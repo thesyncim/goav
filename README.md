@@ -43,7 +43,7 @@ adapters    Optional codec/container integrations outside the core import graph.
 
 ## Shape
 
-The future high-level API should make simple jobs small:
+The high-level API is intended to make simple jobs small:
 
 ```go
 var runtime goav.Runtime
@@ -58,6 +58,9 @@ if err != nil {
 }
 return task.Run(ctx)
 ```
+
+The builder surface exists, but real media execution is still gated on source,
+format, and sink implementations. Unsupported graphs fail explicitly.
 
 The lower-level contracts stay explicit enough to build SFU receivers, recorders,
 transcoders, analyzers, and custom realtime graphs without hiding timestamps,

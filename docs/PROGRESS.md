@@ -33,6 +33,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion boundary sketch | TrackRemote adapter/source boundary |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
+| runtime | `goav.New` options and explicit builder refusal for unsupported graphs | compile real receive/record graphs |
 | adapters | `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
 
 ## Implementation Order
@@ -49,6 +50,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 8. Add compile-safe adapter descriptor boundaries for `govpx`, `goav1`, and
    `goh264`. Done.
 9. Add examples and docs for simple API, graph API, ownership, and adapters.
+   Runtime options and adapter docs are started.
 10. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice

@@ -26,6 +26,11 @@ Sources -> packet/frame/event stages -> sinks
 Format, RTP, WebRTC, codec, and filter adapters
 ```
 
+`goav.New` is the composition root. It owns explicit codec, format, and
+pipeline registries. The current builder is intentionally conservative: it can
+construct an empty direct task, but real input/output graphs return a clear
+unsupported error until source, demux, mux, and sink implementations exist.
+
 ## Core media model
 
 The `av` package owns transport-neutral vocabulary:
