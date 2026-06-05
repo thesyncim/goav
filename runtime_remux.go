@@ -31,50 +31,13 @@ func (b *builder) buildRemux(ctx context.Context) (Task, error) {
 }
 
 func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error {
-	input := b.inputs[0]
-	inputProbe, err := b.runtime.formats.Probe(ctx, format.ProbeRequest{
-		Name:     input.Name,
-		MIMEType: input.MIMEType,
-		Input:    input,
-	})
+	demux, err := b.openDemuxSource(ctx, b.inputs[0])
 	if err != nil {
 		return err
 	}
-	demuxFactory, err := b.runtime.formats.DemuxerFactory(inputProbe.Format)
+	sourcePad, err := graph.AddSource(demux.source, b.runtime.buffer)
 	if err != nil {
-		return err
-	}
-	demuxer, err := demuxFactory.NewDemuxer(ctx, inputProbe)
-	if err != nil {
-		return err
-	}
-	if err := demuxer.Open(ctx, input, format.OpenOptions{
-		Realtime: b.runtime.realtime || input.Realtime,
-		Metadata: input.Metadata,
-	}); err != nil {
-		demuxer.Close()
-		return err
-	}
-
-	streams := demuxer.Streams()
-	if len(streams) == 0 {
-		streams = inputProbe.Streams
-	}
-	source, err := format.NewDemuxSource(format.DemuxSourceConfig{
-		Name:    demuxNodeName(input),
-		Demuxer: demuxer,
-		Result: format.ReadResult{
-			Packet: &av.Packet{},
-			Events: make([]av.Event, 0, 1),
-		},
-	})
-	if err != nil {
-		demuxer.Close()
-		return err
-	}
-	sourcePad, err := graph.AddSource(source, b.runtime.buffer)
-	if err != nil {
-		source.Close()
+		demux.source.Close()
 		return err
 	}
 
@@ -92,7 +55,7 @@ func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error 
 		if err != nil {
 			return err
 		}
-		if err := muxer.Open(ctx, output, streams, format.OpenOptions{
+		if err := muxer.Open(ctx, output, demux.streams, format.OpenOptions{
 			Realtime: b.runtime.realtime || output.Realtime,
 			Metadata: output.Metadata,
 		}); err != nil {

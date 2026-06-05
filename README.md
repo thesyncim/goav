@@ -1,59 +1,34 @@
 # goav
 
-`goav` is a pure-Go media runtime sketch for realtime receive, decode, encode,
-remux, transcode, and recording.
+`goav` is a pure-Go realtime media runtime in progress. The goal is an API that
+feels small for common jobs, while compiling into explicit, inspectable pipeline
+graphs for serious media systems.
 
-The target is an API that feels simple at the edge like FFmpeg, but remains
-composable internally like GStreamer: sources, demuxers, depacketizers, codecs,
-filters, muxers, and sinks all meet through explicit contracts.
+It is not a wrapper around FFmpeg or GStreamer. Codecs and containers live behind
+small Go interfaces and optional adapters, so WebRTC/RTP receive, recording,
+remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 
-This repository starts from interfaces and type contracts, then adds narrow
-vertical slices behind those boundaries. Current implemented pieces include the
-direct pipeline executor, RTP receive primitives, WebRTC track reading, Opus RTP
-depacketization, format graph adapters, and an Opus decode adapter over `gopus`.
+## Design Rules
 
-## First-class goals
+- Pure Go core, no cgo runtime dependency.
+- Simple fluent API for natural workflows.
+- Explicit graph API for custom realtime systems.
+- Caller-owned buffers and result structs on hot paths.
+- RTP metadata, loss, discontinuity, codec epochs, keyframe requests, EOS, and
+  backpressure are first-class events.
+- Pion RTP/RTCP/WebRTC types stay at package boundaries.
+- Codec implementations stay in adapter packages for `gopus`, `govpx`,
+  `goav1`, and `goh264`.
 
-- Realtime WebRTC/RTP receive.
-- Generic realtime and file sources through explicit source and format
-  boundaries.
-- Loss-aware media flow: gaps, late packets, discontinuities, keyframe requests.
-- Codec switches through explicit codec epochs and stream events.
-- Multi-rendition transcoding: one input into many resized/resampled outputs.
-- Pure Go integration with Pion RTP, RTCP, and WebRTC types.
-- Pluggable codec adapters for:
-  - `github.com/thesyncim/gopus`
-  - `github.com/thesyncim/govpx`
-  - `github.com/thesyncim/goh264`
-  - `github.com/thesyncim/goav1`
-- Transport-neutral packet/frame/event model.
-- Registry-driven codecs, formats, payload maps, and pipeline stages.
-- Default static format probing for common file/live boundaries.
+## Examples
 
-## Package map
-
-```text
-av          Core media identifiers, packets, frames, streams, and events.
-codec       Decoder/encoder contracts and backend descriptors.
-format      Probe, demux, and mux contracts for files and containers.
-pipeline    Event-aware graph/stage contracts for realtime composition.
-rtpav       RTP receive contracts using Pion RTP/RTCP types directly.
-webrtcav    WebRTC receive/session contracts using Pion WebRTC types directly.
-filter      Resize/resample/frame-transform contracts.
-transcode   Multi-output ladder and rendition planning contracts.
-adapters    Optional codec/container integrations outside the core import graph.
-```
-
-## Shape
-
-The high-level API should make natural media jobs small. The first compiler
-slice supports one input remuxed or fanned out to one or more outputs when the
-runtime has matching prober, demuxer, and muxer factories registered:
+Remux or fan out one input to many outputs when matching format adapters are
+registered:
 
 ```go
-runtime := goav.New(goav.WithFormatRegistry(formats))
+rt := goav.New(goav.WithFormatRegistry(formats))
 
-task, err := runtime.New().
+task, err := rt.New().
     Input(goav.Input{Name: "input.ogg"}).
     Output(goav.Output{Name: "archive.ogg"}).
     Output(goav.Output{Name: "preview.ogg"}).
@@ -61,6 +36,7 @@ task, err := runtime.New().
 if err != nil {
     return err
 }
+
 _ = task.Describe().Mermaid()
 
 if err := task.Run(ctx); err != nil {
@@ -69,29 +45,28 @@ if err := task.Run(ctx); err != nil {
 return task.Close()
 ```
 
-Decode, encode, filter, and full transcode fluent graphs keep the same surface,
-but still fail explicitly until their graph compilers can select the needed
-sources, codec stages, filters, muxers, and sinks.
-
-The lower-level contracts stay explicit enough to build SFU receivers, recorders,
-transcoders, analyzers, and custom realtime graphs without hiding timestamps,
-loss, codec changes, or backpressure.
-
-Explicit graphs can be built and inspected directly:
+Decode one unambiguous stream into a frame sink when a decoder factory is
+registered:
 
 ```go
-builder := runtime.New().
+task, err := rt.New().
+    Input(goav.Input{Name: "input.ogg"}).
+    Decode(goav.SelectAudio()).
+    Sink(frames).
+    Build(ctx)
+```
+
+Build an explicit graph when the application owns the stages:
+
+```go
+builder := rt.New().
     Source(source).
     Stage(decode).
-    Link(pipeline.Link{
-        From: pipeline.PadRef{Node: "source", Pad: "out"},
-        To: pipeline.PadRef{Node: "decode", Pad: "inout"},
-    }).
     Route(pipeline.Route{
-        From: pipeline.PadRef{Node: "decode", Pad: "inout"},
-        To: []pipeline.PadRef{{Node: "record", Pad: "in"}},
+        From:   pipeline.PadRef{Node: "source", Pad: "out"},
+        To:     []pipeline.PadRef{{Node: "decode", Pad: "inout"}},
         Policy: pipeline.RouteByStream,
-        Label: "audio",
+        Label:  "audio",
     }).
     Sink(record)
 
@@ -99,46 +74,68 @@ spec, err := builder.Describe()
 if err != nil {
     return err
 }
-_ = spec.Mermaid()
-
-task, err := builder.Build(ctx)
-if err != nil {
-    return err
-}
+_ = spec.DOT()
 ```
 
-## Current status
+Unsupported fluent combinations fail early. New high-level workflows are added
+as private graph compilers that must support both `Describe` and `Build`.
 
-This is still an API-first project, but the first receive/decode path is taking
-shape.
+## Current Surface
 
-The current narrow vertical slice is:
+- `av`: media identifiers, streams, packets, frames, timestamps, events, reset
+  helpers, and ownership markers.
+- `pipeline`: direct-call graph executor, fanout, stream/event routes,
+  backpressure surface, text/DOT/Mermaid graph specs.
+- `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
+- `codec`: decoder/encoder contracts, registry, decoder and encoder pipeline
+  stages.
+- `rtpav`: Pion RTP/RTCP boundary, payload map, loss detection, jitter ring,
+  Opus depacketizer, feedback helpers, RTP source.
+- `webrtcav`: Pion TrackRemote reader boundary.
+- `filter`: resize/resample contracts.
+- `transcode`: rendition and ladder planning contracts.
+- `adapters/gopus`: active Opus decoder adapter.
+- `adapters/govpx`, `adapters/goav1`, `adapters/goh264`: descriptor
+  boundaries for future concrete adapters.
 
-1. RTP/WebRTC Opus receive using Pion track types.
-2. Loss/discontinuity events from RTP sequence gaps.
-3. Depacketized Opus packets into a reusable decoder stage.
-4. A `gopus` adapter behind the codec registry producing caller-owned PCM
-   frames.
-5. A reusable encoder stage for upcoming transcode and multi-output branches.
-6. Reusable demux and mux graph adapters for recording, remuxing, and generic
-   protocol/file ingest-output work.
-7. High-level one-input/many-output remux graph compilation through the format
-   registry.
-8. Pre-build graph planning plus text, DOT, and Mermaid renderers.
+## Status
 
-Parallel use cases should shape the same contracts:
+Implemented slices:
 
-- Generic live/file ingest to several outputs.
-- One live input fanning out into multiple encoded layers.
-- Resize video renditions for ABR ladders.
-- Resample audio for output compatibility.
-- Record one branch while forwarding or transcoding another.
+- RTP/WebRTC Opus receive primitives.
+- Loss/discontinuity events from RTP sequence gaps.
+- Opus RTP depacketization.
+- Opus decode through `gopus` into caller-owned PCM frames.
+- Event-aware decoder and encoder stages.
+- Demux source and mux stage graph adapters.
+- Fluent remux/fanout compiler.
+- Fluent single-stream decode-to-sink compiler.
+- Pre-build and runtime graph rendering as text, DOT, and Mermaid.
 
-See `docs/USE_CASES.md` for the current design scenarios.
+Next pressure points:
 
-See `docs/PROGRESS.md` for the compact implementation tracker.
+- Multi-stream decode selection without routing unrelated packets into a
+  decoder.
+- Concrete demuxer/muxer adapters for first recording paths.
+- WebRTC session receive loop and RTCP feedback wiring.
+- VP8/VP9, H264, and AV1 RTP/codec adapter validation.
+- Allocation-safe resize and resample implementations.
 
-See `docs/LOOP.md` for the recursive working loop used to keep new slices small,
-expressive, inspectable, and allocation-aware.
+## Working Loop
 
-See `docs/ADAPTERS.md` and `docs/PERFORMANCE.md` before adding hot-path code.
+Each slice follows the same loop:
+
+1. Express the workflow with the smallest natural API.
+2. Render the explicit graph first.
+3. Add one compiler, stage, adapter, or format boundary.
+4. Prove lifecycle, event behavior, and hot-path allocation expectations.
+5. Update the progress tracker.
+
+See:
+
+- `docs/LOOP.md`
+- `docs/PROGRESS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/RTP_WEBRTC.md`
+- `docs/ADAPTERS.md`
+- `docs/PERFORMANCE.md`

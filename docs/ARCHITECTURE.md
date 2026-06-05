@@ -40,9 +40,12 @@ The current compilers cover:
 - one-input/many-output remux and fanout through
   `format.DemuxSource -> format.MuxStage...` when the format registry can
   probe, demux, and mux the requested boundaries
+- one-input decode to a frame sink through
+  `format.DemuxSource -> codec.DecoderStage -> Sink` when stream selection is
+  unambiguous and the codec registry has a decoder factory
 
-Decode, encode, filter, and transcode discovery still return a clear
-unsupported error until source, codec, filter, mux, and sink selection is ready.
+Encode, filter, and transcode discovery still return a clear unsupported error
+until source, codec, filter, mux, and sink selection is ready.
 
 ## Core media model
 

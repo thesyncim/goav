@@ -36,7 +36,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| runtime | `goav.New` options, private graph compiler loop, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level one-input/many-output remux compiler | decode/encode/filter/transcode graph compilers |
+| runtime | `goav.New` options, private graph compiler loop, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level single-stream decode-to-sink compiler | encode/filter/transcode graph compilers |
 | adapters | `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
 
 ## Implementation Order
@@ -94,6 +94,9 @@ Required proof:
 - The runtime builder can also plan and compile simple remux/fanout jobs from
   `Input(...).Output(...).Build(ctx)` when registered format adapters can probe,
   demux, and mux the selected boundaries.
+- The runtime builder can plan and compile single-stream decode jobs from
+  `Input(...).Decode(...).Sink(...).Build(ctx)` when format probing finds an
+  unambiguous stream and the codec registry has a decoder factory.
 
 ## Adapter Targets
 
@@ -111,7 +114,7 @@ Required proof:
 | Gate | Evidence | State |
 | --- | --- | --- |
 | Clear minimal architecture | `README.md`, `docs/ARCHITECTURE.md`, package boundaries | active |
-| Simple high-level API | runtime builder, remux/fanout compiler | first slice active |
+| Simple high-level API | runtime builder, remux/fanout compiler, decode-to-sink compiler | first slices active |
 | Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts | active |
 | Realtime Opus vertical slice | RTP/WebRTC boundary, Opus depacketizer, `gopus` decoder | active |
 | Allocation guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters | active for implemented paths |
@@ -127,6 +130,9 @@ Required proof:
 3. Add the smallest runtime behavior behind existing stages/adapters.
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
+
+Current pressure point: multi-stream decode selection needs an inspectable graph
+shape that does not route unrelated packets through a decoder.
 
 ## Validation Gates
 

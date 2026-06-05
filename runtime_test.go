@@ -55,7 +55,9 @@ func (s *runtimeTestStage) Close() error {
 type runtimeTestSink struct {
 	name       string
 	count      int
+	frames     int
 	lastPacket *av.Packet
+	lastFrame  av.Frame
 	closed     bool
 }
 
@@ -67,6 +69,12 @@ func (s *runtimeTestSink) Handle(_ context.Context, msg *pipeline.Message) error
 	s.count++
 	if msg.Kind == pipeline.MessagePacket {
 		s.lastPacket = msg.Packet
+	}
+	if msg.Kind == pipeline.MessageFrame {
+		s.frames++
+		if msg.Frame != nil {
+			s.lastFrame = *msg.Frame
+		}
 	}
 	return nil
 }

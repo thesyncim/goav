@@ -16,6 +16,7 @@ var builderCompilers = [...]builderCompiler{
 	emptyGraphCompiler{},
 	explicitGraphCompiler{},
 	remuxGraphCompiler{},
+	decodeToSinkGraphCompiler{},
 }
 
 func (b *builder) selectCompiler() (builderCompiler, error) {
