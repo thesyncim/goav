@@ -59,6 +59,10 @@ type BufferPolicy struct {
 	MaxLatency    time.Duration
 }
 
+func (p BufferPolicy) IsDirect() bool {
+	return p.Capacity == 0 && (p.Drop == "" || p.Drop == DropNever)
+}
+
 type Emitter interface {
 	Emit(context.Context, *Message) error
 }

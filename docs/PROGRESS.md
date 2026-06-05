@@ -28,7 +28,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `av` | reset helpers, ownership docs, RTP timebase helpers | richer timestamp conversion helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry | adapter descriptors and alloc tests |
 | `format` | Into-style read/write contracts | probe registry and first demuxer boundary |
-| `pipeline` | resettable messages and scratch | direct executor, fanout, drop tests |
+| `pipeline` | direct executor, fanout, stream/event routes, backpressure guard | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector | jitter ring and Opus depacketizer |
 | `webrtcav` | Pion boundary sketch | TrackRemote adapter/source boundary |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
@@ -41,7 +41,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 2. Convert hot-path contracts to caller-owned `Into` style.
 3. Add `Reset` helpers and allocation tests for core hot-path structs.
 4. Add explicit codec registry implementation.
-5. Add minimal direct-call pipeline executor.
+5. Add minimal direct-call pipeline executor. Done.
 6. Add RTP static payload map, sequence/loss detector, jitter ring, Opus
    depacketizer.
 7. Add `gopus` adapter and RTP Opus to PCM vertical slice.

@@ -69,6 +69,12 @@ These adapters should live behind `codec.DecoderFactory` and
 The pipeline API is deliberately event-aware. A stage receives a `Message` and
 can emit zero or more messages.
 
+The default executor is a synchronous direct-call graph. It does not create
+goroutines or channels per packet, and fanout delivers the same message and
+payload references unless a future explicit policy asks for copying. Buffered
+edges are intentionally separate from the direct executor so backpressure and
+drop behavior remain visible.
+
 That shape supports:
 
 - demux -> decode -> filter -> encode -> mux
