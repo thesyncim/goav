@@ -147,12 +147,13 @@ func planLinks(spec *pipeline.Spec, from []pipeline.PadRef, to []pipeline.PadRef
 }
 
 func planLink(nodes map[string]plannedNode, spec *pipeline.Spec, link pipeline.Link) error {
-	if err := validatePlannedEdge(nodes, link.From, link.To); err != nil {
+	from, to, err := resolvePlannedEdge(nodes, link.From, link.To)
+	if err != nil {
 		return err
 	}
 	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-		From:   link.From,
-		To:     link.To,
+		From:   from,
+		To:     to,
 		Policy: pipeline.RouteAll,
 	})
 	return nil
@@ -162,7 +163,11 @@ func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline
 	if route.Policy == pipeline.RouteByLabel {
 		return pipeline.ErrUnsupportedRoute
 	}
-	from, ok := nodes[route.From.Node]
+	fromPad, err := resolvePlannedPad(nodes, route.From)
+	if err != nil {
+		return err
+	}
+	from, ok := nodes[fromPad.Node]
 	if !ok {
 		return pipeline.ErrUnknownNode
 	}
@@ -170,7 +175,11 @@ func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline
 		return pipeline.ErrInvalidLink
 	}
 	for i := range route.To {
-		to, ok := nodes[route.To[i].Node]
+		toPad, err := resolvePlannedPad(nodes, route.To[i])
+		if err != nil {
+			return err
+		}
+		to, ok := nodes[toPad.Node]
 		if !ok {
 			return pipeline.ErrUnknownNode
 		}
@@ -178,8 +187,8 @@ func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline
 			return pipeline.ErrInvalidLink
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-			From:   route.From,
-			To:     route.To[i],
+			From:   fromPad,
+			To:     toPad,
 			Policy: route.Policy,
 			Label:  route.Label,
 		})
@@ -203,4 +212,30 @@ func validatePlannedEdge(nodes map[string]plannedNode, from pipeline.PadRef, to 
 		return pipeline.ErrInvalidLink
 	}
 	return nil
+}
+
+func resolvePlannedEdge(nodes map[string]plannedNode, from pipeline.PadRef, to pipeline.PadRef) (pipeline.PadRef, pipeline.PadRef, error) {
+	fromPad, err := resolvePlannedPad(nodes, from)
+	if err != nil {
+		return pipeline.PadRef{}, pipeline.PadRef{}, err
+	}
+	toPad, err := resolvePlannedPad(nodes, to)
+	if err != nil {
+		return pipeline.PadRef{}, pipeline.PadRef{}, err
+	}
+	if err := validatePlannedEdge(nodes, fromPad, toPad); err != nil {
+		return pipeline.PadRef{}, pipeline.PadRef{}, err
+	}
+	return fromPad, toPad, nil
+}
+
+func resolvePlannedPad(nodes map[string]plannedNode, ref pipeline.PadRef) (pipeline.PadRef, error) {
+	if ref.Pad != "" {
+		return ref, nil
+	}
+	node, ok := nodes[ref.Node]
+	if !ok {
+		return pipeline.PadRef{}, pipeline.ErrUnknownNode
+	}
+	return node.pad, nil
 }

@@ -45,6 +45,12 @@ func (b *builder) planDecodeToSink(spec pipeline.Spec) (pipeline.Spec, error) {
 		return pipeline.Spec{}, err
 	}
 
+	selectName := selectNodeName(b.decodes[0])
+	selectPad := pipeline.PadRef{Node: selectName, Pad: "inout"}
+	if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectPad); err != nil {
+		return pipeline.Spec{}, err
+	}
+
 	decodeName := decodeNodeName(b.decodes[0])
 	decodePad := pipeline.PadRef{Node: decodeName, Pad: "inout"}
 	if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodePad); err != nil {
@@ -57,7 +63,16 @@ func (b *builder) planDecodeToSink(spec pipeline.Spec) (pipeline.Spec, error) {
 		return pipeline.Spec{}, err
 	}
 
-	routeDecodeInput(&spec, sourcePad, decodePad, b.decodes[0])
+	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
+		From:   sourcePad,
+		To:     selectPad,
+		Policy: pipeline.RouteAll,
+	})
+	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
+		From:   selectPad,
+		To:     decodePad,
+		Policy: pipeline.RouteAll,
+	})
 	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
 		From:   decodePad,
 		To:     sinkPad,
@@ -98,6 +113,13 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 	if err != nil {
 		return err
 	}
+	selectStage := newStreamSelectStage(selectNodeName(selector), stream.ID)
+	selectPad, err := graph.AddStage(selectStage, b.runtime.buffer)
+	if err != nil {
+		selectStage.Close()
+		return err
+	}
+
 	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
 	if err != nil {
 		return err
@@ -136,17 +158,16 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 		return err
 	}
 
-	if err := linkDecodeInput(graph, sourcePad, stagePad, selector); err != nil {
+	if err := graph.Link(pipeline.Link{From: sourcePad, To: selectPad}); err != nil {
+		return err
+	}
+	if err := graph.Link(pipeline.Link{From: selectPad, To: stagePad}); err != nil {
 		return err
 	}
 	return graph.Link(pipeline.Link{From: stagePad, To: sinkPad})
 }
 
 func selectDecodeStream(streams []av.Stream, selector av.StreamSelector) (av.Stream, error) {
-	if selector.ID == "" && len(streams) != 1 {
-		return av.Stream{}, ErrUnsupportedBuild
-	}
-
 	var selected av.Stream
 	matches := 0
 	for i := range streams {
@@ -182,52 +203,6 @@ func streamMatchesSelector(stream av.Stream, selector av.StreamSelector) bool {
 		return false
 	}
 	return true
-}
-
-func routeDecodeInput(spec *pipeline.Spec, from pipeline.PadRef, to pipeline.PadRef, selector av.StreamSelector) {
-	policy, label := decodeInputRoute(selector)
-	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-		From:   from,
-		To:     to,
-		Policy: policy,
-		Label:  label,
-	})
-	if policy == pipeline.RouteByStream {
-		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-			From:   from,
-			To:     to,
-			Policy: pipeline.RouteByEvent,
-			Label:  string(av.EventEndOfStream),
-		})
-	}
-}
-
-func linkDecodeInput(graph pipeline.Graph, from pipeline.PadRef, to pipeline.PadRef, selector av.StreamSelector) error {
-	policy, label := decodeInputRoute(selector)
-	if err := graph.Route(pipeline.Route{
-		From:   from,
-		To:     []pipeline.PadRef{to},
-		Policy: policy,
-		Label:  label,
-	}); err != nil {
-		return err
-	}
-	if policy != pipeline.RouteByStream {
-		return nil
-	}
-	return graph.Route(pipeline.Route{
-		From:   from,
-		To:     []pipeline.PadRef{to},
-		Policy: pipeline.RouteByEvent,
-		Label:  string(av.EventEndOfStream),
-	})
-}
-
-func decodeInputRoute(selector av.StreamSelector) (pipeline.RoutePolicy, string) {
-	if selector.ID != "" {
-		return pipeline.RouteByStream, string(selector.ID)
-	}
-	return pipeline.RouteAll, ""
 }
 
 func decodeResultForStream(stream av.Stream) codec.DecodeResult {

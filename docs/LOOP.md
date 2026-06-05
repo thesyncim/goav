@@ -22,7 +22,7 @@ compiler is allowed only when it owns one clear shape, for example:
 
 ```text
 Input -> DemuxSource -> MuxStage...
-Input -> DemuxSource -> DecoderStage -> Sink
+Input -> DemuxSource -> stream select -> DecoderStage -> Sink
 Input -> Decode -> Filter branches -> Encode -> Mux outputs
 TrackRemote -> RTP source -> Depacketizer -> DecoderStage
 ```

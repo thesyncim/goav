@@ -40,9 +40,9 @@ The current compilers cover:
 - one-input/many-output remux and fanout through
   `format.DemuxSource -> format.MuxStage...` when the format registry can
   probe, demux, and mux the requested boundaries
-- one-input decode to a frame sink through
-  `format.DemuxSource -> codec.DecoderStage -> Sink` when stream selection is
-  unambiguous and the codec registry has a decoder factory
+- one-input selected-stream decode to a frame sink through
+  `format.DemuxSource -> stream select -> codec.DecoderStage -> Sink` when the
+  selector resolves to one stream and the codec registry has a decoder factory
 
 Encode, filter, and transcode discovery still return a clear unsupported error
 until source, codec, filter, mux, and sink selection is ready.

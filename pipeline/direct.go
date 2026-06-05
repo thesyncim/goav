@@ -74,9 +74,9 @@ func NewDirectGraph(config GraphConfig) (*DirectGraph, error) {
 	if !config.Buffer.IsDirect() {
 		return nil, ErrBufferedEdgesUnsupported
 	}
-	eventCapacity := config.Buffer.Capacity
+	eventCapacity := config.EventCapacity
 	if eventCapacity < 1 {
-		eventCapacity = 1
+		eventCapacity = 16
 	}
 	return &DirectGraph{
 		config: config,

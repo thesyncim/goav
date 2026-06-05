@@ -38,6 +38,9 @@ type Builder interface {
 	Source(pipeline.Source) Builder
 	Stage(pipeline.Stage) Builder
 	Sink(pipeline.Sink) Builder
+	Connect(from string, to string) Builder
+	ConnectStream(from string, to string, stream av.StreamID) Builder
+	ConnectEvent(from string, to string, event av.EventType) Builder
 	Link(pipeline.Link) Builder
 	Route(pipeline.Route) Builder
 	Describe() (pipeline.Spec, error)

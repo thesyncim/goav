@@ -311,7 +311,7 @@ func TestDirectGraphEventBackpressure(t *testing.T) {
 			{Type: av.EventBackpressure},
 		},
 	}
-	graph, err := NewDirectGraph(GraphConfig{Name: "events"})
+	graph, err := NewDirectGraph(GraphConfig{Name: "events", EventCapacity: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

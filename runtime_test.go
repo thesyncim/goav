@@ -243,18 +243,8 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 		Source(source).
 		Sink(audio).
 		Sink(video).
-		Route(pipeline.Route{
-			From:   pipeline.PadRef{Node: "source", Pad: "out"},
-			To:     []pipeline.PadRef{{Node: "audio", Pad: "in"}},
-			Policy: pipeline.RouteByStream,
-			Label:  "audio",
-		}).
-		Route(pipeline.Route{
-			From:   pipeline.PadRef{Node: "source", Pad: "out"},
-			To:     []pipeline.PadRef{{Node: "video", Pad: "in"}},
-			Policy: pipeline.RouteByStream,
-			Label:  "video",
-		}).
+		ConnectStream("source", "audio", "audio").
+		ConnectStream("source", "video", "video").
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -289,18 +279,8 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 		Source(source).
 		Sink(audio).
 		Sink(video).
-		Route(pipeline.Route{
-			From:   pipeline.PadRef{Node: "source", Pad: "out"},
-			To:     []pipeline.PadRef{{Node: "audio", Pad: "in"}},
-			Policy: pipeline.RouteByStream,
-			Label:  "audio",
-		}).
-		Route(pipeline.Route{
-			From:   pipeline.PadRef{Node: "source", Pad: "out"},
-			To:     []pipeline.PadRef{{Node: "video", Pad: "in"}},
-			Policy: pipeline.RouteByStream,
-			Label:  "video",
-		}).
+		ConnectStream("source", "audio", "audio").
+		ConnectStream("source", "video", "video").
 		Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -311,6 +291,37 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 	if !strings.Contains(spec.String(), "source:out -> audio:in [by_stream:audio]") ||
 		!strings.Contains(spec.Mermaid(), "-- \"by_stream:video\" -->") {
 		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
+	}
+}
+
+func TestRuntimeBuilderExplicitEventRoute(t *testing.T) {
+	event := av.Event{Type: av.EventStats}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessageEvent, Event: &event},
+	}
+	stats := &runtimeTestSink{name: "stats"}
+	loss := &runtimeTestSink{name: "loss"}
+
+	task, err := New().New().
+		Source(source).
+		Sink(stats).
+		Sink(loss).
+		ConnectEvent("source", "stats", av.EventStats).
+		ConnectEvent("source", "loss", av.EventPacketLoss).
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := task.Describe()
+	if !strings.Contains(spec.String(), "source:out -> stats:in [by_event:stats]") {
+		t.Fatalf("spec:\n%s", spec.String())
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if stats.count != 1 || loss.count != 0 {
+		t.Fatalf("stats=%d loss=%d", stats.count, loss.count)
 	}
 }
 
@@ -327,10 +338,7 @@ func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 		Source(source).
 		Stage(unused).
 		Sink(sink).
-		Link(pipeline.Link{
-			From: pipeline.PadRef{Node: "source", Pad: "out"},
-			To:   pipeline.PadRef{Node: "sink", Pad: "in"},
-		}).
+		Connect("source", "sink").
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)

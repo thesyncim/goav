@@ -128,8 +128,9 @@ type Factory interface {
 }
 
 type GraphConfig struct {
-	Name     string
-	Realtime bool
-	Buffer   BufferPolicy
-	Metadata av.Metadata
+	Name          string
+	Realtime      bool
+	Buffer        BufferPolicy
+	EventCapacity int
+	Metadata      av.Metadata
 }

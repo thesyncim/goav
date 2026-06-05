@@ -45,8 +45,7 @@ if err := task.Run(ctx); err != nil {
 return task.Close()
 ```
 
-Decode one unambiguous stream into a frame sink when a decoder factory is
-registered:
+Decode a selected stream into a frame sink when a decoder factory is registered:
 
 ```go
 task, err := rt.New().
@@ -62,12 +61,8 @@ Build an explicit graph when the application owns the stages:
 builder := rt.New().
     Source(source).
     Stage(decode).
-    Route(pipeline.Route{
-        From:   pipeline.PadRef{Node: "source", Pad: "out"},
-        To:     []pipeline.PadRef{{Node: "decode", Pad: "inout"}},
-        Policy: pipeline.RouteByStream,
-        Label:  "audio",
-    }).
+    ConnectStream("source", "decode", "audio").
+    Connect("decode", "record").
     Sink(record)
 
 spec, err := builder.Describe()
@@ -109,14 +104,13 @@ Implemented slices:
 - Event-aware decoder and encoder stages.
 - Demux source and mux stage graph adapters.
 - Fluent remux/fanout compiler.
-- Fluent single-stream decode-to-sink compiler.
+- Fluent selected-stream decode-to-sink compiler.
 - Pre-build and runtime graph rendering as text, DOT, and Mermaid.
 
 Next pressure points:
 
-- Multi-stream decode selection without routing unrelated packets into a
-  decoder.
 - Concrete demuxer/muxer adapters for first recording paths.
+- WebRTC/RTP receive compiler shape from track or packet source to decoder.
 - WebRTC session receive loop and RTCP feedback wiring.
 - VP8/VP9, H264, and AV1 RTP/codec adapter validation.
 - Allocation-safe resize and resample implementations.

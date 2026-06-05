@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -65,6 +66,51 @@ func (d *decodeTestDecoder) Close() error {
 	return nil
 }
 
+type decodeTestDemuxer struct {
+	streams []av.Stream
+	packets []av.Packet
+	opened  bool
+	closed  bool
+	read    int
+}
+
+type decodeTestDemuxerFactory struct {
+	demuxer format.Demuxer
+}
+
+func (f decodeTestDemuxerFactory) NewDemuxer(context.Context, format.ProbeResult) (format.Demuxer, error) {
+	return f.demuxer, nil
+}
+
+func (d *decodeTestDemuxer) Format() av.FormatID {
+	return av.FormatOgg
+}
+
+func (d *decodeTestDemuxer) Open(context.Context, format.Input, format.OpenOptions) error {
+	d.opened = true
+	return nil
+}
+
+func (d *decodeTestDemuxer) Streams() []av.Stream {
+	return d.streams
+}
+
+func (d *decodeTestDemuxer) ReadInto(_ context.Context, out *format.ReadResult) error {
+	if d.read >= len(d.packets) {
+		return io.EOF
+	}
+	packet := &d.packets[d.read]
+	d.read++
+	out.PacketReady = true
+	*out.Packet = *packet
+	return nil
+}
+
+func (d *decodeTestDemuxer) Close() error {
+	d.closed = true
+	return nil
+}
+
 func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	streams := []av.Stream{{
 		ID:   "audio",
@@ -80,7 +126,7 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	demuxer := &remuxTestDemuxer{streams: streams}
 	formats := format.NewRegistry(
 		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 	)
 	decoder := &decodeTestDecoder{}
 	decoderFactory := &decodeTestDecoderFactory{decoder: decoder}
@@ -98,10 +144,11 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(planned.Nodes) != 3 || len(planned.Edges) != 2 {
+	if len(planned.Nodes) != 4 || len(planned.Edges) != 3 {
 		t.Fatalf("planned nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "input.ogg:out -> decode-audio:inout") ||
+	if !strings.Contains(planned.String(), "input.ogg:out -> select-audio:inout") ||
+		!strings.Contains(planned.String(), "select-audio:inout -> decode-audio:inout") ||
 		!strings.Contains(planned.String(), "decode-audio:inout -> frames:in") {
 		t.Fatalf("planned spec:\n%s", planned.String())
 	}
@@ -136,9 +183,62 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderInputDecodeSinkSelectsMatchingStream(t *testing.T) {
+	streams := []av.Stream{
+		{ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8}},
+		{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus}},
+	}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{
+			{StreamID: "video", Payload: av.Buffer{Bytes: []byte{9}}},
+			{StreamID: "audio", Payload: av.Buffer{Bytes: []byte{1}}},
+		},
+	}
+	formats := format.NewRegistry(
+		format.WithProber(remuxTestProber{streams: streams}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	decoder := &decodeTestDecoder{}
+	decoderFactory := &decodeTestDecoderFactory{decoder: decoder}
+	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus}, decoderFactory))
+	sink := &runtimeTestSink{name: "frames"}
+
+	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+		Input(Input{Name: "input.ogg"}).
+		Decode(SelectAudio()).
+		Sink(sink)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(planned.String(), "input.ogg:out -> select-audio:inout") {
+		t.Fatalf("planned spec:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := task.Describe()
+	if planned.String() != spec.String() || planned.Mermaid() != spec.Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if decoderFactory.config.Stream.ID != "audio" || decoder.decodes != 1 || sink.frames != 1 {
+		t.Fatalf("stream=%s decodes=%d frames=%d", decoderFactory.config.Stream.ID, decoder.decodes, sink.frames)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRuntimeBuilderDecodeRequiresUnambiguousStream(t *testing.T) {
 	streams := []av.Stream{
-		{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus}},
+		{ID: "audio-main", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus}},
+		{ID: "audio-alt", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus}},
 		{ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8}},
 	}
 	demuxer := &remuxTestDemuxer{streams: streams}
