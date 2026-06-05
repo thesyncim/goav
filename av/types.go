@@ -51,6 +51,11 @@ type StreamID string
 type Epoch uint64
 type Metadata map[string]string
 
+const (
+	SampleFormatS16 = "s16"
+	SampleFormatF32 = "f32"
+)
+
 type TimeBase struct {
 	Num int64
 	Den int64

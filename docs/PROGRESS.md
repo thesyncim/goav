@@ -33,7 +33,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion boundary sketch | TrackRemote adapter/source boundary |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| adapters | not started | `gopus` first, then `govpx`, `goav1`, `goh264` |
+| adapters | `gopus` Opus decoder active | `govpx`, `goav1`, `goh264` skeletons |
 
 ## Implementation Order
 
@@ -44,7 +44,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 5. Add minimal direct-call pipeline executor. Done.
 6. Add RTP static payload map, sequence/loss detector, jitter ring, Opus
    depacketizer. Done.
-7. Add `gopus` adapter and RTP Opus to PCM vertical slice.
+7. Add `gopus` adapter and RTP Opus to PCM vertical slice. RTP packet to PCM
+   frame is covered; WebRTC TrackRemote wiring remains.
 8. Add compile-safe adapter skeletons for `govpx`, `goav1`, and `goh264`.
 9. Add examples and docs for simple API, graph API, ownership, and adapters.
 10. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
@@ -67,11 +68,13 @@ Required proof:
 - keyframe request emits `EventKeyframeRequired` where relevant
 - hot-path allocation tests pass after warm-up
 - core package imports stay lightweight
+- RTP Opus depacketize to `gopus` decode is covered by a compile-time example
+  and adapter test.
 
 ## Adapter Targets
 
-- `adapters/gopus`: Opus decode first, PLC via loss events, encode if API is
-  straightforward.
+- `adapters/gopus`: Opus decode first is active, PLC via loss events works,
+  encode remains unclaimed.
 - `adapters/govpx`: VP8/VP9 decode/encode where stable; preserve I420 planes.
 - `adapters/goav1`: AV1 decode path first; encode only if honestly ready.
 - `adapters/goh264`: Annex B/AVCC, SPS/PPS, IDR, FU-A/STAP-A boundaries; keep

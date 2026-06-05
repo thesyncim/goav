@@ -38,6 +38,7 @@ rtpav       RTP receive contracts using Pion RTP/RTCP types directly.
 webrtcav    WebRTC receive/session contracts using Pion WebRTC types directly.
 filter      Resize/resample/frame-transform contracts.
 transcode   Multi-output ladder and rendition planning contracts.
+adapters    Optional codec/container integrations outside the core import graph.
 ```
 
 ## Shape
@@ -84,3 +85,5 @@ Parallel use cases should shape the same contracts:
 See `docs/USE_CASES.md` for the current design scenarios.
 
 See `docs/PROGRESS.md` for the compact implementation tracker.
+
+See `docs/ADAPTERS.md` and `docs/PERFORMANCE.md` before adding hot-path code.
