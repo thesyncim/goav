@@ -30,7 +30,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `format` | Into-style read/write contracts | probe registry and first demuxer boundary |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus depacketizer | RTCP feedback and richer payload formats |
-| `webrtcav` | Pion boundary sketch | TrackRemote adapter/source boundary |
+| `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
 | runtime | `goav.New` options and explicit builder refusal for unsupported graphs | compile real receive/record graphs |
@@ -46,7 +46,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 6. Add RTP static payload map, sequence/loss detector, jitter ring, Opus
    depacketizer. Done.
 7. Add `gopus` adapter and RTP Opus to PCM vertical slice. RTP packet to PCM
-   frame is covered; WebRTC TrackRemote wiring remains.
+   frame is covered; WebRTC TrackRemote now maps into the RTP reader boundary.
 8. Add compile-safe adapter descriptor boundaries for `govpx`, `goav1`, and
    `goh264`. Done.
 9. Add examples and docs for simple API, graph API, ownership, and adapters.
@@ -73,6 +73,8 @@ Required proof:
 - core package imports stay lightweight
 - RTP Opus depacketize to `gopus` decode is covered by a compile-time example
   and adapter test.
+- WebRTC TrackRemote boundary exposes streams, payload map, RTP reads, metadata,
+  and EOS events.
 
 ## Adapter Targets
 

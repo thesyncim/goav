@@ -40,6 +40,13 @@ Current `rtpav` building blocks:
 - `JitterRing` for bounded sequence-ordered packet release.
 - `OpusDepacketizer` for borrowed RTP Opus payloads into `av.Packet`.
 
+Current `webrtcav` building blocks:
+
+- `TrackRemoteAdapter` for Pion `TrackRemote`.
+- stream and payload-map mapping from Pion `RTPCodecParameters`.
+- preservation of track metadata such as RID, SSRC, stream ID, and track ID.
+- EOS events when the track reader reaches end-of-stream.
+
 ## Loss
 
 Loss is not just an error return. It should become visible as:
