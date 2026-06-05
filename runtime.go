@@ -210,6 +210,12 @@ func (b *builder) Route(route pipeline.Route) Builder {
 
 func (b *builder) Build(ctx context.Context) (Task, error) {
 	if b.hasHighLevelRequests() {
+		if b.hasExplicitGraph() {
+			return nil, ErrUnsupportedBuild
+		}
+		if b.canBuildRemux() {
+			return b.buildRemux(ctx)
+		}
 		return nil, ErrUnsupportedBuild
 	}
 	graph, err := b.runtime.pipelines.NewGraph(ctx, pipeline.GraphConfig{

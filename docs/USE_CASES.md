@@ -30,6 +30,17 @@ Receive a live protocol input, file input, or custom source; demux container dat
 into streams and packets when needed; then feed the same pipeline graph used by
 WebRTC and RTP inputs.
 
+The simplest supported shape is direct remux/fanout through registered format
+adapters:
+
+```go
+task, err := runtime.New().
+    Input(goav.Input{Name: "input"}).
+    Output(goav.Output{Name: "recording"}).
+    Output(goav.Output{Name: "preview"}).
+    Build(ctx)
+```
+
 Expected graph:
 
 ```text

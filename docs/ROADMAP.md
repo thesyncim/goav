@@ -37,6 +37,7 @@ validation gates. This roadmap keeps the broader phase view.
 
 ## Phase 3: Recording and remux
 
+- High-level one-input/many-output remux compiler.
 - Ogg/Opus or IVF output.
 - WebRTC receive to file.
 - Probe output and stream inspection.
@@ -59,5 +60,5 @@ validation gates. This roadmap keeps the broader phase view.
 
 ## Phase 5: High-level API
 
-- Fluent receive/decode/record builder.
+- Fluent receive/decode/filter/encode/record builder compilers.
 - Stats, tracing, and graph introspection.

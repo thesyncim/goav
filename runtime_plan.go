@@ -8,17 +8,45 @@ type plannedNode struct {
 }
 
 func (b *builder) Describe() (pipeline.Spec, error) {
-	if b.hasHighLevelRequests() {
-		return pipeline.Spec{}, ErrUnsupportedBuild
-	}
 	spec := pipeline.Spec{
 		Name:     "goav",
 		Realtime: b.runtime.realtime,
+	}
+	if b.hasHighLevelRequests() {
+		if b.hasExplicitGraph() {
+			return pipeline.Spec{}, ErrUnsupportedBuild
+		}
+		if b.canBuildRemux() {
+			return b.planRemux(spec)
+		}
+		return pipeline.Spec{}, ErrUnsupportedBuild
 	}
 	if !b.hasExplicitGraph() {
 		return spec, nil
 	}
 	return b.planExplicitGraph(spec)
+}
+
+func (b *builder) planRemux(spec pipeline.Spec) (pipeline.Spec, error) {
+	nodes := make(map[string]plannedNode, 1+len(b.outputs))
+	sourceName := demuxNodeName(b.inputs[0])
+	sourcePad := pipeline.PadRef{Node: sourceName, Pad: "out"}
+	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourcePad); err != nil {
+		return pipeline.Spec{}, err
+	}
+	for i := range b.outputs {
+		stageName := muxNodeName(b.outputs[i], i)
+		stagePad := pipeline.PadRef{Node: stageName, Pad: "inout"}
+		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stagePad); err != nil {
+			return pipeline.Spec{}, err
+		}
+		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
+			From:   sourcePad,
+			To:     stagePad,
+			Policy: pipeline.RouteAll,
+		})
+	}
+	return spec, nil
 }
 
 func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {

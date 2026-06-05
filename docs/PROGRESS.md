@@ -33,7 +33,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| runtime | `goav.New` options, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions | high-level input/decode/output graph compiler |
+| runtime | `goav.New` options, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level one-input/many-output remux compiler | decode/encode/filter/transcode graph compilers |
 | adapters | `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
 
 ## Implementation Order
@@ -88,6 +88,9 @@ Required proof:
 - The runtime builder can plan and compile explicit source/stage/sink graphs
   with links/routes and expose generated graph specs with text, DOT, and
   Mermaid renderers before or after build.
+- The runtime builder can also plan and compile simple remux/fanout jobs from
+  `Input(...).Output(...).Build(ctx)` when registered format adapters can probe,
+  demux, and mux the selected boundaries.
 
 ## Adapter Targets
 

@@ -42,7 +42,6 @@ type ProtocolID string
 const (
 	ProtocolUnknown ProtocolID = ""
 	ProtocolFile    ProtocolID = "file"
-	ProtocolRTMP    ProtocolID = "rtmp"
 	ProtocolRTP     ProtocolID = "rtp"
 	ProtocolWebRTC  ProtocolID = "webrtc"
 )

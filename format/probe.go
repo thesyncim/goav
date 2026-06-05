@@ -53,12 +53,11 @@ func DefaultProbeRules() []ProbeRule {
 		},
 		{
 			Format:     av.FormatFLV,
-			Protocol:   av.ProtocolRTMP,
 			Extensions: []string{".flv"},
 			MIMETypes:  []string{"video/x-flv"},
 			Magic:      []Magic{{Bytes: []byte("FLV")}},
 			Score:      100,
-			Reason:     "flv magic, extension, or rtmp protocol",
+			Reason:     "flv magic or extension",
 		},
 		{
 			Format:     av.FormatMatroska,

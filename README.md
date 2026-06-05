@@ -46,24 +46,32 @@ adapters    Optional codec/container integrations outside the core import graph.
 
 ## Shape
 
-The high-level API is intended to make simple jobs small:
+The high-level API should make natural media jobs small. The first compiler
+slice supports one input remuxed or fanned out to one or more outputs when the
+runtime has matching prober, demuxer, and muxer factories registered:
 
 ```go
-var runtime goav.Runtime
+runtime := goav.New(goav.WithFormatRegistry(formats))
 
 task, err := runtime.New().
-    Input(goav.Input{Name: "call", Realtime: true}).
-    Decode(goav.SelectVideo()).
-    Output(goav.Output{Name: "recording.ivf"}).
+    Input(goav.Input{Name: "input.ogg"}).
+    Output(goav.Output{Name: "archive.ogg"}).
+    Output(goav.Output{Name: "preview.ogg"}).
     Build(ctx)
 if err != nil {
     return err
 }
-return task.Run(ctx)
+_ = task.Describe().Mermaid()
+
+if err := task.Run(ctx); err != nil {
+    return err
+}
+return task.Close()
 ```
 
-The builder surface exists, but real media execution is still gated on source,
-format, and sink implementations. Unsupported graphs fail explicitly.
+Decode, encode, filter, and full transcode fluent graphs keep the same surface,
+but still fail explicitly until their graph compilers can select the needed
+sources, codec stages, filters, muxers, and sinks.
 
 The lower-level contracts stay explicit enough to build SFU receivers, recorders,
 transcoders, analyzers, and custom realtime graphs without hiding timestamps,
@@ -114,7 +122,9 @@ The current narrow vertical slice is:
 5. A reusable encoder stage for upcoming transcode and multi-output branches.
 6. Reusable demux and mux graph adapters for recording, remuxing, and generic
    protocol/file ingest-output work.
-7. Pre-build graph planning plus text, DOT, and Mermaid renderers.
+7. High-level one-input/many-output remux graph compilation through the format
+   registry.
+8. Pre-build graph planning plus text, DOT, and Mermaid renderers.
 
 Parallel use cases should shape the same contracts:
 
