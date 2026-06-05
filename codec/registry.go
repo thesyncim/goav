@@ -39,6 +39,20 @@ func WithEncoder(desc Descriptor, factory EncoderFactory) RegistryOption {
 	}
 }
 
+func WithDescriptor(desc Descriptor) RegistryOption {
+	return func(r *SimpleRegistry) {
+		r.RegisterDescriptor(desc)
+	}
+}
+
+func (r *SimpleRegistry) RegisterDescriptor(desc Descriptor) {
+	desc.ID = pickCodecID(desc.ID, desc.Capabilities.CodecID)
+	if desc.Capabilities.CodecID == "" {
+		desc.Capabilities.CodecID = desc.ID
+	}
+	r.descriptors = append(r.descriptors, desc)
+}
+
 func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory) {
 	desc.Capabilities.Decode = true
 	desc.ID = pickCodecID(desc.ID, desc.Capabilities.CodecID)

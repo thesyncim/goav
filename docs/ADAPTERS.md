@@ -23,9 +23,9 @@ integrations belong under `adapters/...`.
 | Adapter | Status |
 | --- | --- |
 | `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
-| `adapters/govpx` | planned |
-| `adapters/goav1` | planned |
-| `adapters/goh264` | planned; keep default build safe if the module is unavailable |
+| `adapters/govpx` | descriptor-only VP8/VP9 boundary |
+| `adapters/goav1` | descriptor-only AV1 boundary |
+| `adapters/goh264` | descriptor-only H264 boundary, concrete adapter reserved for `goav_goh264` |
 
 ## `gopus`
 
@@ -41,3 +41,11 @@ Current surface:
 
 It does not currently claim encode support.
 
+## Descriptor-only Boundaries
+
+`govpx`, `goav1`, and `goh264` currently expose descriptors without importing
+their sibling modules. This lets applications see planned capabilities and build
+registries without breaking the default build or forcing heavy dependencies.
+
+Concrete factories should replace these descriptor-only registrations once each
+codec path has caller-owned output buffers and allocation tests.

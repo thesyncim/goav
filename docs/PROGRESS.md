@@ -33,7 +33,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion boundary sketch | TrackRemote adapter/source boundary |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| adapters | `gopus` Opus decoder active | `govpx`, `goav1`, `goh264` skeletons |
+| adapters | `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
 
 ## Implementation Order
 
@@ -46,7 +46,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
    depacketizer. Done.
 7. Add `gopus` adapter and RTP Opus to PCM vertical slice. RTP packet to PCM
    frame is covered; WebRTC TrackRemote wiring remains.
-8. Add compile-safe adapter skeletons for `govpx`, `goav1`, and `goh264`.
+8. Add compile-safe adapter descriptor boundaries for `govpx`, `goav1`, and
+   `goh264`. Done.
 9. Add examples and docs for simple API, graph API, ownership, and adapters.
 10. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
@@ -75,10 +76,12 @@ Required proof:
 
 - `adapters/gopus`: Opus decode first is active, PLC via loss events works,
   encode remains unclaimed.
-- `adapters/govpx`: VP8/VP9 decode/encode where stable; preserve I420 planes.
-- `adapters/goav1`: AV1 decode path first; encode only if honestly ready.
-- `adapters/goh264`: Annex B/AVCC, SPS/PPS, IDR, FU-A/STAP-A boundaries; keep
-  default build safe if the module is unavailable.
+- `adapters/govpx`: descriptor boundary exists; concrete VP8/VP9 adapters need
+  stable caller-owned frame paths.
+- `adapters/goav1`: descriptor boundary exists; concrete AV1 decode path still
+  needs capability validation.
+- `adapters/goh264`: descriptor boundary exists with `goav_goh264` build-tag
+  marker for future concrete integration.
 
 ## Validation Gates
 
