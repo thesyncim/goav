@@ -1,0 +1,59 @@
+# Roadmap
+
+## Phase 0: API sketch
+
+- Core media types.
+- Codec registry contracts.
+- Format probe/demux/mux contracts.
+- Event-aware pipeline contracts.
+- Pion-based RTP/WebRTC contracts.
+
+## Phase 1: First realtime receive slice
+
+- Pion WebRTC remote track adapter.
+- RTP sequence/loss event surface.
+- Opus depacketizer path.
+- `gopus` decoder adapter.
+- Raw PCM sink for validation.
+
+## Phase 1b: RTMP ingest shape
+
+- RTMP protocol input contract.
+- FLV demux boundary.
+- Live input events for connect, disconnect, and timestamp discontinuity.
+- Shared packet flow into the same pipeline graph used by WebRTC.
+
+## Phase 2: Video receive
+
+- VP8/VP9 depacketization.
+- `govpx` adapter.
+- Keyframe request events.
+- Loss recovery and drop-until-sync behavior.
+
+## Phase 3: Recording and remux
+
+- Ogg/Opus or IVF output.
+- WebRTC receive to file.
+- Probe output and stream inspection.
+- Multiple output branches from one receive graph.
+
+## Phase 3b: Transcode ladders
+
+- Resize filter contract implementation.
+- Resample filter contract implementation.
+- Decode sharing across renditions.
+- Per-rendition encoder configs.
+- Multiple mux/output targets from one plan.
+
+## Phase 4: H264 and AV1
+
+- H264 RTP depacketization and Annex B bridge.
+- `goh264` adapter as it matures.
+- AV1 RTP receive path.
+- `goav1` adapter as it matures.
+
+## Phase 5: High-level API
+
+- Fluent receive/decode/record builder.
+- CLI experiments.
+- Stats, tracing, and graph introspection.
