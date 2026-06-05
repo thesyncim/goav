@@ -40,6 +40,8 @@ Current `rtpav` building blocks:
 - `SequenceDetector` for explicit gap state.
 - `JitterRing` for bounded sequence-ordered packet release.
 - `OpusDepacketizer` for borrowed RTP Opus payloads into `av.Packet`.
+- `VP8Depacketizer` and `VP9Depacketizer` for bounded frame assembly into
+  packet-preserving video `av.Packet` values.
 - `Source` for reading RTP packets, applying optional jitter, depacketizing, and
   emitting normal pipeline messages.
 - Depacketizers receive realtime events before graph delivery, so loss-aware

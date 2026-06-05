@@ -8,5 +8,6 @@ var (
 	ErrNilReceiver           = errors.New("rtpav: nil receiver")
 	ErrPayloadNotFound       = errors.New("rtpav: payload not found")
 	ErrDepacketizerNotFound  = errors.New("rtpav: depacketizer not found")
+	ErrFrameTooLarge         = errors.New("rtpav: frame too large")
 	ErrResultFull            = errors.New("rtpav: result capacity full")
 )

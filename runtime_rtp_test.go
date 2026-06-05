@@ -1,6 +1,7 @@
 package goav
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/pion/rtp"
+	ivfadapter "github.com/thesyncim/goav/adapters/ivf"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/rtpav"
@@ -145,6 +147,71 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 		if !muxers.muxers[i].closed {
 			t.Fatalf("muxer[%d] not closed", i)
 		}
+	}
+}
+
+func TestRuntimeBuilderRTPVP8RecordIVF(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: 90000},
+		Codec: av.CodecParameters{
+			ID:        av.CodecVP8,
+			Type:      av.MediaVideo,
+			ClockRate: 90000,
+			Width:     640,
+			Height:    360,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 96,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEVP8,
+			ClockRate:   90000,
+		}}),
+		packets: []*rtp.Packet{
+			{Header: rtp.Header{PayloadType: 96, Timestamp: 90}, Payload: []byte{0x10, 0xaa}},
+			{Header: rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90}, Payload: []byte{0x00, 0xbb}},
+		},
+		events: make(chan av.Event),
+	}
+	var recording bytes.Buffer
+
+	task, err := New(WithFormatAdapter(ivfadapter.Register)).New().
+		RTP(receiver, WithRTPDepacketizer(rtpav.NewVP8Depacketizer(stream))).
+		Output(Output{Name: "recording.ivf", Writer: &recording}).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &ivfadapter.Demuxer{}
+	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(recording.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	read := format.ReadResult{
+		Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, 16)}},
+	}
+	if err := demuxer.ReadInto(ctx, &read); err != nil {
+		t.Fatal(err)
+	}
+	if !read.PacketReady || read.Packet.StreamID != "video" || read.Packet.PTS.Value != 90 {
+		t.Fatalf("packet = %+v", read.Packet)
+	}
+	if !bytes.Equal(read.Packet.Payload.Bytes, []byte{0xaa, 0xbb}) {
+		t.Fatalf("payload = %v", read.Packet.Payload.Bytes)
+	}
+	if err := demuxer.ReadInto(ctx, &read); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
 	}
 }
 
