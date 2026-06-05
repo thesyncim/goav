@@ -20,6 +20,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 - Optional codec/container integrations stay out of the core import graph.
 - Codec internals live in sibling modules; `goav` provides adapter boundaries.
 - Tests must include allocation guards for implemented hot paths.
+- Every new fluent workflow must pass through the recursive working loop in
+  `docs/LOOP.md`: simple expression, explicit graph, narrow implementation,
+  allocation/event proof, tracker update.
 
 ## Package Status
 
@@ -33,7 +36,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| runtime | `goav.New` options, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level one-input/many-output remux compiler | decode/encode/filter/transcode graph compilers |
+| runtime | `goav.New` options, private graph compiler loop, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level one-input/many-output remux compiler | decode/encode/filter/transcode graph compilers |
 | adapters | `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
 
 ## Implementation Order
@@ -119,11 +122,11 @@ Required proof:
 
 ## Next Slices
 
-1. Concrete demuxer/muxer adapters for the first file/recording path.
-2. Decode/encode/filter graph compiler from the fluent builder.
-3. WebRTC session receive loop and RTCP feedback wiring.
-4. VP8/VP9 RTP payload support and `govpx` adapter validation.
-5. Resize/resample filter implementations with allocation guards.
+1. Choose one workflow and write its shortest fluent expression.
+2. Add the private graph compiler and `Describe` output first.
+3. Add the smallest runtime behavior behind existing stages/adapters.
+4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
+5. Update this tracker with the new evidence and next pressure point.
 
 ## Validation Gates
 

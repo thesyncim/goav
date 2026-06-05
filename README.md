@@ -138,4 +138,7 @@ See `docs/USE_CASES.md` for the current design scenarios.
 
 See `docs/PROGRESS.md` for the compact implementation tracker.
 
+See `docs/LOOP.md` for the recursive working loop used to keep new slices small,
+expressive, inspectable, and allocation-aware.
+
 See `docs/ADAPTERS.md` and `docs/PERFORMANCE.md` before adding hot-path code.

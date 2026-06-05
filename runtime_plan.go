@@ -12,19 +12,11 @@ func (b *builder) Describe() (pipeline.Spec, error) {
 		Name:     "goav",
 		Realtime: b.runtime.realtime,
 	}
-	if b.hasHighLevelRequests() {
-		if b.hasExplicitGraph() {
-			return pipeline.Spec{}, ErrUnsupportedBuild
-		}
-		if b.canBuildRemux() {
-			return b.planRemux(spec)
-		}
-		return pipeline.Spec{}, ErrUnsupportedBuild
+	compiler, err := b.selectCompiler()
+	if err != nil {
+		return pipeline.Spec{}, err
 	}
-	if !b.hasExplicitGraph() {
-		return spec, nil
-	}
-	return b.planExplicitGraph(spec)
+	return compiler.describe(b, spec)
 }
 
 func (b *builder) planRemux(spec pipeline.Spec) (pipeline.Spec, error) {

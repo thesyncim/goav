@@ -133,15 +133,22 @@ func TestRuntimeBuilderInputOutputRemux(t *testing.T) {
 		format.WithMuxer(av.FormatOgg, muxers),
 	)
 
-	task, err := New(WithFormatRegistry(registry)).New().
+	builder := New(WithFormatRegistry(registry)).New().
 		Input(Input{Name: "input.ogg"}).
 		Output(Output{Name: "archive.ogg"}).
-		Output(Output{Name: "preview.ogg"}).
-		Build(context.Background())
+		Output(Output{Name: "preview.ogg"})
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := builder.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
+	if planned.String() != spec.String() || planned.Mermaid() != spec.Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
+	}
 	if len(spec.Nodes) != 3 || len(spec.Edges) != 2 {
 		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
 	}

@@ -19,11 +19,7 @@ func (b *builder) canBuildRemux() bool {
 }
 
 func (b *builder) buildRemux(ctx context.Context) (Task, error) {
-	graph, err := b.runtime.pipelines.NewGraph(ctx, pipeline.GraphConfig{
-		Name:     "goav",
-		Realtime: b.runtime.realtime,
-		Buffer:   b.runtime.buffer,
-	})
+	graph, err := b.newGraph(ctx)
 	if err != nil {
 		return nil, err
 	}

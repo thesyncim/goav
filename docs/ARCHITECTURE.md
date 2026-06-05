@@ -27,15 +27,22 @@ Format, RTP, WebRTC, codec, and filter adapters
 ```
 
 `goav.New` is the composition root. It owns explicit codec, format, and
-pipeline registries. The current builder is intentionally conservative: it can
-compile explicit `Source -> Stage -> Sink` graphs, including named links and
-stream/event routes, then expose their generated graph description before or
-after build. The first high-level compiler supports the common remux/fanout
-shape, turning one `Input` plus one or more `Output` values into
-`format.DemuxSource -> format.MuxStage...` when the format registry can probe,
-demux, and mux the requested boundaries. Decode, encode, filter, and transcode
-discovery still return a clear unsupported error until source, codec, filter,
-mux, and sink selection is ready.
+pipeline registries. The builder compiles through small private graph compilers.
+Each compiler owns one workflow shape and must implement both pre-build
+description and runnable graph construction, so rendered graphs and execution
+graphs stay equivalent.
+
+The current compilers cover:
+
+- empty graphs for lifecycle tests
+- explicit `Source -> Stage -> Sink` graphs with named links and stream/event
+  routes
+- one-input/many-output remux and fanout through
+  `format.DemuxSource -> format.MuxStage...` when the format registry can
+  probe, demux, and mux the requested boundaries
+
+Decode, encode, filter, and transcode discovery still return a clear
+unsupported error until source, codec, filter, mux, and sink selection is ready.
 
 ## Core media model
 

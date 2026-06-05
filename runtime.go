@@ -209,30 +209,11 @@ func (b *builder) Route(route pipeline.Route) Builder {
 }
 
 func (b *builder) Build(ctx context.Context) (Task, error) {
-	if b.hasHighLevelRequests() {
-		if b.hasExplicitGraph() {
-			return nil, ErrUnsupportedBuild
-		}
-		if b.canBuildRemux() {
-			return b.buildRemux(ctx)
-		}
-		return nil, ErrUnsupportedBuild
-	}
-	graph, err := b.runtime.pipelines.NewGraph(ctx, pipeline.GraphConfig{
-		Name:     "goav",
-		Realtime: b.runtime.realtime,
-		Buffer:   b.runtime.buffer,
-	})
+	compiler, err := b.selectCompiler()
 	if err != nil {
 		return nil, err
 	}
-	if b.hasExplicitGraph() {
-		if err := b.compileExplicitGraph(graph); err != nil {
-			graph.Close()
-			return nil, err
-		}
-	}
-	return &task{graph: graph}, nil
+	return compiler.build(ctx, b)
 }
 
 func (b *builder) hasHighLevelRequests() bool {
