@@ -33,6 +33,13 @@ Pion TrackRemote
   -> av.Frame
 ```
 
+Current `rtpav` building blocks:
+
+- `StaticPayloadMap` for payload type lookup.
+- `SequenceDetector` for explicit gap state.
+- `JitterRing` for bounded sequence-ordered packet release.
+- `OpusDepacketizer` for borrowed RTP Opus payloads into `av.Packet`.
+
 ## Loss
 
 Loss is not just an error return. It should become visible as:
@@ -65,4 +72,3 @@ Initial feedback targets:
 - NACK for recoverable packet loss.
 - PLI/FIR for video keyframe requests.
 - Receiver reports for stats and sender-side adaptation.
-

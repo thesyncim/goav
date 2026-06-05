@@ -29,7 +29,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `codec` | Into-style contracts, capabilities, explicit registry | adapter descriptors and alloc tests |
 | `format` | Into-style read/write contracts | probe registry and first demuxer boundary |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard | bounded async edges and drop-policy tests |
-| `rtpav` | Pion boundary, static payload map, sequence loss detector | jitter ring and Opus depacketizer |
+| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus depacketizer | RTCP feedback and richer payload formats |
 | `webrtcav` | Pion boundary sketch | TrackRemote adapter/source boundary |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
@@ -43,7 +43,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 4. Add explicit codec registry implementation.
 5. Add minimal direct-call pipeline executor. Done.
 6. Add RTP static payload map, sequence/loss detector, jitter ring, Opus
-   depacketizer.
+   depacketizer. Done.
 7. Add `gopus` adapter and RTP Opus to PCM vertical slice.
 8. Add compile-safe adapter skeletons for `govpx`, `goav1`, and `goh264`.
 9. Add examples and docs for simple API, graph API, ownership, and adapters.
