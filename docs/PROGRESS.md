@@ -103,6 +103,28 @@ Required proof:
 - `adapters/goh264`: descriptor boundary exists with `goav_goh264` build-tag
   marker for future concrete integration.
 
+## Done Criteria
+
+| Gate | Evidence | State |
+| --- | --- | --- |
+| Clear minimal architecture | `README.md`, `docs/ARCHITECTURE.md`, package boundaries | active |
+| Simple high-level API | runtime builder, remux/fanout compiler | first slice active |
+| Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts | active |
+| Realtime Opus vertical slice | RTP/WebRTC boundary, Opus depacketizer, `gopus` decoder | active |
+| Allocation guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters | active for implemented paths |
+| Adapter boundaries | `adapters/gopus`, `adapters/govpx`, `adapters/goav1`, `adapters/goh264` | active |
+| No cgo | `hygiene_test.go` | active |
+| Lightweight core imports | codec modules isolated under `adapters/...` | active |
+| Docs explain shape | README, architecture, adapters, performance, RTP/WebRTC docs | active |
+
+## Next Slices
+
+1. Concrete demuxer/muxer adapters for the first file/recording path.
+2. Decode/encode/filter graph compiler from the fluent builder.
+3. WebRTC session receive loop and RTCP feedback wiring.
+4. VP8/VP9 RTP payload support and `govpx` adapter validation.
+5. Resize/resample filter implementations with allocation guards.
+
 ## Validation Gates
 
 - `go test ./...`
