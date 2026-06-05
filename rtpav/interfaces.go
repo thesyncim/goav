@@ -111,13 +111,17 @@ type FeedbackWriter interface {
 	WriteRTCP(context.Context, []rtcp.Packet) error
 }
 
-type Receiver interface {
+type PacketReader interface {
 	Streams(context.Context) ([]av.Stream, error)
 	PayloadMap() PayloadMap
 	ReadRTP(context.Context) (*rtp.Packet, error)
 	Events() <-chan av.Event
-	FeedbackWriter
 	Close() error
+}
+
+type Receiver interface {
+	PacketReader
+	FeedbackWriter
 }
 
 type ReceiverFactory interface {

@@ -39,6 +39,8 @@ Current `rtpav` building blocks:
 - `SequenceDetector` for explicit gap state.
 - `JitterRing` for bounded sequence-ordered packet release.
 - `OpusDepacketizer` for borrowed RTP Opus payloads into `av.Packet`.
+- `Source` for reading RTP packets, applying optional jitter, depacketizing, and
+  emitting normal pipeline messages.
 
 Current `webrtcav` building blocks:
 
@@ -83,3 +85,6 @@ Initial feedback targets:
 `rtpav.FeedbackResult` currently builds NACK, PLI, and FIR packets using
 caller-owned scratch storage. Session-level code remains responsible for sending
 those packets through the appropriate Pion RTCP writer.
+
+`rtpav.Source` accepts an explicit `FeedbackWriter`, so WebRTC sessions can own
+RTCP writes while track readers remain packet-only boundaries.

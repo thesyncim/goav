@@ -8,6 +8,10 @@ import (
 )
 
 const MIMEOpus = "audio/opus"
+const MIMEVP8 = "video/vp8"
+const MIMEVP9 = "video/vp9"
+const MIMEH264 = "video/h264"
+const MIMEAV1 = "video/av1"
 
 type OpusDepacketizer struct {
 	stream av.Stream
