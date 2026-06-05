@@ -58,22 +58,39 @@ type ReadResult struct {
 	Events []av.Event
 }
 
+func (r *ReadResult) Reset() {
+	if r.Packet != nil {
+		r.Packet.Reset()
+	}
+	for i := range r.Events {
+		r.Events[i].Reset()
+	}
+	r.Events = r.Events[:0]
+}
+
 type WriteResult struct {
 	Events []av.Event
+}
+
+func (r *WriteResult) Reset() {
+	for i := range r.Events {
+		r.Events[i].Reset()
+	}
+	r.Events = r.Events[:0]
 }
 
 type Demuxer interface {
 	Format() av.FormatID
 	Open(context.Context, Input, OpenOptions) error
 	Streams() []av.Stream
-	Read(context.Context) (ReadResult, error)
+	ReadInto(context.Context, *ReadResult) error
 	Close() error
 }
 
 type Muxer interface {
 	Format() av.FormatID
 	Open(context.Context, Output, []av.Stream, OpenOptions) error
-	Write(context.Context, av.Packet) (WriteResult, error)
+	Write(context.Context, *av.Packet, *WriteResult) error
 	Close() error
 }
 

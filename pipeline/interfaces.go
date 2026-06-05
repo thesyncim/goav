@@ -22,6 +22,26 @@ type Message struct {
 	Event  *av.Event
 }
 
+func (m *Message) Reset() {
+	m.Kind = ""
+	m.Packet = nil
+	m.Frame = nil
+	m.Event = nil
+}
+
+type Scratch struct {
+	Message Message
+	Events  []av.Event
+}
+
+func (s *Scratch) Reset() {
+	s.Message.Reset()
+	for i := range s.Events {
+		s.Events[i].Reset()
+	}
+	s.Events = s.Events[:0]
+}
+
 type DropPolicy string
 
 const (
@@ -40,7 +60,7 @@ type BufferPolicy struct {
 }
 
 type Emitter interface {
-	Emit(context.Context, Message) error
+	Emit(context.Context, *Message) error
 }
 
 type Source interface {
@@ -51,13 +71,13 @@ type Source interface {
 
 type Stage interface {
 	Name() string
-	Handle(context.Context, Message, Emitter) error
+	Handle(context.Context, *Message, Emitter) error
 	Close() error
 }
 
 type Sink interface {
 	Name() string
-	Handle(context.Context, Message) error
+	Handle(context.Context, *Message) error
 	Close() error
 }
 

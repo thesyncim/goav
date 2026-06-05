@@ -82,3 +82,5 @@ Parallel use cases should shape the same contracts:
 - Record one branch while forwarding or transcoding another.
 
 See `docs/USE_CASES.md` for the current design scenarios.
+
+See `docs/PROGRESS.md` for the compact implementation tracker.

@@ -22,7 +22,21 @@ type Descriptor struct {
 	Profiles     []string
 	Realtime     bool
 	Experimental bool
+	Capabilities Capabilities
 	Backend      Backend
+}
+
+type Capabilities struct {
+	CodecID       av.CodecID
+	Type          av.MediaType
+	Decode        bool
+	Encode        bool
+	Realtime      bool
+	SampleFormats []string
+	PixelFormats  []string
+	RTPPayloads   []string
+	BuildTags     []string
+	Experimental  bool
 }
 
 type Backend struct {
@@ -71,15 +85,47 @@ type DecodeResult struct {
 	Requests []ControlRequest
 }
 
+func (r *DecodeResult) Reset() {
+	for i := range r.Frames {
+		r.Frames[i].Reset()
+	}
+	for i := range r.Events {
+		r.Events[i].Reset()
+	}
+	for i := range r.Requests {
+		r.Requests[i].Reset()
+	}
+	r.Frames = r.Frames[:0]
+	r.Events = r.Events[:0]
+	r.Requests = r.Requests[:0]
+}
+
 type EncodeResult struct {
 	Packets []av.Packet
 	Events  []av.Event
+}
+
+func (r *EncodeResult) Reset() {
+	for i := range r.Packets {
+		r.Packets[i].Reset()
+	}
+	for i := range r.Events {
+		r.Events[i].Reset()
+	}
+	r.Packets = r.Packets[:0]
+	r.Events = r.Events[:0]
 }
 
 type ControlRequest struct {
 	Type     ControlType
 	StreamID av.StreamID
 	Reason   string
+}
+
+func (r *ControlRequest) Reset() {
+	r.Type = ""
+	r.StreamID = ""
+	r.Reason = ""
 }
 
 type ControlType string
@@ -93,18 +139,18 @@ const (
 type Decoder interface {
 	Descriptor() Descriptor
 	Open(context.Context, DecodeConfig) error
-	Decode(context.Context, av.Packet) (DecodeResult, error)
-	Flush(context.Context) (DecodeResult, error)
-	HandleEvent(context.Context, av.Event) error
+	DecodeInto(context.Context, *av.Packet, *DecodeResult) error
+	FlushInto(context.Context, *DecodeResult) error
+	HandleEvent(context.Context, *av.Event) error
 	Close() error
 }
 
 type Encoder interface {
 	Descriptor() Descriptor
 	Open(context.Context, EncodeConfig) error
-	Encode(context.Context, av.Frame) (EncodeResult, error)
-	Flush(context.Context) (EncodeResult, error)
-	HandleEvent(context.Context, av.Event) error
+	EncodeInto(context.Context, *av.Frame, *EncodeResult) error
+	FlushInto(context.Context, *EncodeResult) error
+	HandleEvent(context.Context, *av.Event) error
 	Close() error
 }
 

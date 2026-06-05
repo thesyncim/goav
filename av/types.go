@@ -69,15 +69,31 @@ type Duration struct {
 type BufferOwnership string
 
 const (
-	BufferBorrowed  BufferOwnership = "borrowed"
-	BufferOwned     BufferOwnership = "owned"
+	// BufferBorrowed is valid only until the producer's next Read, Decode,
+	// Encode, Filter, or Depacketize call unless the producer documents a
+	// longer lifetime.
+	BufferBorrowed BufferOwnership = "borrowed"
+	// BufferOwned belongs to the caller and may be returned to Owner when the
+	// caller is done with it.
+	BufferOwned BufferOwnership = "owned"
+	// BufferImmutable may be shared and must never be mutated by consumers.
 	BufferImmutable BufferOwnership = "immutable"
 )
+
+type BufferOwner interface {
+	ReleaseBuffer(*Buffer)
+}
 
 type Buffer struct {
 	Bytes     []byte
 	Ownership BufferOwnership
-	Release   func()
+	Owner     BufferOwner
+}
+
+func (b *Buffer) Reset() {
+	b.Bytes = b.Bytes[:0]
+	b.Ownership = ""
+	b.Owner = nil
 }
 
 type CodecParameters struct {
@@ -142,10 +158,30 @@ type Packet struct {
 	Metadata      Metadata
 }
 
+func (p *Packet) Reset() {
+	p.StreamID = ""
+	p.CodecEpoch = 0
+	p.Payload.Reset()
+	p.PTS = Timestamp{}
+	p.DTS = Timestamp{}
+	p.Duration = Duration{}
+	p.Keyframe = false
+	p.Corrupt = false
+	p.Discontinuous = false
+	p.LossBefore = false
+	p.Metadata = nil
+}
+
 type Plane struct {
 	Buffer Buffer
 	Stride int
 	Offset int
+}
+
+func (p *Plane) Reset() {
+	p.Buffer.Reset()
+	p.Stride = 0
+	p.Offset = 0
 }
 
 type VideoFrame struct {
@@ -174,6 +210,21 @@ type Frame struct {
 	Metadata   Metadata
 }
 
+func (f *Frame) Reset() {
+	f.StreamID = ""
+	f.CodecEpoch = 0
+	f.Type = ""
+	f.PTS = Timestamp{}
+	f.Duration = Duration{}
+	f.Video = nil
+	f.Audio = nil
+	for i := range f.Planes {
+		f.Planes[i].Reset()
+	}
+	f.Planes = f.Planes[:0]
+	f.Metadata = nil
+}
+
 type EventType string
 
 const (
@@ -199,4 +250,35 @@ type Event struct {
 	Cause     error
 	Reason    string
 	Metadata  Metadata
+}
+
+func (e *Event) Reset() {
+	e.Type = ""
+	e.StreamID = ""
+	e.Epoch = 0
+	e.At = time.Time{}
+	e.Timestamp = Timestamp{}
+	e.Stream = nil
+	e.Codec = nil
+	e.Cause = nil
+	e.Reason = ""
+	e.Metadata = nil
+}
+
+func RTPTimeBase(clockRate uint32) TimeBase {
+	if clockRate == 0 {
+		return TimeBase{}
+	}
+	return TimeBase{Num: 1, Den: int64(clockRate)}
+}
+
+func RTPToTimestamp(value uint32, clockRate uint32) Timestamp {
+	return Timestamp{Value: int64(value), Base: RTPTimeBase(clockRate)}
+}
+
+func SamplesDuration(samples int, sampleRate int) Duration {
+	if sampleRate <= 0 {
+		return Duration{}
+	}
+	return Duration{Value: int64(samples), Base: TimeBase{Num: 1, Den: int64(sampleRate)}}
 }

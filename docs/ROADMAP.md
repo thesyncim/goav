@@ -1,5 +1,8 @@
 # Roadmap
 
+`PROGRESS.md` is the compact tracker for current implementation status and
+validation gates. This roadmap keeps the broader phase view.
+
 ## Phase 0: API sketch
 
 - Core media types.

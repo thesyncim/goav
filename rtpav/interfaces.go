@@ -30,12 +30,13 @@ type PayloadMap interface {
 }
 
 type SequenceState struct {
-	SSRC          uint32
-	Cycles        uint32
-	Expected      uint16
-	Missing       []uint16
-	LossBefore    bool
-	Discontinuous bool
+	SSRC             uint32
+	Cycles           uint32
+	Expected         uint16
+	Missing          []uint16
+	MissingTruncated bool
+	LossBefore       bool
+	Discontinuous    bool
 }
 
 type JitterStats struct {
@@ -55,10 +56,26 @@ type JitterResult struct {
 	State    SequenceState
 }
 
+func (r *JitterResult) Reset() {
+	for i := range r.Ready {
+		r.Ready[i] = nil
+	}
+	for i := range r.Events {
+		r.Events[i].Reset()
+	}
+	for i := range r.Feedback {
+		r.Feedback[i] = nil
+	}
+	r.Ready = r.Ready[:0]
+	r.Events = r.Events[:0]
+	r.Feedback = r.Feedback[:0]
+	r.State = SequenceState{}
+}
+
 type JitterBuffer interface {
-	Push(context.Context, *rtp.Packet) (JitterResult, error)
-	Pop(context.Context) (*rtp.Packet, error)
-	Flush(context.Context) ([]*rtp.Packet, error)
+	PushInto(context.Context, *rtp.Packet, *JitterResult) error
+	PopInto(context.Context, *rtp.Packet) (bool, error)
+	FlushInto(context.Context, *JitterResult) error
 	Stats() JitterStats
 }
 
@@ -68,11 +85,26 @@ type DepacketizeResult struct {
 	Feedback []rtcp.Packet
 }
 
+func (r *DepacketizeResult) Reset() {
+	for i := range r.Packets {
+		r.Packets[i].Reset()
+	}
+	for i := range r.Events {
+		r.Events[i].Reset()
+	}
+	for i := range r.Feedback {
+		r.Feedback[i] = nil
+	}
+	r.Packets = r.Packets[:0]
+	r.Events = r.Events[:0]
+	r.Feedback = r.Feedback[:0]
+}
+
 type Depacketizer interface {
 	Codec() av.CodecID
-	Push(context.Context, *rtp.Packet, PayloadCodec) (DepacketizeResult, error)
-	Flush(context.Context) (DepacketizeResult, error)
-	HandleEvent(context.Context, av.Event) error
+	PushInto(context.Context, *rtp.Packet, PayloadCodec, *DepacketizeResult) error
+	FlushInto(context.Context, *DepacketizeResult) error
+	HandleEvent(context.Context, *av.Event) error
 }
 
 type FeedbackWriter interface {

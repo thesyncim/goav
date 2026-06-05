@@ -18,15 +18,26 @@ type Descriptor struct {
 type FrameFilter interface {
 	Descriptor() Descriptor
 	Open(context.Context, Config) error
-	Filter(context.Context, av.Frame) (Result, error)
-	Flush(context.Context) (Result, error)
-	HandleEvent(context.Context, av.Event) error
+	FilterInto(context.Context, *av.Frame, *Result) error
+	FlushInto(context.Context, *Result) error
+	HandleEvent(context.Context, *av.Event) error
 	Close() error
 }
 
 type Result struct {
 	Frames []av.Frame
 	Events []av.Event
+}
+
+func (r *Result) Reset() {
+	for i := range r.Frames {
+		r.Frames[i].Reset()
+	}
+	for i := range r.Events {
+		r.Events[i].Reset()
+	}
+	r.Frames = r.Frames[:0]
+	r.Events = r.Events[:0]
 }
 
 type Config struct {
