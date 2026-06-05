@@ -19,6 +19,13 @@ func TestNewRuntimeDefaults(t *testing.T) {
 	if _, err := runtime.Probe(context.Background(), ProbeRequest{}); !errors.Is(err, format.ErrNotFound) {
 		t.Fatalf("probe err = %v, want format.ErrNotFound", err)
 	}
+	result, err := runtime.Probe(context.Background(), ProbeRequest{Name: "audio.opus"})
+	if err != nil {
+		t.Fatalf("probe opus: %v", err)
+	}
+	if result.Format != av.FormatOgg {
+		t.Fatalf("format = %s, want ogg", result.Format)
+	}
 }
 
 func TestRuntimeWithCodecAdapter(t *testing.T) {

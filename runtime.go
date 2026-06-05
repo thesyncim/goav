@@ -26,7 +26,7 @@ type Option func(*runtime)
 func New(options ...Option) Runtime {
 	runtime := &runtime{
 		codecs:    codec.NewRegistry(),
-		formats:   format.NewRegistry(),
+		formats:   format.NewRegistry(format.WithProber(format.DefaultProber())),
 		pipelines: pipeline.NewDirectFactory(),
 		realtime:  true,
 	}

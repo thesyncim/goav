@@ -27,7 +27,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | --- | --- | --- |
 | `av` | reset helpers, ownership docs, RTP timebase helpers | richer timestamp conversion helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry | adapter descriptors and alloc tests |
-| `format` | Into-style read/write contracts | probe registry and first demuxer boundary |
+| `format` | Into-style read/write contracts, registry, default static prober | first demuxer/muxer boundary |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus depacketizer, RTCP feedback helpers | richer payload formats |
 | `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |

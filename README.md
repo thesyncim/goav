@@ -26,6 +26,7 @@ these boundaries as the design settles.
   - `github.com/thesyncim/goav1`
 - Transport-neutral packet/frame/event model.
 - Registry-driven codecs, formats, payload maps, and pipeline stages.
+- Default static format probing for common file/live boundaries.
 
 ## Package map
 

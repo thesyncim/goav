@@ -47,6 +47,12 @@ The `av` package owns transport-neutral vocabulary:
 RTP and WebRTC details do not leak into `av`. Dedicated packages use Pion types
 directly and translate their output into `av.Packet` and `av.Event` values.
 
+## Format Probing
+
+The default runtime includes cold-path static probing for common boundaries:
+Ogg/Opus, IVF, FLV, Matroska/WebM, MP4, Annex B, RTP, and WebRTC. Probe scores
+prefer magic bytes and protocol declarations over extension fallback.
+
 ## Codec epochs
 
 Each stream carries an `Epoch`.
