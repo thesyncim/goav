@@ -215,6 +215,71 @@ func TestRuntimeBuilderRTPVP8RecordIVF(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderRTPAV1RecordIVF(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: 90000},
+		Codec: av.CodecParameters{
+			ID:        av.CodecAV1,
+			Type:      av.MediaVideo,
+			ClockRate: 90000,
+			Width:     640,
+			Height:    360,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 96,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEAV1,
+			ClockRate:   90000,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
+			Payload: []byte{0x18, 0x30, 0xaa, 0xbb},
+		}},
+		events: make(chan av.Event),
+	}
+	var recording bytes.Buffer
+
+	task, err := New(WithFormatAdapter(ivfadapter.Register)).New().
+		RTP(receiver, WithRTPDepacketizer(rtpav.NewAV1Depacketizer(stream))).
+		Output(Output{Name: "recording.ivf", Writer: &recording}).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &ivfadapter.Demuxer{}
+	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(recording.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	read := format.ReadResult{
+		Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, 16)}},
+	}
+	if err := demuxer.ReadInto(ctx, &read); err != nil {
+		t.Fatal(err)
+	}
+	if !read.PacketReady || read.Packet.StreamID != "video" || read.Packet.PTS.Value != 90 {
+		t.Fatalf("packet = %+v", read.Packet)
+	}
+	if !bytes.Equal(read.Packet.Payload.Bytes, []byte{0x32, 0x02, 0xaa, 0xbb}) {
+		t.Fatalf("payload = %v", read.Packet.Payload.Bytes)
+	}
+	if err := demuxer.ReadInto(ctx, &read); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
 func TestRuntimeBuilderRTPRecordRequiresReceiver(t *testing.T) {
 	_, err := New().New().
 		RTP(nil).

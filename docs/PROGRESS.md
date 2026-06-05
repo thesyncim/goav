@@ -32,7 +32,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard, graph specs with text/DOT/Mermaid rendering | bounded async edges and drop-policy tests |
-| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery | AV1 depacketizer |
+| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery | WebRTC session feedback wiring |
 | `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
@@ -59,7 +59,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 11. Add the high-level RTP packet-reader record/fanout graph compiler. Done.
 12. Add bounded VP8/VP9 RTP video depacketizers for packet-preserving recording.
    Done.
-13. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+13. Add bounded AV1 RTP video depacketizer for packet-preserving recording.
+   Done.
+14. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -112,10 +114,11 @@ Required proof:
   visibility.
 - `rtpav.Source` now forwards realtime events into depacketizers before graph
   delivery, so loss-aware depacketizers can reset or drop partial payloads.
-- `rtpav.NewVP8Depacketizer` and `rtpav.NewVP9Depacketizer` strip RTP payload
-  headers, assemble fragmented frames in bounded scratch, emit
-  `EventKeyframeRequired` after loss, keep dropping until sync, and feed the
-  RTP record compiler into IVF in an end-to-end test.
+- `rtpav.NewVP8Depacketizer`, `rtpav.NewVP9Depacketizer`, and
+  `rtpav.NewAV1Depacketizer` strip RTP payload headers, assemble fragmented
+  frames in bounded scratch, emit `EventKeyframeRequired` after loss, keep
+  dropping until sync, and feed the RTP record compiler into IVF in end-to-end
+  tests.
 
 ## Adapter Targets
 
@@ -152,9 +155,9 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: add an allocation-safe AV1 RTP depacketizer that can
-feed IVF recording while handling loss, discontinuity, codec epochs, and
-keyframe requests explicitly.
+Current pressure point: connect the WebRTC session receive loop and RTCP
+feedback writer around the packet-reader source so loss, codec changes, and
+keyframe requests cross the Pion boundary explicitly.
 
 ## Validation Gates
 

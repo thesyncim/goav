@@ -52,11 +52,11 @@ validation gates. This roadmap keeps the broader phase view.
 - Per-rendition encoder configs.
 - Multiple mux/output targets from one plan.
 
-## Phase 4: H264 and AV1
+## Phase 4: H264 and concrete AV1 decode
 
 - H264 RTP depacketization and Annex B bridge.
 - `goh264` adapter as it matures.
-- AV1 RTP receive path.
+- AV1 decode adapter validation.
 - `goav1` adapter as it matures.
 
 ## Phase 5: High-level API
