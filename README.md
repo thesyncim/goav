@@ -75,12 +75,22 @@ Explicit graphs can be built and inspected directly:
 task, err := runtime.New().
     Source(source).
     Stage(decode).
+    Link(pipeline.Link{
+        From: pipeline.PadRef{Node: "source", Pad: "out"},
+        To: pipeline.PadRef{Node: "decode", Pad: "inout"},
+    }).
+    Route(pipeline.Route{
+        From: pipeline.PadRef{Node: "decode", Pad: "inout"},
+        To: []pipeline.PadRef{{Node: "record", Pad: "in"}},
+        Policy: pipeline.RouteByStream,
+        Label: "audio",
+    }).
     Sink(record).
     Build(ctx)
 if err != nil {
     return err
 }
-_ = task.Describe().DOT()
+_ = task.Describe().Mermaid()
 ```
 
 ## Current status
@@ -98,7 +108,7 @@ The current narrow vertical slice is:
 5. A reusable encoder stage for upcoming transcode and multi-output branches.
 6. Reusable demux and mux graph adapters for recording, remuxing, and generic
    protocol/file ingest-output work.
-7. Structured graph descriptions with text and DOT renderers.
+7. Routed graph generation with text, DOT, and Mermaid renderers.
 
 Parallel use cases should shape the same contracts:
 

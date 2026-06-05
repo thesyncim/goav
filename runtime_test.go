@@ -187,6 +187,81 @@ func TestRuntimeBuilderExplicitSourceToSink(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
+	packet := av.Packet{StreamID: "audio"}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	audio := &runtimeTestSink{name: "audio"}
+	video := &runtimeTestSink{name: "video"}
+
+	task, err := New().New().
+		Source(source).
+		Sink(audio).
+		Sink(video).
+		Route(pipeline.Route{
+			From:   pipeline.PadRef{Node: "source", Pad: "out"},
+			To:     []pipeline.PadRef{{Node: "audio", Pad: "in"}},
+			Policy: pipeline.RouteByStream,
+			Label:  "audio",
+		}).
+		Route(pipeline.Route{
+			From:   pipeline.PadRef{Node: "source", Pad: "out"},
+			To:     []pipeline.PadRef{{Node: "video", Pad: "in"}},
+			Policy: pipeline.RouteByStream,
+			Label:  "video",
+		}).
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := task.Describe()
+	if len(spec.Edges) != 2 {
+		t.Fatalf("edges=%d, want 2", len(spec.Edges))
+	}
+	if !strings.Contains(spec.String(), "source:out -> audio:in [by_stream:audio]") ||
+		!strings.Contains(spec.Mermaid(), "-- \"by_stream:video\" -->") {
+		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
+	}
+
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if audio.count != 1 || video.count != 0 {
+		t.Fatalf("audio=%d video=%d", audio.count, video.count)
+	}
+}
+
+func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
+	packet := av.Packet{StreamID: "audio"}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	unused := &runtimeTestStage{name: "unused"}
+	sink := &runtimeTestSink{name: "sink"}
+
+	task, err := New().New().
+		Source(source).
+		Stage(unused).
+		Sink(sink).
+		Link(pipeline.Link{
+			From: pipeline.PadRef{Node: "source", Pad: "out"},
+			To:   pipeline.PadRef{Node: "sink", Pad: "in"},
+		}).
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if unused.count != 0 || sink.count != 1 {
+		t.Fatalf("stage=%d sink=%d", unused.count, sink.count)
+	}
+}
+
 func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
 	_, err := New().New().
 		Input(Input{Name: "input"}).
@@ -238,6 +313,19 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 	_, err = New().New().Source(source).Sink(nil).Build(context.Background())
 	if !errors.Is(err, ErrNilSink) {
 		t.Fatalf("sink err = %v, want ErrNilSink", err)
+	}
+
+	sink := &runtimeTestSink{name: "sink"}
+	_, err = New().New().
+		Source(source).
+		Sink(sink).
+		Link(pipeline.Link{
+			From: pipeline.PadRef{Node: "missing"},
+			To:   pipeline.PadRef{Node: "sink"},
+		}).
+		Build(context.Background())
+	if !errors.Is(err, pipeline.ErrUnknownNode) {
+		t.Fatalf("link err = %v, want ErrUnknownNode", err)
 	}
 }
 

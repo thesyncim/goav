@@ -139,6 +139,8 @@ type builder struct {
 	sources    []pipeline.Source
 	stages     []pipeline.Stage
 	sinks      []pipeline.Sink
+	links      []pipeline.Link
+	routes     []pipeline.Route
 }
 
 type encodeRequest struct {
@@ -196,6 +198,16 @@ func (b *builder) Sink(sink pipeline.Sink) Builder {
 	return b
 }
 
+func (b *builder) Link(link pipeline.Link) Builder {
+	b.links = append(b.links, link)
+	return b
+}
+
+func (b *builder) Route(route pipeline.Route) Builder {
+	b.routes = append(b.routes, route)
+	return b
+}
+
 func (b *builder) Build(ctx context.Context) (Task, error) {
 	if b.hasHighLevelRequests() {
 		return nil, ErrUnsupportedBuild
@@ -223,7 +235,8 @@ func (b *builder) hasHighLevelRequests() bool {
 }
 
 func (b *builder) hasExplicitGraph() bool {
-	return len(b.sources) != 0 || len(b.stages) != 0 || len(b.sinks) != 0
+	return len(b.sources) != 0 || len(b.stages) != 0 || len(b.sinks) != 0 ||
+		len(b.links) != 0 || len(b.routes) != 0
 }
 
 func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
@@ -266,6 +279,10 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 		sinkPads[i] = pad
 	}
 
+	if len(b.links) != 0 || len(b.routes) != 0 {
+		return b.compileExplicitEdges(graph)
+	}
+
 	if len(stagePads) == 0 {
 		return linkMany(graph, sourcePads, sinkPads)
 	}
@@ -278,6 +295,20 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 		}
 	}
 	return linkMany(graph, stagePads[len(stagePads)-1:], sinkPads)
+}
+
+func (b *builder) compileExplicitEdges(graph pipeline.Graph) error {
+	for i := range b.links {
+		if err := graph.Link(b.links[i]); err != nil {
+			return err
+		}
+	}
+	for i := range b.routes {
+		if err := graph.Route(b.routes[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func linkMany(graph pipeline.Graph, from []pipeline.PadRef, to []pipeline.PadRef) error {

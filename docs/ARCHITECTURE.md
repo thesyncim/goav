@@ -28,10 +28,10 @@ Format, RTP, WebRTC, codec, and filter adapters
 
 `goav.New` is the composition root. It owns explicit codec, format, and
 pipeline registries. The current builder is intentionally conservative: it can
-compile explicit `Source -> Stage -> Sink` graphs and expose their generated
-graph description. Higher-level `Input/Decode/Output` graph discovery still
-returns a clear unsupported error until source, demux, codec, mux, and sink
-selection is ready.
+compile explicit `Source -> Stage -> Sink` graphs, including named links and
+stream/event routes, then expose their generated graph description. Higher-level
+`Input/Decode/Output` graph discovery still returns a clear unsupported error
+until source, demux, codec, mux, and sink selection is ready.
 
 ## Core media model
 
@@ -89,8 +89,8 @@ edges are intentionally separate from the direct executor so backpressure and
 drop behavior remain visible.
 
 Every graph can produce a `pipeline.Spec`: structured nodes and edges plus
-human-readable text and DOT rendering. This makes generated pipelines easy to
-log, inspect, or visualize before running media through them.
+human-readable text, DOT, and Mermaid rendering. This makes generated pipelines
+easy to log, inspect, or visualize before running media through them.
 
 The codec package includes generic decoder and encoder stages. They adapt
 `codec.Decoder` and `codec.Encoder` implementations to pipeline messages using

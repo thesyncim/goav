@@ -41,4 +41,11 @@ func TestSpecTextAndDOT(t *testing.T) {
 		!strings.Contains(dot, "label=\"by_stream:audio\"") {
 		t.Fatalf("dot spec:\n%s", dot)
 	}
+
+	mermaid := spec.Mermaid()
+	if !strings.Contains(mermaid, "flowchart LR") ||
+		!strings.Contains(mermaid, "n0([\"source\\nsource\"])") ||
+		!strings.Contains(mermaid, "n1 -- \"by_stream:audio\" --> n2") {
+		t.Fatalf("mermaid spec:\n%s", mermaid)
+	}
 }

@@ -38,6 +38,8 @@ type Builder interface {
 	Source(pipeline.Source) Builder
 	Stage(pipeline.Stage) Builder
 	Sink(pipeline.Sink) Builder
+	Link(pipeline.Link) Builder
+	Route(pipeline.Route) Builder
 	Build(context.Context) (Task, error)
 }
 

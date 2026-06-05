@@ -45,6 +45,12 @@ func (s Spec) DOT() string {
 	return out.String()
 }
 
+func (s Spec) Mermaid() string {
+	var out strings.Builder
+	_ = s.WriteMermaid(&out)
+	return out.String()
+}
+
 func (s Spec) WriteText(w io.Writer) error {
 	if err := writeStrings(w, "pipeline ", specName(s.Name), "\n"); err != nil {
 		return err
@@ -108,6 +114,49 @@ func (s Spec) WriteDOT(w io.Writer) error {
 	return writeStrings(w, "}\n")
 }
 
+func (s Spec) WriteMermaid(w io.Writer) error {
+	if err := writeStrings(w, "flowchart LR\n"); err != nil {
+		return err
+	}
+	ids := make(map[string]string, len(s.Nodes))
+	for i := range s.Nodes {
+		node := &s.Nodes[i]
+		id := "n" + strconv.Itoa(i)
+		ids[node.Name] = id
+		label := node.Name + "\n" + string(node.Kind)
+		switch node.Kind {
+		case NodeSource:
+			if err := writeStrings(w, "  ", id, "([", quoteMermaid(label), "])\n"); err != nil {
+				return err
+			}
+		case NodeSink:
+			if err := writeStrings(w, "  ", id, "((", quoteMermaid(label), "))\n"); err != nil {
+				return err
+			}
+		default:
+			if err := writeStrings(w, "  ", id, "[", quoteMermaid(label), "]\n"); err != nil {
+				return err
+			}
+		}
+	}
+	for i := range s.Edges {
+		edge := &s.Edges[i]
+		from := mermaidNodeID(ids, edge.From.Node)
+		to := mermaidNodeID(ids, edge.To.Node)
+		label := edgeTextLabel(edge)
+		if label == "" {
+			if err := writeStrings(w, "  ", from, " --> ", to, "\n"); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := writeStrings(w, "  ", from, " -- ", quoteMermaid(label), " --> ", to, "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func writeStrings(w io.Writer, values ...string) error {
 	for i := range values {
 		if _, err := io.WriteString(w, values[i]); err != nil {
@@ -126,6 +175,32 @@ func specName(name string) string {
 
 func quoteDOT(value string) string {
 	return strconv.Quote(value)
+}
+
+func quoteMermaid(value string) string {
+	return strconv.Quote(value)
+}
+
+func mermaidNodeID(ids map[string]string, name string) string {
+	if id, ok := ids[name]; ok {
+		return id
+	}
+	return "missing_" + mermaidSafeID(name)
+}
+
+func mermaidSafeID(value string) string {
+	if value == "" {
+		return "node"
+	}
+	var out strings.Builder
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			out.WriteRune(r)
+			continue
+		}
+		out.WriteByte('_')
+	}
+	return out.String()
 }
 
 func edgeTextLabel(edge *EdgeSpec) string {
