@@ -164,6 +164,41 @@ func TestRuntimeBuilderExplicitGraph(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderDescribeBeforeBuild(t *testing.T) {
+	packet := av.Packet{StreamID: "audio"}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	stage := &runtimeTestStage{name: "stage"}
+	sink := &runtimeTestSink{name: "sink"}
+
+	builder := New().New().
+		Source(source).
+		Stage(stage).
+		Sink(sink)
+
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.closed || stage.closed || sink.closed {
+		t.Fatalf("describe closed nodes: source=%v stage=%v sink=%v", source.closed, stage.closed, sink.closed)
+	}
+	if len(planned.Nodes) != 3 || len(planned.Edges) != 2 {
+		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
+	}
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	built := task.Describe()
+	if planned.String() != built.String() || planned.Mermaid() != built.Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), built.String())
+	}
+}
+
 func TestRuntimeBuilderExplicitSourceToSink(t *testing.T) {
 	packet := av.Packet{StreamID: "audio"}
 	source := &runtimeTestSource{
@@ -233,6 +268,44 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
+	packet := av.Packet{StreamID: "audio"}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	audio := &runtimeTestSink{name: "audio"}
+	video := &runtimeTestSink{name: "video"}
+
+	spec, err := New().New().
+		Source(source).
+		Sink(audio).
+		Sink(video).
+		Route(pipeline.Route{
+			From:   pipeline.PadRef{Node: "source", Pad: "out"},
+			To:     []pipeline.PadRef{{Node: "audio", Pad: "in"}},
+			Policy: pipeline.RouteByStream,
+			Label:  "audio",
+		}).
+		Route(pipeline.Route{
+			From:   pipeline.PadRef{Node: "source", Pad: "out"},
+			To:     []pipeline.PadRef{{Node: "video", Pad: "in"}},
+			Policy: pipeline.RouteByStream,
+			Label:  "video",
+		}).
+		Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Edges) != 2 {
+		t.Fatalf("edges=%d, want 2", len(spec.Edges))
+	}
+	if !strings.Contains(spec.String(), "source:out -> audio:in [by_stream:audio]") ||
+		!strings.Contains(spec.Mermaid(), "-- \"by_stream:video\" -->") {
+		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
+	}
+}
+
 func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 	packet := av.Packet{StreamID: "audio"}
 	source := &runtimeTestSource{
@@ -286,6 +359,52 @@ func TestRuntimeBuilderRefusesMixedGraph(t *testing.T) {
 		Build(context.Background())
 	if !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	}
+}
+
+func TestRuntimeBuilderDescribeValidation(t *testing.T) {
+	if _, err := New().New().Input(Input{Name: "input"}).Describe(); !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("high-level err = %v, want ErrUnsupportedBuild", err)
+	}
+	if _, err := New().New().Source(nil).Describe(); !errors.Is(err, ErrNilSource) {
+		t.Fatalf("source err = %v, want ErrNilSource", err)
+	}
+
+	packet := av.Packet{StreamID: "audio"}
+	source := &runtimeTestSource{
+		name:    "same",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	sink := &runtimeTestSink{name: "same"}
+	if _, err := New().New().Source(source).Sink(sink).Describe(); !errors.Is(err, pipeline.ErrNodeExists) {
+		t.Fatalf("duplicate err = %v, want ErrNodeExists", err)
+	}
+
+	validSource := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	validSink := &runtimeTestSink{name: "sink"}
+	if _, err := New().New().
+		Source(validSource).
+		Sink(validSink).
+		Link(pipeline.Link{
+			From: pipeline.PadRef{Node: "missing"},
+			To:   pipeline.PadRef{Node: "sink"},
+		}).
+		Describe(); !errors.Is(err, pipeline.ErrUnknownNode) {
+		t.Fatalf("unknown err = %v, want ErrUnknownNode", err)
+	}
+	if _, err := New().New().
+		Source(validSource).
+		Sink(validSink).
+		Route(pipeline.Route{
+			From:   pipeline.PadRef{Node: "source"},
+			To:     []pipeline.PadRef{{Node: "sink"}},
+			Policy: pipeline.RouteByLabel,
+		}).
+		Describe(); !errors.Is(err, pipeline.ErrUnsupportedRoute) {
+		t.Fatalf("route err = %v, want ErrUnsupportedRoute", err)
 	}
 }
 

@@ -72,7 +72,7 @@ loss, codec changes, or backpressure.
 Explicit graphs can be built and inspected directly:
 
 ```go
-task, err := runtime.New().
+builder := runtime.New().
     Source(source).
     Stage(decode).
     Link(pipeline.Link{
@@ -85,12 +85,18 @@ task, err := runtime.New().
         Policy: pipeline.RouteByStream,
         Label: "audio",
     }).
-    Sink(record).
-    Build(ctx)
+    Sink(record)
+
+spec, err := builder.Describe()
 if err != nil {
     return err
 }
-_ = task.Describe().Mermaid()
+_ = spec.Mermaid()
+
+task, err := builder.Build(ctx)
+if err != nil {
+    return err
+}
 ```
 
 ## Current status
@@ -108,7 +114,7 @@ The current narrow vertical slice is:
 5. A reusable encoder stage for upcoming transcode and multi-output branches.
 6. Reusable demux and mux graph adapters for recording, remuxing, and generic
    protocol/file ingest-output work.
-7. Routed graph generation with text, DOT, and Mermaid renderers.
+7. Pre-build graph planning plus text, DOT, and Mermaid renderers.
 
 Parallel use cases should shape the same contracts:
 

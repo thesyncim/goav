@@ -33,7 +33,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| runtime | `goav.New` options, explicit Source/Stage/Sink builder graphs with links/routes, task graph descriptions | high-level input/decode/output graph compiler |
+| runtime | `goav.New` options, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions | high-level input/decode/output graph compiler |
 | adapters | `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
 
 ## Implementation Order
@@ -85,9 +85,9 @@ Required proof:
   preserving realtime events and flushing delayed packets before EOS.
 - `format.DemuxSource` and `format.MuxStage` adapt container boundaries into
   the event-aware pipeline without per-packet allocation.
-- The runtime builder can compile explicit source/stage/sink graphs with
-  links/routes and expose generated graph specs with text, DOT, and Mermaid
-  renderers.
+- The runtime builder can plan and compile explicit source/stage/sink graphs
+  with links/routes and expose generated graph specs with text, DOT, and
+  Mermaid renderers before or after build.
 
 ## Adapter Targets
 

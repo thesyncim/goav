@@ -40,6 +40,7 @@ type Builder interface {
 	Sink(pipeline.Sink) Builder
 	Link(pipeline.Link) Builder
 	Route(pipeline.Route) Builder
+	Describe() (pipeline.Spec, error)
 	Build(context.Context) (Task, error)
 }
 
