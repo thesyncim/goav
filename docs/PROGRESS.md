@@ -29,7 +29,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `codec` | Into-style contracts, capabilities, explicit registry | adapter descriptors and alloc tests |
 | `format` | Into-style read/write contracts | probe registry and first demuxer boundary |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard | bounded async edges and drop-policy tests |
-| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus depacketizer | RTCP feedback and richer payload formats |
+| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus depacketizer, RTCP feedback helpers | richer payload formats |
 | `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
@@ -75,6 +75,7 @@ Required proof:
   and adapter test.
 - WebRTC TrackRemote boundary exposes streams, payload map, RTP reads, metadata,
   and EOS events.
+- RTCP NACK/PLI/FIR helpers use caller-owned feedback scratch.
 
 ## Adapter Targets
 

@@ -79,3 +79,7 @@ Initial feedback targets:
 - NACK for recoverable packet loss.
 - PLI/FIR for video keyframe requests.
 - Receiver reports for stats and sender-side adaptation.
+
+`rtpav.FeedbackResult` currently builds NACK, PLI, and FIR packets using
+caller-owned scratch storage. Session-level code remains responsible for sending
+those packets through the appropriate Pion RTCP writer.
