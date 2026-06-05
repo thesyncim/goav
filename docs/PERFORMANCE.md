@@ -41,6 +41,7 @@ Current allocation guards cover:
 - `av.Packet`, `av.Frame`, and `av.Event` reset
 - codec result reset
 - direct pipeline pass-through
+- codec decoder stage packet-to-frame flow
 - RTP sequence detection
 - RTP jitter ring
 - Opus depacketization

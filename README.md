@@ -7,9 +7,10 @@ The target is an API that feels simple at the edge like FFmpeg, but remains
 composable internally like GStreamer: sources, demuxers, depacketizers, codecs,
 filters, muxers, and sinks all meet through explicit contracts.
 
-This repository intentionally starts with interfaces and type contracts only.
-Codec, container, jitter-buffer, and WebRTC implementations will arrive behind
-these boundaries as the design settles.
+This repository starts from interfaces and type contracts, then adds narrow
+vertical slices behind those boundaries. Current implemented pieces include the
+direct pipeline executor, RTP receive primitives, WebRTC track reading, Opus RTP
+depacketization, and an Opus decode adapter over `gopus`.
 
 ## First-class goals
 
@@ -69,14 +70,16 @@ loss, codec changes, or backpressure.
 
 ## Current status
 
-This is an API sketch. There are no media implementations yet.
+This is still an API-first project, but the first receive/decode path is taking
+shape.
 
-The next iteration should choose the first narrow vertical slice, likely:
+The current narrow vertical slice is:
 
 1. RTP/WebRTC Opus receive using Pion track types.
 2. Loss/discontinuity events from RTP sequence gaps.
-3. Depacketized Opus packets into the `codec.Decoder` interface.
-4. A `gopus` adapter behind the codec registry.
+3. Depacketized Opus packets into a reusable decoder stage.
+4. A `gopus` adapter behind the codec registry producing caller-owned PCM
+   frames.
 
 Parallel use cases should shape the same contracts:
 

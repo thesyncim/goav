@@ -29,6 +29,7 @@ Pion TrackRemote
   -> rtpav.JitterBuffer
   -> rtpav.Depacketizer
   -> av.Packet
+  -> codec.DecoderStage
   -> codec.Decoder
   -> av.Frame
 ```
@@ -41,6 +42,8 @@ Current `rtpav` building blocks:
 - `OpusDepacketizer` for borrowed RTP Opus payloads into `av.Packet`.
 - `Source` for reading RTP packets, applying optional jitter, depacketizing, and
   emitting normal pipeline messages.
+- `codec.DecoderStage` for turning depacketized packet messages into decoded
+  frame messages while preserving loss and lifecycle events.
 
 Current `webrtcav` building blocks:
 

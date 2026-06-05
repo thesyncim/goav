@@ -26,7 +26,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | Area | Status | Next |
 | --- | --- | --- |
 | `av` | reset helpers, ownership docs, RTP timebase helpers | richer timestamp conversion helpers |
-| `codec` | Into-style contracts, capabilities, explicit registry | adapter descriptors and alloc tests |
+| `codec` | Into-style contracts, capabilities, explicit registry, decoder pipeline stage | encoder stage and richer adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober | first demuxer/muxer boundary |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus depacketizer, RTCP feedback helpers, pipeline source | richer payload formats |
@@ -78,6 +78,9 @@ Required proof:
 - RTCP NACK/PLI/FIR helpers use caller-owned feedback scratch.
 - RTP packet readers can now feed a direct pipeline source that emits
   `av.Packet` and `av.Event` messages.
+- `codec.DecoderStage` converts packet messages into frame messages while
+  preserving realtime events, flushing before EOS, and driving PLC from packet
+  loss events.
 
 ## Adapter Targets
 
