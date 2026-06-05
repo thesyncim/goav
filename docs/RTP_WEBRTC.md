@@ -42,6 +42,8 @@ Current `rtpav` building blocks:
 - `OpusDepacketizer` for borrowed RTP Opus payloads into `av.Packet`.
 - `Source` for reading RTP packets, applying optional jitter, depacketizing, and
   emitting normal pipeline messages.
+- Depacketizers receive realtime events before graph delivery, so loss-aware
+  payload handlers can reset or drop incomplete frames.
 - `codec.DecoderStage` for turning depacketized packet messages into decoded
   frame messages while preserving loss and lifecycle events.
 - `codec.EncoderStage` for later relay/transcode branches that turn processed
@@ -53,6 +55,23 @@ Current `webrtcav` building blocks:
 - stream and payload-map mapping from Pion `RTPCodecParameters`.
 - preservation of track metadata such as RID, SSRC, stream ID, and track ID.
 - EOS events when the track reader reaches end-of-stream.
+
+The runtime builder can compile a packet-reader recording graph directly:
+
+```go
+task, err := runtime.New().
+    RTP(reader,
+        goav.WithRTPJitter(jitter),
+        goav.WithRTPDepacketizers(depacketizers...),
+    ).
+    Output(goav.Output{Name: "recording.ivf", Writer: file}).
+    Build(ctx)
+```
+
+`reader` can be a raw RTP receiver or a `webrtcav.TrackReader` produced from a
+Pion `TrackRemote`. The generated graph is `rtpav.Source -> format.MuxStage...`;
+events remain visible through the task event channel while mux stages receive
+packet messages for each output.
 
 ## Loss
 

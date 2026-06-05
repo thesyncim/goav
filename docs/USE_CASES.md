@@ -25,6 +25,15 @@ WebRTC session
 Receive raw RTP using Pion RTP packet types, resolve payload type mappings,
 surface gaps and discontinuities, emit RTCP feedback, and produce codec packets.
 
+The high-level record/fanout shape is:
+
+```go
+task, err := runtime.New().
+    RTP(reader, goav.WithRTPDepacketizers(depacketizers...)).
+    Output(goav.Output{Name: "recording.ivf"}).
+    Build(ctx)
+```
+
 ## Generic protocol or file ingest
 
 Receive a live protocol input, file input, or custom source; demux container data

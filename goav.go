@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/transcode"
 )
 
@@ -30,6 +31,7 @@ type Runtime interface {
 // internal graph representation.
 type Builder interface {
 	Input(Input) Builder
+	RTP(rtpav.PacketReader, ...RTPOption) Builder
 	Output(Output) Builder
 	Decode(av.StreamSelector) Builder
 	Encode(av.StreamSelector, codec.EncodeConfig) Builder

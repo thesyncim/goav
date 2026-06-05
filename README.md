@@ -55,6 +55,19 @@ task, err := rt.New().
     Build(ctx)
 ```
 
+Record or fan out an RTP/WebRTC packet reader when depacketizers and muxers are
+available:
+
+```go
+task, err := rt.New().
+    RTP(reader,
+        goav.WithRTPJitter(jitter),
+        goav.WithRTPDepacketizers(depacketizers...),
+    ).
+    Output(goav.Output{Name: "recording.ivf", Writer: file}).
+    Build(ctx)
+```
+
 Build an explicit graph when the application owns the stages:
 
 ```go
@@ -106,14 +119,15 @@ Implemented slices:
 - Demux source and mux stage graph adapters.
 - Fluent remux/fanout compiler.
 - Fluent selected-stream decode-to-sink compiler.
+- Fluent RTP packet-reader record/fanout compiler.
 - Pre-build and runtime graph rendering as text, DOT, and Mermaid.
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.
 
 Next pressure points:
 
-- WebRTC/RTP receive compiler shape from track or packet source to recorder.
+- VP8/VP9/AV1 RTP depacketizers for WebRTC video to IVF recording.
 - WebRTC session receive loop and RTCP feedback wiring.
-- VP8/VP9, H264, and AV1 RTP/codec adapter validation.
+- H264 RTP/codec adapter validation.
 - Allocation-safe resize and resample implementations.
 
 ## Working Loop

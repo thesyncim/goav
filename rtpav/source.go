@@ -229,11 +229,23 @@ func (s *Source) emitEvents(ctx context.Context, emitter pipeline.Emitter, event
 }
 
 func (s *Source) emitEvent(ctx context.Context, emitter pipeline.Emitter, event *av.Event) error {
+	if err := s.handleEvent(ctx, event); err != nil {
+		return err
+	}
 	s.message.Kind = pipeline.MessageEvent
 	s.message.Packet = nil
 	s.message.Frame = nil
 	s.message.Event = event
 	return emitter.Emit(ctx, &s.message)
+}
+
+func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
+	for i := range s.depacketizers {
+		if err := s.depacketizers[i].HandleEvent(ctx, event); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Source) writeFeedback(ctx context.Context, feedback []rtcp.Packet) error {

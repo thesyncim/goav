@@ -44,6 +44,9 @@ The current compilers cover:
 - one-input selected-stream decode to a frame sink through
   `format.DemuxSource -> stream select -> codec.DecoderStage -> Sink` when the
   selector resolves to one stream and the codec registry has a decoder factory
+- one RTP/WebRTC packet reader to one or more outputs through
+  `rtpav.Source -> format.MuxStage...` when the application provides
+  depacketizers and the format registry can mux the output boundaries
 
 Encode, filter, and transcode discovery still return a clear unsupported error
 until source, codec, filter, mux, and sink selection is ready.
@@ -121,6 +124,11 @@ adapts a `format.Demuxer` into packet and event messages, including stream and
 EOS events. `MuxStage` writes packet messages through a `format.Muxer` and emits
 write-result events through the graph, so output-side state remains observable
 instead of disappearing inside a terminal sink.
+
+The RTP package provides the live receive source. `rtpav.Source` keeps Pion RTP
+packets at the boundary, applies optional jitter and depacketizers, forwards
+realtime events into those depacketizers, and emits normal packet/event messages
+for the same mux, decode, and analysis stages used by file or protocol inputs.
 
 `adapters/ivf` is the first concrete format adapter. It keeps the scope small:
 one VP8, VP9, or AV1 video stream, packet demux/mux only, and no container

@@ -8,6 +8,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/transcode"
 )
 
@@ -140,6 +141,7 @@ func (r *runtime) New() Builder {
 type builder struct {
 	runtime    *runtime
 	inputs     []Input
+	rtpInputs  []rtpInput
 	outputs    []Output
 	decodes    []av.StreamSelector
 	encodes    []encodeRequest
@@ -162,8 +164,37 @@ type filterRequest struct {
 	stage    pipeline.Stage
 }
 
+type RTPOption func(*rtpInput)
+
+type RTPBufferLimits struct {
+	MaxReady    int
+	MaxEvents   int
+	MaxFeedback int
+	MaxPackets  int
+}
+
+type rtpInput struct {
+	name          string
+	receiver      rtpav.PacketReader
+	feedback      rtpav.FeedbackWriter
+	jitter        rtpav.JitterBuffer
+	depacketizers []rtpav.Depacketizer
+	limits        RTPBufferLimits
+}
+
 func (b *builder) Input(input Input) Builder {
 	b.inputs = append(b.inputs, input)
+	return b
+}
+
+func (b *builder) RTP(receiver rtpav.PacketReader, options ...RTPOption) Builder {
+	input := rtpInput{receiver: receiver}
+	for i := range options {
+		if options[i] != nil {
+			options[i](&input)
+		}
+	}
+	b.rtpInputs = append(b.rtpInputs, input)
 	return b
 }
 
@@ -254,7 +285,7 @@ func (b *builder) Build(ctx context.Context) (Task, error) {
 }
 
 func (b *builder) hasHighLevelRequests() bool {
-	return len(b.inputs) != 0 || len(b.outputs) != 0 || len(b.decodes) != 0 ||
+	return len(b.inputs) != 0 || len(b.rtpInputs) != 0 || len(b.outputs) != 0 || len(b.decodes) != 0 ||
 		len(b.encodes) != 0 || len(b.filters) != 0 || len(b.transcodes) != 0
 }
 

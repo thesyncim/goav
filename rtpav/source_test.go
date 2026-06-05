@@ -35,6 +35,10 @@ type feedbackDepacketizer struct {
 	packet rtcp.Packet
 }
 
+type eventDepacketizer struct {
+	events []av.Event
+}
+
 func (d feedbackDepacketizer) Codec() av.CodecID {
 	return av.CodecOpus
 }
@@ -52,6 +56,23 @@ func (d feedbackDepacketizer) FlushInto(context.Context, *DepacketizeResult) err
 }
 
 func (d feedbackDepacketizer) HandleEvent(context.Context, *av.Event) error {
+	return nil
+}
+
+func (d *eventDepacketizer) Codec() av.CodecID {
+	return av.CodecOpus
+}
+
+func (d *eventDepacketizer) PushInto(context.Context, *rtp.Packet, PayloadCodec, *DepacketizeResult) error {
+	return nil
+}
+
+func (d *eventDepacketizer) FlushInto(context.Context, *DepacketizeResult) error {
+	return nil
+}
+
+func (d *eventDepacketizer) HandleEvent(_ context.Context, event *av.Event) error {
+	d.events = append(d.events, *event)
 	return nil
 }
 
@@ -297,6 +318,40 @@ func TestSourceRoutesFeedbackToExplicitWriter(t *testing.T) {
 	}
 	if len(receiver.feedback) != 0 {
 		t.Fatalf("receiver feedback should not be used when explicit writer is set: %+v", receiver.feedback)
+	}
+}
+
+func TestSourceForwardsEventsToDepacketizers(t *testing.T) {
+	events := make(chan av.Event, 1)
+	events <- av.Event{Type: av.EventPacketLoss, StreamID: "audio"}
+	receiver := &fakeReceiver{
+		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  av.CodecParameters{ID: av.CodecOpus},
+			MIMEType:    MIMEOpus,
+			ClockRate:   48000,
+		}}),
+		events: events,
+	}
+	depacketizer := &eventDepacketizer{}
+	source, err := NewSource(SourceConfig{
+		Receiver:      receiver,
+		Depacketizers: []Depacketizer{depacketizer},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := source.Start(context.Background(), testEmitter(func(context.Context, *pipeline.Message) error {
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(depacketizer.events) != 2 {
+		t.Fatalf("events = %+v, want packet loss and EOS", depacketizer.events)
+	}
+	if depacketizer.events[0].Type != av.EventPacketLoss || depacketizer.events[1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v", depacketizer.events)
 	}
 }
 
