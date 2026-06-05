@@ -44,6 +44,8 @@ Current `rtpav` building blocks:
   emitting normal pipeline messages.
 - `codec.DecoderStage` for turning depacketized packet messages into decoded
   frame messages while preserving loss and lifecycle events.
+- `codec.EncoderStage` for later relay/transcode branches that turn processed
+  frames back into packet messages without changing the event model.
 
 Current `webrtcav` building blocks:
 

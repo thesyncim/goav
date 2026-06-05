@@ -19,6 +19,18 @@ type DecoderStageConfig struct {
 	DropInputEvents bool
 }
 
+type EncoderStageConfig struct {
+	Name string
+	// Encoder receives frames and events and writes encoded packets into Result.
+	Encoder Encoder
+	// Result is caller-owned scratch. Its slice capacities define how many
+	// packets and events can be emitted per input message.
+	Result EncodeResult
+	// DropInputEvents suppresses forwarding upstream events after the encoder
+	// has observed them. By default, events stay visible downstream.
+	DropInputEvents bool
+}
+
 type DecoderStage struct {
 	name         string
 	decoder      Decoder
@@ -29,7 +41,17 @@ type DecoderStage struct {
 	closed       bool
 }
 
+type EncoderStage struct {
+	name       string
+	encoder    Encoder
+	result     EncodeResult
+	message    pipeline.Message
+	dropEvents bool
+	closed     bool
+}
+
 var _ pipeline.Stage = (*DecoderStage)(nil)
+var _ pipeline.Stage = (*EncoderStage)(nil)
 
 func NewDecoderStage(config DecoderStageConfig) (*DecoderStage, error) {
 	if config.Decoder == nil {
@@ -47,7 +69,27 @@ func NewDecoderStage(config DecoderStageConfig) (*DecoderStage, error) {
 	}, nil
 }
 
+func NewEncoderStage(config EncoderStageConfig) (*EncoderStage, error) {
+	if config.Encoder == nil {
+		return nil, ErrNilEncoder
+	}
+	name := config.Name
+	if name == "" {
+		name = "encode"
+	}
+	return &EncoderStage{
+		name:       name,
+		encoder:    config.Encoder,
+		result:     config.Result,
+		dropEvents: config.DropInputEvents,
+	}, nil
+}
+
 func (s *DecoderStage) Name() string {
+	return s.name
+}
+
+func (s *EncoderStage) Name() string {
 	return s.name
 }
 
@@ -80,12 +122,49 @@ func (s *DecoderStage) Handle(ctx context.Context, msg *pipeline.Message, emitte
 	}
 }
 
+func (s *EncoderStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.closed {
+		return pipeline.ErrClosed
+	}
+	if msg == nil {
+		return nil
+	}
+	switch msg.Kind {
+	case pipeline.MessageFrame:
+		if msg.Frame == nil {
+			return nil
+		}
+		s.result.Reset()
+		if err := s.encoder.EncodeInto(ctx, msg.Frame, &s.result); err != nil {
+			return err
+		}
+		return s.emitResult(ctx, emitter)
+	case pipeline.MessageEvent:
+		return s.handleEvent(ctx, msg, emitter)
+	case pipeline.MessagePacket:
+		return emitter.Emit(ctx, msg)
+	default:
+		return nil
+	}
+}
+
 func (s *DecoderStage) Close() error {
 	if s.closed {
 		return nil
 	}
 	s.closed = true
 	return s.decoder.Close()
+}
+
+func (s *EncoderStage) Close() error {
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	return s.encoder.Close()
 }
 
 func (s *DecoderStage) handleEvent(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
@@ -121,7 +200,36 @@ func (s *DecoderStage) handleEvent(ctx context.Context, msg *pipeline.Message, e
 	return s.emitResult(ctx, emitter)
 }
 
+func (s *EncoderStage) handleEvent(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+	if msg.Event == nil {
+		return nil
+	}
+	if err := s.encoder.HandleEvent(ctx, msg.Event); err != nil {
+		return err
+	}
+
+	if msg.Event.Type == av.EventEndOfStream {
+		s.result.Reset()
+		if err := s.encoder.FlushInto(ctx, &s.result); err != nil {
+			return err
+		}
+		if err := s.emitResult(ctx, emitter); err != nil {
+			return err
+		}
+		return s.emitInputEvent(ctx, msg, emitter)
+	}
+
+	return s.emitInputEvent(ctx, msg, emitter)
+}
+
 func (s *DecoderStage) emitInputEvent(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+	if s.dropEvents {
+		return nil
+	}
+	return emitter.Emit(ctx, msg)
+}
+
+func (s *EncoderStage) emitInputEvent(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if s.dropEvents {
 		return nil
 	}
@@ -154,6 +262,28 @@ func (s *DecoderStage) emitResult(ctx context.Context, emitter pipeline.Emitter)
 		s.message.Kind = pipeline.MessageFrame
 		s.message.Packet = nil
 		s.message.Frame = &s.result.Frames[i]
+		s.message.Event = nil
+		if err := emitter.Emit(ctx, &s.message); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *EncoderStage) emitResult(ctx context.Context, emitter pipeline.Emitter) error {
+	for i := range s.result.Events {
+		s.message.Kind = pipeline.MessageEvent
+		s.message.Packet = nil
+		s.message.Frame = nil
+		s.message.Event = &s.result.Events[i]
+		if err := emitter.Emit(ctx, &s.message); err != nil {
+			return err
+		}
+	}
+	for i := range s.result.Packets {
+		s.message.Kind = pipeline.MessagePacket
+		s.message.Packet = &s.result.Packets[i]
+		s.message.Frame = nil
 		s.message.Event = nil
 		if err := emitter.Emit(ctx, &s.message); err != nil {
 			return err

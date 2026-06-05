@@ -26,7 +26,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | Area | Status | Next |
 | --- | --- | --- |
 | `av` | reset helpers, ownership docs, RTP timebase helpers | richer timestamp conversion helpers |
-| `codec` | Into-style contracts, capabilities, explicit registry, decoder pipeline stage | encoder stage and richer adapter alloc tests |
+| `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober | first demuxer/muxer boundary |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus depacketizer, RTCP feedback helpers, pipeline source | richer payload formats |
@@ -81,11 +81,13 @@ Required proof:
 - `codec.DecoderStage` converts packet messages into frame messages while
   preserving realtime events, flushing before EOS, and driving PLC from packet
   loss events.
+- `codec.EncoderStage` converts frame messages into packet messages while
+  preserving realtime events and flushing delayed packets before EOS.
 
 ## Adapter Targets
 
 - `adapters/gopus`: Opus decode first is active, PLC via loss events works,
-  encode remains unclaimed.
+  encode adapter remains unclaimed.
 - `adapters/govpx`: descriptor boundary exists; concrete VP8/VP9 adapters need
   stable caller-owned frame paths.
 - `adapters/goav1`: descriptor boundary exists; concrete AV1 decode path still

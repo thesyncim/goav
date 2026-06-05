@@ -42,6 +42,7 @@ Current allocation guards cover:
 - codec result reset
 - direct pipeline pass-through
 - codec decoder stage packet-to-frame flow
+- codec encoder stage frame-to-packet flow
 - RTP sequence detection
 - RTP jitter ring
 - Opus depacketization

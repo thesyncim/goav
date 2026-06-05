@@ -80,6 +80,7 @@ The current narrow vertical slice is:
 3. Depacketized Opus packets into a reusable decoder stage.
 4. A `gopus` adapter behind the codec registry producing caller-owned PCM
    frames.
+5. A reusable encoder stage for upcoming transcode and multi-output branches.
 
 Parallel use cases should shape the same contracts:
 

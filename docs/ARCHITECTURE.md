@@ -86,10 +86,13 @@ payload references unless a future explicit policy asks for copying. Buffered
 edges are intentionally separate from the direct executor so backpressure and
 drop behavior remain visible.
 
-The codec package includes a generic decoder stage. It accepts packet messages,
-calls a `codec.Decoder` with caller-owned result scratch, emits frame messages,
-keeps upstream events visible by default, flushes before EOS, and uses
-packet-loss events to trigger audio PLC paths such as Opus concealment.
+The codec package includes generic decoder and encoder stages. They adapt
+`codec.Decoder` and `codec.Encoder` implementations to pipeline messages using
+caller-owned result scratch. The decoder stage turns packet messages into frame
+messages, keeps upstream events visible by default, flushes before EOS, and uses
+packet-loss events to trigger audio PLC paths such as Opus concealment. The
+encoder stage turns frame messages into packet messages and flushes delayed
+packets before EOS.
 
 That shape supports:
 
