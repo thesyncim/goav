@@ -8,7 +8,8 @@ integrations belong under `adapters/...`.
 
 ## Rules
 
-- Implement `codec.DecoderFactory` or `codec.EncoderFactory`.
+- Implement `codec.DecoderFactory`, `codec.EncoderFactory`,
+  `format.DemuxerFactory`, or `format.MuxerFactory`.
 - Register with an explicit registry instance; blank-import registration can be
   added later as optional convenience.
 - Allocate only during construction or `Open`.
@@ -22,10 +23,28 @@ integrations belong under `adapters/...`.
 
 | Adapter | Status |
 | --- | --- |
+| `adapters/ivf` | IVF VP8/VP9/AV1 packet demux/mux |
 | `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
 | `adapters/govpx` | descriptor-only VP8/VP9 boundary |
 | `adapters/goav1` | descriptor-only AV1 boundary |
 | `adapters/goh264` | descriptor-only H264 boundary, concrete adapter reserved for `goav_goh264` |
+
+## `ivf`
+
+The `ivf` adapter is the first concrete format adapter. It supports one video
+stream with VP8, VP9, or AV1 packet payloads.
+
+Current surface:
+
+- explicit registry registration through `ivf.Register`
+- IVF magic and extension probing
+- stream metadata from IVF headers
+- demux into caller-owned `av.Packet` payload buffers
+- mux from packet payloads without rewriting codec data
+- zero-allocation read/write hot-path tests
+
+It is intentionally narrow: no indexing, no frame parsing, no multi-stream
+container behavior, and no codec conversion.
 
 ## `gopus`
 

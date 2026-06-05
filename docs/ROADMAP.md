@@ -38,7 +38,7 @@ validation gates. This roadmap keeps the broader phase view.
 ## Phase 3: Recording and remux
 
 - High-level one-input/many-output remux compiler.
-- Ogg/Opus or IVF output.
+- IVF output for VP8/VP9/AV1 packet recording.
 - WebRTC receive to file.
 - Probe output and stream inspection.
 - Multiple output branches from one receive graph.

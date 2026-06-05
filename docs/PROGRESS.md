@@ -30,14 +30,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | --- | --- | --- |
 | `av` | reset helpers, ownership docs, RTP timebase helpers | richer timestamp conversion helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
-| `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | concrete demuxer/muxer adapters |
+| `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard, graph specs with text/DOT/Mermaid rendering | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus depacketizer, RTCP feedback helpers, pipeline source | richer payload formats |
 | `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| runtime | `goav.New` options, private graph compiler loop, simple named graph connections, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level selected-stream decode-to-sink compiler | encode/filter/transcode graph compilers |
-| adapters | `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
+| runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level selected-stream decode-to-sink compiler | receive/record and encode/filter/transcode graph compilers |
+| adapters | `ivf` packet demux/mux active; `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
 
 ## Implementation Order
 
@@ -54,7 +54,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
    `goh264`. Done.
 9. Add examples and docs for simple API, graph API, ownership, and adapters.
    Runtime options and adapter docs are started.
-10. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+10. Add a first concrete format adapter for packet recording. IVF demux/mux is
+   active for VP8, VP9, and AV1.
+11. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -99,9 +101,13 @@ Required proof:
   one matching stream and the codec registry has a decoder factory. The graph
   includes an explicit stream-select stage so unrelated packets do not reach the
   decoder.
+- `adapters/ivf` provides a narrow packet recording boundary for one VP8, VP9,
+  or AV1 video stream with allocation-guarded demux/mux hot paths.
 
 ## Adapter Targets
 
+- `adapters/ivf`: IVF packet demux/mux is active for single-stream VP8, VP9,
+  and AV1 recording paths.
 - `adapters/gopus`: Opus decode first is active, PLC via loss events works,
   encode adapter remains unclaimed.
 - `adapters/govpx`: descriptor boundary exists; concrete VP8/VP9 adapters need
@@ -120,7 +126,7 @@ Required proof:
 | Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts | active |
 | Realtime Opus vertical slice | RTP/WebRTC boundary, Opus depacketizer, `gopus` decoder | active |
 | Allocation guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters | active for implemented paths |
-| Adapter boundaries | `adapters/gopus`, `adapters/govpx`, `adapters/goav1`, `adapters/goh264` | active |
+| Adapter boundaries | `adapters/ivf`, `adapters/gopus`, `adapters/govpx`, `adapters/goav1`, `adapters/goh264` | active |
 | No cgo | `hygiene_test.go` | active |
 | Lightweight core imports | codec modules isolated under `adapters/...` | active |
 | Docs explain shape | README, architecture, adapters, performance, RTP/WebRTC docs | active |
@@ -133,8 +139,8 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: first concrete recording path needs a tiny demuxer/muxer
-adapter slice without widening container scope too early.
+Current pressure point: wire WebRTC/RTP receive into a first recording graph
+without hiding loss, discontinuity, codec epoch, or keyframe-request behavior.
 
 ## Validation Gates
 

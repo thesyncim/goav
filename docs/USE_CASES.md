@@ -1,6 +1,7 @@
 # Use Cases
 
-These scenarios should keep shaping the interfaces before implementation begins.
+These scenarios keep shaping the interfaces as narrow implementation slices
+land.
 
 ## WebRTC receive
 
@@ -40,6 +41,9 @@ task, err := runtime.New().
     Output(goav.Output{Name: "preview"}).
     Build(ctx)
 ```
+
+When packet formats already match, recording can stay packet-preserving. IVF is
+the first concrete target for single-stream VP8, VP9, and AV1 packet recording.
 
 Expected graph:
 

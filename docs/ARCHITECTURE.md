@@ -27,10 +27,11 @@ Format, RTP, WebRTC, codec, and filter adapters
 ```
 
 `goav.New` is the composition root. It owns explicit codec, format, and
-pipeline registries. The builder compiles through small private graph compilers.
-Each compiler owns one workflow shape and must implement both pre-build
-description and runnable graph construction, so rendered graphs and execution
-graphs stay equivalent.
+pipeline registries, with small adapter registration hooks for optional codec
+and container integrations. The builder compiles through private graph
+compilers. Each compiler owns one workflow shape and must implement both
+pre-build description and runnable graph construction, so rendered graphs and
+execution graphs stay equivalent.
 
 The current compilers cover:
 
@@ -120,6 +121,10 @@ adapts a `format.Demuxer` into packet and event messages, including stream and
 EOS events. `MuxStage` writes packet messages through a `format.Muxer` and emits
 write-result events through the graph, so output-side state remains observable
 instead of disappearing inside a terminal sink.
+
+`adapters/ivf` is the first concrete format adapter. It keeps the scope small:
+one VP8, VP9, or AV1 video stream, packet demux/mux only, and no container
+features beyond what the first recording path needs.
 
 That shape supports:
 

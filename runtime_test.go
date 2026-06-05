@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	gopusadapter "github.com/thesyncim/goav/adapters/gopus"
+	ivfadapter "github.com/thesyncim/goav/adapters/ivf"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
@@ -106,6 +107,17 @@ func TestRuntimeWithCodecAdapter(t *testing.T) {
 
 	if _, err := runtime.Codecs().DecoderFactory(av.CodecOpus); err != nil {
 		t.Fatalf("decoder factory: %v", err)
+	}
+}
+
+func TestRuntimeWithFormatAdapter(t *testing.T) {
+	runtime := New(WithFormatAdapter(ivfadapter.Register))
+
+	if _, err := runtime.Formats().DemuxerFactory(av.FormatIVF); err != nil {
+		t.Fatalf("demuxer factory: %v", err)
+	}
+	if _, err := runtime.Formats().MuxerFactory(av.FormatIVF); err != nil {
+		t.Fatalf("muxer factory: %v", err)
 	}
 }
 

@@ -45,6 +45,7 @@ Current allocation guards cover:
 - codec encoder stage frame-to-packet flow
 - format demux source packet/event flow
 - format mux stage packet write flow
+- IVF demux and mux packet read/write paths
 - RTP sequence detection
 - RTP jitter ring
 - Opus depacketization

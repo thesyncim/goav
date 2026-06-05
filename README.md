@@ -26,12 +26,12 @@ Remux or fan out one input to many outputs when matching format adapters are
 registered:
 
 ```go
-rt := goav.New(goav.WithFormatRegistry(formats))
+rt := goav.New(goav.WithFormatAdapter(ivf.Register))
 
 task, err := rt.New().
-    Input(goav.Input{Name: "input.ogg"}).
-    Output(goav.Output{Name: "archive.ogg"}).
-    Output(goav.Output{Name: "preview.ogg"}).
+    Input(goav.Input{Name: "input.ivf", Reader: in}).
+    Output(goav.Output{Name: "archive.ivf", Writer: archive}).
+    Output(goav.Output{Name: "preview.ivf", Writer: preview}).
     Build(ctx)
 if err != nil {
     return err
@@ -89,6 +89,7 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `webrtcav`: Pion TrackRemote reader boundary.
 - `filter`: resize/resample contracts.
 - `transcode`: rendition and ladder planning contracts.
+- `adapters/ivf`: IVF demux/mux for VP8, VP9, and AV1 packet recording.
 - `adapters/gopus`: active Opus decoder adapter.
 - `adapters/govpx`, `adapters/goav1`, `adapters/goh264`: descriptor
   boundaries for future concrete adapters.
@@ -106,11 +107,11 @@ Implemented slices:
 - Fluent remux/fanout compiler.
 - Fluent selected-stream decode-to-sink compiler.
 - Pre-build and runtime graph rendering as text, DOT, and Mermaid.
+- IVF packet demux/mux adapter with allocation-guarded read/write paths.
 
 Next pressure points:
 
-- Concrete demuxer/muxer adapters for first recording paths.
-- WebRTC/RTP receive compiler shape from track or packet source to decoder.
+- WebRTC/RTP receive compiler shape from track or packet source to recorder.
 - WebRTC session receive loop and RTCP feedback wiring.
 - VP8/VP9, H264, and AV1 RTP/codec adapter validation.
 - Allocation-safe resize and resample implementations.

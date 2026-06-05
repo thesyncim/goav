@@ -74,6 +74,15 @@ func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
 	}
 }
 
+func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
+	return func(runtime *runtime) {
+		registry, ok := runtime.formats.(*format.SimpleRegistry)
+		if ok && register != nil {
+			register(registry)
+		}
+	}
+}
+
 func WithBufferPolicy(policy pipeline.BufferPolicy) Option {
 	return func(runtime *runtime) {
 		runtime.buffer = policy
