@@ -11,7 +11,12 @@ import (
 	"github.com/thesyncim/goav/transcode"
 )
 
-var ErrUnsupportedBuild = errors.New("goav: unsupported builder graph")
+var (
+	ErrUnsupportedBuild = errors.New("goav: unsupported builder graph")
+	ErrNilSource        = errors.New("goav: nil source")
+	ErrNilStage         = errors.New("goav: nil stage")
+	ErrNilSink          = errors.New("goav: nil sink")
+)
 
 type Logger interface {
 	Log(context.Context, string, ...any)
@@ -131,6 +136,9 @@ type builder struct {
 	encodes    []encodeRequest
 	filters    []filterRequest
 	transcodes []transcode.Plan
+	sources    []pipeline.Source
+	stages     []pipeline.Stage
+	sinks      []pipeline.Sink
 }
 
 type encodeRequest struct {
@@ -173,9 +181,23 @@ func (b *builder) Transcode(plan transcode.Plan) Builder {
 	return b
 }
 
+func (b *builder) Source(source pipeline.Source) Builder {
+	b.sources = append(b.sources, source)
+	return b
+}
+
+func (b *builder) Stage(stage pipeline.Stage) Builder {
+	b.stages = append(b.stages, stage)
+	return b
+}
+
+func (b *builder) Sink(sink pipeline.Sink) Builder {
+	b.sinks = append(b.sinks, sink)
+	return b
+}
+
 func (b *builder) Build(ctx context.Context) (Task, error) {
-	if len(b.inputs) != 0 || len(b.outputs) != 0 || len(b.decodes) != 0 ||
-		len(b.encodes) != 0 || len(b.filters) != 0 || len(b.transcodes) != 0 {
+	if b.hasHighLevelRequests() {
 		return nil, ErrUnsupportedBuild
 	}
 	graph, err := b.runtime.pipelines.NewGraph(ctx, pipeline.GraphConfig{
@@ -186,11 +208,95 @@ func (b *builder) Build(ctx context.Context) (Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	if b.hasExplicitGraph() {
+		if err := b.compileExplicitGraph(graph); err != nil {
+			graph.Close()
+			return nil, err
+		}
+	}
 	return &task{graph: graph}, nil
+}
+
+func (b *builder) hasHighLevelRequests() bool {
+	return len(b.inputs) != 0 || len(b.outputs) != 0 || len(b.decodes) != 0 ||
+		len(b.encodes) != 0 || len(b.filters) != 0 || len(b.transcodes) != 0
+}
+
+func (b *builder) hasExplicitGraph() bool {
+	return len(b.sources) != 0 || len(b.stages) != 0 || len(b.sinks) != 0
+}
+
+func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
+	if len(b.sources) == 0 {
+		return ErrUnsupportedBuild
+	}
+
+	sourcePads := make([]pipeline.PadRef, len(b.sources))
+	stagePads := make([]pipeline.PadRef, len(b.stages))
+	sinkPads := make([]pipeline.PadRef, len(b.sinks))
+
+	for i := range b.sources {
+		if b.sources[i] == nil {
+			return ErrNilSource
+		}
+		pad, err := graph.AddSource(b.sources[i], b.runtime.buffer)
+		if err != nil {
+			return err
+		}
+		sourcePads[i] = pad
+	}
+	for i := range b.stages {
+		if b.stages[i] == nil {
+			return ErrNilStage
+		}
+		pad, err := graph.AddStage(b.stages[i], b.runtime.buffer)
+		if err != nil {
+			return err
+		}
+		stagePads[i] = pad
+	}
+	for i := range b.sinks {
+		if b.sinks[i] == nil {
+			return ErrNilSink
+		}
+		pad, err := graph.AddSink(b.sinks[i], b.runtime.buffer)
+		if err != nil {
+			return err
+		}
+		sinkPads[i] = pad
+	}
+
+	if len(stagePads) == 0 {
+		return linkMany(graph, sourcePads, sinkPads)
+	}
+	if err := linkMany(graph, sourcePads, stagePads[:1]); err != nil {
+		return err
+	}
+	for i := 0; i < len(stagePads)-1; i++ {
+		if err := graph.Link(pipeline.Link{From: stagePads[i], To: stagePads[i+1]}); err != nil {
+			return err
+		}
+	}
+	return linkMany(graph, stagePads[len(stagePads)-1:], sinkPads)
+}
+
+func linkMany(graph pipeline.Graph, from []pipeline.PadRef, to []pipeline.PadRef) error {
+	for i := range from {
+		for j := range to {
+			if err := graph.Link(pipeline.Link{From: from[i], To: to[j]}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 type task struct {
 	graph pipeline.Graph
+}
+
+func (t *task) Describe() pipeline.Spec {
+	return t.graph.Spec()
 }
 
 func (t *task) Run(ctx context.Context) error {

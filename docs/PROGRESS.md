@@ -28,12 +28,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `av` | reset helpers, ownership docs, RTP timebase helpers | richer timestamp conversion helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | concrete demuxer/muxer adapters |
-| `pipeline` | direct executor, fanout, stream/event routes, backpressure guard | bounded async edges and drop-policy tests |
+| `pipeline` | direct executor, fanout, stream/event routes, backpressure guard, graph specs with text/DOT rendering | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus depacketizer, RTCP feedback helpers, pipeline source | richer payload formats |
 | `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| runtime | `goav.New` options and explicit builder refusal for unsupported graphs | compile real receive/record graphs |
+| runtime | `goav.New` options, explicit Source/Stage/Sink builder graphs, task graph descriptions | high-level input/decode/output graph compiler |
 | adapters | `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
 
 ## Implementation Order
@@ -85,6 +85,8 @@ Required proof:
   preserving realtime events and flushing delayed packets before EOS.
 - `format.DemuxSource` and `format.MuxStage` adapt container boundaries into
   the event-aware pipeline without per-packet allocation.
+- The runtime builder can compile explicit source/stage/sink graphs and expose
+  generated graph specs with text and DOT renderers.
 
 ## Adapter Targets
 

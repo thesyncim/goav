@@ -117,6 +117,7 @@ type Graph interface {
 	AddSink(Sink, BufferPolicy) (PadRef, error)
 	Link(Link) error
 	Route(Route) error
+	Spec() Spec
 	Run(context.Context) error
 	Events() <-chan av.Event
 	Close() error

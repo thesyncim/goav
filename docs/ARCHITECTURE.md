@@ -28,8 +28,10 @@ Format, RTP, WebRTC, codec, and filter adapters
 
 `goav.New` is the composition root. It owns explicit codec, format, and
 pipeline registries. The current builder is intentionally conservative: it can
-construct an empty direct task, but real input/output graphs return a clear
-unsupported error until source, demux, mux, and sink implementations exist.
+compile explicit `Source -> Stage -> Sink` graphs and expose their generated
+graph description. Higher-level `Input/Decode/Output` graph discovery still
+returns a clear unsupported error until source, demux, codec, mux, and sink
+selection is ready.
 
 ## Core media model
 
@@ -86,6 +88,10 @@ payload references unless a future explicit policy asks for copying. Buffered
 edges are intentionally separate from the direct executor so backpressure and
 drop behavior remain visible.
 
+Every graph can produce a `pipeline.Spec`: structured nodes and edges plus
+human-readable text and DOT rendering. This makes generated pipelines easy to
+log, inspect, or visualize before running media through them.
+
 The codec package includes generic decoder and encoder stages. They adapt
 `codec.Decoder` and `codec.Encoder` implementations to pipeline messages using
 caller-owned result scratch. The decoder stage turns packet messages into frame
@@ -104,7 +110,7 @@ That shape supports:
 
 - demux -> decode -> filter -> encode -> mux
 - WebRTC track -> jitter buffer -> depacketizer -> decoder -> recorder
-- RTMP input -> demux -> decode -> resize/resample -> encode ladder -> many outputs
+- protocol source -> demux -> decode -> resize/resample -> encode ladder -> many outputs
 - RTP input -> loss monitor -> stats sink
 - codec switch events -> decoder reset
 - packet loss events -> RTCP feedback and keyframe requests
@@ -117,7 +123,7 @@ decode sharing, filter branches, multiple encoders, and multiple muxers.
 
 Typical use cases:
 
-- RTMP receive to several live outputs.
+- Generic live receive to several outputs.
 - WebRTC receive to recording plus preview plus analysis.
 - One video decode feeding several resize branches.
 - One audio decode feeding several resample branches.

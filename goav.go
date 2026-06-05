@@ -35,11 +35,15 @@ type Builder interface {
 	Encode(av.StreamSelector, codec.EncodeConfig) Builder
 	Filter(av.StreamSelector, pipeline.Stage) Builder
 	Transcode(transcode.Plan) Builder
+	Source(pipeline.Source) Builder
+	Stage(pipeline.Stage) Builder
+	Sink(pipeline.Sink) Builder
 	Build(context.Context) (Task, error)
 }
 
 // Task is a runnable media job such as receive, record, remux, or transcode.
 type Task interface {
+	Describe() pipeline.Spec
 	Run(context.Context) error
 	Events() <-chan av.Event
 	Close() error

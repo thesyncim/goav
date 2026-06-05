@@ -15,7 +15,8 @@ depacketization, format graph adapters, and an Opus decode adapter over `gopus`.
 ## First-class goals
 
 - Realtime WebRTC/RTP receive.
-- Realtime RTMP ingest and FLV-style container boundaries.
+- Generic realtime and file sources through explicit source and format
+  boundaries.
 - Loss-aware media flow: gaps, late packets, discontinuities, keyframe requests.
 - Codec switches through explicit codec epochs and stream events.
 - Multi-rendition transcoding: one input into many resized/resampled outputs.
@@ -68,6 +69,20 @@ The lower-level contracts stay explicit enough to build SFU receivers, recorders
 transcoders, analyzers, and custom realtime graphs without hiding timestamps,
 loss, codec changes, or backpressure.
 
+Explicit graphs can be built and inspected directly:
+
+```go
+task, err := runtime.New().
+    Source(source).
+    Stage(decode).
+    Sink(record).
+    Build(ctx)
+if err != nil {
+    return err
+}
+_ = task.Describe().DOT()
+```
+
 ## Current status
 
 This is still an API-first project, but the first receive/decode path is taking
@@ -81,12 +96,13 @@ The current narrow vertical slice is:
 4. A `gopus` adapter behind the codec registry producing caller-owned PCM
    frames.
 5. A reusable encoder stage for upcoming transcode and multi-output branches.
-6. Reusable demux and mux graph adapters for recording, remuxing, and RTMP-style
-   ingest/output work.
+6. Reusable demux and mux graph adapters for recording, remuxing, and generic
+   protocol/file ingest-output work.
+7. Structured graph descriptions with text and DOT renderers.
 
 Parallel use cases should shape the same contracts:
 
-- RTMP ingest to several outputs.
+- Generic live/file ingest to several outputs.
 - One live input fanning out into multiple encoded layers.
 - Resize video renditions for ABR ladders.
 - Resample audio for output compatibility.

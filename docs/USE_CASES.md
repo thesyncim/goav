@@ -24,16 +24,17 @@ WebRTC session
 Receive raw RTP using Pion RTP packet types, resolve payload type mappings,
 surface gaps and discontinuities, emit RTCP feedback, and produce codec packets.
 
-## RTMP ingest
+## Generic protocol or file ingest
 
-Receive an RTMP live input, demux FLV-style tags into streams and packets, then
-feed the same pipeline graph used by WebRTC and file inputs.
+Receive a live protocol input, file input, or custom source; demux container data
+into streams and packets when needed; then feed the same pipeline graph used by
+WebRTC and RTP inputs.
 
 Expected graph:
 
 ```text
-RTMP input
-  -> format.DemuxSource / FLV demux
+protocol/file source
+  -> format.DemuxSource / demuxer
   -> decode
   -> branch
 ```

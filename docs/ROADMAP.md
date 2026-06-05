@@ -19,10 +19,12 @@ validation gates. This roadmap keeps the broader phase view.
 - `gopus` decoder adapter.
 - Raw PCM sink for validation.
 
-## Phase 1b: RTMP ingest shape
+## Phase 1b: Generic source shape
 
-- RTMP protocol input contract.
-- FLV demux boundary.
+- Explicit source/stage/sink graph builder.
+- Graph description and rendering.
+- Protocol source contracts outside the core runtime.
+- Demux boundaries for protocol/file adapters.
 - Live input events for connect, disconnect, and timestamp discontinuity.
 - Shared packet flow into the same pipeline graph used by WebRTC.
 
@@ -58,5 +60,4 @@ validation gates. This roadmap keeps the broader phase view.
 ## Phase 5: High-level API
 
 - Fluent receive/decode/record builder.
-- CLI experiments.
 - Stats, tracing, and graph introspection.

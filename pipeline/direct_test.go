@@ -129,6 +129,56 @@ func TestDirectGraphPassThrough(t *testing.T) {
 	}
 }
 
+func TestDirectGraphSpec(t *testing.T) {
+	packet := av.Packet{StreamID: "audio"}
+	msg := Message{Kind: MessagePacket, Packet: &packet}
+	source := &directTestSource{name: "source", msg: &msg}
+	stage := &directPassStage{name: "stage"}
+	sink := &directTestSink{name: "sink"}
+
+	graph, err := NewDirectGraph(GraphConfig{Name: "spec", Realtime: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourcePad, err := graph.AddSource(source, BufferPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stagePad, err := graph.AddStage(stage, BufferPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sinkPad, err := graph.AddSink(sink, BufferPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Link(Link{From: sourcePad, To: stagePad}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Route(Route{
+		From:   stagePad,
+		To:     []PadRef{sinkPad},
+		Policy: RouteByStream,
+		Label:  "audio",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	spec := graph.Spec()
+	if spec.Name != "spec" || !spec.Realtime {
+		t.Fatalf("spec metadata = %+v", spec)
+	}
+	if len(spec.Nodes) != 3 || len(spec.Edges) != 2 {
+		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
+	}
+	if spec.Nodes[0].Kind != NodeSource || spec.Nodes[1].Kind != NodeStage || spec.Nodes[2].Kind != NodeSink {
+		t.Fatalf("nodes = %+v", spec.Nodes)
+	}
+	if spec.Edges[1].Policy != RouteByStream || spec.Edges[1].Label != "audio" {
+		t.Fatalf("edge = %+v", spec.Edges[1])
+	}
+}
+
 func TestDirectGraphFanoutSharesPayload(t *testing.T) {
 	payload := []byte{1, 2, 3}
 	packet := av.Packet{Payload: av.Buffer{Bytes: payload, Ownership: av.BufferBorrowed}}

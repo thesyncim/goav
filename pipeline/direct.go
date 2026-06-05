@@ -171,6 +171,31 @@ func (g *DirectGraph) Run(ctx context.Context) error {
 	return nil
 }
 
+func (g *DirectGraph) Spec() Spec {
+	spec := Spec{
+		Name:     g.config.Name,
+		Realtime: g.config.Realtime,
+		Nodes:    make([]NodeSpec, len(g.nodes)),
+	}
+	for i := range g.nodes {
+		node := &g.nodes[i]
+		spec.Nodes[i] = NodeSpec{Name: node.name, Kind: directSpecKind(node.kind)}
+		for j := range node.routes {
+			route := &node.routes[j]
+			for k := range route.to {
+				to := &g.nodes[route.to[k]]
+				spec.Edges = append(spec.Edges, EdgeSpec{
+					From:   PadRef{Node: node.name, Pad: directOutputPad(node.kind)},
+					To:     PadRef{Node: to.name, Pad: directInputPad(to.kind)},
+					Policy: route.policy,
+					Label:  route.label,
+				})
+			}
+		}
+	}
+	return spec
+}
+
 func (g *DirectGraph) Events() <-chan av.Event {
 	return g.events
 }
@@ -301,4 +326,39 @@ func (r *directRoute) matchesEvent(msg *Message) bool {
 		return false
 	}
 	return r.label == "" || string(msg.Event.Type) == r.label
+}
+
+func directSpecKind(kind nodeKind) NodeKind {
+	switch kind {
+	case nodeSource:
+		return NodeSource
+	case nodeStage:
+		return NodeStage
+	case nodeSink:
+		return NodeSink
+	default:
+		return ""
+	}
+}
+
+func directOutputPad(kind nodeKind) string {
+	switch kind {
+	case nodeSource:
+		return "out"
+	case nodeStage:
+		return "inout"
+	default:
+		return ""
+	}
+}
+
+func directInputPad(kind nodeKind) string {
+	switch kind {
+	case nodeStage:
+		return "inout"
+	case nodeSink:
+		return "in"
+	default:
+		return ""
+	}
 }

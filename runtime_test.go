@@ -3,13 +3,78 @@ package goav
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	gopusadapter "github.com/thesyncim/goav/adapters/gopus"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/pipeline"
 )
+
+type runtimeTestSource struct {
+	name    string
+	message pipeline.Message
+	closed  bool
+}
+
+func (s *runtimeTestSource) Name() string {
+	return s.name
+}
+
+func (s *runtimeTestSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	return emitter.Emit(ctx, &s.message)
+}
+
+func (s *runtimeTestSource) Close() error {
+	s.closed = true
+	return nil
+}
+
+type runtimeTestStage struct {
+	name   string
+	count  int
+	closed bool
+}
+
+func (s *runtimeTestStage) Name() string {
+	return s.name
+}
+
+func (s *runtimeTestStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+	s.count++
+	return emitter.Emit(ctx, msg)
+}
+
+func (s *runtimeTestStage) Close() error {
+	s.closed = true
+	return nil
+}
+
+type runtimeTestSink struct {
+	name       string
+	count      int
+	lastPacket *av.Packet
+	closed     bool
+}
+
+func (s *runtimeTestSink) Name() string {
+	return s.name
+}
+
+func (s *runtimeTestSink) Handle(_ context.Context, msg *pipeline.Message) error {
+	s.count++
+	if msg.Kind == pipeline.MessagePacket {
+		s.lastPacket = msg.Packet
+	}
+	return nil
+}
+
+func (s *runtimeTestSink) Close() error {
+	s.closed = true
+	return nil
+}
 
 func TestNewRuntimeDefaults(t *testing.T) {
 	runtime := New()
@@ -49,6 +114,79 @@ func TestRuntimeBuilderEmptyTask(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderExplicitGraph(t *testing.T) {
+	packet := av.Packet{StreamID: "audio"}
+	source := &runtimeTestSource{
+		name: "source",
+		message: pipeline.Message{
+			Kind:   pipeline.MessagePacket,
+			Packet: &packet,
+		},
+	}
+	stage := &runtimeTestStage{name: "stage"}
+	left := &runtimeTestSink{name: "left"}
+	right := &runtimeTestSink{name: "right"}
+
+	task, err := New().New().
+		Source(source).
+		Stage(stage).
+		Sink(left).
+		Sink(right).
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := task.Describe()
+	if len(spec.Nodes) != 4 || len(spec.Edges) != 3 {
+		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
+	}
+	if !strings.Contains(spec.String(), "stage:inout -> left:in") ||
+		!strings.Contains(spec.DOT(), "\"stage\" -> \"right\"") {
+		t.Fatalf("spec text:\n%s\ndot:\n%s", spec.String(), spec.DOT())
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if stage.count != 1 {
+		t.Fatalf("stage count = %d, want 1", stage.count)
+	}
+	if left.count != 1 || right.count != 1 {
+		t.Fatalf("left=%d right=%d", left.count, right.count)
+	}
+	if left.lastPacket != &packet || right.lastPacket != &packet {
+		t.Fatalf("packet fanout copied pointers: left=%p right=%p want=%p", left.lastPacket, right.lastPacket, &packet)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !source.closed || !stage.closed || !left.closed || !right.closed {
+		t.Fatalf("closed source=%v stage=%v left=%v right=%v", source.closed, stage.closed, left.closed, right.closed)
+	}
+}
+
+func TestRuntimeBuilderExplicitSourceToSink(t *testing.T) {
+	packet := av.Packet{StreamID: "audio"}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	sink := &runtimeTestSink{name: "sink"}
+
+	task, err := New().New().
+		Source(source).
+		Sink(sink).
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if sink.count != 1 || sink.lastPacket != &packet {
+		t.Fatalf("sink count=%d packet=%p want=%p", sink.count, sink.lastPacket, &packet)
+	}
+}
+
 func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
 	_, err := New().New().
 		Input(Input{Name: "input"}).
@@ -57,6 +195,49 @@ func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
 		Build(context.Background())
 	if !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	}
+}
+
+func TestRuntimeBuilderRefusesMixedGraph(t *testing.T) {
+	packet := av.Packet{StreamID: "audio"}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+
+	_, err := New().New().
+		Input(Input{Name: "input"}).
+		Source(source).
+		Build(context.Background())
+	if !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	}
+}
+
+func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
+	_, err := New().New().Source(nil).Build(context.Background())
+	if !errors.Is(err, ErrNilSource) {
+		t.Fatalf("source err = %v, want ErrNilSource", err)
+	}
+
+	_, err = New().New().Stage(&runtimeTestStage{name: "stage"}).Build(context.Background())
+	if !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("stage err = %v, want ErrUnsupportedBuild", err)
+	}
+
+	packet := av.Packet{StreamID: "audio"}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	_, err = New().New().Source(source).Stage(nil).Build(context.Background())
+	if !errors.Is(err, ErrNilStage) {
+		t.Fatalf("stage err = %v, want ErrNilStage", err)
+	}
+
+	_, err = New().New().Source(source).Sink(nil).Build(context.Background())
+	if !errors.Is(err, ErrNilSink) {
+		t.Fatalf("sink err = %v, want ErrNilSink", err)
 	}
 }
 
