@@ -54,7 +54,13 @@ type OpenOptions struct {
 }
 
 type ReadResult struct {
+	// Packet is caller-owned scratch filled by Demuxer.ReadInto when
+	// PacketReady is true. Borrowed packet payloads remain valid until the
+	// demuxer's next ReadInto call unless the demuxer documents otherwise.
 	Packet *av.Packet
+	// PacketReady reports whether Packet contains a packet for this read.
+	PacketReady bool
+	// Events is caller-owned scratch filled without growing past capacity.
 	Events []av.Event
 }
 
@@ -62,10 +68,21 @@ func (r *ReadResult) Reset() {
 	if r.Packet != nil {
 		r.Packet.Reset()
 	}
+	r.PacketReady = false
 	for i := range r.Events {
 		r.Events[i].Reset()
 	}
 	r.Events = r.Events[:0]
+}
+
+func (r *ReadResult) AddEvent(event av.Event) error {
+	if len(r.Events) == cap(r.Events) {
+		return ErrResultFull
+	}
+	index := len(r.Events)
+	r.Events = r.Events[:index+1]
+	r.Events[index] = event
+	return nil
 }
 
 type WriteResult struct {
@@ -77,6 +94,16 @@ func (r *WriteResult) Reset() {
 		r.Events[i].Reset()
 	}
 	r.Events = r.Events[:0]
+}
+
+func (r *WriteResult) AddEvent(event av.Event) error {
+	if len(r.Events) == cap(r.Events) {
+		return ErrResultFull
+	}
+	index := len(r.Events)
+	r.Events = r.Events[:index+1]
+	r.Events[index] = event
+	return nil
 }
 
 type Demuxer interface {

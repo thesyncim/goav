@@ -33,7 +33,7 @@ Expected graph:
 
 ```text
 RTMP input
-  -> FLV demux
+  -> format.DemuxSource / FLV demux
   -> decode
   -> branch
 ```
@@ -75,4 +75,3 @@ sample-format conversion without tying the API to one implementation.
 
 Video filters should express exact, fit, fill, and passthrough modes so the same
 contract works for ABR ladders, previews, thumbnails, and recording paths.
-

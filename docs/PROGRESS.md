@@ -27,7 +27,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | --- | --- | --- |
 | `av` | reset helpers, ownership docs, RTP timebase helpers | richer timestamp conversion helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
-| `format` | Into-style read/write contracts, registry, default static prober | first demuxer/muxer boundary |
+| `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | concrete demuxer/muxer adapters |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus depacketizer, RTCP feedback helpers, pipeline source | richer payload formats |
 | `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
@@ -83,6 +83,8 @@ Required proof:
   loss events.
 - `codec.EncoderStage` converts frame messages into packet messages while
   preserving realtime events and flushing delayed packets before EOS.
+- `format.DemuxSource` and `format.MuxStage` adapt container boundaries into
+  the event-aware pipeline without per-packet allocation.
 
 ## Adapter Targets
 

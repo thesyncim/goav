@@ -7,7 +7,13 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
-var ErrNotFound = errors.New("format: not found")
+var (
+	ErrNotFound   = errors.New("format: not found")
+	ErrNilDemuxer = errors.New("format: nil demuxer")
+	ErrNilMuxer   = errors.New("format: nil muxer")
+	ErrNilPacket  = errors.New("format: nil packet")
+	ErrResultFull = errors.New("format: result capacity full")
+)
 
 type RegistryOption func(*SimpleRegistry)
 

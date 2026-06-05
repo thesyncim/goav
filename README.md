@@ -10,7 +10,7 @@ filters, muxers, and sinks all meet through explicit contracts.
 This repository starts from interfaces and type contracts, then adds narrow
 vertical slices behind those boundaries. Current implemented pieces include the
 direct pipeline executor, RTP receive primitives, WebRTC track reading, Opus RTP
-depacketization, and an Opus decode adapter over `gopus`.
+depacketization, format graph adapters, and an Opus decode adapter over `gopus`.
 
 ## First-class goals
 
@@ -81,6 +81,8 @@ The current narrow vertical slice is:
 4. A `gopus` adapter behind the codec registry producing caller-owned PCM
    frames.
 5. A reusable encoder stage for upcoming transcode and multi-output branches.
+6. Reusable demux and mux graph adapters for recording, remuxing, and RTMP-style
+   ingest/output work.
 
 Parallel use cases should shape the same contracts:
 

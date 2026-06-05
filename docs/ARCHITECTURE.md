@@ -94,6 +94,12 @@ packet-loss events to trigger audio PLC paths such as Opus concealment. The
 encoder stage turns frame messages into packet messages and flushes delayed
 packets before EOS.
 
+The format package follows the same pattern for containers. `DemuxSource`
+adapts a `format.Demuxer` into packet and event messages, including stream and
+EOS events. `MuxStage` writes packet messages through a `format.Muxer` and emits
+write-result events through the graph, so output-side state remains observable
+instead of disappearing inside a terminal sink.
+
 That shape supports:
 
 - demux -> decode -> filter -> encode -> mux
