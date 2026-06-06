@@ -16,9 +16,9 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Graphs are named sources, stages, sinks, and routes; fanout is one route with
   multiple targets.
 - A route may match all media, one stream, or one event type.
-- The explicit graph API reads as `goav.From("source").To("sink")`; existing
-  `Connect`, `ConnectStream`, and `ConnectEvent` helpers remain compatibility
-  shorthands over the same edge model.
+- The explicit graph API reads as `goav.Route("source", "sink")` or
+  `goav.StreamRoute("source", "video", "sink")`; `From(...)` and `Connect...`
+  remain compatibility shorthands over the same route model.
 - Rendered graph nodes can carry short workflow details without changing the
   simple node-to-node API; routed edges render as `stream=video` or
   `event=packet_loss`.
@@ -147,8 +147,8 @@ builder := rt.New().
     Sink(preview).
     Sink(stats).
     Routes(
-        goav.From("source").Stream("audio", "decode"),
-        goav.From("decode").To("record", "preview", "stats"),
+        goav.StreamRoute("source", "audio", "decode"),
+        goav.Route("decode", "record", "preview", "stats"),
     )
 
 spec, err := builder.Describe()
@@ -166,7 +166,7 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `av`: media identifiers, streams, packets, frames, timestamps, events,
   timebase conversion helpers, reset helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, bounded buffered graph executor,
-  fanout, `From(...).To(...)` route helpers, stream/event routes,
+  fanout, simple route helpers, stream/event routes,
   backpressure surface, drop-policy decisions, bounded copy slots for borrowed
   media buffers, simple route graph surface, detail-aware text/DOT/Mermaid graph
   specs.
@@ -195,7 +195,8 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `adapters/goav1`: descriptor-only by default; `goav_goav1` enables a first
   AV1 decoder factory over caller-owned `DecoderState`, depacketized
   low-overhead OBU payloads, concrete raw RTP payload decode, borrowed 8-bit
-  `gray8`/4:2:0 frame planes, and drop-until-sync recovery after loss.
+  `gray8`/4:2:0/4:2:2/4:4:4 frame-plane mapping, and drop-until-sync recovery
+  after loss.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
   H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
   video frames.
@@ -220,11 +221,11 @@ Implemented slices:
 - Fluent `Transcode(plan)` compiler for one selected decode feeding multiple
   named encode/output branches, including resize/resample branch stages when
   filter factories are registered.
-- Fluent `Routes(goav.From(...).To(...))` helpers, with `Connect(...)`,
-  `ConnectStream(...)`, and `ConnectEvent(...)` kept as shorthands for
-  one-to-one and one-to-many explicit graph connections.
-- First-class `pipeline.Connection` helpers for direct graph composition without
-  extra graph concepts.
+- Fluent `Routes(goav.Route(...))`, `StreamRoute(...)`, and `EventRoute(...)`
+  helpers, with `From(...)`, `Connect(...)`, `ConnectStream(...)`, and
+  `ConnectEvent(...)` kept as compatibility shorthands over the same model.
+- First-class route helpers for direct graph composition without extra graph
+  concepts.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
   `RTP(...)` inputs.
 - Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,
@@ -281,8 +282,9 @@ Implemented slices:
 - Runtime RTP/WebRTC packet-reader record/fanout builds are covered through
   buffered execution with policy-bounded copies of depacketizer-owned packet
   payloads.
-- The runnable graph surface now uses one edge model: `Connect` plus
-  stream/event-scoped variants.
+- The friendly explicit graph surface now prefers `Route`, `StreamRoute`, and
+  `EventRoute`, with `From` and `Connect...` helpers kept as compatibility
+  paths over the same route model.
 - Tagged AV1 decode now registers a factory behind `goav_goav1`, consumes
   depacketized low-overhead OBU payloads through caller-owned `DecoderState`,
   can provision conservative runtime state for high-level builders, maps
@@ -295,6 +297,9 @@ Implemented slices:
 - Tagged AV1 RTP receive now covers both `gray8` and planar 8-bit 4:2:0:
   `i420` and `yuv420p` stream declarations bind the same backend format and
   emit canonical `i420` frame planes.
+- Tagged AV1 decoder format contracts now also accept planar 8-bit 4:2:2 and
+  4:4:4 declarations: `yuv422p` maps to canonical `i422`, and `yuv444p` maps
+  to canonical `i444` at state and frame boundaries.
 - The same AV1 RTP builder path now has same-stream and replacement-stream
   codec-change proofs: payload-map refresh, epoch/identity update,
   old-ID or replacement-ID event targeting, drop-until-sync, keyframe request,
@@ -306,8 +311,8 @@ Implemented slices:
 Next pressure points:
 
 - Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
-  RTP/WebRTC AV1 streams: dynamic new-codec graph rebind policy, additional
-  output formats beyond 8-bit 4:2:0, richer automatic scratch sizing policy,
+  RTP/WebRTC AV1 streams: dynamic new-codec graph rebind policy, runtime stream
+  proofs for broader output formats, richer automatic scratch sizing policy,
   and deciding how much of the raw RTP runner path should surface in high-level
   builders.
 

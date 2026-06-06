@@ -296,6 +296,26 @@ func TestRuntimeBuilderExplicitSourceToSink(t *testing.T) {
 	}
 }
 
+func TestRouteHelpers(t *testing.T) {
+	route := Route("source", "decode", "stats")
+	if route.From != "source" || len(route.To) != 2 || route.To[0] != "decode" || route.To[1] != "stats" ||
+		route.Policy != pipeline.RouteAll {
+		t.Fatalf("route = %+v", route)
+	}
+
+	stream := StreamRoute("decode", "video", "record")
+	if stream.Policy != pipeline.RouteByStream || stream.Label != "video" || len(stream.To) != 1 ||
+		stream.To[0] != "record" {
+		t.Fatalf("stream route = %+v", stream)
+	}
+
+	event := EventRoute("source", av.EventPacketLoss, "feedback")
+	if event.Policy != pipeline.RouteByEvent || event.Label != string(av.EventPacketLoss) || len(event.To) != 1 ||
+		event.To[0] != "feedback" {
+		t.Fatalf("event route = %+v", event)
+	}
+}
+
 func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 	packet := av.Packet{StreamID: "audio"}
 	source := &runtimeTestSource{
@@ -421,8 +441,8 @@ func TestRuntimeBuilderExplicitRoutesHelper(t *testing.T) {
 		Sink(preview).
 		Sink(audio).
 		Routes(
-			From("source").Stream("video", "record", "preview"),
-			From("source").Stream("audio", "audio"),
+			StreamRoute("source", "video", "record", "preview"),
+			StreamRoute("source", "audio", "audio"),
 		).
 		Build(context.Background())
 	if err != nil {

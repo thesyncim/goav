@@ -92,6 +92,142 @@ func TestDecoderDecodesRTPPayloadIntoBorrowedFrame(t *testing.T) {
 	}
 }
 
+func TestDecoderPixelFormatMapping(t *testing.T) {
+	tests := []struct {
+		name        string
+		format      backend.FrameFormat
+		pixelFormat string
+		planeCount  int
+		wantErr     bool
+	}{
+		{
+			name:        "gray8",
+			format:      backend.FrameFormat{Width: 16, Height: 16, BitDepth: 8, MonoChrome: true},
+			pixelFormat: av.PixelFormatGray8,
+			planeCount:  1,
+		},
+		{
+			name:        "i420",
+			format:      backend.FrameFormat{Width: 16, Height: 16, BitDepth: 8, SubsamplingX: true, SubsamplingY: true},
+			pixelFormat: av.PixelFormatI420,
+			planeCount:  3,
+		},
+		{
+			name:        "i422",
+			format:      backend.FrameFormat{Width: 16, Height: 16, BitDepth: 8, SubsamplingX: true},
+			pixelFormat: av.PixelFormatI422,
+			planeCount:  3,
+		},
+		{
+			name:        "i444",
+			format:      backend.FrameFormat{Width: 16, Height: 16, BitDepth: 8},
+			pixelFormat: av.PixelFormatI444,
+			planeCount:  3,
+		},
+		{
+			name:    "unsupported",
+			format:  backend.FrameFormat{Width: 16, Height: 16, BitDepth: 8, SubsamplingY: true},
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pixelFormat, planeCount, err := backendFramePixelFormat(test.format)
+			if test.wantErr {
+				if !errors.Is(err, codec.ErrUnsupportedFormat) {
+					t.Fatalf("err = %v, want ErrUnsupportedFormat", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pixelFormat != test.pixelFormat || planeCount != test.planeCount {
+				t.Fatalf("pixel=%s planes=%d, want %s/%d", pixelFormat, planeCount, test.pixelFormat, test.planeCount)
+			}
+		})
+	}
+}
+
+func TestDecoderPixelFormatAliases(t *testing.T) {
+	tests := map[string]string{
+		av.PixelFormatYUV420P: av.PixelFormatI420,
+		av.PixelFormatYUV422P: av.PixelFormatI422,
+		av.PixelFormatYUV444P: av.PixelFormatI444,
+		av.PixelFormatGray8:   av.PixelFormatGray8,
+		"":                    "",
+	}
+	for in, want := range tests {
+		if got := normalizeDecoderPixelFormat(in); got != want {
+			t.Fatalf("normalize %q = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDecoderFillDecodedFramePlanarFormats(t *testing.T) {
+	tests := []struct {
+		name        string
+		format      backend.FrameFormat
+		pixelFormat string
+	}{
+		{
+			name:        "i422",
+			format:      backend.FrameFormat{Width: 16, Height: 8, BitDepth: 8, SubsamplingX: true},
+			pixelFormat: av.PixelFormatI422,
+		},
+		{
+			name:        "i444",
+			format:      backend.FrameFormat{Width: 16, Height: 8, BitDepth: 8},
+			pixelFormat: av.PixelFormatI444,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			decoder := &Decoder{stream: av.Stream{ID: "video", Epoch: 4}}
+			src := backend.Frame{Format: test.format}
+			src.Y.Pix = make([]byte, 128)
+			src.Y.Stride = 16
+			src.Y.Width = 16
+			src.Y.Height = 8
+			src.U.Pix = make([]byte, 64)
+			src.U.Stride = 8
+			src.V.Pix = make([]byte, 64)
+			src.V.Stride = 8
+
+			frame := av.Frame{Planes: make([]av.Plane, 0, 3)}
+			err := decoder.fillDecodedFrame(&av.Packet{
+				StreamID:   "packet-video",
+				CodecEpoch: 9,
+			}, &src, &frame)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if frame.StreamID != "packet-video" || frame.CodecEpoch != 9 || frame.Type != av.MediaVideo {
+				t.Fatalf("frame identity = %+v", frame)
+			}
+			if frame.Video == nil || frame.Video.Width != 16 || frame.Video.Height != 8 ||
+				frame.Video.PixelFormat != test.pixelFormat {
+				t.Fatalf("video = %+v", frame.Video)
+			}
+			if decoder.stream.Codec.PixelFormat != test.pixelFormat {
+				t.Fatalf("stream codec = %+v", decoder.stream.Codec)
+			}
+			if len(frame.Planes) != 3 {
+				t.Fatalf("planes = %d, want 3", len(frame.Planes))
+			}
+			for i := range frame.Planes {
+				if frame.Planes[i].Buffer.Ownership != av.BufferBorrowed ||
+					len(frame.Planes[i].Buffer.Bytes) == 0 ||
+					frame.Planes[i].Stride == 0 {
+					t.Fatalf("plane %d = %+v", i, frame.Planes[i])
+				}
+			}
+		})
+	}
+}
+
 func TestDecoderRTPPayloadAfterLossPreservesSequenceState(t *testing.T) {
 	key := testRTPPayload()
 	delta := testRTPFramePayload()

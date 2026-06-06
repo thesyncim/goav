@@ -30,7 +30,7 @@ type Runtime interface {
 }
 
 type Connection = pipeline.Connection
-type Route = pipeline.Route
+type GraphRoute = pipeline.Route
 
 // Builder describes the intended fluent connection API without constraining the
 // internal graph representation.
@@ -69,6 +69,18 @@ func SelectAudio() av.StreamSelector {
 
 func SelectVideo() av.StreamSelector {
 	return av.StreamSelector{Type: av.MediaVideo}
+}
+
+func Route(from string, to ...string) pipeline.Route {
+	return pipeline.Connect(from, to...)
+}
+
+func StreamRoute(from string, stream av.StreamID, to ...string) pipeline.Route {
+	return Route(from, to...).ByStream(stream)
+}
+
+func EventRoute(from string, event av.EventType, to ...string) pipeline.Route {
+	return Route(from, to...).ByEvent(event)
 }
 
 func From(from string) pipeline.RouteBuilder {

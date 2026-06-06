@@ -76,9 +76,11 @@ validation gates. This roadmap keeps the broader phase view.
   can hand off packets to a different registered depacketizer after payload-map
   refresh, while selected decode graphs fail explicitly until dynamic decoder
   graph rebind policy exists. High-level RTP decode builders can pass explicit
-  decode bounds into adapter-provided state; richer automatic scratch sizing,
-  high-level raw-RTP policy, and additional output formats remain. 8-bit 4:2:0
-  receive is active through both `i420` and `yuv420p` declarations.
+  decode bounds into adapter-provided state; richer automatic scratch sizing
+  and high-level raw-RTP policy remain. 8-bit 4:2:0 receive is active through
+  both `i420` and `yuv420p` declarations, and tagged decoder frame contracts
+  now accept 8-bit 4:2:2/4:4:4 aliases with canonical `i422`/`i444` output
+  mapping; runtime stream fixtures for those broader layouts remain.
 - `goav1` adapter as it matures.
 
 ## Phase 5: High-level API

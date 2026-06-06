@@ -134,9 +134,10 @@ Current tagged surface:
 - concrete `DecodeRTPPayloadInto` for callers that intentionally own raw AV1
   RTP aggregation payload bytes, including retained fragments and after-loss
   recovery that preserves known sequence state
-- borrowed decoded frame planes for 8-bit monochrome `gray8` and 4:2:0 I420;
-  `yuv420p` stream declarations are accepted as the same 4:2:0 layout and
-  normalized to canonical `i420` output
+- borrowed decoded frame-plane mapping for 8-bit monochrome `gray8`, 4:2:0
+  I420, 4:2:2 I422, and 4:4:4 I444; `yuv420p`, `yuv422p`, and `yuv444p`
+  stream declarations are accepted as aliases and normalized to canonical
+  `i420`, `i422`, and `i444` output
 - packet-loss, corrupt-packet, and discontinuity paths reset runner state,
   request keyframes, and drop packets until sync
 - codec-change and discontinuity events update stream identity, reset state,
@@ -162,7 +163,7 @@ graphs.
 
 It is intentionally narrow for now. Richer automatic scratch sizing policy, high
 bit-depth output, color metadata, film grain policy, high-level raw-RTP policy,
-and broader frame format conversion beyond 8-bit 4:2:0 remain future slices.
+and runtime stream fixtures for 4:2:2 and 4:4:4 remain future slices.
 
 ## `resample`
 

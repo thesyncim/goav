@@ -58,6 +58,10 @@ const (
 	PixelFormatGray8   = "gray8"
 	PixelFormatI420    = "i420"
 	PixelFormatYUV420P = "yuv420p"
+	PixelFormatI422    = "i422"
+	PixelFormatYUV422P = "yuv422p"
+	PixelFormatI444    = "i444"
+	PixelFormatYUV444P = "yuv444p"
 )
 
 type TimeBase struct {

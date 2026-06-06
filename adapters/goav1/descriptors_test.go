@@ -15,7 +15,15 @@ func TestDescriptor(t *testing.T) {
 	if desc.Capabilities.Encode {
 		t.Fatal("goav1 descriptor should not claim encode support yet")
 	}
-	for _, pixelFormat := range []string{av.PixelFormatI420, av.PixelFormatYUV420P, av.PixelFormatGray8} {
+	for _, pixelFormat := range []string{
+		av.PixelFormatI420,
+		av.PixelFormatYUV420P,
+		av.PixelFormatI422,
+		av.PixelFormatYUV422P,
+		av.PixelFormatI444,
+		av.PixelFormatYUV444P,
+		av.PixelFormatGray8,
+	} {
 		if !slices.Contains(desc.Capabilities.PixelFormats, pixelFormat) {
 			t.Fatalf("pixel formats = %v, missing %s", desc.Capabilities.PixelFormats, pixelFormat)
 		}

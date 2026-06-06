@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	backend "github.com/thesyncim/goav1"
 )
@@ -28,6 +29,62 @@ func TestDecoderFrameFormatFromBounds(t *testing.T) {
 	}
 	if layout.Size == 0 {
 		t.Fatalf("layout = %+v", layout)
+	}
+}
+
+func TestDecoderFrameFormatFromStreamPixelFormats(t *testing.T) {
+	tests := []struct {
+		name         string
+		pixelFormat  string
+		mono         bool
+		subsamplingX bool
+		subsamplingY bool
+	}{
+		{name: "default", subsamplingX: true, subsamplingY: true},
+		{name: "i420", pixelFormat: av.PixelFormatI420, subsamplingX: true, subsamplingY: true},
+		{name: "yuv420p", pixelFormat: av.PixelFormatYUV420P, subsamplingX: true, subsamplingY: true},
+		{name: "i422", pixelFormat: av.PixelFormatI422, subsamplingX: true},
+		{name: "yuv422p", pixelFormat: av.PixelFormatYUV422P, subsamplingX: true},
+		{name: "i444", pixelFormat: av.PixelFormatI444},
+		{name: "yuv444p", pixelFormat: av.PixelFormatYUV444P},
+		{name: "gray8", pixelFormat: av.PixelFormatGray8, mono: true, subsamplingX: true, subsamplingY: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			format, err := DecoderFrameFormatFromStream(av.Stream{
+				Codec: av.CodecParameters{
+					Width:       64,
+					Height:      48,
+					PixelFormat: test.pixelFormat,
+				},
+			}, codec.DecodeBounds{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if format.Width != 64 || format.Height != 48 || format.BitDepth != 8 ||
+				format.MonoChrome != test.mono ||
+				format.SubsamplingX != test.subsamplingX ||
+				format.SubsamplingY != test.subsamplingY {
+				t.Fatalf("format = %+v", format)
+			}
+			if _, err := backend.FrameRequiredSize(format); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestDecoderFrameFormatFromStreamRejectsUnsupportedPixelFormat(t *testing.T) {
+	_, err := DecoderFrameFormatFromStream(av.Stream{
+		Codec: av.CodecParameters{
+			Width:       64,
+			Height:      48,
+			PixelFormat: "nv12",
+		},
+	}, codec.DecodeBounds{})
+	if !errors.Is(err, codec.ErrUnsupportedFormat) {
+		t.Fatalf("err = %v, want ErrUnsupportedFormat", err)
 	}
 }
 

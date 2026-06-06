@@ -148,8 +148,8 @@ task, err := runtime.New().
     Sink(preview).
     Sink(stats).
     Routes(
-        goav.From("source").To("decode"),
-        goav.From("decode").To("record", "preview", "stats"),
+        goav.Route("source", "decode"),
+        goav.Route("decode", "record", "preview", "stats"),
     ).
     Build(ctx)
 ```

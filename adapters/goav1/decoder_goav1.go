@@ -409,10 +409,16 @@ func normalizeDecoderStream(stream av.Stream, format backend.FrameFormat, pixelF
 }
 
 func normalizeDecoderPixelFormat(pixelFormat string) string {
-	if pixelFormat == av.PixelFormatYUV420P {
+	switch pixelFormat {
+	case av.PixelFormatYUV420P:
 		return av.PixelFormatI420
+	case av.PixelFormatYUV422P:
+		return av.PixelFormatI422
+	case av.PixelFormatYUV444P:
+		return av.PixelFormatI444
+	default:
+		return pixelFormat
 	}
-	return pixelFormat
 }
 
 func (d *Decoder) appendDecodedFrames(pkt *av.Packet, result *backend.DecoderFrameWorkResidualStreamResult, out *codec.DecodeResult) error {
@@ -521,6 +527,12 @@ func backendFramePixelFormat(format backend.FrameFormat) (string, int, error) {
 	}
 	if format.SubsamplingX && format.SubsamplingY {
 		return av.PixelFormatI420, 3, nil
+	}
+	if format.SubsamplingX && !format.SubsamplingY {
+		return av.PixelFormatI422, 3, nil
+	}
+	if !format.SubsamplingX && !format.SubsamplingY {
+		return av.PixelFormatI444, 3, nil
 	}
 	return "", 0, codec.ErrUnsupportedFormat
 }

@@ -82,7 +82,7 @@ type DecoderState struct {
 }
 
 // DecoderFrameFormatFromBounds converts DecodeBounds into the exact default
-// 8-bit 4:2:0 coded frame format used by the first AV1 adapter slice.
+// 8-bit 4:2:0 coded frame format used when no stream pixel format is supplied.
 func DecoderFrameFormatFromBounds(bounds codec.DecodeBounds) (backend.FrameFormat, error) {
 	bounds = normalizeDecoderBounds(bounds)
 	if bounds.MaxWidth <= 0 || bounds.MaxHeight <= 0 {
@@ -103,7 +103,7 @@ func DecoderFrameFormatFromBounds(bounds codec.DecodeBounds) (backend.FrameForma
 }
 
 // DecoderFrameFormatFromStream converts stream metadata and bounds into the
-// exact frame-pool format used by the first AV1 adapter slice.
+// exact frame-pool format used by the AV1 adapter.
 func DecoderFrameFormatFromStream(stream av.Stream, bounds codec.DecodeBounds) (backend.FrameFormat, error) {
 	bounds = normalizeDecoderBounds(bounds)
 	if bounds.MaxWidth <= 0 {
@@ -121,6 +121,14 @@ func DecoderFrameFormatFromStream(stream av.Stream, bounds codec.DecodeBounds) (
 		format.MonoChrome = false
 		format.SubsamplingX = true
 		format.SubsamplingY = true
+	case av.PixelFormatI422, av.PixelFormatYUV422P:
+		format.MonoChrome = false
+		format.SubsamplingX = true
+		format.SubsamplingY = false
+	case av.PixelFormatI444, av.PixelFormatYUV444P:
+		format.MonoChrome = false
+		format.SubsamplingX = false
+		format.SubsamplingY = false
 	case av.PixelFormatGray8:
 		format.MonoChrome = true
 		format.SubsamplingX = true
