@@ -225,6 +225,9 @@ func cloneTrack(track Track) Track {
 	if len(track.CodecPrivate) != 0 {
 		track.CodecPrivate = append([]byte(nil), track.CodecPrivate...)
 	}
+	if len(track.Video.Projection.Private) != 0 {
+		track.Video.Projection.Private = append([]byte(nil), track.Video.Projection.Private...)
+	}
 	return track
 }
 
@@ -1044,6 +1047,12 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 			video.Colour = colour
+		case idProjection:
+			projection, err := d.parseProjection(reader, child)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.Projection = projection
 		default:
 			if err := skipElement(reader, child); err != nil {
 				return VideoConfig{}, err
@@ -1051,6 +1060,57 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 		}
 	}
 	return video, nil
+}
+
+func (d *Demuxer) parseProjection(parent io.Reader, header ebml.Header) (VideoProjectionConfig, error) {
+	if header.Size.Unknown {
+		return VideoProjectionConfig{}, ErrInvalidData
+	}
+	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
+	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	projection := VideoProjectionConfig{Set: true}
+	for limited.N > 0 {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return VideoProjectionConfig{}, err
+		}
+		switch child.ID {
+		case idProjectionType:
+			projection.Type, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoProjectionConfig{}, err
+			}
+		case idProjectionPrivate:
+			value, err := readBinaryPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoProjectionConfig{}, err
+			}
+			projection.Private = value
+		case idProjectionPoseYaw:
+			projection.PoseYaw, err = readProjectionPosePayload(reader, child.Size.Value, -180, 180)
+			if err != nil {
+				return VideoProjectionConfig{}, err
+			}
+		case idProjectionPosePitch:
+			projection.PosePitch, err = readProjectionPosePayload(reader, child.Size.Value, -90, 90)
+			if err != nil {
+				return VideoProjectionConfig{}, err
+			}
+		case idProjectionPoseRoll:
+			projection.PoseRoll, err = readProjectionPosePayload(reader, child.Size.Value, -180, 180)
+			if err != nil {
+				return VideoProjectionConfig{}, err
+			}
+		default:
+			if err := skipElement(reader, child); err != nil {
+				return VideoProjectionConfig{}, err
+			}
+		}
+	}
+	if err := validateVideoProjection(projection); err != nil {
+		return VideoProjectionConfig{}, ErrInvalidData
+	}
+	return projection, nil
 }
 
 func (d *Demuxer) parseColour(parent io.Reader, header ebml.Header) (VideoColourConfig, error) {
@@ -1540,6 +1600,17 @@ func readNonNegativeFloatPayload(r io.Reader, size uint64) (float64, error) {
 		return 0, err
 	}
 	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0, ErrInvalidData
+	}
+	return value, nil
+}
+
+func readProjectionPosePayload(r io.Reader, size uint64, min float64, max float64) (float64, error) {
+	value, err := readFloatPayload(r, size)
+	if err != nil {
+		return 0, err
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < min || value > max {
 		return 0, ErrInvalidData
 	}
 	return value, nil

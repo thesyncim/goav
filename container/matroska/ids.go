@@ -84,6 +84,12 @@ const (
 	idWhitePointY          ebml.ID = 0x55d8
 	idLuminanceMax         ebml.ID = 0x55d9
 	idLuminanceMin         ebml.ID = 0x55da
+	idProjection           ebml.ID = 0x7670
+	idProjectionType       ebml.ID = 0x7671
+	idProjectionPrivate    ebml.ID = 0x7672
+	idProjectionPoseYaw    ebml.ID = 0x7673
+	idProjectionPosePitch  ebml.ID = 0x7674
+	idProjectionPoseRoll   ebml.ID = 0x7675
 	idAudio                ebml.ID = 0xe1
 	idSamplingFreq         ebml.ID = 0xb5
 	idOutputFreq           ebml.ID = 0x78b5

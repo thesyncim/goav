@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -189,7 +190,7 @@ func TestMuxerDemuxerPreservesVideoDisplayMetadata(t *testing.T) {
 	if len(tracks) != 1 {
 		t.Fatalf("tracks = %d, want 1", len(tracks))
 	}
-	if tracks[0].Video != wantVideo {
+	if !reflect.DeepEqual(tracks[0].Video, wantVideo) {
 		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
 	}
 }
@@ -236,7 +237,7 @@ func TestMuxerDemuxerPreservesVideoModeMetadata(t *testing.T) {
 	if len(tracks) != 1 {
 		t.Fatalf("tracks = %d, want 1", len(tracks))
 	}
-	if tracks[0].Video != wantVideo {
+	if !reflect.DeepEqual(tracks[0].Video, wantVideo) {
 		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
 	}
 }
@@ -329,7 +330,111 @@ func TestMuxerDemuxerPreservesVideoColourMetadata(t *testing.T) {
 	if len(tracks) != 1 {
 		t.Fatalf("tracks = %d, want 1", len(tracks))
 	}
-	if tracks[0].Video != wantVideo {
+	if !reflect.DeepEqual(tracks[0].Video, wantVideo) {
+		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
+	}
+}
+
+func TestMuxerDemuxerPreservesVideoProjectionMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVideo := VideoConfig{
+		Width:  640,
+		Height: 360,
+		Projection: VideoProjectionConfig{
+			Set:       true,
+			Type:      1,
+			Private:   []byte{0, 0, 0, 0},
+			PoseYaw:   45,
+			PosePitch: -10.5,
+			PoseRoll:  180,
+		},
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: wantVideo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVideo.Projection.Private[0] = 0xff
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	wantVideo.Projection.Private[0] = 0
+	if !reflect.DeepEqual(tracks[0].Video, wantVideo) {
+		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
+	}
+	tracks[0].Video.Projection.Private[0] = 0xee
+	fresh := demuxer.Tracks()
+	if !bytes.Equal(fresh[0].Video.Projection.Private, []byte{0, 0, 0, 0}) {
+		t.Fatalf("projection private alias was not protected: %x", fresh[0].Video.Projection.Private)
+	}
+}
+
+func TestMuxerDemuxerPreservesDefaultVideoProjectionMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVideo := VideoConfig{
+		Width:  640,
+		Height: 360,
+		Projection: VideoProjectionConfig{
+			Set: true,
+		},
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: wantVideo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if !reflect.DeepEqual(tracks[0].Video, wantVideo) {
 		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
 	}
 }
@@ -2010,6 +2115,54 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			},
 		},
 		{
+			name: "video projection type",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{
+					Width:      16,
+					Height:     16,
+					Projection: VideoProjectionConfig{Set: true, Type: -1},
+				},
+			},
+		},
+		{
+			name: "video projection private on rectangular",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{
+					Width:      16,
+					Height:     16,
+					Projection: VideoProjectionConfig{Set: true, Type: 0, Private: []byte{0}},
+				},
+			},
+		},
+		{
+			name: "video projection private missing",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{
+					Width:      16,
+					Height:     16,
+					Projection: VideoProjectionConfig{Set: true, Type: 1},
+				},
+			},
+		},
+		{
+			name: "video projection pose",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{
+					Width:      16,
+					Height:     16,
+					Projection: VideoProjectionConfig{Set: true, PosePitch: 90.1},
+				},
+			},
+		},
+		{
 			name: "default duration",
 			track: Track{
 				Type:              TrackVideo,
@@ -2925,6 +3078,54 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
 			return writeTracksWithVideoMasteringFloatElements(writer,
 				colourFloatElement{idLuminanceMin, -0.1},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video projection type overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoProjectionMetadata(writer,
+				[]projectionUIntElement{{idProjectionType, maxIntValue + 1}},
+				nil,
+				nil,
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video projection private on rectangular", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoProjectionMetadata(writer,
+				[]projectionUIntElement{{idProjectionType, 0}},
+				nil,
+				[]byte{0},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video projection private missing", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoProjectionMetadata(writer,
+				[]projectionUIntElement{{idProjectionType, 1}},
+				nil,
+				nil,
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video projection pose range", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoProjectionMetadata(writer,
+				[]projectionUIntElement{{idProjectionType, 0}},
+				[]projectionFloatElement{{idProjectionPosePitch, 90.1}},
+				nil,
 			)
 		})
 		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
@@ -4230,6 +4431,70 @@ func writeTracksWithVideoColourMetadata(writer *ebml.Writer, uints []colourUIntE
 		}
 	}
 	if err := vw.WriteElement(idColour, colour.Bytes()); err != nil {
+		return err
+	}
+	if err := ew.WriteElement(idVideo, video.Bytes()); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+type projectionUIntElement struct {
+	id    ebml.ID
+	value uint64
+}
+
+type projectionFloatElement struct {
+	id    ebml.ID
+	value float64
+}
+
+func writeTracksWithVideoProjectionMetadata(writer *ebml.Writer, uints []projectionUIntElement, floats []projectionFloatElement, private []byte) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	if err := ew.WriteUInt(idTrackNumber, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, matroskaTrackVideo); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, "V_VP8"); err != nil {
+		return err
+	}
+	var video bytes.Buffer
+	vw := ebml.NewWriter(&video)
+	if err := vw.WriteUInt(idPixelWidth, 16); err != nil {
+		return err
+	}
+	if err := vw.WriteUInt(idPixelHeight, 16); err != nil {
+		return err
+	}
+	var projection bytes.Buffer
+	pw := ebml.NewWriter(&projection)
+	for i := range uints {
+		if err := pw.WriteUInt(uints[i].id, uints[i].value); err != nil {
+			return err
+		}
+	}
+	for i := range floats {
+		if err := pw.WriteFloat64(floats[i].id, floats[i].value); err != nil {
+			return err
+		}
+	}
+	if len(private) != 0 {
+		if err := writeBinary(pw, idProjectionPrivate, private); err != nil {
+			return err
+		}
+	}
+	if err := vw.WriteElement(idProjection, projection.Bytes()); err != nil {
 		return err
 	}
 	if err := ew.WriteElement(idVideo, video.Bytes()); err != nil {

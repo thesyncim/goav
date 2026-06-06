@@ -46,6 +46,7 @@ type VideoConfig struct {
 	DisplayHeight   int
 	DisplayUnit     int
 	Colour          VideoColourConfig
+	Projection      VideoProjectionConfig
 }
 
 type VideoColourConfig struct {
@@ -99,6 +100,15 @@ type VideoMasteringMetadataConfig struct {
 	LuminanceMaxSet            bool
 	LuminanceMin               float64
 	LuminanceMinSet            bool
+}
+
+type VideoProjectionConfig struct {
+	Set       bool
+	Type      int
+	Private   []byte
+	PoseYaw   float64
+	PosePitch float64
+	PoseRoll  float64
 }
 
 type Track struct {

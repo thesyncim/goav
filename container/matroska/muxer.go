@@ -113,6 +113,9 @@ func (m *Muxer) AddTrack(track Track) (uint32, error) {
 	if len(track.CodecPrivate) != 0 {
 		track.CodecPrivate = append([]byte(nil), track.CodecPrivate...)
 	}
+	if len(track.Video.Projection.Private) != 0 {
+		track.Video.Projection.Private = append([]byte(nil), track.Video.Projection.Private...)
+	}
 	m.tracks = append(m.tracks, track)
 	return track.ID, nil
 }
@@ -1585,7 +1588,44 @@ func writeVideo(w *ebml.Writer, video VideoConfig) error {
 			return err
 		}
 	}
+	if videoProjectionHasMetadata(video.Projection) {
+		if err := writeProjection(vw, video.Projection); err != nil {
+			return err
+		}
+	}
 	return w.WriteElement(idVideo, payload.Bytes())
+}
+
+func videoProjectionHasMetadata(projection VideoProjectionConfig) bool {
+	return projection.Set ||
+		projection.Type != 0 ||
+		len(projection.Private) != 0 ||
+		projection.PoseYaw != 0 ||
+		projection.PosePitch != 0 ||
+		projection.PoseRoll != 0
+}
+
+func writeProjection(w *ebml.Writer, projection VideoProjectionConfig) error {
+	var payload bytes.Buffer
+	pw := ebml.NewWriter(&payload)
+	if err := pw.WriteUInt(idProjectionType, uint64(projection.Type)); err != nil {
+		return err
+	}
+	if len(projection.Private) != 0 {
+		if err := writeBinary(pw, idProjectionPrivate, projection.Private); err != nil {
+			return err
+		}
+	}
+	if err := pw.WriteFloat64(idProjectionPoseYaw, projection.PoseYaw); err != nil {
+		return err
+	}
+	if err := pw.WriteFloat64(idProjectionPosePitch, projection.PosePitch); err != nil {
+		return err
+	}
+	if err := pw.WriteFloat64(idProjectionPoseRoll, projection.PoseRoll); err != nil {
+		return err
+	}
+	return w.WriteElement(idProjection, payload.Bytes())
 }
 
 func videoColourHasMetadata(colour VideoColourConfig) bool {
@@ -1787,6 +1827,9 @@ func validateTrack(track Track) error {
 		if err := validateVideoColour(track.Video.Colour); err != nil {
 			return err
 		}
+		if err := validateVideoProjection(track.Video.Projection); err != nil {
+			return err
+		}
 		switch track.Codec {
 		case CodecAV1:
 			if len(track.CodecPrivate) != 0 {
@@ -1829,6 +1872,32 @@ func validateVideoColour(colour VideoColourConfig) error {
 		return ErrInvalidTrack
 	}
 	return validateMasteringMetadata(colour.MasteringMetadata)
+}
+
+func validateVideoProjection(projection VideoProjectionConfig) error {
+	if projection.Type < 0 {
+		return ErrInvalidTrack
+	}
+	if len(projection.Private) != 0 && projection.Type == 0 {
+		return ErrInvalidTrack
+	}
+	if projection.Type >= 1 && projection.Type <= 3 && len(projection.Private) == 0 {
+		return ErrInvalidTrack
+	}
+	if err := validateProjectionPose(projection.PoseYaw, -180, 180); err != nil {
+		return err
+	}
+	if err := validateProjectionPose(projection.PosePitch, -90, 90); err != nil {
+		return err
+	}
+	return validateProjectionPose(projection.PoseRoll, -180, 180)
+}
+
+func validateProjectionPose(value float64, min float64, max float64) error {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < min || value > max {
+		return ErrInvalidTrack
+	}
+	return nil
 }
 
 func validateMasteringMetadata(metadata VideoMasteringMetadataConfig) error {

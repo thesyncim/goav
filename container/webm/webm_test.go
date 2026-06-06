@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -56,6 +57,17 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 		Type:  TrackAudio,
 		Codec: CodecOpus,
 		Audio: AudioConfig{SampleRate: -1, Channels: 2},
+	}); !errors.Is(err, matroska.ErrInvalidTrack) {
+		t.Fatalf("err = %v, want matroska.ErrInvalidTrack", err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{
+			Width:      16,
+			Height:     16,
+			Projection: VideoProjectionConfig{Set: true, PoseYaw: 180.1},
+		},
 	}); !errors.Is(err, matroska.ErrInvalidTrack) {
 		t.Fatalf("err = %v, want matroska.ErrInvalidTrack", err)
 	}
@@ -149,7 +161,7 @@ func TestMuxerDemuxerPreservesVideoDisplayMetadata(t *testing.T) {
 	if len(tracks) != 1 {
 		t.Fatalf("tracks = %d, want 1", len(tracks))
 	}
-	if tracks[0].Video != wantVideo {
+	if !reflect.DeepEqual(tracks[0].Video, wantVideo) {
 		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
 	}
 }
@@ -196,7 +208,7 @@ func TestMuxerDemuxerPreservesVideoModeMetadata(t *testing.T) {
 	if len(tracks) != 1 {
 		t.Fatalf("tracks = %d, want 1", len(tracks))
 	}
-	if tracks[0].Video != wantVideo {
+	if !reflect.DeepEqual(tracks[0].Video, wantVideo) {
 		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
 	}
 }
@@ -289,7 +301,58 @@ func TestMuxerDemuxerPreservesVideoColourMetadata(t *testing.T) {
 	if len(tracks) != 1 {
 		t.Fatalf("tracks = %d, want 1", len(tracks))
 	}
-	if tracks[0].Video != wantVideo {
+	if !reflect.DeepEqual(tracks[0].Video, wantVideo) {
+		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
+	}
+}
+
+func TestMuxerDemuxerPreservesVideoProjectionMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVideo := VideoConfig{
+		Width:  640,
+		Height: 360,
+		Projection: VideoProjectionConfig{
+			Set:       true,
+			Type:      1,
+			Private:   []byte{0, 0, 0, 0},
+			PoseYaw:   45,
+			PosePitch: -10.5,
+			PoseRoll:  180,
+		},
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: wantVideo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if !reflect.DeepEqual(tracks[0].Video, wantVideo) {
 		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
 	}
 }
