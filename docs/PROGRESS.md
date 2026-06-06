@@ -31,12 +31,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `av` | reset helpers, ownership docs, RTP timebase helpers, allocation-free timestamp and duration rescale/compare helpers | richer timestamp metadata helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages, decode bounds for realtime adapter scratch planning | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
-| `pipeline` | direct executor, bounded buffered executor, fanout, first-class node-to-node connections, branch helpers, stream/event routing options, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, graph specs with detail-aware text/DOT/Mermaid rendering | richer realtime buffered graph proofs |
+| `pipeline` | direct executor, bounded buffered executor, fanout, first-class node-to-node connections, branch helpers, stream/event routing options, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, graph specs with detail-aware text/DOT/Mermaid rendering | buffered live receive graph proofs |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh, stream-scoped EOS for single-stream readers | richer multi-stream receive |
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
-| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph connections and branches with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, multi-RTP/WebRTC packet-reader record/fanout compiler | next codec adapter validation |
+| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph connections and branches with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler | buffered RTP/WebRTC receive proof |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` and default-build optional video adapters report unavailable factories explicitly | AV1 tagged decode once the sibling module is a clean dependency and the stream runner can bind from decode bounds without hidden allocation |
 
 ## Implementation Order
@@ -147,7 +147,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     outputs, bounded by `BufferPolicy`, while preserving immutable pass-through,
     drop behavior, and unsafe-lifetime rejection when no bound is configured.
     Done.
-46. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+46. Prove `WithBufferPolicy(...).Transcode(plan)` on a multi-output runtime
+    graph: unsafe encoder-owned packet payloads fail without copy bounds and
+    reach every mux output with copied bytes when `CopyPacketBytes` is set.
+    Done.
+47. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -283,6 +287,10 @@ Required proof:
   shared drop controller, shares immutable media buffers, copies borrowed packet
   payloads and frame planes into policy-bounded preallocated slots, and rejects
   borrowed media when no copy bound is configured.
+- Runtime `Transcode(plan)` uses the same graph policy: a shared-decode
+  multi-rendition graph fails on unsafe encoder-owned packet payloads without a
+  copy bound and delivers copied encoded payloads to multiple mux outputs when
+  `CopyPacketBytes` is configured.
 
 ## Adapter Targets
 
@@ -327,10 +335,9 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: prove the buffered-copy surface inside larger realtime
-receive and multi-output transcode graphs, then extend the next concrete video
-path, likely AV1 decode, if the sibling module surface is ready without
-expanding the core import graph.
+Current pressure point: prove the buffered-copy surface inside RTP/WebRTC live
+receive graphs, then extend the next concrete video path, likely AV1 decode, if
+the sibling module surface is ready without expanding the core import graph.
 
 ## Validation Gates
 

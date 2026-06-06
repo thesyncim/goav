@@ -77,13 +77,14 @@ func (d *remuxTestDemuxer) Close() error {
 }
 
 type remuxTestMuxer struct {
-	opened         bool
-	closed         bool
-	writes         int
-	streamCount    int
-	lastStream     av.StreamID
-	openedStreams  []av.StreamID
-	writtenStreams []av.StreamID
+	opened          bool
+	closed          bool
+	writes          int
+	streamCount     int
+	lastStream      av.StreamID
+	openedStreams   []av.StreamID
+	writtenStreams  []av.StreamID
+	writtenPayloads []byte
 }
 
 func (m *remuxTestMuxer) Format() av.FormatID {
@@ -104,6 +105,9 @@ func (m *remuxTestMuxer) Write(_ context.Context, packet *av.Packet, _ *format.W
 	m.writes++
 	m.lastStream = packet.StreamID
 	m.writtenStreams = append(m.writtenStreams, packet.StreamID)
+	if len(packet.Payload.Bytes) != 0 {
+		m.writtenPayloads = append(m.writtenPayloads, packet.Payload.Bytes[0])
+	}
 	return nil
 }
 

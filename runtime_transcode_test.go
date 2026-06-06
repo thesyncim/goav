@@ -1,7 +1,9 @@
 package goav
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/transcode"
 )
 
@@ -122,6 +125,73 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderBufferedTranscodeRequiresPacketCopyBound(t *testing.T) {
+	builder, _, _, _, _ := newBufferedTranscodeCopyFixture(pipeline.BufferPolicy{
+		Capacity: 8,
+		Drop:     pipeline.DropOldest,
+	})
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(context.Background()); !errors.Is(err, pipeline.ErrBufferedMessageUnsafe) {
+		t.Fatalf("err = %v, want ErrBufferedMessageUnsafe", err)
+	}
+}
+
+func TestRuntimeBuilderBufferedTranscodeCopiesEncodedPacketsToOutputs(t *testing.T) {
+	builder, demuxer, muxers, decoder, encoderFactory := newBufferedTranscodeCopyFixture(pipeline.BufferPolicy{
+		Capacity:        8,
+		Drop:            pipeline.DropOldest,
+		CopyPacketBytes: 8,
+	})
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(planned.String(), "decode-audio -> encode-audio-main") ||
+		!strings.Contains(planned.String(), "encode-audio-low -> preview.ogg") {
+		t.Fatalf("planned:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || len(encoderFactory.encoders) != 2 ||
+		encoderFactory.encoders[0].encodes != 1 || encoderFactory.encoders[1].encodes != 1 {
+		t.Fatalf("decodes=%d encoders=%+v", decoder.decodes, encoderFactory.encoders)
+	}
+	if len(muxers.muxers) != 2 {
+		t.Fatalf("muxers = %d, want 2", len(muxers.muxers))
+	}
+	archive := muxers.muxers[0]
+	preview := muxers.muxers[1]
+	if !streamIDsUnorderedEqual(archive.writtenStreams, []av.StreamID{"audio-main", "audio-low"}) ||
+		!bytes.Equal(archive.writtenPayloads, []byte{7, 7}) {
+		t.Fatalf("archive written streams=%+v payloads=%+v", archive.writtenStreams, archive.writtenPayloads)
+	}
+	if !streamIDsEqual(preview.writtenStreams, []av.StreamID{"audio-low"}) ||
+		!bytes.Equal(preview.writtenPayloads, []byte{7}) {
+		t.Fatalf("preview written streams=%+v payloads=%+v", preview.writtenStreams, preview.writtenPayloads)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !decoder.closed || !encoderFactory.encoders[0].closed || !encoderFactory.encoders[1].closed ||
+		!archive.closed || !preview.closed {
+		t.Fatalf("closed demux=%v decoder=%v encoders=%+v archive=%v preview=%v", demuxer.closed, decoder.closed, encoderFactory.encoders, archive.closed, preview.closed)
+	}
+}
+
 func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{
@@ -223,6 +293,81 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 	if !resampler.closed {
 		t.Fatal("resampler not closed")
 	}
+}
+
+func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (Builder, *decodeTestDemuxer, *remuxTestMuxerFactory, *decodeTestDecoder, *encodeTestEncoderFactory) {
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload: av.Buffer{
+				Bytes:     []byte{1, 2, 3},
+				Ownership: av.BufferImmutable,
+			},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := format.NewRegistry(
+		format.WithProber(remuxTestProber{streams: streams}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		format.WithMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &decodeTestDecoder{}
+	encoderFactory := &encodeTestEncoderFactory{}
+	codecs := codec.NewRegistry(
+		codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		codec.WithEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
+	)
+	plan := transcode.Plan{
+		Input: format.Input{Name: "input.ogg"},
+		Renditions: []transcode.Rendition{
+			{
+				Name:     "audio-main",
+				Selector: SelectAudio(),
+				Encode:   pcmEncodeConfig(),
+				Labels:   []string{"archive"},
+			},
+			{
+				Name:     "audio-low",
+				Selector: SelectAudio(),
+				Encode:   pcmEncodeConfig(),
+				Labels:   []string{"archive", "preview"},
+			},
+		},
+		Outputs: []transcode.Output{
+			{
+				Name:       "archive.ogg",
+				Format:     av.FormatOgg,
+				Renditions: []string{"archive"},
+			},
+			{
+				Name:       "preview.ogg",
+				Format:     av.FormatOgg,
+				Renditions: []string{"audio-low"},
+			},
+		},
+	}
+	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs), WithBufferPolicy(policy)).New().
+		Transcode(plan)
+	return builder, demuxer, muxers, decoder, encoderFactory
+}
+
+func streamIDsUnorderedEqual(got []av.StreamID, want []av.StreamID) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := make(map[av.StreamID]int, len(want))
+	for i := range got {
+		seen[got[i]]++
+	}
+	for i := range want {
+		if seen[want[i]] == 0 {
+			return false
+		}
+		seen[want[i]]--
+	}
+	return true
 }
 
 func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
