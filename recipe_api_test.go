@@ -1044,6 +1044,10 @@ func TestReadmeTranscodeLadderRecipeIsSmall(t *testing.T) {
 		strings.Contains(text, "encode-360p -> web.webm") {
 		t.Fatalf("branch labels leaked:\n%s", text)
 	}
+	intent := job.Intent()
+	if len(intent.Streams) != 2 || !intent.Streams[0].Decode || !intent.Streams[1].Decode {
+		t.Fatalf("intent: %+v", intent)
+	}
 }
 
 func TestTranscodeRecipeSingleBranchUsesOutputLabel(t *testing.T) {

@@ -424,7 +424,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Video().Resize(...).VP9(...).To(...)` while muxed outputs still require an
     explicit encoder.
     Done.
-135. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+135. Remove the redundant transcode branch `.Decode()` method because transcode
+    branches decode by definition before transforms and the terminal encoder.
+    Done.
+136. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

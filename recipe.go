@@ -2079,11 +2079,6 @@ type StreamBuilder struct {
 	index int
 }
 
-func (b *StreamBuilder) Decode() *StreamBuilder {
-	b.current().decode = true
-	return b
-}
-
 func (b *StreamBuilder) Resize(width int, height int, options ...ResizeOption) *StreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {

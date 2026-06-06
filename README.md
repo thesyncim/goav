@@ -109,9 +109,9 @@ for _, edge := range spec.Edges {
   an output and currently carries at most one resize or resample transform.
   Branch names are required and unique; output labels are required and unique,
   and each branch lists each output once. Share one output by reusing its label
-  in `.To(...)` on each branch. Branch transforms come before one terminal
-  encoder. Resize dimensions, resample rates, and channel counts must be
-  positive.
+  in `.To(...)` on each branch. Branches decode implicitly, transforms come
+  before one terminal encoder, and resize dimensions, resample rates, and
+  channel counts must be positive.
 - `goav.WebRTCTrack(track)` adapts a Pion `TrackRemote` into the same realtime
   receive path as RTP.
 - `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive
