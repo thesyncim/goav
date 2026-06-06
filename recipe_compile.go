@@ -163,6 +163,7 @@ func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 		validateTranscodeIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
 		validateTranscodeAttachmentsPass(),
+		validateTranscodeOutputBindingsPass(),
 		planTranscodeIntentPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerTranscodePlanPass(),
@@ -332,6 +333,12 @@ func validateTranscodeIntentShapePass() recipeCompilePass {
 func validateTranscodeAttachmentsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode attachments", fn: func(state *recipeCompileState) error {
 		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeOutputAttachments)
+	}}
+}
+
+func validateTranscodeOutputBindingsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate transcode output bindings", fn: func(state *recipeCompileState) error {
+		return validateTranscodeOutputBindings(state.intent, state.transcodeOutputAttachments)
 	}}
 }
 

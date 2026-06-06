@@ -331,6 +331,36 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 	}
 }
 
+func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
+	state := recipeCompileState{
+		operation: transcodeRecipeOperation,
+		intent: Intent{
+			Inputs: []InputIntent{{Name: "input.ivf"}},
+			Streams: []StreamIntent{{
+				Name:    "360p",
+				Select:  StreamSelect{Type: av.MediaVideo},
+				Encode:  VP9(Bitrate(600_000)),
+				RouteTo: []string{"missing"},
+			}},
+			Outputs: []OutputIntent{{Name: "web.ivf"}},
+		},
+		transcodeOutputAttachments: []namedOutputSpec{{
+			name:   "web",
+			output: FileOutput("web.ivf", io.Discard),
+		}},
+	}
+
+	err := validateTranscodeOutputBindingsPass().Apply(&state)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "output missing is referenced but not defined") ||
+		!strings.Contains(err.Error(), "define shared outputs once") {
+		t.Fatalf("err = %v, want output binding guidance", err)
+	}
+}
+
 func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	job := Record(
 		FileInput("input.ivf", strings.NewReader("")),

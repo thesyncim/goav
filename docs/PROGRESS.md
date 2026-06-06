@@ -623,6 +623,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     branch routes, duplicate branch names, and transform shape now fail from
     public `Intent`, while RTP rejection and mux-output attachment validation
     stay in a concrete attachment pass before plan lowering. Done.
+187. Bind transcode branch routes before plan lowering: every branch `.To(...)`
+    label is now checked against concrete `.Output(label, ...)` attachments in
+    its own compiler pass, with public coverage for undefined output labels.
+    Done.
 
 ## First Vertical Slice
 
@@ -854,8 +858,9 @@ migration graph-compiler selection, and planned spec emission also flow through
 a private recipe compiler state that carries captured recipe attachments instead
 of raw recipe builder pointers. Ordinary stream recipe lowering and transcode
 branch planning now read `Intent.Streams`, ordinary output attachments are no
-longer split into builder-shaped fields, and attachment consistency is checked
-before lowering.
+longer split into builder-shaped fields, attachment consistency is checked
+before lowering, and transcode branch output routes bind in their own pass
+before mux-group plan assembly.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

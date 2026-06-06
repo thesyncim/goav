@@ -1985,22 +1985,6 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 	}
 	for i := range streams {
 		stream := streams[i]
-		for _, label := range stream.RouteTo {
-			if _, ok := outputs[label]; ok {
-				continue
-			}
-			return transcodepkg.Plan{}, &BuildError{
-				Code:      "output_missing",
-				Operation: transcodeRecipeOperation,
-				Node:      stream.Name,
-				Reason:    "output " + label + " is referenced but not defined",
-				Suggestions: []string{
-					"call .Output(" + label + ", goav.FileOutput(...))",
-					"define shared outputs once and route branches by label",
-				},
-				Cause: ErrUnsupportedBuild,
-			}
-		}
 		renditionName := stream.Name
 		selector := streamIntentSelector(stream)
 		rendition := transcodepkg.Rendition{
@@ -2129,6 +2113,20 @@ func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpe
 	return nil
 }
 
+func validateTranscodeOutputBindings(intent Intent, namedOutputs []namedOutputSpec) error {
+	outputs := transcodeOutputLabelSet(namedOutputs)
+	for i := range intent.Streams {
+		stream := intent.Streams[i]
+		for _, label := range stream.RouteTo {
+			if _, ok := outputs[label]; ok {
+				continue
+			}
+			return transcodeOutputReferenceMissingError(stream, label)
+		}
+	}
+	return nil
+}
+
 func transcodeOutputAttachmentSet(namedOutputs []namedOutputSpec) (map[string]OutputSpec, []string) {
 	outputs := make(map[string]OutputSpec, len(namedOutputs))
 	outputOrder := make([]string, 0, len(namedOutputs))
@@ -2138,6 +2136,14 @@ func transcodeOutputAttachmentSet(namedOutputs []namedOutputSpec) (map[string]Ou
 		outputs[name] = namedOutputs[i].output.Name(firstNonEmpty(namedOutputs[i].output.name, name))
 	}
 	return outputs, outputOrder
+}
+
+func transcodeOutputLabelSet(namedOutputs []namedOutputSpec) map[string]struct{} {
+	outputs := make(map[string]struct{}, len(namedOutputs))
+	for i := range namedOutputs {
+		outputs[namedOutputs[i].name] = struct{}{}
+	}
+	return outputs
 }
 
 func transcodeStreamMissingError() error {
@@ -2176,6 +2182,20 @@ func transcodeBranchOutputMissingError(stream StreamIntent) error {
 		Suggestions: []string{
 			"call .To(\"label\") and define it with .Output(label, goav.FileOutput(...))",
 			"reuse the same output label from multiple branches when they should share an output",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeOutputReferenceMissingError(stream StreamIntent, label string) error {
+	return &BuildError{
+		Code:      "output_missing",
+		Operation: transcodeRecipeOperation,
+		Node:      stream.Name,
+		Reason:    "output " + label + " is referenced but not defined",
+		Suggestions: []string{
+			"call .Output(" + label + ", goav.FileOutput(...))",
+			"define shared outputs once and route branches by label",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

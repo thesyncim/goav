@@ -1488,6 +1488,23 @@ func TestTranscodeRecipeRejectsDuplicateBranchOutputLabels(t *testing.T) {
 	}
 }
 
+func TestTranscodeRecipeRejectsUndefinedOutputLabel(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("720p").VP9(2_000_000).To("missing").
+		Output("web", goav.FileOutput("web.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "output missing is referenced but not defined") ||
+		!strings.Contains(err.Error(), `.Output(missing, goav.FileOutput`) ||
+		!strings.Contains(err.Error(), "define shared outputs once") {
+		t.Fatalf("err = %v, want undefined output label guidance", err)
+	}
+}
+
 func TestTranscodeRecipeRejectsEmptyOutputLabel(t *testing.T) {
 	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").VP9(2_000_000).
