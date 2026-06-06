@@ -79,9 +79,10 @@ Current milestone:
 - H.264 tracks validate caller-provided AVCDecoderConfigurationRecord
   codec-private data on mux and demux before exposing or writing track
   metadata.
-- H.264 packet muxing converts public Annex B access units into length-prefixed
-  AVC samples when AVC codec-private data is available; demuxing converts those
-  AVC samples back into Annex B packets for the public API.
+- H.264 packet muxing converts public Annex B access units, including laced
+  frames, into length-prefixed AVC samples when AVC codec-private data is
+  available; demuxing converts those AVC samples back into Annex B packets for
+  the public API.
 - AV1 tracks validate caller-provided AV1CodecConfigurationRecord codec-private
   data on mux and demux before exposing or writing track metadata.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with

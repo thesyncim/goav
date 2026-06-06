@@ -172,17 +172,37 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 	if m.closed {
 		return ErrClosed
 	}
-	if packet.TrackID == 0 || !m.hasTrack(packet.TrackID) {
+	track, ok := m.track(packet.TrackID)
+	if packet.TrackID == 0 || !ok {
 		return ErrUnknownTrack
 	}
 	if packet.TimeNS < 0 {
 		return ErrInvalidData
 	}
-	lacing, err := lacingFlag(packet.Lacing, packet.Frames)
+	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+		return m.writeH264LacedPacket(packet, track)
+	}
+	return m.writeLacedPacket(packet, track, nil)
+}
+
+func (m *Muxer) writeH264LacedPacket(packet LacedPacket, track Track) error {
+	if len(packet.Frames) < 2 || len(packet.Frames) > defaultMaxLaceFrames {
+		return ErrInvalidData
+	}
+	var sizeScratch [defaultMaxLaceFrames]int
+	muxedFrameSizes := sizeScratch[:len(packet.Frames)]
+	if err := h264LacedFrameSizes(packet.Frames, track, muxedFrameSizes); err != nil {
+		return err
+	}
+	return m.writeLacedPacket(packet, track, muxedFrameSizes)
+}
+
+func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSizes []int) error {
+	lacing, err := lacingFlag(packet.Lacing, packet.Frames, muxedFrameSizes)
 	if err != nil {
 		return err
 	}
-	payloadSize, err := m.lacedBlockPayloadSize(packet, lacing)
+	payloadSize, err := m.lacedBlockPayloadSize(packet, lacing, muxedFrameSizes)
 	if err != nil {
 		return err
 	}
@@ -206,7 +226,7 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 		return ErrTimecodeOverflow
 	}
 	relativePosition := m.relativeClusterPosition()
-	if err := m.writeLacedBlock(packet, int16(delta), lacing, payloadSize); err != nil {
+	if err := m.writeLacedBlock(packet, int16(delta), lacing, payloadSize, track, muxedFrameSizes); err != nil {
 		return err
 	}
 	if endTime > m.maxTimeNS {
@@ -751,7 +771,7 @@ func (m *Muxer) writeBlock(id ebml.ID, packet Packet, blockTimecode int16, flags
 	return err
 }
 
-func (m *Muxer) writeLacedBlock(packet LacedPacket, blockTimecode int16, lacing byte, payloadSize uint64) error {
+func (m *Muxer) writeLacedBlock(packet LacedPacket, blockTimecode int16, lacing byte, payloadSize uint64, track Track, muxedFrameSizes []int) error {
 	if err := m.ebml.WriteHeader(idSimpleBlock, payloadSize); err != nil {
 		return err
 	}
@@ -770,11 +790,11 @@ func (m *Muxer) writeLacedBlock(packet LacedPacket, blockTimecode int16, lacing 
 	}
 	switch lacing {
 	case simpleBlockLacingXiph:
-		if err := m.writeXiphLaceSizes(packet.Frames); err != nil {
+		if err := m.writeXiphLaceSizes(packet.Frames, muxedFrameSizes); err != nil {
 			return err
 		}
 	case simpleBlockLacingEBML:
-		if err := m.writeEBMLLaceSizes(packet.Frames); err != nil {
+		if err := m.writeEBMLLaceSizes(packet.Frames, muxedFrameSizes); err != nil {
 			return err
 		}
 	case simpleBlockLacingFixed:
@@ -782,6 +802,12 @@ func (m *Muxer) writeLacedBlock(packet LacedPacket, blockTimecode int16, lacing 
 		return ErrUnsupportedLacing
 	}
 	for i := range packet.Frames {
+		if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+			if err := h264WriteMuxedPayload(m.ebml, track, packet.Frames[i], &m.blockScratch); err != nil {
+				return err
+			}
+			continue
+		}
 		if _, err := m.ebml.Write(packet.Frames[i]); err != nil {
 			return err
 		}
@@ -789,9 +815,9 @@ func (m *Muxer) writeLacedBlock(packet LacedPacket, blockTimecode int16, lacing 
 	return nil
 }
 
-func (m *Muxer) writeXiphLaceSizes(frames [][]byte) error {
+func (m *Muxer) writeXiphLaceSizes(frames [][]byte, sizes []int) error {
 	for i := 0; i < len(frames)-1; i++ {
-		size := len(frames[i])
+		size := framePayloadSize(frames, sizes, i)
 		for size >= 255 {
 			m.blockScratch[0] = 255
 			if _, err := m.ebml.Write(m.blockScratch[:1]); err != nil {
@@ -807,17 +833,18 @@ func (m *Muxer) writeXiphLaceSizes(frames [][]byte) error {
 	return nil
 }
 
-func (m *Muxer) writeEBMLLaceSizes(frames [][]byte) error {
-	n, err := ebml.EncodeUnsignedVINT(m.blockScratch[:], uint64(len(frames[0])))
+func (m *Muxer) writeEBMLLaceSizes(frames [][]byte, sizes []int) error {
+	n, err := ebml.EncodeUnsignedVINT(m.blockScratch[:], uint64(framePayloadSize(frames, sizes, 0)))
 	if err != nil {
 		return err
 	}
 	if _, err := m.ebml.Write(m.blockScratch[:n]); err != nil {
 		return err
 	}
-	previous := len(frames[0])
+	previous := framePayloadSize(frames, sizes, 0)
 	for i := 1; i < len(frames)-1; i++ {
-		delta := len(frames[i]) - previous
+		current := framePayloadSize(frames, sizes, i)
+		delta := current - previous
 		n, err := encodeSignedLaceSizeVINT(m.blockScratch[:], int64(delta))
 		if err != nil {
 			return err
@@ -825,7 +852,7 @@ func (m *Muxer) writeEBMLLaceSizes(frames [][]byte) error {
 		if _, err := m.ebml.Write(m.blockScratch[:n]); err != nil {
 			return err
 		}
-		previous = len(frames[i])
+		previous = current
 	}
 	return nil
 }
@@ -890,13 +917,13 @@ func scaledReferenceBlockTicks(timeNS int64, scaleNS int64) int64 {
 	return timeNS / scaleNS
 }
 
-func lacingFlag(mode LacingMode, frames [][]byte) (byte, error) {
+func lacingFlag(mode LacingMode, frames [][]byte, sizes []int) (byte, error) {
 	if len(frames) < 2 || len(frames) > 256 {
 		return 0, ErrInvalidData
 	}
 	switch mode {
 	case LacingAuto:
-		if equalFrameSizes(frames) {
+		if equalFrameSizes(frames, sizes) {
 			return simpleBlockLacingFixed, nil
 		}
 		return simpleBlockLacingEBML, nil
@@ -905,7 +932,7 @@ func lacingFlag(mode LacingMode, frames [][]byte) (byte, error) {
 	case LacingEBML:
 		return simpleBlockLacingEBML, nil
 	case LacingFixed:
-		if !equalFrameSizes(frames) {
+		if !equalFrameSizes(frames, sizes) {
 			return 0, ErrInvalidData
 		}
 		return simpleBlockLacingFixed, nil
@@ -914,17 +941,24 @@ func lacingFlag(mode LacingMode, frames [][]byte) (byte, error) {
 	}
 }
 
-func equalFrameSizes(frames [][]byte) bool {
+func equalFrameSizes(frames [][]byte, sizes []int) bool {
 	if len(frames) == 0 {
 		return true
 	}
-	size := len(frames[0])
+	size := framePayloadSize(frames, sizes, 0)
 	for i := 1; i < len(frames); i++ {
-		if len(frames[i]) != size {
+		if framePayloadSize(frames, sizes, i) != size {
 			return false
 		}
 	}
 	return true
+}
+
+func framePayloadSize(frames [][]byte, sizes []int, index int) int {
+	if len(sizes) != 0 {
+		return sizes[index]
+	}
+	return len(frames[index])
 }
 
 func (m *Muxer) lacedPacketEndTime(packet LacedPacket) (int64, error) {
@@ -943,13 +977,27 @@ func (m *Muxer) lacedPacketEndTime(packet LacedPacket) (int64, error) {
 	return packet.TimeNS + totalDuration, nil
 }
 
-func (m *Muxer) lacedBlockPayloadSize(packet LacedPacket, lacing byte) (uint64, error) {
+func h264LacedFrameSizes(frames [][]byte, track Track, sizes []int) error {
+	if len(sizes) != len(frames) {
+		return ErrInvalidData
+	}
+	for i := range frames {
+		size, _, err := h264MuxedPayloadSize(track, frames[i])
+		if err != nil {
+			return err
+		}
+		sizes[i] = size
+	}
+	return nil
+}
+
+func (m *Muxer) lacedBlockPayloadSize(packet LacedPacket, lacing byte, muxedFrameSizes []int) (uint64, error) {
 	trackWidth, err := ebml.UnsignedVINTWidth(uint64(packet.TrackID))
 	if err != nil {
 		return 0, err
 	}
 	size := uint64(trackWidth + 3 + 1)
-	laceSize, err := laceSizePayloadWidth(packet.Frames, lacing)
+	laceSize, err := laceSizePayloadWidth(packet.Frames, muxedFrameSizes, lacing)
 	if err != nil {
 		return 0, err
 	}
@@ -958,7 +1006,7 @@ func (m *Muxer) lacedBlockPayloadSize(packet LacedPacket, lacing byte) (uint64, 
 		return 0, err
 	}
 	for i := range packet.Frames {
-		size, err = checkedAddUint64(size, uint64(len(packet.Frames[i])))
+		size, err = checkedAddUint64(size, uint64(framePayloadSize(packet.Frames, muxedFrameSizes, i)))
 		if err != nil {
 			return 0, err
 		}
@@ -966,34 +1014,35 @@ func (m *Muxer) lacedBlockPayloadSize(packet LacedPacket, lacing byte) (uint64, 
 	return size, nil
 }
 
-func laceSizePayloadWidth(frames [][]byte, lacing byte) (uint64, error) {
+func laceSizePayloadWidth(frames [][]byte, sizes []int, lacing byte) (uint64, error) {
 	switch lacing {
 	case simpleBlockLacingXiph:
 		var size uint64
 		for i := 0; i < len(frames)-1; i++ {
-			size += uint64(len(frames[i])/255 + 1)
+			size += uint64(framePayloadSize(frames, sizes, i)/255 + 1)
 		}
 		return size, nil
 	case simpleBlockLacingFixed:
-		if !equalFrameSizes(frames) {
+		if !equalFrameSizes(frames, sizes) {
 			return 0, ErrInvalidData
 		}
 		return 0, nil
 	case simpleBlockLacingEBML:
-		width, err := ebml.UnsignedVINTWidth(uint64(len(frames[0])))
+		width, err := ebml.UnsignedVINTWidth(uint64(framePayloadSize(frames, sizes, 0)))
 		if err != nil {
 			return 0, err
 		}
 		size := uint64(width)
-		previous := len(frames[0])
+		previous := framePayloadSize(frames, sizes, 0)
 		for i := 1; i < len(frames)-1; i++ {
-			delta := len(frames[i]) - previous
+			current := framePayloadSize(frames, sizes, i)
+			delta := current - previous
 			width, err := signedLaceSizeVINTWidth(int64(delta))
 			if err != nil {
 				return 0, err
 			}
 			size += uint64(width)
-			previous = len(frames[i])
+			previous = current
 		}
 		return size, nil
 	default:

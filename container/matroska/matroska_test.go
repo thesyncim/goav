@@ -452,6 +452,66 @@ func TestMuxerWritesH264AnnexBPacketsAsAVCSamples(t *testing.T) {
 	}
 }
 
+func TestMuxerWritesLacedH264AnnexBFramesAsAVCSamples(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackVideo,
+		Codec:             CodecH264,
+		DefaultDurationNS: 20_000_000,
+		Video:             VideoConfig{Width: 16, Height: 16},
+		CodecPrivate:      h264AVCDecoderConfigWithLengthSize(2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := [][]byte{h264AnnexBAccessUnit(), h264AnnexBInterFrame()}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingEBML,
+		Frames:   frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	avc := append(h264AVCSampleWithLengthSize2(), h264AVCInterFrameWithLengthSize2()...)
+	if !bytes.Contains(buffer.Bytes(), avc) {
+		t.Fatalf("muxed data does not contain laced AVC samples %v", avc)
+	}
+	for i := range frames {
+		if bytes.Contains(buffer.Bytes(), frames[i]) {
+			t.Fatalf("muxed data still contains Annex B frame %d", i)
+		}
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 16)}
+	for i := range frames {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatalf("frame %d read: %v", i, err)
+		}
+		if packet.TrackID != trackID || packet.TimeNS != int64(i)*20_000_000 ||
+			packet.DurationNS != 20_000_000 || !packet.Keyframe ||
+			!bytes.Equal(packet.Data, frames[i]) {
+			t.Fatalf("frame %d packet=%+v data=%v want data=%v", i, packet, packet.Data, frames[i])
+		}
+	}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
 func TestMuxerDemuxerPreservesBlockGroupDuration(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -1930,6 +1990,42 @@ func TestWriteLacedPacketAllocs(t *testing.T) {
 	}
 }
 
+func TestWriteH264LacedPacketAllocs(t *testing.T) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := muxer.AddTrack(Track{
+		Type:              TrackVideo,
+		Codec:             CodecH264,
+		DefaultDurationNS: 20_000_000,
+		Video:             VideoConfig{Width: 16, Height: 16},
+		CodecPrivate:      h264AVCDecoderConfigWithLengthSize(2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := LacedPacket{
+		TrackID:  id,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingEBML,
+		Frames:   [][]byte{h264AnnexBAccessUnit(), h264AnnexBInterFrame()},
+	}
+	if err := muxer.WriteLacedPacket(packet); err != nil {
+		t.Fatal(err)
+	}
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		if err := muxer.WriteLacedPacket(packet); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("allocs = %f, want 0", allocs)
+	}
+}
+
 func TestReadPacketAllocs(t *testing.T) {
 	data := makeMatroskaData(t, 1200)
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
@@ -2217,8 +2313,16 @@ func h264AnnexBAccessUnit() []byte {
 	return []byte{0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x99, 0x00, 0x00, 0x00, 0x01, 0x41, 0x9a}
 }
 
+func h264AnnexBInterFrame() []byte {
+	return []byte{0x00, 0x00, 0x00, 0x01, 0x41, 0xab, 0xcd}
+}
+
 func h264AVCSampleWithLengthSize2() []byte {
 	return []byte{0x00, 0x03, 0x65, 0x88, 0x99, 0x00, 0x02, 0x41, 0x9a}
+}
+
+func h264AVCInterFrameWithLengthSize2() []byte {
+	return []byte{0x00, 0x03, 0x41, 0xab, 0xcd}
 }
 
 func makeLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, defaultDurationNS int64) []byte {

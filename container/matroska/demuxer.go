@@ -31,6 +31,7 @@ type Demuxer struct {
 	laceBuffer      []byte
 	laceFrames      []laceFrame
 	laceTrackID     uint32
+	laceH264Length  int
 	laceTimeNS      int64
 	laceDurationNS  int64
 	laceFrameCount  int
@@ -1026,7 +1027,7 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 		return ErrInvalidData
 	}
 	if lacing != 0 {
-		return d.readLacedBlockPayload(trackNumber, timecode, flags, lacing, dst, simple)
+		return d.readLacedBlockPayload(track, trackNumber, timecode, flags, lacing, dst, simple)
 	}
 	frameSize := int(d.blockLimit.N)
 	if cap(dst.Data) < frameSize {
@@ -1093,7 +1094,7 @@ func drainLimited(r *io.LimitedReader) error {
 	return err
 }
 
-func (d *Demuxer) readLacedBlockPayload(trackID uint32, timecode int64, flags byte, lacing byte, dst *Packet, simple bool) error {
+func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timecode int64, flags byte, lacing byte, dst *Packet, simple bool) error {
 	frameCountByte, err := d.readBlockByte()
 	if err != nil {
 		return err
@@ -1137,6 +1138,19 @@ func (d *Demuxer) readLacedBlockPayload(trackID uint32, timecode int64, flags by
 		offset += d.laceFrames[i].size
 	}
 	d.laceTrackID = trackID
+	d.laceH264Length = 0
+	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+		lengthSize, ok, err := h264TrackNALULengthSize(track)
+		if err != nil {
+			d.clearLace()
+			return err
+		}
+		if !ok {
+			d.clearLace()
+			return ErrInvalidData
+		}
+		d.laceH264Length = lengthSize
+	}
 	d.laceTimeNS = timecode * d.timecodeScaleNS
 	d.laceDurationNS = d.defaultDurationNS(trackID)
 	d.laceFrameCount = frameCount
@@ -1257,11 +1271,26 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 		return ErrInvalidData
 	}
 	frame := d.laceFrames[d.laceFrameIndex]
-	if cap(dst.Data) < frame.size {
+	outSize := frame.size
+	if d.laceH264Length != 0 {
+		size, err := h264AVCToAnnexBSize(d.laceBuffer[frame.offset:frame.offset+frame.size], d.laceH264Length)
+		if err != nil {
+			return err
+		}
+		outSize = size
+	}
+	if cap(dst.Data) < outSize {
 		return ErrPayloadTooSmall
 	}
 	dst.Data = dst.Data[:frame.size]
 	copy(dst.Data, d.laceBuffer[frame.offset:frame.offset+frame.size])
+	if d.laceH264Length != 0 {
+		var err error
+		dst.Data, err = h264AVCToAnnexBInPlace(dst.Data, outSize, d.laceH264Length)
+		if err != nil {
+			return err
+		}
+	}
 	dst.TrackID = d.laceTrackID
 	dst.TimeNS = d.laceTimeNS
 	if d.laceDurationNS > 0 {
@@ -1280,6 +1309,7 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 
 func (d *Demuxer) clearLace() {
 	d.laceTrackID = 0
+	d.laceH264Length = 0
 	d.laceTimeNS = 0
 	d.laceDurationNS = 0
 	d.laceFrameCount = 0
