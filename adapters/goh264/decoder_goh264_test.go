@@ -58,7 +58,7 @@ func TestDecodeAnnexBIntoBorrowedVideoFrame(t *testing.T) {
 	if frame.StreamID != "video" || frame.CodecEpoch != 3 || frame.Type != av.MediaVideo {
 		t.Fatalf("frame identity = %+v", frame)
 	}
-	if frame.Video == nil || frame.Video.Width != 16 || frame.Video.Height != 16 || frame.Video.PixelFormat != "yuv420p" {
+	if frame.Video == nil || frame.Video.Width != 16 || frame.Video.Height != 16 || frame.Video.PixelFormat != av.PixelFormatYUV420P {
 		t.Fatalf("video = %+v", frame.Video)
 	}
 	if frame.PTS.Value != 90 || frame.PTS.Base != av.RTPTimeBase(90000) {
@@ -134,6 +134,119 @@ func TestPacketLossRequestsKeyframe(t *testing.T) {
 	}
 }
 
+func TestFillDecodedFrameAllocs(t *testing.T) {
+	decoder := &Decoder{}
+	if err := decoder.Open(context.Background(), codec.DecodeConfig{Stream: h264TestStream()}); err != nil {
+		t.Fatal(err)
+	}
+	src := decodedH264TestFrame(t)
+	packet := av.Packet{
+		StreamID:   "video",
+		CodecEpoch: 4,
+		PTS:        av.Timestamp{Value: 180, Base: av.RTPTimeBase(90000)},
+		Duration:   av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
+	}
+	frame := av.Frame{Planes: make([]av.Plane, 3)}
+
+	if allocs := testing.AllocsPerRun(1000, func() {
+		frame.Reset()
+		if err := decoder.fillDecodedFrame(&packet, src, &frame); err != nil {
+			t.Fatal(err)
+		}
+	}); allocs != 0 {
+		t.Fatalf("fill decoded frame allocs = %v, want 0", allocs)
+	}
+}
+
+func TestPacketLossKeyframeRequestAllocs(t *testing.T) {
+	ctx := context.Background()
+	decoder, err := NewDecoderFactory().NewDecoder(ctx, codec.DecodeConfig{
+		Stream: h264TestStream(),
+		Resilience: codec.ResiliencePolicy{
+			RequestKeyframes: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := av.Event{Type: av.EventPacketLoss, StreamID: "video"}
+	result := h264DecodeResult(1)
+
+	if allocs := testing.AllocsPerRun(1000, func() {
+		result.Reset()
+		if err := decoder.HandleEvent(ctx, &event); err != nil {
+			t.Fatal(err)
+		}
+		if err := decoder.DecodeInto(ctx, nil, &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Requests) != 1 {
+			t.Fatalf("requests = %d, want 1", len(result.Requests))
+		}
+	}); allocs != 0 {
+		t.Fatalf("keyframe request allocs = %v, want 0", allocs)
+	}
+}
+
+func TestCodecChangedUpdatesStreamIdentity(t *testing.T) {
+	decoder := &Decoder{}
+	if err := decoder.Open(context.Background(), codec.DecodeConfig{Stream: h264TestStream()}); err != nil {
+		t.Fatal(err)
+	}
+	codecParams := av.CodecParameters{
+		ID:          av.CodecH264,
+		Type:        av.MediaVideo,
+		ClockRate:   90000,
+		Width:       16,
+		Height:      16,
+		PixelFormat: av.PixelFormatYUV420P,
+	}
+	event := av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: "replacement",
+		Epoch:    7,
+		Codec:    &codecParams,
+	}
+	if err := decoder.HandleEvent(context.Background(), &event); err != nil {
+		t.Fatal(err)
+	}
+
+	frame := av.Frame{Planes: make([]av.Plane, 3)}
+	if err := decoder.fillDecodedFrame(nil, decodedH264TestFrame(t), &frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame.StreamID != "replacement" || frame.CodecEpoch != 7 {
+		t.Fatalf("frame identity = %+v", frame)
+	}
+}
+
+func TestDecoderCloseIsIdempotentAndStopsUse(t *testing.T) {
+	ctx := context.Background()
+	decoder, err := NewDecoderFactory().NewDecoder(ctx, codec.DecodeConfig{Stream: h264TestStream()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := decoder.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := decoder.Close(); err != nil {
+		t.Fatalf("second close: %v", err)
+	}
+
+	result := h264DecodeResult(1)
+	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{0}}, Keyframe: true}
+	event := av.Event{Type: av.EventCodecChanged, StreamID: "video"}
+	if err := decoder.DecodeInto(ctx, &packet, &result); !errors.Is(err, codec.ErrClosed) {
+		t.Fatalf("decode after close = %v, want ErrClosed", err)
+	}
+	if err := decoder.FlushInto(ctx, &result); !errors.Is(err, codec.ErrClosed) {
+		t.Fatalf("flush after close = %v, want ErrClosed", err)
+	}
+	if err := decoder.HandleEvent(ctx, &event); !errors.Is(err, codec.ErrClosed) {
+		t.Fatalf("event after close = %v, want ErrClosed", err)
+	}
+}
+
 func h264DecodeResult(capacity int) codec.DecodeResult {
 	frames := make([]av.Frame, capacity)
 	for i := range frames {
@@ -158,9 +271,26 @@ func h264TestStream() av.Stream {
 			ClockRate:   90000,
 			Width:       16,
 			Height:      16,
-			PixelFormat: "yuv420p",
+			PixelFormat: av.PixelFormatYUV420P,
 		},
 	}
+}
+
+func decodedH264TestFrame(t *testing.T) *goh264lib.Frame {
+	t.Helper()
+	encoded, _ := encodedAnnexBTestFrame(t)
+	decoder := goh264lib.NewDecoder()
+	frames, err := decoder.DecodeFrames(encoded)
+	if err != nil {
+		t.Fatalf("DecodeFrames: %v", err)
+	}
+	for i := range frames {
+		if frames[i] != nil {
+			return frames[i]
+		}
+	}
+	t.Fatal("no decoded frame")
+	return nil
 }
 
 func encodedAnnexBTestFrame(t *testing.T) ([]byte, []byte) {

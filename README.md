@@ -211,12 +211,13 @@ Implemented slices:
 - Descriptor-only codec adapters are discoverable while unavailable factories
   fail explicitly with `codec.ErrUnavailable`.
 - Build-tagged H264 decode maps real `goh264` output into borrowed `av.Frame`
-  planes and requests keyframes after loss.
+  planes, updates identity on codec changes, requests keyframes after loss, and
+  has adapter-owned allocation and close-lifecycle tests.
 
 Next pressure points:
 
-- Allocation and lifecycle hardening for concrete video decode paths.
-- Concrete video adapter allocation guards beyond the first resize filter.
+- Validate the next concrete video codec adapter that can expose caller-owned
+  or explicitly borrowed frame paths.
 
 ## Working Loop
 

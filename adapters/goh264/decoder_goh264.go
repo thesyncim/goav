@@ -44,6 +44,7 @@ type Decoder struct {
 	requestKeyframes bool
 	dropDamagedVideo bool
 	dropUntilSync    bool
+	closed           bool
 }
 
 func (d *Decoder) Descriptor() codec.Descriptor {
@@ -63,6 +64,7 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	d.requestKeyframes = config.Resilience.RequestKeyframes
 	d.dropDamagedVideo = config.Resilience.DropDamagedVideo
 	d.dropUntilSync = false
+	d.closed = false
 	return d.resetDecoder(d.stream.Codec.ExtraData.Bytes)
 }
 
@@ -72,6 +74,9 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	}
 	if out == nil {
 		return codec.ErrNilResult
+	}
+	if d.closed {
+		return codec.ErrClosed
 	}
 	if d.decoder == nil {
 		return codec.ErrUnsupportedFormat
@@ -110,6 +115,9 @@ func (d *Decoder) FlushInto(ctx context.Context, out *codec.DecodeResult) error 
 	if out == nil {
 		return codec.ErrNilResult
 	}
+	if d.closed {
+		return codec.ErrClosed
+	}
 	if d.decoder == nil {
 		return nil
 	}
@@ -127,6 +135,9 @@ func (d *Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if event == nil {
 		return nil
 	}
+	if d.closed {
+		return codec.ErrClosed
+	}
 	switch event.Type {
 	case av.EventPacketLoss:
 		d.dropUntilSync = true
@@ -139,6 +150,10 @@ func (d *Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
 }
 
 func (d *Decoder) Close() error {
+	if d.closed {
+		return nil
+	}
+	d.closed = true
 	d.decoder = nil
 	return nil
 }

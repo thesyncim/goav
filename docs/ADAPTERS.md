@@ -127,9 +127,13 @@ Current tagged surface:
 - codec-change and discontinuity events reset decoder state
 - packet-loss paths request keyframes through `codec.ControlRequest`
 - decoded 8-bit Y/Cb/Cr planes are exposed as borrowed `av.Frame` planes
+- adapter-owned borrowed-frame mapping and keyframe request emission have
+  zero-allocation hot-path tests
+- close is idempotent and later decode, flush, or event calls return
+  `codec.ErrClosed`
 
 It is decode-only and intentionally narrow for now: no high bit-depth output,
-no color conversion, no encode adapter, and no allocation guard yet.
+no color conversion and no encode adapter.
 
 ## Descriptor-only Boundaries
 
