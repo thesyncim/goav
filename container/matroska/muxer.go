@@ -16,6 +16,11 @@ type Muxer struct {
 	tracks          []Track
 	headerWritten   bool
 	clusterOpen     bool
+	seekable        bool
+	segmentPatch    ebml.SizePatch
+	segmentSized    bool
+	clusterPatch    ebml.SizePatch
+	clusterSized    bool
 	clusterTimecode int64
 	closed          bool
 	scratch         [18]byte
@@ -39,6 +44,11 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.tracks = m.tracks[:0]
 	m.headerWritten = false
 	m.clusterOpen = false
+	_, m.seekable = w.(io.Seeker)
+	m.segmentPatch = ebml.SizePatch{}
+	m.segmentSized = false
+	m.clusterPatch = ebml.SizePatch{}
+	m.clusterSized = false
 	m.clusterTimecode = 0
 	m.closed = false
 }
@@ -118,6 +128,18 @@ func (m *Muxer) Close() error {
 			return err
 		}
 	}
+	if m.clusterSized {
+		if err := m.ebml.FinishSizedElement(m.clusterPatch); err != nil {
+			return err
+		}
+		m.clusterSized = false
+	}
+	if m.segmentSized {
+		if err := m.ebml.FinishSizedElement(m.segmentPatch); err != nil {
+			return err
+		}
+		m.segmentSized = false
+	}
 	m.closed = true
 	return nil
 }
@@ -150,8 +172,17 @@ func (m *Muxer) writeHeader() error {
 	if err := m.writeEBMLHeader(); err != nil {
 		return err
 	}
-	if err := m.ebml.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
-		return err
+	if !m.options.Streaming && m.seekable {
+		patch, err := m.ebml.StartSizedElement(idSegment, ebml.MaxSizeWidth)
+		if err != nil {
+			return err
+		}
+		m.segmentPatch = patch
+		m.segmentSized = true
+	} else {
+		if err := m.ebml.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
+			return err
+		}
 	}
 	if err := m.writeInfo(); err != nil {
 		return err
@@ -217,8 +248,23 @@ func (m *Muxer) writeTracks() error {
 }
 
 func (m *Muxer) startCluster(timecode int64) error {
-	if err := m.ebml.WriteUnknownHeader(idCluster, ebml.MaxSizeWidth); err != nil {
-		return err
+	if m.clusterSized {
+		if err := m.ebml.FinishSizedElement(m.clusterPatch); err != nil {
+			return err
+		}
+		m.clusterSized = false
+	}
+	if !m.options.Streaming && m.seekable {
+		patch, err := m.ebml.StartSizedElement(idCluster, ebml.MaxSizeWidth)
+		if err != nil {
+			return err
+		}
+		m.clusterPatch = patch
+		m.clusterSized = true
+	} else {
+		if err := m.ebml.WriteUnknownHeader(idCluster, ebml.MaxSizeWidth); err != nil {
+			return err
+		}
 	}
 	if err := m.ebml.WriteUInt(idTimestamp, uint64(timecode)); err != nil {
 		return err
@@ -229,12 +275,59 @@ func (m *Muxer) startCluster(timecode int64) error {
 }
 
 func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16) error {
+	if packet.DurationNS > 0 {
+		return m.writeBlockGroup(packet, blockTimecode)
+	}
+	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet))
+}
+
+func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16) error {
+	durationTicks := scaledDurationTicks(packet.DurationNS, m.options.TimecodeScaleNS)
+	if durationTicks == 0 {
+		return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet))
+	}
+	trackWidth, err := ebml.UnsignedVINTWidth(uint64(packet.TrackID))
+	if err != nil {
+		return err
+	}
+	blockPayloadSize := uint64(trackWidth + 3 + len(packet.Data))
+	blockHeaderSize, err := elementEncodedSize(idBlock, blockPayloadSize)
+	if err != nil {
+		return err
+	}
+	durationElementSize, err := uintElementEncodedSize(idBlockDuration, durationTicks)
+	if err != nil {
+		return err
+	}
+	groupSize := blockHeaderSize + blockPayloadSize + durationElementSize
+	if !packet.Keyframe {
+		referenceSize, err := intElementEncodedSize(idReferenceBlk, 0)
+		if err != nil {
+			return err
+		}
+		groupSize += referenceSize
+	}
+	if err := m.ebml.WriteHeader(idBlockGroup, groupSize); err != nil {
+		return err
+	}
+	if !packet.Keyframe {
+		if err := m.ebml.WriteInt(idReferenceBlk, 0); err != nil {
+			return err
+		}
+	}
+	if err := m.ebml.WriteUInt(idBlockDuration, durationTicks); err != nil {
+		return err
+	}
+	return m.writeBlock(idBlock, packet, blockTimecode, blockFlags(packet))
+}
+
+func (m *Muxer) writeBlock(id ebml.ID, packet Packet, blockTimecode int16, flags byte) error {
 	trackWidth, err := ebml.UnsignedVINTWidth(uint64(packet.TrackID))
 	if err != nil {
 		return err
 	}
 	size := uint64(trackWidth + 3 + len(packet.Data))
-	if err := m.ebml.WriteHeader(idSimpleBlock, size); err != nil {
+	if err := m.ebml.WriteHeader(id, size); err != nil {
 		return err
 	}
 	n, err := ebml.EncodeUnsignedVINT(m.blockScratch[:], uint64(packet.TrackID))
@@ -242,6 +335,15 @@ func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16) error {
 		return err
 	}
 	binary.BigEndian.PutUint16(m.blockScratch[n:n+2], uint16(blockTimecode))
+	m.blockScratch[n+2] = flags
+	if _, err := m.ebml.Write(m.blockScratch[:n+3]); err != nil {
+		return err
+	}
+	_, err = m.ebml.Write(packet.Data)
+	return err
+}
+
+func simpleBlockFlags(packet Packet) byte {
 	flags := byte(0)
 	if packet.Keyframe {
 		flags |= simpleBlockKeyframe
@@ -252,12 +354,88 @@ func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16) error {
 	if packet.Discardable {
 		flags |= simpleBlockDiscardable
 	}
-	m.blockScratch[n+2] = flags
-	if _, err := m.ebml.Write(m.blockScratch[:n+3]); err != nil {
-		return err
+	return flags
+}
+
+func blockFlags(packet Packet) byte {
+	if packet.Invisible {
+		return simpleBlockInvisible
 	}
-	_, err = m.ebml.Write(packet.Data)
-	return err
+	return 0
+}
+
+func scaledDurationTicks(durationNS int64, scaleNS int64) uint64 {
+	if durationNS <= 0 || scaleNS <= 0 {
+		return 0
+	}
+	value := durationNS / scaleNS
+	if durationNS%scaleNS != 0 {
+		value++
+	}
+	return uint64(value)
+}
+
+func elementEncodedSize(id ebml.ID, payloadSize uint64) (uint64, error) {
+	idWidth, err := ebml.IDWidth(id)
+	if err != nil {
+		return 0, err
+	}
+	sizeWidth, err := ebml.SizeVINTWidth(payloadSize)
+	if err != nil {
+		return 0, err
+	}
+	return uint64(idWidth + sizeWidth), nil
+}
+
+func uintElementEncodedSize(id ebml.ID, value uint64) (uint64, error) {
+	payloadSize := uint64(uintPayloadWidthLocal(value))
+	headerSize, err := elementEncodedSize(id, payloadSize)
+	if err != nil {
+		return 0, err
+	}
+	return headerSize + payloadSize, nil
+}
+
+func intElementEncodedSize(id ebml.ID, value int64) (uint64, error) {
+	payloadSize := uint64(intPayloadWidthLocal(value))
+	headerSize, err := elementEncodedSize(id, payloadSize)
+	if err != nil {
+		return 0, err
+	}
+	return headerSize + payloadSize, nil
+}
+
+func uintPayloadWidthLocal(value uint64) int {
+	switch {
+	case value <= 0xff:
+		return 1
+	case value <= 0xffff:
+		return 2
+	case value <= 0xffffff:
+		return 3
+	case value <= 0xffffffff:
+		return 4
+	case value <= 0xffffffffff:
+		return 5
+	case value <= 0xffffffffffff:
+		return 6
+	case value <= 0xffffffffffffff:
+		return 7
+	default:
+		return 8
+	}
+}
+
+func intPayloadWidthLocal(value int64) int {
+	for width := 1; width < 8; width++ {
+		shift := uint(width * 8)
+		min := int64(-1) << (shift - 1)
+		max := int64(1)<<(shift-1) - 1
+		if value >= min && value <= max {
+			return width
+		}
+	}
+	return 8
 }
 
 func writeTrackEntry(w *ebml.Writer, track Track, scratch *[18]byte) error {

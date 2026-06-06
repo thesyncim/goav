@@ -21,6 +21,8 @@ type Demuxer struct {
 	clusterEnd      int64
 	clusterTimecode int64
 	blockLimit      io.LimitedReader
+	groupLimit      io.LimitedReader
+	groupReader     *ebml.Reader
 	blockHeader     [3]byte
 	scratch         [ebml.MaxSizeWidth]byte
 	uintScratch     [8]byte
@@ -39,6 +41,9 @@ func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
 
 func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.reader = ebml.NewReader(r, ebml.ReaderOptions{MaxElementSize: opts.MaxElementSize})
+	if d.groupReader == nil {
+		d.groupReader = ebml.NewReader(&d.groupLimit, ebml.ReaderOptions{MaxElementSize: opts.MaxElementSize})
+	}
 	d.options = opts
 	d.docType = ""
 	d.timecodeScaleNS = defaultTimecodeScaleNS
@@ -95,6 +100,8 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 				d.clusterTimecode = int64(value)
 			case idSimpleBlock:
 				return d.readSimpleBlock(header, dst)
+			case idBlockGroup:
+				return d.readBlockGroup(header, dst)
 			case idVoid, idCRC32:
 				if err := skipElement(d.reader, header); err != nil {
 					return err
@@ -447,8 +454,67 @@ func (d *Demuxer) readSimpleBlock(header ebml.Header, dst *Packet) error {
 	if header.Size.Unknown {
 		return ErrInvalidData
 	}
+	return d.readBlockPayload(d.reader, header.Size.Value, dst, true)
+}
+
+func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
+	if header.Size.Unknown {
+		return ErrInvalidData
+	}
+	dst.Reset()
+	d.groupLimit.R = d.reader
+	d.groupLimit.N = int64(header.Size.Value)
+	d.groupReader.Reset(&d.groupLimit, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	haveBlock := false
+	referenceSeen := false
+	durationTicks := uint64(0)
+	for d.groupLimit.N > 0 {
+		child, err := d.groupReader.ReadHeader()
+		if err != nil {
+			return err
+		}
+		switch child.ID {
+		case idBlock:
+			if err := d.readBlockPayload(d.groupReader, child.Size.Value, dst, false); err != nil {
+				return err
+			}
+			haveBlock = true
+		case idBlockDuration:
+			value, err := readUIntPayloadScratch(d.groupReader, child.Size.Value, &d.uintScratch)
+			if err != nil {
+				return err
+			}
+			durationTicks = value
+		case idReferenceBlk:
+			if _, err := readIntPayload(d.groupReader, child.Size.Value); err != nil {
+				return err
+			}
+			referenceSeen = true
+		default:
+			if err := skipElement(d.groupReader, child); err != nil {
+				return err
+			}
+		}
+	}
+	if !haveBlock {
+		return ErrInvalidData
+	}
+	if durationTicks != 0 {
+		if durationTicks > uint64(math.MaxInt64)/uint64(d.timecodeScaleNS) {
+			return ErrInvalidData
+		}
+		dst.DurationNS = int64(durationTicks) * d.timecodeScaleNS
+	}
+	dst.Keyframe = !referenceSeen
+	return nil
+}
+
+func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple bool) error {
 	d.blockLimit.R = d.reader
-	d.blockLimit.N = int64(header.Size.Value)
+	if r != nil {
+		d.blockLimit.R = r
+	}
+	d.blockLimit.N = int64(size)
 	trackID, _, err := ebml.ReadUnsignedVINT(&d.blockLimit, &d.scratch)
 	if err != nil {
 		return err
@@ -479,9 +545,13 @@ func (d *Demuxer) readSimpleBlock(header ebml.Header, dst *Packet) error {
 	}
 	dst.TrackID = uint32(trackID)
 	dst.TimeNS = timecode * d.timecodeScaleNS
-	dst.Keyframe = flags&simpleBlockKeyframe != 0
+	if simple {
+		dst.Keyframe = flags&simpleBlockKeyframe != 0
+	}
 	dst.Invisible = flags&simpleBlockInvisible != 0
-	dst.Discardable = flags&simpleBlockDiscardable != 0
+	if simple {
+		dst.Discardable = flags&simpleBlockDiscardable != 0
+	}
 	return nil
 }
 

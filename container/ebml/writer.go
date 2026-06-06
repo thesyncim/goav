@@ -93,6 +93,19 @@ func (w *Writer) WriteUInt(id ID, value uint64) error {
 	return err
 }
 
+func (w *Writer) WriteInt(id ID, value int64) error {
+	n := intPayloadWidth(value)
+	if err := w.WriteHeader(id, uint64(n)); err != nil {
+		return err
+	}
+	for i := n - 1; i >= 0; i-- {
+		w.scratch[i] = byte(value)
+		value >>= 8
+	}
+	_, err := w.Write(w.scratch[:n])
+	return err
+}
+
 func (w *Writer) WriteFloat64(id ID, value float64) error {
 	if err := w.WriteHeader(id, 8); err != nil {
 		return err
@@ -186,6 +199,18 @@ func uintPayloadWidth(value uint64) int {
 	default:
 		return 8
 	}
+}
+
+func intPayloadWidth(value int64) int {
+	for width := 1; width < 8; width++ {
+		shift := uint(width * 8)
+		min := int64(-1) << (shift - 1)
+		max := int64(1)<<(shift-1) - 1
+		if value >= min && value <= max {
+			return width
+		}
+	}
+	return 8
 }
 
 func writeFull(w io.Writer, payload []byte) (int, error) {

@@ -27,6 +27,12 @@ func NewReader(r io.Reader, options ReaderOptions) *Reader {
 	return &Reader{r: r, options: options}
 }
 
+func (r *Reader) Reset(input io.Reader, options ReaderOptions) {
+	r.r = input
+	r.offset = 0
+	r.options = options
+}
+
 func (r *Reader) Offset() int64 {
 	if r == nil {
 		return 0

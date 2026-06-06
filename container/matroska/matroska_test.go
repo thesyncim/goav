@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/container/ebml"
 	"github.com/thesyncim/goav/format"
 )
 
@@ -94,6 +95,118 @@ func TestMuxerDemuxerRoundTrip(t *testing.T) {
 	}
 	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
 		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
+func TestMuxerDemuxerPreservesBlockGroupDuration(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{
+		TrackID:    trackID,
+		TimeNS:     40_000_000,
+		DurationNS: 20_000_000,
+		Keyframe:   false,
+		Data:       []byte{0x11, 0x22, 0x33},
+	}
+	if err := muxer.WritePacket(packet); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != packet.TrackID || got.TimeNS != packet.TimeNS || got.DurationNS != packet.DurationNS ||
+		got.Keyframe || !bytes.Equal(got.Data, packet.Data) {
+		t.Fatalf("packet = %+v data=%v, want %+v data=%v", got, got.Data, packet, packet.Data)
+	}
+}
+
+func TestSeekableMuxerPatchesSegmentAndClusterSizes(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{1, 2, 3},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reader := ebmlReader(t, ws.bytes)
+	header, err := reader.ReadHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if header.ID != idEBML {
+		t.Fatalf("first id = 0x%x, want EBML", uint64(header.ID))
+	}
+	if err := reader.Skip(header.Size.Value); err != nil {
+		t.Fatal(err)
+	}
+	segment, err := reader.ReadHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if segment.ID != idSegment || segment.Size.Unknown {
+		t.Fatalf("segment = %+v, want known-size segment", segment)
+	}
+	var sawKnownCluster bool
+	segmentEnd := segment.DataOffset + int64(segment.Size.Value)
+	for reader.Offset() < segmentEnd {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if child.ID == idCluster {
+			if child.Size.Unknown {
+				t.Fatalf("cluster size is unknown in seekable mode")
+			}
+			sawKnownCluster = true
+			break
+		}
+		if child.Size.Unknown {
+			t.Fatalf("unexpected unknown child before cluster: %+v", child)
+		}
+		if err := reader.Skip(child.Size.Value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !sawKnownCluster {
+		t.Fatalf("did not find known-size cluster")
 	}
 }
 
@@ -298,8 +411,47 @@ func makeMatroskaData(tb testing.TB, packets int) []byte {
 	return buffer.Bytes()
 }
 
+func ebmlReader(tb testing.TB, data []byte) *ebml.Reader {
+	tb.Helper()
+	return ebml.NewReader(bytes.NewReader(data), ebml.ReaderOptions{})
+}
+
 type discardWriter struct{}
 
 func (discardWriter) Write(payload []byte) (int, error) {
 	return len(payload), nil
+}
+
+type memoryWriteSeeker struct {
+	bytes []byte
+	pos   int64
+}
+
+func (m *memoryWriteSeeker) Write(p []byte) (int, error) {
+	end := m.pos + int64(len(p))
+	if end > int64(len(m.bytes)) {
+		next := make([]byte, end)
+		copy(next, m.bytes)
+		m.bytes = next
+	}
+	copy(m.bytes[m.pos:end], p)
+	m.pos = end
+	return len(p), nil
+}
+
+func (m *memoryWriteSeeker) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+	case io.SeekCurrent:
+		offset += m.pos
+	case io.SeekEnd:
+		offset += int64(len(m.bytes))
+	default:
+		return 0, errors.New("invalid whence")
+	}
+	if offset < 0 {
+		return 0, errors.New("negative offset")
+	}
+	m.pos = offset
+	return offset, nil
 }

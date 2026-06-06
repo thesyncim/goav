@@ -198,6 +198,34 @@ func TestSeekableSizePatch(t *testing.T) {
 	}
 }
 
+func TestWriteAndValidateCRC32(t *testing.T) {
+	payload := []byte("matroska")
+	var out bytes.Buffer
+	writer := NewWriter(&out)
+	if err := writer.WriteCRC32(payload); err != nil {
+		t.Fatal(err)
+	}
+	reader := NewReader(bytes.NewReader(out.Bytes()), ReaderOptions{})
+	header, err := reader.ReadHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if header.ID != CRC32ID || header.Size.Value != 4 {
+		t.Fatalf("header = %+v", header)
+	}
+	var stored [4]byte
+	if err := reader.ReadFull(stored[:]); err != nil {
+		t.Fatal(err)
+	}
+	if !ValidateCRC32(stored[:], payload) {
+		t.Fatalf("crc did not validate")
+	}
+	stored[0] ^= 0xff
+	if ValidateCRC32(stored[:], payload) {
+		t.Fatalf("corrupt crc validated")
+	}
+}
+
 func FuzzDecodeSizeVINT(f *testing.F) {
 	for _, seed := range [][]byte{
 		{0x80},

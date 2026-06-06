@@ -46,6 +46,11 @@ Current milestone:
   sizes, skipping, Void writing, and seekable size patching.
 - Matroska EBML header, Segment, Info, Tracks, Cluster, and SimpleBlock.
 - Unknown-size Segment and Cluster mode for streaming-style output.
+- Seekable Segment and Cluster size patching when the writer implements
+  `io.Seeker`.
+- BlockGroup reading and writing for single-frame blocks with BlockDuration;
+  non-keyframe BlockGroups use `ReferenceBlock=0` when exact dependency
+  information is not available.
 - Matroska mux/demux for Opus, PCMU, PCMA, VP8, VP9, AV1, H.264, and H.265
   track declarations, with WebM enforcing Opus, VP8, VP9, and AV1 only.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata.
@@ -56,8 +61,8 @@ Current milestone:
 
 These are intentionally not in the first milestone:
 
-- Cues, SeekHead, duration patching, and random seeking.
-- BlockGroup writing, BlockDuration writing, ReferenceBlock, and lacing.
+- Cues, SeekHead, Info Duration patching, and random seeking.
+- Multiple-reference BlockGroup writing and lacing.
 - Chapters, tags, attachments, language variants, default/forced flags beyond
   basic defaults, and unknown-element preservation.
 - Full codec-private parsers for every codec family.
@@ -84,9 +89,11 @@ The default scale is 1 ms, matching common Matroska/WebM practice. Tests use
 timestamps that round-trip exactly at that scale. Callers that need nanosecond
 precision can set `TimecodeScaleNS` to `1`.
 
-SimpleBlock stores a signed 16-bit timestamp relative to the active Cluster.
-The muxer starts a new Cluster when the relative timestamp would overflow or
-when `ClusterMaxDurationNS` is reached.
+SimpleBlock and Block store a signed 16-bit timestamp relative to the active
+Cluster. The muxer starts a new Cluster when the relative timestamp would
+overflow or when `ClusterMaxDurationNS` is reached. When `DurationNS` is set,
+the muxer writes a single-frame BlockGroup with BlockDuration in timestamp-scale
+ticks.
 
 ## Codec Mapping
 
