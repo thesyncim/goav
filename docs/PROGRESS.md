@@ -253,7 +253,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Capabilities` carries only concrete media compatibility lists. Done.
 77. Prune the central planned-backend list: adapter discovery now has one path
     through descriptors registered by adapter packages. Done.
-78. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+78. Prune the bundled RTP receiver interface: receive keeps the direct
+    `PacketReader` and `FeedbackWriter` contracts without a second combined
+    name. Done.
+79. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

@@ -76,7 +76,7 @@ type trackReader struct {
 }
 
 var _ rtpav.PacketReader = (*trackReader)(nil)
-var _ rtpav.Receiver = (*trackReader)(nil)
+var _ rtpav.FeedbackWriter = (*trackReader)(nil)
 
 func newTrackReader(remote RemoteTrack, reader trackRTPReader) *trackReader {
 	stream := streamFromRemoteTrack(remote)

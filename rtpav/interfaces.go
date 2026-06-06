@@ -118,8 +118,3 @@ type PacketReader interface {
 	Events() <-chan av.Event
 	Close() error
 }
-
-type Receiver interface {
-	PacketReader
-	FeedbackWriter
-}
