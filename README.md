@@ -259,7 +259,8 @@ policies, and graph specs. It is valuable for custom realtime systems, but it
 is no longer the first API a normal record/transcode workflow has to learn.
 The reusable component catalog in [docs/COMPONENTS.md](docs/COMPONENTS.md)
 describes the same building blocks recipes compile to and expert graphs wire
-directly.
+directly. Current component proofs cover file remux fanout, RTP Opus decode,
+custom stages, decoder EOS flush, and mux write events.
 
 ## Project Shape
 

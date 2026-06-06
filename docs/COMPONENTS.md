@@ -144,6 +144,9 @@ rtpav.Source
 
 Use this for realtime audio analyzers, bots, monitors, and receive pipelines
 that need direct ownership of loss, codec-change, EOS, and feedback behavior.
+`TestComponentRTPOpusDecodeGraph` covers this shape with a Pion RTP packet
+reader boundary, `rtpav.Source`, the Opus depacketizer, a concrete Opus
+decoder, and caller-owned frame buffers.
 
 ### File Remux Fanout
 

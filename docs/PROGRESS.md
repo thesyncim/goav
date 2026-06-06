@@ -726,6 +726,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `codec.DecoderStage` and `format.MuxStage` directly into `pipeline.Graph`
     without recipe builders and verifying EOS flush, mux write events, stats,
     and lifecycle closure. Done.
+212. Prove the direct RTP Opus decode component graph: add
+    `TestComponentRTPOpusDecodeGraph`, wiring a Pion RTP `PacketReader`
+    boundary through `rtpav.Source`, `rtpav.NewOpusDepacketizer`, a concrete
+    `gopus` decoder stage, and a sink without recipe builders, verifying graph
+    spec details, decoded PCM frame facts, stats, and lifecycle closure. Done.
 
 ## First Vertical Slice
 
@@ -1003,6 +1008,8 @@ The second named component proof covers a custom reusable stage that preserves
 events while owning its scratch.
 The third named component proof wires codec and mux stages directly into graphs,
 covering decoder EOS flush ordering, mux write events, stats, and closure.
+The RTP Opus decode component proof now exercises the realtime receive boundary
+through the real Opus depacketizer and decoder without recipe lowering.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and
