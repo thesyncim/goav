@@ -78,8 +78,8 @@ return goav.From(input).
 ```
 
 Taps are meant to work at operation boundaries: after decode, after resize or
-resample, after a custom stage, and after encode. `Tee` remains the planned
-split for reusable flow branches:
+resample, after a custom stage, and after encode. `Tee` is the reusable split
+for flow branches:
 
 ```go
 archive := goav.VideoFlow("archive").
@@ -151,24 +151,25 @@ return goav.From(goav.FileInput("source.webm", in)).
     Video().
     Decode().
     Tap("video.decoded").
-    Branch("v1080").
-    Resize(1920, 1080).
-    VP9(4_000_000).
-    To("watch").
-    Video().
-    Decode().
-    Tap("video.decoded.mobile").
-    Branch("v360").
-    Resize(640, 360).
-    VP8(600_000).
-    To("mobile").
+    Variants(
+        goav.Variant("v1080").
+            Resize(1920, 1080).
+            VP9(4_000_000).
+            To("watch"),
+        goav.Variant("v360").
+            Resize(640, 360).
+            VP8(600_000).
+            To("mobile"),
+    ).
     Audio().
     Decode().
     Tap("audio.decoded").
-    Branch("a96").
-    Resample(48_000, goav.Stereo).
-    Opus(96_000).
-    To("watch", "mobile").
+    Variants(
+        goav.Variant("a96").
+            Resample(48_000, goav.Stereo).
+            Opus(96_000).
+            To("watch", "mobile"),
+    ).
     Output("watch", goav.FileOutput("watch.webm", watch)).
     Output("mobile", goav.FileOutput("mobile.webm", mobile)).
     Run(ctx)
@@ -224,9 +225,23 @@ return goav.From(input).
 ```
 
 Use `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` for metering,
-analysis, preview, stats, and integration points. Full `pipeline.Source`,
-`pipeline.Stage`, and `pipeline.Sink` components remain available through the
-expert graph API.
+analysis, preview, stats, and integration points. Custom components are
+orthogonal: a recipe can add a stage before encode, send decoded frames to a
+custom sink, or attach a late sink from any declared tap on a running task.
+
+```go
+levels := goav.SinkFunc("levels", collectLevel)
+
+return goav.From(input).
+    Audio().
+    Decode().
+    Do(meter).
+    To(goav.FrameSink(levels)).
+    Run(ctx)
+```
+
+Full `pipeline.Source`, `pipeline.Stage`, and `pipeline.Sink` components remain
+available through the expert graph API.
 
 ## Custom Codecs
 
@@ -292,7 +307,10 @@ Implemented now:
 - stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode;
 - custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
   generic `Codec` specs;
-- reusable `AudioFlow` and `VideoFlow` with planned `Tee`;
+- custom stages, sinks, adapter hooks, and late runtime branch sinks as optional
+  composition points instead of a separate workflow model;
+- reusable `AudioFlow` and `VideoFlow` with `Tee`;
+- grouped `Variant(...)` alternatives from one selected stream;
 - branch composition through `Tap(...).Branch(...).To(label).Output(label, ...)`;
 - runtime branch attachment through `Task.Taps()` and `Branch(...).FromTap(...)`;
 - structured `Explain(ctx)` reports with branch operations, taps, decisions, and

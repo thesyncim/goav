@@ -8,14 +8,14 @@ import (
 )
 
 type Plan struct {
-	Name       string
-	Input      format.Input
-	Renditions []Rendition
-	Outputs    []Output
-	Metadata   av.Metadata
+	Name     string
+	Input    format.Input
+	Variants []Variant
+	Outputs  []Output
+	Metadata av.Metadata
 }
 
-type Rendition struct {
+type Variant struct {
 	Name     string
 	Selector av.StreamSelector
 	Decode   bool
@@ -30,7 +30,7 @@ type Output struct {
 	Name           string
 	Target         format.Output
 	Format         av.FormatID
-	Renditions     []string
+	Variants       []string
 	Metadata       av.Metadata
 	resolvedFormat av.FormatID
 }

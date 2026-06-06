@@ -113,7 +113,7 @@ Current graph execution covers:
   share a video decode, audio branches can share an audio decode, and one output
   label is a mux group that can receive coordinated encoded audio and video
   branches. Resize/resample configs insert filter stages through the filter
-  registry, and outputs select branches by rendition name or label.
+  registry, and outputs select branches by branch name or label.
 
 Resize and resample branch configs fail explicitly at build time when no matching
 filter factory is registered.

@@ -843,6 +843,36 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	}
 }
 
+func TestReadmeCustomStageToCustomSinkRecipeIsSmall(t *testing.T) {
+	meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+		return emit.Frame(frame)
+	})
+	sink := goav.SinkFunc("levels", func(context.Context, goav.Message) error {
+		return nil
+	})
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Do(meter).
+		To(goav.FrameSink(sink))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "decode-audio -> meter") ||
+		!strings.Contains(text, "meter -> levels") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || !intent.Streams[0].Decode || intent.Streams[0].Encode.ID != "" ||
+		len(intent.Outputs) != 1 || intent.Outputs[0].Name != "levels" {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
 func TestStreamRecipeNamesCodecChangePolicy(t *testing.T) {
 	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 		return nil
@@ -960,6 +990,80 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 		intent.Streams[0].Encode.ID != av.CodecVP9 ||
 		intent.Streams[0].Encode.Bitrate != 600_000 {
 		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestVariantsGroupSelectedStreamBranches(t *testing.T) {
+	job := goav.From(goav.FileInput("source.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		Tap("video.decoded").
+		Variants(
+			goav.Variant("v1080").
+				Resize(1920, 1080).
+				VP9(4_000_000).
+				To("watch"),
+			goav.Variant("v360").
+				Resize(640, 360).
+				VP8(600_000).
+				To("mobile"),
+		).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		Variants(
+			goav.Variant("a96").
+				Resample(48_000, goav.Stereo).
+				Opus(96_000).
+				To("watch", "mobile"),
+		).
+		Output("watch", goav.FileOutput("watch.webm", io.Discard)).
+		Output("mobile", goav.FileOutput("mobile.webm", io.Discard))
+
+	intent := job.Intent()
+	if len(intent.Streams) != 3 || len(intent.Outputs) != 2 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	tests := []struct {
+		name    string
+		fromTap string
+		codec   av.CodecID
+		outputs []string
+	}{
+		{name: "v1080", fromTap: "video.decoded", codec: av.CodecVP9, outputs: []string{"watch"}},
+		{name: "v360", fromTap: "video.decoded", codec: av.CodecVP8, outputs: []string{"mobile"}},
+		{name: "a96", fromTap: "audio.decoded", codec: av.CodecOpus, outputs: []string{"watch", "mobile"}},
+	}
+	for i := range tests {
+		stream := intent.Streams[i]
+		if stream.Name != tests[i].name || stream.FromTap != tests[i].fromTap ||
+			stream.Encode.ID != tests[i].codec || !equalStrings(stream.RouteTo, tests[i].outputs) {
+			t.Fatalf("stream[%d]=%+v, want %+v", i, stream, tests[i])
+		}
+	}
+	if intent.Streams[0].Transforms[0].Resize.Width != 1920 ||
+		intent.Streams[1].Transforms[0].Resize.Width != 640 ||
+		intent.Streams[2].Transforms[0].Resample.SampleRate != 48_000 {
+		t.Fatalf("variant transforms: %+v", intent.Streams)
+	}
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	for _, want := range []string{
+		"decode-video -> resize-v1080",
+		"decode-video -> resize-v360",
+		"decode-audio -> resample-a96",
+		"encode-v1080 -> watch.webm",
+		"encode-v360 -> mobile.webm",
+		"encode-a96 -> watch.webm",
+		"encode-a96 -> mobile.webm",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec missing %q:\n%s", want, text)
+		}
 	}
 }
 
@@ -1944,19 +2048,23 @@ func TestStreamRecipeRejectsWorkInProgressRecipeEncoder(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeRejectsUnsupportedRecipeEncoder(t *testing.T) {
+func TestStreamRecipeReportsMissingCustomEncoder(t *testing.T) {
+	rt := goav.New(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
+	}))
 	_, err := goav.From(goav.FileInput("input.wav", strings.NewReader(""))).
+		UseRuntime(rt).
 		Audio().
-		Encode(goav.CodecSpec{ID: "pcm"}).
-		To(goav.FileOutput("archive.wav", io.Discard)).
+		Encode(goav.Codec("pcm", av.MediaAudio)).
+		To(goav.FileOutput("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_unsupported wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_missing" || !errors.Is(err, codec.ErrNotFound) {
+		t.Fatalf("err = %v, want encode_adapter_missing wrapping codec.ErrNotFound", err)
 	}
-	if !strings.Contains(err.Error(), "pcm is not a recipe encode target") ||
-		!strings.Contains(err.Error(), "codec.EncodeConfig") {
-		t.Fatalf("err = %v, want unsupported encode guidance", err)
+	if !strings.Contains(err.Error(), "no encoder adapter") ||
+		!strings.Contains(err.Error(), "codec=pcm") {
+		t.Fatalf("err = %v, want custom encoder adapter guidance", err)
 	}
 }
 

@@ -17,7 +17,7 @@ import (
 	"github.com/thesyncim/goav/transcode"
 )
 
-func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
+func TestRuntimeBuilderTranscodeBranchesVariantsToOutputs(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{
 		streams: streams,
@@ -40,7 +40,7 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{
+		Variants: []transcode.Variant{
 			{
 				Name:     "audio-main",
 				Selector: testSelectAudio(),
@@ -56,14 +56,14 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 		},
 		Outputs: []transcode.Output{
 			{
-				Name:       "archive.ogg",
-				Format:     av.FormatOgg,
-				Renditions: []string{"archive"},
+				Name:     "archive.ogg",
+				Format:   av.FormatOgg,
+				Variants: []string{"archive"},
 			},
 			{
-				Name:       "preview.ogg",
-				Format:     av.FormatOgg,
-				Renditions: []string{"audio-low"},
+				Name:     "preview.ogg",
+				Format:   av.FormatOgg,
+				Variants: []string{"audio-low"},
 			},
 		},
 	}
@@ -160,7 +160,7 @@ func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T)
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.webm"},
-		Renditions: []transcode.Rendition{
+		Variants: []transcode.Variant{
 			{
 				Name:     "a96",
 				Selector: testSelectAudio(),
@@ -175,9 +175,9 @@ func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T)
 			},
 		},
 		Outputs: []transcode.Output{{
-			Name:       "web.ogg",
-			Format:     av.FormatOgg,
-			Renditions: []string{"web"},
+			Name:     "web.ogg",
+			Format:   av.FormatOgg,
+			Variants: []string{"web"},
 		}},
 	}
 
@@ -262,7 +262,7 @@ func TestRuntimeBuilderRTPTranscodeTeesDecodedStreamToOutputs(t *testing.T) {
 		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
 	)
 	plan := transcode.Plan{
-		Renditions: []transcode.Rendition{
+		Variants: []transcode.Variant{
 			{
 				Name:     "voice",
 				Selector: testSelectAudio(),
@@ -278,14 +278,14 @@ func TestRuntimeBuilderRTPTranscodeTeesDecodedStreamToOutputs(t *testing.T) {
 		},
 		Outputs: []transcode.Output{
 			{
-				Name:       "archive.ogg",
-				Format:     av.FormatOgg,
-				Renditions: []string{"archive"},
+				Name:     "archive.ogg",
+				Format:   av.FormatOgg,
+				Variants: []string{"archive"},
 			},
 			{
-				Name:       "preview.ogg",
-				Format:     av.FormatOgg,
-				Renditions: []string{"preview"},
+				Name:     "preview.ogg",
+				Format:   av.FormatOgg,
+				Variants: []string{"preview"},
 			},
 		},
 	}
@@ -441,7 +441,7 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 	}, filterFactory))
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{
+		Variants: []transcode.Variant{
 			{
 				Name:     "audio-main",
 				Selector: testSelectAudio(),
@@ -540,7 +540,7 @@ func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (builderAPI, 
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{
+		Variants: []transcode.Variant{
 			{
 				Name:     "audio-main",
 				Selector: testSelectAudio(),
@@ -556,14 +556,14 @@ func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (builderAPI, 
 		},
 		Outputs: []transcode.Output{
 			{
-				Name:       "archive.ogg",
-				Format:     av.FormatOgg,
-				Renditions: []string{"archive"},
+				Name:     "archive.ogg",
+				Format:   av.FormatOgg,
+				Variants: []string{"archive"},
 			},
 			{
-				Name:       "preview.ogg",
-				Format:     av.FormatOgg,
-				Renditions: []string{"audio-low"},
+				Name:     "preview.ogg",
+				Format:   av.FormatOgg,
+				Variants: []string{"audio-low"},
 			},
 		},
 	}
@@ -632,7 +632,7 @@ func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{{
+		Variants: []transcode.Variant{{
 			Name:     "audio-low",
 			Selector: testSelectAudio(),
 			Resample: &filter.ResampleConfig{
@@ -658,14 +658,14 @@ func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
 func TestRuntimeBuilderTranscodeRequiresMatchingOutputSelection(t *testing.T) {
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{{
+		Variants: []transcode.Variant{{
 			Name:     "audio-main",
 			Selector: testSelectAudio(),
 			Encode:   pcmEncodeConfig(),
 		}},
 		Outputs: []transcode.Output{{
-			Name:       "preview.ogg",
-			Renditions: []string{"missing"},
+			Name:     "preview.ogg",
+			Variants: []string{"missing"},
 		}},
 	}
 
@@ -688,18 +688,18 @@ func TestRuntimeBuilderTranscodeReportsEmptyPlanParts(t *testing.T) {
 		want string
 	}{
 		{
-			name: "renditions",
+			name: "variants",
 			plan: transcode.Plan{
 				Input:   format.Input{Name: "input.ogg"},
 				Outputs: []transcode.Output{{Name: "preview.ogg"}},
 			},
-			want: "no renditions",
+			want: "no variants",
 		},
 		{
 			name: "outputs",
 			plan: transcode.Plan{
 				Input: format.Input{Name: "input.ogg"},
-				Renditions: []transcode.Rendition{{
+				Variants: []transcode.Variant{{
 					Name:     "audio-main",
 					Selector: testSelectAudio(),
 					Encode:   pcmEncodeConfig(),
@@ -723,10 +723,10 @@ func TestRuntimeBuilderTranscodeReportsEmptyPlanParts(t *testing.T) {
 	}
 }
 
-func TestRuntimeBuilderTranscodeReportsDuplicateRenditionNames(t *testing.T) {
+func TestRuntimeBuilderTranscodeReportsDuplicateVariantNames(t *testing.T) {
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{
+		Variants: []transcode.Variant{
 			{Name: "audio-main", Selector: testSelectAudio(), Encode: pcmEncodeConfig()},
 			{Name: "audio-main", Selector: testSelectAudio(), Encode: pcmEncodeConfig()},
 		},
@@ -735,20 +735,20 @@ func TestRuntimeBuilderTranscodeReportsDuplicateRenditionNames(t *testing.T) {
 
 	_, err := newTestBuilder(t).Transcode(plan).Describe()
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_rendition_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transcode_rendition_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_variant_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transcode_variant_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "audio-main") ||
 		!strings.Contains(err.Error(), "duplicate index: 1") ||
 		!strings.Contains(err.Error(), "unique Name") {
-		t.Fatalf("err = %v, want duplicate rendition guidance", err)
+		t.Fatalf("err = %v, want duplicate variant guidance", err)
 	}
 }
 
 func TestRuntimeBuilderTranscodeReportsMixedTransformChain(t *testing.T) {
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{{
+		Variants: []transcode.Variant{{
 			Name:     "mixed",
 			Selector: testSelectAudio(),
 			Resize:   &filter.ResizeConfig{Width: 320, Height: 180},
@@ -781,7 +781,7 @@ func TestRuntimeBuilderTranscodeReportsTransformMediaMismatch(t *testing.T) {
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{{
+		Variants: []transcode.Variant{{
 			Name:     "video-as-audio",
 			Selector: testSelectVideo(),
 			Resample: &filter.ResampleConfig{SampleRate: 16000, Channels: 1},
@@ -797,7 +797,7 @@ func TestRuntimeBuilderTranscodeReportsTransformMediaMismatch(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "resample applies to audio streams") ||
 		!strings.Contains(err.Error(), "stream id: video") ||
-		!strings.Contains(err.Error(), "transcode.Rendition selector") {
+		!strings.Contains(err.Error(), "transcode.Variant selector") {
 		t.Fatalf("err = %v, want transform media guidance", err)
 	}
 	if !demuxer.closed {

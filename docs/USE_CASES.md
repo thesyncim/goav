@@ -59,28 +59,32 @@ err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
 When a media type matches several streams, the build error lists candidates and
 suggests `StreamID`, `StreamName`, or `StreamIndex(0)`.
 
-## Planned Branches
+## Planned Variants
 
-`Tap` names a stable point. `Branch` declares a downstream output path from that
-point. This keeps complex work natural without exposing graph wiring.
+`Tap` names a stable point. `Variants` declares encoded alternatives from one
+selected stream. This keeps complex work natural without exposing graph wiring.
 
 ```go
 err := goav.From(input).
     Video().
     Decode().
     Tap("video.decoded").
-    Branch("720p").
-    Resize(1280, 720).
-    Tap("video.720p.frames").
-    VP9(2_000_000).
-    To("main").
+    Variants(
+        goav.Variant("720p").
+            Resize(1280, 720).
+            Tap("video.720p.frames").
+            VP9(2_000_000).
+            To("main"),
+    ).
     Audio().
     Decode().
     Tap("audio.decoded").
-    Branch("a96").
-    Resample(48_000, goav.Stereo).
-    Opus(96_000).
-    To("main").
+    Variants(
+        goav.Variant("a96").
+            Resample(48_000, goav.Stereo).
+            Opus(96_000).
+            To("main"),
+    ).
     Output("main", goav.FileOutput("main.webm", out)).
     Run(ctx)
 ```
@@ -88,9 +92,33 @@ err := goav.From(input).
 One output label is a mux group. Several encoded branches can feed the same
 label. Containers shown outside IVF/Annex B require matching adapters.
 
+## Custom Components
+
+Custom work should be optional and local. A stage can live inside a normal
+stream recipe, a sink can receive decoded frames, and a running task can attach
+a sink from a declared tap.
+
+```go
+meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+    observe(frame)
+    return emit.Frame(frame)
+})
+
+err := goav.From(input).
+    Audio().
+    Decode().
+    Do(meter).
+    To(goav.FrameSink(goav.SinkFunc("levels", collectLevel))).
+    Run(ctx)
+```
+
+Branch-local arbitrary stages, custom filters, and late muxed outputs should
+share one ordered branch operation model instead of growing special-case APIs.
+That is the next planner slice after `Variant` proves grouped alternatives.
+
 ## Reusable Flows
 
-`Tee` is the planned split for reusable flow branches.
+`Tee` is the reusable split for flow branches.
 
 ```go
 voice := goav.AudioFlow("voice").Resample(16_000, goav.Mono).OpusVoice()

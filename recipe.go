@@ -2118,18 +2118,7 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			Cause: ErrUnsupportedBuild,
 		}
 	default:
-		return &BuildError{
-			Code:      "encode_unsupported",
-			Operation: operation,
-			Node:      node,
-			Reason:    string(spec.ID) + " is not a recipe encode target",
-			Suggestions: []string{
-				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode paths",
-				"use .Copy().To(output) for packet-preserving output",
-				"use the expert builder with an explicit codec.EncodeConfig for custom encoders",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
+		return validateRecipeEncodeValues(spec, operation, node)
 	}
 }
 
@@ -2804,17 +2793,17 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 	streams := intent.Streams
 	outputs, outputOrder := transcodeOutputAttachmentSet(namedOutputs)
 
-	renditions := make([]transcodepkg.Rendition, 0, len(streams))
-	outputRenditions := make(map[string][]string, len(outputs))
+	variants := make([]transcodepkg.Variant, 0, len(streams))
+	outputVariants := make(map[string][]string, len(outputs))
 	if len(streams) == 0 {
 		return transcodepkg.Plan{}, transcodeStreamMissingError()
 	}
 	for i := range streams {
 		stream := streams[i]
-		renditionName := stream.Name
+		variantName := stream.Name
 		selector := streamIntentSelector(stream)
-		rendition := transcodepkg.Rendition{
-			Name:     renditionName,
+		variant := transcodepkg.Variant{
+			Name:     variantName,
 			Selector: selector,
 			Decode:   true,
 			Encode: codec.EncodeConfig{
@@ -2824,15 +2813,15 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 			Labels: append([]string(nil), stream.RouteTo...),
 		}
 		for _, label := range stream.RouteTo {
-			outputRenditions[label] = append(outputRenditions[label], renditionName)
+			outputVariants[label] = append(outputVariants[label], variantName)
 		}
 		resize, resample, err := transcodeBranchTransformConfigs(stream)
 		if err != nil {
 			return transcodepkg.Plan{}, err
 		}
-		rendition.Resize = resize
-		rendition.Resample = resample
-		renditions = append(renditions, rendition)
+		variant.Resize = resize
+		variant.Resample = resample
+		variants = append(variants, variant)
 	}
 
 	planOutputs := make([]transcodepkg.Output, 0, len(outputOrder))
@@ -2840,10 +2829,10 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 		name := outputOrder[i]
 		output := outputs[name]
 		planOutput := transcodepkg.Output{
-			Name:       name,
-			Target:     output.output,
-			Format:     output.format,
-			Renditions: append([]string(nil), outputRenditions[name]...),
+			Name:     name,
+			Target:   output.output,
+			Format:   output.format,
+			Variants: append([]string(nil), outputVariants[name]...),
 		}
 		if output.resolvedFormat != "" {
 			planOutput = transcodepkg.ResolveOutputFormat(planOutput, output.resolvedFormat)
@@ -2851,10 +2840,10 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 		planOutputs = append(planOutputs, planOutput)
 	}
 	return transcodepkg.Plan{
-		Name:       "transcode",
-		Input:      input.input,
-		Renditions: renditions,
-		Outputs:    planOutputs,
+		Name:     "transcode",
+		Input:    input.input,
+		Variants: variants,
+		Outputs:  planOutputs,
 	}, nil
 }
 
@@ -2881,7 +2870,7 @@ func validateTranscodeIntentShape(operation string, intent Intent) error {
 	if len(streams) == 0 {
 		return transcodeStreamMissingError()
 	}
-	renditionNames := make(map[string]int, len(streams))
+	variantNames := make(map[string]int, len(streams))
 	for i := range streams {
 		stream := streams[i]
 		if err := validateTranscodeBranchIntentShape(stream, i); err != nil {
@@ -2890,11 +2879,11 @@ func validateTranscodeIntentShape(operation string, intent Intent) error {
 		if _, _, err := transcodeBranchTransformConfigs(stream); err != nil {
 			return err
 		}
-		renditionName := stream.Name
-		if firstIndex, ok := renditionNames[renditionName]; ok {
-			return transcodeDuplicateBranchError(renditionName, firstIndex, i)
+		variantName := stream.Name
+		if firstIndex, ok := variantNames[variantName]; ok {
+			return transcodeDuplicateBranchError(variantName, firstIndex, i)
 		}
-		renditionNames[renditionName] = i
+		variantNames[variantName] = i
 	}
 	return nil
 }

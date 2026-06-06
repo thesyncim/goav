@@ -11,25 +11,27 @@ make the implementation match the composable planner promise.
 1. Make `Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph` the normal
    recipe path. Normal recipes should require media-plan recognition instead of
    adding workflow-specific matchers.
-2. Treat declared branches as generic branch operations and mux groups.
-   `From(input).Audio()/Video().Tap(...).Branch(...)` and `Tee(...)` flows
-   should produce equivalent `MediaPlan` shapes where possible.
+2. Treat declared branches as generic ordered branch operations and mux groups.
+   `From(input).Audio()/Video().Tap(...).Branch(...)`, `Variant(...)`, and
+   `Tee(...)` flows should produce equivalent `MediaPlan` shapes where
+   possible.
 3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
    for `From`, packet copy, stream decode, branch composition, and flow tee onto
    direct media-plan graph construction.
 4. Add a capability model for streams, codecs, filters, and containers so the
    planner can explain copy/decode/encode choices, missing adapters, transform
    incompatibilities, and mux-output conflicts before runtime execution.
-5. Keep custom codecs orthogonal: application-local codecs use `goav.Codec`,
-   `WithDecoder`, and `WithEncoder`; built-in specs are presets over the same
-   compiler path.
+5. Keep custom composition orthogonal: application-local codecs use
+   `goav.Codec`, `WithDecoder`, and `WithEncoder`; custom stages, filters,
+   sinks, and outputs use the same stream and runtime-attachment concepts as
+   built-ins instead of workflow-specific helpers.
 6. Keep first-page examples executable with `goav.Default()`, or keep examples
    that require unavailable containers in clearly labeled adapter sections.
 7. Treat adapter coverage as product surface after the planner can absorb it.
    WebM and Ogg remain the next high-value containers because they unlock
    expected RTP/WebRTC record and muxed audio/video examples.
 8. Generalize flows as reusable intent fragments over stream chains, not as a
-   second graph DSL. `Tee` remains planned fanout; runtime `Task.Attach(ctx,
+   second graph DSL. `Tee` remains reusable fanout; runtime `Task.Attach(ctx,
    goav.Branch(...))` remains the late control-plane tap for running direct
    graphs.
 9. Promote live codec-change behavior into explicit policy: compatible rebind,
@@ -93,8 +95,8 @@ make the implementation match the composable planner promise.
 
 - Resize filter contract implementation. I420/YUV420P adapter active.
 - Resample filter contract implementation. S16 adapter active.
-- Decode sharing across renditions. First planner path active.
-- Per-rendition encoder configs. First planner path active.
+- Decode sharing across variants. First planner path active.
+- Per-variant encoder configs. First planner path active.
 - Multiple mux/output targets from one plan. First planner path active.
 - Resize/resample branch execution. First concrete adapters active.
 

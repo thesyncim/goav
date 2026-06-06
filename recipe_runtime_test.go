@@ -820,12 +820,13 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 
 func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 	ctx := context.Background()
+	customPCM := av.CodecID("x_pcm_s16")
 	streams := []av.Stream{{
 		ID:       "audio",
 		Type:     av.MediaAudio,
 		TimeBase: av.TimeBase{Num: 1, Den: 48000},
 		Codec: av.CodecParameters{
-			ID:           av.CodecOpus,
+			ID:           customPCM,
 			Type:         av.MediaAudio,
 			SampleRate:   48000,
 			ClockRate:    48000,
@@ -849,15 +850,19 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 	decoder := &recipePCMDecoder{}
 	encoder := &encodeTestEncoder{}
 	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
-	codecs := codec.NewRegistry()
-	codecs.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipePCMDecoderFactory{decoder: decoder})
-	codecs.RegisterEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory)
-	runtime := New(formats, func(rt *runtime) { rt.codecs = codecs }, WithStdFilters())
+	desc := CodecDescriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
+	runtime := New(
+		formats,
+		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder}),
+		WithEncoder(desc, encoderFactory),
+		WithStdFilters(),
+	)
+	encoded := Codec(customPCM, av.MediaAudio, SampleRate(16_000), Channels(Mono))
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(runtime).
 		Audio().
 		Resample(16_000, Mono).
-		Opus(48_000).
+		Encode(encoded).
 		To(FileOutput("preview.ogg", io.Discard)).
 		Build(ctx)
 	if err != nil {
@@ -871,6 +876,9 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 	}
 	if encoderFactory.config.Stream.Codec.SampleRate != 16_000 || encoderFactory.config.Stream.Codec.Channels != Mono {
 		t.Fatalf("encode stream after resample: %+v", encoderFactory.config.Stream)
+	}
+	if encoderFactory.config.Parameters.ID != customPCM || encoderFactory.config.Stream.Codec.ID != customPCM {
+		t.Fatalf("encode custom codec config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "audio" {
 		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)

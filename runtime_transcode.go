@@ -18,7 +18,7 @@ type rtpTranscodeGraphCompiler struct{}
 
 type transcodeBranch struct {
 	name       string
-	rendition  transcode.Rendition
+	variant    transcode.Variant
 	transforms []transcodeTransform
 	request    encodeRequest
 }
@@ -440,8 +440,8 @@ func (b *builder) newTranscodeFilterStage(ctx context.Context, transform transco
 }
 
 func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOutputBranch, error) {
-	if len(plan.Renditions) == 0 {
-		return nil, nil, transcodePlanEmptyError("renditions")
+	if len(plan.Variants) == 0 {
+		return nil, nil, transcodePlanEmptyError("variants")
 	}
 	if len(plan.Outputs) == 0 {
 		return nil, nil, transcodePlanEmptyError("outputs")
@@ -459,7 +459,7 @@ func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOu
 
 func transcodePlanEmptyError(kind string) error {
 	suggestions := []string{
-		"add at least one transcode.Rendition with a selector and encoder",
+		"add at least one transcode.Variant with a selector and encoder",
 		"add at least one transcode.Output with a target output",
 		"use goav.From(input).Video().Decode().Tap(...).Branch(...).To(label).Output(label, output) for the recipe API",
 	}
@@ -478,12 +478,12 @@ func transcodeSelectorGroups(branches []transcodeBranch) []transcodeSelectorGrou
 	groups := make([]transcodeSelectorGroup, 0, len(branches))
 	index := make(map[string]int, len(branches))
 	for i := range branches {
-		key := transcodeSelectorKey(branches[i].rendition.Selector)
+		key := transcodeSelectorKey(branches[i].variant.Selector)
 		groupIndex, ok := index[key]
 		if !ok {
 			groupIndex = len(groups)
 			index[key] = groupIndex
-			groups = append(groups, transcodeSelectorGroup{selector: branches[i].rendition.Selector})
+			groups = append(groups, transcodeSelectorGroup{selector: branches[i].variant.Selector})
 		}
 		groups[groupIndex].branches = append(groups[groupIndex].branches, i)
 	}
@@ -494,7 +494,7 @@ func resolveTranscodeStreamGroups(streams []av.Stream, branches []transcodeBranc
 	groups := make([]transcodeStreamGroup, 0, len(branches))
 	index := make(map[string]int, len(branches))
 	for i := range branches {
-		stream, err := selectDecodeStream(streams, branches[i].rendition.Selector)
+		stream, err := selectDecodeStream(streams, branches[i].variant.Selector)
 		if err != nil {
 			return nil, err
 		}
@@ -504,7 +504,7 @@ func resolveTranscodeStreamGroups(streams []av.Stream, branches []transcodeBranc
 			groupIndex = len(groups)
 			index[key] = groupIndex
 			groups = append(groups, transcodeStreamGroup{
-				selector: branches[i].rendition.Selector,
+				selector: branches[i].variant.Selector,
 				stream:   stream,
 			})
 		}
@@ -534,37 +534,37 @@ func transcodeStreamKey(stream av.Stream) string {
 }
 
 func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
-	branches := make([]transcodeBranch, len(plan.Renditions))
-	names := make(map[string]struct{}, len(plan.Renditions))
-	for i := range plan.Renditions {
-		rendition := plan.Renditions[i]
-		name := transcodeRenditionName(rendition, i, len(plan.Renditions))
+	branches := make([]transcodeBranch, len(plan.Variants))
+	names := make(map[string]struct{}, len(plan.Variants))
+	for i := range plan.Variants {
+		variant := plan.Variants[i]
+		name := transcodeVariantName(variant, i, len(plan.Variants))
 		if _, ok := names[name]; ok {
-			return nil, transcodeDuplicateRenditionError(name, i)
+			return nil, transcodeDuplicateVariantError(name, i)
 		}
 		names[name] = struct{}{}
-		transforms, err := transcodeTransforms(name, rendition)
+		transforms, err := transcodeTransforms(name, variant)
 		if err != nil {
 			return nil, err
 		}
 
-		config := rendition.Encode
+		config := variant.Encode
 		if config.Stream.ID == "" {
 			config.Stream.ID = av.StreamID(name)
 		}
 		if config.Stream.Name == "" {
 			config.Stream.Name = name
 		}
-		if config.Stream.Metadata == nil && rendition.Metadata != nil {
-			config.Stream.Metadata = rendition.Metadata
+		if config.Stream.Metadata == nil && variant.Metadata != nil {
+			config.Stream.Metadata = variant.Metadata
 		}
 		branches[i] = transcodeBranch{
 			name:       name,
-			rendition:  rendition,
+			variant:    variant,
 			transforms: transforms,
 			request: encodeRequest{
 				name:     name,
-				selector: rendition.Selector,
+				selector: variant.Selector,
 				config:   config,
 			},
 		}
@@ -572,39 +572,39 @@ func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
 	return branches, nil
 }
 
-func transcodeDuplicateRenditionError(name string, index int) error {
+func transcodeDuplicateVariantError(name string, index int) error {
 	return &BuildError{
-		Code:      "transcode_rendition_duplicate",
+		Code:      "transcode_variant_duplicate",
 		Operation: "build transcode",
 		Node:      name,
-		Reason:    "transcode rendition name is defined more than once",
+		Reason:    "transcode variant name is defined more than once",
 		Details: []string{
 			"duplicate index: " + strconv.Itoa(index),
 		},
 		Suggestions: []string{
-			"give each transcode.Rendition a stable unique Name",
-			"use distinct branch names when multiple renditions share one selected stream",
+			"give each transcode.Variant a stable unique Name",
+			"use distinct branch names when multiple variants share one selected stream",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeTransforms(name string, rendition transcode.Rendition) ([]transcodeTransform, error) {
-	if rendition.Resize != nil && rendition.Resample != nil {
+func transcodeTransforms(name string, variant transcode.Variant) ([]transcodeTransform, error) {
+	if variant.Resize != nil && variant.Resample != nil {
 		return nil, advancedTranscodeTransformChainError(name)
 	}
-	if rendition.Resize != nil {
+	if variant.Resize != nil {
 		return []transcodeTransform{{
 			name:    "resize-" + name,
 			factory: filter.FactoryResize,
-			video:   rendition.Resize,
+			video:   variant.Resize,
 		}}, nil
 	}
-	if rendition.Resample != nil {
+	if variant.Resample != nil {
 		return []transcodeTransform{{
 			name:    "resample-" + name,
 			factory: filter.FactoryResample,
-			audio:   rendition.Resample,
+			audio:   variant.Resample,
 		}}, nil
 	}
 	return nil, nil
@@ -615,10 +615,10 @@ func advancedTranscodeTransformChainError(name string) error {
 		Code:      "transcode_transform_chain_unsupported",
 		Operation: "build transcode",
 		Node:      name,
-		Reason:    "transcode rendition cannot combine resize and resample",
+		Reason:    "transcode variant cannot combine resize and resample",
 		Suggestions: []string{
-			"use resize on video renditions and resample on audio renditions",
-			"split audio and video work into separate transcode.Rendition values",
+			"use resize on video variants and resample on audio variants",
+			"split audio and video work into separate transcode.Variant values",
 			"use goav.From(input).Video().Decode().Tap(...).Branch(...) or .Audio().Decode().Tap(...).Branch(...) to keep transforms stream-scoped",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -685,9 +685,9 @@ func advancedTranscodeTransformMediaError(transform transcodeTransform, stream a
 		Reason:    operation + " applies to " + media + " streams",
 		Details:   details,
 		Suggestions: []string{
-			"use resize on video renditions",
-			"use resample on audio renditions",
-			"check the transcode.Rendition selector for this branch",
+			"use resize on video variants",
+			"use resample on audio variants",
+			"check the transcode.Variant selector for this branch",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -714,8 +714,8 @@ func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transc
 func transcodeOutputUnmatchedError(output transcode.Output, target format.Output) error {
 	node := firstNonEmpty(output.Name, target.Name, target.URI, "output")
 	details := make([]string, 0, 1)
-	if len(output.Renditions) != 0 {
-		details = append(details, "requested: "+strings.Join(output.Renditions, ", "))
+	if len(output.Variants) != 0 {
+		details = append(details, "requested: "+strings.Join(output.Variants, ", "))
 	}
 	return &BuildError{
 		Code:      "transcode_output_unmatched",
@@ -724,9 +724,9 @@ func transcodeOutputUnmatchedError(output transcode.Output, target format.Output
 		Reason:    "output selects no transcode branches",
 		Details:   details,
 		Suggestions: []string{
-			"reference a branch name from transcode.Rendition.Name",
+			"reference a branch name from transcode.Variant.Name",
 			"reference a label listed on the branch",
-			"leave Renditions empty when the output should receive every branch",
+			"leave Variants empty when the output should receive every branch",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -736,14 +736,14 @@ func transcodeOutputOpenFormat(output transcode.Output) av.FormatID {
 	return output.OpenFormat()
 }
 
-func transcodeRenditionName(rendition transcode.Rendition, index int, total int) string {
-	if rendition.Name != "" {
-		return rendition.Name
+func transcodeVariantName(variant transcode.Variant, index int, total int) string {
+	if variant.Name != "" {
+		return variant.Name
 	}
 	if total == 1 {
-		return "rendition"
+		return "variant"
 	}
-	return "rendition-" + strconv.Itoa(index+1)
+	return "variant-" + strconv.Itoa(index+1)
 }
 
 func transcodeOutputTarget(plan transcode.Plan, output transcode.Output) format.Output {
@@ -763,7 +763,7 @@ func transcodeOutputTarget(plan transcode.Plan, output transcode.Output) format.
 }
 
 func transcodeOutputMatches(output transcode.Output, branches []transcodeBranch) []int {
-	if len(output.Renditions) == 0 {
+	if len(output.Variants) == 0 {
 		matches := make([]int, len(branches))
 		for i := range branches {
 			matches[i] = i
@@ -771,7 +771,7 @@ func transcodeOutputMatches(output transcode.Output, branches []transcodeBranch)
 		return matches
 	}
 
-	matches := make([]int, 0, len(output.Renditions))
+	matches := make([]int, 0, len(output.Variants))
 	for i := range branches {
 		if transcodeOutputSelectsBranch(output, branches[i]) {
 			matches = append(matches, i)
@@ -781,13 +781,13 @@ func transcodeOutputMatches(output transcode.Output, branches []transcodeBranch)
 }
 
 func transcodeOutputSelectsBranch(output transcode.Output, branch transcodeBranch) bool {
-	for i := range output.Renditions {
-		name := output.Renditions[i]
-		if name == branch.name || name == branch.rendition.Name {
+	for i := range output.Variants {
+		name := output.Variants[i]
+		if name == branch.name || name == branch.variant.Name {
 			return true
 		}
-		for j := range branch.rendition.Labels {
-			if name == branch.rendition.Labels[j] {
+		for j := range branch.variant.Labels {
+			if name == branch.variant.Labels[j] {
 				return true
 			}
 		}
