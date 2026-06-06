@@ -539,6 +539,7 @@ type OutputSpec struct {
 	sink   pipeline.Sink
 	format av.FormatID
 	name   string
+	err    error
 }
 
 func FileOutput(name string, writer io.Writer) OutputSpec {
@@ -567,6 +568,9 @@ func FrameSink(sink pipeline.Sink) OutputSpec {
 	if sink != nil {
 		name = sink.Name()
 	}
+	if sink == nil {
+		return OutputSpec{err: ErrNilSink}
+	}
 	return OutputSpec{sink: sink, name: name}
 }
 
@@ -586,6 +590,66 @@ func (s OutputSpec) apply(builder Builder) Builder {
 		return builder.Sink(s.sink)
 	}
 	return builder.Output(s.output)
+}
+
+func (s OutputSpec) validate(operation string, fallback string) error {
+	node := s.label(fallback)
+	if s.err != nil {
+		return &BuildError{
+			Code:      "output_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    s.err.Error(),
+			Suggestions: []string{
+				"pass a non-nil sink to goav.FrameSink(...)",
+				"use goav.FileOutput(...) or goav.URIOutput(...) for muxed output",
+			},
+			Cause: s.err,
+		}
+	}
+	if s.sink != nil {
+		return nil
+	}
+	if s.output.Name == "" && s.output.URI == "" && s.output.Protocol == "" && s.output.MIMEType == "" && s.output.Writer == nil && s.format == "" {
+		return &BuildError{
+			Code:      "output_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    "empty output spec",
+			Suggestions: []string{
+				"use goav.FileOutput(name, writer) for muxed output",
+				"use goav.FrameSink(sink) for decoded frames",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if s.output.Protocol == av.ProtocolFile && s.output.Writer == nil {
+		return &BuildError{
+			Code:      "output_writer_missing",
+			Operation: operation,
+			Node:      node,
+			Reason:    "file output has no writer",
+			Suggestions: []string{
+				"pass a non-nil io.Writer to goav.FileOutput(name, writer)",
+				"use goav.URIOutput(uri) when the output is opened by an adapter",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil && s.format == "" {
+		return &BuildError{
+			Code:      "output_target_missing",
+			Operation: operation,
+			Node:      node,
+			Reason:    "output has no URI, writer, sink, or explicit format",
+			Suggestions: []string{
+				"use goav.FileOutput(name, writer) for writer-backed output",
+				"use goav.URIOutput(uri) for URI-backed output",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	return nil
 }
 
 func (s OutputSpec) label(fallback string) string {
@@ -755,6 +819,9 @@ func (j *Job) builder() (Builder, error) {
 	outputs := j.allOutputs()
 	if len(outputs) == 0 {
 		return nil, &BuildError{Code: "output_missing", Operation: "build job", Reason: "no output is configured"}
+	}
+	if err := validateOutputSpecs("build job", outputs); err != nil {
+		return nil, err
 	}
 	builder := j.runtime.New()
 	for i := range j.inputs {
@@ -927,6 +994,15 @@ func outputsContainFrameSink(outputs []OutputSpec) bool {
 		}
 	}
 	return false
+}
+
+func validateOutputSpecs(operation string, outputs []OutputSpec) error {
+	for i := range outputs {
+		if err := outputs[i].validate(operation, fmt.Sprintf("output-%d", i)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
@@ -1277,6 +1353,9 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 	outputs := make(map[string]OutputSpec, len(j.outputs))
 	outputOrder := make([]string, 0, len(j.outputs))
 	for i := range j.outputs {
+		if err := j.outputs[i].output.validate("plan transcode", fmt.Sprintf("output-%d", i)); err != nil {
+			return transcodepkg.Plan{}, err
+		}
 		name := j.outputs[i].name
 		if name == "" {
 			name = j.outputs[i].output.label(fmt.Sprintf("output-%d", i))

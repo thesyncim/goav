@@ -338,7 +338,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 103. Tighten RTP recipe codec intent so built-in depacketizer wiring is limited
     to Opus, VP8, VP9, H264, and AV1, while manual depacketizers remain the
     custom codec escape hatch. Done.
-104. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+104. Add recipe output validation so nil frame sinks, empty output specs, and
+    file outputs without writers fail before graph compilation. Done.
+105. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

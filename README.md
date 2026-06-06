@@ -109,7 +109,8 @@ fmt.Println(spec)
   intent without making the caller wire depacketizers by hand for Opus, VP8,
   VP9, H264, or AV1.
 - `goav.FileInput`, `goav.URI`, `goav.FileOutput`, and `goav.URIOutput` cover
-  ordinary input and output declarations.
+  ordinary input and output declarations. `FrameSink` requires a non-nil sink,
+  and `FileOutput` requires a writer.
 
 If `Audio()` or `Video()` matches more than one stream, build errors list the
 available streams and suggest `StreamID`, `StreamName`, or `StreamIndex(0)`.

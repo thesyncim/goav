@@ -163,6 +163,46 @@ func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
 	}
 }
 
+func TestDecodeRecipeRejectsNilFrameSink(t *testing.T) {
+	_, err := goav.Decode(
+		goav.FileInput("input.ogg", strings.NewReader("")),
+		nil,
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrNilSink) {
+		t.Fatalf("err = %v, want output_invalid wrapping ErrNilSink", err)
+	}
+	if !strings.Contains(err.Error(), "non-nil sink") {
+		t.Fatalf("err = %v, want frame sink guidance", err)
+	}
+}
+
+func TestRecordRecipeRejectsEmptyOutputSpec(t *testing.T) {
+	_, err := goav.Record(
+		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.OutputSpec{},
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "empty output spec") ||
+		!strings.Contains(err.Error(), "goav.FileOutput") {
+		t.Fatalf("err = %v, want output constructor guidance", err)
+	}
+}
+
+func TestRecordRecipeRejectsFileOutputWithoutWriter(t *testing.T) {
+	_, err := goav.Record(
+		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.FileOutput("recording.ogg", nil),
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_writer_missing wrapping ErrUnsupportedBuild", err)
+	}
+}
+
 func TestRTPRecipeRejectsUnsupportedAutoCodecIntent(t *testing.T) {
 	_, err := goav.Record(
 		goav.RTP(nil).Name("audio").Codec(goav.CodecSpec{ID: "pcm"}),
@@ -441,6 +481,18 @@ func TestTranscodeRecipeRejectsInvalidOutputTarget(t *testing.T) {
 	if !strings.Contains(err.Error(), "target 0: unsupported target type int") ||
 		!strings.Contains(err.Error(), "goav.FileOutput") {
 		t.Fatalf("err = %v, want target type and output guidance", err)
+	}
+}
+
+func TestTranscodeRecipeRejectsInvalidOutputSpec(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("360p").VP9(600_000).
+		To(goav.FileOutput("preview.webm", nil)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_writer_missing wrapping ErrUnsupportedBuild", err)
 	}
 }
 
