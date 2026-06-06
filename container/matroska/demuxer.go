@@ -1008,7 +1008,8 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 	if err != nil {
 		return err
 	}
-	if !d.hasTrack(trackNumber) {
+	track, ok := d.track(trackNumber)
+	if !ok {
 		return ErrUnknownTrack
 	}
 	if _, err := io.ReadFull(&d.blockLimit, d.blockHeader[:]); err != nil {
@@ -1037,6 +1038,26 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 	dst.Data = dst.Data[:frameSize]
 	if _, err := io.ReadFull(&d.blockLimit, dst.Data); err != nil {
 		return err
+	}
+	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+		lengthSize, ok, err := h264TrackNALULengthSize(track)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrInvalidData
+		}
+		convertedSize, err := h264AVCToAnnexBSize(dst.Data, lengthSize)
+		if err != nil {
+			return err
+		}
+		if cap(dst.Data) < convertedSize {
+			return ErrPayloadTooSmall
+		}
+		dst.Data, err = h264AVCToAnnexBInPlace(dst.Data, convertedSize, lengthSize)
+		if err != nil {
+			return err
+		}
 	}
 	dst.TrackID = trackNumber
 	dst.TimeNS = timecode * d.timecodeScaleNS
@@ -1278,12 +1299,17 @@ func (d *Demuxer) defaultDurationNS(trackID uint32) int64 {
 }
 
 func (d *Demuxer) hasTrack(id uint32) bool {
+	_, ok := d.track(id)
+	return ok
+}
+
+func (d *Demuxer) track(id uint32) (Track, bool) {
 	for i := range d.tracks {
 		if d.tracks[i].ID == id {
-			return true
+			return d.tracks[i], true
 		}
 	}
-	return false
+	return Track{}, false
 }
 
 func (d *Demuxer) upsertTrack(track Track) {

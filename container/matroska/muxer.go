@@ -123,7 +123,8 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if m.closed {
 		return ErrClosed
 	}
-	if packet.TrackID == 0 || !m.hasTrack(packet.TrackID) {
+	track, ok := m.track(packet.TrackID)
+	if packet.TrackID == 0 || !ok {
 		return ErrUnknownTrack
 	}
 	if packet.TimeNS < 0 {
@@ -154,7 +155,7 @@ func (m *Muxer) WritePacket(packet Packet) error {
 		return ErrTimecodeOverflow
 	}
 	relativePosition := m.relativeClusterPosition()
-	if err := m.writeSimpleBlock(packet, int16(delta)); err != nil {
+	if err := m.writeSimpleBlock(packet, int16(delta), track); err != nil {
 		return err
 	}
 	m.updateMaxTime(packet)
@@ -259,12 +260,17 @@ func (m *Muxer) Close() error {
 }
 
 func (m *Muxer) hasTrack(id uint32) bool {
+	_, ok := m.track(id)
+	return ok
+}
+
+func (m *Muxer) track(id uint32) (Track, bool) {
 	for i := range m.tracks {
 		if m.tracks[i].ID == id {
-			return true
+			return m.tracks[i], true
 		}
 	}
-	return false
+	return Track{}, false
 }
 
 func (m *Muxer) defaultDurationNS(trackID uint32) int64 {
@@ -444,11 +450,11 @@ func (m *Muxer) writeSeekHeadPlaceholder() error {
 	return writeVoidTotal(m.ebml, reserve)
 }
 
-func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16) error {
+func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16, track Track) error {
 	if packet.DurationNS > 0 || len(packet.ReferenceBlockTimeNS) != 0 {
-		return m.writeBlockGroup(packet, blockTimecode)
+		return m.writeBlockGroup(packet, blockTimecode, track)
 	}
-	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet))
+	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
 }
 
 func (m *Muxer) addCue(packet Packet, timecode int64, relativePosition uint64) {
@@ -644,16 +650,24 @@ func (m *Muxer) clusterDataOffset() int64 {
 	return int64(m.clusterPosition) + m.segmentData + int64(ebml.MaxIDWidth+ebml.MaxSizeWidth)
 }
 
-func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16) error {
+func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track) error {
 	durationTicks := scaledDurationTicks(packet.DurationNS, m.options.TimecodeScaleNS)
 	if durationTicks == 0 && len(packet.ReferenceBlockTimeNS) == 0 {
-		return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet))
+		return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
+	}
+	payloadSize := len(packet.Data)
+	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+		var err error
+		payloadSize, _, err = h264MuxedPayloadSize(track, packet.Data)
+		if err != nil {
+			return err
+		}
 	}
 	trackWidth, err := ebml.UnsignedVINTWidth(uint64(packet.TrackID))
 	if err != nil {
 		return err
 	}
-	blockPayloadSize := uint64(trackWidth + 3 + len(packet.Data))
+	blockPayloadSize := uint64(trackWidth + 3 + payloadSize)
 	blockHeaderSize, err := elementEncodedSize(idBlock, blockPayloadSize)
 	if err != nil {
 		return err
@@ -701,15 +715,23 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16) error {
 			return err
 		}
 	}
-	return m.writeBlock(idBlock, packet, blockTimecode, blockFlags(packet))
+	return m.writeBlock(idBlock, packet, blockTimecode, blockFlags(packet), track)
 }
 
-func (m *Muxer) writeBlock(id ebml.ID, packet Packet, blockTimecode int16, flags byte) error {
+func (m *Muxer) writeBlock(id ebml.ID, packet Packet, blockTimecode int16, flags byte, track Track) error {
+	payloadSize := len(packet.Data)
+	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+		var err error
+		payloadSize, _, err = h264MuxedPayloadSize(track, packet.Data)
+		if err != nil {
+			return err
+		}
+	}
 	trackWidth, err := ebml.UnsignedVINTWidth(uint64(packet.TrackID))
 	if err != nil {
 		return err
 	}
-	size := uint64(trackWidth + 3 + len(packet.Data))
+	size := uint64(trackWidth + 3 + payloadSize)
 	if err := m.ebml.WriteHeader(id, size); err != nil {
 		return err
 	}
@@ -721,6 +743,9 @@ func (m *Muxer) writeBlock(id ebml.ID, packet Packet, blockTimecode int16, flags
 	m.blockScratch[n+2] = flags
 	if _, err := m.ebml.Write(m.blockScratch[:n+3]); err != nil {
 		return err
+	}
+	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+		return h264WriteMuxedPayload(m.ebml, track, packet.Data, &m.blockScratch)
 	}
 	_, err = m.ebml.Write(packet.Data)
 	return err

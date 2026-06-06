@@ -134,7 +134,7 @@ func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 				Video:        VideoConfig{Width: 640, Height: 360},
 				CodecPrivate: h264AVCDecoderConfig(),
 			},
-			data: []byte{0x00, 0x00, 0x00, 0x01, 0x65},
+			data: h264AnnexBAccessUnit(),
 		},
 		{
 			name: "vp9",
@@ -396,6 +396,59 @@ func TestDemuxerRejectsInvalidH264CodecPrivate(t *testing.T) {
 	})
 	if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
 		t.Fatalf("err = %v, want ErrInvalidData", err)
+	}
+}
+
+func TestMuxerWritesH264AnnexBPacketsAsAVCSamples(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:         TrackVideo,
+		Codec:        CodecH264,
+		Video:        VideoConfig{Width: 16, Height: 16},
+		CodecPrivate: h264AVCDecoderConfigWithLengthSize(2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	annexB := h264AnnexBAccessUnit()
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: annexB}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	avc := h264AVCSampleWithLengthSize2()
+	if !bytes.Contains(buffer.Bytes(), avc) {
+		t.Fatalf("muxed data does not contain AVC sample %v", avc)
+	}
+	if bytes.Contains(buffer.Bytes(), annexB) {
+		t.Fatalf("muxed data still contains Annex B access unit")
+	}
+
+	small, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, len(avc))}
+	if err := small.ReadPacket(&packet); !errors.Is(err, ErrPayloadTooSmall) {
+		t.Fatalf("err = %v, want ErrPayloadTooSmall", err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet.Data = make([]byte, 0, len(annexB))
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TrackID != trackID || packet.TimeNS != 0 || !packet.Keyframe || !bytes.Equal(packet.Data, annexB) {
+		t.Fatalf("packet = %+v data=%v, want Annex B %v", packet, packet.Data, annexB)
 	}
 }
 
@@ -1620,7 +1673,7 @@ func TestFormatMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 	payloads := [][]byte{
 		{0x01, 0x02},
 		{0x12, 0x00, 0x0a},
-		{0x00, 0x00, 0x00, 0x01, 0x65},
+		h264AnnexBAccessUnit(),
 		{0x83, 0x49, 0x83},
 		{0x9d, 0x01, 0x2a},
 	}
@@ -1662,7 +1715,7 @@ func TestFormatMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 			t.Fatalf("%s stream = %+v, want %+v", streams[i].ID, gotStreams[i], streams[i])
 		}
 	}
-	result := format.ReadResult{Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, 8)}}}
+	result := format.ReadResult{Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, 16)}}}
 	for i := range streams {
 		if err := demuxer.ReadInto(ctx, &result); err != nil {
 			t.Fatalf("%s read packet: %v", streams[i].ID, err)
@@ -2148,10 +2201,24 @@ func h264AVCDecoderConfig() []byte {
 	return private
 }
 
+func h264AVCDecoderConfigWithLengthSize(lengthSize int) []byte {
+	private := h264AVCDecoderConfig()
+	private[4] = 0xfc | byte(lengthSize-1)
+	return private
+}
+
 func h264AVCDecoderConfigWithByte(index int, value byte) []byte {
 	private := h264AVCDecoderConfig()
 	private[index] = value
 	return private
+}
+
+func h264AnnexBAccessUnit() []byte {
+	return []byte{0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x99, 0x00, 0x00, 0x00, 0x01, 0x41, 0x9a}
+}
+
+func h264AVCSampleWithLengthSize2() []byte {
+	return []byte{0x00, 0x03, 0x65, 0x88, 0x99, 0x00, 0x02, 0x41, 0x9a}
 }
 
 func makeLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, defaultDurationNS int64) []byte {
