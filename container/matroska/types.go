@@ -60,6 +60,33 @@ type Packet struct {
 	Data        []byte
 }
 
+// LacingMode selects how multiple frames are packed into one laced block.
+type LacingMode int
+
+const (
+	// LacingAuto uses fixed-size lacing for equal-sized frames and EBML lacing
+	// otherwise.
+	LacingAuto LacingMode = iota
+	// LacingXiph writes Xiph lacing.
+	LacingXiph
+	// LacingEBML writes EBML lacing.
+	LacingEBML
+	// LacingFixed writes fixed-size lacing and requires equal-sized frames.
+	LacingFixed
+)
+
+// LacedPacket writes multiple frames for one track into a single laced block.
+// Frame timestamps are derived by demuxers from the track default duration.
+type LacedPacket struct {
+	TrackID     uint32
+	TimeNS      int64
+	Keyframe    bool
+	Invisible   bool
+	Discardable bool
+	Lacing      LacingMode
+	Frames      [][]byte
+}
+
 type CuePoint struct {
 	TrackID         uint32
 	TimeNS          int64

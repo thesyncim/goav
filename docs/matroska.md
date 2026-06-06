@@ -29,6 +29,10 @@ The high-level API is intentionally small:
 muxer, err := matroska.NewMuxer(w, matroska.MuxerOptions{})
 trackID, err := muxer.AddTrack(matroska.Track{Type: matroska.TrackVideo, Codec: matroska.CodecVP8})
 err = muxer.WritePacket(matroska.Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: frame})
+err = muxer.WriteLacedPacket(matroska.LacedPacket{
+    TrackID: trackID, TimeNS: 20_000_000, Keyframe: true,
+    Lacing: matroska.LacingAuto, Frames: frames,
+})
 err = muxer.Close()
 
 demuxer, err := matroska.NewDemuxer(r, matroska.DemuxerOptions{})
@@ -56,7 +60,8 @@ Current milestone:
 - BlockGroup reading and writing for single-frame blocks with BlockDuration;
   non-keyframe BlockGroups use `ReferenceBlock=0` when exact dependency
   information is not available.
-- Xiph, fixed-size, and EBML laced block demuxing with bounded scratch buffers.
+- Xiph, fixed-size, and EBML laced block muxing and demuxing with bounded
+  scratch buffers.
 - Matroska mux/demux for Opus, PCMU, PCMA, VP8, VP9, AV1, H.264, and H.265
   track declarations, with WebM enforcing Opus, VP8, VP9, and AV1 only.
 - The WebRTC codec surface exposed by `av` is covered by Matroska:
@@ -78,7 +83,7 @@ Current milestone:
 These are intentionally not in the first milestone:
 
 - Frame-exact random seeking and index-assisted extraction APIs.
-- Multiple-reference BlockGroup writing and laced block muxing.
+- Multiple-reference BlockGroup writing.
 - Chapters, tags, attachments, language variants, default/forced flags beyond
   basic defaults, and unknown-element preservation.
 - Full codec-private parsers for every codec family.
@@ -143,6 +148,8 @@ Matroska document types.
 The steady-state packet paths avoid allocations:
 
 - The muxer writes SimpleBlock headers from fixed scratch buffers.
+- Laced SimpleBlock writing uses caller-owned frame slices and fixed scratch
+  buffers for lace descriptors.
 - Header and track metadata may allocate before packet writing starts.
 - The demuxer reuses embedded `io.LimitedReader` and fixed scratch buffers for
   block parsing.
@@ -177,6 +184,7 @@ Committed benchmarks cover:
 - EBML size VINT encode/decode.
 - EBML element scanning.
 - SimpleBlock write throughput and allocations.
+- Laced SimpleBlock write throughput and allocations.
 - SimpleBlock read throughput and allocations.
 
 Future benchmarks should add large-file scan speed, mux/demux bytes per second

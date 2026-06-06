@@ -29,6 +29,10 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	return m.inner.WritePacket(packet)
 }
 
+func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
+	return m.inner.WriteLacedPacket(packet)
+}
+
 func (m *Muxer) Close() error {
 	if m == nil || m.inner == nil {
 		return nil

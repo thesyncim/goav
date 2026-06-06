@@ -798,6 +798,160 @@ func TestDemuxerReadsLacedSimpleBlocks(t *testing.T) {
 	}
 }
 
+func TestMuxerWritesLacedSimpleBlocks(t *testing.T) {
+	tests := []struct {
+		name   string
+		lacing LacingMode
+		frames [][]byte
+	}{
+		{
+			name:   "xiph",
+			lacing: LacingXiph,
+			frames: [][]byte{{1}, {2, 3}, {4, 5, 6}},
+		},
+		{
+			name:   "fixed",
+			lacing: LacingFixed,
+			frames: [][]byte{{1, 2}, {3, 4}, {5, 6}},
+		},
+		{
+			name:   "ebml",
+			lacing: LacingEBML,
+			frames: [][]byte{{1, 2, 3}, {4}, {5, 6}},
+		},
+		{
+			name:   "auto",
+			lacing: LacingAuto,
+			frames: [][]byte{{1, 2, 3}, {4, 5}, {6, 7, 8, 9}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			trackID, err := muxer.AddTrack(Track{
+				Type:              TrackAudio,
+				Codec:             CodecOpus,
+				DefaultDurationNS: 20_000_000,
+				Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.WriteLacedPacket(LacedPacket{
+				TrackID:     trackID,
+				TimeNS:      40_000_000,
+				Keyframe:    true,
+				Invisible:   true,
+				Discardable: true,
+				Lacing:      tt.lacing,
+				Frames:      tt.frames,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := Packet{Data: make([]byte, 0, 16)}
+			for i := range tt.frames {
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatalf("read frame %d: %v", i, err)
+				}
+				if packet.TrackID != trackID || packet.TimeNS != 40_000_000+int64(i)*20_000_000 ||
+					packet.DurationNS != 20_000_000 || !packet.Keyframe || !packet.Invisible ||
+					!packet.Discardable || !bytes.Equal(packet.Data, tt.frames[i]) {
+					t.Fatalf("frame %d packet=%+v data=%v want data=%v", i, packet, packet.Data, tt.frames[i])
+				}
+			}
+			if err := demuxer.ReadPacket(&packet); !errors.Is(err, io.EOF) {
+				t.Fatalf("err = %v, want EOF", err)
+			}
+		})
+	}
+}
+
+func TestMuxerRejectsInvalidLacedPackets(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name   string
+		packet LacedPacket
+		want   error
+	}{
+		{
+			name: "unknown track",
+			packet: LacedPacket{
+				TrackID: trackID + 1,
+				Frames:  [][]byte{{1}, {2}},
+			},
+			want: ErrUnknownTrack,
+		},
+		{
+			name: "single frame",
+			packet: LacedPacket{
+				TrackID: trackID,
+				Frames:  [][]byte{{1}},
+			},
+			want: ErrInvalidData,
+		},
+		{
+			name: "too many frames",
+			packet: LacedPacket{
+				TrackID: trackID,
+				Frames:  makeLaceFrames(257, []byte{1}),
+			},
+			want: ErrInvalidData,
+		},
+		{
+			name: "fixed unequal sizes",
+			packet: LacedPacket{
+				TrackID: trackID,
+				Lacing:  LacingFixed,
+				Frames:  [][]byte{{1}, {2, 3}},
+			},
+			want: ErrInvalidData,
+		},
+		{
+			name: "unsupported lacing",
+			packet: LacedPacket{
+				TrackID: trackID,
+				Lacing:  LacingMode(99),
+				Frames:  [][]byte{{1}, {2}},
+			},
+			want: ErrUnsupportedLacing,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := muxer.WriteLacedPacket(tt.packet); !errors.Is(err, tt.want) {
+				t.Fatalf("err = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestDemuxerRejectsLaceFrameCountOverLimit(t *testing.T) {
 	data := makeLacedMatroskaData(t, simpleBlockLacingFixed, [][]byte{{1}, {2}, {3}}, 20_000_000)
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{MaxLaceFrames: 2})
@@ -1219,6 +1373,41 @@ func TestWritePacketAllocs(t *testing.T) {
 	}
 }
 
+func TestWriteLacedPacketAllocs(t *testing.T) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := LacedPacket{
+		TrackID:  id,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames:   [][]byte{{1, 2}, {3, 4}, {5, 6}},
+	}
+	if err := muxer.WriteLacedPacket(packet); err != nil {
+		t.Fatal(err)
+	}
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		if err := muxer.WriteLacedPacket(packet); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("allocs = %f, want 0", allocs)
+	}
+}
+
 func TestReadPacketAllocs(t *testing.T) {
 	data := makeMatroskaData(t, 1200)
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
@@ -1278,6 +1467,45 @@ func BenchmarkWriteSimpleBlock(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		packet.TimeNS = int64(i) * 20_000_000
 		if err := muxer.WritePacket(packet); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWriteXiphLacedSimpleBlock(b *testing.B) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	id, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	packet := LacedPacket{
+		TrackID:  id,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames: [][]byte{
+			make([]byte, 400),
+			make([]byte, 400),
+			make([]byte, 400),
+		},
+	}
+	if err := muxer.WriteLacedPacket(packet); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.SetBytes(1200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		packet.TimeNS = int64(i) * 60_000_000
+		if err := muxer.WriteLacedPacket(packet); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -1379,6 +1607,14 @@ func makeRepeatedLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, 
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func makeLaceFrames(count int, frame []byte) [][]byte {
+	frames := make([][]byte, count)
+	for i := range frames {
+		frames[i] = frame
+	}
+	return frames
 }
 
 func makeLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, defaultDurationNS int64) []byte {

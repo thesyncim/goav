@@ -25,6 +25,16 @@ type AudioConfig = matroska.AudioConfig
 type VideoConfig = matroska.VideoConfig
 type Track = matroska.Track
 type Packet = matroska.Packet
+type LacedPacket = matroska.LacedPacket
+
+type LacingMode = matroska.LacingMode
+
+const (
+	LacingAuto  = matroska.LacingAuto
+	LacingXiph  = matroska.LacingXiph
+	LacingEBML  = matroska.LacingEBML
+	LacingFixed = matroska.LacingFixed
+)
 
 type MuxerOptions struct {
 	MuxingApp            string

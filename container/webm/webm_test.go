@@ -247,6 +247,55 @@ func TestMuxerDemuxerSupportsWebMCodecs(t *testing.T) {
 	}
 }
 
+func TestMuxerWritesLacedPackets(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := [][]byte{{1}, {2, 3}, {4, 5, 6}}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   40_000_000,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames:   frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 8)}
+	for i := range frames {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatalf("read frame %d: %v", i, err)
+		}
+		if packet.TrackID != trackID || packet.TimeNS != 40_000_000+int64(i)*20_000_000 ||
+			packet.DurationNS != 20_000_000 || !packet.Keyframe ||
+			!bytes.Equal(packet.Data, frames[i]) {
+			t.Fatalf("frame %d packet=%+v data=%v want data=%v", i, packet, packet.Data, frames[i])
+		}
+	}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
 func TestDemuxerSeekToTime(t *testing.T) {
 	file := writeSeekableCompatibilityWebM(t)
 	data, err := os.ReadFile(file)
