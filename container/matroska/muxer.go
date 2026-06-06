@@ -1452,6 +1452,11 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 			return err
 		}
 	}
+	if track.DefaultDecodedFieldDurationNS > 0 {
+		if err := tw.WriteUInt(idDefaultDecodedDur, uint64(track.DefaultDecodedFieldDurationNS)); err != nil {
+			return err
+		}
+	}
 	private := track.CodecPrivate
 	if len(private) == 0 {
 		private = defaultCodecPrivate(track, scratch)
@@ -1602,7 +1607,7 @@ func validateTrack(track Track) error {
 	if track.Type != TrackAudio && track.Type != TrackVideo {
 		return ErrInvalidTrack
 	}
-	if track.DefaultDurationNS < 0 || track.CodecDelayNS < 0 || track.SeekPreRollNS < 0 {
+	if track.DefaultDurationNS < 0 || track.DefaultDecodedFieldDurationNS < 0 || track.CodecDelayNS < 0 || track.SeekPreRollNS < 0 {
 		return ErrInvalidTrack
 	}
 	if _, err := matroskaCodecID(track.Codec); err != nil {

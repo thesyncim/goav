@@ -63,6 +63,7 @@ const (
 	idChannels             ebml.ID = 0x9f
 	idBitDepth             ebml.ID = 0x6264
 	idDefaultDur           ebml.ID = 0x23e383
+	idDefaultDecodedDur    ebml.ID = 0x234e7a
 
 	idCluster       ebml.ID = 0x1f43b675
 	idTimestamp     ebml.ID = 0xe7

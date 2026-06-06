@@ -841,14 +841,17 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.CodecName = value
 		case idDefaultDur:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readNonZeroInt64Payload(reader, child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
-			if value > uint64(math.MaxInt64) {
-				return Track{}, ErrInvalidData
+			track.DefaultDurationNS = value
+		case idDefaultDecodedDur:
+			value, err := readNonZeroInt64Payload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
 			}
-			track.DefaultDurationNS = int64(value)
+			track.DefaultDecodedFieldDurationNS = value
 		case idCodecDelay:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
@@ -1296,6 +1299,17 @@ func nonZeroIntFromUint(value uint64) (int, error) {
 		return 0, ErrInvalidData
 	}
 	return intFromUint(value)
+}
+
+func readNonZeroInt64Payload(r io.Reader, size uint64) (int64, error) {
+	value, err := readUIntPayload(r, size)
+	if err != nil {
+		return 0, err
+	}
+	if value == 0 || value > uint64(math.MaxInt64) {
+		return 0, ErrInvalidData
+	}
+	return int64(value), nil
 }
 
 func drainLimited(r *io.LimitedReader) error {

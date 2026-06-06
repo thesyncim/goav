@@ -422,6 +422,47 @@ func TestMuxerDemuxerPreservesCodecName(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesDecodedFieldDuration(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:                          TrackVideo,
+		Codec:                         CodecVP8,
+		DefaultDurationNS:             20_000_000,
+		DefaultDecodedFieldDurationNS: 10_000_000,
+		Video:                         VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].DefaultDurationNS != 20_000_000 || tracks[0].DefaultDecodedFieldDurationNS != 10_000_000 {
+		t.Fatalf("track = %+v", tracks[0])
+	}
+}
+
 func TestMuxerDemuxerPreservesLanguageBCP47(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -1776,6 +1817,15 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			},
 		},
 		{
+			name: "default decoded field duration",
+			track: Track{
+				Type:                          TrackVideo,
+				Codec:                         CodecVP8,
+				DefaultDecodedFieldDurationNS: -1,
+				Video:                         VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
 			name: "codec delay",
 			track: Track{
 				Type:         TrackAudio,
@@ -2620,6 +2670,38 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 				videoUIntElement{idPixelHeight, 16},
 				videoUIntElement{idDisplayUnit, maxIntValue + 1},
 			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("zero default duration", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackMetadata(writer, trackUIntElement{idDefaultDur, 0})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("default duration overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackMetadata(writer, trackUIntElement{idDefaultDur, uint64(math.MaxInt64) + 1})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("zero decoded field duration", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackMetadata(writer, trackUIntElement{idDefaultDecodedDur, 0})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("decoded field duration overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackMetadata(writer, trackUIntElement{idDefaultDecodedDur, uint64(math.MaxInt64) + 1})
 		})
 		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
 			t.Fatalf("err = %v, want ErrInvalidData", err)
@@ -3745,6 +3827,15 @@ func writeTracksWithTrackNumber(writer *ebml.Writer, trackNumber uint64) error {
 }
 
 func writeTracksWithFlagValue(writer *ebml.Writer, flagID ebml.ID, value uint64) error {
+	return writeTracksWithTrackMetadata(writer, trackUIntElement{flagID, value})
+}
+
+type trackUIntElement struct {
+	id    ebml.ID
+	value uint64
+}
+
+func writeTracksWithTrackMetadata(writer *ebml.Writer, elements ...trackUIntElement) error {
 	var tracks bytes.Buffer
 	tw := ebml.NewWriter(&tracks)
 	var entry bytes.Buffer
@@ -3758,8 +3849,10 @@ func writeTracksWithFlagValue(writer *ebml.Writer, flagID ebml.ID, value uint64)
 	if err := ew.WriteUInt(idTrackType, matroskaTrackVideo); err != nil {
 		return err
 	}
-	if err := ew.WriteUInt(flagID, value); err != nil {
-		return err
+	for i := range elements {
+		if err := ew.WriteUInt(elements[i].id, elements[i].value); err != nil {
+			return err
+		}
 	}
 	if err := ew.WriteString(idCodecID, "V_VP8"); err != nil {
 		return err

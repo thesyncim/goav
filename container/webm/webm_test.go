@@ -249,6 +249,47 @@ func TestMuxerDemuxerPreservesCodecName(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesDecodedFieldDuration(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:                          TrackVideo,
+		Codec:                         CodecVP8,
+		DefaultDurationNS:             20_000_000,
+		DefaultDecodedFieldDurationNS: 10_000_000,
+		Video:                         VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].DefaultDurationNS != 20_000_000 || tracks[0].DefaultDecodedFieldDurationNS != 10_000_000 {
+		t.Fatalf("track = %+v", tracks[0])
+	}
+}
+
 func TestDemuxerRejectsMatroskaDocType(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := matroska.NewMuxer(&buffer, matroska.MuxerOptions{})
