@@ -108,7 +108,9 @@ for _, edge := range spec.Edges {
   or encoded packets to file/URI outputs, not both. Declare `.Do(...)`,
   `.Resize(...)`, or `.Resample(...)` before the one terminal encoder, then
   attach outputs with `.To(...)`.
-- `goav.Decode(input, sink)` decodes one selected stream into a frame sink.
+- `goav.Decode(input, goav.FrameSink(frames))` decodes an unambiguous stream
+  into a frame sink; use the stream-scoped `From(...).Audio()` or
+  `From(...).Video()` shape when selection matters.
 - `goav.Transcode(input)` builds named audio or video branches and outputs.
   Transcode branch `.To(...)` accepts either a named output label or an
   `OutputSpec` such as `goav.FileOutput(...)`; each branch must route to an

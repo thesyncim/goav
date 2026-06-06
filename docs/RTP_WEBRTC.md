@@ -134,13 +134,13 @@ task, err := goav.From(goav.WebRTCTrack(track)).
 For repeated RTP/WebRTC inputs, the generated graph feeds all sources into the
 selector before the decoder. Single-stream RTP sources stamp EOS with the stream
 ID so unrelated inputs do not flush the selected decoder.
-Optional filter stages can be inserted after `Decode(...)` and before `Sink(...)`
-when their selector matches the decoded stream.
+Optional filter stages can be inserted after `.Decode()` and before
+`.To(goav.FrameSink(...))` when their selector matches the decoded stream.
 Decoder factories can optionally provide adapter-specific reusable state for
 this high-level path. `WithRTPDecodeBounds(...)` lets an RTP input seed payload,
 retained-fragment, output-count, and geometry limits into that state provider.
 That lets the AV1 adapter bind conservative scratch and a worker pool for
-`RTP(...).Decode(...).Sink(...)` while applications with exact stream knowledge
+stream-scoped RTP decode recipes while applications with exact stream knowledge
 can still pass tuned state through the lower-level codec API.
 The high-level AV1 path receives depacketized packets from `rtpav`; lower-level
 callers that intentionally keep raw AV1 RTP aggregation payload bytes can use
@@ -213,8 +213,8 @@ low-overhead OBU packets after loss until a packet keyframe marker or parseable
 sequence-header/key-frame payload appears. The concrete tagged decoder also has
 a raw AV1 RTP payload path that retains fragments across payloads and can
 recover after loss while preserving known sequence state. The high-level
-`RTP(...).Decode(...).Sink(...)` path covers same-stream and replacement-stream
-AV1 codec changes with payload-map refresh, old-ID or replacement-ID event
+stream-scoped RTP decode recipe covers same-stream and replacement-stream AV1
+codec changes with payload-map refresh, old-ID or replacement-ID event
 targeting, and resumed decode on the next sync packet; dynamic graph rebind for
 new-codec switches is still a future policy.
 

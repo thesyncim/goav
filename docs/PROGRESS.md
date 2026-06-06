@@ -178,7 +178,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     low-overhead sequence/key-frame payload contents. Done.
 55. Add optional `codec.DecodeStateFactory` provisioning so high-level decode
     builders can open adapters that need large caller-owned arenas, then prove
-    tagged AV1 RTP receive through `RTP(...).Decode(...).Sink(...)` with
+    tagged AV1 RTP receive through stream-scoped RTP decode recipes with
     runtime-provided decoder state. Done.
 56. Prove same-stream tagged AV1 RTP codec-change recovery through the
     high-level receive builder: payload-map refresh, epoch update,
@@ -196,8 +196,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 60. Let single-stream RTP/WebRTC codec-change events carry replacement stream
     identity through source stream state, video depacketizers, EOS, and
     type-selected runtime decode graphs while keeping ID-pinned selectors
-    strict. Prove tagged AV1 replacement-stream recovery through
-    `RTP(...).Decode(...).Sink(...)`. Done.
+    strict. Prove tagged AV1 replacement-stream recovery through stream-scoped
+    RTP decode recipes. Done.
 61. Let targeted multi-stream RTP codec-change events use `Event.StreamID` for
     the old stream and `Event.Stream` for the replacement identity, canonicalize
     accepted events downstream, and prove AV1/H264 depacketizer plus tagged AV1
@@ -403,7 +403,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     unnamed single-stream readers keep their stream identity without manual
     depacketizer wiring.
     Done.
-130. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+130. Make the top-level `Decode(input, output)` recipe use `FrameSink(...)`
+    output specs, matching the rest of the recipe API and rejecting mux outputs
+    with direct guidance.
+    Done.
+131. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -456,11 +460,11 @@ Required proof:
 - The runtime builder can also plan and compile simple remux/fanout jobs from
   `Input(...).Output(...).Build(ctx)` when registered format adapters can probe,
   demux, and mux the selected boundaries.
-- The runtime builder can plan and compile selected-stream decode jobs from
-  `Input(...).Decode(...).Sink(...).Build(ctx)` when format probing resolves
-  one matching stream and the codec registry has a decoder factory. The graph
-  includes an explicit stream-select stage so unrelated packets do not reach the
-  decoder, and optional filter stages can run before the sink.
+- The recipe/runtime path can plan and compile selected-stream decode jobs from
+  stream-scoped `.Decode().To(goav.FrameSink(...))` recipes when format probing
+  resolves one matching stream and the codec registry has a decoder factory. The
+  graph includes an explicit stream-select stage so unrelated packets do not
+  reach the decoder, and optional filter stages can run before the sink.
 - `adapters/ivf` provides a narrow packet recording boundary for one VP8, VP9,
   or AV1 video stream with allocation-guarded demux/mux hot paths.
 - The runtime builder can plan and compile RTP/WebRTC packet-reader record jobs
@@ -468,10 +472,11 @@ Required proof:
   depacketizer option, repeated RTP/WebRTC inputs, aggregated stream lists for
   muxers, multiple mux outputs, lifecycle closure, graph specs, and event
   visibility.
-- The runtime builder can plan and compile selected-stream live decode jobs from
-  `RTP(...).Decode(...).Sink(...).Build(ctx)`, including repeated RTP/WebRTC
-  inputs, graph specs, decoder lifecycle closure, and filtering of
-  unrelated packets and stream-scoped EOS before they reach the decoder.
+- The recipe/runtime path can plan and compile selected-stream live decode jobs
+  from stream-scoped RTP/WebRTC `.Decode().To(goav.FrameSink(...))` recipes,
+  including repeated RTP/WebRTC inputs, graph specs, decoder lifecycle closure,
+  and filtering of unrelated packets and stream-scoped EOS before they reach the
+  decoder.
   Ordered filter stages can run between decode and the sink when their selector
   matches the decoded stream. Decoder factories that implement
   `codec.DecodeStateFactory` can provision adapter-specific state for this

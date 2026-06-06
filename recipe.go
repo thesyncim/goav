@@ -685,7 +685,7 @@ func URIOutput(uri string) OutputSpec {
 	}
 }
 
-func FrameSink(sink pipeline.Sink) OutputSpec {
+func FrameSink(sink Sink) OutputSpec {
 	name := ""
 	if sink != nil {
 		name = sink.Name()
@@ -869,13 +869,27 @@ func From(input InputSpec, options ...JobOption) *Job {
 	return job
 }
 
-func Decode(input InputSpec, sink pipeline.Sink, options ...JobOption) *Job {
+func Decode(input InputSpec, output OutputSpec, options ...JobOption) *Job {
 	job := newJob("decode", options...)
 	job.inputs = append(job.inputs, input)
 	job.stream = &jobStreamBuild{
 		selector: input.selector(""),
 		decode:   true,
-		outputs:  []OutputSpec{FrameSink(sink)},
+		outputs:  []OutputSpec{output},
+	}
+	if output.err == nil && output.sink == nil {
+		job.setErr(&BuildError{
+			Code:      "decode_output_invalid",
+			Operation: "build decode",
+			Node:      output.label("output"),
+			Reason:    "decode recipes write decoded frames to a frame sink",
+			Suggestions: []string{
+				"use goav.Decode(input, goav.FrameSink(sink)) for the decode shortcut",
+				"use goav.From(input).Audio().Decode().To(goav.FrameSink(sink)) when stream selection matters",
+				"use goav.Record(input, output) for packet-preserving record or remux",
+			},
+			Cause: ErrUnsupportedBuild,
+		})
 	}
 	return job
 }
@@ -1714,7 +1728,7 @@ func (b *JobStreamBuilder) Decode() *JobStreamBuilder {
 	return b
 }
 
-func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
+func (b *JobStreamBuilder) Do(stage Stage) *JobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
 		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", stream.encode))

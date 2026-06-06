@@ -111,6 +111,31 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	}
 }
 
+func TestReadmeDecodeShortcutUsesFrameSink(t *testing.T) {
+	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		return nil
+	})
+	job := goav.Decode(
+		goav.RTP(recipeAPIRTPReader{}).Codec(goav.Opus()),
+		goav.FrameSink(sink),
+	)
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "rtp -> select-opus") ||
+		!strings.Contains(text, "select-opus -> decode-opus") ||
+		!strings.Contains(text, "decode-opus -> frames") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || string(intent.Streams[0].Select.Codec) != "opus" || !intent.Streams[0].Decode {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
 func TestReadmeWebRTCTrackRecordRecipeIsSmall(t *testing.T) {
 	job := goav.Record(
 		goav.WebRTCTrack(&webrtc.TrackRemote{},
@@ -251,7 +276,7 @@ func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 func TestDecodeRecipeRejectsNilFrameSink(t *testing.T) {
 	_, err := goav.Decode(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		nil,
+		goav.FrameSink(nil),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrNilSink) {
@@ -265,7 +290,7 @@ func TestDecodeRecipeRejectsNilFrameSink(t *testing.T) {
 func TestDecodeRecipeRejectsNilSinkFuncCallback(t *testing.T) {
 	_, err := goav.Decode(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		goav.SinkFunc("frames", nil),
+		goav.FrameSink(goav.SinkFunc("frames", nil)),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrNilSink) {
@@ -273,6 +298,21 @@ func TestDecodeRecipeRejectsNilSinkFuncCallback(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "non-nil sink") {
 		t.Fatalf("err = %v, want sink guidance", err)
+	}
+}
+
+func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
+	_, err := goav.Decode(
+		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.FileOutput("frames.ogg", io.Discard),
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "decode_output_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want decode_output_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "goav.Decode(input, goav.FrameSink") ||
+		!strings.Contains(err.Error(), "goav.Record(input, output)") {
+		t.Fatalf("err = %v, want decode output guidance", err)
 	}
 }
 

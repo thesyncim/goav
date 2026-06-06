@@ -197,9 +197,9 @@ messages, keeps upstream events visible by default, flushes before EOS, and uses
 packet-loss events to trigger audio PLC paths such as Opus concealment. The
 runtime builder asks decoder factories for optional adapter-owned state before
 opening stages, so heavyweight backends can stay hidden behind the same fluent
-`Decode(...).Sink(...)` path. The encoder stage turns frame messages into packet
-messages, observes upstream events for encoder state, flushes delayed packets
-before EOS, and consumes input events after the graph observes them.
+stream-scoped decode recipe. The encoder stage turns frame messages into
+packet messages, observes upstream events for encoder state, flushes delayed
+packets before EOS, and consumes input events after the graph observes them.
 
 The format package follows the same pattern for containers. `DemuxSource`
 adapts a `format.Demuxer` into packet and event messages, including stream and
