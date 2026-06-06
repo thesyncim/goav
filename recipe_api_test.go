@@ -665,6 +665,21 @@ func TestRTPRecipeRejectsNilReader(t *testing.T) {
 	}
 }
 
+func TestRTPRecipeRequiresCodecIntent(t *testing.T) {
+	_, err := goav.Record(
+		goav.RTP(recipeAPIRTPReader{}).Name("audio"),
+		goav.FileOutput("recording.ogg", io.Discard),
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "rtp_codec_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want rtp_codec_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), ".Codec(goav.Opus())") ||
+		!strings.Contains(err.Error(), "goav.WebRTCTrack") {
+		t.Fatalf("err = %v, want RTP codec guidance", err)
+	}
+}
+
 func TestRTPRecipeRejectsNegativeBufferLimits(t *testing.T) {
 	tests := []struct {
 		name  string

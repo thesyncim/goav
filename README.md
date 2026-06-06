@@ -133,6 +133,8 @@ return goav.Transcode(goav.FileInput("input.webm", in)).
 - `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive
   intent without making the caller wire depacketizers by hand for Opus, VP8,
   VP9, H264, or AV1; `reader` must be a non-nil Pion-backed packet reader.
+  Raw RTP recipes require `.Codec(...)`; `WebRTCTrack(track)` derives that
+  intent from Pion track metadata.
   Single-stream readers can provide the stream ID; `.Name(...)` gives the
   graph and stream a stable label when the reader metadata is not enough.
   Unsupported RTP codec intents fail with supported-codec guidance first;

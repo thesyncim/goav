@@ -566,6 +566,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     diagnostics for unsupported shapes such as multiple file inputs, selected
     streams with no operation, missing encoders for mux outputs, and RTP inputs
     on `Transcode` recipes. Done.
+173. Require explicit codec intent for raw `goav.RTP(reader)` recipes, while
+    keeping `WebRTCTrack(track)` as the Pion metadata-driven path, so realtime
+    receive does not silently build opaque RTP graphs. Done.
 
 ## First Vertical Slice
 

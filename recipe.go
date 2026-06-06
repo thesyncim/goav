@@ -549,7 +549,17 @@ func (s InputSpec) validateRTPCodec() error {
 		}
 	}
 	if s.codec.ID == "" {
-		return nil
+		return &BuildError{
+			Code:      "rtp_codec_missing",
+			Operation: "build input",
+			Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
+			Reason:    "RTP input needs an explicit receive codec intent",
+			Suggestions: []string{
+				"call .Codec(goav.Opus()), .Codec(goav.VP8()), .Codec(goav.VP9()), .Codec(goav.H264()), or .Codec(goav.AV1()) on goav.RTP(reader)",
+				"use goav.WebRTCTrack(track) when Pion track metadata should provide the codec intent",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
 	}
 	switch s.codec.ID {
 	case av.CodecOpus, av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1:
