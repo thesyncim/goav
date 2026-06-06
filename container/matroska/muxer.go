@@ -149,7 +149,7 @@ func (m *Muxer) WritePacket(packet Packet) error {
 		if err := m.writeHeader(); err != nil {
 			return err
 		}
-	} else if track.Codec == CodecH264 && len(track.CodecPrivate) == 0 {
+	} else if codecRequiresPrivateForHeader(track.Codec) && len(track.CodecPrivate) == 0 {
 		return ErrInvalidTrack
 	}
 	timecode := packet.TimeNS / m.options.TimecodeScaleNS
@@ -194,7 +194,7 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 		if err != nil {
 			return err
 		}
-	} else if track.Codec == CodecH264 && len(track.CodecPrivate) == 0 {
+	} else if codecRequiresPrivateForHeader(track.Codec) && len(track.CodecPrivate) == 0 {
 		return ErrInvalidTrack
 	}
 	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
@@ -381,7 +381,14 @@ func (m *Muxer) writeHeader() error {
 
 func (m *Muxer) prepareTracksForHeader(trackIndex int, frames [][]byte) (Track, error) {
 	track := m.tracks[trackIndex]
-	if track.Codec == CodecH264 && len(track.CodecPrivate) == 0 {
+	switch {
+	case track.Codec == CodecAV1 && len(track.CodecPrivate) == 0:
+		private, err := av1CodecConfigurationRecordFromFrames(frames)
+		if err != nil {
+			return Track{}, err
+		}
+		track.CodecPrivate = private
+	case track.Codec == CodecH264 && len(track.CodecPrivate) == 0:
 		private, err := h264AVCDecoderConfigurationRecordFromAnnexBFrames(frames)
 		if err != nil {
 			return Track{}, err
@@ -393,7 +400,7 @@ func (m *Muxer) prepareTracksForHeader(trackIndex int, frames [][]byte) (Track, 
 		if i == trackIndex {
 			candidate = track
 		}
-		if candidate.Codec == CodecH264 && len(candidate.CodecPrivate) == 0 {
+		if codecRequiresPrivateForHeader(candidate.Codec) && len(candidate.CodecPrivate) == 0 {
 			return Track{}, ErrInvalidTrack
 		}
 	}
@@ -403,11 +410,15 @@ func (m *Muxer) prepareTracksForHeader(trackIndex int, frames [][]byte) (Track, 
 
 func (m *Muxer) validateTracksForHeader() error {
 	for i := range m.tracks {
-		if m.tracks[i].Codec == CodecH264 && len(m.tracks[i].CodecPrivate) == 0 {
+		if codecRequiresPrivateForHeader(m.tracks[i].Codec) && len(m.tracks[i].CodecPrivate) == 0 {
 			return ErrInvalidTrack
 		}
 	}
 	return nil
+}
+
+func codecRequiresPrivateForHeader(codec Codec) bool {
+	return codec == CodecAV1 || codec == CodecH264
 }
 
 func (m *Muxer) writeEBMLHeader() error {

@@ -114,7 +114,7 @@ func TestMuxerDemuxerRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	packets := []Packet{
-		{TrackID: videoID, TimeNS: 0, Keyframe: true, Data: []byte{1, 2, 3}},
+		{TrackID: videoID, TimeNS: 0, Keyframe: true, Data: webmAV1SequenceHeaderOBU()},
 		{TrackID: audioID, TimeNS: 20_000_000, Keyframe: true, Data: []byte{4, 5}},
 	}
 	for i := range packets {
@@ -184,9 +184,10 @@ func TestMuxerDemuxerSupportsWebMCodecs(t *testing.T) {
 		{
 			name: "av1",
 			track: Track{
-				Type:  TrackVideo,
-				Codec: CodecAV1,
-				Video: VideoConfig{Width: 640, Height: 360},
+				Type:         TrackVideo,
+				Codec:        CodecAV1,
+				Video:        VideoConfig{Width: 640, Height: 360},
+				CodecPrivate: webmAV1CodecConfig(),
 			},
 			data: []byte{0x12, 0x00, 0x0a},
 		},
@@ -245,6 +246,15 @@ func TestMuxerDemuxerSupportsWebMCodecs(t *testing.T) {
 	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
 		t.Fatalf("err = %v, want EOF", err)
 	}
+}
+
+func webmAV1CodecConfig() []byte {
+	private := []byte{0x81, 0x05, 0x10, 0x00}
+	return append(private, webmAV1SequenceHeaderOBU()...)
+}
+
+func webmAV1SequenceHeaderOBU() []byte {
+	return []byte{0x0a, 0x06, 0x19, 0x5d, 0xc3, 0xc3, 0xda, 0x44}
 }
 
 func TestMuxerWritesLacedPackets(t *testing.T) {

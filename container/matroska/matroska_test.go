@@ -342,6 +342,164 @@ func TestDemuxerRejectsInvalidAV1CodecPrivate(t *testing.T) {
 	}
 }
 
+func TestAV1CodecConfigurationRecordFromSequenceHeader(t *testing.T) {
+	private, err := av1CodecConfigurationRecordFromFrames([][]byte{av1SequenceHeaderOBU()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(private, av1CodecConfig()) {
+		t.Fatalf("private = %v, want %v", private, av1CodecConfig())
+	}
+	if _, err := parseAV1CodecConfigurationRecord(private); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = av1CodecConfigurationRecordFromFrames([][]byte{av1TemporalDelimiterOBU()})
+	if !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
+	}
+}
+
+func TestMuxerGeneratesAV1CodecPrivateFromFirstPacket(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecAV1,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := av1SequenceHeaderOBU()
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: data}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 || !bytes.Equal(tracks[0].CodecPrivate, av1CodecConfig()) {
+		t.Fatalf("tracks = %+v", tracks)
+	}
+	packet := Packet{Data: make([]byte, 0, len(data))}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TrackID != trackID || packet.TimeNS != 0 || !packet.Keyframe || !bytes.Equal(packet.Data, data) {
+		t.Fatalf("packet = %+v data=%v, want %v", packet, packet.Data, data)
+	}
+}
+
+func TestMuxerGeneratesAV1CodecPrivateFromFirstLacedPacket(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackVideo,
+		Codec:             CodecAV1,
+		DefaultDurationNS: 20_000_000,
+		Video:             VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := [][]byte{av1SequenceHeaderOBU(), av1TemporalDelimiterOBU()}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingEBML,
+		Frames:   frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 || !bytes.Equal(tracks[0].CodecPrivate, av1CodecConfig()) {
+		t.Fatalf("tracks = %+v", tracks)
+	}
+	packet := Packet{Data: make([]byte, 0, len(frames[0]))}
+	for i := range frames {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatalf("frame %d read: %v", i, err)
+		}
+		if packet.TrackID != trackID || packet.TimeNS != int64(i)*20_000_000 ||
+			packet.DurationNS != 20_000_000 || !packet.Keyframe ||
+			!bytes.Equal(packet.Data, frames[i]) {
+			t.Fatalf("frame %d packet=%+v data=%v want data=%v", i, packet, packet.Data, frames[i])
+		}
+	}
+}
+
+func TestMuxerRejectsHeaderWhenAV1CodecPrivateIsMissing(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecAV1,
+		Video: VideoConfig{Width: 16, Height: 16},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	audioTrack, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = muxer.WritePacket(Packet{TrackID: audioTrack, TimeNS: 0, Keyframe: true, Data: []byte{1, 2, 3}})
+	if !errors.Is(err, ErrInvalidTrack) {
+		t.Fatalf("err = %v, want ErrInvalidTrack", err)
+	}
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before rejecting missing AV1 private data", buffer.Len())
+	}
+}
+
+func TestMuxerCloseRejectsMissingAV1CodecPrivate(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecAV1,
+		Video: VideoConfig{Width: 16, Height: 16},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); !errors.Is(err, ErrInvalidTrack) {
+		t.Fatalf("err = %v, want ErrInvalidTrack", err)
+	}
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before rejecting missing AV1 private data", buffer.Len())
+	}
+}
+
 func TestAVCDecoderConfigurationRecordValidation(t *testing.T) {
 	config, err := parseAVCDecoderConfigurationRecord(h264AVCDecoderConfig())
 	if err != nil {
@@ -2451,6 +2609,10 @@ func av1CodecConfigWithPrefixOBU(obu []byte) []byte {
 
 func av1SequenceHeaderOBU() []byte {
 	return []byte{0x0a, 0x06, 0x19, 0x5d, 0xc3, 0xc3, 0xda, 0x44}
+}
+
+func av1TemporalDelimiterOBU() []byte {
+	return []byte{0x12, 0x00}
 }
 
 func h264AVCDecoderConfig() []byte {

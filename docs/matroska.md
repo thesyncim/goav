@@ -87,7 +87,9 @@ Current milestone:
   available; demuxing converts those AVC samples back into Annex B packets for
   the public API.
 - AV1 tracks validate caller-provided AV1CodecConfigurationRecord codec-private
-  data on mux and demux before exposing or writing track metadata.
+  data on mux and demux before exposing or writing track metadata; muxing can
+  generate the record from a first-packet sequence header OBU before the header
+  is written.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with
   WebM demuxers requiring the `webm` EBML document type.
 - Format registry adapters for `av.Stream` and `av.Packet`.
@@ -166,7 +168,9 @@ Current mappings:
 - VP8: `V_VP8`
 - VP9: `V_VP9`
 - AV1: `V_AV1` with AV1CodecConfigurationRecord validation when codec-private
-  data is provided.
+  data is provided. If AV1 private data is omitted, the first AV1 packet written
+  before the header must contain a sequence header OBU with a size field so the
+  muxer can generate the configuration record.
 - H.264: `V_MPEG4/ISO/AVC` with AVCDecoderConfigurationRecord validation when
   codec-private data is provided. If H.264 private data is omitted, the first
   H.264 packet written before the header must be Annex B and must include SPS
