@@ -543,23 +543,20 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 	if _, err := New().New().
 		Source(validSource).
 		Sink(validSink).
-		Link(pipeline.Link{
-			From: pipeline.Node("missing"),
-			To:   pipeline.Node("sink"),
-		}).
+		Connect("missing", "sink").
 		Describe(); !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("unknown err = %v, want ErrUnknownNode", err)
 	}
 	if _, err := New().New().
 		Source(validSource).
 		Sink(validSink).
-		Route(pipeline.Route{
-			From:   pipeline.Node("source"),
-			To:     []pipeline.NodeRef{pipeline.Node("sink")},
-			Policy: pipeline.RouteByLabel,
+		Connection(pipeline.Connection{
+			From:   "source",
+			To:     []string{"sink"},
+			Policy: pipeline.RoutePolicy("unsupported"),
 		}).
 		Describe(); !errors.Is(err, pipeline.ErrUnsupportedRoute) {
-		t.Fatalf("route err = %v, want ErrUnsupportedRoute", err)
+		t.Fatalf("connection err = %v, want ErrUnsupportedRoute", err)
 	}
 }
 
@@ -593,13 +590,10 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 	_, err = New().New().
 		Source(source).
 		Sink(sink).
-		Link(pipeline.Link{
-			From: pipeline.Node("missing"),
-			To:   pipeline.Node("sink"),
-		}).
+		Connect("missing", "sink").
 		Build(context.Background())
 	if !errors.Is(err, pipeline.ErrUnknownNode) {
-		t.Fatalf("link err = %v, want ErrUnknownNode", err)
+		t.Fatalf("connect err = %v, want ErrUnknownNode", err)
 	}
 }
 

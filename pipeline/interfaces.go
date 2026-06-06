@@ -105,26 +105,13 @@ func (r NodeRef) String() string {
 	return string(r)
 }
 
-type Link struct {
-	From NodeRef
-	To   NodeRef
-}
-
 type RoutePolicy string
 
 const (
 	RouteAll      RoutePolicy = "all"
 	RouteByStream RoutePolicy = "by_stream"
 	RouteByEvent  RoutePolicy = "by_event"
-	RouteByLabel  RoutePolicy = "by_label"
 )
-
-type Route struct {
-	From   NodeRef
-	To     []NodeRef
-	Policy RoutePolicy
-	Label  string
-}
 
 type Connection struct {
 	From   string
@@ -153,19 +140,11 @@ func (c Connection) ByEvent(event av.EventType) Connection {
 	return c
 }
 
-func (c Connection) WithRoute(policy RoutePolicy, label string) Connection {
-	c.Policy = policy
-	c.Label = label
-	return c
-}
-
 type Graph interface {
 	AddSource(Source, BufferPolicy) (NodeRef, error)
 	AddStage(Stage, BufferPolicy) (NodeRef, error)
 	AddSink(Sink, BufferPolicy) (NodeRef, error)
 	Connect(Connection) error
-	Link(Link) error
-	Route(Route) error
 	Spec() Spec
 	Run(context.Context) error
 	Events() <-chan av.Event

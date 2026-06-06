@@ -128,31 +128,11 @@ func (g *DirectGraph) Connect(connection Connection) error {
 	if len(connection.To) == 0 {
 		return ErrInvalidLink
 	}
-	to := make([]NodeRef, len(connection.To))
-	for i := range connection.To {
-		to[i] = NodeRef(connection.To[i])
+	policy, err := normalizeRoutePolicy(connection.Policy)
+	if err != nil {
+		return err
 	}
-	return g.Route(Route{
-		From:   NodeRef(connection.From),
-		To:     to,
-		Policy: connection.Policy,
-		Label:  connection.Label,
-	})
-}
-
-func (g *DirectGraph) Link(link Link) error {
-	return g.Connect(Connection{
-		From:   link.From.String(),
-		To:     []string{link.To.String()},
-		Policy: RouteAll,
-	})
-}
-
-func (g *DirectGraph) Route(route Route) error {
-	if route.Policy == RouteByLabel {
-		return ErrUnsupportedRoute
-	}
-	from, ok := g.index[route.From.String()]
+	from, ok := g.index[connection.From]
 	if !ok {
 		return ErrUnknownNode
 	}
@@ -160,9 +140,9 @@ func (g *DirectGraph) Route(route Route) error {
 		return ErrInvalidLink
 	}
 
-	targets := make([]int, 0, len(route.To))
-	for i := range route.To {
-		to, ok := g.index[route.To[i].String()]
+	targets := make([]int, 0, len(connection.To))
+	for i := range connection.To {
+		to, ok := g.index[connection.To[i]]
 		if !ok {
 			return ErrUnknownNode
 		}
@@ -173,10 +153,21 @@ func (g *DirectGraph) Route(route Route) error {
 	}
 	g.nodes[from].routes = append(g.nodes[from].routes, directRoute{
 		to:     targets,
-		policy: route.Policy,
-		label:  route.Label,
+		policy: policy,
+		label:  connection.Label,
 	})
 	return nil
+}
+
+func normalizeRoutePolicy(policy RoutePolicy) (RoutePolicy, error) {
+	switch policy {
+	case "", RouteAll:
+		return RouteAll, nil
+	case RouteByStream, RouteByEvent:
+		return policy, nil
+	default:
+		return "", ErrUnsupportedRoute
+	}
 }
 
 func (g *DirectGraph) Run(ctx context.Context) error {

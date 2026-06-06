@@ -21,8 +21,6 @@ func (decodeEncodeToOutputGraphCompiler) match(b *builder) bool {
 		len(b.transcodes) == 0 &&
 		len(b.sources) == 0 &&
 		len(b.stages) == 0 &&
-		len(b.links) == 0 &&
-		len(b.routes) == 0 &&
 		len(b.rtpInputs) == 0
 }
 
@@ -43,9 +41,7 @@ func (rtpDecodeEncodeToOutputGraphCompiler) match(b *builder) bool {
 		len(b.sinks) == 0 &&
 		len(b.transcodes) == 0 &&
 		len(b.sources) == 0 &&
-		len(b.stages) == 0 &&
-		len(b.links) == 0 &&
-		len(b.routes) == 0
+		len(b.stages) == 0
 }
 
 func (rtpDecodeEncodeToOutputGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
@@ -224,7 +220,7 @@ func (b *builder) compileEncodeOutputPath(ctx context.Context, graph pipeline.Gr
 			muxStage.Close()
 			return err
 		}
-		if err := graph.Link(pipeline.Link{From: encodeRef, To: muxRef}); err != nil {
+		if err := connectRefs(graph, encodeRef, muxRef); err != nil {
 			return err
 		}
 	}
@@ -241,7 +237,7 @@ func (b *builder) compileEncodeStage(ctx context.Context, graph pipeline.Graph, 
 		stage.Close()
 		return "", err
 	}
-	if err := graph.Link(pipeline.Link{From: upstream, To: encodeRef}); err != nil {
+	if err := connectRefs(graph, upstream, encodeRef); err != nil {
 		return "", err
 	}
 	return encodeRef, nil

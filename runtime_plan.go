@@ -85,7 +85,7 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		sinkRefs[i] = ref
 	}
 
-	if len(b.connections) != 0 || len(b.links) != 0 || len(b.routes) != 0 {
+	if len(b.connections) != 0 {
 		if err := b.planExplicitEdges(nodes, &spec); err != nil {
 			return pipeline.Spec{}, err
 		}
@@ -111,16 +111,6 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 func (b *builder) planExplicitEdges(nodes map[string]plannedNode, spec *pipeline.Spec) error {
 	for i := range b.connections {
 		if err := planConnection(nodes, spec, b.connections[i]); err != nil {
-			return err
-		}
-	}
-	for i := range b.links {
-		if err := planLink(nodes, spec, b.links[i]); err != nil {
-			return err
-		}
-	}
-	for i := range b.routes {
-		if err := planRoute(nodes, spec, b.routes[i]); err != nil {
 			return err
 		}
 	}
@@ -168,34 +158,9 @@ func planLinks(spec *pipeline.Spec, from []pipeline.NodeRef, to []pipeline.NodeR
 	}
 }
 
-func planLink(nodes map[string]plannedNode, spec *pipeline.Spec, link pipeline.Link) error {
-	from, to, err := resolvePlannedEdge(nodes, link.From, link.To)
-	if err != nil {
-		return err
-	}
-	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-		From:   from,
-		To:     to,
-		Policy: pipeline.RouteAll,
-	})
-	return nil
-}
-
-func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline.Route) error {
-	to := make([]string, len(route.To))
-	for i := range route.To {
-		to[i] = route.To[i].String()
-	}
-	return planConnection(nodes, spec, pipeline.Connection{
-		From:   route.From.String(),
-		To:     to,
-		Policy: route.Policy,
-		Label:  route.Label,
-	})
-}
-
 func planConnection(nodes map[string]plannedNode, spec *pipeline.Spec, connection pipeline.Connection) error {
-	if connection.Policy == pipeline.RouteByLabel {
+	policy, err := plannedRoutePolicy(connection.Policy)
+	if err != nil {
 		return pipeline.ErrUnsupportedRoute
 	}
 	if len(connection.To) == 0 {
@@ -227,44 +192,22 @@ func planConnection(nodes map[string]plannedNode, spec *pipeline.Spec, connectio
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
 			From:   fromRef,
 			To:     toRef,
-			Policy: connection.Policy,
+			Policy: policy,
 			Label:  connection.Label,
 		})
 	}
 	return nil
 }
 
-func validatePlannedEdge(nodes map[string]plannedNode, from pipeline.NodeRef, to pipeline.NodeRef) error {
-	fromNode, ok := nodes[from.String()]
-	if !ok {
-		return pipeline.ErrUnknownNode
+func plannedRoutePolicy(policy pipeline.RoutePolicy) (pipeline.RoutePolicy, error) {
+	switch policy {
+	case "", pipeline.RouteAll:
+		return pipeline.RouteAll, nil
+	case pipeline.RouteByStream, pipeline.RouteByEvent:
+		return policy, nil
+	default:
+		return "", pipeline.ErrUnsupportedRoute
 	}
-	if fromNode.kind == pipeline.NodeSink {
-		return pipeline.ErrInvalidLink
-	}
-	toNode, ok := nodes[to.String()]
-	if !ok {
-		return pipeline.ErrUnknownNode
-	}
-	if toNode.kind == pipeline.NodeSource {
-		return pipeline.ErrInvalidLink
-	}
-	return nil
-}
-
-func resolvePlannedEdge(nodes map[string]plannedNode, from pipeline.NodeRef, to pipeline.NodeRef) (pipeline.NodeRef, pipeline.NodeRef, error) {
-	fromRef, err := resolvePlannedNode(nodes, from)
-	if err != nil {
-		return "", "", err
-	}
-	toRef, err := resolvePlannedNode(nodes, to)
-	if err != nil {
-		return "", "", err
-	}
-	if err := validatePlannedEdge(nodes, fromRef, toRef); err != nil {
-		return "", "", err
-	}
-	return fromRef, toRef, nil
 }
 
 func resolvePlannedNode(nodes map[string]plannedNode, ref pipeline.NodeRef) (pipeline.NodeRef, error) {

@@ -20,13 +20,14 @@ func Descriptor() codec.Descriptor {
 			Realtime:     true,
 			PixelFormats: []string{"i420"},
 			RTPPayloads:  []string{"video/av1"},
+			BuildTags:    []string{"goav_goav1"},
 			Experimental: true,
 		},
 		Backend: codec.Backend{
 			Name:    "goav1",
 			Module:  "github.com/thesyncim/goav1",
 			Package: "github.com/thesyncim/goav/adapters/goav1",
-			Status:  "planned",
+			Status:  "planned-build-tagged",
 		},
 	}
 }

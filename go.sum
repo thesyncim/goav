@@ -40,6 +40,8 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+github.com/thesyncim/goav1 v0.0.0-20260605233508-19454059211a h1:+XCHvA1cgzPxJQS7RfoIXSEu9NzHFpJE3EFbj0vdjIU=
+github.com/thesyncim/goav1 v0.0.0-20260605233508-19454059211a/go.mod h1:WfcUmLDoRBNKU32YpA9W/Y/6olN7Otb/Winto4HH97w=
 github.com/thesyncim/goh264 v0.0.0-20260605215817-c3ebee4f35c3 h1:WGzAU8slW6ls79zSPTYnIIoD2/gvacyOff9TArGOOnw=
 github.com/thesyncim/goh264 v0.0.0-20260605215817-c3ebee4f35c3/go.mod h1:/4BzjdI5P2Yf5ZG1ZuDRucRQAiKmXhAw/bj58zIO+Ec=
 github.com/thesyncim/gopus v0.1.1 h1:SM58S7VZGnEZ3ZR0pX5AoC33//LBxJhKkvm15MbBmik=

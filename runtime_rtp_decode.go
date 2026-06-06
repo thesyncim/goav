@@ -18,9 +18,7 @@ func (rtpDecodeToSinkGraphCompiler) match(b *builder) bool {
 		len(b.encodes) == 0 &&
 		len(b.transcodes) == 0 &&
 		len(b.sources) == 0 &&
-		len(b.stages) == 0 &&
-		len(b.links) == 0 &&
-		len(b.routes) == 0
+		len(b.stages) == 0
 }
 
 func (rtpDecodeToSinkGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {

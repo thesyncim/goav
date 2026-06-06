@@ -53,8 +53,6 @@ type Builder interface {
 	BranchStream(from string, stream av.StreamID, to ...string) Builder
 	BranchEvent(from string, event av.EventType, to ...string) Builder
 	Connection(pipeline.Connection) Builder
-	Link(pipeline.Link) Builder
-	Route(pipeline.Route) Builder
 	Describe() (pipeline.Spec, error)
 	Build(context.Context) (Task, error)
 }

@@ -51,7 +51,7 @@ func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error 
 			stage.Close()
 			return err
 		}
-		if err := graph.Link(pipeline.Link{From: sourceRef, To: stageRef}); err != nil {
+		if err := connectRefs(graph, sourceRef, stageRef); err != nil {
 			return err
 		}
 	}

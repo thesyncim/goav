@@ -37,7 +37,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
 | runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph connections and branches with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | next codec adapter validation |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` and default-build optional video adapters report unavailable factories explicitly | AV1 tagged decode once the sibling module is a clean dependency and the stream runner can bind from decode bounds without hidden allocation |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` reserves `goav_goav1` and pins the sibling RTP stream-runner API while keeping factories unavailable; default-build optional video adapters report unavailable factories explicitly | AV1 tagged decode once the stream runner can bind from decode bounds without hidden allocation |
 
 ## Implementation Order
 
@@ -80,8 +80,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 22. Separate descriptor-only codec discovery from factory availability with
     `codec.ErrUnavailable`, including an H264 runtime decode build proof. Done.
 23. Simplify explicit fluent graph routing to `Connect(..., ForStream(...))`
-    and `Connect(..., ForEvent(...))` while preserving low-level `Link` and
-    `Route` escape hatches. Done.
+    and `Connect(..., ForEvent(...))`. Done.
 24. Add build-tagged `goh264` decoder factory with real Annex B decode proof
     into borrowed video planes and keyframe request behavior after loss. Done.
 25. Add runtime-level RTP/WebRTC selected-stream decode-to-sink compiler, with
@@ -101,8 +100,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 30. Add pure-Go S16 audio resample filter adapter with linear interpolation,
     channel conversion, caller-owned output buffers, and allocation guard. Done.
 31. Simplify explicit graph fanout with `Branch(...)`,
-    `BranchStream(...)`, and `BranchEvent(...)` helpers while keeping
-    low-level `Link` and `Route` escape hatches. Done.
+    `BranchStream(...)`, and `BranchEvent(...)` helpers. Done.
 32. Add pure-Go I420/YUV420P video resize filter adapter with exact, fit, fill,
     and passthrough modes, caller-owned output planes, runtime branch scratch
     allocation, and allocation guard. Done.
@@ -129,9 +127,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 39. Add timestamp delta/compare helpers and let `rtpav.Source` emit
     discontinuity events for backward timestamps or configured max-gap
     thresholds, with fluent `WithRTPMaxTimestampGap` graph detail. Done.
-40. Promote `pipeline.Connection` as the simple direct graph connection API, thread
-    runtime explicit graph helpers through it, and keep low-level link/route
-    structs as escape hatches. Done.
+40. Promote `pipeline.Connection` as the simple direct graph connection API and
+    thread runtime explicit graph helpers through it. Done.
 41. Add build-tagged `govpx` VP9 encoder factory with caller-owned packet
     output buffers, keyframe request handling, descriptor merge proof,
     allocation guard, and deterministic close behavior. Done.
@@ -155,7 +152,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     record/fanout graph: unsafe depacketizer-owned packet payloads fail without
     copy bounds and reach every mux output with copied bytes when
     `CopyPacketBytes` is set. Done.
-48. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+48. Collapse the runnable graph edge surface to `Connect` by removing secondary
+    graph methods and builder hooks, while preserving
+    stream/event routing through connection options. Done.
+49. Reserve the `goav_goav1` optional adapter boundary and pin the sibling AV1
+    RTP stream-runner API with a tagged compile proof, without registering a
+    fake decoder factory. Done.
+50. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -342,8 +345,9 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: extend the next concrete video path, likely AV1 decode,
-if the sibling module surface is ready without expanding the core import graph.
+Current pressure point: turn the tagged AV1 readiness proof into a decoder
+factory that binds reusable RTP stream-runner scratch from
+`codec.DecodeConfig.Bounds` without hidden allocation.
 
 ## Validation Gates
 

@@ -42,9 +42,7 @@ func (transcodeGraphCompiler) match(b *builder) bool {
 		len(b.filters) == 0 &&
 		len(b.sources) == 0 &&
 		len(b.stages) == 0 &&
-		len(b.sinks) == 0 &&
-		len(b.links) == 0 &&
-		len(b.routes) == 0
+		len(b.sinks) == 0
 }
 
 func (transcodeGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
@@ -194,7 +192,7 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 				stage.Close()
 				return err
 			}
-			if err := graph.Link(pipeline.Link{From: branchRef, To: stageRef}); err != nil {
+			if err := connectRefs(graph, branchRef, stageRef); err != nil {
 				return err
 			}
 			branchRef = stageRef
@@ -228,7 +226,7 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 			return err
 		}
 		for _, branchIndex := range outputs[i].matches {
-			if err := graph.Link(pipeline.Link{From: encodeRefs[branchIndex], To: muxRef}); err != nil {
+			if err := connectRefs(graph, encodeRefs[branchIndex], muxRef); err != nil {
 				return err
 			}
 		}

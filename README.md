@@ -15,8 +15,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Explicit graph API for custom realtime systems.
 - Graphs are named sources, stages, sinks, connections, and branches;
   stream/event routing is a connection option.
-- The graph API starts with `pipeline.Connect("source", "sink")`; lower-level
-  link/route structs are escape hatches.
+- The graph API starts with `pipeline.Connect("source", "sink")`; `Connect`,
+  `ForStream`, `ForEvent`, and `Branch` are the public edge vocabulary.
 - Rendered graph nodes can carry short workflow details without changing the
   simple node-to-node API.
 - Caller-owned buffers and result structs on hot paths.
@@ -182,9 +182,9 @@ as private graph compilers that must support both `Describe` and `Build`.
   and VP9 decoder factories over `github.com/thesyncim/govpx` into
   caller-owned I420 frames, plus VP8 and VP9 encode into caller-owned packet
   buffers.
-- `adapters/goav1`: descriptor boundary for future concrete adapters; factory
-  lookups return `codec.ErrUnavailable` until a real packet-by-packet adapter is
-  registered.
+- `adapters/goav1`: descriptor-only by default; `goav_goav1` pins the sibling
+  realtime AV1 RTP stream-runner API, while factory lookups still return
+  `codec.ErrUnavailable` until a real packet-by-packet adapter is registered.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
   H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
   video frames.
@@ -210,9 +210,9 @@ Implemented slices:
   named encode/output branches, including resize/resample branch stages when
   filter factories are registered.
 - Fluent `Branch(...)`, `BranchStream(...)`, and `BranchEvent(...)` helpers for
-  one-to-many explicit graph fanout without low-level edge objects.
+  one-to-many explicit graph fanout with named connections.
 - First-class `pipeline.Connection` helpers for direct graph composition without
-  constructing lower-level edge objects.
+  extra graph concepts.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
   `RTP(...)` inputs.
 - Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,
@@ -256,10 +256,13 @@ Implemented slices:
 - Runtime RTP/WebRTC packet-reader record/fanout builds are covered through
   buffered execution with policy-bounded copies of depacketizer-owned packet
   payloads.
+- The runnable graph surface now uses one edge model: `Connect` plus stream,
+  event, and branch helpers.
 
 Next pressure points:
 
-- Extend AV1 decode once the sibling module is a clean optional dependency.
+- Turn the tagged AV1 readiness proof into a decoder factory that binds from
+  `codec.DecodeConfig.Bounds` without hidden scratch allocation.
 
 ## Working Loop
 

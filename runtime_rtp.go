@@ -155,7 +155,7 @@ func (b *builder) compileRTPRecord(ctx context.Context, graph pipeline.Graph) er
 			return err
 		}
 		for j := range sourceRefs {
-			if err := graph.Link(pipeline.Link{From: sourceRefs[j], To: stageRef}); err != nil {
+			if err := connectRefs(graph, sourceRefs[j], stageRef); err != nil {
 				return err
 			}
 		}

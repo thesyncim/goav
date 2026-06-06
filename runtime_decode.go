@@ -19,9 +19,7 @@ func (decodeToSinkGraphCompiler) match(b *builder) bool {
 		len(b.encodes) == 0 &&
 		len(b.transcodes) == 0 &&
 		len(b.sources) == 0 &&
-		len(b.stages) == 0 &&
-		len(b.links) == 0 &&
-		len(b.routes) == 0
+		len(b.stages) == 0
 }
 
 func (decodeToSinkGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
@@ -195,7 +193,7 @@ func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Gra
 	if err != nil {
 		return err
 	}
-	if err := graph.Link(pipeline.Link{From: previousRef, To: sinkRef}); err != nil {
+	if err := connectRefs(graph, previousRef, sinkRef); err != nil {
 		return err
 	}
 	return nil
@@ -222,11 +220,11 @@ func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Gr
 		return "", err
 	}
 	for i := range upstream {
-		if err := graph.Link(pipeline.Link{From: upstream[i], To: selectRef}); err != nil {
+		if err := connectRefs(graph, upstream[i], selectRef); err != nil {
 			return "", err
 		}
 	}
-	if err := graph.Link(pipeline.Link{From: selectRef, To: previousRef}); err != nil {
+	if err := connectRefs(graph, selectRef, previousRef); err != nil {
 		return "", err
 	}
 
@@ -235,7 +233,7 @@ func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Gr
 		if err != nil {
 			return "", err
 		}
-		if err := graph.Link(pipeline.Link{From: previousRef, To: stageRef}); err != nil {
+		if err := connectRefs(graph, previousRef, stageRef); err != nil {
 			return "", err
 		}
 		previousRef = stageRef

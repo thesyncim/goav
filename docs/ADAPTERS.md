@@ -115,10 +115,10 @@ format conversion remain future slices.
 
 ## `goav1`
 
-The `goav1` adapter is still descriptor-only in `goav`. The sibling module has
-AV1 low-overhead and RTP payload stream runners with caller-owned scratch, but a
-tagged decoder should register here only after the dependency can be required
-cleanly and the adapter can bind a reusable packet-by-packet runner from
+The `goav1` adapter is still descriptor-only by default in `goav`. The
+`goav_goav1` tag pins the sibling module's AV1 low-overhead and RTP payload
+stream runners with caller-owned scratch, but a decoder factory should register
+here only after the adapter can bind a reusable packet-by-packet runner from
 `codec.DecodeConfig.Bounds`, stream metadata, and documented `OpaqueState`.
 
 The first concrete surface should stay narrow:
@@ -185,9 +185,10 @@ no color conversion and no encode adapter.
 ## Descriptor-only Boundaries
 
 Default-build `govpx`, `goav1`, and default-build `goh264` expose descriptors
-without importing their sibling modules. This lets applications see planned
-capabilities and build registries without breaking the default build or forcing
-heavy dependencies. When a descriptor exists but no factory is registered,
+without importing concrete decoder/encoder implementations. This lets
+applications see planned capabilities and build registries without breaking the
+default build or forcing heavier tagged code paths. When a descriptor exists
+but no factory is registered,
 `DecoderFactory` or `EncoderFactory` returns `codec.ErrUnavailable`, not
 `codec.ErrNotFound`.
 
