@@ -213,10 +213,3 @@ type DecodeStateFactory interface {
 type EncoderFactory interface {
 	NewEncoder(context.Context, EncodeConfig) (Encoder, error)
 }
-
-type Registry interface {
-	Descriptors() []Descriptor
-	Find(av.CodecID, Mode) ([]Descriptor, error)
-	DecoderFactory(av.CodecID) (DecoderFactory, error)
-	EncoderFactory(av.CodecID) (EncoderFactory, error)
-}

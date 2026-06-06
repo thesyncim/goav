@@ -99,18 +99,34 @@ func runtimeValue(t *testing.T, rt Runtime) *runtime {
 	return r
 }
 
-func newTestCodecRegistry(configure ...func(*codec.SimpleRegistry)) *codec.SimpleRegistry {
-	registry := codec.NewRegistry()
-	for i := range configure {
-		configure[i](registry)
-	}
-	return registry
+func withTestCodecs(configure ...func(*codec.SimpleRegistry)) Option {
+	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		for i := range configure {
+			configure[i](registry)
+		}
+	})
 }
 
-func testCodecDescriptor(desc codec.Descriptor) func(*codec.SimpleRegistry) {
-	return func(registry *codec.SimpleRegistry) {
+func withTestFormats(configure ...func(*format.SimpleRegistry)) Option {
+	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		for i := range configure {
+			configure[i](registry)
+		}
+	})
+}
+
+func withTestFilters(configure ...func(*filter.SimpleRegistry)) Option {
+	return WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		for i := range configure {
+			configure[i](registry)
+		}
+	})
+}
+
+func withTestCodecDescriptor(desc codec.Descriptor) Option {
+	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDescriptor(desc)
-	}
+	})
 }
 
 func testCodecDecoder(desc codec.Descriptor, factory codec.DecoderFactory) func(*codec.SimpleRegistry) {
@@ -123,14 +139,6 @@ func testCodecEncoder(desc codec.Descriptor, factory codec.EncoderFactory) func(
 	return func(registry *codec.SimpleRegistry) {
 		registry.RegisterEncoder(desc, factory)
 	}
-}
-
-func newTestFormatRegistry(configure ...func(*format.SimpleRegistry)) *format.SimpleRegistry {
-	registry := format.NewRegistry()
-	for i := range configure {
-		configure[i](registry)
-	}
-	return registry
 }
 
 func testFormatProber(prober format.Prober) func(*format.SimpleRegistry) {
@@ -149,14 +157,6 @@ func testFormatMuxer(id av.FormatID, factory format.MuxerFactory) func(*format.S
 	return func(registry *format.SimpleRegistry) {
 		registry.RegisterMuxer(id, factory)
 	}
-}
-
-func newTestFilterRegistry(configure ...func(*filter.SimpleRegistry)) *filter.SimpleRegistry {
-	registry := filter.NewRegistry()
-	for i := range configure {
-		configure[i](registry)
-	}
-	return registry
 }
 
 func testFilterFactory(desc filter.Descriptor, factory filter.Factory) func(*filter.SimpleRegistry) {
@@ -737,13 +737,11 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 	}
 }
 
-func TestRuntimeWithCustomCodecRegistry(t *testing.T) {
-	registry := codec.NewRegistry()
-	registry.RegisterDescriptor(codec.Descriptor{
+func TestRuntimeWithCodecDescriptorAdapter(t *testing.T) {
+	rt := runtimeValue(t, New(withTestCodecDescriptor(codec.Descriptor{
 		ID:    av.CodecAV1,
 		Modes: []codec.Mode{codec.ModeDecode},
-	})
-	rt := runtimeValue(t, New(WithCodecRegistry(registry)))
+	})))
 
 	found, err := rt.codecs.Find(av.CodecAV1, codec.ModeDecode)
 	if err != nil {

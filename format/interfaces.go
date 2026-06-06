@@ -128,10 +128,3 @@ type DemuxerFactory interface {
 type MuxerFactory interface {
 	NewMuxer(context.Context, av.FormatID) (Muxer, error)
 }
-
-type Registry interface {
-	Probers() []Prober
-	Probe(context.Context, ProbeRequest) (ProbeResult, error)
-	DemuxerFactory(av.FormatID) (DemuxerFactory, error)
-	MuxerFactory(av.FormatID) (MuxerFactory, error)
-}

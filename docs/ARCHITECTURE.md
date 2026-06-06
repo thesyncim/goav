@@ -26,9 +26,9 @@ Sources -> packet/frame/event stages -> sinks
 Format, RTP, WebRTC, codec, and filter adapters
 ```
 
-`goav.New` is the composition root. It owns explicit codec, format, and
-pipeline registries, with small adapter registration hooks for optional codec
-and container integrations. The builder compiles through private graph
+`goav.New` is the composition root. It owns codec, format, and filter
+registries, with small adapter registration hooks for optional codec,
+container, and filter integrations. The builder compiles through private graph
 compilers. Each compiler owns one workflow shape and must implement both
 pre-build description and runnable graph construction, so rendered graphs and
 execution graphs stay equivalent. The fluent API stays centered on media work:

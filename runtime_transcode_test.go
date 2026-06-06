@@ -25,14 +25,14 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 		}},
 	}
 	muxers := &remuxTestMuxerFactory{}
-	formats := newTestFormatRegistry(
+	formats := withTestFormats(
 		testFormatProber(remuxTestProber{streams: streams}),
 		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 		testFormatMuxer(av.FormatOgg, muxers),
 	)
 	decoder := &decodeTestDecoder{}
 	encoderFactory := &encodeTestEncoderFactory{}
-	codecs := newTestCodecRegistry(
+	codecs := withTestCodecs(
 		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
 		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
 	)
@@ -66,7 +66,7 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 		},
 	}
 
-	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+	builder := New(formats, codecs).New().
 		Transcode(plan)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -202,20 +202,20 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 		}},
 	}
 	muxers := &remuxTestMuxerFactory{}
-	formats := newTestFormatRegistry(
+	formats := withTestFormats(
 		testFormatProber(remuxTestProber{streams: streams}),
 		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 		testFormatMuxer(av.FormatOgg, muxers),
 	)
 	decoder := &decodeTestDecoder{}
 	encoderFactory := &encodeTestEncoderFactory{}
-	codecs := newTestCodecRegistry(
+	codecs := withTestCodecs(
 		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
 		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
 	)
 	resampler := &transcodeTestFilter{}
 	filterFactory := &transcodeTestFilterFactory{filter: resampler}
-	filters := newTestFilterRegistry(testFilterFactory(filter.Descriptor{
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
 		Name:   filter.FactoryResample,
 		Input:  av.MediaAudio,
 		Output: av.MediaAudio,
@@ -243,7 +243,7 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 		Outputs: []transcode.Output{{Name: "archive.ogg", Format: av.FormatOgg}},
 	}
 
-	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs), WithFilterRegistry(filters)).New().
+	builder := New(formats, codecs, filters).New().
 		Transcode(plan)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -308,14 +308,14 @@ func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (Builder, *de
 		}},
 	}
 	muxers := &remuxTestMuxerFactory{}
-	formats := newTestFormatRegistry(
+	formats := withTestFormats(
 		testFormatProber(remuxTestProber{streams: streams}),
 		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 		testFormatMuxer(av.FormatOgg, muxers),
 	)
 	decoder := &decodeTestDecoder{}
 	encoderFactory := &encodeTestEncoderFactory{}
-	codecs := newTestCodecRegistry(
+	codecs := withTestCodecs(
 		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
 		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
 	)
@@ -348,7 +348,7 @@ func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (Builder, *de
 			},
 		},
 	}
-	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs), WithBufferPolicy(policy)).New().
+	builder := New(formats, codecs, WithBufferPolicy(policy)).New().
 		Transcode(plan)
 	return builder, demuxer, muxers, decoder, encoderFactory
 }
@@ -373,12 +373,12 @@ func streamIDsUnorderedEqual(got []av.StreamID, want []av.StreamID) bool {
 func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	formats := newTestFormatRegistry(
+	formats := withTestFormats(
 		testFormatProber(remuxTestProber{streams: streams}),
 		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 		testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 	)
-	codecs := newTestCodecRegistry(
+	codecs := withTestCodecs(
 		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
 		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
@@ -396,7 +396,7 @@ func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
 		Outputs: []transcode.Output{{Name: "preview.ogg"}},
 	}
 
-	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+	_, err := New(formats, codecs).New().
 		Transcode(plan).
 		Build(context.Background())
 	if err != filter.ErrNotFound {

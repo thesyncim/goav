@@ -25,14 +25,13 @@ func TestRuntimeBuilderH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
 		},
 	}}
 	demuxer := &remuxTestDemuxer{streams: streams}
-	formats := newTestFormatRegistry(
+	formats := withTestFormats(
 		testFormatProber(remuxTestProber{streams: streams}),
 		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
 	)
-	codecs := newTestCodecRegistry()
-	goh264adapter.Register(codecs)
+	codecs := withTestCodecs(goh264adapter.Register)
 
-	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+	_, err := New(formats, codecs).New().
 		Input(Input{Name: "input.ogg"}).
 		Decode(SelectVideo()).
 		Sink(&runtimeTestSink{name: "frames"}).

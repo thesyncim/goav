@@ -45,53 +45,26 @@ func New(options ...Option) Runtime {
 	return runtime
 }
 
-func WithCodecRegistry(registry codec.Registry) Option {
-	return func(runtime *runtime) {
-		if registry != nil {
-			runtime.codecs = registry
-		}
-	}
-}
-
-func WithFormatRegistry(registry format.Registry) Option {
-	return func(runtime *runtime) {
-		if registry != nil {
-			runtime.formats = registry
-		}
-	}
-}
-
-func WithFilterRegistry(registry filter.Registry) Option {
-	return func(runtime *runtime) {
-		if registry != nil {
-			runtime.filters = registry
-		}
-	}
-}
-
 func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
 	return func(runtime *runtime) {
-		registry, ok := runtime.codecs.(*codec.SimpleRegistry)
-		if ok && register != nil {
-			register(registry)
+		if register != nil {
+			register(runtime.codecs)
 		}
 	}
 }
 
 func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
 	return func(runtime *runtime) {
-		registry, ok := runtime.formats.(*format.SimpleRegistry)
-		if ok && register != nil {
-			register(registry)
+		if register != nil {
+			register(runtime.formats)
 		}
 	}
 }
 
 func WithFilterAdapter(register func(*filter.SimpleRegistry)) Option {
 	return func(runtime *runtime) {
-		registry, ok := runtime.filters.(*filter.SimpleRegistry)
-		if ok && register != nil {
-			register(registry)
+		if register != nil {
+			register(runtime.filters)
 		}
 	}
 }
@@ -121,9 +94,9 @@ func WithMetrics(metrics Metrics) Option {
 }
 
 type runtime struct {
-	codecs   codec.Registry
-	filters  filter.Registry
-	formats  format.Registry
+	codecs   *codec.SimpleRegistry
+	filters  *filter.SimpleRegistry
+	formats  *format.SimpleRegistry
 	buffer   pipeline.BufferPolicy
 	realtime bool
 	logger   Logger

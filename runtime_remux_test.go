@@ -138,13 +138,13 @@ func TestRuntimeBuilderInputOutputRemux(t *testing.T) {
 	streams := []av.Stream{{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus}}}
 	demuxer := &remuxTestDemuxer{streams: streams}
 	muxers := &remuxTestMuxerFactory{}
-	registry := newTestFormatRegistry(
+	formats := withTestFormats(
 		testFormatProber(remuxTestProber{streams: streams}),
 		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
 		testFormatMuxer(av.FormatOgg, muxers),
 	)
 
-	builder := New(WithFormatRegistry(registry)).New().
+	builder := New(formats).New().
 		Input(Input{Name: "input.ogg"}).
 		Output(Output{Name: "archive.ogg"}).
 		Output(Output{Name: "preview.ogg"})

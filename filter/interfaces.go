@@ -88,8 +88,3 @@ type ResampleConfig struct {
 type Factory interface {
 	NewFilter(context.Context, Config) (FrameFilter, error)
 }
-
-type Registry interface {
-	Descriptors() []Descriptor
-	Factory(name string) (Factory, error)
-}
