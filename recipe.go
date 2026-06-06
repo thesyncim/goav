@@ -837,6 +837,13 @@ type jobStreamStep struct {
 	transform TransformSpec
 }
 
+type jobStreamStepAttachment struct {
+	stage          pipeline.Stage
+	hasTransform   bool
+	transformIndex int
+	stepIndex      int
+}
+
 func Record(input InputSpec, outputs ...OutputSpec) *Job {
 	job := newJob("record")
 	job.inputs = append(job.inputs, input)
@@ -936,22 +943,7 @@ func (j *Job) Intent() Intent {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())
 	}
 	if j.stream != nil {
-		intent.Streams = append(intent.Streams, StreamIntent{
-			Name: j.stream.name,
-			Select: StreamSelect{
-				ID:       j.stream.selector.ID,
-				Index:    j.stream.selector.Index,
-				UseIndex: j.stream.selector.UseIndex,
-				Type:     j.stream.selector.Type,
-				Codec:    j.stream.selector.Codec,
-				Name:     j.stream.selector.Name,
-			},
-			Decode:      j.stream.decode,
-			Transforms:  j.stream.transformSpecs(),
-			Encode:      j.stream.encode,
-			CodecChange: j.stream.codecChange,
-			RouteTo:     outputLabels(j.stream.outputs),
-		})
+		intent.Streams = append(intent.Streams, jobStreamIntent(j.stream))
 	}
 	outputs := j.allOutputs()
 	for i := range outputs {
@@ -1074,17 +1066,18 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 }
 
 func (j *Job) validateOutputScope() error {
-	return validateJobOutputScope(j.outputs, j.stream)
+	stream, ok := jobStreamIntentIfPresent(j.stream)
+	return validateJobOutputScope(j.outputs, stream, ok)
 }
 
-func validateJobOutputScope(outputs []OutputSpec, stream *jobStreamBuild) error {
-	if stream == nil || len(outputs) == 0 {
+func validateJobOutputScope(outputs []OutputSpec, stream StreamIntent, hasStream bool) error {
+	if !hasStream || len(outputs) == 0 {
 		return nil
 	}
 	return &BuildError{
 		Code:      "output_scope_mixed",
 		Operation: "build job",
-		Node:      jobStreamName(stream),
+		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes use stream-local outputs",
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
@@ -1096,32 +1089,35 @@ func validateJobOutputScope(outputs []OutputSpec, stream *jobStreamBuild) error 
 }
 
 func (j *Job) allOutputs() []OutputSpec {
-	return jobAllOutputs(j.outputs, j.stream)
+	return jobAllOutputs(j.outputs, jobStreamOutputs(j.stream))
 }
 
-func jobAllOutputs(outputs []OutputSpec, stream *jobStreamBuild) []OutputSpec {
-	if stream == nil || len(stream.outputs) == 0 {
+func jobAllOutputs(outputs []OutputSpec, streamOutputs []OutputSpec) []OutputSpec {
+	if len(streamOutputs) == 0 {
 		return append([]OutputSpec(nil), outputs...)
 	}
-	all := make([]OutputSpec, 0, len(outputs)+len(stream.outputs))
+	all := make([]OutputSpec, 0, len(outputs)+len(streamOutputs))
 	all = append(all, outputs...)
-	all = append(all, stream.outputs...)
+	all = append(all, streamOutputs...)
 	return all
 }
 
 func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAPI, error) {
-	return applyJobStream(builder, j.allOutputs(), stream)
-}
-
-func applyJobStream(builder builderAPI, outputs []OutputSpec, stream *jobStreamBuild) (builderAPI, error) {
-	if stream == nil {
+	intent, ok := jobStreamIntentIfPresent(stream)
+	if !ok {
 		return builder, nil
 	}
-	if !stream.hasOperation() {
+	return applyJobStream(builder, j.allOutputs(), intent, jobStreamStepAttachments(stream))
+}
+
+func applyJobStream(builder builderAPI, outputs []OutputSpec, stream StreamIntent, steps []jobStreamStepAttachment) (builderAPI, error) {
+	selector := streamIntentSelector(stream)
+	node := jobStreamIntentName(stream)
+	if !streamIntentHasOperation(stream, steps) {
 		return nil, &BuildError{
 			Code:      "stream_operation_missing",
 			Operation: "build stream",
-			Node:      stream.name,
+			Node:      node,
 			Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
 			Suggestions: []string{
 				"call .To(goav.FrameSink(...)) to receive decoded frames",
@@ -1131,23 +1127,23 @@ func applyJobStream(builder builderAPI, outputs []OutputSpec, stream *jobStreamB
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if err := validateRecipeStreamSelector("build stream", jobStreamName(stream), stream.selector); err != nil {
+	if err := validateRecipeStreamSelector("build stream", node, selector); err != nil {
 		return nil, err
 	}
-	if err := validateRecipeEncode(stream.encode, "build stream", stream.name); err != nil {
+	if err := validateRecipeEncode(stream.Encode, "build stream", stream.Name); err != nil {
 		return nil, err
 	}
-	if err := validateCodecChangePolicy("build stream", jobStreamName(stream), stream.codecChange); err != nil {
+	if err := validateCodecChangePolicy("build stream", node, stream.CodecChange); err != nil {
 		return nil, err
 	}
 	if outputsContainFrameSink(outputs) && outputsContainMuxTarget(outputs) {
 		return nil, mixedStreamOutputError(stream)
 	}
-	if stream.encode.ID == "" && outputsContainMuxTarget(outputs) {
+	if stream.Encode.ID == "" && outputsContainMuxTarget(outputs) {
 		return nil, &BuildError{
 			Code:      "encode_missing",
 			Operation: "build stream",
-			Node:      stream.name,
+			Node:      stream.Name,
 			Reason:    "decoded frames cannot be written to a muxed output without an encoder",
 			Suggestions: []string{
 				"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...))",
@@ -1157,11 +1153,11 @@ func applyJobStream(builder builderAPI, outputs []OutputSpec, stream *jobStreamB
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if stream.encode.ID != "" && outputsContainFrameSink(outputs) {
+	if stream.Encode.ID != "" && outputsContainFrameSink(outputs) {
 		return nil, &BuildError{
 			Code:      "encoded_sink_unsupported",
 			Operation: "build stream",
-			Node:      stream.name,
+			Node:      stream.Name,
 			Reason:    "stream recipes currently send encoded packets to file or URI outputs, not frame sinks",
 			Suggestions: []string{
 				"use .To(goav.FrameSink(...)) for decoded frames",
@@ -1171,8 +1167,8 @@ func applyJobStream(builder builderAPI, outputs []OutputSpec, stream *jobStreamB
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if stream.decode || len(stream.steps) != 0 || stream.encode.ID != "" {
-		if codecChangePolicySet(stream.codecChange) {
+	if stream.Decode || len(steps) != 0 || stream.Encode.ID != "" {
+		if codecChangePolicySet(stream.CodecChange) {
 			internal, ok := builder.(interface {
 				decodeWithPolicy(av.StreamSelector, CodecChangePolicy) builderAPI
 			})
@@ -1180,7 +1176,7 @@ func applyJobStream(builder builderAPI, outputs []OutputSpec, stream *jobStreamB
 				return nil, &BuildError{
 					Code:      "codec_change_runtime_unsupported",
 					Operation: "build stream",
-					Node:      jobStreamName(stream),
+					Node:      node,
 					Reason:    "codec-change policy requires the standard runtime builder",
 					Suggestions: []string{
 						"use goav.Default() or goav.New(...) for live stream recipes",
@@ -1189,21 +1185,21 @@ func applyJobStream(builder builderAPI, outputs []OutputSpec, stream *jobStreamB
 					Cause: ErrUnsupportedBuild,
 				}
 			}
-			builder = internal.decodeWithPolicy(stream.selector, stream.codecChange)
+			builder = internal.decodeWithPolicy(selector, stream.CodecChange)
 		} else {
-			builder = builder.Decode(stream.selector)
+			builder = builder.Decode(selector)
 		}
 	}
-	for i := range stream.steps {
-		step := stream.steps[i]
+	for i := range steps {
+		step := steps[i]
 		if step.stage != nil {
-			builder = builder.Filter(stream.selector, step.stage)
+			builder = builder.Filter(selector, step.stage)
 			continue
 		}
-		if step.transform.Resize == nil && step.transform.Resample == nil {
+		if !step.hasTransform || step.transformIndex < 0 || step.transformIndex >= len(stream.Transforms) {
 			return nil, streamStageMissingError(stream)
 		}
-		transform, err := streamTransform(stream.name, stream.selector, step.transform, i)
+		transform, err := streamTransform(stream.Name, selector, stream.Transforms[step.transformIndex], step.stepIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -1214,7 +1210,7 @@ func applyJobStream(builder builderAPI, outputs []OutputSpec, stream *jobStreamB
 			return nil, &BuildError{
 				Code:      "transform_runtime_unsupported",
 				Operation: "build stream",
-				Node:      stream.name,
+				Node:      stream.Name,
 				Reason:    "stream transforms require the standard runtime builder",
 				Suggestions: []string{
 					"use goav.Default() or goav.New(...) for recipe transforms",
@@ -1223,29 +1219,92 @@ func applyJobStream(builder builderAPI, outputs []OutputSpec, stream *jobStreamB
 				Cause: ErrUnsupportedBuild,
 			}
 		}
-		builder = internal.transform(stream.selector, transform)
+		builder = internal.transform(selector, transform)
 	}
-	if stream.encode.ID != "" {
-		builder = builder.Encode(stream.selector, encodeConfigFromSpec(stream.encode))
+	if stream.Encode.ID != "" {
+		builder = builder.Encode(selector, encodeConfigFromSpec(stream.Encode))
 	}
 	return builder, nil
 }
 
-func cloneJobStreamBuild(stream *jobStreamBuild) *jobStreamBuild {
+func jobStreamIntentIfPresent(stream *jobStreamBuild) (StreamIntent, bool) {
 	if stream == nil {
-		return nil
+		return StreamIntent{}, false
 	}
-	clone := *stream
-	clone.steps = append([]jobStreamStep(nil), stream.steps...)
-	clone.outputs = append([]OutputSpec(nil), stream.outputs...)
-	return &clone
+	return jobStreamIntent(stream), true
 }
 
-func streamStageMissingError(stream *jobStreamBuild) error {
+func jobIntentHasStream(intent Intent) bool {
+	return len(intent.Streams) != 0
+}
+
+func jobIntentStream(intent Intent) (StreamIntent, bool) {
+	if len(intent.Streams) == 0 {
+		return StreamIntent{}, false
+	}
+	return intent.Streams[0], true
+}
+
+func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
+	if stream == nil {
+		return StreamIntent{}
+	}
+	return StreamIntent{
+		Name: stream.name,
+		Select: StreamSelect{
+			ID:       stream.selector.ID,
+			Index:    stream.selector.Index,
+			UseIndex: stream.selector.UseIndex,
+			Type:     stream.selector.Type,
+			Codec:    stream.selector.Codec,
+			Name:     stream.selector.Name,
+		},
+		Decode:      stream.decode,
+		Transforms:  stream.transformSpecs(),
+		Encode:      stream.encode,
+		CodecChange: stream.codecChange,
+		RouteTo:     outputLabels(stream.outputs),
+	}
+}
+
+func jobStreamOutputs(stream *jobStreamBuild) []OutputSpec {
+	if stream == nil || len(stream.outputs) == 0 {
+		return nil
+	}
+	return append([]OutputSpec(nil), stream.outputs...)
+}
+
+func jobStreamStepAttachments(stream *jobStreamBuild) []jobStreamStepAttachment {
+	if stream == nil || len(stream.steps) == 0 {
+		return nil
+	}
+	attachments := make([]jobStreamStepAttachment, 0, len(stream.steps))
+	transformIndex := 0
+	for i := range stream.steps {
+		step := stream.steps[i]
+		if step.stage != nil {
+			attachments = append(attachments, jobStreamStepAttachment{stage: step.stage, stepIndex: i})
+			continue
+		}
+		if step.transform.Resize != nil || step.transform.Resample != nil {
+			attachments = append(attachments, jobStreamStepAttachment{
+				hasTransform:   true,
+				transformIndex: transformIndex,
+				stepIndex:      i,
+			})
+			transformIndex++
+			continue
+		}
+		attachments = append(attachments, jobStreamStepAttachment{stepIndex: i})
+	}
+	return attachments
+}
+
+func streamStageMissingError(stream StreamIntent) error {
 	return &BuildError{
 		Code:      "stage_missing",
 		Operation: "build stream",
-		Node:      jobStreamName(stream),
+		Node:      jobStreamIntentName(stream),
 		Reason:    "custom stream stage is nil",
 		Suggestions: []string{
 			"pass a non-nil stage to .Do(stage)",
@@ -1256,11 +1315,11 @@ func streamStageMissingError(stream *jobStreamBuild) error {
 	}
 }
 
-func mixedStreamOutputError(stream *jobStreamBuild) error {
+func mixedStreamOutputError(stream StreamIntent) error {
 	return &BuildError{
 		Code:      "output_kind_mixed",
 		Operation: "build stream",
-		Node:      jobStreamName(stream),
+		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes cannot mix frame sinks and muxed outputs",
 		Suggestions: []string{
 			"use .To(goav.FrameSink(...)) for decoded frames",
@@ -1269,6 +1328,10 @@ func mixedStreamOutputError(stream *jobStreamBuild) error {
 		},
 		Cause: ErrUnsupportedBuild,
 	}
+}
+
+func jobStreamIntentName(stream StreamIntent) string {
+	return firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
 }
 
 func jobStreamName(stream *jobStreamBuild) string {
@@ -1299,6 +1362,10 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 
 func (s *jobStreamBuild) hasOperation() bool {
 	return s.decode || len(s.steps) != 0 || s.encode.ID != "" || s.encode.Auto || s.encode.Copy
+}
+
+func streamIntentHasOperation(stream StreamIntent, steps []jobStreamStepAttachment) bool {
+	return stream.Decode || len(steps) != 0 || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy
 }
 
 func (s *jobStreamBuild) transformSpecs() []TransformSpec {

@@ -599,6 +599,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     routes from public intent data while concrete outputs remain captured
     attachments, with a guard preventing `[]streamBuild` from entering
     `recipeCompileState`. Done.
+182. Move ordinary stream recipe lowering onto `Intent.Streams`: selected stream
+    decode, transforms, encode target, and codec-change policy now lower from
+    public intent data while `.Do(...)` stages and stream-local outputs remain
+    captured attachments, with a guard preventing `*jobStreamBuild` from
+    entering `recipeCompileState`. Done.
 
 ## First Vertical Slice
 
@@ -827,11 +832,11 @@ Current pressure point: keep moving real work into the intent compiler path.
 Validation, transcode planning, builder lowering, migration graph-compiler
 selection, and planned spec emission now have a private recipe compiler state
 that carries captured recipe attachments instead of raw recipe builder pointers;
-transcode branch planning now reads `Intent.Streams`. Probing, stream
-resolution, format/codec resolution, mux grouping, and route assignment still
-need to shrink the fixed compiler list. First-page examples must stay
-executable with `Default()` or clearly name adapter requirements, and WebM/Ogg
-remain the next container coverage pressure.
+ordinary stream recipe lowering and transcode branch planning now read
+`Intent.Streams`. Probing, stream resolution, format/codec resolution, mux
+grouping, and route assignment still need to shrink the fixed compiler list.
+First-page examples must stay executable with `Default()` or clearly name
+adapter requirements, and WebM/Ogg remain the next container coverage pressure.
 
 ## Validation Gates
 

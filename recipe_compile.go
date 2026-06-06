@@ -26,9 +26,10 @@ type recipeCompileState struct {
 	transcodePresent bool
 	recipeErr        error
 
-	inputs     []InputSpec
-	jobOutputs []OutputSpec
-	stream     *jobStreamBuild
+	inputs        []InputSpec
+	jobOutputs    []OutputSpec
+	streamOutputs []OutputSpec
+	streamSteps   []jobStreamStepAttachment
 
 	transcodeInput   InputSpec
 	transcodeOutputs []namedOutputSpec
@@ -128,7 +129,8 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 		state.recipeErr = job.err
 		state.inputs = append([]InputSpec(nil), job.inputs...)
 		state.jobOutputs = append([]OutputSpec(nil), job.outputs...)
-		state.stream = cloneJobStreamBuild(job.stream)
+		state.streamOutputs = jobStreamOutputs(job.stream)
+		state.streamSteps = jobStreamStepAttachments(job.stream)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateJobIntentPass(),
@@ -185,10 +187,11 @@ func validateJobIntentPass() recipeCompilePass {
 		if err := validateJobInputs(state.inputs); err != nil {
 			return err
 		}
-		if err := validateJobOutputScope(state.jobOutputs, state.stream); err != nil {
+		stream, hasStream := jobIntentStream(state.intent)
+		if err := validateJobOutputScope(state.jobOutputs, stream, hasStream); err != nil {
 			return err
 		}
-		state.outputs = jobAllOutputs(state.jobOutputs, state.stream)
+		state.outputs = jobAllOutputs(state.jobOutputs, state.streamOutputs)
 		if len(state.outputs) == 0 {
 			return &BuildError{Code: "output_missing", Operation: state.operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
 		}
@@ -198,7 +201,7 @@ func validateJobIntentPass() recipeCompilePass {
 
 func validatePacketJobOutputsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate packet job outputs", fn: func(state *recipeCompileState) error {
-		if !state.jobPresent || state.stream != nil {
+		if !state.jobPresent || jobIntentHasStream(state.intent) {
 			return nil
 		}
 		for i := range state.outputs {
@@ -244,10 +247,11 @@ func lowerJobInputsPass() recipeCompilePass {
 
 func lowerJobStreamPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "lower job stream", fn: func(state *recipeCompileState) error {
-		if state.stream == nil {
+		stream, ok := jobIntentStream(state.intent)
+		if !ok {
 			return nil
 		}
-		builder, err := applyJobStream(state.builder, state.outputs, state.stream)
+		builder, err := applyJobStream(state.builder, state.outputs, stream, state.streamSteps)
 		if err != nil {
 			return err
 		}
