@@ -28,6 +28,22 @@ import (
 
 type recipeAPIRTPReader struct{}
 
+type recipeAPISource struct {
+	name string
+}
+
+func (s recipeAPISource) Name() string {
+	return s.name
+}
+
+func (s recipeAPISource) Start(context.Context, pipeline.Emitter) error {
+	return nil
+}
+
+func (s recipeAPISource) Close() error {
+	return nil
+}
+
 type recipeAPIRuntimeWithoutBuilder struct{}
 
 type recipeAPIStreamProber struct {
@@ -195,6 +211,39 @@ func TestTeeIsTheOnlyPublicFlowBranchVerb(t *testing.T) {
 	}
 	if _, ok := streamType.MethodByName("Fork"); ok {
 		t.Fatal("JobStreamBuilder should not expose Fork; Tee is the public branch verb")
+	}
+}
+
+func TestRuntimeBranchDecodedAnchorIsPublicAPI(t *testing.T) {
+	graph := goav.Default().Graph()
+	source := graph.Source("source", recipeAPISource{name: "source"})
+	decode := graph.Stage("decode-audio", goav.PacketFunc("decode-audio", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
+		return emit.Packet(packet)
+	}))
+	base := graph.Sink("base", goav.SinkFunc("base", func(context.Context, goav.Message) error {
+		return nil
+	}))
+	graph.Connect(source.Out(), decode.In())
+	graph.Connect(decode.Out(), base.In())
+	task, err := graph.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachment, err := task.Attach(context.Background(),
+		goav.Branch("levels").
+			FromDecodedAudio(goav.StreamIndex(0)).
+			To(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
+				return nil
+			})),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attachment.Name() != "levels" {
+		t.Fatalf("attachment name = %q", attachment.Name())
+	}
+	if err := attachment.Stop(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 

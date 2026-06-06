@@ -62,12 +62,14 @@ workflow-report output lives outside the runtime core. A route carries all media
 by default, or matches one stream or event type.
 
 `Task.Attach` is the first runtime control-plane operation. It attaches a named
-stage/sink branch to a built direct graph using node names from `Task.Describe`
-and returns an attachment handle with `Stop(ctx)`. This is for late analysis
-taps, meters, and screenshot collectors that should observe future messages
-without rebuilding the task. Buffered runtime attachments and late muxed output
-branches remain separate slices because they need queue, worker, and mux-output
-lifecycle management.
+stage/sink branch to a built direct graph and returns an attachment handle with
+`Stop(ctx)`. Common raw-frame anchors use `FromDecodedAudio(...)` and
+`FromDecodedVideo(...)`; expert graph nodes can still be addressed with
+`From(node)` and `Task.Describe`. This is for late analysis taps, meters, and
+screenshot collectors that should observe future messages without rebuilding the
+task. Buffered runtime attachments and late muxed output branches remain
+separate slices because they need queue, worker, and mux-output lifecycle
+management.
 
 The current compilers cover:
 

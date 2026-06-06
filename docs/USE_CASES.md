@@ -118,7 +118,7 @@ separate control-plane operation when a late branch is a stage and/or sink:
 ```go
 levels, err := task.Attach(ctx,
     goav.Branch("level-meter").
-        From("decode-audio").
+        FromDecodedAudio().
         To(goav.SinkFunc("levels", collectLevel)),
 )
 if err != nil {
@@ -127,9 +127,11 @@ if err != nil {
 defer levels.Stop(ctx)
 ```
 
-Use `task.Describe()` to choose the `.From(...)` node. Buffered runtime
-attachments and late muxed recording outputs remain planned control-plane
-slices.
+Use `FromDecodedAudio(...)` or `FromDecodedVideo(...)` for the common raw frame
+anchors, with the same selectors as `Audio(...)` and `Video(...)`. Use
+`task.Describe()` plus `.From(node)` when attaching to an expert graph node.
+Buffered runtime attachments and late muxed recording outputs remain planned
+control-plane slices.
 
 When a media type matches several streams, the build error lists the candidates.
 Use the same stream-scoped shape with a narrower selector. `StreamIndex(0)`

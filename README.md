@@ -202,7 +202,7 @@ go task.Run(ctx)
 
 screenshots, err := task.Attach(ctx,
     goav.Branch("screenshots").
-        From("decode-video").
+        FromDecodedVideo().
         Do(screenshotStage).
         To(goav.SinkFunc("screenshots-out", collectScreenshot)),
 )
@@ -214,9 +214,11 @@ if err != nil {
 return screenshots.Stop(ctx)
 ```
 
-Use `task.Describe()` to choose the source node for `.From(...)`. Buffered
-runtime attachments and live muxed `FileOutput` attachment fail explicitly
-today; those need queue/worker and mux-output control-plane slices.
+Use `FromDecodedAudio(...)` or `FromDecodedVideo(...)` for the common raw frame
+anchors, with the same stream selectors as `Audio(...)` and `Video(...)`.
+Use `.From(node)` with `task.Describe()` when attaching to an expert graph node.
+Buffered runtime attachments and live muxed `FileOutput` attachment fail
+explicitly today; those need queue/worker and mux-output control-plane slices.
 
 `Record` and `From(input).To(...)` are packet-preserving forms. A stream chain
 such as `From(input).Audio()` or `From(input).Video()` sends decoded frames to

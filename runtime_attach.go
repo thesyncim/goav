@@ -46,6 +46,22 @@ func (b *RuntimeBranchBuilder) From(node string) *RuntimeBranchBuilder {
 	return b
 }
 
+func (b *RuntimeBranchBuilder) FromDecodedAudio(options ...streamOption) *RuntimeBranchBuilder {
+	return b.fromDecoded(av.MediaAudio, options...)
+}
+
+func (b *RuntimeBranchBuilder) FromDecodedVideo(options ...streamOption) *RuntimeBranchBuilder {
+	return b.fromDecoded(av.MediaVideo, options...)
+}
+
+func (b *RuntimeBranchBuilder) fromDecoded(media av.MediaType, options ...streamOption) *RuntimeBranchBuilder {
+	if b == nil {
+		return b
+	}
+	b.branch.from = decodeNodeName(newStreamSelector(media, options...))
+	return b
+}
+
 func (b *RuntimeBranchBuilder) Stream(stream av.StreamID) *RuntimeBranchBuilder {
 	if b == nil {
 		return b
@@ -338,6 +354,7 @@ func runtimeBranchAnchorMissingError(node string) error {
 		Reason:    "branch source node does not exist in the running task graph",
 		Suggestions: []string{
 			"call task.Describe() and use a node name from the graph spec",
+			"use .FromDecodedAudio(...) or .FromDecodedVideo(...) for the common raw decoded frame anchors",
 			"attach from a stable decoded-frame node when the branch needs raw frames",
 		},
 		Cause: pipeline.ErrUnknownNode,

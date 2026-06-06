@@ -225,6 +225,21 @@ func TestTaskAttachRejectsRunningBufferedGraph(t *testing.T) {
 	}
 }
 
+func TestRuntimeBranchDecodedAnchorsUseCompilerNodeNames(t *testing.T) {
+	audio := Branch("levels").FromDecodedAudio().To(&runtimeTestSink{name: "levels"})
+	if audio.from != "decode-audio" {
+		t.Fatalf("audio anchor = %q, want decode-audio", audio.from)
+	}
+	video := Branch("screenshots").FromDecodedVideo(StreamName("main")).To(&runtimeTestSink{name: "shots"})
+	if video.from != "decode-main" {
+		t.Fatalf("video anchor = %q, want decode-main", video.from)
+	}
+	indexed := Branch("indexed").FromDecodedAudio(StreamIndex(0)).To(&runtimeTestSink{name: "out"})
+	if indexed.from != "decode-audio" {
+		t.Fatalf("indexed anchor = %q, want decode-audio", indexed.from)
+	}
+}
+
 type runtimeBranchStepSource struct {
 	name     string
 	messages []pipeline.Message
