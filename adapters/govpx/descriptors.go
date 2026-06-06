@@ -9,15 +9,8 @@ const backendName = "govpx"
 
 func Descriptors() []codec.Descriptor {
 	return []codec.Descriptor{
-		descriptor(av.CodecVP8, "VP8", []string{"i420"}, []string{"video/vp8"}),
-		descriptor(av.CodecVP9, "VP9", []string{"i420"}, []string{"video/vp9"}),
-	}
-}
-
-func Register(registry *codec.SimpleRegistry) {
-	descriptors := Descriptors()
-	for i := range descriptors {
-		registry.RegisterDescriptor(descriptors[i])
+		descriptor(av.CodecVP8, "VP8", []string{av.PixelFormatI420}, []string{"video/vp8"}),
+		descriptor(av.CodecVP9, "VP9", []string{av.PixelFormatI420}, []string{"video/vp9"}),
 	}
 }
 
@@ -37,13 +30,14 @@ func descriptor(id av.CodecID, name string, pixelFormats []string, rtpPayloads [
 			Realtime:     true,
 			PixelFormats: pixelFormats,
 			RTPPayloads:  rtpPayloads,
+			BuildTags:    []string{"goav_govpx"},
 			Experimental: true,
 		},
 		Backend: codec.Backend{
 			Name:    backendName,
 			Module:  "github.com/thesyncim/govpx",
 			Package: "github.com/thesyncim/goav/adapters/govpx",
-			Status:  "planned",
+			Status:  "planned-build-tagged",
 		},
 	}
 }

@@ -31,13 +31,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `av` | reset helpers, ownership docs, RTP timebase helpers | richer timestamp conversion helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
-| `pipeline` | direct executor, fanout, simple node-to-node links, branch helpers, stream/event routes, backpressure guard, graph specs with text/DOT/Mermaid rendering | bounded async edges and drop-policy tests |
+| `pipeline` | direct executor, fanout, simple node-to-node links, branch helpers, stream/event routes, backpressure guard, graph specs with text/DOT/Mermaid rendering | bounded async links and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh, stream-scoped EOS for single-stream readers | richer multi-stream receive |
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
-| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph connections and branches with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, multi-RTP/WebRTC packet-reader record/fanout compiler | next codec adapter validation |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx`, `goav1`, and default-build `goh264` descriptor boundaries report unavailable factories explicitly | validate next concrete video codec adapter |
+| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph links and branches with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, multi-RTP/WebRTC packet-reader record/fanout compiler | next codec adapter validation |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8 decoder active behind `goav_govpx` with caller-owned I420 output guards; `goav1` and default-build optional video adapters report unavailable factories explicitly | extend the next concrete video path |
 
 ## Implementation Order
 
@@ -109,7 +109,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 33. Harden build-tagged H264 decode with allocation guards for adapter-owned
     borrowed-frame mapping and keyframe request emission, codec-change identity
     proof, and deterministic close behavior. Done.
-34. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+34. Add build-tagged `govpx` VP8 decoder factory with caller-owned I420 output
+    buffers, startup/loss drop-until-sync behavior, keyframe requests,
+    codec-change identity proof, allocation guards, and deterministic close
+    behavior. Done.
+35. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -214,6 +218,14 @@ Required proof:
   events, requests keyframes after packet loss, and has allocation guards for
   adapter-owned frame mapping and loss request emission plus closed-state
   lifecycle tests.
+- With `goav_govpx`, `adapters/govpx` registers a concrete VP8 decoder factory
+  over `github.com/thesyncim/govpx`, decodes real VP8 samples into caller-owned
+  I420 `av.Frame` planes, drops inter frames until a keyframe after startup or
+  loss, requests keyframes through `codec.ControlRequest`, resets on
+  codec-change/discontinuity events, and has allocation guards for adapter
+  output preparation and loss request emission plus closed-state lifecycle
+  tests. VP9 and encode remain descriptor-only until their adapter paths are
+  proven.
 
 ## Adapter Targets
 
@@ -227,8 +239,9 @@ Required proof:
   caller-owned output planes and allocation-guarded hot paths.
 - `adapters/gopus`: Opus decode first is active, PLC via loss events works,
   encode adapter remains unclaimed.
-- `adapters/govpx`: descriptor boundary exists; concrete VP8/VP9 adapters need
-  stable caller-owned frame paths.
+- `adapters/govpx`: descriptor-only by default; `goav_govpx` activates VP8
+  decode into caller-owned I420 frames. VP9 and encode still need concrete
+  adapter validation.
 - `adapters/goav1`: descriptor boundary exists; concrete AV1 decode path still
   needs capability validation.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` activates a
@@ -257,9 +270,8 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: validate the next concrete video codec adapter that can
-expose caller-owned or explicitly borrowed frame paths without expanding the
-core import graph.
+Current pressure point: extend the next concrete video path, likely VP9 decode,
+VP8 encode, or AV1 decode, without expanding the core import graph.
 
 ## Validation Gates
 

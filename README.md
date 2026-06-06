@@ -13,7 +13,7 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pure Go core, no cgo runtime dependency.
 - Simple fluent API for natural workflows.
 - Explicit graph API for custom realtime systems.
-- Graphs are named sources, stages, sinks, connections, and branches;
+- Graphs are named sources, stages, sinks, links, and branches;
   stream/event routing is a connection option.
 - Caller-owned buffers and result structs on hot paths.
 - RTP metadata, loss, discontinuity, codec epochs, keyframe requests, EOS, and
@@ -149,7 +149,7 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `av`: media identifiers, streams, packets, frames, timestamps, events, reset
   helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, fanout, stream/event routes,
-  backpressure surface, simple node-to-node connections and branches,
+  backpressure surface, simple node-to-node links and branches,
   text/DOT/Mermaid graph specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, registry, decoder and encoder pipeline
@@ -168,9 +168,11 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `adapters/resample`: pure-Go `s16` audio resample/channel conversion filter.
 - `adapters/resize`: pure-Go planar 8-bit 4:2:0 video resize filter.
 - `adapters/gopus`: active Opus decoder adapter.
-- `adapters/govpx`, `adapters/goav1`: descriptor boundaries for future
-  concrete adapters; factory lookups return `codec.ErrUnavailable` until a
-  real adapter is registered.
+- `adapters/govpx`: descriptor-only by default; `goav_govpx` enables a real VP8
+  decoder factory over `github.com/thesyncim/govpx` into caller-owned I420
+  frames. VP9 and encode remain descriptor-only.
+- `adapters/goav1`: descriptor boundary for future concrete adapters; factory
+  lookups return `codec.ErrUnavailable` until a real adapter is registered.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
   H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
   video frames.
@@ -213,11 +215,15 @@ Implemented slices:
 - Build-tagged H264 decode maps real `goh264` output into borrowed `av.Frame`
   planes, updates identity on codec changes, requests keyframes after loss, and
   has adapter-owned allocation and close-lifecycle tests.
+- Build-tagged VP8 decode maps real `govpx` output into caller-owned I420
+  `av.Frame` planes, drops until sync after loss or startup, requests keyframes,
+  updates identity on codec changes, and has allocation and lifecycle tests.
 
 Next pressure points:
 
-- Validate the next concrete video codec adapter that can expose caller-owned
-  or explicitly borrowed frame paths.
+- Extend the next concrete video path: VP9 decode, VP8 encode, or AV1 decode,
+  whichever sibling module surface is ready without expanding the core import
+  graph.
 
 ## Working Loop
 

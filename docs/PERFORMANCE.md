@@ -34,6 +34,8 @@ Run:
 
 ```sh
 go test ./...
+go test -tags goav_goh264 ./adapters/goh264
+go test -tags goav_govpx ./adapters/govpx
 ```
 
 Current allocation guards cover:
@@ -56,4 +58,6 @@ Current allocation guards cover:
 - RTCP feedback scratch for NACK/PLI/FIR
 - `gopus` packet-loss decode into a preallocated frame
 - build-tagged `goh264` adapter borrowed-frame mapping and loss request
+  emission
+- build-tagged `govpx` adapter I420 output preparation and loss request
   emission

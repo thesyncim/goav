@@ -32,7 +32,7 @@ integrations belong under `adapters/...`.
 | `adapters/resample` | pure-Go S16 audio resample and channel conversion filter |
 | `adapters/resize` | pure-Go I420/YUV420P video resize filter |
 | `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
-| `adapters/govpx` | descriptor-only VP8/VP9 boundary |
+| `adapters/govpx` | descriptor-only by default; `goav_govpx` enables VP8 decode |
 | `adapters/goav1` | descriptor-only AV1 boundary |
 | `adapters/goh264` | descriptor-only by default; `goav_goh264` enables H264 decode |
 
@@ -81,6 +81,30 @@ Current surface:
 - caller-owned frame and plane buffer output
 
 It does not currently claim encode support.
+
+## `govpx`
+
+The `govpx` adapter wraps `github.com/thesyncim/govpx` only when built with
+`goav_govpx`. Normal builds keep VP8 and VP9 descriptors visible without
+importing the module.
+
+Current tagged surface:
+
+- explicit registry registration through `govpx.Register`
+- VP8 packet decode through `DecodeIntoWithPTS`
+- decoded I420 planes are written into caller-owned `av.Frame` buffers
+- startup, packet-loss, corrupt-packet, and discontinuity paths drop until the
+  next VP8 keyframe
+- packet-loss paths request keyframes through `codec.ControlRequest`
+- codec-change and discontinuity events reset decoder state and update stream
+  identity
+- adapter-owned output preparation and keyframe request emission have
+  zero-allocation hot-path tests
+- close is idempotent and later decode, flush, or event calls return
+  `codec.ErrClosed`
+
+It is VP8 decode-only for now. VP9 decode, VP8/VP9 encode, SVC controls, color
+metadata, and format conversion remain future slices.
 
 ## `resample`
 
@@ -137,8 +161,8 @@ no color conversion and no encode adapter.
 
 ## Descriptor-only Boundaries
 
-`govpx`, `goav1`, and default-build `goh264` expose descriptors without
-importing their sibling modules. This lets applications see planned
+Default-build `govpx`, `goav1`, and default-build `goh264` expose descriptors
+without importing their sibling modules. This lets applications see planned
 capabilities and build registries without breaking the default build or forcing
 heavy dependencies. When a descriptor exists but no factory is registered,
 `DecoderFactory` or `EncoderFactory` returns `codec.ErrUnavailable`, not
