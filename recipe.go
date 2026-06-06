@@ -31,6 +31,7 @@ type InputIntent struct {
 	Name     string
 	URI      string
 	Protocol av.ProtocolID
+	MIMEType string
 	Codec    CodecSpec
 	Realtime bool
 }
@@ -48,6 +49,7 @@ type OutputIntent struct {
 	Name     string
 	URI      string
 	Protocol av.ProtocolID
+	MIMEType string
 	Format   av.FormatID
 }
 
@@ -337,6 +339,11 @@ func (s InputSpec) Name(name string) InputSpec {
 	return s
 }
 
+func (s InputSpec) MIME(mimeType string) InputSpec {
+	s.input.MIMEType = mimeType
+	return s
+}
+
 func (s InputSpec) Codec(codec CodecSpec) InputSpec {
 	s.codec = codec
 	return s
@@ -562,6 +569,7 @@ func (s InputSpec) intent() InputIntent {
 		Name:     firstNonEmpty(s.name, s.input.Name),
 		URI:      s.input.URI,
 		Protocol: s.input.Protocol,
+		MIMEType: s.input.MIMEType,
 		Codec:    s.codec,
 		Realtime: s.input.Realtime || s.rtp != nil,
 	}
@@ -629,6 +637,11 @@ func FrameSink(sink pipeline.Sink) OutputSpec {
 func (s OutputSpec) Name(name string) OutputSpec {
 	s.name = name
 	s.output.Name = name
+	return s
+}
+
+func (s OutputSpec) MIME(mimeType string) OutputSpec {
+	s.output.MIMEType = mimeType
 	return s
 }
 
@@ -743,6 +756,7 @@ func (s OutputSpec) intent() OutputIntent {
 		Name:     s.label("output"),
 		URI:      s.output.URI,
 		Protocol: s.output.Protocol,
+		MIMEType: s.output.MIMEType,
 		Format:   s.format,
 	}
 }

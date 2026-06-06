@@ -149,6 +149,86 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	}
 }
 
+func TestRecordRecipeInputMIMEDrivesFormatProbe(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}}}
+	demuxer := &remuxTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	runtime := New(withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	))
+	job := Record(
+		FileInput("", strings.NewReader("")).MIME("audio/ogg"),
+		FileOutput("recording.ogg", io.Discard),
+		UseRuntime(runtime),
+	)
+	intent := job.Intent()
+	if len(intent.Inputs) != 1 || intent.Inputs[0].MIMEType != "audio/ogg" {
+		t.Fatalf("intent: %+v", intent)
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.opened || len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 {
+		t.Fatalf("opened=%v muxers=%d", demuxer.opened, len(muxers.muxers))
+	}
+}
+
+func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}}}
+	demuxer := &remuxTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	runtime := New(withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	))
+	job := Record(
+		FileInput("input.ogg", strings.NewReader("")),
+		FileOutput("", io.Discard).MIME("audio/ogg"),
+		UseRuntime(runtime),
+	)
+	intent := job.Intent()
+	if len(intent.Outputs) != 1 || intent.Outputs[0].MIMEType != "audio/ogg" {
+		t.Fatalf("intent: %+v", intent)
+	}
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "input.ogg -> output") ||
+		!strings.Contains(text, "mime=audio/ogg") {
+		t.Fatalf("spec:\n%s", text)
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 {
+		t.Fatalf("muxers=%d", len(muxers.muxers))
+	}
+}
+
 func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 	ctx := context.Background()
 	audio := av.Stream{

@@ -122,8 +122,9 @@ for _, edge := range spec.Edges {
 - `goav.FileInput`, `goav.URI`, `goav.FileOutput`, and `goav.URIOutput` cover
   ordinary input and output declarations. `FrameSink` requires a non-nil sink,
   and `FileOutput` requires a writer. Writer-only outputs need a filename,
-  MIME type, URI, or explicit `.Format(...)` so the container is not guessed
-  from nothing. Output names are unique within a recipe.
+  `.MIME(...)`, URI, or explicit `.Format(...)` so the container is not guessed
+  from nothing. Inputs can also use `.MIME(...)` when a reader or URI lacks a
+  useful name. Output names are unique within a recipe.
 
 If `Audio()` or `Video()` matches more than one stream, build errors list the
 available streams and suggest `StreamID`, `StreamName`, or `StreamIndex(0)`.

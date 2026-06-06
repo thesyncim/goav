@@ -383,7 +383,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 123. Wrap missing format probe, demuxer, and muxer registry failures with
     actionable build diagnostics that name the input/output and adapter role.
     Done.
-124. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+124. Add recipe-level `.MIME(...)` customization for inputs and outputs so
+    unnamed readers and writer-backed outputs can still drive format probing.
+    Done.
+125. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
