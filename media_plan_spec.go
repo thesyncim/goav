@@ -12,6 +12,7 @@ const (
 	mediaBuildKindPacketCopy = "packet_copy"
 	mediaBuildKindFrameSink  = "frame_sink"
 	mediaBuildKindEncode     = "encode"
+	mediaBuildKindBranch     = "branch_composer"
 )
 
 func emitMediaPlanGraphSpecPass() recipeCompilePass {
@@ -37,6 +38,9 @@ func mediaPlanGraphSpec(state *recipeCompileState) (pipeline.Spec, string, bool,
 	}
 	if spec, ok, err := mediaPlanEncodeSpec(state); err != nil || ok {
 		return spec, mediaBuildKindEncode, ok, err
+	}
+	if spec, ok, err := mediaPlanBranchComposerSpec(state); err != nil || ok {
+		return spec, mediaBuildKindBranch, ok, err
 	}
 	return pipeline.Spec{}, "", false, nil
 }
@@ -142,6 +146,40 @@ func builderCanBuildEncodeOutput(builder *builder) bool {
 		len(builder.transcodes) == 0 &&
 		len(builder.sources) == 0 &&
 		len(builder.stages) == 0
+}
+
+func mediaPlanBranchComposerSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
+	if state == nil || !state.transcodePresent {
+		return pipeline.Spec{}, false, nil
+	}
+	builder, ok := state.builder.(*builder)
+	if !ok || !builderCanBuildBranchComposer(builder) {
+		return pipeline.Spec{}, false, nil
+	}
+	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
+	switch {
+	case len(builder.rtpInputs) == 0:
+		spec, err := builder.planTranscode(spec)
+		return spec, err == nil, err
+	case len(builder.rtpInputs) > 0:
+		spec, err := builder.planRTPTranscode(spec)
+		return spec, err == nil, err
+	default:
+		return pipeline.Spec{}, false, nil
+	}
+}
+
+func builderCanBuildBranchComposer(builder *builder) bool {
+	return builder != nil &&
+		len(builder.transcodes) == 1 &&
+		len(builder.inputs) == 0 &&
+		len(builder.outputs) == 0 &&
+		len(builder.decodes) == 0 &&
+		len(builder.encodes) == 0 &&
+		len(builder.filters) == 0 &&
+		len(builder.sources) == 0 &&
+		len(builder.stages) == 0 &&
+		len(builder.sinks) == 0
 }
 
 func mediaPlanPacketCopySources(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {

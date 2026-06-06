@@ -56,6 +56,29 @@ func (r recipeResolved) buildMediaPlanEncodeTask(ctx context.Context) (Task, err
 	return &task{graph: graph}, nil
 }
 
+func (r recipeResolved) buildMediaPlanBranchComposerTask(ctx context.Context) (Task, error) {
+	builder, ok := r.builder.(*builder)
+	if !ok || !builderCanBuildBranchComposer(builder) {
+		return nil, recipeGraphUnsupportedError("build branch composition", r.intent)
+	}
+	graph, err := builder.newGraph(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.compileMediaPlanBranchComposer(ctx, builder, graph); err != nil {
+		graph.Close()
+		return nil, err
+	}
+	return &task{graph: graph}, nil
+}
+
+func (r recipeResolved) compileMediaPlanBranchComposer(ctx context.Context, builder *builder, graph pipeline.Graph) error {
+	if len(builder.rtpInputs) != 0 {
+		return builder.compileRTPTranscode(ctx, graph)
+	}
+	return builder.compileTranscode(ctx, graph)
+}
+
 func (r recipeResolved) compileMediaPlanEncode(ctx context.Context, builder *builder, graph pipeline.Graph) error {
 	switch {
 	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0:

@@ -201,6 +201,8 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 		task, err = r.buildMediaPlanFrameSinkTask(ctx)
 	case mediaBuildKindEncode:
 		task, err = r.buildMediaPlanEncodeTask(ctx)
+	case mediaBuildKindBranch:
+		task, err = r.buildMediaPlanBranchComposerTask(ctx)
 	default:
 		if r.compiler != nil && r.migration != nil {
 			task, err = r.compiler.build(ctx, r.migration)
@@ -360,6 +362,7 @@ func compileTranscodeRecipeWithOptions(job *transcodeJob, options recipeCompileO
 		planTranscodeIntentPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerTranscodePlanPass(),
+		emitMediaPlanGraphSpecPass(),
 		selectMigrationGraphCompilerPass(),
 		emitMigrationGraphSpecPass(),
 	}}.Compile(state)

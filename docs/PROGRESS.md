@@ -807,8 +807,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     packet-preserving `From(input).Copy().To(...)` file/remux and RTP/WebRTC
     record/fanout recipes now emit exact `pipeline.Spec` values from the
     recipe compiler's media-plan pass, with migration graph description kept as
-    the fallback for remaining branch/composer paths while they move to
-    `MediaPlan -> pipeline.Graph`.
+    the fallback only for lower-level or not-yet-recognized runtime shapes while
+    recipes move to `MediaPlan -> pipeline.Graph`.
     Done.
 226. Harden runtime branch attachment at operation boundaries:
     stream recipes now have coverage for `Task.Attach(...FromTap(...))` after a
@@ -830,6 +830,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     now emits and builds through the media-plan encode path for file/protocol
     and RTP/WebRTC inputs, preserving ordered custom processing before encode
     and mux fanout without migration compiler selection. Done.
+230. Move branch/composer recipes off the migration compiler list:
+    declared `Tap(...).Branch(...).To(label).Output(label, ...)` compositions
+    and live flow `Tee(...)` recipes now emit and build through the media-plan
+    branch-composer path, preserving shared decode, per-branch transforms,
+    encoders, shared mux outputs, and RTP/WebRTC receive without migration
+    compiler selection. Done.
 
 ## First Vertical Slice
 

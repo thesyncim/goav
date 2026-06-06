@@ -1798,8 +1798,11 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	if len(builder.transcodes) != 1 {
 		t.Fatalf("builder transcodes = %d, want 1", len(builder.transcodes))
 	}
-	if resolved.compiler == nil || resolved.migration == nil {
-		t.Fatal("compileJobRecipe() did not select a migration graph compiler")
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("branch composition recipe selected a migration graph compiler")
+	}
+	if resolved.mediaBuildKind != mediaBuildKindBranch {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindBranch)
 	}
 	if !resolved.specReady {
 		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
@@ -1819,6 +1822,90 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	}
 	if len(spec.Nodes) == 0 || len(spec.Edges) == 0 {
 		t.Fatalf("resolved spec = %+v, want planned graph nodes and edges", spec)
+	}
+}
+
+func TestCompileLiveFlowTeeRecipeUsesMediaPlanBranchComposer(t *testing.T) {
+	job := From(RTP(&runtimeRTPReceiver{
+		streams: []Stream{audioOpusTestStream()},
+	}).Name("audio").Codec(Opus())).
+		Audio().
+		Tee(
+			AudioFlow("voice").OpusVoice().To(FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg)),
+			AudioFlow("archive").OpusMusic().To(FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg)),
+		)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	builder, ok := resolved.builder.(*builder)
+	if !ok {
+		t.Fatalf("resolved builder type = %T, want *builder", resolved.builder)
+	}
+	if len(builder.transcodes) != 1 || len(builder.rtpInputs) != 1 {
+		t.Fatalf("builder transcodes=%d rtp=%d, want live branch composer", len(builder.transcodes), len(builder.rtpInputs))
+	}
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("live flow tee recipe selected a migration graph compiler")
+	}
+	if resolved.mediaBuildKind != mediaBuildKindBranch {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindBranch)
+	}
+	spec, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	if !specHasNode(spec, "encode-voice") || !specHasNode(spec, "encode-archive") {
+		t.Fatalf("spec = %+v, want flow branch encoders", spec)
+	}
+}
+
+func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		Branch("main").
+		Opus(96_000).
+		To("archive").
+		Output("archive", FileOutput("archive.ogg", io.Discard))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("branch composition recipe selected a migration graph compiler")
+	}
+	if resolved.mediaBuildKind != mediaBuildKindBranch {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindBranch)
+	}
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
 
