@@ -780,6 +780,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     resolve to the same stable decoded-node names as stream recipes and accept
     the same stream selectors, while `.From(node)` remains the expert graph
     escape hatch. Done.
+221. Add task-level runtime attachment cleanup:
+    `Task.StopAttachments(ctx)` removes all live runtime branches under the same
+    attach control plane, individual `Attachment.Stop(ctx)` handles remain
+    idempotent after group cleanup, and `Task.Close()` stops runtime attachments
+    before closing the graph. Done.
 
 ## First Vertical Slice
 

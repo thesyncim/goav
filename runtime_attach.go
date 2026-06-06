@@ -144,12 +144,14 @@ func (t *task) Attach(ctx context.Context, branch RuntimeBranch) (Attachment, er
 		t.rollbackRuntimeBranch(refs)
 		return nil, err
 	}
-	return &runtimeAttachment{
+	attachment := &runtimeAttachment{
 		name:   branch.name,
-		graph:  t.graph,
+		owner:  t,
 		nodes:  refs,
 		routes: routes,
-	}, nil
+	}
+	t.trackAttachmentLocked(attachment)
+	return attachment, nil
 }
 
 func (t *task) attachRuntimeBranch(branch RuntimeBranch, nodeNames []string) ([]pipeline.NodeRef, []pipeline.Route, error) {
@@ -206,9 +208,44 @@ func (t *task) rollbackRuntimeBranch(nodes []pipeline.NodeRef) {
 	}
 }
 
+func (t *task) trackAttachmentLocked(attachment *runtimeAttachment) {
+	if t.attachments == nil {
+		t.attachments = make(map[*runtimeAttachment]struct{})
+	}
+	t.attachments[attachment] = struct{}{}
+}
+
+func (t *task) stopAttachment(ctx context.Context, attachment *runtimeAttachment) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t.attachMu.Lock()
+	defer t.attachMu.Unlock()
+	return t.stopAttachmentLocked(ctx, attachment)
+}
+
+func (t *task) stopAttachmentLocked(ctx context.Context, attachment *runtimeAttachment) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if attachment == nil {
+		return nil
+	}
+	attachment.stopMu.Lock()
+	defer attachment.stopMu.Unlock()
+	if attachment.stopped {
+		delete(t.attachments, attachment)
+		return nil
+	}
+	err := attachment.stopLocked(t.graph)
+	attachment.stopped = true
+	delete(t.attachments, attachment)
+	return err
+}
+
 type runtimeAttachment struct {
 	name    string
-	graph   pipeline.Graph
+	owner   *task
 	nodes   []pipeline.NodeRef
 	routes  []pipeline.Route
 	stopMu  sync.Mutex
@@ -226,26 +263,24 @@ func (a *runtimeAttachment) Stop(ctx context.Context) error {
 	if a == nil {
 		return nil
 	}
-	if err := ctx.Err(); err != nil {
-		return err
+	if a.owner != nil {
+		return a.owner.stopAttachment(ctx, a)
 	}
-	a.stopMu.Lock()
-	defer a.stopMu.Unlock()
-	if a.stopped {
-		return nil
-	}
+	return nil
+}
+
+func (a *runtimeAttachment) stopLocked(graph pipeline.Graph) error {
 	var first error
 	for i := range a.routes {
-		if err := a.graph.Disconnect(a.routes[i]); err != nil && !isStoppedAttachmentError(err) && first == nil {
+		if err := graph.Disconnect(a.routes[i]); err != nil && !isStoppedAttachmentError(err) && first == nil {
 			first = err
 		}
 	}
 	for i := len(a.nodes) - 1; i >= 0; i-- {
-		if err := a.graph.Remove(a.nodes[i]); err != nil && !isStoppedAttachmentError(err) && first == nil {
+		if err := graph.Remove(a.nodes[i]); err != nil && !isStoppedAttachmentError(err) && first == nil {
 			first = err
 		}
 	}
-	a.stopped = true
 	return first
 }
 

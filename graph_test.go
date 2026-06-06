@@ -173,6 +173,113 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	}
 }
 
+func TestTaskStopAttachmentsStopsAllRuntimeBranches(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	source := &runtimeBranchStepSource{
+		name: "source",
+		messages: []pipeline.Message{
+			{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "audio", Payload: av.Buffer{Bytes: []byte{1}}}},
+			{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "audio", Payload: av.Buffer{Bytes: []byte{2}}}},
+			{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "audio", Payload: av.Buffer{Bytes: []byte{3}}}},
+		},
+		emitted: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+		resume: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+	}
+	base := &runtimeTestSink{name: "base"}
+	leftStage := &runtimeTestStage{name: "left-stage"}
+	leftSink := &runtimeTestSink{name: "left-sink"}
+	rightStage := &runtimeTestStage{name: "right-stage"}
+	rightSink := &runtimeTestSink{name: "right-sink"}
+
+	graph := New().Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- task.Run(ctx)
+	}()
+
+	select {
+	case <-source.emitted[0]:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	left, err := task.Attach(ctx, Branch("left").From("source").Do(leftStage).To(leftSink))
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := task.Attach(ctx, Branch("right").From("source").Do(rightStage).To(rightSink))
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(source.resume[0])
+	select {
+	case <-source.emitted[1]:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := task.StopAttachments(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.StopAttachments(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := left.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := right.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	close(source.resume[1])
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 3 || leftStage.count != 1 || rightStage.count != 1 || leftSink.count != 1 || rightSink.count != 1 {
+		t.Fatalf("base=%d leftStage=%d rightStage=%d leftSink=%d rightSink=%d", base.count, leftStage.count, rightStage.count, leftSink.count, rightSink.count)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
+		t.Fatalf("spec:\n%s", text)
+	}
+}
+
+func TestTaskCloseStopsRuntimeAttachments(t *testing.T) {
+	graph := New().Graph()
+	source := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(source.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage := &runtimeTestStage{name: "stage"}
+	sink := &runtimeTestSink{name: "sink"}
+	attachment, err := task.Attach(context.Background(), Branch("close").From("source").Do(stage).To(sink))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !stage.closed || !sink.closed {
+		t.Fatalf("closed stage=%v sink=%v", stage.closed, sink.closed)
+	}
+	if err := attachment.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	graph := New().Graph()
 	graph.Source("source", &runtimeTestSource{name: "source"})

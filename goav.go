@@ -37,6 +37,7 @@ type GraphBuilder interface {
 type Task interface {
 	Describe() pipeline.Spec
 	Attach(context.Context, RuntimeBranch) (Attachment, error)
+	StopAttachments(context.Context) error
 	Run(context.Context) error
 	Events() <-chan av.Event
 	Stats() TaskStats

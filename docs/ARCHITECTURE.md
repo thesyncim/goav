@@ -63,7 +63,9 @@ by default, or matches one stream or event type.
 
 `Task.Attach` is the first runtime control-plane operation. It attaches a named
 stage/sink branch to a built direct graph and returns an attachment handle with
-`Stop(ctx)`. Common raw-frame anchors use `FromDecodedAudio(...)` and
+`Stop(ctx)`. `Task.StopAttachments(ctx)` removes every live attachment as one
+control-plane action, and `Task.Close()` stops attachments before closing the
+graph. Common raw-frame anchors use `FromDecodedAudio(...)` and
 `FromDecodedVideo(...)`; expert graph nodes can still be addressed with
 `From(node)` and `Task.Describe`. This is for late analysis taps, meters, and
 screenshot collectors that should observe future messages without rebuilding the

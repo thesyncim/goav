@@ -83,7 +83,7 @@ contract:
 | `pipeline.Emitter` | stable | emits messages | Lets stages forward packets, frames, and events without changing graph topology. |
 | `pipeline.Route` | stable | graph edge policy | Describes one edge with optional stream or event scoping. |
 | fanout routing | stable | one-to-many edges | One upstream can feed several downstream stages or sinks. |
-| runtime attach | experimental | running direct graph to new stage/sink branch | `Task.Attach(ctx, goav.Branch(...))` attaches stoppable stage/sink taps to future messages in direct graphs; decoded audio/video anchors cover common raw-frame taps, and buffered live attachments are guarded until queue/worker extension exists. |
+| runtime attach | experimental | running direct graph to new stage/sink branch | `Task.Attach(ctx, goav.Branch(...))` attaches stoppable stage/sink taps to future messages in direct graphs; `Attachment.Stop(ctx)` removes one branch, `Task.StopAttachments(ctx)` removes all live branches, decoded audio/video anchors cover common raw-frame taps, and buffered live attachments are guarded until queue/worker extension exists. |
 | `pipeline.BufferPolicy` | experimental | execution policy | Controls direct, buffered, backpressure, and dropping behavior where supported. |
 | graph stats | experimental | counters/events | `Task.Stats()` exposes packet, frame, event, drop, and last-event counters. |
 

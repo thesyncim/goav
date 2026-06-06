@@ -408,8 +408,9 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 }
 
 type task struct {
-	graph    pipeline.Graph
-	attachMu sync.Mutex
+	graph       pipeline.Graph
+	attachMu    sync.Mutex
+	attachments map[*runtimeAttachment]struct{}
 }
 
 func (t *task) Describe() pipeline.Spec {
@@ -428,6 +429,25 @@ func (t *task) Stats() TaskStats {
 	return t.graph.Stats()
 }
 
+func (t *task) StopAttachments(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t.attachMu.Lock()
+	defer t.attachMu.Unlock()
+	var first error
+	for attachment := range t.attachments {
+		if err := t.stopAttachmentLocked(ctx, attachment); first == nil && err != nil {
+			first = err
+		}
+	}
+	return first
+}
+
 func (t *task) Close() error {
-	return t.graph.Close()
+	first := t.StopAttachments(context.Background())
+	if err := t.graph.Close(); first == nil && err != nil {
+		first = err
+	}
+	return first
 }

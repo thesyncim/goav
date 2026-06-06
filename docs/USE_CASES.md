@@ -127,6 +127,9 @@ if err != nil {
 defer levels.Stop(ctx)
 ```
 
+Use `task.StopAttachments(ctx)` when several runtime branches should be removed
+together without stopping the main job.
+
 Use `FromDecodedAudio(...)` or `FromDecodedVideo(...)` for the common raw frame
 anchors, with the same selectors as `Audio(...)` and `Video(...)`. Use
 `task.Describe()` plus `.From(node)` when attaching to an expert graph node.

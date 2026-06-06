@@ -214,6 +214,12 @@ if err != nil {
 return screenshots.Stop(ctx)
 ```
 
+When several runtime branches are active, stop them as one control-plane action:
+
+```go
+return task.StopAttachments(ctx)
+```
+
 Use `FromDecodedAudio(...)` or `FromDecodedVideo(...)` for the common raw frame
 anchors, with the same stream selectors as `Audio(...)` and `Video(...)`.
 Use `.From(node)` with `task.Describe()` when attaching to an expert graph node.
