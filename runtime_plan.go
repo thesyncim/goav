@@ -8,15 +8,21 @@ type plannedNode struct {
 }
 
 func (b *builder) Describe() (pipeline.Spec, error) {
-	spec := pipeline.Spec{
-		Name:     "goav",
-		Realtime: b.runtime.realtime,
-	}
 	compiler, err := b.selectCompiler()
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
-	return compiler.describe(b, spec)
+	return b.describeWithCompiler(compiler)
+}
+
+func (b *builder) describeWithCompiler(compiler builderCompiler) (pipeline.Spec, error) {
+	if compiler == nil {
+		return pipeline.Spec{}, ErrUnsupportedBuild
+	}
+	return compiler.describe(b, pipeline.Spec{
+		Name:     "goav",
+		Realtime: b.runtime.realtime,
+	})
 }
 
 func (b *builder) planRemux(spec pipeline.Spec) (pipeline.Spec, error) {

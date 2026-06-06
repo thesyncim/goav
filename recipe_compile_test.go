@@ -1,9 +1,12 @@
 package goav
 
 import (
+	"context"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/thesyncim/goav/av"
 )
 
 func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
@@ -22,6 +25,9 @@ func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	if resolved.compiler == nil || resolved.migration == nil {
 		t.Fatal("compileJobRecipe() did not select a migration graph compiler")
 	}
+	if !resolved.specReady {
+		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
+	}
 	if resolved.intent.Name != "record" {
 		t.Fatalf("intent name = %q, want record", resolved.intent.Name)
 	}
@@ -37,6 +43,9 @@ func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	}
 	if len(spec.Nodes) == 0 || len(spec.Edges) == 0 {
 		t.Fatalf("resolved spec = %+v, want planned graph nodes and edges", spec)
+	}
+	if got, want := spec, resolved.spec; got.Name != want.Name || len(got.Nodes) != len(want.Nodes) || len(got.Edges) != len(want.Edges) {
+		t.Fatalf("resolved.Describe() = %+v, want stored spec %+v", got, want)
 	}
 }
 
@@ -59,6 +68,9 @@ func TestCompileTranscodeRecipeCarriesIntentAndPlan(t *testing.T) {
 	if resolved.compiler == nil || resolved.migration == nil {
 		t.Fatal("compileTranscodeRecipe() did not select a migration graph compiler")
 	}
+	if !resolved.specReady {
+		t.Fatal("compileTranscodeRecipe() did not emit a planned graph spec")
+	}
 	if resolved.intent.Name != "transcode" {
 		t.Fatalf("intent name = %q, want transcode", resolved.intent.Name)
 	}
@@ -67,5 +79,46 @@ func TestCompileTranscodeRecipeCarriesIntentAndPlan(t *testing.T) {
 	}
 	if got := resolved.intent.Streams[0].RouteTo; len(got) != 1 || got[0] != "web" {
 		t.Fatalf("intent route targets = %+v, want [web]", got)
+	}
+	spec, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	if len(spec.Nodes) == 0 || len(spec.Edges) == 0 {
+		t.Fatalf("resolved spec = %+v, want planned graph nodes and edges", spec)
+	}
+}
+
+func TestRecipeResolvedBuildUsesPlannedCompiler(t *testing.T) {
+	job := Record(
+		RTP(&runtimeRTPReceiver{
+			streams: []Stream{{
+				ID:   "video",
+				Type: av.MediaVideo,
+				Codec: av.CodecParameters{
+					ID:   av.CodecVP8,
+					Type: av.MediaVideo,
+				},
+			}},
+		}).Name("video").Codec(VP8()),
+		FileOutput("recording.ivf", io.Discard),
+	)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(context.Background())
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	built := task.Describe()
+	if len(planned.Nodes) != len(built.Nodes) || len(planned.Edges) != len(built.Edges) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }

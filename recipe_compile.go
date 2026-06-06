@@ -13,6 +13,8 @@ type recipeResolved struct {
 	builder   builderAPI
 	migration *builder
 	compiler  builderCompiler
+	spec      pipeline.Spec
+	specReady bool
 }
 
 type recipeCompileState struct {
@@ -29,6 +31,8 @@ type recipeCompileState struct {
 	builder   builderAPI
 	migration *builder
 	compiler  builderCompiler
+	spec      pipeline.Spec
+	specReady bool
 }
 
 type recipeCompilePass interface {
@@ -86,15 +90,14 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		builder:   state.builder,
 		migration: state.migration,
 		compiler:  state.compiler,
+		spec:      state.spec,
+		specReady: state.specReady,
 	}, nil
 }
 
 func (r recipeResolved) Describe() (pipeline.Spec, error) {
-	if r.compiler != nil && r.migration != nil {
-		return r.compiler.describe(r.migration, pipeline.Spec{
-			Name:     "goav",
-			Realtime: r.migration.runtime.realtime,
-		})
+	if r.specReady {
+		return r.spec, nil
 	}
 	return r.builder.Describe()
 }
@@ -122,6 +125,7 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 		lowerJobStreamPass(),
 		lowerJobOutputsPass(),
 		selectMigrationGraphCompilerPass(),
+		emitMigrationGraphSpecPass(),
 	}}.Compile(state)
 }
 
@@ -139,6 +143,7 @@ func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 		openRecipeRuntimeBuilderPass(),
 		lowerTranscodePlanPass(),
 		selectMigrationGraphCompilerPass(),
+		emitMigrationGraphSpecPass(),
 	}}.Compile(state)
 }
 
@@ -265,6 +270,21 @@ func selectMigrationGraphCompilerPass() recipeCompilePass {
 		}
 		state.migration = builder
 		state.compiler = compiler
+		return nil
+	}}
+}
+
+func emitMigrationGraphSpecPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "emit migration graph spec", fn: func(state *recipeCompileState) error {
+		if state.migration == nil || state.compiler == nil {
+			return nil
+		}
+		spec, err := state.migration.describeWithCompiler(state.compiler)
+		if err != nil {
+			return err
+		}
+		state.spec = spec
+		state.specReady = true
 		return nil
 	}}
 }
