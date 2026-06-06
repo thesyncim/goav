@@ -33,6 +33,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `codec` | Into-style contracts, descriptors with one owner for identity/modes/status and capability lists for concrete media compatibility, descriptor-driven backend discovery, explicit registry, optional decode-state provisioning, decoder pipeline stages, event-consuming encoder stages, decode bounds for realtime adapter scratch planning, explicit unsupported live codec-switch guard for bound decoder stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source with stream-added/EOS lifecycle events, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, bounded buffered executor, fanout, one route model with one-to-many targets, stream/event scoped routing labeled as `stream=...` or `event=...`, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, buffered runtime transcode and live receive proofs, detail-aware graph specs as the core inspection object | richer realtime lifecycle proof |
+| `graphrender` | optional graph-spec renderer with one URI-based public entry point, kept outside `pipeline` core | later hosted/shareable graph views |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh including new-codec depacketizer handoff when registered, replacement-stream identity adoption for single-stream readers, targeted old-ID replacement for multi-stream readers, stream-scoped EOS | richer multi-stream receive |
 | `webrtcav` | single `NewSession` PeerConnection entry, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit factory registry, event-preserving frame-transform pipeline stage | richer concrete filters later |
@@ -434,7 +435,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `.Run(ctx)` path, and add a default `From(...).To(...).Run(ctx)` fanout
     acceptance test.
     Done.
-138. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+138. Collapse optional graph rendering to a single URI-based public entry point,
+    keeping text, DOT, and Mermaid choices out of the core and out of the public
+    renderer surface.
+    Done.
+139. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

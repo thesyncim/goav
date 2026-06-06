@@ -42,7 +42,11 @@ func (recipeAPIRTPReader) Close() error {
 }
 
 func specText(spec pipeline.Spec) string {
-	return graphrender.Render(spec, graphrender.Text)
+	out, err := graphrender.RenderURI(spec, "goav:graph")
+	if err != nil {
+		return err.Error()
+	}
+	return out
 }
 
 func TestReadmeRecordRecipeIsSmall(t *testing.T) {

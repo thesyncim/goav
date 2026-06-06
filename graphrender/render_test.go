@@ -1,7 +1,6 @@
 package graphrender
 
 import (
-	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -9,7 +8,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func TestRenderTextDOTAndMermaid(t *testing.T) {
+func TestRenderURITextDOTAndMermaid(t *testing.T) {
 	spec := pipeline.Spec{
 		Name: "receive",
 		Nodes: []pipeline.NodeSpec{
@@ -32,14 +31,20 @@ func TestRenderTextDOTAndMermaid(t *testing.T) {
 		},
 	}
 
-	text := Render(spec, Text)
+	text, err := RenderURI(spec, "goav:graph")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(text, "pipeline receive") ||
 		!strings.Contains(text, "source source [rtp receive]") ||
 		!strings.Contains(text, "decode -> sink [stream=audio]") {
 		t.Fatalf("text spec:\n%s", text)
 	}
 
-	dot := Render(spec, DOT)
+	dot, err := RenderURI(spec, "goav://graph/dot")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(dot, "digraph \"receive\"") ||
 		!strings.Contains(dot, "source\\nsource\\nrtp receive") ||
 		!strings.Contains(dot, "\"source\" -> \"decode\"") ||
@@ -47,23 +52,14 @@ func TestRenderTextDOTAndMermaid(t *testing.T) {
 		t.Fatalf("dot spec:\n%s", dot)
 	}
 
-	mermaid := Render(spec, Mermaid)
+	mermaid, err := RenderURI(spec, "goav:graph?format=mermaid")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(mermaid, "flowchart LR") ||
 		!strings.Contains(mermaid, "n0([\"source\\nsource\\nrtp receive\"])") ||
 		!strings.Contains(mermaid, "n1 -- \"stream=audio\" --> n2") {
 		t.Fatalf("mermaid spec:\n%s", mermaid)
-	}
-
-	var out bytes.Buffer
-	if err := Write(&out, spec, Mermaid); err != nil {
-		t.Fatal(err)
-	}
-	if out.String() != mermaid {
-		t.Fatalf("write mermaid:\n%s\nwant:\n%s", out.String(), mermaid)
-	}
-
-	if err := Write(&out, spec, Format("json")); !errors.Is(err, ErrUnsupportedFormat) {
-		t.Fatalf("err = %v, want ErrUnsupportedFormat", err)
 	}
 }
 

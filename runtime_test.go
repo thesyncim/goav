@@ -101,15 +101,23 @@ func runtimeValue(t *testing.T, rt Runtime) *runtime {
 }
 
 func specDOT(spec pipeline.Spec) string {
-	return graphrender.Render(spec, graphrender.DOT)
+	return specRenderURI(spec, "goav://graph/dot")
 }
 
 func specText(spec pipeline.Spec) string {
-	return graphrender.Render(spec, graphrender.Text)
+	return specRenderURI(spec, "goav:graph")
 }
 
 func specMermaid(spec pipeline.Spec) string {
-	return graphrender.Render(spec, graphrender.Mermaid)
+	return specRenderURI(spec, "goav:graph?format=mermaid")
+}
+
+func specRenderURI(spec pipeline.Spec, target string) string {
+	out, err := graphrender.RenderURI(spec, target)
+	if err != nil {
+		return err.Error()
+	}
+	return out
 }
 
 func withTestCodecs(configure ...func(*codec.SimpleRegistry)) Option {

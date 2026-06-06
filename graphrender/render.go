@@ -13,52 +13,46 @@ import (
 var ErrUnsupportedFormat = errors.New("graphrender: unsupported format")
 var ErrUnsupportedURI = errors.New("graphrender: unsupported uri")
 
-type Format string
+type format string
 
 const (
-	Text    Format = "text"
-	DOT     Format = "dot"
-	Mermaid Format = "mermaid"
+	textFormat    format = "text"
+	dotFormat     format = "dot"
+	mermaidFormat format = "mermaid"
 )
-
-func Render(spec pipeline.Spec, format Format) string {
-	var out strings.Builder
-	_ = Write(&out, spec, format)
-	return out.String()
-}
 
 func RenderURI(spec pipeline.Spec, target string) (string, error) {
 	var out strings.Builder
-	if err := WriteURI(&out, spec, target); err != nil {
+	if err := writeURI(&out, spec, target); err != nil {
 		return "", err
 	}
 	return out.String(), nil
 }
 
-func Write(w io.Writer, spec pipeline.Spec, format Format) error {
+func write(w io.Writer, spec pipeline.Spec, format format) error {
 	switch format {
-	case "", Text:
+	case "", textFormat:
 		return writeText(w, spec)
-	case DOT:
+	case dotFormat:
 		return writeDOT(w, spec)
-	case Mermaid:
+	case mermaidFormat:
 		return writeMermaid(w, spec)
 	default:
 		return ErrUnsupportedFormat
 	}
 }
 
-func WriteURI(w io.Writer, spec pipeline.Spec, target string) error {
-	format, err := FormatURI(target)
+func writeURI(w io.Writer, spec pipeline.Spec, target string) error {
+	format, err := formatURI(target)
 	if err != nil {
 		return err
 	}
-	return Write(w, spec, format)
+	return write(w, spec, format)
 }
 
-func FormatURI(target string) (Format, error) {
+func formatURI(target string) (format, error) {
 	if target == "" {
-		return Text, nil
+		return textFormat, nil
 	}
 	uri, err := url.Parse(target)
 	if err != nil {
@@ -69,7 +63,7 @@ func FormatURI(target string) (Format, error) {
 	}
 	format := graphURIFormat(uri)
 	if format == "" {
-		return Text, nil
+		return textFormat, nil
 	}
 	return parseFormat(format)
 }
@@ -204,14 +198,14 @@ func graphURIFormat(uri *url.URL) string {
 	return strings.Trim(uri.Path, "/")
 }
 
-func parseFormat(value string) (Format, error) {
-	switch Format(strings.ToLower(value)) {
-	case "", Text:
-		return Text, nil
-	case DOT:
-		return DOT, nil
-	case Mermaid:
-		return Mermaid, nil
+func parseFormat(value string) (format, error) {
+	switch format(strings.ToLower(value)) {
+	case "", textFormat:
+		return textFormat, nil
+	case dotFormat:
+		return dotFormat, nil
+	case mermaidFormat:
+		return mermaidFormat, nil
 	default:
 		return "", ErrUnsupportedFormat
 	}

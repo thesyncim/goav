@@ -182,8 +182,8 @@ for _, node := range spec.Nodes {
 }
 ```
 
-`pipeline.Spec` is the core graph object: structured nodes and edges only.
-Exporters live in the small `graphrender` utility package behind URI targets,
+`pipeline.Spec` is the core graph object: structured nodes and edges only. The
+optional `graphrender` package exposes a single URI-based render entry point,
 so generated output can evolve without becoming part of runtime composition.
 
 ```go
