@@ -205,3 +205,34 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 		t.Fatalf("result = %+v packet=%+v", result, result.Packet)
 	}
 }
+
+func TestFormatMuxerRejectsNegativeDuration(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "audio",
+		Index:    0,
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			SampleRate: 48000,
+			Channels:   2,
+		},
+	}
+	var buffer bytes.Buffer
+	muxer := &FormatMuxer{}
+	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	err := muxer.Write(ctx, &av.Packet{
+		StreamID: stream.ID,
+		Payload:  av.Buffer{Bytes: []byte{1}},
+		PTS:      av.Timestamp{Value: 0, Base: stream.TimeBase},
+		Duration: av.Duration{Value: -1, Base: stream.TimeBase},
+		Keyframe: true,
+	}, nil)
+	if !errors.Is(err, matroska.ErrInvalidData) {
+		t.Fatalf("err = %v, want matroska.ErrInvalidData", err)
+	}
+}

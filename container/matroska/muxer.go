@@ -129,6 +129,9 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if packet.TimeNS < 0 {
 		return ErrInvalidData
 	}
+	if packet.DurationNS < 0 || (packet.DurationNS > 0 && packet.TimeNS > math.MaxInt64-packet.DurationNS) {
+		return ErrInvalidData
+	}
 	if !m.headerWritten {
 		if err := m.writeHeader(); err != nil {
 			return err

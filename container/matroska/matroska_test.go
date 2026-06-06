@@ -182,6 +182,53 @@ func TestNanosecondTimecodeScaleRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsInvalidPacketDuration(t *testing.T) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		packet Packet
+	}{
+		{
+			name: "negative",
+			packet: Packet{
+				TrackID:    trackID,
+				TimeNS:     0,
+				DurationNS: -1,
+				Keyframe:   true,
+				Data:       []byte{1},
+			},
+		},
+		{
+			name: "overflow",
+			packet: Packet{
+				TrackID:    trackID,
+				TimeNS:     math.MaxInt64,
+				DurationNS: 1,
+				Keyframe:   true,
+				Data:       []byte{1},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := muxer.WritePacket(tt.packet); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
 func TestMuxerSplitsClustersBeforeBlockTimecodeOverflow(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -655,6 +702,37 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	if !result.PacketReady || result.Packet.StreamID != "1" || result.Packet.PTS.Value != 20_000_000 ||
 		!bytes.Equal(result.Packet.Payload.Bytes, []byte{1, 2, 3}) {
 		t.Fatalf("result = %+v packet=%+v", result, result.Packet)
+	}
+}
+
+func TestFormatMuxerRejectsNegativeDuration(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "audio",
+		Index:    0,
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: timeNS},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			SampleRate: 48000,
+			Channels:   2,
+		},
+	}
+	var buffer bytes.Buffer
+	muxer := &FormatMuxer{}
+	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	err := muxer.Write(ctx, &av.Packet{
+		StreamID: stream.ID,
+		Payload:  av.Buffer{Bytes: []byte{1}},
+		PTS:      av.Timestamp{Value: 0, Base: stream.TimeBase},
+		Duration: av.Duration{Value: -1, Base: stream.TimeBase},
+		Keyframe: true,
+	}, nil)
+	if !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
 	}
 }
 

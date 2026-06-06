@@ -104,6 +104,8 @@ overflow or when `ClusterMaxDurationNS` is reached. When `DurationNS` is set,
 the muxer writes a single-frame BlockGroup with BlockDuration in timestamp-scale
 ticks. In seekable mode, `Info.Duration` is patched on close to the maximum
 observed packet end time expressed in those same timestamp-scale ticks.
+Negative packet durations and packet end times that overflow `int64` are
+rejected before bytes are written.
 Seekable mode also writes Cues for keyframe packets using Segment-relative
 Cluster positions, and a SeekHead that points to Info, Tracks, and Cues. The
 muxer updates duration and cue state only after the packet bytes are written
