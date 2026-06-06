@@ -10,20 +10,31 @@ const (
 	graphSpecOriginMigration = "migration"
 
 	mediaBuildKindPacketCopy = "packet_copy"
+	mediaBuildKindFrameSink  = "frame_sink"
 )
 
 func emitMediaPlanGraphSpecPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "emit media plan graph spec", fn: func(state *recipeCompileState) error {
-		spec, ok, err := mediaPlanPacketCopySpec(state)
+		spec, kind, ok, err := mediaPlanGraphSpec(state)
 		if err != nil || !ok {
 			return err
 		}
 		state.spec = spec
 		state.specReady = true
 		state.specOrigin = graphSpecOriginMediaPlan
-		state.mediaBuildKind = mediaBuildKindPacketCopy
+		state.mediaBuildKind = kind
 		return nil
 	}}
+}
+
+func mediaPlanGraphSpec(state *recipeCompileState) (pipeline.Spec, string, bool, error) {
+	if spec, ok, err := mediaPlanPacketCopySpec(state); err != nil || ok {
+		return spec, mediaBuildKindPacketCopy, ok, err
+	}
+	if spec, ok, err := mediaPlanFrameSinkSpec(state); err != nil || ok {
+		return spec, mediaBuildKindFrameSink, ok, err
+	}
+	return pipeline.Spec{}, "", false, nil
 }
 
 func mediaPlanPacketCopySpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
@@ -63,6 +74,38 @@ func mediaPlanPacketCopySpec(state *recipeCompileState) (pipeline.Spec, bool, er
 		}
 	}
 	return spec, true, nil
+}
+
+func mediaPlanFrameSinkSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
+	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
+		return pipeline.Spec{}, false, nil
+	}
+	builder, ok := state.builder.(*builder)
+	if !ok || !builderCanBuildFrameSink(builder) {
+		return pipeline.Spec{}, false, nil
+	}
+	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
+	switch {
+	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0:
+		spec, err := builder.planDecodeToSink(spec)
+		return spec, err == nil, err
+	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0:
+		spec, err := builder.planRTPDecodeToSink(spec)
+		return spec, err == nil, err
+	default:
+		return pipeline.Spec{}, false, nil
+	}
+}
+
+func builderCanBuildFrameSink(builder *builder) bool {
+	return builder != nil &&
+		len(builder.decodes) == 1 &&
+		len(builder.sinks) == 1 &&
+		len(builder.outputs) == 0 &&
+		len(builder.encodes) == 0 &&
+		len(builder.transcodes) == 0 &&
+		len(builder.sources) == 0 &&
+		len(builder.stages) == 0
 }
 
 func mediaPlanPacketCopySources(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {

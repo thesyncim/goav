@@ -24,6 +24,33 @@ func (r recipeResolved) buildMediaPlanPacketCopyTask(ctx context.Context) (Task,
 	return &task{graph: graph}, nil
 }
 
+func (r recipeResolved) buildMediaPlanFrameSinkTask(ctx context.Context) (Task, error) {
+	builder, ok := r.builder.(*builder)
+	if !ok || !builderCanBuildFrameSink(builder) {
+		return nil, recipeGraphUnsupportedError("build job", r.intent)
+	}
+	graph, err := builder.newGraph(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.compileMediaPlanFrameSink(ctx, builder, graph); err != nil {
+		graph.Close()
+		return nil, err
+	}
+	return &task{graph: graph}, nil
+}
+
+func (r recipeResolved) compileMediaPlanFrameSink(ctx context.Context, builder *builder, graph pipeline.Graph) error {
+	switch {
+	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0:
+		return builder.compileDecodeToSink(ctx, graph)
+	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0:
+		return builder.compileRTPDecodeToSink(ctx, graph)
+	default:
+		return recipeGraphUnsupportedError("build job", r.intent)
+	}
+}
+
 func (r recipeResolved) compileMediaPlanPacketCopy(ctx context.Context, builder *builder, graph pipeline.Graph) error {
 	if len(r.inputAttachments) == 1 && r.inputAttachments[0].rtp == nil {
 		return r.compileMediaPlanFileCopy(ctx, builder, graph)

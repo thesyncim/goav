@@ -194,12 +194,17 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 		task Task
 		err  error
 	)
-	if r.mediaBuildKind == mediaBuildKindPacketCopy {
+	switch r.mediaBuildKind {
+	case mediaBuildKindPacketCopy:
 		task, err = r.buildMediaPlanPacketCopyTask(ctx)
-	} else if r.compiler != nil && r.migration != nil {
-		task, err = r.compiler.build(ctx, r.migration)
-	} else {
-		task, err = r.builder.Build(ctx)
+	case mediaBuildKindFrameSink:
+		task, err = r.buildMediaPlanFrameSinkTask(ctx)
+	default:
+		if r.compiler != nil && r.migration != nil {
+			task, err = r.compiler.build(ctx, r.migration)
+		} else {
+			task, err = r.builder.Build(ctx)
+		}
 	}
 	if err != nil {
 		return nil, err

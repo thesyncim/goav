@@ -1860,3 +1860,115 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
+
+func TestRecipeResolvedBuildUsesMediaPlanFileFrameSink(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		),
+		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		To(FrameSink(&runtimeTestSink{name: "frames"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("frame-sink recipe selected a migration graph compiler")
+	}
+	if resolved.mediaBuildKind != mediaBuildKindFrameSink {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindFrameSink)
+	}
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}
+
+func TestRecipeResolvedMediaPlanFrameSinkPreservesCustomStage(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		),
+		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Do(&runtimeTestStage{name: "meter"}).
+		To(FrameSink(&runtimeTestSink{name: "frames"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("custom-stage frame-sink recipe selected a migration graph compiler")
+	}
+	if resolved.mediaBuildKind != mediaBuildKindFrameSink {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindFrameSink)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	spec := task.Describe()
+	if !specHasNode(spec, "meter") {
+		t.Fatalf("built spec = %+v, want custom stage node", spec)
+	}
+}
+
+func TestRecipeResolvedBuildUsesMediaPlanRTPFrameSink(t *testing.T) {
+	ctx := context.Background()
+	stream := audioOpusTestStream()
+	receiver := &runtimeRTPReceiver{streams: []Stream{stream}}
+	runtime := New(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})))
+	job := From(RTP(receiver).Name("audio").Codec(Opus())).UseRuntime(runtime).
+		Audio().
+		Decode().
+		To(FrameSink(&runtimeTestSink{name: "frames"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("RTP frame-sink recipe selected a migration graph compiler")
+	}
+	if resolved.mediaBuildKind != mediaBuildKindFrameSink {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindFrameSink)
+	}
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}
