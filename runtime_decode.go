@@ -250,7 +250,7 @@ func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Gr
 	currentStream := stream
 	for i := range b.filters {
 		if !streamMatchesSelector(currentStream, b.filters[i].selector) {
-			return "", av.Stream{}, ErrUnsupportedBuild
+			return "", av.Stream{}, filterStreamMismatchError(b.filters[i], currentStream)
 		}
 		stage, outputStream, err := b.newFilterRequestStage(ctx, b.filters[i], currentStream, realtime)
 		if err != nil {
@@ -268,6 +268,25 @@ func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Gr
 		currentStream = outputStream
 	}
 	return previousRef, currentStream, nil
+}
+
+func filterStreamMismatchError(request filterRequest, stream av.Stream) error {
+	node, _, err := filterRequestPlanNode(request)
+	if err != nil || node == "" {
+		node = "filter"
+	}
+	return streamRequestMismatchError(
+		"filter_stream_mismatch",
+		"attach filter",
+		node,
+		request.selector,
+		stream,
+		[]string{
+			"use the same stream selector for Decode and Filter in the expert builder",
+			"use .Audio().Resample(...) for audio transforms and .Video().Resize(...) for video transforms in recipes",
+			"narrow ambiguous inputs with StreamID, StreamName, or StreamIndex(0)",
+		},
+	)
 }
 
 func filterRequestPlanNode(request filterRequest) (string, string, error) {
@@ -366,6 +385,21 @@ func streamSelectionError(code string, selector av.StreamSelector, streams []av.
 		Reason:      reason,
 		Details:     streamDiagnostics(streams),
 		Suggestions: streamSelectionSuggestions(selector, streams),
+		Cause:       ErrUnsupportedBuild,
+	}
+}
+
+func streamRequestMismatchError(code string, operation string, node string, selector av.StreamSelector, stream av.Stream, suggestions []string) error {
+	return &BuildError{
+		Code:      code,
+		Operation: operation,
+		Node:      node,
+		Reason:    "requested " + readableSelector(selector) + " does not match selected stream",
+		Details: []string{
+			"selected: " + streamDiagnostic(stream, 0),
+			"requested: " + readableSelector(selector),
+		},
+		Suggestions: suggestions,
 		Cause:       ErrUnsupportedBuild,
 	}
 }

@@ -272,7 +272,7 @@ func (b *builder) newEncodeStage(ctx context.Context, request encodeRequest, con
 
 func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) (codec.EncodeConfig, av.Stream, error) {
 	if !streamMatchesSelector(input, request.selector) {
-		return codec.EncodeConfig{}, av.Stream{}, ErrUnsupportedBuild
+		return codec.EncodeConfig{}, av.Stream{}, encodeStreamMismatchError(request, input)
 	}
 	config := request.config
 	targetCodec := config.Parameters.ID
@@ -280,7 +280,7 @@ func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) 
 		targetCodec = config.Stream.Codec.ID
 	}
 	if targetCodec == "" {
-		return codec.EncodeConfig{}, av.Stream{}, ErrUnsupportedBuild
+		return codec.EncodeConfig{}, av.Stream{}, encodeTargetMissingError(request, input)
 	}
 
 	stream := mergeEncodeStream(input, config.Stream)
@@ -319,6 +319,37 @@ func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) 
 		config.LowLatency = true
 	}
 	return config, stream, nil
+}
+
+func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
+	return streamRequestMismatchError(
+		"encode_stream_mismatch",
+		"configure encode",
+		encodeNodeName(request),
+		request.selector,
+		stream,
+		[]string{
+			"use the same stream selector for Decode and Encode in the expert builder",
+			"use .Audio().Opus(...) for audio streams or .Video().VP8(...)/.VP9(...) for video streams in recipes",
+			"narrow ambiguous inputs with StreamID, StreamName, or StreamIndex(0)",
+		},
+	)
+}
+
+func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
+	return &BuildError{
+		Code:      "encode_target_missing",
+		Operation: "configure encode",
+		Node:      encodeNodeName(request),
+		Reason:    "no target codec was provided",
+		Details:   []string{"selected: " + streamDiagnostic(stream, 0)},
+		Suggestions: []string{
+			"use .Opus(...), .VP8(...), or .VP9(...) in recipe encode paths",
+			"set codec.EncodeConfig.Parameters.ID in the expert builder",
+			"use goav.Copy() or Record(...) when no encode step is intended",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func mergeEncodeStream(base av.Stream, override av.Stream) av.Stream {

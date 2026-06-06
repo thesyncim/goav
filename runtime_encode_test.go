@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -262,8 +263,12 @@ func TestRuntimeBuilderDecodeEncodeRequiresMatchingStream(t *testing.T) {
 		Encode(SelectVideo(), pcmEncodeConfig()).
 		Output(Output{Name: "archive.ogg"}).
 		Build(context.Background())
-	if err != ErrUnsupportedBuild {
-		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_stream_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_stream_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "selected: audio[0]") || !strings.Contains(err.Error(), "requested: type=video") {
+		t.Fatalf("err = %v, want selected and requested stream details", err)
 	}
 	if !demuxer.closed {
 		t.Fatal("demux source should be closed after unsupported encode selector")
@@ -289,8 +294,12 @@ func TestRuntimeBuilderDecodeEncodeRequiresTargetCodec(t *testing.T) {
 		Encode(SelectAudio(), codec.EncodeConfig{}).
 		Output(Output{Name: "archive.ogg"}).
 		Build(context.Background())
-	if err != ErrUnsupportedBuild {
-		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_target_missing" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_target_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "no target codec") || !strings.Contains(err.Error(), "codec.EncodeConfig.Parameters.ID") {
+		t.Fatalf("err = %v, want target codec guidance", err)
 	}
 	if !demuxer.closed {
 		t.Fatal("demux source should be closed after missing encode target")
