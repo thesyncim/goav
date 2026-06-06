@@ -21,12 +21,23 @@ type ProbeResult = format.ProbeResult
 // Runtime is the composition root for applications embedding goav.
 type Runtime interface {
 	Probe(context.Context, ProbeRequest) (ProbeResult, error)
-	Graph() Builder
+	Graph() GraphBuilder
 	New() Builder
 }
 
-// Builder is the advanced graph-building layer. Most applications should start
-// with recipes such as Record, Decode, From, or Transcode.
+// GraphBuilder is the handle-based expert graph layer. Most applications should
+// start with recipes such as Record, Decode, From, or Transcode.
+type GraphBuilder interface {
+	Source(string, pipeline.Source) GraphNode
+	Stage(string, pipeline.Stage) GraphNode
+	Sink(string, pipeline.Sink) GraphNode
+	Connect(GraphOutlet, ...GraphInlet) GraphBuilder
+	Describe() (pipeline.Spec, error)
+	Build(context.Context) (Task, error)
+}
+
+// Builder is the legacy advanced builder and compiler target used by recipes
+// and graph handles.
 type Builder interface {
 	Input(Input) Builder
 	RTP(rtpav.PacketReader, ...RTPOption) Builder

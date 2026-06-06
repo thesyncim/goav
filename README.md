@@ -140,21 +140,22 @@ The graph engine remains the escape hatch:
 ```go
 rt := goav.Default()
 
-task, err := rt.Graph().
-    Source(source).
-    Stage(decode).
-    Sink(record).
-    Sink(preview).
-    Routes(
-        goav.Route("source", "decode").ByStream("audio"),
-        goav.Route("decode", "record", "preview"),
-    ).
-    Build(ctx)
+graph := rt.Graph()
+src := graph.Source("source", source)
+dec := graph.Stage("decode", decode)
+recordOut := graph.Sink("record", record)
+previewOut := graph.Sink("preview", preview)
+
+graph.Connect(src.Stream("audio"), dec.In())
+graph.Connect(dec.Out(), recordOut.In(), previewOut.In())
+
+task, err := graph.Build(ctx)
 ```
 
-This layer exposes named sources, stages, sinks, routes, buffer policies, and
-rendered graph specs. It is valuable for custom realtime systems, but it is no
-longer the first API a normal record/transcode workflow has to learn.
+This layer exposes named sources, stages, sinks, typed handles, route policies,
+buffer policies, and rendered graph specs. It is valuable for custom realtime
+systems, but it is no longer the first API a normal record/transcode workflow
+has to learn.
 
 ## Project Shape
 
@@ -172,6 +173,7 @@ Implemented today:
 - file, URI, RTP, codec, resize, resample, and output specs;
 - `Explain` reports over the existing text, DOT, and Mermaid graph renderers;
 - function adapters for packet, frame, event, and sink hooks;
+- handle-based expert graph wiring through `Runtime.Graph()`;
 - runtime graph compilers for remux/fanout, live RTP record/fanout, selected
   decode, selected encode, and shared-decode transcode plans;
 - pure-Go RTP/WebRTC receive boundaries and optional codec/filter/format

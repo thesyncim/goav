@@ -39,19 +39,22 @@ embedded runtimes explicit. Package-level recipes such as `Record(...)`,
 produce a small intent model, then lower into the existing runtime builder and
 graph compilers.
 
-The builder remains available as the advanced layer through `Runtime.Graph()`
-(`Runtime.New()` remains as a compatibility alias). It compiles through private
-graph compilers. Each compiler owns one workflow shape and must implement both
-pre-build description and runnable graph construction, so rendered graphs and
-execution graphs stay equivalent. The graph layer stays available as named
-nodes plus simple routes for inspection, custom stages, and rendering. A route
-carries all media by default, or matches one stream or event type.
+The handle-based graph builder remains available as the advanced layer through
+`Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed
+handles such as `source.Stream("audio")` and `decode.Out()` to node inputs.
+`Runtime.New()` remains as a compatibility builder and as the recipe compiler
+target. Runtime builders compile through private graph compilers. Each compiler
+owns one workflow shape and must implement both pre-build description and
+runnable graph construction, so rendered graphs and execution graphs stay
+equivalent. The graph layer stays available for inspection, custom stages, and
+rendering. A route carries all media by default, or matches one stream or event
+type.
 
 The current compilers cover:
 
 - empty graphs for lifecycle tests
-- explicit `Source -> Stage -> Sink` graphs with direct named routes and
-  stream/event match options
+- explicit `Source -> Stage -> Sink` graphs with handle-based connects,
+  multi-target fanout, and stream/event match options
 - one-input/many-output remux and fanout through
   `format.DemuxSource -> format.MuxStage...` when the format registry can
   probe, demux, and mux the requested boundaries

@@ -89,8 +89,8 @@ func (r *runtime) New() Builder {
 	return &builder{runtime: r}
 }
 
-func (r *runtime) Graph() Builder {
-	return r.New()
+func (r *runtime) Graph() GraphBuilder {
+	return &graphBuilder{builder: r.New()}
 }
 
 type builder struct {
