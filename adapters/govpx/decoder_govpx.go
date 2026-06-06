@@ -23,15 +23,23 @@ func Register(registry *codec.SimpleRegistry) {
 	}
 	descriptors := Descriptors()
 	for i := range descriptors {
-		if descriptors[i].ID == av.CodecVP8 {
+		switch descriptors[i].ID {
+		case av.CodecVP8:
 			registry.RegisterDecoder(activeVP8Descriptor(descriptors[i]), NewDecoderFactory())
-			continue
+		case av.CodecVP9:
+			registry.RegisterDecoder(activeVP9Descriptor(descriptors[i]), NewVP9DecoderFactory())
+		default:
+			registry.RegisterDescriptor(descriptors[i])
 		}
-		registry.RegisterDescriptor(descriptors[i])
 	}
 }
 
 func activeVP8Descriptor(desc codec.Descriptor) codec.Descriptor {
+	desc.Backend.Status = "active-build-tagged"
+	return desc
+}
+
+func activeVP9Descriptor(desc codec.Descriptor) codec.Descriptor {
 	desc.Backend.Status = "active-build-tagged"
 	return desc
 }
@@ -190,21 +198,12 @@ func (d *Decoder) decodeVisiblePacket(pkt *av.Packet, streamInfo govpxlib.Stream
 	frame.Reset()
 
 	width, height := d.outputDimensions(streamInfo)
-	if err := prepareI420Frame(frame, width, height); err != nil {
+	img, err := prepareGovpxImageFrame(frame, width, height)
+	if err != nil {
 		out.Frames = out.Frames[:index]
 		return err
 	}
 
-	img := govpxlib.Image{
-		Width:   width,
-		Height:  height,
-		Y:       frame.Planes[0].Buffer.Bytes,
-		U:       frame.Planes[1].Buffer.Bytes,
-		V:       frame.Planes[2].Buffer.Bytes,
-		YStride: frame.Planes[0].Stride,
-		UStride: frame.Planes[1].Stride,
-		VStride: frame.Planes[2].Stride,
-	}
 	frameInfo, err := d.decoder.DecodeIntoWithPTS(pkt.Payload.Bytes, &img, timestampValue(pkt.PTS))
 	if err != nil {
 		out.Frames = out.Frames[:index]
@@ -215,26 +214,7 @@ func (d *Decoder) decodeVisiblePacket(pkt *av.Packet, streamInfo govpxlib.Stream
 		return nil
 	}
 
-	d.video.Width = frameInfo.Width
-	d.video.Height = frameInfo.Height
-	d.video.PixelFormat = av.PixelFormatI420
-	d.stream.Codec.Width = frameInfo.Width
-	d.stream.Codec.Height = frameInfo.Height
-	d.stream.Codec.PixelFormat = av.PixelFormatI420
-
-	frame.StreamID = d.stream.ID
-	frame.CodecEpoch = d.stream.Epoch
-	if pkt.StreamID != "" {
-		frame.StreamID = pkt.StreamID
-	}
-	if pkt.CodecEpoch != 0 {
-		frame.CodecEpoch = pkt.CodecEpoch
-	}
-	frame.Type = av.MediaVideo
-	frame.PTS = pkt.PTS
-	frame.Duration = pkt.Duration
-	frame.Video = &d.video
-	frame.Metadata = pkt.Metadata
+	stampDecodedVideoFrame(frame, &d.video, &d.stream, pkt, frameInfo.Width, frameInfo.Height)
 	return nil
 }
 
@@ -246,6 +226,22 @@ func (d *Decoder) outputDimensions(info govpxlib.StreamInfo) (int, int) {
 		return d.video.Width, d.video.Height
 	}
 	return d.stream.Codec.Width, d.stream.Codec.Height
+}
+
+func prepareGovpxImageFrame(frame *av.Frame, width, height int) (govpxlib.Image, error) {
+	if err := prepareI420Frame(frame, width, height); err != nil {
+		return govpxlib.Image{}, err
+	}
+	return govpxlib.Image{
+		Width:   width,
+		Height:  height,
+		Y:       frame.Planes[0].Buffer.Bytes,
+		U:       frame.Planes[1].Buffer.Bytes,
+		V:       frame.Planes[2].Buffer.Bytes,
+		YStride: frame.Planes[0].Stride,
+		UStride: frame.Planes[1].Stride,
+		VStride: frame.Planes[2].Stride,
+	}, nil
 }
 
 func prepareI420Frame(frame *av.Frame, width, height int) error {
@@ -280,6 +276,29 @@ func prepareI420Frame(frame *av.Frame, width, height int) error {
 		Stride: chromaWidth,
 	}
 	return nil
+}
+
+func stampDecodedVideoFrame(frame *av.Frame, video *av.VideoFrame, stream *av.Stream, pkt *av.Packet, width, height int) {
+	video.Width = width
+	video.Height = height
+	video.PixelFormat = av.PixelFormatI420
+	stream.Codec.Width = width
+	stream.Codec.Height = height
+	stream.Codec.PixelFormat = av.PixelFormatI420
+
+	frame.StreamID = stream.ID
+	frame.CodecEpoch = stream.Epoch
+	if pkt.StreamID != "" {
+		frame.StreamID = pkt.StreamID
+	}
+	if pkt.CodecEpoch != 0 {
+		frame.CodecEpoch = pkt.CodecEpoch
+	}
+	frame.Type = av.MediaVideo
+	frame.PTS = pkt.PTS
+	frame.Duration = pkt.Duration
+	frame.Video = video
+	frame.Metadata = pkt.Metadata
 }
 
 func (d *Decoder) applyEventStream(event *av.Event) {

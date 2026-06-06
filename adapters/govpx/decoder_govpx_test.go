@@ -12,7 +12,7 @@ import (
 	govpxlib "github.com/thesyncim/govpx"
 )
 
-func TestRegisterWithBuildTagProvidesVP8Factory(t *testing.T) {
+func TestRegisterWithBuildTagProvidesVP8AndVP9Factories(t *testing.T) {
 	registry := codec.NewRegistry()
 	Register(registry)
 
@@ -22,11 +22,17 @@ func TestRegisterWithBuildTagProvidesVP8Factory(t *testing.T) {
 	if _, err := registry.DecoderFactory(av.CodecVP8); err != nil {
 		t.Fatalf("VP8 decoder factory: %v", err)
 	}
-	if _, err := registry.DecoderFactory(av.CodecVP9); !errors.Is(err, codec.ErrUnavailable) {
-		t.Fatalf("VP9 decoder factory err = %v, want ErrUnavailable", err)
+	if _, err := registry.Find(av.CodecVP9, codec.ModeDecode); err != nil {
+		t.Fatalf("find VP9: %v", err)
+	}
+	if _, err := registry.DecoderFactory(av.CodecVP9); err != nil {
+		t.Fatalf("VP9 decoder factory: %v", err)
 	}
 	if _, err := registry.EncoderFactory(av.CodecVP8); !errors.Is(err, codec.ErrUnavailable) {
 		t.Fatalf("VP8 encoder factory err = %v, want ErrUnavailable", err)
+	}
+	if _, err := registry.EncoderFactory(av.CodecVP9); !errors.Is(err, codec.ErrUnavailable) {
+		t.Fatalf("VP9 encoder factory err = %v, want ErrUnavailable", err)
 	}
 }
 

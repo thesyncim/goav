@@ -168,9 +168,9 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `adapters/resample`: pure-Go `s16` audio resample/channel conversion filter.
 - `adapters/resize`: pure-Go planar 8-bit 4:2:0 video resize filter.
 - `adapters/gopus`: active Opus decoder adapter.
-- `adapters/govpx`: descriptor-only by default; `goav_govpx` enables a real VP8
-  decoder factory over `github.com/thesyncim/govpx` into caller-owned I420
-  frames. VP9 and encode remain descriptor-only.
+- `adapters/govpx`: descriptor-only by default; `goav_govpx` enables real VP8
+  and VP9 decoder factories over `github.com/thesyncim/govpx` into
+  caller-owned I420 frames. Encode remains descriptor-only.
 - `adapters/goav1`: descriptor boundary for future concrete adapters; factory
   lookups return `codec.ErrUnavailable` until a real adapter is registered.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
@@ -215,15 +215,15 @@ Implemented slices:
 - Build-tagged H264 decode maps real `goh264` output into borrowed `av.Frame`
   planes, updates identity on codec changes, requests keyframes after loss, and
   has adapter-owned allocation and close-lifecycle tests.
-- Build-tagged VP8 decode maps real `govpx` output into caller-owned I420
-  `av.Frame` planes, drops until sync after loss or startup, requests keyframes,
-  updates identity on codec changes, and has allocation and lifecycle tests.
+- Build-tagged VP8 and VP9 decode map real `govpx` output into caller-owned
+  I420 `av.Frame` planes, drop until sync after loss or startup, request
+  keyframes, update identity on codec changes, and have allocation and
+  lifecycle tests.
 
 Next pressure points:
 
-- Extend the next concrete video path: VP9 decode, VP8 encode, or AV1 decode,
-  whichever sibling module surface is ready without expanding the core import
-  graph.
+- Extend the next concrete video path: VP8/VP9 encode or AV1 decode, whichever
+  sibling module surface is ready without expanding the core import graph.
 
 ## Working Loop
 

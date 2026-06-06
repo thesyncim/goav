@@ -59,5 +59,5 @@ Current allocation guards cover:
 - `gopus` packet-loss decode into a preallocated frame
 - build-tagged `goh264` adapter borrowed-frame mapping and loss request
   emission
-- build-tagged `govpx` adapter I420 output preparation and loss request
+- build-tagged `govpx` adapter VP8/VP9 I420 output preparation and loss request
   emission
