@@ -54,6 +54,7 @@ const (
 	idBlock         ebml.ID = 0xa1
 	idBlockDuration ebml.ID = 0x9b
 	idReferenceBlk  ebml.ID = 0xfb
+	idDiscardPad    ebml.ID = 0x75a2
 
 	idCues               ebml.ID = 0x1c53bb6b
 	idCuePoint           ebml.ID = 0xbb

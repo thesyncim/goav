@@ -542,7 +542,7 @@ func (m *Muxer) writeSeekHeadPlaceholder() error {
 }
 
 func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16, track Track) error {
-	if packet.DurationNS > 0 || len(packet.ReferenceBlockTimeNS) != 0 {
+	if packet.DurationNS > 0 || len(packet.ReferenceBlockTimeNS) != 0 || packet.DiscardPaddingNS != 0 {
 		return m.writeBlockGroup(packet, blockTimecode, track)
 	}
 	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
@@ -743,7 +743,7 @@ func (m *Muxer) clusterDataOffset() int64 {
 
 func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track) error {
 	durationTicks := scaledDurationTicks(packet.DurationNS, m.options.TimecodeScaleNS)
-	if durationTicks == 0 && len(packet.ReferenceBlockTimeNS) == 0 {
+	if durationTicks == 0 && len(packet.ReferenceBlockTimeNS) == 0 && packet.DiscardPaddingNS == 0 {
 		return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
 	}
 	payloadSize := len(packet.Data)
@@ -787,6 +787,13 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 		}
 		groupSize += referenceSize
 	}
+	if packet.DiscardPaddingNS != 0 {
+		paddingSize, err := intElementEncodedSize(idDiscardPad, packet.DiscardPaddingNS)
+		if err != nil {
+			return err
+		}
+		groupSize += paddingSize
+	}
 	if err := m.ebml.WriteHeader(idBlockGroup, groupSize); err != nil {
 		return err
 	}
@@ -803,6 +810,11 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 	}
 	if durationTicks != 0 {
 		if err := m.ebml.WriteUInt(idBlockDuration, durationTicks); err != nil {
+			return err
+		}
+	}
+	if packet.DiscardPaddingNS != 0 {
+		if err := m.ebml.WriteInt(idDiscardPad, packet.DiscardPaddingNS); err != nil {
 			return err
 		}
 	}

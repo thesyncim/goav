@@ -998,6 +998,12 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 			}
 			dst.ReferenceBlockTimeNS = append(dst.ReferenceBlockTimeNS, timeNS)
 			referenceSeen = true
+		case idDiscardPad:
+			paddingNS, err := readIntPayload(d.groupReader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			dst.DiscardPaddingNS = paddingNS
 		default:
 			if err := skipElement(d.groupReader, child); err != nil {
 				return err

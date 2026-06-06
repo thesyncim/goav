@@ -1067,6 +1067,63 @@ func TestMuxerWritesReferenceOnlyBlockGroup(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesBlockGroupDiscardPadding(t *testing.T) {
+	tests := []struct {
+		name      string
+		paddingNS int64
+	}{
+		{name: "end", paddingNS: 13_000_000},
+		{name: "beginning", paddingNS: -7_000_000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{TimecodeScaleNS: 1_000_000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			trackID, err := muxer.AddTrack(Track{
+				Type:  TrackAudio,
+				Codec: CodecOpus,
+				Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := Packet{
+				TrackID:          trackID,
+				TimeNS:           40_000_000,
+				DiscardPaddingNS: tt.paddingNS,
+				Keyframe:         true,
+				Data:             []byte{0xf8, 0xff, 0xfe},
+			}
+			if err := muxer.WritePacket(packet); err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if paddingNS, ok := readFirstDiscardPadding(t, buffer.Bytes()); !ok || paddingNS != tt.paddingNS {
+				t.Fatalf("raw DiscardPadding = %d ok=%v, want %d", paddingNS, ok, tt.paddingNS)
+			}
+
+			demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := Packet{Data: make([]byte, 0, 8)}
+			if err := demuxer.ReadPacket(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got.TrackID != packet.TrackID || got.TimeNS != packet.TimeNS ||
+				got.DurationNS != 0 || got.DiscardPaddingNS != packet.DiscardPaddingNS ||
+				!got.Keyframe || !bytes.Equal(got.Data, packet.Data) {
+				t.Fatalf("packet = %+v data=%v, want %+v data=%v", got, got.Data, packet, packet.Data)
+			}
+		})
+	}
+}
+
 func TestNanosecondTimecodeScaleRoundTrip(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{TimecodeScaleNS: 1})
@@ -3521,6 +3578,54 @@ func readInfoDuration(tb testing.TB, payload []byte) (float64, bool) {
 		}
 		if header.Size.Unknown {
 			tb.Fatalf("unexpected unknown Info child: %+v", header)
+		}
+		if err := reader.Skip(header.Size.Value); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	return 0, false
+}
+
+func readFirstDiscardPadding(tb testing.TB, data []byte) (int64, bool) {
+	tb.Helper()
+	reader := ebml.NewReader(bytes.NewReader(data), ebml.ReaderOptions{})
+	for {
+		header, err := reader.ReadHeader()
+		if errors.Is(err, io.EOF) {
+			return 0, false
+		}
+		if err != nil {
+			tb.Fatal(err)
+		}
+		if header.ID == idBlockGroup {
+			return readDiscardPaddingFromBlockGroup(tb, data[header.DataOffset:header.DataOffset+int64(header.Size.Value)])
+		}
+		if header.Size.Unknown {
+			continue
+		}
+		if err := reader.Skip(header.Size.Value); err != nil {
+			tb.Fatal(err)
+		}
+	}
+}
+
+func readDiscardPaddingFromBlockGroup(tb testing.TB, payload []byte) (int64, bool) {
+	tb.Helper()
+	reader := ebml.NewReader(bytes.NewReader(payload), ebml.ReaderOptions{})
+	for reader.Offset() < int64(len(payload)) {
+		header, err := reader.ReadHeader()
+		if err != nil {
+			tb.Fatal(err)
+		}
+		if header.ID == idDiscardPad {
+			value, err := readIntPayload(reader, header.Size.Value)
+			if err != nil {
+				tb.Fatal(err)
+			}
+			return value, true
+		}
+		if header.Size.Unknown {
+			tb.Fatalf("unexpected unknown BlockGroup child: %+v", header)
 		}
 		if err := reader.Skip(header.Size.Value); err != nil {
 			tb.Fatal(err)

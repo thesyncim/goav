@@ -57,6 +57,7 @@ type Packet struct {
 	TimeNS               int64
 	DurationNS           int64
 	ReferenceBlockTimeNS []int64
+	DiscardPaddingNS     int64
 	Keyframe             bool
 	Invisible            bool
 	Discardable          bool
