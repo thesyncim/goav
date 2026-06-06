@@ -86,6 +86,27 @@ return goav.Transcode(goav.FileInput("input.webm", in)).
     Run(ctx)
 ```
 
+Reuse audio branches when the selected runtime has the matching input and
+output adapters:
+
+```go
+voice := goav.AudioFlow("voice").
+    Resample(16_000, goav.Mono).
+    OpusVoice()
+
+archive := goav.AudioFlow("archive").
+    Resample(48_000, goav.Stereo).
+    OpusMusic()
+
+return goav.From(goav.FileInput("input.webm", in)).
+    Audio().
+    Tee(
+        voice.To(goav.FileOutput("voice.ogg", voiceFile)),
+        archive.To(goav.FileOutput("archive.ogg", archiveFile)),
+    ).
+    Run(ctx)
+```
+
 ## Common Recipes
 
 - `goav.Record(input, output...)` records, remuxes, or fans out packet streams.
@@ -103,6 +124,9 @@ return goav.Transcode(goav.FileInput("input.webm", in)).
   resizes and encodes one selected video stream.
 - `goav.From(input).Audio().Do(meter).Opus(96_000).To(output)` adds a
   stream-local custom stage before encoding.
+- `goav.AudioFlow(name)` and `goav.VideoFlow(name)` define reusable stream
+  fragments. Apply one with `.Audio().Apply(flow)` or route several encoded
+  branches with `.Audio().Tee(flow.To(output), ...)`.
 - `goav.From(input).Video().OnCodecChange(goav.RealtimeCodecChangePolicy())`
   names today's live receive policy: rebind compatible replacement streams,
   request video keyframes, drop until sync, and fail on different decoder

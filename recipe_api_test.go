@@ -412,6 +412,173 @@ func TestStreamRecipeNamesCodecChangePolicy(t *testing.T) {
 	}
 }
 
+func TestAudioFlowAppliesToStreamRecipeIntent(t *testing.T) {
+	voice := goav.AudioFlow("voice").
+		Resample(16_000, goav.Mono).
+		OpusVoice()
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(voice).
+		To(goav.FileOutput("voice.ogg", io.Discard))
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	stream := intent.Streams[0]
+	if stream.Select.Type != av.MediaAudio || !stream.Decode ||
+		len(stream.Transforms) != 1 || stream.Transforms[0].Resample == nil ||
+		stream.Transforms[0].Resample.SampleRate != 16_000 ||
+		stream.Transforms[0].Resample.Channels != goav.Mono ||
+		stream.Encode.ID != av.CodecOpus || stream.Encode.Bitrate != 32_000 ||
+		len(stream.RouteTo) != 1 || stream.RouteTo[0] != "voice.ogg" {
+		t.Fatalf("stream intent: %+v", stream)
+	}
+}
+
+func TestFlowTeeStaysOnJobAndBuildsBranchIntent(t *testing.T) {
+	voice := goav.AudioFlow("voice").
+		Resample(16_000, goav.Mono).
+		OpusVoice()
+	archive := goav.AudioFlow("archive").
+		Resample(48_000, goav.Stereo).
+		OpusMusic()
+
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Audio(goav.StreamIndex(0)).
+		Tee(
+			voice.To(goav.FileOutput("voice.ogg", io.Discard)),
+			archive.To(goav.FileOutput("archive.ogg", io.Discard)),
+		)
+
+	if reflect.TypeOf(job) != reflect.TypeOf((*goav.Job)(nil)) {
+		t.Fatalf("Tee returned %T, want *goav.Job", job)
+	}
+	intent := job.Intent()
+	if len(intent.Streams) != 2 || len(intent.Outputs) != 2 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	if intent.Streams[0].Name != "voice" || intent.Streams[1].Name != "archive" ||
+		!intent.Streams[0].Select.UseIndex || intent.Streams[0].Select.Index != 0 ||
+		intent.Streams[0].Encode.ID != av.CodecOpus || intent.Streams[1].Encode.ID != av.CodecOpus ||
+		intent.Streams[0].Transforms[0].Resample.SampleRate != 16_000 ||
+		intent.Streams[1].Transforms[0].Resample.SampleRate != 48_000 {
+		t.Fatalf("streams: %+v", intent.Streams)
+	}
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	for _, want := range []string{
+		"decode-audio -> resample-voice",
+		"resample-voice -> encode-voice",
+		"decode-audio -> resample-archive",
+		"resample-archive -> encode-archive",
+		"encode-voice -> voice.ogg",
+		"encode-archive -> archive.ogg",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestFlowAppliesToTranscodeBranch(t *testing.T) {
+	preview := goav.VideoFlow("preview").
+		Resize(640, 360).
+		VP9(600_000)
+
+	job := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("preview").
+		Apply(preview).
+		To("web").
+		Output("web", goav.FileOutput("preview.webm", io.Discard))
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || intent.Streams[0].Name != "preview" ||
+		len(intent.Streams[0].Transforms) != 1 ||
+		intent.Streams[0].Transforms[0].Resize.Width != 640 ||
+		intent.Streams[0].Transforms[0].Resize.Height != 360 ||
+		intent.Streams[0].Encode.ID != av.CodecVP9 ||
+		intent.Streams[0].Encode.Bitrate != 600_000 {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestFlowMediaMismatchIsActionable(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Apply(goav.AudioFlow("voice").OpusVoice()).
+		To(goav.FileOutput("voice.webm", io.Discard)).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" {
+		t.Fatalf("err = %v, want flow_media_mismatch", err)
+	}
+	if !strings.Contains(err.Error(), "AudioFlow") || !strings.Contains(err.Error(), "VideoFlow") {
+		t.Fatalf("err = %v, want flow guidance", err)
+	}
+}
+
+func TestFlowBranchSnapshotsBuilderState(t *testing.T) {
+	flow := goav.AudioFlow("voice").
+		Resample(16_000, goav.Mono).
+		OpusVoice()
+	branch := flow.To(goav.FileOutput("voice.ogg", io.Discard))
+
+	flow.Resample(8_000, goav.Mono)
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Audio().
+		Tee(branch)
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 ||
+		len(intent.Streams[0].Transforms) != 1 ||
+		intent.Streams[0].Transforms[0].Resample.SampleRate != 16_000 {
+		t.Fatalf("intent after mutating flow: %+v", intent)
+	}
+}
+
+func TestNilFlowIsActionable(t *testing.T) {
+	var flow *goav.AudioFlowBuilder
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(flow).
+		To(goav.FileOutput("voice.ogg", io.Discard)).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_invalid" {
+		t.Fatalf("err = %v, want flow_invalid", err)
+	}
+}
+
+func TestFlowTeeRejectsOuterOutputsAndDuplicateTee(t *testing.T) {
+	voice := goav.AudioFlow("voice").OpusVoice()
+
+	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Audio().
+		Tee(voice.To(goav.FileOutput("voice.ogg", io.Discard))).
+		To(goav.FileOutput("ignored.ogg", io.Discard)).
+		Describe()
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" {
+		t.Fatalf("err = %v, want output_scope_mixed", err)
+	}
+
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader("")))
+	audio := job.Audio()
+	audio.Tee(voice.To(goav.FileOutput("voice.ogg", io.Discard)))
+	_, err = audio.Tee(voice.To(goav.FileOutput("other.ogg", io.Discard))).Describe()
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_duplicate" {
+		t.Fatalf("err = %v, want flow_duplicate", err)
+	}
+}
+
 func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
 	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 		return nil

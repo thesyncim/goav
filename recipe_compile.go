@@ -149,6 +149,9 @@ func compileJobRecipeForBuild(job *Job) (recipeResolved, error) {
 }
 
 func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
+	if job != nil && len(job.teeStreams) != 0 {
+		return compileJobTeeRecipeWithOptions(job, options)
+	}
 	state := recipeCompileState{
 		operation: "build job",
 		options:   options,
@@ -188,6 +191,21 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		selectMigrationGraphCompilerPass(),
 		emitMigrationGraphSpecPass(),
 	}}.Compile(state)
+}
+
+func compileJobTeeRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
+	branchJob := &TranscodeJob{
+		runtime: job.runtime,
+		streams: append([]streamBuild(nil), job.teeStreams...),
+		outputs: append([]namedOutputSpec(nil), job.teeOutputs...),
+		err:     job.err,
+	}
+	if len(job.inputs) == 1 {
+		branchJob.input = job.inputs[0]
+	} else if branchJob.err == nil {
+		branchJob.err = flowTeeInputCountError("tee", len(job.inputs))
+	}
+	return compileTranscodeRecipeWithOptions(branchJob, options)
 }
 
 func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {

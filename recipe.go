@@ -837,12 +837,14 @@ func (s OutputSpec) intent() OutputIntent {
 }
 
 type Job struct {
-	name    string
-	runtime Runtime
-	inputs  []InputSpec
-	outputs []OutputSpec
-	stream  *jobStreamBuild
-	err     error
+	name       string
+	runtime    Runtime
+	inputs     []InputSpec
+	outputs    []OutputSpec
+	stream     *jobStreamBuild
+	teeStreams []streamBuild
+	teeOutputs []namedOutputSpec
+	err        error
 }
 
 type jobStreamBuild struct {
@@ -927,6 +929,10 @@ func (j *Job) setErr(err error) {
 }
 
 func (j *Job) To(outputs ...OutputSpec) *Job {
+	if len(j.teeStreams) != 0 {
+		j.setErr(flowTeeOutputScopeError("tee"))
+		return j
+	}
 	j.outputs = append(j.outputs, outputs...)
 	return j
 }
@@ -965,7 +971,11 @@ func (j *Job) Intent() Intent {
 	for i := range j.inputs {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())
 	}
-	if j.stream != nil {
+	if len(j.teeStreams) != 0 {
+		for i := range j.teeStreams {
+			intent.Streams = append(intent.Streams, transcodeStreamIntent(j.teeStreams[i]))
+		}
+	} else if j.stream != nil {
 		intent.Streams = append(intent.Streams, jobStreamIntent(j.stream))
 	}
 	outputs := j.allOutputs()
@@ -1120,6 +1130,13 @@ func jobOutputLabelSet(outputs []OutputSpec) map[string]struct{} {
 }
 
 func (j *Job) allOutputs() []OutputSpec {
+	if len(j.teeOutputs) != 0 {
+		outputs := make([]OutputSpec, 0, len(j.teeOutputs))
+		for i := range j.teeOutputs {
+			outputs = append(outputs, j.teeOutputs[i].output)
+		}
+		return outputs
+	}
 	return jobAllOutputs(j.outputs, jobStreamOutputs(j.stream))
 }
 
@@ -1230,6 +1247,24 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 		Encode:      stream.encode,
 		CodecChange: stream.codecChange,
 		RouteTo:     outputLabels(stream.outputs),
+	}
+}
+
+func transcodeStreamIntent(stream streamBuild) StreamIntent {
+	return StreamIntent{
+		Name: stream.name,
+		Select: StreamSelect{
+			ID:       stream.selector.ID,
+			Index:    stream.selector.Index,
+			UseIndex: stream.selector.UseIndex,
+			Type:     stream.selector.Type,
+			Codec:    stream.selector.Codec,
+			Name:     stream.selector.Name,
+		},
+		Decode:     stream.decode,
+		Transforms: cloneTransformSpecs(stream.transforms),
+		Encode:     stream.encode,
+		RouteTo:    append([]string(nil), stream.labels...),
 	}
 }
 
@@ -2247,6 +2282,91 @@ type JobStreamBuilder struct {
 	stream *jobStreamBuild
 }
 
+func (b *JobStreamBuilder) Apply(flow Flow) *JobStreamBuilder {
+	spec, err := flowSpecFrom(flow)
+	if err != nil {
+		b.job.setErr(err)
+		return b
+	}
+	stream := b.current()
+	if err := validateFlowMedia("build stream", jobStreamName(stream), stream.selector.Type, spec); err != nil {
+		b.job.setErr(err)
+		return b
+	}
+	if codecIntentSet(stream.encode) && (len(spec.transforms) != 0 || codecIntentSet(spec.encode)) {
+		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "flow", stream.encode))
+		return b
+	}
+	for i := range spec.transforms {
+		stream.decode = true
+		stream.steps = append(stream.steps, jobStreamStep{transform: cloneTransformSpec(spec.transforms[i])})
+	}
+	if codecIntentSet(spec.encode) {
+		return b.Encode(spec.encode)
+	}
+	return b
+}
+
+func (b *JobStreamBuilder) Tee(branches ...FlowBranch) *Job {
+	stream := b.current()
+	job := b.job
+	if len(branches) == 0 {
+		job.setErr(flowTeeMissingError(jobStreamName(stream)))
+		return job
+	}
+	if len(job.teeStreams) != 0 {
+		job.setErr(flowTeeDuplicateError(jobStreamName(stream)))
+		return job
+	}
+	if len(job.inputs) != 1 {
+		job.setErr(flowTeeInputCountError(jobStreamName(stream), len(job.inputs)))
+		return job
+	}
+	if len(job.outputs) != 0 || len(stream.outputs) != 0 {
+		job.setErr(flowTeeOutputScopeError(jobStreamName(stream)))
+		return job
+	}
+
+	job.teeStreams = job.teeStreams[:0]
+	job.teeOutputs = job.teeOutputs[:0]
+	for i := range branches {
+		spec := branches[i].spec
+		if spec.err != nil {
+			job.setErr(spec.err)
+			return job
+		}
+		if err := validateFlowMedia("build tee", jobStreamName(stream), stream.selector.Type, spec); err != nil {
+			job.setErr(err)
+			return job
+		}
+		if len(branches[i].outputs) == 0 {
+			job.setErr(flowBranchOutputMissingError(spec.name))
+			return job
+		}
+		if !codecIntentSet(spec.encode) {
+			job.setErr(flowBranchEncodeMissingError(spec.name))
+			return job
+		}
+		branch := streamBuild{
+			name:       spec.name,
+			selector:   stream.selector,
+			decode:     true,
+			transforms: cloneTransformSpecs(spec.transforms),
+			encode:     spec.encode,
+			labels:     outputLabels(branches[i].outputs),
+		}
+		job.teeStreams = append(job.teeStreams, branch)
+		for j := range branches[i].outputs {
+			label := branch.labels[j]
+			job.teeOutputs = append(job.teeOutputs, namedOutputSpec{
+				name:   label,
+				output: branches[i].outputs[j].Name(firstNonEmpty(branches[i].outputs[j].name, label)),
+			})
+		}
+	}
+	return job
+}
+
 func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
@@ -2387,22 +2507,7 @@ func (j *TranscodeJob) Intent() Intent {
 		intent.Policies.Realtime = runtime.realtime
 	}
 	for i := range j.streams {
-		stream := j.streams[i]
-		intent.Streams = append(intent.Streams, StreamIntent{
-			Name: stream.name,
-			Select: StreamSelect{
-				ID:       stream.selector.ID,
-				Index:    stream.selector.Index,
-				UseIndex: stream.selector.UseIndex,
-				Type:     stream.selector.Type,
-				Codec:    stream.selector.Codec,
-				Name:     stream.selector.Name,
-			},
-			Decode:     stream.decode,
-			Transforms: append([]TransformSpec(nil), stream.transforms...),
-			Encode:     stream.encode,
-			RouteTo:    append([]string(nil), stream.labels...),
-		})
+		intent.Streams = append(intent.Streams, transcodeStreamIntent(j.streams[i]))
 	}
 	for i := range j.outputs {
 		intent.Outputs = append(intent.Outputs, j.outputs[i].output.intent())
@@ -2692,6 +2797,28 @@ func (j *TranscodeJob) stream(name string, media av.MediaType, options ...stream
 type StreamBuilder struct {
 	job   *TranscodeJob
 	index int
+}
+
+func (b *StreamBuilder) Apply(flow Flow) *StreamBuilder {
+	spec, err := flowSpecFrom(flow)
+	if err != nil {
+		b.job.setErr(err)
+		return b
+	}
+	stream := b.current()
+	if err := validateFlowMedia(transcodeRecipeOperation, transcodeBranchName(*stream), stream.selector.Type, spec); err != nil {
+		b.job.setErr(err)
+		return b
+	}
+	if codecIntentSet(stream.encode) && (len(spec.transforms) != 0 || codecIntentSet(spec.encode)) {
+		b.job.setErr(streamStepAfterEncodeError(transcodeRecipeOperation, transcodeBranchName(*stream), "flow", stream.encode))
+		return b
+	}
+	stream.transforms = append(stream.transforms, cloneTransformSpecs(spec.transforms)...)
+	if codecIntentSet(spec.encode) {
+		return b.encode(spec.encode)
+	}
+	return b
 }
 
 func (b *StreamBuilder) Resize(width int, height int, options ...resizeOption) *StreamBuilder {
