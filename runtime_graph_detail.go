@@ -136,7 +136,7 @@ func selectorDetail(selector av.StreamSelector) string {
 	if selector.ID != "" {
 		parts = append(parts, "stream="+string(selector.ID))
 	}
-	if selector.Index != 0 {
+	if selectorHasIndex(selector) {
 		parts = append(parts, "index="+strconv.Itoa(selector.Index))
 	}
 	if selector.Type != "" {

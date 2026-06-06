@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -414,8 +415,15 @@ func TestRuntimeBuilderDecodeRequiresUnambiguousStream(t *testing.T) {
 		Decode(SelectAudio()).
 		Sink(&runtimeTestSink{name: "frames"}).
 		Build(context.Background())
-	if err != ErrUnsupportedBuild {
-		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
+	}
+	text := err.Error()
+	if !strings.Contains(text, "audio-main") ||
+		!strings.Contains(text, ".Audio(goav.StreamID(\"audio-main\"))") ||
+		!strings.Contains(text, ".Audio(goav.StreamIndex(0))") {
+		t.Fatalf("err text:\n%s", text)
 	}
 }
 

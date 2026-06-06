@@ -56,11 +56,12 @@ type PolicyIntent struct {
 }
 
 type StreamSelect struct {
-	ID    av.StreamID
-	Index int
-	Type  av.MediaType
-	Codec av.CodecID
-	Name  string
+	ID       av.StreamID
+	Index    int
+	UseIndex bool
+	Type     av.MediaType
+	Codec    av.CodecID
+	Name     string
 }
 
 type BuildError struct {
@@ -68,6 +69,7 @@ type BuildError struct {
 	Operation   string
 	Node        string
 	Reason      string
+	Details     []string
 	Suggestions []string
 	Cause       error
 }
@@ -91,6 +93,13 @@ func (e *BuildError) Error() string {
 	if e.Reason != "" {
 		out.WriteString(": ")
 		out.WriteString(e.Reason)
+	}
+	if len(e.Details) != 0 {
+		out.WriteString("\nDetails:")
+		for i := range e.Details {
+			out.WriteString("\n  - ")
+			out.WriteString(e.Details[i])
+		}
 	}
 	if len(e.Suggestions) != 0 {
 		out.WriteString("\nSuggestions:")
@@ -631,11 +640,12 @@ func (j *Job) Intent() Intent {
 		intent.Streams = append(intent.Streams, StreamIntent{
 			Name: j.stream.name,
 			Select: StreamSelect{
-				ID:    j.stream.selector.ID,
-				Index: j.stream.selector.Index,
-				Type:  j.stream.selector.Type,
-				Codec: j.stream.selector.Codec,
-				Name:  j.stream.selector.Name,
+				ID:       j.stream.selector.ID,
+				Index:    j.stream.selector.Index,
+				UseIndex: j.stream.selector.UseIndex,
+				Type:     j.stream.selector.Type,
+				Codec:    j.stream.selector.Codec,
+				Name:     j.stream.selector.Name,
 			},
 			Decode:  j.stream.decode,
 			Encode:  j.stream.encode,
@@ -917,6 +927,7 @@ func StreamName(name string) StreamOption {
 func StreamIndex(index int) StreamOption {
 	return func(config *streamSelectConfig) {
 		config.selector.Index = index
+		config.selector.UseIndex = true
 	}
 }
 
@@ -1016,11 +1027,12 @@ func (j *TranscodeJob) Intent() Intent {
 		intent.Streams = append(intent.Streams, StreamIntent{
 			Name: stream.name,
 			Select: StreamSelect{
-				ID:    stream.selector.ID,
-				Index: stream.selector.Index,
-				Type:  stream.selector.Type,
-				Codec: stream.selector.Codec,
-				Name:  stream.selector.Name,
+				ID:       stream.selector.ID,
+				Index:    stream.selector.Index,
+				UseIndex: stream.selector.UseIndex,
+				Type:     stream.selector.Type,
+				Codec:    stream.selector.Codec,
+				Name:     stream.selector.Name,
 			},
 			Decode:     stream.decode,
 			Transforms: append([]TransformSpec(nil), stream.transforms...),

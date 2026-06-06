@@ -132,7 +132,7 @@ func selectNodeName(selector av.StreamSelector) string {
 	if selector.Type != "" {
 		return "select-" + string(selector.Type)
 	}
-	if selector.Index != 0 {
+	if selectorHasIndex(selector) {
 		return "select-" + strconv.Itoa(selector.Index)
 	}
 	return "select"

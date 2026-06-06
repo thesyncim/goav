@@ -276,11 +276,12 @@ type Stream struct {
 }
 
 type StreamSelector struct {
-	ID    StreamID
-	Index int
-	Type  MediaType
-	Codec CodecID
-	Name  string
+	ID       StreamID
+	Index    int
+	UseIndex bool
+	Type     MediaType
+	Codec    CodecID
+	Name     string
 }
 
 type VideoGeometry struct {

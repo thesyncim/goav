@@ -435,7 +435,7 @@ func encodeNodeName(request encodeRequest) string {
 	if selector.Type != "" {
 		return "encode-" + string(selector.Type)
 	}
-	if selector.Index != 0 {
+	if selectorHasIndex(selector) {
 		return "encode-" + strconv.Itoa(selector.Index)
 	}
 	codecID := request.config.Parameters.ID

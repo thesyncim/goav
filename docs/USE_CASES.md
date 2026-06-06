@@ -74,6 +74,18 @@ task, err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Build(ctx)
 ```
 
+When a media type matches several streams, the build error lists the candidates.
+Use the same stream-scoped shape with a narrower selector. `StreamIndex(0)`
+selects the first stream when that is the intended one:
+
+```go
+task, err := goav.From(input).
+    Audio(goav.StreamID("eng")).
+    Decode().
+    To(goav.FrameSink(frames)).
+    Build(ctx)
+```
+
 ## Generic protocol or file ingest
 
 Receive a live protocol input, file input, or custom source; demux container data

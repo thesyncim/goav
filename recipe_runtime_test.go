@@ -3,7 +3,9 @@ package goav
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/pion/rtp"
@@ -207,6 +209,82 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 	}
 	if !audioReceiver.closed || !videoReceiver.closed || !muxer.closed {
 		t.Fatalf("closed audio=%v video=%v mux=%v", audioReceiver.closed, videoReceiver.closed, muxer.closed)
+	}
+}
+
+func TestStreamRecipeReportsAmbiguousStreams(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{
+		{ID: "audio-main", Index: 0, Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
+		{ID: "audio-alt", Index: 1, Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
+	}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
+
+	_, err := From(FileInput("input.ogg", nil), UseRuntime(New(formats, codecs))).
+		Audio().
+		Decode().
+		To(FrameSink(&runtimeTestSink{name: "frames"})).
+		Build(ctx)
+
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
+	}
+	text := err.Error()
+	for _, want := range []string{
+		"audio[0] id=audio-main codec=opus",
+		"audio[1] id=audio-alt codec=opus",
+		".Audio(goav.StreamID(\"audio-main\"))",
+		".Audio(goav.StreamIndex(0))",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("err text missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestStreamRecipeSelectsFirstStreamByIndex(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{
+		{ID: "audio-main", Index: 0, Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
+		{ID: "audio-alt", Index: 1, Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
+	}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio-main",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	decoder := &decodeTestDecoder{}
+	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}))
+	sink := &runtimeTestSink{name: "frames"}
+
+	task, err := From(FileInput("input.ogg", nil), UseRuntime(New(formats, codecs))).
+		Audio(StreamIndex(0)).
+		Decode().
+		To(FrameSink(sink)).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || sink.frames != 1 || sink.lastFrame.StreamID != "audio-main" {
+		t.Fatalf("decodes=%d frames=%d last=%s", decoder.decodes, sink.frames, sink.lastFrame.StreamID)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

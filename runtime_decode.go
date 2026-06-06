@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -277,18 +278,34 @@ func (b *builder) validateFiltersForStream(stream av.Stream) error {
 func selectDecodeStream(streams []av.Stream, selector av.StreamSelector) (av.Stream, error) {
 	var selected av.Stream
 	matches := 0
+	matched := make([]av.Stream, 0, len(streams))
 	for i := range streams {
 		if !streamMatchesSelector(streams[i], selector) {
 			continue
 		}
 		selected = streams[i]
 		matches++
+		matched = append(matched, streams[i])
 	}
-	if matches != 1 {
-		return av.Stream{}, ErrUnsupportedBuild
+	if matches == 0 {
+		return av.Stream{}, streamSelectionError("stream_missing", selector, streams)
+	}
+	if matches > 1 {
+		return av.Stream{}, streamSelectionError("stream_ambiguous", selector, matched)
 	}
 	if selected.Codec.ID == "" {
-		return av.Stream{}, ErrUnsupportedBuild
+		return av.Stream{}, &BuildError{
+			Code:      "stream_codec_missing",
+			Operation: "select stream",
+			Node:      selectorDetail(selector),
+			Reason:    "selected stream has no codec id",
+			Details:   []string{streamDiagnostic(selected, 0)},
+			Suggestions: []string{
+				"provide codec metadata on the input stream",
+				"use goav.RTP(reader).Codec(...) for raw RTP receive",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
 	}
 	return selected, nil
 }
@@ -297,7 +314,7 @@ func streamMatchesSelector(stream av.Stream, selector av.StreamSelector) bool {
 	if selector.ID != "" && stream.ID != selector.ID {
 		return false
 	}
-	if selector.Index != 0 && stream.Index != selector.Index {
+	if selectorHasIndex(selector) && stream.Index != selector.Index {
 		return false
 	}
 	if selector.Type != "" && stream.Type != selector.Type {
@@ -310,6 +327,120 @@ func streamMatchesSelector(stream av.Stream, selector av.StreamSelector) bool {
 		return false
 	}
 	return true
+}
+
+func selectorHasIndex(selector av.StreamSelector) bool {
+	return selector.UseIndex || selector.Index != 0
+}
+
+func streamSelectionError(code string, selector av.StreamSelector, streams []av.Stream) error {
+	operation := "select stream"
+	node := selectorDetail(selector)
+	reason := "no stream matches " + readableSelector(selector)
+	if code == "stream_ambiguous" {
+		reason = "multiple streams match " + readableSelector(selector)
+	}
+	return &BuildError{
+		Code:        code,
+		Operation:   operation,
+		Node:        node,
+		Reason:      reason,
+		Details:     streamDiagnostics(streams),
+		Suggestions: streamSelectionSuggestions(selector, streams),
+		Cause:       ErrUnsupportedBuild,
+	}
+}
+
+func readableSelector(selector av.StreamSelector) string {
+	detail := selectorDetail(selector)
+	if detail == "" {
+		return "the requested selector"
+	}
+	return detail
+}
+
+func streamDiagnostics(streams []av.Stream) []string {
+	if len(streams) == 0 {
+		return nil
+	}
+	details := make([]string, len(streams))
+	for i := range streams {
+		details[i] = streamDiagnostic(streams[i], i)
+	}
+	return details
+}
+
+func streamDiagnostic(stream av.Stream, fallbackIndex int) string {
+	media := string(stream.Type)
+	if media == "" {
+		media = "stream"
+	}
+	index := stream.Index
+	if index == 0 {
+		index = fallbackIndex
+	}
+	parts := []string{media + "[" + strconv.Itoa(index) + "]"}
+	if stream.ID != "" {
+		parts = append(parts, "id="+string(stream.ID))
+	}
+	if stream.Codec.ID != "" {
+		parts = append(parts, "codec="+string(stream.Codec.ID))
+	}
+	if stream.Name != "" {
+		parts = append(parts, "name="+stream.Name)
+	}
+	if stream.Language != "" {
+		parts = append(parts, "lang="+stream.Language)
+	}
+	return strings.Join(parts, " ")
+}
+
+func streamSelectionSuggestions(selector av.StreamSelector, streams []av.Stream) []string {
+	call, recipeCall := streamOptionCall(selector)
+	suggestions := make([]string, 0, 3)
+	for i := range streams {
+		if streams[i].ID != "" {
+			if recipeCall {
+				suggestions = append(suggestions, call+"(goav.StreamID("+strconv.Quote(string(streams[i].ID))+"))")
+			} else {
+				suggestions = append(suggestions, "select stream id "+strconv.Quote(string(streams[i].ID)))
+			}
+			break
+		}
+	}
+	for i := range streams {
+		if streams[i].Name != "" {
+			if recipeCall {
+				suggestions = append(suggestions, call+"(goav.StreamName("+strconv.Quote(streams[i].Name)+"))")
+			} else {
+				suggestions = append(suggestions, "select stream name "+strconv.Quote(streams[i].Name))
+			}
+			break
+		}
+	}
+	if len(streams) != 0 {
+		index := streams[0].Index
+		if recipeCall {
+			suggestions = append(suggestions, call+"(goav.StreamIndex("+strconv.Itoa(index)+"))")
+		} else {
+			suggestions = append(suggestions, "select stream index "+strconv.Itoa(index))
+		}
+	}
+	if len(suggestions) == 0 {
+		suggestions = append(suggestions, "choose a more specific stream selector")
+	}
+	return suggestions
+}
+
+func streamOptionCall(selector av.StreamSelector) (string, bool) {
+	switch selector.Type {
+	case av.MediaAudio:
+		return ".Audio", true
+	case av.MediaVideo:
+		return ".Video", true
+	default:
+		return "", false
+	}
 }
 
 func decodeResultForStream(stream av.Stream, bounds codec.DecodeBounds) codec.DecodeResult {
@@ -392,7 +523,7 @@ func decodeNodeName(selector av.StreamSelector) string {
 	if selector.Type != "" {
 		return "decode-" + string(selector.Type)
 	}
-	if selector.Index != 0 {
+	if selectorHasIndex(selector) {
 		return "decode-" + strconv.Itoa(selector.Index)
 	}
 	return "decode"

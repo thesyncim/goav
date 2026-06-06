@@ -103,6 +103,9 @@ fmt.Println(spec)
 - `goav.FileInput`, `goav.URI`, `goav.FileOutput`, and `goav.URIOutput` cover
   ordinary input and output declarations.
 
+If `Audio()` or `Video()` matches more than one stream, build errors list the
+available streams and suggest `StreamID`, `StreamName`, or `StreamIndex(0)`.
+
 Recipes compile into the existing runtime builder, so `Describe`, `Build`,
 `Run`, task events, and graph specs stay the same.
 
@@ -206,6 +209,7 @@ Implemented today:
   and Opus/VP8/VP9 encode paths;
 - file, URI, RTP, WebRTC track, codec, resize, resample, and output specs;
 - multi-input realtime recipes with `From(input).And(other...)`;
+- actionable stream-selection diagnostics and first-stream `StreamIndex(0)`;
 - `Describe` graph specs plus optional `graphrender` exporters;
 - function adapters for packet, frame, event, and sink hooks;
 - handle-based expert graph wiring through `Runtime.Graph()`;
