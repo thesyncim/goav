@@ -372,7 +372,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     same rendition to the same output more than once. Done.
 119. Add repeated realtime-input validation so explicit RTP/WebRTC recipe names
     are unique before graph source handles are planned. Done.
-120. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+120. Add stream-recipe output-scope validation so selected `Audio()`/`Video()`
+    chains use stream-local `.To(...)` instead of mixed generic job outputs.
+    Done.
+121. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

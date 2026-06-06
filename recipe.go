@@ -873,6 +873,9 @@ func (j *Job) builder() (Builder, error) {
 	if err := j.validateInputs(); err != nil {
 		return nil, err
 	}
+	if err := j.validateOutputScope(); err != nil {
+		return nil, err
+	}
 	outputs := j.allOutputs()
 	if len(outputs) == 0 {
 		return nil, &BuildError{Code: "output_missing", Operation: "build job", Reason: "no output is configured"}
@@ -957,6 +960,24 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 			"give each repeated realtime input a distinct .Name(...)",
 			"use stable names such as \"audio\" and \"video\" for separate RTP/WebRTC streams",
 			"use goav.WebRTCTrack(..., goav.WithTrackStream(...)) when track metadata should provide the name",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func (j *Job) validateOutputScope() error {
+	if j.stream == nil || len(j.outputs) == 0 {
+		return nil
+	}
+	return &BuildError{
+		Code:      "output_scope_mixed",
+		Operation: "build job",
+		Node:      jobStreamName(j.stream),
+		Reason:    "stream recipes use stream-local outputs",
+		Suggestions: []string{
+			"attach outputs to the selected stream chain with .Audio().Decode()...To(...) or .Video().Decode()...To(...)",
+			"use goav.Record(input, output) or goav.From(input).To(output...) for packet-preserving record/remux",
+			"use goav.Transcode(input) when one input needs separate record, preview, or ladder branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

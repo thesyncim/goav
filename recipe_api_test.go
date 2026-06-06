@@ -455,6 +455,43 @@ func TestStreamRecipeRequiresOperation(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeRejectsGenericAndStreamOutputs(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		To(goav.FileOutput("archive.ogg", io.Discard)).
+		Audio().
+		Decode().
+		Opus(96_000).
+		To(goav.FileOutput("preview.ogg", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_scope_mixed wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "stream recipes use stream-local outputs") ||
+		!strings.Contains(err.Error(), "goav.Record") ||
+		!strings.Contains(err.Error(), "goav.Transcode") {
+		t.Fatalf("err = %v, want output scope guidance", err)
+	}
+}
+
+func TestStreamRecipeRejectsJobLevelOutput(t *testing.T) {
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader("")))
+	job.Audio().Decode()
+	job.To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		return nil
+	})))
+	_, err := job.Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_scope_mixed wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), ".Audio().Decode()...To(...)") {
+		t.Fatalf("err = %v, want stream-local To guidance", err)
+	}
+}
+
 func TestStreamRecipeRejectsSecondStreamSelection(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio().
