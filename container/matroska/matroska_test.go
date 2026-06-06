@@ -229,6 +229,76 @@ func TestMuxerRejectsInvalidPacketDuration(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
+	tests := []struct {
+		name  string
+		track Track
+	}{
+		{
+			name: "audio sample rate",
+			track: Track{
+				Type:  TrackAudio,
+				Codec: CodecOpus,
+				Audio: AudioConfig{SampleRate: -1, Channels: 2},
+			},
+		},
+		{
+			name: "audio channels",
+			track: Track{
+				Type:  TrackAudio,
+				Codec: CodecOpus,
+				Audio: AudioConfig{SampleRate: 48000, Channels: -1},
+			},
+		},
+		{
+			name: "audio bit depth",
+			track: Track{
+				Type:  TrackAudio,
+				Codec: CodecPCMU,
+				Audio: AudioConfig{SampleRate: 8000, Channels: 1, BitDepth: -1},
+			},
+		},
+		{
+			name: "video width",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: -1, Height: 16},
+			},
+		},
+		{
+			name: "default duration",
+			track: Track{
+				Type:              TrackVideo,
+				Codec:             CodecVP8,
+				DefaultDurationNS: -1,
+				Video:             VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
+			name: "timebase",
+			track: Track{
+				Type:        TrackAudio,
+				Codec:       CodecOpus,
+				TimebaseNum: -1,
+				TimebaseDen: 48000,
+				Audio:       AudioConfig{SampleRate: 48000, Channels: 2},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := muxer.AddTrack(tt.track); !errors.Is(err, ErrInvalidTrack) {
+				t.Fatalf("err = %v, want ErrInvalidTrack", err)
+			}
+		})
+	}
+}
+
 func TestMuxerSplitsClustersBeforeBlockTimecodeOverflow(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -651,6 +721,41 @@ func TestDemuxerRejectsOversizedTrackIDs(t *testing.T) {
 		}
 		packet := Packet{Data: make([]byte, 0, 8)}
 		if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+}
+
+func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
+	t.Run("video dimension overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoDimensions(writer, maxIntValue+1, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("audio channels overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithAudioMetadata(writer, 48000, maxIntValue+1, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("audio negative sample rate", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithAudioMetadata(writer, -1, 2, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("audio nan sample rate", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithAudioMetadata(writer, math.NaN(), 2, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
 			t.Fatalf("err = %v, want ErrInvalidData", err)
 		}
 	})
@@ -1129,6 +1234,20 @@ func makeBlockTrackNumberMatroskaData(tb testing.TB, trackNumber uint64) []byte 
 	return buffer.Bytes()
 }
 
+func makeTrackMetadataMatroskaData(tb testing.TB, writeTracks func(*ebml.Writer) error) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	writeMatroskaSegmentPrefix(tb, muxer)
+	if err := writeTracks(muxer.ebml); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
 func writeMatroskaSegmentPrefix(tb testing.TB, muxer *Muxer) {
 	tb.Helper()
 	if err := muxer.writeEBMLHeader(); err != nil {
@@ -1161,6 +1280,77 @@ func writeTracksWithTrackNumber(writer *ebml.Writer, trackNumber uint64) error {
 		return err
 	}
 	if err := writeVideo(ew, VideoConfig{Width: 16, Height: 16}); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+func writeTracksWithVideoDimensions(writer *ebml.Writer, width uint64, height uint64) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	if err := ew.WriteUInt(idTrackNumber, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, matroskaTrackVideo); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, "V_VP8"); err != nil {
+		return err
+	}
+	var video bytes.Buffer
+	vw := ebml.NewWriter(&video)
+	if err := vw.WriteUInt(idPixelWidth, width); err != nil {
+		return err
+	}
+	if err := vw.WriteUInt(idPixelHeight, height); err != nil {
+		return err
+	}
+	if err := ew.WriteElement(idVideo, video.Bytes()); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+func writeTracksWithAudioMetadata(writer *ebml.Writer, sampleRate float64, channels uint64, bitDepth uint64) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	if err := ew.WriteUInt(idTrackNumber, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, matroskaTrackAudio); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, "A_OPUS"); err != nil {
+		return err
+	}
+	var audio bytes.Buffer
+	aw := ebml.NewWriter(&audio)
+	if err := aw.WriteFloat64(idSamplingFreq, sampleRate); err != nil {
+		return err
+	}
+	if err := aw.WriteUInt(idChannels, channels); err != nil {
+		return err
+	}
+	if err := aw.WriteUInt(idBitDepth, bitDepth); err != nil {
+		return err
+	}
+	if err := ew.WriteElement(idAudio, audio.Bytes()); err != nil {
 		return err
 	}
 	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {

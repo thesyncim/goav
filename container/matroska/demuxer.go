@@ -47,7 +47,10 @@ type laceFrame struct {
 	size   int
 }
 
-const maxTrackID = uint64(^uint32(0))
+const (
+	maxTrackID  = uint64(^uint32(0))
+	maxIntValue = uint64(^uint(0) >> 1)
+)
 
 func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
 	if r == nil {
@@ -717,13 +720,19 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			if err != nil {
 				return VideoConfig{}, err
 			}
-			video.Width = int(value)
+			video.Width, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
 		case idPixelHeight:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
-			video.Height = int(value)
+			video.Height, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
 		default:
 			if err := skipElement(reader, child); err != nil {
 				return VideoConfig{}, err
@@ -751,19 +760,28 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 			if err != nil {
 				return AudioConfig{}, err
 			}
+			if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > float64(maxIntValue) {
+				return AudioConfig{}, ErrInvalidData
+			}
 			audio.SampleRate = int(value)
 		case idChannels:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
 				return AudioConfig{}, err
 			}
-			audio.Channels = int(value)
+			audio.Channels, err = intFromUint(value)
+			if err != nil {
+				return AudioConfig{}, err
+			}
 		case idBitDepth:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
 				return AudioConfig{}, err
 			}
-			audio.BitDepth = int(value)
+			audio.BitDepth, err = intFromUint(value)
+			if err != nil {
+				return AudioConfig{}, err
+			}
 		default:
 			if err := skipElement(reader, child); err != nil {
 				return AudioConfig{}, err
@@ -923,6 +941,13 @@ func trackIDFromUint(value uint64) (uint32, error) {
 		return 0, ErrInvalidData
 	}
 	return uint32(value), nil
+}
+
+func intFromUint(value uint64) (int, error) {
+	if value > maxIntValue {
+		return 0, ErrInvalidData
+	}
+	return int(value), nil
 }
 
 func drainLimited(r *io.LimitedReader) error {

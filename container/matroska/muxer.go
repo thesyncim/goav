@@ -942,11 +942,17 @@ func validateTrack(track Track) error {
 	if track.Type != TrackAudio && track.Type != TrackVideo {
 		return ErrInvalidTrack
 	}
+	if track.DefaultDurationNS < 0 {
+		return ErrInvalidTrack
+	}
 	if _, err := matroskaCodecID(track.Codec); err != nil {
 		return err
 	}
 	switch track.Type {
 	case TrackAudio:
+		if track.Audio.SampleRate < 0 || track.Audio.Channels < 0 || track.Audio.BitDepth < 0 {
+			return ErrInvalidTrack
+		}
 		switch track.Codec {
 		case CodecOpus, CodecPCMU, CodecPCMA:
 		default:
@@ -962,7 +968,8 @@ func validateTrack(track Track) error {
 			return ErrInvalidTrack
 		}
 	}
-	if (track.TimebaseNum == 0) != (track.TimebaseDen == 0) {
+	if (track.TimebaseNum == 0) != (track.TimebaseDen == 0) ||
+		track.TimebaseNum < 0 || track.TimebaseDen < 0 {
 		return ErrInvalidTrack
 	}
 	return nil

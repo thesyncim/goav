@@ -65,6 +65,9 @@ Current milestone:
 - Caller-owned packet data for demuxing.
 - Demux validation rejects on-disk track, cue, and block track numbers that
   cannot fit the public `uint32` track ID surface.
+- Mux and demux validation rejects negative or overflowing track timing,
+  audio, and video metadata before it can wrap into EBML unsigned integers or
+  public `int` fields.
 
 ## Deferred Features
 

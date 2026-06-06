@@ -46,6 +46,21 @@ func TestMuxerEnforcesProfile(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: -1, Channels: 2},
+	}); !errors.Is(err, matroska.ErrInvalidTrack) {
+		t.Fatalf("err = %v, want matroska.ErrInvalidTrack", err)
+	}
+}
+
 func TestDemuxerRejectsMatroskaDocType(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := matroska.NewMuxer(&buffer, matroska.MuxerOptions{})
