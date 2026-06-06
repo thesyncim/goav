@@ -46,20 +46,14 @@ func WithDescriptor(desc Descriptor) RegistryOption {
 }
 
 func (r *SimpleRegistry) RegisterDescriptor(desc Descriptor) {
-	desc.ID = pickCodecID(desc.ID, desc.Capabilities.CodecID)
-	if desc.Capabilities.CodecID == "" {
-		desc.Capabilities.CodecID = desc.ID
-	}
-	r.descriptors = append(r.descriptors, desc)
+	desc = normalizeDescriptor(desc)
+	r.upsertDescriptor(desc)
 }
 
 func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory) {
 	desc.Capabilities.Decode = true
-	desc.ID = pickCodecID(desc.ID, desc.Capabilities.CodecID)
-	if desc.Capabilities.CodecID == "" {
-		desc.Capabilities.CodecID = desc.ID
-	}
-	r.descriptors = append(r.descriptors, desc)
+	desc = normalizeDescriptor(desc)
+	r.upsertDescriptor(desc)
 	if factory != nil {
 		r.decoders[desc.ID] = factory
 	}
@@ -67,11 +61,8 @@ func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory
 
 func (r *SimpleRegistry) RegisterEncoder(desc Descriptor, factory EncoderFactory) {
 	desc.Capabilities.Encode = true
-	desc.ID = pickCodecID(desc.ID, desc.Capabilities.CodecID)
-	if desc.Capabilities.CodecID == "" {
-		desc.Capabilities.CodecID = desc.ID
-	}
-	r.descriptors = append(r.descriptors, desc)
+	desc = normalizeDescriptor(desc)
+	r.upsertDescriptor(desc)
 	if factory != nil {
 		r.encoders[desc.ID] = factory
 	}
@@ -163,4 +154,115 @@ func pickCodecID(a av.CodecID, b av.CodecID) av.CodecID {
 		return a
 	}
 	return b
+}
+
+func normalizeDescriptor(desc Descriptor) Descriptor {
+	desc.ID = pickCodecID(desc.ID, desc.Capabilities.CodecID)
+	if desc.Capabilities.CodecID == "" {
+		desc.Capabilities.CodecID = desc.ID
+	}
+	return desc
+}
+
+func (r *SimpleRegistry) upsertDescriptor(desc Descriptor) {
+	for i := range r.descriptors {
+		if !sameDescriptorSlot(r.descriptors[i], desc) {
+			continue
+		}
+		r.descriptors[i] = mergeDescriptors(r.descriptors[i], desc)
+		return
+	}
+	r.descriptors = append(r.descriptors, desc)
+}
+
+func sameDescriptorSlot(a Descriptor, b Descriptor) bool {
+	return a.ID == b.ID &&
+		a.Backend.Name == b.Backend.Name &&
+		a.Backend.Module == b.Backend.Module &&
+		a.Backend.Package == b.Backend.Package
+}
+
+func mergeDescriptors(existing Descriptor, next Descriptor) Descriptor {
+	merged := existing
+	if next.Name != "" {
+		merged.Name = next.Name
+	}
+	if next.Type != "" {
+		merged.Type = next.Type
+	}
+	merged.Modes = mergeModes(merged.Modes, next.Modes)
+	merged.Profiles = mergeStrings(merged.Profiles, next.Profiles)
+	merged.Realtime = merged.Realtime || next.Realtime
+	merged.Experimental = merged.Experimental || next.Experimental
+	merged.Capabilities = mergeCapabilities(merged.Capabilities, next.Capabilities)
+	merged.Backend = mergeBackend(merged.Backend, next.Backend)
+	return merged
+}
+
+func mergeCapabilities(existing Capabilities, next Capabilities) Capabilities {
+	merged := existing
+	if next.CodecID != "" {
+		merged.CodecID = next.CodecID
+	}
+	if next.Type != "" {
+		merged.Type = next.Type
+	}
+	merged.Decode = merged.Decode || next.Decode
+	merged.Encode = merged.Encode || next.Encode
+	merged.Realtime = merged.Realtime || next.Realtime
+	merged.SampleFormats = mergeStrings(merged.SampleFormats, next.SampleFormats)
+	merged.PixelFormats = mergeStrings(merged.PixelFormats, next.PixelFormats)
+	merged.RTPPayloads = mergeStrings(merged.RTPPayloads, next.RTPPayloads)
+	merged.BuildTags = mergeStrings(merged.BuildTags, next.BuildTags)
+	merged.Experimental = merged.Experimental || next.Experimental
+	return merged
+}
+
+func mergeBackend(existing Backend, next Backend) Backend {
+	merged := existing
+	if next.Name != "" {
+		merged.Name = next.Name
+	}
+	if next.Module != "" {
+		merged.Module = next.Module
+	}
+	if next.Package != "" {
+		merged.Package = next.Package
+	}
+	if next.Status != "" {
+		merged.Status = next.Status
+	}
+	return merged
+}
+
+func mergeModes(existing []Mode, next []Mode) []Mode {
+	for _, candidate := range next {
+		found := false
+		for _, current := range existing {
+			if current == candidate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			existing = append(existing, candidate)
+		}
+	}
+	return existing
+}
+
+func mergeStrings(existing []string, next []string) []string {
+	for _, candidate := range next {
+		found := false
+		for _, current := range existing {
+			if current == candidate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			existing = append(existing, candidate)
+		}
+	}
+	return existing
 }

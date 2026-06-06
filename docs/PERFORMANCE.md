@@ -61,3 +61,4 @@ Current allocation guards cover:
   emission
 - build-tagged `govpx` adapter VP8/VP9 I420 output preparation and loss request
   emission
+- build-tagged `govpx` adapter VP8 encode frame mapping

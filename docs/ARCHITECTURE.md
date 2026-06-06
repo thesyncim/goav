@@ -127,8 +127,8 @@ These adapters should live behind `codec.DecoderFactory` and
 Descriptor-only adapters are allowed for planned or optional backends; they are
 discoverable through registry descriptors, while factory lookup returns
 `codec.ErrUnavailable` until an active factory is registered. `goh264` and
-`govpx` follow that pattern in normal builds and register concrete decoder
-factories only when their build tags are enabled.
+`govpx` follow that pattern in normal builds and register concrete factories
+only when their build tags are enabled.
 
 ## Realtime pipeline
 

@@ -170,7 +170,8 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `adapters/gopus`: active Opus decoder adapter.
 - `adapters/govpx`: descriptor-only by default; `goav_govpx` enables real VP8
   and VP9 decoder factories over `github.com/thesyncim/govpx` into
-  caller-owned I420 frames. Encode remains descriptor-only.
+  caller-owned I420 frames, plus VP8 encode into caller-owned packet buffers.
+  VP9 encode remains descriptor-only.
 - `adapters/goav1`: descriptor boundary for future concrete adapters; factory
   lookups return `codec.ErrUnavailable` until a real adapter is registered.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
@@ -219,10 +220,13 @@ Implemented slices:
   I420 `av.Frame` planes, drop until sync after loss or startup, request
   keyframes, update identity on codec changes, and have allocation and
   lifecycle tests.
+- Build-tagged VP8 encode maps caller-owned I420 `av.Frame` input into
+  caller-owned `av.Packet` payload buffers, honors keyframe request events, and
+  has allocation and lifecycle tests.
 
 Next pressure points:
 
-- Extend the next concrete video path: VP8/VP9 encode or AV1 decode, whichever
+- Extend the next concrete video path: VP9 encode or AV1 decode, whichever
   sibling module surface is ready without expanding the core import graph.
 
 ## Working Loop

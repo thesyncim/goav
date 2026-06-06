@@ -32,7 +32,7 @@ integrations belong under `adapters/...`.
 | `adapters/resample` | pure-Go S16 audio resample and channel conversion filter |
 | `adapters/resize` | pure-Go I420/YUV420P video resize filter |
 | `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
-| `adapters/govpx` | descriptor-only by default; `goav_govpx` enables VP8/VP9 decode |
+| `adapters/govpx` | descriptor-only by default; `goav_govpx` enables VP8/VP9 decode and VP8 encode |
 | `adapters/goav1` | descriptor-only AV1 boundary |
 | `adapters/goh264` | descriptor-only by default; `goav_goh264` enables H264 decode |
 
@@ -93,17 +93,21 @@ Current tagged surface:
 - explicit registry registration through `govpx.Register`
 - VP8 and VP9 packet decode through `DecodeIntoWithPTS`
 - decoded I420 planes are written into caller-owned `av.Frame` buffers
+- VP8 encode writes packet payloads into caller-owned `codec.EncodeResult`
+  buffers
 - startup, packet-loss, corrupt-packet, and discontinuity paths drop until the
   next VP8 or VP9 keyframe
 - packet-loss paths request keyframes through `codec.ControlRequest`
 - codec-change and discontinuity events reset decoder state and update stream
   identity
+- encode keyframe request, codec-change, and discontinuity events force the next
+  VP8 packet to be a keyframe
 - adapter-owned output preparation and keyframe request emission have
   zero-allocation hot-path tests
 - close is idempotent and later decode, flush, or event calls return
   `codec.ErrClosed`
 
-It is VP8/VP9 decode-only for now. VP8/VP9 encode, SVC controls, color
+It has VP8/VP9 decode and VP8 encode for now. VP9 encode, SVC controls, color
 metadata, and format conversion remain future slices.
 
 ## `resample`

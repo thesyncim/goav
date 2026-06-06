@@ -25,7 +25,9 @@ func Register(registry *codec.SimpleRegistry) {
 	for i := range descriptors {
 		switch descriptors[i].ID {
 		case av.CodecVP8:
-			registry.RegisterDecoder(activeVP8Descriptor(descriptors[i]), NewDecoderFactory())
+			desc := activeVP8Descriptor(descriptors[i])
+			registry.RegisterDecoder(desc, NewDecoderFactory())
+			registry.RegisterEncoder(desc, NewVP8EncoderFactory())
 		case av.CodecVP9:
 			registry.RegisterDecoder(activeVP9Descriptor(descriptors[i]), NewVP9DecoderFactory())
 		default:
