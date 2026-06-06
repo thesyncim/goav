@@ -145,10 +145,11 @@ Implemented slices:
 - Event-aware decoder and encoder stages.
 - Demux source and mux stage graph adapters.
 - Fluent remux/fanout compiler.
-- Fluent selected-stream decode-to-sink compiler.
+- Fluent selected-stream decode-to-sink compiler, with optional filter stages.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
   `RTP(...)` inputs.
-- Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive.
+- Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,
+  with optional filter stages.
 - Pre-build and runtime graph rendering as text, DOT, and Mermaid.
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.
 - Annex B packet mux adapter for H264 recording.
@@ -165,7 +166,7 @@ Implemented slices:
 
 Next pressure points:
 
-- Runtime-level filter/encode composition for live receive.
+- Runtime-level encode composition for live receive.
 - Allocation and lifecycle hardening for concrete video decode paths.
 - Allocation-safe resize and resample implementations.
 

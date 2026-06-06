@@ -183,6 +183,96 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderInputDecodeFilterSink(t *testing.T) {
+	streams := []av.Stream{{
+		ID:   "audio",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   2,
+		},
+	}}
+	demuxer := &remuxTestDemuxer{streams: streams}
+	formats := format.NewRegistry(
+		format.WithProber(remuxTestProber{streams: streams}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	decoder := &decodeTestDecoder{}
+	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{
+		ID:   av.CodecOpus,
+		Type: av.MediaAudio,
+	}, &decodeTestDecoderFactory{decoder: decoder}))
+	filter := &runtimeTestStage{name: "meter"}
+	sink := &runtimeTestSink{name: "frames"}
+
+	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+		Input(Input{Name: "input.ogg"}).
+		Decode(SelectAudio()).
+		Filter(SelectAudio(), filter).
+		Sink(sink)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Nodes) != 5 || len(planned.Edges) != 4 {
+		t.Fatalf("planned nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
+	}
+	if !strings.Contains(planned.String(), "decode-audio -> meter") ||
+		!strings.Contains(planned.String(), "meter -> frames") {
+		t.Fatalf("planned spec:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.String() != task.Describe().String() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || decoder.flushes != 1 || filter.count != 1 || sink.frames != 1 {
+		t.Fatalf("decodes=%d flushes=%d filter=%d frames=%d", decoder.decodes, decoder.flushes, filter.count, sink.frames)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !filter.closed || !sink.closed {
+		t.Fatalf("closed demux=%v filter=%v sink=%v", demuxer.closed, filter.closed, sink.closed)
+	}
+}
+
+func TestRuntimeBuilderDecodeFilterRequiresMatchingStream(t *testing.T) {
+	streams := []av.Stream{{
+		ID:    "audio",
+		Type:  av.MediaAudio,
+		Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
+	}}
+	demuxer := &remuxTestDemuxer{streams: streams}
+	formats := format.NewRegistry(
+		format.WithProber(remuxTestProber{streams: streams}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
+
+	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+		Input(Input{Name: "input.ogg"}).
+		Decode(SelectAudio()).
+		Filter(SelectVideo(), &runtimeTestStage{name: "resize"}).
+		Sink(&runtimeTestSink{name: "frames"}).
+		Build(context.Background())
+	if err != ErrUnsupportedBuild {
+		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	}
+	if !demuxer.closed {
+		t.Fatal("demux source should be closed after unsupported filter selector")
+	}
+}
+
 func TestRuntimeBuilderInputDecodeSinkSelectsMatchingStream(t *testing.T) {
 	streams := []av.Stream{
 		{ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8}},

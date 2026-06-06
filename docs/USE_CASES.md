@@ -48,6 +48,7 @@ factory is registered:
 task, err := runtime.New().
     RTP(audio, goav.WithRTPDepacketizer(opus)).
     Decode(goav.SelectAudio()).
+    Filter(goav.SelectAudio(), meter).
     Sink(frames).
     Build(ctx)
 ```

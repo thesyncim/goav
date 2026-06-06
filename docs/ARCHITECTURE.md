@@ -42,17 +42,19 @@ The current compilers cover:
   `format.DemuxSource -> format.MuxStage...` when the format registry can
   probe, demux, and mux the requested boundaries
 - one-input selected-stream decode to a frame sink through
-  `format.DemuxSource -> stream select -> codec.DecoderStage -> Sink` when the
-  selector resolves to one stream and the codec registry has a decoder factory
+  `format.DemuxSource -> stream select -> codec.DecoderStage -> optional filter
+  stages -> Sink` when the selector resolves to one stream and the codec
+  registry has a decoder factory
 - one or more RTP/WebRTC packet readers to one or more outputs through
   `rtpav.Source -> format.MuxStage...` when the application provides
   depacketizers and the format registry can mux the output boundaries
 - one or more RTP/WebRTC packet readers to a selected frame sink through
-  `rtpav.Source... -> stream select -> codec.DecoderStage -> Sink` when one
-  stream matches the selector and the codec registry has a decoder factory
+  `rtpav.Source... -> stream select -> codec.DecoderStage -> optional filter
+  stages -> Sink` when one stream matches the selector and the codec registry
+  has a decoder factory
 
-Encode, filter, and transcode discovery still return a clear unsupported error
-until source, codec, filter, mux, and sink selection is ready.
+Encode and transcode discovery still return a clear unsupported error until
+source, codec, filter, mux, and sink selection is ready.
 
 ## Core media model
 

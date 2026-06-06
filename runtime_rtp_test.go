@@ -238,6 +238,81 @@ func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderRTPDecodeFilterSink(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   2,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    2,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	decoder := &decodeTestDecoder{}
+	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}))
+	filter := &runtimeTestStage{name: "meter"}
+	sink := &runtimeTestSink{name: "frames"}
+
+	builder := New(WithCodecRegistry(codecs)).New().
+		RTP(receiver,
+			WithRTPName("live-audio"),
+			WithRTPDepacketizer(rtpav.NewOpusDepacketizer(stream)),
+		).
+		Decode(SelectAudio()).
+		Filter(SelectAudio(), filter).
+		Sink(sink)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Nodes) != 5 || len(planned.Edges) != 4 {
+		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
+	}
+	if !strings.Contains(planned.String(), "decode-audio -> meter") ||
+		!strings.Contains(planned.String(), "meter -> frames") {
+		t.Fatalf("planned:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || decoder.flushes != 1 || filter.count != 1 || sink.frames != 1 {
+		t.Fatalf("decodes=%d flushes=%d filter=%d frames=%d", decoder.decodes, decoder.flushes, filter.count, sink.frames)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed || !filter.closed || !sink.closed {
+		t.Fatalf("closed receiver=%v filter=%v sink=%v", receiver.closed, filter.closed, sink.closed)
+	}
+}
+
 func TestRuntimeBuilderMultiRTPDecodeSelectsOneStream(t *testing.T) {
 	ctx := context.Background()
 	audio := av.Stream{

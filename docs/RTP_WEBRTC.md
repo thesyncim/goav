@@ -121,6 +121,8 @@ task, err := runtime.New().
 For repeated RTP/WebRTC inputs, the generated graph feeds all sources into the
 selector before the decoder. Single-stream RTP sources stamp EOS with the stream
 ID so unrelated inputs do not flush the selected decoder.
+Optional filter stages can be inserted after `Decode(...)` and before `Sink(...)`
+when their selector matches the decoded stream.
 
 ## Loss
 

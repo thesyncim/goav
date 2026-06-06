@@ -16,7 +16,6 @@ func (rtpDecodeToSinkGraphCompiler) match(b *builder) bool {
 		len(b.inputs) == 0 &&
 		len(b.outputs) == 0 &&
 		len(b.encodes) == 0 &&
-		len(b.filters) == 0 &&
 		len(b.transcodes) == 0 &&
 		len(b.sources) == 0 &&
 		len(b.stages) == 0 &&
@@ -37,7 +36,7 @@ func (b *builder) planRTPDecodeToSink(spec pipeline.Spec) (pipeline.Spec, error)
 		return pipeline.Spec{}, ErrNilSink
 	}
 
-	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3)
+	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3+len(b.filters))
 	sourceRefs := make([]pipeline.NodeRef, len(b.rtpInputs))
 	for i := range b.rtpInputs {
 		sourceName := rtpNodeName(b.rtpInputs[i], i)
@@ -48,42 +47,9 @@ func (b *builder) planRTPDecodeToSink(spec pipeline.Spec) (pipeline.Spec, error)
 		sourceRefs[i] = sourceRef
 	}
 
-	selector := b.decodes[0]
-	selectName := selectNodeName(selector)
-	selectRef := pipeline.NodeRef(selectName)
-	if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef); err != nil {
+	if err := b.planDecodeFramePath(nodes, &spec, sourceRefs, b.decodes[0]); err != nil {
 		return pipeline.Spec{}, err
 	}
-
-	decodeName := decodeNodeName(selector)
-	decodeRef := pipeline.NodeRef(decodeName)
-	if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef); err != nil {
-		return pipeline.Spec{}, err
-	}
-
-	sinkName := b.sinks[0].Name()
-	sinkRef := pipeline.NodeRef(sinkName)
-	if err := addPlannedNode(nodes, &spec, sinkName, pipeline.NodeSink, sinkRef); err != nil {
-		return pipeline.Spec{}, err
-	}
-
-	for i := range sourceRefs {
-		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-			From:   sourceRefs[i],
-			To:     selectRef,
-			Policy: pipeline.RouteAll,
-		})
-	}
-	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-		From:   selectRef,
-		To:     decodeRef,
-		Policy: pipeline.RouteAll,
-	})
-	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-		From:   decodeRef,
-		To:     sinkRef,
-		Policy: pipeline.RouteAll,
-	})
 	return spec, nil
 }
 
@@ -126,33 +92,5 @@ func (b *builder) compileRTPDecodeToSink(ctx context.Context, graph pipeline.Gra
 		return err
 	}
 
-	selectStage := newStreamSelectStage(selectNodeName(selector), stream.ID)
-	selectRef, err := graph.AddStage(selectStage, b.runtime.buffer)
-	if err != nil {
-		selectStage.Close()
-		return err
-	}
-	stage, err := b.newDecodeStage(ctx, selector, stream, b.runtime.realtime)
-	if err != nil {
-		return err
-	}
-	stageRef, err := graph.AddStage(stage, b.runtime.buffer)
-	if err != nil {
-		stage.Close()
-		return err
-	}
-	sinkRef, err := graph.AddSink(b.sinks[0], b.runtime.buffer)
-	if err != nil {
-		return err
-	}
-
-	for i := range sourceRefs {
-		if err := graph.Link(pipeline.Link{From: sourceRefs[i], To: selectRef}); err != nil {
-			return err
-		}
-	}
-	if err := graph.Link(pipeline.Link{From: selectRef, To: stageRef}); err != nil {
-		return err
-	}
-	return graph.Link(pipeline.Link{From: stageRef, To: sinkRef})
+	return b.compileDecodeFramePath(ctx, graph, sourceRefs, selector, stream, b.runtime.realtime)
 }
