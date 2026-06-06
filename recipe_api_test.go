@@ -160,6 +160,23 @@ func adapterRequirementByKind(requirements []goav.AdapterRequirement, kind strin
 	return goav.AdapterRequirement{}, false
 }
 
+func adapterRequirementByKindAndOwner(requirements []goav.AdapterRequirement, kind string, name string, requiredBy string) (goav.AdapterRequirement, bool) {
+	for i := range requirements {
+		requirement := requirements[i]
+		if requirement.RequiredBy != requiredBy {
+			continue
+		}
+		if requirement.Kind != kind {
+			continue
+		}
+		if name != "" && requirement.Name != name && string(requirement.Format) != name && string(requirement.Codec) != name && requirement.Transform != name {
+			continue
+		}
+		return requirement, true
+	}
+	return goav.AdapterRequirement{}, false
+}
+
 func hasPlanWarning(warnings []goav.PlanDiagnostic, code string) bool {
 	for i := range warnings {
 		if warnings[i].Code == code {
@@ -551,6 +568,72 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 	}
 	if len(report.Decisions) < 4 {
 		t.Fatalf("decisions=%+v, want decode and encode decisions per branch", report.Decisions)
+	}
+}
+
+func TestExplainRequirementsFollowOrderedPathOperations(t *testing.T) {
+	rt := goav.New(
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
+				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
+			}})
+			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
+			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
+		}),
+		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
+			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
+		}),
+		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+			registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResize, Input: av.MediaVideo, Output: av.MediaVideo}, recipeAPIFilterFactory{})
+		}),
+	)
+	meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+		return emit.Frame(frame)
+	})
+
+	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Video().
+		Decode().
+		Paths(
+			goav.Path("v360").
+				Resize(640, 360).
+				Do(meter).
+				VP9(600_000).
+				To("web"),
+		).
+		Outputs(goav.Output("web", goav.FileOutput("web.ogg", io.Discard))).
+		Explain(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch, ok := branchByName(report.Branches, "v360")
+	if !ok {
+		t.Fatalf("branches=%+v, want v360", report.Branches)
+	}
+	wantOps := []goav.OperationKind{goav.OpDemux, goav.OpSelect, goav.OpDecode, goav.OpTransform, goav.OpStage, goav.OpEncode}
+	if !equalOperationKinds(operationKinds(branch.Operations), wantOps) {
+		t.Fatalf("operations=%+v, want %+v", branch.Operations, wantOps)
+	}
+	for _, want := range []struct {
+		kind       string
+		name       string
+		requiredBy string
+	}{
+		{kind: "demuxer", name: string(av.FormatOgg), requiredBy: "input.ogg"},
+		{kind: "decoder", name: string(av.CodecVP8), requiredBy: "v360"},
+		{kind: "filter", name: filter.FactoryResize, requiredBy: "v360"},
+		{kind: "encoder", name: string(av.CodecVP9), requiredBy: "v360"},
+		{kind: "muxer", name: string(av.FormatOgg), requiredBy: "web"},
+	} {
+		requirement, ok := adapterRequirementByKindAndOwner(report.RequiredAdapters, want.kind, want.name, want.requiredBy)
+		if !ok || requirement.Status != "available" {
+			t.Fatalf("requirements=%+v, want available %s %s required by %s", report.RequiredAdapters, want.kind, want.name, want.requiredBy)
+		}
+	}
+	if len(report.Warnings) != 0 {
+		t.Fatalf("warnings=%+v", report.Warnings)
 	}
 }
 

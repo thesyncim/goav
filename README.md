@@ -232,6 +232,9 @@ if err != nil {
 When build preflight finds a missing adapter, `Explain(ctx)` still returns the
 structured report it can prove, including a warning and a
 `RequiredAdapters` entry with status `missing` or `unavailable`.
+Adapter requirements are derived from the planned operation chain, so a resize
+inside a path reports a branch-local filter requirement, while muxers and
+demuxers stay attached to outputs and inputs.
 
 ## Custom Processing
 

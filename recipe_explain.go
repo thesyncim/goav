@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
@@ -370,7 +371,7 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 				Name:       string(input.Format),
 				Format:     input.Format,
 				RequiredBy: firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
-				Status:     "available",
+				Status:     adapterRequirementRuntimeStatus(resolved.runtime, "demuxer", input.Format, "", ""),
 			})
 		case input.Realtime && input.Codec != "":
 			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
@@ -392,15 +393,49 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 			Name:       string(output.Format),
 			Format:     output.Format,
 			RequiredBy: firstNonEmpty(output.Name, output.URI, fmt.Sprintf("output-%d", i)),
-			Status:     "available",
+			Status:     adapterRequirementRuntimeStatus(resolved.runtime, "muxer", output.Format, "", ""),
 		})
 	}
-	for i := range resolved.intent.Streams {
-		stream := resolved.intent.Streams[i]
-		requiredBy := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("stream-%d", i))
-		for j := range stream.Transforms {
-			name := transformFactoryName(stream.Transforms[j])
-			if name == "" {
+	for i := range report.Branches {
+		branch := report.Branches[i]
+		stream, streamOK := reportStreamForBranch(resolved.intent.Streams, branch, i)
+		var branchWarnings []PlanDiagnostic
+		requirements, branchWarnings = appendBranchOperationRequirements(requirements, resolved, branch, stream, streamOK)
+		warnings = append(warnings, branchWarnings...)
+	}
+	return requirements, warnings
+}
+
+func appendBranchOperationRequirements(requirements []AdapterRequirement, resolved recipeResolved, branch BranchReport, stream StreamIntent, streamOK bool) ([]AdapterRequirement, []PlanDiagnostic) {
+	var warnings []PlanDiagnostic
+	requiredBy := firstNonEmpty(branch.Name, "branch")
+	for i := range branch.Operations {
+		operation := branch.Operations[i]
+		switch operation.Kind {
+		case OpDecode:
+			codecID, ok := operationDecodeCodec(resolved, stream, streamOK, operation)
+			if !ok || codecID == "" {
+				warnings = append(warnings, PlanDiagnostic{
+					Code:    "decode_codec_deferred",
+					Node:    requiredBy,
+					Message: "decode codec will be resolved when the input opens",
+					Suggestions: []string{
+						"use RTP/WebRTC codec intent when the receive codec is already known",
+						"use input metadata or a format adapter that reports streams during probing",
+					},
+				})
+				continue
+			}
+			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
+				Kind:       "decoder",
+				Name:       string(codecID),
+				Codec:      codecID,
+				RequiredBy: requiredBy,
+				Status:     adapterRequirementRuntimeStatus(resolved.runtime, "decoder", "", codecID, ""),
+			})
+		case OpTransform:
+			name := operation.Component
+			if name == "" || name == "transform" {
 				continue
 			}
 			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
@@ -408,43 +443,114 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 				Name:       name,
 				Transform:  name,
 				RequiredBy: requiredBy,
-				Status:     "available",
+				Status:     adapterRequirementRuntimeStatus(resolved.runtime, "filter", "", "", name),
 			})
-		}
-		if stream.Encode.ID != "" {
+		case OpEncode:
+			codecID := operationEncodeCodec(stream, streamOK, operation)
+			if codecID == "" {
+				continue
+			}
 			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
 				Kind:       "encoder",
-				Name:       string(stream.Encode.ID),
-				Codec:      stream.Encode.ID,
+				Name:       string(codecID),
+				Codec:      codecID,
 				RequiredBy: requiredBy,
-				Status:     "available",
+				Status:     adapterRequirementRuntimeStatus(resolved.runtime, "encoder", "", codecID, ""),
 			})
 		}
-		if !streamNeedsDecode(stream) {
-			continue
-		}
-		codecID, ok := reportDecodeCodec(resolved, stream)
-		if !ok || codecID == "" {
-			warnings = append(warnings, PlanDiagnostic{
-				Code:    "decode_codec_deferred",
-				Node:    requiredBy,
-				Message: "decode codec will be resolved when the input opens",
-				Suggestions: []string{
-					"use RTP/WebRTC codec intent when the receive codec is already known",
-					"use input metadata or a format adapter that reports streams during probing",
-				},
-			})
-			continue
-		}
-		requirements = appendAdapterRequirement(requirements, AdapterRequirement{
-			Kind:       "decoder",
-			Name:       string(codecID),
-			Codec:      codecID,
-			RequiredBy: requiredBy,
-			Status:     "available",
-		})
 	}
 	return requirements, warnings
+}
+
+func reportStreamForBranch(streams []StreamIntent, branch BranchReport, index int) (StreamIntent, bool) {
+	for i := range streams {
+		if reportBranchNameForStream(streams[i], i) == branch.Name {
+			return streams[i], true
+		}
+	}
+	if index >= 0 && index < len(streams) {
+		return streams[index], true
+	}
+	return StreamIntent{}, false
+}
+
+func reportBranchNameForStream(stream StreamIntent, index int) string {
+	return firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", index))
+}
+
+func operationDecodeCodec(resolved recipeResolved, stream StreamIntent, streamOK bool, operation OperationReport) (av.CodecID, bool) {
+	if streamOK {
+		if codecID, ok := reportDecodeCodec(resolved, stream); ok {
+			return codecID, true
+		}
+	}
+	codecID := av.CodecID(operation.Component)
+	if codecID == "" || codecID == "decoder" {
+		return "", false
+	}
+	return codecID, true
+}
+
+func operationEncodeCodec(stream StreamIntent, streamOK bool, operation OperationReport) av.CodecID {
+	if streamOK && stream.Encode.ID != "" {
+		return stream.Encode.ID
+	}
+	codecID := av.CodecID(operation.Component)
+	if codecID == "" || codecID == "encoder" {
+		return ""
+	}
+	return codecID
+}
+
+func adapterRequirementRuntimeStatus(rt Runtime, kind string, formatID av.FormatID, codecID av.CodecID, transform string) string {
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return "required"
+	}
+	switch kind {
+	case "demuxer":
+		if formatID == "" {
+			return "unknown"
+		}
+		if _, err := standard.formats.DemuxerFactory(formatID); err != nil {
+			return "missing"
+		}
+		return "available"
+	case "muxer":
+		if formatID == "" {
+			return "unknown"
+		}
+		if _, err := standard.formats.MuxerFactory(formatID); err != nil {
+			return "missing"
+		}
+		return "available"
+	case "decoder":
+		_, err := standard.codecs.DecoderFactory(codecID)
+		return codecFactoryStatus(err)
+	case "encoder":
+		_, err := standard.codecs.EncoderFactory(codecID)
+		return codecFactoryStatus(err)
+	case "filter":
+		if transform == "" {
+			return "unknown"
+		}
+		if _, err := standard.filters.Factory(transform); err != nil {
+			return "missing"
+		}
+		return "available"
+	default:
+		return "required"
+	}
+}
+
+func codecFactoryStatus(err error) string {
+	if err == nil {
+		return "available"
+	}
+	if errors.Is(err, codec.ErrUnavailable) {
+		return "unavailable"
+	}
+	return "missing"
 }
 
 func reportDecodeCodec(resolved recipeResolved, stream StreamIntent) (av.CodecID, bool) {

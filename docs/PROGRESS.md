@@ -877,6 +877,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `RequiredAdapters` entries with `missing`, `unavailable`, or `unknown`
     status, plus `Missing` and `Warnings` diagnostics so applications can show
     actionable plan reports without pretending the build can run. Done.
+236. Move `Explain(ctx)` adapter requirements onto operation planning:
+    `RequiredAdapters` now follows planned branch operation chains instead of
+    the older flattened stream fields. Decode, transform, and encode
+    requirements are attached to the branch that owns the operation, demuxers
+    and muxers stay attached to inputs and outputs, and standard runtime
+    registries mark requirements as `available`, `missing`, `unavailable`,
+    `built-in`, `unknown`, or `required` before any adapter is opened. Done.
 
 ## First Vertical Slice
 
@@ -1124,11 +1131,10 @@ control plane for running direct graphs. `MediaPlan` expresses record, stream
 decode, encode, path composition, and transcode as input refs, stream selectors,
 ordered operations, output refs, taps, and planner decisions. `Describe`, `Build`, and
 `Explain(ctx)` now require a supported media-plan shape for normal recipes. The
-next implementation work is to move capability data from error-derived
-diagnostics into first-class operation planning, then extend the same model to
-custom filter adapters, mux compatibility diagnostics, operation-boundary
-attachment after transforms and sink-style observation, and late muxed runtime
-outputs before WebM/Ogg land cleanly.
+next implementation work is to use the same first-class requirement model for
+mux compatibility diagnostics, custom filter capability details,
+operation-boundary attachment after transforms and sink-style observation, and
+late muxed runtime outputs before WebM/Ogg land cleanly.
 
 ## Validation Gates
 
