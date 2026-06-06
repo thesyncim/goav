@@ -1067,11 +1067,11 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 
 func (j *Job) validateOutputScope() error {
 	stream, ok := jobStreamIntentIfPresent(j.stream)
-	return validateJobOutputScope(j.outputs, stream, ok)
+	return validateJobOutputScope(len(j.outputs), stream, ok)
 }
 
-func validateJobOutputScope(outputs []OutputSpec, stream StreamIntent, hasStream bool) error {
-	if !hasStream || len(outputs) == 0 {
+func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool) error {
+	if !hasStream || outputCount == 0 {
 		return nil
 	}
 	return &BuildError{

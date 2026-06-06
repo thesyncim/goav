@@ -23,6 +23,10 @@ func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 		if name, ok := forbidden[field.Type]; ok {
 			t.Fatalf("recipeCompileState field %s carries %s; compiler passes should use captured intent attachments", field.Name, name)
 		}
+		switch field.Name {
+		case "jobOutputs", "streamOutputs":
+			t.Fatalf("recipeCompileState field %s splits output attachments; compiler passes should use one captured output attachment set", field.Name)
+		}
 	}
 }
 

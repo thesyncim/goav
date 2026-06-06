@@ -604,6 +604,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     public intent data while `.Do(...)` stages and stream-local outputs remain
     captured attachments, with a guard preventing `*jobStreamBuild` from
     entering `recipeCompileState`. Done.
+183. Collapse ordinary job output attachments in recipe compiler state: job and
+    stream outputs are now captured once as the concrete output attachment set,
+    while a small output count preserves the stream/global scope diagnostic;
+    guard coverage prevents `jobOutputs` and `streamOutputs` fields from
+    returning to `recipeCompileState`. Done.
 
 ## First Vertical Slice
 
@@ -833,7 +838,8 @@ Validation, transcode planning, builder lowering, migration graph-compiler
 selection, and planned spec emission now have a private recipe compiler state
 that carries captured recipe attachments instead of raw recipe builder pointers;
 ordinary stream recipe lowering and transcode branch planning now read
-`Intent.Streams`. Probing, stream resolution, format/codec resolution, mux
+`Intent.Streams`, and ordinary output attachments are no longer split into
+builder-shaped fields. Probing, stream resolution, format/codec resolution, mux
 grouping, and route assignment still need to shrink the fixed compiler list.
 First-page examples must stay executable with `Default()` or clearly name
 adapter requirements, and WebM/Ogg remain the next container coverage pressure.

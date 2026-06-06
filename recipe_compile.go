@@ -26,10 +26,9 @@ type recipeCompileState struct {
 	transcodePresent bool
 	recipeErr        error
 
-	inputs        []InputSpec
-	jobOutputs    []OutputSpec
-	streamOutputs []OutputSpec
-	streamSteps   []jobStreamStepAttachment
+	inputs         []InputSpec
+	jobOutputCount int
+	streamSteps    []jobStreamStepAttachment
 
 	transcodeInput   InputSpec
 	transcodeOutputs []namedOutputSpec
@@ -128,8 +127,8 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 		state.runtime = job.runtime
 		state.recipeErr = job.err
 		state.inputs = append([]InputSpec(nil), job.inputs...)
-		state.jobOutputs = append([]OutputSpec(nil), job.outputs...)
-		state.streamOutputs = jobStreamOutputs(job.stream)
+		state.jobOutputCount = len(job.outputs)
+		state.outputs = jobAllOutputs(job.outputs, jobStreamOutputs(job.stream))
 		state.streamSteps = jobStreamStepAttachments(job.stream)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
@@ -188,10 +187,9 @@ func validateJobIntentPass() recipeCompilePass {
 			return err
 		}
 		stream, hasStream := jobIntentStream(state.intent)
-		if err := validateJobOutputScope(state.jobOutputs, stream, hasStream); err != nil {
+		if err := validateJobOutputScope(state.jobOutputCount, stream, hasStream); err != nil {
 			return err
 		}
-		state.outputs = jobAllOutputs(state.jobOutputs, state.streamOutputs)
 		if len(state.outputs) == 0 {
 			return &BuildError{Code: "output_missing", Operation: state.operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
 		}
