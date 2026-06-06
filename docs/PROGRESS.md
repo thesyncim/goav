@@ -698,6 +698,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     rendition/output lists and duplicate rendition names now return structured
     build errors with concrete plan-shape guidance instead of bare unsupported
     sentinels. Done.
+206. Make advanced transcode transform failures actionable: mixed
+    resize/resample renditions and transform/media mismatches now return
+    structured build errors with stream-scoped guidance instead of bare
+    unsupported sentinels. Done.
 
 ## First Vertical Slice
 
@@ -962,6 +966,8 @@ Advanced transcode output-group matching now reports unmatched branch labels
 with branch-name guidance instead of a generic unsupported graph error.
 Empty advanced transcode plans and duplicate rendition names now report
 structured plan-shape diagnostics too.
+Advanced transcode transform failures now report mixed-transform and
+wrong-media diagnostics with branch and selected-stream details.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

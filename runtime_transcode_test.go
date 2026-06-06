@@ -631,6 +631,66 @@ func TestRuntimeBuilderTranscodeReportsDuplicateRenditionNames(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderTranscodeReportsMixedTransformChain(t *testing.T) {
+	plan := transcode.Plan{
+		Input: format.Input{Name: "input.ogg"},
+		Renditions: []transcode.Rendition{{
+			Name:     "mixed",
+			Selector: testSelectAudio(),
+			Resize:   &filter.ResizeConfig{Width: 320, Height: 180},
+			Resample: &filter.ResampleConfig{SampleRate: 16000, Channels: 1},
+			Encode:   pcmEncodeConfig(),
+		}},
+		Outputs: []transcode.Output{{Name: "preview.ogg"}},
+	}
+
+	_, err := newTestBuilder(t).Transcode(plan).Describe()
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_transform_chain_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transcode_transform_chain_unsupported wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "cannot combine resize and resample") ||
+		!strings.Contains(err.Error(), "Video(...)/Audio(...)") {
+		t.Fatalf("err = %v, want transform chain guidance", err)
+	}
+}
+
+func TestRuntimeBuilderTranscodeReportsTransformMediaMismatch(t *testing.T) {
+	streams := []av.Stream{videoVP8TranscodeTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+	)
+	plan := transcode.Plan{
+		Input: format.Input{Name: "input.ogg"},
+		Renditions: []transcode.Rendition{{
+			Name:     "video-as-audio",
+			Selector: testSelectVideo(),
+			Resample: &filter.ResampleConfig{SampleRate: 16000, Channels: 1},
+			Encode:   vp8EncodeConfig(),
+		}},
+		Outputs: []transcode.Output{{Name: "preview.ogg"}},
+	}
+
+	_, err := newTestBuilder(t, formats, codecs).Transcode(plan).Build(context.Background())
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_transform_media_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transcode_transform_media_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "resample applies to audio streams") ||
+		!strings.Contains(err.Error(), "stream id: video") ||
+		!strings.Contains(err.Error(), "transcode.Rendition selector") {
+		t.Fatalf("err = %v, want transform media guidance", err)
+	}
+	if !demuxer.closed {
+		t.Fatal("demux source should be closed after transform media mismatch")
+	}
+}
+
 func TestTranscodeVideoFilterResultPreallocatesI420Planes(t *testing.T) {
 	stream := av.Stream{
 		ID:   "video",

@@ -460,7 +460,7 @@ func transcodeDuplicateRenditionError(name string, index int) error {
 
 func transcodeTransforms(name string, rendition transcode.Rendition) ([]transcodeTransform, error) {
 	if rendition.Resize != nil && rendition.Resample != nil {
-		return nil, ErrUnsupportedBuild
+		return nil, advancedTranscodeTransformChainError(name)
 	}
 	if rendition.Resize != nil {
 		return []transcodeTransform{{
@@ -479,6 +479,21 @@ func transcodeTransforms(name string, rendition transcode.Rendition) ([]transcod
 	return nil, nil
 }
 
+func advancedTranscodeTransformChainError(name string) error {
+	return &BuildError{
+		Code:      "transcode_transform_chain_unsupported",
+		Operation: "build transcode",
+		Node:      name,
+		Reason:    "transcode rendition cannot combine resize and resample",
+		Suggestions: []string{
+			"use resize on video renditions and resample on audio renditions",
+			"split audio and video work into separate transcode.Rendition values",
+			"use goav.Transcode(input).Video(...)/Audio(...) to keep transforms stream-scoped",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
 func transcodeTransformCount(branches []transcodeBranch) int {
 	count := 0
 	for i := range branches {
@@ -492,7 +507,7 @@ func applyTranscodeTransformToStream(stream av.Stream, transform transcodeTransf
 	switch {
 	case transform.audio != nil:
 		if stream.Type != av.MediaAudio && stream.Codec.Type != av.MediaAudio {
-			return av.Stream{}, ErrUnsupportedBuild
+			return av.Stream{}, advancedTranscodeTransformMediaError(transform, stream, "resample", "audio")
 		}
 		out.Type = av.MediaAudio
 		out.Codec.Type = av.MediaAudio
@@ -512,7 +527,7 @@ func applyTranscodeTransformToStream(stream av.Stream, transform transcodeTransf
 		}
 	case transform.video != nil:
 		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
-			return av.Stream{}, ErrUnsupportedBuild
+			return av.Stream{}, advancedTranscodeTransformMediaError(transform, stream, "resize", "video")
 		}
 		out.Type = av.MediaVideo
 		out.Codec.Type = av.MediaVideo
@@ -524,6 +539,27 @@ func applyTranscodeTransformToStream(stream av.Stream, transform transcodeTransf
 		}
 	}
 	return out, nil
+}
+
+func advancedTranscodeTransformMediaError(transform transcodeTransform, stream av.Stream, operation string, media string) error {
+	details := []string{
+		"stream id: " + string(stream.ID),
+		"stream type: " + string(stream.Type),
+		"codec type: " + string(stream.Codec.Type),
+	}
+	return &BuildError{
+		Code:      "transcode_transform_media_mismatch",
+		Operation: "build transcode",
+		Node:      transform.name,
+		Reason:    operation + " applies to " + media + " streams",
+		Details:   details,
+		Suggestions: []string{
+			"use resize on video renditions",
+			"use resample on audio renditions",
+			"check the transcode.Rendition selector for this branch",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transcodeOutputBranch, error) {
