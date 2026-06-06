@@ -13,13 +13,14 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/webrtcav"
 )
 
 func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
-	job := Record(
+	job := From(
 		webRTCRemote(webrtcav.RemoteTrack{
 			Track: &webrtc.TrackRemote{},
 			Codec: webrtc.RTPCodecParameters{
@@ -34,8 +35,7 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 				Type: av.MediaVideo,
 			},
 		}),
-		FileOutput("recording.ivf", io.Discard),
-	)
+	).Copy().To(FileOutput("recording.ivf", io.Discard))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -65,7 +65,7 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 }
 
 func TestWebRTCTrackRecipeRejectsUnknownCodecMetadata(t *testing.T) {
-	_, err := Record(
+	_, err := From(
 		webRTCRemote(webrtcav.RemoteTrack{
 			Track: &webrtc.TrackRemote{},
 			Codec: webrtc.RTPCodecParameters{
@@ -80,8 +80,7 @@ func TestWebRTCTrackRecipeRejectsUnknownCodecMetadata(t *testing.T) {
 				Type: av.MediaAudio,
 			},
 		}),
-		FileOutput("recording.ogg", io.Discard),
-	).Build(context.Background())
+	).Copy().To(FileOutput("recording.ogg", io.Discard)).Build(context.Background())
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "webrtc_codec_unknown" || !errors.Is(err, ErrUnsupportedBuild) {
@@ -181,10 +180,9 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
 
-	task, err := Record(
+	task, err := From(
 		RTP(receiver).Name("audio").Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
-		FileOutput("recording.ogg", io.Discard),
-	).UseRuntime(runtime).Build(ctx)
+	).Copy().To(FileOutput("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,10 +235,9 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
 
-	task, err := Record(
+	task, err := From(
 		RTP(receiver).Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
-		FileOutput("recording.ogg", io.Discard),
-	).UseRuntime(runtime).Build(ctx)
+	).Copy().To(FileOutput("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,10 +284,9 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	var out bytes.Buffer
-	job := Record(
+	job := From(
 		RTP(receiver).Name("video").Codec(VP8()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
-		FileOutput("recording.ivf", &out),
-	)
+	).Copy().To(FileOutput("recording.ivf", &out))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -336,10 +332,9 @@ func TestRecordRecipeInputMIMEDrivesFormatProbe(t *testing.T) {
 		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
-	job := Record(
+	job := From(
 		FileInput("", strings.NewReader("")).MIME("audio/ogg"),
-		FileOutput("recording.ogg", io.Discard),
-	).UseRuntime(runtime)
+	).Copy().To(FileOutput("recording.ogg", io.Discard)).UseRuntime(runtime)
 	intent := job.Intent()
 	if len(intent.Inputs) != 1 || intent.Inputs[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
@@ -370,10 +365,9 @@ func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
 		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
-	job := Record(
+	job := From(
 		FileInput("input.ogg", strings.NewReader("")),
-		FileOutput("", io.Discard).MIME("audio/ogg"),
-	).UseRuntime(runtime)
+	).Copy().To(FileOutput("", io.Discard).MIME("audio/ogg")).UseRuntime(runtime)
 	intent := job.Intent()
 	if len(intent.Outputs) != 1 || intent.Outputs[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
@@ -662,7 +656,7 @@ func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 	}
 }
 
-func TestTranscodeRecipeDescribeMatchesBuiltGraph(t *testing.T) {
+func TestBranchCompositionRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -676,8 +670,13 @@ func TestTranscodeRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
 		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
-	job := Transcode(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
-		Audio("main").Opus(96_000).To("archive").
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		Branch("main").
+		Opus(96_000).
+		To("archive").
 		Output("archive", FileOutput("archive.ogg", io.Discard))
 
 	planned, err := job.Describe()
@@ -692,6 +691,64 @@ func TestTranscodeRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 
 	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}
+
+func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{videoVP8TranscodeTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResize,
+		Input:  av.MediaVideo,
+		Output: av.MediaVideo,
+	}, &transcodeTestFilterFactory{}))
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, &encodeTestEncoderFactory{}),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(New(formats, codecs, filters)).
+		Video().
+		Decode().
+		Tap("video.decoded").
+		Branch("720p").
+		Resize(1280, 720).
+		Tap("video.720p.frames").
+		VP9(2_000_000).
+		To("web").
+		Output("web", FileOutput("web.ogg", io.Discard))
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	var resizeTap TapInfo
+	for _, tap := range task.Taps() {
+		if tap.Name == "video.720p.frames" {
+			resizeTap = tap
+			break
+		}
+	}
+	if resizeTap.Name == "" || resizeTap.Domain != DomainFrame || resizeTap.MediaKind != av.MediaVideo || resizeTap.Node == "" {
+		t.Fatalf("resize tap = %+v, want frame video tap with graph node", resizeTap)
+	}
+
+	attachment, err := task.Attach(ctx, Branch("screenshots").FromTap("video.720p.frames").To(SinkFunc("screenshots", func(context.Context, Message) error {
+		return nil
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -344,7 +344,7 @@ func flowTeeDuplicateError(node string) error {
 		Reason:    "a stream recipe can have one Tee",
 		Suggestions: []string{
 			"pass all routed flows to the same .Tee(...) call",
-			"use goav.Transcode(input) when branches should be declared independently",
+			"use .Tap(...).Branch(...) when branches should be declared independently",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

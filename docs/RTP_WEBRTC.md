@@ -76,10 +76,10 @@ The session-level shape is:
 session, err := webrtcav.NewSession(ctx, webrtcav.SessionConfig{})
 answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
-err := goav.Record(
-    goav.WebRTCTrack(remote.Track),
-    goav.FileOutput("recording.ivf", file),
-).Run(ctx)
+err := goav.From(goav.WebRTCTrack(remote.Track)).
+    Copy().
+    To(goav.FileOutput("recording.ivf", file)).
+    Run(ctx)
 ```
 
 For multiple tracks, the orchestration boundary is explicit. Writing them to one
@@ -103,10 +103,10 @@ application graph.
 The recipe layer can also accept raw RTP packet readers directly:
 
 ```go
-err := goav.Record(
-    goav.RTP(video).Name("video").Codec(goav.VP8()),
-    goav.FileOutput("recording.ivf", file),
-).Run(ctx)
+err := goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
+    Copy().
+    To(goav.FileOutput("recording.ivf", file)).
+    Run(ctx)
 ```
 
 Each reader can be a raw RTP receiver or a `webrtcav.TrackReader` produced from
@@ -126,6 +126,7 @@ It can also decode a selected live stream directly into frames:
 ```go
 err := goav.From(goav.WebRTCTrack(track)).
     Audio().
+    Decode().
     To(goav.FrameSink(frames)).
     Run(ctx)
 ```
@@ -151,6 +152,7 @@ outputs when the target codec is explicit:
 ```go
 err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
+    Decode().
     Do(resample).
     Opus(96_000).
     To(

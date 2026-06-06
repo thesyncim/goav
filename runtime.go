@@ -409,12 +409,21 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 
 type task struct {
 	graph       pipeline.Graph
+	taps        []TapInfo
 	attachMu    sync.Mutex
 	attachments map[*runtimeAttachment]struct{}
 }
 
 func (t *task) Describe() pipeline.Spec {
 	return t.graph.Spec()
+}
+
+func (t *task) Explain(context.Context) (PlanReport, error) {
+	return PlanReport{
+		Summary: "running media task",
+		Graph:   t.Describe(),
+		Taps:    tapReports(t.Taps()),
+	}, nil
 }
 
 func (t *task) Run(ctx context.Context) error {
@@ -429,7 +438,29 @@ func (t *task) Stats() TaskStats {
 	return t.graph.Stats()
 }
 
-func (t *task) StopAttachments(ctx context.Context) error {
+func (t *task) Taps() []TapInfo {
+	if len(t.taps) != 0 {
+		out := make([]TapInfo, len(t.taps))
+		copy(out, t.taps)
+		return out
+	}
+	return inferSpecTaps(t.graph.Spec())
+}
+
+func (t *task) Detach(ctx context.Context, attachment Attachment) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if attachment == nil {
+		return nil
+	}
+	if runtimeAttachment, ok := attachment.(*runtimeAttachment); ok {
+		return t.stopAttachment(ctx, runtimeAttachment)
+	}
+	return attachment.Close(ctx)
+}
+
+func (t *task) stopAttachments(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -445,7 +476,7 @@ func (t *task) StopAttachments(ctx context.Context) error {
 }
 
 func (t *task) Close() error {
-	first := t.StopAttachments(context.Background())
+	first := t.stopAttachments(context.Background())
 	if err := t.graph.Close(); first == nil && err != nil {
 		first = err
 	}

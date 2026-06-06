@@ -16,7 +16,11 @@ type PlanReport struct {
 	Intent           Intent
 	Inputs           []InputReport
 	Streams          []StreamReport
+	Taps             []TapReport
+	Branches         []BranchReport
 	Outputs          []OutputReport
+	Decisions        []Decision
+	Missing          []Requirement
 	RequiredAdapters []AdapterRequirement
 	Warnings         []PlanDiagnostic
 	Graph            pipeline.Spec
@@ -56,6 +60,34 @@ type OutputReport struct {
 	MIMEType string
 	Format   av.FormatID
 	Kind     string
+	Branches []string
+}
+
+type BranchReport struct {
+	Name       string
+	Input      string
+	Stream     StreamSelect
+	Operations []OperationReport
+	Outputs    []string
+}
+
+type OperationReport struct {
+	Kind      OperationKind
+	Component string
+	Detail    string
+}
+
+type Decision struct {
+	Code    string
+	Branch  string
+	Message string
+}
+
+type Requirement struct {
+	Kind       string
+	Name       string
+	RequiredBy string
+	Status     string
 }
 
 type AdapterRequirement struct {
@@ -104,10 +136,27 @@ func newPlanReport(operation string, resolved recipeResolved) (PlanReport, error
 	}
 	report.Inputs = explainInputs(resolved)
 	report.Streams = explainStreams(resolved.intent.Streams)
-	report.Outputs = explainOutputs(resolved.intent.Outputs, resolved.outputFormats)
+	report.Taps = explainTaps(resolved.mediaPlan.Taps)
+	report.Branches = explainBranches(resolved.mediaPlan.Branches)
+	report.Outputs = explainOutputs(resolved.intent.Outputs, resolved.outputFormats, resolved.mediaPlan.Outputs)
+	report.Decisions = explainDecisions(resolved.mediaPlan.Decisions)
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, report)
 	report.Summary = explainSummary(report)
 	return report, nil
+}
+
+func explainTaps(taps []planTap) []TapReport {
+	reports := make([]TapReport, 0, len(taps))
+	for i := range taps {
+		reports = append(reports, TapReport{
+			Name:      taps[i].Name,
+			MediaKind: taps[i].MediaKind,
+			Domain:    taps[i].Domain,
+			Caps:      taps[i].Caps,
+			Node:      taps[i].Node,
+		})
+	}
+	return reports
 }
 
 func explainInputs(resolved recipeResolved) []InputReport {
@@ -176,6 +225,47 @@ func explainStreams(streams []StreamIntent) []StreamReport {
 	return reports
 }
 
+func explainBranches(branches []planBranch) []BranchReport {
+	reports := make([]BranchReport, 0, len(branches))
+	for i := range branches {
+		branch := branches[i]
+		reports = append(reports, BranchReport{
+			Name:       branch.Name,
+			Input:      branch.Input,
+			Stream:     branch.Stream,
+			Operations: explainOperations(branch.Operations),
+			Outputs:    append([]string(nil), branch.Outputs...),
+		})
+	}
+	return reports
+}
+
+func explainOperations(operations []planOperation) []OperationReport {
+	reports := make([]OperationReport, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		reports = append(reports, OperationReport{
+			Kind:      operation.Kind,
+			Component: operation.Component,
+			Detail:    operation.Detail,
+		})
+	}
+	return reports
+}
+
+func explainDecisions(decisions []planDecision) []Decision {
+	reports := make([]Decision, 0, len(decisions))
+	for i := range decisions {
+		decision := decisions[i]
+		reports = append(reports, Decision{
+			Code:    decision.Code,
+			Branch:  decision.Branch,
+			Message: decision.Message,
+		})
+	}
+	return reports
+}
+
 func explainTransforms(transforms []TransformSpec) []TransformReport {
 	reports := make([]TransformReport, 0, len(transforms))
 	for i := range transforms {
@@ -196,12 +286,14 @@ func explainTransforms(transforms []TransformSpec) []TransformReport {
 	return reports
 }
 
-func explainOutputs(outputs []OutputIntent, outputFormats map[string]av.FormatID) []OutputReport {
+func explainOutputs(outputs []OutputIntent, outputFormats map[string]av.FormatID, planOutputs []planOutput) []OutputReport {
 	reports := make([]OutputReport, 0, len(outputs))
+	branchesByOutput := planOutputBranches(planOutputs)
 	for i := range outputs {
 		output := outputs[i]
+		name := firstNonEmpty(output.Name, output.URI, fmt.Sprintf("output-%d", i))
 		formatID := output.Format
-		if resolved := outputFormats[output.Name]; resolved != "" {
+		if resolved := outputFormats[name]; resolved != "" {
 			formatID = resolved
 		}
 		kind := "sink"
@@ -209,15 +301,27 @@ func explainOutputs(outputs []OutputIntent, outputFormats map[string]av.FormatID
 			kind = "mux"
 		}
 		reports = append(reports, OutputReport{
-			Name:     output.Name,
+			Name:     name,
 			URI:      output.URI,
 			Protocol: output.Protocol,
 			MIMEType: output.MIMEType,
 			Format:   formatID,
 			Kind:     kind,
+			Branches: append([]string(nil), branchesByOutput[name]...),
 		})
 	}
 	return reports
+}
+
+func planOutputBranches(outputs []planOutput) map[string][]string {
+	branches := make(map[string][]string, len(outputs))
+	for i := range outputs {
+		if len(outputs[i].BranchRefs) == 0 {
+			continue
+		}
+		branches[outputs[i].Name] = append([]string(nil), outputs[i].BranchRefs...)
+	}
+	return branches
 }
 
 func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterRequirement, []PlanDiagnostic) {

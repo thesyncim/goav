@@ -4,16 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
 
+var runtimeAttachmentSeq atomic.Uint64
+
 // RuntimeBranch describes a branch attached to an already-built task.
 type RuntimeBranch struct {
 	name   string
 	from   string
+	tap    string
 	stages []pipeline.Stage
 	sink   pipeline.Sink
 	policy pipeline.RoutePolicy
@@ -29,8 +34,11 @@ type RuntimeBranchBuilder struct {
 
 // Attachment is a live runtime branch attached to a task.
 type Attachment interface {
+	ID() string
 	Name() string
-	Stop(context.Context) error
+	Spec() pipeline.Spec
+	Stats() BranchStats
+	Close(context.Context) error
 }
 
 // Branch starts a runtime branch description. Attach it with Task.Attach.
@@ -43,22 +51,16 @@ func (b *RuntimeBranchBuilder) From(node string) *RuntimeBranchBuilder {
 		return b
 	}
 	b.branch.from = node
+	b.branch.tap = ""
 	return b
 }
 
-func (b *RuntimeBranchBuilder) FromDecodedAudio(options ...streamOption) *RuntimeBranchBuilder {
-	return b.fromDecoded(av.MediaAudio, options...)
-}
-
-func (b *RuntimeBranchBuilder) FromDecodedVideo(options ...streamOption) *RuntimeBranchBuilder {
-	return b.fromDecoded(av.MediaVideo, options...)
-}
-
-func (b *RuntimeBranchBuilder) fromDecoded(media av.MediaType, options ...streamOption) *RuntimeBranchBuilder {
+func (b *RuntimeBranchBuilder) FromTap(name string) *RuntimeBranchBuilder {
 	if b == nil {
 		return b
 	}
-	b.branch.from = decodeNodeName(newStreamSelector(media, options...))
+	b.branch.tap = name
+	b.branch.from = ""
 	return b
 }
 
@@ -131,8 +133,10 @@ func (t *task) Attach(ctx context.Context, branch RuntimeBranch) (Attachment, er
 	defer t.attachMu.Unlock()
 
 	spec := t.graph.Spec()
-	if !specHasNode(spec, branch.from) {
-		return nil, runtimeBranchAnchorMissingError(branch.from)
+	var err error
+	branch.from, err = t.resolveRuntimeBranchAnchor(branch, spec)
+	if err != nil {
+		return nil, err
 	}
 
 	nodeNames, err := runtimeBranchNodeNames(branch, spec)
@@ -145,6 +149,7 @@ func (t *task) Attach(ctx context.Context, branch RuntimeBranch) (Attachment, er
 		return nil, err
 	}
 	attachment := &runtimeAttachment{
+		id:     nextRuntimeAttachmentID(branch.name),
 		name:   branch.name,
 		owner:  t,
 		nodes:  refs,
@@ -152,6 +157,21 @@ func (t *task) Attach(ctx context.Context, branch RuntimeBranch) (Attachment, er
 	}
 	t.trackAttachmentLocked(attachment)
 	return attachment, nil
+}
+
+func (t *task) resolveRuntimeBranchAnchor(branch RuntimeBranch, spec pipeline.Spec) (string, error) {
+	if branch.tap != "" {
+		for _, tap := range t.Taps() {
+			if tap.Name == branch.tap {
+				return tap.Node.String(), nil
+			}
+		}
+		return "", runtimeBranchTapMissingError(branch.tap, t.Taps())
+	}
+	if !specHasNode(spec, branch.from) {
+		return "", runtimeBranchAnchorMissingError(branch.from)
+	}
+	return branch.from, nil
 }
 
 func (t *task) attachRuntimeBranch(branch RuntimeBranch, nodeNames []string) ([]pipeline.NodeRef, []pipeline.Route, error) {
@@ -244,12 +264,20 @@ func (t *task) stopAttachmentLocked(ctx context.Context, attachment *runtimeAtta
 }
 
 type runtimeAttachment struct {
+	id      string
 	name    string
 	owner   *task
 	nodes   []pipeline.NodeRef
 	routes  []pipeline.Route
 	stopMu  sync.Mutex
 	stopped bool
+}
+
+func (a *runtimeAttachment) ID() string {
+	if a == nil {
+		return ""
+	}
+	return a.id
 }
 
 func (a *runtimeAttachment) Name() string {
@@ -259,7 +287,37 @@ func (a *runtimeAttachment) Name() string {
 	return a.name
 }
 
-func (a *runtimeAttachment) Stop(ctx context.Context) error {
+func (a *runtimeAttachment) Spec() pipeline.Spec {
+	if a == nil || a.owner == nil {
+		return pipeline.Spec{}
+	}
+	graph := a.owner.Describe()
+	nodes := make(map[string]struct{}, len(a.nodes))
+	for i := range a.nodes {
+		nodes[a.nodes[i].String()] = struct{}{}
+	}
+	spec := pipeline.Spec{Name: a.name, Realtime: graph.Realtime}
+	for i := range graph.Nodes {
+		if _, ok := nodes[graph.Nodes[i].Name]; ok {
+			spec.Nodes = append(spec.Nodes, graph.Nodes[i])
+		}
+	}
+	for i := range graph.Edges {
+		if _, ok := nodes[graph.Edges[i].To.String()]; ok {
+			spec.Edges = append(spec.Edges, graph.Edges[i])
+		}
+	}
+	return spec
+}
+
+func (a *runtimeAttachment) Stats() BranchStats {
+	if a == nil || a.owner == nil {
+		return BranchStats{}
+	}
+	return a.owner.Stats()
+}
+
+func (a *runtimeAttachment) Close(ctx context.Context) error {
 	if a == nil {
 		return nil
 	}
@@ -297,8 +355,8 @@ func validateRuntimeBranch(branch RuntimeBranch) error {
 	if branch.name == "" {
 		return runtimeBranchInvalidError("branch name is empty", "start with goav.Branch(\"name\")")
 	}
-	if branch.from == "" {
-		return runtimeBranchInvalidError("branch source is empty", "call .From(node) with a node from Task.Describe()")
+	if branch.from == "" && branch.tap == "" {
+		return runtimeBranchInvalidError("branch source is empty", "call .FromTap(name) with a tap from Task.Taps() or .From(node) with an expert graph node")
 	}
 	if branch.sink == nil {
 		return runtimeBranchInvalidError("branch sink is missing", "finish the branch with .To(sink)")
@@ -360,6 +418,14 @@ func routeBetween(from pipeline.NodeRef, to pipeline.NodeRef) pipeline.Route {
 	}
 }
 
+func nextRuntimeAttachmentID(name string) string {
+	seq := runtimeAttachmentSeq.Add(1)
+	if name == "" {
+		return "attachment-" + strconv.FormatUint(seq, 10)
+	}
+	return name + "-" + strconv.FormatUint(seq, 10)
+}
+
 func specHasNode(spec pipeline.Spec, name string) bool {
 	for i := range spec.Nodes {
 		if spec.Nodes[i].Name == name {
@@ -388,9 +454,29 @@ func runtimeBranchAnchorMissingError(node string) error {
 		Node:      node,
 		Reason:    "branch source node does not exist in the running task graph",
 		Suggestions: []string{
-			"call task.Describe() and use a node name from the graph spec",
-			"use .FromDecodedAudio(...) or .FromDecodedVideo(...) for the common raw decoded frame anchors",
-			"attach from a stable decoded-frame node when the branch needs raw frames",
+			"call task.Taps() and use .FromTap(name) for stable media outlets",
+			"call task.Describe() and use a node name from the graph spec for expert graph attachments",
+			"attach from a stable decoded-frame tap when the branch needs raw frames",
+		},
+		Cause: pipeline.ErrUnknownNode,
+	}
+}
+
+func runtimeBranchTapMissingError(name string, taps []TapInfo) error {
+	details := make([]string, 0, len(taps))
+	for i := range taps {
+		details = append(details, taps[i].Name+": "+string(taps[i].Domain)+" "+string(taps[i].MediaKind))
+	}
+	return &BuildError{
+		Code:      "runtime_branch_tap_missing",
+		Operation: "attach runtime branch",
+		Node:      name,
+		Reason:    "branch source tap does not exist in the running task",
+		Details:   details,
+		Suggestions: []string{
+			"add .Tap(" + strconv.Quote(name) + ") at the point you want to attach",
+			"call task.Taps() before attaching runtime branches",
+			"use .From(node) only for expert graph-node attachments",
 		},
 		Cause: pipeline.ErrUnknownNode,
 	}

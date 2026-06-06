@@ -716,7 +716,7 @@ func TestRuntimeBuilderTranscodeReportsEmptyPlanParts(t *testing.T) {
 				t.Fatalf("err = %v, want transcode_plan_empty wrapping ErrUnsupportedBuild", err)
 			}
 			if !strings.Contains(err.Error(), tt.want) ||
-				!strings.Contains(err.Error(), "goav.Transcode") {
+				!strings.Contains(err.Error(), "goav.From") {
 				t.Fatalf("err = %v, want empty plan guidance", err)
 			}
 		})
@@ -764,7 +764,7 @@ func TestRuntimeBuilderTranscodeReportsMixedTransformChain(t *testing.T) {
 		t.Fatalf("err = %v, want transcode_transform_chain_unsupported wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "cannot combine resize and resample") ||
-		!strings.Contains(err.Error(), "Video(...)/Audio(...)") {
+		!strings.Contains(err.Error(), ".Video().Decode().Tap") {
 		t.Fatalf("err = %v, want transform chain guidance", err)
 	}
 }

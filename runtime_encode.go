@@ -347,7 +347,7 @@ func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 		Suggestions: []string{
 			"use .Opus(...), .VP8(...), or .VP9(...) in recipe encode paths",
 			"set codec.EncodeConfig.Parameters.ID in the expert builder",
-			"use goav.Copy() or Record(...) when no encode step is intended",
+			"use goav.Copy() or .Copy().To(...) when no encode step is intended",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

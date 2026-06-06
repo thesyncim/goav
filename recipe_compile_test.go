@@ -113,7 +113,7 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 				!strings.Contains(err.Error(), "intent") ||
 				!strings.Contains(err.Error(), "attached") ||
 				!strings.Contains(err.Error(), "custom compiler passes") ||
-				!strings.Contains(err.Error(), "goav.Record") {
+				!strings.Contains(err.Error(), "goav.From") {
 				t.Fatalf("err = %v, want attachment mismatch guidance", err)
 			}
 			if !errors.As(err, &buildErr) || buildErr.Code != "recipe_attachment_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
@@ -393,7 +393,7 @@ func TestResolvedJobOutputFormatsLowerIntoBuilder(t *testing.T) {
 			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 		),
 	)
-	job := Record(
+	job := From(
 		RTP(&runtimeRTPReceiver{
 			streams: []Stream{{
 				ID:   "audio",
@@ -404,8 +404,7 @@ func TestResolvedJobOutputFormatsLowerIntoBuilder(t *testing.T) {
 				},
 			}},
 		}).Name("audio").Codec(Opus()),
-		FileOutput("recording.ogg", io.Discard),
-	).UseRuntime(runtime)
+	).Copy().To(FileOutput("recording.ogg", io.Discard)).UseRuntime(runtime)
 
 	resolved, err := compileJobRecipeForBuild(job)
 	if err != nil {
@@ -765,7 +764,7 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 			},
 			code:  "decode_adapter_missing",
 			cause: codec.ErrNotFound,
-			want:  []string{"no decoder adapter", "codec=opus", "goav.Record"},
+			want:  []string{"no decoder adapter", "codec=opus", "goav.From"},
 		},
 		{
 			name: "descriptor-only decoder",
@@ -880,7 +879,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 			},
 			code:  "decode_adapter_missing",
 			cause: codec.ErrNotFound,
-			want:  []string{"no decoder adapter", "codec=opus", "goav.Record"},
+			want:  []string{"no decoder adapter", "codec=opus", "goav.From"},
 		},
 		{
 			name: "job probed descriptor-only decoder",
@@ -934,7 +933,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 			},
 			code:  "decode_adapter_missing",
 			cause: codec.ErrNotFound,
-			want:  []string{"no decoder adapter", "codec=vp9", "goav.Record"},
+			want:  []string{"no decoder adapter", "codec=vp9", "goav.From"},
 		},
 	}
 	for _, tt := range tests {
@@ -1124,7 +1123,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			},
 			outputs: []OutputSpec{frameSink, fileOutput},
 			code:    "output_kind_mixed",
-			want:    []string{"cannot mix frame sinks and muxed outputs", "goav.Transcode"},
+			want:    []string{"cannot mix frame sinks and muxed outputs", ".Tap(...).Branch(...)"},
 		},
 		{
 			name: "mux output without encoder",
@@ -1251,7 +1250,7 @@ func TestMigrationGraphCompilerPassWrapsUnsupportedRecipeShape(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want recipe_graph_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	for _, want := range []string{"recipe intent", "inputs: 1", "outputs: 0", "goav.Record", "goav.Transcode"} {
+	for _, want := range []string{"recipe intent", "inputs: 1", "outputs: 0", "goav.From", ".Copy().To", ".Branch"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
@@ -1482,23 +1481,6 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 			want: "automatic codec selection",
 		},
 		{
-			name: "copy unresolved",
-			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
-				intent: Intent{
-					Inputs: []InputIntent{{Name: "input.ivf"}},
-					Streams: []StreamIntent{{
-						Name:    "copy",
-						Select:  StreamSelect{Type: av.MediaVideo},
-						Encode:  Copy(),
-						RouteTo: []string{"web"},
-					}},
-				},
-			},
-			code: "copy_unresolved",
-			want: "record/remux",
-		},
-		{
 			name: "duplicate branch output",
 			state: recipeCompileState{
 				operation: transcodeRecipeOperation,
@@ -1664,10 +1646,9 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 }
 
 func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
-	job := Record(
+	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
-		FileOutput("recording.ivf", io.Discard),
-	)
+	).Copy().To(FileOutput("recording.ivf", io.Discard))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -1682,8 +1663,8 @@ func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	if !resolved.specReady {
 		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
 	}
-	if resolved.intent.Name != "record" {
-		t.Fatalf("intent name = %q, want record", resolved.intent.Name)
+	if resolved.intent.Name != "from" {
+		t.Fatalf("intent name = %q, want from", resolved.intent.Name)
 	}
 	if len(resolved.intent.Inputs) != 1 || resolved.intent.Inputs[0].Name != "input.ivf" {
 		t.Fatalf("intent inputs = %+v", resolved.intent.Inputs)
@@ -1703,14 +1684,20 @@ func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	}
 }
 
-func TestCompileTranscodeRecipeCarriesIntentAndPlan(t *testing.T) {
-	job := Transcode(FileInput("input.ivf", strings.NewReader(""))).
-		Video("360p").Resize(640, 360).VP9(600_000).To("web").
+func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Tap("video.decoded").
+		Branch("360p").
+		Resize(640, 360).
+		VP9(600_000).
+		To("web").
 		Output("web", FileOutput("web.ivf", io.Discard))
 
-	resolved, err := compileTranscodeRecipe(job)
+	resolved, err := compileJobRecipe(job)
 	if err != nil {
-		t.Fatalf("compileTranscodeRecipe() error = %v", err)
+		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
 	builder, ok := resolved.builder.(*builder)
 	if !ok {
@@ -1720,13 +1707,13 @@ func TestCompileTranscodeRecipeCarriesIntentAndPlan(t *testing.T) {
 		t.Fatalf("builder transcodes = %d, want 1", len(builder.transcodes))
 	}
 	if resolved.compiler == nil || resolved.migration == nil {
-		t.Fatal("compileTranscodeRecipe() did not select a migration graph compiler")
+		t.Fatal("compileJobRecipe() did not select a migration graph compiler")
 	}
 	if !resolved.specReady {
-		t.Fatal("compileTranscodeRecipe() did not emit a planned graph spec")
+		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
 	}
-	if resolved.intent.Name != "transcode" {
-		t.Fatalf("intent name = %q, want transcode", resolved.intent.Name)
+	if resolved.intent.Name != "from" {
+		t.Fatalf("intent name = %q, want from", resolved.intent.Name)
 	}
 	if len(resolved.intent.Streams) != 1 || resolved.intent.Streams[0].Name != "360p" {
 		t.Fatalf("intent streams = %+v", resolved.intent.Streams)
@@ -1744,7 +1731,7 @@ func TestCompileTranscodeRecipeCarriesIntentAndPlan(t *testing.T) {
 }
 
 func TestRecipeResolvedBuildUsesPlannedCompiler(t *testing.T) {
-	job := Record(
+	job := From(
 		RTP(&runtimeRTPReceiver{
 			streams: []Stream{{
 				ID:   "video",
@@ -1755,8 +1742,7 @@ func TestRecipeResolvedBuildUsesPlannedCompiler(t *testing.T) {
 				},
 			}},
 		}).Name("video").Codec(VP8()),
-		FileOutput("recording.ivf", io.Discard),
-	)
+	).Copy().To(FileOutput("recording.ivf", io.Discard))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {

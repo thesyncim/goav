@@ -6,41 +6,35 @@ validation gates. This roadmap keeps the broader phase view.
 ## Next-Level Priorities
 
 The recipe surface is now pointed in the right direction; the next work is to
-make the implementation and adapter coverage match the promise.
+make the implementation match the composable planner promise.
 
-1. Keep first-page examples executable with `goav.Default()`, or move examples
-   that require unavailable containers into clearly labeled adapter sections.
-2. Treat adapter coverage as product surface, not internals. The next container
-   targets are WebM and Ogg because they unlock expected WebRTC/RTP record and
-   transcode examples; WAV and Y4M can follow when they unlock simple audio or
-   raw-video workflows.
-3. Make `Intent` the only recipe compiler input. Recipes should lower through
-   validation, probing, stream resolution, format/codec resolution,
-   demux/depacketize, decode, transform, encode, mux, route, buffer-policy, and
-   graph-emission passes instead of adding a new matcher for each workflow
-   combination. First private recipe intent compiler state and migration
-   graph-compiler selection/spec emission are active; the existing fixed graph
-   compiler list is migration scaffolding.
-4. Continue expanding transcode into a media output composer: one output label is
-   a mux group that can receive coordinated audio and video branches, not a
-   synonym for one rendition. First mixed-stream compiler slice active.
-5. Keep `pipeline.Spec` as the core graph object. Human graph rendering and any
-   future workflow report should live outside runtime composition behind
-   optional tooling, not as text/DOT/Mermaid methods or beginner recipe APIs.
-6. Keep planned fanout and runtime control-plane separate. `Tee` composes
-   repeated stream chains before build; `Task.Attach(ctx, goav.Branch(...))`
-   adds stoppable stage/sink branches to direct task graphs while running.
-   Buffered runtime attachments and live muxed output attachments are the next
-   control-plane slices, not a separate graph DSL.
-7. Promote live codec-change behavior into explicit policy: compatible rebind,
+1. Make `Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph` the normal
+   recipe path. The old builder/compiler dispatch may remain as a migration
+   shim, but no new recipe workflow should require another matcher.
+2. Treat declared branches as generic branch operations and mux groups.
+   `From(input).Audio()/Video().Tap(...).Branch(...)` and `Tee(...)` flows
+   should produce equivalent `MediaPlan` shapes where possible.
+3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
+   for `From`, packet copy, stream decode, branch composition, and flow tee onto
+   direct media-plan graph construction.
+4. Add a capability model for streams, codecs, filters, and containers so the
+   planner can explain copy/decode/encode choices, missing adapters, transform
+   incompatibilities, and mux-output conflicts before runtime execution.
+5. Keep first-page examples executable with `goav.Default()`, or keep examples
+   that require unavailable containers in clearly labeled adapter sections.
+6. Treat adapter coverage as product surface after the planner can absorb it.
+   WebM and Ogg remain the next high-value containers because they unlock
+   expected RTP/WebRTC record and muxed audio/video examples.
+7. Generalize flows as reusable intent fragments over stream chains, not as a
+   second graph DSL. `Tee` remains planned fanout; runtime `Task.Attach(ctx,
+   goav.Branch(...))` remains the late control-plane tap for running direct
+   graphs.
+8. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
-   choices should be visible to realtime users. First recipe policy slice
-   active for today's supported behavior.
-8. Add runtime observability through task stats, traces, drop reasons, and
+   choices should be visible to realtime users.
+9. Add runtime observability through task stats, traces, drop reasons, and
    latency counters. First task stats slice active for graph message/event/drop
    counters.
-9. Keep beginner signatures literal and narrow. `Record(input, outputs...)` is
-   the model: public signatures should show exactly what callers may pass.
 10. Prepare v0.1 only after README examples compile/run or clearly name their
     adapter requirements, default and tagged tests pass, core stays cgo-free,
     hot-path allocation guards remain green, and one public RTP/WebRTC record
@@ -128,12 +122,13 @@ make the implementation and adapter coverage match the promise.
   mapping; runtime stream fixtures for those broader layouts remain.
 - `goav1` adapter as it matures.
 
-## Phase 5: High-level API
+## Phase 5: High-level API And Planner
 
-- Fluent receive/decode/filter/encode/output builder compilers for selected
-  streams. First file/protocol and RTP/WebRTC slices are active.
-- Branchable multi-rendition transcode builder compilers and fluent explicit
-  graph fanout through multi-target routes. First shared-decode slice is active.
+- Fluent receive/decode/filter/encode/output recipes for selected streams.
+  First file/protocol and RTP/WebRTC migration slices are active.
+- `MediaPlan` as the shared branch-operation IR for record, decode, flow tee,
+  and transcode recipes. First `Explain(ctx)` report slice is active; direct
+  `Describe`/`Build` lowering remains planned.
 - Reusable `AudioFlow`/`VideoFlow` branches with `.Tee(...)`. Build-time
   file/protocol and RTP/WebRTC slices are active; runtime stage/sink attachments
   are active for direct task graphs; buffered attachments and late recording outputs

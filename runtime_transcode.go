@@ -461,7 +461,7 @@ func transcodePlanEmptyError(kind string) error {
 	suggestions := []string{
 		"add at least one transcode.Rendition with a selector and encoder",
 		"add at least one transcode.Output with a target output",
-		"use goav.Transcode(input).Video(...).To(...).Output(...) for the recipe API",
+		"use goav.From(input).Video().Decode().Tap(...).Branch(...).To(label).Output(label, output) for the recipe API",
 	}
 	reason := "transcode plan has no " + kind
 	return &BuildError{
@@ -619,7 +619,7 @@ func advancedTranscodeTransformChainError(name string) error {
 		Suggestions: []string{
 			"use resize on video renditions and resample on audio renditions",
 			"split audio and video work into separate transcode.Rendition values",
-			"use goav.Transcode(input).Video(...)/Audio(...) to keep transforms stream-scoped",
+			"use goav.From(input).Video().Decode().Tap(...).Branch(...) or .Audio().Decode().Tap(...).Branch(...) to keep transforms stream-scoped",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

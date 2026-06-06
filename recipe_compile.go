@@ -22,6 +22,7 @@ type recipeResolved struct {
 	transcodeInputProbe      format.ProbeResult
 	transcodeInputProbeReady bool
 	outputFormats            map[string]av.FormatID
+	mediaPlan                mediaPlan
 	plan                     transcodepkg.Plan
 }
 
@@ -164,6 +165,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		transcodeInputProbe:      state.transcodeInputProbe,
 		transcodeInputProbeReady: state.transcodeInputProbeReady,
 		outputFormats:            state.outputFormatMap(),
+		mediaPlan:                buildMediaPlan(&state),
 		plan:                     state.plan,
 	}, nil
 }
@@ -176,10 +178,53 @@ func (r recipeResolved) Describe() (pipeline.Spec, error) {
 }
 
 func (r recipeResolved) Build(ctx context.Context) (Task, error) {
+	var (
+		task Task
+		err  error
+	)
 	if r.compiler != nil && r.migration != nil {
-		return r.compiler.build(ctx, r.migration)
+		task, err = r.compiler.build(ctx, r.migration)
+	} else {
+		task, err = r.builder.Build(ctx)
 	}
-	return r.builder.Build(ctx)
+	if err != nil {
+		return nil, err
+	}
+	installTaskTaps(task, r.mediaPlan.Taps)
+	return task, nil
+}
+
+func installTaskTaps(mediaTask Task, taps []planTap) {
+	if len(taps) == 0 {
+		return
+	}
+	runtimeTask, ok := mediaTask.(*task)
+	if !ok || runtimeTask == nil {
+		return
+	}
+	runtimeTask.taps = tapInfosFromPlan(taps)
+}
+
+func tapInfosFromPlan(taps []planTap) []TapInfo {
+	out := make([]TapInfo, 0, len(taps))
+	seen := make(map[string]struct{}, len(taps))
+	for i := range taps {
+		if taps[i].Name == "" {
+			continue
+		}
+		if _, ok := seen[taps[i].Name]; ok {
+			continue
+		}
+		seen[taps[i].Name] = struct{}{}
+		out = append(out, TapInfo{
+			Name:      taps[i].Name,
+			MediaKind: taps[i].MediaKind,
+			Domain:    taps[i].Domain,
+			Caps:      taps[i].Caps,
+			Node:      taps[i].Node,
+		})
+	}
+	return out
 }
 
 func compileJobRecipe(job *Job) (recipeResolved, error) {
@@ -250,6 +295,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 func compileJobTeeRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
 	branchJob := &TranscodeJob{
 		runtime:     job.runtime,
+		name:        job.name,
 		streams:     append([]streamBuild(nil), job.teeStreams...),
 		outputs:     append([]namedOutputSpec(nil), job.teeOutputs...),
 		err:         job.err,
@@ -380,8 +426,8 @@ func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
 		Reason:    "stream recipes use stream-local outputs",
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
-			"use goav.Record(input, output) or goav.From(input).To(output...) for packet-preserving record/remux",
-			"use goav.Transcode(input) when one input needs separate record, preview, or ladder branches",
+			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
+			"use goav.From(input).Video().Decode().Tap(...).Branch(...).To(label).Output(label, output) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -395,8 +441,8 @@ func jobOutputReferenceMissingError(operation string, stream StreamIntent, label
 		Reason:    "stream route output " + label + " is not attached",
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
-			"use goav.Record(input, output...) or goav.From(input).To(output...) for packet-preserving record/remux",
-			"use goav.Transcode(input) when a stream branch needs named output labels",
+			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
+			"define named branch outputs with .Output(label, output)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -409,7 +455,7 @@ func jobIntentTooManyStreamsError(operation string, streams []StreamIntent) erro
 		Reason:    "ordinary stream recipes select one audio or video stream",
 		Suggestions: []string{
 			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
-			"use goav.Transcode(input) for multiple audio or video branches",
+			"use goav.From(input).Video().Decode().Tap(...).Branch(...) for multiple branches from one stream",
 			"use the expert graph API for custom multi-stream routing",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -493,7 +539,7 @@ func streamOperationMissingError(operation string, node string) error {
 		Suggestions: []string{
 			"call .To(goav.FrameSink(...)) to receive decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before writing to a file output",
-			"use goav.Record(input, output) for packet-preserving record or remux",
+			"use .Copy().To(output) for packet-preserving record or remux",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -584,6 +630,9 @@ func validateJobStreamAttachments(operation string, stream StreamIntent, steps [
 				continue
 			}
 			return jobStreamTransformAttachmentMismatchError(operation, stream, step, len(stream.Transforms))
+		}
+		if step.tap != "" {
+			continue
 		}
 		return streamStageMissingError(stream)
 	}
@@ -758,7 +807,7 @@ func recipeAttachmentMismatchError(operation string, kind string, intentCount in
 			fmt.Sprintf("attached %s: %d", kind, attachmentCount),
 		},
 		Suggestions: []string{
-			"build recipes through goav.Record, goav.From, goav.Decode, or goav.Transcode",
+			"build recipes through goav.From(input)",
 			"keep custom compiler passes aligned with the public Intent and captured attachments",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -780,9 +829,9 @@ func validatePacketJobOutputsPass() recipeCompilePass {
 				Node:      state.outputAttachments[i].label(fmt.Sprintf("output-%d", i)),
 				Reason:    "packet-preserving recipes write to muxed outputs, not frame sinks",
 				Suggestions: []string{
-					"use goav.Decode(input, goav.FrameSink(sink)) for decoded frames when the input has one obvious stream",
-					"use goav.From(input).Audio().To(goav.FrameSink(sink)) or .Video().To(...) when stream selection matters",
-					"use goav.FileOutput(...) or goav.URIOutput(...) with goav.Record(...) for packet-preserving output",
+					"use goav.From(input).Stream().Decode().To(goav.FrameSink(sink)) for decoded frames when the input has one obvious stream",
+					"use goav.From(input).Audio().Decode().To(goav.FrameSink(sink)) or .Video().Decode().To(...) when stream selection matters",
+					"use goav.FileOutput(...) or goav.URIOutput(...) with .Copy().To(...) for packet-preserving output",
 				},
 				Cause: ErrUnsupportedBuild,
 			}
@@ -978,9 +1027,9 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		Reason:    "recipe intent did not match any standard graph compiler",
 		Details:   details,
 		Suggestions: []string{
-			"use goav.Record(input, output...) for packet-preserving record or remux",
+			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
 			"use goav.From(input).Audio().To(goav.FrameSink(...)) or .Video().To(...) for decoded frames",
-			"use goav.Transcode(input) when one input needs named branches or shared outputs",
+			"use goav.From(input).Video().Decode().Tap(...).Branch(...).To(label).Output(label, output) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

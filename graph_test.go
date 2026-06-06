@@ -154,10 +154,10 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if err := attachment.Stop(ctx); err != nil {
+	if err := attachment.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := attachment.Stop(ctx); err != nil {
+	if err := attachment.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
 	close(source.resume[1])
@@ -173,7 +173,7 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	}
 }
 
-func TestTaskStopAttachmentsStopsAllRuntimeBranches(t *testing.T) {
+func TestTaskDetachClosesRuntimeBranches(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	source := &runtimeBranchStepSource{
@@ -230,16 +230,16 @@ func TestTaskStopAttachmentsStopsAllRuntimeBranches(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if err := task.StopAttachments(ctx); err != nil {
+	if err := task.Detach(ctx, left); err != nil {
 		t.Fatal(err)
 	}
-	if err := task.StopAttachments(ctx); err != nil {
+	if err := task.Detach(ctx, right); err != nil {
 		t.Fatal(err)
 	}
-	if err := left.Stop(ctx); err != nil {
+	if err := left.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := right.Stop(ctx); err != nil {
+	if err := right.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
 	close(source.resume[1])
@@ -275,7 +275,7 @@ func TestTaskCloseStopsRuntimeAttachments(t *testing.T) {
 	if !stage.closed || !sink.closed {
 		t.Fatalf("closed stage=%v sink=%v", stage.closed, sink.closed)
 	}
-	if err := attachment.Stop(context.Background()); err != nil {
+	if err := attachment.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -332,18 +332,14 @@ func TestTaskAttachRejectsRunningBufferedGraph(t *testing.T) {
 	}
 }
 
-func TestRuntimeBranchDecodedAnchorsUseCompilerNodeNames(t *testing.T) {
-	audio := Branch("levels").FromDecodedAudio().To(&runtimeTestSink{name: "levels"})
-	if audio.from != "decode-audio" {
-		t.Fatalf("audio anchor = %q, want decode-audio", audio.from)
+func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
+	audio := Branch("levels").FromTap("audio.decoded").To(&runtimeTestSink{name: "levels"})
+	if audio.tap != "audio.decoded" || audio.from != "" {
+		t.Fatalf("audio anchor tap=%q from=%q, want tap only", audio.tap, audio.from)
 	}
-	video := Branch("screenshots").FromDecodedVideo(StreamName("main")).To(&runtimeTestSink{name: "shots"})
-	if video.from != "decode-main" {
-		t.Fatalf("video anchor = %q, want decode-main", video.from)
-	}
-	indexed := Branch("indexed").FromDecodedAudio(StreamIndex(0)).To(&runtimeTestSink{name: "out"})
-	if indexed.from != "decode-audio" {
-		t.Fatalf("indexed anchor = %q, want decode-audio", indexed.from)
+	expert := Branch("expert").From("decode-audio").To(&runtimeTestSink{name: "expert"})
+	if expert.from != "decode-audio" || expert.tap != "" {
+		t.Fatalf("expert anchor tap=%q from=%q, want node only", expert.tap, expert.from)
 	}
 }
 

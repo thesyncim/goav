@@ -17,11 +17,11 @@ and keyframe recovery are represented as events instead of hidden side effects.
 ```text
 Application
   |
-Recipes: Record, Decode, Transcode, From/To
+Recipes: From, stream chains, taps, branches, outputs
   |
 Intent graph: inputs, streams, transforms, outputs, policies
   |
-Intent compiler passes
+MediaPlan planner passes
   |
 Pipeline graph
   |
@@ -34,21 +34,26 @@ Format, RTP, WebRTC, codec, and filter adapters
 registries, with small adapter registration hooks for optional codec,
 container, and filter integrations. `goav.Default()` registers the standard
 in-repo adapters for the beginner path, while `goav.New(...)` keeps minimal and
-embedded runtimes explicit. Package-level recipes such as `Record(...)`,
-`Decode(...)`, and `Transcode(...)` are now the beginner-facing front door. They
-produce a small intent model. The target architecture is one intent compiler
-that validates, probes, resolves streams, resolves formats/codecs, inserts
-demux or depacketize boundaries, inserts decode/transform/encode/mux stages,
+embedded runtimes explicit. `From(input)` is the beginner-facing front door. It
+produces a small intent model for packet copy, stream decode, transform, encode,
+declared branch composition, and runtime tap naming. The target architecture is one media planner that
+validates, probes, resolves streams, resolves formats/codecs, chooses
+packet-copy or decode paths, inserts demux or depacketize boundaries, inserts
+select/decode/transform/stage/encode operations, groups branches by outputs,
 assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
-the runnable graph. The current private graph compilers are migration
-scaffolding while each workflow moves onto that shared path. The first active
-slice is a private recipe intent compiler state: `Job` and `TranscodeJob` carry
-their public `Intent` plus concrete readers, writers, sinks, and stages through
-validation, planning, and lowering passes before handing off to the migration
-builder. The same pass chain now also selects the migration graph compiler used
-for `Describe` and `Build`, and emits the pre-build `pipeline.Spec`, so recipe
-graph matching and spec planning are no longer hidden behind the builder entry
-point.
+the runnable graph. `MediaPlan` is the migration IR for that work: declared
+branches, flow tee branches, decode recipes, and packet-preserving copy/remux
+all become ordinary branch operations over the same model. The current private
+graph compilers are migration scaffolding while each workflow moves onto that
+shared path.
+
+The active recipe compiler state carries public `Intent` plus concrete readers,
+writers, sinks, and stages through validation, media-plan creation, migration
+builder lowering, and planned-spec emission. `Job.Explain(ctx)` already reports
+the `MediaPlan` branch operations, taps, and decisions. `Build` and `Describe`
+still use the migration graph compilers for
+execution, so the next architectural pressure is moving those calls to
+`MediaPlan -> pipeline.Spec -> pipeline.Graph` directly.
 
 The handle-based graph builder remains available as the advanced layer through
 `Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed
@@ -58,20 +63,21 @@ method on the public `Runtime` interface or an exported top-level type.
 Described graphs and execution graphs must stay equivalent, whether the current
 slice is still using a fixed compiler or has moved onto intent passes. The graph
 layer stays available for inspection and custom stages. Recipe `Explain(ctx)`
-returns structured workflow-report data plus the same `pipeline.Spec`; optional
-diagram or prose rendering lives outside runtime composition. A route carries
-all media by default, or matches one stream or event type.
+returns structured workflow-report data, branch operations, planner decisions,
+and the same `pipeline.Spec`; optional diagram or prose rendering lives outside
+runtime composition. A route carries all media by default, or matches one stream
+or event type.
 
 `Task.Attach` is the first runtime control-plane operation. It attaches a named
 stage/sink branch to a built direct graph and returns an attachment handle with
-`Stop(ctx)`. `Task.StopAttachments(ctx)` removes every live attachment as one
-control-plane action, and `Task.Close()` stops attachments before closing the
-graph. Common raw-frame anchors use `FromDecodedAudio(...)` and
-`FromDecodedVideo(...)`; expert graph nodes can still be addressed with
-`From(node)` and `Task.Describe`. This is for late analysis taps, meters, and
-screenshot collectors that should observe future messages without rebuilding the
-task. Buffered runtime attachments and late muxed output branches remain
-separate slices because they need queue, worker, and mux-output lifecycle
+`Close(ctx)`. `Task.Detach(ctx, h)` removes one live attachment, and
+`Task.Close()` stops attachments before closing the graph. Stable recipe outlets
+come from `.Tap(name)` and are listed by `Task.Taps()`; runtime branches attach
+with `goav.Branch("name").FromTap(name)`. Expert graph nodes can still be
+addressed with `From(node)` and `Task.Describe`. This is for late analysis taps,
+meters, and screenshot collectors that should observe future messages without
+rebuilding the task. Buffered runtime attachments and late muxed output branches
+remain separate slices because they need queue, worker, and mux-output lifecycle
 management.
 
 The current compilers cover:
@@ -273,13 +279,19 @@ That shape supports:
 - codec switch events -> decoder reset
 - packet loss events -> RTCP feedback and keyframe requests
 
-## Multi-output transcoding
+## Multi-output media planning
 
-The `transcode` package keeps the internal plan shape for renditions and output
-selection. The runtime compiler turns that plan into a graph with one
-shared selected decode, multiple encoder branches, and mux outputs that select
-renditions by name or label. Resize and resample branch configs become filter
-stages when matching factories are registered.
+`Transcode` is user-facing syntax, not a runtime engine. It lowers into the
+same `MediaPlan` branch shape as `From(input).Audio()/Video()` and flow
+`Tee(...)`: input ref, stream selector, operation chain, output refs, and mux
+groups. The older `transcode` package and runtime compiler remain migration
+scaffolding while execution moves onto direct media-plan graph construction.
+
+Multiple branches that select the same input stream should share upstream demux,
+selection, and decode nodes unless a future isolation policy asks otherwise.
+One output label is a mux group that can receive coordinated encoded branches
+from different media streams. Resize and resample configs become ordinary
+transform operations when matching factories are registered.
 
 Typical use cases:
 
