@@ -1,0 +1,182 @@
+package matroska
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestExternalFFProbeRecognizesMatroskaWebRTCCodecs(t *testing.T) {
+	tool := requireExternalTool(t, "ffprobe")
+	file := writeCompatibilityMatroska(t)
+	output := runExternalTool(t, tool, "-v", "error", "-show_entries", "stream=codec_name,width,height,sample_rate,channels", "-of", "default=nw=1", file)
+	for _, codec := range []string{"opus", "av1", "h264", "vp9", "vp8"} {
+		if !strings.Contains(output, codec) {
+			t.Fatalf("ffprobe output missing %s:\n%s", codec, output)
+		}
+	}
+}
+
+func TestExternalFFProbeRecognizesGeneratedMatroskaCodecPrivate(t *testing.T) {
+	tool := requireExternalTool(t, "ffprobe")
+	tests := []struct {
+		name  string
+		codec string
+		file  string
+	}{
+		{name: "av1", codec: "av1", file: writeGeneratedPrivateMatroska(t, CodecAV1, av1SequenceHeaderOBU())},
+		{name: "h264", codec: "h264", file: writeGeneratedPrivateMatroska(t, CodecH264, h264AnnexBParameterAccessUnit())},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := runExternalTool(t, tool, "-v", "error", "-show_entries", "stream=codec_name,width,height", "-of", "default=nw=1", tt.file)
+			if !strings.Contains(output, tt.codec) {
+				t.Fatalf("ffprobe output missing %s:\n%s", tt.codec, output)
+			}
+		})
+	}
+}
+
+func TestExternalMatroskaToolCompat(t *testing.T) {
+	file := writeCompatibilityMatroska(t)
+	if tool, ok := lookupExternalTool("mkvalidator"); ok {
+		runExternalTool(t, tool, file)
+	}
+	if tool, ok := lookupExternalTool("mkvinfo"); ok {
+		runExternalTool(t, tool, file)
+	}
+	if tool, ok := lookupExternalTool("mkvextract"); ok {
+		out := filepath.Join(t.TempDir(), "track-0.bin")
+		runExternalTool(t, tool, "tracks", file, "0:"+out)
+	}
+	if tool, ok := lookupExternalTool("mkvmerge"); ok {
+		out := filepath.Join(t.TempDir(), "remux.mkv")
+		runExternalTool(t, tool, "-o", out, file)
+	}
+}
+
+func writeCompatibilityMatroska(t *testing.T) string {
+	t.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opusID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	av1ID, err := muxer.AddTrack(Track{
+		Type:         TrackVideo,
+		Codec:        CodecAV1,
+		Video:        VideoConfig{Width: 16, Height: 16},
+		CodecPrivate: av1CodecConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h264ID, err := muxer.AddTrack(Track{
+		Type:         TrackVideo,
+		Codec:        CodecH264,
+		Video:        VideoConfig{Width: 16, Height: 16},
+		CodecPrivate: h264AVCDecoderConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vp9ID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP9,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vp8ID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: opusID, TimeNS: 0, Keyframe: true, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: av1ID, TimeNS: 0, Keyframe: true, Data: av1SequenceHeaderOBU()},
+		{TrackID: h264ID, TimeNS: 0, Keyframe: true, Data: h264AnnexBAccessUnit()},
+		{TrackID: vp9ID, TimeNS: 0, Keyframe: true, Data: []byte{0x83, 0x49, 0x83}},
+		{TrackID: vp8ID, TimeNS: 0, Keyframe: true, Data: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatalf("write packet %d: %v", i, err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "sample.mkv")
+	if err := os.WriteFile(file, buffer.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
+func writeGeneratedPrivateMatroska(t *testing.T, codec Codec, data []byte) string {
+	t.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: codec,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: data}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "generated.mkv")
+	if err := os.WriteFile(file, buffer.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
+func requireExternalTool(t *testing.T, name string) string {
+	t.Helper()
+	tool, ok := lookupExternalTool(name)
+	if !ok {
+		t.Skipf("%s not installed", name)
+	}
+	return tool
+}
+
+func lookupExternalTool(name string) (string, bool) {
+	tool, err := exec.LookPath(name)
+	return tool, err == nil
+}
+
+func runExternalTool(t *testing.T, tool string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(tool, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s failed: %v\n%s", filepath.Base(tool), strings.Join(args, " "), err, output)
+	}
+	return string(output)
+}
