@@ -22,8 +22,17 @@ type recipeCompileState struct {
 	intent    Intent
 	runtime   Runtime
 
-	job       *Job
-	transcode *TranscodeJob
+	jobPresent       bool
+	transcodePresent bool
+	recipeErr        error
+
+	inputs     []InputSpec
+	jobOutputs []OutputSpec
+	stream     *jobStreamBuild
+
+	transcodeInput   InputSpec
+	transcodeStreams []streamBuild
+	transcodeOutputs []namedOutputSpec
 
 	outputs []OutputSpec
 	plan    transcodepkg.Plan
@@ -112,11 +121,15 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 func compileJobRecipe(job *Job) (recipeResolved, error) {
 	state := recipeCompileState{
 		operation: "build job",
-		job:       job,
 	}
 	if job != nil {
+		state.jobPresent = true
 		state.intent = job.Intent()
 		state.runtime = job.runtime
+		state.recipeErr = job.err
+		state.inputs = append([]InputSpec(nil), job.inputs...)
+		state.jobOutputs = append([]OutputSpec(nil), job.outputs...)
+		state.stream = cloneJobStreamBuild(job.stream)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateJobIntentPass(),
@@ -133,11 +146,15 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 	state := recipeCompileState{
 		operation: transcodeRecipeOperation,
-		transcode: job,
 	}
 	if job != nil {
+		state.transcodePresent = true
 		state.intent = job.Intent()
 		state.runtime = job.runtime
+		state.recipeErr = job.err
+		state.transcodeInput = job.input
+		state.transcodeStreams = cloneStreamBuilds(job.streams)
+		state.transcodeOutputs = append([]namedOutputSpec(nil), job.outputs...)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		planTranscodeIntentPass(),
@@ -150,8 +167,7 @@ func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 
 func validateJobIntentPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job intent", fn: func(state *recipeCompileState) error {
-		job := state.job
-		if job == nil {
+		if !state.jobPresent {
 			return &BuildError{
 				Code:      "job_invalid",
 				Operation: state.operation,
@@ -159,22 +175,22 @@ func validateJobIntentPass() recipeCompilePass {
 				Cause:     ErrUnsupportedBuild,
 			}
 		}
-		if job.runtime == nil {
+		if state.runtime == nil {
 			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
 		}
-		if job.err != nil {
-			return job.err
+		if state.recipeErr != nil {
+			return state.recipeErr
 		}
-		if len(job.inputs) == 0 {
+		if len(state.inputs) == 0 {
 			return &BuildError{Code: "input_missing", Operation: state.operation, Reason: "no input is configured", Cause: ErrUnsupportedBuild}
 		}
-		if err := job.validateInputs(); err != nil {
+		if err := validateJobInputs(state.inputs); err != nil {
 			return err
 		}
-		if err := job.validateOutputScope(); err != nil {
+		if err := validateJobOutputScope(state.jobOutputs, state.stream); err != nil {
 			return err
 		}
-		state.outputs = job.allOutputs()
+		state.outputs = jobAllOutputs(state.jobOutputs, state.stream)
 		if len(state.outputs) == 0 {
 			return &BuildError{Code: "output_missing", Operation: state.operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
 		}
@@ -184,7 +200,7 @@ func validateJobIntentPass() recipeCompilePass {
 
 func validatePacketJobOutputsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate packet job outputs", fn: func(state *recipeCompileState) error {
-		if state.job == nil || state.job.stream != nil {
+		if !state.jobPresent || state.stream != nil {
 			return nil
 		}
 		for i := range state.outputs {
@@ -221,8 +237,8 @@ func openRecipeRuntimeBuilderPass() recipeCompilePass {
 
 func lowerJobInputsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "lower job inputs", fn: func(state *recipeCompileState) error {
-		for i := range state.job.inputs {
-			state.builder = state.job.inputs[i].apply(state.builder)
+		for i := range state.inputs {
+			state.builder = state.inputs[i].apply(state.builder)
 		}
 		return nil
 	}}
@@ -230,10 +246,10 @@ func lowerJobInputsPass() recipeCompilePass {
 
 func lowerJobStreamPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "lower job stream", fn: func(state *recipeCompileState) error {
-		if state.job.stream == nil {
+		if state.stream == nil {
 			return nil
 		}
-		builder, err := state.job.applyStream(state.builder, state.job.stream)
+		builder, err := applyJobStream(state.builder, state.outputs, state.stream)
 		if err != nil {
 			return err
 		}
@@ -257,8 +273,7 @@ func lowerJobOutputsPass() recipeCompilePass {
 
 func planTranscodeIntentPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "plan transcode intent", fn: func(state *recipeCompileState) error {
-		job := state.transcode
-		if job == nil {
+		if !state.transcodePresent {
 			return &BuildError{
 				Code:      "job_invalid",
 				Operation: state.operation,
@@ -266,10 +281,10 @@ func planTranscodeIntentPass() recipeCompilePass {
 				Cause:     ErrUnsupportedBuild,
 			}
 		}
-		if job.runtime == nil {
+		if state.runtime == nil {
 			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
 		}
-		plan, err := job.plan()
+		plan, err := planTranscodeRecipe(state.transcodeInput, state.transcodeStreams, state.transcodeOutputs, state.recipeErr)
 		if err != nil {
 			return err
 		}

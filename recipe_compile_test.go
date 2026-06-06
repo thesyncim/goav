@@ -3,11 +3,26 @@ package goav
 import (
 	"context"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
 )
+
+func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
+	stateType := reflect.TypeOf(recipeCompileState{})
+	forbidden := map[reflect.Type]string{
+		reflect.TypeOf((*Job)(nil)):          "*Job",
+		reflect.TypeOf((*TranscodeJob)(nil)): "*TranscodeJob",
+	}
+	for i := 0; i < stateType.NumField(); i++ {
+		field := stateType.Field(i)
+		if name, ok := forbidden[field.Type]; ok {
+			t.Fatalf("recipeCompileState field %s carries %s; compiler passes should use captured intent attachments", field.Name, name)
+		}
+	}
+}
 
 func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	job := Record(

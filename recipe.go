@@ -1004,22 +1004,26 @@ func newRuntimeBuilder(runtime Runtime, operation string) (builderAPI, error) {
 }
 
 func (j *Job) validateInputs() error {
-	for i := range j.inputs {
-		if err := j.inputs[i].validate(); err != nil {
+	return validateJobInputs(j.inputs)
+}
+
+func validateJobInputs(inputs []InputSpec) error {
+	for i := range inputs {
+		if err := inputs[i].validate(); err != nil {
 			return err
 		}
 	}
-	if len(j.inputs) <= 1 {
+	if len(inputs) <= 1 {
 		return nil
 	}
-	for i := range j.inputs {
-		if j.inputs[i].rtp != nil {
+	for i := range inputs {
+		if inputs[i].rtp != nil {
 			continue
 		}
 		return &BuildError{
 			Code:      "multi_input_unsupported",
 			Operation: "build job",
-			Node:      firstNonEmpty(j.inputs[i].name, j.inputs[i].input.Name, j.inputs[i].input.URI, fmt.Sprintf("input-%d", i)),
+			Node:      firstNonEmpty(inputs[i].name, inputs[i].input.Name, inputs[i].input.URI, fmt.Sprintf("input-%d", i)),
 			Reason:    "multiple recipe inputs currently require realtime RTP/WebRTC packet readers",
 			Suggestions: []string{
 				"use goav.From(goav.RTP(...)).And(goav.RTP(...)) for repeated live inputs",
@@ -1029,7 +1033,7 @@ func (j *Job) validateInputs() error {
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if err := validateRealtimeInputNames(j.inputs); err != nil {
+	if err := validateRealtimeInputNames(inputs); err != nil {
 		return err
 	}
 	return nil
@@ -1070,13 +1074,17 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 }
 
 func (j *Job) validateOutputScope() error {
-	if j.stream == nil || len(j.outputs) == 0 {
+	return validateJobOutputScope(j.outputs, j.stream)
+}
+
+func validateJobOutputScope(outputs []OutputSpec, stream *jobStreamBuild) error {
+	if stream == nil || len(outputs) == 0 {
 		return nil
 	}
 	return &BuildError{
 		Code:      "output_scope_mixed",
 		Operation: "build job",
-		Node:      jobStreamName(j.stream),
+		Node:      jobStreamName(stream),
 		Reason:    "stream recipes use stream-local outputs",
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
@@ -1088,20 +1096,27 @@ func (j *Job) validateOutputScope() error {
 }
 
 func (j *Job) allOutputs() []OutputSpec {
-	if j.stream == nil || len(j.stream.outputs) == 0 {
-		return append([]OutputSpec(nil), j.outputs...)
+	return jobAllOutputs(j.outputs, j.stream)
+}
+
+func jobAllOutputs(outputs []OutputSpec, stream *jobStreamBuild) []OutputSpec {
+	if stream == nil || len(stream.outputs) == 0 {
+		return append([]OutputSpec(nil), outputs...)
 	}
-	outputs := make([]OutputSpec, 0, len(j.outputs)+len(j.stream.outputs))
-	outputs = append(outputs, j.outputs...)
-	outputs = append(outputs, j.stream.outputs...)
-	return outputs
+	all := make([]OutputSpec, 0, len(outputs)+len(stream.outputs))
+	all = append(all, outputs...)
+	all = append(all, stream.outputs...)
+	return all
 }
 
 func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAPI, error) {
+	return applyJobStream(builder, j.allOutputs(), stream)
+}
+
+func applyJobStream(builder builderAPI, outputs []OutputSpec, stream *jobStreamBuild) (builderAPI, error) {
 	if stream == nil {
 		return builder, nil
 	}
-	outputs := j.allOutputs()
 	if !stream.hasOperation() {
 		return nil, &BuildError{
 			Code:      "stream_operation_missing",
@@ -1214,6 +1229,29 @@ func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAP
 		builder = builder.Encode(stream.selector, encodeConfigFromSpec(stream.encode))
 	}
 	return builder, nil
+}
+
+func cloneJobStreamBuild(stream *jobStreamBuild) *jobStreamBuild {
+	if stream == nil {
+		return nil
+	}
+	clone := *stream
+	clone.steps = append([]jobStreamStep(nil), stream.steps...)
+	clone.outputs = append([]OutputSpec(nil), stream.outputs...)
+	return &clone
+}
+
+func cloneStreamBuilds(streams []streamBuild) []streamBuild {
+	if len(streams) == 0 {
+		return nil
+	}
+	clones := make([]streamBuild, len(streams))
+	copy(clones, streams)
+	for i := range streams {
+		clones[i].transforms = append([]TransformSpec(nil), streams[i].transforms...)
+		clones[i].labels = append([]string(nil), streams[i].labels...)
+	}
+	return clones
 }
 
 func streamStageMissingError(stream *jobStreamBuild) error {
@@ -1913,14 +1951,14 @@ func (j *TranscodeJob) Intent() Intent {
 	return intent
 }
 
-func (j *TranscodeJob) plan() (transcodepkg.Plan, error) {
-	if j.err != nil {
-		return transcodepkg.Plan{}, j.err
+func planTranscodeRecipe(input InputSpec, streams []streamBuild, namedOutputs []namedOutputSpec, recipeErr error) (transcodepkg.Plan, error) {
+	if recipeErr != nil {
+		return transcodepkg.Plan{}, recipeErr
 	}
-	if err := j.input.validate(); err != nil {
+	if err := input.validate(); err != nil {
 		return transcodepkg.Plan{}, err
 	}
-	if j.input.rtp != nil {
+	if input.rtp != nil {
 		return transcodepkg.Plan{}, &BuildError{
 			Code:      "unsupported_input",
 			Operation: transcodeRecipeOperation,
@@ -1932,7 +1970,7 @@ func (j *TranscodeJob) plan() (transcodepkg.Plan, error) {
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if len(j.streams) == 0 {
+	if len(streams) == 0 {
 		return transcodepkg.Plan{}, &BuildError{
 			Code:      "stream_missing",
 			Operation: transcodeRecipeOperation,
@@ -1944,9 +1982,9 @@ func (j *TranscodeJob) plan() (transcodepkg.Plan, error) {
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	renditionNames := make(map[string]int, len(j.streams))
-	for i := range j.streams {
-		stream := j.streams[i]
+	renditionNames := make(map[string]int, len(streams))
+	for i := range streams {
+		stream := streams[i]
 		if stream.name == "" {
 			return transcodepkg.Plan{}, transcodeBranchNameMissingError(i, stream)
 		}
@@ -1991,27 +2029,27 @@ func (j *TranscodeJob) plan() (transcodepkg.Plan, error) {
 		renditionNames[renditionName] = i
 	}
 
-	outputs := make(map[string]OutputSpec, len(j.outputs))
-	outputOrder := make([]string, 0, len(j.outputs))
-	for i := range j.outputs {
-		if err := j.outputs[i].output.validate(transcodeRecipeOperation, fmt.Sprintf("output-%d", i)); err != nil {
+	outputs := make(map[string]OutputSpec, len(namedOutputs))
+	outputOrder := make([]string, 0, len(namedOutputs))
+	for i := range namedOutputs {
+		if err := namedOutputs[i].output.validate(transcodeRecipeOperation, fmt.Sprintf("output-%d", i)); err != nil {
 			return transcodepkg.Plan{}, err
 		}
-		if j.outputs[i].output.sink != nil {
-			return transcodepkg.Plan{}, transcodeFrameSinkOutputError(j.outputs[i].name, j.outputs[i].output)
+		if namedOutputs[i].output.sink != nil {
+			return transcodepkg.Plan{}, transcodeFrameSinkOutputError(namedOutputs[i].name, namedOutputs[i].output)
 		}
-		name := j.outputs[i].name
+		name := namedOutputs[i].name
 		if _, ok := outputs[name]; ok {
 			return transcodepkg.Plan{}, transcodeDuplicateOutputError(name)
 		}
 		outputOrder = append(outputOrder, name)
-		outputs[name] = j.outputs[i].output.Name(firstNonEmpty(j.outputs[i].output.name, name))
+		outputs[name] = namedOutputs[i].output.Name(firstNonEmpty(namedOutputs[i].output.name, name))
 	}
 
-	renditions := make([]transcodepkg.Rendition, 0, len(j.streams))
+	renditions := make([]transcodepkg.Rendition, 0, len(streams))
 	outputRenditions := make(map[string][]string, len(outputs))
-	for i := range j.streams {
-		stream := j.streams[i]
+	for i := range streams {
+		stream := streams[i]
 		for _, label := range stream.labels {
 			if _, ok := outputs[label]; ok {
 				continue
@@ -2064,7 +2102,7 @@ func (j *TranscodeJob) plan() (transcodepkg.Plan, error) {
 	}
 	return transcodepkg.Plan{
 		Name:       "transcode",
-		Input:      j.input.input,
+		Input:      input.input,
 		Renditions: renditions,
 		Outputs:    planOutputs,
 	}, nil

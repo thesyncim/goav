@@ -590,6 +590,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `From(input).Audio(StreamIndex(0)).To(FrameSink(...))` now proves
     `Task.Stats()` reports decoded frame totals, stream-added and EOS event
     counts, delivery totals, last-event state, and no drops. Done.
+180. Detach recipe compiler state from raw recipe builder pointers: compile
+    entrypoints now capture inputs, outputs, stream selections, transcode
+    branches, and recipe errors into pass state, with a guard test preventing
+    `*Job` or `*TranscodeJob` from returning to `recipeCompileState`. Done.
 
 ## First Vertical Slice
 
@@ -816,7 +820,8 @@ Required proof:
 
 Current pressure point: keep moving real work into the intent compiler path.
 Validation, transcode planning, builder lowering, migration graph-compiler
-selection, and planned spec emission now have a private recipe compiler state;
+selection, and planned spec emission now have a private recipe compiler state
+that carries captured recipe attachments instead of raw recipe builder pointers;
 probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and
