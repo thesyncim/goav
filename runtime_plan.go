@@ -23,13 +23,13 @@ func (b *builder) planRemux(spec pipeline.Spec) (pipeline.Spec, error) {
 	nodes := make(map[string]plannedNode, 1+len(b.outputs))
 	sourceName := demuxNodeName(b.inputs[0])
 	sourceRef := pipeline.NodeRef(sourceName)
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
+	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(b.inputs[0])); err != nil {
 		return pipeline.Spec{}, err
 	}
 	for i := range b.outputs {
 		stageName := muxNodeName(b.outputs[i], i)
 		stageRef := pipeline.NodeRef(stageName)
-		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef); err != nil {
+		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef, outputNodeDetail(b.outputs[i])); err != nil {
 			return pipeline.Spec{}, err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
@@ -57,7 +57,7 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		}
 		name := b.sources[i].Name()
 		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeSource, ref); err != nil {
+		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeSource, ref, describedNodeDetail(b.sources[i])); err != nil {
 			return pipeline.Spec{}, err
 		}
 		sourceRefs[i] = ref
@@ -68,7 +68,7 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		}
 		name := b.stages[i].Name()
 		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeStage, ref); err != nil {
+		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeStage, ref, describedNodeDetail(b.stages[i])); err != nil {
 			return pipeline.Spec{}, err
 		}
 		stageRefs[i] = ref
@@ -79,7 +79,7 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		}
 		name := b.sinks[i].Name()
 		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeSink, ref); err != nil {
+		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeSink, ref, describedNodeDetail(b.sinks[i])); err != nil {
 			return pipeline.Spec{}, err
 		}
 		sinkRefs[i] = ref
@@ -122,7 +122,7 @@ func (b *builder) planExplicitEdges(nodes map[string]plannedNode, spec *pipeline
 	return nil
 }
 
-func addPlannedNode(nodes map[string]plannedNode, spec *pipeline.Spec, name string, kind pipeline.NodeKind, ref pipeline.NodeRef) error {
+func addPlannedNode(nodes map[string]plannedNode, spec *pipeline.Spec, name string, kind pipeline.NodeKind, ref pipeline.NodeRef, detail ...string) error {
 	if name == "" {
 		return pipeline.ErrUnknownNode
 	}
@@ -130,8 +130,25 @@ func addPlannedNode(nodes map[string]plannedNode, spec *pipeline.Spec, name stri
 		return pipeline.ErrNodeExists
 	}
 	nodes[name] = plannedNode{ref: ref, kind: kind}
-	spec.Nodes = append(spec.Nodes, pipeline.NodeSpec{Name: name, Kind: kind})
+	spec.Nodes = append(spec.Nodes, pipeline.NodeSpec{Name: name, Kind: kind, Detail: firstDetail(detail)})
 	return nil
+}
+
+func firstDetail(detail []string) string {
+	for i := range detail {
+		if detail[i] != "" {
+			return detail[i]
+		}
+	}
+	return ""
+}
+
+func describedNodeDetail(node any) string {
+	describer, ok := node.(pipeline.NodeDescriber)
+	if !ok {
+		return ""
+	}
+	return describer.DescribeNode().Detail
 }
 
 func planLinks(spec *pipeline.Spec, from []pipeline.NodeRef, to []pipeline.NodeRef) {

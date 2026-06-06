@@ -15,8 +15,9 @@ const (
 )
 
 type NodeSpec struct {
-	Name string
-	Kind NodeKind
+	Name   string
+	Kind   NodeKind
+	Detail string
 }
 
 type EdgeSpec struct {
@@ -57,7 +58,15 @@ func (s Spec) WriteText(w io.Writer) error {
 	}
 	for i := range s.Nodes {
 		node := &s.Nodes[i]
-		if err := writeStrings(w, "  ", string(node.Kind), " ", node.Name, "\n"); err != nil {
+		if err := writeStrings(w, "  ", string(node.Kind), " ", node.Name); err != nil {
+			return err
+		}
+		if node.Detail != "" {
+			if err := writeStrings(w, " [", node.Detail, "]"); err != nil {
+				return err
+			}
+		}
+		if err := writeStrings(w, "\n"); err != nil {
 			return err
 		}
 	}
@@ -92,7 +101,7 @@ func (s Spec) WriteDOT(w io.Writer) error {
 		case NodeSink:
 			shape = "doublecircle"
 		}
-		if err := writeStrings(w, "  ", quoteDOT(node.Name), " [shape=", shape, ", label=", quoteDOT(node.Name+"\\n"+string(node.Kind)), "];\n"); err != nil {
+		if err := writeStrings(w, "  ", quoteDOT(node.Name), " [shape=", shape, ", label=", quoteDOT(nodeLabel(node)), "];\n"); err != nil {
 			return err
 		}
 	}
@@ -123,7 +132,7 @@ func (s Spec) WriteMermaid(w io.Writer) error {
 		node := &s.Nodes[i]
 		id := "n" + strconv.Itoa(i)
 		ids[node.Name] = id
-		label := node.Name + "\n" + string(node.Kind)
+		label := nodeLabel(node)
 		switch node.Kind {
 		case NodeSource:
 			if err := writeStrings(w, "  ", id, "([", quoteMermaid(label), "])\n"); err != nil {
@@ -171,6 +180,14 @@ func specName(name string) string {
 		return "goav"
 	}
 	return name
+}
+
+func nodeLabel(node *NodeSpec) string {
+	label := node.Name + "\n" + string(node.Kind)
+	if node.Detail != "" {
+		label += "\n" + node.Detail
+	}
+	return label
 }
 
 func quoteDOT(value string) string {

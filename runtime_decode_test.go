@@ -152,6 +152,11 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 		!strings.Contains(planned.String(), "decode-audio -> frames") {
 		t.Fatalf("planned spec:\n%s", planned.String())
 	}
+	if !strings.Contains(planned.String(), "source input.ogg [demux]") ||
+		!strings.Contains(planned.String(), "stage select-audio [select, type=audio]") ||
+		!strings.Contains(planned.String(), "stage decode-audio [packets -> frames, type=audio]") {
+		t.Fatalf("planned details:\n%s", planned.String())
+	}
 
 	task, err := builder.Build(context.Background())
 	if err != nil {

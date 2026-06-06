@@ -41,7 +41,7 @@ func (b *builder) planRTPDecodeToSink(spec pipeline.Spec) (pipeline.Spec, error)
 	for i := range b.rtpInputs {
 		sourceName := rtpNodeName(b.rtpInputs[i], i)
 		sourceRef := pipeline.NodeRef(sourceName)
-		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
+		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, rtpInputDetail(b.rtpInputs[i])); err != nil {
 			return pipeline.Spec{}, err
 		}
 		sourceRefs[i] = sourceRef

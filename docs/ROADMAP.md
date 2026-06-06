@@ -73,4 +73,5 @@ validation gates. This roadmap keeps the broader phase view.
   streams. First file/protocol and RTP/WebRTC slices are active.
 - Branchable multi-rendition transcode builder compilers and fluent explicit
   graph branch helpers. First shared-decode slice is active.
-- Stats, tracing, and graph introspection.
+- Detail-aware graph introspection is active; richer stats and tracing remain
+  future work.

@@ -179,7 +179,7 @@ func (g *DirectGraph) Spec() Spec {
 	}
 	for i := range g.nodes {
 		node := &g.nodes[i]
-		spec.Nodes[i] = NodeSpec{Name: node.name, Kind: directSpecKind(node.kind)}
+		spec.Nodes[i] = directNodeSpec(node)
 		for j := range node.routes {
 			route := &node.routes[j]
 			for k := range route.to {
@@ -326,6 +326,35 @@ func (r *directRoute) matchesEvent(msg *Message) bool {
 		return false
 	}
 	return r.label == "" || string(msg.Event.Type) == r.label
+}
+
+func directNodeSpec(node *directNode) NodeSpec {
+	spec := NodeSpec{Name: node.name, Kind: directSpecKind(node.kind)}
+	describer := directNodeDescriber(node)
+	if describer == nil {
+		return spec
+	}
+	described := describer.DescribeNode()
+	spec.Detail = described.Detail
+	return spec
+}
+
+func directNodeDescriber(node *directNode) NodeDescriber {
+	switch node.kind {
+	case nodeSource:
+		if describer, ok := node.source.(NodeDescriber); ok {
+			return describer
+		}
+	case nodeStage:
+		if describer, ok := node.stage.(NodeDescriber); ok {
+			return describer
+		}
+	case nodeSink:
+		if describer, ok := node.sink.(NodeDescriber); ok {
+			return describer
+		}
+	}
+	return nil
 }
 
 func directSpecKind(kind nodeKind) NodeKind {

@@ -85,6 +85,10 @@ type Sink interface {
 	Close() error
 }
 
+type NodeDescriber interface {
+	DescribeNode() NodeSpec
+}
+
 type NodeRef string
 
 func Node(name string) NodeRef {

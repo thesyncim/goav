@@ -9,6 +9,8 @@ import (
 
 type StageConfig struct {
 	Name string
+	// Detail is optional graph-rendering context for humans.
+	Detail string
 	// Filter receives frames and events and writes transformed frames into Result.
 	Filter FrameFilter
 	// Result is caller-owned scratch. Its slice capacities define how many
@@ -21,6 +23,7 @@ type StageConfig struct {
 
 type Stage struct {
 	name       string
+	detail     string
 	filter     FrameFilter
 	result     Result
 	message    pipeline.Message
@@ -29,6 +32,7 @@ type Stage struct {
 }
 
 var _ pipeline.Stage = (*Stage)(nil)
+var _ pipeline.NodeDescriber = (*Stage)(nil)
 
 func NewStage(config StageConfig) (*Stage, error) {
 	if config.Filter == nil {
@@ -43,6 +47,7 @@ func NewStage(config StageConfig) (*Stage, error) {
 	}
 	return &Stage{
 		name:       name,
+		detail:     config.Detail,
 		filter:     config.Filter,
 		result:     config.Result,
 		dropEvents: config.DropInputEvents,
@@ -51,6 +56,10 @@ func NewStage(config StageConfig) (*Stage, error) {
 
 func (s *Stage) Name() string {
 	return s.name
+}
+
+func (s *Stage) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
 func (s *Stage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {

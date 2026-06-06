@@ -60,7 +60,7 @@ func (b *builder) planDecodeEncodeToOutput(spec pipeline.Spec) (pipeline.Spec, e
 	nodes := make(map[string]plannedNode, 4+len(b.filters)+len(b.outputs))
 	sourceName := demuxNodeName(b.inputs[0])
 	sourceRef := pipeline.NodeRef(sourceName)
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
+	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(b.inputs[0])); err != nil {
 		return pipeline.Spec{}, err
 	}
 
@@ -80,7 +80,7 @@ func (b *builder) planRTPDecodeEncodeToOutput(spec pipeline.Spec) (pipeline.Spec
 	for i := range b.rtpInputs {
 		sourceName := rtpNodeName(b.rtpInputs[i], i)
 		sourceRef := pipeline.NodeRef(sourceName)
-		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
+		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, rtpInputDetail(b.rtpInputs[i])); err != nil {
 			return pipeline.Spec{}, err
 		}
 		sourceRefs[i] = sourceRef
@@ -99,7 +99,7 @@ func (b *builder) planRTPDecodeEncodeToOutput(spec pipeline.Spec) (pipeline.Spec
 func (b *builder) planEncodeOutputPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, request encodeRequest) error {
 	encodeName := encodeNodeName(request)
 	encodeRef := pipeline.NodeRef(encodeName)
-	if err := addPlannedNode(nodes, spec, encodeName, pipeline.NodeStage, encodeRef); err != nil {
+	if err := addPlannedNode(nodes, spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(request)); err != nil {
 		return err
 	}
 	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
@@ -110,7 +110,7 @@ func (b *builder) planEncodeOutputPath(nodes map[string]plannedNode, spec *pipel
 	for i := range b.outputs {
 		outputName := muxNodeName(b.outputs[i], i)
 		outputRef := pipeline.NodeRef(outputName)
-		if err := addPlannedNode(nodes, spec, outputName, pipeline.NodeStage, outputRef); err != nil {
+		if err := addPlannedNode(nodes, spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetail(b.outputs[i])); err != nil {
 			return err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
@@ -258,6 +258,7 @@ func (b *builder) newEncodeStage(ctx context.Context, request encodeRequest, con
 	}
 	stage, err := codec.NewEncoderStage(codec.EncoderStageConfig{
 		Name:              encodeNodeName(request),
+		Detail:            encodeNodeDetail(request),
 		Encoder:           encoder,
 		Result:            encodeResultForStream(config.Stream),
 		OutputStreamID:    config.Stream.ID,

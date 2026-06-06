@@ -142,10 +142,12 @@ edges are intentionally separate from the direct executor so backpressure and
 drop behavior remain visible.
 
 Builders and graphs can produce a `pipeline.Spec`: structured nodes and edges
-plus human-readable text, DOT, and Mermaid rendering. This makes generated
-pipelines easy to validate, log, inspect, or visualize before running media
-through them. Specs render simple node-to-node connections; executor-specific
-details stay behind the graph implementation.
+plus human-readable text, DOT, and Mermaid rendering. Nodes may include short
+workflow details such as `rtp receive`, `packets -> frames`, `frames ->
+packets`, `resize`, or `mux`. This makes generated pipelines easy to validate,
+log, inspect, or visualize before running media through them. Specs still render
+simple node-to-node connections; executor-specific details stay behind the graph
+implementation.
 
 The codec package includes generic decoder and encoder stages. They adapt
 `codec.Decoder` and `codec.Encoder` implementations to pipeline messages using

@@ -51,12 +51,17 @@ func (s *directEventSource) Close() error {
 }
 
 type directPassStage struct {
-	name  string
-	count int
+	name   string
+	detail string
+	count  int
 }
 
 func (s *directPassStage) Name() string {
 	return s.name
+}
+
+func (s *directPassStage) DescribeNode() NodeSpec {
+	return NodeSpec{Name: s.name, Kind: NodeStage, Detail: s.detail}
 }
 
 func (s *directPassStage) Handle(ctx context.Context, msg *Message, emitter Emitter) error {
@@ -133,7 +138,7 @@ func TestDirectGraphSpec(t *testing.T) {
 	packet := av.Packet{StreamID: "audio"}
 	msg := Message{Kind: MessagePacket, Packet: &packet}
 	source := &directTestSource{name: "source", msg: &msg}
-	stage := &directPassStage{name: "stage"}
+	stage := &directPassStage{name: "stage", detail: "meter"}
 	sink := &directTestSink{name: "sink"}
 
 	graph, err := NewDirectGraph(GraphConfig{Name: "spec", Realtime: true})
@@ -173,6 +178,9 @@ func TestDirectGraphSpec(t *testing.T) {
 	}
 	if spec.Nodes[0].Kind != NodeSource || spec.Nodes[1].Kind != NodeStage || spec.Nodes[2].Kind != NodeSink {
 		t.Fatalf("nodes = %+v", spec.Nodes)
+	}
+	if spec.Nodes[1].Detail != "meter" {
+		t.Fatalf("node detail = %q", spec.Nodes[1].Detail)
 	}
 	if spec.Edges[1].Policy != RouteByStream || spec.Edges[1].Label != "audio" {
 		t.Fatalf("edge = %+v", spec.Edges[1])

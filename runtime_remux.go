@@ -87,6 +87,7 @@ func (b *builder) openMuxStageWithFormat(ctx context.Context, output Output, ind
 	}
 	stage, err := format.NewMuxStage(format.MuxStageConfig{
 		Name:            muxNodeName(output, index),
+		Detail:          outputNodeDetail(output),
 		Muxer:           muxer,
 		Result:          format.WriteResult{Events: make([]av.Event, 0, 1)},
 		DropInputEvents: true,

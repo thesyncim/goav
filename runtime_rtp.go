@@ -83,7 +83,7 @@ func (b *builder) planRTPRecord(spec pipeline.Spec) (pipeline.Spec, error) {
 	for i := range b.rtpInputs {
 		sourceName := rtpNodeName(b.rtpInputs[i], i)
 		sourceRef := pipeline.NodeRef(sourceName)
-		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
+		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, rtpInputDetail(b.rtpInputs[i])); err != nil {
 			return pipeline.Spec{}, err
 		}
 		sourceRefs[i] = sourceRef
@@ -92,7 +92,7 @@ func (b *builder) planRTPRecord(spec pipeline.Spec) (pipeline.Spec, error) {
 	for i := range b.outputs {
 		stageName := muxNodeName(b.outputs[i], i)
 		stageRef := pipeline.NodeRef(stageName)
-		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef); err != nil {
+		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef, outputNodeDetail(b.outputs[i])); err != nil {
 			return pipeline.Spec{}, err
 		}
 		stageRefs[i] = stageRef
@@ -167,6 +167,7 @@ func (b *builder) openRTPSource(ctx context.Context, input rtpInput, index int) 
 	}
 	source, err := rtpav.NewSource(rtpav.SourceConfig{
 		Name:          rtpNodeName(input, index),
+		Detail:        rtpInputDetail(input),
 		Receiver:      input.receiver,
 		Feedback:      input.feedback,
 		Jitter:        input.jitter,

@@ -14,6 +14,7 @@ import (
 
 type SourceConfig struct {
 	Name          string
+	Detail        string
 	Receiver      PacketReader
 	Feedback      FeedbackWriter
 	Jitter        JitterBuffer
@@ -28,6 +29,7 @@ type SourceConfig struct {
 
 type Source struct {
 	name          string
+	detail        string
 	receiver      PacketReader
 	feedback      FeedbackWriter
 	payloads      PayloadMap
@@ -42,6 +44,7 @@ type Source struct {
 }
 
 var _ pipeline.Source = (*Source)(nil)
+var _ pipeline.NodeDescriber = (*Source)(nil)
 
 func NewSource(config SourceConfig) (*Source, error) {
 	if config.Receiver == nil {
@@ -58,6 +61,7 @@ func NewSource(config SourceConfig) (*Source, error) {
 
 	return &Source{
 		name:          name,
+		detail:        config.Detail,
 		receiver:      config.Receiver,
 		feedback:      feedbackWriter(config.Receiver, config.Feedback),
 		payloads:      config.Receiver.PayloadMap(),
@@ -79,6 +83,10 @@ func NewSource(config SourceConfig) (*Source, error) {
 
 func (s *Source) Name() string {
 	return s.name
+}
+
+func (s *Source) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeSource, Detail: s.detail}
 }
 
 func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {

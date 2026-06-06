@@ -11,6 +11,8 @@ import (
 
 type DemuxSourceConfig struct {
 	Name string
+	// Detail is optional graph-rendering context for humans.
+	Detail string
 	// Demuxer reads container input into caller-owned Result scratch.
 	Demuxer Demuxer
 	// Result owns the packet pointer and event slice reused for every read.
@@ -23,6 +25,8 @@ type DemuxSourceConfig struct {
 
 type MuxStageConfig struct {
 	Name string
+	// Detail is optional graph-rendering context for humans.
+	Detail string
 	// Muxer writes packet messages to the configured output.
 	Muxer Muxer
 	// Result owns the event slice reused for every write.
@@ -35,6 +39,7 @@ type MuxStageConfig struct {
 
 type DemuxSource struct {
 	name    string
+	detail  string
 	demuxer Demuxer
 	result  ReadResult
 	message pipeline.Message
@@ -47,6 +52,7 @@ type DemuxSource struct {
 
 type MuxStage struct {
 	name               string
+	detail             string
 	muxer              Muxer
 	result             WriteResult
 	message            pipeline.Message
@@ -57,6 +63,8 @@ type MuxStage struct {
 
 var _ pipeline.Source = (*DemuxSource)(nil)
 var _ pipeline.Stage = (*MuxStage)(nil)
+var _ pipeline.NodeDescriber = (*DemuxSource)(nil)
+var _ pipeline.NodeDescriber = (*MuxStage)(nil)
 
 func NewDemuxSource(config DemuxSourceConfig) (*DemuxSource, error) {
 	if config.Demuxer == nil {
@@ -72,6 +80,7 @@ func NewDemuxSource(config DemuxSourceConfig) (*DemuxSource, error) {
 
 	source := &DemuxSource{
 		name:    name,
+		detail:  config.Detail,
 		demuxer: config.Demuxer,
 		result:  config.Result,
 		dropEOS: config.DropEndOfStream,
@@ -92,6 +101,7 @@ func NewMuxStage(config MuxStageConfig) (*MuxStage, error) {
 	}
 	return &MuxStage{
 		name:               name,
+		detail:             config.Detail,
 		muxer:              config.Muxer,
 		result:             config.Result,
 		dropEvents:         config.DropInputEvents,
@@ -105,6 +115,14 @@ func (s *DemuxSource) Name() string {
 
 func (s *MuxStage) Name() string {
 	return s.name
+}
+
+func (s *DemuxSource) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeSource, Detail: s.detail}
+}
+
+func (s *MuxStage) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
 func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error {

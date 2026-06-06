@@ -10,18 +10,24 @@ import (
 
 type streamSelectStage struct {
 	name     string
+	detail   string
 	streamID av.StreamID
 	closed   bool
 }
 
 var _ pipeline.Stage = (*streamSelectStage)(nil)
+var _ pipeline.NodeDescriber = (*streamSelectStage)(nil)
 
-func newStreamSelectStage(name string, streamID av.StreamID) *streamSelectStage {
-	return &streamSelectStage{name: name, streamID: streamID}
+func newStreamSelectStage(name string, streamID av.StreamID, detail string) *streamSelectStage {
+	return &streamSelectStage{name: name, detail: detail, streamID: streamID}
 }
 
 func (s *streamSelectStage) Name() string {
 	return s.name
+}
+
+func (s *streamSelectStage) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
 func (s *streamSelectStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {

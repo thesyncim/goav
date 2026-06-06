@@ -43,6 +43,7 @@ func (b *builder) openDemuxSource(ctx context.Context, input Input) (demuxBuild,
 	}
 	source, err := format.NewDemuxSource(format.DemuxSourceConfig{
 		Name:    demuxNodeName(input),
+		Detail:  inputNodeDetail(input),
 		Demuxer: demuxer,
 		Result: format.ReadResult{
 			Packet: &av.Packet{},

@@ -65,7 +65,7 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 	nodes := make(map[string]plannedNode, 3+len(branches)+transcodeTransformCount(branches)+len(outputs))
 	sourceName := demuxNodeName(plan.Input)
 	sourceRef := pipeline.NodeRef(sourceName)
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
+	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(plan.Input)); err != nil {
 		return pipeline.Spec{}, err
 	}
 
@@ -81,7 +81,7 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 		branchRef := previous
 		for j := range branches[i].transforms {
 			transformRef := pipeline.NodeRef(branches[i].transforms[j].name)
-			if err := addPlannedNode(nodes, &spec, branches[i].transforms[j].name, pipeline.NodeStage, transformRef); err != nil {
+			if err := addPlannedNode(nodes, &spec, branches[i].transforms[j].name, pipeline.NodeStage, transformRef, transcodeTransformDetail(branches[i].transforms[j])); err != nil {
 				return pipeline.Spec{}, err
 			}
 			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
@@ -95,7 +95,7 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 
 		encodeName := encodeNodeName(branches[i].request)
 		encodeRef := pipeline.NodeRef(encodeName)
-		if err := addPlannedNode(nodes, &spec, encodeName, pipeline.NodeStage, encodeRef); err != nil {
+		if err := addPlannedNode(nodes, &spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(branches[i].request)); err != nil {
 			return pipeline.Spec{}, err
 		}
 		outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
@@ -110,7 +110,7 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 	for i := range outputs {
 		outputName := muxNodeName(outputs[i].target, i)
 		outputRef := pipeline.NodeRef(outputName)
-		if err := addPlannedNode(nodes, &spec, outputName, pipeline.NodeStage, outputRef); err != nil {
+		if err := addPlannedNode(nodes, &spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetail(outputs[i].target)); err != nil {
 			return pipeline.Spec{}, err
 		}
 		for _, branchIndex := range outputs[i].matches {
@@ -257,6 +257,7 @@ func (b *builder) newTranscodeFilterStage(ctx context.Context, transform transco
 	}
 	stage, err := filter.NewStage(filter.StageConfig{
 		Name:   transform.name,
+		Detail: transcodeTransformDetail(transform),
 		Filter: frameFilter,
 		Result: filterResultForStream(outputStream),
 	})

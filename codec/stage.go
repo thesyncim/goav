@@ -9,6 +9,8 @@ import (
 
 type DecoderStageConfig struct {
 	Name string
+	// Detail is optional graph-rendering context for humans.
+	Detail string
 	// Decoder receives packets and events and writes decoded frames into Result.
 	Decoder Decoder
 	// Result is caller-owned scratch. Its slice capacities define how many
@@ -21,6 +23,8 @@ type DecoderStageConfig struct {
 
 type EncoderStageConfig struct {
 	Name string
+	// Detail is optional graph-rendering context for humans.
+	Detail string
 	// Encoder receives frames and events and writes encoded packets into Result.
 	Encoder Encoder
 	// Result is caller-owned scratch. Its slice capacities define how many
@@ -43,6 +47,7 @@ type EncoderStageConfig struct {
 
 type DecoderStage struct {
 	name         string
+	detail       string
 	decoder      Decoder
 	result       DecodeResult
 	message      pipeline.Message
@@ -53,6 +58,7 @@ type DecoderStage struct {
 
 type EncoderStage struct {
 	name              string
+	detail            string
 	encoder           Encoder
 	result            EncodeResult
 	message           pipeline.Message
@@ -65,6 +71,8 @@ type EncoderStage struct {
 
 var _ pipeline.Stage = (*DecoderStage)(nil)
 var _ pipeline.Stage = (*EncoderStage)(nil)
+var _ pipeline.NodeDescriber = (*DecoderStage)(nil)
+var _ pipeline.NodeDescriber = (*EncoderStage)(nil)
 
 func NewDecoderStage(config DecoderStageConfig) (*DecoderStage, error) {
 	if config.Decoder == nil {
@@ -76,6 +84,7 @@ func NewDecoderStage(config DecoderStageConfig) (*DecoderStage, error) {
 	}
 	return &DecoderStage{
 		name:       name,
+		detail:     config.Detail,
 		decoder:    config.Decoder,
 		result:     config.Result,
 		dropEvents: config.DropInputEvents,
@@ -92,6 +101,7 @@ func NewEncoderStage(config EncoderStageConfig) (*EncoderStage, error) {
 	}
 	return &EncoderStage{
 		name:              name,
+		detail:            config.Detail,
 		encoder:           config.Encoder,
 		result:            config.Result,
 		outputStreamID:    config.OutputStreamID,
@@ -107,6 +117,14 @@ func (s *DecoderStage) Name() string {
 
 func (s *EncoderStage) Name() string {
 	return s.name
+}
+
+func (s *DecoderStage) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
+}
+
+func (s *EncoderStage) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
 func (s *DecoderStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {

@@ -15,6 +15,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Explicit graph API for custom realtime systems.
 - Graphs are named sources, stages, sinks, links, and branches;
   stream/event routing is a connection option.
+- Rendered graph nodes can carry short workflow details without changing the
+  simple node-to-node API.
 - Caller-owned buffers and result structs on hot paths.
 - RTP metadata, loss, discontinuity, codec epochs, keyframe requests, EOS, and
   backpressure are first-class events.
@@ -150,7 +152,7 @@ as private graph compilers that must support both `Describe` and `Build`.
   helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, fanout, stream/event routes,
   backpressure surface, simple node-to-node links and branches,
-  text/DOT/Mermaid graph specs.
+  detail-aware text/DOT/Mermaid graph specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, registry, decoder and encoder pipeline
   stages.
@@ -201,6 +203,8 @@ Implemented slices:
 - Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,
   with optional filter stages.
 - Pre-build and runtime graph rendering as text, DOT, and Mermaid.
+- Detail-aware graph descriptions for runtime-created sources, select stages,
+  codecs, filters, RTP receive nodes, and mux outputs.
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.
 - Annex B packet mux adapter for H264 recording.
 - S16 audio resample filter adapter with allocation-guarded hot path.
@@ -234,7 +238,7 @@ Next pressure points:
 Each slice follows the same loop:
 
 1. Express the workflow with the smallest natural API.
-2. Render the explicit graph first.
+2. Render the explicit graph, with useful node details, first.
 3. Add one compiler, stage, adapter, or format boundary.
 4. Prove lifecycle, event behavior, and hot-path allocation expectations.
 5. Update the progress tracker.
