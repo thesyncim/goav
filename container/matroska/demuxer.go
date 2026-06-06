@@ -215,8 +215,17 @@ func (d *Demuxer) Tracks() []Track {
 		return nil
 	}
 	tracks := make([]Track, len(d.tracks))
-	copy(tracks, d.tracks)
+	for i := range d.tracks {
+		tracks[i] = cloneTrack(d.tracks[i])
+	}
 	return tracks
+}
+
+func cloneTrack(track Track) Track {
+	if len(track.CodecPrivate) != 0 {
+		track.CodecPrivate = append([]byte(nil), track.CodecPrivate...)
+	}
+	return track
 }
 
 func (d *Demuxer) DocType() string {

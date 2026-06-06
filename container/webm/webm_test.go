@@ -426,6 +426,61 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFormatDemuxerStreamsReturnsExtraDataCopies(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "video",
+		Index:    0,
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: 1000},
+		Codec: av.CodecParameters{
+			ID:        av.CodecAV1,
+			Type:      av.MediaVideo,
+			Width:     16,
+			Height:    16,
+			ExtraData: av.Buffer{Bytes: webmAV1CodecConfig()},
+		},
+	}
+	var buffer bytes.Buffer
+	muxer := &FormatMuxer{}
+	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Write(ctx, &av.Packet{
+		StreamID: stream.ID,
+		Payload:  av.Buffer{Bytes: webmAV1SequenceHeaderOBU()},
+		PTS:      av.Timestamp{Value: 0, Base: stream.TimeBase},
+		Keyframe: true,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &FormatDemuxer{}
+	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	streams := demuxer.Streams()
+	if len(streams) != 1 || len(streams[0].Codec.ExtraData.Bytes) == 0 {
+		t.Fatalf("streams = %+v", streams)
+	}
+	streams[0].Codec.ExtraData.Bytes[0] = 0
+
+	fresh := demuxer.Streams()
+	if len(fresh) != 1 || !bytes.Equal(fresh[0].Codec.ExtraData.Bytes, webmAV1CodecConfig()) {
+		t.Fatalf("fresh streams = %+v", fresh)
+	}
+	result := format.ReadResult{Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, len(webmAV1SequenceHeaderOBU()))}}}
+	if err := demuxer.ReadInto(ctx, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(result.Packet.Payload.Bytes, webmAV1SequenceHeaderOBU()) {
+		t.Fatalf("payload = %v, want AV1 sequence header", result.Packet.Payload.Bytes)
+	}
+}
+
 func TestFormatMuxerRejectsNegativeDuration(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

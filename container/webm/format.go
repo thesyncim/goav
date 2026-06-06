@@ -206,8 +206,17 @@ func (d *FormatDemuxer) Streams() []av.Stream {
 		return nil
 	}
 	streams := make([]av.Stream, len(d.streams))
-	copy(streams, d.streams)
+	for i := range d.streams {
+		streams[i] = cloneAVStream(d.streams[i])
+	}
 	return streams
+}
+
+func cloneAVStream(stream av.Stream) av.Stream {
+	if len(stream.Codec.ExtraData.Bytes) != 0 {
+		stream.Codec.ExtraData.Bytes = append([]byte(nil), stream.Codec.ExtraData.Bytes...)
+	}
+	return stream
 }
 
 func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) error {

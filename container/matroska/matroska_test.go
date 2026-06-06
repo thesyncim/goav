@@ -216,6 +216,31 @@ func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 	}
 }
 
+func TestDemuxerTracksReturnsCodecPrivateCopies(t *testing.T) {
+	data := makeH264AVCMatroskaData(t, 1)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 || len(tracks[0].CodecPrivate) == 0 {
+		t.Fatalf("tracks = %+v", tracks)
+	}
+	tracks[0].CodecPrivate[4] = 0xfe
+
+	fresh := demuxer.Tracks()
+	if len(fresh) != 1 || !bytes.Equal(fresh[0].CodecPrivate, h264AVCDecoderConfigWithLengthSize(2)) {
+		t.Fatalf("fresh tracks = %+v", fresh)
+	}
+	packet := Packet{Data: make([]byte, 0, len(h264AnnexBAccessUnit()))}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(packet.Data, h264AnnexBAccessUnit()) {
+		t.Fatalf("data = %v, want Annex B", packet.Data)
+	}
+}
+
 func TestMuxerWritesDefaultOpusHead(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -1988,6 +2013,61 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	if !result.PacketReady || result.Packet.StreamID != "1" || result.Packet.PTS.Value != 20_000_000 ||
 		!bytes.Equal(result.Packet.Payload.Bytes, []byte{1, 2, 3}) {
 		t.Fatalf("result = %+v packet=%+v", result, result.Packet)
+	}
+}
+
+func TestFormatDemuxerStreamsReturnsExtraDataCopies(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "video",
+		Index:    0,
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: timeNS},
+		Codec: av.CodecParameters{
+			ID:        av.CodecH264,
+			Type:      av.MediaVideo,
+			Width:     16,
+			Height:    16,
+			ExtraData: av.Buffer{Bytes: h264AVCDecoderConfigWithLengthSize(2)},
+		},
+	}
+	var buffer bytes.Buffer
+	muxer := &FormatMuxer{}
+	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Write(ctx, &av.Packet{
+		StreamID: stream.ID,
+		Payload:  av.Buffer{Bytes: h264AnnexBAccessUnit()},
+		PTS:      av.Timestamp{Value: 0, Base: stream.TimeBase},
+		Keyframe: true,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &FormatDemuxer{}
+	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	streams := demuxer.Streams()
+	if len(streams) != 1 || len(streams[0].Codec.ExtraData.Bytes) == 0 {
+		t.Fatalf("streams = %+v", streams)
+	}
+	streams[0].Codec.ExtraData.Bytes[4] = 0xfe
+
+	fresh := demuxer.Streams()
+	if len(fresh) != 1 || !bytes.Equal(fresh[0].Codec.ExtraData.Bytes, h264AVCDecoderConfigWithLengthSize(2)) {
+		t.Fatalf("fresh streams = %+v", fresh)
+	}
+	result := format.ReadResult{Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, len(h264AnnexBAccessUnit()))}}}
+	if err := demuxer.ReadInto(ctx, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(result.Packet.Payload.Bytes, h264AnnexBAccessUnit()) {
+		t.Fatalf("payload = %v, want Annex B", result.Packet.Payload.Bytes)
 	}
 }
 
