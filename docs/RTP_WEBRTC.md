@@ -53,10 +53,22 @@ Current `rtpav` building blocks:
 
 Current `webrtcav` building blocks:
 
+- `PeerConnectionSessionFactory` and `NewSession` for Pion `PeerConnection`
+  receive sessions.
+- bounded `AcceptTrack(ctx)` queue with stream-added and backpressure events.
 - `TrackRemoteAdapter` for Pion `TrackRemote`.
 - stream and payload-map mapping from Pion `RTPCodecParameters`.
 - preservation of track metadata such as RID, SSRC, stream ID, and track ID.
 - EOS events when the track reader reaches end-of-stream.
+
+The session-level shape is:
+
+```go
+session, err := webrtcav.NewSession(ctx, webrtcav.SessionConfig{})
+answer, err := session.SetRemoteDescription(ctx, offer)
+remote, err := session.AcceptTrack(ctx)
+reader, err := webrtcav.NewTrackRemoteAdapter().AdaptTrack(ctx, remote)
+```
 
 The runtime builder can compile a packet-reader recording graph directly:
 
@@ -71,9 +83,10 @@ task, err := runtime.New().
 ```
 
 `reader` can be a raw RTP receiver or a `webrtcav.TrackReader` produced from a
-Pion `TrackRemote`. The generated graph is `rtpav.Source -> format.MuxStage...`;
-events remain visible through the task event channel while mux stages receive
-packet messages for each output.
+Pion `TrackRemote`. A track reader produced from a WebRTC session can also route
+RTCP feedback back through the session peer connection. The generated graph is
+`rtpav.Source -> format.MuxStage...`; events remain visible through the task
+event channel while mux stages receive packet messages for each output.
 
 ## Loss
 
@@ -112,5 +125,6 @@ Initial feedback targets:
 caller-owned scratch storage. Session-level code remains responsible for sending
 those packets through the appropriate Pion RTCP writer.
 
-`rtpav.Source` accepts an explicit `FeedbackWriter`, so WebRTC sessions can own
-RTCP writes while track readers remain packet-only boundaries.
+`rtpav.Source` accepts an explicit `FeedbackWriter`, and it also auto-detects
+packet readers that implement `WriteRTCP`. WebRTC track readers created from a
+session use that path to keep RTCP writes owned by the Pion peer connection.

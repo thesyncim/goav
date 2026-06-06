@@ -17,6 +17,7 @@ type RemoteTrack struct {
 	Codec       webrtc.RTPCodecParameters
 	Stream      av.Stream
 	Payloads    rtpav.PayloadMap
+	Feedback    rtpav.FeedbackWriter
 	Metadata    av.Metadata
 }
 
@@ -28,16 +29,22 @@ type TrackReader interface {
 	Close() error
 }
 
+// TrackReceiver is a WebRTC track reader that can also write RTCP feedback.
+type TrackReceiver interface {
+	TrackReader
+	rtpav.FeedbackWriter
+}
+
 type TrackAdapter interface {
 	AdaptTrack(context.Context, RemoteTrack) (TrackReader, error)
 }
 
 type Session interface {
+	Negotiator
 	PeerConnection() *webrtc.PeerConnection
 	AcceptTrack(context.Context) (RemoteTrack, error)
 	WriteRTCP(context.Context, []rtcp.Packet) error
 	Events() <-chan av.Event
-	Close() error
 }
 
 type Negotiator interface {
@@ -50,8 +57,11 @@ type SessionFactory interface {
 	NewSession(context.Context, SessionConfig) (Session, error)
 }
 
+// SessionConfig configures a Pion-backed WebRTC receive session.
 type SessionConfig struct {
 	Configuration webrtc.Configuration
 	API           *webrtc.API
 	Metadata      av.Metadata
+	MaxTracks     int
+	MaxEvents     int
 }

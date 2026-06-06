@@ -9,6 +9,10 @@ Receive one or more Pion `TrackRemote` values, preserve RTP metadata, detect
 loss, emit codec and track lifecycle events, depacketize, decode, and optionally
 record or forward.
 
+The current receive boundary accepts tracks from a Pion peer connection, adapts
+each track into the shared RTP reader contract, and routes RTCP feedback through
+the session peer connection.
+
 Expected graph:
 
 ```text

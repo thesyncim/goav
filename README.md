@@ -99,7 +99,7 @@ as private graph compilers that must support both `Describe` and `Build`.
   stages.
 - `rtpav`: Pion RTP/RTCP boundary, payload map, loss detection, jitter ring,
   Opus/VP8/VP9/AV1 depacketizers, feedback helpers, RTP source.
-- `webrtcav`: Pion TrackRemote reader boundary.
+- `webrtcav`: Pion PeerConnection session and TrackRemote reader boundaries.
 - `filter`: resize/resample contracts.
 - `transcode`: rendition and ladder planning contracts.
 - `adapters/ivf`: IVF demux/mux for VP8, VP9, and AV1 packet recording.
@@ -123,10 +123,10 @@ Implemented slices:
 - Pre-build and runtime graph rendering as text, DOT, and Mermaid.
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.
 - VP8/VP9/AV1 RTP depacketizers for packet-preserving video recording.
+- WebRTC session track accept loop with RTCP feedback routed through Pion.
 
 Next pressure points:
 
-- WebRTC session receive loop and RTCP feedback wiring.
 - H264 RTP/codec adapter validation.
 - Codec-switch tests around payload-map epochs.
 - Allocation-safe resize and resample implementations.

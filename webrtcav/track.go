@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/pion/interceptor"
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav/av"
@@ -15,8 +16,9 @@ import (
 )
 
 var (
-	ErrClosed   = errors.New("webrtcav: closed")
-	ErrNilTrack = errors.New("webrtcav: nil track")
+	ErrClosed         = errors.New("webrtcav: closed")
+	ErrNilTrack       = errors.New("webrtcav: nil track")
+	ErrTrackQueueFull = errors.New("webrtcav: track queue full")
 )
 
 type TrackRemoteAdapter struct{}
@@ -66,6 +68,7 @@ type trackReader struct {
 }
 
 var _ rtpav.PacketReader = (*trackReader)(nil)
+var _ rtpav.Receiver = (*trackReader)(nil)
 
 func newTrackReader(remote RemoteTrack, reader trackRTPReader) *trackReader {
 	stream := streamFromRemoteTrack(remote)
@@ -124,6 +127,19 @@ func (r *trackReader) Streams(context.Context) ([]av.Stream, error) {
 
 func (r *trackReader) PayloadMap() rtpav.PayloadMap {
 	return r.remote.Payloads
+}
+
+func (r *trackReader) WriteRTCP(ctx context.Context, packets []rtcp.Packet) error {
+	if r.closed {
+		return ErrClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(packets) == 0 || r.remote.Feedback == nil {
+		return nil
+	}
+	return r.remote.Feedback.WriteRTCP(ctx, packets)
 }
 
 func (r *trackReader) emit(event av.Event) {

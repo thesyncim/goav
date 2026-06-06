@@ -7,9 +7,12 @@ import (
 	"testing"
 
 	"github.com/pion/interceptor"
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/rtpav"
 )
 
 type fakeTrackRTPReader struct {
@@ -17,6 +20,16 @@ type fakeTrackRTPReader struct {
 	err     error
 	reads   int
 }
+
+type fakeRTCPWriter struct {
+	packets []rtcp.Packet
+}
+
+type feedbackDepacketizer struct {
+	packet rtcp.Packet
+}
+
+type testEmitter func(context.Context, *pipeline.Message) error
 
 func (r *fakeTrackRTPReader) ReadRTP() (*rtp.Packet, interceptor.Attributes, error) {
 	if r.reads < len(r.packets) {
@@ -28,6 +41,35 @@ func (r *fakeTrackRTPReader) ReadRTP() (*rtp.Packet, interceptor.Attributes, err
 		return nil, nil, r.err
 	}
 	return nil, nil, io.EOF
+}
+
+func (w *fakeRTCPWriter) WriteRTCP(_ context.Context, packets []rtcp.Packet) error {
+	w.packets = append(w.packets, packets...)
+	return nil
+}
+
+func (d feedbackDepacketizer) Codec() av.CodecID {
+	return av.CodecOpus
+}
+
+func (d feedbackDepacketizer) PushInto(_ context.Context, _ *rtp.Packet, _ rtpav.PayloadCodec, out *rtpav.DepacketizeResult) error {
+	if len(out.Feedback) == cap(out.Feedback) {
+		return rtpav.ErrResultFull
+	}
+	out.Feedback = append(out.Feedback, d.packet)
+	return nil
+}
+
+func (d feedbackDepacketizer) FlushInto(context.Context, *rtpav.DepacketizeResult) error {
+	return nil
+}
+
+func (d feedbackDepacketizer) HandleEvent(context.Context, *av.Event) error {
+	return nil
+}
+
+func (e testEmitter) Emit(ctx context.Context, msg *pipeline.Message) error {
+	return e(ctx, msg)
 }
 
 func TestNewTrackReaderMapsStreamAndPayload(t *testing.T) {
@@ -100,6 +142,75 @@ func TestTrackReaderReadRTPAndClose(t *testing.T) {
 	}
 	if _, err := reader.ReadRTP(context.Background()); !errors.Is(err, ErrClosed) {
 		t.Fatalf("err = %v, want ErrClosed", err)
+	}
+}
+
+func TestTrackReaderRoutesRTCPFeedback(t *testing.T) {
+	writer := &fakeRTCPWriter{}
+	reader := newTrackReader(RemoteTrack{
+		Stream:   av.Stream{ID: "video"},
+		Feedback: writer,
+	}, &fakeTrackRTPReader{})
+	packet := &rtcp.PictureLossIndication{MediaSSRC: 42}
+
+	if err := reader.WriteRTCP(context.Background(), []rtcp.Packet{packet}); err != nil {
+		t.Fatal(err)
+	}
+	if len(writer.packets) != 1 || writer.packets[0] != packet {
+		t.Fatalf("packets = %+v", writer.packets)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.WriteRTCP(context.Background(), []rtcp.Packet{packet}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("err = %v, want ErrClosed", err)
+	}
+}
+
+func TestTrackReaderRoutesSourceFeedback(t *testing.T) {
+	writer := &fakeRTCPWriter{}
+	stream := av.Stream{
+		ID:    "audio",
+		Epoch: 2,
+		Codec: av.CodecParameters{
+			ID:        av.CodecOpus,
+			Type:      av.MediaAudio,
+			ClockRate: 48000,
+		},
+	}
+	reader := newTrackReader(RemoteTrack{
+		Stream: stream,
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypeOpus,
+				ClockRate: 48000,
+			},
+			PayloadType: 111,
+		},
+		Feedback: writer,
+	}, &fakeTrackRTPReader{
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 1},
+			Payload: []byte{1},
+		}},
+	})
+	pli := &rtcp.PictureLossIndication{MediaSSRC: 42}
+	source, err := rtpav.NewSource(rtpav.SourceConfig{
+		Receiver:      reader,
+		Depacketizers: []rtpav.Depacketizer{feedbackDepacketizer{packet: pli}},
+		MaxFeedback:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := source.Start(context.Background(), testEmitter(func(context.Context, *pipeline.Message) error {
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(writer.packets) != 1 || writer.packets[0] != pli {
+		t.Fatalf("feedback = %+v", writer.packets)
 	}
 }
 

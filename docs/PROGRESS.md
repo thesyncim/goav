@@ -32,8 +32,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard, graph specs with text/DOT/Mermaid rendering | bounded async edges and drop-policy tests |
-| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery | WebRTC session feedback wiring |
-| `webrtcav` | Pion TrackRemote reader, stream mapping, payload map boundary | session accept loop and RTCP feedback wiring |
+| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery | codec-switch epoch tests |
+| `webrtcav` | Pion PeerConnection session, track accept queue, TrackRemote reader, stream mapping, payload map boundary, RTCP feedback bridge | codec-change/session renegotiation events |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
 | runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level selected-stream decode-to-sink compiler, RTP packet-reader record/fanout compiler | encode/filter/transcode graph compilers |
@@ -61,7 +61,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
    Done.
 13. Add bounded AV1 RTP video depacketizer for packet-preserving recording.
    Done.
-14. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+14. Add WebRTC PeerConnection session receive boundary with track acceptance and
+   RTCP feedback routing into the existing RTP source. Done.
+15. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -85,6 +87,9 @@ Required proof:
   and adapter test.
 - WebRTC TrackRemote boundary exposes streams, payload map, RTP reads, metadata,
   and EOS events.
+- WebRTC session boundary exposes Pion PeerConnection negotiation, bounded
+  remote-track acceptance, stream-added/backpressure events, and RTCP feedback
+  writes through the same Pion PeerConnection used by the session.
 - RTCP NACK/PLI/FIR helpers use caller-owned feedback scratch.
 - RTP packet readers can now feed a direct pipeline source that emits
   `av.Packet` and `av.Event` messages.
@@ -155,9 +160,9 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: connect the WebRTC session receive loop and RTCP
-feedback writer around the packet-reader source so loss, codec changes, and
-keyframe requests cross the Pion boundary explicitly.
+Current pressure point: prove codec-switch behavior around WebRTC payload-map
+epochs so depacketizers and decoders reset explicitly when renegotiation or
+track replacement changes codec parameters.
 
 ## Validation Gates
 
