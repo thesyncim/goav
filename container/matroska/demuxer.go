@@ -1,6 +1,7 @@
 package matroska
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -551,91 +552,148 @@ func (d *Demuxer) parseInfo(header ebml.Header) error {
 	if header.Size.Unknown {
 		return ErrInvalidData
 	}
-	limited := d.reader.Limited(header.Size.Value)
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	limited, reader, err := d.validatedInfoReader(d.reader, header.Size.Value)
+	if err != nil {
+		return err
+	}
 	for limited.N > 0 {
 		child, err := reader.ReadHeader()
 		if err != nil {
 			return err
 		}
-		switch child.ID {
-		case idSegmentUUID:
-			value, err := readBinaryPayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			d.info.SegmentUUID = value
-		case idSegmentFilename:
-			value, err := readStringPayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			d.info.SegmentFilename = value
-		case idPrevUUID:
-			value, err := readBinaryPayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			d.info.PrevUUID = value
-		case idPrevFilename:
-			value, err := readStringPayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			d.info.PrevFilename = value
-		case idNextUUID:
-			value, err := readBinaryPayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			d.info.NextUUID = value
-		case idNextFilename:
-			value, err := readStringPayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			d.info.NextFilename = value
-		case idTimestampScale:
-			value, err := readUIntPayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			if value == 0 || value > uint64(math.MaxInt64) {
+		if child.ID == idCRC32 {
+			if child.Offset != 0 {
 				return ErrInvalidData
 			}
-			d.timecodeScaleNS = int64(value)
-		case idDateUTC:
-			value, err := readDatePayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			d.info.DateUTC = value
-			d.info.DateUTCSet = true
-		case idTitle:
-			value, err := readStringPayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			d.info.Title = value
-		case idMuxingApp:
-			value, err := readStringPayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			d.info.MuxingApp = value
-		case idWritingApp:
-			value, err := readStringPayload(reader, child.Size.Value)
-			if err != nil {
-				return err
-			}
-			d.info.WritingApp = value
-		default:
 			if err := skipElement(reader, child); err != nil {
 				return err
 			}
+			continue
+		}
+		if err := d.parseInfoChild(reader, child); err != nil {
+			return err
 		}
 	}
 	return validateSegmentInfo(d.info)
+}
+
+func (d *Demuxer) validatedInfoReader(parent io.Reader, size uint64) (*io.LimitedReader, *ebml.Reader, error) {
+	payload, err := readBinaryPayload(parent, size)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateLeadingCRC32(payload); err != nil {
+		return nil, nil, err
+	}
+	limited := &io.LimitedReader{R: bytes.NewReader(payload), N: int64(len(payload))}
+	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	return limited, reader, nil
+}
+
+func validateLeadingCRC32(payload []byte) error {
+	reader := ebml.NewReader(bytes.NewReader(payload), ebml.ReaderOptions{})
+	header, err := reader.ReadHeader()
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if header.ID != idCRC32 {
+		return nil
+	}
+	if header.Size.Unknown || header.Size.Value != 4 {
+		return ErrInvalidData
+	}
+	crcStart := header.DataOffset
+	crcEnd := crcStart + int64(header.Size.Value)
+	if crcStart < 0 || crcEnd > int64(len(payload)) {
+		return ErrInvalidData
+	}
+	if !ebml.ValidateCRC32(payload[crcStart:crcEnd], payload[crcEnd:]) {
+		return ErrInvalidData
+	}
+	return nil
+}
+
+func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header) error {
+	switch child.ID {
+	case idSegmentUUID:
+		value, err := readBinaryPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		d.info.SegmentUUID = value
+	case idSegmentFilename:
+		value, err := readStringPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		d.info.SegmentFilename = value
+	case idPrevUUID:
+		value, err := readBinaryPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		d.info.PrevUUID = value
+	case idPrevFilename:
+		value, err := readStringPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		d.info.PrevFilename = value
+	case idNextUUID:
+		value, err := readBinaryPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		d.info.NextUUID = value
+	case idNextFilename:
+		value, err := readStringPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		d.info.NextFilename = value
+	case idTimestampScale:
+		value, err := readUIntPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		if value == 0 || value > uint64(math.MaxInt64) {
+			return ErrInvalidData
+		}
+		d.timecodeScaleNS = int64(value)
+	case idDateUTC:
+		value, err := readDatePayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		d.info.DateUTC = value
+		d.info.DateUTCSet = true
+	case idTitle:
+		value, err := readStringPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		d.info.Title = value
+	case idMuxingApp:
+		value, err := readStringPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		d.info.MuxingApp = value
+	case idWritingApp:
+		value, err := readStringPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		d.info.WritingApp = value
+	default:
+		if err := skipElement(reader, child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (d *Demuxer) parseTracks(header ebml.Header) error {

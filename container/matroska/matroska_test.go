@@ -3332,6 +3332,58 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 	})
 }
 
+func TestDemuxerValidatesSegmentInfoCRC32(t *testing.T) {
+	t.Run("valid crc32", func(t *testing.T) {
+		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeInfoWithCRC32(writer, nil)
+		})
+		demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := demuxer.Info(); got.Title != "crc protected" || got.MuxingApp != "crc-mux" || got.WritingApp != "crc-write" {
+			t.Fatalf("info = %+v", got)
+		}
+	})
+	t.Run("crc32 mismatch", func(t *testing.T) {
+		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeInfoWithCRC32(writer, func(payload []byte) {
+				payload[len(payload)-1] ^= 0x01
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("short crc32", func(t *testing.T) {
+		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeInfoWithElements(writer, func(w *ebml.Writer) error {
+				if err := w.WriteHeader(idCRC32, 3); err != nil {
+					return err
+				}
+				_, err := w.Write([]byte{0, 0, 0})
+				return err
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("misplaced crc32", func(t *testing.T) {
+		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeInfoWithElements(writer, func(w *ebml.Writer) error {
+				if err := w.WriteString(idTitle, "before crc"); err != nil {
+					return err
+				}
+				return w.WriteCRC32([]byte{})
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+}
+
 func TestDemuxerRejectsInvalidSegmentInfoMetadata(t *testing.T) {
 	t.Run("short segment uuid", func(t *testing.T) {
 		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
@@ -4410,6 +4462,9 @@ func makeInfoMetadataMatroskaData(tb testing.TB, writeInfo func(*ebml.Writer) er
 	if err := writeTracksWithVideoDimensions(muxer.ebml, 16, 16); err != nil {
 		tb.Fatal(err)
 	}
+	if err := muxer.ebml.WriteElement(idCluster, nil); err != nil {
+		tb.Fatal(err)
+	}
 	return buffer.Bytes()
 }
 
@@ -4428,6 +4483,37 @@ func writeInfoWithElements(writer *ebml.Writer, writeExtra func(*ebml.Writer) er
 		return err
 	}
 	if err := iw.WriteString(idWritingApp, defaultWritingApp); err != nil {
+		return err
+	}
+	return writer.WriteElement(idInfo, info.Bytes())
+}
+
+func writeInfoWithCRC32(writer *ebml.Writer, mutate func([]byte)) error {
+	var body bytes.Buffer
+	bw := ebml.NewWriter(&body)
+	if err := bw.WriteString(idTitle, "crc protected"); err != nil {
+		return err
+	}
+	if err := bw.WriteUInt(idTimestampScale, uint64(defaultTimecodeScaleNS)); err != nil {
+		return err
+	}
+	if err := bw.WriteString(idMuxingApp, "crc-mux"); err != nil {
+		return err
+	}
+	if err := bw.WriteString(idWritingApp, "crc-write"); err != nil {
+		return err
+	}
+	payload := append([]byte(nil), body.Bytes()...)
+
+	var info bytes.Buffer
+	iw := ebml.NewWriter(&info)
+	if err := iw.WriteCRC32(payload); err != nil {
+		return err
+	}
+	if mutate != nil {
+		mutate(payload)
+	}
+	if _, err := iw.Write(payload); err != nil {
 		return err
 	}
 	return writer.WriteElement(idInfo, info.Bytes())
