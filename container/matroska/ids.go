@@ -67,6 +67,9 @@ const (
 
 	simpleBlockKeyframe    = 0x80
 	simpleBlockInvisible   = 0x08
+	simpleBlockLacingXiph  = 0x02
+	simpleBlockLacingEBML  = 0x04
+	simpleBlockLacingFixed = 0x06
 	simpleBlockLacingMask  = 0x06
 	simpleBlockDiscardable = 0x01
 )

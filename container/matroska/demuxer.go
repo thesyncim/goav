@@ -28,8 +28,23 @@ type Demuxer struct {
 	groupLimit      io.LimitedReader
 	groupReader     *ebml.Reader
 	blockHeader     [3]byte
+	laceBuffer      []byte
+	laceFrames      []laceFrame
+	laceTrackID     uint32
+	laceTimeNS      int64
+	laceDurationNS  int64
+	laceFrameCount  int
+	laceFrameIndex  int
+	laceKeyframe    bool
+	laceInvisible   bool
+	laceDiscardable bool
 	scratch         [ebml.MaxSizeWidth]byte
 	uintScratch     [8]byte
+}
+
+type laceFrame struct {
+	offset int
+	size   int
 }
 
 func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
@@ -50,6 +65,20 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 		d.groupReader = ebml.NewReader(&d.groupLimit, ebml.ReaderOptions{MaxElementSize: opts.MaxElementSize})
 	}
 	d.options = opts
+	if d.options.MaxLaceFrames <= 0 {
+		d.options.MaxLaceFrames = defaultMaxLaceFrames
+	}
+	if d.options.MaxLacePayload <= 0 {
+		d.options.MaxLacePayload = defaultMaxLacePayload
+	}
+	if cap(d.laceFrames) < d.options.MaxLaceFrames {
+		d.laceFrames = make([]laceFrame, d.options.MaxLaceFrames)
+	}
+	d.laceFrames = d.laceFrames[:d.options.MaxLaceFrames]
+	if cap(d.laceBuffer) < d.options.MaxLacePayload {
+		d.laceBuffer = make([]byte, d.options.MaxLacePayload)
+	}
+	d.laceBuffer = d.laceBuffer[:d.options.MaxLacePayload]
 	d.docType = ""
 	d.segmentData = 0
 	d.timecodeScaleNS = defaultTimecodeScaleNS
@@ -61,6 +90,7 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.clusterUnknown = false
 	d.clusterEnd = 0
 	d.clusterTimecode = 0
+	d.clearLace()
 	return d.readPreamble()
 }
 
@@ -142,6 +172,9 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 		return ErrNilPacket
 	}
 	dst.Reset()
+	if d.laceFrameIndex < d.laceFrameCount {
+		return d.nextLacedPacket(dst)
+	}
 	for {
 		if d.inCluster && !d.clusterUnknown && d.reader.Offset() >= d.clusterEnd {
 			d.inCluster = false
@@ -612,6 +645,15 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 			codecID = value
+		case idDefaultDur:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			if value > uint64(math.MaxInt64) {
+				return Track{}, ErrInvalidData
+			}
+			track.DefaultDurationNS = int64(value)
 		case idCodecPrivate:
 			value, err := readBinaryPayload(reader, child.Size.Value)
 			if err != nil {
@@ -779,9 +821,17 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 		if durationTicks > uint64(math.MaxInt64)/uint64(d.timecodeScaleNS) {
 			return ErrInvalidData
 		}
-		dst.DurationNS = int64(durationTicks) * d.timecodeScaleNS
+		durationNS := int64(durationTicks) * d.timecodeScaleNS
+		if d.laceFrameCount > 0 {
+			durationNS /= int64(d.laceFrameCount)
+			d.laceDurationNS = durationNS
+		}
+		dst.DurationNS = durationNS
 	}
 	dst.Keyframe = !referenceSeen
+	if d.laceFrameCount > 0 {
+		d.laceKeyframe = !referenceSeen
+	}
 	return nil
 }
 
@@ -799,12 +849,17 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 		return err
 	}
 	flags := d.blockHeader[2]
-	if flags&simpleBlockLacingMask != 0 {
-		_, _ = io.Copy(io.Discard, &d.blockLimit)
-		return ErrUnsupportedLacing
-	}
+	lacing := flags & simpleBlockLacingMask
 	if d.blockLimit.N < 0 || d.blockLimit.N > int64(^uint(0)>>1) {
 		return ErrInvalidData
+	}
+	blockTimecode := int16(binary.BigEndian.Uint16(d.blockHeader[:2]))
+	timecode := d.clusterTimecode + int64(blockTimecode)
+	if timecode < 0 {
+		return ErrInvalidData
+	}
+	if lacing != 0 {
+		return d.readLacedBlockPayload(trackID, timecode, flags, lacing, dst, simple)
 	}
 	frameSize := int(d.blockLimit.N)
 	if cap(dst.Data) < frameSize {
@@ -813,11 +868,6 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 	dst.Data = dst.Data[:frameSize]
 	if _, err := io.ReadFull(&d.blockLimit, dst.Data); err != nil {
 		return err
-	}
-	blockTimecode := int16(binary.BigEndian.Uint16(d.blockHeader[:2]))
-	timecode := d.clusterTimecode + int64(blockTimecode)
-	if timecode < 0 {
-		return ErrInvalidData
 	}
 	dst.TrackID = uint32(trackID)
 	dst.TimeNS = timecode * d.timecodeScaleNS
@@ -829,6 +879,211 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 		dst.Discardable = flags&simpleBlockDiscardable != 0
 	}
 	return nil
+}
+
+func (d *Demuxer) readLacedBlockPayload(trackID uint64, timecode int64, flags byte, lacing byte, dst *Packet, simple bool) error {
+	frameCountByte, err := d.readBlockByte()
+	if err != nil {
+		return err
+	}
+	frameCount := int(frameCountByte) + 1
+	if frameCount < 2 || frameCount > len(d.laceFrames) {
+		return ErrLaceTooLarge
+	}
+	for i := 0; i < frameCount; i++ {
+		d.laceFrames[i] = laceFrame{}
+	}
+	switch lacing {
+	case simpleBlockLacingXiph:
+		if err := d.readXiphLaceSizes(frameCount); err != nil {
+			return err
+		}
+	case simpleBlockLacingFixed:
+		if err := d.readFixedLaceSizes(frameCount); err != nil {
+			return err
+		}
+	case simpleBlockLacingEBML:
+		if err := d.readEBMLLaceSizes(frameCount); err != nil {
+			return err
+		}
+	default:
+		return ErrUnsupportedLacing
+	}
+	payloadSize := int(d.blockLimit.N)
+	if payloadSize < 0 || payloadSize > len(d.laceBuffer) {
+		return ErrLaceTooLarge
+	}
+	if err := d.validateLacePayloadSize(frameCount, payloadSize); err != nil {
+		return err
+	}
+	if _, err := io.ReadFull(&d.blockLimit, d.laceBuffer[:payloadSize]); err != nil {
+		return err
+	}
+	offset := 0
+	for i := 0; i < frameCount; i++ {
+		d.laceFrames[i].offset = offset
+		offset += d.laceFrames[i].size
+	}
+	d.laceTrackID = uint32(trackID)
+	d.laceTimeNS = timecode * d.timecodeScaleNS
+	d.laceDurationNS = d.defaultDurationNS(uint32(trackID))
+	d.laceFrameCount = frameCount
+	d.laceFrameIndex = 0
+	d.laceKeyframe = simple && flags&simpleBlockKeyframe != 0
+	d.laceInvisible = flags&simpleBlockInvisible != 0
+	d.laceDiscardable = simple && flags&simpleBlockDiscardable != 0
+	return d.nextLacedPacket(dst)
+}
+
+func (d *Demuxer) readXiphLaceSizes(frameCount int) error {
+	total := 0
+	for i := 0; i < frameCount-1; i++ {
+		size := 0
+		for {
+			value, err := d.readBlockByte()
+			if err != nil {
+				return err
+			}
+			size += int(value)
+			if size > len(d.laceBuffer) {
+				return ErrLaceTooLarge
+			}
+			if value != 255 {
+				break
+			}
+		}
+		d.laceFrames[i].size = size
+		total += size
+	}
+	if d.blockLimit.N < int64(total) {
+		return ErrInvalidData
+	}
+	d.laceFrames[frameCount-1].size = int(d.blockLimit.N) - total
+	return nil
+}
+
+func (d *Demuxer) readFixedLaceSizes(frameCount int) error {
+	if d.blockLimit.N < 0 || d.blockLimit.N%int64(frameCount) != 0 {
+		return ErrInvalidData
+	}
+	size := int(d.blockLimit.N) / frameCount
+	for i := 0; i < frameCount; i++ {
+		d.laceFrames[i].size = size
+	}
+	return nil
+}
+
+func (d *Demuxer) readEBMLLaceSizes(frameCount int) error {
+	first, _, err := ebml.ReadUnsignedVINT(&d.blockLimit, &d.scratch)
+	if err != nil {
+		return err
+	}
+	if first > uint64(len(d.laceBuffer)) {
+		return ErrLaceTooLarge
+	}
+	d.laceFrames[0].size = int(first)
+	total := int(first)
+	previous := int64(first)
+	for i := 1; i < frameCount-1; i++ {
+		delta, err := d.readSignedLaceVINT()
+		if err != nil {
+			return err
+		}
+		size := previous + delta
+		if size < 0 || size > int64(len(d.laceBuffer)) {
+			return ErrLaceTooLarge
+		}
+		d.laceFrames[i].size = int(size)
+		total += int(size)
+		previous = size
+	}
+	if d.blockLimit.N < int64(total) {
+		return ErrInvalidData
+	}
+	d.laceFrames[frameCount-1].size = int(d.blockLimit.N) - total
+	return nil
+}
+
+func (d *Demuxer) readSignedLaceVINT() (int64, error) {
+	value, width, err := ebml.ReadUnsignedVINT(&d.blockLimit, &d.scratch)
+	if err != nil {
+		return 0, err
+	}
+	bias := (uint64(1) << uint(7*width-1)) - 1
+	if value > uint64(math.MaxInt64)+bias {
+		return 0, ErrInvalidData
+	}
+	return int64(value) - int64(bias), nil
+}
+
+func (d *Demuxer) validateLacePayloadSize(frameCount int, payloadSize int) error {
+	total := 0
+	for i := 0; i < frameCount; i++ {
+		if d.laceFrames[i].size < 0 {
+			return ErrInvalidData
+		}
+		total += d.laceFrames[i].size
+		if total > payloadSize {
+			return ErrInvalidData
+		}
+	}
+	if total != payloadSize {
+		return ErrInvalidData
+	}
+	return nil
+}
+
+func (d *Demuxer) readBlockByte() (byte, error) {
+	if _, err := io.ReadFull(&d.blockLimit, d.scratch[:1]); err != nil {
+		return 0, err
+	}
+	return d.scratch[0], nil
+}
+
+func (d *Demuxer) nextLacedPacket(dst *Packet) error {
+	if d.laceFrameIndex >= d.laceFrameCount {
+		return ErrInvalidData
+	}
+	frame := d.laceFrames[d.laceFrameIndex]
+	if cap(dst.Data) < frame.size {
+		return ErrPayloadTooSmall
+	}
+	dst.Data = dst.Data[:frame.size]
+	copy(dst.Data, d.laceBuffer[frame.offset:frame.offset+frame.size])
+	dst.TrackID = d.laceTrackID
+	dst.TimeNS = d.laceTimeNS
+	if d.laceDurationNS > 0 {
+		dst.TimeNS += int64(d.laceFrameIndex) * d.laceDurationNS
+		dst.DurationNS = d.laceDurationNS
+	}
+	dst.Keyframe = d.laceKeyframe
+	dst.Invisible = d.laceInvisible
+	dst.Discardable = d.laceDiscardable
+	d.laceFrameIndex++
+	if d.laceFrameIndex >= d.laceFrameCount {
+		d.clearLace()
+	}
+	return nil
+}
+
+func (d *Demuxer) clearLace() {
+	d.laceTrackID = 0
+	d.laceTimeNS = 0
+	d.laceDurationNS = 0
+	d.laceFrameCount = 0
+	d.laceFrameIndex = 0
+	d.laceKeyframe = false
+	d.laceInvisible = false
+	d.laceDiscardable = false
+}
+
+func (d *Demuxer) defaultDurationNS(trackID uint32) int64 {
+	for i := range d.tracks {
+		if d.tracks[i].ID == trackID {
+			return d.tracks[i].DefaultDurationNS
+		}
+	}
+	return 0
 }
 
 func (d *Demuxer) upsertTrack(track Track) {

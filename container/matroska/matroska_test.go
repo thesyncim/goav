@@ -421,6 +421,65 @@ func TestDemuxerSeekToTimeRequiresSeekableReader(t *testing.T) {
 	}
 }
 
+func TestDemuxerReadsLacedSimpleBlocks(t *testing.T) {
+	tests := []struct {
+		name   string
+		lacing byte
+		frames [][]byte
+	}{
+		{
+			name:   "xiph",
+			lacing: simpleBlockLacingXiph,
+			frames: [][]byte{{1, 2}, {3, 4, 5}, {6}},
+		},
+		{
+			name:   "fixed",
+			lacing: simpleBlockLacingFixed,
+			frames: [][]byte{{1, 2}, {3, 4}, {5, 6}},
+		},
+		{
+			name:   "ebml",
+			lacing: simpleBlockLacingEBML,
+			frames: [][]byte{{1, 2}, {3, 4, 5}, {6}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeLacedMatroskaData(t, tt.lacing, tt.frames, 20_000_000)
+			demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := Packet{Data: make([]byte, 0, 8)}
+			for i := range tt.frames {
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatalf("read frame %d: %v", i, err)
+				}
+				if packet.TrackID != 1 || packet.TimeNS != int64(i)*20_000_000 ||
+					packet.DurationNS != 20_000_000 || !packet.Keyframe ||
+					!bytes.Equal(packet.Data, tt.frames[i]) {
+					t.Fatalf("frame %d packet=%+v data=%v want data=%v", i, packet, packet.Data, tt.frames[i])
+				}
+			}
+			if err := demuxer.ReadPacket(&packet); !errors.Is(err, io.EOF) {
+				t.Fatalf("err = %v, want EOF", err)
+			}
+		})
+	}
+}
+
+func TestDemuxerRejectsLaceFrameCountOverLimit(t *testing.T) {
+	data := makeLacedMatroskaData(t, simpleBlockLacingFixed, [][]byte{{1}, {2}, {3}}, 20_000_000)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{MaxLaceFrames: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrLaceTooLarge) {
+		t.Fatalf("err = %v, want ErrLaceTooLarge", err)
+	}
+}
+
 func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
@@ -591,6 +650,23 @@ func BenchmarkReadSimpleBlock(b *testing.B) {
 	}
 }
 
+func BenchmarkReadXiphLacedSimpleBlock(b *testing.B) {
+	data := makeRepeatedLacedMatroskaData(b, simpleBlockLacingXiph, [][]byte{{1, 2}, {3, 4}, {5, 6}}, b.N/3+1)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 8)}
+	b.ReportAllocs()
+	b.SetBytes(2)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func makeMatroskaData(tb testing.TB, packets int) []byte {
 	tb.Helper()
 	var buffer bytes.Buffer
@@ -620,6 +696,144 @@ func makeMatroskaData(tb testing.TB, packets int) []byte {
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func makeRepeatedLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, blocks int) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.writeHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		tb.Fatal(err)
+	}
+	for i := 0; i < blocks; i++ {
+		if err := writeLacedSimpleBlock(muxer.ebml, trackID, lacing, frames); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func makeLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, defaultDurationNS int64) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: defaultDurationNS,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.writeHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeLacedSimpleBlock(muxer.ebml, trackID, lacing, frames); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func writeLacedSimpleBlock(writer *ebml.Writer, trackID uint32, lacing byte, frames [][]byte) error {
+	var payload bytes.Buffer
+	var scratch [ebml.MaxSizeWidth]byte
+	n, err := ebml.EncodeUnsignedVINT(scratch[:], uint64(trackID))
+	if err != nil {
+		return err
+	}
+	payload.Write(scratch[:n])
+	var blockHeader [3]byte
+	binary.BigEndian.PutUint16(blockHeader[:2], 0)
+	blockHeader[2] = simpleBlockKeyframe | lacing
+	payload.Write(blockHeader[:])
+	if len(frames) < 2 || len(frames) > 256 {
+		return ErrInvalidData
+	}
+	payload.WriteByte(byte(len(frames) - 1))
+	switch lacing {
+	case simpleBlockLacingXiph:
+		for i := 0; i < len(frames)-1; i++ {
+			size := len(frames[i])
+			for size >= 255 {
+				payload.WriteByte(255)
+				size -= 255
+			}
+			payload.WriteByte(byte(size))
+		}
+	case simpleBlockLacingFixed:
+		size := len(frames[0])
+		for i := range frames {
+			if len(frames[i]) != size {
+				return ErrInvalidData
+			}
+		}
+	case simpleBlockLacingEBML:
+		n, err := ebml.EncodeUnsignedVINT(scratch[:], uint64(len(frames[0])))
+		if err != nil {
+			return err
+		}
+		payload.Write(scratch[:n])
+	default:
+		return ErrUnsupportedLacing
+	}
+	if lacing == simpleBlockLacingEBML {
+		previous := len(frames[0])
+		for i := 1; i < len(frames)-1; i++ {
+			delta := len(frames[i]) - previous
+			n, err := encodeSignedLaceVINT(scratch[:], int64(delta))
+			if err != nil {
+				return err
+			}
+			payload.Write(scratch[:n])
+			previous = len(frames[i])
+		}
+	}
+	for i := range frames {
+		payload.Write(frames[i])
+	}
+	return writer.WriteElement(idSimpleBlock, payload.Bytes())
+}
+
+func encodeSignedLaceVINT(dst []byte, value int64) (int, error) {
+	for width := 1; width <= ebml.MaxSizeWidth; width++ {
+		bias := int64((uint64(1) << uint(7*width-1)) - 1)
+		encoded := value + bias
+		if encoded < 0 {
+			continue
+		}
+		if uint64(encoded) <= (uint64(1)<<uint(7*width))-2 {
+			return ebml.EncodeUnsignedVINTWidth(dst, uint64(encoded), width)
+		}
+	}
+	return 0, ErrInvalidData
 }
 
 func ebmlReader(tb testing.TB, data []byte) *ebml.Reader {

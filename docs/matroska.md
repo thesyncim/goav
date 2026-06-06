@@ -56,6 +56,7 @@ Current milestone:
 - BlockGroup reading and writing for single-frame blocks with BlockDuration;
   non-keyframe BlockGroups use `ReferenceBlock=0` when exact dependency
   information is not available.
+- Xiph, fixed-size, and EBML laced block demuxing with bounded scratch buffers.
 - Matroska mux/demux for Opus, PCMU, PCMA, VP8, VP9, AV1, H.264, and H.265
   track declarations, with WebM enforcing Opus, VP8, VP9, and AV1 only.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata.
@@ -67,7 +68,7 @@ Current milestone:
 These are intentionally not in the first milestone:
 
 - Frame-exact random seeking and index-assisted extraction APIs.
-- Multiple-reference BlockGroup writing and lacing.
+- Multiple-reference BlockGroup writing and laced block muxing.
 - Chapters, tags, attachments, language variants, default/forced flags beyond
   basic defaults, and unknown-element preservation.
 - Full codec-private parsers for every codec family.
@@ -159,5 +160,5 @@ Committed benchmarks cover:
 - SimpleBlock read throughput and allocations.
 
 Future benchmarks should add large-file scan speed, mux/demux bytes per second
-on real WebRTC recordings, and comparisons against `ffmpeg`, `mkvmerge`, and
-other Go EBML/Matroska libraries on the same corpus.
+on real WebRTC recordings, more lacing variants, and comparisons against
+`ffmpeg`, `mkvmerge`, and other Go EBML/Matroska libraries on the same corpus.

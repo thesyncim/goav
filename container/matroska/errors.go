@@ -14,6 +14,7 @@ var (
 	ErrUnsupportedCodec   = errors.New("matroska: unsupported codec")
 	ErrUnsupportedElement = errors.New("matroska: unsupported element")
 	ErrUnsupportedLacing  = errors.New("matroska: lacing is not supported")
+	ErrLaceTooLarge       = errors.New("matroska: laced block exceeds configured bounds")
 	ErrInvalidData        = errors.New("matroska: invalid data")
 	ErrSeekHeadTooSmall   = errors.New("matroska: reserved seek head is too small")
 	ErrPayloadTooSmall    = errors.New("matroska: packet data capacity too small")

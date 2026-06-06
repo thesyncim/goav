@@ -868,6 +868,11 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[18]byte) error {
 	if err := tw.WriteString(idCodecID, codecID); err != nil {
 		return err
 	}
+	if track.DefaultDurationNS > 0 {
+		if err := tw.WriteUInt(idDefaultDur, uint64(track.DefaultDurationNS)); err != nil {
+			return err
+		}
+	}
 	private := track.CodecPrivate
 	if len(private) == 0 {
 		private = defaultCodecPrivate(track, scratch)

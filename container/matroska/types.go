@@ -36,15 +36,16 @@ type VideoConfig struct {
 }
 
 type Track struct {
-	ID          uint32
-	Type        TrackType
-	Codec       Codec
-	Name        string
-	Language    string
-	TimebaseNum int64
-	TimebaseDen int64
-	Audio       AudioConfig
-	Video       VideoConfig
+	ID                uint32
+	Type              TrackType
+	Codec             Codec
+	Name              string
+	Language          string
+	TimebaseNum       int64
+	TimebaseDen       int64
+	DefaultDurationNS int64
+	Audio             AudioConfig
+	Video             VideoConfig
 
 	CodecPrivate []byte
 }
@@ -89,6 +90,8 @@ type MuxerOptions struct {
 
 type DemuxerOptions struct {
 	MaxElementSize uint64
+	MaxLaceFrames  int
+	MaxLacePayload int
 }
 
 const (
@@ -99,6 +102,8 @@ const (
 	defaultWritingApp           = "goav"
 	defaultTimecodeScaleNS      = int64(time.Millisecond)
 	defaultClusterMaxDurationNS = int64(5 * time.Second)
+	defaultMaxLaceFrames        = 256
+	defaultMaxLacePayload       = 1 << 20
 )
 
 func normalizeMuxerOptions(opts MuxerOptions) MuxerOptions {
