@@ -183,8 +183,9 @@ as private graph compilers that must support both `Describe` and `Build`.
   caller-owned I420 frames, plus VP8 and VP9 encode into caller-owned packet
   buffers.
 - `adapters/goav1`: descriptor-only by default; `goav_goav1` pins the sibling
-  realtime AV1 RTP stream-runner API, while factory lookups still return
-  `codec.ErrUnavailable` until a real packet-by-packet adapter is registered.
+  realtime AV1 RTP stream-runner API and reusable decoder state binding, while
+  factory lookups still return `codec.ErrUnavailable` until packet-by-packet
+  decode is wired.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
   H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
   video frames.
@@ -258,11 +259,14 @@ Implemented slices:
   payloads.
 - The runnable graph surface now uses one edge model: `Connect` plus stream,
   event, and branch helpers.
+- Tagged AV1 decoder state binding now owns exact-format frame pools, retained
+  RTP scratch, event/parser scratch, references, and output slots for the
+  future packet-by-packet factory.
 
 Next pressure points:
 
-- Turn the tagged AV1 readiness proof into a decoder factory that binds from
-  `codec.DecodeConfig.Bounds` without hidden scratch allocation.
+- Turn the tagged AV1 state binder into a decoder factory with loss,
+  codec-change, output, and allocation proofs.
 
 ## Working Loop
 

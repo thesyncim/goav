@@ -37,7 +37,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
 | runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph connections and branches with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | next codec adapter validation |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` reserves `goav_goav1` and pins the sibling RTP stream-runner API while keeping factories unavailable; default-build optional video adapters report unavailable factories explicitly | AV1 tagged decode once the stream runner can bind from decode bounds without hidden allocation |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` reserves `goav_goav1`, pins the sibling RTP stream-runner API, and binds reusable decoder state from bounds/exact format while keeping factories unavailable; default-build optional video adapters report unavailable factories explicitly | AV1 tagged decode factory over the bound state |
 
 ## Implementation Order
 
@@ -157,8 +157,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     stream/event routing through connection options. Done.
 49. Reserve the `goav_goav1` optional adapter boundary and pin the sibling AV1
     RTP stream-runner API with a tagged compile proof, without registering a
-    fake decoder factory. Done.
-50. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+    premature decoder factory. Done.
+50. Add a tagged AV1 `DecoderState` binder that owns exact-format frame pools,
+    retained RTP scratch, event/parser scratch, reference/output slots, and
+    reusable backend runtime handles from `codec.DecodeConfig.Bounds` plus
+    adapter-specific scratch sizing. Done.
+51. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -345,9 +349,9 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: turn the tagged AV1 readiness proof into a decoder
-factory that binds reusable RTP stream-runner scratch from
-`codec.DecodeConfig.Bounds` without hidden allocation.
+Current pressure point: turn the tagged AV1 state binder into a decoder factory
+that maps packet loss, codec changes, decoded outputs, and result-capacity
+failures without hidden allocation.
 
 ## Validation Gates
 

@@ -117,9 +117,17 @@ format conversion remain future slices.
 
 The `goav1` adapter is still descriptor-only by default in `goav`. The
 `goav_goav1` tag pins the sibling module's AV1 low-overhead and RTP payload
-stream runners with caller-owned scratch, but a decoder factory should register
-here only after the adapter can bind a reusable packet-by-packet runner from
-`codec.DecodeConfig.Bounds`, stream metadata, and documented `OpaqueState`.
+stream runners with caller-owned scratch, and exposes `DecoderState` as the
+documented `codec.DecodeConfig.OpaqueState` shape for the future decoder
+factory. `DecoderState` binds exact-format frame pools, retained RTP buffers,
+event/parser scratch, reference/output slots, and backend runtime handles from
+generic decode bounds plus adapter-specific scratch sizing.
+
+A decoder factory should register here only after packet-by-packet decode can
+map realtime packet loss, codec changes, decoded output frames, and
+result-capacity failures onto that state without hidden allocation. The frame
+format passed to `DecoderState` is exact, not merely a maximum envelope, because
+the AV1 backend frame pool must match the accepted sequence/frame format.
 
 The first concrete surface should stay narrow:
 
