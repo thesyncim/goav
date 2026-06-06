@@ -127,7 +127,8 @@ return goav.Transcode(goav.FileInput("input.webm", in)).
   and each branch lists each output once. Share one output by reusing its label
   in `.To(...)` on each branch. Branches decode implicitly, transforms come
   before one terminal encoder, and resize dimensions, resample rates, and
-  channel counts must be positive.
+  channel counts must be positive. Branches currently choose concrete Opus,
+  VP8, or VP9 recipe encoders; `Auto()` and `Copy()` fail early.
 - `goav.WebRTCTrack(track)` adapts a Pion `TrackRemote` into the same realtime
   receive path as RTP.
 - `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive

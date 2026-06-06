@@ -2517,7 +2517,7 @@ func validateTranscodeBranchIntentShape(stream StreamIntent, index int) error {
 	if err := validateRecipeStreamSelector(transcodeRecipeOperation, transcodeIntentBranchName(stream), selector); err != nil {
 		return err
 	}
-	if stream.Encode.ID == "" && !stream.Encode.Copy {
+	if !codecIntentSet(stream.Encode) {
 		return transcodeEncodeMissingError(stream)
 	}
 	if err := validateRecipeEncode(stream.Encode, transcodeRecipeOperation, stream.Name); err != nil {

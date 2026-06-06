@@ -687,6 +687,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     ordinary and transcode file/protocol recipes now report missing or
     descriptor-only decoders before demuxers are opened whenever the registered
     prober already exposes an unambiguous selected stream codec. Done.
+203. Validate unresolved transcode encode intents through the shared recipe
+    encode rules: `Auto()` and `Copy()` branch targets now fail with explicit
+    intent diagnostics instead of falling through as missing encoders. Done.
 
 ## First Vertical Slice
 
@@ -944,6 +947,9 @@ unless the recipe explicitly requested `.Format(...)`.
 When probed input streams identify the selected codec, ordinary stream recipes
 and transcode branches also preflight decoder availability before opening the
 demuxer, while ambiguous selections stay with stream-selection diagnostics.
+Transcode branch validation now uses the same unresolved encode-intent rules as
+stream recipes, so `Auto()` and `Copy()` remain explicit future work rather
+than half-admitted branch targets.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

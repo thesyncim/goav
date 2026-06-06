@@ -1465,6 +1465,40 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 			want: "stream has no codec target",
 		},
 		{
+			name: "auto unresolved",
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ivf"}},
+					Streams: []StreamIntent{{
+						Name:    "360p",
+						Select:  StreamSelect{Type: av.MediaVideo},
+						Encode:  Auto(),
+						RouteTo: []string{"web"},
+					}},
+				},
+			},
+			code: "encode_auto_unresolved",
+			want: "automatic codec selection",
+		},
+		{
+			name: "copy unresolved",
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ivf"}},
+					Streams: []StreamIntent{{
+						Name:    "copy",
+						Select:  StreamSelect{Type: av.MediaVideo},
+						Encode:  Copy(),
+						RouteTo: []string{"web"},
+					}},
+				},
+			},
+			code: "copy_unresolved",
+			want: "record/remux",
+		},
+		{
 			name: "duplicate branch output",
 			state: recipeCompileState{
 				operation: transcodeRecipeOperation,
