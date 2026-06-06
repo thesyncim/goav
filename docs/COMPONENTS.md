@@ -192,6 +192,8 @@ webrtcav.TrackReader or webrtcav.TrackSet
 
 This keeps Pion types at the WebRTC/RTP boundary while the rest of the graph
 uses `av`, `pipeline`, `codec`, `format`, and `filter` contracts.
+`TestComponentWebRTCTrackSetFeedsRTPSource` covers TrackSet replacement,
+long-lived reader reuse, and direct graph receive through `rtpav.Source`.
 
 ## Custom Stage Checklist
 

@@ -737,6 +737,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     as a `Job` expression that expands to branch stream intents, preserves
     snapshots, emits actionable flow diagnostics, and describes branch graphs
     through the existing branch composer. Done.
+214. Prove WebRTC TrackSet receive as reusable components: add
+    `TestComponentWebRTCTrackSetFeedsRTPSource`, accepting an initial and
+    replacement Pion-typed remote track through `webrtcav.TrackSet`, reusing
+    one long-lived reader, feeding that reader into `rtpav.Source`, and
+    verifying replacement epoch packet output, graph spec details, stats,
+    lifecycle closure, and caller-owned session lifetime. Done.
 
 ## First Vertical Slice
 
@@ -1019,6 +1025,8 @@ through the real Opus depacketizer and decoder without recipe lowering.
 Reusable audio/video flows now expand into recipe intent instead of a parallel
 graph language; `Tee` stays on `Job` and branch graph descriptions reuse the
 existing branch composer.
+The WebRTC TrackSet component proof now exercises same-stream replacement and
+reader reuse through direct RTP source graph composition.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and
