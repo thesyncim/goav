@@ -380,7 +380,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 122. Carry explicit recipe output formats into ordinary record/stream builders,
     and reject writer-only file outputs that provide no name, URI, MIME type, or
     format signal. Done.
-123. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+123. Wrap missing format probe, demuxer, and muxer registry failures with
+    actionable build diagnostics that name the input/output and adapter role.
+    Done.
+124. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

@@ -312,6 +312,40 @@ func TestRecordRecipeRejectsFormatOnlyOutputSpec(t *testing.T) {
 	}
 }
 
+func TestRecordRecipeReportsMissingInputDemuxer(t *testing.T) {
+	_, err := goav.Record(
+		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.FileOutput("recording.ivf", io.Discard),
+	).Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_demuxer_missing" {
+		t.Fatalf("err = %v, want input_demuxer_missing", err)
+	}
+	if !strings.Contains(err.Error(), `format "ogg"`) ||
+		!strings.Contains(err.Error(), "no demuxer is registered") ||
+		!strings.Contains(err.Error(), "WithFormatAdapter") {
+		t.Fatalf("err = %v, want demuxer adapter guidance", err)
+	}
+}
+
+func TestRecordRecipeReportsMissingOutputMuxer(t *testing.T) {
+	_, err := goav.Record(
+		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
+		goav.FileOutput("recording.webm", io.Discard),
+	).Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_muxer_missing" {
+		t.Fatalf("err = %v, want output_muxer_missing", err)
+	}
+	if !strings.Contains(err.Error(), `format "matroska"`) ||
+		!strings.Contains(err.Error(), "no muxer is registered") ||
+		!strings.Contains(err.Error(), ".ivf") {
+		t.Fatalf("err = %v, want muxer adapter guidance", err)
+	}
+}
+
 func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
 		To(

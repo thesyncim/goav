@@ -19,15 +19,15 @@ func (b *builder) openDemuxSource(ctx context.Context, input Input) (demuxBuild,
 		Input:    input,
 	})
 	if err != nil {
-		return demuxBuild{}, err
+		return demuxBuild{}, inputFormatProbeError(input, err)
 	}
 	demuxFactory, err := b.runtime.formats.DemuxerFactory(inputProbe.Format)
 	if err != nil {
-		return demuxBuild{}, err
+		return demuxBuild{}, inputDemuxerMissingError(input, inputProbe.Format, err)
 	}
 	demuxer, err := demuxFactory.NewDemuxer(ctx, inputProbe)
 	if err != nil {
-		return demuxBuild{}, err
+		return demuxBuild{}, inputDemuxerMissingError(input, inputProbe.Format, err)
 	}
 	if err := demuxer.Open(ctx, input, format.OpenOptions{
 		Realtime: b.runtime.realtime || input.Realtime,

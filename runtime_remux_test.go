@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -193,5 +194,42 @@ func TestRuntimeBuilderInputOutputRemux(t *testing.T) {
 		if !muxers.muxers[i].closed {
 			t.Fatalf("muxer[%d] not closed", i)
 		}
+	}
+}
+
+func TestRuntimeBuilderReportsMissingInputDemuxer(t *testing.T) {
+	_, err := New().New().
+		Input(Input{Name: "input.ogg"}).
+		Output(Output{Name: "recording.ivf"}).
+		Build(context.Background())
+
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_demuxer_missing" || !errors.Is(err, format.ErrNotFound) {
+		t.Fatalf("err = %v, want input_demuxer_missing wrapping format.ErrNotFound", err)
+	}
+	if !strings.Contains(err.Error(), `format "ogg"`) ||
+		!strings.Contains(err.Error(), "no demuxer is registered") {
+		t.Fatalf("err = %v, want demuxer guidance", err)
+	}
+}
+
+func TestRuntimeBuilderReportsMissingOutputMuxer(t *testing.T) {
+	streams := []av.Stream{{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus}}}
+	demuxer := &remuxTestDemuxer{streams: streams}
+
+	_, err := New(withTestFormats(
+		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
+	)).New().
+		Input(Input{Name: "input.ogg"}).
+		Output(Output{Name: "archive.webm"}).
+		Build(context.Background())
+
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_muxer_missing" || !errors.Is(err, format.ErrNotFound) {
+		t.Fatalf("err = %v, want output_muxer_missing wrapping format.ErrNotFound", err)
+	}
+	if !strings.Contains(err.Error(), `format "matroska"`) ||
+		!strings.Contains(err.Error(), "no muxer is registered") {
+		t.Fatalf("err = %v, want muxer guidance", err)
 	}
 }

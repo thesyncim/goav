@@ -154,6 +154,11 @@ The explicit registration path remains important for embedded builds and narrow
 deployments. The recipe API is the stable front door as the default adapter
 bundle grows.
 
+`goav.Default()` currently includes concrete IVF and Annex B format adapters.
+Containers such as WebM or Ogg need a matching adapter registered on the runtime.
+When a container is detected but no demuxer or muxer exists, builds fail with an
+actionable diagnostic naming the missing adapter role.
+
 Recipe encode conveniences currently target Opus, VP8, and VP9. H264 and AV1
 codec specs are useful for receive, record, and decode paths while recipe encode
 support continues to mature. Recipe encode bitrates cannot be negative, and

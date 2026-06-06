@@ -34,7 +34,8 @@ task, err := goav.From(goav.WebRTCTrack(audio)).
 ```
 
 Repeated realtime inputs need distinct names when names are explicit, such as
-`audio` and `video`.
+`audio` and `video`. A shared recording container such as WebM needs a matching
+muxer adapter registered on the runtime.
 
 Expected graph:
 
@@ -164,6 +165,7 @@ task, err := goav.Transcode(goav.FileInput("input.webm", in)).
 Branch names are required, unique handles; output labels are unique handles.
 Each branch lists each output once. Route multiple branches to the same output
 by reusing the output label in `.To(...)`, not by defining the output twice.
+The containers shown here require matching demuxer and muxer adapters.
 
 Resize and resample configs become branch-local filter stages when matching
 filter factories are registered. The first concrete filters cover S16 audio

@@ -82,7 +82,8 @@ task, err := goav.Record(
 ).Build(ctx)
 ```
 
-For multiple tracks, the orchestration boundary is explicit:
+For multiple tracks, the orchestration boundary is explicit. Writing them to one
+container requires a muxer adapter for that container:
 
 ```go
 tracks, err := webrtcav.NewTrackSet(webrtcav.TrackSetConfig{Session: session})

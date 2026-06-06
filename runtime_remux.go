@@ -67,17 +67,17 @@ func (b *builder) openMuxStageWithFormat(ctx context.Context, output Output, ind
 	if formatID == "" {
 		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
 		if err != nil {
-			return nil, err
+			return nil, outputFormatProbeError(output, index, err)
 		}
 		formatID = outputProbe.Format
 	}
 	muxFactory, err := b.runtime.formats.MuxerFactory(formatID)
 	if err != nil {
-		return nil, err
+		return nil, outputMuxerMissingError(output, index, formatID, err)
 	}
 	muxer, err := muxFactory.NewMuxer(ctx, formatID)
 	if err != nil {
-		return nil, err
+		return nil, outputMuxerMissingError(output, index, formatID, err)
 	}
 	if err := muxer.Open(ctx, output, streams, format.OpenOptions{
 		Realtime: b.runtime.realtime || output.Realtime,
