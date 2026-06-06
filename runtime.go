@@ -87,11 +87,11 @@ type builderAPI interface {
 	Output(format.Output) builderAPI
 	Decode(av.StreamSelector) builderAPI
 	Encode(av.StreamSelector, codec.EncodeConfig) builderAPI
-	Filter(av.StreamSelector, Stage) builderAPI
+	Filter(av.StreamSelector, pipeline.Stage) builderAPI
 	Transcode(transcode.Plan) builderAPI
-	Source(Source) builderAPI
-	Stage(Stage) builderAPI
-	Sink(Sink) builderAPI
+	Source(pipeline.Source) builderAPI
+	Stage(pipeline.Stage) builderAPI
+	Sink(pipeline.Sink) builderAPI
 	Routes(...pipeline.Route) builderAPI
 	Describe() (pipeline.Spec, error)
 	Build(context.Context) (Task, error)

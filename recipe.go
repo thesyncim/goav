@@ -690,7 +690,7 @@ func URIOutput(uri string) OutputSpec {
 	}
 }
 
-func FrameSink(sink Sink) OutputSpec {
+func FrameSink(sink pipeline.Sink) OutputSpec {
 	name := ""
 	if sink != nil {
 		name = sink.Name()
@@ -1742,7 +1742,7 @@ type JobStreamBuilder struct {
 	stream *jobStreamBuild
 }
 
-func (b *JobStreamBuilder) Do(stage Stage) *JobStreamBuilder {
+func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
 		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", stream.encode))

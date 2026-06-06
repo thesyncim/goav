@@ -90,6 +90,9 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Output":       true,
 		"ProbeRequest": true,
 		"ProbeResult":  true,
+		"Source":       true,
+		"Stage":        true,
+		"Sink":         true,
 	}
 	for _, decl := range file.Decls {
 		switch decl := decl.(type) {

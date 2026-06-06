@@ -45,28 +45,28 @@ func (e *Emit) Event(event av.Event) error {
 	return e.emitter.Emit(e.ctx, &e.message)
 }
 
-func PacketFunc(name string, fn func(context.Context, *av.Packet, Emit) error) Stage {
+func PacketFunc(name string, fn func(context.Context, *av.Packet, Emit) error) pipeline.Stage {
 	if fn == nil {
 		return nil
 	}
 	return mediaFuncStage{name: name, packet: fn}
 }
 
-func FrameFunc(name string, fn func(context.Context, *av.Frame, Emit) error) Stage {
+func FrameFunc(name string, fn func(context.Context, *av.Frame, Emit) error) pipeline.Stage {
 	if fn == nil {
 		return nil
 	}
 	return mediaFuncStage{name: name, frame: fn}
 }
 
-func EventFunc(name string, fn func(context.Context, av.Event) error) Stage {
+func EventFunc(name string, fn func(context.Context, av.Event) error) pipeline.Stage {
 	if fn == nil {
 		return nil
 	}
 	return mediaFuncStage{name: name, event: fn}
 }
 
-func SinkFunc(name string, fn func(context.Context, Message) error) Sink {
+func SinkFunc(name string, fn func(context.Context, Message) error) pipeline.Sink {
 	if fn == nil {
 		return nil
 	}

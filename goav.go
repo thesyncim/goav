@@ -16,9 +16,6 @@ type Event = av.Event
 type Stream = av.Stream
 type Metadata = av.Metadata
 type CodecParameters = av.CodecParameters
-type Source = pipeline.Source
-type Stage = pipeline.Stage
-type Sink = pipeline.Sink
 
 // Runtime is the composition root for applications embedding goav.
 type Runtime interface {
@@ -29,9 +26,9 @@ type Runtime interface {
 // GraphBuilder is the handle-based expert graph layer. Most applications should
 // start with recipes such as Record, Decode, From, or Transcode.
 type GraphBuilder interface {
-	Source(string, Source) GraphNode
-	Stage(string, Stage) GraphNode
-	Sink(string, Sink) GraphNode
+	Source(string, pipeline.Source) GraphNode
+	Stage(string, pipeline.Stage) GraphNode
+	Sink(string, pipeline.Sink) GraphNode
 	Connect(GraphOutlet, ...GraphInlet) GraphBuilder
 	Describe() (pipeline.Spec, error)
 	Build(context.Context) (Task, error)

@@ -231,10 +231,10 @@ graph.Connect(dec.Out(), recordOut.In(), previewOut.In())
 task, err := graph.Build(ctx)
 ```
 
-This layer exposes named sources, stages, sinks, typed handles, route policies,
-buffer policies, and graph specs. It is valuable for custom realtime systems,
-but it is no longer the first API a normal record/transcode workflow has to
-learn.
+This layer accepts `pipeline.Source`, `pipeline.Stage`, and `pipeline.Sink`
+components, then connects them through typed handles, route policies, buffer
+policies, and graph specs. It is valuable for custom realtime systems, but it
+is no longer the first API a normal record/transcode workflow has to learn.
 
 ## Project Shape
 

@@ -457,7 +457,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     probing details stay in `format`, while `Runtime.Probe` remains available
     for applications that need it.
     Done.
-144. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+144. Remove top-level `Source`, `Stage`, and `Sink` aliases so graph-kernel
+    primitives live in `pipeline`, while recipe helpers still expose
+    `FrameSink`, `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc`.
+    Done.
+145. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
