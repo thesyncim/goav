@@ -253,11 +253,13 @@ Implemented slices:
   drop-newest, and backpressure behavior covered.
 - Runtime multi-output `Transcode(plan)` builds are covered through buffered
   execution with policy-bounded copies of encoder-owned packet payloads.
+- Runtime RTP/WebRTC packet-reader record/fanout builds are covered through
+  buffered execution with policy-bounded copies of depacketizer-owned packet
+  payloads.
 
 Next pressure points:
 
-- Use the buffered-copy surface in RTP/WebRTC live receive graph proofs, then
-  extend AV1 decode once the sibling module is a clean optional dependency.
+- Extend AV1 decode once the sibling module is a clean optional dependency.
 
 ## Working Loop
 

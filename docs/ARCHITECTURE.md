@@ -149,9 +149,9 @@ into preallocated per-node slots when `BufferPolicy` provides explicit byte
 bounds. Borrowed media without a configured copy bound fails early instead of
 extending unsafe lifetimes. Buffered handlers must copy any message header or
 buffer data they need after `Handle` returns; slot-owned pointers are reused.
-High-level runtime compilers use the same policy surface, so a multi-output
-transcode can switch from direct calls to bounded buffered execution without a
-separate graph shape.
+High-level runtime compilers use the same policy surface, so multi-output
+transcode and RTP/WebRTC packet-reader record/fanout graphs can switch from
+direct calls to bounded buffered execution without a separate graph shape.
 
 Builders and graphs can produce a `pipeline.Spec`: structured nodes and edges
 plus human-readable text, DOT, and Mermaid rendering. Nodes may include short

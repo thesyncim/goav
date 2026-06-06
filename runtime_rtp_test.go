@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
 )
 
@@ -140,6 +141,76 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 	}
 	if gotEvents[0].Type != av.EventPacketLoss || gotEvents[1].Type != av.EventEndOfStream {
 		t.Fatalf("events = %+v", gotEvents)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed {
+		t.Fatal("receiver not closed")
+	}
+	for i := range muxers.muxers {
+		if !muxers.muxers[i].closed {
+			t.Fatalf("muxer[%d] not closed", i)
+		}
+	}
+}
+
+func TestRuntimeBuilderBufferedRTPRecordRequiresPacketCopyBound(t *testing.T) {
+	builder, _, _ := newBufferedRTPRecordCopyFixture(pipeline.BufferPolicy{
+		Capacity: 4,
+		Drop:     pipeline.DropOldest,
+	})
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(context.Background()); !errors.Is(err, pipeline.ErrBufferedMessageUnsafe) {
+		t.Fatalf("err = %v, want ErrBufferedMessageUnsafe", err)
+	}
+}
+
+func TestRuntimeBuilderBufferedRTPRecordCopiesPacketsToOutputs(t *testing.T) {
+	builder, receiver, muxers := newBufferedRTPRecordCopyFixture(pipeline.BufferPolicy{
+		Capacity:        4,
+		Drop:            pipeline.DropOldest,
+		CopyPacketBytes: 8,
+	})
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(planned.String(), "live-audio -> archive.ogg") ||
+		!strings.Contains(planned.String(), "live-audio -> preview.ogg") {
+		t.Fatalf("planned:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(muxers.muxers) != 2 {
+		t.Fatalf("muxers = %d, want 2", len(muxers.muxers))
+	}
+	for i := range muxers.muxers {
+		muxer := muxers.muxers[i]
+		if !muxer.opened || muxer.streamCount != 1 || muxer.writes != 1 || muxer.lastStream != "audio" {
+			t.Fatalf("muxer[%d] opened=%v streams=%d writes=%d last=%s", i, muxer.opened, muxer.streamCount, muxer.writes, muxer.lastStream)
+		}
+		if !bytes.Equal(muxer.writtenPayloads, []byte{1}) {
+			t.Fatalf("muxer[%d] payloads = %+v, want copied Opus payload", i, muxer.writtenPayloads)
+		}
+	}
+	gotEvents := drainTaskEvents(task)
+	if countEvents(gotEvents, av.EventEndOfStream) != 1 {
+		t.Fatalf("events = %+v, want EOS", gotEvents)
 	}
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
@@ -313,6 +384,49 @@ func TestRuntimeBuilderRTPDecodeFilterSink(t *testing.T) {
 	if !receiver.closed || !filter.closed || !sink.closed {
 		t.Fatalf("closed receiver=%v filter=%v sink=%v", receiver.closed, filter.closed, sink.closed)
 	}
+}
+
+func newBufferedRTPRecordCopyFixture(policy pipeline.BufferPolicy) (Builder, *runtimeRTPReceiver, *remuxTestMuxerFactory) {
+	stream := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   2,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    2,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := format.NewRegistry(
+		format.WithProber(format.DefaultProber()),
+		format.WithMuxer(av.FormatOgg, muxers),
+	)
+	builder := New(WithFormatRegistry(formats), WithBufferPolicy(policy)).New().
+		RTP(receiver,
+			WithRTPName("live-audio"),
+			WithRTPDepacketizer(rtpav.NewOpusDepacketizer(stream)),
+		).
+		Output(Output{Name: "archive.ogg"}).
+		Output(Output{Name: "preview.ogg"})
+	return builder, receiver, muxers
 }
 
 func TestRuntimeBuilderMultiRTPDecodeSelectsOneStream(t *testing.T) {
