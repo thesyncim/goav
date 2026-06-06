@@ -28,7 +28,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 
 | Area | Status | Next |
 | --- | --- | --- |
-| `av` | reset helpers, ownership docs, RTP timebase helpers | richer timestamp conversion helpers |
+| `av` | reset helpers, ownership docs, RTP timebase helpers, allocation-free timestamp and duration rescale helpers | timestamp discontinuity helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, fanout, simple node-to-node links, branch helpers, stream/event routes, backpressure guard, graph specs with detail-aware text/DOT/Mermaid rendering | bounded async links and drop-policy tests |
@@ -123,7 +123,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     codec stages, transcode transforms, RTP receive nodes, and mux outputs
     render useful text/DOT/Mermaid labels while preserving the simple
     node-to-node API. Done.
-38. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+38. Add allocation-free `av.TimeBase`, `av.Timestamp`, and `av.Duration`
+    helpers for RTP/media/std-duration rescaling, plus first adapter use in
+    tagged VP8 encode FPS selection. Done.
+39. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -151,6 +154,8 @@ Required proof:
   remote-track acceptance, stream-added/backpressure events, and RTCP feedback
   writes through the same Pion PeerConnection used by the session.
 - RTCP NACK/PLI/FIR helpers use caller-owned feedback scratch.
+- `av` timebase helpers rescale RTP timestamps, media durations, and standard
+  Go durations without allocation so adapters share the same clock-domain math.
 - RTP packet readers can now feed a direct pipeline source that emits
   `av.Packet` and `av.Event` messages.
 - `codec.DecoderStage` converts packet messages into frame messages while

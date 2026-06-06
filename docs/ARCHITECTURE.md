@@ -88,6 +88,9 @@ The `av` package owns transport-neutral vocabulary:
 
 RTP and WebRTC details do not leak into `av`. Dedicated packages use Pion types
 directly and translate their output into `av.Packet` and `av.Event` values.
+Timestamp helpers in `av` keep RTP clock domains, media durations, and standard
+Go durations convertible without allocating or making each adapter repeat its
+own timebase math.
 
 ## Format Probing
 

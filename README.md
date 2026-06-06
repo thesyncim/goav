@@ -148,8 +148,8 @@ as private graph compilers that must support both `Describe` and `Build`.
 
 ## Current Surface
 
-- `av`: media identifiers, streams, packets, frames, timestamps, events, reset
-  helpers, and ownership markers.
+- `av`: media identifiers, streams, packets, frames, timestamps, events,
+  timebase conversion helpers, reset helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, fanout, stream/event routes,
   backpressure surface, simple node-to-node links and branches,
   detail-aware text/DOT/Mermaid graph specs.
@@ -186,6 +186,8 @@ Implemented slices:
 
 - RTP/WebRTC Opus receive primitives.
 - Loss/discontinuity events from RTP sequence gaps.
+- Allocation-free timestamp/timebase rescale helpers for RTP, codec, and
+  transcode boundaries.
 - Opus RTP depacketization.
 - Opus decode through `gopus` into caller-owned PCM frames.
 - Event-aware decoder and encoder stages.

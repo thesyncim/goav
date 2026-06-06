@@ -41,6 +41,7 @@ go test -tags goav_govpx ./adapters/govpx
 Current allocation guards cover:
 
 - `av.Packet`, `av.Frame`, and `av.Event` reset
+- `av.TimeBase`, `av.Timestamp`, and `av.Duration` conversion helpers
 - codec result reset
 - direct pipeline pass-through
 - codec decoder stage packet-to-frame flow

@@ -27,6 +27,7 @@ validation gates. This roadmap keeps the broader phase view.
 - Demux boundaries for protocol/file adapters.
 - Live input events for connect, disconnect, and timestamp discontinuity.
 - Shared packet flow into the same pipeline graph used by WebRTC.
+- Core timestamp/timebase rescale helpers. First slice active.
 
 ## Phase 2: Video receive
 

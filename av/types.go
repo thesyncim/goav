@@ -72,6 +72,114 @@ type Duration struct {
 	Base  TimeBase
 }
 
+// Valid reports whether the timebase can convert values.
+func (b TimeBase) Valid() bool {
+	return b.Num > 0 && b.Den > 0
+}
+
+// ToDuration converts a value in this timebase to a standard Go duration.
+func (b TimeBase) ToDuration(value int64) (time.Duration, bool) {
+	scaled, ok := RescaleValue(value, b, TimeBase{Num: 1, Den: int64(time.Second)})
+	if !ok {
+		return 0, false
+	}
+	return time.Duration(scaled), true
+}
+
+// FromDuration converts a standard Go duration to a value in this timebase.
+func (b TimeBase) FromDuration(duration time.Duration) (int64, bool) {
+	return RescaleValue(int64(duration), TimeBase{Num: 1, Den: int64(time.Second)}, b)
+}
+
+// Rescale converts the timestamp to another timebase.
+func (t Timestamp) Rescale(base TimeBase) (Timestamp, bool) {
+	value, ok := RescaleValue(t.Value, t.Base, base)
+	if !ok {
+		return Timestamp{}, false
+	}
+	return Timestamp{Value: value, Base: base}, true
+}
+
+// ToDuration converts the timestamp value to elapsed duration from zero.
+func (t Timestamp) ToDuration() (time.Duration, bool) {
+	return t.Base.ToDuration(t.Value)
+}
+
+// Rescale converts the duration to another timebase.
+func (d Duration) Rescale(base TimeBase) (Duration, bool) {
+	value, ok := RescaleValue(d.Value, d.Base, base)
+	if !ok {
+		return Duration{}, false
+	}
+	return Duration{Value: value, Base: base}, true
+}
+
+// ToDuration converts the media duration to a standard Go duration.
+func (d Duration) ToDuration() (time.Duration, bool) {
+	return d.Base.ToDuration(d.Value)
+}
+
+// TimestampFromStdDuration converts elapsed time from zero into a timestamp.
+func TimestampFromStdDuration(duration time.Duration, base TimeBase) (Timestamp, bool) {
+	value, ok := base.FromDuration(duration)
+	if !ok {
+		return Timestamp{}, false
+	}
+	return Timestamp{Value: value, Base: base}, true
+}
+
+// DurationFromStdDuration converts a standard Go duration into a media duration.
+func DurationFromStdDuration(duration time.Duration, base TimeBase) (Duration, bool) {
+	value, ok := base.FromDuration(duration)
+	if !ok {
+		return Duration{}, false
+	}
+	return Duration{Value: value, Base: base}, true
+}
+
+// RescaleValue converts value from one rational timebase to another.
+func RescaleValue(value int64, from TimeBase, to TimeBase) (int64, bool) {
+	if !from.Valid() || !to.Valid() {
+		return 0, false
+	}
+	if value == 0 {
+		return 0, true
+	}
+	negative := value < 0
+	if negative {
+		if value == minInt64 {
+			return 0, false
+		}
+		value = -value
+	}
+
+	a := value
+	b := from.Num
+	c := to.Den
+	d := from.Den
+	e := to.Num
+	reducePair(&a, &d)
+	reducePair(&a, &e)
+	reducePair(&b, &d)
+	reducePair(&b, &e)
+	reducePair(&c, &d)
+	reducePair(&c, &e)
+
+	numerator, ok := checkedMul(a, b)
+	if !ok {
+		return 0, false
+	}
+	numerator, ok = checkedMul(numerator, c)
+	if !ok {
+		return 0, false
+	}
+	value = numerator / d / e
+	if negative {
+		value = -value
+	}
+	return value, true
+}
+
 type BufferOwnership string
 
 const (
@@ -287,4 +395,38 @@ func SamplesDuration(samples int, sampleRate int) Duration {
 		return Duration{}
 	}
 	return Duration{Value: int64(samples), Base: TimeBase{Num: 1, Den: int64(sampleRate)}}
+}
+
+const (
+	maxInt64 = int64(^uint64(0) >> 1)
+	minInt64 = -maxInt64 - 1
+)
+
+func reducePair(a *int64, b *int64) {
+	gcd := gcdInt64(*a, *b)
+	if gcd <= 1 {
+		return
+	}
+	*a /= gcd
+	*b /= gcd
+}
+
+func gcdInt64(a int64, b int64) int64 {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	if a < 0 {
+		return -a
+	}
+	return a
+}
+
+func checkedMul(a int64, b int64) (int64, bool) {
+	if a == 0 || b == 0 {
+		return 0, true
+	}
+	if a > maxInt64/b {
+		return 0, false
+	}
+	return a * b, true
 }

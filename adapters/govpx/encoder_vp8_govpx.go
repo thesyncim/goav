@@ -5,6 +5,7 @@ package govpx
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -262,14 +263,11 @@ func encodeFPS(config codec.EncodeConfig) int {
 }
 
 func fpsFromDuration(duration av.Duration) int {
-	if duration.Value <= 0 || duration.Base.Num <= 0 || duration.Base.Den <= 0 {
+	std, ok := duration.ToDuration()
+	if !ok || std <= 0 {
 		return 0
 	}
-	denominator := duration.Value * duration.Base.Num
-	if denominator <= 0 {
-		return 0
-	}
-	fps := duration.Base.Den / denominator
+	fps := int64(time.Second) / int64(std)
 	if fps <= 0 {
 		return 0
 	}
