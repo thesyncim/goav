@@ -131,7 +131,7 @@ func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 				Type:         TrackVideo,
 				Codec:        CodecH264,
 				Video:        VideoConfig{Width: 640, Height: 360},
-				CodecPrivate: []byte{0x01, 0x64, 0x00, 0x1f},
+				CodecPrivate: h264AVCDecoderConfig(),
 			},
 			data: []byte{0x00, 0x00, 0x00, 0x01, 0x65},
 		},
@@ -274,6 +274,63 @@ func TestDemuxerRejectsInvalidOpusHead(t *testing.T) {
 				t.Fatalf("err = %v, want ErrInvalidData", err)
 			}
 		})
+	}
+}
+
+func TestAVCDecoderConfigurationRecordValidation(t *testing.T) {
+	config, err := parseAVCDecoderConfigurationRecord(h264AVCDecoderConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ProfileIDC != 0x42 || config.ProfileCompatibility != 0x00 || config.LevelIDC != 0x0a ||
+		config.NALULengthSize != 4 || config.SPSCount != 1 || config.PPSCount != 1 {
+		t.Fatalf("config = %+v", config)
+	}
+
+	tests := []struct {
+		name    string
+		private []byte
+	}{
+		{name: "short", private: []byte{0x01, 0x42, 0x00, 0x0a, 0xff, 0xe1}},
+		{name: "bad version", private: h264AVCDecoderConfigWithByte(0, 0x00)},
+		{name: "bad reserved length bits", private: h264AVCDecoderConfigWithByte(4, 0x03)},
+		{name: "invalid length size", private: h264AVCDecoderConfigWithByte(4, 0xfe)},
+		{name: "no sps", private: h264AVCDecoderConfigWithByte(5, 0xe0)},
+		{name: "wrong sps type", private: h264AVCDecoderConfigWithByte(8, 0x68)},
+		{name: "missing pps", private: h264AVCDecoderConfig()[:15]},
+		{name: "wrong pps type", private: h264AVCDecoderConfigWithByte(18, 0x67)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := parseAVCDecoderConfigurationRecord(tt.private); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestMuxerRejectsInvalidH264CodecPrivate(t *testing.T) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = muxer.AddTrack(Track{
+		Type:         TrackVideo,
+		Codec:        CodecH264,
+		Video:        VideoConfig{Width: 16, Height: 16},
+		CodecPrivate: []byte{0x01, 0x64, 0x00, 0x1f},
+	})
+	if !errors.Is(err, ErrInvalidTrack) {
+		t.Fatalf("err = %v, want ErrInvalidTrack", err)
+	}
+}
+
+func TestDemuxerRejectsInvalidH264CodecPrivate(t *testing.T) {
+	data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+		return writeTracksWithH264Private(writer, []byte{0x01, 0x64, 0x00, 0x1f})
+	})
+	if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
 	}
 }
 
@@ -1466,7 +1523,7 @@ func TestFormatMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 				Type:      av.MediaVideo,
 				Width:     640,
 				Height:    360,
-				ExtraData: av.Buffer{Bytes: []byte{0x01, 0x64, 0x00, 0x1f}},
+				ExtraData: av.Buffer{Bytes: h264AVCDecoderConfig()},
 			},
 		},
 		{
@@ -1990,6 +2047,25 @@ func expectedOpusHead(channels int, sampleRate int) []byte {
 	return header
 }
 
+func h264AVCDecoderConfig() []byte {
+	sps := []byte{0x67, 0x42, 0x00, 0x0a, 0xf8, 0x41, 0xa2}
+	pps := []byte{0x68, 0xce, 0x0f, 0x2c, 0x80}
+	private := make([]byte, 0, 11+len(sps)+len(pps))
+	private = append(private, 0x01, sps[1], sps[2], sps[3], 0xff, 0xe1)
+	private = binary.BigEndian.AppendUint16(private, uint16(len(sps)))
+	private = append(private, sps...)
+	private = append(private, 0x01)
+	private = binary.BigEndian.AppendUint16(private, uint16(len(pps)))
+	private = append(private, pps...)
+	return private
+}
+
+func h264AVCDecoderConfigWithByte(index int, value byte) []byte {
+	private := h264AVCDecoderConfig()
+	private[index] = value
+	return private
+}
+
 func makeLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, defaultDurationNS int64) []byte {
 	tb.Helper()
 	var buffer bytes.Buffer
@@ -2234,6 +2310,35 @@ func writeTracksWithOpusPrivate(writer *ebml.Writer, private []byte) error {
 		return err
 	}
 	if err := writeAudio(ew, AudioConfig{SampleRate: 48000, Channels: 2}); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+func writeTracksWithH264Private(writer *ebml.Writer, private []byte) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	if err := ew.WriteUInt(idTrackNumber, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, matroskaTrackVideo); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, codecIDH264); err != nil {
+		return err
+	}
+	if err := writeBinary(ew, idCodecPrivate, private); err != nil {
+		return err
+	}
+	if err := writeVideo(ew, VideoConfig{Width: 16, Height: 16}); err != nil {
 		return err
 	}
 	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {

@@ -76,6 +76,9 @@ Current milestone:
 - Opus tracks generate mono/stereo `OpusHead` codec-private data when callers
   do not provide their own, and demuxers validate `OpusHead` before exposing
   Opus track metadata.
+- H.264 tracks validate caller-provided AVCDecoderConfigurationRecord
+  codec-private data on mux and demux before exposing or writing track
+  metadata.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with
   WebM demuxers requiring the `webm` EBML document type.
 - Format registry adapters for `av.Stream` and `av.Packet`.
@@ -95,7 +98,7 @@ These are intentionally not in the first milestone:
   `ReadPacketAtTime`.
 - Chapters, tags, attachments, language variants, default/forced flags beyond
   basic defaults, and unknown-element preservation.
-- Full codec-private parsers for every codec family.
+- Full codec-private generation and parsers for every codec family.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
 
 Those belong either in future Matroska phases or in separate media pipeline
@@ -154,7 +157,8 @@ Current mappings:
 - VP8: `V_VP8`
 - VP9: `V_VP9`
 - AV1: `V_AV1`
-- H.264: `V_MPEG4/ISO/AVC`
+- H.264: `V_MPEG4/ISO/AVC` with AVCDecoderConfigurationRecord validation when
+  codec-private data is provided.
 - H.265: `V_MPEGH/ISO/HEVC`
 
 WebM accepts only Opus, VP8, VP9, and AV1. It rejects H.264, H.265, PCM

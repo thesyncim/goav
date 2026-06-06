@@ -9,6 +9,12 @@ import (
 const codecPrivateScratchSize = 32
 
 const (
+	avcNALUTypeMask = 0x1f
+	avcNALUSPS      = 7
+	avcNALUPPS      = 8
+)
+
+const (
 	codecIDOpus = "A_OPUS"
 	codecIDMS   = "A_MS/ACM"
 	codecIDVP8  = "V_VP8"
@@ -153,6 +159,81 @@ func defaultCodecPrivate(track Track, scratch *[codecPrivateScratchSize]byte) []
 	default:
 		return nil
 	}
+}
+
+type avcDecoderConfigurationRecord struct {
+	ProfileIDC           byte
+	ProfileCompatibility byte
+	LevelIDC             byte
+	NALULengthSize       int
+	SPSCount             int
+	PPSCount             int
+}
+
+func parseAVCDecoderConfigurationRecord(private []byte) (avcDecoderConfigurationRecord, error) {
+	if len(private) < 7 || private[0] != 1 {
+		return avcDecoderConfigurationRecord{}, ErrInvalidData
+	}
+	if private[4]&0xfc != 0xfc || private[5]&0xe0 != 0xe0 {
+		return avcDecoderConfigurationRecord{}, ErrInvalidData
+	}
+	lengthSizeMinusOne := private[4] & 0x03
+	if lengthSizeMinusOne == 2 {
+		return avcDecoderConfigurationRecord{}, ErrInvalidData
+	}
+	offset := 6
+	spsCount := int(private[5] & 0x1f)
+	if spsCount == 0 {
+		return avcDecoderConfigurationRecord{}, ErrInvalidData
+	}
+	for i := 0; i < spsCount; i++ {
+		nal, next, err := readAVCParameterSet(private, offset)
+		if err != nil {
+			return avcDecoderConfigurationRecord{}, err
+		}
+		if nal[0]&avcNALUTypeMask != avcNALUSPS {
+			return avcDecoderConfigurationRecord{}, ErrInvalidData
+		}
+		offset = next
+	}
+	if offset >= len(private) {
+		return avcDecoderConfigurationRecord{}, ErrInvalidData
+	}
+	ppsCount := int(private[offset])
+	offset++
+	if ppsCount == 0 {
+		return avcDecoderConfigurationRecord{}, ErrInvalidData
+	}
+	for i := 0; i < ppsCount; i++ {
+		nal, next, err := readAVCParameterSet(private, offset)
+		if err != nil {
+			return avcDecoderConfigurationRecord{}, err
+		}
+		if nal[0]&avcNALUTypeMask != avcNALUPPS {
+			return avcDecoderConfigurationRecord{}, ErrInvalidData
+		}
+		offset = next
+	}
+	return avcDecoderConfigurationRecord{
+		ProfileIDC:           private[1],
+		ProfileCompatibility: private[2],
+		LevelIDC:             private[3],
+		NALULengthSize:       int(lengthSizeMinusOne) + 1,
+		SPSCount:             spsCount,
+		PPSCount:             ppsCount,
+	}, nil
+}
+
+func readAVCParameterSet(private []byte, offset int) ([]byte, int, error) {
+	if offset < 0 || offset+2 > len(private) {
+		return nil, 0, ErrInvalidData
+	}
+	size := int(binary.BigEndian.Uint16(private[offset : offset+2]))
+	offset += 2
+	if size == 0 || offset+size > len(private) {
+		return nil, 0, ErrInvalidData
+	}
+	return private[offset : offset+size], offset + size, nil
 }
 
 type opusHead struct {
