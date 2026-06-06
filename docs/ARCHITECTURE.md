@@ -45,10 +45,10 @@ handles such as `source.Stream("audio")` and `decode.Out()` to node inputs.
 `Runtime.New()` remains as a compatibility builder and as the recipe compiler
 target. Runtime builders compile through private graph compilers. Each compiler
 owns one workflow shape and must implement both pre-build description and
-runnable graph construction, so rendered graphs and execution graphs stay
-equivalent. The graph layer stays available for inspection, custom stages, and
-rendering. A route carries all media by default, or matches one stream or event
-type.
+runnable graph construction, so described graphs and execution graphs stay
+equivalent. The graph layer stays available for inspection and custom stages;
+optional diagram output lives outside the runtime core. A route carries all
+media by default, or matches one stream or event type.
 
 The current compilers cover:
 
@@ -177,15 +177,15 @@ High-level runtime compilers use the same policy surface, so multi-output
 transcode and RTP/WebRTC packet-reader record/fanout graphs can switch from
 direct calls to bounded buffered execution without a separate graph shape.
 
-Builders and graphs can produce a `pipeline.Spec`: structured nodes and edges
-rendered as text, DOT, or Mermaid through one `Render`/`Write` API. Nodes may
-include short workflow details such as `rtp receive`, `packets -> frames`,
-`frames -> packets`, `resize`, or `mux`. This makes generated pipelines easy
-to validate,
-log, inspect, or visualize before running media through them. Specs render
-plain node-to-node routes, with routed edges labeled as media concepts such as
-`stream=video` or `event=packet_loss`; executor-specific details stay behind the
-graph implementation.
+Builders and graphs produce a `pipeline.Spec`: structured nodes and edges that
+are the core inspection contract. Nodes may include short workflow details such
+as `rtp receive`, `packets -> frames`, `frames -> packets`, `resize`, or `mux`.
+This makes generated pipelines easy to validate, log, inspect, or visualize
+before running media through them. Optional exporters live outside the runtime
+core in `graphrender`, so diagram formats can evolve without changing graph
+composition. Specs keep routed edges labeled as media concepts such as
+`stream=video` or `event=packet_loss`; executor-specific details stay behind
+the graph implementation.
 
 The codec package includes generic decoder and encoder stages. They adapt
 `codec.Decoder` and `codec.Encoder` implementations to pipeline messages using

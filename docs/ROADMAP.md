@@ -22,7 +22,7 @@ validation gates. This roadmap keeps the broader phase view.
 ## Phase 1b: Generic source shape
 
 - Explicit source/stage/sink graph builder.
-- Pre-build graph description and text/DOT/Mermaid rendering.
+- Pre-build graph description and optional diagram exporters.
 - Protocol source contracts outside the core runtime.
 - Demux boundaries for protocol/file adapters.
 - Live input events for connect, disconnect, and timestamp discontinuity.

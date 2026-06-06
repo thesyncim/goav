@@ -35,8 +35,8 @@ func TestRuntimeGraphHandleRoutes(t *testing.T) {
 	}
 	if !strings.Contains(planned.String(), "source -> decode [stream=audio]") ||
 		!strings.Contains(planned.String(), "decode -> record") ||
-		!strings.Contains(planned.Render("mermaid"), "-- \"stream=audio\" -->") {
-		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), planned.Render("mermaid"))
+		!strings.Contains(specMermaid(planned), "-- \"stream=audio\" -->") {
+		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), specMermaid(planned))
 	}
 
 	task, err := graph.Build(context.Background())

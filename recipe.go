@@ -523,12 +523,20 @@ func (s OutputSpec) intent() OutputIntent {
 }
 
 type Job struct {
+	name    string
+	runtime Runtime
+	inputs  []InputSpec
+	outputs []OutputSpec
+	stream  *jobStreamBuild
+}
+
+type jobStreamBuild struct {
 	name     string
-	runtime  Runtime
-	inputs   []InputSpec
-	outputs  []OutputSpec
 	selector av.StreamSelector
 	decode   bool
+	stages   []pipeline.Stage
+	encode   CodecSpec
+	outputs  []OutputSpec
 }
 
 func Record(input InputSpec, output OutputSpec, options ...JobOption) *Job {
@@ -544,9 +552,11 @@ func From(input InputSpec, options ...JobOption) *Job {
 func Decode(input InputSpec, sink pipeline.Sink, options ...JobOption) *Job {
 	job := newJob("decode", options...)
 	job.inputs = append(job.inputs, input)
-	job.outputs = append(job.outputs, FrameSink(sink))
-	job.selector = input.selector("")
-	job.decode = true
+	job.stream = &jobStreamBuild{
+		selector: input.selector(""),
+		decode:   true,
+		outputs:  []OutputSpec{FrameSink(sink)},
+	}
 	return job
 }
 
@@ -570,6 +580,22 @@ func (j *Job) To(outputs ...OutputSpec) *Job {
 	return j
 }
 
+func (j *Job) Audio(options ...StreamOption) *JobStreamBuilder {
+	return j.streamBuilder("audio", av.MediaAudio, options...)
+}
+
+func (j *Job) Video(options ...StreamOption) *JobStreamBuilder {
+	return j.streamBuilder("video", av.MediaVideo, options...)
+}
+
+func (j *Job) streamBuilder(name string, media av.MediaType, options ...StreamOption) *JobStreamBuilder {
+	j.stream = &jobStreamBuild{
+		name:     name,
+		selector: newStreamSelector(media, options...),
+	}
+	return &JobStreamBuilder{job: j}
+}
+
 func (j *Job) Intent() Intent {
 	intent := Intent{Name: j.name}
 	if runtime, ok := j.runtime.(*runtime); ok {
@@ -578,21 +604,24 @@ func (j *Job) Intent() Intent {
 	for i := range j.inputs {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())
 	}
-	if j.decode {
+	if j.stream != nil {
 		intent.Streams = append(intent.Streams, StreamIntent{
+			Name: j.stream.name,
 			Select: StreamSelect{
-				ID:    j.selector.ID,
-				Index: j.selector.Index,
-				Type:  j.selector.Type,
-				Codec: j.selector.Codec,
-				Name:  j.selector.Name,
+				ID:    j.stream.selector.ID,
+				Index: j.stream.selector.Index,
+				Type:  j.stream.selector.Type,
+				Codec: j.stream.selector.Codec,
+				Name:  j.stream.selector.Name,
 			},
-			Decode:  true,
-			RouteTo: outputLabels(j.outputs),
+			Decode:  j.stream.decode,
+			Encode:  j.stream.encode,
+			RouteTo: outputLabels(j.stream.outputs),
 		})
 	}
-	for i := range j.outputs {
-		intent.Outputs = append(intent.Outputs, j.outputs[i].intent())
+	outputs := j.allOutputs()
+	for i := range outputs {
+		intent.Outputs = append(intent.Outputs, outputs[i].intent())
 	}
 	return intent
 }
@@ -603,14 +632,6 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 		return pipeline.Spec{}, err
 	}
 	return builder.Describe()
-}
-
-func (j *Job) Explain(context.Context) (Explanation, error) {
-	spec, err := j.Describe()
-	if err != nil {
-		return Explanation{}, err
-	}
-	return Explanation{Intent: j.Intent(), Spec: spec}, nil
 }
 
 func (j *Job) Build(ctx context.Context) (Task, error) {
@@ -637,77 +658,186 @@ func (j *Job) builder() (Builder, error) {
 	if len(j.inputs) == 0 {
 		return nil, &BuildError{Code: "input_missing", Operation: "build job", Reason: "no input is configured"}
 	}
-	if len(j.outputs) == 0 {
+	outputs := j.allOutputs()
+	if len(outputs) == 0 {
 		return nil, &BuildError{Code: "output_missing", Operation: "build job", Reason: "no output is configured"}
 	}
 	builder := j.runtime.New()
 	for i := range j.inputs {
 		builder = j.inputs[i].apply(builder)
 	}
-	if j.decode {
-		builder = builder.Decode(j.selector)
+	if j.stream != nil {
+		var err error
+		builder, err = j.applyStream(builder, j.stream)
+		if err != nil {
+			return nil, err
+		}
 	}
-	for i := range j.outputs {
-		builder = j.outputs[i].apply(builder)
+	for i := range outputs {
+		builder = outputs[i].apply(builder)
 	}
 	return builder, nil
 }
 
-type Explanation struct {
-	Intent Intent
-	Spec   pipeline.Spec
+func (j *Job) allOutputs() []OutputSpec {
+	if j.stream == nil || len(j.stream.outputs) == 0 {
+		return append([]OutputSpec(nil), j.outputs...)
+	}
+	outputs := make([]OutputSpec, 0, len(j.outputs)+len(j.stream.outputs))
+	outputs = append(outputs, j.outputs...)
+	outputs = append(outputs, j.stream.outputs...)
+	return outputs
 }
 
-func (e Explanation) Text() string {
-	var out strings.Builder
-	name := e.Intent.Name
-	if name == "" {
-		name = "media job"
+func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, error) {
+	if stream == nil {
+		return builder, nil
 	}
-	out.WriteString(name)
-	out.WriteByte('\n')
-	for i := range e.Intent.Inputs {
-		input := e.Intent.Inputs[i]
-		out.WriteString("\nInput:\n  ")
-		out.WriteString(firstNonEmpty(input.Name, input.URI, "input"))
-		if input.Codec.ID != "" {
-			out.WriteString(": ")
-			out.WriteString(string(input.Codec.ID))
+	outputs := j.allOutputs()
+	if !stream.hasOperation() {
+		return nil, &BuildError{
+			Code:      "stream_operation_missing",
+			Operation: "build stream",
+			Node:      stream.name,
+			Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
+			Suggestions: []string{
+				"call .Decode().To(goav.FrameSink(...)) to receive frames",
+				"call .Opus(...), .VP8(...), or .VP9(...) before writing to a file output",
+				"use goav.Record(input, output) for packet-preserving record or remux",
+			},
 		}
 	}
-	if len(e.Intent.Streams) != 0 {
-		out.WriteString("\n\nStreams:")
-		for i := range e.Intent.Streams {
-			stream := e.Intent.Streams[i]
-			out.WriteString("\n  ")
-			out.WriteString(firstNonEmpty(stream.Name, string(stream.Select.Type), "stream"))
-			if stream.Encode.ID != "" {
-				out.WriteString(" -> ")
-				out.WriteString(string(stream.Encode.ID))
-			}
+	if stream.encode.Auto {
+		return nil, &BuildError{
+			Code:      "encode_auto_unresolved",
+			Operation: "build stream",
+			Node:      stream.name,
+			Reason:    "automatic codec selection is not implemented for stream recipes yet",
+			Suggestions: []string{
+				"choose an explicit recipe encoder such as .Opus(...), .VP8(...), or .VP9(...)",
+			},
 		}
 	}
-	if len(e.Intent.Outputs) != 0 {
-		out.WriteString("\n\nOutputs:")
-		for i := range e.Intent.Outputs {
-			out.WriteString("\n  ")
-			out.WriteString(firstNonEmpty(e.Intent.Outputs[i].Name, e.Intent.Outputs[i].URI, "output"))
+	if stream.encode.Copy {
+		return nil, &BuildError{
+			Code:      "copy_unresolved",
+			Operation: "build stream",
+			Node:      stream.name,
+			Reason:    "packet copy is only available through record/remux recipes today",
+			Suggestions: []string{
+				"use goav.Record(input, output) for packet-preserving output",
+			},
 		}
 	}
-	out.WriteString("\n\nPlan:\n")
-	out.WriteString(e.Spec.String())
-	return out.String()
+	if err := validateRecipeEncode(stream.encode, "build stream", stream.name); err != nil {
+		return nil, err
+	}
+	if stream.encode.ID == "" && outputsContainMuxTarget(outputs) {
+		return nil, &BuildError{
+			Code:      "encode_missing",
+			Operation: "build stream",
+			Node:      stream.name,
+			Reason:    "decoded frames cannot be written to a muxed output without an encoder",
+			Suggestions: []string{
+				"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...))",
+				"send decoded frames to goav.FrameSink(...)",
+				"use goav.Record(input, output) if you want to copy packets without decoding",
+			},
+		}
+	}
+	if stream.encode.ID != "" && outputsContainFrameSink(outputs) {
+		return nil, &BuildError{
+			Code:      "encoded_sink_unsupported",
+			Operation: "build stream",
+			Node:      stream.name,
+			Reason:    "stream recipes currently send encoded packets to file or URI outputs, not frame sinks",
+			Suggestions: []string{
+				"use .Decode().To(goav.FrameSink(...)) for decoded frames",
+				"send encoded output to goav.FileOutput(...) or goav.URIOutput(...)",
+				"use the expert graph API for custom packet sink wiring",
+			},
+		}
+	}
+	if stream.decode || len(stream.stages) != 0 || stream.encode.ID != "" {
+		builder = builder.Decode(stream.selector)
+	}
+	for i := range stream.stages {
+		builder = builder.Filter(stream.selector, stream.stages[i])
+	}
+	if stream.encode.ID != "" {
+		builder = builder.Encode(stream.selector, encodeConfigFromSpec(stream.encode))
+	}
+	return builder, nil
 }
 
-func (e Explanation) Mermaid() string {
-	return e.Spec.Render("mermaid")
+func (s *jobStreamBuild) hasOperation() bool {
+	return s.decode || len(s.stages) != 0 || s.encode.ID != "" || s.encode.Auto || s.encode.Copy
 }
 
-func (e Explanation) DOT() string {
-	return e.Spec.Render("dot")
+func outputsContainMuxTarget(outputs []OutputSpec) bool {
+	for i := range outputs {
+		if outputs[i].sink == nil {
+			return true
+		}
+	}
+	return false
 }
 
-type StreamOption func(*streamBuild)
+func outputsContainFrameSink(outputs []OutputSpec) bool {
+	for i := range outputs {
+		if outputs[i].sink != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
+	return codec.EncodeConfig{
+		Parameters: spec.Parameters,
+		Bitrate:    spec.Bitrate,
+	}
+}
+
+func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
+	if spec.ID == "" || spec.Auto || spec.Copy {
+		return nil
+	}
+	switch spec.ID {
+	case av.CodecOpus, av.CodecVP8, av.CodecVP9:
+		return nil
+	case av.CodecH264, av.CodecAV1:
+		return &BuildError{
+			Code:      "encode_work_in_progress",
+			Operation: operation,
+			Node:      node,
+			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode paths currently target opus, vp8, and vp9",
+			Suggestions: []string{
+				"decode the stream with .Decode().To(goav.FrameSink(...))",
+				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode paths",
+				"use the expert builder with an explicit codec.EncodeConfig when testing an experimental encoder",
+			},
+		}
+	default:
+		return nil
+	}
+}
+
+type StreamOption func(*streamSelectConfig)
+
+type streamSelectConfig struct {
+	selector av.StreamSelector
+}
+
+func newStreamSelector(media av.MediaType, options ...StreamOption) av.StreamSelector {
+	config := streamSelectConfig{selector: av.StreamSelector{Type: media}}
+	for i := range options {
+		if options[i] != nil {
+			options[i](&config)
+		}
+	}
+	return config.selector
+}
 
 type streamBuild struct {
 	name       string
@@ -719,21 +849,69 @@ type streamBuild struct {
 }
 
 func StreamID(id av.StreamID) StreamOption {
-	return func(stream *streamBuild) {
-		stream.selector.ID = id
+	return func(config *streamSelectConfig) {
+		config.selector.ID = id
 	}
 }
 
 func StreamName(name string) StreamOption {
-	return func(stream *streamBuild) {
-		stream.selector.Name = name
+	return func(config *streamSelectConfig) {
+		config.selector.Name = name
 	}
 }
 
 func StreamIndex(index int) StreamOption {
-	return func(stream *streamBuild) {
-		stream.selector.Index = index
+	return func(config *streamSelectConfig) {
+		config.selector.Index = index
 	}
+}
+
+type JobStreamBuilder struct {
+	job *Job
+}
+
+func (b *JobStreamBuilder) Decode() *JobStreamBuilder {
+	b.current().decode = true
+	return b
+}
+
+func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
+	stream := b.current()
+	stream.decode = true
+	stream.stages = append(stream.stages, stage)
+	return b
+}
+
+func (b *JobStreamBuilder) Encode(codec CodecSpec) *JobStreamBuilder {
+	stream := b.current()
+	stream.decode = true
+	stream.encode = codec
+	return b
+}
+
+func (b *JobStreamBuilder) Opus(bitrate int, options ...CodecOption) *JobStreamBuilder {
+	return b.Encode(Opus(append([]CodecOption{Bitrate(bitrate)}, options...)...))
+}
+
+func (b *JobStreamBuilder) VP8(bitrate int, options ...CodecOption) *JobStreamBuilder {
+	return b.Encode(VP8(append([]CodecOption{Bitrate(bitrate)}, options...)...))
+}
+
+func (b *JobStreamBuilder) VP9(bitrate int, options ...CodecOption) *JobStreamBuilder {
+	return b.Encode(VP9(append([]CodecOption{Bitrate(bitrate)}, options...)...))
+}
+
+func (b *JobStreamBuilder) To(outputs ...OutputSpec) *Job {
+	stream := b.current()
+	stream.outputs = append(stream.outputs, outputs...)
+	return b.job
+}
+
+func (b *JobStreamBuilder) current() *jobStreamBuild {
+	if b.job.stream == nil {
+		b.job.stream = &jobStreamBuild{}
+	}
+	return b.job.stream
 }
 
 type TranscodeJob struct {
@@ -838,9 +1016,12 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 				Node:      stream.name,
 				Reason:    "stream has no codec target",
 				Suggestions: []string{
-					"call .Opus(...), .VP9(...), .H264(...), or another codec method before .To(...)",
+					"call .Opus(...), .VP8(...), or .VP9(...) before .To(...)",
 				},
 			}
+		}
+		if err := validateRecipeEncode(stream.encode, "plan transcode", stream.name); err != nil {
+			return transcodepkg.Plan{}, err
 		}
 		for _, label := range stream.labels {
 			if _, ok := outputs[label]; ok {
@@ -911,14 +1092,6 @@ func (j *TranscodeJob) Describe() (pipeline.Spec, error) {
 	return builder.Describe()
 }
 
-func (j *TranscodeJob) Explain(context.Context) (Explanation, error) {
-	spec, err := j.Describe()
-	if err != nil {
-		return Explanation{}, err
-	}
-	return Explanation{Intent: j.Intent(), Spec: spec}, nil
-}
-
 func (j *TranscodeJob) Build(ctx context.Context) (Task, error) {
 	builder, err := j.builder()
 	if err != nil {
@@ -950,13 +1123,8 @@ func (j *TranscodeJob) builder() (Builder, error) {
 func (j *TranscodeJob) stream(name string, media av.MediaType, options ...StreamOption) *StreamBuilder {
 	stream := streamBuild{
 		name:     name,
-		selector: av.StreamSelector{Type: media},
+		selector: newStreamSelector(media, options...),
 		decode:   true,
-	}
-	for i := range options {
-		if options[i] != nil {
-			options[i](&stream)
-		}
 	}
 	j.streams = append(j.streams, stream)
 	return &StreamBuilder{job: j, index: len(j.streams) - 1}
@@ -994,14 +1162,6 @@ func (b *StreamBuilder) VP8(bitrate int, options ...CodecOption) *StreamBuilder 
 
 func (b *StreamBuilder) VP9(bitrate int, options ...CodecOption) *StreamBuilder {
 	return b.encode(VP9(append([]CodecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *StreamBuilder) H264(bitrate int, options ...CodecOption) *StreamBuilder {
-	return b.encode(H264(append([]CodecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *StreamBuilder) AV1(bitrate int, options ...CodecOption) *StreamBuilder {
-	return b.encode(AV1(append([]CodecOption{Bitrate(bitrate)}, options...)...))
 }
 
 func (b *StreamBuilder) To(targets ...any) *TranscodeJob {

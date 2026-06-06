@@ -176,7 +176,7 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || planned.Render("mermaid") != spec.Render("mermaid") {
+	if planned.String() != spec.String() || specMermaid(planned) != specMermaid(spec) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
 	}
 
@@ -382,7 +382,7 @@ func TestRuntimeBuilderInputDecodeSinkSelectsMatchingStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || planned.Render("mermaid") != spec.Render("mermaid") {
+	if planned.String() != spec.String() || specMermaid(planned) != specMermaid(spec) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
 	}
 	if err := task.Run(context.Background()); err != nil {

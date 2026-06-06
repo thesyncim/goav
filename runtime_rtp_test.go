@@ -178,8 +178,8 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 	}
 	if !strings.Contains(planned.String(), "remote-audio -> archive.ogg") ||
 		!strings.Contains(planned.String(), "timestamp gap") ||
-		!strings.Contains(planned.Render("mermaid"), "preview.ogg\\nstage") {
-		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), planned.Render("mermaid"))
+		!strings.Contains(specMermaid(planned), "preview.ogg\\nstage") {
+		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), specMermaid(planned))
 	}
 
 	task, err := builder.Build(ctx)
@@ -187,7 +187,7 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || planned.Render("mermaid") != spec.Render("mermaid") {
+	if planned.String() != spec.String() || specMermaid(planned) != specMermaid(spec) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
 	}
 	if err := task.Run(ctx); err != nil {
@@ -258,7 +258,7 @@ func TestRuntimeBuilderBufferedRTPRecordCopiesPacketsToOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || planned.Render("mermaid") != task.Describe().Render("mermaid") {
+	if planned.String() != task.Describe().String() || specMermaid(planned) != specMermaid(task.Describe()) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
 	}
 	if err := task.Run(context.Background()); err != nil {
@@ -355,7 +355,7 @@ func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || planned.Render("mermaid") != spec.Render("mermaid") {
+	if planned.String() != spec.String() || specMermaid(planned) != specMermaid(spec) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
 	}
 	if err := task.Run(ctx); err != nil {
@@ -607,7 +607,7 @@ func TestRuntimeBuilderRTPDecodeFilterSink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || planned.Render("mermaid") != task.Describe().Render("mermaid") {
+	if planned.String() != task.Describe().String() || specMermaid(planned) != specMermaid(task.Describe()) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
 	}
 	if err := task.Run(ctx); err != nil {
@@ -862,7 +862,7 @@ func TestRuntimeBuilderMultiRTPRecordFanout(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || planned.Render("mermaid") != spec.Render("mermaid") {
+	if planned.String() != spec.String() || specMermaid(planned) != specMermaid(spec) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
 	}
 	if err := task.Run(ctx); err != nil {

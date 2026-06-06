@@ -55,18 +55,21 @@ job := goav.Record(
     goav.FileOutput("preview.ivf", preview),
 )
 
-report, err := job.Explain(ctx)
+spec, err := job.Describe()
 if err != nil {
     return err
 }
-fmt.Println(report.Text())
-fmt.Println(report.Mermaid())
+fmt.Println(spec)
 ```
 
 ## Common Recipes
 
 - `goav.Record(input, output)` records, remuxes, or fans out packet streams.
 - `goav.From(input).To(output...)` is the generic recipe form.
+- `goav.From(input).Audio().Decode().To(goav.FrameSink(frames))` decodes one
+  selected audio stream without manual selectors.
+- `goav.From(input).Audio().Decode().Do(meter).Opus(96_000).To(output)` adds a
+  stream-local custom stage and encoder.
 - `goav.Decode(input, sink)` decodes one selected stream into a frame sink.
 - `goav.Transcode(input)` builds named audio or video branches and outputs.
 - `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive
@@ -75,7 +78,7 @@ fmt.Println(report.Mermaid())
   ordinary input and output declarations.
 
 Recipes compile into the existing runtime builder, so `Describe`, `Build`,
-`Run`, task events, and graph rendering stay the same.
+`Run`, task events, and graph specs stay the same.
 
 ## Choosing Codecs And Formats
 
@@ -99,19 +102,22 @@ The explicit registration path remains important for embedded builds and narrow
 deployments. The recipe API is the stable front door as the default adapter
 bundle grows.
 
+Recipe encode conveniences currently target Opus, VP8, and VP9. H264 and AV1
+codec specs are useful for receive, record, and decode paths while recipe encode
+support continues to mature.
+
 ## Inspect The Graph
 
-Every recipe can explain the graph it will build:
+Every recipe can describe the graph it will build:
 
 ```go
 spec, err := job.Describe()
-_ = spec.Render("text")
-_ = spec.Render("dot")
-_ = spec.Render("mermaid")
+fmt.Println(spec)
 ```
 
-`Explain` adds the recipe intent beside the rendered graph so logs and tests can
-show both the user request and the compiled plan.
+`pipeline.Spec` is the core graph object. Diagram exporters live in the small
+`graphrender` utility package, so generated diagram output can evolve without
+becoming part of runtime composition.
 
 ## Custom Processing
 
@@ -119,9 +125,9 @@ Use function adapters when you want a small hook without implementing the full
 graph interfaces:
 
 ```go
-meter := goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
-    level := measure(frame)
-    return emit.Event(av.Event{Type: av.EventStats, StreamID: frame.StreamID})
+meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+    observe(frame)
+    return emit.Frame(frame)
 })
 
 sink := goav.SinkFunc("frames", func(ctx context.Context, msg goav.Message) error {
@@ -153,9 +159,9 @@ task, err := graph.Build(ctx)
 ```
 
 This layer exposes named sources, stages, sinks, typed handles, route policies,
-buffer policies, and rendered graph specs. It is valuable for custom realtime
-systems, but it is no longer the first API a normal record/transcode workflow
-has to learn.
+buffer policies, and graph specs. It is valuable for custom realtime systems,
+but it is no longer the first API a normal record/transcode workflow has to
+learn.
 
 ## Project Shape
 
@@ -170,8 +176,10 @@ runtime graph sources, stages, sinks, routes, messages
 Implemented today:
 
 - recipe `Record`, `From`, `Decode`, and transcode-ladder builders;
+- stream-scoped recipe builders for selected audio/video decode, custom stages,
+  and Opus/VP8/VP9 encode paths;
 - file, URI, RTP, codec, resize, resample, and output specs;
-- `Explain` reports over the existing text, DOT, and Mermaid graph renderers;
+- `Describe` graph specs plus optional `graphrender` exporters;
 - function adapters for packet, frame, event, and sink hooks;
 - handle-based expert graph wiring through `Runtime.Graph()`;
 - runtime graph compilers for remux/fanout, live RTP record/fanout, selected

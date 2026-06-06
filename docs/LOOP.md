@@ -8,7 +8,7 @@ The loop is intentionally small:
 
 1. Name the user workflow in one sentence.
 2. Express it with the shortest fluent API that should feel natural.
-3. Render the explicit graph before adding runtime behavior.
+3. Describe the explicit graph before adding runtime behavior.
 4. Add one private compiler, adapter, stage, or format boundary.
 5. Keep hot-path data caller-owned and preallocated.
 6. Add the narrow allocation, lifecycle, and event tests for that slice.
@@ -18,7 +18,7 @@ The loop is intentionally small:
 Graph descriptions should stay at the workflow level: named nodes connected by
 named routes, with short node details when they make the workflow easier to
 read. Stream and event matching are options on a route. Lower-level executor
-vocabulary should not leak into fluent APIs or rendered specs unless a future
+vocabulary should not leak into fluent APIs or graph specs unless a future
 advanced stage truly needs it.
 
 ## Compiler Rule
@@ -35,8 +35,8 @@ TrackRemote -> RTP source -> Depacketizer -> DecoderStage
 
 The compiler must support both:
 
-- `Describe`, so users can inspect text, DOT, and Mermaid graphs before running.
-- `Build`, so the rendered graph and runnable graph stay equivalent.
+- `Describe`, so users can inspect the graph spec before running.
+- `Build`, so the described graph and runnable graph stay equivalent.
 
 Unsupported combinations should fail early with the existing unsupported-builder
 error. Do not guess across codec, format, or protocol boundaries.
@@ -61,7 +61,7 @@ Pause a slice before adding code when any of these are unclear:
 - Which package owns the behavior.
 - Who owns the buffer lifetime.
 - How loss, discontinuity, codec change, or backpressure is represented.
-- How the graph will be rendered.
+- How the graph will be described and inspected.
 - Which allocation guard proves the hot path.
 
 The next useful action is then to clarify the contract, not to add another

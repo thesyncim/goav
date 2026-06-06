@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -24,13 +25,94 @@ func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	if !strings.Contains(spec.String(), "input.ogg -> recording.ogg") {
 		t.Fatalf("spec:\n%s", spec.String())
 	}
+	intent := job.Intent()
+	if intent.Name != "record" || len(intent.Inputs) != 1 || len(intent.Outputs) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
 
-	report, err := job.Explain(context.Background())
+func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
+	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		return nil
+	})
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		To(goav.FrameSink(sink))
+
+	spec, err := job.Describe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(report.Text(), "record") || !strings.Contains(report.Mermaid(), "recording.ogg") {
-		t.Fatalf("report:\n%s\nmermaid:\n%s", report.Text(), report.Mermaid())
+	text := spec.String()
+	if !strings.Contains(text, "input.ogg -> select-audio") ||
+		!strings.Contains(text, "select-audio -> decode-audio") ||
+		!strings.Contains(text, "decode-audio -> frames") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || intent.Streams[0].Select.Type != "audio" || !intent.Streams[0].Decode {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestReadmeAudioEncodeRecipeIsSmall(t *testing.T) {
+	meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+		return emit.Frame(frame)
+	})
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Do(meter).
+		Opus(96_000).
+		To(goav.FileOutput("archive.ogg", io.Discard))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := spec.String()
+	if !strings.Contains(text, "decode-audio -> meter") ||
+		!strings.Contains(text, "meter -> encode-audio") ||
+		!strings.Contains(text, "encode-audio -> archive.ogg") {
+		t.Fatalf("spec:\n%s", text)
+	}
+}
+
+func TestStreamRecipeRequiresOperation(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_operation_missing" {
+		t.Fatalf("err = %v, want stream_operation_missing", err)
+	}
+}
+
+func TestStreamRecipeRequiresEncoderForFileOutput(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		To(goav.FileOutput("archive.ogg", io.Discard)).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" {
+		t.Fatalf("err = %v, want encode_missing", err)
+	}
+}
+
+func TestStreamRecipeRejectsWorkInProgressRecipeEncoder(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.h264", strings.NewReader(""))).
+		Video().
+		Encode(goav.H264(goav.Bitrate(2_000_000))).
+		To(goav.FileOutput("archive.h264", io.Discard)).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_work_in_progress" {
+		t.Fatalf("err = %v, want encode_work_in_progress", err)
 	}
 }
 

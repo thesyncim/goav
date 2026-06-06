@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -97,6 +98,14 @@ func runtimeValue(t *testing.T, rt Runtime) *runtime {
 		t.Fatalf("runtime = %T, want *runtime", rt)
 	}
 	return r
+}
+
+func specDOT(spec pipeline.Spec) string {
+	return graphrender.Render(spec, graphrender.DOT)
+}
+
+func specMermaid(spec pipeline.Spec) string {
+	return graphrender.Render(spec, graphrender.Mermaid)
 }
 
 func withTestCodecs(configure ...func(*codec.SimpleRegistry)) Option {
@@ -251,8 +260,8 @@ func TestRuntimeBuilderExplicitGraph(t *testing.T) {
 		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
 	}
 	if !strings.Contains(spec.String(), "stage -> left") ||
-		!strings.Contains(spec.Render("dot"), "\"stage\" -> \"right\"") {
-		t.Fatalf("spec text:\n%s\ndot:\n%s", spec.String(), spec.Render("dot"))
+		!strings.Contains(specDOT(spec), "\"stage\" -> \"right\"") {
+		t.Fatalf("spec text:\n%s\ndot:\n%s", spec.String(), specDOT(spec))
 	}
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
@@ -343,7 +352,7 @@ func TestRuntimeBuilderDescribeBeforeBuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	built := task.Describe()
-	if planned.String() != built.String() || planned.Render("mermaid") != built.Render("mermaid") {
+	if planned.String() != built.String() || specMermaid(planned) != specMermaid(built) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), built.String())
 	}
 }
@@ -417,8 +426,8 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 		t.Fatalf("edges=%d, want 2", len(spec.Edges))
 	}
 	if !strings.Contains(spec.String(), "source -> audio [stream=audio]") ||
-		!strings.Contains(spec.Render("mermaid"), "-- \"stream=video\" -->") {
-		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Render("mermaid"))
+		!strings.Contains(specMermaid(spec), "-- \"stream=video\" -->") {
+		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), specMermaid(spec))
 	}
 
 	if err := task.Run(context.Background()); err != nil {
@@ -566,8 +575,8 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 		t.Fatalf("edges=%d, want 2", len(spec.Edges))
 	}
 	if !strings.Contains(spec.String(), "source -> audio [stream=audio]") ||
-		!strings.Contains(spec.Render("mermaid"), "-- \"stream=video\" -->") {
-		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Render("mermaid"))
+		!strings.Contains(specMermaid(spec), "-- \"stream=video\" -->") {
+		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), specMermaid(spec))
 	}
 }
 

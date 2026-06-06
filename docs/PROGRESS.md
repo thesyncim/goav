@@ -32,12 +32,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `av` | reset helpers, ownership docs, RTP timebase helpers, allocation-free timestamp and duration rescale/compare helpers | richer timestamp metadata helpers |
 | `codec` | Into-style contracts, descriptors with one owner for identity/modes/status and capability lists for concrete media compatibility, descriptor-driven backend discovery, explicit registry, optional decode-state provisioning, decoder pipeline stages, event-consuming encoder stages, decode bounds for realtime adapter scratch planning, explicit unsupported live codec-switch guard for bound decoder stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source with stream-added/EOS lifecycle events, mux stage | richer stream probing and more containers |
-| `pipeline` | direct executor, bounded buffered executor, fanout, one route model with one-to-many targets, stream/event scoped routing rendered as `stream=...` or `event=...`, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, buffered runtime transcode and live receive proofs, detail-aware graph specs with one text/DOT/Mermaid render API | richer realtime lifecycle proof |
+| `pipeline` | direct executor, bounded buffered executor, fanout, one route model with one-to-many targets, stream/event scoped routing labeled as `stream=...` or `event=...`, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, buffered runtime transcode and live receive proofs, detail-aware graph specs as the core inspection object | richer realtime lifecycle proof |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh including new-codec depacketizer handoff when registered, replacement-stream identity adoption for single-stream readers, targeted old-ID replacement for multi-stream readers, stream-scoped EOS | richer multi-stream receive |
 | `webrtcav` | single `NewSession` PeerConnection entry, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit factory registry, event-preserving frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | one explicit `Plan` contract, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
-| runtime | recipe front door with `Record`, `From`, `Decode`, `Transcode`, `FileInput`, `FileOutput`, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, `Explain`, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, private graph compiler loop, decoder state-provider hook, RTP decode-bound hints for high-level receive, compatibility `Routes(goav.Route(...))` builder path plus `.ByStream(...)`/`.ByEvent(...)` modifiers, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | intent compiler passes and graph subflows |
+| runtime | recipe front door with `Record`, `From`, `Decode`, `Transcode`, stream-scoped audio/video recipe builders, `FileInput`, `FileOutput`, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, private graph compiler loop, decoder state-provider hook, RTP decode-bound hints for high-level receive, compatibility `Routes(goav.Route(...))` builder path plus `.ByStream(...)`/`.ByEvent(...)` modifiers, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | intent compiler passes and graph subflows |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning from RTP decode bounds, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420/I422/I444 frame mapping with yuv420p/yuv422p/yuv444p accepted as aliases, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
@@ -67,8 +67,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 15. Add RTP codec-change payload-map refresh and depacketizer epoch reset
    proof. Done.
 16. Simplify explicit graph references to node-to-node routes with
-    stream/event route labels, while keeping text/DOT/Mermaid rendering
-    equivalent to runtime graphs. Done.
+    stream/event route labels, while keeping graph descriptions equivalent to
+    runtime graphs. Done.
 17. Add bounded H264 RTP depacketization and Annex B packet recording. Done.
 18. Add WebRTC track codec-update events that refresh RTP payload maps and
     depacketizer epochs through the existing RTP source. Done.
@@ -120,8 +120,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     allocation guard, and deterministic close behavior. Done.
 37. Add detail-aware graph specs so runtime-created sources, select stages,
     codec stages, transcode transforms, RTP receive nodes, and mux outputs
-    render useful text/DOT/Mermaid labels while preserving the simple
-    node-to-node API. Done.
+    carry useful workflow labels while preserving the simple node-to-node API.
+    Done.
 38. Add allocation-free `av.TimeBase`, `av.Timestamp`, and `av.Duration`
     helpers for RTP/media/std-duration rescaling, plus first adapter use in
     tagged VP8 encode FPS selection. Done.
@@ -227,9 +227,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 68. Prune unused public planning vocabulary: transcode keeps one explicit
     `Plan` path through `Runtime.Transcode(plan)`, and graph specs use
     `pipeline.NodeRef` directly instead of a duplicate node helper. Done.
-69. Collapse graph rendering to one public surface: `Spec.Render(format)` and
-    `Spec.Write(w, format)` handle text, DOT, and Mermaid; `String` remains the
-    text debug view. Done.
+69. Keep graph inspection core and diagram generation optional:
+    `pipeline.Spec` is the runtime graph object, `String` remains the debug
+    view, and exporters live in the small `graphrender` utility package instead
+    of the pipeline core. Done.
 70. Prune unused receive factory vocabulary: WebRTC sessions use one
     `NewSession(ctx, config)` entry, and RTP receive keeps the direct
     `PacketReader`/`FeedbackWriter` contracts without a speculative receiver
@@ -282,7 +283,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     flush delayed packets, while event fanout stays in graph routes. Done.
 87. Add the recipe/intent front door: `Record`, `From`, `Decode`,
     `Transcode`, file/URI/RTP specs, codec/transform presets, standard
-    `Default()` adapters, `Explain`, and acceptance tests that keep the
+    `Default()` adapters, `Describe`, and acceptance tests that keep the
     README-level API small. Done.
 88. Add function adapters for custom packet, frame, event, and sink hooks so
     simple processing does not require full graph interface implementations.
@@ -296,7 +297,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Runtime.Graph()` names nodes once, then connects `Out`, `In`, `Stream`,
     and `Event` handles while still compiling to the existing route graph.
     Done.
-92. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+92. Add stream-scoped recipe builders on `From(input)`: selected audio/video
+    streams can `Decode`, `Do` custom stages, encode with the currently ready
+    Opus/VP8/VP9 recipe targets, and route to outputs while lowering through
+    the existing selected-stream runtime compilers. H264 and AV1 recipe encode
+    paths return an explicit work-in-progress diagnostic. Done.
+93. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -342,10 +348,10 @@ Required proof:
   the event-aware pipeline without per-packet allocation.
 - The runtime builder can plan and compile explicit source/stage/sink graphs
   with direct routes plus stream/event match options, and expose generated
-  graph specs with text, DOT, and Mermaid renderers before or after build.
-  Runtime-created nodes and any explicit node that implements the optional
-  node-describer contract can include short graph details without introducing
-  lower-level executor vocabulary into the public builder.
+  graph specs before or after build. Runtime-created nodes and any explicit
+  node that implements the optional node-describer contract can include short
+  graph details without introducing lower-level executor vocabulary into the
+  public builder. Optional diagram/text generation lives in `graphrender`.
 - The runtime builder can also plan and compile simple remux/fanout jobs from
   `Input(...).Output(...).Build(ctx)` when registered format adapters can probe,
   demux, and mux the selected boundaries.
@@ -359,11 +365,11 @@ Required proof:
 - The runtime builder can plan and compile RTP/WebRTC packet-reader record jobs
   from `RTP(...).Output(...).Build(ctx)`, including jitter and the variadic
   depacketizer option, repeated RTP/WebRTC inputs, aggregated stream lists for
-  muxers, multiple mux outputs, lifecycle closure, graph rendering, and event
+  muxers, multiple mux outputs, lifecycle closure, graph specs, and event
   visibility.
 - The runtime builder can plan and compile selected-stream live decode jobs from
   `RTP(...).Decode(...).Sink(...).Build(ctx)`, including repeated RTP/WebRTC
-  inputs, graph rendering, decoder lifecycle closure, and filtering of
+  inputs, graph specs, decoder lifecycle closure, and filtering of
   unrelated packets and stream-scoped EOS before they reach the decoder.
   Ordered filter stages can run between decode and the sink when their selector
   matches the decoded stream. Decoder factories that implement

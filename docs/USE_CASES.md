@@ -45,10 +45,11 @@ factory is registered, and can continue into filters, an explicit target
 encoder, and one or more mux outputs:
 
 ```go
-task, err := goav.Decode(
-    goav.RTP(audio).Name("audio").Codec(goav.Opus()),
-    frames,
-).Build(ctx)
+task, err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+    Audio().
+    Decode().
+    To(goav.FrameSink(frames)).
+    Build(ctx)
 ```
 
 ## Generic protocol or file ingest
@@ -105,6 +106,10 @@ task, err := goav.Transcode(goav.FileInput("input.webm", in)).
 Resize and resample configs become branch-local filter stages when matching
 filter factories are registered. The first concrete filters cover S16 audio
 resample/channel conversion and I420/YUV420P video resize.
+
+Recipe encode conveniences currently target Opus, VP8, and VP9. H264 and AV1
+remain first-class receive/decode codec specs; recipe encode support for those
+codecs is treated as work in progress until the concrete encoders are ready.
 
 Expected graph:
 
