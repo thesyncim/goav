@@ -15,6 +15,8 @@ type Demuxer struct {
 	docType         string
 	timecodeScaleNS int64
 	tracks          []Track
+	cues            []CuePoint
+	seekEntries     []SeekEntry
 	inSegment       bool
 	inCluster       bool
 	clusterUnknown  bool
@@ -48,6 +50,8 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.docType = ""
 	d.timecodeScaleNS = defaultTimecodeScaleNS
 	d.tracks = d.tracks[:0]
+	d.cues = d.cues[:0]
+	d.seekEntries = d.seekEntries[:0]
 	d.inSegment = false
 	d.inCluster = false
 	d.clusterUnknown = false
@@ -63,6 +67,24 @@ func (d *Demuxer) Tracks() []Track {
 	tracks := make([]Track, len(d.tracks))
 	copy(tracks, d.tracks)
 	return tracks
+}
+
+func (d *Demuxer) Cues() []CuePoint {
+	if d == nil || len(d.cues) == 0 {
+		return nil
+	}
+	cues := make([]CuePoint, len(d.cues))
+	copy(cues, d.cues)
+	return cues
+}
+
+func (d *Demuxer) SeekEntries() []SeekEntry {
+	if d == nil || len(d.seekEntries) == 0 {
+		return nil
+	}
+	entries := make([]SeekEntry, len(d.seekEntries))
+	copy(entries, d.seekEntries)
+	return entries
 }
 
 func (d *Demuxer) ReadPacket(dst *Packet) error {
@@ -114,6 +136,10 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 			continue
 		}
 		switch header.ID {
+		case idSeekHead:
+			if err := d.parseSeekHead(header); err != nil {
+				return err
+			}
 		case idCluster:
 			if err := d.enterCluster(header); err != nil {
 				return err
@@ -124,6 +150,10 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 			}
 		case idTracks:
 			if err := d.parseTracks(header); err != nil {
+				return err
+			}
+		case idCues:
+			if err := d.parseCues(header); err != nil {
 				return err
 			}
 		case idVoid, idCRC32:
@@ -177,12 +207,20 @@ func (d *Demuxer) readSegmentHeaders() error {
 			return err
 		}
 		switch header.ID {
+		case idSeekHead:
+			if err := d.parseSeekHead(header); err != nil {
+				return err
+			}
 		case idInfo:
 			if err := d.parseInfo(header); err != nil {
 				return err
 			}
 		case idTracks:
 			if err := d.parseTracks(header); err != nil {
+				return err
+			}
+		case idCues:
+			if err := d.parseCues(header); err != nil {
 				return err
 			}
 		case idCluster:
@@ -197,6 +235,69 @@ func (d *Demuxer) readSegmentHeaders() error {
 			}
 		}
 	}
+}
+
+func (d *Demuxer) parseSeekHead(header ebml.Header) error {
+	if header.Size.Unknown {
+		return ErrInvalidData
+	}
+	limited := d.reader.Limited(header.Size.Value)
+	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	for limited.N > 0 {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return err
+		}
+		switch child.ID {
+		case idSeek:
+			entry, err := d.parseSeekEntry(reader, child)
+			if err != nil {
+				return err
+			}
+			if entry.ID != 0 {
+				d.seekEntries = append(d.seekEntries, entry)
+			}
+		default:
+			if err := skipElement(reader, child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (d *Demuxer) parseSeekEntry(parent io.Reader, header ebml.Header) (SeekEntry, error) {
+	if header.Size.Unknown {
+		return SeekEntry{}, ErrInvalidData
+	}
+	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
+	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	var entry SeekEntry
+	for limited.N > 0 {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return SeekEntry{}, err
+		}
+		switch child.ID {
+		case idSeekID:
+			value, err := readElementIDPayload(reader, child.Size.Value)
+			if err != nil {
+				return SeekEntry{}, err
+			}
+			entry.ID = uint64(value)
+		case idSeekPosition:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return SeekEntry{}, err
+			}
+			entry.Position = value
+		default:
+			if err := skipElement(reader, child); err != nil {
+				return SeekEntry{}, err
+			}
+		}
+	}
+	return entry, nil
 }
 
 func (d *Demuxer) parseEBMLHeader(header ebml.Header) error {
@@ -283,6 +384,108 @@ func (d *Demuxer) parseTracks(header ebml.Header) error {
 		}
 	}
 	return nil
+}
+
+func (d *Demuxer) parseCues(header ebml.Header) error {
+	if header.Size.Unknown {
+		return ErrInvalidData
+	}
+	limited := d.reader.Limited(header.Size.Value)
+	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	for limited.N > 0 {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return err
+		}
+		switch child.ID {
+		case idCuePoint:
+			cue, err := d.parseCuePoint(reader, child)
+			if err != nil {
+				return err
+			}
+			if cue.TrackID != 0 {
+				d.cues = append(d.cues, cue)
+			}
+		default:
+			if err := skipElement(reader, child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint, error) {
+	if header.Size.Unknown {
+		return CuePoint{}, ErrInvalidData
+	}
+	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
+	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	var cue CuePoint
+	for limited.N > 0 {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return CuePoint{}, err
+		}
+		switch child.ID {
+		case idCueTime:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return CuePoint{}, err
+			}
+			if value > uint64(math.MaxInt64)/uint64(d.timecodeScaleNS) {
+				return CuePoint{}, ErrInvalidData
+			}
+			cue.TimeNS = int64(value) * d.timecodeScaleNS
+		case idCueTrackPositions:
+			trackID, position, err := d.parseCueTrackPositions(reader, child)
+			if err != nil {
+				return CuePoint{}, err
+			}
+			cue.TrackID = trackID
+			cue.ClusterPosition = position
+		default:
+			if err := skipElement(reader, child); err != nil {
+				return CuePoint{}, err
+			}
+		}
+	}
+	return cue, nil
+}
+
+func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (uint32, uint64, error) {
+	if header.Size.Unknown {
+		return 0, 0, ErrInvalidData
+	}
+	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
+	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	var trackID uint32
+	var clusterPosition uint64
+	for limited.N > 0 {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return 0, 0, err
+		}
+		switch child.ID {
+		case idCueTrack:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return 0, 0, err
+			}
+			trackID = uint32(value)
+		case idCueClusterPosition:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return 0, 0, err
+			}
+			clusterPosition = value
+		default:
+			if err := skipElement(reader, child); err != nil {
+				return 0, 0, err
+			}
+		}
+	}
+	return trackID, clusterPosition, nil
 }
 
 func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, error) {

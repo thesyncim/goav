@@ -15,6 +15,10 @@ const (
 	idVoid               ebml.ID = 0xec
 
 	idSegment        ebml.ID = 0x18538067
+	idSeekHead       ebml.ID = 0x114d9b74
+	idSeek           ebml.ID = 0x4dbb
+	idSeekID         ebml.ID = 0x53ab
+	idSeekPosition   ebml.ID = 0x53ac
 	idInfo           ebml.ID = 0x1549a966
 	idTimestampScale ebml.ID = 0x2ad7b1
 	idDuration       ebml.ID = 0x4489
@@ -48,6 +52,13 @@ const (
 	idBlock         ebml.ID = 0xa1
 	idBlockDuration ebml.ID = 0x9b
 	idReferenceBlk  ebml.ID = 0xfb
+
+	idCues               ebml.ID = 0x1c53bb6b
+	idCuePoint           ebml.ID = 0xbb
+	idCueTime            ebml.ID = 0xb3
+	idCueTrackPositions  ebml.ID = 0xb7
+	idCueTrack           ebml.ID = 0xf7
+	idCueClusterPosition ebml.ID = 0xf1
 )
 
 const (

@@ -59,6 +59,17 @@ type Packet struct {
 	Data        []byte
 }
 
+type CuePoint struct {
+	TrackID         uint32
+	TimeNS          int64
+	ClusterPosition uint64
+}
+
+type SeekEntry struct {
+	ID       uint64
+	Position uint64
+}
+
 func (p *Packet) Reset() {
 	data := p.Data[:0]
 	*p = Packet{Data: data}
@@ -73,6 +84,7 @@ type MuxerOptions struct {
 	TimecodeScaleNS      int64
 	ClusterMaxDurationNS int64
 	Streaming            bool
+	CueCapacity          int
 }
 
 type DemuxerOptions struct {

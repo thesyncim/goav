@@ -88,6 +88,24 @@ func readBinaryPayload(r io.Reader, size uint64) ([]byte, error) {
 	return payload, nil
 }
 
+func readElementIDPayload(r io.Reader, size uint64) (ebml.ID, error) {
+	if size == 0 || size > ebml.MaxIDWidth {
+		return 0, ErrInvalidData
+	}
+	var scratch [ebml.MaxIDWidth]byte
+	if _, err := io.ReadFull(r, scratch[:size]); err != nil {
+		return 0, err
+	}
+	id, width, err := ebml.DecodeIDVINT(scratch[:size])
+	if err != nil {
+		return 0, err
+	}
+	if uint64(width) != size {
+		return 0, ErrInvalidData
+	}
+	return id, nil
+}
+
 func skipElement(r *ebml.Reader, header ebml.Header) error {
 	if header.Size.Unknown {
 		return ErrUnsupportedElement

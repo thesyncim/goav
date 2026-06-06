@@ -50,6 +50,8 @@ Current milestone:
 - Seekable Segment and Cluster size patching when the writer implements
   `io.Seeker`.
 - Seekable Info Duration patching when packet timestamps/durations are known.
+- SeekHead writing and parsing for seekable files.
+- Cues writing and parsing for keyframe packets in seekable files.
 - BlockGroup reading and writing for single-frame blocks with BlockDuration;
   non-keyframe BlockGroups use `ReferenceBlock=0` when exact dependency
   information is not available.
@@ -63,7 +65,7 @@ Current milestone:
 
 These are intentionally not in the first milestone:
 
-- Cues, SeekHead, and random seeking.
+- Random seeking APIs.
 - Multiple-reference BlockGroup writing and lacing.
 - Chapters, tags, attachments, language variants, default/forced flags beyond
   basic defaults, and unknown-element preservation.
@@ -97,6 +99,8 @@ overflow or when `ClusterMaxDurationNS` is reached. When `DurationNS` is set,
 the muxer writes a single-frame BlockGroup with BlockDuration in timestamp-scale
 ticks. In seekable mode, `Info.Duration` is patched on close to the maximum
 observed packet end time expressed in those same timestamp-scale ticks.
+Seekable mode also writes Cues for keyframe packets using Segment-relative
+Cluster positions, and a SeekHead that points to Info, Tracks, and Cues.
 
 ## Codec Mapping
 

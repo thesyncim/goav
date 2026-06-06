@@ -14,6 +14,7 @@ var (
 	ErrUnsupportedElement = errors.New("matroska: unsupported element")
 	ErrUnsupportedLacing  = errors.New("matroska: lacing is not supported")
 	ErrInvalidData        = errors.New("matroska: invalid data")
+	ErrSeekHeadTooSmall   = errors.New("matroska: reserved seek head is too small")
 	ErrPayloadTooSmall    = errors.New("matroska: packet data capacity too small")
 	ErrTimecodeOverflow   = errors.New("matroska: block timecode out of range")
 )

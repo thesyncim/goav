@@ -297,6 +297,75 @@ func TestSeekableMuxerPatchesSegmentClusterAndDuration(t *testing.T) {
 	}
 }
 
+func TestSeekableMuxerWritesSeekHeadAndCues(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 1_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}},
+		{TrackID: trackID, TimeNS: 2_000_000, Keyframe: true, Data: []byte{2}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	positions := collectTopLevelPositions(t, ws.bytes)
+	for _, id := range []ebml.ID{idSeekHead, idInfo, idTracks, idCluster, idCues} {
+		if _, ok := positions[id]; !ok {
+			t.Fatalf("missing top-level element 0x%x in positions %+v", uint64(id), positions)
+		}
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := demuxer.SeekEntries()
+	assertSeekEntry(t, entries, idInfo, positions[idInfo])
+	assertSeekEntry(t, entries, idTracks, positions[idTracks])
+	assertSeekEntry(t, entries, idCues, positions[idCues])
+
+	got := Packet{Data: make([]byte, 0, 8)}
+	for i := range packets {
+		if err := demuxer.ReadPacket(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got.TimeNS != packets[i].TimeNS || !bytes.Equal(got.Data, packets[i].Data) {
+			t.Fatalf("packet %d = %+v data=%v", i, got, got.Data)
+		}
+	}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+	cues := demuxer.Cues()
+	if len(cues) != len(packets) {
+		t.Fatalf("cues = %+v, want %d cues", cues, len(packets))
+	}
+	for i := range cues {
+		if cues[i].TrackID != trackID || cues[i].TimeNS != packets[i].TimeNS {
+			t.Fatalf("cue %d = %+v, want track=%d time=%d", i, cues[i], trackID, packets[i].TimeNS)
+		}
+		if cues[i].ClusterPosition == 0 {
+			t.Fatalf("cue %d cluster position = 0, positions=%+v", i, positions)
+		}
+	}
+}
+
 func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
@@ -546,6 +615,57 @@ func countClusters(tb testing.TB, data []byte) int {
 		}
 	}
 	return clusters
+}
+
+func collectTopLevelPositions(tb testing.TB, data []byte) map[ebml.ID]uint64 {
+	tb.Helper()
+	reader := ebmlReader(tb, data)
+	header, err := reader.ReadHeader()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if header.ID != idEBML {
+		tb.Fatalf("first id = 0x%x, want EBML", uint64(header.ID))
+	}
+	if err := reader.Skip(header.Size.Value); err != nil {
+		tb.Fatal(err)
+	}
+	segment, err := reader.ReadHeader()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if segment.ID != idSegment || segment.Size.Unknown {
+		tb.Fatalf("segment = %+v, want known-size Segment", segment)
+	}
+	positions := make(map[ebml.ID]uint64)
+	segmentEnd := segment.DataOffset + int64(segment.Size.Value)
+	for reader.Offset() < segmentEnd {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			tb.Fatal(err)
+		}
+		positions[child.ID] = uint64(child.Offset - segment.DataOffset)
+		if child.Size.Unknown {
+			tb.Fatalf("unexpected unknown top-level element %+v", child)
+		}
+		if err := reader.Skip(child.Size.Value); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	return positions
+}
+
+func assertSeekEntry(tb testing.TB, entries []SeekEntry, id ebml.ID, position uint64) {
+	tb.Helper()
+	for i := range entries {
+		if entries[i].ID == uint64(id) {
+			if entries[i].Position != position {
+				tb.Fatalf("seek entry 0x%x position = %d, want %d", uint64(id), entries[i].Position, position)
+			}
+			return
+		}
+	}
+	tb.Fatalf("missing seek entry 0x%x in %+v", uint64(id), entries)
 }
 
 func readInfoDuration(tb testing.TB, payload []byte) (float64, bool) {

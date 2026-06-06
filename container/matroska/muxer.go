@@ -14,9 +14,17 @@ type Muxer struct {
 	ebml            *ebml.Writer
 	options         MuxerOptions
 	tracks          []Track
+	cues            []CuePoint
 	headerWritten   bool
 	clusterOpen     bool
 	seekable        bool
+	segmentData     int64
+	seekHeadOffset  int64
+	seekHeadReserve int
+	infoPosition    uint64
+	tracksPosition  uint64
+	cuesPosition    uint64
+	clusterPosition uint64
 	segmentPatch    ebml.SizePatch
 	segmentSized    bool
 	clusterPatch    ebml.SizePatch
@@ -45,9 +53,17 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.ebml = ebml.NewWriter(w)
 	m.options = normalizeMuxerOptions(opts)
 	m.tracks = m.tracks[:0]
+	m.cues = m.cues[:0]
 	m.headerWritten = false
 	m.clusterOpen = false
 	_, m.seekable = w.(io.Seeker)
+	m.segmentData = 0
+	m.seekHeadOffset = 0
+	m.seekHeadReserve = 0
+	m.infoPosition = 0
+	m.tracksPosition = 0
+	m.cuesPosition = 0
+	m.clusterPosition = 0
 	m.segmentPatch = ebml.SizePatch{}
 	m.segmentSized = false
 	m.clusterPatch = ebml.SizePatch{}
@@ -57,6 +73,15 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.maxTimeNS = 0
 	m.clusterTimecode = 0
 	m.closed = false
+	if m.seekable && !m.options.Streaming {
+		capacity := m.options.CueCapacity
+		if capacity <= 0 {
+			capacity = 256
+		}
+		if cap(m.cues) < capacity {
+			m.cues = make([]CuePoint, 0, capacity)
+		}
+	}
 }
 
 func (m *Muxer) AddTrack(track Track) (uint32, error) {
@@ -120,6 +145,7 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if delta < math.MinInt16 || delta > math.MaxInt16 {
 		return ErrTimecodeOverflow
 	}
+	m.addCue(packet, timecode)
 	return m.writeSimpleBlock(packet, int16(delta))
 }
 
@@ -141,8 +167,18 @@ func (m *Muxer) Close() error {
 		}
 		m.clusterSized = false
 	}
+	if m.hasCuesToWrite() {
+		if err := m.writeCues(); err != nil {
+			return err
+		}
+	}
 	if m.durationPatch {
 		if err := m.patchDuration(); err != nil {
+			return err
+		}
+	}
+	if m.seekHeadReserve != 0 {
+		if err := m.patchSeekHead(); err != nil {
 			return err
 		}
 	}
@@ -191,14 +227,21 @@ func (m *Muxer) writeHeader() error {
 		}
 		m.segmentPatch = patch
 		m.segmentSized = true
+		m.segmentData = patch.Start
+		if err := m.writeSeekHeadPlaceholder(); err != nil {
+			return err
+		}
 	} else {
 		if err := m.ebml.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
 			return err
 		}
+		m.segmentData = m.ebml.Offset()
 	}
+	m.infoPosition = m.relativeSegmentPosition()
 	if err := m.writeInfo(); err != nil {
 		return err
 	}
+	m.tracksPosition = m.relativeSegmentPosition()
 	if err := m.writeTracks(); err != nil {
 		return err
 	}
@@ -295,6 +338,10 @@ func (m *Muxer) startCluster(timecode int64) error {
 		}
 		m.clusterSized = false
 	}
+	clusterOffset := m.ebml.Offset()
+	if m.segmentData != 0 && clusterOffset >= m.segmentData {
+		m.clusterPosition = uint64(clusterOffset - m.segmentData)
+	}
 	if !m.options.Streaming && m.seekable {
 		patch, err := m.ebml.StartSizedElement(idCluster, ebml.MaxSizeWidth)
 		if err != nil {
@@ -315,11 +362,69 @@ func (m *Muxer) startCluster(timecode int64) error {
 	return nil
 }
 
+func (m *Muxer) writeSeekHeadPlaceholder() error {
+	const reserve = 512
+	m.seekHeadOffset = m.ebml.Offset()
+	m.seekHeadReserve = reserve
+	return writeVoidTotal(m.ebml, reserve)
+}
+
 func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16) error {
 	if packet.DurationNS > 0 {
 		return m.writeBlockGroup(packet, blockTimecode)
 	}
 	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet))
+}
+
+func (m *Muxer) addCue(packet Packet, timecode int64) {
+	if !m.collectsCues() || !packet.Keyframe {
+		return
+	}
+	m.cues = append(m.cues, CuePoint{
+		TrackID:         packet.TrackID,
+		TimeNS:          timecode * m.options.TimecodeScaleNS,
+		ClusterPosition: m.clusterPosition,
+	})
+}
+
+func (m *Muxer) collectsCues() bool {
+	return !m.options.Streaming && m.seekable
+}
+
+func (m *Muxer) hasCuesToWrite() bool {
+	return m.collectsCues() && len(m.cues) != 0
+}
+
+func (m *Muxer) writeCues() error {
+	m.cuesPosition = m.relativeSegmentPosition()
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	for i := range m.cues {
+		if err := writeCuePoint(w, m.cues[i], m.options.TimecodeScaleNS); err != nil {
+			return err
+		}
+	}
+	return m.ebml.WriteElement(idCues, payload.Bytes())
+}
+
+func writeCuePoint(w *ebml.Writer, cue CuePoint, scaleNS int64) error {
+	var payload bytes.Buffer
+	cw := ebml.NewWriter(&payload)
+	if err := cw.WriteUInt(idCueTime, uint64(cue.TimeNS/scaleNS)); err != nil {
+		return err
+	}
+	var positions bytes.Buffer
+	pw := ebml.NewWriter(&positions)
+	if err := pw.WriteUInt(idCueTrack, uint64(cue.TrackID)); err != nil {
+		return err
+	}
+	if err := pw.WriteUInt(idCueClusterPosition, cue.ClusterPosition); err != nil {
+		return err
+	}
+	if err := cw.WriteElement(idCueTrackPositions, positions.Bytes()); err != nil {
+		return err
+	}
+	return w.WriteElement(idCuePoint, payload.Bytes())
 }
 
 func (m *Muxer) updateMaxTime(packet Packet) {
@@ -349,6 +454,93 @@ func (m *Muxer) patchDuration() error {
 		return err
 	}
 	return nil
+}
+
+func (m *Muxer) patchSeekHead() error {
+	seeker, ok := m.writer.(io.Seeker)
+	if !ok {
+		return nil
+	}
+	payload, err := m.buildSeekHeadPayload()
+	if err != nil {
+		return err
+	}
+	element, err := buildElementBytes(idSeekHead, payload)
+	if err != nil {
+		return err
+	}
+	if m.seekHeadReserve-len(element) == 1 {
+		element, err = buildElementBytesWithExtraSizeByte(idSeekHead, payload)
+		if err != nil {
+			return err
+		}
+	}
+	if len(element) > m.seekHeadReserve {
+		return ErrSeekHeadTooSmall
+	}
+	current := m.ebml.Offset()
+	if _, err := seeker.Seek(m.seekHeadOffset, io.SeekStart); err != nil {
+		return err
+	}
+	if err := writeFull(m.writer, element); err != nil {
+		return err
+	}
+	if err := writeVoidTotalRaw(m.writer, m.seekHeadReserve-len(element)); err != nil {
+		return err
+	}
+	if _, err := seeker.Seek(current, io.SeekStart); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *Muxer) buildSeekHeadPayload() ([]byte, error) {
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	for _, entry := range []struct {
+		id       ebml.ID
+		position uint64
+	}{
+		{id: idInfo, position: m.infoPosition},
+		{id: idTracks, position: m.tracksPosition},
+		{id: idCues, position: m.cuesPosition},
+	} {
+		if entry.position == 0 {
+			continue
+		}
+		if err := writeSeekEntry(w, entry.id, entry.position); err != nil {
+			return nil, err
+		}
+	}
+	return payload.Bytes(), nil
+}
+
+func writeSeekEntry(w *ebml.Writer, id ebml.ID, position uint64) error {
+	var payload bytes.Buffer
+	sw := ebml.NewWriter(&payload)
+	var idPayload [ebml.MaxIDWidth]byte
+	n, err := ebml.EncodeID(idPayload[:], id)
+	if err != nil {
+		return err
+	}
+	if err := writeBinary(sw, idSeekID, idPayload[:n]); err != nil {
+		return err
+	}
+	if err := sw.WriteUInt(idSeekPosition, position); err != nil {
+		return err
+	}
+	return w.WriteElement(idSeek, payload.Bytes())
+}
+
+func (m *Muxer) relativeSegmentPosition() uint64 {
+	if m.segmentData == 0 {
+		return 0
+	}
+	offset := m.ebml.Offset()
+	if offset < m.segmentData {
+		return 0
+	}
+	return uint64(offset - m.segmentData)
 }
 
 func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16) error {
@@ -520,6 +712,116 @@ func writeFull(writer io.Writer, payload []byte) error {
 		payload = payload[n:]
 	}
 	return nil
+}
+
+func buildElementBytes(id ebml.ID, payload []byte) ([]byte, error) {
+	var out bytes.Buffer
+	w := ebml.NewWriter(&out)
+	if err := w.WriteElement(id, payload); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+func buildElementBytesWithExtraSizeByte(id ebml.ID, payload []byte) ([]byte, error) {
+	idWidth, err := ebml.IDWidth(id)
+	if err != nil {
+		return nil, err
+	}
+	sizeWidth, err := ebml.SizeVINTWidth(uint64(len(payload)))
+	if err != nil {
+		return nil, err
+	}
+	if sizeWidth == ebml.MaxSizeWidth {
+		return nil, ErrSeekHeadTooSmall
+	}
+	out := make([]byte, idWidth+sizeWidth+1+len(payload))
+	if _, err := ebml.EncodeID(out, id); err != nil {
+		return nil, err
+	}
+	if _, err := ebml.EncodeSizeVINTWidth(out[idWidth:], uint64(len(payload)), sizeWidth+1); err != nil {
+		return nil, err
+	}
+	copy(out[idWidth+sizeWidth+1:], payload)
+	return out, nil
+}
+
+func writeVoidTotal(w *ebml.Writer, total int) error {
+	if total == 0 {
+		return nil
+	}
+	if total < 2 {
+		return ErrInvalidData
+	}
+	_, payloadSize, err := voidLayout(total)
+	if err != nil {
+		return err
+	}
+	if err := w.WriteHeader(idVoid, uint64(payloadSize)); err != nil {
+		return err
+	}
+	var zero [64]byte
+	for payloadSize > 0 {
+		n := payloadSize
+		if n > len(zero) {
+			n = len(zero)
+		}
+		if _, err := w.Write(zero[:n]); err != nil {
+			return err
+		}
+		payloadSize -= n
+	}
+	return nil
+}
+
+func writeVoidTotalRaw(writer io.Writer, total int) error {
+	if total == 0 {
+		return nil
+	}
+	if total < 2 {
+		return ErrInvalidData
+	}
+	width, payloadSize, err := voidLayout(total)
+	if err != nil {
+		return err
+	}
+	var header [1 + ebml.MaxSizeWidth]byte
+	header[0] = byte(idVoid)
+	if _, err := ebml.EncodeSizeVINTWidth(header[1:], uint64(payloadSize), width); err != nil {
+		return err
+	}
+	if err := writeFull(writer, header[:1+width]); err != nil {
+		return err
+	}
+	var zero [64]byte
+	for payloadSize > 0 {
+		n := payloadSize
+		if n > len(zero) {
+			n = len(zero)
+		}
+		if err := writeFull(writer, zero[:n]); err != nil {
+			return err
+		}
+		payloadSize -= n
+	}
+	return nil
+}
+
+func voidLayout(total int) (int, int, error) {
+	for width := 1; width <= ebml.MaxSizeWidth; width++ {
+		payloadSize := total - 1 - width
+		if payloadSize < 0 {
+			continue
+		}
+		if uint64(payloadSize) <= maxKnownSize(width) {
+			return width, payloadSize, nil
+		}
+	}
+	return 0, 0, ErrInvalidData
+}
+
+func maxKnownSize(width int) uint64 {
+	return (uint64(1) << uint(7*width)) - 2
 }
 
 func writeTrackEntry(w *ebml.Writer, track Track, scratch *[18]byte) error {
