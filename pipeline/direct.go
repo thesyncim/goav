@@ -9,9 +9,11 @@ import (
 
 var (
 	ErrBackpressure             = errors.New("pipeline: backpressure")
+	ErrBufferedMessageUnsafe    = errors.New("pipeline: buffered message unsafe")
 	ErrBufferedEdgesUnsupported = errors.New("pipeline: buffered edges unsupported by direct graph")
 	ErrClosed                   = errors.New("pipeline: closed")
 	ErrInvalidLink              = errors.New("pipeline: invalid link")
+	ErrMessageTooLarge          = errors.New("pipeline: message too large")
 	ErrNilMessage               = errors.New("pipeline: nil message")
 	ErrNodeExists               = errors.New("pipeline: node exists")
 	ErrUnsupportedRoute         = errors.New("pipeline: unsupported route")
@@ -58,6 +60,9 @@ func NewDirectFactory() DirectFactory {
 }
 
 func (DirectFactory) NewGraph(_ context.Context, config GraphConfig) (Graph, error) {
+	if !config.Buffer.IsDirect() {
+		return NewBufferedGraph(config)
+	}
 	return NewDirectGraph(config)
 }
 

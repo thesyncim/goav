@@ -140,10 +140,11 @@ can emit zero or more messages.
 
 The default executor is a synchronous direct-call graph. It does not create
 goroutines or channels per packet, and fanout delivers the same message and
-payload references unless a future explicit policy asks for copying. Buffered
-connections are intentionally separate from the direct executor so backpressure
-and drop behavior remain visible. Drop-policy decisions are centralized in the
-pipeline package before a bounded async executor depends on them.
+payload references unless a future explicit policy asks for copying. When a
+non-direct `BufferPolicy` is configured, the default factory builds a bounded
+buffered graph instead. That graph copies message headers into per-node queues,
+uses the shared drop controller for backpressure and drop behavior, and rejects
+borrowed packet/frame buffers until preallocated media copy slots exist.
 
 Builders and graphs can produce a `pipeline.Spec`: structured nodes and edges
 plus human-readable text, DOT, and Mermaid rendering. Nodes may include short

@@ -195,6 +195,45 @@ func TestRuntimeBuilderExplicitGraph(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderExplicitGraphWithBufferPolicy(t *testing.T) {
+	packet := av.Packet{StreamID: "audio"}
+	source := &runtimeTestSource{
+		name: "source",
+		message: pipeline.Message{
+			Kind:   pipeline.MessagePacket,
+			Packet: &packet,
+		},
+	}
+	stage := &runtimeTestStage{name: "stage"}
+	sink := &runtimeTestSink{name: "sink"}
+
+	builder := New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, Drop: pipeline.DropOldest})).New().
+		Source(source).
+		Stage(stage).
+		Sink(sink)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.String() != task.Describe().String() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if stage.count != 1 || sink.count != 1 || sink.lastPacket == nil || sink.lastPacket.StreamID != "audio" {
+		t.Fatalf("stage=%d sink=%d packet=%+v", stage.count, sink.count, sink.lastPacket)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRuntimeBuilderDescribeBeforeBuild(t *testing.T) {
 	packet := av.Packet{StreamID: "audio"}
 	source := &runtimeTestSource{
