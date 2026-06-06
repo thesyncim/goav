@@ -281,8 +281,48 @@ func TestStreamRecipeRejectsWorkInProgressRecipeEncoder(t *testing.T) {
 		To(goav.FileOutput("archive.h264", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_work_in_progress" {
-		t.Fatalf("err = %v, want encode_work_in_progress", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_work_in_progress" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_work_in_progress wrapping ErrUnsupportedBuild", err)
+	}
+}
+
+func TestStreamRecipeRejectsUnsupportedRecipeEncoder(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.wav", strings.NewReader(""))).
+		Audio().
+		Encode(goav.CodecSpec{ID: "pcm"}).
+		To(goav.FileOutput("archive.wav", io.Discard)).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_unsupported wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "pcm is not a recipe encode target") ||
+		!strings.Contains(err.Error(), "codec.EncodeConfig") {
+		t.Fatalf("err = %v, want unsupported encode guidance", err)
+	}
+}
+
+func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
+	tests := []struct {
+		name string
+		spec goav.CodecSpec
+		code string
+	}{
+		{name: "auto", spec: goav.Auto(), code: "encode_auto_unresolved"},
+		{name: "copy", spec: goav.Copy(), code: "copy_unresolved"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+				Audio().
+				Encode(tt.spec).
+				To(goav.FileOutput("archive.ogg", io.Discard)).
+				Build(context.Background())
+			var buildErr *goav.BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, goav.ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+		})
 	}
 }
 

@@ -778,28 +778,6 @@ func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, err
 			},
 		}
 	}
-	if stream.encode.Auto {
-		return nil, &BuildError{
-			Code:      "encode_auto_unresolved",
-			Operation: "build stream",
-			Node:      stream.name,
-			Reason:    "automatic codec selection is not implemented for stream recipes yet",
-			Suggestions: []string{
-				"choose an explicit recipe encoder such as .Opus(...), .VP8(...), or .VP9(...)",
-			},
-		}
-	}
-	if stream.encode.Copy {
-		return nil, &BuildError{
-			Code:      "copy_unresolved",
-			Operation: "build stream",
-			Node:      stream.name,
-			Reason:    "packet copy is only available through record/remux recipes today",
-			Suggestions: []string{
-				"use goav.Record(input, output) for packet-preserving output",
-			},
-		}
-	}
 	if err := validateRecipeEncode(stream.encode, "build stream", stream.name); err != nil {
 		return nil, err
 	}
@@ -919,7 +897,31 @@ func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
 }
 
 func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
-	if spec.ID == "" || spec.Auto || spec.Copy {
+	if spec.Auto {
+		return &BuildError{
+			Code:      "encode_auto_unresolved",
+			Operation: operation,
+			Node:      node,
+			Reason:    "automatic codec selection is not implemented for stream recipes yet",
+			Suggestions: []string{
+				"choose an explicit recipe encoder such as .Opus(...), .VP8(...), or .VP9(...)",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if spec.Copy {
+		return &BuildError{
+			Code:      "copy_unresolved",
+			Operation: operation,
+			Node:      node,
+			Reason:    "packet copy is only available through record/remux recipes today",
+			Suggestions: []string{
+				"use goav.Record(input, output) for packet-preserving output",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if spec.ID == "" {
 		return nil
 	}
 	switch spec.ID {
@@ -936,9 +938,21 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode paths",
 				"use the expert builder with an explicit codec.EncodeConfig when testing an experimental encoder",
 			},
+			Cause: ErrUnsupportedBuild,
 		}
 	default:
-		return nil
+		return &BuildError{
+			Code:      "encode_unsupported",
+			Operation: operation,
+			Node:      node,
+			Reason:    string(spec.ID) + " is not a recipe encode target",
+			Suggestions: []string{
+				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode paths",
+				"use goav.Record(input, output) for packet-preserving output",
+				"use the expert builder with an explicit codec.EncodeConfig for custom encoders",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
 	}
 }
 

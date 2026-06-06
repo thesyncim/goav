@@ -332,7 +332,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 101. Add intent-layer transcode transform diagnostics so wrong-media transforms
     and transform chains fail before the single-transform plan silently drops
     intent. Done.
-102. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+102. Tighten recipe encode target validation so unknown codec specs, automatic
+    codec selection, copy requests, and H264/AV1 work-in-progress targets fail
+    as actionable build diagnostics. Done.
+103. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
