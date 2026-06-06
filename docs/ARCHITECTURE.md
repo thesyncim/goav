@@ -42,13 +42,14 @@ graph compilers.
 The handle-based graph builder remains available as the advanced layer through
 `Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed
 handles such as `source.Stream("audio")` and `decode.Out()` to node inputs.
-`Runtime.New()` remains as a compatibility builder and as the recipe compiler
-target. Runtime builders compile through private graph compilers. Each compiler
-owns one workflow shape and must implement both pre-build description and
-runnable graph construction, so described graphs and execution graphs stay
-equivalent. The graph layer stays available for inspection and custom stages;
-optional diagram output lives outside the runtime core. A route carries all
-media by default, or matches one stream or event type.
+The legacy builder remains a compiler target, but it is no longer a method on
+the public `Runtime` interface. Runtime builders compile through private graph
+compilers. Each compiler owns one workflow shape and must
+implement both pre-build description and runnable graph construction, so
+described graphs and execution graphs stay equivalent. The graph layer stays
+available for inspection and custom stages; optional diagram output lives
+outside the runtime core. A route carries all media by default, or matches one
+stream or event type.
 
 The current compilers cover:
 

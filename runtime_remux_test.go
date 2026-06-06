@@ -118,7 +118,7 @@ func (m *remuxTestMuxer) Close() error {
 }
 
 func TestRuntimeBuilderDescribeRemux(t *testing.T) {
-	spec, err := New().New().
+	spec, err := newTestBuilder(t).
 		Input(Input{Name: "input.ogg"}).
 		Output(Output{Name: "archive.ogg"}).
 		Output(Output{Name: "preview.ogg"}).
@@ -145,7 +145,7 @@ func TestRuntimeBuilderInputOutputRemux(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	)
 
-	builder := New(formats).New().
+	builder := newTestBuilder(t, formats).
 		Input(Input{Name: "input.ogg"}).
 		Output(Output{Name: "archive.ogg"}).
 		Output(Output{Name: "preview.ogg"})
@@ -198,7 +198,7 @@ func TestRuntimeBuilderInputOutputRemux(t *testing.T) {
 }
 
 func TestRuntimeBuilderReportsMissingInputDemuxer(t *testing.T) {
-	_, err := New().New().
+	_, err := newTestBuilder(t).
 		Input(Input{Name: "input.ogg"}).
 		Output(Output{Name: "recording.ivf"}).
 		Build(context.Background())
@@ -217,9 +217,9 @@ func TestRuntimeBuilderReportsMissingOutputMuxer(t *testing.T) {
 	streams := []av.Stream{{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus}}}
 	demuxer := &remuxTestDemuxer{streams: streams}
 
-	_, err := New(withTestFormats(
+	_, err := newTestBuilder(t, withTestFormats(
 		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
-	)).New().
+	)).
 		Input(Input{Name: "input.ogg"}).
 		Output(Output{Name: "archive.webm"}).
 		Build(context.Background())

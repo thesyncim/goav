@@ -103,7 +103,7 @@ func TestRuntimeBuilderInputDecodeFilterEncodeOutputs(t *testing.T) {
 	)
 	filter := &runtimeTestStage{name: "meter"}
 
-	builder := New(formats, codecs).New().
+	builder := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
 		Decode(SelectAudio()).
 		Filter(SelectAudio(), filter).
@@ -198,7 +198,7 @@ func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
 	)
 	filter := &runtimeTestStage{name: "meter"}
 
-	builder := New(formats, codecs).New().
+	builder := newTestBuilder(t, formats, codecs).
 		RTP(receiver,
 			WithRTPName("live-audio"),
 			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
@@ -257,7 +257,7 @@ func TestRuntimeBuilderDecodeEncodeRequiresMatchingStream(t *testing.T) {
 		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	_, err := New(formats, codecs).New().
+	_, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
 		Decode(SelectAudio()).
 		Encode(SelectVideo(), pcmEncodeConfig()).
@@ -288,7 +288,7 @@ func TestRuntimeBuilderDecodeEncodeRequiresTargetCodec(t *testing.T) {
 		&decodeTestDecoderFactory{decoder: &decodeTestDecoder{}},
 	))
 
-	_, err := New(formats, codecs).New().
+	_, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
 		Decode(SelectAudio()).
 		Encode(SelectAudio(), codec.EncodeConfig{}).

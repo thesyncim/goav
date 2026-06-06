@@ -100,6 +100,11 @@ func runtimeValue(t *testing.T, rt Runtime) *runtime {
 	return r
 }
 
+func newTestBuilder(t *testing.T, options ...Option) Builder {
+	t.Helper()
+	return runtimeValue(t, New(options...)).New()
+}
+
 func specDOT(spec pipeline.Spec) string {
 	return specRenderURI(spec, "goav://graph/dot")
 }
@@ -233,7 +238,7 @@ func TestRuntimeWithFilterAdapter(t *testing.T) {
 }
 
 func TestRuntimeBuilderEmptyTask(t *testing.T) {
-	task, err := New().New().Build(context.Background())
+	task, err := newTestBuilder(t).Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +263,7 @@ func TestRuntimeBuilderExplicitGraph(t *testing.T) {
 	left := &runtimeTestSink{name: "left"}
 	right := &runtimeTestSink{name: "right"}
 
-	task, err := New().New().
+	task, err := newTestBuilder(t).
 		Source(source).
 		Stage(stage).
 		Sink(left).
@@ -307,7 +312,7 @@ func TestRuntimeBuilderExplicitGraphWithBufferPolicy(t *testing.T) {
 	stage := &runtimeTestStage{name: "stage"}
 	sink := &runtimeTestSink{name: "sink"}
 
-	builder := New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, Drop: pipeline.DropOldest})).New().
+	builder := newTestBuilder(t, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, Drop: pipeline.DropOldest})).
 		Source(source).
 		Stage(stage).
 		Sink(sink)
@@ -343,7 +348,7 @@ func TestRuntimeBuilderDescribeBeforeBuild(t *testing.T) {
 	stage := &runtimeTestStage{name: "stage"}
 	sink := &runtimeTestSink{name: "sink"}
 
-	builder := New().New().
+	builder := newTestBuilder(t).
 		Source(source).
 		Stage(stage).
 		Sink(sink)
@@ -377,7 +382,7 @@ func TestRuntimeBuilderExplicitSourceToSink(t *testing.T) {
 	}
 	sink := &runtimeTestSink{name: "sink"}
 
-	task, err := New().New().
+	task, err := newTestBuilder(t).
 		Source(source).
 		Sink(sink).
 		Build(context.Background())
@@ -421,7 +426,7 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 	audio := &runtimeTestSink{name: "audio"}
 	video := &runtimeTestSink{name: "video"}
 
-	task, err := New().New().
+	task, err := newTestBuilder(t).
 		Source(source).
 		Sink(audio).
 		Sink(video).
@@ -460,7 +465,7 @@ func TestRuntimeBuilderExplicitFanout(t *testing.T) {
 	preview := &runtimeTestSink{name: "preview"}
 	stats := &runtimeTestSink{name: "stats"}
 
-	task, err := New().New().
+	task, err := newTestBuilder(t).
 		Source(source).
 		Sink(record).
 		Sink(preview).
@@ -498,7 +503,7 @@ func TestRuntimeBuilderExplicitStreamFanout(t *testing.T) {
 	preview := &runtimeTestSink{name: "preview"}
 	audio := &runtimeTestSink{name: "audio"}
 
-	task, err := New().New().
+	task, err := newTestBuilder(t).
 		Source(source).
 		Sink(record).
 		Sink(preview).
@@ -535,7 +540,7 @@ func TestRuntimeBuilderExplicitRoutesHelper(t *testing.T) {
 	preview := &runtimeTestSink{name: "preview"}
 	audio := &runtimeTestSink{name: "audio"}
 
-	task, err := New().New().
+	task, err := newTestBuilder(t).
 		Source(source).
 		Sink(record).
 		Sink(preview).
@@ -571,7 +576,7 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 	audio := &runtimeTestSink{name: "audio"}
 	video := &runtimeTestSink{name: "video"}
 
-	spec, err := New().New().
+	spec, err := newTestBuilder(t).
 		Source(source).
 		Sink(audio).
 		Sink(video).
@@ -601,7 +606,7 @@ func TestRuntimeBuilderExplicitRouteByEvent(t *testing.T) {
 	stats := &runtimeTestSink{name: "stats"}
 	loss := &runtimeTestSink{name: "loss"}
 
-	task, err := New().New().
+	task, err := newTestBuilder(t).
 		Source(source).
 		Sink(stats).
 		Sink(loss).
@@ -634,7 +639,7 @@ func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 	unused := &runtimeTestStage{name: "unused"}
 	sink := &runtimeTestSink{name: "sink"}
 
-	task, err := New().New().
+	task, err := newTestBuilder(t).
 		Source(source).
 		Stage(unused).
 		Sink(sink).
@@ -652,7 +657,7 @@ func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 }
 
 func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
-	_, err := New().New().
+	_, err := newTestBuilder(t).
 		Input(Input{Name: "input"}).
 		Decode(SelectAudio()).
 		Output(Output{Name: "output"}).
@@ -669,7 +674,7 @@ func TestRuntimeBuilderRefusesMixedGraph(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 
-	_, err := New().New().
+	_, err := newTestBuilder(t).
 		Input(Input{Name: "input"}).
 		Source(source).
 		Build(context.Background())
@@ -679,10 +684,10 @@ func TestRuntimeBuilderRefusesMixedGraph(t *testing.T) {
 }
 
 func TestRuntimeBuilderDescribeValidation(t *testing.T) {
-	if _, err := New().New().Input(Input{Name: "input"}).Describe(); !errors.Is(err, ErrUnsupportedBuild) {
+	if _, err := newTestBuilder(t).Input(Input{Name: "input"}).Describe(); !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("high-level err = %v, want ErrUnsupportedBuild", err)
 	}
-	if _, err := New().New().Source(nil).Describe(); !errors.Is(err, ErrNilSource) {
+	if _, err := newTestBuilder(t).Source(nil).Describe(); !errors.Is(err, ErrNilSource) {
 		t.Fatalf("source err = %v, want ErrNilSource", err)
 	}
 
@@ -692,7 +697,7 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	sink := &runtimeTestSink{name: "same"}
-	if _, err := New().New().Source(source).Sink(sink).Describe(); !errors.Is(err, pipeline.ErrNodeExists) {
+	if _, err := newTestBuilder(t).Source(source).Sink(sink).Describe(); !errors.Is(err, pipeline.ErrNodeExists) {
 		t.Fatalf("duplicate err = %v, want ErrNodeExists", err)
 	}
 
@@ -701,14 +706,14 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	validSink := &runtimeTestSink{name: "sink"}
-	if _, err := New().New().
+	if _, err := newTestBuilder(t).
 		Source(validSource).
 		Sink(validSink).
 		Routes(Route("missing", "sink")).
 		Describe(); !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("unknown err = %v, want ErrUnknownNode", err)
 	}
-	if _, err := New().New().
+	if _, err := newTestBuilder(t).
 		Source(validSource).
 		Sink(validSink).
 		Routes(pipeline.Route{
@@ -722,12 +727,12 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 }
 
 func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
-	_, err := New().New().Source(nil).Build(context.Background())
+	_, err := newTestBuilder(t).Source(nil).Build(context.Background())
 	if !errors.Is(err, ErrNilSource) {
 		t.Fatalf("source err = %v, want ErrNilSource", err)
 	}
 
-	_, err = New().New().Stage(&runtimeTestStage{name: "stage"}).Build(context.Background())
+	_, err = newTestBuilder(t).Stage(&runtimeTestStage{name: "stage"}).Build(context.Background())
 	if !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("stage err = %v, want ErrUnsupportedBuild", err)
 	}
@@ -737,18 +742,18 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 		name:    "source",
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
-	_, err = New().New().Source(source).Stage(nil).Build(context.Background())
+	_, err = newTestBuilder(t).Source(source).Stage(nil).Build(context.Background())
 	if !errors.Is(err, ErrNilStage) {
 		t.Fatalf("stage err = %v, want ErrNilStage", err)
 	}
 
-	_, err = New().New().Source(source).Sink(nil).Build(context.Background())
+	_, err = newTestBuilder(t).Source(source).Sink(nil).Build(context.Background())
 	if !errors.Is(err, ErrNilSink) {
 		t.Fatalf("sink err = %v, want ErrNilSink", err)
 	}
 
 	sink := &runtimeTestSink{name: "sink"}
-	_, err = New().New().
+	_, err = newTestBuilder(t).
 		Source(source).
 		Sink(sink).
 		Routes(Route("missing", "sink")).

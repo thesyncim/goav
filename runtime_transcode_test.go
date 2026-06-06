@@ -66,7 +66,7 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 		},
 	}
 
-	builder := New(formats, codecs).New().
+	builder := newTestBuilder(t, formats, codecs).
 		Transcode(plan)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -243,7 +243,7 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 		Outputs: []transcode.Output{{Name: "archive.ogg", Format: av.FormatOgg}},
 	}
 
-	builder := New(formats, codecs, filters).New().
+	builder := newTestBuilder(t, formats, codecs, filters).
 		Transcode(plan)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -348,7 +348,7 @@ func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (Builder, *de
 			},
 		},
 	}
-	builder := New(formats, codecs, WithBufferPolicy(policy)).New().
+	builder := New(formats, codecs, WithBufferPolicy(policy)).(*runtime).New().
 		Transcode(plan)
 	return builder, demuxer, muxers, decoder, encoderFactory
 }
@@ -396,7 +396,7 @@ func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
 		Outputs: []transcode.Output{{Name: "preview.ogg"}},
 	}
 
-	_, err := New(formats, codecs).New().
+	_, err := newTestBuilder(t, formats, codecs).
 		Transcode(plan).
 		Build(context.Background())
 	if err != filter.ErrNotFound {
@@ -421,7 +421,7 @@ func TestRuntimeBuilderTranscodeRequiresMatchingOutputSelection(t *testing.T) {
 		}},
 	}
 
-	_, err := New().New().Transcode(plan).Describe()
+	_, err := newTestBuilder(t).Transcode(plan).Describe()
 	if err != ErrUnsupportedBuild {
 		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
 	}

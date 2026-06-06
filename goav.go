@@ -31,7 +31,6 @@ type Sink = pipeline.Sink
 type Runtime interface {
 	Probe(context.Context, ProbeRequest) (ProbeResult, error)
 	Graph() GraphBuilder
-	New() Builder
 }
 
 // GraphBuilder is the handle-based expert graph layer. Most applications should
@@ -46,7 +45,7 @@ type GraphBuilder interface {
 }
 
 // Builder is the legacy advanced builder and compiler target used by recipes
-// and graph handles.
+// and graph handles. Prefer recipes or Runtime.Graph for new application code.
 type Builder interface {
 	Input(Input) Builder
 	RTP(rtpav.PacketReader, ...RTPOption) Builder

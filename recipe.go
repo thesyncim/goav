@@ -126,6 +126,10 @@ type jobConfig struct {
 	runtime Runtime
 }
 
+type builderProvider interface {
+	New() Builder
+}
+
 func UseRuntime(runtime Runtime) JobOption {
 	return func(config *jobConfig) {
 		config.runtime = runtime
@@ -1026,7 +1030,10 @@ func (j *Job) builder() (Builder, error) {
 	if err := validateOutputSpecs("build job", outputs); err != nil {
 		return nil, err
 	}
-	builder := j.runtime.New()
+	builder, err := newRuntimeBuilder(j.runtime, "build job")
+	if err != nil {
+		return nil, err
+	}
 	for i := range j.inputs {
 		builder = j.inputs[i].apply(builder)
 	}
@@ -1045,6 +1052,23 @@ func (j *Job) builder() (Builder, error) {
 		}
 	}
 	return builder, nil
+}
+
+func newRuntimeBuilder(runtime Runtime, operation string) (Builder, error) {
+	provider, ok := runtime.(builderProvider)
+	if !ok {
+		return nil, &BuildError{
+			Code:      "runtime_builder_missing",
+			Operation: operation,
+			Reason:    "runtime cannot compile recipe jobs",
+			Suggestions: []string{
+				"use goav.Default() for the standard recipe runtime",
+				"use goav.New(...) when customizing adapters",
+				"use runtime.Graph() for explicit graph wiring",
+			},
+		}
+	}
+	return provider.New(), nil
 }
 
 func (j *Job) validateInputs() error {
@@ -2056,7 +2080,11 @@ func (j *TranscodeJob) builder() (Builder, error) {
 	if err != nil {
 		return nil, err
 	}
-	return j.runtime.New().Transcode(plan), nil
+	builder, err := newRuntimeBuilder(j.runtime, "build transcode")
+	if err != nil {
+		return nil, err
+	}
+	return builder.Transcode(plan), nil
 }
 
 func (j *TranscodeJob) stream(name string, media av.MediaType, options ...StreamOption) *StreamBuilder {

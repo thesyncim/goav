@@ -150,7 +150,7 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	}, decoderFactory))
 	sink := &runtimeTestSink{name: "frames"}
 
-	builder := New(formats, codecs).New().
+	builder := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
 		Decode(SelectAudio()).
 		Sink(sink)
@@ -233,7 +233,7 @@ func TestRuntimeBuilderDecodeUsesFactoryStateProvider(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, factory))
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := New(formats, codecs).New().
+	task, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ivf"}).
 		Decode(SelectVideo()).
 		Sink(sink).
@@ -280,7 +280,7 @@ func TestRuntimeBuilderInputDecodeFilterSink(t *testing.T) {
 	filter := &runtimeTestStage{name: "meter"}
 	sink := &runtimeTestSink{name: "frames"}
 
-	builder := New(formats, codecs).New().
+	builder := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
 		Decode(SelectAudio()).
 		Filter(SelectAudio(), filter).
@@ -331,7 +331,7 @@ func TestRuntimeBuilderDecodeFilterRequiresMatchingStream(t *testing.T) {
 	)
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 
-	_, err := New(formats, codecs).New().
+	_, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
 		Decode(SelectAudio()).
 		Filter(SelectVideo(), &runtimeTestStage{name: "resize"}).
@@ -370,7 +370,7 @@ func TestRuntimeBuilderInputDecodeSinkSelectsMatchingStream(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus}, decoderFactory))
 	sink := &runtimeTestSink{name: "frames"}
 
-	builder := New(formats, codecs).New().
+	builder := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
 		Decode(SelectAudio()).
 		Sink(sink)
@@ -414,7 +414,7 @@ func TestRuntimeBuilderDecodeRequiresUnambiguousStream(t *testing.T) {
 	)
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 
-	_, err := New(formats, codecs).New().
+	_, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
 		Decode(SelectAudio()).
 		Sink(&runtimeTestSink{name: "frames"}).

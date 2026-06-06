@@ -31,7 +31,7 @@ func TestRuntimeBuilderH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
 	)
 	codecs := withTestCodecs(goh264adapter.Register)
 
-	_, err := New(formats, codecs).New().
+	_, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
 		Decode(SelectVideo()).
 		Sink(&runtimeTestSink{name: "frames"}).

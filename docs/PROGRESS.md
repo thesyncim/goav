@@ -242,7 +242,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     private. Done.
 72. Prune runtime registry getters: registry wiring is configured through
     `goav.New(...)` options and adapter hooks, while runtime users keep the
-    forward path of `Probe`, `New`, `Describe`, `Build`, and `Run`. Done.
+    forward path of `Probe`, graph specs, `Build`, and `Run`. Done.
 73. Collapse registry setup to one registration style: codec, format, and
     filter registries use explicit `Register...` methods instead of parallel
     constructor option helpers. Done.
@@ -289,8 +289,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 88. Add function adapters for custom packet, frame, event, and sink hooks so
     simple processing does not require full graph interface implementations.
     Done.
-89. Add `Runtime.Graph()` as the named advanced builder entry while keeping
-    `Runtime.New()` as a compatibility alias. Done.
+89. Add `Runtime.Graph()` as the named advanced builder entry. Done.
 90. Give runtime demux sources bounded packet payload storage so default
     file-record recipes can run through real packet demuxers such as IVF
     without per-packet growth. Done.
@@ -439,7 +438,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     keeping text, DOT, and Mermaid choices out of the core and out of the public
     renderer surface.
     Done.
-139. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+139. Demote the legacy fluent builder from the public `Runtime` interface so
+    expert users enter through `Runtime.Graph()` while recipes keep using the
+    compiler target internally.
+    Done.
+140. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

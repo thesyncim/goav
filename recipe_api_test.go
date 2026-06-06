@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -20,6 +21,16 @@ import (
 )
 
 type recipeAPIRTPReader struct{}
+
+type recipeAPIRuntimeWithoutBuilder struct{}
+
+func (recipeAPIRuntimeWithoutBuilder) Probe(context.Context, goav.ProbeRequest) (goav.ProbeResult, error) {
+	return goav.ProbeResult{}, nil
+}
+
+func (recipeAPIRuntimeWithoutBuilder) Graph() goav.GraphBuilder {
+	return goav.Default().Graph()
+}
 
 func (recipeAPIRTPReader) Streams(context.Context) ([]goav.Stream, error) {
 	return []goav.Stream{{ID: "audio", Type: "audio"}}, nil
@@ -47,6 +58,33 @@ func specText(spec pipeline.Spec) string {
 		return err.Error()
 	}
 	return out
+}
+
+func TestRuntimeInterfaceKeepsLegacyBuilderOutOfFrontDoor(t *testing.T) {
+	runtimeType := reflect.TypeOf((*goav.Runtime)(nil)).Elem()
+	if _, ok := runtimeType.MethodByName("New"); ok {
+		t.Fatal("Runtime exposes legacy New builder; use Runtime.Graph for expert graph wiring")
+	}
+	if _, ok := runtimeType.MethodByName("Graph"); !ok {
+		t.Fatal("Runtime should expose Graph as the expert graph entry point")
+	}
+}
+
+func TestRecipeReportsRuntimeWithoutCompilerBuilder(t *testing.T) {
+	_, err := goav.Record(
+		goav.FileInput("input.ivf", strings.NewReader("")),
+		goav.FileOutput("recording.ivf", io.Discard),
+		goav.UseRuntime(recipeAPIRuntimeWithoutBuilder{}),
+	).Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_builder_missing" {
+		t.Fatalf("err = %v, want runtime_builder_missing", err)
+	}
+	if !strings.Contains(err.Error(), "runtime cannot compile recipe jobs") ||
+		!strings.Contains(err.Error(), "goav.Default") {
+		t.Fatalf("err = %v, want runtime guidance", err)
+	}
 }
 
 func TestReadmeRecordRecipeIsSmall(t *testing.T) {
