@@ -41,13 +41,13 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 		Renditions: []transcode.Rendition{
 			{
 				Name:     "audio-main",
-				Selector: SelectAudio(),
+				Selector: testSelectAudio(),
 				Encode:   pcmEncodeConfig(),
 				Labels:   []string{"archive"},
 			},
 			{
 				Name:     "audio-low",
-				Selector: SelectAudio(),
+				Selector: testSelectAudio(),
 				Encode:   pcmEncodeConfig(),
 				Labels:   []string{"archive", "preview"},
 			},
@@ -225,12 +225,12 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 		Renditions: []transcode.Rendition{
 			{
 				Name:     "audio-main",
-				Selector: SelectAudio(),
+				Selector: testSelectAudio(),
 				Encode:   pcmEncodeConfig(),
 			},
 			{
 				Name:     "audio-low",
-				Selector: SelectAudio(),
+				Selector: testSelectAudio(),
 				Resample: &filter.ResampleConfig{
 					SampleRate: 16000,
 					Channels:   1,
@@ -324,13 +324,13 @@ func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (Builder, *de
 		Renditions: []transcode.Rendition{
 			{
 				Name:     "audio-main",
-				Selector: SelectAudio(),
+				Selector: testSelectAudio(),
 				Encode:   pcmEncodeConfig(),
 				Labels:   []string{"archive"},
 			},
 			{
 				Name:     "audio-low",
-				Selector: SelectAudio(),
+				Selector: testSelectAudio(),
 				Encode:   pcmEncodeConfig(),
 				Labels:   []string{"archive", "preview"},
 			},
@@ -386,7 +386,7 @@ func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
 		Input: format.Input{Name: "input.ogg"},
 		Renditions: []transcode.Rendition{{
 			Name:     "audio-low",
-			Selector: SelectAudio(),
+			Selector: testSelectAudio(),
 			Resample: &filter.ResampleConfig{
 				SampleRate: 16000,
 				Channels:   1,
@@ -412,7 +412,7 @@ func TestRuntimeBuilderTranscodeRequiresMatchingOutputSelection(t *testing.T) {
 		Input: format.Input{Name: "input.ogg"},
 		Renditions: []transcode.Rendition{{
 			Name:     "audio-main",
-			Selector: SelectAudio(),
+			Selector: testSelectAudio(),
 			Encode:   pcmEncodeConfig(),
 		}},
 		Outputs: []transcode.Output{{

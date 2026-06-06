@@ -12,7 +12,7 @@ func TestStreamSelectStageAdoptsReplacementForTypeSelector(t *testing.T) {
 	updated := initial
 	updated.ID = "video-replaced"
 	updated.Epoch = 2
-	stage := newStreamSelectStage("select-video", initial, SelectVideo(), "video")
+	stage := newStreamSelectStage("select-video", initial, testSelectVideo(), "video")
 
 	if !stage.matches(&pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 		Type:     av.EventCodecChanged,
@@ -39,7 +39,7 @@ func TestStreamSelectStageAdoptsOldIDReplacementForTypeSelector(t *testing.T) {
 	updated := initial
 	updated.ID = "video-replaced"
 	updated.Epoch = 2
-	stage := newStreamSelectStage("select-video", initial, SelectVideo(), "video")
+	stage := newStreamSelectStage("select-video", initial, testSelectVideo(), "video")
 
 	if !stage.matches(&pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 		Type:     av.EventCodecChanged,
@@ -63,7 +63,7 @@ func TestStreamSelectStageAdoptsGlobalReplacementForTypeSelector(t *testing.T) {
 	updated := initial
 	updated.ID = "video-replaced"
 	updated.Epoch = 2
-	stage := newStreamSelectStage("select-video", initial, SelectVideo(), "video")
+	stage := newStreamSelectStage("select-video", initial, testSelectVideo(), "video")
 
 	if !stage.matches(&pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 		Type:   av.EventCodecChanged,

@@ -52,7 +52,7 @@ func TestRuntimeBuilderRTPAV1DecodeSink(t *testing.T) {
 			WithRTPName("av1-rtp"),
 			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 		).
-		Decode(SelectVideo()).
+		Decode(testSelectVideo()).
 		Sink(sink)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -135,7 +135,7 @@ func testRuntimeBuilderRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 			WithRTPName("av1-rtp"),
 			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 		).
-		Decode(SelectVideo()).
+		Decode(testSelectVideo()).
 		Sink(sink).
 		Build(ctx)
 	if err != nil {
@@ -203,7 +203,7 @@ func TestRuntimeBuilderRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
 		).
-		Decode(SelectVideo()).
+		Decode(testSelectVideo()).
 		Sink(sink).
 		Build(ctx)
 	if err != nil {
@@ -291,7 +291,7 @@ func testRuntimeBuilderRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTa
 			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
 		).
-		Decode(SelectVideo()).
+		Decode(testSelectVideo()).
 		Sink(sink).
 		Build(ctx)
 	if err != nil {

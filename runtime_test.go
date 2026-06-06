@@ -105,6 +105,22 @@ func newTestBuilder(t *testing.T, options ...Option) Builder {
 	return runtimeValue(t, New(options...)).New()
 }
 
+func testSelectAudio() av.StreamSelector {
+	return av.StreamSelector{Type: av.MediaAudio}
+}
+
+func testSelectVideo() av.StreamSelector {
+	return av.StreamSelector{Type: av.MediaVideo}
+}
+
+func testRoute(from string, to ...string) pipeline.Route {
+	return pipeline.Route{
+		From:   from,
+		To:     append([]string(nil), to...),
+		Policy: pipeline.RouteAll,
+	}
+}
+
 func specDOT(spec pipeline.Spec) string {
 	return specRenderURI(spec, "goav://graph/dot")
 }
@@ -398,19 +414,19 @@ func TestRuntimeBuilderExplicitSourceToSink(t *testing.T) {
 }
 
 func TestRouteHelpers(t *testing.T) {
-	route := Route("source", "decode", "stats")
+	route := testRoute("source", "decode", "stats")
 	if route.From != "source" || len(route.To) != 2 || route.To[0] != "decode" || route.To[1] != "stats" ||
 		route.Policy != pipeline.RouteAll {
 		t.Fatalf("route = %+v", route)
 	}
 
-	stream := Route("decode", "record").ByStream("video")
+	stream := testRoute("decode", "record").ByStream("video")
 	if stream.Policy != pipeline.RouteByStream || stream.Label != "video" || len(stream.To) != 1 ||
 		stream.To[0] != "record" {
 		t.Fatalf("stream route = %+v", stream)
 	}
 
-	event := Route("source", "feedback").ByEvent(av.EventPacketLoss)
+	event := testRoute("source", "feedback").ByEvent(av.EventPacketLoss)
 	if event.Policy != pipeline.RouteByEvent || event.Label != string(av.EventPacketLoss) || len(event.To) != 1 ||
 		event.To[0] != "feedback" {
 		t.Fatalf("event route = %+v", event)
@@ -431,8 +447,8 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 		Sink(audio).
 		Sink(video).
 		Routes(
-			Route("source", "audio").ByStream("audio"),
-			Route("source", "video").ByStream("video"),
+			testRoute("source", "audio").ByStream("audio"),
+			testRoute("source", "video").ByStream("video"),
 		).
 		Build(context.Background())
 	if err != nil {
@@ -470,7 +486,7 @@ func TestRuntimeBuilderExplicitFanout(t *testing.T) {
 		Sink(record).
 		Sink(preview).
 		Sink(stats).
-		Routes(Route("source", "record", "preview", "stats")).
+		Routes(testRoute("source", "record", "preview", "stats")).
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -509,8 +525,8 @@ func TestRuntimeBuilderExplicitStreamFanout(t *testing.T) {
 		Sink(preview).
 		Sink(audio).
 		Routes(
-			Route("source", "record", "preview").ByStream("video"),
-			Route("source", "audio").ByStream("audio"),
+			testRoute("source", "record", "preview").ByStream("video"),
+			testRoute("source", "audio").ByStream("audio"),
 		).
 		Build(context.Background())
 	if err != nil {
@@ -546,8 +562,8 @@ func TestRuntimeBuilderExplicitRoutesHelper(t *testing.T) {
 		Sink(preview).
 		Sink(audio).
 		Routes(
-			Route("source", "record", "preview").ByStream("video"),
-			Route("source", "audio").ByStream("audio"),
+			testRoute("source", "record", "preview").ByStream("video"),
+			testRoute("source", "audio").ByStream("audio"),
 		).
 		Build(context.Background())
 	if err != nil {
@@ -581,8 +597,8 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 		Sink(audio).
 		Sink(video).
 		Routes(
-			Route("source", "audio").ByStream("audio"),
-			Route("source", "video").ByStream("video"),
+			testRoute("source", "audio").ByStream("audio"),
+			testRoute("source", "video").ByStream("video"),
 		).
 		Describe()
 	if err != nil {
@@ -611,8 +627,8 @@ func TestRuntimeBuilderExplicitRouteByEvent(t *testing.T) {
 		Sink(stats).
 		Sink(loss).
 		Routes(
-			Route("source", "stats").ByEvent(av.EventStats),
-			Route("source", "loss").ByEvent(av.EventPacketLoss),
+			testRoute("source", "stats").ByEvent(av.EventStats),
+			testRoute("source", "loss").ByEvent(av.EventPacketLoss),
 		).
 		Build(context.Background())
 	if err != nil {
@@ -643,7 +659,7 @@ func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 		Source(source).
 		Stage(unused).
 		Sink(sink).
-		Routes(Route("source", "sink")).
+		Routes(testRoute("source", "sink")).
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -659,7 +675,7 @@ func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
 	_, err := newTestBuilder(t).
 		Input(Input{Name: "input"}).
-		Decode(SelectAudio()).
+		Decode(testSelectAudio()).
 		Output(Output{Name: "output"}).
 		Build(context.Background())
 	if !errors.Is(err, ErrUnsupportedBuild) {
@@ -709,7 +725,7 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 	if _, err := newTestBuilder(t).
 		Source(validSource).
 		Sink(validSink).
-		Routes(Route("missing", "sink")).
+		Routes(testRoute("missing", "sink")).
 		Describe(); !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("unknown err = %v, want ErrUnknownNode", err)
 	}
@@ -756,7 +772,7 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 	_, err = newTestBuilder(t).
 		Source(source).
 		Sink(sink).
-		Routes(Route("missing", "sink")).
+		Routes(testRoute("missing", "sink")).
 		Build(context.Background())
 	if !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("route err = %v, want ErrUnknownNode", err)

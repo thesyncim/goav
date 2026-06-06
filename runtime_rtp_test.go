@@ -335,7 +335,7 @@ func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
 			WithRTPName("live-audio"),
 			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
 		).
-		Decode(SelectAudio()).
+		Decode(testSelectAudio()).
 		Sink(sink)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -427,7 +427,7 @@ func TestRuntimeBuilderRTPDecodeUsesRTPDecodeBounds(t *testing.T) {
 			WithRTPDepacketizers(rtpav.NewVP8Depacketizer(stream, rtpav.WithMaxVideoFrameSize(4096))),
 			WithRTPDecodeBounds(requested),
 		).
-		Decode(SelectVideo()).
+		Decode(testSelectVideo()).
 		Sink(sink)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -529,7 +529,7 @@ func TestRuntimeBuilderRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 			),
 			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
 		).
-		Decode(SelectVideo()).
+		Decode(testSelectVideo()).
 		Sink(sink).
 		Build(ctx)
 	if err != nil {
@@ -588,8 +588,8 @@ func TestRuntimeBuilderRTPDecodeFilterSink(t *testing.T) {
 			WithRTPName("live-audio"),
 			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
 		).
-		Decode(SelectAudio()).
-		Filter(SelectAudio(), filter).
+		Decode(testSelectAudio()).
+		Filter(testSelectAudio(), filter).
 		Sink(sink)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -735,7 +735,7 @@ func TestRuntimeBuilderMultiRTPDecodeSelectsOneStream(t *testing.T) {
 			WithRTPName("video-rtp"),
 			WithRTPDepacketizers(rtpav.NewVP8Depacketizer(video)),
 		).
-		Decode(SelectAudio()).
+		Decode(testSelectAudio()).
 		Sink(sink)
 	planned, err := builder.Describe()
 	if err != nil {

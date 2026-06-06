@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"reflect"
 	"strings"
@@ -67,6 +70,27 @@ func TestRuntimeInterfaceKeepsLegacyBuilderOutOfFrontDoor(t *testing.T) {
 	}
 	if _, ok := runtimeType.MethodByName("Graph"); !ok {
 		t.Fatal("Runtime should expose Graph as the expert graph entry point")
+	}
+}
+
+func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "goav.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := map[string]bool{
+		"SelectAudio": true,
+		"SelectVideo": true,
+		"Route":       true,
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv != nil {
+			continue
+		}
+		if legacy[fn.Name.Name] {
+			t.Fatalf("goav.%s keeps a legacy helper on the front door", fn.Name.Name)
+		}
 	}
 }
 

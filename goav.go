@@ -69,19 +69,3 @@ type Task interface {
 	Events() <-chan av.Event
 	Close() error
 }
-
-func SelectAudio() av.StreamSelector {
-	return av.StreamSelector{Type: av.MediaAudio}
-}
-
-func SelectVideo() av.StreamSelector {
-	return av.StreamSelector{Type: av.MediaVideo}
-}
-
-func Route(from string, to ...string) pipeline.Route {
-	return pipeline.Route{
-		From:   from,
-		To:     append([]string(nil), to...),
-		Policy: pipeline.RouteAll,
-	}
-}

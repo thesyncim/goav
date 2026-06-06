@@ -105,9 +105,9 @@ func TestRuntimeBuilderInputDecodeFilterEncodeOutputs(t *testing.T) {
 
 	builder := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
-		Decode(SelectAudio()).
-		Filter(SelectAudio(), filter).
-		Encode(SelectAudio(), pcmEncodeConfig()).
+		Decode(testSelectAudio()).
+		Filter(testSelectAudio(), filter).
+		Encode(testSelectAudio(), pcmEncodeConfig()).
 		Output(Output{Name: "archive.ogg"}).
 		Output(Output{Name: "preview.ogg"})
 	planned, err := builder.Describe()
@@ -203,9 +203,9 @@ func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
 			WithRTPName("live-audio"),
 			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
 		).
-		Decode(SelectAudio()).
-		Filter(SelectAudio(), filter).
-		Encode(SelectAudio(), pcmEncodeConfig()).
+		Decode(testSelectAudio()).
+		Filter(testSelectAudio(), filter).
+		Encode(testSelectAudio(), pcmEncodeConfig()).
 		Output(Output{Name: "encoded.ogg"})
 	planned, err := builder.Describe()
 	if err != nil {
@@ -259,8 +259,8 @@ func TestRuntimeBuilderDecodeEncodeRequiresMatchingStream(t *testing.T) {
 
 	_, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
-		Decode(SelectAudio()).
-		Encode(SelectVideo(), pcmEncodeConfig()).
+		Decode(testSelectAudio()).
+		Encode(testSelectVideo(), pcmEncodeConfig()).
 		Output(Output{Name: "archive.ogg"}).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -290,8 +290,8 @@ func TestRuntimeBuilderDecodeEncodeRequiresTargetCodec(t *testing.T) {
 
 	_, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
-		Decode(SelectAudio()).
-		Encode(SelectAudio(), codec.EncodeConfig{}).
+		Decode(testSelectAudio()).
+		Encode(testSelectAudio(), codec.EncodeConfig{}).
 		Output(Output{Name: "archive.ogg"}).
 		Build(context.Background())
 	var buildErr *BuildError

@@ -152,7 +152,7 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 
 	builder := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
-		Decode(SelectAudio()).
+		Decode(testSelectAudio()).
 		Sink(sink)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -235,7 +235,7 @@ func TestRuntimeBuilderDecodeUsesFactoryStateProvider(t *testing.T) {
 
 	task, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ivf"}).
-		Decode(SelectVideo()).
+		Decode(testSelectVideo()).
 		Sink(sink).
 		Build(context.Background())
 	if err != nil {
@@ -282,8 +282,8 @@ func TestRuntimeBuilderInputDecodeFilterSink(t *testing.T) {
 
 	builder := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
-		Decode(SelectAudio()).
-		Filter(SelectAudio(), filter).
+		Decode(testSelectAudio()).
+		Filter(testSelectAudio(), filter).
 		Sink(sink)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -333,8 +333,8 @@ func TestRuntimeBuilderDecodeFilterRequiresMatchingStream(t *testing.T) {
 
 	_, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
-		Decode(SelectAudio()).
-		Filter(SelectVideo(), &runtimeTestStage{name: "resize"}).
+		Decode(testSelectAudio()).
+		Filter(testSelectVideo(), &runtimeTestStage{name: "resize"}).
 		Sink(&runtimeTestSink{name: "frames"}).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -372,7 +372,7 @@ func TestRuntimeBuilderInputDecodeSinkSelectsMatchingStream(t *testing.T) {
 
 	builder := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
-		Decode(SelectAudio()).
+		Decode(testSelectAudio()).
 		Sink(sink)
 	planned, err := builder.Describe()
 	if err != nil {
@@ -416,7 +416,7 @@ func TestRuntimeBuilderDecodeRequiresUnambiguousStream(t *testing.T) {
 
 	_, err := newTestBuilder(t, formats, codecs).
 		Input(Input{Name: "input.ogg"}).
-		Decode(SelectAudio()).
+		Decode(testSelectAudio()).
 		Sink(&runtimeTestSink{name: "frames"}).
 		Build(context.Background())
 	var buildErr *BuildError
