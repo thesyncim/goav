@@ -4,7 +4,8 @@ import "testing"
 
 func TestRegistryFactory(t *testing.T) {
 	factory := &fakeFactory{}
-	registry := NewRegistry(WithFactory(Descriptor{Name: FactoryResize}, factory))
+	registry := NewRegistry()
+	registry.RegisterFactory(Descriptor{Name: FactoryResize}, factory)
 
 	got, err := registry.Factory(FactoryResize)
 	if err != nil {

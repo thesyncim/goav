@@ -137,13 +137,13 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 		},
 	}}
 	demuxer := &remuxTestDemuxer{streams: streams}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	formats := newTestFormatRegistry(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 	)
 	decoder := &decodeTestDecoder{}
 	decoderFactory := &decodeTestDecoderFactory{decoder: decoder}
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{
 		ID:   av.CodecOpus,
 		Type: av.MediaAudio,
 	}, decoderFactory))
@@ -221,15 +221,15 @@ func TestRuntimeBuilderDecodeUsesFactoryStateProvider(t *testing.T) {
 		streams: streams,
 		packets: []av.Packet{{StreamID: "video", Payload: av.Buffer{Bytes: []byte{1}}}},
 	}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	formats := newTestFormatRegistry(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 	)
 	decoder := &decodeTestDecoder{}
 	factory := &decodeStateTestFactory{
 		decodeTestDecoderFactory: decodeTestDecoderFactory{decoder: decoder},
 	}
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, factory))
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, factory))
 	sink := &runtimeTestSink{name: "frames"}
 
 	task, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
@@ -267,12 +267,12 @@ func TestRuntimeBuilderInputDecodeFilterSink(t *testing.T) {
 		},
 	}}
 	demuxer := &remuxTestDemuxer{streams: streams}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	formats := newTestFormatRegistry(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 	)
 	decoder := &decodeTestDecoder{}
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{
 		ID:   av.CodecOpus,
 		Type: av.MediaAudio,
 	}, &decodeTestDecoderFactory{decoder: decoder}))
@@ -324,11 +324,11 @@ func TestRuntimeBuilderDecodeFilterRequiresMatchingStream(t *testing.T) {
 		Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
 	}}
 	demuxer := &remuxTestDemuxer{streams: streams}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	formats := newTestFormatRegistry(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 	)
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 
 	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
 		Input(Input{Name: "input.ogg"}).
@@ -356,13 +356,13 @@ func TestRuntimeBuilderInputDecodeSinkSelectsMatchingStream(t *testing.T) {
 			{StreamID: "audio", Payload: av.Buffer{Bytes: []byte{1}}},
 		},
 	}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	formats := newTestFormatRegistry(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 	)
 	decoder := &decodeTestDecoder{}
 	decoderFactory := &decodeTestDecoderFactory{decoder: decoder}
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus}, decoderFactory))
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus}, decoderFactory))
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
@@ -403,11 +403,11 @@ func TestRuntimeBuilderDecodeRequiresUnambiguousStream(t *testing.T) {
 		{ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8}},
 	}
 	demuxer := &remuxTestDemuxer{streams: streams}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
+	formats := newTestFormatRegistry(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
 	)
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 
 	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
 		Input(Input{Name: "input.ogg"}).

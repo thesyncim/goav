@@ -30,10 +30,9 @@ func (testMuxerFactory) NewMuxer(context.Context, av.FormatID) (Muxer, error) {
 }
 
 func TestRegistryProbeChoosesHighestScore(t *testing.T) {
-	registry := NewRegistry(
-		WithProber(testProber{result: ProbeResult{Format: av.FormatOgg, Score: 50}}),
-		WithProber(testProber{result: ProbeResult{Format: av.FormatIVF, Score: 90}}),
-	)
+	registry := NewRegistry()
+	registry.RegisterProber(testProber{result: ProbeResult{Format: av.FormatOgg, Score: 50}})
+	registry.RegisterProber(testProber{result: ProbeResult{Format: av.FormatIVF, Score: 90}})
 
 	result, err := registry.Probe(context.Background(), ProbeRequest{})
 	if err != nil {
@@ -45,10 +44,9 @@ func TestRegistryProbeChoosesHighestScore(t *testing.T) {
 }
 
 func TestRegistryFactories(t *testing.T) {
-	registry := NewRegistry(
-		WithDemuxer(av.FormatOgg, testDemuxerFactory{}),
-		WithMuxer(av.FormatOgg, testMuxerFactory{}),
-	)
+	registry := NewRegistry()
+	registry.RegisterDemuxer(av.FormatOgg, testDemuxerFactory{})
+	registry.RegisterMuxer(av.FormatOgg, testMuxerFactory{})
 
 	if _, err := registry.DemuxerFactory(av.FormatOgg); err != nil {
 		t.Fatalf("demuxer: %v", err)
@@ -62,7 +60,8 @@ func TestRegistryFactories(t *testing.T) {
 }
 
 func TestRegistryProbersAreCopied(t *testing.T) {
-	registry := NewRegistry(WithProber(testProber{}))
+	registry := NewRegistry()
+	registry.RegisterProber(testProber{})
 
 	probers := registry.Probers()
 	probers[0] = testProber{result: ProbeResult{Format: av.FormatIVF}}

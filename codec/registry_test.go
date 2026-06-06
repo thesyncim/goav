@@ -21,10 +21,9 @@ func (testEncoderFactory) NewEncoder(context.Context, EncodeConfig) (Encoder, er
 }
 
 func TestRegistryFindsExplicitFactories(t *testing.T) {
-	registry := NewRegistry(
-		WithDecoder(Descriptor{ID: av.CodecOpus, Name: "opus"}, testDecoderFactory{}),
-		WithEncoder(Descriptor{ID: av.CodecOpus, Name: "opus"}, testEncoderFactory{}),
-	)
+	registry := NewRegistry()
+	registry.RegisterDecoder(Descriptor{ID: av.CodecOpus, Name: "opus"}, testDecoderFactory{})
+	registry.RegisterEncoder(Descriptor{ID: av.CodecOpus, Name: "opus"}, testEncoderFactory{})
 
 	if _, err := registry.DecoderFactory(av.CodecOpus); err != nil {
 		t.Fatalf("decoder factory: %v", err)
@@ -60,10 +59,9 @@ func TestRegistryFindsExplicitFactories(t *testing.T) {
 }
 
 func TestRegistryReportsDescriptorOnlyFactoriesUnavailable(t *testing.T) {
-	registry := NewRegistry(
-		WithDescriptor(Descriptor{ID: av.CodecH264, Modes: []Mode{ModeDecode}}),
-		WithDescriptor(Descriptor{ID: av.CodecVP8, Modes: []Mode{ModeEncode}}),
-	)
+	registry := NewRegistry()
+	registry.RegisterDescriptor(Descriptor{ID: av.CodecH264, Modes: []Mode{ModeDecode}})
+	registry.RegisterDescriptor(Descriptor{ID: av.CodecVP8, Modes: []Mode{ModeEncode}})
 
 	if _, err := registry.DecoderFactory(av.CodecH264); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("decoder factory err = %v, want ErrUnavailable", err)
@@ -77,9 +75,8 @@ func TestRegistryReportsDescriptorOnlyFactoriesUnavailable(t *testing.T) {
 }
 
 func TestRegistryDescriptorsAreCopied(t *testing.T) {
-	registry := NewRegistry(
-		WithDecoder(Descriptor{ID: av.CodecOpus, Name: "original"}, testDecoderFactory{}),
-	)
+	registry := NewRegistry()
+	registry.RegisterDecoder(Descriptor{ID: av.CodecOpus, Name: "original"}, testDecoderFactory{})
 
 	descriptors := registry.Descriptors()
 	descriptors[0].Name = "mutated"
@@ -91,9 +88,8 @@ func TestRegistryDescriptorsAreCopied(t *testing.T) {
 }
 
 func TestRegistryNormalizesCapabilityCodecIDForFactories(t *testing.T) {
-	registry := NewRegistry(
-		WithDecoder(Descriptor{Capabilities: Capabilities{CodecID: av.CodecVP8}}, testDecoderFactory{}),
-	)
+	registry := NewRegistry()
+	registry.RegisterDecoder(Descriptor{Capabilities: Capabilities{CodecID: av.CodecVP8}}, testDecoderFactory{})
 
 	if _, err := registry.DecoderFactory(av.CodecVP8); err != nil {
 		t.Fatalf("decoder factory: %v", err)

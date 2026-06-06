@@ -10,7 +10,6 @@ import (
 	goh264adapter "github.com/thesyncim/goav/adapters/goh264"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/format"
 )
 
 func TestRuntimeBuilderH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
@@ -26,11 +25,11 @@ func TestRuntimeBuilderH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
 		},
 	}}
 	demuxer := &remuxTestDemuxer{streams: streams}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
+	formats := newTestFormatRegistry(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
 	)
-	codecs := codec.NewRegistry()
+	codecs := newTestCodecRegistry()
 	goh264adapter.Register(codecs)
 
 	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().

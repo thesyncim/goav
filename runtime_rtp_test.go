@@ -155,9 +155,9 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 		events: events,
 	}
 	muxers := &remuxTestMuxerFactory{}
-	formats := format.NewRegistry(
-		format.WithProber(format.DefaultProber()),
-		format.WithMuxer(av.FormatOgg, muxers),
+	formats := newTestFormatRegistry(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
 	)
 
 	builder := New(WithFormatRegistry(formats)).New().
@@ -324,7 +324,7 @@ func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
 	}
 	decoder := &decodeTestDecoder{}
 	decoderFactory := &decodeTestDecoderFactory{decoder: decoder}
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{
 		ID:   av.CodecOpus,
 		Type: av.MediaAudio,
 	}, decoderFactory))
@@ -418,7 +418,7 @@ func TestRuntimeBuilderRTPDecodeUsesRTPDecodeBounds(t *testing.T) {
 	}
 	decoder := &decodeTestDecoder{}
 	decoderFactory := &decodeTestDecoderFactory{decoder: decoder}
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, decoderFactory))
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, decoderFactory))
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := New(WithCodecRegistry(codecs)).New().
@@ -517,7 +517,7 @@ func TestRuntimeBuilderRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 		},
 	})
 	decoder := &decodeTestDecoder{}
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: decoder}))
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: decoder}))
 	sink := &runtimeTestSink{name: "frames"}
 
 	task, err := New(WithCodecRegistry(codecs)).New().
@@ -579,7 +579,7 @@ func TestRuntimeBuilderRTPDecodeFilterSink(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	decoder := &decodeTestDecoder{}
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}))
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}))
 	filter := &runtimeTestStage{name: "meter"}
 	sink := &runtimeTestSink{name: "frames"}
 
@@ -653,9 +653,9 @@ func newBufferedRTPRecordCopyFixture(policy pipeline.BufferPolicy) (Builder, *ru
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	formats := format.NewRegistry(
-		format.WithProber(format.DefaultProber()),
-		format.WithMuxer(av.FormatOgg, muxers),
+	formats := newTestFormatRegistry(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
 	)
 	builder := New(WithFormatRegistry(formats), WithBufferPolicy(policy)).New().
 		RTP(receiver,
@@ -723,7 +723,7 @@ func TestRuntimeBuilderMultiRTPDecodeSelectsOneStream(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	decoder := &decodeTestDecoder{}
-	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}))
+	codecs := newTestCodecRegistry(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}))
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := New(WithCodecRegistry(codecs)).New().
@@ -829,9 +829,9 @@ func TestRuntimeBuilderMultiRTPRecordFanout(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	formats := format.NewRegistry(
-		format.WithProber(format.DefaultProber()),
-		format.WithMuxer(av.FormatOgg, muxers),
+	formats := newTestFormatRegistry(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
 	)
 
 	builder := New(WithFormatRegistry(formats)).New().

@@ -88,17 +88,17 @@ func TestRuntimeBuilderInputDecodeFilterEncodeOutputs(t *testing.T) {
 		}},
 	}
 	muxers := &remuxTestMuxerFactory{}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
-		format.WithMuxer(av.FormatOgg, muxers),
+	formats := newTestFormatRegistry(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
 	)
 	decoder := &decodeTestDecoder{}
 	encoder := &encodeTestEncoder{}
 	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
-	codecs := codec.NewRegistry(
-		codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
-		codec.WithEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
+	codecs := newTestCodecRegistry(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
 	)
 	filter := &runtimeTestStage{name: "meter"}
 
@@ -185,15 +185,15 @@ func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	formats := format.NewRegistry(
-		format.WithProber(format.DefaultProber()),
-		format.WithMuxer(av.FormatOgg, muxers),
+	formats := newTestFormatRegistry(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
 	)
 	decoder := &decodeTestDecoder{}
 	encoder := &encodeTestEncoder{}
-	codecs := codec.NewRegistry(
-		codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
-		codec.WithEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder}),
+	codecs := newTestCodecRegistry(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder}),
 	)
 	filter := &runtimeTestStage{name: "meter"}
 
@@ -246,14 +246,14 @@ func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
 func TestRuntimeBuilderDecodeEncodeRequiresMatchingStream(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
-		format.WithMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+	formats := newTestFormatRegistry(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 	)
-	codecs := codec.NewRegistry(
-		codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
-		codec.WithEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+	codecs := newTestCodecRegistry(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
 	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
@@ -273,12 +273,12 @@ func TestRuntimeBuilderDecodeEncodeRequiresMatchingStream(t *testing.T) {
 func TestRuntimeBuilderDecodeEncodeRequiresTargetCodec(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
-		format.WithMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+	formats := newTestFormatRegistry(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 	)
-	codecs := codec.NewRegistry(codec.WithDecoder(
+	codecs := newTestCodecRegistry(testCodecDecoder(
 		codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio},
 		&decodeTestDecoderFactory{decoder: &decodeTestDecoder{}},
 	))

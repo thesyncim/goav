@@ -1,31 +1,13 @@
 package filter
 
-type RegistryOption func(*SimpleRegistry)
-
 type SimpleRegistry struct {
 	descriptors []Descriptor
 	factories   map[string]Factory
 }
 
-func NewRegistry(options ...RegistryOption) *SimpleRegistry {
-	registry := &SimpleRegistry{
+func NewRegistry() *SimpleRegistry {
+	return &SimpleRegistry{
 		factories: make(map[string]Factory),
-	}
-	for _, option := range options {
-		option(registry)
-	}
-	return registry
-}
-
-func WithFactory(desc Descriptor, factory Factory) RegistryOption {
-	return func(registry *SimpleRegistry) {
-		registry.RegisterFactory(desc, factory)
-	}
-}
-
-func WithDescriptor(desc Descriptor) RegistryOption {
-	return func(registry *SimpleRegistry) {
-		registry.RegisterDescriptor(desc)
 	}
 }
 

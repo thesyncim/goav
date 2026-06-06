@@ -99,6 +99,72 @@ func runtimeValue(t *testing.T, rt Runtime) *runtime {
 	return r
 }
 
+func newTestCodecRegistry(configure ...func(*codec.SimpleRegistry)) *codec.SimpleRegistry {
+	registry := codec.NewRegistry()
+	for i := range configure {
+		configure[i](registry)
+	}
+	return registry
+}
+
+func testCodecDescriptor(desc codec.Descriptor) func(*codec.SimpleRegistry) {
+	return func(registry *codec.SimpleRegistry) {
+		registry.RegisterDescriptor(desc)
+	}
+}
+
+func testCodecDecoder(desc codec.Descriptor, factory codec.DecoderFactory) func(*codec.SimpleRegistry) {
+	return func(registry *codec.SimpleRegistry) {
+		registry.RegisterDecoder(desc, factory)
+	}
+}
+
+func testCodecEncoder(desc codec.Descriptor, factory codec.EncoderFactory) func(*codec.SimpleRegistry) {
+	return func(registry *codec.SimpleRegistry) {
+		registry.RegisterEncoder(desc, factory)
+	}
+}
+
+func newTestFormatRegistry(configure ...func(*format.SimpleRegistry)) *format.SimpleRegistry {
+	registry := format.NewRegistry()
+	for i := range configure {
+		configure[i](registry)
+	}
+	return registry
+}
+
+func testFormatProber(prober format.Prober) func(*format.SimpleRegistry) {
+	return func(registry *format.SimpleRegistry) {
+		registry.RegisterProber(prober)
+	}
+}
+
+func testFormatDemuxer(id av.FormatID, factory format.DemuxerFactory) func(*format.SimpleRegistry) {
+	return func(registry *format.SimpleRegistry) {
+		registry.RegisterDemuxer(id, factory)
+	}
+}
+
+func testFormatMuxer(id av.FormatID, factory format.MuxerFactory) func(*format.SimpleRegistry) {
+	return func(registry *format.SimpleRegistry) {
+		registry.RegisterMuxer(id, factory)
+	}
+}
+
+func newTestFilterRegistry(configure ...func(*filter.SimpleRegistry)) *filter.SimpleRegistry {
+	registry := filter.NewRegistry()
+	for i := range configure {
+		configure[i](registry)
+	}
+	return registry
+}
+
+func testFilterFactory(desc filter.Descriptor, factory filter.Factory) func(*filter.SimpleRegistry) {
+	return func(registry *filter.SimpleRegistry) {
+		registry.RegisterFactory(desc, factory)
+	}
+}
+
 func TestNewRuntimeDefaults(t *testing.T) {
 	rt := runtimeValue(t, New())
 	if rt.codecs == nil || rt.formats == nil || rt.filters == nil {
@@ -672,10 +738,11 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 }
 
 func TestRuntimeWithCustomCodecRegistry(t *testing.T) {
-	registry := codec.NewRegistry(codec.WithDescriptor(codec.Descriptor{
+	registry := codec.NewRegistry()
+	registry.RegisterDescriptor(codec.Descriptor{
 		ID:    av.CodecAV1,
 		Modes: []codec.Mode{codec.ModeDecode},
-	}))
+	})
 	rt := runtimeValue(t, New(WithCodecRegistry(registry)))
 
 	found, err := rt.codecs.Find(av.CodecAV1, codec.ModeDecode)

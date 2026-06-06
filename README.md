@@ -13,6 +13,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pure Go core, no cgo runtime dependency.
 - Simple fluent API for natural workflows.
 - Runtime registries are configured through options and adapter hooks.
+- Registry packages use explicit `Register...` methods for codecs, formats,
+  and filters.
 - Explicit graph API for custom realtime systems.
 - One graph constructor: `pipeline.NewGraph` chooses direct or bounded buffered
   execution from `pipeline.BufferPolicy`.

@@ -15,40 +15,16 @@ var (
 	ErrResultFull = errors.New("format: result capacity full")
 )
 
-type RegistryOption func(*SimpleRegistry)
-
 type SimpleRegistry struct {
 	probers  []Prober
 	demuxers map[av.FormatID]DemuxerFactory
 	muxers   map[av.FormatID]MuxerFactory
 }
 
-func NewRegistry(options ...RegistryOption) *SimpleRegistry {
-	registry := &SimpleRegistry{
+func NewRegistry() *SimpleRegistry {
+	return &SimpleRegistry{
 		demuxers: make(map[av.FormatID]DemuxerFactory),
 		muxers:   make(map[av.FormatID]MuxerFactory),
-	}
-	for _, option := range options {
-		option(registry)
-	}
-	return registry
-}
-
-func WithProber(prober Prober) RegistryOption {
-	return func(registry *SimpleRegistry) {
-		registry.RegisterProber(prober)
-	}
-}
-
-func WithDemuxer(format av.FormatID, factory DemuxerFactory) RegistryOption {
-	return func(registry *SimpleRegistry) {
-		registry.RegisterDemuxer(format, factory)
-	}
-}
-
-func WithMuxer(format av.FormatID, factory MuxerFactory) RegistryOption {
-	return func(registry *SimpleRegistry) {
-		registry.RegisterMuxer(format, factory)
 	}
 }
 

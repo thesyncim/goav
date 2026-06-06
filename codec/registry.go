@@ -8,40 +8,16 @@ import (
 
 var ErrNotFound = errors.New("codec: not found")
 
-type RegistryOption func(*SimpleRegistry)
-
 type SimpleRegistry struct {
 	descriptors []Descriptor
 	decoders    map[av.CodecID]DecoderFactory
 	encoders    map[av.CodecID]EncoderFactory
 }
 
-func NewRegistry(options ...RegistryOption) *SimpleRegistry {
-	r := &SimpleRegistry{
+func NewRegistry() *SimpleRegistry {
+	return &SimpleRegistry{
 		decoders: make(map[av.CodecID]DecoderFactory),
 		encoders: make(map[av.CodecID]EncoderFactory),
-	}
-	for _, option := range options {
-		option(r)
-	}
-	return r
-}
-
-func WithDecoder(desc Descriptor, factory DecoderFactory) RegistryOption {
-	return func(r *SimpleRegistry) {
-		r.RegisterDecoder(desc, factory)
-	}
-}
-
-func WithEncoder(desc Descriptor, factory EncoderFactory) RegistryOption {
-	return func(r *SimpleRegistry) {
-		r.RegisterEncoder(desc, factory)
-	}
-}
-
-func WithDescriptor(desc Descriptor) RegistryOption {
-	return func(r *SimpleRegistry) {
-		r.RegisterDescriptor(desc)
 	}
 }
 

@@ -31,10 +31,12 @@ type Metrics interface {
 type Option func(*runtime)
 
 func New(options ...Option) Runtime {
+	formats := format.NewRegistry()
+	formats.RegisterProber(format.DefaultProber())
 	runtime := &runtime{
 		codecs:   codec.NewRegistry(),
 		filters:  filter.NewRegistry(),
-		formats:  format.NewRegistry(format.WithProber(format.DefaultProber())),
+		formats:  formats,
 		realtime: true,
 	}
 	for _, option := range options {
