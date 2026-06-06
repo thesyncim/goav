@@ -106,7 +106,7 @@ func (b *builder) planEncodeOutputPath(nodes map[string]plannedNode, spec *pipel
 	for i := range b.outputs {
 		outputName := muxNodeName(b.outputs[i], i)
 		outputRef := pipeline.NodeRef(outputName)
-		if err := addPlannedNode(nodes, spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetail(b.outputs[i])); err != nil {
+		if err := addPlannedNode(nodes, spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetailWithFormat(b.outputs[i], b.outputFormat(i))); err != nil {
 			return err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{

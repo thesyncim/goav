@@ -109,7 +109,7 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 	for i := range outputs {
 		outputName := muxNodeName(outputs[i].target, i)
 		outputRef := pipeline.NodeRef(outputName)
-		if err := addPlannedNode(nodes, &spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetail(outputs[i].target)); err != nil {
+		if err := addPlannedNode(nodes, &spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetailWithFormat(outputs[i].target, outputs[i].output.Format)); err != nil {
 			return pipeline.Spec{}, err
 		}
 		for _, branchIndex := range outputs[i].matches {

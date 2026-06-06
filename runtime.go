@@ -98,6 +98,7 @@ type builder struct {
 	inputs     []Input
 	rtpInputs  []rtpInput
 	outputs    []Output
+	outputFmts []av.FormatID
 	decodes    []av.StreamSelector
 	encodes    []encodeRequest
 	filters    []filterRequest
@@ -157,8 +158,20 @@ func (b *builder) RTP(receiver rtpav.PacketReader, options ...RTPOption) Builder
 }
 
 func (b *builder) Output(output Output) Builder {
+	return b.outputWithFormat(output, "")
+}
+
+func (b *builder) outputWithFormat(output Output, format av.FormatID) Builder {
 	b.outputs = append(b.outputs, output)
+	b.outputFmts = append(b.outputFmts, format)
 	return b
+}
+
+func (b *builder) outputFormat(index int) av.FormatID {
+	if index < 0 || index >= len(b.outputFmts) {
+		return ""
+	}
+	return b.outputFmts[index]
 }
 
 func (b *builder) Decode(selector av.StreamSelector) Builder {

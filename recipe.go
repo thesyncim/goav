@@ -590,6 +590,10 @@ type OutputSpec struct {
 	err    error
 }
 
+type formattedOutputBuilder interface {
+	outputWithFormat(Output, av.FormatID) Builder
+}
+
 func FileOutput(name string, writer io.Writer) OutputSpec {
 	return OutputSpec{
 		output: Output{
@@ -633,11 +637,28 @@ func (s OutputSpec) Format(format av.FormatID) OutputSpec {
 	return s
 }
 
-func (s OutputSpec) apply(builder Builder) Builder {
+func (s OutputSpec) apply(builder Builder) (Builder, error) {
 	if s.sink != nil {
-		return builder.Sink(s.sink)
+		return builder.Sink(s.sink), nil
 	}
-	return builder.Output(s.output)
+	if s.format == "" {
+		return builder.Output(s.output), nil
+	}
+	formatted, ok := builder.(formattedOutputBuilder)
+	if !ok {
+		return nil, &BuildError{
+			Code:      "output_format_unsupported",
+			Operation: "build job",
+			Node:      s.label("output"),
+			Reason:    "runtime builder cannot receive an explicit output format",
+			Suggestions: []string{
+				"use goav.Default() or goav.New(...) for recipe output formats",
+				"use a named output whose extension can be probed by the runtime",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	return formatted.outputWithFormat(s.output, s.format), nil
 }
 
 func (s OutputSpec) validate(operation string, fallback string) error {
@@ -684,12 +705,25 @@ func (s OutputSpec) validate(operation string, fallback string) error {
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil && s.format == "" {
+	if s.output.Protocol == av.ProtocolFile && s.output.Writer != nil && s.output.Name == "" && s.output.URI == "" && s.output.MIMEType == "" && s.format == "" {
+		return &BuildError{
+			Code:      "output_format_missing",
+			Operation: operation,
+			Node:      node,
+			Reason:    "writer-backed file output has no name, URI, MIME type, or explicit format",
+			Suggestions: []string{
+				"give goav.FileOutput(name, writer) a name with a container extension",
+				"call .Format(...) with a registered container when the writer has no filename",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil {
 		return &BuildError{
 			Code:      "output_target_missing",
 			Operation: operation,
 			Node:      node,
-			Reason:    "output has no URI, writer, sink, or explicit format",
+			Reason:    "output has no URI, writer, or sink",
 			Suggestions: []string{
 				"use goav.FileOutput(name, writer) for writer-backed output",
 				"use goav.URIOutput(uri) for URI-backed output",
@@ -895,7 +929,11 @@ func (j *Job) builder() (Builder, error) {
 		}
 	}
 	for i := range outputs {
-		builder = outputs[i].apply(builder)
+		var err error
+		builder, err = outputs[i].apply(builder)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return builder, nil
 }

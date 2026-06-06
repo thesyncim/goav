@@ -377,7 +377,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Done.
 121. Add stream-recipe output-kind validation so one selected stream chain
     cannot mix decoded frame sinks with muxed file/URI outputs. Done.
-122. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+122. Carry explicit recipe output formats into ordinary record/stream builders,
+    and reject writer-only file outputs that provide no name, URI, MIME type, or
+    format signal. Done.
+123. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

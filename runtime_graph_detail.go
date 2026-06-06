@@ -26,9 +26,16 @@ func inputNodeDetail(input Input) string {
 }
 
 func outputNodeDetail(output Output) string {
+	return outputNodeDetailWithFormat(output, "")
+}
+
+func outputNodeDetailWithFormat(output Output, format av.FormatID) string {
 	parts := []string{"mux"}
 	if output.URI != "" && output.URI != output.Name {
 		parts = append(parts, "uri="+output.URI)
+	}
+	if format != "" {
+		parts = append(parts, "format="+string(format))
 	}
 	if output.Protocol != "" {
 		parts = append(parts, "protocol="+string(output.Protocol))

@@ -29,7 +29,7 @@ func (b *builder) planRemux(spec pipeline.Spec) (pipeline.Spec, error) {
 	for i := range b.outputs {
 		stageName := muxNodeName(b.outputs[i], i)
 		stageRef := pipeline.NodeRef(stageName)
-		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef, outputNodeDetail(b.outputs[i])); err != nil {
+		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef, outputNodeDetailWithFormat(b.outputs[i], b.outputFormat(i))); err != nil {
 			return pipeline.Spec{}, err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{

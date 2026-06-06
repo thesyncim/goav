@@ -12,6 +12,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
@@ -276,6 +277,38 @@ func TestRecordRecipeRejectsFileOutputWithoutWriter(t *testing.T) {
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want output_writer_missing wrapping ErrUnsupportedBuild", err)
+	}
+}
+
+func TestRecordRecipeRejectsUnnamedFileOutputWithoutFormat(t *testing.T) {
+	_, err := goav.Record(
+		goav.FileInput("input.ivf", strings.NewReader("")),
+		goav.FileOutput("", io.Discard),
+	).Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_format_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_format_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "explicit format") ||
+		!strings.Contains(err.Error(), "container extension") {
+		t.Fatalf("err = %v, want format guidance", err)
+	}
+}
+
+func TestRecordRecipeRejectsFormatOnlyOutputSpec(t *testing.T) {
+	_, err := goav.Record(
+		goav.FileInput("input.ivf", strings.NewReader("")),
+		goav.OutputSpec{}.Format(av.FormatIVF),
+	).Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_target_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_target_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "no URI, writer, or sink") ||
+		!strings.Contains(err.Error(), "goav.FileOutput") {
+		t.Fatalf("err = %v, want output target guidance", err)
 	}
 }
 
@@ -733,6 +766,38 @@ func TestDefaultRecordIVFRecipeRuns(t *testing.T) {
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.FileOutput("preview.ivf", &out),
 	).Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if out.Len() == 0 {
+		t.Fatal("empty output")
+	}
+}
+
+func TestDefaultRecordRecipeRunsWithExplicitUnnamedOutputFormat(t *testing.T) {
+	var out bytes.Buffer
+	job := goav.Record(
+		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
+		goav.FileOutput("", &out).Format(av.FormatIVF),
+	)
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "input.ivf -> output") ||
+		!strings.Contains(text, "format=ivf") {
+		t.Fatalf("spec:\n%s", text)
+	}
+
+	task, err := job.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
