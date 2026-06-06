@@ -378,6 +378,82 @@ func TestInputFormatAdapterPassSkipsLiveReceiveInputs(t *testing.T) {
 	}
 }
 
+func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) {
+	tests := []struct {
+		name   string
+		intent Intent
+		code   string
+		want   []string
+	}{
+		{
+			name: "ambiguous live video",
+			intent: Intent{
+				Inputs: []InputIntent{
+					{Name: "front", Protocol: av.ProtocolRTP, Codec: VP8(), Realtime: true},
+					{Name: "screen", Protocol: av.ProtocolRTP, Codec: VP8(), Realtime: true},
+				},
+				Streams: []StreamIntent{{
+					Name:   "video",
+					Select: StreamSelect{Type: av.MediaVideo},
+					Decode: true,
+				}},
+			},
+			code: "stream_ambiguous",
+			want: []string{"multiple streams match type=video", "id=front", "id=screen", `.Video(goav.StreamID("front"))`, ".Video(goav.StreamIndex(0))"},
+		},
+		{
+			name: "missing live audio",
+			intent: Intent{
+				Inputs: []InputIntent{
+					{Name: "camera", Protocol: av.ProtocolRTP, Codec: VP8(), Realtime: true},
+				},
+				Streams: []StreamIntent{{
+					Name:   "audio",
+					Select: StreamSelect{Type: av.MediaAudio},
+					Decode: true,
+				}},
+			},
+			code: "stream_missing",
+			want: []string{"no stream matches type=audio", "video[0]", "id=camera", "codec=vp8"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightLiveStreams: true},
+				intent:    tt.intent,
+			}
+			err := validateJobLiveStreamSelectionPass().Apply(&state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestLiveStreamSelectionPassSkipsPacketOnlyJobs(t *testing.T) {
+	state := recipeCompileState{
+		operation: "build job",
+		options:   recipeCompileOptions{preflightLiveStreams: true},
+		intent: Intent{Inputs: []InputIntent{{
+			Name:     "video",
+			Protocol: av.ProtocolRTP,
+			Codec:    VP8(),
+			Realtime: true,
+		}}},
+	}
+	if err := validateJobLiveStreamSelectionPass().Apply(&state); err != nil {
+		t.Fatalf("err = %v, want packet-only record recipe skipped", err)
+	}
+}
+
 func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 	descriptorOnly := codec.NewRegistry()
 	descriptorOnly.RegisterDescriptor(codec.Descriptor{

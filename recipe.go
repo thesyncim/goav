@@ -1529,6 +1529,45 @@ func validateRecipeDecodeAdapters(operation string, rt Runtime, intent Intent) e
 	return nil
 }
 
+func validateLiveStreamSelection(inputs []InputIntent, stream StreamIntent) error {
+	streams := liveIntentStreams(inputs)
+	if len(streams) == 0 {
+		return nil
+	}
+	_, err := selectDecodeStream(streams, streamIntentSelector(stream))
+	return err
+}
+
+func liveIntentStreams(inputs []InputIntent) []av.Stream {
+	streams := make([]av.Stream, 0, len(inputs))
+	for i := range inputs {
+		input := inputs[i]
+		if !input.Realtime || input.Codec.ID == "" {
+			continue
+		}
+		stream := av.Stream{
+			Index: i,
+			Type:  input.Codec.Type,
+			Codec: input.Codec.Parameters,
+		}
+		if input.Name != "" {
+			stream.ID = av.StreamID(input.Name)
+			stream.Name = input.Name
+		}
+		if stream.Codec.ID == "" {
+			stream.Codec.ID = input.Codec.ID
+		}
+		if stream.Codec.Type == "" {
+			stream.Codec.Type = stream.Type
+		}
+		if stream.Type == "" {
+			stream.Type = stream.Codec.Type
+		}
+		streams = append(streams, stream)
+	}
+	return streams
+}
+
 func streamNeedsDecode(stream StreamIntent) bool {
 	return stream.Decode || len(stream.Transforms) != 0 || stream.Encode.ID != ""
 }

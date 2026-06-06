@@ -52,6 +52,7 @@ type recipeCompileOptions struct {
 	preflightDecodeAdapters    bool
 	preflightEncodeAdapters    bool
 	preflightTransformAdapters bool
+	preflightLiveStreams       bool
 }
 
 type recipeCompilePass interface {
@@ -139,6 +140,7 @@ func compileJobRecipeForBuild(job *Job) (recipeResolved, error) {
 		preflightDecodeAdapters:    true,
 		preflightEncodeAdapters:    true,
 		preflightTransformAdapters: true,
+		preflightLiveStreams:       true,
 	})
 }
 
@@ -166,6 +168,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobOutputBindingsPass(),
 		validateJobStreamOutputKindsPass(),
 		validatePacketJobOutputsPass(),
+		validateJobLiveStreamSelectionPass(),
 		validateJobOutputFormatAdaptersPass(),
 		validateJobDecodeAdaptersPass(),
 		validateJobEncodeAdaptersPass(),
@@ -672,6 +675,19 @@ func validatePacketJobOutputsPass() recipeCompilePass {
 			}
 		}
 		return nil
+	}}
+}
+
+func validateJobLiveStreamSelectionPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job live stream selection", fn: func(state *recipeCompileState) error {
+		if !state.options.preflightLiveStreams {
+			return nil
+		}
+		stream, ok := jobIntentStream(state.intent)
+		if !ok || !streamNeedsDecode(stream) {
+			return nil
+		}
+		return validateLiveStreamSelection(state.intent.Inputs, stream)
 	}}
 }
 

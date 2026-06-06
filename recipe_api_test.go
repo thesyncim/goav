@@ -1292,6 +1292,26 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 	}
 }
 
+func TestStreamRecipeReportsAmbiguousLiveSelectionBeforeDecoderAdapter(t *testing.T) {
+	_, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("front").Codec(goav.VP8())).
+		And(goav.RTP(recipeAPIRTPReader{}).Name("screen").Codec(goav.VP8())).
+		Video().
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "id=front") ||
+		!strings.Contains(err.Error(), "id=screen") ||
+		!strings.Contains(err.Error(), `.Video(goav.StreamID("front"))`) ||
+		strings.Contains(err.Error(), "decoder adapter") {
+		t.Fatalf("err = %v, want live stream-selection guidance before decoder diagnostics", err)
+	}
+}
+
 func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(goav.New(goav.WithStdCodecs())).

@@ -671,6 +671,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Resize`/`Resample` intents now fail on missing filter factories before
     inputs are opened, while custom `.Do(...)` stages remain caller-provided
     graph components. Done.
+199. Preflight live recipe stream selection at build time: ordinary RTP/WebRTC
+    stream recipes now report obvious ambiguous or missing `Audio()`/`Video()`
+    selections from intent before opening live receivers or checking decoder
+    adapter availability. Done.
 
 ## First Vertical Slice
 
@@ -917,7 +921,9 @@ too. Build-time encode adapter availability is preflighted before input open,
 and known live RTP/WebRTC decode adapter availability is preflighted without
 masking ambiguous receive selection, while graph `Describe()` remains
 adapter-agnostic. Resize/resample filter factory availability is also
-preflighted before input open.
+preflighted before input open. Live RTP/WebRTC stream selection now fails from
+intent before live receivers are opened when the described inputs already prove
+an obvious ambiguous or missing selection.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

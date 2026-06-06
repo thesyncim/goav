@@ -150,6 +150,8 @@ return goav.Transcode(goav.FileInput("input.webm", in)).
 If `Audio()` or `Video()` matches more than one stream, build errors list the
 available streams and suggest `StreamID`, `StreamName`, or `StreamIndex(0)`.
 Stream indexes are zero-based and must be non-negative.
+For RTP/WebRTC inputs described by recipe intent, those stream-selection errors
+are reported before the live receivers are opened.
 
 Use `.Run(ctx)` when the recipe is the whole job. Use `.Build(ctx)` when the
 caller needs a `Task` for graph specs, events, or explicit lifecycle control.
