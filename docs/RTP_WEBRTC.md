@@ -86,11 +86,12 @@ For multiple tracks, the orchestration boundary is explicit:
 
 ```go
 tracks, err := webrtcav.NewTrackSet(webrtcav.TrackSetConfig{Session: session})
-update, err := tracks.Accept(ctx)
-task, err := goav.Record(
-    goav.RTP(update.Reader),
-    goav.FileOutput("recording.ivf", file),
-).Build(ctx)
+audio, err := tracks.Accept(ctx)
+video, err := tracks.Accept(ctx)
+task, err := goav.From(goav.RTP(audio.Reader)).
+    And(goav.RTP(video.Reader)).
+    To(goav.FileOutput("recording.webm", file)).
+    Build(ctx)
 ```
 
 When a later accepted track has the same stream ID, `TrackSet` calls
@@ -108,11 +109,13 @@ task, err := goav.Record(
 ```
 
 Each reader can be a raw RTP receiver or a `webrtcav.TrackReader` produced from
-a Pion `TrackRemote`. A track reader produced from a WebRTC session can also
-route RTCP feedback back through the session peer connection. The generated
-graph is one `rtpav.Source` per reader feeding shared `format.MuxStage` outputs;
-graph specs show simple node-to-node routes, and events remain visible through
-the task event channel while mux stages receive packet messages for each output.
+a Pion `TrackRemote`. Repeated realtime inputs use the same recipe shape:
+`goav.From(first).And(second...)`. A track reader produced from a WebRTC session
+can also route RTCP feedback back through the session peer connection. The
+generated graph is one `rtpav.Source` per reader feeding shared
+`format.MuxStage` outputs; graph specs show simple node-to-node routes, and
+events remain visible through the task event channel while mux stages receive
+packet messages for each output.
 
 It can also decode a selected live stream directly into frames:
 

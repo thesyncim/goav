@@ -93,6 +93,54 @@ func TestReadmeWebRTCTrackRecordRecipeIsSmall(t *testing.T) {
 	}
 }
 
+func TestReadmeWebRTCTrackRecordMultiInputRecipeIsSmall(t *testing.T) {
+	job := goav.From(goav.WebRTCTrack(&webrtc.TrackRemote{},
+		goav.WithTrackCodec(webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypeOpus,
+				ClockRate: 48000,
+				Channels:  2,
+			},
+			PayloadType: 111,
+		}),
+		goav.WithTrackStream(goav.Stream{
+			ID:   "audio",
+			Type: "audio",
+		}),
+	)).
+		And(goav.WebRTCTrack(&webrtc.TrackRemote{},
+			goav.WithTrackCodec(webrtc.RTPCodecParameters{
+				RTPCodecCapability: webrtc.RTPCodecCapability{
+					MimeType:  webrtc.MimeTypeVP8,
+					ClockRate: 90000,
+				},
+				PayloadType: 96,
+			}),
+			goav.WithTrackStream(goav.Stream{
+				ID:   "video",
+				Type: "video",
+			}),
+		)).
+		To(goav.FileOutput("recording.webm", io.Discard))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := spec.String()
+	if !strings.Contains(text, "audio -> recording.webm") ||
+		!strings.Contains(text, "video -> recording.webm") ||
+		strings.Count(text, "depacketizers=1") != 2 {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Inputs) != 2 ||
+		string(intent.Inputs[0].Codec.ID) != "opus" ||
+		string(intent.Inputs[1].Codec.ID) != "vp8" {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
 func TestWebRTCTrackRecipeReportsNilTrack(t *testing.T) {
 	_, err := goav.Record(
 		goav.WebRTCTrack(nil),
@@ -101,6 +149,17 @@ func TestWebRTCTrackRecipeReportsNilTrack(t *testing.T) {
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" || !errors.Is(err, webrtcav.ErrNilTrack) {
 		t.Fatalf("err = %v, want input_invalid wrapping ErrNilTrack", err)
+	}
+}
+
+func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
+	_, err := goav.From(goav.FileInput("a.ivf", strings.NewReader(""))).
+		And(goav.FileInput("b.ivf", strings.NewReader(""))).
+		To(goav.FileOutput("out.ivf", io.Discard)).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "multi_input_unsupported" {
+		t.Fatalf("err = %v, want multi_input_unsupported", err)
 	}
 }
 

@@ -27,6 +27,15 @@ if err != nil {
 return task.Run(ctx)
 ```
 
+Record audio and video tracks together:
+
+```go
+task, err := goav.From(goav.WebRTCTrack(audio)).
+    And(goav.WebRTCTrack(video)).
+    To(goav.FileOutput("call.webm", file)).
+    Build(ctx)
+```
+
 Record an RTP packet reader:
 
 ```go
@@ -79,6 +88,8 @@ fmt.Println(spec)
 
 - `goav.Record(input, output)` records, remuxes, or fans out packet streams.
 - `goav.From(input).To(output...)` is the generic recipe form.
+- `goav.From(input).And(other).To(output)` records repeated RTP/WebRTC receive
+  inputs through one shared output graph.
 - `goav.From(input).Audio().Decode().To(goav.FrameSink(frames))` decodes one
   selected audio stream without manual selectors.
 - `goav.From(input).Audio().Decode().Do(meter).Opus(96_000).To(output)` adds a
@@ -194,6 +205,7 @@ Implemented today:
 - stream-scoped recipe builders for selected audio/video decode, custom stages,
   and Opus/VP8/VP9 encode paths;
 - file, URI, RTP, WebRTC track, codec, resize, resample, and output specs;
+- multi-input realtime recipes with `From(input).And(other...)`;
 - `Describe` graph specs plus optional `graphrender` exporters;
 - function adapters for packet, frame, event, and sink hooks;
 - handle-based expert graph wiring through `Runtime.Graph()`;

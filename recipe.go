@@ -598,6 +598,11 @@ func (j *Job) To(outputs ...OutputSpec) *Job {
 	return j
 }
 
+func (j *Job) And(inputs ...InputSpec) *Job {
+	j.inputs = append(j.inputs, inputs...)
+	return j
+}
+
 func (j *Job) Audio(options ...StreamOption) *JobStreamBuilder {
 	return j.streamBuilder("audio", av.MediaAudio, options...)
 }
@@ -676,10 +681,8 @@ func (j *Job) builder() (Builder, error) {
 	if len(j.inputs) == 0 {
 		return nil, &BuildError{Code: "input_missing", Operation: "build job", Reason: "no input is configured"}
 	}
-	for i := range j.inputs {
-		if err := j.inputs[i].validate(); err != nil {
-			return nil, err
-		}
+	if err := j.validateInputs(); err != nil {
+		return nil, err
 	}
 	outputs := j.allOutputs()
 	if len(outputs) == 0 {
@@ -700,6 +703,34 @@ func (j *Job) builder() (Builder, error) {
 		builder = outputs[i].apply(builder)
 	}
 	return builder, nil
+}
+
+func (j *Job) validateInputs() error {
+	for i := range j.inputs {
+		if err := j.inputs[i].validate(); err != nil {
+			return err
+		}
+	}
+	if len(j.inputs) <= 1 {
+		return nil
+	}
+	for i := range j.inputs {
+		if j.inputs[i].rtp != nil {
+			continue
+		}
+		return &BuildError{
+			Code:      "multi_input_unsupported",
+			Operation: "build job",
+			Node:      firstNonEmpty(j.inputs[i].name, j.inputs[i].input.Name, j.inputs[i].input.URI, fmt.Sprintf("input-%d", i)),
+			Reason:    "multiple recipe inputs currently require realtime RTP/WebRTC packet readers",
+			Suggestions: []string{
+				"use goav.From(goav.RTP(...)).And(goav.RTP(...)) for repeated live inputs",
+				"use goav.WebRTCTrack(...) or goav.WebRTCRemote(...) for Pion WebRTC tracks",
+				"build an explicit graph when combining multiple file or protocol sources",
+			},
+		}
+	}
+	return nil
 }
 
 func (j *Job) allOutputs() []OutputSpec {

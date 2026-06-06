@@ -24,6 +24,15 @@ task, err := goav.Record(
 ).Build(ctx)
 ```
 
+Repeated realtime tracks compose through the same front door:
+
+```go
+task, err := goav.From(goav.WebRTCTrack(audio)).
+    And(goav.WebRTCTrack(video)).
+    To(goav.FileOutput("call.webm", file)).
+    Build(ctx)
+```
+
 Expected graph:
 
 ```text
@@ -49,6 +58,9 @@ task, err := goav.Record(
     goav.FileOutput("recording.ivf", file),
 ).Build(ctx)
 ```
+
+For multiple live readers, use `From(first).And(other...)` instead of wiring
+separate graph sources by hand.
 
 The same receive boundary can decode a selected stream when a matching decoder
 factory is registered, and can continue into filters, an explicit target
