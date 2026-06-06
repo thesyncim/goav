@@ -89,6 +89,10 @@ func (r *runtime) New() Builder {
 	return &builder{runtime: r}
 }
 
+func (r *runtime) Graph() Builder {
+	return r.New()
+}
+
 type builder struct {
 	runtime    *runtime
 	inputs     []Input

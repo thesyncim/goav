@@ -21,11 +21,12 @@ type ProbeResult = format.ProbeResult
 // Runtime is the composition root for applications embedding goav.
 type Runtime interface {
 	Probe(context.Context, ProbeRequest) (ProbeResult, error)
+	Graph() Builder
 	New() Builder
 }
 
-// Builder describes the intended fluent route API without constraining the
-// internal graph representation.
+// Builder is the advanced graph-building layer. Most applications should start
+// with recipes such as Record, Decode, From, or Transcode.
 type Builder interface {
 	Input(Input) Builder
 	RTP(rtpav.PacketReader, ...RTPOption) Builder

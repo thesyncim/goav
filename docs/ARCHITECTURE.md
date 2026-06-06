@@ -17,7 +17,11 @@ and keyframe recovery are represented as events instead of hidden side effects.
 ```text
 Application
   |
-Runtime / Builder
+Recipes: Record, Decode, Transcode, From/To
+  |
+Intent graph: inputs, streams, transforms, outputs, policies
+  |
+Runtime builder
   |
 Pipeline graph
   |
@@ -28,14 +32,20 @@ Format, RTP, WebRTC, codec, and filter adapters
 
 `goav.New` is the composition root. It owns codec, format, and filter
 registries, with small adapter registration hooks for optional codec,
-container, and filter integrations. The builder compiles through private graph
-compilers. Each compiler owns one workflow shape and must implement both
+container, and filter integrations. `goav.Default()` registers the standard
+in-repo adapters for the beginner path, while `goav.New(...)` keeps minimal and
+embedded runtimes explicit. Package-level recipes such as `Record(...)`,
+`Decode(...)`, and `Transcode(...)` are now the beginner-facing front door. They
+produce a small intent model, then lower into the existing runtime builder and
+graph compilers.
+
+The builder remains available as the advanced layer through `Runtime.Graph()`
+(`Runtime.New()` remains as a compatibility alias). It compiles through private
+graph compilers. Each compiler owns one workflow shape and must implement both
 pre-build description and runnable graph construction, so rendered graphs and
-execution graphs stay equivalent. The fluent API stays centered on media work:
-source, decode, filter, encode, output, and sink. The graph layer stays
-available as named nodes plus simple routes for inspection, custom stages, and
-rendering. A route carries all media by default, or matches one stream or event
-type.
+execution graphs stay equivalent. The graph layer stays available as named
+nodes plus simple routes for inspection, custom stages, and rendering. A route
+carries all media by default, or matches one stream or event type.
 
 The current compilers cover:
 
@@ -54,8 +64,9 @@ The current compilers cover:
   stages -> codec.EncoderStage -> format.MuxStage...` when the selected stream,
   target encoder, and mux boundaries are explicit
 - one or more RTP/WebRTC packet readers to one or more outputs through
-  `rtpav.Source -> format.MuxStage...` when the application provides
-  depacketizers and the format registry can mux the output boundaries
+  `rtpav.Source -> format.MuxStage...` when recipe codec intent or the
+  application provides depacketizers and the format registry can mux the output
+  boundaries
 - one or more RTP/WebRTC packet readers to a selected frame sink through
   `rtpav.Source... -> stream select -> codec.DecoderStage -> optional filter
   stages -> Sink` when one stream matches the selector and the codec registry
@@ -73,6 +84,10 @@ Resize and resample branch configs fail explicitly at build time when no matchin
 filter factory is registered.
 When output geometry is known, branch filter stages receive preallocated frame
 scratch so concrete resize filters can keep plane ownership with the caller.
+
+Recipe helpers also expose `PacketFunc`, `FrameFunc`, `EventFunc`, and
+`SinkFunc` so small custom processing hooks can participate in the graph without
+implementing full source/stage/sink types.
 
 ## Core media model
 
@@ -177,15 +192,18 @@ packet-loss events to trigger audio PLC paths such as Opus concealment. The
 runtime builder asks decoder factories for optional adapter-owned state before
 opening stages, so heavyweight backends can stay hidden behind the same fluent
 `Decode(...).Sink(...)` path. The encoder stage turns frame messages into packet
-messages and flushes delayed packets before EOS.
+messages, observes upstream events for encoder state, flushes delayed packets
+before EOS, and consumes input events after the graph observes them.
 
 The format package follows the same pattern for containers. `DemuxSource`
 adapts a `format.Demuxer` into packet and event messages, including stream and
-EOS events. `MuxStage` writes packet messages through a `format.Muxer` and emits
-write-result events through the graph, so output-side state remains observable
-instead of disappearing inside a terminal sink. Packet fanout happens before mux
-stages through graph routes, and input events stay observable through the graph
-event stream rather than being relayed by the mux boundary.
+EOS events. Runtime-created demux sources own bounded packet payload storage
+for demuxers that fill caller-provided packets. `MuxStage` writes packet
+messages through a `format.Muxer` and emits write-result events through the
+graph, so output-side state remains observable instead of disappearing inside a
+terminal sink. Packet fanout happens before mux stages through graph routes, and
+input events stay observable through the graph event stream rather than being
+relayed by the mux boundary.
 
 The filter package follows the codec stage model for frame transforms.
 `filter.Stage` adapts a `filter.FrameFilter` to frame and event messages,

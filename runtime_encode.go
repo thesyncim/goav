@@ -262,7 +262,6 @@ func (b *builder) newEncodeStage(ctx context.Context, request encodeRequest, con
 		OutputStreamID:    config.Stream.ID,
 		OutputCodecEpoch:  config.Stream.Epoch,
 		StampOutputStream: true,
-		DropInputEvents:   true,
 	})
 	if err != nil {
 		encoder.Close()

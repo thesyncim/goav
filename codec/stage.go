@@ -43,9 +43,6 @@ type EncoderStageConfig struct {
 	// leave the stage. This is useful when one decoded stream fans out into
 	// several encoded output streams.
 	StampOutputStream bool
-	// DropInputEvents suppresses forwarding upstream events after the encoder
-	// has observed them. By default, events stay visible downstream.
-	DropInputEvents bool
 }
 
 type DecoderStage struct {
@@ -69,7 +66,6 @@ type EncoderStage struct {
 	outputStreamID    av.StreamID
 	outputCodecEpoch  av.Epoch
 	stampOutputStream bool
-	dropEvents        bool
 	closed            bool
 }
 
@@ -112,7 +108,6 @@ func NewEncoderStage(config EncoderStageConfig) (*EncoderStage, error) {
 		outputStreamID:    config.OutputStreamID,
 		outputCodecEpoch:  config.OutputCodecEpoch,
 		stampOutputStream: config.StampOutputStream,
-		dropEvents:        config.DropInputEvents,
 	}, nil
 }
 
@@ -313,23 +308,13 @@ func (s *EncoderStage) handleEvent(ctx context.Context, msg *pipeline.Message, e
 		if err := s.encoder.FlushInto(ctx, &s.result); err != nil {
 			return err
 		}
-		if err := s.emitResult(ctx, emitter); err != nil {
-			return err
-		}
-		return s.emitInputEvent(ctx, msg, emitter)
+		return s.emitResult(ctx, emitter)
 	}
 
-	return s.emitInputEvent(ctx, msg, emitter)
+	return nil
 }
 
 func (s *DecoderStage) emitInputEvent(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
-	if s.dropEvents {
-		return nil
-	}
-	return emitter.Emit(ctx, msg)
-}
-
-func (s *EncoderStage) emitInputEvent(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if s.dropEvents {
 		return nil
 	}

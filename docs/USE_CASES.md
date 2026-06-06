@@ -34,11 +34,10 @@ surface gaps and discontinuities, emit RTCP feedback, and produce codec packets.
 The high-level record/fanout shape accepts one or more packet readers:
 
 ```go
-task, err := runtime.New().
-    RTP(audio, goav.WithRTPDepacketizers(opus)).
-    RTP(video, goav.WithRTPDepacketizers(vp8)).
-    Output(goav.Output{Name: "recording.webm"}).
-    Build(ctx)
+task, err := goav.Record(
+    goav.RTP(video).Name("video").Codec(goav.VP8()),
+    goav.FileOutput("recording.ivf", file),
+).Build(ctx)
 ```
 
 The same receive boundary can decode a selected stream when a matching decoder
@@ -46,13 +45,10 @@ factory is registered, and can continue into filters, an explicit target
 encoder, and one or more mux outputs:
 
 ```go
-task, err := runtime.New().
-    RTP(audio, goav.WithRTPDepacketizers(opus)).
-    Decode(goav.SelectAudio()).
-    Filter(goav.SelectAudio(), meter).
-    Encode(goav.SelectAudio(), opusEncode).
-    Output(goav.Output{Name: "archive.ogg"}).
-    Build(ctx)
+task, err := goav.Decode(
+    goav.RTP(audio).Name("audio").Codec(goav.Opus()),
+    frames,
+).Build(ctx)
 ```
 
 ## Generic protocol or file ingest
@@ -65,10 +61,11 @@ The simplest supported shape is direct remux/fanout through registered format
 adapters:
 
 ```go
-task, err := runtime.New().
-    Input(goav.Input{Name: "input"}).
-    Output(goav.Output{Name: "recording"}).
-    Output(goav.Output{Name: "preview"}).
+task, err := goav.From(goav.FileInput("input.ivf", in)).
+    To(
+        goav.FileOutput("recording.ivf", recording),
+        goav.FileOutput("preview.ivf", preview),
+    ).
     Build(ctx)
 ```
 
@@ -93,23 +90,16 @@ Decode once, then fan out into several video resize branches and audio resample
 branches. Each branch can encode with its own bitrate, codec parameters, and
 output target.
 
-The first plan compiler covers the shared-decode and multiple-encode/output
-part of that shape. Outputs can receive every rendition or select a subset by
-rendition name or label:
+The first recipe compiler lowers the small branch DSL into the shared-decode
+plan used by the runtime graph. Outputs can receive one or more named branches:
 
 ```go
-plan := transcode.Plan{
-    Input: goav.Input{Name: "input"},
-    Renditions: []transcode.Rendition{
-        {Name: "main", Selector: goav.SelectVideo(), Encode: mainEncode, Labels: []string{"archive"}},
-        {Name: "preview", Selector: goav.SelectVideo(), Encode: previewEncode, Labels: []string{"preview"}},
-    },
-    Outputs: []transcode.Output{
-        {Name: "archive.webm", Renditions: []string{"archive"}},
-        {Name: "preview.webm", Renditions: []string{"preview"}},
-    },
-}
-task, err := runtime.New().Transcode(plan).Build(ctx)
+task, err := goav.Transcode(goav.FileInput("input.webm", in)).
+    Video("720p").Resize(1280, 720).VP9(2_000_000).To("archive").
+    Video("360p").Resize(640, 360).VP9(600_000).To("preview").
+    Output("archive", goav.FileOutput("archive.webm", archive)).
+    Output("preview", goav.FileOutput("preview.webm", preview)).
+    Build(ctx)
 ```
 
 Resize and resample configs become branch-local filter stages when matching
@@ -141,7 +131,7 @@ One receive graph should be able to drive several sinks at once:
 Explicit application-owned graphs can use a multi-target route for this shape:
 
 ```go
-task, err := runtime.New().
+task, err := runtime.Graph().
     Source(source).
     Stage(decode).
     Sink(record).

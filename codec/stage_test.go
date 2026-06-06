@@ -513,7 +513,7 @@ func TestEncoderStageEmitsResultEventsBeforePackets(t *testing.T) {
 	}
 }
 
-func TestEncoderStageHandlesEvents(t *testing.T) {
+func TestEncoderStageConsumesInputEvents(t *testing.T) {
 	encoder := &fakeEncoder{}
 	stage, err := NewEncoderStage(EncoderStageConfig{
 		Encoder: encoder,
@@ -531,27 +531,6 @@ func TestEncoderStageHandlesEvents(t *testing.T) {
 	}
 	if encoder.events != 1 {
 		t.Fatalf("encoder events = %d, want 1", encoder.events)
-	}
-	if emitter.events != 1 || emitter.packets != 0 {
-		t.Fatalf("packets=%d events=%d", emitter.packets, emitter.events)
-	}
-}
-
-func TestEncoderStageCanDropInputEvents(t *testing.T) {
-	stage, err := NewEncoderStage(EncoderStageConfig{
-		Encoder:         &fakeEncoder{},
-		Result:          EncodeResult{Packets: make([]av.Packet, 0, 1)},
-		DropInputEvents: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	event := av.Event{Type: av.EventKeyframeRequired, StreamID: "video"}
-	message := pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
-	emitter := &stageEmitter{}
-
-	if err := stage.Handle(context.Background(), &message, emitter); err != nil {
-		t.Fatal(err)
 	}
 	if emitter.events != 0 || emitter.packets != 0 {
 		t.Fatalf("packets=%d events=%d", emitter.packets, emitter.events)
@@ -577,10 +556,10 @@ func TestEncoderStageFlushesBeforeEOS(t *testing.T) {
 	if encoder.flushes != 1 {
 		t.Fatalf("flushes = %d, want 1", encoder.flushes)
 	}
-	if emitter.packets != 1 || emitter.events != 1 {
+	if emitter.packets != 1 || emitter.events != 0 {
 		t.Fatalf("packets=%d events=%d", emitter.packets, emitter.events)
 	}
-	if emitter.order != [2]pipeline.MessageKind{pipeline.MessagePacket, pipeline.MessageEvent} {
+	if emitter.order[0] != pipeline.MessagePacket {
 		t.Fatalf("order = %+v", emitter.order)
 	}
 }

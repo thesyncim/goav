@@ -46,7 +46,9 @@ func (b *builder) openDemuxSource(ctx context.Context, input Input) (demuxBuild,
 		Detail:  inputNodeDetail(input),
 		Demuxer: demuxer,
 		Result: format.ReadResult{
-			Packet: &av.Packet{},
+			Packet: &av.Packet{
+				Payload: av.Buffer{Bytes: make([]byte, 0, demuxPacketBufferSize(streams))},
+			},
 			Events: make([]av.Event, 0, 1),
 		},
 	})
@@ -55,4 +57,24 @@ func (b *builder) openDemuxSource(ctx context.Context, input Input) (demuxBuild,
 		return demuxBuild{}, err
 	}
 	return demuxBuild{source: source, streams: streams}, nil
+}
+
+func demuxPacketBufferSize(streams []av.Stream) int {
+	size := 64 * 1024
+	for i := range streams {
+		if streams[i].Type == av.MediaAudio || streams[i].Codec.Type == av.MediaAudio {
+			size = maxInt(size, 4096)
+		}
+		if streams[i].Type == av.MediaVideo || streams[i].Codec.Type == av.MediaVideo {
+			size = maxInt(size, 4<<20)
+		}
+	}
+	return size
+}
+
+func maxInt(a int, b int) int {
+	if b > a {
+		return b
+	}
+	return a
 }
