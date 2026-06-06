@@ -19,6 +19,9 @@ func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	if resolved.builder == nil {
 		t.Fatal("compileJobRecipe() produced nil builder")
 	}
+	if resolved.compiler == nil || resolved.migration == nil {
+		t.Fatal("compileJobRecipe() did not select a migration graph compiler")
+	}
 	if resolved.intent.Name != "record" {
 		t.Fatalf("intent name = %q, want record", resolved.intent.Name)
 	}
@@ -27,6 +30,13 @@ func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	}
 	if len(resolved.intent.Outputs) != 1 || resolved.intent.Outputs[0].Name != "recording.ivf" {
 		t.Fatalf("intent outputs = %+v", resolved.intent.Outputs)
+	}
+	spec, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	if len(spec.Nodes) == 0 || len(spec.Edges) == 0 {
+		t.Fatalf("resolved spec = %+v, want planned graph nodes and edges", spec)
 	}
 }
 
@@ -45,6 +55,9 @@ func TestCompileTranscodeRecipeCarriesIntentAndPlan(t *testing.T) {
 	}
 	if len(builder.transcodes) != 1 {
 		t.Fatalf("builder transcodes = %d, want 1", len(builder.transcodes))
+	}
+	if resolved.compiler == nil || resolved.migration == nil {
+		t.Fatal("compileTranscodeRecipe() did not select a migration graph compiler")
 	}
 	if resolved.intent.Name != "transcode" {
 		t.Fatalf("intent name = %q, want transcode", resolved.intent.Name)

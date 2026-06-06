@@ -45,7 +45,9 @@ scaffolding while each workflow moves onto that shared path. The first active
 slice is a private recipe intent compiler state: `Job` and `TranscodeJob` carry
 their public `Intent` plus concrete readers, writers, sinks, and stages through
 validation, planning, and lowering passes before handing off to the migration
-builder.
+builder. The same pass chain now also selects the migration graph compiler used
+for `Describe` and `Build`, so recipe graph matching is no longer hidden behind
+the builder entry point.
 
 The handle-based graph builder remains available as the advanced layer through
 `Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed

@@ -1,14 +1,18 @@
 package goav
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/thesyncim/goav/pipeline"
 	transcodepkg "github.com/thesyncim/goav/transcode"
 )
 
 type recipeResolved struct {
-	intent  Intent
-	builder builderAPI
+	intent    Intent
+	builder   builderAPI
+	migration *builder
+	compiler  builderCompiler
 }
 
 type recipeCompileState struct {
@@ -21,7 +25,10 @@ type recipeCompileState struct {
 
 	outputs []OutputSpec
 	plan    transcodepkg.Plan
-	builder builderAPI
+
+	builder   builderAPI
+	migration *builder
+	compiler  builderCompiler
 }
 
 type recipeCompilePass interface {
@@ -74,7 +81,29 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	return recipeResolved{intent: state.intent, builder: state.builder}, nil
+	return recipeResolved{
+		intent:    state.intent,
+		builder:   state.builder,
+		migration: state.migration,
+		compiler:  state.compiler,
+	}, nil
+}
+
+func (r recipeResolved) Describe() (pipeline.Spec, error) {
+	if r.compiler != nil && r.migration != nil {
+		return r.compiler.describe(r.migration, pipeline.Spec{
+			Name:     "goav",
+			Realtime: r.migration.runtime.realtime,
+		})
+	}
+	return r.builder.Describe()
+}
+
+func (r recipeResolved) Build(ctx context.Context) (Task, error) {
+	if r.compiler != nil && r.migration != nil {
+		return r.compiler.build(ctx, r.migration)
+	}
+	return r.builder.Build(ctx)
 }
 
 func compileJobRecipe(job *Job) (recipeResolved, error) {
@@ -92,6 +121,7 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 		lowerJobInputsPass(),
 		lowerJobStreamPass(),
 		lowerJobOutputsPass(),
+		selectMigrationGraphCompilerPass(),
 	}}.Compile(state)
 }
 
@@ -108,6 +138,7 @@ func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 		planTranscodeIntentPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerTranscodePlanPass(),
+		selectMigrationGraphCompilerPass(),
 	}}.Compile(state)
 }
 
@@ -218,6 +249,22 @@ func planTranscodeIntentPass() recipeCompilePass {
 func lowerTranscodePlanPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "lower transcode plan", fn: func(state *recipeCompileState) error {
 		state.builder = state.builder.Transcode(state.plan)
+		return nil
+	}}
+}
+
+func selectMigrationGraphCompilerPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "select migration graph compiler", fn: func(state *recipeCompileState) error {
+		builder, ok := state.builder.(*builder)
+		if !ok {
+			return nil
+		}
+		compiler, err := builder.selectCompiler()
+		if err != nil {
+			return err
+		}
+		state.migration = builder
+		state.compiler = compiler
 		return nil
 	}}
 }

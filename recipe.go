@@ -937,19 +937,19 @@ func (j *Job) Intent() Intent {
 }
 
 func (j *Job) Describe() (pipeline.Spec, error) {
-	builder, err := j.builder()
+	resolved, err := compileJobRecipe(j)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
-	return builder.Describe()
+	return resolved.Describe()
 }
 
 func (j *Job) Build(ctx context.Context) (Task, error) {
-	builder, err := j.builder()
+	resolved, err := compileJobRecipe(j)
 	if err != nil {
 		return nil, err
 	}
-	return builder.Build(ctx)
+	return resolved.Build(ctx)
 }
 
 func (j *Job) Run(ctx context.Context) error {
@@ -959,14 +959,6 @@ func (j *Job) Run(ctx context.Context) error {
 	}
 	defer task.Close()
 	return task.Run(ctx)
-}
-
-func (j *Job) builder() (builderAPI, error) {
-	resolved, err := compileJobRecipe(j)
-	if err != nil {
-		return nil, err
-	}
-	return resolved.builder, nil
 }
 
 func newRuntimeBuilder(runtime Runtime, operation string) (builderAPI, error) {
@@ -2044,19 +2036,19 @@ func (j *TranscodeJob) plan() (transcodepkg.Plan, error) {
 }
 
 func (j *TranscodeJob) Describe() (pipeline.Spec, error) {
-	builder, err := j.builder()
+	resolved, err := compileTranscodeRecipe(j)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
-	return builder.Describe()
+	return resolved.Describe()
 }
 
 func (j *TranscodeJob) Build(ctx context.Context) (Task, error) {
-	builder, err := j.builder()
+	resolved, err := compileTranscodeRecipe(j)
 	if err != nil {
 		return nil, err
 	}
-	return builder.Build(ctx)
+	return resolved.Build(ctx)
 }
 
 func (j *TranscodeJob) Run(ctx context.Context) error {
@@ -2066,14 +2058,6 @@ func (j *TranscodeJob) Run(ctx context.Context) error {
 	}
 	defer task.Close()
 	return task.Run(ctx)
-}
-
-func (j *TranscodeJob) builder() (builderAPI, error) {
-	resolved, err := compileTranscodeRecipe(j)
-	if err != nil {
-		return nil, err
-	}
-	return resolved.builder, nil
 }
 
 func (j *TranscodeJob) stream(name string, media av.MediaType, options ...streamOption) *StreamBuilder {
