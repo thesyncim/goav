@@ -765,6 +765,24 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, ErrInvalidData
 			}
 			track.DefaultDurationNS = int64(value)
+		case idCodecDelay:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			if value > uint64(math.MaxInt64) {
+				return Track{}, ErrInvalidData
+			}
+			track.CodecDelayNS = int64(value)
+		case idSeekPreRoll:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			if value > uint64(math.MaxInt64) {
+				return Track{}, ErrInvalidData
+			}
+			track.SeekPreRollNS = int64(value)
 		case idCodecPrivate:
 			value, err := readBinaryPayload(reader, child.Size.Value)
 			if err != nil {
@@ -796,6 +814,12 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			return Track{}, err
 		}
 		track.Audio.Channels = head.Channels
+		if track.CodecDelayNS == 0 {
+			track.CodecDelayNS = opusCodecDelayNS(head.PreSkip)
+		}
+		if track.SeekPreRollNS == 0 {
+			track.SeekPreRollNS = opusDefaultSeekPreRollNS
+		}
 	}
 	if track.Codec == CodecAV1 && len(track.CodecPrivate) != 0 {
 		if _, err := parseAV1CodecConfigurationRecord(track.CodecPrivate); err != nil {

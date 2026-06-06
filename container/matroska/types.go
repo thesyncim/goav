@@ -44,6 +44,8 @@ type Track struct {
 	TimebaseNum       int64
 	TimebaseDen       int64
 	DefaultDurationNS int64
+	CodecDelayNS      int64
+	SeekPreRollNS     int64
 	Audio             AudioConfig
 	Video             VideoConfig
 

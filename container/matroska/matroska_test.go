@@ -276,8 +276,76 @@ func TestMuxerWritesDefaultOpusHead(t *testing.T) {
 		t.Fatalf("tracks = %d, want 1", len(tracks))
 	}
 	if tracks[0].Codec != CodecOpus || tracks[0].Audio.Channels != 1 ||
+		tracks[0].CodecDelayNS != 0 || tracks[0].SeekPreRollNS != opusDefaultSeekPreRollNS ||
 		!bytes.Equal(tracks[0].CodecPrivate, expectedOpusHead(1, 48000)) {
 		t.Fatalf("track = %+v private=%v", tracks[0], tracks[0].CodecPrivate)
+	}
+}
+
+func TestMuxerDerivesOpusCodecTimingFromPrivateData(t *testing.T) {
+	private := expectedOpusHeadWithPreSkip(2, 48000, 312)
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:         TrackAudio,
+		Codec:        CodecOpus,
+		Audio:        AudioConfig{SampleRate: 48000, Channels: 2},
+		CodecPrivate: private,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0xf8, 0xff, 0xfe},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].CodecDelayNS != 6_500_000 || tracks[0].SeekPreRollNS != opusDefaultSeekPreRollNS {
+		t.Fatalf("track timing delay=%d preroll=%d", tracks[0].CodecDelayNS, tracks[0].SeekPreRollNS)
+	}
+}
+
+func TestDemuxerReadsOpusCodecTiming(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMatroskaSegmentPrefix(t, muxer)
+	if err := writeTracksWithOpusPrivateAndTiming(muxer.ebml, expectedOpusHeadWithPreSkip(2, 48000, 960), 1_234, 5_678); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.ebml.WriteElement(idCluster, nil); err != nil {
+		t.Fatal(err)
+	}
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].CodecDelayNS != 1_234 || tracks[0].SeekPreRollNS != 5_678 {
+		t.Fatalf("track timing delay=%d preroll=%d", tracks[0].CodecDelayNS, tracks[0].SeekPreRollNS)
 	}
 }
 
@@ -1163,6 +1231,24 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 				Codec:             CodecVP8,
 				DefaultDurationNS: -1,
 				Video:             VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
+			name: "codec delay",
+			track: Track{
+				Type:         TrackAudio,
+				Codec:        CodecOpus,
+				CodecDelayNS: -1,
+				Audio:        AudioConfig{SampleRate: 48000, Channels: 2},
+			},
+		},
+		{
+			name: "seek preroll",
+			track: Track{
+				Type:          TrackAudio,
+				Codec:         CodecOpus,
+				SeekPreRollNS: -1,
+				Audio:         AudioConfig{SampleRate: 48000, Channels: 2},
 			},
 		},
 		{
@@ -2771,6 +2857,12 @@ func expectedOpusHead(channels int, sampleRate int) []byte {
 	return header
 }
 
+func expectedOpusHeadWithPreSkip(channels int, sampleRate int, preSkip int) []byte {
+	header := expectedOpusHead(channels, sampleRate)
+	binary.LittleEndian.PutUint16(header[10:12], uint16(preSkip))
+	return header
+}
+
 func av1CodecConfig() []byte {
 	private := []byte{0x81, 0x05, 0x10, 0x00}
 	return append(private, av1SequenceHeaderOBU()...)
@@ -3094,6 +3186,10 @@ func writeTracksWithAudioMetadata(writer *ebml.Writer, sampleRate float64, chann
 }
 
 func writeTracksWithOpusPrivate(writer *ebml.Writer, private []byte) error {
+	return writeTracksWithOpusPrivateAndTiming(writer, private, 0, 0)
+}
+
+func writeTracksWithOpusPrivateAndTiming(writer *ebml.Writer, private []byte, codecDelayNS uint64, seekPreRollNS uint64) error {
 	var tracks bytes.Buffer
 	tw := ebml.NewWriter(&tracks)
 	var entry bytes.Buffer
@@ -3109,6 +3205,16 @@ func writeTracksWithOpusPrivate(writer *ebml.Writer, private []byte) error {
 	}
 	if err := ew.WriteString(idCodecID, "A_OPUS"); err != nil {
 		return err
+	}
+	if codecDelayNS != 0 {
+		if err := ew.WriteUInt(idCodecDelay, codecDelayNS); err != nil {
+			return err
+		}
+	}
+	if seekPreRollNS != 0 {
+		if err := ew.WriteUInt(idSeekPreRoll, seekPreRollNS); err != nil {
+			return err
+		}
 	}
 	if err := writeBinary(ew, idCodecPrivate, private); err != nil {
 		return err

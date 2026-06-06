@@ -40,6 +40,17 @@ func TestExternalFFProbeRecognizesGeneratedMatroskaCodecPrivate(t *testing.T) {
 	}
 }
 
+func TestExternalFFProbeReportsOpusCodecTiming(t *testing.T) {
+	tool := requireExternalTool(t, "ffprobe")
+	file := writeOpusTimingMatroska(t)
+	output := runExternalTool(t, tool, "-v", "error", "-show_entries", "stream=codec_name,initial_padding", "-of", "default=nw=1", file)
+	for _, want := range []string{"codec_name=opus", "initial_padding=312"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("ffprobe output missing %s:\n%s", want, output)
+		}
+	}
+}
+
 func TestExternalMatroskaToolCompat(t *testing.T) {
 	file := writeCompatibilityMatroska(t)
 	if tool, ok := lookupExternalTool("mkvalidator"); ok {
@@ -123,6 +134,35 @@ func writeCompatibilityMatroska(t *testing.T) string {
 		t.Fatal(err)
 	}
 	file := filepath.Join(t.TempDir(), "sample.mkv")
+	if err := os.WriteFile(file, buffer.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
+func writeOpusTimingMatroska(t *testing.T) string {
+	t.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:         TrackAudio,
+		Codec:        CodecOpus,
+		Audio:        AudioConfig{SampleRate: 48000, Channels: 2},
+		CodecPrivate: expectedOpusHeadWithPreSkip(2, 48000, 312),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{0xf8, 0xff, 0xfe}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "opus-timing.mkv")
 	if err := os.WriteFile(file, buffer.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}

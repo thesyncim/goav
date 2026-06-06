@@ -9,6 +9,11 @@ import (
 const codecPrivateScratchSize = 32
 
 const (
+	opusSampleRate           = 48000
+	opusDefaultSeekPreRollNS = 80_000_000
+)
+
+const (
 	avcNALUTypeMask = 0x1f
 	avcNALUSPS      = 7
 	avcNALUPPS      = 8
@@ -365,6 +370,7 @@ func readAV1LEB128(data []byte, offset int) (uint64, int, error) {
 type opusHead struct {
 	Channels   int
 	SampleRate int
+	PreSkip    int
 }
 
 func parseOpusHead(private []byte) (opusHead, error) {
@@ -378,6 +384,7 @@ func parseOpusHead(private []byte) (opusHead, error) {
 	if channels == 0 {
 		return opusHead{}, ErrInvalidData
 	}
+	preSkip := int(binary.LittleEndian.Uint16(private[10:12]))
 	sampleRate := binary.LittleEndian.Uint32(private[12:16])
 	if uint64(sampleRate) > maxIntValue {
 		return opusHead{}, ErrInvalidData
@@ -387,7 +394,7 @@ func parseOpusHead(private []byte) (opusHead, error) {
 		if channels > 2 || len(private) != 19 {
 			return opusHead{}, ErrInvalidData
 		}
-		return opusHead{Channels: channels, SampleRate: int(sampleRate)}, nil
+		return opusHead{Channels: channels, SampleRate: int(sampleRate), PreSkip: preSkip}, nil
 	}
 	if len(private) != 21+channels {
 		return opusHead{}, ErrInvalidData
@@ -407,7 +414,11 @@ func parseOpusHead(private []byte) (opusHead, error) {
 			return opusHead{}, ErrInvalidData
 		}
 	}
-	return opusHead{Channels: channels, SampleRate: int(sampleRate)}, nil
+	return opusHead{Channels: channels, SampleRate: int(sampleRate), PreSkip: preSkip}, nil
+}
+
+func opusCodecDelayNS(preSkip int) int64 {
+	return int64(preSkip) * timeNS / opusSampleRate
 }
 
 func hasOpusHeadMagic(private []byte) bool {

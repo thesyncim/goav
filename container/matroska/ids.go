@@ -36,6 +36,8 @@ const (
 	idLanguage     ebml.ID = 0x22b59c
 	idCodecID      ebml.ID = 0x86
 	idCodecPrivate ebml.ID = 0x63a2
+	idCodecDelay   ebml.ID = 0x56aa
+	idSeekPreRoll  ebml.ID = 0x56bb
 	idVideo        ebml.ID = 0xe0
 	idPixelWidth   ebml.ID = 0xb0
 	idPixelHeight  ebml.ID = 0xba

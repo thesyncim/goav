@@ -1394,6 +1394,20 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 	if len(private) == 0 {
 		private = defaultCodecPrivate(track, scratch)
 	}
+	codecDelayNS, seekPreRollNS, err := trackCodecTiming(track, private)
+	if err != nil {
+		return err
+	}
+	if codecDelayNS > 0 || track.Codec == CodecOpus {
+		if err := tw.WriteUInt(idCodecDelay, uint64(codecDelayNS)); err != nil {
+			return err
+		}
+	}
+	if seekPreRollNS > 0 || track.Codec == CodecOpus {
+		if err := tw.WriteUInt(idSeekPreRoll, uint64(seekPreRollNS)); err != nil {
+			return err
+		}
+	}
 	if len(private) != 0 {
 		if err := writeBinary(tw, idCodecPrivate, private); err != nil {
 			return err
@@ -1410,6 +1424,25 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 		}
 	}
 	return w.WriteElement(idTrackEntry, payload.Bytes())
+}
+
+func trackCodecTiming(track Track, private []byte) (int64, int64, error) {
+	codecDelayNS := track.CodecDelayNS
+	seekPreRollNS := track.SeekPreRollNS
+	if track.Codec != CodecOpus {
+		return codecDelayNS, seekPreRollNS, nil
+	}
+	if codecDelayNS == 0 && len(private) != 0 {
+		head, err := parseOpusHead(private)
+		if err != nil {
+			return 0, 0, err
+		}
+		codecDelayNS = opusCodecDelayNS(head.PreSkip)
+	}
+	if seekPreRollNS == 0 {
+		seekPreRollNS = opusDefaultSeekPreRollNS
+	}
+	return codecDelayNS, seekPreRollNS, nil
 }
 
 func writeVideo(w *ebml.Writer, video VideoConfig) error {
@@ -1453,7 +1486,7 @@ func validateTrack(track Track) error {
 	if track.Type != TrackAudio && track.Type != TrackVideo {
 		return ErrInvalidTrack
 	}
-	if track.DefaultDurationNS < 0 {
+	if track.DefaultDurationNS < 0 || track.CodecDelayNS < 0 || track.SeekPreRollNS < 0 {
 		return ErrInvalidTrack
 	}
 	if _, err := matroskaCodecID(track.Codec); err != nil {
