@@ -702,6 +702,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     resize/resample renditions and transform/media mismatches now return
     structured build errors with stream-scoped guidance instead of bare
     unsupported sentinels. Done.
+207. Make advanced transcode resize planning failures actionable: impossible
+    fit/fill geometry and unknown resize modes now return structured build
+    errors with mode, input geometry, target geometry, and resize-mode guidance
+    instead of bare unsupported sentinels. Done.
 
 ## First Vertical Slice
 
@@ -968,6 +972,8 @@ Empty advanced transcode plans and duplicate rendition names now report
 structured plan-shape diagnostics too.
 Advanced transcode transform failures now report mixed-transform and
 wrong-media diagnostics with branch and selected-stream details.
+Advanced transcode resize planning now reports impossible fit/fill geometry and
+unknown modes with concrete input and target dimensions.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

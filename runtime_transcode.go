@@ -695,23 +695,53 @@ func applyResizeConfigToStream(stream *av.Stream, config filter.ResizeConfig) er
 		}
 		return nil
 	case filter.ResizeFit:
-		if config.Width <= 0 || config.Height <= 0 || stream.Codec.Width <= 0 || stream.Codec.Height <= 0 {
-			return ErrUnsupportedBuild
+		if config.Width <= 0 || config.Height <= 0 {
+			return transcodeResizeConfigError(*stream, mode, config, "resize fit requires positive target width and height")
+		}
+		if stream.Codec.Width <= 0 || stream.Codec.Height <= 0 {
+			return transcodeResizeConfigError(*stream, mode, config, "resize fit requires known positive input width and height")
 		}
 		stream.Codec.Width, stream.Codec.Height = resizeFitStreamDimensions(stream.Codec.Width, stream.Codec.Height, config.Width, config.Height)
 		if stream.Codec.Width == 0 || stream.Codec.Height == 0 {
-			return ErrUnsupportedBuild
+			return transcodeResizeConfigError(*stream, mode, config, "resize fit produced empty output geometry")
 		}
 		return nil
 	case filter.ResizeFill:
 		if config.Width <= 0 || config.Height <= 0 {
-			return ErrUnsupportedBuild
+			return transcodeResizeConfigError(*stream, mode, config, "resize fill requires positive target width and height")
 		}
 		stream.Codec.Width = config.Width
 		stream.Codec.Height = config.Height
 		return nil
 	default:
-		return ErrUnsupportedBuild
+		return transcodeResizeConfigError(*stream, mode, config, "unsupported resize mode")
+	}
+}
+
+func transcodeResizeConfigError(stream av.Stream, mode filter.ResizeMode, config filter.ResizeConfig, reason string) error {
+	node := "resize"
+	if stream.ID != "" {
+		node += "-" + string(stream.ID)
+	}
+	return &BuildError{
+		Code:      "transcode_resize_invalid",
+		Operation: "build transcode",
+		Node:      node,
+		Reason:    reason,
+		Details: []string{
+			"mode: " + string(mode),
+			"stream id: " + string(stream.ID),
+			"input width: " + strconv.Itoa(stream.Codec.Width),
+			"input height: " + strconv.Itoa(stream.Codec.Height),
+			"target width: " + strconv.Itoa(config.Width),
+			"target height: " + strconv.Itoa(config.Height),
+		},
+		Suggestions: []string{
+			"use resize mode exact, fit, fill, or passthrough",
+			"provide positive target dimensions for fit and fill",
+			"use exact resize when input dimensions are not known before filtering",
+		},
+		Cause: ErrUnsupportedBuild,
 	}
 }
 

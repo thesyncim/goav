@@ -736,6 +736,70 @@ func TestApplyResizeConfigToStreamFit(t *testing.T) {
 	}
 }
 
+func TestApplyResizeConfigToStreamReportsInvalidConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		stream av.Stream
+		config filter.ResizeConfig
+		want   []string
+	}{
+		{
+			name: "fit missing input geometry",
+			stream: av.Stream{
+				ID:   "video",
+				Type: av.MediaVideo,
+				Codec: av.CodecParameters{
+					Type: av.MediaVideo,
+				},
+			},
+			config: filter.ResizeConfig{Width: 1280, Height: 720, Mode: filter.ResizeFit},
+			want:   []string{"known positive input width and height", "input width: 0", "target width: 1280"},
+		},
+		{
+			name: "fill missing target geometry",
+			stream: av.Stream{
+				ID:   "video",
+				Type: av.MediaVideo,
+				Codec: av.CodecParameters{
+					Type:   av.MediaVideo,
+					Width:  640,
+					Height: 360,
+				},
+			},
+			config: filter.ResizeConfig{Height: 720, Mode: filter.ResizeFill},
+			want:   []string{"resize fill requires positive target width and height", "target width: 0"},
+		},
+		{
+			name: "unsupported mode",
+			stream: av.Stream{
+				ID:   "video",
+				Type: av.MediaVideo,
+				Codec: av.CodecParameters{
+					Type:   av.MediaVideo,
+					Width:  640,
+					Height: 360,
+				},
+			},
+			config: filter.ResizeConfig{Width: 640, Height: 360, Mode: filter.ResizeMode("stretch")},
+			want:   []string{"unsupported resize mode", "mode: stretch", "exact, fit, fill, or passthrough"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := applyResizeConfigToStream(&tt.stream, tt.config)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "transcode_resize_invalid" || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want transcode_resize_invalid wrapping ErrUnsupportedBuild", err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func encoderAt(encoders []*encodeTestEncoder, index int) *encodeTestEncoder {
 	if index >= len(encoders) {
 		return nil
