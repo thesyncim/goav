@@ -82,22 +82,22 @@ func (w *Writer) WriteString(id ID, value string) error {
 
 func (w *Writer) WriteUInt(id ID, value uint64) error {
 	n := uintPayloadWidth(value)
+	if err := w.WriteHeader(id, uint64(n)); err != nil {
+		return err
+	}
 	for i := n - 1; i >= 0; i-- {
 		w.scratch[i] = byte(value)
 		value >>= 8
-	}
-	if err := w.WriteHeader(id, uint64(n)); err != nil {
-		return err
 	}
 	_, err := w.Write(w.scratch[:n])
 	return err
 }
 
 func (w *Writer) WriteFloat64(id ID, value float64) error {
-	binary.BigEndian.PutUint64(w.scratch[:8], math.Float64bits(value))
 	if err := w.WriteHeader(id, 8); err != nil {
 		return err
 	}
+	binary.BigEndian.PutUint64(w.scratch[:8], math.Float64bits(value))
 	_, err := w.Write(w.scratch[:8])
 	return err
 }
