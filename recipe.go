@@ -137,12 +137,14 @@ func Default() Runtime {
 type CodecOption func(*CodecSpec)
 
 type CodecSpec struct {
-	ID         av.CodecID
-	Type       av.MediaType
-	Parameters av.CodecParameters
-	Bitrate    int
-	Copy       bool
-	Auto       bool
+	ID            av.CodecID
+	Type          av.MediaType
+	Parameters    av.CodecParameters
+	Bitrate       int
+	Copy          bool
+	Auto          bool
+	sampleRateSet bool
+	channelsSet   bool
 }
 
 func Auto() CodecSpec {
@@ -213,6 +215,7 @@ func Bitrate(bitsPerSecond int) CodecOption {
 func Channels(channels int) CodecOption {
 	return func(spec *CodecSpec) {
 		spec.Parameters.Channels = channels
+		spec.channelsSet = true
 		if channels == Mono {
 			spec.Parameters.ChannelLayout = "mono"
 		}
@@ -225,6 +228,8 @@ func Channels(channels int) CodecOption {
 func SampleRate(sampleRate int) CodecOption {
 	return func(spec *CodecSpec) {
 		spec.Parameters.SampleRate = sampleRate
+		spec.Parameters.ClockRate = uint32(sampleRate)
+		spec.sampleRateSet = true
 	}
 }
 
@@ -557,9 +562,14 @@ type jobStreamBuild struct {
 	name     string
 	selector av.StreamSelector
 	decode   bool
-	stages   []pipeline.Stage
+	steps    []jobStreamStep
 	encode   CodecSpec
 	outputs  []OutputSpec
+}
+
+type jobStreamStep struct {
+	stage     pipeline.Stage
+	transform TransformSpec
 }
 
 func Record(input InputSpec, output OutputSpec, options ...JobOption) *Job {
@@ -643,9 +653,10 @@ func (j *Job) Intent() Intent {
 				Codec:    j.stream.selector.Codec,
 				Name:     j.stream.selector.Name,
 			},
-			Decode:  j.stream.decode,
-			Encode:  j.stream.encode,
-			RouteTo: outputLabels(j.stream.outputs),
+			Decode:     j.stream.decode,
+			Transforms: j.stream.transformSpecs(),
+			Encode:     j.stream.encode,
+			RouteTo:    outputLabels(j.stream.outputs),
 		})
 	}
 	outputs := j.allOutputs()
@@ -818,11 +829,35 @@ func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, err
 			},
 		}
 	}
-	if stream.decode || len(stream.stages) != 0 || stream.encode.ID != "" {
+	if stream.decode || len(stream.steps) != 0 || stream.encode.ID != "" {
 		builder = builder.Decode(stream.selector)
 	}
-	for i := range stream.stages {
-		builder = builder.Filter(stream.selector, stream.stages[i])
+	for i := range stream.steps {
+		step := stream.steps[i]
+		if step.stage != nil {
+			builder = builder.Filter(stream.selector, step.stage)
+			continue
+		}
+		transform, err := streamTransform(stream.name, stream.selector, step.transform, i)
+		if err != nil {
+			return nil, err
+		}
+		internal, ok := builder.(interface {
+			transform(av.StreamSelector, transcodeTransform) Builder
+		})
+		if !ok {
+			return nil, &BuildError{
+				Code:      "transform_runtime_unsupported",
+				Operation: "build stream",
+				Node:      stream.name,
+				Reason:    "stream transforms require the standard runtime builder",
+				Suggestions: []string{
+					"use goav.Default() or goav.New(...) for recipe transforms",
+					"use .Do(stage) when a custom runtime must provide its own filter stage",
+				},
+			}
+		}
+		builder = internal.transform(stream.selector, transform)
 	}
 	if stream.encode.ID != "" {
 		builder = builder.Encode(stream.selector, encodeConfigFromSpec(stream.encode))
@@ -831,7 +866,20 @@ func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, err
 }
 
 func (s *jobStreamBuild) hasOperation() bool {
-	return s.decode || len(s.stages) != 0 || s.encode.ID != "" || s.encode.Auto || s.encode.Copy
+	return s.decode || len(s.steps) != 0 || s.encode.ID != "" || s.encode.Auto || s.encode.Copy
+}
+
+func (s *jobStreamBuild) transformSpecs() []TransformSpec {
+	if s == nil {
+		return nil
+	}
+	transforms := make([]TransformSpec, 0, len(s.steps))
+	for i := range s.steps {
+		if s.steps[i].transform.Resize != nil || s.steps[i].transform.Resample != nil {
+			transforms = append(transforms, s.steps[i].transform)
+		}
+	}
+	return transforms
 }
 
 func outputsContainMuxTarget(outputs []OutputSpec) bool {
@@ -853,8 +901,19 @@ func outputsContainFrameSink(outputs []OutputSpec) bool {
 }
 
 func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
+	parameters := spec.Parameters
+	if spec.ID == av.CodecOpus {
+		if !spec.sampleRateSet {
+			parameters.SampleRate = 0
+			parameters.ClockRate = 0
+		}
+		if !spec.channelsSet {
+			parameters.Channels = 0
+			parameters.ChannelLayout = ""
+		}
+	}
 	return codec.EncodeConfig{
-		Parameters: spec.Parameters,
+		Parameters: parameters,
 		Bitrate:    spec.Bitrate,
 	}
 }
@@ -880,6 +939,67 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 		}
 	default:
 		return nil
+	}
+}
+
+func streamTransform(streamName string, selector av.StreamSelector, spec TransformSpec, index int) (transcodeTransform, error) {
+	base := firstNonEmpty(streamName, string(selector.ID), string(selector.Type), "stream")
+	suffix := ""
+	if index > 0 {
+		suffix = "-" + fmt.Sprint(index+1)
+	}
+	switch {
+	case spec.Resize != nil && spec.Resample != nil:
+		return transcodeTransform{}, &BuildError{
+			Code:      "transform_invalid",
+			Operation: "build stream",
+			Node:      base,
+			Reason:    "one stream transform cannot be both resize and resample",
+		}
+	case spec.Resize != nil:
+		if selector.Type == av.MediaAudio {
+			return transcodeTransform{}, transformMediaError(base, "resize", "video")
+		}
+		resize := *spec.Resize
+		return transcodeTransform{
+			name:    "resize-" + base + suffix,
+			factory: filter.FactoryResize,
+			video:   &resize,
+		}, nil
+	case spec.Resample != nil:
+		if selector.Type == av.MediaVideo {
+			return transcodeTransform{}, transformMediaError(base, "resample", "audio")
+		}
+		resample := *spec.Resample
+		return transcodeTransform{
+			name:    "resample-" + base + suffix,
+			factory: filter.FactoryResample,
+			audio:   &resample,
+		}, nil
+	default:
+		return transcodeTransform{}, &BuildError{
+			Code:      "transform_invalid",
+			Operation: "build stream",
+			Node:      base,
+			Reason:    "empty stream transform",
+			Suggestions: []string{
+				"call .Resize(width, height) for video streams",
+				"call .Resample(sampleRate, channels) for audio streams",
+			},
+		}
+	}
+}
+
+func transformMediaError(stream string, transform string, media string) error {
+	return &BuildError{
+		Code:      "transform_media_mismatch",
+		Operation: "build stream",
+		Node:      stream,
+		Reason:    transform + " applies to " + media + " streams",
+		Suggestions: []string{
+			"use .Video().Resize(...) for video scaling",
+			"use .Audio().Resample(...) for audio sample-rate or channel conversion",
+		},
 	}
 }
 
@@ -939,7 +1059,21 @@ func (b *JobStreamBuilder) Decode() *JobStreamBuilder {
 func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
 	stream := b.current()
 	stream.decode = true
-	stream.stages = append(stream.stages, stage)
+	stream.steps = append(stream.steps, jobStreamStep{stage: stage})
+	return b
+}
+
+func (b *JobStreamBuilder) Resize(width int, height int, options ...ResizeOption) *JobStreamBuilder {
+	stream := b.current()
+	stream.decode = true
+	stream.steps = append(stream.steps, jobStreamStep{transform: Resize(width, height, options...)})
+	return b
+}
+
+func (b *JobStreamBuilder) Resample(sampleRate int, channels int, options ...AudioOption) *JobStreamBuilder {
+	stream := b.current()
+	stream.decode = true
+	stream.steps = append(stream.steps, jobStreamStep{transform: Resample(sampleRate, channels, options...)})
 	return b
 }
 

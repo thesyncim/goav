@@ -159,11 +159,11 @@ func (b *builder) compileDecodeEncodeToOutput(ctx context.Context, graph pipelin
 		return err
 	}
 	realtime := b.runtime.realtime || b.inputs[0].Realtime
-	encodeConfig, encodedStream, err := prepareEncodeConfig(stream, b.encodes[0], realtime)
+	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, realtime, false, codec.DecodeBounds{})
 	if err != nil {
 		return err
 	}
-	previousRef, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, realtime, false, codec.DecodeBounds{})
+	encodeConfig, encodedStream, err := prepareEncodeConfig(filteredStream, b.encodes[0], realtime)
 	if err != nil {
 		return err
 	}
@@ -194,11 +194,11 @@ func (b *builder) compileRTPDecodeEncodeToOutput(ctx context.Context, graph pipe
 	if err != nil {
 		return err
 	}
-	encodeConfig, encodedStream, err := prepareEncodeConfig(stream, b.encodes[0], b.runtime.realtime)
+	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, sourceRefs, selector, stream, b.runtime.realtime, false, rtpDecodeBoundsForStream(stream, builds))
 	if err != nil {
 		return err
 	}
-	previousRef, err := b.compileDecodeFilterPath(ctx, graph, sourceRefs, selector, stream, b.runtime.realtime, false, rtpDecodeBoundsForStream(stream, builds))
+	encodeConfig, encodedStream, err := prepareEncodeConfig(filteredStream, b.encodes[0], b.runtime.realtime)
 	if err != nil {
 		return err
 	}

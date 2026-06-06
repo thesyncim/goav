@@ -173,7 +173,7 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 	}
 
 	realtime := b.runtime.realtime || plan.Input.Realtime
-	previousRef, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, realtime, false, codec.DecodeBounds{})
+	previousRef, _, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, realtime, false, codec.DecodeBounds{})
 	if err != nil {
 		return err
 	}

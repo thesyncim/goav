@@ -187,12 +187,12 @@ func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipel
 
 	previous := decodeRef
 	for i := range b.filters {
-		if b.filters[i].stage == nil {
-			return "", ErrNilStage
+		name, detail, err := filterRequestPlanNode(b.filters[i])
+		if err != nil {
+			return "", err
 		}
-		name := b.filters[i].stage.Name()
 		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, spec, name, pipeline.NodeStage, ref, describedNodeDetail(b.filters[i].stage)); err != nil {
+		if err := addPlannedNode(nodes, spec, name, pipeline.NodeStage, ref, detail); err != nil {
 			return "", err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
@@ -206,7 +206,7 @@ func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipel
 }
 
 func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool, bounds codec.DecodeBounds) error {
-	previousRef, err := b.compileDecodeFilterPath(ctx, graph, upstream, selector, stream, realtime, true, bounds)
+	previousRef, _, err := b.compileDecodeFilterPath(ctx, graph, upstream, selector, stream, realtime, true, bounds)
 	if err != nil {
 		return err
 	}
@@ -221,58 +221,77 @@ func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Gra
 	return nil
 }
 
-func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool, dropDecodeEvents bool, bounds codec.DecodeBounds) (pipeline.NodeRef, error) {
-	if err := b.validateFiltersForStream(stream); err != nil {
-		return "", err
-	}
+func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool, dropDecodeEvents bool, bounds codec.DecodeBounds) (pipeline.NodeRef, av.Stream, error) {
 	selectStage := newStreamSelectStage(selectNodeName(selector), stream, selector, selectNodeDetail(selector))
 	selectRef, err := graph.AddStage(selectStage, b.runtime.buffer)
 	if err != nil {
 		selectStage.Close()
-		return "", err
+		return "", av.Stream{}, err
 	}
 
 	decodeStage, err := b.newDecodeStage(ctx, selector, stream, realtime, dropDecodeEvents, bounds)
 	if err != nil {
-		return "", err
+		return "", av.Stream{}, err
 	}
 	previousRef, err := graph.AddStage(decodeStage, b.runtime.buffer)
 	if err != nil {
 		decodeStage.Close()
-		return "", err
+		return "", av.Stream{}, err
 	}
 	for i := range upstream {
 		if err := connectRefs(graph, upstream[i], selectRef); err != nil {
-			return "", err
+			return "", av.Stream{}, err
 		}
 	}
 	if err := connectRefs(graph, selectRef, previousRef); err != nil {
-		return "", err
+		return "", av.Stream{}, err
 	}
 
+	currentStream := stream
 	for i := range b.filters {
-		stageRef, err := graph.AddStage(b.filters[i].stage, b.runtime.buffer)
+		if !streamMatchesSelector(currentStream, b.filters[i].selector) {
+			return "", av.Stream{}, ErrUnsupportedBuild
+		}
+		stage, outputStream, err := b.newFilterRequestStage(ctx, b.filters[i], currentStream, realtime)
 		if err != nil {
-			return "", err
+			return "", av.Stream{}, err
+		}
+		stageRef, err := graph.AddStage(stage, b.runtime.buffer)
+		if err != nil {
+			stage.Close()
+			return "", av.Stream{}, err
 		}
 		if err := connectRefs(graph, previousRef, stageRef); err != nil {
-			return "", err
+			return "", av.Stream{}, err
 		}
 		previousRef = stageRef
+		currentStream = outputStream
 	}
-	return previousRef, nil
+	return previousRef, currentStream, nil
 }
 
-func (b *builder) validateFiltersForStream(stream av.Stream) error {
-	for i := range b.filters {
-		if b.filters[i].stage == nil {
-			return ErrNilStage
-		}
-		if !streamMatchesSelector(stream, b.filters[i].selector) {
-			return ErrUnsupportedBuild
-		}
+func filterRequestPlanNode(request filterRequest) (string, string, error) {
+	if request.stage != nil {
+		return request.stage.Name(), describedNodeDetail(request.stage), nil
 	}
-	return nil
+	if request.transform != nil {
+		return request.transform.name, transcodeTransformDetail(*request.transform), nil
+	}
+	return "", "", ErrNilStage
+}
+
+func (b *builder) newFilterRequestStage(ctx context.Context, request filterRequest, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
+	if request.stage != nil {
+		return request.stage, stream, nil
+	}
+	if request.transform != nil {
+		stage, outputStream, err := b.newTranscodeFilterStage(ctx, *request.transform, stream, realtime)
+		if err != nil {
+			return nil, av.Stream{}, err
+		}
+		return stage, outputStream, nil
+	}
+	return nil, av.Stream{}, ErrNilStage
 }
 
 func selectDecodeStream(streams []av.Stream, selector av.StreamSelector) (av.Stream, error) {

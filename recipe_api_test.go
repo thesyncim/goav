@@ -186,6 +186,55 @@ func TestReadmeAudioEncodeRecipeIsSmall(t *testing.T) {
 	}
 }
 
+func TestReadmeAudioResampleEncodeRecipeIsSmall(t *testing.T) {
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Resample(16_000, goav.Mono).
+		Opus(48_000).
+		To(goav.FileOutput("preview.ogg", io.Discard))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := spec.String()
+	if !strings.Contains(text, "decode-audio -> resample-audio") ||
+		!strings.Contains(text, "resample-audio -> encode-audio") ||
+		!strings.Contains(text, "16000 Hz") ||
+		!strings.Contains(text, "1 ch") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || len(intent.Streams[0].Transforms) != 1 || intent.Streams[0].Transforms[0].Resample == nil {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestReadmeVideoResizeEncodeRecipeIsSmall(t *testing.T) {
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		Resize(1280, 720).
+		VP9(2_000_000).
+		To(goav.FileOutput("preview.webm", io.Discard))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := spec.String()
+	if !strings.Contains(text, "decode-video -> resize-video") ||
+		!strings.Contains(text, "resize-video -> encode-video") ||
+		!strings.Contains(text, "1280x720") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || len(intent.Streams[0].Transforms) != 1 || intent.Streams[0].Transforms[0].Resize == nil {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
 func TestStreamRecipeRequiresOperation(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -196,6 +245,20 @@ func TestStreamRecipeRequiresOperation(t *testing.T) {
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_operation_missing" {
 		t.Fatalf("err = %v, want stream_operation_missing", err)
+	}
+}
+
+func TestStreamRecipeRejectsWrongMediaTransform(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Resize(320, 180).
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_media_mismatch" {
+		t.Fatalf("err = %v, want transform_media_mismatch", err)
 	}
 }
 

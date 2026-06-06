@@ -92,8 +92,12 @@ fmt.Println(spec)
   inputs through one shared output graph.
 - `goav.From(input).Audio().Decode().To(goav.FrameSink(frames))` decodes one
   selected audio stream without manual selectors.
+- `goav.From(input).Audio().Decode().Resample(16_000, goav.Mono).Opus(48_000).To(output)`
+  resamples and encodes one selected audio stream.
+- `goav.From(input).Video().Decode().Resize(1280, 720).VP9(2_000_000).To(output)`
+  resizes and encodes one selected video stream.
 - `goav.From(input).Audio().Decode().Do(meter).Opus(96_000).To(output)` adds a
-  stream-local custom stage and encoder.
+  stream-local custom stage before encoding.
 - `goav.Decode(input, sink)` decodes one selected stream into a frame sink.
 - `goav.Transcode(input)` builds named audio or video branches and outputs.
 - `goav.WebRTCTrack(track)` adapts a Pion `TrackRemote` into the same realtime
@@ -206,7 +210,7 @@ Implemented today:
 
 - recipe `Record`, `From`, `Decode`, and transcode-ladder builders;
 - stream-scoped recipe builders for selected audio/video decode, custom stages,
-  and Opus/VP8/VP9 encode paths;
+  resize/resample transforms, and Opus/VP8/VP9 encode paths;
 - file, URI, RTP, WebRTC track, codec, resize, resample, and output specs;
 - one file-output constructor, `FileOutput`, instead of duplicate aliases;
 - multi-input realtime recipes with `From(input).And(other...)`;

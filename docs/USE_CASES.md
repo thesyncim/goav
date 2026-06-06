@@ -74,6 +74,18 @@ task, err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Build(ctx)
 ```
 
+Audio and video transforms stay stream-local in the recipe:
+
+```go
+task, err := goav.From(input).
+    Audio().
+    Decode().
+    Resample(16_000, goav.Mono).
+    Opus(48_000).
+    To(goav.FileOutput("preview.ogg", preview)).
+    Build(ctx)
+```
+
 When a media type matches several streams, the build error lists the candidates.
 Use the same stream-scoped shape with a narrower selector. `StreamIndex(0)`
 selects the first stream when that is the intended one:

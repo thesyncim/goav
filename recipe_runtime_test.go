@@ -342,3 +342,132 @@ func TestFromAudioStreamRecipeDecodeDoEncodeRuns(t *testing.T) {
 		t.Fatalf("closed demux=%v decoder=%v meter=%v encoder=%v mux=%v", demuxer.closed, decoder.closed, meter.closed, encoder.closed, muxers.muxers[0].closed)
 	}
 }
+
+func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:           av.CodecOpus,
+			Type:         av.MediaAudio,
+			SampleRate:   48000,
+			ClockRate:    48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatS16,
+		},
+	}}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &recipePCMDecoder{}
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	codecs := codec.NewRegistry()
+	codecs.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipePCMDecoderFactory{decoder: decoder})
+	codecs.RegisterEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory)
+	runtime := New(formats, func(rt *runtime) { rt.codecs = codecs }, WithStdFilters())
+
+	task, err := From(FileInput("input.ogg", nil), UseRuntime(runtime)).
+		Audio().
+		Decode().
+		Resample(16_000, Mono).
+		Opus(48_000).
+		To(FileOutput("preview.ogg", io.Discard)).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || encoder.encodes != 1 || encoder.flushes != 1 {
+		t.Fatalf("decodes=%d encodes=%d flushes=%d", decoder.decodes, encoder.encodes, encoder.flushes)
+	}
+	if encoderFactory.config.Stream.Codec.SampleRate != 16_000 || encoderFactory.config.Stream.Codec.Channels != Mono {
+		t.Fatalf("encode stream after resample: %+v", encoderFactory.config.Stream)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "audio" {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type recipePCMDecoderFactory struct {
+	decoder *recipePCMDecoder
+}
+
+func (f recipePCMDecoderFactory) NewDecoder(context.Context, codec.DecodeConfig) (codec.Decoder, error) {
+	return f.decoder, nil
+}
+
+type recipePCMDecoder struct {
+	decodes int
+	flushes int
+	closed  bool
+}
+
+func (d *recipePCMDecoder) Descriptor() codec.Descriptor {
+	return codec.Descriptor{ID: av.CodecOpus}
+}
+
+func (d *recipePCMDecoder) Open(context.Context, codec.DecodeConfig) error {
+	return nil
+}
+
+func (d *recipePCMDecoder) DecodeInto(_ context.Context, packet *av.Packet, out *codec.DecodeResult) error {
+	if packet == nil {
+		return nil
+	}
+	if len(out.Frames) == cap(out.Frames) {
+		return codec.ErrResultFull
+	}
+	index := len(out.Frames)
+	out.Frames = out.Frames[:index+1]
+	frame := &out.Frames[index]
+	frame.Reset()
+	frame.StreamID = packet.StreamID
+	frame.Type = av.MediaAudio
+	frame.Audio = &av.AudioFrame{
+		SampleRate:   48000,
+		Channels:     Stereo,
+		SampleFormat: av.SampleFormatS16,
+		Samples:      480,
+	}
+	if cap(frame.Planes) < 1 {
+		frame.Planes = make([]av.Plane, 1)
+	} else {
+		frame.Planes = frame.Planes[:1]
+	}
+	frame.Planes[0].Buffer.Bytes = append(frame.Planes[0].Buffer.Bytes[:0], make([]byte, 480*Stereo*2)...)
+	frame.Planes[0].Stride = Stereo * 2
+	d.decodes++
+	return nil
+}
+
+func (d *recipePCMDecoder) FlushInto(context.Context, *codec.DecodeResult) error {
+	d.flushes++
+	return nil
+}
+
+func (d *recipePCMDecoder) HandleEvent(context.Context, *av.Event) error {
+	return nil
+}
+
+func (d *recipePCMDecoder) Close() error {
+	d.closed = true
+	return nil
+}

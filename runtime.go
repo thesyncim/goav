@@ -115,8 +115,9 @@ type encodeRequest struct {
 }
 
 type filterRequest struct {
-	selector av.StreamSelector
-	stage    pipeline.Stage
+	selector  av.StreamSelector
+	stage     pipeline.Stage
+	transform *transcodeTransform
 }
 
 type RTPOption func(*rtpInput)
@@ -172,6 +173,11 @@ func (b *builder) Encode(selector av.StreamSelector, config codec.EncodeConfig) 
 
 func (b *builder) Filter(selector av.StreamSelector, stage pipeline.Stage) Builder {
 	b.filters = append(b.filters, filterRequest{selector: selector, stage: stage})
+	return b
+}
+
+func (b *builder) transform(selector av.StreamSelector, transform transcodeTransform) Builder {
+	b.filters = append(b.filters, filterRequest{selector: selector, transform: &transform})
 	return b
 }
 

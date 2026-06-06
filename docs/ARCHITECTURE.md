@@ -91,6 +91,9 @@ scratch so concrete resize filters can keep plane ownership with the caller.
 Recipe helpers also expose `PacketFunc`, `FrameFunc`, `EventFunc`, and
 `SinkFunc` so small custom processing hooks can participate in the graph without
 implementing full source/stage/sink types.
+Stream recipe transforms such as `Audio().Resample(...)` and
+`Video().Resize(...)` lower through the same filter registry as transcode
+branches, so common processing does not require manually building filter stages.
 
 ## Core media model
 
