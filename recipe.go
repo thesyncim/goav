@@ -412,7 +412,31 @@ func (s InputSpec) validate() error {
 	if err := s.validateRTPReceiver(); err != nil {
 		return err
 	}
+	if err := s.validatePlainInput(); err != nil {
+		return err
+	}
 	return s.validateRTPCodec()
+}
+
+func (s InputSpec) validatePlainInput() error {
+	if s.rtp != nil {
+		return nil
+	}
+	if s.input.Name != "" || s.input.URI != "" || s.input.Protocol != "" || s.input.MIMEType != "" || s.input.Reader != nil || s.input.ReaderAt != nil {
+		return nil
+	}
+	return &BuildError{
+		Code:      "input_invalid",
+		Operation: "build input",
+		Node:      "input",
+		Reason:    "empty input spec",
+		Suggestions: []string{
+			"use goav.FileInput(name, reader) for file-like input",
+			"use goav.URI(uri) for URI-backed input",
+			"use goav.RTP(reader) or goav.WebRTCTrack(track) for realtime receive",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func (s InputSpec) validateRTPReceiver() error {

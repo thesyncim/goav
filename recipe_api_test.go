@@ -187,6 +187,21 @@ func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
 	}
 }
 
+func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
+	_, err := goav.Record(
+		goav.InputSpec{},
+		goav.FileOutput("recording.ogg", io.Discard),
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want input_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "empty input spec") ||
+		!strings.Contains(err.Error(), "goav.FileInput") {
+		t.Fatalf("err = %v, want input constructor guidance", err)
+	}
+}
+
 func TestDecodeRecipeRejectsNilFrameSink(t *testing.T) {
 	_, err := goav.Decode(
 		goav.FileInput("input.ogg", strings.NewReader("")),

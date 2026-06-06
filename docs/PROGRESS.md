@@ -343,7 +343,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 105. Add recipe RTP reader validation so nil packet readers fail before source
     construction while codec-intent diagnostics still cover valid readers.
     Done.
-106. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+106. Add plain recipe input validation so zero-value input specs fail with
+    constructor guidance before format probing. Done.
+107. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
