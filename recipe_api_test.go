@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/webrtcav"
 )
 
 func TestReadmeRecordRecipeIsSmall(t *testing.T) {
@@ -53,6 +55,52 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	intent := job.Intent()
 	if len(intent.Streams) != 1 || intent.Streams[0].Select.Type != "audio" || !intent.Streams[0].Decode {
 		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestReadmeWebRTCTrackRecordRecipeIsSmall(t *testing.T) {
+	job := goav.Record(
+		goav.WebRTCTrack(&webrtc.TrackRemote{},
+			goav.WithTrackCodec(webrtc.RTPCodecParameters{
+				RTPCodecCapability: webrtc.RTPCodecCapability{
+					MimeType:  webrtc.MimeTypeVP8,
+					ClockRate: 90000,
+				},
+				PayloadType: 96,
+			}),
+			goav.WithTrackStream(goav.Stream{
+				ID:   "video",
+				Type: "video",
+			}),
+		),
+		goav.FileOutput("recording.ivf", io.Discard),
+	)
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := spec.String()
+	if !strings.Contains(text, "video -> recording.ivf") ||
+		!strings.Contains(text, "rtp receive, depacketizers=1") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Inputs) != 1 ||
+		string(intent.Inputs[0].Protocol) != "webrtc" ||
+		string(intent.Inputs[0].Codec.ID) != "vp8" {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestWebRTCTrackRecipeReportsNilTrack(t *testing.T) {
+	_, err := goav.Record(
+		goav.WebRTCTrack(nil),
+		goav.FileOutput("recording.ivf", io.Discard),
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" || !errors.Is(err, webrtcav.ErrNilTrack) {
+		t.Fatalf("err = %v, want input_invalid wrapping ErrNilTrack", err)
 	}
 }
 

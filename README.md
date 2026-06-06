@@ -14,7 +14,20 @@ normal user sees is now a recipe, not graph wiring.
 
 ## 30-Second Examples
 
-Record an RTP/WebRTC video packet reader:
+Record a WebRTC video track:
+
+```go
+task, err := goav.Record(
+    goav.WebRTCTrack(track),
+    goav.File("recording.ivf", file),
+).Build(ctx)
+if err != nil {
+    return err
+}
+return task.Run(ctx)
+```
+
+Record an RTP packet reader:
 
 ```go
 task, err := goav.Record(
@@ -72,6 +85,8 @@ fmt.Println(spec)
   stream-local custom stage and encoder.
 - `goav.Decode(input, sink)` decodes one selected stream into a frame sink.
 - `goav.Transcode(input)` builds named audio or video branches and outputs.
+- `goav.WebRTCTrack(track)` adapts a Pion `TrackRemote` into the same realtime
+  receive path as RTP.
 - `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive
   intent without making the caller wire depacketizers by hand for common codecs.
 - `goav.FileInput`, `goav.URI`, `goav.FileOutput`, and `goav.URIOutput` cover
@@ -178,7 +193,7 @@ Implemented today:
 - recipe `Record`, `From`, `Decode`, and transcode-ladder builders;
 - stream-scoped recipe builders for selected audio/video decode, custom stages,
   and Opus/VP8/VP9 encode paths;
-- file, URI, RTP, codec, resize, resample, and output specs;
+- file, URI, RTP, WebRTC track, codec, resize, resample, and output specs;
 - `Describe` graph specs plus optional `graphrender` exporters;
 - function adapters for packet, frame, event, and sink hooks;
 - handle-based expert graph wiring through `Runtime.Graph()`;

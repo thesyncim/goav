@@ -269,6 +269,7 @@ type InputSpec struct {
 	codec    CodecSpec
 	name     string
 	realtime bool
+	err      error
 }
 
 type rtpInputSpec struct {
@@ -378,6 +379,23 @@ func (s InputSpec) apply(builder Builder) Builder {
 		return builder.Input(input)
 	}
 	return builder.RTP(s.rtp.receiver, s.rtpOptions()...)
+}
+
+func (s InputSpec) validate() error {
+	if s.err == nil {
+		return nil
+	}
+	return &BuildError{
+		Code:      "input_invalid",
+		Operation: "build input",
+		Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
+		Reason:    s.err.Error(),
+		Suggestions: []string{
+			"check the input constructor arguments",
+			"use goav.RTP(reader) when you already have an RTP packet reader",
+		},
+		Cause: s.err,
+	}
 }
 
 func (s InputSpec) rtpOptions() []RTPOption {
@@ -657,6 +675,11 @@ func (j *Job) builder() (Builder, error) {
 	}
 	if len(j.inputs) == 0 {
 		return nil, &BuildError{Code: "input_missing", Operation: "build job", Reason: "no input is configured"}
+	}
+	for i := range j.inputs {
+		if err := j.inputs[i].validate(); err != nil {
+			return nil, err
+		}
 	}
 	outputs := j.allOutputs()
 	if len(outputs) == 0 {
@@ -981,6 +1004,9 @@ func (j *TranscodeJob) Intent() Intent {
 }
 
 func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
+	if err := j.input.validate(); err != nil {
+		return transcodepkg.Plan{}, err
+	}
 	if j.input.rtp != nil {
 		return transcodepkg.Plan{}, &BuildError{
 			Code:      "unsupported_input",

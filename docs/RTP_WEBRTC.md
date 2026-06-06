@@ -76,7 +76,10 @@ The session-level shape is:
 session, err := webrtcav.NewSession(ctx, webrtcav.SessionConfig{})
 answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
-reader, err := webrtcav.NewTrackRemoteAdapter().AdaptTrack(ctx, remote)
+task, err := goav.Record(
+    goav.WebRTCRemote(remote),
+    goav.FileOutput("recording.ivf", file),
+).Build(ctx)
 ```
 
 For multiple tracks, the orchestration boundary is explicit:
@@ -84,7 +87,10 @@ For multiple tracks, the orchestration boundary is explicit:
 ```go
 tracks, err := webrtcav.NewTrackSet(webrtcav.TrackSetConfig{Session: session})
 update, err := tracks.Accept(ctx)
-reader := update.Reader
+task, err := goav.Record(
+    goav.RTP(update.Reader),
+    goav.FileOutput("recording.ivf", file),
+).Build(ctx)
 ```
 
 When a later accepted track has the same stream ID, `TrackSet` calls
@@ -92,31 +98,29 @@ When a later accepted track has the same stream ID, `TrackSet` calls
 RTP sources can observe the codec-change event without rebuilding the whole
 application graph.
 
-The runtime builder can compile packet-reader recording graphs directly:
+The recipe layer can also accept raw RTP packet readers directly:
 
 ```go
-task, err := runtime.New().
-    RTP(audio, goav.WithRTPName("audio"), goav.WithRTPDepacketizers(opus)).
-    RTP(video, goav.WithRTPName("video"), goav.WithRTPDepacketizers(vp8)).
-    Output(goav.Output{Name: "recording.webm", Writer: file}).
-    Build(ctx)
+task, err := goav.Record(
+    goav.RTP(video).Name("video").Codec(goav.VP8()),
+    goav.FileOutput("recording.ivf", file),
+).Build(ctx)
 ```
 
 Each reader can be a raw RTP receiver or a `webrtcav.TrackReader` produced from
 a Pion `TrackRemote`. A track reader produced from a WebRTC session can also
 route RTCP feedback back through the session peer connection. The generated
 graph is one `rtpav.Source` per reader feeding shared `format.MuxStage` outputs;
-rendered specs show simple node-to-node routes, and events remain visible
-through the task event channel while mux stages receive packet messages for each
-output.
+graph specs show simple node-to-node routes, and events remain visible through
+the task event channel while mux stages receive packet messages for each output.
 
 It can also decode a selected live stream directly into frames:
 
 ```go
-task, err := runtime.New().
-    RTP(audio, goav.WithRTPName("audio"), goav.WithRTPDepacketizers(opus)).
-    Decode(goav.SelectAudio()).
-    Sink(frames).
+task, err := goav.From(goav.WebRTCTrack(track)).
+    Audio().
+    Decode().
+    To(goav.FrameSink(frames)).
     Build(ctx)
 ```
 
@@ -139,13 +143,15 @@ The same selected live stream can continue into an encoder and one or more mux
 outputs when the target codec is explicit:
 
 ```go
-task, err := runtime.New().
-    RTP(audio, goav.WithRTPName("audio"), goav.WithRTPDepacketizers(opus)).
-    Decode(goav.SelectAudio()).
-    Filter(goav.SelectAudio(), resample).
-    Encode(goav.SelectAudio(), opusEncode).
-    Output(goav.Output{Name: "archive.ogg", Writer: archive}).
-    Output(goav.Output{Name: "preview.ogg", Writer: preview}).
+task, err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+    Audio().
+    Decode().
+    Do(resample).
+    Opus(96_000).
+    To(
+        goav.FileOutput("archive.ogg", archive),
+        goav.FileOutput("preview.ogg", preview),
+    ).
     Build(ctx)
 ```
 

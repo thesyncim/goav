@@ -14,6 +14,16 @@ one long-lived reader per logical stream with `webrtcav.TrackSet`, applies
 same-stream replacement tracks as codec-change events, and routes RTCP feedback
 through the session peer connection.
 
+The recipe front door accepts a Pion track directly and lowers it through the
+same RTP receive graph:
+
+```go
+task, err := goav.Record(
+    goav.WebRTCTrack(track),
+    goav.FileOutput("recording.ivf", file),
+).Build(ctx)
+```
+
 Expected graph:
 
 ```text
