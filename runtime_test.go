@@ -303,13 +303,13 @@ func TestRouteHelpers(t *testing.T) {
 		t.Fatalf("route = %+v", route)
 	}
 
-	stream := StreamRoute("decode", "video", "record")
+	stream := Route("decode", "record").ByStream("video")
 	if stream.Policy != pipeline.RouteByStream || stream.Label != "video" || len(stream.To) != 1 ||
 		stream.To[0] != "record" {
 		t.Fatalf("stream route = %+v", stream)
 	}
 
-	event := EventRoute("source", av.EventPacketLoss, "feedback")
+	event := Route("source", "feedback").ByEvent(av.EventPacketLoss)
 	if event.Policy != pipeline.RouteByEvent || event.Label != string(av.EventPacketLoss) || len(event.To) != 1 ||
 		event.To[0] != "feedback" {
 		t.Fatalf("event route = %+v", event)
@@ -330,8 +330,8 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 		Sink(audio).
 		Sink(video).
 		Routes(
-			StreamRoute("source", "audio", "audio"),
-			StreamRoute("source", "video", "video"),
+			Route("source", "audio").ByStream("audio"),
+			Route("source", "video").ByStream("video"),
 		).
 		Build(context.Background())
 	if err != nil {
@@ -408,8 +408,8 @@ func TestRuntimeBuilderExplicitStreamFanout(t *testing.T) {
 		Sink(preview).
 		Sink(audio).
 		Routes(
-			StreamRoute("source", "video", "record", "preview"),
-			StreamRoute("source", "audio", "audio"),
+			Route("source", "record", "preview").ByStream("video"),
+			Route("source", "audio").ByStream("audio"),
 		).
 		Build(context.Background())
 	if err != nil {
@@ -445,8 +445,8 @@ func TestRuntimeBuilderExplicitRoutesHelper(t *testing.T) {
 		Sink(preview).
 		Sink(audio).
 		Routes(
-			StreamRoute("source", "video", "record", "preview"),
-			StreamRoute("source", "audio", "audio"),
+			Route("source", "record", "preview").ByStream("video"),
+			Route("source", "audio").ByStream("audio"),
 		).
 		Build(context.Background())
 	if err != nil {
@@ -480,8 +480,8 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 		Sink(audio).
 		Sink(video).
 		Routes(
-			StreamRoute("source", "audio", "audio"),
-			StreamRoute("source", "video", "video"),
+			Route("source", "audio").ByStream("audio"),
+			Route("source", "video").ByStream("video"),
 		).
 		Describe()
 	if err != nil {
@@ -496,7 +496,7 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 	}
 }
 
-func TestRuntimeBuilderExplicitEventRoute(t *testing.T) {
+func TestRuntimeBuilderExplicitRouteByEvent(t *testing.T) {
 	event := av.Event{Type: av.EventStats}
 	source := &runtimeTestSource{
 		name:    "source",
@@ -510,8 +510,8 @@ func TestRuntimeBuilderExplicitEventRoute(t *testing.T) {
 		Sink(stats).
 		Sink(loss).
 		Routes(
-			EventRoute("source", av.EventStats, "stats"),
-			EventRoute("source", av.EventPacketLoss, "loss"),
+			Route("source", "stats").ByEvent(av.EventStats),
+			Route("source", "loss").ByEvent(av.EventPacketLoss),
 		).
 		Build(context.Background())
 	if err != nil {

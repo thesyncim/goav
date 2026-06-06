@@ -16,8 +16,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Graphs are named sources, stages, sinks, and routes; fanout is one route with
   multiple targets.
 - A route may match all media, one stream, or one event type.
-- The explicit graph API reads as `goav.Route("source", "sink")` or
-  `goav.StreamRoute("source", "video", "sink")`.
+- The explicit graph API reads as `goav.Route("source", "sink")`; stream and
+  event routing use `.ByStream(...)` and `.ByEvent(...)` on the same route.
 - Rendered graph nodes can carry short workflow details without changing the
   simple node-to-node API; routed edges render as `stream=video` or
   `event=packet_loss`.
@@ -146,7 +146,7 @@ builder := rt.New().
     Sink(preview).
     Sink(stats).
     Routes(
-        goav.StreamRoute("source", "audio", "decode"),
+        goav.Route("source", "decode").ByStream("audio"),
         goav.Route("decode", "record", "preview", "stats"),
     )
 
@@ -220,8 +220,8 @@ Implemented slices:
 - Fluent `Transcode(plan)` compiler for one selected decode feeding multiple
   named encode/output branches, including resize/resample branch stages when
   filter factories are registered.
-- Fluent `Routes(goav.Route(...))`, `StreamRoute(...)`, and `EventRoute(...)`
-  helpers for explicit application graphs.
+- Fluent `Routes(goav.Route(...))` for explicit application graphs, with
+  stream/event matching as route modifiers.
 - First-class route helpers for direct graph composition without extra graph
   concepts.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
@@ -280,8 +280,8 @@ Implemented slices:
 - Runtime RTP/WebRTC packet-reader record/fanout builds are covered through
   buffered execution with policy-bounded copies of depacketizer-owned packet
   payloads.
-- The friendly explicit graph surface now has one route shape: `Routes(...)`
-  with `Route`, `StreamRoute`, or `EventRoute`.
+- The friendly explicit graph surface now has one route constructor:
+  `Routes(goav.Route(...))`, with optional `.ByStream(...)` or `.ByEvent(...)`.
 - Tagged AV1 decode now registers a factory behind `goav_goav1`, consumes
   depacketized low-overhead OBU payloads through caller-owned `DecoderState`,
   can provision conservative runtime state for high-level builders, maps

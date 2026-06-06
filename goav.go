@@ -66,11 +66,3 @@ func SelectVideo() av.StreamSelector {
 func Route(from string, to ...string) pipeline.Route {
 	return pipeline.Connect(from, to...)
 }
-
-func StreamRoute(from string, stream av.StreamID, to ...string) pipeline.Route {
-	return Route(from, to...).ByStream(stream)
-}
-
-func EventRoute(from string, event av.EventType, to ...string) pipeline.Route {
-	return Route(from, to...).ByEvent(event)
-}
