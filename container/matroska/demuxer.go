@@ -786,6 +786,7 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 	haveBlock := false
 	referenceSeen := false
 	durationTicks := uint64(0)
+	var payloadErr error
 	for d.groupLimit.N > 0 {
 		child, err := d.groupReader.ReadHeader()
 		if err != nil {
@@ -793,8 +794,17 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 		}
 		switch child.ID {
 		case idBlock:
+			if payloadErr != nil {
+				if err := skipElement(d.groupReader, child); err != nil {
+					return err
+				}
+				continue
+			}
 			if err := d.readBlockPayload(d.groupReader, child.Size.Value, dst, false); err != nil {
-				return err
+				if !errors.Is(err, ErrPayloadTooSmall) {
+					return err
+				}
+				payloadErr = err
 			}
 			haveBlock = true
 		case idBlockDuration:
@@ -832,6 +842,9 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 	if d.laceFrameCount > 0 {
 		d.laceKeyframe = !referenceSeen
 	}
+	if payloadErr != nil {
+		return payloadErr
+	}
 	return nil
 }
 
@@ -863,6 +876,9 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 	}
 	frameSize := int(d.blockLimit.N)
 	if cap(dst.Data) < frameSize {
+		if err := drainLimited(&d.blockLimit); err != nil {
+			return err
+		}
 		return ErrPayloadTooSmall
 	}
 	dst.Data = dst.Data[:frameSize]
@@ -879,6 +895,14 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 		dst.Discardable = flags&simpleBlockDiscardable != 0
 	}
 	return nil
+}
+
+func drainLimited(r *io.LimitedReader) error {
+	if r.N <= 0 {
+		return nil
+	}
+	_, err := io.CopyN(io.Discard, r, r.N)
+	return err
 }
 
 func (d *Demuxer) readLacedBlockPayload(trackID uint64, timecode int64, flags byte, lacing byte, dst *Packet, simple bool) error {

@@ -541,6 +541,99 @@ func TestReadPacketRequiresCapacity(t *testing.T) {
 	}
 }
 
+func TestReadPacketSmallBufferSkipsSimpleBlock(t *testing.T) {
+	data := makeMatroskaData(t, 2)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 1)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrPayloadTooSmall) {
+		t.Fatalf("err = %v, want ErrPayloadTooSmall", err)
+	}
+	packet.Data = make([]byte, 0, 8)
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TimeNS != 20_000_000 || !bytes.Equal(packet.Data, []byte{1, 2, 3, 4}) {
+		t.Fatalf("packet = %+v data=%v", packet, packet.Data)
+	}
+}
+
+func TestReadPacketSmallBufferSkipsBlockGroup(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     0,
+		DurationNS: 20_000_000,
+		Keyframe:   true,
+		Data:       []byte{1, 2, 3},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   40_000_000,
+		Keyframe: true,
+		Data:     []byte{4, 5},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 1)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrPayloadTooSmall) {
+		t.Fatalf("err = %v, want ErrPayloadTooSmall", err)
+	}
+	packet.Data = make([]byte, 0, 8)
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TimeNS != 40_000_000 || !bytes.Equal(packet.Data, []byte{4, 5}) {
+		t.Fatalf("packet = %+v data=%v", packet, packet.Data)
+	}
+}
+
+func TestReadPacketSmallBufferRetriesLacedFrame(t *testing.T) {
+	frames := [][]byte{{1, 2}, {3}, {4}}
+	data := makeLacedMatroskaData(t, simpleBlockLacingXiph, frames, 20_000_000)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 1)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrPayloadTooSmall) {
+		t.Fatalf("err = %v, want ErrPayloadTooSmall", err)
+	}
+	packet.Data = make([]byte, 0, 8)
+	for i := range frames {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatalf("read frame %d: %v", i, err)
+		}
+		if packet.TimeNS != int64(i)*20_000_000 || !bytes.Equal(packet.Data, frames[i]) {
+			t.Fatalf("frame %d packet = %+v data=%v", i, packet, packet.Data)
+		}
+	}
+}
+
 func TestWritePacketAllocs(t *testing.T) {
 	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
 	if err != nil {

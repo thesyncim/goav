@@ -130,6 +130,9 @@ The steady-state packet paths avoid allocations:
 - The demuxer reuses embedded `io.LimitedReader` and fixed scratch buffers for
   block parsing.
 - `ReadPacket` writes frame bytes into caller-owned `Packet.Data` capacity.
+  When a non-laced frame is too large, the demuxer returns
+  `ErrPayloadTooSmall` after skipping that packet so the next read stays
+  aligned; pending laced frames can be retried with a larger buffer.
 - Format adapters keep stream-to-track mappings in slices built during `Open`.
 
 Unit tests assert 0 alloc/op for steady-state `WritePacket` and `ReadPacket`.
