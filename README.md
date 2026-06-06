@@ -90,6 +90,8 @@ return goav.Transcode(goav.FileInput("input.webm", in)).
 
 - `goav.Record(input, output...)` records, remuxes, or fans out packet streams.
 - `goav.From(input).To(output...)` is the generic recipe form.
+  These packet-preserving forms write to `FileOutput` or `URIOutput`; decoded
+  frame sinks use `Decode` or a stream-scoped `Audio()`/`Video()` chain.
 - `goav.From(input).And(other).To(output)` records repeated RTP/WebRTC receive
   inputs through one shared output graph; explicit realtime input names must be
   unique.

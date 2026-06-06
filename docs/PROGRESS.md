@@ -555,6 +555,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 169. Emit the planned `pipeline.Spec` during recipe compiler resolution and let
     recipe `Describe` return that stored spec, while `Build` uses the same
     resolved migration compiler for the runnable graph. Done.
+170. Reject frame sinks on packet-preserving `Record` and generic
+    `From(input).To(...)` recipes during intent validation, with guidance to use
+    `Decode` or stream-scoped `Audio()`/`Video()` chains for decoded frames.
+    Done.
 
 ## First Vertical Slice
 

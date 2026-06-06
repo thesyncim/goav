@@ -120,6 +120,7 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateJobIntentPass(),
+		validatePacketJobOutputsPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerJobInputsPass(),
 		lowerJobStreamPass(),
@@ -178,6 +179,32 @@ func validateJobIntentPass() recipeCompilePass {
 			return &BuildError{Code: "output_missing", Operation: state.operation, Reason: "no output is configured"}
 		}
 		return validateOutputSpecs(state.operation, state.outputs)
+	}}
+}
+
+func validatePacketJobOutputsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate packet job outputs", fn: func(state *recipeCompileState) error {
+		if state.job == nil || state.job.stream != nil {
+			return nil
+		}
+		for i := range state.outputs {
+			if state.outputs[i].sink == nil {
+				continue
+			}
+			return &BuildError{
+				Code:      "output_kind_invalid",
+				Operation: state.operation,
+				Node:      state.outputs[i].label(fmt.Sprintf("output-%d", i)),
+				Reason:    "packet-preserving recipes write to muxed outputs, not frame sinks",
+				Suggestions: []string{
+					"use goav.Decode(input, goav.FrameSink(sink)) for decoded frames when the input has one obvious stream",
+					"use goav.From(input).Audio().To(goav.FrameSink(sink)) or .Video().To(...) when stream selection matters",
+					"use goav.FileOutput(...) or goav.URIOutput(...) with goav.Record(...) for packet-preserving output",
+				},
+				Cause: ErrUnsupportedBuild,
+			}
+		}
+		return nil
 	}}
 }
 

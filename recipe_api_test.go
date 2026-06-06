@@ -492,6 +492,25 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 	}
 }
 
+func TestRecordRecipeRejectsFrameSinkOutput(t *testing.T) {
+	_, err := goav.Record(
+		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		})),
+	).Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_kind_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "packet-preserving recipes") ||
+		!strings.Contains(err.Error(), "goav.Decode(input, goav.FrameSink") ||
+		!strings.Contains(err.Error(), "goav.FileOutput") {
+		t.Fatalf("err = %v, want packet output guidance", err)
+	}
+}
+
 func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
 	_, err := goav.Record(
 		goav.FileInput("input.ogg", strings.NewReader("")),
