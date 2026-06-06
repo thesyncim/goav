@@ -557,6 +557,19 @@ func TestNilFlowIsActionable(t *testing.T) {
 	}
 }
 
+func TestNilFlowBranchIsActionable(t *testing.T) {
+	var flow *goav.AudioFlowBuilder
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Tee(flow.To(goav.FileOutput("voice.ogg", io.Discard))).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_invalid" {
+		t.Fatalf("err = %v, want flow_invalid", err)
+	}
+}
+
 func TestFlowTeeRejectsOuterOutputsAndDuplicateTee(t *testing.T) {
 	voice := goav.AudioFlow("voice").OpusVoice()
 
@@ -576,6 +589,26 @@ func TestFlowTeeRejectsOuterOutputsAndDuplicateTee(t *testing.T) {
 	_, err = audio.Tee(voice.To(goav.FileOutput("other.ogg", io.Discard))).Describe()
 	if !errors.As(err, &buildErr) || buildErr.Code != "flow_duplicate" {
 		t.Fatalf("err = %v, want flow_duplicate", err)
+	}
+}
+
+func TestFlowRejectsTransformsAfterEncode(t *testing.T) {
+	flow := goav.AudioFlow("voice").
+		OpusVoice().
+		Resample(16_000, goav.Mono)
+
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(flow).
+		To(goav.FileOutput("voice.ogg", io.Discard)).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" {
+		t.Fatalf("err = %v, want stream_step_after_encode", err)
+	}
+	if buildErr.Operation != "build flow" || !strings.Contains(err.Error(), "resample") {
+		t.Fatalf("err = %v, want flow resample guidance", err)
 	}
 }
 

@@ -136,6 +136,8 @@ Reusable components should document these points as they mature:
 
 These patterns are the component shapes recipes should compile toward. They
 are also the shapes advanced users can wire manually with `Runtime.Graph()`.
+The direct component tests capture `pipeline.Spec` before execution and compare
+it after `Run`, so the graph users inspect is the graph that actually ran.
 
 ### RTP Opus Decode
 

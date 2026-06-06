@@ -743,6 +743,17 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     one long-lived reader, feeding that reader into `rtpav.Source`, and
     verifying replacement epoch packet output, graph spec details, stats,
     lifecycle closure, and caller-owned session lifetime. Done.
+215. Prove component graph specs stay stable across execution: all direct
+    component graph tests now capture `pipeline.Spec` before `Run` and compare
+    it afterward for file remux fanout, custom stages, RTP Opus decode, WebRTC
+    TrackSet receive, codec EOS flush, and mux write events. Done.
+216. Keep flow ordering consistent with stream recipes: `AudioFlow` and
+    `VideoFlow` now reject transforms declared after a terminal encoder instead
+    of silently normalizing call order, preserving the one-chain rule that
+    transforms come first, one encoder comes last, then outputs are attached;
+    the sealed `Flow` implementation now uses a private snapshot hook and
+    typed-nil flows or branches become structured build errors instead of
+    panics. Done.
 
 ## First Vertical Slice
 

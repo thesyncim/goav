@@ -27,6 +27,10 @@ type flowBuilder struct {
 	spec streamFlowSpec
 }
 
+type flowSnapshotter interface {
+	flowSpec() streamFlowSpec
+}
+
 // FlowBranch is a flow routed to one or more outputs.
 type FlowBranch struct {
 	spec    streamFlowSpec
@@ -56,10 +60,16 @@ type VideoFlowBuilder struct {
 }
 
 func (b *AudioFlowBuilder) Name() string {
+	if b == nil {
+		return ""
+	}
 	return b.flowBuilder.name()
 }
 
 func (b *VideoFlowBuilder) Name() string {
+	if b == nil {
+		return ""
+	}
 	return b.flowBuilder.name()
 }
 
@@ -68,11 +78,17 @@ func (b *AudioFlowBuilder) isFlow() {}
 func (b *VideoFlowBuilder) isFlow() {}
 
 func (b *AudioFlowBuilder) Resample(sampleRate int, channels int, options ...audioOption) *AudioFlowBuilder {
+	if b == nil {
+		return b
+	}
 	b.flowBuilder.transform(Resample(sampleRate, channels, options...))
 	return b
 }
 
 func (b *AudioFlowBuilder) Encode(codec CodecSpec) *AudioFlowBuilder {
+	if b == nil {
+		return b
+	}
 	b.flowBuilder.encode(codec)
 	return b
 }
@@ -90,19 +106,31 @@ func (b *AudioFlowBuilder) OpusMusic() *AudioFlowBuilder {
 }
 
 func (b *AudioFlowBuilder) To(outputs ...OutputSpec) FlowBranch {
+	if b == nil {
+		return newFlowBranch(streamFlowSpec{err: nilFlowError()}, outputs...)
+	}
 	return b.flowBuilder.to(outputs...)
 }
 
 func (b *AudioFlowBuilder) flowSpec() streamFlowSpec {
+	if b == nil {
+		return streamFlowSpec{err: nilFlowError()}
+	}
 	return b.flowBuilder.snapshot()
 }
 
 func (b *VideoFlowBuilder) Resize(width int, height int, options ...resizeOption) *VideoFlowBuilder {
+	if b == nil {
+		return b
+	}
 	b.flowBuilder.transform(Resize(width, height, options...))
 	return b
 }
 
 func (b *VideoFlowBuilder) Encode(codec CodecSpec) *VideoFlowBuilder {
+	if b == nil {
+		return b
+	}
 	b.flowBuilder.encode(codec)
 	return b
 }
@@ -116,10 +144,16 @@ func (b *VideoFlowBuilder) VP9(bitrate int, options ...codecOption) *VideoFlowBu
 }
 
 func (b *VideoFlowBuilder) To(outputs ...OutputSpec) FlowBranch {
+	if b == nil {
+		return newFlowBranch(streamFlowSpec{err: nilFlowError()}, outputs...)
+	}
 	return b.flowBuilder.to(outputs...)
 }
 
 func (b *VideoFlowBuilder) flowSpec() streamFlowSpec {
+	if b == nil {
+		return streamFlowSpec{err: nilFlowError()}
+	}
 	return b.flowBuilder.snapshot()
 }
 
@@ -132,6 +166,10 @@ func (b *flowBuilder) name() string {
 
 func (b *flowBuilder) transform(spec TransformSpec) {
 	if b == nil {
+		return
+	}
+	if codecIntentSet(b.spec.encode) {
+		b.setErr(streamStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), flowTransformStepName(spec), b.spec.encode))
 		return
 	}
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpec(spec))
@@ -149,7 +187,7 @@ func (b *flowBuilder) encode(codec CodecSpec) {
 }
 
 func (b *flowBuilder) to(outputs ...OutputSpec) FlowBranch {
-	return FlowBranch{spec: b.snapshot(), outputs: append([]OutputSpec(nil), outputs...)}
+	return newFlowBranch(b.snapshot(), outputs...)
 }
 
 func (b *flowBuilder) snapshot() streamFlowSpec {
@@ -171,21 +209,11 @@ func flowSpecFrom(flow Flow) (streamFlowSpec, error) {
 	if flow == nil {
 		return streamFlowSpec{}, nilFlowError()
 	}
-	var spec streamFlowSpec
-	switch f := flow.(type) {
-	case *AudioFlowBuilder:
-		if f == nil {
-			return streamFlowSpec{}, nilFlowError()
-		}
-		spec = f.flowSpec()
-	case *VideoFlowBuilder:
-		if f == nil {
-			return streamFlowSpec{}, nilFlowError()
-		}
-		spec = f.flowSpec()
-	default:
+	snapshotter, ok := flow.(flowSnapshotter)
+	if !ok {
 		return streamFlowSpec{}, nilFlowError()
 	}
+	spec := snapshotter.flowSpec()
 	if spec.err != nil {
 		return spec, spec.err
 	}
@@ -214,6 +242,21 @@ func cloneTransformSpec(spec TransformSpec) TransformSpec {
 		out.Resample = &resample
 	}
 	return out
+}
+
+func newFlowBranch(spec streamFlowSpec, outputs ...OutputSpec) FlowBranch {
+	return FlowBranch{spec: spec, outputs: append([]OutputSpec(nil), outputs...)}
+}
+
+func flowTransformStepName(spec TransformSpec) string {
+	switch {
+	case spec.Resize != nil:
+		return "resize"
+	case spec.Resample != nil:
+		return "resample"
+	default:
+		return "transform"
+	}
 }
 
 func duplicateFlowEncodeError(name string, first CodecSpec, second CodecSpec) error {

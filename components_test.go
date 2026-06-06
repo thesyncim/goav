@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"io"
+	"reflect"
 	"testing"
 
 	"github.com/pion/rtcp"
@@ -96,6 +97,7 @@ func TestComponentFileRemuxFanout(t *testing.T) {
 	if err := graph.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
+	assertComponentSpecStable(t, graph, spec)
 	if archiveMuxer.writes != 1 || previewMuxer.writes != 1 ||
 		!streamIDsEqual(archiveMuxer.writtenStreams, []av.StreamID{"audio"}) ||
 		!streamIDsEqual(previewMuxer.writtenStreams, []av.StreamID{"audio"}) ||
@@ -151,9 +153,11 @@ func TestComponentCustomStageForwardsEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	spec := graph.Spec()
 	if err := graph.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	assertComponentSpecStable(t, graph, spec)
 	if source.starts != 1 || stage.events != 3 || sink.events != 3 || sink.lastEvent != av.EventEndOfStream {
 		t.Fatalf("starts=%d stage events=%d sink events=%d last=%s", source.starts, stage.events, sink.events, sink.lastEvent)
 	}
@@ -266,6 +270,7 @@ func TestComponentRTPOpusDecodeGraph(t *testing.T) {
 	if err := graph.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
+	assertComponentSpecStable(t, graph, spec)
 	if reader.reads != 1 || sink.frames != 1 || sink.events != 1 || sink.lastEvent != av.EventEndOfStream {
 		t.Fatalf("reads=%d frames=%d events=%d last=%s", reader.reads, sink.frames, sink.events, sink.lastEvent)
 	}
@@ -361,6 +366,7 @@ func TestComponentWebRTCTrackSetFeedsRTPSource(t *testing.T) {
 	if err := graph.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
+	assertComponentSpecStable(t, graph, spec)
 	if adapter.readers[0].reads != 1 || sink.packets != 1 || sink.events != 1 || sink.lastEvent != av.EventEndOfStream {
 		t.Fatalf("reads=%d packets=%d events=%d last=%s",
 			adapter.readers[0].reads, sink.packets, sink.events, sink.lastEvent)
@@ -424,9 +430,11 @@ func TestComponentCodecStageFlushesOnEOS(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	spec := graph.Spec()
 	if err := graph.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	assertComponentSpecStable(t, graph, spec)
 	if decoder.events != 1 || decoder.flushes != 1 {
 		t.Fatalf("decoder events=%d flushes=%d", decoder.events, decoder.flushes)
 	}
@@ -486,9 +494,11 @@ func TestComponentMuxStageEmitsWriteEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	spec := graph.Spec()
 	if err := graph.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	assertComponentSpecStable(t, graph, spec)
 	if muxer.writes != 1 || muxer.lastPacket == nil || muxer.lastPacket.StreamID != "audio" {
 		t.Fatalf("writes=%d packet=%+v", muxer.writes, muxer.lastPacket)
 	}
@@ -513,6 +523,17 @@ type componentEventSource struct {
 	msg    pipeline.Message
 	starts int
 	closed bool
+}
+
+type componentSpecGraph interface {
+	Spec() pipeline.Spec
+}
+
+func assertComponentSpecStable(t *testing.T, graph componentSpecGraph, before pipeline.Spec) {
+	t.Helper()
+	if after := graph.Spec(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("component graph spec changed after run:\nbefore=%+v\nafter=%+v", before, after)
+	}
 }
 
 func (s *componentEventSource) Name() string {
