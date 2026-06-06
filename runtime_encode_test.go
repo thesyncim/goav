@@ -135,8 +135,8 @@ func TestRuntimeBuilderInputDecodeFilterEncodeOutputs(t *testing.T) {
 	if decoder.decodes != 1 || decoder.flushes != 1 || encoder.encodes != 1 || encoder.flushes != 1 {
 		t.Fatalf("decodes=%d decoder flushes=%d encodes=%d encoder flushes=%d", decoder.decodes, decoder.flushes, encoder.encodes, encoder.flushes)
 	}
-	if filter.count != 2 {
-		t.Fatalf("filter count = %d, want frame and EOS", filter.count)
+	if filter.count != 3 {
+		t.Fatalf("filter count = %d, want stream event, frame, and EOS", filter.count)
 	}
 	if encoderFactory.config.Stream.ID != "audio" ||
 		encoderFactory.config.Parameters.ID != av.CodecPCM ||

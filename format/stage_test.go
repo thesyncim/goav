@@ -97,6 +97,7 @@ type formatEmitter struct {
 	frames     int
 	lastPacket av.StreamID
 	lastEvent  av.EventType
+	lastStream av.StreamID
 	order      [4]pipeline.MessageKind
 	orderLen   int
 }
@@ -112,6 +113,7 @@ func (e *formatEmitter) Emit(_ context.Context, msg *pipeline.Message) error {
 		e.events++
 		if msg.Event != nil {
 			e.lastEvent = msg.Event.Type
+			e.lastStream = msg.Event.StreamID
 		}
 	case pipeline.MessageFrame:
 		e.frames++
@@ -129,6 +131,7 @@ func (e *formatEmitter) Reset() {
 	e.frames = 0
 	e.lastPacket = ""
 	e.lastEvent = ""
+	e.lastStream = ""
 	e.order = [4]pipeline.MessageKind{}
 	e.orderLen = 0
 }
@@ -143,9 +146,8 @@ func TestDemuxSourceEmitsStreamsEventsPacketsAndEOS(t *testing.T) {
 	}
 	packet := av.Packet{}
 	source, err := NewDemuxSource(DemuxSourceConfig{
-		Demuxer:          demuxer,
-		Result:           ReadResult{Packet: &packet, Events: make([]av.Event, 0, 1)},
-		EmitStreamEvents: true,
+		Demuxer: demuxer,
+		Result:  ReadResult{Packet: &packet, Events: make([]av.Event, 0, 1)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -171,6 +173,26 @@ func TestDemuxSourceEmitsStreamsEventsPacketsAndEOS(t *testing.T) {
 	}
 }
 
+func TestDemuxSourceEOSUsesSingleStream(t *testing.T) {
+	demuxer := &fakeDemuxer{streams: []av.Stream{{ID: "audio", Epoch: 7}}}
+	packet := av.Packet{}
+	source, err := NewDemuxSource(DemuxSourceConfig{
+		Demuxer: demuxer,
+		Result:  ReadResult{Packet: &packet},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	emitter := &formatEmitter{}
+
+	if err := source.Start(context.Background(), emitter); err != nil {
+		t.Fatal(err)
+	}
+	if emitter.events != 2 || emitter.lastEvent != av.EventEndOfStream || emitter.lastStream != "audio" {
+		t.Fatalf("events=%d event=%s stream=%s", emitter.events, emitter.lastEvent, emitter.lastStream)
+	}
+}
+
 func TestDemuxSourceEventOnlyReadDoesNotEmitPacket(t *testing.T) {
 	demuxer := &fakeDemuxer{
 		steps: []demuxStep{{event: av.EventStats, stream: "audio"}},
@@ -189,27 +211,6 @@ func TestDemuxSourceEventOnlyReadDoesNotEmitPacket(t *testing.T) {
 		t.Fatal(err)
 	}
 	if emitter.packets != 0 || emitter.events != 2 {
-		t.Fatalf("packets=%d events=%d", emitter.packets, emitter.events)
-	}
-}
-
-func TestDemuxSourceDropEOS(t *testing.T) {
-	demuxer := &fakeDemuxer{}
-	packet := av.Packet{}
-	source, err := NewDemuxSource(DemuxSourceConfig{
-		Demuxer:         demuxer,
-		Result:          ReadResult{Packet: &packet},
-		DropEndOfStream: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	emitter := &formatEmitter{}
-
-	if err := source.Start(context.Background(), emitter); err != nil {
-		t.Fatal(err)
-	}
-	if emitter.events != 0 || emitter.packets != 0 {
 		t.Fatalf("packets=%d events=%d", emitter.packets, emitter.events)
 	}
 }
@@ -250,9 +251,8 @@ func TestDemuxSourceAllocs(t *testing.T) {
 	}
 	packet := av.Packet{}
 	source, err := NewDemuxSource(DemuxSourceConfig{
-		Demuxer:         demuxer,
-		Result:          ReadResult{Packet: &packet},
-		DropEndOfStream: true,
+		Demuxer: demuxer,
+		Result:  ReadResult{Packet: &packet},
 	})
 	if err != nil {
 		t.Fatal(err)

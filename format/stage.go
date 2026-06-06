@@ -17,10 +17,6 @@ type DemuxSourceConfig struct {
 	Demuxer Demuxer
 	// Result owns the packet pointer and event slice reused for every read.
 	Result ReadResult
-	// EmitStreamEvents emits initial stream_added events from Demuxer.Streams.
-	EmitStreamEvents bool
-	// DropEndOfStream suppresses the synthetic EOS event emitted on io.EOF.
-	DropEndOfStream bool
 }
 
 type MuxStageConfig struct {
@@ -46,7 +42,6 @@ type DemuxSource struct {
 	eos     av.Event
 	streams []av.Stream
 	events  []av.Event
-	dropEOS bool
 	closed  bool
 }
 
@@ -83,11 +78,8 @@ func NewDemuxSource(config DemuxSourceConfig) (*DemuxSource, error) {
 		detail:  config.Detail,
 		demuxer: config.Demuxer,
 		result:  config.Result,
-		dropEOS: config.DropEndOfStream,
 	}
-	if config.EmitStreamEvents {
-		source.initStreamEvents(config.Demuxer.Streams())
-	}
+	source.initStreamEvents(config.Demuxer.Streams())
 	return source, nil
 }
 
@@ -259,11 +251,12 @@ func (s *DemuxSource) emitPacket(ctx context.Context, emitter pipeline.Emitter, 
 }
 
 func (s *DemuxSource) emitEndOfStream(ctx context.Context, emitter pipeline.Emitter) error {
-	if s.dropEOS {
-		return nil
-	}
 	s.eos.Reset()
 	s.eos.Type = av.EventEndOfStream
+	if len(s.streams) == 1 {
+		s.eos.StreamID = s.streams[0].ID
+		s.eos.Epoch = s.streams[0].Epoch
+	}
 	s.message.Kind = pipeline.MessageEvent
 	s.message.Packet = nil
 	s.message.Frame = nil

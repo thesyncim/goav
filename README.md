@@ -178,7 +178,8 @@ as private graph compilers that must support both `Describe` and `Build`.
   surface, drop-policy decisions, bounded copy slots for borrowed media buffers,
   detail-aware graph specs rendered through `Spec.Render(...)` or
   `Spec.Write(...)`.
-- `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
+- `format`: probe/demux/mux contracts plus demux source and mux stage adapters
+  with stream-added and EOS lifecycle events.
 - `codec`: decoder/encoder contracts, realtime decode bounds, registry,
   optional decode-state provisioning, decoder and encoder pipeline stages.
 - `rtpav`: Pion RTP/RTCP boundary, payload map, loss detection, jitter ring,
