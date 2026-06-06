@@ -259,7 +259,7 @@ Implemented today:
 - function adapters for packet, frame, event, and sink hooks;
 - handle-based expert graph wiring through `Runtime.Graph()`;
 - runtime graph compilers for remux/fanout, live RTP record/fanout, selected
-  decode, selected encode, and shared-decode transcode plans;
+  decode, selected encode, and shared-decode transcode recipes;
 - pure-Go RTP/WebRTC receive boundaries and optional codec/filter/format
   adapters.
 

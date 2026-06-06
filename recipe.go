@@ -1831,6 +1831,8 @@ type namedOutputSpec struct {
 	output OutputSpec
 }
 
+const transcodeRecipeOperation = "build transcode"
+
 func Transcode(input InputSpec, options ...JobOption) *TranscodeJob {
 	config := jobConfig{runtime: Default()}
 	for i := range options {
@@ -1896,7 +1898,7 @@ func (j *TranscodeJob) Intent() Intent {
 	return intent
 }
 
-func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
+func (j *TranscodeJob) plan() (transcodepkg.Plan, error) {
 	if j.err != nil {
 		return transcodepkg.Plan{}, j.err
 	}
@@ -1906,18 +1908,18 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 	if j.input.rtp != nil {
 		return transcodepkg.Plan{}, &BuildError{
 			Code:      "unsupported_input",
-			Operation: "plan transcode",
-			Reason:    "RTP transcode recipes are not lowered to transcode.Plan yet",
+			Operation: transcodeRecipeOperation,
+			Reason:    "RTP transcode recipes are not supported by the transcode recipe compiler yet",
 			Suggestions: []string{
 				"use Record(...) for packet recording",
-				"use the advanced builder for RTP decode/filter/encode paths until intent lowering covers RTP transcode",
+				"use From(...).Audio() or From(...).Video() for one selected RTP receive path",
 			},
 		}
 	}
 	if len(j.streams) == 0 {
 		return transcodepkg.Plan{}, &BuildError{
 			Code:      "stream_missing",
-			Operation: "plan transcode",
+			Operation: transcodeRecipeOperation,
 			Reason:    "no audio or video branches are configured",
 			Suggestions: []string{
 				"add a video branch such as .Video(\"720p\").Resize(...).VP9(...).To(...)",
@@ -1932,13 +1934,13 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 		if stream.name == "" {
 			return transcodepkg.Plan{}, transcodeBranchNameMissingError(i, stream)
 		}
-		if err := validateRecipeStreamSelector("plan transcode", transcodeBranchName(stream), stream.selector); err != nil {
+		if err := validateRecipeStreamSelector(transcodeRecipeOperation, transcodeBranchName(stream), stream.selector); err != nil {
 			return transcodepkg.Plan{}, err
 		}
 		if stream.encode.ID == "" && !stream.encode.Copy {
 			return transcodepkg.Plan{}, &BuildError{
 				Code:      "encode_missing",
-				Operation: "plan transcode",
+				Operation: transcodeRecipeOperation,
 				Node:      stream.name,
 				Reason:    "stream has no codec target",
 				Suggestions: []string{
@@ -1946,13 +1948,13 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 				},
 			}
 		}
-		if err := validateRecipeEncode(stream.encode, "plan transcode", stream.name); err != nil {
+		if err := validateRecipeEncode(stream.encode, transcodeRecipeOperation, stream.name); err != nil {
 			return transcodepkg.Plan{}, err
 		}
 		if len(stream.labels) == 0 {
 			return transcodepkg.Plan{}, &BuildError{
 				Code:      "output_missing",
-				Operation: "plan transcode",
+				Operation: transcodeRecipeOperation,
 				Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
 				Reason:    "stream has no output target",
 				Suggestions: []string{
@@ -1975,7 +1977,7 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 	outputs := make(map[string]OutputSpec, len(j.outputs))
 	outputOrder := make([]string, 0, len(j.outputs))
 	for i := range j.outputs {
-		if err := j.outputs[i].output.validate("plan transcode", fmt.Sprintf("output-%d", i)); err != nil {
+		if err := j.outputs[i].output.validate(transcodeRecipeOperation, fmt.Sprintf("output-%d", i)); err != nil {
 			return transcodepkg.Plan{}, err
 		}
 		name := j.outputs[i].name
@@ -1996,7 +1998,7 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 			}
 			return transcodepkg.Plan{}, &BuildError{
 				Code:      "output_missing",
-				Operation: "plan transcode",
+				Operation: transcodeRecipeOperation,
 				Node:      stream.name,
 				Reason:    "output " + label + " is referenced but not defined",
 				Suggestions: []string{
@@ -2077,7 +2079,7 @@ func (j *TranscodeJob) builder() (builderAPI, error) {
 	if j.runtime == nil {
 		return nil, &BuildError{Code: "runtime_missing", Operation: "build transcode", Reason: "no runtime is configured"}
 	}
-	plan, err := j.Plan()
+	plan, err := j.plan()
 	if err != nil {
 		return nil, err
 	}
@@ -2106,7 +2108,7 @@ type StreamBuilder struct {
 func (b *StreamBuilder) Resize(width int, height int, options ...ResizeOption) *StreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
-		b.job.setErr(streamStepAfterEncodeError("plan transcode", transcodeBranchName(*stream), "resize", stream.encode))
+		b.job.setErr(streamStepAfterEncodeError(transcodeRecipeOperation, transcodeBranchName(*stream), "resize", stream.encode))
 		return b
 	}
 	stream.transforms = append(stream.transforms, Resize(width, height, options...))
@@ -2116,7 +2118,7 @@ func (b *StreamBuilder) Resize(width int, height int, options ...ResizeOption) *
 func (b *StreamBuilder) Resample(sampleRate int, channels int, options ...AudioOption) *StreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
-		b.job.setErr(streamStepAfterEncodeError("plan transcode", transcodeBranchName(*stream), "resample", stream.encode))
+		b.job.setErr(streamStepAfterEncodeError(transcodeRecipeOperation, transcodeBranchName(*stream), "resample", stream.encode))
 		return b
 	}
 	stream.transforms = append(stream.transforms, Resample(sampleRate, channels, options...))
@@ -2150,7 +2152,7 @@ func (b *StreamBuilder) To(labels ...string) *TranscodeJob {
 func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 	return &BuildError{
 		Code:      "output_label_invalid",
-		Operation: "plan transcode",
+		Operation: transcodeRecipeOperation,
 		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
 		Reason:    "transcode output labels must be non-empty",
 		Details: []string{
@@ -2167,7 +2169,7 @@ func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 func transcodeEmptyOutputDefinitionLabelError(output OutputSpec) error {
 	err := &BuildError{
 		Code:      "output_label_invalid",
-		Operation: "plan transcode",
+		Operation: transcodeRecipeOperation,
 		Node:      output.label("output"),
 		Reason:    "transcode output labels must be non-empty",
 		Suggestions: []string{
@@ -2185,7 +2187,7 @@ func transcodeEmptyOutputDefinitionLabelError(output OutputSpec) error {
 func transcodeDuplicateOutputError(name string) error {
 	return &BuildError{
 		Code:      "output_duplicate",
-		Operation: "plan transcode",
+		Operation: transcodeRecipeOperation,
 		Node:      name,
 		Reason:    fmt.Sprintf("output label %q is defined more than once", name),
 		Suggestions: []string{
@@ -2199,7 +2201,7 @@ func transcodeDuplicateOutputError(name string) error {
 func transcodeDuplicateBranchError(name string, firstIndex int, secondIndex int) error {
 	return &BuildError{
 		Code:      "stream_duplicate",
-		Operation: "plan transcode",
+		Operation: transcodeRecipeOperation,
 		Node:      name,
 		Reason:    fmt.Sprintf("transcode branch name %q is defined more than once", name),
 		Details: []string{
@@ -2218,7 +2220,7 @@ func transcodeDuplicateBranchError(name string, firstIndex int, secondIndex int)
 func transcodeBranchNameMissingError(index int, stream streamBuild) error {
 	return &BuildError{
 		Code:      "stream_name_missing",
-		Operation: "plan transcode",
+		Operation: transcodeRecipeOperation,
 		Node:      fmt.Sprintf("branch-%d", index),
 		Reason:    "transcode branches need stable names",
 		Details: []string{
@@ -2247,7 +2249,7 @@ func validateTranscodeBranchOutputLabels(stream streamBuild) error {
 func transcodeDuplicateBranchOutputError(stream streamBuild, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
 		Code:      "output_duplicate",
-		Operation: "plan transcode",
+		Operation: transcodeRecipeOperation,
 		Node:      transcodeBranchName(stream),
 		Reason:    fmt.Sprintf("branch routes to output %q more than once", label),
 		Details: []string{
@@ -2268,14 +2270,14 @@ func transcodeBranchTransformConfigs(stream streamBuild) (*filter.ResizeConfig, 
 	var resample *filter.ResampleConfig
 	for i := range stream.transforms {
 		transform := stream.transforms[i]
-		if err := validateTransformSpec("plan transcode", transcodeBranchName(stream), transform); err != nil {
+		if err := validateTransformSpec(transcodeRecipeOperation, transcodeBranchName(stream), transform); err != nil {
 			return nil, nil, err
 		}
 		switch {
 		case transform.Resize != nil && transform.Resample != nil:
 			return nil, nil, &BuildError{
 				Code:      "transform_invalid",
-				Operation: "plan transcode",
+				Operation: transcodeRecipeOperation,
 				Node:      transcodeBranchName(stream),
 				Reason:    "one transform cannot be both resize and resample",
 				Cause:     ErrUnsupportedBuild,
@@ -2301,7 +2303,7 @@ func transcodeBranchTransformConfigs(stream streamBuild) (*filter.ResizeConfig, 
 		default:
 			return nil, nil, &BuildError{
 				Code:      "transform_invalid",
-				Operation: "plan transcode",
+				Operation: transcodeRecipeOperation,
 				Node:      transcodeBranchName(stream),
 				Reason:    "empty stream transform",
 				Suggestions: []string{
@@ -2318,7 +2320,7 @@ func transcodeBranchTransformConfigs(stream streamBuild) (*filter.ResizeConfig, 
 func transcodeTransformMediaError(stream streamBuild, transform string, media string) error {
 	return &BuildError{
 		Code:      "transform_media_mismatch",
-		Operation: "plan transcode",
+		Operation: transcodeRecipeOperation,
 		Node:      transcodeBranchName(stream),
 		Reason:    transform + " applies to " + media + " branches",
 		Suggestions: []string{
@@ -2332,7 +2334,7 @@ func transcodeTransformMediaError(stream streamBuild, transform string, media st
 func transcodeTransformChainError(stream streamBuild) error {
 	return &BuildError{
 		Code:      "transform_chain_unsupported",
-		Operation: "plan transcode",
+		Operation: transcodeRecipeOperation,
 		Node:      transcodeBranchName(stream),
 		Reason:    "transcode branches currently support one media transform",
 		Suggestions: []string{
@@ -2350,7 +2352,7 @@ func transcodeBranchName(stream streamBuild) string {
 func (b *StreamBuilder) encode(codec CodecSpec) *StreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
-		b.job.setErr(duplicateStreamEncodeError("plan transcode", transcodeBranchName(*stream), stream.encode, codec))
+		b.job.setErr(duplicateStreamEncodeError(transcodeRecipeOperation, transcodeBranchName(*stream), stream.encode, codec))
 		return b
 	}
 	stream.encode = codec

@@ -79,7 +79,7 @@ The current compilers cover:
 - one or more RTP/WebRTC packet readers to selected-stream
   decode/filter/encode outputs through the same decoder, filter, encoder, and
   mux stages used by file or protocol inputs
-- `Transcode(plan)` for one input where all renditions resolve to the same
+- transcode recipes for one input where all renditions resolve to the same
   selected stream, sharing one decode and fanning frames into multiple named
   encoder branches; resize/resample configs insert filter stages through the
   filter registry, and outputs can receive all renditions or select branches by
@@ -250,8 +250,8 @@ That shape supports:
 
 ## Multi-output transcoding
 
-The `transcode` package exposes one explicit plan shape for renditions and
-output selection. The runtime compiler turns that plan into a graph with one
+The `transcode` package keeps the internal plan shape for renditions and output
+selection. The runtime compiler turns that plan into a graph with one
 shared selected decode, multiple encoder branches, and mux outputs that select
 renditions by name or label. Resize and resample branch configs become filter
 stages when matching factories are registered.

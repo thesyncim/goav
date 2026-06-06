@@ -74,6 +74,13 @@ func TestRuntimeInterfaceKeepsLegacyBuilderOutOfFrontDoor(t *testing.T) {
 	}
 }
 
+func TestTranscodeJobKeepsPlanIROutOfFrontDoor(t *testing.T) {
+	transcodeType := reflect.TypeOf((*goav.TranscodeJob)(nil))
+	if _, ok := transcodeType.MethodByName("Plan"); ok {
+		t.Fatal("TranscodeJob exposes transcode.Plan; use Intent, Describe, Build, or Run")
+	}
+}
+
 func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 	file, err := parser.ParseFile(token.NewFileSet(), "goav.go", nil, 0)
 	if err != nil {

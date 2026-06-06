@@ -37,8 +37,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh including new-codec depacketizer handoff when registered, replacement-stream identity adoption for single-stream readers, targeted old-ID replacement for multi-stream readers, stream-scoped EOS | richer multi-stream receive |
 | `webrtcav` | single `NewSession` PeerConnection entry, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit factory registry, event-preserving frame-transform pipeline stage | richer concrete filters later |
-| `transcode` | one explicit `Plan` contract, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
-| runtime | recipe front door with `Record`, `From`, `Decode`, `Transcode`, stream-scoped audio/video recipe builders, stream-local `Resize`/`Resample` transforms, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, private graph compiler loop, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for legacy compiler coverage, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | intent compiler passes and graph subflows |
+| `transcode` | internal `Plan` contract, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
+| runtime | recipe front door with `Record`, `From`, `Decode`, `Transcode`, stream-scoped audio/video recipe builders, stream-local `Resize`/`Resample` transforms, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, private graph compiler loop, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for legacy compiler coverage, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, shared-decode multi-rendition transcode recipe compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | intent compiler passes and graph subflows |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning from RTP decode bounds, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420/I422/I444 frame mapping with yuv420p/yuv422p/yuv444p accepted as aliases, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
@@ -224,9 +224,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     remove the old exported edge alias and standalone constructor helper, keep
     `Graph.Connect(route)` as the graph action, and route planner/build internals
     through the same type. Done.
-68. Prune unused public planning vocabulary: transcode keeps one explicit
-    `Plan` path through `Runtime.Transcode(plan)`, and graph specs use
-    `pipeline.NodeRef` directly instead of a duplicate node helper. Done.
+68. Prune unused public planning vocabulary: transcode keeps one internal
+    `Plan` path for compiler tests, and graph specs use `pipeline.NodeRef`
+    directly instead of a duplicate node helper. Done.
 69. Keep graph inspection core and diagram generation optional:
     `pipeline.Spec` is the structured runtime graph object, while text and
     diagram exporters live in the small `graphrender` utility package instead
@@ -461,7 +461,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     primitives live in `pipeline`, while recipe helpers still expose
     `FrameSink`, `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc`.
     Done.
-145. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+145. Hide `TranscodeJob`'s internal plan compiler method so users stay on
+    `Intent`, `Describe`, `Build`, and `Run`, while diagnostics speak in recipe
+    terms instead of `transcode.Plan`.
+    Done.
+146. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -538,8 +542,8 @@ Required proof:
   jobs. The graph shares the selected decode/filter prefix, requires an
   explicit target codec, forwards EOS far enough to flush encoders, and can fan
   one encoded packet stream to multiple mux outputs.
-- The runtime builder can plan and compile shared-decode transcode jobs from
-  `Transcode(plan).Build(ctx)` when all renditions resolve to one selected
+- The runtime builder can plan and compile shared-decode transcode recipe jobs
+  when all renditions resolve to one selected
   stream. Each rendition becomes a named encoded stream, outputs can select
   renditions by name or label, and graph description is equivalent before and
   after build. Resize and resample branch configs insert filter stages when
@@ -620,7 +624,7 @@ Required proof:
   shared drop controller, shares immutable media buffers, copies borrowed packet
   payloads and frame planes into policy-bounded preallocated slots, and rejects
   borrowed media when no copy bound is configured.
-- Runtime `Transcode(plan)` uses the same graph policy: a shared-decode
+- The shared-decode transcode compiler uses the same graph policy: a
   multi-rendition graph fails on unsafe encoder-owned packet payloads without a
   copy bound and delivers copied encoded payloads to multiple mux outputs when
   `CopyPacketBytes` is configured.
