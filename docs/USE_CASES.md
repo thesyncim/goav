@@ -18,19 +18,19 @@ The recipe front door accepts a Pion track directly and lowers it through the
 same RTP receive graph:
 
 ```go
-task, err := goav.Record(
+err := goav.Record(
     goav.WebRTCTrack(track),
     goav.FileOutput("recording.ivf", file),
-).Build(ctx)
+).Run(ctx)
 ```
 
 Repeated realtime tracks compose through the same front door:
 
 ```go
-task, err := goav.From(goav.WebRTCTrack(audio)).
+err := goav.From(goav.WebRTCTrack(audio)).
     And(goav.WebRTCTrack(video)).
     To(goav.FileOutput("call.webm", file)).
-    Build(ctx)
+    Run(ctx)
 ```
 
 Repeated realtime inputs need distinct names when names are explicit, such as
@@ -57,11 +57,11 @@ surface gaps and discontinuities, emit RTCP feedback, and produce codec packets.
 The high-level record/fanout shape accepts one or more packet readers:
 
 ```go
-task, err := goav.Record(
+err := goav.Record(
     goav.RTP(video).Name("video").Codec(goav.VP8()),
     goav.FileOutput("recording.ivf", file),
     goav.FileOutput("preview.ivf", preview),
-).Build(ctx)
+).Run(ctx)
 ```
 
 For multiple live readers, use `From(first).And(other...)` instead of wiring
@@ -72,21 +72,21 @@ factory is registered, and can continue into filters, an explicit target
 encoder, and one or more mux outputs:
 
 ```go
-task, err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
     To(goav.FrameSink(frames)).
-    Build(ctx)
+    Run(ctx)
 ```
 
 Audio and video transforms stay stream-local in the recipe:
 
 ```go
-task, err := goav.From(input).
+err := goav.From(input).
     Audio().
     Resample(16_000, goav.Mono).
     Opus(48_000).
     To(goav.FileOutput("preview.ogg", preview)).
-    Build(ctx)
+    Run(ctx)
 ```
 
 The `From` stream recipe has one selected stream chain. Use `Transcode` for
@@ -101,10 +101,10 @@ Use the same stream-scoped shape with a narrower selector. `StreamIndex(0)`
 selects the first stream when that is the intended one:
 
 ```go
-task, err := goav.From(input).
+err := goav.From(input).
     Audio(goav.StreamID("eng")).
     To(goav.FrameSink(frames)).
-    Build(ctx)
+    Run(ctx)
 ```
 
 ## Generic protocol or file ingest
@@ -117,12 +117,12 @@ The simplest supported shape is direct remux/fanout through registered format
 adapters:
 
 ```go
-task, err := goav.From(goav.FileInput("input.ivf", in)).
+err := goav.From(goav.FileInput("input.ivf", in)).
     To(
         goav.FileOutput("recording.ivf", recording),
         goav.FileOutput("preview.ivf", preview),
     ).
-    Build(ctx)
+    Run(ctx)
 ```
 
 For one input and packet-preserving outputs, `Record(input, output...)` is the
@@ -156,12 +156,12 @@ The first recipe compiler lowers the small branch DSL into the shared-decode
 plan used by the runtime graph. Outputs can receive one or more named branches:
 
 ```go
-task, err := goav.Transcode(goav.FileInput("input.webm", in)).
+err := goav.Transcode(goav.FileInput("input.webm", in)).
     Video("720p").Resize(1280, 720).VP9(2_000_000).To("archive").
     Video("360p").Resize(640, 360).VP9(600_000).To("preview").
     Output("archive", goav.FileOutput("archive.webm", archive)).
     Output("preview", goav.FileOutput("preview.webm", preview)).
-    Build(ctx)
+    Run(ctx)
 ```
 
 Branch names are required, unique handles; output labels are required, unique

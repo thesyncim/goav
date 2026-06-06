@@ -1029,6 +1029,22 @@ func TestDefaultRecordIVFRecipeRunShortcutRuns(t *testing.T) {
 	}
 }
 
+func TestDefaultFromFanoutRecipeRunShortcutRuns(t *testing.T) {
+	var recording bytes.Buffer
+	var preview bytes.Buffer
+	if err := goav.From(goav.FileInput("input.ivf", bytes.NewReader(tinyIVF()))).
+		To(
+			goav.FileOutput("recording.ivf", &recording),
+			goav.FileOutput("preview.ivf", &preview),
+		).
+		Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if recording.Len() == 0 || preview.Len() == 0 {
+		t.Fatalf("recording=%d preview=%d, want both non-empty", recording.Len(), preview.Len())
+	}
+}
+
 func TestDefaultRecordRecipeRunsWithExplicitUnnamedOutputFormat(t *testing.T) {
 	var out bytes.Buffer
 	job := goav.Record(

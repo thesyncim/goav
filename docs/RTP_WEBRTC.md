@@ -76,10 +76,10 @@ The session-level shape is:
 session, err := webrtcav.NewSession(ctx, webrtcav.SessionConfig{})
 answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
-task, err := goav.Record(
+err := goav.Record(
     goav.WebRTCRemote(remote),
     goav.FileOutput("recording.ivf", file),
-).Build(ctx)
+).Run(ctx)
 ```
 
 For multiple tracks, the orchestration boundary is explicit. Writing them to one
@@ -89,10 +89,10 @@ container requires a muxer adapter for that container:
 tracks, err := webrtcav.NewTrackSet(webrtcav.TrackSetConfig{Session: session})
 audio, err := tracks.Accept(ctx)
 video, err := tracks.Accept(ctx)
-task, err := goav.From(goav.RTP(audio.Reader)).
+err := goav.From(goav.RTP(audio.Reader)).
     And(goav.RTP(video.Reader)).
     To(goav.FileOutput("recording.webm", file)).
-    Build(ctx)
+    Run(ctx)
 ```
 
 When a later accepted track has the same stream ID, `TrackSet` calls
@@ -103,10 +103,10 @@ application graph.
 The recipe layer can also accept raw RTP packet readers directly:
 
 ```go
-task, err := goav.Record(
+err := goav.Record(
     goav.RTP(video).Name("video").Codec(goav.VP8()),
     goav.FileOutput("recording.ivf", file),
-).Build(ctx)
+).Run(ctx)
 ```
 
 Each reader can be a raw RTP receiver or a `webrtcav.TrackReader` produced from
@@ -124,10 +124,10 @@ the task event channel while mux stages receive packet messages for each output.
 It can also decode a selected live stream directly into frames:
 
 ```go
-task, err := goav.From(goav.WebRTCTrack(track)).
+err := goav.From(goav.WebRTCTrack(track)).
     Audio().
     To(goav.FrameSink(frames)).
-    Build(ctx)
+    Run(ctx)
 ```
 
 For repeated RTP/WebRTC inputs, the generated graph feeds all sources into the
@@ -149,7 +149,7 @@ The same selected live stream can continue into an encoder and one or more mux
 outputs when the target codec is explicit:
 
 ```go
-task, err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
     Do(resample).
     Opus(96_000).
@@ -157,7 +157,7 @@ task, err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
         goav.FileOutput("archive.ogg", archive),
         goav.FileOutput("preview.ogg", preview),
     ).
-    Build(ctx)
+    Run(ctx)
 ```
 
 ## Loss

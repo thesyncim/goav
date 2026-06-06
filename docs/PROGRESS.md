@@ -430,7 +430,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 136. Remove the redundant ordinary stream `.Decode()` method because frame
     sinks, custom stages, transforms, and encoders already imply decode intent.
     Done.
-137. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+137. Align use-case RTP/WebRTC and generic recipe examples with the beginner
+    `.Run(ctx)` path, and add a default `From(...).To(...).Run(ctx)` fanout
+    acceptance test.
+    Done.
+138. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
