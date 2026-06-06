@@ -27,8 +27,6 @@ type MuxStageConfig struct {
 	Muxer Muxer
 	// Result owns the event slice reused for every write.
 	Result WriteResult
-	// DropInputEvents suppresses forwarding upstream events.
-	DropInputEvents bool
 }
 
 type DemuxSource struct {
@@ -44,13 +42,12 @@ type DemuxSource struct {
 }
 
 type MuxStage struct {
-	name       string
-	detail     string
-	muxer      Muxer
-	result     WriteResult
-	message    pipeline.Message
-	dropEvents bool
-	closed     bool
+	name    string
+	detail  string
+	muxer   Muxer
+	result  WriteResult
+	message pipeline.Message
+	closed  bool
 }
 
 var _ pipeline.Source = (*DemuxSource)(nil)
@@ -89,11 +86,10 @@ func NewMuxStage(config MuxStageConfig) (*MuxStage, error) {
 		name = "mux"
 	}
 	return &MuxStage{
-		name:       name,
-		detail:     config.Detail,
-		muxer:      config.Muxer,
-		result:     config.Result,
-		dropEvents: config.DropInputEvents,
+		name:   name,
+		detail: config.Detail,
+		muxer:  config.Muxer,
+		result: config.Result,
 	}, nil
 }
 
@@ -170,10 +166,7 @@ func (s *MuxStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pi
 		}
 		return nil
 	case pipeline.MessageEvent:
-		if s.dropEvents {
-			return nil
-		}
-		return emitter.Emit(ctx, msg)
+		return nil
 	case pipeline.MessageFrame:
 		return emitter.Emit(ctx, msg)
 	default:

@@ -294,7 +294,7 @@ func TestMuxStageWritesPacketAndEmitsEvents(t *testing.T) {
 	}
 }
 
-func TestMuxStagePassesAndDropsInputEvents(t *testing.T) {
+func TestMuxStageConsumesInputEvents(t *testing.T) {
 	stage, err := NewMuxStage(MuxStageConfig{Muxer: &fakeMuxer{}})
 	if err != nil {
 		t.Fatal(err)
@@ -303,18 +303,6 @@ func TestMuxStagePassesAndDropsInputEvents(t *testing.T) {
 	message := pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
 	emitter := &formatEmitter{}
 	if err := stage.Handle(context.Background(), &message, emitter); err != nil {
-		t.Fatal(err)
-	}
-	if emitter.events != 1 {
-		t.Fatalf("events=%d, want 1", emitter.events)
-	}
-
-	drop, err := NewMuxStage(MuxStageConfig{Muxer: &fakeMuxer{}, DropInputEvents: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	emitter.Reset()
-	if err := drop.Handle(context.Background(), &message, emitter); err != nil {
 		t.Fatal(err)
 	}
 	if emitter.events != 0 {

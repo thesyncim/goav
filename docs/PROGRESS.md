@@ -274,7 +274,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 84. Prune mux packet passthrough: `MuxStage` writes packets and emits muxer
     events, while packet fanout remains one graph route with one or many
     targets. Done.
-85. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+85. Prune the mux input-event drop switch: mux is an output boundary that
+    consumes upstream events after the graph observes them and only emits
+    muxer-produced events downstream. Done.
+86. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

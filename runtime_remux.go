@@ -86,11 +86,10 @@ func (b *builder) openMuxStageWithFormat(ctx context.Context, output Output, ind
 		return nil, err
 	}
 	stage, err := format.NewMuxStage(format.MuxStageConfig{
-		Name:            muxNodeName(output, index),
-		Detail:          outputNodeDetail(output),
-		Muxer:           muxer,
-		Result:          format.WriteResult{Events: make([]av.Event, 0, 1)},
-		DropInputEvents: true,
+		Name:   muxNodeName(output, index),
+		Detail: outputNodeDetail(output),
+		Muxer:  muxer,
+		Result: format.WriteResult{Events: make([]av.Event, 0, 1)},
 	})
 	if err != nil {
 		muxer.Close()
