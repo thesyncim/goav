@@ -233,7 +233,17 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `NewSession(ctx, config)` entry, and RTP receive keeps the direct
     `PacketReader`/`FeedbackWriter` contracts without a speculative receiver
     factory config. Done.
-71. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+71. Collapse graph construction to one public path: `pipeline.NewGraph(config)`
+    selects direct or bounded buffered execution from `GraphConfig.Buffer`; the
+    concrete direct/buffered runners and the runtime graph factory hook stay
+    private. Done.
+72. Prune runtime registry getters: registry wiring is configured through
+    `goav.New(...)` options and adapter hooks, while runtime users keep the
+    forward path of `Probe`, `New`, `Describe`, `Build`, and `Run`. Done.
+73. Collapse registry setup to one registration style: codec, format, and
+    filter registries use explicit `Register...` methods instead of parallel
+    constructor option helpers. Done.
+74. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
