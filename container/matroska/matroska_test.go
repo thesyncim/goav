@@ -314,7 +314,100 @@ func TestMuxerDemuxerPreservesBlockGroupDuration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.TrackID != packet.TrackID || got.TimeNS != packet.TimeNS || got.DurationNS != packet.DurationNS ||
-		got.Keyframe || !bytes.Equal(got.Data, packet.Data) {
+		got.Keyframe || len(got.ReferenceBlockTimeNS) != 1 || got.ReferenceBlockTimeNS[0] != 0 ||
+		!bytes.Equal(got.Data, packet.Data) {
+		t.Fatalf("packet = %+v data=%v, want %+v data=%v", got, got.Data, packet, packet.Data)
+	}
+}
+
+func TestMuxerDemuxerPreservesBlockGroupReferences(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{
+		TrackID:              trackID,
+		TimeNS:               40_000_000,
+		DurationNS:           20_000_000,
+		ReferenceBlockTimeNS: []int64{-20_000_000, 40_000_000},
+		Keyframe:             false,
+		Data:                 []byte{0x11, 0x22, 0x33},
+	}
+	if err := muxer.WritePacket(packet); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{
+		Data:                 make([]byte, 0, 8),
+		ReferenceBlockTimeNS: make([]int64, 0, 2),
+	}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != packet.TrackID || got.TimeNS != packet.TimeNS || got.DurationNS != packet.DurationNS ||
+		got.Keyframe || !equalInt64s(got.ReferenceBlockTimeNS, packet.ReferenceBlockTimeNS) ||
+		!bytes.Equal(got.Data, packet.Data) {
+		t.Fatalf("packet = %+v data=%v, want %+v data=%v", got, got.Data, packet, packet.Data)
+	}
+}
+
+func TestMuxerWritesReferenceOnlyBlockGroup(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{
+		TrackID:              trackID,
+		TimeNS:               40_000_000,
+		ReferenceBlockTimeNS: []int64{-20_000_000},
+		Data:                 []byte{0x11, 0x22, 0x33},
+	}
+	if err := muxer.WritePacket(packet); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{
+		Data:                 make([]byte, 0, 8),
+		ReferenceBlockTimeNS: make([]int64, 0, 1),
+	}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != packet.TrackID || got.TimeNS != packet.TimeNS || got.DurationNS != 0 ||
+		got.Keyframe || !equalInt64s(got.ReferenceBlockTimeNS, packet.ReferenceBlockTimeNS) ||
+		!bytes.Equal(got.Data, packet.Data) {
 		t.Fatalf("packet = %+v data=%v, want %+v data=%v", got, got.Data, packet, packet.Data)
 	}
 }
@@ -403,6 +496,31 @@ func TestMuxerRejectsInvalidPacketDuration(t *testing.T) {
 				t.Fatalf("err = %v, want ErrInvalidData", err)
 			}
 		})
+	}
+}
+
+func TestMuxerRejectsKeyframeReferences(t *testing.T) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = muxer.WritePacket(Packet{
+		TrackID:              trackID,
+		TimeNS:               0,
+		ReferenceBlockTimeNS: []int64{-20_000_000},
+		Keyframe:             true,
+		Data:                 []byte{1},
+	})
+	if !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
 	}
 }
 
@@ -1787,6 +1905,18 @@ func makeLaceFrames(count int, frame []byte) [][]byte {
 		frames[i] = frame
 	}
 	return frames
+}
+
+func equalInt64s(left []int64, right []int64) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func expectedOpusHead(channels int, sampleRate int) []byte {

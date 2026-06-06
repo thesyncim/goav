@@ -839,6 +839,13 @@ func (d *Demuxer) readSimpleBlock(header ebml.Header, dst *Packet) error {
 	return d.readBlockPayload(d.reader, header.Size.Value, dst, true)
 }
 
+func scaleReferenceBlockTimeNS(ticks int64, scaleNS int64) (int64, error) {
+	if scaleNS <= 0 || ticks > math.MaxInt64/scaleNS || ticks < math.MinInt64/scaleNS {
+		return 0, ErrInvalidData
+	}
+	return ticks * scaleNS, nil
+}
+
 func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 	if header.Size.Unknown {
 		return ErrInvalidData
@@ -878,9 +885,15 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 			}
 			durationTicks = value
 		case idReferenceBlk:
-			if _, err := readIntPayload(d.groupReader, child.Size.Value); err != nil {
+			ticks, err := readIntPayload(d.groupReader, child.Size.Value)
+			if err != nil {
 				return err
 			}
+			timeNS, err := scaleReferenceBlockTimeNS(ticks, d.timecodeScaleNS)
+			if err != nil {
+				return err
+			}
+			dst.ReferenceBlockTimeNS = append(dst.ReferenceBlockTimeNS, timeNS)
 			referenceSeen = true
 		default:
 			if err := skipElement(d.groupReader, child); err != nil {

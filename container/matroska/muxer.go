@@ -132,6 +132,12 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if packet.DurationNS < 0 || (packet.DurationNS > 0 && packet.TimeNS > math.MaxInt64-packet.DurationNS) {
 		return ErrInvalidData
 	}
+	if packet.Keyframe && len(packet.ReferenceBlockTimeNS) != 0 {
+		return ErrInvalidData
+	}
+	if err := validateReferenceBlockTimes(packet.ReferenceBlockTimeNS, m.options.TimecodeScaleNS); err != nil {
+		return err
+	}
 	if !m.headerWritten {
 		if err := m.writeHeader(); err != nil {
 			return err
@@ -437,7 +443,7 @@ func (m *Muxer) writeSeekHeadPlaceholder() error {
 }
 
 func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16) error {
-	if packet.DurationNS > 0 {
+	if packet.DurationNS > 0 || len(packet.ReferenceBlockTimeNS) != 0 {
 		return m.writeBlockGroup(packet, blockTimecode)
 	}
 	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet))
@@ -612,7 +618,7 @@ func (m *Muxer) relativeSegmentPosition() uint64 {
 
 func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16) error {
 	durationTicks := scaledDurationTicks(packet.DurationNS, m.options.TimecodeScaleNS)
-	if durationTicks == 0 {
+	if durationTicks == 0 && len(packet.ReferenceBlockTimeNS) == 0 {
 		return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet))
 	}
 	trackWidth, err := ebml.UnsignedVINTWidth(uint64(packet.TrackID))
@@ -624,13 +630,25 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16) error {
 	if err != nil {
 		return err
 	}
-	durationElementSize, err := uintElementEncodedSize(idBlockDuration, durationTicks)
-	if err != nil {
-		return err
+	groupSize := blockHeaderSize + blockPayloadSize
+	if durationTicks != 0 {
+		durationElementSize, err := uintElementEncodedSize(idBlockDuration, durationTicks)
+		if err != nil {
+			return err
+		}
+		groupSize += durationElementSize
 	}
-	groupSize := blockHeaderSize + blockPayloadSize + durationElementSize
-	if !packet.Keyframe {
+	writeImplicitReference := durationTicks != 0 && !packet.Keyframe && len(packet.ReferenceBlockTimeNS) == 0
+	if writeImplicitReference {
 		referenceSize, err := intElementEncodedSize(idReferenceBlk, 0)
+		if err != nil {
+			return err
+		}
+		groupSize += referenceSize
+	}
+	for i := range packet.ReferenceBlockTimeNS {
+		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS)
+		referenceSize, err := intElementEncodedSize(idReferenceBlk, ticks)
 		if err != nil {
 			return err
 		}
@@ -639,13 +657,21 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16) error {
 	if err := m.ebml.WriteHeader(idBlockGroup, groupSize); err != nil {
 		return err
 	}
-	if !packet.Keyframe {
+	if writeImplicitReference {
 		if err := m.ebml.WriteInt(idReferenceBlk, 0); err != nil {
 			return err
 		}
 	}
-	if err := m.ebml.WriteUInt(idBlockDuration, durationTicks); err != nil {
-		return err
+	for i := range packet.ReferenceBlockTimeNS {
+		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS)
+		if err := m.ebml.WriteInt(idReferenceBlk, ticks); err != nil {
+			return err
+		}
+	}
+	if durationTicks != 0 {
+		if err := m.ebml.WriteUInt(idBlockDuration, durationTicks); err != nil {
+			return err
+		}
 	}
 	return m.writeBlock(idBlock, packet, blockTimecode, blockFlags(packet))
 }
@@ -795,6 +821,20 @@ func scaledDurationTicks(durationNS int64, scaleNS int64) uint64 {
 		value++
 	}
 	return uint64(value)
+}
+
+func validateReferenceBlockTimes(references []int64, scaleNS int64) error {
+	if scaleNS <= 0 {
+		return ErrInvalidData
+	}
+	for i := range references {
+		_ = scaledReferenceBlockTicks(references[i], scaleNS)
+	}
+	return nil
+}
+
+func scaledReferenceBlockTicks(timeNS int64, scaleNS int64) int64 {
+	return timeNS / scaleNS
 }
 
 func lacingFlag(mode LacingMode, frames [][]byte) (byte, error) {

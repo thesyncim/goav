@@ -51,13 +51,14 @@ type Track struct {
 }
 
 type Packet struct {
-	TrackID     uint32
-	TimeNS      int64
-	DurationNS  int64
-	Keyframe    bool
-	Invisible   bool
-	Discardable bool
-	Data        []byte
+	TrackID              uint32
+	TimeNS               int64
+	DurationNS           int64
+	ReferenceBlockTimeNS []int64
+	Keyframe             bool
+	Invisible            bool
+	Discardable          bool
+	Data                 []byte
 }
 
 // LacingMode selects how multiple frames are packed into one laced block.
@@ -100,7 +101,8 @@ type SeekEntry struct {
 
 func (p *Packet) Reset() {
 	data := p.Data[:0]
-	*p = Packet{Data: data}
+	references := p.ReferenceBlockTimeNS[:0]
+	*p = Packet{Data: data, ReferenceBlockTimeNS: references}
 }
 
 type MuxerOptions struct {

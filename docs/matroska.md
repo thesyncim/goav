@@ -61,7 +61,8 @@ Current milestone:
 - Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
   a requested timestamp.
 - BlockGroup reading and writing for single-frame blocks with BlockDuration;
-  non-keyframe BlockGroups use `ReferenceBlock=0` when exact dependency
+  packets may carry one or more `ReferenceBlock` offsets, and non-keyframe
+  duration BlockGroups use `ReferenceBlock=0` when exact dependency
   information is not available.
 - Xiph, fixed-size, and EBML laced block muxing and demuxing with bounded
   scratch buffers.
@@ -90,7 +91,6 @@ These are intentionally not in the first milestone:
 
 - Dense indexing and frame-exact random access beyond cue-assisted
   `ReadPacketAtTime`.
-- Multiple-reference BlockGroup writing.
 - Chapters, tags, attachments, language variants, default/forced flags beyond
   basic defaults, and unknown-element preservation.
 - Full codec-private parsers for every codec family.
@@ -105,10 +105,11 @@ Public packets use nanoseconds:
 
 ```go
 type Packet struct {
-    TrackID    uint32
-    TimeNS     int64
-    DurationNS int64
-    Data       []byte
+    TrackID              uint32
+    TimeNS               int64
+    DurationNS           int64
+    ReferenceBlockTimeNS []int64
+    Data                 []byte
 }
 ```
 
@@ -123,6 +124,9 @@ overflow or when `ClusterMaxDurationNS` is reached. When `DurationNS` is set,
 the muxer writes a single-frame BlockGroup with BlockDuration in timestamp-scale
 ticks. In seekable mode, `Info.Duration` is patched on close to the maximum
 observed packet end time expressed in those same timestamp-scale ticks.
+When `ReferenceBlockTimeNS` is set, the muxer writes one `ReferenceBlock`
+element per offset. Offsets are signed nanosecond values relative to the packet
+timestamp and are stored in timestamp-scale ticks.
 Negative packet durations and packet end times that overflow `int64` are
 rejected before bytes are written.
 Seekable mode also writes Cues for keyframe packets using Segment-relative
