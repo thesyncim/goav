@@ -348,7 +348,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 107. Remove text rendering from `pipeline.Spec` so core graph inspection stays
     structured-only and all string/diagram exporters live in `graphrender`.
     Done.
-108. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+108. Add recipe custom-stage validation so `.Do(nil)` fails with stage guidance
+    instead of looking like an empty resize/resample transform. Done.
+109. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

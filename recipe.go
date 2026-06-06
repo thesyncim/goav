@@ -978,6 +978,9 @@ func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, err
 			builder = builder.Filter(stream.selector, step.stage)
 			continue
 		}
+		if step.transform.Resize == nil && step.transform.Resample == nil {
+			return nil, streamStageMissingError(stream)
+		}
 		transform, err := streamTransform(stream.name, stream.selector, step.transform, i)
 		if err != nil {
 			return nil, err
@@ -1003,6 +1006,28 @@ func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, err
 		builder = builder.Encode(stream.selector, encodeConfigFromSpec(stream.encode))
 	}
 	return builder, nil
+}
+
+func streamStageMissingError(stream *jobStreamBuild) error {
+	return &BuildError{
+		Code:      "stage_missing",
+		Operation: "build stream",
+		Node:      jobStreamName(stream),
+		Reason:    "custom stream stage is nil",
+		Suggestions: []string{
+			"pass a non-nil stage to .Do(stage)",
+			"use goav.FrameFunc, goav.PacketFunc, or goav.EventFunc for small hooks",
+			"remove .Do(...) when no custom processing is needed",
+		},
+		Cause: ErrNilStage,
+	}
+}
+
+func jobStreamName(stream *jobStreamBuild) string {
+	if stream == nil {
+		return "stream"
+	}
+	return firstNonEmpty(stream.name, string(stream.selector.ID), string(stream.selector.Type), "stream")
 }
 
 func (s *jobStreamBuild) hasOperation() bool {

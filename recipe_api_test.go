@@ -385,6 +385,24 @@ func TestStreamRecipeRequiresOperation(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeRejectsNilCustomStage(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Do(nil).
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stage_missing" || !errors.Is(err, goav.ErrNilStage) {
+		t.Fatalf("err = %v, want stage_missing wrapping ErrNilStage", err)
+	}
+	if !strings.Contains(err.Error(), ".Do(stage)") ||
+		!strings.Contains(err.Error(), "goav.FrameFunc") {
+		t.Fatalf("err = %v, want custom stage guidance", err)
+	}
+}
+
 func TestStreamRecipeRejectsWrongMediaTransform(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
