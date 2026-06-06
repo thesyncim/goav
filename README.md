@@ -252,7 +252,10 @@ reported before receivers or demuxers are opened.
 
 Use `.Run(ctx)` when the recipe is the whole job. Use `.Build(ctx)` when the
 caller needs a `Task` for graph specs, events, or explicit lifecycle control.
-`Describe()` resolves the same graph spec that `Build(ctx)` returns on the task.
+`Explain(ctx)` returns a structured workflow report with inputs, stream branches,
+outputs, adapter requirements, warnings, and the graph. `Describe()` is the
+graph-only view and resolves the same graph spec that `Build(ctx)` returns on
+the task.
 `Task.Stats()` reports packet/frame/event totals, event counts by type, buffered
 drops, and the last event observed by the graph.
 
@@ -287,7 +290,19 @@ Resize and resample recipes also validate their filter adapters during build.
 
 ## Inspect The Graph
 
-Every recipe can describe the graph it will build:
+Use `Explain(ctx)` when the application needs a workflow report before running:
+
+```go
+report, err := job.Explain(ctx)
+if err != nil {
+    return err
+}
+for _, requirement := range report.RequiredAdapters {
+    fmt.Printf("%s: %s\n", requirement.Kind, requirement.Name)
+}
+```
+
+Every recipe can also describe only the graph it will build:
 
 ```go
 spec, err := job.Describe()

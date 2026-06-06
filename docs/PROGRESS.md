@@ -785,6 +785,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     attach control plane, individual `Attachment.Stop(ctx)` handles remain
     idempotent after group cleanup, and `Task.Close()` stops runtime attachments
     before closing the graph. Done.
+222. Add renderer-free recipe explanations:
+    `Job.Explain(ctx)` and `TranscodeJob.Explain(ctx)` now compile through the
+    same build-preflight path, return `PlanReport` with structured inputs,
+    streams, outputs, adapter requirements, warnings, and `pipeline.Spec`, and
+    keep text/diagram rendering outside core. Done.
 
 ## First Vertical Slice
 
@@ -1067,8 +1072,9 @@ through the real Opus depacketizer and decoder without recipe lowering.
 Reusable audio/video flows now expand into recipe intent instead of a parallel
 graph language; `Tee` stays on stream recipes, branch graph descriptions reuse
 the existing branch composer, live RTP/WebRTC `Tee` now composes receive,
-shared decode, per-flow encode, and mux outputs, and runtime `Task.Attach` can
-attach stoppable stage/sink taps to running direct graphs.
+shared decode, per-flow encode, and mux outputs, runtime `Task.Attach` can
+attach stoppable stage/sink taps to running direct graphs, and recipe
+`Explain(ctx)` returns structured reports without adding renderers to core.
 The WebRTC TrackSet component proof now exercises same-stream replacement and
 reader reuse through direct RTP source graph composition.
 Probing, stream resolution, format/codec resolution, mux grouping, and route

@@ -994,7 +994,7 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 }
 
 func (j *Job) Build(ctx context.Context) (Task, error) {
-	resolved, err := compileJobRecipeForBuild(j)
+	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err != nil {
 		return nil, err
 	}
@@ -2774,7 +2774,7 @@ func (j *TranscodeJob) Describe() (pipeline.Spec, error) {
 }
 
 func (j *TranscodeJob) Build(ctx context.Context) (Task, error) {
-	resolved, err := compileTranscodeRecipeForBuild(j)
+	resolved, err := compileTranscodeRecipeForBuildContext(ctx, j)
 	if err != nil {
 		return nil, err
 	}

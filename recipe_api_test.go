@@ -105,6 +105,23 @@ func specText(spec pipeline.Spec) string {
 	return out
 }
 
+func hasRequirement(requirements []goav.AdapterRequirement, kind string, codecID av.CodecID, formatID av.FormatID) bool {
+	for i := range requirements {
+		requirement := requirements[i]
+		if requirement.Kind != kind {
+			continue
+		}
+		if codecID != "" && requirement.Codec != codecID {
+			continue
+		}
+		if formatID != "" && requirement.Format != formatID {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func TestRuntimeInterfaceKeepsLegacyBuilderOutOfFrontDoor(t *testing.T) {
 	runtimeType := reflect.TypeOf((*goav.Runtime)(nil)).Elem()
 	if _, ok := runtimeType.MethodByName("New"); ok {
@@ -119,6 +136,55 @@ func TestTranscodeJobKeepsPlanIROutOfFrontDoor(t *testing.T) {
 	transcodeType := reflect.TypeOf((*goav.TranscodeJob)(nil))
 	if _, ok := transcodeType.MethodByName("Plan"); ok {
 		t.Fatal("TranscodeJob exposes transcode.Plan; use Intent, Describe, Build, or Run")
+	}
+}
+
+func TestRecipesExposeStructuredExplain(t *testing.T) {
+	jobType := reflect.TypeOf((*goav.Job)(nil))
+	if _, ok := jobType.MethodByName("Explain"); !ok {
+		t.Fatal("Job should expose Explain for structured workflow reports")
+	}
+	transcodeType := reflect.TypeOf((*goav.TranscodeJob)(nil))
+	if _, ok := transcodeType.MethodByName("Explain"); !ok {
+		t.Fatal("TranscodeJob should expose Explain for structured workflow reports")
+	}
+	reportType := reflect.TypeOf(goav.PlanReport{})
+	for _, method := range []string{"Text", "Mermaid", "DOT", "Render"} {
+		if _, ok := reportType.MethodByName(method); ok {
+			t.Fatalf("PlanReport exposes renderer method %s; keep rendering outside core", method)
+		}
+	}
+}
+
+func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
+	report, err := goav.Record(
+		goav.RTP(recipeAPIRTPReader{}).Name("video").Codec(goav.VP8()),
+		goav.FileOutput("recording.ivf", io.Discard),
+	).Explain(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary == "" || report.Operation != "build job" || report.Intent.Name != "record" {
+		t.Fatalf("report summary=%q operation=%q intent=%q", report.Summary, report.Operation, report.Intent.Name)
+	}
+	if len(report.Graph.Nodes) == 0 || len(report.Graph.Edges) == 0 {
+		t.Fatalf("empty graph: %+v", report.Graph)
+	}
+	if len(report.Inputs) != 1 || report.Inputs[0].Name != "video" ||
+		report.Inputs[0].Format != av.FormatRTP || report.Inputs[0].Codec != av.CodecVP8 ||
+		!report.Inputs[0].Realtime {
+		t.Fatalf("inputs=%+v", report.Inputs)
+	}
+	if len(report.Outputs) != 1 || report.Outputs[0].Name != "recording.ivf" ||
+		report.Outputs[0].Format != av.FormatIVF || report.Outputs[0].Kind != "mux" {
+		t.Fatalf("outputs=%+v", report.Outputs)
+	}
+	if !hasRequirement(report.RequiredAdapters, "rtp-depacketizer", av.CodecVP8, "") ||
+		!hasRequirement(report.RequiredAdapters, "muxer", "", av.FormatIVF) {
+		t.Fatalf("requirements=%+v", report.RequiredAdapters)
+	}
+	if len(report.Warnings) != 0 {
+		t.Fatalf("warnings=%+v", report.Warnings)
 	}
 }
 

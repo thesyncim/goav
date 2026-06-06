@@ -57,9 +57,10 @@ The legacy builder remains an internal compiler target, but it is no longer a
 method on the public `Runtime` interface or an exported top-level type.
 Described graphs and execution graphs must stay equivalent, whether the current
 slice is still using a fixed compiler or has moved onto intent passes. The graph
-layer stays available for inspection and custom stages; optional diagram or
-workflow-report output lives outside the runtime core. A route carries all media
-by default, or matches one stream or event type.
+layer stays available for inspection and custom stages. Recipe `Explain(ctx)`
+returns structured workflow-report data plus the same `pipeline.Spec`; optional
+diagram or prose rendering lives outside runtime composition. A route carries
+all media by default, or matches one stream or event type.
 
 `Task.Attach` is the first runtime control-plane operation. It attaches a named
 stage/sink branch to a built direct graph and returns an attachment handle with

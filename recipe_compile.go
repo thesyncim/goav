@@ -12,12 +12,17 @@ import (
 )
 
 type recipeResolved struct {
-	intent    Intent
-	builder   builderAPI
-	migration *builder
-	compiler  builderCompiler
-	spec      pipeline.Spec
-	specReady bool
+	intent                   Intent
+	builder                  builderAPI
+	migration                *builder
+	compiler                 builderCompiler
+	spec                     pipeline.Spec
+	specReady                bool
+	inputProbes              []format.ProbeResult
+	transcodeInputProbe      format.ProbeResult
+	transcodeInputProbeReady bool
+	outputFormats            map[string]av.FormatID
+	plan                     transcodepkg.Plan
 }
 
 type recipeCompileState struct {
@@ -52,12 +57,50 @@ type recipeCompileState struct {
 }
 
 type recipeCompileOptions struct {
+	ctx                        context.Context
 	preflightInputAdapters     bool
 	preflightOutputAdapters    bool
 	preflightDecodeAdapters    bool
 	preflightEncodeAdapters    bool
 	preflightTransformAdapters bool
 	preflightLiveStreams       bool
+}
+
+func (o recipeCompileOptions) Context() context.Context {
+	if o.ctx != nil {
+		return o.ctx
+	}
+	return context.Background()
+}
+
+func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
+	formats := make(map[string]av.FormatID)
+	for i := range s.outputAttachments {
+		formatID := outputSpecFormat(s.outputAttachments[i])
+		if formatID == "" {
+			continue
+		}
+		formats[s.outputAttachments[i].label(fmt.Sprintf("output-%d", i))] = formatID
+	}
+	for i := range s.transcodeOutputAttachments {
+		formatID := outputSpecFormat(s.transcodeOutputAttachments[i].output)
+		if formatID == "" {
+			continue
+		}
+		label := firstNonEmpty(s.transcodeOutputAttachments[i].name, s.transcodeOutputAttachments[i].output.label(fmt.Sprintf("output-%d", i)))
+		formats[label] = formatID
+	}
+	if len(formats) == 0 {
+		return nil
+	}
+	return formats
+}
+
+func outputSpecFormat(output OutputSpec) av.FormatID {
+	if output.resolvedFormat != "" {
+		return output.resolvedFormat
+	}
+	return output.format
 }
 
 type recipeCompilePass interface {
@@ -111,12 +154,17 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		}
 	}
 	return recipeResolved{
-		intent:    state.intent,
-		builder:   state.builder,
-		migration: state.migration,
-		compiler:  state.compiler,
-		spec:      state.spec,
-		specReady: state.specReady,
+		intent:                   state.intent,
+		builder:                  state.builder,
+		migration:                state.migration,
+		compiler:                 state.compiler,
+		spec:                     state.spec,
+		specReady:                state.specReady,
+		inputProbes:              append([]format.ProbeResult(nil), state.inputProbes...),
+		transcodeInputProbe:      state.transcodeInputProbe,
+		transcodeInputProbeReady: state.transcodeInputProbeReady,
+		outputFormats:            state.outputFormatMap(),
+		plan:                     state.plan,
 	}, nil
 }
 
@@ -139,7 +187,12 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 }
 
 func compileJobRecipeForBuild(job *Job) (recipeResolved, error) {
+	return compileJobRecipeForBuildContext(context.Background(), job)
+}
+
+func compileJobRecipeForBuildContext(ctx context.Context, job *Job) (recipeResolved, error) {
 	return compileJobRecipeWithOptions(job, recipeCompileOptions{
+		ctx:                        ctx,
 		preflightInputAdapters:     true,
 		preflightOutputAdapters:    true,
 		preflightDecodeAdapters:    true,
@@ -215,7 +268,12 @@ func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 }
 
 func compileTranscodeRecipeForBuild(job *TranscodeJob) (recipeResolved, error) {
+	return compileTranscodeRecipeForBuildContext(context.Background(), job)
+}
+
+func compileTranscodeRecipeForBuildContext(ctx context.Context, job *TranscodeJob) (recipeResolved, error) {
 	return compileTranscodeRecipeWithOptions(job, recipeCompileOptions{
+		ctx:                        ctx,
 		preflightInputAdapters:     true,
 		preflightOutputAdapters:    true,
 		preflightDecodeAdapters:    true,
@@ -455,7 +513,7 @@ func validateJobOutputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs, err := validateOutputFormatAdapters(context.Background(), state.runtime, state.outputAttachments)
+		outputs, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, state.outputAttachments)
 		if err != nil {
 			return err
 		}
@@ -469,7 +527,7 @@ func validateJobInputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightInputAdapters {
 			return nil
 		}
-		probes, err := validateInputFormatAdapters(context.Background(), state.runtime, state.inputAttachments)
+		probes, err := validateInputFormatAdapters(state.options.Context(), state.runtime, state.inputAttachments)
 		if err != nil {
 			return err
 		}
@@ -616,7 +674,7 @@ func validateTranscodeOutputFormatAdaptersPass() recipeCompilePass {
 			))
 			outputs = append(outputs, output)
 		}
-		resolved, err := validateOutputFormatAdapters(context.Background(), state.runtime, outputs)
+		resolved, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, outputs)
 		if err != nil {
 			return err
 		}
@@ -632,7 +690,7 @@ func validateTranscodeInputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightInputAdapters {
 			return nil
 		}
-		probes, err := validateInputFormatAdapters(context.Background(), state.runtime, []InputSpec{state.transcodeInputAttachment})
+		probes, err := validateInputFormatAdapters(state.options.Context(), state.runtime, []InputSpec{state.transcodeInputAttachment})
 		if err != nil {
 			return err
 		}
