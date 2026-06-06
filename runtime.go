@@ -136,6 +136,7 @@ type rtpInput struct {
 	feedback      rtpav.FeedbackWriter
 	jitter        rtpav.JitterBuffer
 	depacketizers []rtpav.Depacketizer
+	codec         CodecSpec
 	limits        RTPBufferLimits
 	decodeBounds  codec.DecodeBounds
 	maxTSGap      av.Duration

@@ -611,9 +611,11 @@ func (s InputSpec) rtpOptions() []RTPOption {
 		options = append(options, WithRTPJitter(s.rtp.jitter))
 	}
 	depacketizers := append([]rtpav.Depacketizer(nil), s.rtp.depacketizers...)
-	depacketizers = append(depacketizers, s.codecDepacketizers()...)
 	if len(depacketizers) != 0 {
 		options = append(options, WithRTPDepacketizers(depacketizers...))
+	}
+	if s.codec.ID != "" {
+		options = append(options, withRTPCodec(s.codec))
 	}
 	if s.rtp.limits != (RTPBufferLimits{}) {
 		options = append(options, WithRTPBufferLimits(s.rtp.limits))
@@ -622,31 +624,6 @@ func (s InputSpec) rtpOptions() []RTPOption {
 		options = append(options, WithRTPMaxTimestampGap(s.rtp.maxTSGap))
 	}
 	return options
-}
-
-func (s InputSpec) codecDepacketizers() []rtpav.Depacketizer {
-	if s.codec.ID == "" {
-		return nil
-	}
-	stream := av.Stream{
-		ID:    av.StreamID(s.name),
-		Type:  s.codec.Type,
-		Codec: s.codec.Parameters,
-	}
-	switch s.codec.ID {
-	case av.CodecOpus:
-		return []rtpav.Depacketizer{rtpav.NewOpusDepacketizer(stream)}
-	case av.CodecVP8:
-		return []rtpav.Depacketizer{rtpav.NewVP8Depacketizer(stream)}
-	case av.CodecVP9:
-		return []rtpav.Depacketizer{rtpav.NewVP9Depacketizer(stream)}
-	case av.CodecH264:
-		return []rtpav.Depacketizer{rtpav.NewH264Depacketizer(stream)}
-	case av.CodecAV1:
-		return []rtpav.Depacketizer{rtpav.NewAV1Depacketizer(stream)}
-	default:
-		return nil
-	}
 }
 
 func (s InputSpec) intent() InputIntent {

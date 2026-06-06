@@ -122,6 +122,8 @@ for _, edge := range spec.Edges {
 - `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive
   intent without making the caller wire depacketizers by hand for Opus, VP8,
   VP9, H264, or AV1; `reader` must be a non-nil Pion-backed packet reader.
+  Single-stream readers can provide the stream ID; `.Name(...)` gives the
+  graph and stream a stable label when the reader metadata is not enough.
   `RTPBuffer(...)` limit fields use zero for defaults and positive values for
   explicit bounds; `MaxTimestampGap(...)` needs a positive duration with a
   valid timebase when enabled.

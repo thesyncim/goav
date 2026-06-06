@@ -101,6 +101,63 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 	}
 }
 
+func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    Stereo,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	muxers := &remuxTestMuxerFactory{}
+	runtime := New(withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	))
+
+	task, err := Record(
+		RTP(receiver).Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+		FileOutput("recording.ogg", io.Discard),
+		UseRuntime(runtime),
+	).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(muxers.muxers) != 1 {
+		t.Fatalf("muxers=%d, want 1", len(muxers.muxers))
+	}
+	if muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "audio" {
+		t.Fatalf("writes=%d stream=%s", muxers.muxers[0].writes, muxers.muxers[0].lastStream)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

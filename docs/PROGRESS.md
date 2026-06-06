@@ -399,7 +399,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 128. Let the beginner `Record(input, output...)` recipe fan out to multiple
     outputs directly while preserving `UseRuntime(...)` on the same call.
     Done.
-129. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+129. Lower recipe RTP codec intent after packet-reader stream discovery so
+    unnamed single-stream readers keep their stream identity without manual
+    depacketizer wiring.
+    Done.
+130. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -612,7 +616,8 @@ Required proof:
 ## Next Slices
 
 1. Choose one workflow and write its shortest fluent expression.
-2. Add the private graph compiler and `Describe` output first.
+2. Add the private graph compiler and structured graph spec first; keep
+   rendering/export outside core.
 3. Add the smallest runtime behavior behind existing stages/adapters.
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.

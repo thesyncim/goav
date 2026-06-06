@@ -54,8 +54,8 @@ func rtpInputDetail(input rtpInput) string {
 	if input.jitter != nil {
 		parts = append(parts, "jitter")
 	}
-	if len(input.depacketizers) != 0 {
-		parts = append(parts, "depacketizers="+strconv.Itoa(len(input.depacketizers)))
+	if count := rtpDepacketizerCount(input); count != 0 {
+		parts = append(parts, "depacketizers="+strconv.Itoa(count))
 	}
 	if input.feedback != nil {
 		parts = append(parts, "feedback")
@@ -67,6 +67,15 @@ func rtpInputDetail(input rtpInput) string {
 		parts = append(parts, "timestamp gap")
 	}
 	return joinSpecDetail(parts...)
+}
+
+func rtpDepacketizerCount(input rtpInput) int {
+	count := len(input.depacketizers)
+	switch input.codec.ID {
+	case av.CodecOpus, av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1:
+		count++
+	}
+	return count
 }
 
 func selectNodeDetail(selector av.StreamSelector) string {
