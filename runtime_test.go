@@ -621,7 +621,7 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 			Policy: pipeline.RoutePolicy("unsupported"),
 		}).
 		Describe(); !errors.Is(err, pipeline.ErrUnsupportedRoute) {
-		t.Fatalf("connection err = %v, want ErrUnsupportedRoute", err)
+		t.Fatalf("route err = %v, want ErrUnsupportedRoute", err)
 	}
 }
 
@@ -658,7 +658,7 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 		Routes(Route("missing", "sink")).
 		Build(context.Background())
 	if !errors.Is(err, pipeline.ErrUnknownNode) {
-		t.Fatalf("connect err = %v, want ErrUnknownNode", err)
+		t.Fatalf("route err = %v, want ErrUnknownNode", err)
 	}
 }
 

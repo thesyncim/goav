@@ -163,18 +163,18 @@ func (r *runtime) New() Builder {
 }
 
 type builder struct {
-	runtime     *runtime
-	inputs      []Input
-	rtpInputs   []rtpInput
-	outputs     []Output
-	decodes     []av.StreamSelector
-	encodes     []encodeRequest
-	filters     []filterRequest
-	transcodes  []transcode.Plan
-	sources     []pipeline.Source
-	stages      []pipeline.Stage
-	sinks       []pipeline.Sink
-	connections []pipeline.Connection
+	runtime    *runtime
+	inputs     []Input
+	rtpInputs  []rtpInput
+	outputs    []Output
+	decodes    []av.StreamSelector
+	encodes    []encodeRequest
+	filters    []filterRequest
+	transcodes []transcode.Plan
+	sources    []pipeline.Source
+	stages     []pipeline.Stage
+	sinks      []pipeline.Sink
+	routes     []pipeline.Route
 }
 
 type encodeRequest struct {
@@ -265,7 +265,7 @@ func (b *builder) Sink(sink pipeline.Sink) Builder {
 }
 
 func (b *builder) Routes(routes ...pipeline.Route) Builder {
-	b.connections = append(b.connections, routes...)
+	b.routes = append(b.routes, routes...)
 	return b
 }
 
@@ -284,7 +284,7 @@ func (b *builder) hasHighLevelRequests() bool {
 
 func (b *builder) hasExplicitGraph() bool {
 	return len(b.sources) != 0 || len(b.stages) != 0 || len(b.sinks) != 0 ||
-		len(b.connections) != 0
+		len(b.routes) != 0
 }
 
 func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
@@ -327,12 +327,12 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 		sinkRefs[i] = ref
 	}
 
-	if len(b.connections) != 0 {
+	if len(b.routes) != 0 {
 		nodes := make(map[string]pipeline.NodeRef, len(sourceRefs)+len(stageRefs)+len(sinkRefs))
 		addRuntimeNodes(nodes, sourceRefs)
 		addRuntimeNodes(nodes, stageRefs)
 		addRuntimeNodes(nodes, sinkRefs)
-		return b.compileExplicitEdges(graph, nodes)
+		return b.compileExplicitRoutes(graph, nodes)
 	}
 
 	if len(stageRefs) == 0 {
@@ -349,35 +349,35 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 	return linkMany(graph, stageRefs[len(stageRefs)-1:], sinkRefs)
 }
 
-func (b *builder) compileExplicitEdges(graph pipeline.Graph, nodes map[string]pipeline.NodeRef) error {
-	for i := range b.connections {
-		connection, err := resolveRuntimeConnection(nodes, b.connections[i])
+func (b *builder) compileExplicitRoutes(graph pipeline.Graph, nodes map[string]pipeline.NodeRef) error {
+	for i := range b.routes {
+		route, err := resolveRuntimeRoute(nodes, b.routes[i])
 		if err != nil {
 			return err
 		}
-		if err := graph.Connect(connection); err != nil {
+		if err := graph.Connect(route); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func resolveRuntimeConnection(nodes map[string]pipeline.NodeRef, connection pipeline.Connection) (pipeline.Connection, error) {
-	from, err := resolveRuntimeNode(nodes, pipeline.NodeRef(connection.From))
+func resolveRuntimeRoute(nodes map[string]pipeline.NodeRef, route pipeline.Route) (pipeline.Route, error) {
+	from, err := resolveRuntimeNode(nodes, pipeline.NodeRef(route.From))
 	if err != nil {
-		return pipeline.Connection{}, err
+		return pipeline.Route{}, err
 	}
-	to := make([]string, len(connection.To))
-	for i := range connection.To {
-		ref, err := resolveRuntimeNode(nodes, pipeline.NodeRef(connection.To[i]))
+	to := make([]string, len(route.To))
+	for i := range route.To {
+		ref, err := resolveRuntimeNode(nodes, pipeline.NodeRef(route.To[i]))
 		if err != nil {
-			return pipeline.Connection{}, err
+			return pipeline.Route{}, err
 		}
 		to[i] = ref.String()
 	}
-	connection.From = from.String()
-	connection.To = to
-	return connection, nil
+	route.From = from.String()
+	route.To = to
+	return route, nil
 }
 
 func addRuntimeNodes(nodes map[string]pipeline.NodeRef, refs []pipeline.NodeRef) {
@@ -406,7 +406,11 @@ func linkMany(graph pipeline.Graph, from []pipeline.NodeRef, to []pipeline.NodeR
 }
 
 func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRef) error {
-	return graph.Connect(pipeline.Connect(from.String(), to.String()))
+	return graph.Connect(pipeline.Route{
+		From:   from.String(),
+		To:     []string{to.String()},
+		Policy: pipeline.RouteAll,
+	})
 }
 
 type task struct {

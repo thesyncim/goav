@@ -165,10 +165,9 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `av`: media identifiers, streams, packets, frames, timestamps, events,
   timebase conversion helpers, reset helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, bounded buffered graph executor,
-  fanout, simple route helpers, stream/event routes,
-  backpressure surface, drop-policy decisions, bounded copy slots for borrowed
-  media buffers, simple route graph surface, detail-aware text/DOT/Mermaid graph
-  specs.
+  fanout, one `Route` edge value, stream/event route modifiers, backpressure
+  surface, drop-policy decisions, bounded copy slots for borrowed media buffers,
+  detail-aware text/DOT/Mermaid graph specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, realtime decode bounds, registry,
   optional decode-state provisioning, decoder and encoder pipeline stages.
@@ -222,8 +221,9 @@ Implemented slices:
   filter factories are registered.
 - Fluent `Routes(goav.Route(...))` for explicit application graphs, with
   stream/event matching as route modifiers.
-- First-class route helpers for direct graph composition without extra graph
-  concepts.
+- One route value through fluent planning and runnable graph composition:
+  `goav.Route(...)` creates routes, and graph executors accept
+  `Graph.Connect(route)`.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
   `RTP(...)` inputs.
 - Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,

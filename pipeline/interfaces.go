@@ -113,42 +113,30 @@ const (
 	RouteByEvent  RoutePolicy = "by_event"
 )
 
-type Connection struct {
+type Route struct {
 	From   string
 	To     []string
 	Policy RoutePolicy
 	Label  string
 }
 
-// Route is the friendly name for a node-to-node connection. It is an alias so
-// low-level graph code has one edge model.
-type Route = Connection
-
-func Connect(from string, to ...string) Connection {
-	return Connection{
-		From:   from,
-		To:     append([]string(nil), to...),
-		Policy: RouteAll,
-	}
+func (r Route) ByStream(stream av.StreamID) Route {
+	r.Policy = RouteByStream
+	r.Label = string(stream)
+	return r
 }
 
-func (c Connection) ByStream(stream av.StreamID) Connection {
-	c.Policy = RouteByStream
-	c.Label = string(stream)
-	return c
-}
-
-func (c Connection) ByEvent(event av.EventType) Connection {
-	c.Policy = RouteByEvent
-	c.Label = string(event)
-	return c
+func (r Route) ByEvent(event av.EventType) Route {
+	r.Policy = RouteByEvent
+	r.Label = string(event)
+	return r
 }
 
 type Graph interface {
 	AddSource(Source, BufferPolicy) (NodeRef, error)
 	AddStage(Stage, BufferPolicy) (NodeRef, error)
 	AddSink(Sink, BufferPolicy) (NodeRef, error)
-	Connect(Connection) error
+	Connect(Route) error
 	Spec() Spec
 	Run(context.Context) error
 	Events() <-chan av.Event

@@ -143,7 +143,7 @@ func TestBufferedGraphPassThroughImmutablePacket(t *testing.T) {
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "sink")); err != nil {
+	if err := graph.Connect(route("source", "sink")); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(context.Background()); err != nil {
@@ -174,7 +174,7 @@ func TestBufferedGraphRejectsBorrowedPacketPayload(t *testing.T) {
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "sink")); err != nil {
+	if err := graph.Connect(route("source", "sink")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -218,7 +218,7 @@ func TestBufferedGraphCopiesBorrowedPacketPayload(t *testing.T) {
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "sink")); err != nil {
+	if err := graph.Connect(route("source", "sink")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -309,7 +309,7 @@ func TestBufferedGraphRejectsOversizedBorrowedPacketPayload(t *testing.T) {
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "sink")); err != nil {
+	if err := graph.Connect(route("source", "sink")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -357,7 +357,7 @@ func TestBufferedGraphCopiesBorrowedFramePlane(t *testing.T) {
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "sink")); err != nil {
+	if err := graph.Connect(route("source", "sink")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -431,7 +431,7 @@ func runBufferedBurst(policy BufferPolicy) ([]byte, error) {
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
 		return nil, err
 	}
-	if err := graph.Connect(Connect("source", "sink")); err != nil {
+	if err := graph.Connect(route("source", "sink")); err != nil {
 		return nil, err
 	}
 

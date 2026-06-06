@@ -85,8 +85,8 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		sinkRefs[i] = ref
 	}
 
-	if len(b.connections) != 0 {
-		if err := b.planExplicitEdges(nodes, &spec); err != nil {
+	if len(b.routes) != 0 {
+		if err := b.planExplicitRoutes(nodes, &spec); err != nil {
 			return pipeline.Spec{}, err
 		}
 		return spec, nil
@@ -108,9 +108,9 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 	return spec, nil
 }
 
-func (b *builder) planExplicitEdges(nodes map[string]plannedNode, spec *pipeline.Spec) error {
-	for i := range b.connections {
-		if err := planConnection(nodes, spec, b.connections[i]); err != nil {
+func (b *builder) planExplicitRoutes(nodes map[string]plannedNode, spec *pipeline.Spec) error {
+	for i := range b.routes {
+		if err := planRoute(nodes, spec, b.routes[i]); err != nil {
 			return err
 		}
 	}
@@ -158,15 +158,15 @@ func planLinks(spec *pipeline.Spec, from []pipeline.NodeRef, to []pipeline.NodeR
 	}
 }
 
-func planConnection(nodes map[string]plannedNode, spec *pipeline.Spec, connection pipeline.Connection) error {
-	policy, err := plannedRoutePolicy(connection.Policy)
+func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline.Route) error {
+	policy, err := plannedRoutePolicy(route.Policy)
 	if err != nil {
 		return pipeline.ErrUnsupportedRoute
 	}
-	if len(connection.To) == 0 {
+	if len(route.To) == 0 {
 		return pipeline.ErrInvalidLink
 	}
-	fromRef, err := resolvePlannedNode(nodes, pipeline.NodeRef(connection.From))
+	fromRef, err := resolvePlannedNode(nodes, pipeline.NodeRef(route.From))
 	if err != nil {
 		return err
 	}
@@ -177,8 +177,8 @@ func planConnection(nodes map[string]plannedNode, spec *pipeline.Spec, connectio
 	if from.kind == pipeline.NodeSink {
 		return pipeline.ErrInvalidLink
 	}
-	for i := range connection.To {
-		toRef, err := resolvePlannedNode(nodes, pipeline.NodeRef(connection.To[i]))
+	for i := range route.To {
+		toRef, err := resolvePlannedNode(nodes, pipeline.NodeRef(route.To[i]))
 		if err != nil {
 			return err
 		}
@@ -193,7 +193,7 @@ func planConnection(nodes map[string]plannedNode, spec *pipeline.Spec, connectio
 			From:   fromRef,
 			To:     toRef,
 			Policy: policy,
-			Label:  connection.Label,
+			Label:  route.Label,
 		})
 	}
 	return nil

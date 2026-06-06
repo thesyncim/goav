@@ -202,7 +202,11 @@ func TestSourceDepacketizesRTPIntoPipelinePackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(pipeline.Connect(sourceRef.String(), sinkRef.String())); err != nil {
+	if err := graph.Connect(pipeline.Route{
+		From:   sourceRef.String(),
+		To:     []string{sinkRef.String()},
+		Policy: pipeline.RouteAll,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(ctx); err != nil {
@@ -464,7 +468,11 @@ func TestSourceEmitsTimestampDiscontinuityOnBackwardPTS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(pipeline.Connect(sourceRef.String(), sinkRef.String())); err != nil {
+	if err := graph.Connect(pipeline.Route{
+		From:   sourceRef.String(),
+		To:     []string{sinkRef.String()},
+		Policy: pipeline.RouteAll,
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -576,7 +584,11 @@ func TestSourceJitterOrdersPackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(pipeline.Connect(sourceRef.String(), sinkRef.String())); err != nil {
+	if err := graph.Connect(pipeline.Route{
+		From:   sourceRef.String(),
+		To:     []string{sinkRef.String()},
+		Policy: pipeline.RouteAll,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(ctx); err != nil {

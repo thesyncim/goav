@@ -116,10 +116,10 @@ func TestDirectGraphPassThrough(t *testing.T) {
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "stage")); err != nil {
+	if err := graph.Connect(route("source", "stage")); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("stage", "sink")); err != nil {
+	if err := graph.Connect(route("stage", "sink")); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(ctx); err != nil {
@@ -151,10 +151,10 @@ func TestDirectGraphSpec(t *testing.T) {
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "stage")); err != nil {
+	if err := graph.Connect(route("source", "stage")); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("stage", "sink").ByStream("audio")); err != nil {
+	if err := graph.Connect(route("stage", "sink").ByStream("audio")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -197,7 +197,7 @@ func TestDirectGraphFanoutSharesPayload(t *testing.T) {
 	if _, err := graph.AddSink(right, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "left", "right")); err != nil {
+	if err := graph.Connect(route("source", "left", "right")); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(context.Background()); err != nil {
@@ -232,10 +232,10 @@ func TestDirectGraphRouteByStream(t *testing.T) {
 	if _, err := graph.AddSink(audio, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "video").ByStream("video-main")); err != nil {
+	if err := graph.Connect(route("source", "video").ByStream("video-main")); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "audio").ByStream("audio-main")); err != nil {
+	if err := graph.Connect(route("source", "audio").ByStream("audio-main")); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(context.Background()); err != nil {
@@ -266,10 +266,10 @@ func TestDirectGraphRouteByEvent(t *testing.T) {
 	if _, err := graph.AddSink(stats, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "loss").ByEvent(av.EventPacketLoss)); err != nil {
+	if err := graph.Connect(route("source", "loss").ByEvent(av.EventPacketLoss)); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "stats").ByEvent(av.EventStats)); err != nil {
+	if err := graph.Connect(route("source", "stats").ByEvent(av.EventStats)); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(context.Background()); err != nil {
@@ -333,10 +333,10 @@ func TestDirectGraphRunAllocs(t *testing.T) {
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("source", "stage")); err != nil {
+	if err := graph.Connect(route("source", "stage")); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Connect("stage", "sink")); err != nil {
+	if err := graph.Connect(route("stage", "sink")); err != nil {
 		t.Fatal(err)
 	}
 

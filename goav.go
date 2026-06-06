@@ -29,7 +29,7 @@ type Runtime interface {
 	New() Builder
 }
 
-// Builder describes the intended fluent connection API without constraining the
+// Builder describes the intended fluent route API without constraining the
 // internal graph representation.
 type Builder interface {
 	Input(Input) Builder
@@ -64,5 +64,9 @@ func SelectVideo() av.StreamSelector {
 }
 
 func Route(from string, to ...string) pipeline.Route {
-	return pipeline.Connect(from, to...)
+	return pipeline.Route{
+		From:   from,
+		To:     append([]string(nil), to...),
+		Policy: pipeline.RouteAll,
+	}
 }

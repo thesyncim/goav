@@ -124,15 +124,15 @@ func (g *DirectGraph) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
 	return NodeRef(g.nodes[index].name), nil
 }
 
-func (g *DirectGraph) Connect(connection Connection) error {
-	if len(connection.To) == 0 {
+func (g *DirectGraph) Connect(route Route) error {
+	if len(route.To) == 0 {
 		return ErrInvalidLink
 	}
-	policy, err := normalizeRoutePolicy(connection.Policy)
+	policy, err := normalizeRoutePolicy(route.Policy)
 	if err != nil {
 		return err
 	}
-	from, ok := g.index[connection.From]
+	from, ok := g.index[route.From]
 	if !ok {
 		return ErrUnknownNode
 	}
@@ -140,9 +140,9 @@ func (g *DirectGraph) Connect(connection Connection) error {
 		return ErrInvalidLink
 	}
 
-	targets := make([]int, 0, len(connection.To))
-	for i := range connection.To {
-		to, ok := g.index[connection.To[i]]
+	targets := make([]int, 0, len(route.To))
+	for i := range route.To {
+		to, ok := g.index[route.To[i]]
 		if !ok {
 			return ErrUnknownNode
 		}
@@ -154,7 +154,7 @@ func (g *DirectGraph) Connect(connection Connection) error {
 	g.nodes[from].routes = append(g.nodes[from].routes, directRoute{
 		to:     targets,
 		policy: policy,
-		label:  connection.Label,
+		label:  route.Label,
 	})
 	return nil
 }

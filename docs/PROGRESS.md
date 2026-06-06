@@ -65,7 +65,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
    RTCP feedback routing into the existing RTP source. Done.
 15. Add RTP codec-change payload-map refresh and depacketizer epoch reset
    proof. Done.
-16. Simplify explicit graph references to node-to-node connections with
+16. Simplify explicit graph references to node-to-node routes with
     stream/event route labels, while keeping text/DOT/Mermaid rendering
     equivalent to runtime graphs. Done.
 17. Add bounded H264 RTP depacketization and Annex B packet recording. Done.
@@ -127,8 +127,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 39. Add timestamp delta/compare helpers and let `rtpav.Source` emit
     discontinuity events for backward timestamps or configured max-gap
     thresholds, with fluent `WithRTPMaxTimestampGap` graph detail. Done.
-40. Promote `pipeline.Connection` as the simple direct graph connection API and
-    thread runtime explicit graph helpers through it. Done.
+40. Promote `pipeline.Route` as the simple direct graph edge API and thread
+    runtime explicit graph helpers through it. Done.
 41. Add build-tagged `govpx` VP9 encoder factory with caller-owned packet
     output buffers, keyframe request handling, descriptor merge proof,
     allocation guard, and deterministic close behavior. Done.
@@ -152,8 +152,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     record/fanout graph: unsafe depacketizer-owned packet payloads fail without
     copy bounds and reach every mux output with copied bytes when
     `CopyPacketBytes` is set. Done.
-48. Collapse the runnable graph edge surface to the `Connection` model by
-    removing secondary graph methods while preserving stream/event routing.
+48. Collapse the runnable graph edge surface to the `Route` model by removing
+    secondary graph methods while preserving stream/event routing.
     Done.
 49. Reserve the `goav_goav1` optional adapter boundary and pin the sibling AV1
     RTP stream-runner API with a tagged compile proof, without registering a
@@ -219,7 +219,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `i444` borrowed planes. Done.
 66. Collapse RTP depacketizer configuration to one variadic public option:
     `WithRTPDepacketizers(...)` handles one or many depacketizers. Done.
-67. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+67. Collapse the remaining pipeline edge vocabulary to one `Route` value:
+    remove the old exported edge alias and standalone constructor helper, keep
+    `Graph.Connect(route)` as the graph action, and route planner/build internals
+    through the same type. Done.
+68. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
