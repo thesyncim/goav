@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
@@ -96,4 +97,188 @@ func TestRuntimeGraphHandlesRejectNilNode(t *testing.T) {
 	if _, err := graph.Build(context.Background()); !errors.Is(err, ErrNilSource) {
 		t.Fatalf("err = %v, want ErrNilSource", err)
 	}
+}
+
+func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	source := &runtimeBranchStepSource{
+		name: "source",
+		messages: []pipeline.Message{
+			{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{1}}}},
+			{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{2}}}},
+			{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{3}}}},
+		},
+		emitted: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+		resume: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+	}
+	base := &runtimeTestSink{name: "base"}
+	stage := &runtimeTestStage{name: "sample"}
+	late := &runtimeTestSink{name: "out"}
+
+	graph := New().Graph()
+	src := graph.Source("source", source)
+	baseNode := graph.Sink("base", base)
+	graph.Connect(src.Out(), baseNode.In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- task.Run(ctx)
+	}()
+
+	select {
+	case <-source.emitted[0]:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	attachment, err := task.Attach(ctx, Branch("screenshots").From("source").Do(stage).To(late))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attachment.Name() != "screenshots" {
+		t.Fatalf("attachment name = %q", attachment.Name())
+	}
+	close(source.resume[0])
+	select {
+	case <-source.emitted[1]:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := attachment.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := attachment.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	close(source.resume[1])
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 3 || stage.count != 1 || late.count != 1 || late.lastPacketValue.Payload.Bytes[0] != 2 {
+		t.Fatalf("base=%d stage=%d late=%d packet=%+v", base.count, stage.count, late.count, late.lastPacketValue)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "screenshots/sample") || strings.Contains(text, "screenshots/out") {
+		t.Fatalf("spec:\n%s", text)
+	}
+}
+
+func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
+	graph := New().Graph()
+	graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Sink("sink", &runtimeTestSink{name: "sink"})
+	task, err := graph.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = task.Attach(context.Background(), Branch("late").From("missing").To(&runtimeTestSink{name: "late"}))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_anchor_missing" || !errors.Is(err, pipeline.ErrUnknownNode) {
+		t.Fatalf("err = %v, want runtime_branch_anchor_missing wrapping ErrUnknownNode", err)
+	}
+}
+
+func TestTaskAttachRejectsRunningBufferedGraph(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	source := &runtimeBranchWaitingSource{
+		name:   "source",
+		ready:  make(chan struct{}),
+		resume: make(chan struct{}),
+		msg:    pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventStats}},
+	}
+	graph := New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 1})).Graph()
+	src := graph.Source("source", source)
+	sink := graph.Sink("sink", &runtimeTestSink{name: "sink"})
+	graph.Connect(src.Out(), sink.In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- task.Run(ctx)
+	}()
+	select {
+	case <-source.ready:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	_, err = task.Attach(ctx, Branch("late").From("source").To(&runtimeTestSink{name: "late"}))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_graph_error" || !errors.Is(err, pipeline.ErrDynamicGraphUnsupported) {
+		t.Fatalf("err = %v, want runtime_branch_graph_error wrapping ErrDynamicGraphUnsupported", err)
+	}
+	close(source.resume)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+}
+
+type runtimeBranchStepSource struct {
+	name     string
+	messages []pipeline.Message
+	emitted  []chan struct{}
+	resume   []chan struct{}
+}
+
+func (s *runtimeBranchStepSource) Name() string {
+	return s.name
+}
+
+func (s *runtimeBranchStepSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	for i := range s.messages {
+		if err := emitter.Emit(ctx, &s.messages[i]); err != nil {
+			return err
+		}
+		close(s.emitted[i])
+		if i >= len(s.resume) {
+			continue
+		}
+		select {
+		case <-s.resume[i]:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+func (s *runtimeBranchStepSource) Close() error {
+	return nil
+}
+
+type runtimeBranchWaitingSource struct {
+	name   string
+	msg    pipeline.Message
+	ready  chan struct{}
+	resume chan struct{}
+}
+
+func (s *runtimeBranchWaitingSource) Name() string {
+	return s.name
+}
+
+func (s *runtimeBranchWaitingSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	close(s.ready)
+	select {
+	case <-s.resume:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return emitter.Emit(ctx, &s.msg)
+}
+
+func (s *runtimeBranchWaitingSource) Close() error {
+	return nil
 }

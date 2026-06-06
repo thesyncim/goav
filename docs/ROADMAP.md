@@ -27,10 +27,11 @@ make the implementation and adapter coverage match the promise.
 5. Keep `pipeline.Spec` as the core graph object. Human graph rendering and any
    future workflow report should live outside runtime composition behind
    optional tooling, not as text/DOT/Mermaid methods or beginner recipe APIs.
-6. Keep `Fork` as the single branch word. Build-time flow forks now compose
-   repeated stream chains; runtime-attached forks should grow as a task control
-   plane for late outputs, screenshots, and observability taps, not as another
-   graph DSL.
+6. Keep planned fanout and runtime control-plane separate. `Tee` composes
+   repeated stream chains before build; `Task.Attach(ctx, goav.Branch(...))`
+   adds stoppable stage/sink branches to direct task graphs while running.
+   Buffered runtime attachments and live muxed output attachments are the next
+   control-plane slices, not a separate graph DSL.
 7. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
    choices should be visible to realtime users. First recipe policy slice
@@ -133,8 +134,9 @@ make the implementation and adapter coverage match the promise.
   streams. First file/protocol and RTP/WebRTC slices are active.
 - Branchable multi-rendition transcode builder compilers and fluent explicit
   graph fanout through multi-target routes. First shared-decode slice is active.
-- Reusable `AudioFlow`/`VideoFlow` branches with `.Fork(...)`. Build-time
-  file/protocol and RTP/WebRTC slices are active; runtime-attached forks remain
-  planned for screenshots, late recording outputs, and live analysis taps.
+- Reusable `AudioFlow`/`VideoFlow` branches with `.Tee(...)`. Build-time
+  file/protocol and RTP/WebRTC slices are active; runtime stage/sink attachments
+  are active for direct task graphs; buffered attachments and late recording outputs
+  remain planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

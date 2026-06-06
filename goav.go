@@ -36,6 +36,7 @@ type GraphBuilder interface {
 // Task is a runnable media job such as receive, record, remux, or transcode.
 type Task interface {
 	Describe() pipeline.Spec
+	Attach(context.Context, RuntimeBranch) (Attachment, error)
 	Run(context.Context) error
 	Events() <-chan av.Event
 	Stats() TaskStats

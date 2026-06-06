@@ -9,7 +9,7 @@ import (
 // Flow is a reusable stream-local recipe fragment.
 //
 // Build flows with AudioFlow or VideoFlow, then apply them to one stream chain
-// or route several flow branches with Fork.
+// or route several flow branches with Tee.
 type Flow interface {
 	Name() string
 	isFlow()
@@ -292,12 +292,12 @@ func validateFlowMedia(operation string, node string, selected av.MediaType, spe
 	}
 }
 
-func flowForkMissingError(node string) error {
+func flowTeeMissingError(node string) error {
 	return &BuildError{
 		Code:      "flow_missing",
-		Operation: "build fork",
+		Operation: "build tee",
 		Node:      node,
-		Reason:    "Fork requires at least one routed flow",
+		Reason:    "Tee requires at least one routed flow",
 		Suggestions: []string{
 			"pass flows with goav.AudioFlow(name).To(output) or goav.VideoFlow(name).To(output)",
 		},
@@ -305,45 +305,45 @@ func flowForkMissingError(node string) error {
 	}
 }
 
-func flowForkInputCountError(node string, count int) error {
+func flowTeeInputCountError(node string, count int) error {
 	return &BuildError{
 		Code:      "input_count_unsupported",
-		Operation: "build fork",
+		Operation: "build tee",
 		Node:      node,
-		Reason:    "Fork currently composes branches from one input",
+		Reason:    "Tee currently composes branches from one input",
 		Details: []string{
 			fmt.Sprintf("inputs=%d", count),
 		},
 		Suggestions: []string{
-			"start Fork from goav.From(input).Audio() or goav.From(input).Video() with one input",
+			"start Tee from goav.From(input).Audio() or goav.From(input).Video() with one input",
 			"use the expert graph API when combining several sources manually",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func flowForkOutputScopeError(node string) error {
+func flowTeeOutputScopeError(node string) error {
 	return &BuildError{
 		Code:      "output_scope_mixed",
-		Operation: "build fork",
+		Operation: "build tee",
 		Node:      node,
-		Reason:    "Fork branches own their outputs",
+		Reason:    "Tee branches own their outputs",
 		Suggestions: []string{
 			"attach outputs to flows with flow.To(output)",
-			"remove outer .To(...) calls before .Fork(...)",
+			"remove outer .To(...) calls before .Tee(...)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func flowForkDuplicateError(node string) error {
+func flowTeeDuplicateError(node string) error {
 	return &BuildError{
 		Code:      "flow_duplicate",
-		Operation: "build fork",
+		Operation: "build tee",
 		Node:      node,
-		Reason:    "a stream recipe can have one Fork",
+		Reason:    "a stream recipe can have one Tee",
 		Suggestions: []string{
-			"pass all routed flows to the same .Fork(...) call",
+			"pass all routed flows to the same .Tee(...) call",
 			"use goav.Transcode(input) when branches should be declared independently",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -353,11 +353,11 @@ func flowForkDuplicateError(node string) error {
 func flowBranchOutputMissingError(name string) error {
 	return &BuildError{
 		Code:      "output_missing",
-		Operation: "build fork",
+		Operation: "build tee",
 		Node:      firstNonEmpty(name, "flow"),
 		Reason:    "routed flow has no output",
 		Suggestions: []string{
-			"call flow.To(goav.FileOutput(...)) before passing it to Fork",
+			"call flow.To(goav.FileOutput(...)) before passing it to Tee",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -366,9 +366,9 @@ func flowBranchOutputMissingError(name string) error {
 func flowBranchEncodeMissingError(name string) error {
 	return &BuildError{
 		Code:      "encode_missing",
-		Operation: "build fork",
+		Operation: "build tee",
 		Node:      firstNonEmpty(name, "flow"),
-		Reason:    "Fork branches write encoded outputs and need a terminal codec",
+		Reason:    "Tee branches write encoded outputs and need a terminal codec",
 		Suggestions: []string{
 			"call .Opus(...), .OpusVoice(), .OpusMusic(), .VP8(...), or .VP9(...) on the flow",
 		},

@@ -93,7 +93,7 @@ return goav.Transcode(goav.FileInput("source.webm", in)).
     Run(ctx)
 ```
 
-Reuse flow branches for live or file inputs. `Fork` is the public branch verb:
+Reuse flow branches for live or file inputs. `Tee` is the planned media split:
 one decoded stream feeds named flow branches, each with its own transform,
 encoder, and output.
 
@@ -108,14 +108,14 @@ archive := goav.AudioFlow("archive").
 
 return goav.From(goav.FileInput("input.webm", in)).
     Audio().
-    Fork(
+    Tee(
         voice.To(goav.FileOutput("voice.ogg", voiceFile)),
         archive.To(goav.FileOutput("archive.ogg", archiveFile)),
     ).
     Run(ctx)
 ```
 
-## Common Recipes
+## Workflow Shapes
 
 Record and fan out packet streams:
 
@@ -154,7 +154,7 @@ return goav.From(input).
     Run(ctx)
 ```
 
-Fork one decoded stream into reusable branches:
+Tee one decoded stream into reusable branches:
 
 ```go
 archive := goav.VideoFlow("archive").VP8(2_000_000)
@@ -162,7 +162,7 @@ thumbs := goav.VideoFlow("thumbs").Resize(320, 180).VP8(300_000)
 
 return goav.From(input).
     Video().
-    Fork(
+    Tee(
         archive.To(goav.FileOutput("archive.ivf", archiveFile)),
         thumbs.To(goav.FileOutput("thumbs.ivf", thumbsFile)),
     ).
@@ -189,11 +189,34 @@ return goav.From(goav.WebRTCTrack(track)).
     Run(ctx)
 ```
 
-`Fork` is build-time today: it splits the current selected stream into reusable
-flow branches before the task starts. Runtime-attached forks are the next
-control-plane shape for screenshots, late outputs, and observability taps, but
-they should grow from the same word and the same flow model instead of adding a
-second branching API.
+Runtime branches use a separate control-plane verb. `Attach` adds a new branch
+to a built direct task graph while it is running, and the returned attachment
+can be stopped later:
+
+```go
+task, err := job.Build(ctx)
+if err != nil {
+    return err
+}
+go task.Run(ctx)
+
+screenshots, err := task.Attach(ctx,
+    goav.Branch("screenshots").
+        From("decode-video").
+        Do(screenshotStage).
+        To(goav.SinkFunc("screenshots-out", collectScreenshot)),
+)
+if err != nil {
+    return err
+}
+
+// Later, stop the branch without stopping the main task.
+return screenshots.Stop(ctx)
+```
+
+Use `task.Describe()` to choose the source node for `.From(...)`. Buffered
+runtime attachments and live muxed `FileOutput` attachment fail explicitly
+today; those need queue/worker and mux-output control-plane slices.
 
 `Record` and `From(input).To(...)` are packet-preserving forms. A stream chain
 such as `From(input).Audio()` or `From(input).Video()` sends decoded frames to

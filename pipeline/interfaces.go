@@ -133,6 +133,8 @@ type Graph interface {
 	AddStage(Stage, BufferPolicy) (NodeRef, error)
 	AddSink(Sink, BufferPolicy) (NodeRef, error)
 	Connect(Route) error
+	Disconnect(Route) error
+	Remove(NodeRef) error
 	Spec() Spec
 	Run(context.Context) error
 	Events() <-chan av.Event

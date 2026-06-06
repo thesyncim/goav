@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -12,6 +13,7 @@ var (
 	ErrBufferedMessageUnsafe    = errors.New("pipeline: buffered message unsafe")
 	ErrBufferedEdgesUnsupported = errors.New("pipeline: buffered edges unsupported by direct graph")
 	ErrClosed                   = errors.New("pipeline: closed")
+	ErrDynamicGraphUnsupported  = errors.New("pipeline: dynamic graph unsupported")
 	ErrInvalidLink              = errors.New("pipeline: invalid link")
 	ErrMessageTooLarge          = errors.New("pipeline: message too large")
 	ErrNilMessage               = errors.New("pipeline: nil message")
@@ -31,11 +33,12 @@ const (
 type directNode struct {
 	name    string
 	kind    nodeKind
+	active  bool
 	source  Source
 	stage   Stage
 	sink    Sink
 	routes  []directRoute
-	emitter directEmitter
+	emitter *directEmitter
 }
 
 type directRoute struct {
@@ -64,6 +67,8 @@ func NewGraph(config GraphConfig) (Graph, error) {
 
 type directRunner struct {
 	config  GraphConfig
+	mu      sync.RWMutex
+	statsMu sync.Mutex
 	index   map[string]int
 	nodes   []directNode
 	sources []int
@@ -91,6 +96,8 @@ func (g *directRunner) AddSource(source Source, policy BufferPolicy) (NodeRef, e
 	if !policy.IsDirect() {
 		return "", ErrBufferedEdgesUnsupported
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	index, err := g.addNode(directNode{name: source.Name(), kind: nodeSource, source: source})
 	if err != nil {
 		return "", err
@@ -103,6 +110,8 @@ func (g *directRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, erro
 	if !policy.IsDirect() {
 		return "", ErrBufferedEdgesUnsupported
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	index, err := g.addNode(directNode{name: stage.Name(), kind: nodeStage, stage: stage})
 	if err != nil {
 		return "", err
@@ -114,6 +123,8 @@ func (g *directRunner) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) 
 	if !policy.IsDirect() {
 		return "", ErrBufferedEdgesUnsupported
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	index, err := g.addNode(directNode{name: sink.Name(), kind: nodeSink, sink: sink})
 	if err != nil {
 		return "", err
@@ -129,8 +140,10 @@ func (g *directRunner) Connect(route Route) error {
 	if err != nil {
 		return err
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	from, ok := g.index[route.From]
-	if !ok {
+	if !ok || !g.nodes[from].active {
 		return ErrUnknownNode
 	}
 	if g.nodes[from].kind == nodeSink {
@@ -140,7 +153,7 @@ func (g *directRunner) Connect(route Route) error {
 	targets := make([]int, 0, len(route.To))
 	for i := range route.To {
 		to, ok := g.index[route.To[i]]
-		if !ok {
+		if !ok || !g.nodes[to].active {
 			return ErrUnknownNode
 		}
 		if g.nodes[to].kind == nodeSource {
@@ -156,6 +169,57 @@ func (g *directRunner) Connect(route Route) error {
 	return nil
 }
 
+func (g *directRunner) Disconnect(route Route) error {
+	if len(route.To) == 0 {
+		return ErrInvalidLink
+	}
+	policy, err := normalizeRoutePolicy(route.Policy)
+	if err != nil {
+		return err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	from, ok := g.index[route.From]
+	if !ok || !g.nodes[from].active {
+		return ErrUnknownNode
+	}
+	targets := make(map[int]struct{}, len(route.To))
+	for i := range route.To {
+		to, ok := g.index[route.To[i]]
+		if !ok {
+			return ErrUnknownNode
+		}
+		targets[to] = struct{}{}
+	}
+	removed := false
+	routes := g.nodes[from].routes[:0]
+	for i := range g.nodes[from].routes {
+		existing := g.nodes[from].routes[i]
+		if existing.policy != policy || existing.label != route.Label {
+			routes = append(routes, existing)
+			continue
+		}
+		to := existing.to[:0]
+		for j := range existing.to {
+			if _, ok := targets[existing.to[j]]; ok {
+				removed = true
+				continue
+			}
+			to = append(to, existing.to[j])
+		}
+		if len(to) == 0 {
+			continue
+		}
+		existing.to = to
+		routes = append(routes, existing)
+	}
+	g.nodes[from].routes = routes
+	if !removed {
+		return ErrInvalidLink
+	}
+	return nil
+}
+
 func normalizeRoutePolicy(policy RoutePolicy) (RoutePolicy, error) {
 	switch policy {
 	case "", RouteAll:
@@ -168,12 +232,30 @@ func normalizeRoutePolicy(policy RoutePolicy) (RoutePolicy, error) {
 }
 
 func (g *directRunner) Run(ctx context.Context) error {
+	g.mu.RLock()
 	if g.closed {
+		g.mu.RUnlock()
 		return ErrClosed
 	}
+	var sourceStack [8]int
+	sources := sourceStack[:0]
 	for i := range g.sources {
-		node := &g.nodes[g.sources[i]]
-		if err := node.source.Start(ctx, &node.emitter); err != nil {
+		if !g.nodes[g.sources[i]].active {
+			continue
+		}
+		if len(sources) < cap(sources) {
+			sources = append(sources, g.sources[i])
+			continue
+		}
+		sources = append(sources, g.sources[i])
+	}
+	g.mu.RUnlock()
+	for i := range sources {
+		node, err := g.nodeSnapshot(sources[i])
+		if err != nil {
+			return err
+		}
+		if err := node.source.Start(ctx, node.emitter); err != nil {
 			return err
 		}
 	}
@@ -181,18 +263,25 @@ func (g *directRunner) Run(ctx context.Context) error {
 }
 
 func (g *directRunner) Spec() Spec {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 	spec := Spec{
 		Name:     g.config.Name,
 		Realtime: g.config.Realtime,
-		Nodes:    make([]NodeSpec, len(g.nodes)),
 	}
 	for i := range g.nodes {
 		node := &g.nodes[i]
-		spec.Nodes[i] = directNodeSpec(node)
+		if !node.active {
+			continue
+		}
+		spec.Nodes = append(spec.Nodes, directNodeSpec(node))
 		for j := range node.routes {
 			route := &node.routes[j]
 			for k := range route.to {
 				to := &g.nodes[route.to[k]]
+				if !to.active {
+					continue
+				}
 				spec.Edges = append(spec.Edges, EdgeSpec{
 					From:   NodeRef(node.name),
 					To:     NodeRef(to.name),
@@ -210,32 +299,86 @@ func (g *directRunner) Events() <-chan av.Event {
 }
 
 func (g *directRunner) Stats() GraphStats {
+	g.statsMu.Lock()
+	defer g.statsMu.Unlock()
 	return cloneGraphStats(g.stats)
 }
 
 func (g *directRunner) Close() error {
+	g.mu.Lock()
 	if g.closed {
+		g.mu.Unlock()
 		return nil
 	}
 	g.closed = true
-	var first error
+	nodes := make([]directNode, 0, len(g.nodes))
 	for i := range g.nodes {
 		node := &g.nodes[i]
-		var err error
-		switch node.kind {
-		case nodeSource:
-			err = node.source.Close()
-		case nodeStage:
-			err = node.stage.Close()
-		case nodeSink:
-			err = node.sink.Close()
+		if !node.active {
+			continue
 		}
+		node.active = false
+		nodes = append(nodes, *node)
+	}
+	g.mu.Unlock()
+
+	var first error
+	for i := range nodes {
+		err := closeDirectNode(&nodes[i])
 		if first == nil && err != nil {
 			first = err
 		}
 	}
 	close(g.events)
 	return first
+}
+
+func (g *directRunner) Remove(ref NodeRef) error {
+	g.mu.Lock()
+	if g.closed {
+		g.mu.Unlock()
+		return ErrClosed
+	}
+	index, ok := g.index[ref.String()]
+	if !ok || !g.nodes[index].active {
+		g.mu.Unlock()
+		return ErrUnknownNode
+	}
+	if g.nodes[index].kind == nodeSource {
+		g.mu.Unlock()
+		return ErrInvalidLink
+	}
+	node := &g.nodes[index]
+	node.active = false
+	node.routes = nil
+	delete(g.index, ref.String())
+	for i := range g.nodes {
+		if !g.nodes[i].active {
+			continue
+		}
+		for j := range g.nodes[i].routes {
+			route := &g.nodes[i].routes[j]
+			to := route.to[:0]
+			for k := range route.to {
+				if route.to[k] == index {
+					continue
+				}
+				to = append(to, route.to[k])
+			}
+			route.to = to
+		}
+		routes := g.nodes[i].routes[:0]
+		for j := range g.nodes[i].routes {
+			if len(g.nodes[i].routes[j].to) == 0 {
+				continue
+			}
+			routes = append(routes, g.nodes[i].routes[j])
+		}
+		g.nodes[i].routes = routes
+	}
+	closeNode := *node
+	g.mu.Unlock()
+	return closeDirectNode(&closeNode)
 }
 
 func (g *directRunner) addNode(node directNode) (int, error) {
@@ -246,27 +389,41 @@ func (g *directRunner) addNode(node directNode) (int, error) {
 		return 0, ErrNodeExists
 	}
 	index := len(g.nodes)
-	node.emitter = directEmitter{graph: g, from: index}
+	node.active = true
+	node.emitter = &directEmitter{graph: g, from: index}
 	g.index[node.name] = index
 	g.nodes = append(g.nodes, node)
 	return index, nil
 }
 
 func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
-	if g.closed {
-		return ErrClosed
-	}
 	if msg == nil {
 		return ErrNilMessage
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	g.mu.RLock()
+	if g.closed {
+		g.mu.RUnlock()
+		return ErrClosed
+	}
+	if from < 0 || from >= len(g.nodes) {
+		g.mu.RUnlock()
+		return ErrUnknownNode
+	}
+	if !g.nodes[from].active {
+		g.mu.RUnlock()
+		return nil
+	}
 	g.observeMessage(msg)
 	if err := g.publishEvent(msg); err != nil {
+		g.mu.RUnlock()
 		return err
 	}
 
+	var targetStack [8]int
+	targets := targetStack[:0]
 	routes := g.nodes[from].routes
 	for i := range routes {
 		route := &routes[i]
@@ -274,24 +431,66 @@ func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 			continue
 		}
 		for j := range route.to {
-			if err := g.deliver(ctx, route.to[j], msg); err != nil {
-				return err
+			if len(targets) < cap(targets) {
+				targets = append(targets, route.to[j])
+				continue
 			}
+			targets = append(targets, route.to[j])
+		}
+	}
+	g.mu.RUnlock()
+	for i := range targets {
+		if err := g.deliver(ctx, targets[i], msg); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 func (g *directRunner) deliver(ctx context.Context, to int, msg *Message) error {
-	g.stats.Delivered++
-	node := &g.nodes[to]
+	node, err := g.nodeSnapshot(to)
+	if err != nil {
+		if errors.Is(err, ErrUnknownNode) {
+			return nil
+		}
+		return err
+	}
+	g.observeDelivered()
 	switch node.kind {
 	case nodeStage:
-		return node.stage.Handle(ctx, msg, &node.emitter)
+		return node.stage.Handle(ctx, msg, node.emitter)
 	case nodeSink:
 		return node.sink.Handle(ctx, msg)
 	default:
 		return ErrInvalidLink
+	}
+}
+
+func (g *directRunner) nodeSnapshot(index int) (directNode, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.closed {
+		return directNode{}, ErrClosed
+	}
+	if index < 0 || index >= len(g.nodes) {
+		return directNode{}, ErrUnknownNode
+	}
+	if !g.nodes[index].active {
+		return directNode{}, ErrUnknownNode
+	}
+	return g.nodes[index], nil
+}
+
+func closeDirectNode(node *directNode) error {
+	switch node.kind {
+	case nodeSource:
+		return node.source.Close()
+	case nodeStage:
+		return node.stage.Close()
+	case nodeSink:
+		return node.sink.Close()
+	default:
+		return nil
 	}
 }
 
@@ -308,7 +507,15 @@ func (g *directRunner) publishEvent(msg *Message) error {
 }
 
 func (g *directRunner) observeMessage(msg *Message) {
+	g.statsMu.Lock()
+	defer g.statsMu.Unlock()
 	g.stats.observeMessage(msg)
+}
+
+func (g *directRunner) observeDelivered() {
+	g.statsMu.Lock()
+	defer g.statsMu.Unlock()
+	g.stats.Delivered++
 }
 
 func (r *directRoute) matches(msg *Message) bool {

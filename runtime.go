@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -407,7 +408,8 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 }
 
 type task struct {
-	graph pipeline.Graph
+	graph    pipeline.Graph
+	attachMu sync.Mutex
 }
 
 func (t *task) Describe() pipeline.Spec {

@@ -837,14 +837,14 @@ func (s OutputSpec) intent() OutputIntent {
 }
 
 type Job struct {
-	name        string
-	runtime     Runtime
-	inputs      []InputSpec
-	outputs     []OutputSpec
-	stream      *jobStreamBuild
-	forkStreams []streamBuild
-	forkOutputs []namedOutputSpec
-	err         error
+	name       string
+	runtime    Runtime
+	inputs     []InputSpec
+	outputs    []OutputSpec
+	stream     *jobStreamBuild
+	teeStreams []streamBuild
+	teeOutputs []namedOutputSpec
+	err        error
 }
 
 type jobStreamBuild struct {
@@ -929,8 +929,8 @@ func (j *Job) setErr(err error) {
 }
 
 func (j *Job) To(outputs ...OutputSpec) *Job {
-	if len(j.forkStreams) != 0 {
-		j.setErr(flowForkOutputScopeError("fork"))
+	if len(j.teeStreams) != 0 {
+		j.setErr(flowTeeOutputScopeError("tee"))
 		return j
 	}
 	j.outputs = append(j.outputs, outputs...)
@@ -971,9 +971,9 @@ func (j *Job) Intent() Intent {
 	for i := range j.inputs {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())
 	}
-	if len(j.forkStreams) != 0 {
-		for i := range j.forkStreams {
-			intent.Streams = append(intent.Streams, transcodeStreamIntent(j.forkStreams[i]))
+	if len(j.teeStreams) != 0 {
+		for i := range j.teeStreams {
+			intent.Streams = append(intent.Streams, transcodeStreamIntent(j.teeStreams[i]))
 		}
 	} else if j.stream != nil {
 		intent.Streams = append(intent.Streams, jobStreamIntent(j.stream))
@@ -1130,10 +1130,10 @@ func jobOutputLabelSet(outputs []OutputSpec) map[string]struct{} {
 }
 
 func (j *Job) allOutputs() []OutputSpec {
-	if len(j.forkOutputs) != 0 {
-		outputs := make([]OutputSpec, 0, len(j.forkOutputs))
-		for i := range j.forkOutputs {
-			outputs = append(outputs, j.forkOutputs[i].output)
+	if len(j.teeOutputs) != 0 {
+		outputs := make([]OutputSpec, 0, len(j.teeOutputs))
+		for i := range j.teeOutputs {
+			outputs = append(outputs, j.teeOutputs[i].output)
 		}
 		return outputs
 	}
@@ -2307,35 +2307,35 @@ func (b *JobStreamBuilder) Apply(flow Flow) *JobStreamBuilder {
 	return b
 }
 
-func (b *JobStreamBuilder) Fork(branches ...FlowBranch) *Job {
+func (b *JobStreamBuilder) Tee(branches ...FlowBranch) *Job {
 	stream := b.current()
 	job := b.job
 	if len(branches) == 0 {
-		job.setErr(flowForkMissingError(jobStreamName(stream)))
+		job.setErr(flowTeeMissingError(jobStreamName(stream)))
 		return job
 	}
-	if len(job.forkStreams) != 0 {
-		job.setErr(flowForkDuplicateError(jobStreamName(stream)))
+	if len(job.teeStreams) != 0 {
+		job.setErr(flowTeeDuplicateError(jobStreamName(stream)))
 		return job
 	}
 	if len(job.inputs) != 1 {
-		job.setErr(flowForkInputCountError(jobStreamName(stream), len(job.inputs)))
+		job.setErr(flowTeeInputCountError(jobStreamName(stream), len(job.inputs)))
 		return job
 	}
 	if len(job.outputs) != 0 || len(stream.outputs) != 0 {
-		job.setErr(flowForkOutputScopeError(jobStreamName(stream)))
+		job.setErr(flowTeeOutputScopeError(jobStreamName(stream)))
 		return job
 	}
 
-	forkStreams := make([]streamBuild, 0, len(branches))
-	forkOutputs := make([]namedOutputSpec, 0, len(branches))
+	teeStreams := make([]streamBuild, 0, len(branches))
+	teeOutputs := make([]namedOutputSpec, 0, len(branches))
 	for i := range branches {
 		spec := branches[i].spec
 		if spec.err != nil {
 			job.setErr(spec.err)
 			return job
 		}
-		if err := validateFlowMedia("build fork", jobStreamName(stream), stream.selector.Type, spec); err != nil {
+		if err := validateFlowMedia("build tee", jobStreamName(stream), stream.selector.Type, spec); err != nil {
 			job.setErr(err)
 			return job
 		}
@@ -2355,17 +2355,17 @@ func (b *JobStreamBuilder) Fork(branches ...FlowBranch) *Job {
 			encode:     spec.encode,
 			labels:     outputLabels(branches[i].outputs),
 		}
-		forkStreams = append(forkStreams, branch)
+		teeStreams = append(teeStreams, branch)
 		for j := range branches[i].outputs {
 			label := branch.labels[j]
-			forkOutputs = append(forkOutputs, namedOutputSpec{
+			teeOutputs = append(teeOutputs, namedOutputSpec{
 				name:   label,
 				output: branches[i].outputs[j].Name(firstNonEmpty(branches[i].outputs[j].name, label)),
 			})
 		}
 	}
-	job.forkStreams = forkStreams
-	job.forkOutputs = forkOutputs
+	job.teeStreams = teeStreams
+	job.teeOutputs = teeOutputs
 	return job
 }
 
@@ -2458,7 +2458,7 @@ type TranscodeJob struct {
 	outputs []namedOutputSpec
 	err     error
 
-	fromFlowFork bool
+	fromFlowTee bool
 }
 
 type namedOutputSpec struct {
@@ -2638,12 +2638,12 @@ func validateTranscodeBranchIntentShape(stream StreamIntent, index int) error {
 	return validateTranscodeBranchOutputLabels(stream)
 }
 
-func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpec, fromFlowFork bool) error {
+func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpec, fromFlowTee bool) error {
 	if err := input.validate(); err != nil {
 		return err
 	}
 	if input.rtp != nil {
-		if !fromFlowFork {
+		if !fromFlowTee {
 			return transcodeUnsupportedRTPInputError()
 		}
 	}

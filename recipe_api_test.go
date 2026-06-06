@@ -188,13 +188,13 @@ func TestInputSpecKeepsManualDepacketizersOutOfRecipeFrontDoor(t *testing.T) {
 	}
 }
 
-func TestForkIsTheOnlyPublicFlowBranchVerb(t *testing.T) {
+func TestTeeIsTheOnlyPublicFlowBranchVerb(t *testing.T) {
 	streamType := reflect.TypeOf((*goav.JobStreamBuilder)(nil))
-	if _, ok := streamType.MethodByName("Fork"); !ok {
-		t.Fatal("JobStreamBuilder should expose Fork for flow branches")
+	if _, ok := streamType.MethodByName("Tee"); !ok {
+		t.Fatal("JobStreamBuilder should expose Tee for flow branches")
 	}
-	if _, ok := streamType.MethodByName("Tee"); ok {
-		t.Fatal("JobStreamBuilder should not expose Tee; Fork is the public branch verb")
+	if _, ok := streamType.MethodByName("Fork"); ok {
+		t.Fatal("JobStreamBuilder should not expose Fork; Tee is the public branch verb")
 	}
 }
 
@@ -485,7 +485,7 @@ func TestAudioFlowAppliesToStreamRecipeIntent(t *testing.T) {
 	}
 }
 
-func TestFlowForkStaysOnJobAndBuildsBranchIntent(t *testing.T) {
+func TestFlowTeeStaysOnJobAndBuildsBranchIntent(t *testing.T) {
 	voice := goav.AudioFlow("voice").
 		Resample(16_000, goav.Mono).
 		OpusVoice()
@@ -495,13 +495,13 @@ func TestFlowForkStaysOnJobAndBuildsBranchIntent(t *testing.T) {
 
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio(goav.StreamIndex(0)).
-		Fork(
+		Tee(
 			voice.To(goav.FileOutput("voice.ogg", io.Discard)),
 			archive.To(goav.FileOutput("archive.ogg", io.Discard)),
 		)
 
 	if reflect.TypeOf(job) != reflect.TypeOf((*goav.Job)(nil)) {
-		t.Fatalf("Fork returned %T, want *goav.Job", job)
+		t.Fatalf("Tee returned %T, want *goav.Job", job)
 	}
 	intent := job.Intent()
 	if len(intent.Streams) != 2 || len(intent.Outputs) != 2 {
@@ -581,7 +581,7 @@ func TestFlowBranchSnapshotsBuilderState(t *testing.T) {
 	flow.Resample(8_000, goav.Mono)
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio().
-		Fork(branch)
+		Tee(branch)
 
 	intent := job.Intent()
 	if len(intent.Streams) != 1 ||
@@ -609,7 +609,7 @@ func TestNilFlowBranchIsActionable(t *testing.T) {
 	var flow *goav.AudioFlowBuilder
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Fork(flow.To(goav.FileOutput("voice.ogg", io.Discard))).
+		Tee(flow.To(goav.FileOutput("voice.ogg", io.Discard))).
 		Describe()
 
 	var buildErr *goav.BuildError
@@ -618,12 +618,12 @@ func TestNilFlowBranchIsActionable(t *testing.T) {
 	}
 }
 
-func TestFlowForkRejectsOuterOutputsAndDuplicateFork(t *testing.T) {
+func TestFlowTeeRejectsOuterOutputsAndDuplicateTee(t *testing.T) {
 	voice := goav.AudioFlow("voice").OpusVoice()
 
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio().
-		Fork(voice.To(goav.FileOutput("voice.ogg", io.Discard))).
+		Tee(voice.To(goav.FileOutput("voice.ogg", io.Discard))).
 		To(goav.FileOutput("ignored.ogg", io.Discard)).
 		Describe()
 	var buildErr *goav.BuildError
@@ -633,8 +633,8 @@ func TestFlowForkRejectsOuterOutputsAndDuplicateFork(t *testing.T) {
 
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader("")))
 	audio := job.Audio()
-	audio.Fork(voice.To(goav.FileOutput("voice.ogg", io.Discard)))
-	_, err = audio.Fork(voice.To(goav.FileOutput("other.ogg", io.Discard))).Describe()
+	audio.Tee(voice.To(goav.FileOutput("voice.ogg", io.Discard)))
+	_, err = audio.Tee(voice.To(goav.FileOutput("other.ogg", io.Discard))).Describe()
 	if !errors.As(err, &buildErr) || buildErr.Code != "flow_duplicate" {
 		t.Fatalf("err = %v, want flow_duplicate", err)
 	}
@@ -660,13 +660,13 @@ func TestFlowRejectsTransformsAfterEncode(t *testing.T) {
 	}
 }
 
-func TestFlowForkDescribesLiveInputBranches(t *testing.T) {
+func TestFlowTeeDescribesLiveInputBranches(t *testing.T) {
 	voice := goav.AudioFlow("voice").OpusVoice()
 	archive := goav.AudioFlow("archive").OpusMusic()
 
 	job := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.Opus())).
 		Audio().
-		Fork(
+		Tee(
 			voice.To(goav.FileOutput("voice.ogg", io.Discard)),
 			archive.To(goav.FileOutput("archive.ogg", io.Discard)),
 		)

@@ -61,6 +61,14 @@ layer stays available for inspection and custom stages; optional diagram or
 workflow-report output lives outside the runtime core. A route carries all media
 by default, or matches one stream or event type.
 
+`Task.Attach` is the first runtime control-plane operation. It attaches a named
+stage/sink branch to a built direct graph using node names from `Task.Describe`
+and returns an attachment handle with `Stop(ctx)`. This is for late analysis
+taps, meters, and screenshot collectors that should observe future messages
+without rebuilding the task. Buffered runtime attachments and late muxed output
+branches remain separate slices because they need queue, worker, and mux-output
+lifecycle management.
+
 The current compilers cover:
 
 - empty graphs for lifecycle tests
@@ -88,7 +96,7 @@ The current compilers cover:
 - one or more RTP/WebRTC packet readers to selected-stream
   decode/filter/encode outputs through the same decoder, filter, encoder, and
   mux stages used by file or protocol inputs
-- live RTP/WebRTC flow forks that receive through `rtpav.Source`, share the
+- live RTP/WebRTC flow tees that receive through `rtpav.Source`, share the
   selected stream decode, then route each reusable flow branch through its own
   transforms, encoder, and mux output
 - transcode recipes for one input grouped by selected stream: video branches can

@@ -232,7 +232,7 @@ func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T)
 	}
 }
 
-func TestRuntimeBuilderRTPTranscodeForksDecodedStreamToOutputs(t *testing.T) {
+func TestRuntimeBuilderRTPTranscodeTeesDecodedStreamToOutputs(t *testing.T) {
 	ctx := context.Background()
 	stream := audioOpusTestStream()
 	receiver := &runtimeRTPReceiver{

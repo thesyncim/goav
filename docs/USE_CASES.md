@@ -97,7 +97,7 @@ frame sinks or encoded packets to file/URI outputs, not both. Processing steps
 come before one terminal encoder, and outputs attach after that encoder.
 
 When one selected stream should feed several encoded outputs, reuse flow
-branches and split with `Fork`:
+branches and split with `Tee`:
 
 ```go
 voice := goav.AudioFlow("voice").Resample(16_000, goav.Mono).OpusVoice()
@@ -105,17 +105,31 @@ archive := goav.AudioFlow("archive").Resample(48_000, goav.Stereo).OpusMusic()
 
 err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
-    Fork(
+    Tee(
         voice.To(goav.FileOutput("voice.ogg", voiceFile)),
         archive.To(goav.FileOutput("archive.ogg", archiveFile)),
     ).
     Run(ctx)
 ```
 
-Build-time `Fork` is active for the selected stream. Runtime-attached forks
-remain a planned task control plane for cases such as taking screenshots every
-N seconds, starting a late recording output, or attaching an analysis tap after
-the job is already running.
+`Tee` is a planned media split for the selected stream. Runtime branches use a
+separate control-plane operation when a late branch is a stage and/or sink:
+
+```go
+levels, err := task.Attach(ctx,
+    goav.Branch("level-meter").
+        From("decode-audio").
+        To(goav.SinkFunc("levels", collectLevel)),
+)
+if err != nil {
+    return err
+}
+defer levels.Stop(ctx)
+```
+
+Use `task.Describe()` to choose the `.From(...)` node. Buffered runtime
+attachments and late muxed recording outputs remain planned control-plane
+slices.
 
 When a media type matches several streams, the build error lists the candidates.
 Use the same stream-scoped shape with a narrower selector. `StreamIndex(0)`
@@ -224,12 +238,13 @@ One receive graph should be able to drive several sinks at once:
 - stats/analysis
 - archival transcode
 
-For recipe users, `Fork` is the single branch word. Use it when one selected
+For recipe users, `Tee` is the planned split word. Use it when one selected
 stream has several reusable encoded branches. Use `Transcode` when one file or
 protocol input needs a declared set of muxed audio/video output groups.
-Runtime-attached forks should eventually cover dynamic cases such as a
-screenshot sampler or a late output without forcing users to rebuild the whole
-graph.
+Runtime `Attach` can add a stoppable stage/sink branch to a direct task graph
+while it is running, which covers dynamic analysis, meters, and screenshot
+collectors that consume raw decoded frames. Late muxed `FileOutput` branches
+remain a planned output compiler slice.
 
 Explicit application-owned graphs can use typed handles for this shape:
 
