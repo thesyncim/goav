@@ -48,6 +48,8 @@ const (
 	idCodecDelay           ebml.ID = 0x56aa
 	idSeekPreRoll          ebml.ID = 0x56bb
 	idVideo                ebml.ID = 0xe0
+	idStereoMode           ebml.ID = 0x53b8
+	idAlphaMode            ebml.ID = 0x53c0
 	idPixelWidth           ebml.ID = 0xb0
 	idPixelHeight          ebml.ID = 0xba
 	idPixelCropBottom      ebml.ID = 0x54aa

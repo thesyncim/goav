@@ -937,6 +937,26 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			return VideoConfig{}, err
 		}
 		switch child.ID {
+		case idStereoMode:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.StereoMode, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.StereoModeSet = true
+		case idAlphaMode:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.AlphaMode, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.AlphaModeSet = true
 		case idPixelWidth:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {

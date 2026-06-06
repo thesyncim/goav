@@ -154,6 +154,53 @@ func TestMuxerDemuxerPreservesVideoDisplayMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesVideoModeMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVideo := VideoConfig{
+		Width:         640,
+		Height:        360,
+		StereoMode:    11,
+		StereoModeSet: true,
+		AlphaMode:     0,
+		AlphaModeSet:  true,
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: wantVideo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Video != wantVideo {
+		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
+	}
+}
+
 func TestMuxerDemuxerPreservesTrackSelectionFlags(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})

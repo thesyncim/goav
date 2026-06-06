@@ -194,6 +194,53 @@ func TestMuxerDemuxerPreservesVideoDisplayMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesVideoModeMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVideo := VideoConfig{
+		Width:         640,
+		Height:        360,
+		StereoMode:    11,
+		StereoModeSet: true,
+		AlphaMode:     0,
+		AlphaModeSet:  true,
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: wantVideo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Video != wantVideo {
+		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
+	}
+}
+
 func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1784,6 +1831,22 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			},
 		},
 		{
+			name: "video stereo mode",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 16, Height: 16, StereoMode: -1, StereoModeSet: true},
+			},
+		},
+		{
+			name: "video alpha mode",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 16, Height: 16, AlphaMode: -1, AlphaModeSet: true},
+			},
+		},
+		{
 			name: "video crop",
 			track: Track{
 				Type:  TrackVideo,
@@ -2622,6 +2685,30 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 	t.Run("video zero pixel width", func(t *testing.T) {
 		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
 			return writeTracksWithVideoDimensions(writer, 0, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video stereo mode overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoElements(writer,
+				videoUIntElement{idPixelWidth, 16},
+				videoUIntElement{idPixelHeight, 16},
+				videoUIntElement{idStereoMode, maxIntValue + 1},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video alpha mode overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoElements(writer,
+				videoUIntElement{idPixelWidth, 16},
+				videoUIntElement{idPixelHeight, 16},
+				videoUIntElement{idAlphaMode, maxIntValue + 1},
+			)
 		})
 		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
 			t.Fatalf("err = %v, want ErrInvalidData", err)

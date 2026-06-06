@@ -1529,6 +1529,16 @@ func writeOptionalBoolFlag(w *ebml.Writer, id ebml.ID, value bool, set bool) err
 func writeVideo(w *ebml.Writer, video VideoConfig) error {
 	var payload bytes.Buffer
 	vw := ebml.NewWriter(&payload)
+	if video.StereoModeSet {
+		if err := vw.WriteUInt(idStereoMode, uint64(video.StereoMode)); err != nil {
+			return err
+		}
+	}
+	if video.AlphaModeSet {
+		if err := vw.WriteUInt(idAlphaMode, uint64(video.AlphaMode)); err != nil {
+			return err
+		}
+	}
 	if err := vw.WriteUInt(idPixelWidth, uint64(video.Width)); err != nil {
 		return err
 	}
@@ -1629,6 +1639,7 @@ func validateTrack(track Track) error {
 		}
 	case TrackVideo:
 		if track.Video.Width < 0 || track.Video.Height < 0 ||
+			track.Video.StereoMode < 0 || track.Video.AlphaMode < 0 ||
 			track.Video.PixelCropBottom < 0 || track.Video.PixelCropTop < 0 ||
 			track.Video.PixelCropLeft < 0 || track.Video.PixelCropRight < 0 ||
 			track.Video.DisplayWidth < 0 || track.Video.DisplayHeight < 0 ||

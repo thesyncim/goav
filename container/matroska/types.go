@@ -34,6 +34,10 @@ type AudioConfig struct {
 type VideoConfig struct {
 	Width           int
 	Height          int
+	StereoMode      int
+	StereoModeSet   bool
+	AlphaMode       int
+	AlphaModeSet    bool
 	PixelCropBottom int
 	PixelCropTop    int
 	PixelCropLeft   int
