@@ -126,9 +126,11 @@ ID so unrelated inputs do not flush the selected decoder.
 Optional filter stages can be inserted after `Decode(...)` and before `Sink(...)`
 when their selector matches the decoded stream.
 Decoder factories can optionally provide adapter-specific reusable state for
-this high-level path. That lets the AV1 adapter bind conservative scratch and a
-worker pool for `RTP(...).Decode(...).Sink(...)` while applications with exact
-stream knowledge can still pass tuned state through the lower-level codec API.
+this high-level path. `WithRTPDecodeBounds(...)` lets an RTP input seed payload,
+retained-fragment, output-count, and geometry limits into that state provider.
+That lets the AV1 adapter bind conservative scratch and a worker pool for
+`RTP(...).Decode(...).Sink(...)` while applications with exact stream knowledge
+can still pass tuned state through the lower-level codec API.
 The high-level AV1 path receives depacketized packets from `rtpav`; lower-level
 callers that intentionally keep raw AV1 RTP aggregation payload bytes can use
 the tagged concrete decoder's `DecodeRTPPayloadInto` method.

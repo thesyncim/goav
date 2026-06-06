@@ -126,7 +126,8 @@ Current tagged surface:
 - explicit registry registration through `goav1.Register`
 - `DecoderState` as the documented `codec.DecodeConfig.OpaqueState`
 - optional `codec.DecodeStateFactory` support for high-level runtime decode
-  builders, with a conservative first-slice realtime scratch arena
+  builders, with RTP decode bounds feeding a conservative first-slice realtime
+  scratch arena
 - exact-format frame pools, retained RTP scratch, event/parser scratch,
   reference/output slots, and backend runtime handles owned by `DecoderState`
 - depacketized low-overhead OBU payload decode through the backend runner
@@ -159,9 +160,9 @@ that know their stream shape should still pass a tuned `DecoderState`; the
 runtime state provider is a conservative convenience path for simple receive
 graphs.
 
-It is intentionally narrow for now. Richer scratch sizing policy, high bit-depth
-output, color metadata, film grain policy, high-level raw-RTP policy, and
-broader frame format conversion beyond 8-bit 4:2:0 remain future slices.
+It is intentionally narrow for now. Richer automatic scratch sizing policy, high
+bit-depth output, color metadata, film grain policy, high-level raw-RTP policy,
+and broader frame format conversion beyond 8-bit 4:2:0 remain future slices.
 
 ## `resample`
 

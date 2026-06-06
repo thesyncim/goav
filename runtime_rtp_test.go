@@ -379,6 +379,109 @@ func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderRTPDecodeUsesRTPDecodeBounds(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		TimeBase: av.RTPTimeBase(90000),
+		Codec: av.CodecParameters{
+			ID:        av.CodecVP8,
+			Type:      av.MediaVideo,
+			ClockRate: 90000,
+			Width:     640,
+			Height:    360,
+		},
+	}
+	requested := codec.DecodeBounds{
+		MaxFramesPerInput:   2,
+		MaxEventsPerInput:   3,
+		MaxRequestsPerInput: 4,
+		MaxPayloadBytes:     4096,
+		MaxRetainedBytes:    8192,
+		MaxWidth:            1280,
+		MaxHeight:           720,
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 96,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEVP8,
+			ClockRate:   90000,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			Payload: []byte{0x10, 0x00, 0xaa},
+		}},
+		events: make(chan av.Event),
+	}
+	decoder := &decodeTestDecoder{}
+	decoderFactory := &decodeTestDecoderFactory{decoder: decoder}
+	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, decoderFactory))
+	sink := &runtimeTestSink{name: "frames"}
+
+	builder := New(WithCodecRegistry(codecs)).New().
+		RTP(receiver,
+			WithRTPName("video-rtp"),
+			WithRTPDepacketizer(rtpav.NewVP8Depacketizer(stream, rtpav.WithMaxVideoFrameSize(4096))),
+			WithRTPDecodeBounds(requested),
+		).
+		Decode(SelectVideo()).
+		Sink(sink)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(planned.String(), "decode bounds") {
+		t.Fatalf("planned:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoderFactory.config.Bounds.MaxFramesPerInput != 2 ||
+		decoderFactory.config.Bounds.MaxEventsPerInput != 3 ||
+		decoderFactory.config.Bounds.MaxRequestsPerInput != 4 ||
+		decoderFactory.config.Bounds.MaxPayloadBytes != 4096 ||
+		decoderFactory.config.Bounds.MaxRetainedBytes != 8192 ||
+		decoderFactory.config.Bounds.MaxWidth != 1280 ||
+		decoderFactory.config.Bounds.MaxHeight != 720 {
+		t.Fatalf("bounds = %+v", decoderFactory.config.Bounds)
+	}
+	if sink.frames != 1 || sink.lastFrame.StreamID != stream.ID {
+		t.Fatalf("frames=%d last=%+v", sink.frames, sink.lastFrame)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed || !decoder.closed || !sink.closed {
+		t.Fatalf("closed receiver=%v decoder=%v sink=%v", receiver.closed, decoder.closed, sink.closed)
+	}
+}
+
+func TestRTPDecodeBoundsForStreamUsesMatchingInput(t *testing.T) {
+	audio := av.Stream{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}}
+	video := av.Stream{ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}}
+	bounds := rtpDecodeBoundsForStream(video, []rtpBuild{
+		{
+			streams:      []av.Stream{audio},
+			decodeBounds: codec.DecodeBounds{MaxPayloadBytes: 1024},
+		},
+		{
+			streams:      []av.Stream{video},
+			decodeBounds: codec.DecodeBounds{MaxFramesPerInput: 2, MaxPayloadBytes: 4096},
+		},
+	})
+	if bounds.MaxFramesPerInput != 2 || bounds.MaxPayloadBytes != 4096 {
+		t.Fatalf("bounds = %+v", bounds)
+	}
+}
+
 func TestRuntimeBuilderRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 	ctx := context.Background()
 	initial := av.Stream{

@@ -80,15 +80,15 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 	if err != nil {
 		return err
 	}
-	return b.compileDecodeFramePath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, b.runtime.realtime || b.inputs[0].Realtime)
+	return b.compileDecodeFramePath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, b.runtime.realtime || b.inputs[0].Realtime, codec.DecodeBounds{})
 }
 
-func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector, stream av.Stream, realtime bool, dropInputEvents bool) (*codec.DecoderStage, error) {
+func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
 	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
 	if err != nil {
 		return nil, err
 	}
-	result := decodeResultForStream(stream)
+	result := decodeResultForStream(stream, bounds)
 	config := codec.DecodeConfig{
 		Stream:     stream,
 		Realtime:   realtime,
@@ -99,7 +99,7 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 			DropDamagedVideo: stream.Type == av.MediaVideo,
 			RequestKeyframes: stream.Type == av.MediaVideo,
 		},
-		Bounds: decodeBoundsForStream(stream, result),
+		Bounds: decodeBoundsForStream(stream, result, bounds),
 	}
 	stateFromFactory := false
 	if stateFactory, ok := factory.(codec.DecodeStateFactory); ok {
@@ -204,8 +204,8 @@ func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipel
 	return previous, nil
 }
 
-func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool) error {
-	previousRef, err := b.compileDecodeFilterPath(ctx, graph, upstream, selector, stream, realtime, true)
+func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool, bounds codec.DecodeBounds) error {
+	previousRef, err := b.compileDecodeFilterPath(ctx, graph, upstream, selector, stream, realtime, true, bounds)
 	if err != nil {
 		return err
 	}
@@ -220,7 +220,7 @@ func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Gra
 	return nil
 }
 
-func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool, dropDecodeEvents bool) (pipeline.NodeRef, error) {
+func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool, dropDecodeEvents bool, bounds codec.DecodeBounds) (pipeline.NodeRef, error) {
 	if err := b.validateFiltersForStream(stream); err != nil {
 		return "", err
 	}
@@ -231,7 +231,7 @@ func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Gr
 		return "", err
 	}
 
-	decodeStage, err := b.newDecodeStage(ctx, selector, stream, realtime, dropDecodeEvents)
+	decodeStage, err := b.newDecodeStage(ctx, selector, stream, realtime, dropDecodeEvents, bounds)
 	if err != nil {
 		return "", err
 	}
@@ -312,29 +312,52 @@ func streamMatchesSelector(stream av.Stream, selector av.StreamSelector) bool {
 	return true
 }
 
-func decodeResultForStream(stream av.Stream) codec.DecodeResult {
-	frame := av.Frame{}
-	if stream.Type == av.MediaAudio || stream.Codec.Type == av.MediaAudio {
-		frame.Planes = []av.Plane{{Buffer: av.Buffer{Bytes: make([]byte, 0, audioDecodeBufferSize(stream))}}}
-	}
-	if stream.Type == av.MediaVideo || stream.Codec.Type == av.MediaVideo {
-		frame.Planes = make([]av.Plane, 3)
+func decodeResultForStream(stream av.Stream, bounds codec.DecodeBounds) codec.DecodeResult {
+	frameCount := positiveOrDefault(bounds.MaxFramesPerInput, 1)
+	frames := make([]av.Frame, frameCount)
+	for i := range frames {
+		if stream.Type == av.MediaAudio || stream.Codec.Type == av.MediaAudio {
+			frames[i].Planes = []av.Plane{{Buffer: av.Buffer{Bytes: make([]byte, 0, audioDecodeBufferSize(stream))}}}
+		}
+		if stream.Type == av.MediaVideo || stream.Codec.Type == av.MediaVideo {
+			frames[i].Planes = make([]av.Plane, 3)
+		}
 	}
 	return codec.DecodeResult{
-		Frames:   []av.Frame{frame}[:0],
-		Events:   make([]av.Event, 0, 1),
-		Requests: make([]codec.ControlRequest, 0, 1),
+		Frames:   frames[:0],
+		Events:   make([]av.Event, 0, positiveOrDefault(bounds.MaxEventsPerInput, 1)),
+		Requests: make([]codec.ControlRequest, 0, positiveOrDefault(bounds.MaxRequestsPerInput, 1)),
 	}
 }
 
-func decodeBoundsForStream(stream av.Stream, result codec.DecodeResult) codec.DecodeBounds {
-	return codec.DecodeBounds{
+func decodeBoundsForStream(stream av.Stream, result codec.DecodeResult, bounds codec.DecodeBounds) codec.DecodeBounds {
+	merged := codec.DecodeBounds{
 		MaxFramesPerInput:   cap(result.Frames),
 		MaxEventsPerInput:   cap(result.Events),
 		MaxRequestsPerInput: cap(result.Requests),
 		MaxWidth:            stream.Codec.Width,
 		MaxHeight:           stream.Codec.Height,
 	}
+	if bounds.MaxPayloadBytes > 0 {
+		merged.MaxPayloadBytes = bounds.MaxPayloadBytes
+	}
+	if bounds.MaxRetainedBytes > 0 {
+		merged.MaxRetainedBytes = bounds.MaxRetainedBytes
+	}
+	if bounds.MaxWidth > 0 {
+		merged.MaxWidth = bounds.MaxWidth
+	}
+	if bounds.MaxHeight > 0 {
+		merged.MaxHeight = bounds.MaxHeight
+	}
+	return merged
+}
+
+func positiveOrDefault(value int, fallback int) int {
+	if value > 0 {
+		return value
+	}
+	return fallback
 }
 
 func audioDecodeBufferSize(stream av.Stream) int {

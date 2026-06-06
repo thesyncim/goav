@@ -70,6 +70,7 @@ func (b *builder) compileRTPDecodeToSink(ctx context.Context, graph pipeline.Gra
 
 	sourceRefs := make([]pipeline.NodeRef, 0, len(b.rtpInputs))
 	streams := make([]av.Stream, 0, len(b.rtpInputs))
+	builds := make([]rtpBuild, 0, len(b.rtpInputs))
 	for i := range b.rtpInputs {
 		receiver, err := b.openRTPSource(ctx, b.rtpInputs[i], i)
 		if err != nil {
@@ -82,6 +83,7 @@ func (b *builder) compileRTPDecodeToSink(ctx context.Context, graph pipeline.Gra
 		}
 		sourceRefs = append(sourceRefs, sourceRef)
 		streams = append(streams, receiver.streams...)
+		builds = append(builds, receiver)
 	}
 
 	selector := b.decodes[0]
@@ -90,5 +92,5 @@ func (b *builder) compileRTPDecodeToSink(ctx context.Context, graph pipeline.Gra
 		return err
 	}
 
-	return b.compileDecodeFramePath(ctx, graph, sourceRefs, selector, stream, b.runtime.realtime)
+	return b.compileDecodeFramePath(ctx, graph, sourceRefs, selector, stream, b.runtime.realtime, rtpDecodeBoundsForStream(stream, builds))
 }

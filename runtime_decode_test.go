@@ -427,10 +427,34 @@ func TestDecodeResultForVideoPreallocatesPlaneSlots(t *testing.T) {
 			ID:   av.CodecH264,
 			Type: av.MediaVideo,
 		},
-	})
+	}, codec.DecodeBounds{})
 	frames := result.Frames[:cap(result.Frames)]
 	if len(frames) != 1 || cap(frames[0].Planes) < 3 {
 		t.Fatalf("frames=%d plane cap=%d", len(frames), cap(frames[0].Planes))
+	}
+}
+
+func TestDecodeResultForVideoUsesBoundsCapacity(t *testing.T) {
+	result := decodeResultForStream(av.Stream{
+		ID:   "video",
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			ID:   av.CodecH264,
+			Type: av.MediaVideo,
+		},
+	}, codec.DecodeBounds{
+		MaxFramesPerInput:   2,
+		MaxEventsPerInput:   3,
+		MaxRequestsPerInput: 4,
+	})
+	frames := result.Frames[:cap(result.Frames)]
+	if len(frames) != 2 ||
+		cap(frames[0].Planes) < 3 ||
+		cap(frames[1].Planes) < 3 ||
+		cap(result.Events) != 3 ||
+		cap(result.Requests) != 4 {
+		t.Fatalf("result caps frames=%d planes=%d/%d events=%d requests=%d",
+			len(frames), cap(frames[0].Planes), cap(frames[1].Planes), cap(result.Events), cap(result.Requests))
 	}
 }
 
@@ -445,12 +469,46 @@ func TestDecodeBoundsForVideoStream(t *testing.T) {
 			Height: 720,
 		},
 	}
-	result := decodeResultForStream(stream)
+	result := decodeResultForStream(stream, codec.DecodeBounds{})
 
-	bounds := decodeBoundsForStream(stream, result)
+	bounds := decodeBoundsForStream(stream, result, codec.DecodeBounds{})
 	if bounds.MaxFramesPerInput != 1 ||
 		bounds.MaxEventsPerInput != 1 ||
 		bounds.MaxRequestsPerInput != 1 ||
+		bounds.MaxWidth != 1280 ||
+		bounds.MaxHeight != 720 {
+		t.Fatalf("bounds = %+v", bounds)
+	}
+}
+
+func TestDecodeBoundsForVideoStreamMergesRuntimeBounds(t *testing.T) {
+	stream := av.Stream{
+		ID:   "video",
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			ID:     av.CodecAV1,
+			Type:   av.MediaVideo,
+			Width:  640,
+			Height: 360,
+		},
+	}
+	requested := codec.DecodeBounds{
+		MaxFramesPerInput:   2,
+		MaxEventsPerInput:   3,
+		MaxRequestsPerInput: 4,
+		MaxPayloadBytes:     4096,
+		MaxRetainedBytes:    8192,
+		MaxWidth:            1280,
+		MaxHeight:           720,
+	}
+	result := decodeResultForStream(stream, requested)
+
+	bounds := decodeBoundsForStream(stream, result, requested)
+	if bounds.MaxFramesPerInput != 2 ||
+		bounds.MaxEventsPerInput != 3 ||
+		bounds.MaxRequestsPerInput != 4 ||
+		bounds.MaxPayloadBytes != 4096 ||
+		bounds.MaxRetainedBytes != 8192 ||
 		bounds.MaxWidth != 1280 ||
 		bounds.MaxHeight != 720 {
 		t.Fatalf("bounds = %+v", bounds)

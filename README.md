@@ -30,6 +30,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pion RTP/RTCP/WebRTC types stay at package boundaries.
 - Realtime decoder adapters can receive explicit payload, retained-fragment,
   output-count, and geometry bounds before binding scratch.
+- RTP receive builders can pass those bounds with `WithRTPDecodeBounds` so
+  high-level decode graphs still keep caller-owned scratch explicit.
 - Decoder factories may optionally provision adapter-specific state for
   high-level builders, while low-level callers can still own exact state.
 - Codec implementations stay in adapter packages for `gopus`, `govpx`,
@@ -250,6 +252,9 @@ Implemented slices:
   depacketizers are present; selected runtime decode graphs now fail explicitly
   with `codec.ErrUnsupportedCodecSwitch` when that change would require a
   different decoder factory.
+- `WithRTPDecodeBounds(...)` lets high-level RTP decode builders size decoder
+  result capacity and adapter-provided state for payload, retained-fragment,
+  output-count, and geometry limits.
 - Descriptor-only codec adapters are discoverable while unavailable factories
   fail explicitly with `codec.ErrUnavailable`.
 - Build-tagged H264 decode maps real `goh264` output into borrowed `av.Frame`
@@ -302,8 +307,9 @@ Next pressure points:
 
 - Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
   RTP/WebRTC AV1 streams: dynamic new-codec graph rebind policy, additional
-  output formats beyond 8-bit 4:2:0, richer scratch sizing policy, and deciding
-  how much of the raw RTP runner path should surface in high-level builders.
+  output formats beyond 8-bit 4:2:0, richer automatic scratch sizing policy,
+  and deciding how much of the raw RTP runner path should surface in high-level
+  builders.
 
 ## Working Loop
 

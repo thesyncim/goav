@@ -53,6 +53,9 @@ func rtpInputDetail(input rtpInput) string {
 	if input.feedback != nil {
 		parts = append(parts, "feedback")
 	}
+	if rtpDecodeBoundsConfigured(input.decodeBounds) {
+		parts = append(parts, "decode bounds")
+	}
 	if input.maxTSGap.Value > 0 && input.maxTSGap.Base.Valid() {
 		parts = append(parts, "timestamp gap")
 	}

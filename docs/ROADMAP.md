@@ -75,9 +75,10 @@ validation gates. This roadmap keeps the broader phase view.
   runner integration with retained-fragment and after-loss tests. RTP sources
   can hand off packets to a different registered depacketizer after payload-map
   refresh, while selected decode graphs fail explicitly until dynamic decoder
-  graph rebind policy exists. Richer scratch sizing, high-level raw-RTP policy,
-  and additional output formats remain; 8-bit 4:2:0 receive is active through
-  both `i420` and `yuv420p` declarations.
+  graph rebind policy exists. High-level RTP decode builders can pass explicit
+  decode bounds into adapter-provided state; richer automatic scratch sizing,
+  high-level raw-RTP policy, and additional output formats remain. 8-bit 4:2:0
+  receive is active through both `i420` and `yuv420p` declarations.
 - `goav1` adapter as it matures.
 
 ## Phase 5: High-level API

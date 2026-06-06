@@ -163,7 +163,7 @@ func (b *builder) compileDecodeEncodeToOutput(ctx context.Context, graph pipelin
 	if err != nil {
 		return err
 	}
-	previousRef, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, realtime, false)
+	previousRef, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, realtime, false, codec.DecodeBounds{})
 	if err != nil {
 		return err
 	}
@@ -173,6 +173,7 @@ func (b *builder) compileDecodeEncodeToOutput(ctx context.Context, graph pipelin
 func (b *builder) compileRTPDecodeEncodeToOutput(ctx context.Context, graph pipeline.Graph) error {
 	sourceRefs := make([]pipeline.NodeRef, 0, len(b.rtpInputs))
 	streams := make([]av.Stream, 0, len(b.rtpInputs))
+	builds := make([]rtpBuild, 0, len(b.rtpInputs))
 	for i := range b.rtpInputs {
 		receiver, err := b.openRTPSource(ctx, b.rtpInputs[i], i)
 		if err != nil {
@@ -185,6 +186,7 @@ func (b *builder) compileRTPDecodeEncodeToOutput(ctx context.Context, graph pipe
 		}
 		sourceRefs = append(sourceRefs, sourceRef)
 		streams = append(streams, receiver.streams...)
+		builds = append(builds, receiver)
 	}
 
 	selector := b.decodes[0]
@@ -196,7 +198,7 @@ func (b *builder) compileRTPDecodeEncodeToOutput(ctx context.Context, graph pipe
 	if err != nil {
 		return err
 	}
-	previousRef, err := b.compileDecodeFilterPath(ctx, graph, sourceRefs, selector, stream, b.runtime.realtime, false)
+	previousRef, err := b.compileDecodeFilterPath(ctx, graph, sourceRefs, selector, stream, b.runtime.realtime, false, rtpDecodeBoundsForStream(stream, builds))
 	if err != nil {
 		return err
 	}

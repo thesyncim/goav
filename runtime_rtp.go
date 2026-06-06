@@ -5,13 +5,15 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
 )
 
 type rtpBuild struct {
-	source  *rtpav.Source
-	streams []av.Stream
+	source       *rtpav.Source
+	streams      []av.Stream
+	decodeBounds codec.DecodeBounds
 }
 
 type rtpRecordGraphCompiler struct{}
@@ -55,6 +57,14 @@ func WithRTPDepacketizers(depacketizers ...rtpav.Depacketizer) RTPOption {
 func WithRTPBufferLimits(limits RTPBufferLimits) RTPOption {
 	return func(input *rtpInput) {
 		input.limits = limits
+	}
+}
+
+// WithRTPDecodeBounds seeds codec.DecodeConfig.Bounds for high-level RTP decode
+// builders using this packet reader.
+func WithRTPDecodeBounds(bounds codec.DecodeBounds) RTPOption {
+	return func(input *rtpInput) {
+		input.decodeBounds = bounds
 	}
 }
 
@@ -188,7 +198,7 @@ func (b *builder) openRTPSource(ctx context.Context, input rtpInput, index int) 
 	if err != nil {
 		return rtpBuild{}, err
 	}
-	return rtpBuild{source: source, streams: streams}, nil
+	return rtpBuild{source: source, streams: streams, decodeBounds: input.decodeBounds}, nil
 }
 
 func rtpNodeName(input rtpInput, index int) string {
@@ -199,4 +209,66 @@ func rtpNodeName(input rtpInput, index int) string {
 		return "rtp-" + strconv.Itoa(index)
 	}
 	return "rtp"
+}
+
+func rtpDecodeBoundsForStream(stream av.Stream, builds []rtpBuild) codec.DecodeBounds {
+	var bounds codec.DecodeBounds
+	for i := range builds {
+		if !rtpDecodeBoundsConfigured(builds[i].decodeBounds) {
+			continue
+		}
+		for j := range builds[i].streams {
+			if !sameDecodeBoundsStream(stream, builds[i].streams[j]) {
+				continue
+			}
+			bounds = maxDecodeBounds(bounds, builds[i].decodeBounds)
+			break
+		}
+	}
+	return bounds
+}
+
+func rtpDecodeBoundsConfigured(bounds codec.DecodeBounds) bool {
+	return bounds.MaxFramesPerInput > 0 ||
+		bounds.MaxEventsPerInput > 0 ||
+		bounds.MaxRequestsPerInput > 0 ||
+		bounds.MaxPayloadBytes > 0 ||
+		bounds.MaxRetainedBytes > 0 ||
+		bounds.MaxWidth > 0 ||
+		bounds.MaxHeight > 0
+}
+
+func sameDecodeBoundsStream(a av.Stream, b av.Stream) bool {
+	if a.ID != "" && b.ID != "" {
+		return a.ID == b.ID
+	}
+	if a.Index != 0 || b.Index != 0 {
+		return a.Index == b.Index
+	}
+	return a.Type == b.Type && a.Codec.ID == b.Codec.ID
+}
+
+func maxDecodeBounds(a codec.DecodeBounds, b codec.DecodeBounds) codec.DecodeBounds {
+	if b.MaxFramesPerInput > a.MaxFramesPerInput {
+		a.MaxFramesPerInput = b.MaxFramesPerInput
+	}
+	if b.MaxEventsPerInput > a.MaxEventsPerInput {
+		a.MaxEventsPerInput = b.MaxEventsPerInput
+	}
+	if b.MaxRequestsPerInput > a.MaxRequestsPerInput {
+		a.MaxRequestsPerInput = b.MaxRequestsPerInput
+	}
+	if b.MaxPayloadBytes > a.MaxPayloadBytes {
+		a.MaxPayloadBytes = b.MaxPayloadBytes
+	}
+	if b.MaxRetainedBytes > a.MaxRetainedBytes {
+		a.MaxRetainedBytes = b.MaxRetainedBytes
+	}
+	if b.MaxWidth > a.MaxWidth {
+		a.MaxWidth = b.MaxWidth
+	}
+	if b.MaxHeight > a.MaxHeight {
+		a.MaxHeight = b.MaxHeight
+	}
+	return a
 }

@@ -36,8 +36,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
-| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, decoder state-provider hook, `Routes(goav.From(...).To(...))` route-map helpers plus compatibility `Connect...` shorthands, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | next codec adapter validation |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420 frame output with yuv420p accepted as a 4:2:0 alias, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
+| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, decoder state-provider hook, RTP decode-bound hints for high-level receive, `Routes(goav.From(...).To(...))` route-map helpers plus compatibility `Connect...` shorthands, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | next codec adapter validation |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning from RTP decode bounds, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420 frame output with yuv420p accepted as a 4:2:0 alias, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
 
@@ -208,7 +208,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     depacketizer is present, and make selected runtime decode graphs fail
     explicitly with `codec.ErrUnsupportedCodecSwitch` when a live codec-change
     event would require a different decoder factory. Done.
-63. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+63. Add `WithRTPDecodeBounds(...)` so high-level RTP decode builders can pass
+    payload, retained-fragment, output-count, and geometry limits into decoder
+    result scratch and adapter-provided decode state. Render tuned RTP nodes as
+    carrying decode bounds. Done.
+64. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -355,6 +359,8 @@ Required proof:
 - `codec.DecodeBounds` gives future realtime adapters a small common place to
   receive payload, retained-fragment, output-count, and geometry limits while
   keeping adapter-specific arenas behind documented `OpaqueState` types.
+  `WithRTPDecodeBounds(...)` now feeds those limits into high-level RTP decode
+  builders and graph descriptions.
 - `pipeline.BufferPolicy` now has one allocation-free decision point for
   direct backpressure, oldest/newest dropping, wait-for-sync recovery, and
   non-key-video dropping. This keeps the future bounded executor from spreading
@@ -424,8 +430,8 @@ Required proof:
 
 Current pressure point: broaden tagged AV1 decode toward real RTP/WebRTC
 receive, especially dynamic new-codec graph rebind policy, richer scratch
-sizing policy, output formats beyond 8-bit 4:2:0, and deciding whether the
-concrete raw RTP payload path should remain low-level or grow a high-level
+auto-sizing policy, output formats beyond 8-bit 4:2:0, and deciding whether
+the concrete raw RTP payload path should remain low-level or grow a high-level
 builder policy.
 
 ## Validation Gates

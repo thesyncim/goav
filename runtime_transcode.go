@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/transcode"
@@ -172,7 +173,7 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 	}
 
 	realtime := b.runtime.realtime || plan.Input.Realtime
-	previousRef, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, realtime, false)
+	previousRef, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, realtime, false, codec.DecodeBounds{})
 	if err != nil {
 		return err
 	}
