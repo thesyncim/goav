@@ -58,20 +58,3 @@ func TestRegistryFactories(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
-
-func TestRegistryProbersAreCopied(t *testing.T) {
-	registry := NewRegistry()
-	registry.RegisterProber(testProber{})
-
-	probers := registry.Probers()
-	probers[0] = testProber{result: ProbeResult{Format: av.FormatIVF}}
-
-	again := registry.Probers()
-	result, err := again[0].Probe(context.Background(), ProbeRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Format != "" {
-		t.Fatalf("prober mutation leaked: %+v", result)
-	}
-}

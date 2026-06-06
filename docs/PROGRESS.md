@@ -259,7 +259,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 79. Prune unused codec control request types: decoder stages expose the
     implemented keyframe request path and drop unproduced reset/drop request
     names. Done.
-80. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+80. Prune the format prober getter: probing is configured through explicit
+    prober registration and consumed through `Registry.Probe`, without exposing
+    registry internals. Done.
+81. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

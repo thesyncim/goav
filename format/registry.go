@@ -46,12 +46,6 @@ func (r *SimpleRegistry) RegisterMuxer(format av.FormatID, factory MuxerFactory)
 	}
 }
 
-func (r *SimpleRegistry) Probers() []Prober {
-	out := make([]Prober, len(r.probers))
-	copy(out, r.probers)
-	return out
-}
-
 func (r *SimpleRegistry) Probe(ctx context.Context, request ProbeRequest) (ProbeResult, error) {
 	var best ProbeResult
 	var found bool
