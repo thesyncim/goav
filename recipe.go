@@ -1463,6 +1463,27 @@ func validateOutputSpecs(operation string, outputs []OutputSpec) error {
 	return nil
 }
 
+func validateInputFormatAdapters(ctx context.Context, rt Runtime, inputs []InputSpec) error {
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return nil
+	}
+	for i := range inputs {
+		if inputs[i].rtp != nil {
+			continue
+		}
+		input := inputs[i].input
+		result, err := standard.formats.Probe(ctx, inputProbeRequest(input))
+		if err != nil {
+			return inputFormatProbeError(input, err)
+		}
+		if _, err := standard.formats.DemuxerFactory(result.Format); err != nil {
+			return inputDemuxerMissingError(input, result.Format, err)
+		}
+	}
+	return nil
+}
+
 func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []OutputSpec) error {
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {

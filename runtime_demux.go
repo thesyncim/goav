@@ -13,11 +13,7 @@ type demuxBuild struct {
 }
 
 func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demuxBuild, error) {
-	inputProbe, err := b.runtime.formats.Probe(ctx, format.ProbeRequest{
-		Name:     input.Name,
-		MIMEType: input.MIMEType,
-		Input:    input,
-	})
+	inputProbe, err := b.runtime.formats.Probe(ctx, inputProbeRequest(input))
 	if err != nil {
 		return demuxBuild{}, inputFormatProbeError(input, err)
 	}
@@ -57,6 +53,14 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demu
 		return demuxBuild{}, err
 	}
 	return demuxBuild{source: source, streams: streams}, nil
+}
+
+func inputProbeRequest(input format.Input) format.ProbeRequest {
+	return format.ProbeRequest{
+		Name:     input.Name,
+		MIMEType: input.MIMEType,
+		Input:    input,
+	}
 }
 
 func demuxPacketBufferSize(streams []av.Stream) int {

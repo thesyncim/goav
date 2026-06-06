@@ -167,6 +167,9 @@ IVF and Annex B format adapters. Containers such as WebM or Ogg need a matching
 adapter in the selected runtime; missing demuxers or muxers fail with actionable
 diagnostics. Exact adapter registration remains available for embedded and
 narrow deployments in [docs/ADAPTERS.md](docs/ADAPTERS.md).
+Build-time recipe checks validate input demuxers and output muxers when a
+container can be inferred from the input or output name, MIME type, URI, or
+explicit output format. Full stream probing still belongs to graph build.
 
 Recipe encode conveniences currently target Opus, VP8, and VP9. H264 and AV1
 codec specs are useful for receive, record, and decode paths while recipe encode

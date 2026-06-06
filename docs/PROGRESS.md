@@ -663,6 +663,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     RTP/WebRTC decode intents now fail on missing or descriptor-only decoder
     factories before the runtime builder opens live inputs, while ambiguous
     receive selection still defers to stream resolution. Done.
+197. Preflight recipe input format adapters at build time: ordinary and
+    transcode file/protocol inputs now resolve metadata-detected containers and
+    missing demuxers before runtime builder lowering, while RTP/WebRTC receive
+    stays on the live input path. Done.
 
 ## First Vertical Slice
 
@@ -903,10 +907,12 @@ lowering. Runtime capability checks for live codec-change and transforms now
 also run before ordinary stream lowering. Migration graph-compiler selection
 now reports recipe-focused diagnostics when no standard compiler matches.
 Output format and muxer availability for ordinary and transcode recipes are
-preflighted before runtime builder lowering. Build-time encode adapter
-availability is preflighted before input open, and known live RTP/WebRTC decode
-adapter availability is preflighted without masking ambiguous receive
-selection, while graph `Describe()` remains adapter-agnostic.
+preflighted before runtime builder lowering. Input format and demuxer
+availability for metadata-detected ordinary and transcode inputs is preflighted
+too. Build-time encode adapter availability is preflighted before input open,
+and known live RTP/WebRTC decode adapter availability is preflighted without
+masking ambiguous receive selection, while graph `Describe()` remains
+adapter-agnostic.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

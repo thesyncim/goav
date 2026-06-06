@@ -298,6 +298,85 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 	}
 }
 
+func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
+	tests := []struct {
+		name  string
+		pass  recipeCompilePass
+		state recipeCompileState
+		code  string
+		want  []string
+	}{
+		{
+			name: "job probed format",
+			pass: validateJobInputFormatAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightInputAdapters: true},
+				runtime:   Default(),
+				inputAttachments: []InputSpec{
+					FileInput("input.ogg", strings.NewReader("")),
+				},
+			},
+			code: "input_demuxer_missing",
+			want: []string{`format "ogg"`, "no demuxer is registered", "WithFormatAdapter"},
+		},
+		{
+			name: "transcode probed format",
+			pass: validateTranscodeInputFormatAdaptersPass(),
+			state: recipeCompileState{
+				operation:                transcodeRecipeOperation,
+				options:                  recipeCompileOptions{preflightInputAdapters: true},
+				runtime:                  Default(),
+				transcodeInputAttachment: FileInput("input.webm", strings.NewReader("")),
+			},
+			code: "input_demuxer_missing",
+			want: []string{`format "matroska"`, "no demuxer is registered", "WithFormatAdapter"},
+		},
+		{
+			name: "unknown input format",
+			pass: validateJobInputFormatAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightInputAdapters: true},
+				runtime:   Default(),
+				inputAttachments: []InputSpec{
+					FileInput("input.unknown", strings.NewReader("")),
+				},
+			},
+			code: "input_format_unknown",
+			want: []string{"could not be detected", "name=input.unknown", "goav.RTP"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, format.ErrNotFound) {
+				t.Fatalf("err = %v, want %s wrapping format.ErrNotFound", err, tt.code)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestInputFormatAdapterPassSkipsLiveReceiveInputs(t *testing.T) {
+	state := recipeCompileState{
+		operation: "build job",
+		options:   recipeCompileOptions{preflightInputAdapters: true},
+		runtime:   Default(),
+		inputAttachments: []InputSpec{
+			RTP(nil).Codec(Opus()),
+		},
+	}
+	if err := validateJobInputFormatAdaptersPass().Apply(&state); err != nil {
+		t.Fatalf("err = %v, want RTP input format preflight skipped", err)
+	}
+}
+
 func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 	descriptorOnly := codec.NewRegistry()
 	descriptorOnly.RegisterDescriptor(codec.Descriptor{
