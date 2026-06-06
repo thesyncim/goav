@@ -134,6 +134,7 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 	if err := d.enterCluster(header); err != nil {
 		return err
 	}
+	d.clearLace()
 	return nil
 }
 

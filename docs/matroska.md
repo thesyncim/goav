@@ -105,7 +105,9 @@ observed packet end time expressed in those same timestamp-scale ticks.
 Seekable mode also writes Cues for keyframe packets using Segment-relative
 Cluster positions, and a SeekHead that points to Info, Tracks, and Cues.
 `SeekToTime` uses those Cues to jump to the nearest preceding cue cluster;
-callers should continue reading until they reach the exact target packet.
+callers should continue reading until they reach the exact target packet. A
+successful seek clears pending laced-frame state before reading from the target
+cluster.
 
 ## Codec Mapping
 
