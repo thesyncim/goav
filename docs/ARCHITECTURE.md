@@ -47,6 +47,9 @@ The current compilers cover:
 - one or more RTP/WebRTC packet readers to one or more outputs through
   `rtpav.Source -> format.MuxStage...` when the application provides
   depacketizers and the format registry can mux the output boundaries
+- one or more RTP/WebRTC packet readers to a selected frame sink through
+  `rtpav.Source... -> stream select -> codec.DecoderStage -> Sink` when one
+  stream matches the selector and the codec registry has a decoder factory
 
 Encode, filter, and transcode discovery still return a clear unsupported error
 until source, codec, filter, mux, and sink selection is ready.
@@ -143,6 +146,8 @@ The RTP package provides the live receive source. `rtpav.Source` keeps Pion RTP
 packets at the boundary, applies optional jitter and depacketizers, forwards
 realtime events into those depacketizers, and emits normal packet/event messages
 for the same mux, decode, and analysis stages used by file or protocol inputs.
+When a packet reader represents one stream, its EOS event carries that stream ID
+and epoch so selected live-decode graphs do not flush unrelated decoders.
 
 `adapters/ivf` is the first concrete format adapter. It keeps the scope small:
 one VP8, VP9, or AV1 video stream, packet demux/mux only, and no container

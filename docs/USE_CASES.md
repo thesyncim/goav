@@ -41,6 +41,17 @@ task, err := runtime.New().
     Build(ctx)
 ```
 
+The same receive boundary can decode a selected stream when a matching decoder
+factory is registered:
+
+```go
+task, err := runtime.New().
+    RTP(audio, goav.WithRTPDepacketizer(opus)).
+    Decode(goav.SelectAudio()).
+    Sink(frames).
+    Build(ctx)
+```
+
 ## Generic protocol or file ingest
 
 Receive a live protocol input, file input, or custom source; demux container data

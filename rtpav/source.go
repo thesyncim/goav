@@ -18,6 +18,7 @@ type SourceConfig struct {
 	Feedback      FeedbackWriter
 	Jitter        JitterBuffer
 	Depacketizers []Depacketizer
+	Streams       []av.Stream
 
 	MaxReady    int
 	MaxEvents   int
@@ -32,6 +33,7 @@ type Source struct {
 	payloads      PayloadMap
 	jitter        JitterBuffer
 	depacketizers []Depacketizer
+	streams       []av.Stream
 	jitterOut     JitterResult
 	depacketOut   DepacketizeResult
 	message       pipeline.Message
@@ -61,6 +63,7 @@ func NewSource(config SourceConfig) (*Source, error) {
 		payloads:      config.Receiver.PayloadMap(),
 		jitter:        config.Jitter,
 		depacketizers: config.Depacketizers,
+		streams:       cloneStreams(config.Streams),
 		jitterOut: JitterResult{
 			Ready:    make([]*rtp.Packet, 0, maxReady),
 			Events:   make([]av.Event, 0, maxEvents),
@@ -92,7 +95,7 @@ func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 				if err := s.flush(ctx, emitter); err != nil {
 					return err
 				}
-				s.eos = av.Event{Type: av.EventEndOfStream}
+				s.eos = endOfStreamEvent(s.streams)
 				return s.emitEvent(ctx, emitter, &s.eos)
 			}
 			return err
@@ -296,6 +299,25 @@ func positiveOrDefault(value int, fallback int) int {
 		return value
 	}
 	return fallback
+}
+
+func cloneStreams(streams []av.Stream) []av.Stream {
+	if len(streams) == 0 {
+		return nil
+	}
+	out := make([]av.Stream, len(streams))
+	copy(out, streams)
+	return out
+}
+
+func endOfStreamEvent(streams []av.Stream) av.Event {
+	event := av.Event{Type: av.EventEndOfStream}
+	if len(streams) != 1 {
+		return event
+	}
+	event.StreamID = streams[0].ID
+	event.Epoch = streams[0].Epoch
+	return event
 }
 
 func feedbackWriter(reader PacketReader, explicit FeedbackWriter) FeedbackWriter {

@@ -12,6 +12,7 @@ import (
 	annexbadapter "github.com/thesyncim/goav/adapters/annexb"
 	ivfadapter "github.com/thesyncim/goav/adapters/ivf"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/rtpav"
 )
@@ -148,6 +149,198 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 		if !muxers.muxers[i].closed {
 			t.Fatalf("muxer[%d] not closed", i)
 		}
+	}
+}
+
+func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   2,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    2,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	decoder := &decodeTestDecoder{}
+	decoderFactory := &decodeTestDecoderFactory{decoder: decoder}
+	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{
+		ID:   av.CodecOpus,
+		Type: av.MediaAudio,
+	}, decoderFactory))
+	sink := &runtimeTestSink{name: "frames"}
+
+	builder := New(WithCodecRegistry(codecs)).New().
+		RTP(receiver,
+			WithRTPName("live-audio"),
+			WithRTPDepacketizer(rtpav.NewOpusDepacketizer(stream)),
+		).
+		Decode(SelectAudio()).
+		Sink(sink)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Nodes) != 4 || len(planned.Edges) != 3 {
+		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
+	}
+	if !strings.Contains(planned.String(), "live-audio -> select-audio") ||
+		!strings.Contains(planned.String(), "select-audio -> decode-audio") ||
+		!strings.Contains(planned.String(), "decode-audio -> frames") {
+		t.Fatalf("planned:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := task.Describe()
+	if planned.String() != spec.String() || planned.Mermaid() != spec.Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || decoder.flushes != 1 || sink.frames != 1 || sink.lastFrame.StreamID != "audio" {
+		t.Fatalf("decodes=%d flushes=%d frames=%d last=%+v", decoder.decodes, decoder.flushes, sink.frames, sink.lastFrame)
+	}
+	if decoderFactory.config.Stream.ID != "audio" || !decoderFactory.config.Realtime || !decoderFactory.config.LowLatency {
+		t.Fatalf("decode config: %+v", decoderFactory.config)
+	}
+	gotEvents := drainTaskEvents(task)
+	if countEvents(gotEvents, av.EventEndOfStream) != 2 || countEventsForStream(gotEvents, av.EventEndOfStream, "audio") != 2 {
+		t.Fatalf("events = %+v", gotEvents)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed || !decoder.closed || !sink.closed {
+		t.Fatalf("closed receiver=%v decoder=%v sink=%v", receiver.closed, decoder.closed, sink.closed)
+	}
+}
+
+func TestRuntimeBuilderMultiRTPDecodeSelectsOneStream(t *testing.T) {
+	ctx := context.Background()
+	audio := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   2,
+		},
+	}
+	video := av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: 90000},
+		Codec: av.CodecParameters{
+			ID:        av.CodecVP8,
+			Type:      av.MediaVideo,
+			ClockRate: 90000,
+			Width:     640,
+			Height:    360,
+		},
+	}
+	audioReceiver := &runtimeRTPReceiver{
+		streams: []av.Stream{audio},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  audio.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    2,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	videoReceiver := &runtimeRTPReceiver{
+		streams: []av.Stream{video},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 96,
+			Parameters:  video.Codec,
+			MIMEType:    rtpav.MIMEVP8,
+			ClockRate:   90000,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
+			Payload: []byte{0x10, 0x00, 0xaa},
+		}},
+		events: make(chan av.Event),
+	}
+	decoder := &decodeTestDecoder{}
+	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}))
+	sink := &runtimeTestSink{name: "frames"}
+
+	builder := New(WithCodecRegistry(codecs)).New().
+		RTP(audioReceiver,
+			WithRTPName("audio-rtp"),
+			WithRTPDepacketizer(rtpav.NewOpusDepacketizer(audio)),
+		).
+		RTP(videoReceiver,
+			WithRTPName("video-rtp"),
+			WithRTPDepacketizer(rtpav.NewVP8Depacketizer(video)),
+		).
+		Decode(SelectAudio()).
+		Sink(sink)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Nodes) != 5 || len(planned.Edges) != 4 {
+		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
+	}
+	if !strings.Contains(planned.String(), "audio-rtp -> select-audio") ||
+		!strings.Contains(planned.String(), "video-rtp -> select-audio") {
+		t.Fatalf("planned:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || decoder.flushes != 1 || sink.frames != 1 {
+		t.Fatalf("decodes=%d flushes=%d frames=%d", decoder.decodes, decoder.flushes, sink.frames)
+	}
+	gotEvents := drainTaskEvents(task)
+	if countEvents(gotEvents, av.EventEndOfStream) != 3 ||
+		countEventsForStream(gotEvents, av.EventEndOfStream, "audio") != 2 ||
+		countEventsForStream(gotEvents, av.EventEndOfStream, "video") != 1 {
+		t.Fatalf("events = %+v", gotEvents)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !audioReceiver.closed || !videoReceiver.closed {
+		t.Fatalf("closed audio=%v video=%v", audioReceiver.closed, videoReceiver.closed)
 	}
 }
 
@@ -515,6 +708,16 @@ func countEvents(events []av.Event, eventType av.EventType) int {
 	count := 0
 	for i := range events {
 		if events[i].Type == eventType {
+			count++
+		}
+	}
+	return count
+}
+
+func countEventsForStream(events []av.Event, eventType av.EventType, stream av.StreamID) int {
+	count := 0
+	for i := range events {
+		if events[i].Type == eventType && events[i].StreamID == stream {
 			count++
 		}
 	}

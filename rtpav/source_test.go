@@ -355,6 +355,34 @@ func TestSourceForwardsEventsToDepacketizers(t *testing.T) {
 	}
 }
 
+func TestSourceEOSUsesSingleConfiguredStream(t *testing.T) {
+	stream := av.Stream{ID: "audio", Epoch: 7}
+	receiver := &fakeReceiver{
+		payloads: NewStaticPayloadMap(1, nil),
+		events:   make(chan av.Event),
+	}
+	source, err := NewSource(SourceConfig{
+		Receiver: receiver,
+		Streams:  []av.Stream{stream},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []av.Event
+
+	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		if msg.Kind == pipeline.MessageEvent {
+			events = append(events, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Type != av.EventEndOfStream || events[0].StreamID != stream.ID || events[0].Epoch != stream.Epoch {
+		t.Fatalf("events = %+v", events)
+	}
+}
+
 func TestSourceCodecChangedRefreshesPayloadMapAndEpoch(t *testing.T) {
 	initial := av.Stream{
 		ID:    "audio",

@@ -120,32 +120,8 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 		return err
 	}
 
-	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
+	stage, err := b.newDecodeStage(ctx, selector, stream, b.runtime.realtime || b.inputs[0].Realtime)
 	if err != nil {
-		return err
-	}
-	decoder, err := factory.NewDecoder(ctx, codec.DecodeConfig{
-		Stream:     stream,
-		Realtime:   b.runtime.realtime || b.inputs[0].Realtime,
-		LowLatency: b.runtime.realtime || b.inputs[0].Realtime,
-		Resilience: codec.ResiliencePolicy{
-			AcceptLoss:       true,
-			ConcealAudio:     stream.Type == av.MediaAudio,
-			DropDamagedVideo: stream.Type == av.MediaVideo,
-			RequestKeyframes: stream.Type == av.MediaVideo,
-		},
-	})
-	if err != nil {
-		return err
-	}
-	stage, err := codec.NewDecoderStage(codec.DecoderStageConfig{
-		Name:            decodeNodeName(selector),
-		Decoder:         decoder,
-		Result:          decodeResultForStream(stream),
-		DropInputEvents: true,
-	})
-	if err != nil {
-		decoder.Close()
 		return err
 	}
 	stageRef, err := graph.AddStage(stage, b.runtime.buffer)
@@ -165,6 +141,38 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 		return err
 	}
 	return graph.Link(pipeline.Link{From: stageRef, To: sinkRef})
+}
+
+func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector, stream av.Stream, realtime bool) (*codec.DecoderStage, error) {
+	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
+	if err != nil {
+		return nil, err
+	}
+	decoder, err := factory.NewDecoder(ctx, codec.DecodeConfig{
+		Stream:     stream,
+		Realtime:   realtime,
+		LowLatency: realtime,
+		Resilience: codec.ResiliencePolicy{
+			AcceptLoss:       true,
+			ConcealAudio:     stream.Type == av.MediaAudio,
+			DropDamagedVideo: stream.Type == av.MediaVideo,
+			RequestKeyframes: stream.Type == av.MediaVideo,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	stage, err := codec.NewDecoderStage(codec.DecoderStageConfig{
+		Name:            decodeNodeName(selector),
+		Decoder:         decoder,
+		Result:          decodeResultForStream(stream),
+		DropInputEvents: true,
+	})
+	if err != nil {
+		decoder.Close()
+		return nil, err
+	}
+	return stage, nil
 }
 
 func selectDecodeStream(streams []av.Stream, selector av.StreamSelector) (av.Stream, error) {

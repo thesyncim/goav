@@ -198,6 +198,7 @@ func (b *builder) openRTPSource(ctx context.Context, input rtpInput, index int) 
 		Feedback:      input.feedback,
 		Jitter:        input.jitter,
 		Depacketizers: input.depacketizers,
+		Streams:       streams,
 		MaxReady:      input.limits.MaxReady,
 		MaxEvents:     input.limits.MaxEvents,
 		MaxFeedback:   input.limits.MaxFeedback,

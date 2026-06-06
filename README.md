@@ -74,6 +74,19 @@ task, err := rt.New().
     Build(ctx)
 ```
 
+Decode a selected live RTP/WebRTC stream directly into a frame sink:
+
+```go
+task, err := rt.New().
+    RTP(audio,
+        goav.WithRTPName("audio"),
+        goav.WithRTPDepacketizer(opus),
+    ).
+    Decode(goav.SelectAudio()).
+    Sink(frames).
+    Build(ctx)
+```
+
 Build an explicit graph when the application owns the stages:
 
 ```go
@@ -135,6 +148,7 @@ Implemented slices:
 - Fluent selected-stream decode-to-sink compiler.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
   `RTP(...)` inputs.
+- Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive.
 - Pre-build and runtime graph rendering as text, DOT, and Mermaid.
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.
 - Annex B packet mux adapter for H264 recording.
@@ -151,7 +165,7 @@ Implemented slices:
 
 Next pressure points:
 
-- Runtime-level decode/filter/encode graph composition for live receive.
+- Runtime-level filter/encode composition for live receive.
 - Allocation and lifecycle hardening for concrete video decode paths.
 - Allocation-safe resize and resample implementations.
 

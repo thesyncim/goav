@@ -108,6 +108,20 @@ rendered specs show simple node-to-node connections, and events remain visible
 through the task event channel while mux stages receive packet messages for each
 output.
 
+It can also decode a selected live stream directly into frames:
+
+```go
+task, err := runtime.New().
+    RTP(audio, goav.WithRTPName("audio"), goav.WithRTPDepacketizer(opus)).
+    Decode(goav.SelectAudio()).
+    Sink(frames).
+    Build(ctx)
+```
+
+For repeated RTP/WebRTC inputs, the generated graph feeds all sources into the
+selector before the decoder. Single-stream RTP sources stamp EOS with the stream
+ID so unrelated inputs do not flush the selected decoder.
+
 ## Loss
 
 Loss is not just an error return. It should become visible as:
