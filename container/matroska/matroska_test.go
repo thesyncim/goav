@@ -2353,6 +2353,37 @@ func TestWriteH264LacedPacketAllocs(t *testing.T) {
 	}
 }
 
+func TestH264AVCToAnnexBInPlaceAllocs(t *testing.T) {
+	tests := []struct {
+		name       string
+		lengthSize int
+		input      []byte
+	}{
+		{name: "length1", lengthSize: 1, input: h264AVCSampleWithLengthSize1()},
+		{name: "length2", lengthSize: 2, input: h264AVCSampleWithLengthSize2()},
+	}
+	want := h264AnnexBAccessUnit()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buffer := make([]byte, len(want))
+			allocs := testing.AllocsPerRun(1000, func() {
+				data := buffer[:len(tt.input)]
+				copy(data, tt.input)
+				out, err := h264AVCToAnnexBInPlace(data, len(want), tt.lengthSize)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(out, want) {
+					t.Fatalf("out = %v, want %v", out, want)
+				}
+			})
+			if allocs != 0 {
+				t.Fatalf("allocs = %f, want 0", allocs)
+			}
+		})
+	}
+}
+
 func TestReadPacketAllocs(t *testing.T) {
 	data := makeMatroskaData(t, 1200)
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
@@ -2364,6 +2395,27 @@ func TestReadPacketAllocs(t *testing.T) {
 	allocs := testing.AllocsPerRun(1000, func() {
 		if err := demuxer.ReadPacket(&packet); err != nil {
 			t.Fatal(err)
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("allocs = %f, want 0", allocs)
+	}
+}
+
+func TestReadH264AVCToAnnexBAllocs(t *testing.T) {
+	data := makeH264AVCMatroskaData(t, 1200)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, len(h264AnnexBAccessUnit()))}
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(packet.Data, h264AnnexBAccessUnit()) {
+			t.Fatalf("data = %v, want Annex B", packet.Data)
 		}
 	})
 	if allocs != 0 {
@@ -2473,6 +2525,23 @@ func BenchmarkReadSimpleBlock(b *testing.B) {
 	}
 }
 
+func BenchmarkReadH264AVCToAnnexB(b *testing.B) {
+	data := makeH264AVCMatroskaData(b, b.N+1)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, len(h264AnnexBAccessUnit()))}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(h264AnnexBAccessUnit())))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkReadXiphLacedSimpleBlock(b *testing.B) {
 	data := makeRepeatedLacedMatroskaData(b, simpleBlockLacingXiph, [][]byte{{1, 2}, {3, 4}, {5, 6}}, b.N/3+1)
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
@@ -2511,6 +2580,39 @@ func makeMatroskaData(tb testing.TB, packets int) []byte {
 			TimeNS:   int64(i) * 20_000_000,
 			Keyframe: i == 0,
 			Data:     []byte{byte(i), 2, 3, 4},
+		}); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func makeH264AVCMatroskaData(tb testing.TB, packets int) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	id, err := muxer.AddTrack(Track{
+		Type:         TrackVideo,
+		Codec:        CodecH264,
+		Video:        VideoConfig{Width: 16, Height: 16},
+		CodecPrivate: h264AVCDecoderConfigWithLengthSize(2),
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	data := h264AnnexBAccessUnit()
+	for i := 0; i < packets; i++ {
+		if err := muxer.WritePacket(Packet{
+			TrackID:  id,
+			TimeNS:   int64(i) * 20_000_000,
+			Keyframe: i == 0,
+			Data:     data,
 		}); err != nil {
 			tb.Fatal(err)
 		}
@@ -2669,6 +2771,10 @@ func h264AnnexBInterFrame() []byte {
 
 func h264AVCSampleWithLengthSize2() []byte {
 	return []byte{0x00, 0x03, 0x65, 0x88, 0x99, 0x00, 0x02, 0x41, 0x9a}
+}
+
+func h264AVCSampleWithLengthSize1() []byte {
+	return []byte{0x03, 0x65, 0x88, 0x99, 0x02, 0x41, 0x9a}
 }
 
 func h264AVCSampleWithParameterSetsLengthSize4() []byte {

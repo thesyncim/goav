@@ -308,24 +308,45 @@ func h264AVCToAnnexBInPlace(data []byte, outSize int, lengthSize int) ([]byte, e
 		}
 		return data, nil
 	}
-	input := make([]byte, len(data))
-	copy(input, data)
 	out := data[:outSize]
-	inOffset := 0
-	outOffset := 0
-	for inOffset < len(input) {
-		size, next, err := h264ReadAVCNALUSize(input, inOffset, lengthSize)
+	inLimit := len(data)
+	outOffset := outSize
+	for inLimit > 0 {
+		prefixOffset, size, err := h264LastAVCNALU(data[:inLimit], lengthSize)
 		if err != nil {
 			return nil, err
 		}
-		if size == 0 || next+size > len(input) {
-			return nil, ErrInvalidData
-		}
-		copy(out[outOffset:], h264StartCode[:])
-		outOffset += len(h264StartCode)
-		copy(out[outOffset:], input[next:next+size])
-		outOffset += size
-		inOffset = next + size
+		payloadOffset := prefixOffset + lengthSize
+		outOffset -= size
+		copy(out[outOffset:outOffset+size], data[payloadOffset:inLimit])
+		outOffset -= len(h264StartCode)
+		copy(out[outOffset:outOffset+len(h264StartCode)], h264StartCode[:])
+		inLimit = prefixOffset
+	}
+	if outOffset != 0 {
+		return nil, ErrInvalidData
 	}
 	return out, nil
+}
+
+func h264LastAVCNALU(data []byte, lengthSize int) (int, int, error) {
+	offset := 0
+	lastPrefixOffset := -1
+	lastSize := 0
+	for offset < len(data) {
+		size, next, err := h264ReadAVCNALUSize(data, offset, lengthSize)
+		if err != nil {
+			return 0, 0, err
+		}
+		if size == 0 || next+size > len(data) {
+			return 0, 0, ErrInvalidData
+		}
+		lastPrefixOffset = offset
+		lastSize = size
+		offset = next + size
+	}
+	if lastPrefixOffset < 0 {
+		return 0, 0, ErrInvalidData
+	}
+	return lastPrefixOffset, lastSize, nil
 }

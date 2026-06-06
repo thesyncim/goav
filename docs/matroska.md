@@ -194,6 +194,8 @@ The steady-state packet paths avoid allocations:
 - Header and track metadata may allocate before packet writing starts.
 - The demuxer reuses embedded `io.LimitedReader` and fixed scratch buffers for
   block parsing.
+- H.264 AVC-to-Annex B demux conversion expands length-prefixed samples into
+  caller-owned packet buffers without heap allocation.
 - `ReadPacket` writes frame bytes into caller-owned `Packet.Data` capacity.
   When a non-laced frame is too large, the demuxer returns
   `ErrPayloadTooSmall` after skipping that packet so the next read stays
