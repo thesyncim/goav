@@ -635,6 +635,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Resize`/`Resample` value, empty-transform, and media-mismatch errors now
     fail during public `StreamIntent` validation instead of first surfacing
     during builder lowering. Done.
+190. Validate ordinary stream step attachments before lowering: nil
+    `.Do(...)` stages and mismatched transform attachments now fail in a
+    dedicated compiler pass before the stream lowerer mutates the runtime
+    builder. Done.
 
 ## First Vertical Slice
 
@@ -869,7 +873,8 @@ branch planning now read `Intent.Streams`, ordinary output attachments are no
 longer split into builder-shaped fields, attachment consistency is checked
 before lowering, and both ordinary stream and transcode branch output routes
 bind in their own passes before stream lowering or mux-group plan assembly.
-Ordinary stream transform shape now validates from intent too.
+Ordinary stream transform shape now validates from intent too, and concrete
+stream step attachments are checked before stream lowering.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

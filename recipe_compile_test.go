@@ -201,6 +201,76 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 	}
 }
 
+func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
+	tests := []struct {
+		name  string
+		state recipeCompileState
+		code  string
+		cause error
+		want  []string
+	}{
+		{
+			name: "nil custom stage",
+			state: recipeCompileState{
+				operation: "build job",
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ogg"}},
+					Streams: []StreamIntent{{
+						Name:    "audio",
+						Decode:  true,
+						RouteTo: []string{"frames"},
+					}},
+					Outputs: []OutputIntent{{Name: "frames"}},
+				},
+				streamSteps: []jobStreamStepAttachment{{stepIndex: 0}},
+			},
+			code:  "stage_missing",
+			cause: ErrNilStage,
+			want:  []string{".Do(stage)", "goav.FrameFunc"},
+		},
+		{
+			name: "transform attachment mismatch",
+			state: recipeCompileState{
+				operation: "build job",
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ogg"}},
+					Streams: []StreamIntent{{
+						Name:       "audio",
+						Select:     StreamSelect{Type: av.MediaAudio},
+						Decode:     true,
+						Transforms: []TransformSpec{Resample(48_000, Stereo)},
+						RouteTo:    []string{"frames"},
+					}},
+					Outputs: []OutputIntent{{Name: "frames"}},
+				},
+				streamSteps: []jobStreamStepAttachment{{
+					hasTransform:   true,
+					transformIndex: 1,
+					stepIndex:      0,
+				}},
+			},
+			code:  "recipe_attachment_mismatch",
+			cause: ErrUnsupportedBuild,
+			want:  []string{"transform attachment", "transform index: 1", "intent transforms: 1", "Intent.Transforms"},
+		},
+	}
+	pass := validateJobStreamAttachmentsPass()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, tt.cause) {
+				t.Fatalf("err = %v, want %s wrapping %v", err, tt.code, tt.cause)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestJobIntentShapePassRejectsStreamTransforms(t *testing.T) {
 	tests := []struct {
 		name   string

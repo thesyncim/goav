@@ -137,6 +137,7 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 		validateJobIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
 		validateJobAttachmentsPass(),
+		validateJobStreamAttachmentsPass(),
 		validateJobOutputBindingsPass(),
 		validatePacketJobOutputsPass(),
 		openRecipeRuntimeBuilderPass(),
@@ -364,6 +365,52 @@ func validateJobAttachmentsPass() recipeCompilePass {
 		}
 		return validateOutputSpecs(state.operation, state.outputAttachments)
 	}}
+}
+
+func validateJobStreamAttachmentsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job stream attachments", fn: func(state *recipeCompileState) error {
+		stream, ok := jobIntentStream(state.intent)
+		if !ok {
+			return nil
+		}
+		return validateJobStreamAttachments(state.operation, stream, state.streamSteps)
+	}}
+}
+
+func validateJobStreamAttachments(operation string, stream StreamIntent, steps []jobStreamStepAttachment) error {
+	for i := range steps {
+		step := steps[i]
+		if step.stage != nil {
+			continue
+		}
+		if step.hasTransform {
+			if step.transformIndex >= 0 && step.transformIndex < len(stream.Transforms) {
+				continue
+			}
+			return jobStreamTransformAttachmentMismatchError(operation, stream, step, len(stream.Transforms))
+		}
+		return streamStageMissingError(stream)
+	}
+	return nil
+}
+
+func jobStreamTransformAttachmentMismatchError(operation string, stream StreamIntent, step jobStreamStepAttachment, transformCount int) error {
+	return &BuildError{
+		Code:      "recipe_attachment_mismatch",
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    "stream transform attachment does not match intent transforms",
+		Details: []string{
+			fmt.Sprintf("step index: %d", step.stepIndex),
+			fmt.Sprintf("transform index: %d", step.transformIndex),
+			fmt.Sprintf("intent transforms: %d", transformCount),
+		},
+		Suggestions: []string{
+			"build stream recipes through goav.From(...).Audio() or goav.From(...).Video()",
+			"keep custom compiler passes aligned with Intent.Transforms and captured stream attachments",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func validateJobOutputBindingsPass() recipeCompilePass {
