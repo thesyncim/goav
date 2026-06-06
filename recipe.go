@@ -43,11 +43,21 @@ type StreamIntent struct {
 	Select      StreamSelect
 	FromTap     string
 	Decode      bool
+	Operations  []StreamOperation
 	Transforms  []TransformSpec
 	Taps        []TapIntent
 	Encode      CodecSpec
 	CodecChange CodecChangePolicy
 	RouteTo     []string
+}
+
+type StreamOperation struct {
+	Kind      OperationKind
+	Component string
+	Stage     pipeline.Stage
+	Transform TransformSpec
+	Tap       TapIntent
+	Encode    CodecSpec
 }
 
 type OutputIntent struct {
@@ -888,14 +898,14 @@ func (s OutputSpec) intentWithName(name string) OutputIntent {
 }
 
 type Job struct {
-	name       string
-	runtime    Runtime
-	inputs     []InputSpec
-	outputs    []OutputSpec
-	stream     *jobStreamBuild
-	teeStreams []streamBuild
-	teeOutputs []namedOutputSpec
-	err        error
+	name        string
+	runtime     Runtime
+	inputs      []InputSpec
+	outputs     []OutputSpec
+	stream      *jobStreamBuild
+	pathStreams []streamBuild
+	pathOutputs []namedOutputSpec
+	err         error
 }
 
 type jobStreamBuild struct {
@@ -957,20 +967,29 @@ func (j *Job) setErr(err error) {
 }
 
 func (j *Job) To(outputs ...OutputSpec) *Job {
-	if len(j.teeStreams) != 0 {
-		j.setErr(flowTeeOutputScopeError("tee"))
+	if len(j.pathStreams) != 0 {
+		j.setErr(pathOutputScopeError("paths"))
 		return j
 	}
 	j.outputs = append(j.outputs, outputs...)
 	return j
 }
 
-func (j *Job) Output(name string, output OutputSpec) *Job {
-	if name == "" {
-		j.setErr(transcodeEmptyOutputDefinitionLabelError(output))
-		return j
+func (j *Job) Outputs(outputs ...OutputBinding) *Job {
+	for i := range outputs {
+		if outputs[i].err != nil {
+			j.setErr(outputs[i].err)
+			continue
+		}
+		if outputs[i].name == "" {
+			j.setErr(transcodeEmptyOutputDefinitionLabelError(outputs[i].output))
+			continue
+		}
+		j.pathOutputs = append(j.pathOutputs, namedOutputSpec{
+			name:   outputs[i].name,
+			output: outputs[i].output.Name(firstNonEmpty(outputs[i].output.name, outputs[i].name)),
+		})
 	}
-	j.teeOutputs = append(j.teeOutputs, namedOutputSpec{name: name, output: output.Name(firstNonEmpty(output.name, name))})
 	return j
 }
 
@@ -997,7 +1016,7 @@ func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOp
 		selector: newStreamSelector(media, options...),
 	}
 	if j.stream != nil {
-		if len(j.teeStreams) != 0 {
+		if len(j.pathStreams) != 0 {
 			j.stream = stream
 			return &JobStreamBuilder{job: j, stream: stream}
 		}
@@ -1016,12 +1035,12 @@ func (j *Job) Intent() Intent {
 	for i := range j.inputs {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())
 	}
-	if len(j.teeStreams) != 0 {
-		for i := range j.teeStreams {
-			intent.Streams = append(intent.Streams, transcodeStreamIntent(j.teeStreams[i]))
+	if len(j.pathStreams) != 0 {
+		for i := range j.pathStreams {
+			intent.Streams = append(intent.Streams, transcodeStreamIntent(j.pathStreams[i]))
 		}
-		for i := range j.teeOutputs {
-			intent.Outputs = append(intent.Outputs, j.teeOutputs[i].output.intentWithName(j.teeOutputs[i].name))
+		for i := range j.pathOutputs {
+			intent.Outputs = append(intent.Outputs, j.pathOutputs[i].output.intentWithName(j.pathOutputs[i].name))
 		}
 		return intent
 	} else if j.stream != nil {
@@ -1179,10 +1198,10 @@ func jobOutputLabelSet(outputs []OutputSpec) map[string]struct{} {
 }
 
 func (j *Job) allOutputs() []OutputSpec {
-	if len(j.teeOutputs) != 0 {
-		outputs := make([]OutputSpec, 0, len(j.teeOutputs))
-		for i := range j.teeOutputs {
-			outputs = append(outputs, j.teeOutputs[i].output)
+	if len(j.pathOutputs) != 0 {
+		outputs := make([]OutputSpec, 0, len(j.pathOutputs))
+		for i := range j.pathOutputs {
+			outputs = append(outputs, j.pathOutputs[i].output)
 		}
 		return outputs
 	}
@@ -1295,6 +1314,7 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 			Name:     stream.selector.Name,
 		},
 		Decode:      stream.decode,
+		Operations:  jobStreamOperations(stream),
 		Transforms:  stream.transformSpecs(),
 		Taps:        append(streamStepTapIntents(stream.steps, stream.selector.Type), postEncodeTapIntents(stream.postEncodeTaps, stream.selector.Type)...),
 		Encode:      stream.encode,
@@ -1316,11 +1336,75 @@ func transcodeStreamIntent(stream streamBuild) StreamIntent {
 		},
 		FromTap:    stream.fromTap,
 		Decode:     stream.decode,
+		Operations: streamBuildOperations(stream),
 		Transforms: cloneTransformSpecs(stream.transforms),
 		Taps:       streamTapIntents(stream.taps, stream.selector.Type, stream.decode),
 		Encode:     stream.encode,
 		RouteTo:    append([]string(nil), stream.labels...),
 	}
+}
+
+func jobStreamOperations(stream *jobStreamBuild) []StreamOperation {
+	if stream == nil {
+		return nil
+	}
+	operations := make([]StreamOperation, 0, len(stream.steps)+1+len(stream.postEncodeTaps))
+	if stream.decode {
+		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec)})
+	}
+	operations = append(operations, streamStepOperations(stream.steps, stream.selector.Type)...)
+	if codecIntentSet(stream.encode) {
+		operations = append(operations, StreamOperation{Kind: OpEncode, Component: string(stream.encode.ID), Encode: stream.encode})
+	}
+	for i := range stream.postEncodeTaps {
+		tap := TapIntent{Name: stream.postEncodeTaps[i], MediaKind: stream.selector.Type, Domain: DomainPacket, After: OpEncode}
+		operations = append(operations, StreamOperation{Kind: OpTap, Component: tap.Name, Tap: tap})
+	}
+	return operations
+}
+
+func streamBuildOperations(stream streamBuild) []StreamOperation {
+	operations := make([]StreamOperation, 0, len(stream.steps)+2)
+	if stream.decode {
+		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec)})
+	}
+	operations = append(operations, streamStepOperations(stream.steps, stream.selector.Type)...)
+	if codecIntentSet(stream.encode) {
+		operations = append(operations, StreamOperation{Kind: OpEncode, Component: string(stream.encode.ID), Encode: stream.encode})
+	}
+	return operations
+}
+
+func streamStepOperations(steps []jobStreamStep, media av.MediaType) []StreamOperation {
+	if len(steps) == 0 {
+		return nil
+	}
+	operations := make([]StreamOperation, 0, len(steps))
+	for i := range steps {
+		step := steps[i]
+		switch {
+		case step.stage != nil:
+			operations = append(operations, StreamOperation{
+				Kind:      OpStage,
+				Component: step.stage.Name(),
+				Stage:     step.stage,
+			})
+		case step.transform.Resize != nil || step.transform.Resample != nil:
+			operations = append(operations, StreamOperation{
+				Kind:      OpTransform,
+				Component: transformFactoryName(step.transform),
+				Transform: cloneTransformSpec(step.transform),
+			})
+		case step.tap != "":
+			tap := TapIntent{Name: step.tap, MediaKind: media, Domain: DomainFrame}
+			operations = append(operations, StreamOperation{
+				Kind:      OpTap,
+				Component: tap.Name,
+				Tap:       tap,
+			})
+		}
+	}
+	return operations
 }
 
 func streamTapIntents(names []string, media av.MediaType, decoded bool) []TapIntent {
@@ -1459,7 +1543,7 @@ func mixedStreamOutputError(operation string, stream StreamIntent) error {
 		Suggestions: []string{
 			"use .To(goav.FrameSink(...)) for decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...)) for encoded output",
-			"use .Tap(...).Branch(...) when one stream needs separate decoded and encoded branches",
+			"use .Paths(...) when one stream needs separate decoded and encoded branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1579,7 +1663,7 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 		},
 		Suggestions: []string{
 			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
-			"use goav.From(input).Video().Decode().Tap(...).Branch(...) for multiple branches from one stream",
+			"use goav.From(input).Video().Decode().Paths(...) for multiple paths from one stream",
 			"use the expert graph API for custom multi-stream routing",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -1605,6 +1689,44 @@ func (s *jobStreamBuild) transformSpecs() []TransformSpec {
 		}
 	}
 	return transforms
+}
+
+func streamStepsFromTransforms(transforms []TransformSpec) []jobStreamStep {
+	if len(transforms) == 0 {
+		return nil
+	}
+	steps := make([]jobStreamStep, 0, len(transforms))
+	for i := range transforms {
+		steps = append(steps, jobStreamStep{transform: cloneTransformSpec(transforms[i])})
+	}
+	return steps
+}
+
+func cloneJobStreamSteps(steps []jobStreamStep) []jobStreamStep {
+	if len(steps) == 0 {
+		return nil
+	}
+	out := make([]jobStreamStep, 0, len(steps))
+	for i := range steps {
+		step := steps[i]
+		step.transform = cloneTransformSpec(step.transform)
+		out = append(out, step)
+	}
+	return out
+}
+
+func appendPathSteps(prefix []jobStreamStep, path []jobStreamStep) []jobStreamStep {
+	out := make([]jobStreamStep, 0, len(prefix)+len(path))
+	out = append(out, cloneJobStreamSteps(prefix)...)
+	out = append(out, cloneJobStreamSteps(path)...)
+	return out
+}
+
+func appendTransformSpecs(prefix []TransformSpec, path []TransformSpec) []TransformSpec {
+	out := make([]TransformSpec, 0, len(prefix)+len(path))
+	out = append(out, cloneTransformSpecs(prefix)...)
+	out = append(out, cloneTransformSpecs(path)...)
+	return out
 }
 
 func outputsContainMuxTarget(outputs []OutputSpec) bool {
@@ -2045,7 +2167,7 @@ func duplicateStreamEncodeError(operation string, node string, first CodecSpec, 
 		},
 		Suggestions: []string{
 			"choose one output codec for the stream chain",
-			"use .Tap(...).Branch(...) when one input needs multiple encoded branches",
+			"use .Paths(...) when one input needs multiple encoded branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -2355,6 +2477,7 @@ type streamBuild struct {
 	selector   av.StreamSelector
 	fromTap    string
 	decode     bool
+	steps      []jobStreamStep
 	transforms []TransformSpec
 	taps       []string
 	encode     CodecSpec
@@ -2446,198 +2569,6 @@ func (b *JobStreamBuilder) Tap(name string) *JobStreamBuilder {
 	stream.decode = true
 	stream.steps = append(stream.steps, jobStreamStep{tap: name})
 	return b
-}
-
-func (b *JobStreamBuilder) Tee(branches ...FlowBranch) *Job {
-	stream := b.current()
-	job := b.job
-	if len(branches) == 0 {
-		job.setErr(flowTeeMissingError(jobStreamName(stream)))
-		return job
-	}
-	if len(job.teeStreams) != 0 {
-		job.setErr(flowTeeDuplicateError(jobStreamName(stream)))
-		return job
-	}
-	if len(job.inputs) != 1 {
-		job.setErr(flowTeeInputCountError(jobStreamName(stream), len(job.inputs)))
-		return job
-	}
-	if len(job.outputs) != 0 || len(stream.outputs) != 0 {
-		job.setErr(flowTeeOutputScopeError(jobStreamName(stream)))
-		return job
-	}
-
-	teeStreams := make([]streamBuild, 0, len(branches))
-	teeOutputs := make([]namedOutputSpec, 0, len(branches))
-	for i := range branches {
-		spec := branches[i].spec
-		if spec.err != nil {
-			job.setErr(spec.err)
-			return job
-		}
-		if err := validateFlowMedia("build tee", jobStreamName(stream), stream.selector.Type, spec); err != nil {
-			job.setErr(err)
-			return job
-		}
-		if len(branches[i].outputs) == 0 {
-			job.setErr(flowBranchOutputMissingError(spec.name))
-			return job
-		}
-		if !codecIntentSet(spec.encode) {
-			job.setErr(flowBranchEncodeMissingError(spec.name))
-			return job
-		}
-		branch := streamBuild{
-			name:       spec.name,
-			selector:   stream.selector,
-			decode:     true,
-			transforms: cloneTransformSpecs(spec.transforms),
-			encode:     spec.encode,
-			labels:     outputLabels(branches[i].outputs),
-		}
-		teeStreams = append(teeStreams, branch)
-		for j := range branches[i].outputs {
-			label := branch.labels[j]
-			teeOutputs = append(teeOutputs, namedOutputSpec{
-				name:   label,
-				output: branches[i].outputs[j].Name(firstNonEmpty(branches[i].outputs[j].name, label)),
-			})
-		}
-	}
-	job.teeStreams = teeStreams
-	job.teeOutputs = teeOutputs
-	return job
-}
-
-func (b *JobStreamBuilder) Branch(name string) *JobBranchBuilder {
-	stream := b.current()
-	if name == "" {
-		b.job.setErr(transcodeIntentBranchNameMissingError(len(b.job.teeStreams), StreamIntent{Select: streamSelectFromAV(stream.selector)}))
-	}
-	return &JobBranchBuilder{
-		job:      b.job,
-		name:     name,
-		selector: stream.selector,
-		fromTap:  lastStreamTap(stream),
-		decode:   true,
-	}
-}
-
-type JobBranchBuilder struct {
-	job        *Job
-	name       string
-	selector   av.StreamSelector
-	fromTap    string
-	decode     bool
-	transforms []TransformSpec
-	taps       []string
-	encode     CodecSpec
-}
-
-func (b *JobBranchBuilder) Apply(flow Flow) *JobBranchBuilder {
-	spec, err := flowSpecFrom(flow)
-	if err != nil {
-		b.job.setErr(err)
-		return b
-	}
-	if err := validateFlowMedia("build branch", firstNonEmpty(b.name, "branch"), b.selector.Type, spec); err != nil {
-		b.job.setErr(err)
-		return b
-	}
-	if codecIntentSet(b.encode) && (len(spec.transforms) != 0 || codecIntentSet(spec.encode)) {
-		b.job.setErr(streamStepAfterEncodeError("build branch", firstNonEmpty(b.name, "branch"), "flow", b.encode))
-		return b
-	}
-	b.transforms = append(b.transforms, cloneTransformSpecs(spec.transforms)...)
-	if codecIntentSet(spec.encode) {
-		return b.Encode(spec.encode)
-	}
-	return b
-}
-
-func (b *JobBranchBuilder) Resize(width int, height int, options ...resizeOption) *JobBranchBuilder {
-	if codecIntentSet(b.encode) {
-		b.job.setErr(streamStepAfterEncodeError("build branch", firstNonEmpty(b.name, "branch"), "resize", b.encode))
-		return b
-	}
-	b.transforms = append(b.transforms, Resize(width, height, options...))
-	return b
-}
-
-func (b *JobBranchBuilder) Resample(sampleRate int, channels int, options ...audioOption) *JobBranchBuilder {
-	if codecIntentSet(b.encode) {
-		b.job.setErr(streamStepAfterEncodeError("build branch", firstNonEmpty(b.name, "branch"), "resample", b.encode))
-		return b
-	}
-	b.transforms = append(b.transforms, Resample(sampleRate, channels, options...))
-	return b
-}
-
-func (b *JobBranchBuilder) Tap(name string) *JobBranchBuilder {
-	if name == "" {
-		b.job.setErr(&BuildError{
-			Code:      "tap_invalid",
-			Operation: "build branch",
-			Node:      firstNonEmpty(b.name, "branch"),
-			Reason:    "tap name is empty",
-			Suggestions: []string{
-				"call .Tap(\"video.720p.frames\") or another stable tap name",
-				"omit .Tap(...) when no runtime branch should attach at that point",
-			},
-			Cause: ErrUnsupportedBuild,
-		})
-		return b
-	}
-	b.taps = append(b.taps, name)
-	return b
-}
-
-func (b *JobBranchBuilder) Encode(codec CodecSpec) *JobBranchBuilder {
-	if codecIntentSet(b.encode) {
-		b.job.setErr(duplicateStreamEncodeError("build branch", firstNonEmpty(b.name, "branch"), b.encode, codec))
-		return b
-	}
-	b.encode = codec
-	return b
-}
-
-func (b *JobBranchBuilder) Opus(bitrate int, options ...codecOption) *JobBranchBuilder {
-	return b.Encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *JobBranchBuilder) VP8(bitrate int, options ...codecOption) *JobBranchBuilder {
-	return b.Encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *JobBranchBuilder) VP9(bitrate int, options ...codecOption) *JobBranchBuilder {
-	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *JobBranchBuilder) To(labels ...string) *Job {
-	routeTo := make([]string, 0, len(labels))
-	for i := range labels {
-		if labels[i] == "" {
-			b.job.setErr(transcodeEmptyOutputLabelError(streamBuild{
-				name:     b.name,
-				selector: b.selector,
-			}, i))
-			continue
-		}
-		routeTo = append(routeTo, labels[i])
-	}
-	branch := streamBuild{
-		name:       b.name,
-		selector:   b.selector,
-		fromTap:    b.fromTap,
-		decode:     b.decode,
-		transforms: cloneTransformSpecs(b.transforms),
-		taps:       append([]string(nil), b.taps...),
-		encode:     b.encode,
-		labels:     routeTo,
-	}
-	b.job.teeStreams = append(b.job.teeStreams, branch)
-	return b.job
 }
 
 func streamSelectFromAV(selector av.StreamSelector) StreamSelect {
@@ -2756,12 +2687,26 @@ type transcodeJob struct {
 	outputs []namedOutputSpec
 	err     error
 
-	fromFlowTee bool
+	fromPathSplit bool
 }
 
 type namedOutputSpec struct {
 	name   string
 	output OutputSpec
+}
+
+// Output binds a stable output label to a concrete muxed output.
+func Output(name string, output OutputSpec) OutputBinding {
+	if name == "" {
+		return OutputBinding{output: output, err: transcodeEmptyOutputDefinitionLabelError(output)}
+	}
+	return OutputBinding{name: name, output: output}
+}
+
+type OutputBinding struct {
+	name   string
+	output OutputSpec
+	err    error
 }
 
 const transcodeRecipeOperation = "build branch composition"
@@ -2793,17 +2738,17 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 	streams := intent.Streams
 	outputs, outputOrder := transcodeOutputAttachmentSet(namedOutputs)
 
-	variants := make([]transcodepkg.Variant, 0, len(streams))
-	outputVariants := make(map[string][]string, len(outputs))
+	paths := make([]transcodepkg.Path, 0, len(streams))
+	outputPaths := make(map[string][]string, len(outputs))
 	if len(streams) == 0 {
 		return transcodepkg.Plan{}, transcodeStreamMissingError()
 	}
 	for i := range streams {
 		stream := streams[i]
-		variantName := stream.Name
+		pathName := stream.Name
 		selector := streamIntentSelector(stream)
-		variant := transcodepkg.Variant{
-			Name:     variantName,
+		path := transcodepkg.Path{
+			Name:     pathName,
 			Selector: selector,
 			Decode:   true,
 			Encode: codec.EncodeConfig{
@@ -2812,16 +2757,14 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 			},
 			Labels: append([]string(nil), stream.RouteTo...),
 		}
+		path.Steps = transcodePathSteps(stream)
 		for _, label := range stream.RouteTo {
-			outputVariants[label] = append(outputVariants[label], variantName)
+			outputPaths[label] = append(outputPaths[label], pathName)
 		}
-		resize, resample, err := transcodeBranchTransformConfigs(stream)
-		if err != nil {
+		if err := validateTranscodeBranchTransforms(stream); err != nil {
 			return transcodepkg.Plan{}, err
 		}
-		variant.Resize = resize
-		variant.Resample = resample
-		variants = append(variants, variant)
+		paths = append(paths, path)
 	}
 
 	planOutputs := make([]transcodepkg.Output, 0, len(outputOrder))
@@ -2829,10 +2772,10 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 		name := outputOrder[i]
 		output := outputs[name]
 		planOutput := transcodepkg.Output{
-			Name:     name,
-			Target:   output.output,
-			Format:   output.format,
-			Variants: append([]string(nil), outputVariants[name]...),
+			Name:   name,
+			Target: output.output,
+			Format: output.format,
+			Paths:  append([]string(nil), outputPaths[name]...),
 		}
 		if output.resolvedFormat != "" {
 			planOutput = transcodepkg.ResolveOutputFormat(planOutput, output.resolvedFormat)
@@ -2840,11 +2783,68 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 		planOutputs = append(planOutputs, planOutput)
 	}
 	return transcodepkg.Plan{
-		Name:     "transcode",
-		Input:    input.input,
-		Variants: variants,
-		Outputs:  planOutputs,
+		Name:    "transcode",
+		Input:   input.input,
+		Paths:   paths,
+		Outputs: planOutputs,
 	}, nil
+}
+
+func transcodePathSteps(stream StreamIntent) []transcodepkg.Step {
+	if len(stream.Operations) != 0 {
+		return transcodeStepsFromOperations(stream.Operations)
+	}
+	if len(stream.Transforms) == 0 {
+		return nil
+	}
+	return transcodeStepsFromJobSteps(streamStepsFromTransforms(stream.Transforms))
+}
+
+func transcodeStepsFromOperations(operations []StreamOperation) []transcodepkg.Step {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := make([]transcodepkg.Step, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		switch operation.Kind {
+		case OpStage:
+			if operation.Stage != nil {
+				out = append(out, transcodepkg.Step{Stage: operation.Stage})
+			}
+		case OpTransform:
+			switch {
+			case operation.Transform.Resize != nil:
+				resize := *operation.Transform.Resize
+				out = append(out, transcodepkg.Step{Resize: &resize})
+			case operation.Transform.Resample != nil:
+				resample := *operation.Transform.Resample
+				out = append(out, transcodepkg.Step{Resample: &resample})
+			}
+		}
+	}
+	return out
+}
+
+func transcodeStepsFromJobSteps(steps []jobStreamStep) []transcodepkg.Step {
+	if len(steps) == 0 {
+		return nil
+	}
+	out := make([]transcodepkg.Step, 0, len(steps))
+	for i := range steps {
+		step := steps[i]
+		switch {
+		case step.stage != nil:
+			out = append(out, transcodepkg.Step{Stage: step.stage})
+		case step.transform.Resize != nil:
+			resize := *step.transform.Resize
+			out = append(out, transcodepkg.Step{Resize: &resize})
+		case step.transform.Resample != nil:
+			resample := *step.transform.Resample
+			out = append(out, transcodepkg.Step{Resample: &resample})
+		}
+	}
+	return out
 }
 
 func validateTranscodeIntentShape(operation string, intent Intent) error {
@@ -2870,20 +2870,20 @@ func validateTranscodeIntentShape(operation string, intent Intent) error {
 	if len(streams) == 0 {
 		return transcodeStreamMissingError()
 	}
-	variantNames := make(map[string]int, len(streams))
+	pathNames := make(map[string]int, len(streams))
 	for i := range streams {
 		stream := streams[i]
 		if err := validateTranscodeBranchIntentShape(stream, i); err != nil {
 			return err
 		}
-		if _, _, err := transcodeBranchTransformConfigs(stream); err != nil {
+		if err := validateTranscodeBranchTransforms(stream); err != nil {
 			return err
 		}
-		variantName := stream.Name
-		if firstIndex, ok := variantNames[variantName]; ok {
-			return transcodeDuplicateBranchError(variantName, firstIndex, i)
+		pathName := stream.Name
+		if firstIndex, ok := pathNames[pathName]; ok {
+			return transcodeDuplicateBranchError(pathName, firstIndex, i)
 		}
-		variantNames[variantName] = i
+		pathNames[pathName] = i
 	}
 	return nil
 }
@@ -2908,12 +2908,12 @@ func validateTranscodeBranchIntentShape(stream StreamIntent, index int) error {
 	return validateTranscodeBranchOutputLabels(stream)
 }
 
-func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpec, fromFlowTee bool) error {
+func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpec, fromPathSplit bool) error {
 	if err := input.validate(); err != nil {
 		return err
 	}
 	if input.rtp != nil {
-		if !fromFlowTee {
+		if !fromPathSplit {
 			return transcodeUnsupportedRTPInputError()
 		}
 	}
@@ -3001,7 +3001,7 @@ func transcodeBranchOutputMissingError(stream StreamIntent) error {
 		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
 		Reason:    "stream has no output target",
 		Suggestions: []string{
-			"call .To(\"label\") and define it with .Output(label, goav.FileOutput(...))",
+			"call .To(\"label\") and define it with .Outputs(goav.Output(\"label\", goav.FileOutput(...)))",
 			"reuse the same output label from multiple branches when they should share an output",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3015,7 +3015,7 @@ func transcodeOutputReferenceMissingError(stream StreamIntent, label string) err
 		Node:      stream.Name,
 		Reason:    "output " + label + " is referenced but not defined",
 		Suggestions: []string{
-			"call .Output(" + label + ", goav.FileOutput(...))",
+			"call .Outputs(goav.Output(" + label + ", goav.FileOutput(...)))",
 			"define shared outputs once and route branches by label",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3046,7 +3046,7 @@ func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 		},
 		Suggestions: []string{
 			"call .To(\"label\") with a non-empty output label",
-			"define the label once with .Output(label, goav.FileOutput(...))",
+			"define the label once with .Outputs(goav.Output(\"label\", goav.FileOutput(...)))",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3059,7 +3059,7 @@ func transcodeEmptyOutputDefinitionLabelError(output OutputSpec) error {
 		Node:      output.label("output"),
 		Reason:    "transcode output labels must be non-empty",
 		Suggestions: []string{
-			"call .Output(\"label\", goav.FileOutput(...)) with a stable output label",
+			"call .Outputs(goav.Output(\"label\", goav.FileOutput(...))) with a stable output label",
 			"route branches with .To(\"label\") using that same label",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3077,7 +3077,7 @@ func transcodeFrameSinkOutputError(label string, output OutputSpec) error {
 		Node:      firstNonEmpty(label, output.label("output")),
 		Reason:    "transcode outputs are muxed output groups, not frame sinks",
 		Suggestions: []string{
-			"use goav.FileOutput(...) or goav.URIOutput(...) in .Output(label, ...)",
+			"use goav.FileOutput(...) or goav.URIOutput(...) in .Outputs(goav.Output(label, ...))",
 			"use goav.From(input).Audio().Decode().To(goav.FrameSink(sink)) or .Video().Decode().To(...) for decoded frames",
 			"use the expert graph API when one pipeline must feed both decoded frame sinks and muxed outputs",
 		},
@@ -3096,7 +3096,7 @@ func transcodeDuplicateOutputError(name string) error {
 		Node:      name,
 		Reason:    fmt.Sprintf("output label %q is defined more than once", name),
 		Suggestions: []string{
-			"use a unique .Output(label, ...) label for each transcode output",
+			"use a unique .Outputs(goav.Output(label, ...)) label for each transcode output",
 			"route multiple branches to one shared output by calling .To(label) on each branch",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3164,23 +3164,21 @@ func transcodeDuplicateBranchOutputError(stream StreamIntent, label string, firs
 		Suggestions: []string{
 			"list each output label once in .To(...)",
 			"route one branch to multiple outputs with distinct labels such as .To(\"archive\", \"preview\")",
-			"define shared outputs once with .Output(label, goav.FileOutput(...))",
+			"define shared outputs once with .Outputs(goav.Output(\"label\", goav.FileOutput(...)))",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeBranchTransformConfigs(stream StreamIntent) (*filter.ResizeConfig, *filter.ResampleConfig, error) {
-	var resize *filter.ResizeConfig
-	var resample *filter.ResampleConfig
+func validateTranscodeBranchTransforms(stream StreamIntent) error {
 	for i := range stream.Transforms {
 		transform := stream.Transforms[i]
 		if err := validateTransformSpec(transcodeRecipeOperation, transcodeIntentBranchName(stream), transform); err != nil {
-			return nil, nil, err
+			return err
 		}
 		switch {
 		case transform.Resize != nil && transform.Resample != nil:
-			return nil, nil, &BuildError{
+			return &BuildError{
 				Code:      "transform_invalid",
 				Operation: transcodeRecipeOperation,
 				Node:      transcodeIntentBranchName(stream),
@@ -3189,37 +3187,27 @@ func transcodeBranchTransformConfigs(stream StreamIntent) (*filter.ResizeConfig,
 			}
 		case transform.Resize != nil:
 			if stream.Select.Type == av.MediaAudio {
-				return nil, nil, transcodeTransformMediaError(stream, "resize", "video")
+				return transcodeTransformMediaError(stream, "resize", "video")
 			}
-			if resize != nil || resample != nil {
-				return nil, nil, transcodeTransformChainError(stream)
-			}
-			config := *transform.Resize
-			resize = &config
 		case transform.Resample != nil:
 			if stream.Select.Type == av.MediaVideo {
-				return nil, nil, transcodeTransformMediaError(stream, "resample", "audio")
+				return transcodeTransformMediaError(stream, "resample", "audio")
 			}
-			if resize != nil || resample != nil {
-				return nil, nil, transcodeTransformChainError(stream)
-			}
-			config := *transform.Resample
-			resample = &config
 		default:
-			return nil, nil, &BuildError{
+			return &BuildError{
 				Code:      "transform_invalid",
 				Operation: transcodeRecipeOperation,
 				Node:      transcodeIntentBranchName(stream),
 				Reason:    "empty stream transform",
 				Suggestions: []string{
-					"call .Resize(width, height) once on video branches",
-					"call .Resample(sampleRate, channels) once on audio branches",
+					"call .Resize(width, height) on video branches",
+					"call .Resample(sampleRate, channels) on audio branches",
 				},
 				Cause: ErrUnsupportedBuild,
 			}
 		}
 	}
-	return resize, resample, nil
+	return nil
 }
 
 func transcodeTransformMediaError(stream StreamIntent, transform string, media string) error {
@@ -3231,20 +3219,6 @@ func transcodeTransformMediaError(stream StreamIntent, transform string, media s
 		Suggestions: []string{
 			"use .Video(...).Resize(...) for video ladder branches",
 			"use .Audio(...).Resample(...) for audio branches",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func transcodeTransformChainError(stream StreamIntent) error {
-	return &BuildError{
-		Code:      "transform_chain_unsupported",
-		Operation: transcodeRecipeOperation,
-		Node:      transcodeIntentBranchName(stream),
-		Reason:    "transcode branches currently support one media transform",
-		Suggestions: []string{
-			"call one Resize or Resample per branch",
-			"create another Video(...) or Audio(...) branch for another output shape",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

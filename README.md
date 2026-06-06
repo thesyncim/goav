@@ -58,28 +58,39 @@ return goav.From(input).
 These examples use containers available in `goav.Default()` today. WebM, Ogg,
 WAV, and Y4M are adapter surface, not hidden core magic.
 
-## Branch Composition
+## Paths
 
-Use `Tap` to name a stable point in the media chain. A declared branch can start
-from that point and become a different output path.
+Use `Paths` when one selected stream should become several encoded output
+paths. A path can start after the operations already declared on the stream, so
+splits are natural after decode, after resize or resample, after a custom
+stage, or after any declared tap.
 
 ```go
 return goav.From(input).
     Video().
     Decode().
     Tap("video.decoded").
-    Branch("720p").
-    Resize(1280, 720).
-    Tap("video.720p.frames").
-    VP9(2_000_000).
-    To("web").
-    Output("web", goav.FileOutput("web.ivf", web)).
+    Resize(1920, 1080).
+    Paths(
+        goav.Path("archive").
+            VP9(4_000_000).
+            To("archive"),
+        goav.Path("preview").
+            Resize(640, 360).
+            Do(frameMeter).
+            Tap("video.preview.frames").
+            VP8(600_000).
+            To("preview"),
+    ).
+    Outputs(
+        goav.Output("archive", goav.FileOutput("archive.ivf", archive)),
+        goav.Output("preview", goav.FileOutput("preview.ivf", preview)),
+    ).
     Run(ctx)
 ```
 
-Taps are meant to work at operation boundaries: after decode, after resize or
-resample, after a custom stage, and after encode. `Tee` is the reusable split
-for flow branches:
+Reusable flows produce the same `PathSpec` values as ad hoc paths, so there is
+one way to split:
 
 ```go
 archive := goav.VideoFlow("archive").
@@ -92,9 +103,13 @@ preview := goav.VideoFlow("preview").
 return goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
     Video().
     Decode().
-    Tee(
-        archive.To(goav.FileOutput("archive.ivf", archiveFile)),
-        preview.To(goav.FileOutput("preview.ivf", previewFile)),
+    Paths(
+        archive.To("archive"),
+        preview.To("preview"),
+    ).
+    Outputs(
+        goav.Output("archive", goav.FileOutput("archive.ivf", archiveFile)),
+        goav.Output("preview", goav.FileOutput("preview.ivf", previewFile)),
     ).
     Run(ctx)
 ```
@@ -109,12 +124,14 @@ task, err := goav.From(input).
     Video().
     Decode().
     Tap("video.decoded").
-    Branch("720p").
-    Resize(1280, 720).
-    Tap("video.720p.frames").
-    VP9(2_000_000).
-    To("web").
-    Output("web", goav.FileOutput("web.ivf", web)).
+    Paths(
+        goav.Path("720p").
+            Resize(1280, 720).
+            Tap("video.720p.frames").
+            VP9(2_000_000).
+            To("web"),
+    ).
+    Outputs(goav.Output("web", goav.FileOutput("web.ivf", web))).
     Build(ctx)
 if err != nil {
     return err
@@ -151,27 +168,30 @@ return goav.From(goav.FileInput("source.webm", in)).
     Video().
     Decode().
     Tap("video.decoded").
-    Variants(
-        goav.Variant("v1080").
+    Paths(
+        goav.Path("v1080").
             Resize(1920, 1080).
             VP9(4_000_000).
             To("watch"),
-        goav.Variant("v360").
+        goav.Path("v360").
             Resize(640, 360).
+            Do(frameMeter).
             VP8(600_000).
             To("mobile"),
     ).
     Audio().
     Decode().
     Tap("audio.decoded").
-    Variants(
-        goav.Variant("a96").
+    Paths(
+        goav.Path("a96").
             Resample(48_000, goav.Stereo).
             Opus(96_000).
             To("watch", "mobile"),
     ).
-    Output("watch", goav.FileOutput("watch.webm", watch)).
-    Output("mobile", goav.FileOutput("mobile.webm", mobile)).
+    Outputs(
+        goav.Output("watch", goav.FileOutput("watch.webm", watch)),
+        goav.Output("mobile", goav.FileOutput("mobile.webm", mobile)),
+    ).
     Run(ctx)
 ```
 
@@ -309,9 +329,11 @@ Implemented now:
   generic `Codec` specs;
 - custom stages, sinks, adapter hooks, and late runtime branch sinks as optional
   composition points instead of a separate workflow model;
-- reusable `AudioFlow` and `VideoFlow` with `Tee`;
-- grouped `Variant(...)` alternatives from one selected stream;
-- branch composition through `Tap(...).Branch(...).To(label).Output(label, ...)`;
+- reusable `AudioFlow` and `VideoFlow` values that become `PathSpec` with
+  `.To(label)`;
+- grouped `Path(...)` output paths from one selected stream, with ordered custom
+  stage, tap, transform, and encode steps;
+- output groups through `.Outputs(goav.Output(label, output), ...)`;
 - runtime branch attachment through `Task.Taps()` and `Branch(...).FromTap(...)`;
 - structured `Explain(ctx)` reports with branch operations, taps, decisions, and
   adapter requirements;

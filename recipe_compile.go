@@ -48,7 +48,7 @@ type recipeCompileState struct {
 	transcodeOutputAttachments []namedOutputSpec
 	transcodeInputProbe        format.ProbeResult
 	transcodeInputProbeReady   bool
-	transcodeFlowTee           bool
+	transcodePathSplit         bool
 
 	plan transcodepkg.Plan
 
@@ -260,8 +260,8 @@ func compileJobRecipeForBuildContext(ctx context.Context, job *Job) (recipeResol
 }
 
 func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
-	if job != nil && len(job.teeStreams) != 0 {
-		return compileJobTeeRecipeWithOptions(job, options)
+	if job != nil && len(job.pathStreams) != 0 {
+		return compileJobPathRecipeWithOptions(job, options)
 	}
 	state := recipeCompileState{
 		operation: "build job",
@@ -304,19 +304,19 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 	}}.Compile(state)
 }
 
-func compileJobTeeRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
+func compileJobPathRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
 	branchJob := &transcodeJob{
-		runtime:     job.runtime,
-		name:        job.name,
-		streams:     append([]streamBuild(nil), job.teeStreams...),
-		outputs:     append([]namedOutputSpec(nil), job.teeOutputs...),
-		err:         job.err,
-		fromFlowTee: true,
+		runtime:       job.runtime,
+		name:          job.name,
+		streams:       append([]streamBuild(nil), job.pathStreams...),
+		outputs:       append([]namedOutputSpec(nil), job.pathOutputs...),
+		err:           job.err,
+		fromPathSplit: true,
 	}
 	if len(job.inputs) == 1 {
 		branchJob.input = job.inputs[0]
 	} else if branchJob.err == nil {
-		branchJob.err = flowTeeInputCountError("tee", len(job.inputs))
+		branchJob.err = pathInputCountError("paths", len(job.inputs))
 	}
 	return compileTranscodeRecipeWithOptions(branchJob, options)
 }
@@ -333,7 +333,7 @@ func compileTranscodeRecipeWithOptions(job *transcodeJob, options recipeCompileO
 		state.recipeErr = job.err
 		state.transcodeInputAttachment = job.input
 		state.transcodeOutputAttachments = append([]namedOutputSpec(nil), job.outputs...)
-		state.transcodeFlowTee = job.fromFlowTee
+		state.transcodePathSplit = job.fromPathSplit
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateTranscodeRecipePass(),
@@ -420,7 +420,7 @@ func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
-			"use goav.From(input).Video().Decode().Tap(...).Branch(...).To(label).Output(label, output) for named branches",
+			"use goav.From(input).Video().Decode().Paths(goav.Path(name).To(label)).Outputs(goav.Output(label, output)) for named paths",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -435,7 +435,7 @@ func jobOutputReferenceMissingError(operation string, stream StreamIntent, label
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
-			"define named branch outputs with .Output(label, output)",
+			"define named path outputs with .Outputs(goav.Output(label, output))",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -448,7 +448,7 @@ func jobIntentTooManyStreamsError(operation string, streams []StreamIntent) erro
 		Reason:    "ordinary stream recipes select one audio or video stream",
 		Suggestions: []string{
 			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
-			"use goav.From(input).Video().Decode().Tap(...).Branch(...) for multiple branches from one stream",
+			"use goav.From(input).Video().Decode().Paths(...) for multiple branches from one stream",
 			"use the expert graph API for custom multi-stream routing",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -699,7 +699,7 @@ func validateTranscodeIntentShapePass() recipeCompilePass {
 
 func validateTranscodeAttachmentsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode attachments", fn: func(state *recipeCompileState) error {
-		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeOutputAttachments, state.transcodeFlowTee)
+		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeOutputAttachments, state.transcodePathSplit)
 	}}
 }
 
@@ -980,7 +980,7 @@ func planTranscodeIntentPass() recipeCompilePass {
 
 func lowerTranscodePlanPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "lower transcode plan", fn: func(state *recipeCompileState) error {
-		if state.transcodeFlowTee && state.transcodeInputAttachment.rtp != nil {
+		if state.transcodePathSplit && state.transcodeInputAttachment.rtp != nil {
 			state.builder = state.transcodeInputAttachment.apply(state.builder)
 		}
 		state.builder = state.builder.Transcode(state.plan)
@@ -1003,7 +1003,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		Suggestions: []string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
 			"use goav.From(input).Audio().To(goav.FrameSink(...)) or .Video().To(...) for decoded frames",
-			"use goav.From(input).Video().Decode().Tap(...).Branch(...).To(label).Output(label, output) for named branches",
+			"use goav.From(input).Video().Decode().Paths(goav.Path(name).To(label)).Outputs(goav.Output(label, output)) for named paths",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

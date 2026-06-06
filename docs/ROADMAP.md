@@ -11,13 +11,17 @@ make the implementation match the composable planner promise.
 1. Make `Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph` the normal
    recipe path. Normal recipes should require media-plan recognition instead of
    adding workflow-specific matchers.
-2. Treat declared branches as generic ordered branch operations and mux groups.
-   `From(input).Audio()/Video().Tap(...).Branch(...)`, `Variant(...)`, and
-   `Tee(...)` flows should produce equivalent `MediaPlan` shapes where
-   possible.
+2. Treat paths as generic ordered stream operations and mux groups.
+   `From(input).Audio()/Video().Paths(...)`, `Path(...)`, and
+   `AudioFlow`/`VideoFlow` values should produce equivalent `MediaPlan` shapes
+   where possible. Paths must be orthogonal at operation boundaries: after
+   decode, after resize/resample, after custom stages, after taps, and later
+   after sink/output attachment where runtime support makes sense. Custom stage
+   and transform steps are active; custom filter adapter metadata and late muxed
+   runtime outputs remain next slices.
 3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
-   for `From`, packet copy, stream decode, branch composition, and flow tee onto
-   direct media-plan graph construction.
+   for `From`, packet copy, stream decode, path composition, and reusable flows
+   onto direct media-plan graph construction.
 4. Add a capability model for streams, codecs, filters, and containers so the
    planner can explain copy/decode/encode choices, missing adapters, transform
    incompatibilities, and mux-output conflicts before runtime execution.
@@ -31,9 +35,9 @@ make the implementation match the composable planner promise.
    WebM and Ogg remain the next high-value containers because they unlock
    expected RTP/WebRTC record and muxed audio/video examples.
 8. Generalize flows as reusable intent fragments over stream chains, not as a
-   second graph DSL. `Tee` remains reusable fanout; runtime `Task.Attach(ctx,
-   goav.Branch(...))` remains the late control-plane tap for running direct
-   graphs.
+   second graph DSL. Flows become `PathSpec` with `.To(label)` and compose
+   through `Paths(...)`; runtime `Task.Attach(ctx, goav.Branch(...))` remains
+   the late control-plane tap for running direct graphs.
 9. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
    choices should be visible to realtime users.
@@ -95,8 +99,8 @@ make the implementation match the composable planner promise.
 
 - Resize filter contract implementation. I420/YUV420P adapter active.
 - Resample filter contract implementation. S16 adapter active.
-- Decode sharing across variants. First planner path active.
-- Per-variant encoder configs. First planner path active.
+- Decode sharing across paths. First planner path active.
+- Per-path encoder configs. First planner path active.
 - Multiple mux/output targets from one plan. First planner path active.
 - Resize/resample branch execution. First concrete adapters active.
 
@@ -131,12 +135,12 @@ make the implementation match the composable planner promise.
 
 - Fluent receive/decode/filter/encode/output recipes for selected streams.
   First file/protocol and RTP/WebRTC planner slices are active.
-- `MediaPlan` as the shared branch-operation IR for record, decode, flow tee,
-  and transcode recipes. First `Explain(ctx)` report slice is active; direct
-  `Describe`/`Build` lowering remains planned.
-- Reusable `AudioFlow`/`VideoFlow` branches with `.Tee(...)`. Build-time
-  file/protocol and RTP/WebRTC slices are active; runtime stage/sink attachments
-  are active for direct task graphs; buffered attachments and late recording outputs
-  remain planned.
+- `MediaPlan` as the shared branch-operation IR for record, decode, reusable
+  paths, and transcode recipes. First `Explain(ctx)` report slice is active;
+  direct `Describe`/`Build` lowering remains planned.
+- Reusable `AudioFlow`/`VideoFlow` values that become `PathSpec` through
+  `.To(label)`. Build-time file/protocol and RTP/WebRTC path slices are active;
+  runtime stage/sink attachments are active for direct task graphs; buffered
+  attachments and late recording outputs remain planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

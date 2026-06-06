@@ -104,6 +104,9 @@ func encodeTargetCodec(request encodeRequest) av.CodecID {
 }
 
 func transcodeTransformDetail(transform transcodeTransform) string {
+	if transform.stage != nil {
+		return "custom stage"
+	}
 	if transform.video != nil {
 		return resizeDetail(*transform.video)
 	}

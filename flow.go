@@ -9,7 +9,7 @@ import (
 // Flow is a reusable stream-local recipe fragment.
 //
 // Build flows with AudioFlow or VideoFlow, then apply them to one stream chain
-// or route several flow branches with Tee.
+// or route them as named paths with JobStreamBuilder.Paths.
 type Flow interface {
 	Name() string
 	isFlow()
@@ -29,16 +29,6 @@ type flowBuilder struct {
 
 type flowSnapshotter interface {
 	flowSpec() streamFlowSpec
-}
-
-// FlowBranch is a flow routed to one or more outputs.
-type FlowBranch struct {
-	spec    streamFlowSpec
-	outputs []OutputSpec
-}
-
-func (b FlowBranch) Name() string {
-	return b.spec.name
 }
 
 // AudioFlow creates a reusable audio stream fragment.
@@ -105,11 +95,11 @@ func (b *AudioFlowBuilder) OpusMusic() *AudioFlowBuilder {
 	return b.Encode(OpusMusic())
 }
 
-func (b *AudioFlowBuilder) To(outputs ...OutputSpec) FlowBranch {
+func (b *AudioFlowBuilder) To(labels ...string) PathSpec {
 	if b == nil {
-		return newFlowBranch(streamFlowSpec{err: nilFlowError()}, outputs...)
+		return pathFromFlow(streamFlowSpec{err: nilFlowError()}, labels...)
 	}
-	return b.flowBuilder.to(outputs...)
+	return b.flowBuilder.to(labels...)
 }
 
 func (b *AudioFlowBuilder) flowSpec() streamFlowSpec {
@@ -143,11 +133,11 @@ func (b *VideoFlowBuilder) VP9(bitrate int, options ...codecOption) *VideoFlowBu
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *VideoFlowBuilder) To(outputs ...OutputSpec) FlowBranch {
+func (b *VideoFlowBuilder) To(labels ...string) PathSpec {
 	if b == nil {
-		return newFlowBranch(streamFlowSpec{err: nilFlowError()}, outputs...)
+		return pathFromFlow(streamFlowSpec{err: nilFlowError()}, labels...)
 	}
-	return b.flowBuilder.to(outputs...)
+	return b.flowBuilder.to(labels...)
 }
 
 func (b *VideoFlowBuilder) flowSpec() streamFlowSpec {
@@ -186,8 +176,8 @@ func (b *flowBuilder) encode(codec CodecSpec) {
 	b.spec.encode = codec
 }
 
-func (b *flowBuilder) to(outputs ...OutputSpec) FlowBranch {
-	return newFlowBranch(b.snapshot(), outputs...)
+func (b *flowBuilder) to(labels ...string) PathSpec {
+	return pathFromFlow(b.snapshot(), labels...)
 }
 
 func (b *flowBuilder) snapshot() streamFlowSpec {
@@ -244,8 +234,16 @@ func cloneTransformSpec(spec TransformSpec) TransformSpec {
 	return out
 }
 
-func newFlowBranch(spec streamFlowSpec, outputs ...OutputSpec) FlowBranch {
-	return FlowBranch{spec: spec, outputs: append([]OutputSpec(nil), outputs...)}
+func pathFromFlow(spec streamFlowSpec, labels ...string) PathSpec {
+	return PathSpec{
+		name:       spec.name,
+		media:      spec.media,
+		steps:      streamStepsFromTransforms(spec.transforms),
+		transforms: cloneTransformSpecs(spec.transforms),
+		encode:     spec.encode,
+		labels:     append([]string(nil), labels...),
+		err:        spec.err,
+	}
 }
 
 func flowTransformStepName(spec TransformSpec) string {
@@ -292,85 +290,32 @@ func validateFlowMedia(operation string, node string, selected av.MediaType, spe
 	}
 }
 
-func flowTeeMissingError(node string) error {
-	return &BuildError{
-		Code:      "flow_missing",
-		Operation: "build tee",
-		Node:      node,
-		Reason:    "Tee requires at least one routed flow",
-		Suggestions: []string{
-			"pass flows with goav.AudioFlow(name).To(output) or goav.VideoFlow(name).To(output)",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func flowTeeInputCountError(node string, count int) error {
+func pathInputCountError(node string, count int) error {
 	return &BuildError{
 		Code:      "input_count_unsupported",
-		Operation: "build tee",
+		Operation: "build paths",
 		Node:      node,
-		Reason:    "Tee currently composes branches from one input",
+		Reason:    "paths currently compose from one input",
 		Details: []string{
 			fmt.Sprintf("inputs=%d", count),
 		},
 		Suggestions: []string{
-			"start Tee from goav.From(input).Audio() or goav.From(input).Video() with one input",
+			"start paths from goav.From(input).Audio() or goav.From(input).Video() with one input",
 			"use the expert graph API when combining several sources manually",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func flowTeeOutputScopeError(node string) error {
+func pathOutputScopeError(node string) error {
 	return &BuildError{
 		Code:      "output_scope_mixed",
-		Operation: "build tee",
+		Operation: "build paths",
 		Node:      node,
-		Reason:    "Tee branches own their outputs",
+		Reason:    "path outputs are declared as labeled output groups",
 		Suggestions: []string{
-			"attach outputs to flows with flow.To(output)",
-			"remove outer .To(...) calls before .Tee(...)",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func flowTeeDuplicateError(node string) error {
-	return &BuildError{
-		Code:      "flow_duplicate",
-		Operation: "build tee",
-		Node:      node,
-		Reason:    "a stream recipe can have one Tee",
-		Suggestions: []string{
-			"pass all routed flows to the same .Tee(...) call",
-			"use .Tap(...).Branch(...) when branches should be declared independently",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func flowBranchOutputMissingError(name string) error {
-	return &BuildError{
-		Code:      "output_missing",
-		Operation: "build tee",
-		Node:      firstNonEmpty(name, "flow"),
-		Reason:    "routed flow has no output",
-		Suggestions: []string{
-			"call flow.To(goav.FileOutput(...)) before passing it to Tee",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func flowBranchEncodeMissingError(name string) error {
-	return &BuildError{
-		Code:      "encode_missing",
-		Operation: "build tee",
-		Node:      firstNonEmpty(name, "flow"),
-		Reason:    "Tee branches write encoded outputs and need a terminal codec",
-		Suggestions: []string{
-			"call .Opus(...), .OpusVoice(), .OpusMusic(), .VP8(...), or .VP9(...) on the flow",
+			"route paths with .To(\"label\")",
+			"declare output groups once with .Outputs(goav.Output(\"label\", goav.FileOutput(...)))",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

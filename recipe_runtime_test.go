@@ -674,10 +674,8 @@ func TestBranchCompositionRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 		Audio().
 		Decode().
 		Tap("audio.decoded").
-		Branch("main").
-		Opus(96_000).
-		To("archive").
-		Output("archive", FileOutput("archive.ogg", io.Discard))
+		Paths(Path("main").Opus(96_000).To("archive")).
+		Outputs(Output("archive", FileOutput("archive.ogg", io.Discard)))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -717,12 +715,14 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 		Video().
 		Decode().
 		Tap("video.decoded").
-		Branch("720p").
-		Resize(1280, 720).
-		Tap("video.720p.frames").
-		VP9(2_000_000).
-		To("web").
-		Output("web", FileOutput("web.ogg", io.Discard))
+		Paths(
+			Path("720p").
+				Resize(1280, 720).
+				Tap("video.720p.frames").
+				VP9(2_000_000).
+				To("web"),
+		).
+		Outputs(Output("web", FileOutput("web.ogg", io.Discard)))
 
 	task, err := job.Build(ctx)
 	if err != nil {

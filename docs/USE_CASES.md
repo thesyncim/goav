@@ -59,19 +59,22 @@ err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
 When a media type matches several streams, the build error lists candidates and
 suggests `StreamID`, `StreamName`, or `StreamIndex(0)`.
 
-## Planned Variants
+## Paths
 
-`Tap` names a stable point. `Variants` declares encoded alternatives from one
-selected stream. This keeps complex work natural without exposing graph wiring.
+`Tap` names a stable point. `Paths` declares encoded alternatives from one
+selected stream. Each path is an ordered branch chain: custom stages,
+transforms, taps, encode, then output labels. This keeps complex work natural
+without exposing graph wiring.
 
 ```go
 err := goav.From(input).
     Video().
     Decode().
     Tap("video.decoded").
-    Variants(
-        goav.Variant("720p").
+    Paths(
+        goav.Path("720p").
             Resize(1280, 720).
+            Do(frameMeter).
             Tap("video.720p.frames").
             VP9(2_000_000).
             To("main"),
@@ -79,13 +82,13 @@ err := goav.From(input).
     Audio().
     Decode().
     Tap("audio.decoded").
-    Variants(
-        goav.Variant("a96").
+    Paths(
+        goav.Path("a96").
             Resample(48_000, goav.Stereo).
             Opus(96_000).
             To("main"),
     ).
-    Output("main", goav.FileOutput("main.webm", out)).
+    Outputs(goav.Output("main", goav.FileOutput("main.webm", out))).
     Run(ctx)
 ```
 
@@ -112,13 +115,13 @@ err := goav.From(input).
     Run(ctx)
 ```
 
-Branch-local arbitrary stages, custom filters, and late muxed outputs should
-share one ordered branch operation model instead of growing special-case APIs.
-That is the next planner slice after `Variant` proves grouped alternatives.
+Path-local custom stages and transforms share the ordered operation model.
+Custom filter adapters and late muxed runtime outputs should extend that same
+model instead of growing special-case APIs.
 
 ## Reusable Flows
 
-`Tee` is the reusable split for flow branches.
+Flows become paths, so reusable and ad hoc splits use the same API.
 
 ```go
 voice := goav.AudioFlow("voice").Resample(16_000, goav.Mono).OpusVoice()
@@ -127,9 +130,13 @@ archive := goav.AudioFlow("archive").Resample(48_000, goav.Stereo).OpusMusic()
 err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
     Decode().
-    Tee(
-        voice.To(goav.FileOutput("voice.ogg", voiceFile)),
-        archive.To(goav.FileOutput("archive.ogg", archiveFile)),
+    Paths(
+        voice.To("voice"),
+        archive.To("archive"),
+    ).
+    Outputs(
+        goav.Output("voice", goav.FileOutput("voice.ogg", voiceFile)),
+        goav.Output("archive", goav.FileOutput("archive.ogg", archiveFile)),
     ).
     Run(ctx)
 ```

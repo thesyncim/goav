@@ -5,20 +5,22 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/pipeline"
 )
 
 type Plan struct {
 	Name     string
 	Input    format.Input
-	Variants []Variant
+	Paths    []Path
 	Outputs  []Output
 	Metadata av.Metadata
 }
 
-type Variant struct {
+type Path struct {
 	Name     string
 	Selector av.StreamSelector
 	Decode   bool
+	Steps    []Step
 	Resize   *filter.ResizeConfig
 	Resample *filter.ResampleConfig
 	Encode   codec.EncodeConfig
@@ -26,11 +28,17 @@ type Variant struct {
 	Metadata av.Metadata
 }
 
+type Step struct {
+	Stage    pipeline.Stage
+	Resize   *filter.ResizeConfig
+	Resample *filter.ResampleConfig
+}
+
 type Output struct {
 	Name           string
 	Target         format.Output
 	Format         av.FormatID
-	Variants       []string
+	Paths          []string
 	Metadata       av.Metadata
 	resolvedFormat av.FormatID
 }

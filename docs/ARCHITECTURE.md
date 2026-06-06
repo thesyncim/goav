@@ -36,20 +36,22 @@ container, and filter integrations. `goav.Default()` registers the standard
 in-repo adapters for the beginner path, while `goav.New(...)` keeps minimal and
 embedded runtimes explicit. `From(input)` is the beginner-facing front door. It
 produces a small intent model for packet copy, stream decode, transform, encode,
-declared branch composition, and runtime tap naming. The target architecture is one media planner that
+declared path composition, and runtime tap naming. The target architecture is one media planner that
 validates, probes, resolves streams, resolves formats/codecs, chooses
 packet-copy or decode paths, inserts demux or depacketize boundaries, inserts
-select/decode/transform/stage/encode operations, groups branches by outputs,
+select/decode/transform/stage/tap/encode operations, groups paths by outputs,
 assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
 the runnable graph. `MediaPlan` is the planner IR for that work: declared
-branches, flow tee branches, decode recipes, and packet-preserving copy/remux
+paths, reusable flow paths, decode recipes, and packet-preserving copy/remux
 all become ordinary branch operations over the same model. Recipe compilation
 must recognize a media-plan shape before it can describe or build a normal
 workflow.
 
 The active recipe compiler state carries public `Intent` plus concrete readers,
 writers, sinks, and stages through validation, media-plan creation, planner
-lowering, and planned-spec emission. `Job.Explain(ctx)` reports the
+lowering, and planned-spec emission. Paths carry ordered stage, transform, tap,
+and encode operations and can start after earlier stream operations such as
+decode, resize, resample, custom stages, and taps. `Job.Explain(ctx)` reports the
 `MediaPlan` branch operations, taps, and decisions. The next architectural
 pressure is to shrink the remaining internal builder lowering behind each
 media-plan build kind until graph construction is directly
@@ -106,8 +108,8 @@ Current graph execution covers:
 - one or more RTP/WebRTC packet readers to selected-stream
   decode/filter/encode outputs through the same decoder, filter, encoder, and
   mux stages used by file or protocol inputs
-- live RTP/WebRTC flow tees that receive through `rtpav.Source`, share the
-  selected stream decode, then route each reusable flow branch through its own
+- live RTP/WebRTC reusable paths that receive through `rtpav.Source`, share the
+  selected stream decode, then route each flow-derived path through its own
   transforms, encoder, and mux output
 - transcode recipes for one input grouped by selected stream: video branches can
   share a video decode, audio branches can share an audio decode, and one output
@@ -281,16 +283,17 @@ That shape supports:
 ## Multi-output media planning
 
 `Transcode` is user-facing syntax, not a runtime engine. It lowers into the
-same `MediaPlan` branch shape as `From(input).Audio()/Video()` and flow
-`Tee(...)`: input ref, stream selector, operation chain, output refs, and mux
-groups. Mixed audio/video outputs are modeled as mux groups receiving ordinary
-encoded branches.
+same `MediaPlan` branch shape as `From(input).Audio()/Video().Paths(...)` and
+flow-derived paths: input ref, stream selector, operation chain, output refs,
+and mux groups. Mixed audio/video outputs are modeled as mux groups receiving
+ordinary encoded branches.
 
 Multiple branches that select the same input stream should share upstream demux,
 selection, and decode nodes unless a future isolation policy asks otherwise.
 One output label is a mux group that can receive coordinated encoded branches
-from different media streams. Resize and resample configs become ordinary
-transform operations when matching factories are registered.
+from different media streams. Resize, resample, and custom stage steps become
+ordinary branch operations; transform steps use matching filter factories when
+registered.
 
 Typical use cases:
 

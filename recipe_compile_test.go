@@ -1134,7 +1134,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			},
 			outputs: []OutputSpec{frameSink, fileOutput},
 			code:    "output_kind_mixed",
-			want:    []string{"cannot mix frame sinks and muxed outputs", ".Tap(...).Branch(...)"},
+			want:    []string{"cannot mix frame sinks and muxed outputs", ".Paths(...)"},
 		},
 		{
 			name: "mux output without encoder",
@@ -1261,7 +1261,7 @@ func TestRequireMediaPlanGraphSpecPassWrapsUnsupportedRecipeShape(t *testing.T) 
 	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want recipe_graph_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	for _, want := range []string{"recipe intent", "inputs: 1", "outputs: 0", "goav.From", ".Copy().To", ".Branch"} {
+	for _, want := range []string{"recipe intent", "inputs: 1", "outputs: 0", "goav.From", ".Copy().To", ".Paths"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
@@ -1778,11 +1778,13 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 		Video().
 		Decode().
 		Tap("video.decoded").
-		Branch("360p").
-		Resize(640, 360).
-		VP9(600_000).
-		To("web").
-		Output("web", FileOutput("web.ivf", io.Discard))
+		Paths(
+			Path("360p").
+				Resize(640, 360).
+				VP9(600_000).
+				To("web"),
+		).
+		Outputs(Output("web", FileOutput("web.ivf", io.Discard)))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -1819,14 +1821,18 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	}
 }
 
-func TestCompileLiveFlowTeeRecipeUsesMediaPlanBranchComposer(t *testing.T) {
+func TestCompileLiveFlowPathsRecipeUsesMediaPlanBranchComposer(t *testing.T) {
 	job := From(RTP(&runtimeRTPReceiver{
 		streams: []Stream{audioOpusTestStream()},
 	}).Name("audio").Codec(Opus())).
 		Audio().
-		Tee(
-			AudioFlow("voice").OpusVoice().To(FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg)),
-			AudioFlow("archive").OpusMusic().To(FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg)),
+		Paths(
+			AudioFlow("voice").OpusVoice().To("voice"),
+			AudioFlow("archive").OpusMusic().To("archive"),
+		).
+		Outputs(
+			Output("voice", FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg)),
+			Output("archive", FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg)),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -1871,10 +1877,8 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 		Audio().
 		Decode().
 		Tap("audio.decoded").
-		Branch("main").
-		Opus(96_000).
-		To("archive").
-		Output("archive", FileOutput("archive.ogg", io.Discard))
+		Paths(Path("main").Opus(96_000).To("archive")).
+		Outputs(Output("archive", FileOutput("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {

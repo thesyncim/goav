@@ -23,7 +23,6 @@ const (
 	OpWrite       OperationKind = "write"
 	OpSink        OperationKind = "sink"
 	OpTap         OperationKind = "tap"
-	OpTee         OperationKind = "tee"
 )
 
 type mediaPlan struct {
@@ -210,6 +209,11 @@ func planStreamOperations(inputs []InputIntent, stream StreamIntent, branchName 
 		Component: selectorComponent(stream.Select),
 		Detail:    "select stream",
 	})
+	if len(stream.Operations) != 0 {
+		streamOperations, decisions := planStreamIntentOperations(stream, branchName)
+		operations = append(operations, streamOperations...)
+		return operations, decisions
+	}
 	var decisions []planDecision
 	if streamNeedsDecode(stream) {
 		operations = append(operations, planOperation{
@@ -249,6 +253,83 @@ func planStreamOperations(inputs []InputIntent, stream StreamIntent, branchName 
 	}
 	operations = append(operations, planPostEncodeTapOperations(stream)...)
 	return operations, decisions
+}
+
+func planStreamIntentOperations(stream StreamIntent, branchName string) ([]planOperation, []planDecision) {
+	operations := make([]planOperation, 0, len(stream.Operations))
+	var decisions []planDecision
+	for i := range stream.Operations {
+		operation := stream.Operations[i]
+		operations = append(operations, planOperationFromStreamOperation(operation))
+	}
+	if streamOperationKindPresent(stream.Operations, OpDecode) {
+		decisions = append(decisions, planDecision{
+			Code:    "decode_required",
+			Branch:  branchName,
+			Message: "stream operations require decoded frames",
+		})
+	} else if streamOperationKindPresent(stream.Operations, OpCopy) {
+		decisions = append(decisions, planDecision{
+			Code:    "packet_copy",
+			Branch:  branchName,
+			Message: "stream can remain packet encoded",
+		})
+	}
+	if streamOperationKindPresent(stream.Operations, OpEncode) {
+		decisions = append(decisions, planDecision{
+			Code:    "encode_required",
+			Branch:  branchName,
+			Message: "muxed stream output requires encoded packets",
+		})
+	}
+	return operations, decisions
+}
+
+func planOperationFromStreamOperation(operation StreamOperation) planOperation {
+	switch operation.Kind {
+	case OpTransform:
+		return planTransformOperation(operation.Transform)
+	case OpTap:
+		return planTapOperation(operation.Tap)
+	case OpEncode:
+		return planOperation{
+			Kind:      OpEncode,
+			Component: string(operation.Encode.ID),
+			Detail:    "frames to packets",
+		}
+	case OpDecode:
+		return planOperation{
+			Kind:      OpDecode,
+			Component: operation.Component,
+			Detail:    "packets to frames",
+		}
+	case OpStage:
+		return planOperation{
+			Kind:      OpStage,
+			Component: operation.Component,
+			Detail:    "custom stage",
+		}
+	case OpCopy:
+		return planOperation{
+			Kind:      OpCopy,
+			Component: firstNonEmpty(operation.Component, "packet-copy"),
+			Detail:    "no frame operation requested",
+		}
+	default:
+		return planOperation{
+			Kind:      operation.Kind,
+			Component: operation.Component,
+		}
+	}
+}
+
+func streamOperationKindPresent(operations []StreamOperation, kind OperationKind) bool {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func planInputOperations(input InputIntent) []planOperation {

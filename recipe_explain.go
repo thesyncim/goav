@@ -41,6 +41,7 @@ type StreamReport struct {
 	Name        string
 	Select      StreamSelect
 	Decode      bool
+	Operations  []OperationReport
 	Transforms  []TransformReport
 	Encode      CodecSpec
 	CodecChange CodecChangePolicy
@@ -208,6 +209,7 @@ func explainStreams(streams []StreamIntent) []StreamReport {
 			Name:        stream.Name,
 			Select:      stream.Select,
 			Decode:      stream.Decode,
+			Operations:  explainStreamOperations(stream.Operations),
 			Transforms:  explainTransforms(stream.Transforms),
 			Encode:      stream.Encode,
 			CodecChange: stream.CodecChange,
@@ -215,6 +217,35 @@ func explainStreams(streams []StreamIntent) []StreamReport {
 		})
 	}
 	return reports
+}
+
+func explainStreamOperations(operations []StreamOperation) []OperationReport {
+	reports := make([]OperationReport, 0, len(operations))
+	for i := range operations {
+		reports = append(reports, OperationReport{
+			Kind:      operations[i].Kind,
+			Component: operations[i].Component,
+			Detail:    streamOperationDetail(operations[i]),
+		})
+	}
+	return reports
+}
+
+func streamOperationDetail(operation StreamOperation) string {
+	switch operation.Kind {
+	case OpTransform:
+		return firstNonEmpty(transformFactoryName(operation.Transform), "transform frames")
+	case OpStage:
+		return "custom stage"
+	case OpTap:
+		return "named media outlet"
+	case OpEncode:
+		return "frames to packets"
+	case OpDecode:
+		return "packets to frames"
+	default:
+		return ""
+	}
 }
 
 func explainBranches(branches []planBranch) []BranchReport {
@@ -454,9 +485,31 @@ func cloneIntent(intent Intent) Intent {
 	clone.Inputs = append([]InputIntent(nil), intent.Inputs...)
 	clone.Streams = append([]StreamIntent(nil), intent.Streams...)
 	for i := range clone.Streams {
+		clone.Streams[i].Operations = cloneStreamOperations(intent.Streams[i].Operations)
 		clone.Streams[i].Transforms = cloneTransformSpecs(intent.Streams[i].Transforms)
+		clone.Streams[i].Taps = cloneTapIntents(intent.Streams[i].Taps)
 		clone.Streams[i].RouteTo = append([]string(nil), intent.Streams[i].RouteTo...)
 	}
 	clone.Outputs = append([]OutputIntent(nil), intent.Outputs...)
 	return clone
+}
+
+func cloneStreamOperations(operations []StreamOperation) []StreamOperation {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := make([]StreamOperation, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		operation.Transform = cloneTransformSpec(operation.Transform)
+		out = append(out, operation)
+	}
+	return out
+}
+
+func cloneTapIntents(taps []TapIntent) []TapIntent {
+	if len(taps) == 0 {
+		return nil
+	}
+	return append([]TapIntent(nil), taps...)
 }
