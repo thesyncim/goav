@@ -754,6 +754,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     the sealed `Flow` implementation now uses a private snapshot hook and
     typed-nil flows or branches become structured build errors instead of
     panics. Done.
+217. Make reusable component allocation proof auditable: add an Allocation
+    Proofs section to `docs/COMPONENTS.md` naming the package-local
+    `testing.AllocsPerRun` guards for core media, pipeline, RTP, codec,
+    format, filter, and default adapters, and lock the catalog with a docs
+    acceptance test. Done.
 
 ## First Vertical Slice
 

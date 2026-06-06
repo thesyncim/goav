@@ -266,6 +266,44 @@ func TestReusableComponentCatalogIsDocumented(t *testing.T) {
 	}
 }
 
+func TestReusableComponentCatalogNamesAllocationProofs(t *testing.T) {
+	body, err := os.ReadFile("docs/COMPONENTS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, want := range []string{
+		"## Allocation Proofs",
+		"TestCoreResetAllocs",
+		"TestMessageAndScratchResetAllocs",
+		"TestGraphDirectRunAllocs",
+		"TestDropControllerDecideAllocs",
+		"TestSourceStartAllocs",
+		"TestSequenceDetectorAllocs",
+		"TestOpusDepacketizerAllocs",
+		"TestVP8DepacketizerAllocs",
+		"TestVP9DepacketizerAllocs",
+		"TestH264DepacketizerAllocs",
+		"TestAV1DepacketizerAllocs",
+		"TestJitterRingAllocs",
+		"TestFeedbackResultAllocs",
+		"TestDecoderStageAllocs",
+		"TestEncoderStageAllocs",
+		"TestFormatResultResetAllocs",
+		"TestDemuxSourceAllocs",
+		"TestMuxStageAllocs",
+		"TestStageAllocs",
+		"TestDecodePacketLossConcealmentAllocs",
+		"TestMuxerWriteAllocs",
+		"TestDemuxerReadIntoAllocs",
+		"TestFilterAllocs",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("docs/COMPONENTS.md allocation proofs missing %q", want)
+		}
+	}
+}
+
 func TestRecordSignatureAcceptsOnlyInputAndOutputs(t *testing.T) {
 	typ := reflect.TypeOf(goav.Record)
 	if !typ.IsVariadic() || typ.NumIn() != 2 || typ.NumOut() != 1 {

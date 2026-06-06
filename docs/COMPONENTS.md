@@ -42,6 +42,26 @@ Reusable components should document these points as they mature:
 - direct graph and bounded buffered graph safety;
 - scratch/result objects callers are expected to reuse.
 
+## Allocation Proofs
+
+Hot-path allocation guards live next to the domain packages that own the
+contract:
+
+- `av`: `TestCoreResetAllocs`, `TestTimeBaseHelpersAllocs`
+- `pipeline`: `TestMessageAndScratchResetAllocs`, `TestGraphDirectRunAllocs`,
+  `TestDropControllerDecideAllocs`
+- `rtpav`: `TestSourceStartAllocs`, `TestSequenceDetectorAllocs`,
+  `TestOpusDepacketizerAllocs`, `TestVP8DepacketizerAllocs`,
+  `TestVP9DepacketizerAllocs`, `TestH264DepacketizerAllocs`,
+  `TestAV1DepacketizerAllocs`, `TestJitterRingAllocs`,
+  `TestFeedbackResultAllocs`
+- `codec`: `TestDecoderStageAllocs`, `TestEncoderStageAllocs`
+- `format`: `TestFormatResultResetAllocs`, `TestDemuxSourceAllocs`,
+  `TestMuxStageAllocs`
+- `filter`: `TestStageAllocs`
+- default adapters: `TestDecodePacketLossConcealmentAllocs`,
+  `TestMuxerWriteAllocs`, `TestDemuxerReadIntoAllocs`, `TestFilterAllocs`
+
 ## Core Media
 
 | Component | Status | Accepts/Emits | Contract Notes |
