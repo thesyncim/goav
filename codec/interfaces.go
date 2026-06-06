@@ -43,13 +43,6 @@ type Backend struct {
 	Status  string
 }
 
-var PlannedBackends = []Backend{
-	{Name: "gopus", Module: "github.com/thesyncim/gopus", Status: "planned"},
-	{Name: "govpx", Module: "github.com/thesyncim/govpx", Status: "planned"},
-	{Name: "goh264", Module: "github.com/thesyncim/goh264", Status: "planned"},
-	{Name: "goav1", Module: "github.com/thesyncim/goav1", Status: "planned"},
-}
-
 type ResiliencePolicy struct {
 	AcceptLoss       bool
 	ConcealAudio     bool

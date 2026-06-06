@@ -29,7 +29,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | Area | Status | Next |
 | --- | --- | --- |
 | `av` | reset helpers, ownership docs, RTP timebase helpers, allocation-free timestamp and duration rescale/compare helpers | richer timestamp metadata helpers |
-| `codec` | Into-style contracts, descriptors with one owner for identity/modes/status and capability lists for concrete media compatibility, explicit registry, optional decode-state provisioning, decoder and encoder pipeline stages, decode bounds for realtime adapter scratch planning, explicit unsupported live codec-switch guard for bound decoder stages | richer concrete adapter alloc tests |
+| `codec` | Into-style contracts, descriptors with one owner for identity/modes/status and capability lists for concrete media compatibility, descriptor-driven backend discovery, explicit registry, optional decode-state provisioning, decoder and encoder pipeline stages, decode bounds for realtime adapter scratch planning, explicit unsupported live codec-switch guard for bound decoder stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, bounded buffered executor, fanout, one route model with one-to-many targets, stream/event scoped routing rendered as `stream=...` or `event=...`, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, buffered runtime transcode and live receive proofs, detail-aware graph specs with one text/DOT/Mermaid render API | richer realtime lifecycle proof |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh including new-codec depacketizer handoff when registered, replacement-stream identity adoption for single-stream readers, targeted old-ID replacement for multi-stream readers, stream-scoped EOS | richer multi-stream receive |
@@ -251,7 +251,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 76. Collapse codec descriptor capability duplication: codec identity, media
     type, modes, realtime, and experimental status live on `Descriptor`, while
     `Capabilities` carries only concrete media compatibility lists. Done.
-77. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+77. Prune the central planned-backend list: adapter discovery now has one path
+    through descriptors registered by adapter packages. Done.
+78. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

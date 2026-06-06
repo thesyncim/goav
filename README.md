@@ -17,6 +17,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
   and filters.
 - Codec descriptors own identity, media type, modes, realtime, and experimental
   status; capabilities carry concrete format, payload, and build-tag lists.
+- Adapter discovery comes from registered descriptors, not a central planned
+  backend list.
 - Explicit graph API for custom realtime systems.
 - One graph constructor: `pipeline.NewGraph` chooses direct or bounded buffered
   execution from `pipeline.BufferPolicy`.

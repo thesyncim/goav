@@ -22,6 +22,8 @@ integrations belong under `adapters/...`.
 - Descriptors own codec identity, media type, modes, realtime, and experimental
   status. Capability fields are for concrete sample format, pixel format, RTP
   payload, and build-tag lists.
+- Adapter discovery comes from descriptors registered by adapters, not from a
+  central planned-backend list in the core codec package.
 - Descriptor-only registrations may advertise planned media compatibility, but
   factory lookup must fail with `codec.ErrUnavailable` until a concrete factory
   is registered.
@@ -225,9 +227,9 @@ no color conversion and no encode adapter.
 
 Default-build `govpx`, `goav1`, and default-build `goh264` expose descriptors
 without importing concrete decoder/encoder implementations. This lets
-applications see planned capabilities and build registries without breaking the
-default build or forcing heavier tagged code paths. When a descriptor exists
-but no factory is registered,
+applications see planned media compatibility and build registries without
+breaking the default build or forcing heavier tagged code paths. When a
+descriptor exists but no factory is registered,
 `DecoderFactory` or `EncoderFactory` returns `codec.ErrUnavailable`, not
 `codec.ErrNotFound`.
 
