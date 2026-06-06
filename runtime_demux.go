@@ -12,7 +12,7 @@ type demuxBuild struct {
 	streams []av.Stream
 }
 
-func (b *builder) openDemuxSource(ctx context.Context, input Input) (demuxBuild, error) {
+func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demuxBuild, error) {
 	inputProbe, err := b.runtime.formats.Probe(ctx, format.ProbeRequest{
 		Name:     input.Name,
 		MIMEType: input.MIMEType,

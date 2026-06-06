@@ -8,7 +8,7 @@ import (
 	"github.com/thesyncim/goav/format"
 )
 
-func inputFormatProbeError(input Input, cause error) error {
+func inputFormatProbeError(input format.Input, cause error) error {
 	if !errors.Is(cause, format.ErrNotFound) {
 		return cause
 	}
@@ -27,7 +27,7 @@ func inputFormatProbeError(input Input, cause error) error {
 	}
 }
 
-func inputDemuxerMissingError(input Input, id av.FormatID, cause error) error {
+func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) error {
 	if !errors.Is(cause, format.ErrNotFound) {
 		return cause
 	}
@@ -46,7 +46,7 @@ func inputDemuxerMissingError(input Input, id av.FormatID, cause error) error {
 	}
 }
 
-func outputFormatProbeError(output Output, index int, cause error) error {
+func outputFormatProbeError(output format.Output, index int, cause error) error {
 	if !errors.Is(cause, format.ErrNotFound) {
 		return cause
 	}
@@ -65,7 +65,7 @@ func outputFormatProbeError(output Output, index int, cause error) error {
 	}
 }
 
-func outputMuxerMissingError(output Output, index int, id av.FormatID, cause error) error {
+func outputMuxerMissingError(output format.Output, index int, id av.FormatID, cause error) error {
 	if !errors.Is(cause, format.ErrNotFound) {
 		return cause
 	}
@@ -84,7 +84,7 @@ func outputMuxerMissingError(output Output, index int, id av.FormatID, cause err
 	}
 }
 
-func inputFormatDetails(input Input) []string {
+func inputFormatDetails(input format.Input) []string {
 	var details []string
 	if input.Name != "" {
 		details = append(details, "name="+input.Name)
@@ -101,7 +101,7 @@ func inputFormatDetails(input Input) []string {
 	return details
 }
 
-func outputFormatDetails(output Output) []string {
+func outputFormatDetails(output format.Output) []string {
 	var details []string
 	if output.Name != "" {
 		details = append(details, "name="+output.Name)

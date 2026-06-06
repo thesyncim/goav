@@ -10,8 +10,6 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-type Input = format.Input
-type Output = format.Output
 type ProbeRequest = format.ProbeRequest
 type ProbeResult = format.ProbeResult
 type Packet = av.Packet

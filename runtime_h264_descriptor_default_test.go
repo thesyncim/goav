@@ -10,6 +10,7 @@ import (
 	goh264adapter "github.com/thesyncim/goav/adapters/goh264"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/format"
 )
 
 func TestRuntimeBuilderH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
@@ -32,7 +33,7 @@ func TestRuntimeBuilderH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
 	codecs := withTestCodecs(goh264adapter.Register)
 
 	_, err := newTestBuilder(t, formats, codecs).
-		Input(Input{Name: "input.ogg"}).
+		Input(format.Input{Name: "input.ogg"}).
 		Decode(testSelectVideo()).
 		Sink(&runtimeTestSink{name: "frames"}).
 		Build(context.Background())

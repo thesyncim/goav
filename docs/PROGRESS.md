@@ -449,7 +449,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     top-level API exposes recipes, graph handles, and tasks, not compiler
     plumbing.
     Done.
-142. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+142. Remove top-level `Input` and `Output` aliases so low-level container
+    structs stay in `format`, while recipes keep `FileInput`, `URI`, `RTP`,
+    `WebRTCTrack`, `FileOutput`, `URIOutput`, and `FrameSink` as the front door.
+    Done.
+143. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -499,9 +503,9 @@ Required proof:
   node that implements the optional node-describer contract can include short
   graph details without introducing lower-level executor vocabulary into the
   public builder. Optional diagram/text generation lives in `graphrender`.
-- The runtime builder can also plan and compile simple remux/fanout jobs from
-  `Input(...).Output(...).Build(ctx)` when registered format adapters can probe,
-  demux, and mux the selected boundaries.
+- The internal runtime compiler can also plan and compile simple remux/fanout
+  jobs from low-level `format.Input` and `format.Output` values when registered
+  format adapters can probe, demux, and mux the selected boundaries.
 - The recipe/runtime path can plan and compile selected-stream decode jobs from
   stream-scoped `.To(goav.FrameSink(...))` recipes when format probing
   resolves one matching stream and the codec registry has a decoder factory. The
@@ -509,11 +513,10 @@ Required proof:
   reach the decoder, and optional filter stages can run before the sink.
 - `adapters/ivf` provides a narrow packet recording boundary for one VP8, VP9,
   or AV1 video stream with allocation-guarded demux/mux hot paths.
-- The runtime builder can plan and compile RTP/WebRTC packet-reader record jobs
-  from `RTP(...).Output(...).Build(ctx)`, including jitter and the variadic
-  depacketizer option, repeated RTP/WebRTC inputs, aggregated stream lists for
-  muxers, multiple mux outputs, lifecycle closure, graph specs, and event
-  visibility.
+- The internal runtime compiler can plan and compile RTP/WebRTC packet-reader
+  record jobs, including jitter and depacketizer selection, repeated RTP/WebRTC
+  inputs, aggregated stream lists for muxers, multiple mux outputs, lifecycle
+  closure, graph specs, and event visibility.
 - The recipe/runtime path can plan and compile selected-stream live decode jobs
   from stream-scoped RTP/WebRTC `.To(goav.FrameSink(...))` recipes,
   including repeated RTP/WebRTC inputs, graph specs, decoder lifecycle closure,
@@ -523,12 +526,10 @@ Required proof:
   matches the decoded stream. Decoder factories that implement
   `codec.DecodeStateFactory` can provision adapter-specific state for this
   high-level path before `NewDecoder`.
-- The runtime builder can plan and compile selected-stream encode jobs from
-  `Input(...).Decode(...).Filter(...).Encode(...).Output(...).Build(ctx)` and
-  `RTP(...).Decode(...).Filter(...).Encode(...).Output(...).Build(ctx)`. The
-  graph shares the selected decode/filter prefix, requires an explicit target
-  codec, forwards EOS far enough to flush encoders, and can fan one encoded
-  packet stream to multiple mux outputs.
+- The internal runtime compiler can plan and compile selected-stream encode
+  jobs. The graph shares the selected decode/filter prefix, requires an
+  explicit target codec, forwards EOS far enough to flush encoders, and can fan
+  one encoded packet stream to multiple mux outputs.
 - The runtime builder can plan and compile shared-decode transcode jobs from
   `Transcode(plan).Build(ctx)` when all renditions resolve to one selected
   stream. Each rendition becomes a named encoded stream, outputs can select
@@ -615,7 +616,7 @@ Required proof:
   multi-rendition graph fails on unsafe encoder-owned packet payloads without a
   copy bound and delivers copied encoded payloads to multiple mux outputs when
   `CopyPacketBytes` is configured.
-- Runtime `RTP(...).Output(...)` record/fanout uses that policy too:
+- Internal RTP/WebRTC record/fanout compilers use that policy too:
   depacketizer-owned packet payloads fail without a copy bound and copied
   payloads reach every mux output when `CopyPacketBytes` is configured.
 

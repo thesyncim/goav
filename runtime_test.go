@@ -674,9 +674,9 @@ func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 
 func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
 	_, err := newTestBuilder(t).
-		Input(Input{Name: "input"}).
+		Input(format.Input{Name: "input"}).
 		Decode(testSelectAudio()).
-		Output(Output{Name: "output"}).
+		Output(format.Output{Name: "output"}).
 		Build(context.Background())
 	if !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
@@ -691,7 +691,7 @@ func TestRuntimeBuilderRefusesMixedGraph(t *testing.T) {
 	}
 
 	_, err := newTestBuilder(t).
-		Input(Input{Name: "input"}).
+		Input(format.Input{Name: "input"}).
 		Source(source).
 		Build(context.Background())
 	if !errors.Is(err, ErrUnsupportedBuild) {
@@ -700,7 +700,7 @@ func TestRuntimeBuilderRefusesMixedGraph(t *testing.T) {
 }
 
 func TestRuntimeBuilderDescribeValidation(t *testing.T) {
-	if _, err := newTestBuilder(t).Input(Input{Name: "input"}).Describe(); !errors.Is(err, ErrUnsupportedBuild) {
+	if _, err := newTestBuilder(t).Input(format.Input{Name: "input"}).Describe(); !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("high-level err = %v, want ErrUnsupportedBuild", err)
 	}
 	if _, err := newTestBuilder(t).Source(nil).Describe(); !errors.Is(err, ErrNilSource) {

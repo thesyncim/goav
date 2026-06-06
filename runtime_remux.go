@@ -58,11 +58,11 @@ func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error 
 	return nil
 }
 
-func (b *builder) openMuxStage(ctx context.Context, output Output, index int, streams []av.Stream) (*format.MuxStage, error) {
+func (b *builder) openMuxStage(ctx context.Context, output format.Output, index int, streams []av.Stream) (*format.MuxStage, error) {
 	return b.openMuxStageWithFormat(ctx, output, index, streams, b.outputFormat(index))
 }
 
-func (b *builder) openMuxStageWithFormat(ctx context.Context, output Output, index int, streams []av.Stream, formatID av.FormatID) (*format.MuxStage, error) {
+func (b *builder) openMuxStageWithFormat(ctx context.Context, output format.Output, index int, streams []av.Stream, formatID av.FormatID) (*format.MuxStage, error) {
 	explicitFormat := formatID
 	if formatID == "" {
 		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
@@ -99,7 +99,7 @@ func (b *builder) openMuxStageWithFormat(ctx context.Context, output Output, ind
 	return stage, nil
 }
 
-func outputProbeRequest(output Output) format.ProbeRequest {
+func outputProbeRequest(output format.Output) format.ProbeRequest {
 	return format.ProbeRequest{
 		Name:     output.Name,
 		MIMEType: output.MIMEType,
@@ -114,7 +114,7 @@ func outputProbeRequest(output Output) format.ProbeRequest {
 	}
 }
 
-func demuxNodeName(input Input) string {
+func demuxNodeName(input format.Input) string {
 	if input.Name != "" {
 		return input.Name
 	}
@@ -124,7 +124,7 @@ func demuxNodeName(input Input) string {
 	return "input"
 }
 
-func muxNodeName(output Output, index int) string {
+func muxNodeName(output format.Output, index int) string {
 	if output.Name != "" {
 		return output.Name
 	}

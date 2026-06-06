@@ -6,9 +6,10 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/format"
 )
 
-func inputNodeDetail(input Input) string {
+func inputNodeDetail(input format.Input) string {
 	parts := []string{"demux"}
 	if input.URI != "" && input.URI != input.Name {
 		parts = append(parts, "uri="+input.URI)
@@ -25,17 +26,17 @@ func inputNodeDetail(input Input) string {
 	return joinSpecDetail(parts...)
 }
 
-func outputNodeDetail(output Output) string {
+func outputNodeDetail(output format.Output) string {
 	return outputNodeDetailWithFormat(output, "")
 }
 
-func outputNodeDetailWithFormat(output Output, format av.FormatID) string {
+func outputNodeDetailWithFormat(output format.Output, formatID av.FormatID) string {
 	parts := []string{"mux"}
 	if output.URI != "" && output.URI != output.Name {
 		parts = append(parts, "uri="+output.URI)
 	}
-	if format != "" {
-		parts = append(parts, "format="+string(format))
+	if formatID != "" {
+		parts = append(parts, "format="+string(formatID))
 	}
 	if output.Protocol != "" {
 		parts = append(parts, "protocol="+string(output.Protocol))

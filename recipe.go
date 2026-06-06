@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
 	transcodepkg "github.com/thesyncim/goav/transcode"
@@ -303,7 +304,7 @@ func Resample(sampleRate int, channels int, options ...AudioOption) TransformSpe
 }
 
 type InputSpec struct {
-	input    Input
+	input    format.Input
 	rtp      *rtpInputSpec
 	codec    CodecSpec
 	name     string
@@ -324,7 +325,7 @@ type RTPInputOption func(*InputSpec)
 
 func FileInput(name string, reader io.Reader) InputSpec {
 	return InputSpec{
-		input: Input{
+		input: format.Input{
 			Name:     name,
 			Protocol: av.ProtocolFile,
 			Reader:   reader,
@@ -335,7 +336,7 @@ func FileInput(name string, reader io.Reader) InputSpec {
 
 func URI(uri string) InputSpec {
 	return InputSpec{
-		input: Input{
+		input: format.Input{
 			Name: uri,
 			URI:  uri,
 		},
@@ -345,7 +346,7 @@ func URI(uri string) InputSpec {
 
 func RTP(receiver rtpav.PacketReader, options ...RTPInputOption) InputSpec {
 	spec := InputSpec{
-		input: Input{Protocol: av.ProtocolRTP, Realtime: true},
+		input: format.Input{Protocol: av.ProtocolRTP, Realtime: true},
 		rtp:   &rtpInputSpec{receiver: receiver},
 	}
 	for i := range options {
@@ -657,7 +658,7 @@ func (s InputSpec) selector(media av.MediaType) av.StreamSelector {
 }
 
 type OutputSpec struct {
-	output Output
+	output format.Output
 	sink   pipeline.Sink
 	format av.FormatID
 	name   string
@@ -665,12 +666,12 @@ type OutputSpec struct {
 }
 
 type formattedOutputBuilder interface {
-	outputWithFormat(Output, av.FormatID) builderAPI
+	outputWithFormat(format.Output, av.FormatID) builderAPI
 }
 
 func FileOutput(name string, writer io.Writer) OutputSpec {
 	return OutputSpec{
-		output: Output{
+		output: format.Output{
 			Name:     name,
 			Protocol: av.ProtocolFile,
 			Writer:   writer,
@@ -681,7 +682,7 @@ func FileOutput(name string, writer io.Writer) OutputSpec {
 
 func URIOutput(uri string) OutputSpec {
 	return OutputSpec{
-		output: Output{
+		output: format.Output{
 			Name: uri,
 			URI:  uri,
 		},

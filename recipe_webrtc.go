@@ -5,6 +5,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/webrtcav"
 )
@@ -53,7 +54,7 @@ func WebRTCRemote(remote webrtcav.RemoteTrack, options ...TrackOption) InputSpec
 	}
 
 	spec := InputSpec{
-		input: Input{
+		input: format.Input{
 			Protocol: av.ProtocolWebRTC,
 			Realtime: true,
 		},

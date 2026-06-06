@@ -151,7 +151,7 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := newTestBuilder(t, formats, codecs).
-		Input(Input{Name: "input.ogg"}).
+		Input(format.Input{Name: "input.ogg"}).
 		Decode(testSelectAudio()).
 		Sink(sink)
 	planned, err := builder.Describe()
@@ -234,7 +234,7 @@ func TestRuntimeBuilderDecodeUsesFactoryStateProvider(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	task, err := newTestBuilder(t, formats, codecs).
-		Input(Input{Name: "input.ivf"}).
+		Input(format.Input{Name: "input.ivf"}).
 		Decode(testSelectVideo()).
 		Sink(sink).
 		Build(context.Background())
@@ -281,7 +281,7 @@ func TestRuntimeBuilderInputDecodeFilterSink(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := newTestBuilder(t, formats, codecs).
-		Input(Input{Name: "input.ogg"}).
+		Input(format.Input{Name: "input.ogg"}).
 		Decode(testSelectAudio()).
 		Filter(testSelectAudio(), filter).
 		Sink(sink)
@@ -332,7 +332,7 @@ func TestRuntimeBuilderDecodeFilterRequiresMatchingStream(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 
 	_, err := newTestBuilder(t, formats, codecs).
-		Input(Input{Name: "input.ogg"}).
+		Input(format.Input{Name: "input.ogg"}).
 		Decode(testSelectAudio()).
 		Filter(testSelectVideo(), &runtimeTestStage{name: "resize"}).
 		Sink(&runtimeTestSink{name: "frames"}).
@@ -371,7 +371,7 @@ func TestRuntimeBuilderInputDecodeSinkSelectsMatchingStream(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := newTestBuilder(t, formats, codecs).
-		Input(Input{Name: "input.ogg"}).
+		Input(format.Input{Name: "input.ogg"}).
 		Decode(testSelectAudio()).
 		Sink(sink)
 	planned, err := builder.Describe()
@@ -415,7 +415,7 @@ func TestRuntimeBuilderDecodeRequiresUnambiguousStream(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 
 	_, err := newTestBuilder(t, formats, codecs).
-		Input(Input{Name: "input.ogg"}).
+		Input(format.Input{Name: "input.ogg"}).
 		Decode(testSelectAudio()).
 		Sink(&runtimeTestSink{name: "frames"}).
 		Build(context.Background())

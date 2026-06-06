@@ -82,9 +82,9 @@ type runtime struct {
 }
 
 type builderAPI interface {
-	Input(Input) builderAPI
+	Input(format.Input) builderAPI
 	RTP(rtpav.PacketReader, ...RTPOption) builderAPI
-	Output(Output) builderAPI
+	Output(format.Output) builderAPI
 	Decode(av.StreamSelector) builderAPI
 	Encode(av.StreamSelector, codec.EncodeConfig) builderAPI
 	Filter(av.StreamSelector, Stage) builderAPI
@@ -111,9 +111,9 @@ func (r *runtime) Graph() GraphBuilder {
 
 type builder struct {
 	runtime    *runtime
-	inputs     []Input
+	inputs     []format.Input
 	rtpInputs  []rtpInput
-	outputs    []Output
+	outputs    []format.Output
 	outputFmts []av.FormatID
 	decodes    []av.StreamSelector
 	encodes    []encodeRequest
@@ -158,7 +158,7 @@ type rtpInput struct {
 	maxTSGap      av.Duration
 }
 
-func (b *builder) Input(input Input) builderAPI {
+func (b *builder) Input(input format.Input) builderAPI {
 	b.inputs = append(b.inputs, input)
 	return b
 }
@@ -174,13 +174,13 @@ func (b *builder) RTP(receiver rtpav.PacketReader, options ...RTPOption) builder
 	return b
 }
 
-func (b *builder) Output(output Output) builderAPI {
+func (b *builder) Output(output format.Output) builderAPI {
 	return b.outputWithFormat(output, "")
 }
 
-func (b *builder) outputWithFormat(output Output, format av.FormatID) builderAPI {
+func (b *builder) outputWithFormat(output format.Output, formatID av.FormatID) builderAPI {
 	b.outputs = append(b.outputs, output)
-	b.outputFmts = append(b.outputFmts, format)
+	b.outputFmts = append(b.outputFmts, formatID)
 	return b
 }
 

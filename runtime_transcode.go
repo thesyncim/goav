@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/transcode"
 )
@@ -29,7 +30,7 @@ type transcodeTransform struct {
 
 type transcodeOutputBranch struct {
 	output  transcode.Output
-	target  Output
+	target  format.Output
 	matches []int
 }
 
@@ -417,7 +418,7 @@ func transcodeRenditionName(rendition transcode.Rendition, index int, total int)
 	return "rendition-" + strconv.Itoa(index+1)
 }
 
-func transcodeOutputTarget(plan transcode.Plan, output transcode.Output) Output {
+func transcodeOutputTarget(plan transcode.Plan, output transcode.Output) format.Output {
 	target := output.Target
 	if target.Name == "" {
 		target.Name = output.Name

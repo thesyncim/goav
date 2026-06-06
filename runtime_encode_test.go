@@ -104,12 +104,12 @@ func TestRuntimeBuilderInputDecodeFilterEncodeOutputs(t *testing.T) {
 	filter := &runtimeTestStage{name: "meter"}
 
 	builder := newTestBuilder(t, formats, codecs).
-		Input(Input{Name: "input.ogg"}).
+		Input(format.Input{Name: "input.ogg"}).
 		Decode(testSelectAudio()).
 		Filter(testSelectAudio(), filter).
 		Encode(testSelectAudio(), pcmEncodeConfig()).
-		Output(Output{Name: "archive.ogg"}).
-		Output(Output{Name: "preview.ogg"})
+		Output(format.Output{Name: "archive.ogg"}).
+		Output(format.Output{Name: "preview.ogg"})
 	planned, err := builder.Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +206,7 @@ func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
 		Decode(testSelectAudio()).
 		Filter(testSelectAudio(), filter).
 		Encode(testSelectAudio(), pcmEncodeConfig()).
-		Output(Output{Name: "encoded.ogg"})
+		Output(format.Output{Name: "encoded.ogg"})
 	planned, err := builder.Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -258,10 +258,10 @@ func TestRuntimeBuilderDecodeEncodeRequiresMatchingStream(t *testing.T) {
 	)
 
 	_, err := newTestBuilder(t, formats, codecs).
-		Input(Input{Name: "input.ogg"}).
+		Input(format.Input{Name: "input.ogg"}).
 		Decode(testSelectAudio()).
 		Encode(testSelectVideo(), pcmEncodeConfig()).
-		Output(Output{Name: "archive.ogg"}).
+		Output(format.Output{Name: "archive.ogg"}).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_stream_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
@@ -289,10 +289,10 @@ func TestRuntimeBuilderDecodeEncodeRequiresTargetCodec(t *testing.T) {
 	))
 
 	_, err := newTestBuilder(t, formats, codecs).
-		Input(Input{Name: "input.ogg"}).
+		Input(format.Input{Name: "input.ogg"}).
 		Decode(testSelectAudio()).
 		Encode(testSelectAudio(), codec.EncodeConfig{}).
-		Output(Output{Name: "archive.ogg"}).
+		Output(format.Output{Name: "archive.ogg"}).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_target_missing" || !errors.Is(err, ErrUnsupportedBuild) {
