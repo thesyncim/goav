@@ -1380,6 +1380,41 @@ func TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput(t *testing.T) 
 	}
 }
 
+func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testing.T) {
+	streams := []av.Stream{{
+		Index: 0,
+		ID:    "audio",
+		Type:  av.MediaAudio,
+		Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
+	}}
+	demuxerOpened := false
+	rt := goav.New(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		registry.RegisterProber(recipeAPIStreamProber{streams: streams})
+		registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
+	}))
+
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Audio().
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "decode_adapter_missing" || !errors.Is(err, codec.ErrNotFound) {
+		t.Fatalf("err = %v, want decode_adapter_missing wrapping codec.ErrNotFound", err)
+	}
+	if demuxerOpened {
+		t.Fatal("demuxer opened before known decoder preflight failed")
+	}
+	if !strings.Contains(err.Error(), "codec=opus") ||
+		!strings.Contains(err.Error(), "goav.Record") ||
+		strings.Contains(err.Error(), "cannot open input") ||
+		strings.Contains(err.Error(), "stream_ambiguous") {
+		t.Fatalf("err = %v, want probed decoder guidance before input diagnostics", err)
+	}
+}
+
 func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(goav.New(goav.WithStdCodecs())).

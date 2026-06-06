@@ -174,7 +174,8 @@ Build-time recipe checks validate input demuxers and output muxers when a
 container can be inferred from the input or output name, MIME type, URI, or
 explicit output format. When an input prober already reports stream metadata,
 build-time checks also validate obvious `Audio()`/`Video()` selection errors;
-otherwise full stream discovery still belongs to graph build.
+the selected codec can also be checked against registered decoder adapters.
+Otherwise full stream discovery still belongs to graph build.
 Inferred output formats are used internally when opening muxers; graph details
 only show a format when the recipe explicitly used `.Format(...)`.
 

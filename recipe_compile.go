@@ -179,6 +179,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobTransformAdaptersPass(),
 		validateJobInputFormatAdaptersPass(),
 		validateJobKnownInputStreamSelectionPass(),
+		validateJobKnownInputDecodeAdaptersPass(),
 		openRecipeRuntimeBuilderPass(),
 		validateJobStreamRuntimeCapabilitiesPass(),
 		lowerJobInputsPass(),
@@ -197,6 +198,7 @@ func compileTranscodeRecipeForBuild(job *TranscodeJob) (recipeResolved, error) {
 	return compileTranscodeRecipeWithOptions(job, recipeCompileOptions{
 		preflightInputAdapters:     true,
 		preflightOutputAdapters:    true,
+		preflightDecodeAdapters:    true,
 		preflightEncodeAdapters:    true,
 		preflightTransformAdapters: true,
 	})
@@ -226,6 +228,7 @@ func compileTranscodeRecipeWithOptions(job *TranscodeJob, options recipeCompileO
 		validateTranscodeTransformAdaptersPass(),
 		validateTranscodeInputFormatAdaptersPass(),
 		validateTranscodeKnownInputStreamSelectionPass(),
+		validateTranscodeKnownInputDecodeAdaptersPass(),
 		planTranscodeIntentPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerTranscodePlanPass(),
@@ -732,6 +735,19 @@ func validateJobKnownInputStreamSelectionPass() recipeCompilePass {
 	}}
 }
 
+func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job known input decode adapters", fn: func(state *recipeCompileState) error {
+		if !state.options.preflightDecodeAdapters {
+			return nil
+		}
+		stream, ok := jobIntentStream(state.intent)
+		if !ok || !streamNeedsDecode(stream) {
+			return nil
+		}
+		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, state.inputProbes, []StreamIntent{stream})
+	}}
+}
+
 func validateTranscodeKnownInputStreamSelectionPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode known input stream selection", fn: func(state *recipeCompileState) error {
 		if !state.transcodeInputProbeReady || len(state.transcodeInputProbe.Streams) == 0 {
@@ -743,6 +759,15 @@ func validateTranscodeKnownInputStreamSelectionPass() recipeCompilePass {
 			}
 		}
 		return nil
+	}}
+}
+
+func validateTranscodeKnownInputDecodeAdaptersPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate transcode known input decode adapters", fn: func(state *recipeCompileState) error {
+		if !state.options.preflightDecodeAdapters || !state.transcodeInputProbeReady || len(state.transcodeInputProbe.Streams) == 0 {
+			return nil
+		}
+		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, []format.ProbeResult{state.transcodeInputProbe}, state.intent.Streams)
 	}}
 }
 

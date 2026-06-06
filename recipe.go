@@ -1555,6 +1555,27 @@ func validateRecipeDecodeAdapters(operation string, rt Runtime, intent Intent) e
 	return nil
 }
 
+func validateKnownRecipeDecodeAdapters(operation string, rt Runtime, probes []format.ProbeResult, streams []StreamIntent) error {
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return nil
+	}
+	for i := range streams {
+		stream := streams[i]
+		if !streamNeedsDecode(stream) {
+			continue
+		}
+		codecID, ok := knownProbeDecodeCodec(probes, stream)
+		if !ok || codecID == "" {
+			continue
+		}
+		if _, err := standard.codecs.DecoderFactory(codecID); err != nil {
+			return recipeDecodeAdapterError(operation, stream, codecID, standard.codecs, err)
+		}
+	}
+	return nil
+}
+
 func validateLiveStreamSelection(inputs []InputIntent, stream StreamIntent) error {
 	streams := liveIntentStreams(inputs)
 	if len(streams) == 0 {
@@ -1592,6 +1613,25 @@ func liveIntentStreams(inputs []InputIntent) []av.Stream {
 		streams = append(streams, stream)
 	}
 	return streams
+}
+
+func knownProbeDecodeCodec(probes []format.ProbeResult, stream StreamIntent) (av.CodecID, bool) {
+	candidates := make([]av.CodecID, 0, len(probes))
+	selector := streamIntentSelector(stream)
+	for i := range probes {
+		if len(probes[i].Streams) == 0 {
+			continue
+		}
+		selected, err := selectDecodeStream(probes[i].Streams, selector)
+		if err != nil || selected.Codec.ID == "" {
+			continue
+		}
+		candidates = append(candidates, selected.Codec.ID)
+	}
+	if len(candidates) != 1 {
+		return "", false
+	}
+	return candidates[0], true
 }
 
 func streamNeedsDecode(stream StreamIntent) bool {

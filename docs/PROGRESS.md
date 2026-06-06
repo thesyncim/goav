@@ -683,6 +683,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     transcode recipe output preflight now stores inferred mux formats as
     runtime open hints while keeping graph details reserved for explicit
     `.Format(...)` requests, preserving `Describe`/`Build` equivalence. Done.
+202. Reuse build-time input probe stream codecs for decode-adapter checks:
+    ordinary and transcode file/protocol recipes now report missing or
+    descriptor-only decoders before demuxers are opened whenever the registered
+    prober already exposes an unambiguous selected stream codec. Done.
 
 ## First Vertical Slice
 
@@ -937,6 +941,9 @@ that only discover streams on open still defer to graph build.
 Output format preflight now carries inferred mux formats into ordinary builder
 lowering and transcode plans as open hints, without changing graph details
 unless the recipe explicitly requested `.Format(...)`.
+When probed input streams identify the selected codec, ordinary stream recipes
+and transcode branches also preflight decoder availability before opening the
+demuxer, while ambiguous selections stay with stream-selection diagnostics.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and
