@@ -575,6 +575,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 175. Add public recipe acceptance coverage proving `Describe()` and `Build(ctx)`
     resolve the same `pipeline.Spec` for default record and fanout recipes.
     Done.
+176. Extend recipe Describe/Build equivalence coverage to stream-scoped decoded
+    frame sinks and transcode branches with muxed outputs, using test adapters
+    so the public workflow contract stays true beyond packet-preserving recipes.
+    Done.
 
 ## First Vertical Slice
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -539,6 +540,34 @@ func TestStreamRecipeSelectsFirstStreamByIndex(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeDescribeMatchesBuiltGraph(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
+		Audio().
+		To(FrameSink(&runtimeTestSink{name: "frames"}))
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}
+
 func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
@@ -590,6 +619,39 @@ func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 	}
 	if !demuxer.closed || !decoder.closed || !meter.closed || !encoder.closed || !muxers.muxers[0].closed {
 		t.Fatalf("closed demux=%v decoder=%v meter=%v encoder=%v mux=%v", demuxer.closed, decoder.closed, meter.closed, encoder.closed, muxers.muxers[0].closed)
+	}
+}
+
+func TestTranscodeRecipeDescribeMatchesBuiltGraph(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+	)
+	job := Transcode(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
+		Audio("main").Opus(96_000).To("archive").
+		Output("archive", FileOutput("archive.ogg", io.Discard))
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
 
