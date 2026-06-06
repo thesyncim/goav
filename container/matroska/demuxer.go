@@ -1,9 +1,10 @@
 package matroska
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
+	"hash"
+	"hash/crc32"
 	"io"
 	"math"
 
@@ -462,16 +463,18 @@ func (d *Demuxer) parseSeekHead(header ebml.Header) error {
 	if header.Size.Unknown {
 		return ErrInvalidData
 	}
-	limited := d.reader.Limited(header.Size.Value)
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	master, err := d.checkedMasterReader(d.reader, header.Size.Value)
+	if err != nil {
+		return err
+	}
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return err
 		}
 		switch child.ID {
 		case idSeek:
-			entry, err := d.parseSeekEntry(reader, child)
+			entry, err := d.parseSeekEntry(master.Reader(), child)
 			if err != nil {
 				return err
 			}
@@ -479,12 +482,12 @@ func (d *Demuxer) parseSeekHead(header ebml.Header) error {
 				d.seekEntries = append(d.seekEntries, entry)
 			}
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return err
 			}
 		}
 	}
-	return nil
+	return master.Validate()
 }
 
 func (d *Demuxer) parseSeekEntry(parent io.Reader, header ebml.Header) (SeekEntry, error) {
@@ -552,68 +555,112 @@ func (d *Demuxer) parseInfo(header ebml.Header) error {
 	if header.Size.Unknown {
 		return ErrInvalidData
 	}
-	limited, reader, err := d.validatedInfoReader(d.reader, header.Size.Value)
+	master, err := d.checkedMasterReader(d.reader, header.Size.Value)
 	if err != nil {
 		return err
 	}
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return err
 		}
-		if child.ID == idCRC32 {
-			if child.Offset != 0 {
-				return ErrInvalidData
-			}
-			if err := skipElement(reader, child); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := d.parseInfoChild(reader, child); err != nil {
+		if err := d.parseInfoChild(master.Reader(), child); err != nil {
 			return err
 		}
+	}
+	if err := master.Validate(); err != nil {
+		return err
 	}
 	return validateSegmentInfo(d.info)
 }
 
-func (d *Demuxer) validatedInfoReader(parent io.Reader, size uint64) (*io.LimitedReader, *ebml.Reader, error) {
-	payload, err := readBinaryPayload(parent, size)
-	if err != nil {
-		return nil, nil, err
+func (d *Demuxer) checkedMasterReader(parent io.Reader, size uint64) (*checkedMasterReader, error) {
+	if size > uint64(math.MaxInt64) {
+		return nil, ErrInvalidData
 	}
-	if err := validateLeadingCRC32(payload); err != nil {
-		return nil, nil, err
-	}
-	limited := &io.LimitedReader{R: bytes.NewReader(payload), N: int64(len(payload))}
+	limited := &io.LimitedReader{R: parent, N: int64(size)}
 	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
-	return limited, reader, nil
-}
-
-func validateLeadingCRC32(payload []byte) error {
-	reader := ebml.NewReader(bytes.NewReader(payload), ebml.ReaderOptions{})
-	header, err := reader.ReadHeader()
-	if errors.Is(err, io.EOF) {
-		return nil
+	master := checkedMasterReader{limited: limited, reader: reader}
+	if limited.N == 0 {
+		return &master, nil
 	}
+	header, err := reader.ReadHeader()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if header.ID != idCRC32 {
-		return nil
+		master.pending = header
+		master.hasPending = true
+		return &master, nil
 	}
 	if header.Size.Unknown || header.Size.Value != 4 {
+		return nil, ErrInvalidData
+	}
+	if err := reader.ReadFull(master.storedCRC[:]); err != nil {
+		return nil, err
+	}
+	master.crc = crc32.NewIEEE()
+	reader = ebml.NewReader(crc32HashReader{reader: limited, crc: master.crc}, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	master.reader = reader
+	return &master, nil
+}
+
+type checkedMasterReader struct {
+	limited    *io.LimitedReader
+	reader     *ebml.Reader
+	pending    ebml.Header
+	hasPending bool
+	crc        hash.Hash32
+	storedCRC  [4]byte
+}
+
+func (r *checkedMasterReader) Done() bool {
+	return !r.hasPending && r.limited.N == 0
+}
+
+func (r *checkedMasterReader) Reader() *ebml.Reader {
+	return r.reader
+}
+
+func (r *checkedMasterReader) ReadHeader() (ebml.Header, error) {
+	if r.hasPending {
+		r.hasPending = false
+		return r.pending, nil
+	}
+	header, err := r.reader.ReadHeader()
+	if err != nil {
+		return ebml.Header{}, err
+	}
+	if header.ID == idCRC32 {
+		return ebml.Header{}, ErrInvalidData
+	}
+	return header, nil
+}
+
+func (r *checkedMasterReader) Validate() error {
+	if r.limited.N != 0 {
 		return ErrInvalidData
 	}
-	crcStart := header.DataOffset
-	crcEnd := crcStart + int64(header.Size.Value)
-	if crcStart < 0 || crcEnd > int64(len(payload)) {
-		return ErrInvalidData
+	if r.crc == nil {
+		return nil
 	}
-	if !ebml.ValidateCRC32(payload[crcStart:crcEnd], payload[crcEnd:]) {
+	if binary.LittleEndian.Uint32(r.storedCRC[:]) != r.crc.Sum32() {
 		return ErrInvalidData
 	}
 	return nil
+}
+
+type crc32HashReader struct {
+	reader *io.LimitedReader
+	crc    hash.Hash32
+}
+
+func (r crc32HashReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n != 0 {
+		_, _ = r.crc.Write(p[:n])
+	}
+	return n, err
 }
 
 func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header) error {
@@ -700,16 +747,18 @@ func (d *Demuxer) parseTracks(header ebml.Header) error {
 	if header.Size.Unknown {
 		return ErrInvalidData
 	}
-	limited := d.reader.Limited(header.Size.Value)
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	master, err := d.checkedMasterReader(d.reader, header.Size.Value)
+	if err != nil {
+		return err
+	}
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return err
 		}
 		switch child.ID {
 		case idTrackEntry:
-			track, err := d.parseTrackEntry(reader, child)
+			track, err := d.parseTrackEntry(master.Reader(), child)
 			if err != nil {
 				return err
 			}
@@ -717,28 +766,30 @@ func (d *Demuxer) parseTracks(header ebml.Header) error {
 				d.upsertTrack(track)
 			}
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return err
 			}
 		}
 	}
-	return nil
+	return master.Validate()
 }
 
 func (d *Demuxer) parseCues(header ebml.Header) error {
 	if header.Size.Unknown {
 		return ErrInvalidData
 	}
-	limited := d.reader.Limited(header.Size.Value)
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	master, err := d.checkedMasterReader(d.reader, header.Size.Value)
+	if err != nil {
+		return err
+	}
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return err
 		}
 		switch child.ID {
 		case idCuePoint:
-			cue, err := d.parseCuePoint(reader, child)
+			cue, err := d.parseCuePoint(master.Reader(), child)
 			if err != nil {
 				return err
 			}
@@ -746,12 +797,12 @@ func (d *Demuxer) parseCues(header ebml.Header) error {
 				d.cues = append(d.cues, cue)
 			}
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return err
 			}
 		}
 	}
-	return nil
+	return master.Validate()
 }
 
 func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint, error) {

@@ -3384,6 +3384,33 @@ func TestDemuxerValidatesSegmentInfoCRC32(t *testing.T) {
 	})
 }
 
+func TestDemuxerValidatesTopLevelMetadataCRC32(t *testing.T) {
+	tests := []struct {
+		name string
+		id   ebml.ID
+	}{
+		{name: "seekhead", id: idSeekHead},
+		{name: "tracks", id: idTracks},
+		{name: "cues", id: idCues},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+" valid crc32", func(t *testing.T) {
+			data := makeMetadataCRCMatroskaData(t, tt.id, nil)
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		t.Run(tt.name+" crc32 mismatch", func(t *testing.T) {
+			data := makeMetadataCRCMatroskaData(t, tt.id, func(payload []byte) {
+				payload[len(payload)-1] ^= 0x01
+			})
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
 func TestDemuxerRejectsInvalidSegmentInfoMetadata(t *testing.T) {
 	t.Run("short segment uuid", func(t *testing.T) {
 		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
@@ -4503,20 +4530,104 @@ func writeInfoWithCRC32(writer *ebml.Writer, mutate func([]byte)) error {
 	if err := bw.WriteString(idWritingApp, "crc-write"); err != nil {
 		return err
 	}
-	payload := append([]byte(nil), body.Bytes()...)
+	return writeMasterWithCRC32(writer, idInfo, body.Bytes(), mutate)
+}
 
+func writeMasterWithCRC32(writer *ebml.Writer, id ebml.ID, payload []byte, mutate func([]byte)) error {
+	protected := append([]byte(nil), payload...)
 	var info bytes.Buffer
 	iw := ebml.NewWriter(&info)
-	if err := iw.WriteCRC32(payload); err != nil {
+	if err := iw.WriteCRC32(protected); err != nil {
 		return err
 	}
 	if mutate != nil {
-		mutate(payload)
+		mutate(protected)
 	}
-	if _, err := iw.Write(payload); err != nil {
+	if _, err := iw.Write(protected); err != nil {
 		return err
 	}
-	return writer.WriteElement(idInfo, info.Bytes())
+	return writer.WriteElement(id, info.Bytes())
+}
+
+func makeMetadataCRCMatroskaData(tb testing.TB, checkedID ebml.ID, mutate func([]byte)) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.writeEBMLHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.ebml.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
+		tb.Fatal(err)
+	}
+	muxer.segmentData = muxer.ebml.Offset()
+	if checkedID == idSeekHead {
+		if err := writeMasterWithCRC32(muxer.ebml, idSeekHead, seekHeadPayload(tb), mutate); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if err := writeInfoWithElements(muxer.ebml, nil); err != nil {
+		tb.Fatal(err)
+	}
+	if checkedID == idTracks {
+		payload := elementPayload(tb, idTracks, func(w *ebml.Writer) error {
+			return writeTracksWithVideoDimensions(w, 16, 16)
+		})
+		if err := writeMasterWithCRC32(muxer.ebml, idTracks, payload, mutate); err != nil {
+			tb.Fatal(err)
+		}
+	} else if err := writeTracksWithVideoDimensions(muxer.ebml, 16, 16); err != nil {
+		tb.Fatal(err)
+	}
+	if checkedID == idCues {
+		payload := elementPayload(tb, idCues, func(w *ebml.Writer) error {
+			return writeCuesWithTrackNumber(w, 1)
+		})
+		if err := writeMasterWithCRC32(muxer.ebml, idCues, payload, mutate); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if err := muxer.ebml.WriteElement(idCluster, nil); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func seekHeadPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writeSeekEntry(writer, idInfo, 0); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func elementPayload(tb testing.TB, id ebml.ID, writeElement func(*ebml.Writer) error) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	writer := ebml.NewWriter(&buffer)
+	if err := writeElement(writer); err != nil {
+		tb.Fatal(err)
+	}
+	reader := ebml.NewReader(bytes.NewReader(buffer.Bytes()), ebml.ReaderOptions{})
+	header, err := reader.ReadHeader()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if header.ID != id || header.Size.Unknown {
+		tb.Fatalf("element header = %+v, want id 0x%x", header, uint64(id))
+	}
+	payload, err := readBinaryPayload(reader, header.Size.Value)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if reader.Offset() != int64(len(buffer.Bytes())) {
+		tb.Fatalf("payload length left reader at %d, want %d", reader.Offset(), len(buffer.Bytes()))
+	}
+	return payload
 }
 
 func writeMatroskaSegmentPrefix(tb testing.TB, muxer *Muxer) {
