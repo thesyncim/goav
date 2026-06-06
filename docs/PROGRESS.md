@@ -246,7 +246,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 74. Collapse runtime registry wiring to adapter hooks: the runtime owns concrete
     codec, format, and filter registries directly; custom replacement registry
     options and unused registry interface types are removed. Done.
-75. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+75. Prune unused observability hooks: runtime logging and metrics placeholders
+    are removed until concrete event or metrics semantics exist. Done.
+76. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

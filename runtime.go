@@ -20,14 +20,6 @@ var (
 	ErrNilSink          = errors.New("goav: nil sink")
 )
 
-type Logger interface {
-	Log(context.Context, string, ...any)
-}
-
-type Metrics interface {
-	Count(context.Context, string, int64)
-}
-
 type Option func(*runtime)
 
 func New(options ...Option) Runtime {
@@ -81,26 +73,12 @@ func WithRealtime(realtime bool) Option {
 	}
 }
 
-func WithLogger(logger Logger) Option {
-	return func(runtime *runtime) {
-		runtime.logger = logger
-	}
-}
-
-func WithMetrics(metrics Metrics) Option {
-	return func(runtime *runtime) {
-		runtime.metrics = metrics
-	}
-}
-
 type runtime struct {
 	codecs   *codec.SimpleRegistry
 	filters  *filter.SimpleRegistry
 	formats  *format.SimpleRegistry
 	buffer   pipeline.BufferPolicy
 	realtime bool
-	logger   Logger
-	metrics  Metrics
 }
 
 func (r *runtime) Probe(ctx context.Context, request ProbeRequest) (ProbeResult, error) {
