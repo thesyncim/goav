@@ -11,8 +11,10 @@ import (
 
 type Demuxer struct {
 	reader          *ebml.Reader
+	seeker          io.ReadSeeker
 	options         DemuxerOptions
 	docType         string
+	segmentData     int64
 	timecodeScaleNS int64
 	tracks          []Track
 	cues            []CuePoint
@@ -43,11 +45,13 @@ func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
 
 func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.reader = ebml.NewReader(r, ebml.ReaderOptions{MaxElementSize: opts.MaxElementSize})
+	d.seeker, _ = r.(io.ReadSeeker)
 	if d.groupReader == nil {
 		d.groupReader = ebml.NewReader(&d.groupLimit, ebml.ReaderOptions{MaxElementSize: opts.MaxElementSize})
 	}
 	d.options = opts
 	d.docType = ""
+	d.segmentData = 0
 	d.timecodeScaleNS = defaultTimecodeScaleNS
 	d.tracks = d.tracks[:0]
 	d.cues = d.cues[:0]
@@ -58,6 +62,49 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.clusterEnd = 0
 	d.clusterTimecode = 0
 	return d.readPreamble()
+}
+
+func (d *Demuxer) SeekToTime(timeNS int64) error {
+	if d == nil || d.reader == nil {
+		return ErrNilReader
+	}
+	if d.seeker == nil {
+		return ErrNonSeekableReader
+	}
+	if timeNS < 0 {
+		return ErrInvalidData
+	}
+	if len(d.cues) == 0 {
+		if err := d.loadCuesFromSeekHead(); err != nil {
+			return err
+		}
+	}
+	if len(d.cues) == 0 {
+		return ErrInvalidData
+	}
+	cue := d.cues[0]
+	for i := range d.cues {
+		if d.cues[i].TimeNS > timeNS {
+			break
+		}
+		cue = d.cues[i]
+	}
+	offset := d.segmentData + int64(cue.ClusterPosition)
+	if _, err := d.seeker.Seek(offset, io.SeekStart); err != nil {
+		return err
+	}
+	d.reader.Reset(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	header, err := d.reader.ReadHeader()
+	if err != nil {
+		return err
+	}
+	if header.ID != idCluster {
+		return ErrInvalidData
+	}
+	if err := d.enterCluster(header); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (d *Demuxer) Tracks() []Track {
@@ -187,6 +234,7 @@ func (d *Demuxer) readPreamble() error {
 		switch header.ID {
 		case idSegment:
 			d.inSegment = true
+			d.segmentData = header.DataOffset
 			return d.readSegmentHeaders()
 		case idVoid, idCRC32:
 			if err := skipElement(d.reader, header); err != nil {
@@ -198,6 +246,31 @@ func (d *Demuxer) readPreamble() error {
 			}
 		}
 	}
+}
+
+func (d *Demuxer) loadCuesFromSeekHead() error {
+	var cuesPosition uint64
+	for i := range d.seekEntries {
+		if d.seekEntries[i].ID == uint64(idCues) {
+			cuesPosition = d.seekEntries[i].Position
+			break
+		}
+	}
+	if cuesPosition == 0 {
+		return ErrInvalidData
+	}
+	if _, err := d.seeker.Seek(d.segmentData+int64(cuesPosition), io.SeekStart); err != nil {
+		return err
+	}
+	d.reader.Reset(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	header, err := d.reader.ReadHeader()
+	if err != nil {
+		return err
+	}
+	if header.ID != idCues {
+		return ErrInvalidData
+	}
+	return d.parseCues(header)
 }
 
 func (d *Demuxer) readSegmentHeaders() error {

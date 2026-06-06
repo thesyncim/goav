@@ -33,3 +33,7 @@ func (d *Demuxer) Tracks() []Track {
 func (d *Demuxer) ReadPacket(dst *Packet) error {
 	return d.inner.ReadPacket(dst)
 }
+
+func (d *Demuxer) SeekToTime(timeNS int64) error {
+	return d.inner.SeekToTime(timeNS)
+}

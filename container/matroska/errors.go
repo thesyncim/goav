@@ -9,6 +9,7 @@ var (
 	ErrClosed             = errors.New("matroska: closed")
 	ErrInvalidTrack       = errors.New("matroska: invalid track")
 	ErrUnknownTrack       = errors.New("matroska: unknown track")
+	ErrNonSeekableReader  = errors.New("matroska: reader is not seekable")
 	ErrTrackAfterWrite    = errors.New("matroska: cannot add track after writing packets")
 	ErrUnsupportedCodec   = errors.New("matroska: unsupported codec")
 	ErrUnsupportedElement = errors.New("matroska: unsupported element")

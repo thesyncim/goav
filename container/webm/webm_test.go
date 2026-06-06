@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -99,6 +100,28 @@ func TestMuxerDemuxerRoundTrip(t *testing.T) {
 	}
 	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
 		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
+func TestDemuxerSeekToTime(t *testing.T) {
+	file := writeSeekableCompatibilityWebM(t)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(10_000_000); err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 16)}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TimeNS != 0 {
+		t.Fatalf("packet time = %d, want first cue", packet.TimeNS)
 	}
 }
 

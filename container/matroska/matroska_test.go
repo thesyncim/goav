@@ -366,6 +366,61 @@ func TestSeekableMuxerWritesSeekHeadAndCues(t *testing.T) {
 	}
 }
 
+func TestDemuxerSeekToTimeUsesCues(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 1_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}},
+		{TrackID: trackID, TimeNS: 2_000_000, Keyframe: true, Data: []byte{2}},
+		{TrackID: trackID, TimeNS: 4_000_000, Keyframe: true, Data: []byte{3}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(3_000_000); err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != packets[1].TimeNS || !bytes.Equal(got.Data, packets[1].Data) {
+		t.Fatalf("packet after seek = %+v data=%v, want %+v data=%v", got, got.Data, packets[1], packets[1].Data)
+	}
+}
+
+func TestDemuxerSeekToTimeRequiresSeekableReader(t *testing.T) {
+	data := makeMatroskaData(t, 1)
+	demuxer, err := NewDemuxer(bytes.NewBuffer(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); !errors.Is(err, ErrNonSeekableReader) {
+		t.Fatalf("err = %v, want ErrNonSeekableReader", err)
+	}
+}
+
 func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

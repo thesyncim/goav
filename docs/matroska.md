@@ -52,6 +52,7 @@ Current milestone:
 - Seekable Info Duration patching when packet timestamps/durations are known.
 - SeekHead writing and parsing for seekable files.
 - Cues writing and parsing for keyframe packets in seekable files.
+- Cue-based `SeekToTime` for seekable demuxers.
 - BlockGroup reading and writing for single-frame blocks with BlockDuration;
   non-keyframe BlockGroups use `ReferenceBlock=0` when exact dependency
   information is not available.
@@ -65,7 +66,7 @@ Current milestone:
 
 These are intentionally not in the first milestone:
 
-- Random seeking APIs.
+- Frame-exact random seeking and index-assisted extraction APIs.
 - Multiple-reference BlockGroup writing and lacing.
 - Chapters, tags, attachments, language variants, default/forced flags beyond
   basic defaults, and unknown-element preservation.
@@ -101,6 +102,8 @@ ticks. In seekable mode, `Info.Duration` is patched on close to the maximum
 observed packet end time expressed in those same timestamp-scale ticks.
 Seekable mode also writes Cues for keyframe packets using Segment-relative
 Cluster positions, and a SeekHead that points to Info, Tracks, and Cues.
+`SeekToTime` uses those Cues to jump to the nearest preceding cue cluster;
+callers should continue reading until they reach the exact target packet.
 
 ## Codec Mapping
 
