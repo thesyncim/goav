@@ -103,7 +103,8 @@ for _, edge := range spec.Edges {
   stream-local custom stage before encoding.
 - A `From` stream recipe carries one `Audio()` or `Video()` chain; use
   stream-local `.To(...)` outputs there, and use `Transcode` when one input
-  needs multiple branches.
+  needs multiple branches. A stream chain sends decoded frames to frame sinks
+  or encoded packets to file/URI outputs, not both.
 - `goav.Decode(input, sink)` decodes one selected stream into a frame sink.
 - `goav.Transcode(input)` builds named audio or video branches and outputs.
   Transcode branch `.To(...)` accepts either a named output label or an

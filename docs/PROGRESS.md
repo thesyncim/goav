@@ -375,7 +375,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 120. Add stream-recipe output-scope validation so selected `Audio()`/`Video()`
     chains use stream-local `.To(...)` instead of mixed generic job outputs.
     Done.
-121. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+121. Add stream-recipe output-kind validation so one selected stream chain
+    cannot mix decoded frame sinks with muxed file/URI outputs. Done.
+122. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

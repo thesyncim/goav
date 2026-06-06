@@ -598,6 +598,51 @@ func TestStreamRecipeRequiresEncoderForFileOutput(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeRejectsMixedFrameSinkAndFileOutput(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		To(
+			goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+				return nil
+			})),
+			goav.FileOutput("archive.ogg", io.Discard),
+		).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_kind_mixed wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "cannot mix frame sinks and muxed outputs") ||
+		!strings.Contains(err.Error(), "goav.Transcode") {
+		t.Fatalf("err = %v, want mixed output guidance", err)
+	}
+}
+
+func TestStreamRecipeRejectsMixedEncodedOutputAndFrameSink(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Opus(96_000).
+		To(
+			goav.FileOutput("archive.ogg", io.Discard),
+			goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+				return nil
+			})),
+		).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_kind_mixed wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), ".Decode().To(goav.FrameSink") ||
+		!strings.Contains(err.Error(), ".To(goav.FileOutput") {
+		t.Fatalf("err = %v, want decoded or encoded output guidance", err)
+	}
+}
+
 func TestStreamRecipeRejectsWorkInProgressRecipeEncoder(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.h264", strings.NewReader(""))).
 		Video().

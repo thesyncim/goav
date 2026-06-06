@@ -1017,6 +1017,9 @@ func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, err
 	if err := validateRecipeEncode(stream.encode, "build stream", stream.name); err != nil {
 		return nil, err
 	}
+	if outputsContainFrameSink(outputs) && outputsContainMuxTarget(outputs) {
+		return nil, mixedStreamOutputError(stream)
+	}
 	if stream.encode.ID == "" && outputsContainMuxTarget(outputs) {
 		return nil, &BuildError{
 			Code:      "encode_missing",
@@ -1094,6 +1097,21 @@ func streamStageMissingError(stream *jobStreamBuild) error {
 			"remove .Do(...) when no custom processing is needed",
 		},
 		Cause: ErrNilStage,
+	}
+}
+
+func mixedStreamOutputError(stream *jobStreamBuild) error {
+	return &BuildError{
+		Code:      "output_kind_mixed",
+		Operation: "build stream",
+		Node:      jobStreamName(stream),
+		Reason:    "stream recipes cannot mix frame sinks and muxed outputs",
+		Suggestions: []string{
+			"use .Decode().To(goav.FrameSink(...)) for decoded frames",
+			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...)) for encoded output",
+			"use goav.Transcode(input) or the expert graph API when one stream needs separate decoded and encoded branches",
+		},
+		Cause: ErrUnsupportedBuild,
 	}
 }
 
