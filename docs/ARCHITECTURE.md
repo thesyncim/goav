@@ -44,7 +44,7 @@ The current compilers cover:
 - one-input selected-stream decode to a frame sink through
   `format.DemuxSource -> stream select -> codec.DecoderStage -> Sink` when the
   selector resolves to one stream and the codec registry has a decoder factory
-- one RTP/WebRTC packet reader to one or more outputs through
+- one or more RTP/WebRTC packet readers to one or more outputs through
   `rtpav.Source -> format.MuxStage...` when the application provides
   depacketizers and the format registry can mux the output boundaries
 

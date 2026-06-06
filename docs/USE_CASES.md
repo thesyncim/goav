@@ -31,12 +31,13 @@ WebRTC session
 Receive raw RTP using Pion RTP packet types, resolve payload type mappings,
 surface gaps and discontinuities, emit RTCP feedback, and produce codec packets.
 
-The high-level record/fanout shape is:
+The high-level record/fanout shape accepts one or more packet readers:
 
 ```go
 task, err := runtime.New().
-    RTP(reader, goav.WithRTPDepacketizers(depacketizers...)).
-    Output(goav.Output{Name: "recording.ivf"}).
+    RTP(audio, goav.WithRTPDepacketizer(opus)).
+    RTP(video, goav.WithRTPDepacketizer(vp8)).
+    Output(goav.Output{Name: "recording.webm"}).
     Build(ctx)
 ```
 

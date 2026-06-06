@@ -33,10 +33,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, fanout, simple node-to-node links, stream/event routes, backpressure guard, graph specs with text/DOT/Mermaid rendering | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh | richer multi-stream receive |
-| `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | runtime-level multi-input graph composition |
+| `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level selected-stream decode-to-sink compiler, RTP packet-reader record/fanout compiler | encode/filter/transcode graph compilers |
+| runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level selected-stream decode-to-sink compiler, multi-RTP/WebRTC packet-reader record/fanout compiler | encode/filter/transcode graph compilers |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
 
 ## Implementation Order
@@ -75,7 +75,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 20. Add WebRTC TrackSet orchestration that keeps one long-lived reader per
     logical stream while applying accepted replacement tracks through
     `UpdateTrack`. Done.
-21. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+21. Add runtime-level multi-RTP/WebRTC input graph composition from repeated
+    `RTP(...)` calls into shared mux outputs. Done.
+22. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -127,8 +129,8 @@ Required proof:
   or AV1 video stream with allocation-guarded demux/mux hot paths.
 - The runtime builder can plan and compile RTP/WebRTC packet-reader record jobs
   from `RTP(...).Output(...).Build(ctx)`, including jitter/depacketizer options,
-  multiple mux outputs, lifecycle closure, graph rendering, and event
-  visibility.
+  repeated RTP/WebRTC inputs, aggregated stream lists for muxers, multiple mux
+  outputs, lifecycle closure, graph rendering, and event visibility.
 - `rtpav.Source` now forwards realtime events into depacketizers before graph
   delivery, so loss-aware depacketizers can reset or drop partial payloads.
 - `rtpav.Source` refreshes payload maps on `EventCodecChanged`, and
@@ -188,9 +190,9 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: add runtime-level multi-RTP/WebRTC input graph
-composition, then validate concrete H264 decode adapter behavior without
-pulling codec internals into the core runtime.
+Current pressure point: validate concrete H264 decode adapter behavior without
+pulling codec internals into the core runtime, then connect live multi-input
+receive graphs into decode/filter/encode composition.
 
 ## Validation Gates
 

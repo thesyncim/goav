@@ -90,24 +90,23 @@ When a later accepted track has the same stream ID, `TrackSet` calls
 RTP sources can observe the codec-change event without rebuilding the whole
 application graph.
 
-The runtime builder can compile a packet-reader recording graph directly:
+The runtime builder can compile packet-reader recording graphs directly:
 
 ```go
 task, err := runtime.New().
-    RTP(reader,
-        goav.WithRTPJitter(jitter),
-        goav.WithRTPDepacketizers(depacketizers...),
-    ).
-    Output(goav.Output{Name: "recording.ivf", Writer: file}).
+    RTP(audio, goav.WithRTPName("audio"), goav.WithRTPDepacketizer(opus)).
+    RTP(video, goav.WithRTPName("video"), goav.WithRTPDepacketizer(vp8)).
+    Output(goav.Output{Name: "recording.webm", Writer: file}).
     Build(ctx)
 ```
 
-`reader` can be a raw RTP receiver or a `webrtcav.TrackReader` produced from a
-Pion `TrackRemote`. A track reader produced from a WebRTC session can also route
-RTCP feedback back through the session peer connection. The generated graph is
-`rtpav.Source -> format.MuxStage...`; rendered specs show simple node-to-node
-connections, and events remain visible through the task event channel while mux
-stages receive packet messages for each output.
+Each reader can be a raw RTP receiver or a `webrtcav.TrackReader` produced from
+a Pion `TrackRemote`. A track reader produced from a WebRTC session can also
+route RTCP feedback back through the session peer connection. The generated
+graph is one `rtpav.Source` per reader feeding shared `format.MuxStage` outputs;
+rendered specs show simple node-to-node connections, and events remain visible
+through the task event channel while mux stages receive packet messages for each
+output.
 
 ## Loss
 

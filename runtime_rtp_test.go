@@ -151,6 +151,152 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderMultiRTPRecordFanout(t *testing.T) {
+	ctx := context.Background()
+	audio := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   2,
+		},
+	}
+	video := av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: 90000},
+		Codec: av.CodecParameters{
+			ID:        av.CodecVP8,
+			Type:      av.MediaVideo,
+			ClockRate: 90000,
+			Width:     640,
+			Height:    360,
+		},
+	}
+	audioReceiver := &runtimeRTPReceiver{
+		streams: []av.Stream{audio},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  audio.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    2,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	videoReceiver := &runtimeRTPReceiver{
+		streams: []av.Stream{video},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 96,
+			Parameters:  video.Codec,
+			MIMEType:    rtpav.MIMEVP8,
+			ClockRate:   90000,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
+			Payload: []byte{0x10, 0x00, 0xaa},
+		}},
+		events: make(chan av.Event),
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := format.NewRegistry(
+		format.WithProber(format.DefaultProber()),
+		format.WithMuxer(av.FormatOgg, muxers),
+	)
+
+	builder := New(WithFormatRegistry(formats)).New().
+		RTP(audioReceiver,
+			WithRTPName("audio-rtp"),
+			WithRTPDepacketizer(rtpav.NewOpusDepacketizer(audio)),
+		).
+		RTP(videoReceiver,
+			WithRTPName("video-rtp"),
+			WithRTPDepacketizer(rtpav.NewVP8Depacketizer(video)),
+		).
+		Output(Output{Name: "archive.ogg"}).
+		Output(Output{Name: "preview.ogg"})
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Nodes) != 4 || len(planned.Edges) != 4 {
+		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
+	}
+	if !strings.Contains(planned.String(), "audio-rtp -> archive.ogg") ||
+		!strings.Contains(planned.String(), "video-rtp -> preview.ogg") {
+		t.Fatalf("planned:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := task.Describe()
+	if planned.String() != spec.String() || planned.Mermaid() != spec.Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(muxers.muxers) != 2 {
+		t.Fatalf("muxers = %d, want 2", len(muxers.muxers))
+	}
+	for i := range muxers.muxers {
+		muxer := muxers.muxers[i]
+		if !muxer.opened || muxer.streamCount != 2 || muxer.writes != 2 {
+			t.Fatalf("muxer[%d] opened=%v streams=%d writes=%d", i, muxer.opened, muxer.streamCount, muxer.writes)
+		}
+		if !streamIDsEqual(muxer.openedStreams, []av.StreamID{"audio", "video"}) {
+			t.Fatalf("muxer[%d] opened streams = %+v", i, muxer.openedStreams)
+		}
+		if !streamIDsEqual(muxer.writtenStreams, []av.StreamID{"audio", "video"}) {
+			t.Fatalf("muxer[%d] written streams = %+v", i, muxer.writtenStreams)
+		}
+	}
+
+	gotEvents := drainTaskEvents(task)
+	if countEvents(gotEvents, av.EventEndOfStream) != 2 {
+		t.Fatalf("events = %+v, want two EOS events", gotEvents)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !audioReceiver.closed || !videoReceiver.closed {
+		t.Fatalf("closed audio=%v video=%v", audioReceiver.closed, videoReceiver.closed)
+	}
+	for i := range muxers.muxers {
+		if !muxers.muxers[i].closed {
+			t.Fatalf("muxer[%d] not closed", i)
+		}
+	}
+}
+
+func TestRuntimeBuilderMultiRTPRecordDefaultNames(t *testing.T) {
+	spec, err := New().New().
+		RTP(&runtimeRTPReceiver{}).
+		RTP(&runtimeRTPReceiver{}).
+		Output(Output{Name: "archive.ogg"}).
+		Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Nodes) != 3 || len(spec.Edges) != 2 {
+		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
+	}
+	if !strings.Contains(spec.String(), "rtp -> archive.ogg") ||
+		!strings.Contains(spec.String(), "rtp-1 -> archive.ogg") {
+		t.Fatalf("spec:\n%s", spec.String())
+	}
+}
+
 func TestRuntimeBuilderRTPVP8RecordIVF(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
@@ -351,4 +497,26 @@ func drainTaskEvents(task Task) []av.Event {
 			return events
 		}
 	}
+}
+
+func streamIDsEqual(got []av.StreamID, want []av.StreamID) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func countEvents(events []av.Event, eventType av.EventType) int {
+	count := 0
+	for i := range events {
+		if events[i].Type == eventType {
+			count++
+		}
+	}
+	return count
 }

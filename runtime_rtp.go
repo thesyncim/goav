@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
@@ -59,7 +60,7 @@ func WithRTPBufferLimits(limits RTPBufferLimits) RTPOption {
 }
 
 func (rtpRecordGraphCompiler) match(b *builder) bool {
-	return len(b.rtpInputs) == 1 &&
+	return len(b.rtpInputs) > 0 &&
 		len(b.outputs) > 0 &&
 		len(b.inputs) == 0 &&
 		len(b.decodes) == 0 &&
@@ -78,23 +79,33 @@ func (rtpRecordGraphCompiler) build(ctx context.Context, b *builder) (Task, erro
 }
 
 func (b *builder) planRTPRecord(spec pipeline.Spec) (pipeline.Spec, error) {
-	nodes := make(map[string]plannedNode, 1+len(b.outputs))
-	sourceName := rtpNodeName(b.rtpInputs[0])
-	sourceRef := pipeline.NodeRef(sourceName)
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
-		return pipeline.Spec{}, err
+	nodes := make(map[string]plannedNode, len(b.rtpInputs)+len(b.outputs))
+	sourceRefs := make([]pipeline.NodeRef, len(b.rtpInputs))
+	for i := range b.rtpInputs {
+		sourceName := rtpNodeName(b.rtpInputs[i], i)
+		sourceRef := pipeline.NodeRef(sourceName)
+		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
+			return pipeline.Spec{}, err
+		}
+		sourceRefs[i] = sourceRef
 	}
+	stageRefs := make([]pipeline.NodeRef, len(b.outputs))
 	for i := range b.outputs {
 		stageName := muxNodeName(b.outputs[i], i)
 		stageRef := pipeline.NodeRef(stageName)
 		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef); err != nil {
 			return pipeline.Spec{}, err
 		}
-		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-			From:   sourceRef,
-			To:     stageRef,
-			Policy: pipeline.RouteAll,
-		})
+		stageRefs[i] = stageRef
+	}
+	for i := range sourceRefs {
+		for j := range stageRefs {
+			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
+				From:   sourceRefs[i],
+				To:     stageRefs[j],
+				Policy: pipeline.RouteAll,
+			})
+		}
 	}
 	return spec, nil
 }
@@ -112,15 +123,20 @@ func (b *builder) buildRTPRecord(ctx context.Context) (Task, error) {
 }
 
 func (b *builder) compileRTPRecord(ctx context.Context, graph pipeline.Graph) error {
-	rtpInput := b.rtpInputs[0]
-	receiver, err := b.openRTPSource(ctx, rtpInput)
-	if err != nil {
-		return err
-	}
-	sourceRef, err := graph.AddSource(receiver.source, b.runtime.buffer)
-	if err != nil {
-		receiver.source.Close()
-		return err
+	sourceRefs := make([]pipeline.NodeRef, 0, len(b.rtpInputs))
+	streams := make([]av.Stream, 0, len(b.rtpInputs))
+	for i := range b.rtpInputs {
+		receiver, err := b.openRTPSource(ctx, b.rtpInputs[i], i)
+		if err != nil {
+			return err
+		}
+		sourceRef, err := graph.AddSource(receiver.source, b.runtime.buffer)
+		if err != nil {
+			receiver.source.Close()
+			return err
+		}
+		sourceRefs = append(sourceRefs, sourceRef)
+		streams = append(streams, receiver.streams...)
 	}
 
 	for i := range b.outputs {
@@ -137,7 +153,7 @@ func (b *builder) compileRTPRecord(ctx context.Context, graph pipeline.Graph) er
 		if err != nil {
 			return err
 		}
-		if err := muxer.Open(ctx, output, receiver.streams, format.OpenOptions{
+		if err := muxer.Open(ctx, output, streams, format.OpenOptions{
 			Realtime: b.runtime.realtime || output.Realtime,
 			Metadata: output.Metadata,
 		}); err != nil {
@@ -159,14 +175,16 @@ func (b *builder) compileRTPRecord(ctx context.Context, graph pipeline.Graph) er
 			stage.Close()
 			return err
 		}
-		if err := graph.Link(pipeline.Link{From: sourceRef, To: stageRef}); err != nil {
-			return err
+		for j := range sourceRefs {
+			if err := graph.Link(pipeline.Link{From: sourceRefs[j], To: stageRef}); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func (b *builder) openRTPSource(ctx context.Context, input rtpInput) (rtpBuild, error) {
+func (b *builder) openRTPSource(ctx context.Context, input rtpInput, index int) (rtpBuild, error) {
 	if input.receiver == nil {
 		return rtpBuild{}, ErrNilSource
 	}
@@ -175,7 +193,7 @@ func (b *builder) openRTPSource(ctx context.Context, input rtpInput) (rtpBuild, 
 		return rtpBuild{}, err
 	}
 	source, err := rtpav.NewSource(rtpav.SourceConfig{
-		Name:          rtpNodeName(input),
+		Name:          rtpNodeName(input, index),
 		Receiver:      input.receiver,
 		Feedback:      input.feedback,
 		Jitter:        input.jitter,
@@ -191,9 +209,12 @@ func (b *builder) openRTPSource(ctx context.Context, input rtpInput) (rtpBuild, 
 	return rtpBuild{source: source, streams: streams}, nil
 }
 
-func rtpNodeName(input rtpInput) string {
+func rtpNodeName(input rtpInput, index int) string {
 	if input.name != "" {
 		return input.name
+	}
+	if index > 0 {
+		return "rtp-" + strconv.Itoa(index)
 	}
 	return "rtp"
 }

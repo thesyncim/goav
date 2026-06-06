@@ -55,16 +55,21 @@ task, err := rt.New().
     Build(ctx)
 ```
 
-Record or fan out an RTP/WebRTC packet reader when depacketizers and muxers are
-available:
+Record or fan out one or more RTP/WebRTC packet readers when depacketizers and
+muxers are available:
 
 ```go
 task, err := rt.New().
-    RTP(reader,
+    RTP(audio,
+        goav.WithRTPName("audio"),
         goav.WithRTPJitter(jitter),
-        goav.WithRTPDepacketizers(depacketizers...),
+        goav.WithRTPDepacketizer(opus),
     ).
-    Output(goav.Output{Name: "recording.ivf", Writer: file}).
+    RTP(video,
+        goav.WithRTPName("video"),
+        goav.WithRTPDepacketizer(vp8),
+    ).
+    Output(goav.Output{Name: "recording.webm", Writer: file}).
     Build(ctx)
 ```
 
@@ -123,7 +128,8 @@ Implemented slices:
 - Demux source and mux stage graph adapters.
 - Fluent remux/fanout compiler.
 - Fluent selected-stream decode-to-sink compiler.
-- Fluent RTP packet-reader record/fanout compiler.
+- Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
+  `RTP(...)` inputs.
 - Pre-build and runtime graph rendering as text, DOT, and Mermaid.
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.
 - Annex B packet mux adapter for H264 recording.
@@ -136,8 +142,8 @@ Implemented slices:
 
 Next pressure points:
 
-- Runtime-level multi-RTP/WebRTC input graph composition.
 - Concrete H264 decode adapter validation.
+- Runtime-level decode/filter/encode graph composition for live receive.
 - Allocation-safe resize and resample implementations.
 
 ## Working Loop
