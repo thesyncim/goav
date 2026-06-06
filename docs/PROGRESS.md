@@ -410,7 +410,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 131. Prune transcode branch-local direct outputs so branches route through one
     label-only `.To(...)` path and outputs are defined once with `.Output(...)`.
     Done.
-132. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+132. Promote recipe `.Run(ctx)` as the beginner execution path in the README and
+    acceptance tests, while keeping `.Build(ctx)` for task events, graph specs,
+    and explicit lifecycle control.
+    Done.
+133. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

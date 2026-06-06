@@ -969,19 +969,12 @@ func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 	}
 }
 
-func TestDefaultRecordIVFRecipeRuns(t *testing.T) {
+func TestDefaultRecordIVFRecipeRunShortcutRuns(t *testing.T) {
 	var out bytes.Buffer
-	task, err := goav.Record(
+	if err := goav.Record(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.FileOutput("preview.ivf", &out),
-	).Build(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := task.Run(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if err := task.Close(); err != nil {
+	).Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if out.Len() == 0 {

@@ -17,57 +17,49 @@ normal user sees is now a recipe, not graph wiring.
 Record a WebRTC video track:
 
 ```go
-task, err := goav.Record(
+return goav.Record(
     goav.WebRTCTrack(track),
     goav.FileOutput("recording.ivf", file),
-).Build(ctx)
-if err != nil {
-    return err
-}
-return task.Run(ctx)
+).Run(ctx)
 ```
 
 Record audio and video tracks together:
 
 ```go
-task, err := goav.From(goav.WebRTCTrack(audio)).
+return goav.From(goav.WebRTCTrack(audio)).
     And(goav.WebRTCTrack(video)).
     To(goav.FileOutput("call.webm", file)).
-    Build(ctx)
+    Run(ctx)
 ```
 
 Record an RTP packet reader:
 
 ```go
-task, err := goav.Record(
+return goav.Record(
     goav.RTP(video).Name("video").Codec(goav.VP8()),
     goav.FileOutput("recording.ivf", file),
-).Build(ctx)
-if err != nil {
-    return err
-}
-return task.Run(ctx)
+).Run(ctx)
 ```
 
 Remux or fan out a file-like input:
 
 ```go
-task, err := goav.Record(
+return goav.Record(
     goav.FileInput("input.ivf", in),
     goav.FileOutput("archive.ivf", archive),
     goav.FileOutput("preview.ivf", preview),
-).Build(ctx)
+).Run(ctx)
 ```
 
 Build a small video ladder:
 
 ```go
-task, err := goav.Transcode(goav.FileInput("input.webm", in)).
+return goav.Transcode(goav.FileInput("input.webm", in)).
     Video("720p").Resize(1280, 720).VP9(2_000_000).To("web").
     Video("360p").Resize(640, 360).VP9(600_000).To("preview").
     Output("web", goav.FileOutput("web.webm", web)).
     Output("preview", goav.FileOutput("preview.webm", preview)).
-    Build(ctx)
+    Run(ctx)
 ```
 
 Inspect the graph data before running:
@@ -140,8 +132,8 @@ If `Audio()` or `Video()` matches more than one stream, build errors list the
 available streams and suggest `StreamID`, `StreamName`, or `StreamIndex(0)`.
 Stream indexes are zero-based and must be non-negative.
 
-Recipes compile into the existing runtime builder, so `Describe`, `Build`,
-`Run`, task events, and graph specs stay the same.
+Use `.Run(ctx)` when the recipe is the whole job. Use `.Build(ctx)` when the
+caller needs a `Task` for graph specs, events, or explicit lifecycle control.
 
 ## Choosing Codecs And Formats
 
