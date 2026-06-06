@@ -48,6 +48,7 @@ type recipeCompileState struct {
 
 type recipeCompileOptions struct {
 	preflightOutputAdapters bool
+	preflightDecodeAdapters bool
 	preflightEncodeAdapters bool
 }
 
@@ -132,6 +133,7 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 func compileJobRecipeForBuild(job *Job) (recipeResolved, error) {
 	return compileJobRecipeWithOptions(job, recipeCompileOptions{
 		preflightOutputAdapters: true,
+		preflightDecodeAdapters: true,
 		preflightEncodeAdapters: true,
 	})
 }
@@ -161,6 +163,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobStreamOutputKindsPass(),
 		validatePacketJobOutputsPass(),
 		validateJobOutputFormatAdaptersPass(),
+		validateJobDecodeAdaptersPass(),
 		validateJobEncodeAdaptersPass(),
 		openRecipeRuntimeBuilderPass(),
 		validateJobStreamRuntimeCapabilitiesPass(),
@@ -410,6 +413,15 @@ func validateJobOutputFormatAdaptersPass() recipeCompilePass {
 			return nil
 		}
 		return validateOutputFormatAdapters(context.Background(), state.runtime, state.outputAttachments)
+	}}
+}
+
+func validateJobDecodeAdaptersPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job decode adapters", fn: func(state *recipeCompileState) error {
+		if !state.options.preflightDecodeAdapters {
+			return nil
+		}
+		return validateRecipeDecodeAdapters(state.operation, state.runtime, state.intent)
 	}}
 }
 

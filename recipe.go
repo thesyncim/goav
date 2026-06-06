@@ -1487,6 +1487,88 @@ func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []Out
 	return nil
 }
 
+func validateRecipeDecodeAdapters(operation string, rt Runtime, intent Intent) error {
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return nil
+	}
+	for i := range intent.Streams {
+		stream := intent.Streams[i]
+		if !streamNeedsDecode(stream) {
+			continue
+		}
+		codecID, ok := liveDecodeCodec(intent.Inputs, stream)
+		if !ok || codecID == "" {
+			continue
+		}
+		if _, err := standard.codecs.DecoderFactory(codecID); err != nil {
+			return recipeDecodeAdapterError(operation, stream, codecID, standard.codecs, err)
+		}
+	}
+	return nil
+}
+
+func streamNeedsDecode(stream StreamIntent) bool {
+	return stream.Decode || len(stream.Transforms) != 0 || stream.Encode.ID != ""
+}
+
+func liveDecodeCodec(inputs []InputIntent, stream StreamIntent) (av.CodecID, bool) {
+	selector := stream.Select
+	candidates := make([]av.CodecID, 0, len(inputs))
+	for i := range inputs {
+		input := inputs[i]
+		if !input.Realtime || input.Codec.ID == "" {
+			continue
+		}
+		if selector.Codec != "" && selector.Codec != input.Codec.ID {
+			continue
+		}
+		if selector.Type != "" && input.Codec.Type != "" && selector.Type != input.Codec.Type {
+			continue
+		}
+		if selector.Name != "" && selector.Name != input.Name {
+			continue
+		}
+		if selector.ID != "" && input.Name != string(selector.ID) {
+			continue
+		}
+		candidates = append(candidates, input.Codec.ID)
+	}
+	if len(candidates) != 1 {
+		return "", false
+	}
+	return candidates[0], true
+}
+
+func recipeDecodeAdapterError(operation string, stream StreamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
+	code := "decode_adapter_missing"
+	reason := "no decoder adapter is registered for " + string(codecID)
+	if errors.Is(cause, codec.ErrUnavailable) {
+		code = "decode_adapter_unavailable"
+		reason = string(codecID) + " decoder adapter is descriptor-only in this build"
+	}
+	details := []string{"codec=" + string(codecID)}
+	if registry != nil {
+		descriptors, err := registry.Find(codecID, codec.ModeDecode)
+		if err == nil {
+			details = append(details, codecDescriptorDetails(descriptors)...)
+		}
+	}
+	return &BuildError{
+		Code:      code,
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    reason,
+		Details:   details,
+		Suggestions: []string{
+			"register a codec adapter that provides a " + string(codecID) + " decoder",
+			"enable the adapter build tag or choose a runtime with a concrete decoder",
+			"use goav.Record(input, output) for packet-preserving receive when decoding is not needed",
+		},
+		Cause: cause,
+	}
+}
+
 func validateRecipeEncodeAdapters(operation string, rt Runtime, streams []StreamIntent) error {
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
@@ -1515,7 +1597,7 @@ func recipeEncodeAdapterError(operation string, stream StreamIntent, registry *c
 	if registry != nil {
 		descriptors, err := registry.Find(stream.Encode.ID, codec.ModeEncode)
 		if err == nil {
-			details = append(details, encodeDescriptorDetails(descriptors)...)
+			details = append(details, codecDescriptorDetails(descriptors)...)
 		}
 	}
 	return &BuildError{
@@ -1533,7 +1615,7 @@ func recipeEncodeAdapterError(operation string, stream StreamIntent, registry *c
 	}
 }
 
-func encodeDescriptorDetails(descriptors []codec.Descriptor) []string {
+func codecDescriptorDetails(descriptors []codec.Descriptor) []string {
 	details := make([]string, 0, len(descriptors)*3)
 	for i := range descriptors {
 		if descriptors[i].Backend.Name != "" {

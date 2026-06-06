@@ -298,6 +298,118 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 	}
 }
 
+func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
+	descriptorOnly := codec.NewRegistry()
+	descriptorOnly.RegisterDescriptor(codec.Descriptor{
+		ID:    av.CodecH264,
+		Name:  "h264",
+		Modes: []codec.Mode{codec.ModeDecode},
+		Capabilities: codec.Capabilities{
+			BuildTags: []string{"goav_goh264"},
+		},
+		Backend: codec.Backend{
+			Name:   "goh264",
+			Status: "planned-build-tagged",
+		},
+	})
+	descriptorRuntime := New(func(runtime *runtime) {
+		runtime.codecs = descriptorOnly
+	})
+
+	tests := []struct {
+		name  string
+		state recipeCompileState
+		code  string
+		cause error
+		want  []string
+	}{
+		{
+			name: "missing decoder",
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightDecodeAdapters: true},
+				runtime:   New(),
+				intent: Intent{
+					Inputs: []InputIntent{{
+						Name:     "audio",
+						Protocol: av.ProtocolRTP,
+						Codec:    Opus(),
+						Realtime: true,
+					}},
+					Streams: []StreamIntent{{
+						Name:   "audio",
+						Select: StreamSelect{Type: av.MediaAudio},
+						Decode: true,
+					}},
+				},
+			},
+			code:  "decode_adapter_missing",
+			cause: codec.ErrNotFound,
+			want:  []string{"no decoder adapter", "codec=opus", "goav.Record"},
+		},
+		{
+			name: "descriptor-only decoder",
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightDecodeAdapters: true},
+				runtime:   descriptorRuntime,
+				intent: Intent{
+					Inputs: []InputIntent{{
+						Name:     "video",
+						Protocol: av.ProtocolRTP,
+						Codec:    H264(),
+						Realtime: true,
+					}},
+					Streams: []StreamIntent{{
+						Name:   "video",
+						Select: StreamSelect{Type: av.MediaVideo},
+						Decode: true,
+					}},
+				},
+			},
+			code:  "decode_adapter_unavailable",
+			cause: codec.ErrUnavailable,
+			want:  []string{"descriptor-only", "codec=h264", "backend=goh264", "build_tags=goav_goh264"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateJobDecodeAdaptersPass().Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, tt.cause) {
+				t.Fatalf("err = %v, want %s wrapping %v", err, tt.code, tt.cause)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestDecodeAdapterPassDefersAmbiguousLiveSelection(t *testing.T) {
+	state := recipeCompileState{
+		operation: "build job",
+		options:   recipeCompileOptions{preflightDecodeAdapters: true},
+		runtime:   New(),
+		intent: Intent{
+			Inputs: []InputIntent{
+				{Name: "front", Protocol: av.ProtocolRTP, Codec: H264(), Realtime: true},
+				{Name: "screen", Protocol: av.ProtocolRTP, Codec: H264(), Realtime: true},
+			},
+			Streams: []StreamIntent{{
+				Name:   "video",
+				Select: StreamSelect{Type: av.MediaVideo},
+				Decode: true,
+			}},
+		},
+	}
+	if err := validateJobDecodeAdaptersPass().Apply(&state); err != nil {
+		t.Fatalf("err = %v, want ambiguity to stay with stream resolution", err)
+	}
+}
+
 func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 	descriptorOnly := codec.NewRegistry()
 	descriptorOnly.RegisterDescriptor(codec.Descriptor{

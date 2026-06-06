@@ -1257,6 +1257,40 @@ func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T)
 	}
 }
 
+func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testing.T) {
+	rt := goav.New(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		registry.RegisterDescriptor(codec.Descriptor{
+			ID:    av.CodecH264,
+			Name:  "h264",
+			Modes: []codec.Mode{codec.ModeDecode},
+			Capabilities: codec.Capabilities{
+				BuildTags: []string{"goav_goh264"},
+			},
+			Backend: codec.Backend{
+				Name:   "goh264",
+				Status: "planned-build-tagged",
+			},
+		})
+	}))
+	_, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("video").Codec(goav.H264())).
+		UseRuntime(rt).
+		Video().
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "decode_adapter_unavailable" || !errors.Is(err, codec.ErrUnavailable) {
+		t.Fatalf("err = %v, want decode_adapter_unavailable wrapping codec.ErrUnavailable", err)
+	}
+	if !strings.Contains(err.Error(), "codec=h264") ||
+		!strings.Contains(err.Error(), "goav.Record") ||
+		strings.Contains(err.Error(), "stream") ||
+		strings.Contains(err.Error(), "cannot open input") {
+		t.Fatalf("err = %v, want decode adapter guidance before live input diagnostics", err)
+	}
+}
+
 func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 	tests := []struct {
 		name string

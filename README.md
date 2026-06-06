@@ -172,6 +172,10 @@ Recipe encode conveniences currently target Opus, VP8, and VP9. H264 and AV1
 codec specs are useful for receive, record, and decode paths while recipe encode
 support continues to mature. Recipe encode bitrates cannot be negative, and
 explicit sample-rate or channel overrides must be positive.
+Build-time recipe checks validate concrete encoder adapters for explicit encode
+intents and concrete decoder adapters when a live RTP/WebRTC decode codec is
+already known. `Describe()` remains graph inspection and does not require those
+adapters to be present.
 
 ## Inspect The Graph
 
