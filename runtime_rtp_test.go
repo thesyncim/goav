@@ -162,10 +162,10 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 
 	builder := newTestBuilder(t, formats).
 		RTP(receiver,
-			WithRTPName("remote-audio"),
-			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
-			WithRTPMaxTimestampGap(av.SamplesDuration(960, 48000)),
-			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 2, MaxEvents: 2}),
+			withRTPName("remote-audio"),
+			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+			withRTPMaxTimestampGap(av.SamplesDuration(960, 48000)),
+			withRTPBufferLimits(RTPBufferLimits{MaxPackets: 2, MaxEvents: 2}),
 		).
 		Output(format.Output{Name: "archive.ogg"}).
 		Output(format.Output{Name: "preview.ogg"})
@@ -332,8 +332,8 @@ func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
 
 	builder := newTestBuilder(t, codecs).
 		RTP(receiver,
-			WithRTPName("live-audio"),
-			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+			withRTPName("live-audio"),
+			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
 		).
 		Decode(testSelectAudio()).
 		Sink(sink)
@@ -423,9 +423,9 @@ func TestRuntimeBuilderRTPDecodeUsesRTPDecodeBounds(t *testing.T) {
 
 	builder := newTestBuilder(t, codecs).
 		RTP(receiver,
-			WithRTPName("video-rtp"),
-			WithRTPDepacketizers(rtpav.NewVP8Depacketizer(stream, rtpav.WithMaxVideoFrameSize(4096))),
-			WithRTPDecodeBounds(requested),
+			withRTPName("video-rtp"),
+			withRTPDepacketizers(rtpav.NewVP8Depacketizer(stream, rtpav.WithMaxVideoFrameSize(4096))),
+			withRTPDecodeBounds(requested),
 		).
 		Decode(testSelectVideo()).
 		Sink(sink)
@@ -522,12 +522,12 @@ func TestRuntimeBuilderRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 
 	task, err := newTestBuilder(t, codecs).
 		RTP(receiver,
-			WithRTPName("video-rtp"),
-			WithRTPDepacketizers(
+			withRTPName("video-rtp"),
+			withRTPDepacketizers(
 				rtpav.NewVP8Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16)),
 				rtpav.NewH264Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16)),
 			),
-			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
+			withRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
 		).
 		Decode(testSelectVideo()).
 		Sink(sink).
@@ -585,8 +585,8 @@ func TestRuntimeBuilderRTPDecodeFilterSink(t *testing.T) {
 
 	builder := newTestBuilder(t, codecs).
 		RTP(receiver,
-			WithRTPName("live-audio"),
-			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+			withRTPName("live-audio"),
+			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
 		).
 		Decode(testSelectAudio()).
 		Filter(testSelectAudio(), filter).
@@ -659,8 +659,8 @@ func newBufferedRTPRecordCopyFixture(policy pipeline.BufferPolicy) (builderAPI, 
 	)
 	builder := New(formats, WithBufferPolicy(policy)).(*runtime).New().
 		RTP(receiver,
-			WithRTPName("live-audio"),
-			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+			withRTPName("live-audio"),
+			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
 		).
 		Output(format.Output{Name: "archive.ogg"}).
 		Output(format.Output{Name: "preview.ogg"})
@@ -728,12 +728,12 @@ func TestRuntimeBuilderMultiRTPDecodeSelectsOneStream(t *testing.T) {
 
 	builder := newTestBuilder(t, codecs).
 		RTP(audioReceiver,
-			WithRTPName("audio-rtp"),
-			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(audio)),
+			withRTPName("audio-rtp"),
+			withRTPDepacketizers(rtpav.NewOpusDepacketizer(audio)),
 		).
 		RTP(videoReceiver,
-			WithRTPName("video-rtp"),
-			WithRTPDepacketizers(rtpav.NewVP8Depacketizer(video)),
+			withRTPName("video-rtp"),
+			withRTPDepacketizers(rtpav.NewVP8Depacketizer(video)),
 		).
 		Decode(testSelectAudio()).
 		Sink(sink)
@@ -836,12 +836,12 @@ func TestRuntimeBuilderMultiRTPRecordFanout(t *testing.T) {
 
 	builder := newTestBuilder(t, formats).
 		RTP(audioReceiver,
-			WithRTPName("audio-rtp"),
-			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(audio)),
+			withRTPName("audio-rtp"),
+			withRTPDepacketizers(rtpav.NewOpusDepacketizer(audio)),
 		).
 		RTP(videoReceiver,
-			WithRTPName("video-rtp"),
-			WithRTPDepacketizers(rtpav.NewVP8Depacketizer(video)),
+			withRTPName("video-rtp"),
+			withRTPDepacketizers(rtpav.NewVP8Depacketizer(video)),
 		).
 		Output(format.Output{Name: "archive.ogg"}).
 		Output(format.Output{Name: "preview.ogg"})
@@ -950,7 +950,7 @@ func TestRuntimeBuilderRTPVP8RecordIVF(t *testing.T) {
 	var recording bytes.Buffer
 
 	task, err := newTestBuilder(t, WithFormatAdapter(ivfadapter.Register)).
-		RTP(receiver, WithRTPDepacketizers(rtpav.NewVP8Depacketizer(stream))).
+		RTP(receiver, withRTPDepacketizers(rtpav.NewVP8Depacketizer(stream))).
 		Output(format.Output{Name: "recording.ivf", Writer: &recording}).
 		Build(ctx)
 	if err != nil {
@@ -1015,7 +1015,7 @@ func TestRuntimeBuilderRTPAV1RecordIVF(t *testing.T) {
 	var recording bytes.Buffer
 
 	task, err := newTestBuilder(t, WithFormatAdapter(ivfadapter.Register)).
-		RTP(receiver, WithRTPDepacketizers(rtpav.NewAV1Depacketizer(stream))).
+		RTP(receiver, withRTPDepacketizers(rtpav.NewAV1Depacketizer(stream))).
 		Output(format.Output{Name: "recording.ivf", Writer: &recording}).
 		Build(ctx)
 	if err != nil {
@@ -1080,7 +1080,7 @@ func TestRuntimeBuilderRTPH264RecordAnnexB(t *testing.T) {
 	var recording bytes.Buffer
 
 	task, err := newTestBuilder(t, WithFormatAdapter(annexbadapter.Register)).
-		RTP(receiver, WithRTPDepacketizers(rtpav.NewH264Depacketizer(stream))).
+		RTP(receiver, withRTPDepacketizers(rtpav.NewH264Depacketizer(stream))).
 		Output(format.Output{Name: "recording.h264", Writer: &recording}).
 		Build(ctx)
 	if err != nil {

@@ -469,7 +469,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     media structs stay in `av`, while recipes continue to expose codec and
     stream intent through `CodecSpec`, options, and input/output specs.
     Done.
-147. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+147. Demote legacy `WithRTP...` builder options and `RTPOption` to
+    package-private compiler plumbing so recipe users configure RTP through
+    `goav.RTP(reader).Name(...).Codec(...).RTPBuffer(...)`.
+    Done.
+148. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

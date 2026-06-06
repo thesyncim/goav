@@ -49,8 +49,8 @@ func TestRuntimeBuilderRTPAV1DecodeSink(t *testing.T) {
 
 	builder := newTestBuilder(t, WithCodecAdapter(goav1adapter.Register)).
 		RTP(receiver,
-			WithRTPName("av1-rtp"),
-			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
+			withRTPName("av1-rtp"),
+			withRTPDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 		).
 		Decode(testSelectVideo()).
 		Sink(sink)
@@ -132,8 +132,8 @@ func testRuntimeBuilderRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 
 	task, err := newTestBuilder(t, WithCodecAdapter(goav1adapter.Register)).
 		RTP(receiver,
-			WithRTPName("av1-rtp"),
-			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
+			withRTPName("av1-rtp"),
+			withRTPDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 		).
 		Decode(testSelectVideo()).
 		Sink(sink).
@@ -199,9 +199,9 @@ func TestRuntimeBuilderRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 
 	task, err := newTestBuilder(t, WithCodecAdapter(goav1adapter.Register)).
 		RTP(receiver,
-			WithRTPName("av1-rtp"),
-			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
-			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
+			withRTPName("av1-rtp"),
+			withRTPDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
+			withRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
 		).
 		Decode(testSelectVideo()).
 		Sink(sink).
@@ -287,9 +287,9 @@ func testRuntimeBuilderRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTa
 
 	task, err := newTestBuilder(t, WithCodecAdapter(goav1adapter.Register)).
 		RTP(receiver,
-			WithRTPName("av1-rtp"),
-			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
-			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
+			withRTPName("av1-rtp"),
+			withRTPDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
+			withRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
 		).
 		Decode(testSelectVideo()).
 		Sink(sink).

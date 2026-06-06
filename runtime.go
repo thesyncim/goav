@@ -83,7 +83,7 @@ type runtime struct {
 
 type builderAPI interface {
 	Input(format.Input) builderAPI
-	RTP(rtpav.PacketReader, ...RTPOption) builderAPI
+	RTP(rtpav.PacketReader, ...rtpOption) builderAPI
 	Output(format.Output) builderAPI
 	Decode(av.StreamSelector) builderAPI
 	Encode(av.StreamSelector, codec.EncodeConfig) builderAPI
@@ -137,7 +137,7 @@ type filterRequest struct {
 	transform *transcodeTransform
 }
 
-type RTPOption func(*rtpInput)
+type rtpOption func(*rtpInput)
 
 type RTPBufferLimits struct {
 	MaxReady    int
@@ -163,7 +163,7 @@ func (b *builder) Input(input format.Input) builderAPI {
 	return b
 }
 
-func (b *builder) RTP(receiver rtpav.PacketReader, options ...RTPOption) builderAPI {
+func (b *builder) RTP(receiver rtpav.PacketReader, options ...rtpOption) builderAPI {
 	input := rtpInput{receiver: receiver}
 	for i := range options {
 		if options[i] != nil {

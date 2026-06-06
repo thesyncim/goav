@@ -9,6 +9,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -82,14 +83,27 @@ func TestTranscodeJobKeepsPlanIROutOfFrontDoor(t *testing.T) {
 }
 
 func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), "goav.go", nil, 0)
+	packages, err := parser.ParseDir(token.NewFileSet(), ".", func(info os.FileInfo) bool {
+		return !strings.HasSuffix(info.Name(), "_test.go")
+	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
+	pkg, ok := packages["goav"]
+	if !ok {
+		t.Fatal("package goav not found")
+	}
 	legacyFuncs := map[string]bool{
-		"SelectAudio": true,
-		"SelectVideo": true,
-		"Route":       true,
+		"SelectAudio":            true,
+		"SelectVideo":            true,
+		"Route":                  true,
+		"WithRTPName":            true,
+		"WithRTPFeedback":        true,
+		"WithRTPJitter":          true,
+		"WithRTPDepacketizers":   true,
+		"WithRTPBufferLimits":    true,
+		"WithRTPDecodeBounds":    true,
+		"WithRTPMaxTimestampGap": true,
 	}
 	legacyTypes := map[string]bool{
 		"Builder":         true,
@@ -102,25 +116,28 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Sink":            true,
 		"Metadata":        true,
 		"CodecParameters": true,
+		"RTPOption":       true,
 	}
-	for _, decl := range file.Decls {
-		switch decl := decl.(type) {
-		case *ast.FuncDecl:
-			if decl.Recv != nil {
+	for filename, file := range pkg.Files {
+		for _, decl := range file.Decls {
+			switch decl := decl.(type) {
+			case *ast.FuncDecl:
+				if decl.Recv != nil {
+					continue
+				}
+				if legacyFuncs[decl.Name.Name] {
+					t.Fatalf("goav.%s keeps a legacy helper on the front door in %s", decl.Name.Name, filename)
+				}
+			case *ast.GenDecl:
+				for _, spec := range decl.Specs {
+					typeSpec, ok := spec.(*ast.TypeSpec)
+					if ok && legacyTypes[typeSpec.Name.Name] {
+						t.Fatalf("goav.%s keeps a legacy type on the front door in %s", typeSpec.Name.Name, filename)
+					}
+				}
+			default:
 				continue
 			}
-			if legacyFuncs[decl.Name.Name] {
-				t.Fatalf("goav.%s keeps a legacy helper on the front door", decl.Name.Name)
-			}
-		case *ast.GenDecl:
-			for _, spec := range decl.Specs {
-				typeSpec, ok := spec.(*ast.TypeSpec)
-				if ok && legacyTypes[typeSpec.Name.Name] {
-					t.Fatalf("goav.%s keeps a legacy type on the front door", typeSpec.Name.Name)
-				}
-			}
-		default:
-			continue
 		}
 	}
 }

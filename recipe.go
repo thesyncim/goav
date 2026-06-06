@@ -604,29 +604,29 @@ func (s InputSpec) validateRTPCodec() error {
 	}
 }
 
-func (s InputSpec) rtpOptions() []RTPOption {
-	options := make([]RTPOption, 0, 6)
+func (s InputSpec) rtpOptions() []rtpOption {
+	options := make([]rtpOption, 0, 6)
 	if s.name != "" {
-		options = append(options, WithRTPName(s.name))
+		options = append(options, withRTPName(s.name))
 	}
 	if s.rtp.feedback != nil {
-		options = append(options, WithRTPFeedback(s.rtp.feedback))
+		options = append(options, withRTPFeedback(s.rtp.feedback))
 	}
 	if s.rtp.jitter != nil {
-		options = append(options, WithRTPJitter(s.rtp.jitter))
+		options = append(options, withRTPJitter(s.rtp.jitter))
 	}
 	depacketizers := append([]rtpav.Depacketizer(nil), s.rtp.depacketizers...)
 	if len(depacketizers) != 0 {
-		options = append(options, WithRTPDepacketizers(depacketizers...))
+		options = append(options, withRTPDepacketizers(depacketizers...))
 	}
 	if s.codec.ID != "" {
 		options = append(options, withRTPCodec(s.codec))
 	}
 	if s.rtp.limits != (RTPBufferLimits{}) {
-		options = append(options, WithRTPBufferLimits(s.rtp.limits))
+		options = append(options, withRTPBufferLimits(s.rtp.limits))
 	}
 	if s.rtp.maxTSGap != (av.Duration{}) {
-		options = append(options, WithRTPMaxTimestampGap(s.rtp.maxTSGap))
+		options = append(options, withRTPMaxTimestampGap(s.rtp.maxTSGap))
 	}
 	return options
 }

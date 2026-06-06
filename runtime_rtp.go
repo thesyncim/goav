@@ -18,25 +18,25 @@ type rtpBuild struct {
 
 type rtpRecordGraphCompiler struct{}
 
-func WithRTPName(name string) RTPOption {
+func withRTPName(name string) rtpOption {
 	return func(input *rtpInput) {
 		input.name = name
 	}
 }
 
-func WithRTPFeedback(feedback rtpav.FeedbackWriter) RTPOption {
+func withRTPFeedback(feedback rtpav.FeedbackWriter) rtpOption {
 	return func(input *rtpInput) {
 		input.feedback = feedback
 	}
 }
 
-func WithRTPJitter(jitter rtpav.JitterBuffer) RTPOption {
+func withRTPJitter(jitter rtpav.JitterBuffer) rtpOption {
 	return func(input *rtpInput) {
 		input.jitter = jitter
 	}
 }
 
-func WithRTPDepacketizers(depacketizers ...rtpav.Depacketizer) RTPOption {
+func withRTPDepacketizers(depacketizers ...rtpav.Depacketizer) rtpOption {
 	return func(input *rtpInput) {
 		for i := range depacketizers {
 			if depacketizers[i] != nil {
@@ -46,27 +46,27 @@ func WithRTPDepacketizers(depacketizers ...rtpav.Depacketizer) RTPOption {
 	}
 }
 
-func withRTPCodec(codec CodecSpec) RTPOption {
+func withRTPCodec(codec CodecSpec) rtpOption {
 	return func(input *rtpInput) {
 		input.codec = codec
 	}
 }
 
-func WithRTPBufferLimits(limits RTPBufferLimits) RTPOption {
+func withRTPBufferLimits(limits RTPBufferLimits) rtpOption {
 	return func(input *rtpInput) {
 		input.limits = limits
 	}
 }
 
-// WithRTPDecodeBounds seeds codec.DecodeConfig.Bounds for high-level RTP decode
+// withRTPDecodeBounds seeds codec.DecodeConfig.Bounds for high-level RTP decode
 // builders using this packet reader.
-func WithRTPDecodeBounds(bounds codec.DecodeBounds) RTPOption {
+func withRTPDecodeBounds(bounds codec.DecodeBounds) rtpOption {
 	return func(input *rtpInput) {
 		input.decodeBounds = bounds
 	}
 }
 
-func WithRTPMaxTimestampGap(gap av.Duration) RTPOption {
+func withRTPMaxTimestampGap(gap av.Duration) rtpOption {
 	return func(input *rtpInput) {
 		input.maxTSGap = gap
 	}
