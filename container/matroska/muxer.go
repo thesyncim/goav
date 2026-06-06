@@ -1330,13 +1330,19 @@ func validateTrack(track Track) error {
 		}
 	case TrackVideo:
 		switch track.Codec {
+		case CodecAV1:
+			if len(track.CodecPrivate) != 0 {
+				if _, err := parseAV1CodecConfigurationRecord(track.CodecPrivate); err != nil {
+					return ErrInvalidTrack
+				}
+			}
 		case CodecH264:
 			if len(track.CodecPrivate) != 0 {
 				if _, err := parseAVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
 					return ErrInvalidTrack
 				}
 			}
-		case CodecVP8, CodecVP9, CodecAV1, CodecH265:
+		case CodecVP8, CodecVP9, CodecH265:
 		default:
 			return ErrInvalidTrack
 		}

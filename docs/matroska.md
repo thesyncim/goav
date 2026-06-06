@@ -79,6 +79,8 @@ Current milestone:
 - H.264 tracks validate caller-provided AVCDecoderConfigurationRecord
   codec-private data on mux and demux before exposing or writing track
   metadata.
+- AV1 tracks validate caller-provided AV1CodecConfigurationRecord codec-private
+  data on mux and demux before exposing or writing track metadata.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with
   WebM demuxers requiring the `webm` EBML document type.
 - Format registry adapters for `av.Stream` and `av.Packet`.
@@ -156,7 +158,8 @@ Current mappings:
 - PCMU/PCMA: `A_MS/ACM` with generated WAVEFORMATEX codec private data
 - VP8: `V_VP8`
 - VP9: `V_VP9`
-- AV1: `V_AV1`
+- AV1: `V_AV1` with AV1CodecConfigurationRecord validation when codec-private
+  data is provided.
 - H.264: `V_MPEG4/ISO/AVC` with AVCDecoderConfigurationRecord validation when
   codec-private data is provided.
 - H.265: `V_MPEGH/ISO/HEVC`

@@ -15,6 +15,11 @@ const (
 )
 
 const (
+	av1OBUSequenceHeader = 1
+	av1MaxLEB128Bytes    = 8
+)
+
+const (
 	codecIDOpus = "A_OPUS"
 	codecIDMS   = "A_MS/ACM"
 	codecIDVP8  = "V_VP8"
@@ -234,6 +239,127 @@ func readAVCParameterSet(private []byte, offset int) ([]byte, int, error) {
 		return nil, 0, ErrInvalidData
 	}
 	return private[offset : offset+size], offset + size, nil
+}
+
+type av1CodecConfigurationRecord struct {
+	SeqProfile                       int
+	SeqLevelIdx0                     int
+	SeqTier0                         bool
+	HighBitDepth                     bool
+	TwelveBit                        bool
+	Monochrome                       bool
+	ChromaSubsamplingX               bool
+	ChromaSubsamplingY               bool
+	ChromaSamplePosition             int
+	InitialPresentationDelaySet      bool
+	InitialPresentationDelayMinusOne int
+	ConfigOBUCount                   int
+	SequenceHeaderOBUPresent         bool
+}
+
+func parseAV1CodecConfigurationRecord(private []byte) (av1CodecConfigurationRecord, error) {
+	if len(private) < 4 || private[0]&0x80 == 0 || private[0]&0x7f != 1 {
+		return av1CodecConfigurationRecord{}, ErrInvalidData
+	}
+	profile := int(private[1] >> 5)
+	if profile > 2 {
+		return av1CodecConfigurationRecord{}, ErrInvalidData
+	}
+	highBitDepth := private[2]&0x40 != 0
+	twelveBit := private[2]&0x20 != 0
+	if twelveBit && (!highBitDepth || profile != 2) {
+		return av1CodecConfigurationRecord{}, ErrInvalidData
+	}
+	chromaSamplePosition := int(private[2] & 0x03)
+	if chromaSamplePosition == 3 {
+		return av1CodecConfigurationRecord{}, ErrInvalidData
+	}
+	if private[3]&0xe0 != 0 {
+		return av1CodecConfigurationRecord{}, ErrInvalidData
+	}
+	initialDelaySet := private[3]&0x10 != 0
+	if !initialDelaySet && private[3]&0x0f != 0 {
+		return av1CodecConfigurationRecord{}, ErrInvalidData
+	}
+	config := av1CodecConfigurationRecord{
+		SeqProfile:                       profile,
+		SeqLevelIdx0:                     int(private[1] & 0x1f),
+		SeqTier0:                         private[2]&0x80 != 0,
+		HighBitDepth:                     highBitDepth,
+		TwelveBit:                        twelveBit,
+		Monochrome:                       private[2]&0x10 != 0,
+		ChromaSubsamplingX:               private[2]&0x08 != 0,
+		ChromaSubsamplingY:               private[2]&0x04 != 0,
+		ChromaSamplePosition:             chromaSamplePosition,
+		InitialPresentationDelaySet:      initialDelaySet,
+		InitialPresentationDelayMinusOne: int(private[3] & 0x0f),
+	}
+	offset := 4
+	for offset < len(private) {
+		obuType, next, err := readAV1ConfigOBU(private, offset)
+		if err != nil {
+			return av1CodecConfigurationRecord{}, err
+		}
+		if obuType == av1OBUSequenceHeader {
+			if config.SequenceHeaderOBUPresent || config.ConfigOBUCount != 0 {
+				return av1CodecConfigurationRecord{}, ErrInvalidData
+			}
+			config.SequenceHeaderOBUPresent = true
+		}
+		config.ConfigOBUCount++
+		offset = next
+	}
+	return config, nil
+}
+
+func readAV1ConfigOBU(private []byte, offset int) (int, int, error) {
+	if offset < 0 || offset >= len(private) {
+		return 0, 0, ErrInvalidData
+	}
+	header := private[offset]
+	if header&0x80 != 0 || header&0x01 != 0 {
+		return 0, 0, ErrInvalidData
+	}
+	obuType := int((header >> 3) & 0x0f)
+	if obuType == 0 {
+		return 0, 0, ErrInvalidData
+	}
+	hasExtension := header&0x04 != 0
+	hasSize := header&0x02 != 0
+	if !hasSize {
+		return 0, 0, ErrInvalidData
+	}
+	offset++
+	if hasExtension {
+		if offset >= len(private) || private[offset]&0x07 != 0 {
+			return 0, 0, ErrInvalidData
+		}
+		offset++
+	}
+	size, sizeWidth, err := readAV1LEB128(private, offset)
+	if err != nil {
+		return 0, 0, err
+	}
+	offset += sizeWidth
+	if size > uint64(len(private)-offset) {
+		return 0, 0, ErrInvalidData
+	}
+	return obuType, offset + int(size), nil
+}
+
+func readAV1LEB128(data []byte, offset int) (uint64, int, error) {
+	var value uint64
+	for i := 0; i < av1MaxLEB128Bytes; i++ {
+		if offset+i >= len(data) {
+			return 0, 0, ErrInvalidData
+		}
+		b := data[offset+i]
+		value |= uint64(b&0x7f) << uint(i*7)
+		if b&0x80 == 0 {
+			return value, i + 1, nil
+		}
+	}
+	return 0, 0, ErrInvalidData
 }
 
 type opusHead struct {

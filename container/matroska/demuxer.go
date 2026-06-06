@@ -787,6 +787,11 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 		}
 		track.Audio.Channels = head.Channels
 	}
+	if track.Codec == CodecAV1 && len(track.CodecPrivate) != 0 {
+		if _, err := parseAV1CodecConfigurationRecord(track.CodecPrivate); err != nil {
+			return Track{}, err
+		}
+	}
 	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
 		if _, err := parseAVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
 			return Track{}, err
