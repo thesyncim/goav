@@ -110,19 +110,20 @@ func (r *runtime) Graph() GraphBuilder {
 }
 
 type builder struct {
-	runtime    *runtime
-	inputs     []format.Input
-	rtpInputs  []rtpInput
-	outputs    []format.Output
-	outputFmts []av.FormatID
-	decodes    []decodeRequest
-	encodes    []encodeRequest
-	filters    []filterRequest
-	transcodes []transcode.Plan
-	sources    []pipeline.Source
-	stages     []pipeline.Stage
-	sinks      []pipeline.Sink
-	routes     []pipeline.Route
+	runtime         *runtime
+	inputs          []format.Input
+	rtpInputs       []rtpInput
+	outputs         []format.Output
+	outputFmts      []av.FormatID
+	outputGraphFmts []av.FormatID
+	decodes         []decodeRequest
+	encodes         []encodeRequest
+	filters         []filterRequest
+	transcodes      []transcode.Plan
+	sources         []pipeline.Source
+	stages          []pipeline.Stage
+	sinks           []pipeline.Sink
+	routes          []pipeline.Route
 }
 
 type encodeRequest struct {
@@ -180,20 +181,36 @@ func (b *builder) RTP(receiver rtpav.PacketReader, options ...rtpOption) builder
 }
 
 func (b *builder) Output(output format.Output) builderAPI {
-	return b.outputWithFormat(output, "")
+	return b.outputWithFormats(output, "", "")
 }
 
 func (b *builder) outputWithFormat(output format.Output, formatID av.FormatID) builderAPI {
+	return b.outputWithFormats(output, formatID, formatID)
+}
+
+func (b *builder) resolvedOutputWithFormat(output format.Output, formatID av.FormatID) builderAPI {
+	return b.outputWithFormats(output, formatID, "")
+}
+
+func (b *builder) outputWithFormats(output format.Output, openFormat av.FormatID, detailFormat av.FormatID) builderAPI {
 	b.outputs = append(b.outputs, output)
-	b.outputFmts = append(b.outputFmts, formatID)
+	b.outputFmts = append(b.outputFmts, openFormat)
+	b.outputGraphFmts = append(b.outputGraphFmts, detailFormat)
 	return b
 }
 
-func (b *builder) outputFormat(index int) av.FormatID {
+func (b *builder) outputOpenFormat(index int) av.FormatID {
 	if index < 0 || index >= len(b.outputFmts) {
 		return ""
 	}
 	return b.outputFmts[index]
+}
+
+func (b *builder) outputFormat(index int) av.FormatID {
+	if index < 0 || index >= len(b.outputGraphFmts) {
+		return ""
+	}
+	return b.outputGraphFmts[index]
 }
 
 func (b *builder) Decode(selector av.StreamSelector) builderAPI {

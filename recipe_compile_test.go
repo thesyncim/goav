@@ -299,6 +299,168 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 	}
 }
 
+func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
+	tests := []struct {
+		name     string
+		pass     recipeCompilePass
+		state    recipeCompileState
+		validate func(*testing.T, recipeCompileState)
+	}{
+		{
+			name: "job probed output format",
+			pass: validateJobOutputFormatAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightOutputAdapters: true},
+				runtime: New(withTestFormats(
+					testFormatProber(remuxTestProber{}),
+					testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+				)),
+				outputAttachments: []OutputSpec{
+					FileOutput("recording.ogg", io.Discard),
+				},
+			},
+			validate: func(t *testing.T, state recipeCompileState) {
+				t.Helper()
+				if len(state.outputAttachments) != 1 ||
+					state.outputAttachments[0].format != "" ||
+					state.outputAttachments[0].resolvedFormat != av.FormatOgg {
+					t.Fatalf("output attachments = %+v, want resolved Ogg format", state.outputAttachments)
+				}
+			},
+		},
+		{
+			name: "transcode probed output format",
+			pass: validateTranscodeOutputFormatAdaptersPass(),
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				options:   recipeCompileOptions{preflightOutputAdapters: true},
+				runtime: New(withTestFormats(
+					testFormatProber(remuxTestProber{}),
+					testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+				)),
+				transcodeOutputAttachments: []namedOutputSpec{{
+					name:   "web",
+					output: FileOutput("web.ogg", io.Discard),
+				}},
+			},
+			validate: func(t *testing.T, state recipeCompileState) {
+				t.Helper()
+				if len(state.transcodeOutputAttachments) != 1 ||
+					state.transcodeOutputAttachments[0].output.format != "" ||
+					state.transcodeOutputAttachments[0].output.resolvedFormat != av.FormatOgg ||
+					state.transcodeOutputAttachments[0].output.output.Name != "web.ogg" {
+					t.Fatalf("transcode output attachments = %+v, want resolved Ogg format", state.transcodeOutputAttachments)
+				}
+			},
+		},
+		{
+			name: "explicit output format stays explicit",
+			pass: validateJobOutputFormatAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightOutputAdapters: true},
+				runtime: New(withTestFormats(
+					testFormatMuxer(av.FormatIVF, &remuxTestMuxerFactory{}),
+				)),
+				outputAttachments: []OutputSpec{
+					FileOutput("recording.media", io.Discard).Format(av.FormatIVF),
+				},
+			},
+			validate: func(t *testing.T, state recipeCompileState) {
+				t.Helper()
+				if len(state.outputAttachments) != 1 || state.outputAttachments[0].format != av.FormatIVF {
+					t.Fatalf("output attachments = %+v, want explicit IVF format preserved", state.outputAttachments)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.pass.Apply(&tt.state); err != nil {
+				t.Fatalf("err = %v, want resolved output formats", err)
+			}
+			tt.validate(t, tt.state)
+		})
+	}
+}
+
+func TestResolvedJobOutputFormatsLowerIntoBuilder(t *testing.T) {
+	runtime := New(
+		WithDefaults(),
+		withTestFormats(
+			testFormatProber(remuxTestProber{}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+	)
+	job := Record(
+		RTP(&runtimeRTPReceiver{
+			streams: []Stream{{
+				ID:   "audio",
+				Type: av.MediaAudio,
+				Codec: av.CodecParameters{
+					ID:   av.CodecOpus,
+					Type: av.MediaAudio,
+				},
+			}},
+		}).Name("audio").Codec(Opus()),
+		FileOutput("recording.ogg", io.Discard),
+	).UseRuntime(runtime)
+
+	resolved, err := compileJobRecipeForBuild(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuild() error = %v", err)
+	}
+	builder := resolved.migration
+	if builder == nil {
+		t.Fatal("migration builder is nil")
+	}
+	if got := builder.outputOpenFormat(0); got != av.FormatOgg {
+		t.Fatalf("builder open output format = %q, want resolved Ogg format", got)
+	}
+	if got := builder.outputFormat(0); got != "" {
+		t.Fatalf("builder graph detail output format = %q, want inferred format hidden from graph detail", got)
+	}
+}
+
+func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
+	state := recipeCompileState{
+		operation: transcodeRecipeOperation,
+		options:   recipeCompileOptions{preflightOutputAdapters: true},
+		runtime: New(withTestFormats(
+			testFormatProber(remuxTestProber{}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		)),
+		intent: Intent{
+			Inputs: []InputIntent{{Name: "input.ivf"}},
+			Streams: []StreamIntent{{
+				Name:    "audio",
+				Select:  StreamSelect{Type: av.MediaAudio},
+				Encode:  Opus(Bitrate(96_000)),
+				RouteTo: []string{"archive"},
+			}},
+			Outputs: []OutputIntent{{Name: "archive"}},
+		},
+		transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
+		transcodeOutputAttachments: []namedOutputSpec{{
+			name:   "archive",
+			output: FileOutput("archive.ogg", io.Discard),
+		}},
+	}
+
+	if err := validateTranscodeOutputFormatAdaptersPass().Apply(&state); err != nil {
+		t.Fatalf("validateTranscodeOutputFormatAdaptersPass() error = %v", err)
+	}
+	if err := planTranscodeIntentPass().Apply(&state); err != nil {
+		t.Fatalf("planTranscodeIntentPass() error = %v", err)
+	}
+	if len(state.plan.Outputs) != 1 ||
+		state.plan.Outputs[0].Format != "" ||
+		state.plan.Outputs[0].OpenFormat() != av.FormatOgg {
+		t.Fatalf("plan outputs = %+v, want resolved Ogg open format without graph detail format", state.plan.Outputs)
+	}
+}
+
 func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 	tests := []struct {
 		name  string

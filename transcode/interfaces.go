@@ -27,9 +27,25 @@ type Rendition struct {
 }
 
 type Output struct {
-	Name       string
-	Target     format.Output
-	Format     av.FormatID
-	Renditions []string
-	Metadata   av.Metadata
+	Name           string
+	Target         format.Output
+	Format         av.FormatID
+	Renditions     []string
+	Metadata       av.Metadata
+	resolvedFormat av.FormatID
+}
+
+// ResolveOutputFormat returns output with an internal mux-open format resolved
+// by a recipe compiler while preserving Format for explicit user intent.
+func ResolveOutputFormat(output Output, format av.FormatID) Output {
+	output.resolvedFormat = format
+	return output
+}
+
+// OpenFormat returns the concrete mux format to use when opening the output.
+func (o Output) OpenFormat() av.FormatID {
+	if o.resolvedFormat != "" {
+		return o.resolvedFormat
+	}
+	return o.Format
 }

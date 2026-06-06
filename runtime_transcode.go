@@ -258,7 +258,7 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 		for _, branchIndex := range outputs[i].matches {
 			streams = append(streams, encodedStreams[branchIndex])
 		}
-		muxStage, err := b.openMuxStageWithFormat(ctx, outputs[i].target, i, streams, outputs[i].output.Format)
+		muxStage, err := b.openMuxStageWithFormat(ctx, outputs[i].target, i, streams, transcodeOutputOpenFormat(outputs[i].output), outputs[i].output.Format)
 		if err != nil {
 			return err
 		}
@@ -505,6 +505,10 @@ func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transc
 		}
 	}
 	return outputs, nil
+}
+
+func transcodeOutputOpenFormat(output transcode.Output) av.FormatID {
+	return output.OpenFormat()
 }
 
 func transcodeRenditionName(rendition transcode.Rendition, index int, total int) string {

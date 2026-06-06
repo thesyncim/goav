@@ -679,6 +679,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     ordinary and transcode file/protocol recipes now report obvious ambiguous
     or missing `Audio()`/`Video()` branch selections before demuxers are opened
     whenever the registered prober already exposes streams. Done.
+201. Carry resolved output formats through build lowering: ordinary and
+    transcode recipe output preflight now stores inferred mux formats as
+    runtime open hints while keeping graph details reserved for explicit
+    `.Format(...)` requests, preserving `Describe`/`Build` equivalence. Done.
 
 ## First Vertical Slice
 
@@ -930,6 +934,9 @@ intent before live receivers are opened when the described inputs already prove
 an obvious ambiguous or missing selection. File/protocol stream selection now
 does the same when input probes already expose stream metadata, while adapters
 that only discover streams on open still defer to graph build.
+Output format preflight now carries inferred mux formats into ordinary builder
+lowering and transcode plans as open hints, without changing graph details
+unless the recipe explicitly requested `.Format(...)`.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

@@ -431,7 +431,12 @@ func validateJobOutputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		return validateOutputFormatAdapters(context.Background(), state.runtime, state.outputAttachments)
+		outputs, err := validateOutputFormatAdapters(context.Background(), state.runtime, state.outputAttachments)
+		if err != nil {
+			return err
+		}
+		state.outputAttachments = outputs
+		return nil
 	}}
 }
 
@@ -587,7 +592,14 @@ func validateTranscodeOutputFormatAdaptersPass() recipeCompilePass {
 			))
 			outputs = append(outputs, output)
 		}
-		return validateOutputFormatAdapters(context.Background(), state.runtime, outputs)
+		resolved, err := validateOutputFormatAdapters(context.Background(), state.runtime, outputs)
+		if err != nil {
+			return err
+		}
+		for i := range state.transcodeOutputAttachments {
+			state.transcodeOutputAttachments[i].output = resolved[i]
+		}
+		return nil
 	}}
 }
 

@@ -175,6 +175,8 @@ container can be inferred from the input or output name, MIME type, URI, or
 explicit output format. When an input prober already reports stream metadata,
 build-time checks also validate obvious `Audio()`/`Video()` selection errors;
 otherwise full stream discovery still belongs to graph build.
+Inferred output formats are used internally when opening muxers; graph details
+only show a format when the recipe explicitly used `.Format(...)`.
 
 Recipe encode conveniences currently target Opus, VP8, and VP9. H264 and AV1
 codec specs are useful for receive, record, and decode paths while recipe encode

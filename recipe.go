@@ -644,15 +644,20 @@ func (s InputSpec) selector(media av.MediaType) av.StreamSelector {
 }
 
 type OutputSpec struct {
-	output format.Output
-	sink   pipeline.Sink
-	format av.FormatID
-	name   string
-	err    error
+	output         format.Output
+	sink           pipeline.Sink
+	format         av.FormatID
+	resolvedFormat av.FormatID
+	name           string
+	err            error
 }
 
 type formattedOutputBuilder interface {
 	outputWithFormat(format.Output, av.FormatID) builderAPI
+}
+
+type resolvedFormattedOutputBuilder interface {
+	resolvedOutputWithFormat(format.Output, av.FormatID) builderAPI
 }
 
 func FileOutput(name string, writer io.Writer) OutputSpec {
@@ -703,28 +708,45 @@ func (s OutputSpec) Format(format av.FormatID) OutputSpec {
 	return s
 }
 
+func (s OutputSpec) withResolvedFormat(format av.FormatID) OutputSpec {
+	s.resolvedFormat = format
+	return s
+}
+
 func (s OutputSpec) apply(builder builderAPI) (builderAPI, error) {
 	if s.sink != nil {
 		return builder.Sink(s.sink), nil
 	}
-	if s.format == "" {
+	switch {
+	case s.format != "":
+		formatted, ok := builder.(formattedOutputBuilder)
+		if !ok {
+			return nil, outputFormatUnsupportedError("build job", s)
+		}
+		return formatted.outputWithFormat(s.output, s.format), nil
+	case s.resolvedFormat != "":
+		formatted, ok := builder.(resolvedFormattedOutputBuilder)
+		if !ok {
+			return nil, outputFormatUnsupportedError("build job", s)
+		}
+		return formatted.resolvedOutputWithFormat(s.output, s.resolvedFormat), nil
+	default:
 		return builder.Output(s.output), nil
 	}
-	formatted, ok := builder.(formattedOutputBuilder)
-	if !ok {
-		return nil, &BuildError{
-			Code:      "output_format_unsupported",
-			Operation: "build job",
-			Node:      s.label("output"),
-			Reason:    "runtime builder cannot receive an explicit output format",
-			Suggestions: []string{
-				"use goav.Default() or goav.New(...) for recipe output formats",
-				"use a named output whose extension can be probed by the runtime",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
+}
+
+func outputFormatUnsupportedError(operation string, output OutputSpec) error {
+	return &BuildError{
+		Code:      "output_format_unsupported",
+		Operation: operation,
+		Node:      output.label("output"),
+		Reason:    "runtime builder cannot receive a concrete output format",
+		Suggestions: []string{
+			"use goav.Default() or goav.New(...) for recipe output formats",
+			"use a named output whose extension can be probed by the runtime",
+		},
+		Cause: ErrUnsupportedBuild,
 	}
-	return formatted.outputWithFormat(s.output, s.format), nil
 }
 
 func (s OutputSpec) validate(operation string, fallback string) error {
@@ -1486,28 +1508,30 @@ func validateInputFormatAdapters(ctx context.Context, rt Runtime, inputs []Input
 	return probes, nil
 }
 
-func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []OutputSpec) error {
+func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []OutputSpec) ([]OutputSpec, error) {
+	resolved := append([]OutputSpec(nil), outputs...)
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
-		return nil
+		return resolved, nil
 	}
-	for i := range outputs {
-		if outputs[i].sink != nil {
+	for i := range resolved {
+		if resolved[i].sink != nil {
 			continue
 		}
-		formatID := outputs[i].format
+		formatID := resolved[i].format
 		if formatID == "" {
-			result, err := standard.formats.Probe(ctx, outputProbeRequest(outputs[i].output))
+			result, err := standard.formats.Probe(ctx, outputProbeRequest(resolved[i].output))
 			if err != nil {
-				return outputFormatProbeError(outputs[i].output, i, err)
+				return nil, outputFormatProbeError(resolved[i].output, i, err)
 			}
 			formatID = result.Format
+			resolved[i] = resolved[i].withResolvedFormat(formatID)
 		}
 		if _, err := standard.formats.MuxerFactory(formatID); err != nil {
-			return outputMuxerMissingError(outputs[i].output, i, formatID, err)
+			return nil, outputMuxerMissingError(resolved[i].output, i, formatID, err)
 		}
 	}
-	return nil
+	return resolved, nil
 }
 
 func validateRecipeDecodeAdapters(operation string, rt Runtime, intent Intent) error {
@@ -2385,12 +2409,16 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 	for i := range outputOrder {
 		name := outputOrder[i]
 		output := outputs[name]
-		planOutputs = append(planOutputs, transcodepkg.Output{
+		planOutput := transcodepkg.Output{
 			Name:       name,
 			Target:     output.output,
 			Format:     output.format,
 			Renditions: append([]string(nil), outputRenditions[name]...),
-		})
+		}
+		if output.resolvedFormat != "" {
+			planOutput = transcodepkg.ResolveOutputFormat(planOutput, output.resolvedFormat)
+		}
+		planOutputs = append(planOutputs, planOutput)
 	}
 	return transcodepkg.Plan{
 		Name:       "transcode",
