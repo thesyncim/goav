@@ -34,6 +34,7 @@ const (
 	FormatIVF      FormatID = "ivf"
 	FormatAnnexB   FormatID = "annexb"
 	FormatMatroska FormatID = "matroska"
+	FormatWebM     FormatID = "webm"
 	FormatMP4      FormatID = "mp4"
 )
 
