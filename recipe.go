@@ -121,7 +121,7 @@ func (e *BuildError) Unwrap() error {
 	return e.Cause
 }
 
-type JobOption func(*jobConfig)
+type jobOption func(*jobConfig)
 
 type jobConfig struct {
 	runtime Runtime
@@ -131,7 +131,7 @@ type builderProvider interface {
 	New() builderAPI
 }
 
-func UseRuntime(runtime Runtime) JobOption {
+func UseRuntime(runtime Runtime) jobOption {
 	return func(config *jobConfig) {
 		config.runtime = runtime
 	}
@@ -146,7 +146,7 @@ type recordConfig struct {
 	outputs []OutputSpec
 }
 
-func (option JobOption) applyRecord(config *recordConfig) {
+func (option jobOption) applyRecord(config *recordConfig) {
 	if option != nil {
 		option(&config.job)
 	}
@@ -860,13 +860,13 @@ func Record(input InputSpec, output OutputSpec, options ...recordOption) *Job {
 	}).To(config.outputs...)
 }
 
-func From(input InputSpec, options ...JobOption) *Job {
+func From(input InputSpec, options ...jobOption) *Job {
 	job := newJob("from", options...)
 	job.inputs = append(job.inputs, input)
 	return job
 }
 
-func Decode(input InputSpec, output OutputSpec, options ...JobOption) *Job {
+func Decode(input InputSpec, output OutputSpec, options ...jobOption) *Job {
 	job := newJob("decode", options...)
 	job.inputs = append(job.inputs, input)
 	job.stream = &jobStreamBuild{
@@ -891,7 +891,7 @@ func Decode(input InputSpec, output OutputSpec, options ...JobOption) *Job {
 	return job
 }
 
-func newJob(name string, options ...JobOption) *Job {
+func newJob(name string, options ...jobOption) *Job {
 	config := jobConfig{runtime: Default()}
 	for i := range options {
 		if options[i] != nil {
@@ -1825,7 +1825,7 @@ type namedOutputSpec struct {
 
 const transcodeRecipeOperation = "build transcode"
 
-func Transcode(input InputSpec, options ...JobOption) *TranscodeJob {
+func Transcode(input InputSpec, options ...jobOption) *TranscodeJob {
 	config := jobConfig{runtime: Default()}
 	for i := range options {
 		if options[i] != nil {

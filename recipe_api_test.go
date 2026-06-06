@@ -118,6 +118,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Sink":            true,
 		"Metadata":        true,
 		"CodecParameters": true,
+		"JobOption":       true,
 		"RTPOption":       true,
 		"RTPInputOption":  true,
 		"TrackOption":     true,

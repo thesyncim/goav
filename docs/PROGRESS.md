@@ -485,7 +485,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     the public record recipe keeps the same call shape without exposing an
     implementation detail.
     Done.
-151. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+151. Demote the `JobOption` marker type to package-private plumbing so
+    `UseRuntime(...)` still composes with recipes without adding another
+    public option noun.
+    Done.
+152. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
