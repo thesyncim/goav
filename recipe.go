@@ -549,6 +549,20 @@ func (s InputSpec) validateRTPCodec() error {
 		}
 	}
 	if s.codec.ID == "" {
+		if s.input.Protocol == av.ProtocolWebRTC {
+			return &BuildError{
+				Code:      "webrtc_codec_unknown",
+				Operation: "build input",
+				Node:      firstNonEmpty(s.name, s.input.Name, "webrtc"),
+				Reason:    "WebRTC track codec is unknown or unsupported by built-in receive recipes",
+				Suggestions: []string{
+					"verify the Pion TrackRemote codec is Opus, VP8, VP9, H264, or AV1",
+					"use goav.RTP(reader).Codec(...) when adapting an RTP reader outside WebRTCTrack",
+					"add an advanced RTP receive adapter for custom payloads before using recipes",
+				},
+				Cause: ErrUnsupportedBuild,
+			}
+		}
 		return &BuildError{
 			Code:      "rtp_codec_missing",
 			Operation: "build input",

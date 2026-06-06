@@ -54,6 +54,36 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 	}
 }
 
+func TestWebRTCTrackRecipeRejectsUnknownCodecMetadata(t *testing.T) {
+	_, err := Record(
+		webRTCRemote(webrtcav.RemoteTrack{
+			Track: &webrtc.TrackRemote{},
+			Codec: webrtc.RTPCodecParameters{
+				RTPCodecCapability: webrtc.RTPCodecCapability{
+					MimeType:  "audio/telephone-event",
+					ClockRate: 8000,
+				},
+				PayloadType: 101,
+			},
+			Stream: av.Stream{
+				ID:   "dtmf",
+				Type: av.MediaAudio,
+			},
+		}),
+		FileOutput("recording.ogg", io.Discard),
+	).Build(context.Background())
+
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "webrtc_codec_unknown" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want webrtc_codec_unknown wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "Pion TrackRemote codec") ||
+		!strings.Contains(err.Error(), "goav.RTP(reader).Codec") ||
+		strings.Contains(err.Error(), "missing") {
+		t.Fatalf("err = %v, want WebRTC codec guidance", err)
+	}
+}
+
 func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
 	job := From(webRTCRemote(webrtcav.RemoteTrack{
 		Track: &webrtc.TrackRemote{},

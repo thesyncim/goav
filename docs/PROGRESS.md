@@ -569,6 +569,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 173. Require explicit codec intent for raw `goav.RTP(reader)` recipes, while
     keeping `WebRTCTrack(track)` as the Pion metadata-driven path, so realtime
     receive does not silently build opaque RTP graphs. Done.
+174. Give `WebRTCTrack(track)` its own unknown-codec diagnostic when Pion track
+    metadata does not map to Opus, VP8, VP9, H264, or AV1, instead of reusing
+    raw-RTP missing-codec guidance. Done.
 
 ## First Vertical Slice
 
