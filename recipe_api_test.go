@@ -1256,6 +1256,42 @@ func TestReadmeTranscodeLadderRecipeIsSmall(t *testing.T) {
 	}
 }
 
+func TestTranscodeRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
+	job := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("v360").Resize(640, 360).VP9(600_000).To("web").
+		Audio("a96").Resample(48_000, goav.Stereo).Opus(96_000).To("web").
+		Output("web", goav.FileOutput("out.webm", io.Discard))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	for _, want := range []string{
+		"decode-video -> resize-v360",
+		"resize-v360 -> encode-v360",
+		"decode-audio -> resample-a96",
+		"resample-a96 -> encode-a96",
+		"encode-v360 -> out.webm",
+		"encode-a96 -> out.webm",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "decode-video -> resample-a96") ||
+		strings.Contains(text, "decode-audio -> resize-v360") {
+		t.Fatalf("audio/video decode paths crossed:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Streams) != 2 ||
+		len(intent.Streams[0].RouteTo) != 1 || intent.Streams[0].RouteTo[0] != "web" ||
+		len(intent.Streams[1].RouteTo) != 1 || intent.Streams[1].RouteTo[0] != "web" ||
+		len(intent.Outputs) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
 func TestTranscodeRecipeSingleBranchUsesOutputLabel(t *testing.T) {
 	job := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").Resize(640, 360).VP9(600_000).

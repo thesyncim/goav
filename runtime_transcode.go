@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -32,6 +33,17 @@ type transcodeOutputBranch struct {
 	output  transcode.Output
 	target  format.Output
 	matches []int
+}
+
+type transcodeSelectorGroup struct {
+	selector av.StreamSelector
+	branches []int
+}
+
+type transcodeStreamGroup struct {
+	selector av.StreamSelector
+	stream   av.Stream
+	branches []int
 }
 
 func (transcodeGraphCompiler) match(b *builder) bool {
@@ -69,16 +81,43 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 		return pipeline.Spec{}, err
 	}
 
-	previous, err := b.planDecodeFilterPath(nodes, &spec, []pipeline.NodeRef{sourceRef}, branches[0].rendition.Selector)
-	if err != nil {
-		return pipeline.Spec{}, err
+	groups := transcodeSelectorGroups(branches)
+	branchInputs := make([]pipeline.NodeRef, len(branches))
+	groupNodeOrder := make([]pipeline.NodeRef, 0, len(groups))
+	sourceEdges := make([]pipeline.EdgeSpec, 0, len(groups))
+	groupEdges := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(groups))
+	for i := range groups {
+		selectName := selectNodeName(groups[i].selector)
+		selectRef := pipeline.NodeRef(selectName)
+		if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef, selectNodeDetail(groups[i].selector)); err != nil {
+			return pipeline.Spec{}, err
+		}
+		decodeName := decodeNodeName(groups[i].selector)
+		decodeRef := pipeline.NodeRef(decodeName)
+		if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef, decodeNodeDetail(groups[i].selector)); err != nil {
+			return pipeline.Spec{}, err
+		}
+		sourceEdges = append(sourceEdges, pipeline.EdgeSpec{
+			From:   sourceRef,
+			To:     selectRef,
+			Policy: pipeline.RouteAll,
+		})
+		groupEdges[selectRef] = append(groupEdges[selectRef], pipeline.EdgeSpec{
+			From:   selectRef,
+			To:     decodeRef,
+			Policy: pipeline.RouteAll,
+		})
+		groupNodeOrder = append(groupNodeOrder, selectRef, decodeRef)
+		for _, branchIndex := range groups[i].branches {
+			branchInputs[branchIndex] = decodeRef
+		}
 	}
 
 	encodeRefs := make([]pipeline.NodeRef, len(branches))
 	branchNodeOrder := make([]pipeline.NodeRef, 0, len(branches)+transcodeTransformCount(branches))
 	outgoing := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(branches)*2+transcodeTransformCount(branches))
 	for i := range branches {
-		branchRef := previous
+		branchRef := branchInputs[i]
 		for j := range branches[i].transforms {
 			transformRef := pipeline.NodeRef(branches[i].transforms[j].name)
 			if err := addPlannedNode(nodes, &spec, branches[i].transforms[j].name, pipeline.NodeStage, transformRef, transcodeTransformDetail(branches[i].transforms[j])); err != nil {
@@ -122,7 +161,11 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 			})
 		}
 	}
-	spec.Edges = append(spec.Edges, outgoing[previous]...)
+	spec.Edges = append(spec.Edges, sourceEdges...)
+	for i := range groupNodeOrder {
+		spec.Edges = append(spec.Edges, groupEdges[groupNodeOrder[i]]...)
+		spec.Edges = append(spec.Edges, outgoing[groupNodeOrder[i]]...)
+	}
 	for i := range branchNodeOrder {
 		spec.Edges = append(spec.Edges, outgoing[branchNodeOrder[i]]...)
 	}
@@ -158,32 +201,29 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 		return err
 	}
 
-	selector := branches[0].rendition.Selector
-	stream, err := selectDecodeStream(demux.streams, selector)
+	realtime := b.runtime.realtime || plan.Input.Realtime
+	groups, err := resolveTranscodeStreamGroups(demux.streams, branches)
 	if err != nil {
 		return err
 	}
-	for i := 1; i < len(branches); i++ {
-		branchStream, err := selectDecodeStream(demux.streams, branches[i].rendition.Selector)
+	branchInputs := make([]pipeline.NodeRef, len(branches))
+	branchStreams := make([]av.Stream, len(branches))
+	for i := range groups {
+		previousRef, decodedStream, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, groups[i].selector, groups[i].stream, realtime, false, codec.DecodeBounds{})
 		if err != nil {
 			return err
 		}
-		if branchStream.ID != stream.ID || branchStream.Epoch != stream.Epoch {
-			return ErrUnsupportedBuild
+		for _, branchIndex := range groups[i].branches {
+			branchInputs[branchIndex] = previousRef
+			branchStreams[branchIndex] = decodedStream
 		}
-	}
-
-	realtime := b.runtime.realtime || plan.Input.Realtime
-	previousRef, _, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, realtime, false, codec.DecodeBounds{})
-	if err != nil {
-		return err
 	}
 
 	encodeRefs := make([]pipeline.NodeRef, len(branches))
 	encodedStreams := make([]av.Stream, len(branches))
 	for i := range branches {
-		branchRef := previousRef
-		branchStream := stream
+		branchRef := branchInputs[i]
+		branchStream := branchStreams[i]
 		for j := range branches[i].transforms {
 			stage, outputStream, err := b.newTranscodeFilterStage(ctx, branches[i].transforms[j], branchStream, realtime)
 			if err != nil {
@@ -281,6 +321,65 @@ func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOu
 		return nil, nil, err
 	}
 	return branches, outputs, nil
+}
+
+func transcodeSelectorGroups(branches []transcodeBranch) []transcodeSelectorGroup {
+	groups := make([]transcodeSelectorGroup, 0, len(branches))
+	index := make(map[string]int, len(branches))
+	for i := range branches {
+		key := transcodeSelectorKey(branches[i].rendition.Selector)
+		groupIndex, ok := index[key]
+		if !ok {
+			groupIndex = len(groups)
+			index[key] = groupIndex
+			groups = append(groups, transcodeSelectorGroup{selector: branches[i].rendition.Selector})
+		}
+		groups[groupIndex].branches = append(groups[groupIndex].branches, i)
+	}
+	return groups
+}
+
+func resolveTranscodeStreamGroups(streams []av.Stream, branches []transcodeBranch) ([]transcodeStreamGroup, error) {
+	groups := make([]transcodeStreamGroup, 0, len(branches))
+	index := make(map[string]int, len(branches))
+	for i := range branches {
+		stream, err := selectDecodeStream(streams, branches[i].rendition.Selector)
+		if err != nil {
+			return nil, err
+		}
+		key := transcodeStreamKey(stream)
+		groupIndex, ok := index[key]
+		if !ok {
+			groupIndex = len(groups)
+			index[key] = groupIndex
+			groups = append(groups, transcodeStreamGroup{
+				selector: branches[i].rendition.Selector,
+				stream:   stream,
+			})
+		}
+		groups[groupIndex].branches = append(groups[groupIndex].branches, i)
+	}
+	return groups, nil
+}
+
+func transcodeSelectorKey(selector av.StreamSelector) string {
+	return strings.Join([]string{
+		string(selector.ID),
+		strconv.FormatInt(int64(selector.Index), 10),
+		strconv.FormatBool(selector.UseIndex),
+		string(selector.Type),
+		string(selector.Codec),
+		selector.Name,
+	}, "\x00")
+}
+
+func transcodeStreamKey(stream av.Stream) string {
+	return strings.Join([]string{
+		string(stream.ID),
+		strconv.FormatInt(int64(stream.Index), 10),
+		string(stream.Type),
+		strconv.FormatUint(uint64(stream.Epoch), 10),
+	}, "\x00")
 }
 
 func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {

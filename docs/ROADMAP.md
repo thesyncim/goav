@@ -17,7 +17,8 @@ make the implementation and adapter coverage match the promise.
    demux/depacketize, decode, transform, encode, mux, route, buffer-policy, and
    graph-emission passes instead of growing one matcher per workflow.
 4. Expand transcode from same-stream ladders into a media output composer where
-   one muxed output can receive coordinated audio and video branches.
+   one muxed output can receive coordinated audio and video branches. First
+   compiler slice active.
 5. Add an `Explain` report above `Describe` so users can inspect selected
    streams, required adapters, missing adapters, warnings, and the graph without
    reading raw node/edge details first.

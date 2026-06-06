@@ -533,6 +533,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     runtime selection onto `.UseRuntime(...)` for recipe jobs and transcode jobs,
     removing the old package-level runtime option path.
     Done.
+164. Let transcode compile audio and video branches as separate decoded stream
+    groups that can feed one shared muxed output, so one output is a media
+    composer instead of an implicit same-stream ladder.
+    Done.
 
 ## First Vertical Slice
 

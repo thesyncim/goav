@@ -125,6 +125,111 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T) {
+	streams := []av.Stream{audioOpusTestStream(), videoVP8TranscodeTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{
+			{
+				StreamID: "audio",
+				Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+			},
+			{
+				StreamID: "video",
+				Payload:  av.Buffer{Bytes: []byte{4, 5, 6}},
+			},
+		},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	audioDecoder := &decodeTestDecoder{}
+	videoDecoder := &decodeTestDecoder{}
+	audioEncoderFactory := &encodeTestEncoderFactory{}
+	videoEncoderFactory := &encodeTestEncoderFactory{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: audioDecoder}),
+		testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: videoDecoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, audioEncoderFactory),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, videoEncoderFactory),
+	)
+	plan := transcode.Plan{
+		Input: format.Input{Name: "input.webm"},
+		Renditions: []transcode.Rendition{
+			{
+				Name:     "a96",
+				Selector: testSelectAudio(),
+				Encode:   pcmEncodeConfig(),
+				Labels:   []string{"web"},
+			},
+			{
+				Name:     "v360",
+				Selector: testSelectVideo(),
+				Encode:   vp8EncodeConfig(),
+				Labels:   []string{"web"},
+			},
+		},
+		Outputs: []transcode.Output{{
+			Name:       "web.ogg",
+			Format:     av.FormatOgg,
+			Renditions: []string{"web"},
+		}},
+	}
+
+	builder := newTestBuilder(t, formats, codecs).
+		Transcode(plan)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(planned)
+	if len(planned.Nodes) != 8 || len(planned.Edges) != 8 ||
+		!strings.Contains(text, "decode-audio -> encode-a96") ||
+		!strings.Contains(text, "decode-video -> encode-v360") ||
+		!strings.Contains(text, "encode-a96 -> web.ogg") ||
+		!strings.Contains(text, "encode-v360 -> web.ogg") ||
+		strings.Contains(text, "decode-audio -> encode-v360") ||
+		strings.Contains(text, "decode-video -> encode-a96") {
+		t.Fatalf("planned:\n%s", text)
+	}
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if audioDecoder.decodes != 1 || videoDecoder.decodes != 1 {
+		t.Fatalf("audio decodes=%d video decodes=%d", audioDecoder.decodes, videoDecoder.decodes)
+	}
+	if len(audioEncoderFactory.configs) != 1 || audioEncoderFactory.configs[0].Stream.ID != "a96" ||
+		len(videoEncoderFactory.configs) != 1 || videoEncoderFactory.configs[0].Stream.ID != "v360" {
+		t.Fatalf("audio configs=%+v video configs=%+v", audioEncoderFactory.configs, videoEncoderFactory.configs)
+	}
+	if len(muxers.muxers) != 1 {
+		t.Fatalf("muxers=%d, want 1", len(muxers.muxers))
+	}
+	muxer := muxers.muxers[0]
+	if !muxer.opened || muxer.writes != 2 ||
+		!streamIDsEqual(muxer.openedStreams, []av.StreamID{"a96", "v360"}) ||
+		!streamIDsEqual(muxer.writtenStreams, []av.StreamID{"a96", "v360"}) {
+		t.Fatalf("opened=%v writes=%d opened streams=%+v written=%+v", muxer.opened, muxer.writes, muxer.openedStreams, muxer.writtenStreams)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !audioDecoder.closed || !videoDecoder.closed || !muxer.closed {
+		t.Fatalf("closed demux=%v audio=%v video=%v mux=%v", demuxer.closed, audioDecoder.closed, videoDecoder.closed, muxer.closed)
+	}
+}
+
 func TestRuntimeBuilderBufferedTranscodeRequiresPacketCopyBound(t *testing.T) {
 	builder, _, _, _, _ := newBufferedTranscodeCopyFixture(pipeline.BufferPolicy{
 		Capacity: 8,
@@ -368,6 +473,35 @@ func streamIDsUnorderedEqual(got []av.StreamID, want []av.StreamID) bool {
 		seen[want[i]]--
 	}
 	return true
+}
+
+func videoVP8TranscodeTestStream() av.Stream {
+	return av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: 90000},
+		Codec: av.CodecParameters{
+			ID:          av.CodecVP8,
+			Type:        av.MediaVideo,
+			ClockRate:   90000,
+			Width:       640,
+			Height:      360,
+			PixelFormat: av.PixelFormatYUV420P,
+		},
+	}
+}
+
+func vp8EncodeConfig() codec.EncodeConfig {
+	return codec.EncodeConfig{
+		Parameters: av.CodecParameters{
+			ID:          av.CodecVP8,
+			Type:        av.MediaVideo,
+			ClockRate:   90000,
+			Width:       640,
+			Height:      360,
+			PixelFormat: av.PixelFormatYUV420P,
+		},
+	}
 }
 
 func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
