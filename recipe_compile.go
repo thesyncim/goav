@@ -199,6 +199,8 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 		task, err = r.buildMediaPlanPacketCopyTask(ctx)
 	case mediaBuildKindFrameSink:
 		task, err = r.buildMediaPlanFrameSinkTask(ctx)
+	case mediaBuildKindEncode:
+		task, err = r.buildMediaPlanEncodeTask(ctx)
 	default:
 		if r.compiler != nil && r.migration != nil {
 			task, err = r.compiler.build(ctx, r.migration)

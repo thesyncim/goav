@@ -1972,3 +1972,97 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPFrameSink(t *testing.T) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
+
+func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Do(&runtimeTestStage{name: "meter"}).
+		Opus(96_000).
+		To(FileOutput("archive.ogg", io.Discard))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("file encode recipe selected a migration graph compiler")
+	}
+	if resolved.mediaBuildKind != mediaBuildKindEncode {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindEncode)
+	}
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	built := task.Describe()
+	if !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(built, "meter") || !specHasNode(built, "encode-audio") || !specHasNode(built, "archive.ogg") {
+		t.Fatalf("built spec = %+v, want meter, encode, and mux nodes", built)
+	}
+}
+
+func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
+	ctx := context.Background()
+	stream := audioOpusTestStream()
+	receiver := &runtimeRTPReceiver{streams: []Stream{stream}}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(RTP(receiver).Name("audio").Codec(Opus())).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Opus(96_000).
+		To(FileOutput("archive.ogg", io.Discard))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("RTP encode recipe selected a migration graph compiler")
+	}
+	if resolved.mediaBuildKind != mediaBuildKindEncode {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindEncode)
+	}
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}

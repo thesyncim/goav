@@ -807,7 +807,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     packet-preserving `From(input).Copy().To(...)` file/remux and RTP/WebRTC
     record/fanout recipes now emit exact `pipeline.Spec` values from the
     recipe compiler's media-plan pass, with migration graph description kept as
-    the fallback for remaining decoded/encoded/branch paths while they move to
+    the fallback for remaining branch/composer paths while they move to
     `MediaPlan -> pipeline.Graph`.
     Done.
 226. Harden runtime branch attachment at operation boundaries:
@@ -825,6 +825,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     and RTP/WebRTC inputs now emits and builds through the media-plan frame-sink
     path, preserving ordered custom stages before the sink while skipping
     migration compiler selection. Done.
+229. Move stream encode-to-output recipes off the migration compiler list:
+    `From(input).Audio()/Video().Decode().Do/Resize/Resample().Opus/VP8/VP9().To(FileOutput(...))`
+    now emits and builds through the media-plan encode path for file/protocol
+    and RTP/WebRTC inputs, preserving ordered custom processing before encode
+    and mux fanout without migration compiler selection. Done.
 
 ## First Vertical Slice
 

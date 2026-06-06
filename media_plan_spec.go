@@ -11,6 +11,7 @@ const (
 
 	mediaBuildKindPacketCopy = "packet_copy"
 	mediaBuildKindFrameSink  = "frame_sink"
+	mediaBuildKindEncode     = "encode"
 )
 
 func emitMediaPlanGraphSpecPass() recipeCompilePass {
@@ -33,6 +34,9 @@ func mediaPlanGraphSpec(state *recipeCompileState) (pipeline.Spec, string, bool,
 	}
 	if spec, ok, err := mediaPlanFrameSinkSpec(state); err != nil || ok {
 		return spec, mediaBuildKindFrameSink, ok, err
+	}
+	if spec, ok, err := mediaPlanEncodeSpec(state); err != nil || ok {
+		return spec, mediaBuildKindEncode, ok, err
 	}
 	return pipeline.Spec{}, "", false, nil
 }
@@ -103,6 +107,38 @@ func builderCanBuildFrameSink(builder *builder) bool {
 		len(builder.sinks) == 1 &&
 		len(builder.outputs) == 0 &&
 		len(builder.encodes) == 0 &&
+		len(builder.transcodes) == 0 &&
+		len(builder.sources) == 0 &&
+		len(builder.stages) == 0
+}
+
+func mediaPlanEncodeSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
+	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
+		return pipeline.Spec{}, false, nil
+	}
+	builder, ok := state.builder.(*builder)
+	if !ok || !builderCanBuildEncodeOutput(builder) {
+		return pipeline.Spec{}, false, nil
+	}
+	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
+	switch {
+	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0:
+		spec, err := builder.planDecodeEncodeToOutput(spec)
+		return spec, err == nil, err
+	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0:
+		spec, err := builder.planRTPDecodeEncodeToOutput(spec)
+		return spec, err == nil, err
+	default:
+		return pipeline.Spec{}, false, nil
+	}
+}
+
+func builderCanBuildEncodeOutput(builder *builder) bool {
+	return builder != nil &&
+		len(builder.decodes) == 1 &&
+		len(builder.encodes) == 1 &&
+		len(builder.outputs) > 0 &&
+		len(builder.sinks) == 0 &&
 		len(builder.transcodes) == 0 &&
 		len(builder.sources) == 0 &&
 		len(builder.stages) == 0

@@ -40,6 +40,33 @@ func (r recipeResolved) buildMediaPlanFrameSinkTask(ctx context.Context) (Task, 
 	return &task{graph: graph}, nil
 }
 
+func (r recipeResolved) buildMediaPlanEncodeTask(ctx context.Context) (Task, error) {
+	builder, ok := r.builder.(*builder)
+	if !ok || !builderCanBuildEncodeOutput(builder) {
+		return nil, recipeGraphUnsupportedError("build job", r.intent)
+	}
+	graph, err := builder.newGraph(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.compileMediaPlanEncode(ctx, builder, graph); err != nil {
+		graph.Close()
+		return nil, err
+	}
+	return &task{graph: graph}, nil
+}
+
+func (r recipeResolved) compileMediaPlanEncode(ctx context.Context, builder *builder, graph pipeline.Graph) error {
+	switch {
+	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0:
+		return builder.compileDecodeEncodeToOutput(ctx, graph)
+	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0:
+		return builder.compileRTPDecodeEncodeToOutput(ctx, graph)
+	default:
+		return recipeGraphUnsupportedError("build job", r.intent)
+	}
+}
+
 func (r recipeResolved) compileMediaPlanFrameSink(ctx context.Context, builder *builder, graph pipeline.Graph) error {
 	switch {
 	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0:
