@@ -89,6 +89,90 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 	}
 }
 
+func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
+	tests := []struct {
+		name  string
+		state recipeCompileState
+		code  string
+		want  string
+	}{
+		{
+			name: "input missing",
+			state: recipeCompileState{
+				operation: "build job",
+				intent: Intent{
+					Outputs: []OutputIntent{{Name: "recording.ivf"}},
+				},
+			},
+			code: "input_missing",
+			want: "no input is configured",
+		},
+		{
+			name: "duplicate stream intent",
+			state: recipeCompileState{
+				operation: "build job",
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ivf"}},
+					Streams: []StreamIntent{
+						{Name: "audio", Decode: true, RouteTo: []string{"audio"}},
+						{Name: "video", Decode: true, RouteTo: []string{"video"}},
+					},
+					Outputs: []OutputIntent{{Name: "audio"}, {Name: "video"}},
+				},
+			},
+			code: "stream_duplicate",
+			want: "ordinary stream recipes select one audio or video stream",
+		},
+		{
+			name: "mixed output scope",
+			state: recipeCompileState{
+				operation:      "build job",
+				jobOutputCount: 1,
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ivf"}},
+					Streams: []StreamIntent{{
+						Name:    "audio",
+						Decode:  true,
+						RouteTo: []string{"frames"},
+					}},
+					Outputs: []OutputIntent{{Name: "archive.ivf"}, {Name: "frames"}},
+				},
+			},
+			code: "output_scope_mixed",
+			want: "stream recipes use stream-local outputs",
+		},
+		{
+			name: "stream operation missing",
+			state: recipeCompileState{
+				operation: "build job",
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ivf"}},
+					Streams: []StreamIntent{{
+						Name:    "audio",
+						RouteTo: []string{"frames"},
+					}},
+					Outputs: []OutputIntent{{Name: "frames"}},
+				},
+			},
+			code: "stream_operation_missing",
+			want: "no decode, processing stage, or encoder was requested",
+		},
+	}
+	pass := validateJobIntentShapePass()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	job := Record(
 		FileInput("input.ivf", strings.NewReader("")),

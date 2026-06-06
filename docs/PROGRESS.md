@@ -613,6 +613,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     transcode IO attachments now use attachment-shaped state names, and a
     consistency pass rejects mismatches between public `Intent` counts and the
     captured concrete attachments before lowering. Done.
+185. Split ordinary recipe validation into intent shape and concrete attachment
+    passes: input/output presence, one selected stream, stream-local output
+    scope, stream operation, selector, encode, and codec-change policy now fail
+    from public `Intent` before readers, writers, sinks, and stage attachments
+    are validated. Done.
 
 ## First Vertical Slice
 
@@ -838,12 +843,14 @@ Required proof:
 7. Update this tracker with the new evidence and next pressure point.
 
 Current pressure point: keep moving real work into the intent compiler path.
-Validation, transcode planning, builder lowering, migration graph-compiler
-selection, and planned spec emission now have a private recipe compiler state
-that carries captured recipe attachments instead of raw recipe builder pointers;
-ordinary stream recipe lowering and transcode branch planning now read
-`Intent.Streams`, and ordinary output attachments are no longer split into
-builder-shaped fields. Attachment consistency is checked before lowering.
+Ordinary recipe validation is now split into public intent shape checks and
+concrete attachment checks; transcode planning, builder lowering, migration
+graph-compiler selection, and planned spec emission also flow through a private
+recipe compiler state that carries captured recipe attachments instead of raw
+recipe builder pointers. Ordinary stream recipe lowering and transcode branch
+planning now read `Intent.Streams`, ordinary output attachments are no longer
+split into builder-shaped fields, and attachment consistency is checked before
+lowering.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

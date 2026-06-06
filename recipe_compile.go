@@ -132,8 +132,10 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 		state.streamSteps = jobStreamStepAttachments(job.stream)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
-		validateJobIntentPass(),
+		validateJobRecipePass(),
+		validateJobIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
+		validateJobAttachmentsPass(),
 		validatePacketJobOutputsPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerJobInputsPass(),
@@ -166,8 +168,8 @@ func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 	}}.Compile(state)
 }
 
-func validateJobIntentPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate job intent", fn: func(state *recipeCompileState) error {
+func validateJobRecipePass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job recipe", fn: func(state *recipeCompileState) error {
 		if !state.jobPresent {
 			return &BuildError{
 				Code:      "job_invalid",
@@ -182,18 +184,117 @@ func validateJobIntentPass() recipeCompilePass {
 		if state.recipeErr != nil {
 			return state.recipeErr
 		}
-		if len(state.inputAttachments) == 0 {
-			return &BuildError{Code: "input_missing", Operation: state.operation, Reason: "no input is configured", Cause: ErrUnsupportedBuild}
-		}
+		return nil
+	}}
+}
+
+func validateJobIntentShapePass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job intent shape", fn: func(state *recipeCompileState) error {
+		return validateJobIntentShape(state.operation, state.intent, state.jobOutputCount)
+	}}
+}
+
+func validateJobIntentShape(operation string, intent Intent, jobOutputCount int) error {
+	if len(intent.Inputs) == 0 {
+		return &BuildError{Code: "input_missing", Operation: operation, Reason: "no input is configured", Cause: ErrUnsupportedBuild}
+	}
+	stream, hasStream := jobIntentStream(intent)
+	if len(intent.Streams) > 1 {
+		return jobIntentTooManyStreamsError(operation, intent.Streams)
+	}
+	if len(intent.Outputs) == 0 {
+		return &BuildError{Code: "output_missing", Operation: operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
+	}
+	if err := validateJobIntentOutputScope(operation, intent, jobOutputCount, stream, hasStream); err != nil {
+		return err
+	}
+	if !hasStream {
+		return nil
+	}
+	return validateJobStreamIntentShape(operation, stream, nil)
+}
+
+func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCount int, stream StreamIntent, hasStream bool) error {
+	if !hasStream {
+		return nil
+	}
+	if jobOutputCount == 0 && len(intent.Outputs) == len(stream.RouteTo) {
+		return nil
+	}
+	return jobOutputScopeMixedError(operation, stream)
+}
+
+func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
+	return &BuildError{
+		Code:      "output_scope_mixed",
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    "stream recipes use stream-local outputs",
+		Suggestions: []string{
+			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
+			"use goav.Record(input, output) or goav.From(input).To(output...) for packet-preserving record/remux",
+			"use goav.Transcode(input) when one input needs separate record, preview, or ladder branches",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func jobIntentTooManyStreamsError(operation string, streams []StreamIntent) error {
+	err := &BuildError{
+		Code:      "stream_duplicate",
+		Operation: operation,
+		Reason:    "ordinary stream recipes select one audio or video stream",
+		Suggestions: []string{
+			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
+			"use goav.Transcode(input) for multiple audio or video branches",
+			"use the expert graph API for custom multi-stream routing",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+	if len(streams) > 0 {
+		err.Details = append(err.Details, "first stream: "+jobStreamIntentName(streams[0]))
+	}
+	if len(streams) > 1 {
+		err.Node = jobStreamIntentName(streams[1])
+		err.Details = append(err.Details, "second stream: "+jobStreamIntentName(streams[1]))
+	}
+	return err
+}
+
+func validateJobStreamIntentShape(operation string, stream StreamIntent, steps []jobStreamStepAttachment) error {
+	selector := streamIntentSelector(stream)
+	node := jobStreamIntentName(stream)
+	if !streamIntentHasOperation(stream, steps) {
+		return streamOperationMissingError(operation, node)
+	}
+	if err := validateRecipeStreamSelector(operation, node, selector); err != nil {
+		return err
+	}
+	if err := validateRecipeEncode(stream.Encode, operation, stream.Name); err != nil {
+		return err
+	}
+	return validateCodecChangePolicy(operation, node, stream.CodecChange)
+}
+
+func streamOperationMissingError(operation string, node string) error {
+	return &BuildError{
+		Code:      "stream_operation_missing",
+		Operation: operation,
+		Node:      node,
+		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
+		Suggestions: []string{
+			"call .To(goav.FrameSink(...)) to receive decoded frames",
+			"call .Opus(...), .VP8(...), or .VP9(...) before writing to a file output",
+			"use goav.Record(input, output) for packet-preserving record or remux",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func validateJobAttachmentsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job attachments", fn: func(state *recipeCompileState) error {
 		if err := validateJobInputs(state.inputAttachments); err != nil {
 			return err
-		}
-		stream, hasStream := jobIntentStream(state.intent)
-		if err := validateJobOutputScope(state.jobOutputCount, stream, hasStream); err != nil {
-			return err
-		}
-		if len(state.outputAttachments) == 0 {
-			return &BuildError{Code: "output_missing", Operation: state.operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
 		}
 		return validateOutputSpecs(state.operation, state.outputAttachments)
 	}}

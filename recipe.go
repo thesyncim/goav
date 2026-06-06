@@ -1074,18 +1074,7 @@ func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool
 	if !hasStream || outputCount == 0 {
 		return nil
 	}
-	return &BuildError{
-		Code:      "output_scope_mixed",
-		Operation: "build job",
-		Node:      jobStreamIntentName(stream),
-		Reason:    "stream recipes use stream-local outputs",
-		Suggestions: []string{
-			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
-			"use goav.Record(input, output) or goav.From(input).To(output...) for packet-preserving record/remux",
-			"use goav.Transcode(input) when one input needs separate record, preview, or ladder branches",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
+	return jobOutputScopeMixedError("build job", stream)
 }
 
 func (j *Job) allOutputs() []OutputSpec {
@@ -1113,27 +1102,7 @@ func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAP
 func applyJobStream(builder builderAPI, outputs []OutputSpec, stream StreamIntent, steps []jobStreamStepAttachment) (builderAPI, error) {
 	selector := streamIntentSelector(stream)
 	node := jobStreamIntentName(stream)
-	if !streamIntentHasOperation(stream, steps) {
-		return nil, &BuildError{
-			Code:      "stream_operation_missing",
-			Operation: "build stream",
-			Node:      node,
-			Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
-			Suggestions: []string{
-				"call .To(goav.FrameSink(...)) to receive decoded frames",
-				"call .Opus(...), .VP8(...), or .VP9(...) before writing to a file output",
-				"use goav.Record(input, output) for packet-preserving record or remux",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	}
-	if err := validateRecipeStreamSelector("build stream", node, selector); err != nil {
-		return nil, err
-	}
-	if err := validateRecipeEncode(stream.Encode, "build stream", stream.Name); err != nil {
-		return nil, err
-	}
-	if err := validateCodecChangePolicy("build stream", node, stream.CodecChange); err != nil {
+	if err := validateJobStreamIntentShape("build stream", stream, steps); err != nil {
 		return nil, err
 	}
 	if outputsContainFrameSink(outputs) && outputsContainMuxTarget(outputs) {
