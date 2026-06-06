@@ -76,15 +76,15 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 		return err
 	}
 
-	selector := b.decodes[0]
-	stream, err := selectDecodeStream(demux.streams, selector)
+	request := b.decodes[0]
+	stream, err := selectDecodeStream(demux.streams, request.selector)
 	if err != nil {
 		return err
 	}
-	return b.compileDecodeFramePath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, b.runtime.realtime || b.inputs[0].Realtime, codec.DecodeBounds{})
+	return b.compileDecodeFramePath(ctx, graph, []pipeline.NodeRef{sourceRef}, request, stream, b.runtime.realtime || b.inputs[0].Realtime, codec.DecodeBounds{})
 }
 
-func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
+func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
 	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
 	if err != nil {
 		return nil, err
@@ -119,8 +119,8 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 		return nil, err
 	}
 	stage, err := codec.NewDecoderStage(codec.DecoderStageConfig{
-		Name:            decodeNodeName(selector),
-		Detail:          decodeNodeDetail(selector),
+		Name:            decodeNodeName(request.selector),
+		Detail:          decodeRequestDetail(request),
 		InputStream:     stream,
 		Decoder:         decoder,
 		Result:          result,
@@ -140,8 +140,8 @@ func closeDecodeState(state any) {
 	}
 }
 
-func (b *builder) planDecodeFramePath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, selector av.StreamSelector) error {
-	previous, err := b.planDecodeFilterPath(nodes, spec, upstream, selector)
+func (b *builder) planDecodeFramePath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, request decodeRequest) error {
+	previous, err := b.planDecodeFilterPath(nodes, spec, upstream, request)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,8 @@ func (b *builder) planDecodeFramePath(nodes map[string]plannedNode, spec *pipeli
 	return nil
 }
 
-func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, selector av.StreamSelector) (pipeline.NodeRef, error) {
+func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, request decodeRequest) (pipeline.NodeRef, error) {
+	selector := request.selector
 	selectName := selectNodeName(selector)
 	selectRef := pipeline.NodeRef(selectName)
 	if err := addPlannedNode(nodes, spec, selectName, pipeline.NodeStage, selectRef, selectNodeDetail(selector)); err != nil {
@@ -168,7 +169,7 @@ func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipel
 
 	decodeName := decodeNodeName(selector)
 	decodeRef := pipeline.NodeRef(decodeName)
-	if err := addPlannedNode(nodes, spec, decodeName, pipeline.NodeStage, decodeRef, decodeNodeDetail(selector)); err != nil {
+	if err := addPlannedNode(nodes, spec, decodeName, pipeline.NodeStage, decodeRef, decodeRequestDetail(request)); err != nil {
 		return "", err
 	}
 
@@ -205,8 +206,8 @@ func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipel
 	return previous, nil
 }
 
-func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool, bounds codec.DecodeBounds) error {
-	previousRef, _, err := b.compileDecodeFilterPath(ctx, graph, upstream, selector, stream, realtime, true, bounds)
+func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, request decodeRequest, stream av.Stream, realtime bool, bounds codec.DecodeBounds) error {
+	previousRef, _, err := b.compileDecodeFilterPath(ctx, graph, upstream, request, stream, realtime, true, bounds)
 	if err != nil {
 		return err
 	}
@@ -221,7 +222,8 @@ func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Gra
 	return nil
 }
 
-func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool, dropDecodeEvents bool, bounds codec.DecodeBounds) (pipeline.NodeRef, av.Stream, error) {
+func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, request decodeRequest, stream av.Stream, realtime bool, dropDecodeEvents bool, bounds codec.DecodeBounds) (pipeline.NodeRef, av.Stream, error) {
+	selector := request.selector
 	selectStage := newStreamSelectStage(selectNodeName(selector), stream, selector, selectNodeDetail(selector))
 	selectRef, err := graph.AddStage(selectStage, b.runtime.buffer)
 	if err != nil {
@@ -229,7 +231,7 @@ func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Gr
 		return "", av.Stream{}, err
 	}
 
-	decodeStage, err := b.newDecodeStage(ctx, selector, stream, realtime, dropDecodeEvents, bounds)
+	decodeStage, err := b.newDecodeStage(ctx, request, stream, realtime, dropDecodeEvents, bounds)
 	if err != nil {
 		return "", av.Stream{}, err
 	}

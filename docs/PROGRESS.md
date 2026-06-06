@@ -537,6 +537,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     groups that can feed one shared muxed output, so one output is a media
     composer instead of an implicit same-stream ladder.
     Done.
+165. Add stream-level `OnCodecChange(goav.RealtimeCodecChangePolicy())` so live
+    receive recipes can name the supported compatible-rebind/keyframe/sync/drop
+    policy while unsupported custom policies fail during build.
+    Done.
 
 ## First Vertical Slice
 

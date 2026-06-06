@@ -26,7 +26,8 @@ make the implementation and adapter coverage match the promise.
    can be named, reused, and teed without manual graph wiring.
 7. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
-   choices should be visible to realtime users.
+   choices should be visible to realtime users. First recipe policy slice
+   active for today's supported behavior.
 8. Add runtime observability through task stats, traces, drop reasons, and
    latency counters.
 9. Make beginner signatures describe exactly what callers may pass, especially

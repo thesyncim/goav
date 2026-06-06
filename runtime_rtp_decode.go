@@ -86,11 +86,11 @@ func (b *builder) compileRTPDecodeToSink(ctx context.Context, graph pipeline.Gra
 		builds = append(builds, receiver)
 	}
 
-	selector := b.decodes[0]
-	stream, err := selectDecodeStream(streams, selector)
+	request := b.decodes[0]
+	stream, err := selectDecodeStream(streams, request.selector)
 	if err != nil {
 		return err
 	}
 
-	return b.compileDecodeFramePath(ctx, graph, sourceRefs, selector, stream, b.runtime.realtime, rtpDecodeBoundsForStream(stream, builds))
+	return b.compileDecodeFramePath(ctx, graph, sourceRefs, request, stream, b.runtime.realtime, rtpDecodeBoundsForStream(stream, builds))
 }

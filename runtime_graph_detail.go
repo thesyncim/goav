@@ -80,6 +80,14 @@ func decodeNodeDetail(selector av.StreamSelector) string {
 	return joinSpecDetail("packets -> frames", selectorDetail(selector))
 }
 
+func decodeRequestDetail(request decodeRequest) string {
+	detail := decodeNodeDetail(request.selector)
+	if !codecChangePolicySet(request.codecChange) {
+		return detail
+	}
+	return joinSpecDetail(detail, codecChangePolicyDetail(request.codecChange))
+}
+
 func encodeNodeDetail(request encodeRequest) string {
 	codecID := encodeTargetCodec(request)
 	if codecID == "" {

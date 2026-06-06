@@ -216,6 +216,19 @@ codec changes with payload-map refresh, old-ID or replacement-ID event
 targeting, and resumed decode on the next sync packet; dynamic graph rebind for
 new-codec switches is still a future policy.
 
+Stream recipes can name the supported live policy explicitly:
+
+```go
+err := goav.From(goav.WebRTCTrack(track)).
+    Video().
+    OnCodecChange(goav.RealtimeCodecChangePolicy()).
+    To(goav.FrameSink(frames)).
+    Run(ctx)
+```
+
+Custom codec-change policies fail during recipe build until dynamic decoder
+rebind and opt-out sync behavior are implemented.
+
 Session-level code still owns the policy decision for when renegotiation should
 call `UpdateCodec`. Accepted replacement tracks for the same stream can flow
 through `TrackSet`.

@@ -38,12 +38,13 @@ type InputIntent struct {
 }
 
 type StreamIntent struct {
-	Name       string
-	Select     StreamSelect
-	Decode     bool
-	Transforms []TransformSpec
-	Encode     CodecSpec
-	RouteTo    []string
+	Name        string
+	Select      StreamSelect
+	Decode      bool
+	Transforms  []TransformSpec
+	Encode      CodecSpec
+	CodecChange CodecChangePolicy
+	RouteTo     []string
 }
 
 type OutputIntent struct {
@@ -56,6 +57,22 @@ type OutputIntent struct {
 
 type PolicyIntent struct {
 	Realtime bool
+}
+
+type CodecChangePolicy struct {
+	RebindCompatible     bool
+	RequestKeyframe      bool
+	DropUntilSync        bool
+	FailOnDifferentCodec bool
+}
+
+func RealtimeCodecChangePolicy() CodecChangePolicy {
+	return CodecChangePolicy{
+		RebindCompatible:     true,
+		RequestKeyframe:      true,
+		DropUntilSync:        true,
+		FailOnDifferentCodec: true,
+	}
 }
 
 type StreamSelect struct {
@@ -782,12 +799,13 @@ type Job struct {
 }
 
 type jobStreamBuild struct {
-	name     string
-	selector av.StreamSelector
-	decode   bool
-	steps    []jobStreamStep
-	encode   CodecSpec
-	outputs  []OutputSpec
+	name        string
+	selector    av.StreamSelector
+	decode      bool
+	steps       []jobStreamStep
+	encode      CodecSpec
+	codecChange CodecChangePolicy
+	outputs     []OutputSpec
 }
 
 type jobStreamStep struct {
@@ -904,10 +922,11 @@ func (j *Job) Intent() Intent {
 				Codec:    j.stream.selector.Codec,
 				Name:     j.stream.selector.Name,
 			},
-			Decode:     j.stream.decode,
-			Transforms: j.stream.transformSpecs(),
-			Encode:     j.stream.encode,
-			RouteTo:    outputLabels(j.stream.outputs),
+			Decode:      j.stream.decode,
+			Transforms:  j.stream.transformSpecs(),
+			Encode:      j.stream.encode,
+			CodecChange: j.stream.codecChange,
+			RouteTo:     outputLabels(j.stream.outputs),
 		})
 	}
 	outputs := j.allOutputs()
@@ -1123,6 +1142,9 @@ func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAP
 	if err := validateRecipeEncode(stream.encode, "build stream", stream.name); err != nil {
 		return nil, err
 	}
+	if err := validateCodecChangePolicy("build stream", jobStreamName(stream), stream.codecChange); err != nil {
+		return nil, err
+	}
 	if outputsContainFrameSink(outputs) && outputsContainMuxTarget(outputs) {
 		return nil, mixedStreamOutputError(stream)
 	}
@@ -1153,7 +1175,27 @@ func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAP
 		}
 	}
 	if stream.decode || len(stream.steps) != 0 || stream.encode.ID != "" {
-		builder = builder.Decode(stream.selector)
+		if codecChangePolicySet(stream.codecChange) {
+			internal, ok := builder.(interface {
+				decodeWithPolicy(av.StreamSelector, CodecChangePolicy) builderAPI
+			})
+			if !ok {
+				return nil, &BuildError{
+					Code:      "codec_change_runtime_unsupported",
+					Operation: "build stream",
+					Node:      jobStreamName(stream),
+					Reason:    "codec-change policy requires the standard runtime builder",
+					Suggestions: []string{
+						"use goav.Default() or goav.New(...) for live stream recipes",
+						"remove .OnCodecChange(...) when using a custom recipe runtime",
+					},
+					Cause: ErrUnsupportedBuild,
+				}
+			}
+			builder = internal.decodeWithPolicy(stream.selector, stream.codecChange)
+		} else {
+			builder = builder.Decode(stream.selector)
+		}
 	}
 	for i := range stream.steps {
 		step := stream.steps[i]
@@ -1516,6 +1558,55 @@ func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) e
 	}
 }
 
+func validateCodecChangePolicy(operation string, node string, policy CodecChangePolicy) error {
+	if !codecChangePolicySet(policy) || policy == RealtimeCodecChangePolicy() {
+		return nil
+	}
+	return &BuildError{
+		Code:      "codec_change_policy_unsupported",
+		Operation: operation,
+		Node:      node,
+		Reason:    "custom codec-change policies are not implemented yet",
+		Details: []string{
+			"supported: " + codecChangePolicyDetail(RealtimeCodecChangePolicy()),
+			"requested: " + codecChangePolicyDetail(policy),
+		},
+		Suggestions: []string{
+			"use goav.RealtimeCodecChangePolicy() for today's live receive behavior",
+			"use packet-preserving goav.Record(...) when codec changes should stay encoded",
+			"rebuild the job when a live stream switches to a different decoder codec",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func codecChangePolicySet(policy CodecChangePolicy) bool {
+	return policy.RebindCompatible || policy.RequestKeyframe || policy.DropUntilSync || policy.FailOnDifferentCodec
+}
+
+func codecChangePolicyDetail(policy CodecChangePolicy) string {
+	if !codecChangePolicySet(policy) {
+		return "codec-change=default"
+	}
+	parts := make([]string, 0, 4)
+	if policy.RebindCompatible {
+		parts = append(parts, "rebind-compatible")
+	}
+	if policy.RequestKeyframe {
+		parts = append(parts, "request-keyframe")
+	}
+	if policy.DropUntilSync {
+		parts = append(parts, "drop-until-sync")
+	}
+	if policy.FailOnDifferentCodec {
+		parts = append(parts, "fail-different-codec")
+	}
+	if len(parts) == 0 {
+		return "codec-change=custom"
+	}
+	return "codec-change=" + strings.Join(parts, ",")
+}
+
 func streamTransform(streamName string, selector av.StreamSelector, spec TransformSpec, index int) (transcodeTransform, error) {
 	base := firstNonEmpty(streamName, string(selector.ID), string(selector.Type), "stream")
 	suffix := ""
@@ -1717,6 +1808,12 @@ func (b *JobStreamBuilder) Encode(codec CodecSpec) *JobStreamBuilder {
 	}
 	stream.decode = true
 	stream.encode = codec
+	return b
+}
+
+func (b *JobStreamBuilder) OnCodecChange(policy CodecChangePolicy) *JobStreamBuilder {
+	stream := b.current()
+	stream.codecChange = policy
 	return b
 }
 

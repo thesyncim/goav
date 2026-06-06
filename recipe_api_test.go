@@ -326,6 +326,50 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeNamesCodecChangePolicy(t *testing.T) {
+	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		return nil
+	})
+	policy := goav.RealtimeCodecChangePolicy()
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		OnCodecChange(policy).
+		To(goav.FrameSink(sink))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "codec-change=rebind-compatible,request-keyframe,drop-until-sync,fail-different-codec") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || intent.Streams[0].CodecChange != policy {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
+	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		return nil
+	})
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		OnCodecChange(goav.CodecChangePolicy{RebindCompatible: true}).
+		To(goav.FrameSink(sink)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "codec_change_policy_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want codec_change_policy_unsupported wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "RealtimeCodecChangePolicy") ||
+		!strings.Contains(err.Error(), "different decoder codec") {
+		t.Fatalf("err = %v, want codec-change policy guidance", err)
+	}
+}
+
 func TestReadmeDecodeShortcutUsesFrameSink(t *testing.T) {
 	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 		return nil

@@ -209,7 +209,7 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 	branchInputs := make([]pipeline.NodeRef, len(branches))
 	branchStreams := make([]av.Stream, len(branches))
 	for i := range groups {
-		previousRef, decodedStream, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, groups[i].selector, groups[i].stream, realtime, false, codec.DecodeBounds{})
+		previousRef, decodedStream, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, decodeRequest{selector: groups[i].selector}, groups[i].stream, realtime, false, codec.DecodeBounds{})
 		if err != nil {
 			return err
 		}

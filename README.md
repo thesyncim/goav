@@ -101,6 +101,10 @@ return goav.Transcode(goav.FileInput("input.webm", in)).
   resizes and encodes one selected video stream.
 - `goav.From(input).Audio().Do(meter).Opus(96_000).To(output)` adds a
   stream-local custom stage before encoding.
+- `goav.From(input).Video().OnCodecChange(goav.RealtimeCodecChangePolicy())`
+  names today's live receive policy: rebind compatible replacement streams,
+  request video keyframes, drop until sync, and fail on different decoder
+  codecs.
 - A `From` stream recipe carries one `Audio()` or `Video()` chain; use
   stream-local `.To(...)` outputs there, and use `Transcode` when one input
   needs multiple branches. A stream chain sends decoded frames to frame sinks

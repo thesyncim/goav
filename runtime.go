@@ -115,7 +115,7 @@ type builder struct {
 	rtpInputs  []rtpInput
 	outputs    []format.Output
 	outputFmts []av.FormatID
-	decodes    []av.StreamSelector
+	decodes    []decodeRequest
 	encodes    []encodeRequest
 	filters    []filterRequest
 	transcodes []transcode.Plan
@@ -129,6 +129,11 @@ type encodeRequest struct {
 	name     string
 	selector av.StreamSelector
 	config   codec.EncodeConfig
+}
+
+type decodeRequest struct {
+	selector    av.StreamSelector
+	codecChange CodecChangePolicy
 }
 
 type filterRequest struct {
@@ -192,7 +197,11 @@ func (b *builder) outputFormat(index int) av.FormatID {
 }
 
 func (b *builder) Decode(selector av.StreamSelector) builderAPI {
-	b.decodes = append(b.decodes, selector)
+	return b.decodeWithPolicy(selector, CodecChangePolicy{})
+}
+
+func (b *builder) decodeWithPolicy(selector av.StreamSelector, policy CodecChangePolicy) builderAPI {
+	b.decodes = append(b.decodes, decodeRequest{selector: selector, codecChange: policy})
 	return b
 }
 

@@ -153,13 +153,13 @@ func (b *builder) compileDecodeEncodeToOutput(ctx context.Context, graph pipelin
 		return err
 	}
 
-	selector := b.decodes[0]
-	stream, err := selectDecodeStream(demux.streams, selector)
+	request := b.decodes[0]
+	stream, err := selectDecodeStream(demux.streams, request.selector)
 	if err != nil {
 		return err
 	}
 	realtime := b.runtime.realtime || b.inputs[0].Realtime
-	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, realtime, false, codec.DecodeBounds{})
+	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, request, stream, realtime, false, codec.DecodeBounds{})
 	if err != nil {
 		return err
 	}
@@ -189,12 +189,13 @@ func (b *builder) compileRTPDecodeEncodeToOutput(ctx context.Context, graph pipe
 		builds = append(builds, receiver)
 	}
 
-	selector := b.decodes[0]
+	request := b.decodes[0]
+	selector := request.selector
 	stream, err := selectDecodeStream(streams, selector)
 	if err != nil {
 		return err
 	}
-	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, sourceRefs, selector, stream, b.runtime.realtime, false, rtpDecodeBoundsForStream(stream, builds))
+	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, sourceRefs, request, stream, b.runtime.realtime, false, rtpDecodeBoundsForStream(stream, builds))
 	if err != nil {
 		return err
 	}
