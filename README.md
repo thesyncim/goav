@@ -119,6 +119,8 @@ for _, edge := range spec.Edges {
   VP9, H264, or AV1; `reader` must be a non-nil Pion-backed packet reader.
   Single-stream readers can provide the stream ID; `.Name(...)` gives the
   graph and stream a stable label when the reader metadata is not enough.
+  Unsupported RTP codec intents fail with supported-codec guidance first;
+  custom RTP payload adapters stay an advanced path.
   `RTPBuffer(...)` limit fields use zero for defaults and positive values for
   explicit bounds; `MaxTimestampGap(...)` needs a positive duration with a
   valid timebase when enabled.

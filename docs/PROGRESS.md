@@ -501,7 +501,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     package-private plumbing so transform recipes stay on `.Resize(...)` and
     `.Resample(...)` instead of teaching extra option nouns.
     Done.
-155. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+155. Make RTP codec-intent diagnostics recipe-first: unsupported or automatic
+    RTP codecs now suggest explicit built-in codec specs before pointing custom
+    payload work at advanced receive adapters.
+    Done.
+156. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

@@ -657,7 +657,7 @@ func TestRTPRecipeRejectsInvalidTimestampGap(t *testing.T) {
 	}
 }
 
-func TestRTPRecipeRejectsUnsupportedAutoCodecIntent(t *testing.T) {
+func TestRTPRecipeRejectsUnsupportedCodecIntent(t *testing.T) {
 	_, err := goav.Record(
 		goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.CodecSpec{ID: "pcm"}),
 		goav.FileOutput("recording.ogg", io.Discard),
@@ -667,7 +667,9 @@ func TestRTPRecipeRejectsUnsupportedAutoCodecIntent(t *testing.T) {
 		t.Fatalf("err = %v, want rtp_codec_unsupported wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "pcm has no built-in RTP depacketizer") ||
-		!strings.Contains(err.Error(), ".Depacketize") {
+		!strings.Contains(err.Error(), "goav.Opus()") ||
+		!strings.Contains(err.Error(), "advanced receive adapter") ||
+		strings.Contains(err.Error(), ".Depacketize") {
 		t.Fatalf("err = %v, want RTP codec guidance", err)
 	}
 }
@@ -690,6 +692,12 @@ func TestRTPRecipeRejectsUnresolvedCodecIntents(t *testing.T) {
 			var buildErr *goav.BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, goav.ErrUnsupportedBuild) {
 				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+			if tt.code == "rtp_codec_auto_unresolved" &&
+				(!strings.Contains(err.Error(), "set RTP receive intent") ||
+					!strings.Contains(err.Error(), "advanced receive adapter") ||
+					strings.Contains(err.Error(), ".Depacketize")) {
+				t.Fatalf("err = %v, want recipe-first RTP codec guidance", err)
 			}
 		})
 	}

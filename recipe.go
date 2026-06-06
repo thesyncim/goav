@@ -556,8 +556,8 @@ func (s InputSpec) validateRTPCodec() error {
 			Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
 			Reason:    "automatic RTP codec detection is not implemented for recipe inputs yet",
 			Suggestions: []string{
-				"call .Codec(goav.Opus()), .Codec(goav.VP8()), .Codec(goav.VP9()), .Codec(goav.H264()), or .Codec(goav.AV1())",
-				"pass a custom depacketizer with .Depacketize(...)",
+				"set RTP receive intent with .Codec(goav.Opus()), .Codec(goav.VP8()), .Codec(goav.VP9()), .Codec(goav.H264()), or .Codec(goav.AV1())",
+				"for custom RTP payloads, add an advanced receive adapter before using the recipe",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -588,8 +588,8 @@ func (s InputSpec) validateRTPCodec() error {
 			Node:      firstNonEmpty(s.name, s.input.Name, string(s.codec.ID), "rtp"),
 			Reason:    string(s.codec.ID) + " has no built-in RTP depacketizer",
 			Suggestions: []string{
-				"use a built-in receive codec: Opus, VP8, VP9, H264, or AV1",
-				"pass a custom depacketizer with .Depacketize(...)",
+				"use a built-in receive codec: goav.Opus(), goav.VP8(), goav.VP9(), goav.H264(), or goav.AV1()",
+				"for custom RTP payloads, add an advanced receive adapter before using the recipe",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
