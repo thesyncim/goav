@@ -14,6 +14,7 @@ import (
 )
 
 type transcodeGraphCompiler struct{}
+type rtpTranscodeGraphCompiler struct{}
 
 type transcodeBranch struct {
 	name       string
@@ -59,12 +60,33 @@ func (transcodeGraphCompiler) match(b *builder) bool {
 		len(b.sinks) == 0
 }
 
+func (rtpTranscodeGraphCompiler) match(b *builder) bool {
+	return len(b.transcodes) == 1 &&
+		len(b.rtpInputs) > 0 &&
+		len(b.inputs) == 0 &&
+		len(b.outputs) == 0 &&
+		len(b.decodes) == 0 &&
+		len(b.encodes) == 0 &&
+		len(b.filters) == 0 &&
+		len(b.sources) == 0 &&
+		len(b.stages) == 0 &&
+		len(b.sinks) == 0
+}
+
 func (transcodeGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
 	return b.planTranscode(spec)
 }
 
+func (rtpTranscodeGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
+	return b.planRTPTranscode(spec)
+}
+
 func (transcodeGraphCompiler) build(ctx context.Context, b *builder) (Task, error) {
 	return b.buildTranscode(ctx)
+}
+
+func (rtpTranscodeGraphCompiler) build(ctx context.Context, b *builder) (Task, error) {
+	return b.buildRTPTranscode(ctx)
 }
 
 func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
@@ -81,10 +103,39 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 		return pipeline.Spec{}, err
 	}
 
+	return b.planTranscodeBranches(spec, nodes, []pipeline.NodeRef{sourceRef}, branches, outputs)
+}
+
+func (b *builder) planRTPTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
+	branches, outputs, err := prepareTranscodePlan(b.transcodes[0])
+	if err != nil {
+		return pipeline.Spec{}, err
+	}
+
+	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3+len(branches)+transcodeTransformCount(branches)+len(outputs))
+	sourceRefs := make([]pipeline.NodeRef, len(b.rtpInputs))
+	for i := range b.rtpInputs {
+		sourceName := rtpNodeName(b.rtpInputs[i], i)
+		sourceRef := pipeline.NodeRef(sourceName)
+		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, rtpInputDetail(b.rtpInputs[i])); err != nil {
+			return pipeline.Spec{}, err
+		}
+		sourceRefs[i] = sourceRef
+	}
+	return b.planTranscodeBranches(spec, nodes, sourceRefs, branches, outputs)
+}
+
+func (b *builder) planTranscodeBranches(
+	spec pipeline.Spec,
+	nodes map[string]plannedNode,
+	sourceRefs []pipeline.NodeRef,
+	branches []transcodeBranch,
+	outputs []transcodeOutputBranch,
+) (pipeline.Spec, error) {
 	groups := transcodeSelectorGroups(branches)
 	branchInputs := make([]pipeline.NodeRef, len(branches))
 	groupNodeOrder := make([]pipeline.NodeRef, 0, len(groups))
-	sourceEdges := make([]pipeline.EdgeSpec, 0, len(groups))
+	sourceEdges := make([]pipeline.EdgeSpec, 0, len(groups)*len(sourceRefs))
 	groupEdges := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(groups))
 	for i := range groups {
 		selectName := selectNodeName(groups[i].selector)
@@ -97,11 +148,13 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 		if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef, decodeNodeDetail(groups[i].selector)); err != nil {
 			return pipeline.Spec{}, err
 		}
-		sourceEdges = append(sourceEdges, pipeline.EdgeSpec{
-			From:   sourceRef,
-			To:     selectRef,
-			Policy: pipeline.RouteAll,
-		})
+		for _, sourceRef := range sourceRefs {
+			sourceEdges = append(sourceEdges, pipeline.EdgeSpec{
+				From:   sourceRef,
+				To:     selectRef,
+				Policy: pipeline.RouteAll,
+			})
+		}
 		groupEdges[selectRef] = append(groupEdges[selectRef], pipeline.EdgeSpec{
 			From:   selectRef,
 			To:     decodeRef,
@@ -155,7 +208,7 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 		for _, branchIndex := range outputs[i].matches {
 			encodeRef := encodeRefs[branchIndex]
 			outgoing[encodeRef] = append(outgoing[encodeRef], pipeline.EdgeSpec{
-				From:   encodeRefs[branchIndex],
+				From:   encodeRef,
 				To:     outputRef,
 				Policy: pipeline.RouteAll,
 			})
@@ -178,6 +231,18 @@ func (b *builder) buildTranscode(ctx context.Context) (Task, error) {
 		return nil, err
 	}
 	if err := b.compileTranscode(ctx, graph); err != nil {
+		graph.Close()
+		return nil, err
+	}
+	return &task{graph: graph}, nil
+}
+
+func (b *builder) buildRTPTranscode(ctx context.Context) (Task, error) {
+	graph, err := b.newGraph(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.compileRTPTranscode(ctx, graph); err != nil {
 		graph.Close()
 		return nil, err
 	}
@@ -219,6 +284,72 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 		}
 	}
 
+	return b.compileTranscodeBranches(ctx, graph, branches, outputs, branchInputs, branchStreams, realtime)
+}
+
+func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
+	branches, outputs, err := prepareTranscodePlan(b.transcodes[0])
+	if err != nil {
+		return err
+	}
+
+	sourceRefs := make([]pipeline.NodeRef, 0, len(b.rtpInputs))
+	streams := make([]av.Stream, 0, len(b.rtpInputs))
+	builds := make([]rtpBuild, 0, len(b.rtpInputs))
+	for i := range b.rtpInputs {
+		receiver, err := b.openRTPSource(ctx, b.rtpInputs[i], i)
+		if err != nil {
+			return err
+		}
+		sourceRef, err := graph.AddSource(receiver.source, b.runtime.buffer)
+		if err != nil {
+			receiver.source.Close()
+			return err
+		}
+		sourceRefs = append(sourceRefs, sourceRef)
+		streams = append(streams, receiver.streams...)
+		builds = append(builds, receiver)
+	}
+
+	realtime := true
+	groups, err := resolveTranscodeStreamGroups(streams, branches)
+	if err != nil {
+		return err
+	}
+	branchInputs := make([]pipeline.NodeRef, len(branches))
+	branchStreams := make([]av.Stream, len(branches))
+	for i := range groups {
+		previousRef, decodedStream, err := b.compileDecodeFilterPath(
+			ctx,
+			graph,
+			sourceRefs,
+			decodeRequest{selector: groups[i].selector},
+			groups[i].stream,
+			realtime,
+			false,
+			rtpDecodeBoundsForStream(groups[i].stream, builds),
+		)
+		if err != nil {
+			return err
+		}
+		for _, branchIndex := range groups[i].branches {
+			branchInputs[branchIndex] = previousRef
+			branchStreams[branchIndex] = decodedStream
+		}
+	}
+
+	return b.compileTranscodeBranches(ctx, graph, branches, outputs, branchInputs, branchStreams, realtime)
+}
+
+func (b *builder) compileTranscodeBranches(
+	ctx context.Context,
+	graph pipeline.Graph,
+	branches []transcodeBranch,
+	outputs []transcodeOutputBranch,
+	branchInputs []pipeline.NodeRef,
+	branchStreams []av.Stream,
+	realtime bool,
+) error {
 	encodeRefs := make([]pipeline.NodeRef, len(branches))
 	encodedStreams := make([]av.Stream, len(branches))
 	for i := range branches {

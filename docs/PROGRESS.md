@@ -38,7 +38,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | single `NewSession` PeerConnection entry, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit factory registry, event-preserving frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | internal `Plan` contract, branch-to-output selection model, mixed audio/video output grouping, resize/resample branch insertion through filter factories | intent-native branch planning |
-| runtime | recipe front door with `Record`, `From`, `Decode`, `Transcode`, stream-scoped audio/video recipe builders, reusable `AudioFlow`/`VideoFlow` intent fragments, stream-local `Resize`/`Resample` transforms, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, private recipe intent compiler state with validation, transcode planning, builder lowering, migration graph-compiler selection, and planned `pipeline.Spec` emission for `Job` and `TranscodeJob`, migration graph compiler list, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for legacy compiler coverage, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, grouped audio/video transcode recipe compiler with transform branches and shared mux outputs, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | move probing/resolution/graph emission behind shared intent passes, live RTP/WebRTC flow Tee compiler, traces and drop reasons |
+| runtime | recipe front door with `Record`, `From`, `Decode`, `Transcode`, stream-scoped audio/video recipe builders, reusable `AudioFlow`/`VideoFlow` intent fragments, stream-local `Resize`/`Resample` transforms, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, private recipe intent compiler state with validation, transcode planning, builder lowering, migration graph-compiler selection, and planned `pipeline.Spec` emission for `Job` and `TranscodeJob`, migration graph compiler list, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for legacy compiler coverage, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, grouped audio/video transcode recipe compiler with transform branches and shared mux outputs, buffered multi-output transcode proof, live RTP/WebRTC flow `Fork` compiler, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | move probing/resolution/graph emission behind shared intent passes, runtime-attached forks, traces and drop reasons |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning from RTP decode bounds, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420/I422/I444 frame mapping with yuv420p/yuv422p/yuv444p accepted as aliases, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
@@ -733,7 +733,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     spec details, decoded PCM frame facts, stats, and lifecycle closure. Done.
 213. Add reusable flow intent fragments without a second DSL: introduce
     `AudioFlow` and `VideoFlow`, `.Apply(flow)` for stream and transcode
-    builders, and `.Tee(flow.To(output), ...)` on `From(input).Audio()/Video()`
+    builders, and `.Fork(flow.To(output), ...)` on `From(input).Audio()/Video()`
     as a `Job` expression that expands to branch stream intents, preserves
     snapshots, emits actionable flow diagnostics, and describes branch graphs
     through the existing branch composer. Done.
@@ -759,11 +759,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `testing.AllocsPerRun` guards for core media, pipeline, RTP, codec,
     format, filter, and default adapters, and lock the catalog with a docs
     acceptance test. Done.
-218. Make live flow Tee fail honestly until the realtime branch compiler lands:
-    flow `Tee` lowering now marks the internal transcode job it creates and
-    RTP/WebRTC inputs return a dedicated `flow_tee_live_unsupported` diagnostic
-    with single-branch and expert-graph guidance instead of the generic
-    transcode RTP error. Done.
+218. Make live flow Fork a real receive compiler: flow `Fork` lowering now marks
+    the internal transcode job it creates, RTP/WebRTC inputs lower into the
+    builder with their Pion-backed packet reader, and
+    `rtpTranscodeGraphCompiler` composes receive, shared decode, per-flow
+    transforms, per-flow encoders, and mux outputs. Public recipe coverage
+    proves live branch descriptions, and runtime coverage proves RTP packets
+    decode once then feed two encoded mux outputs. Done.
 
 ## First Vertical Slice
 
@@ -1044,16 +1046,15 @@ covering decoder EOS flush ordering, mux write events, stats, and closure.
 The RTP Opus decode component proof now exercises the realtime receive boundary
 through the real Opus depacketizer and decoder without recipe lowering.
 Reusable audio/video flows now expand into recipe intent instead of a parallel
-graph language; `Tee` stays on `Job`, branch graph descriptions reuse the
-existing branch composer, and live RTP/WebRTC `Tee` now fails with a dedicated
-diagnostic until its realtime branch compiler exists.
+graph language; `Fork` stays on `Job`, branch graph descriptions reuse the
+existing branch composer, and live RTP/WebRTC `Fork` now composes receive,
+shared decode, per-flow encode, and mux outputs.
 The WebRTC TrackSet component proof now exercises same-stream replacement and
 reader reuse through direct RTP source graph composition.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and
-WebM/Ogg plus the live RTP/WebRTC flow Tee compiler remain the next coverage
-pressure.
+WebM/Ogg plus runtime-attached forks remain the next coverage pressure.
 
 ## Validation Gates
 

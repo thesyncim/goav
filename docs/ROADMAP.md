@@ -27,9 +27,10 @@ make the implementation and adapter coverage match the promise.
 5. Keep `pipeline.Spec` as the core graph object. Human graph rendering and any
    future workflow report should live outside runtime composition behind
    optional tooling, not as text/DOT/Mermaid methods or beginner recipe APIs.
-6. Add reusable flow/subflow builders only when they remove repeated stream
-   chains. A flow should compose existing recipe steps; it should not introduce a
-   second way to build the same pipeline.
+6. Keep `Fork` as the single branch word. Build-time flow forks now compose
+   repeated stream chains; runtime-attached forks should grow as a task control
+   plane for late outputs, screenshots, and observability taps, not as another
+   graph DSL.
 7. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
    choices should be visible to realtime users. First recipe policy slice
@@ -132,5 +133,8 @@ make the implementation and adapter coverage match the promise.
   streams. First file/protocol and RTP/WebRTC slices are active.
 - Branchable multi-rendition transcode builder compilers and fluent explicit
   graph fanout through multi-target routes. First shared-decode slice is active.
+- Reusable `AudioFlow`/`VideoFlow` branches with `.Fork(...)`. Build-time
+  file/protocol and RTP/WebRTC slices are active; runtime-attached forks remain
+  planned for screenshots, late recording outputs, and live analysis taps.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

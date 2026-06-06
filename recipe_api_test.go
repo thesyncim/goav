@@ -188,6 +188,16 @@ func TestInputSpecKeepsManualDepacketizersOutOfRecipeFrontDoor(t *testing.T) {
 	}
 }
 
+func TestForkIsTheOnlyPublicFlowBranchVerb(t *testing.T) {
+	streamType := reflect.TypeOf((*goav.JobStreamBuilder)(nil))
+	if _, ok := streamType.MethodByName("Fork"); !ok {
+		t.Fatal("JobStreamBuilder should expose Fork for flow branches")
+	}
+	if _, ok := streamType.MethodByName("Tee"); ok {
+		t.Fatal("JobStreamBuilder should not expose Tee; Fork is the public branch verb")
+	}
+}
+
 func TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor(t *testing.T) {
 	body, err := os.ReadFile("README.md")
 	if err != nil {
@@ -475,7 +485,7 @@ func TestAudioFlowAppliesToStreamRecipeIntent(t *testing.T) {
 	}
 }
 
-func TestFlowTeeStaysOnJobAndBuildsBranchIntent(t *testing.T) {
+func TestFlowForkStaysOnJobAndBuildsBranchIntent(t *testing.T) {
 	voice := goav.AudioFlow("voice").
 		Resample(16_000, goav.Mono).
 		OpusVoice()
@@ -485,13 +495,13 @@ func TestFlowTeeStaysOnJobAndBuildsBranchIntent(t *testing.T) {
 
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio(goav.StreamIndex(0)).
-		Tee(
+		Fork(
 			voice.To(goav.FileOutput("voice.ogg", io.Discard)),
 			archive.To(goav.FileOutput("archive.ogg", io.Discard)),
 		)
 
 	if reflect.TypeOf(job) != reflect.TypeOf((*goav.Job)(nil)) {
-		t.Fatalf("Tee returned %T, want *goav.Job", job)
+		t.Fatalf("Fork returned %T, want *goav.Job", job)
 	}
 	intent := job.Intent()
 	if len(intent.Streams) != 2 || len(intent.Outputs) != 2 {
@@ -571,7 +581,7 @@ func TestFlowBranchSnapshotsBuilderState(t *testing.T) {
 	flow.Resample(8_000, goav.Mono)
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio().
-		Tee(branch)
+		Fork(branch)
 
 	intent := job.Intent()
 	if len(intent.Streams) != 1 ||
@@ -599,7 +609,7 @@ func TestNilFlowBranchIsActionable(t *testing.T) {
 	var flow *goav.AudioFlowBuilder
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Tee(flow.To(goav.FileOutput("voice.ogg", io.Discard))).
+		Fork(flow.To(goav.FileOutput("voice.ogg", io.Discard))).
 		Describe()
 
 	var buildErr *goav.BuildError
@@ -608,12 +618,12 @@ func TestNilFlowBranchIsActionable(t *testing.T) {
 	}
 }
 
-func TestFlowTeeRejectsOuterOutputsAndDuplicateTee(t *testing.T) {
+func TestFlowForkRejectsOuterOutputsAndDuplicateFork(t *testing.T) {
 	voice := goav.AudioFlow("voice").OpusVoice()
 
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio().
-		Tee(voice.To(goav.FileOutput("voice.ogg", io.Discard))).
+		Fork(voice.To(goav.FileOutput("voice.ogg", io.Discard))).
 		To(goav.FileOutput("ignored.ogg", io.Discard)).
 		Describe()
 	var buildErr *goav.BuildError
@@ -623,8 +633,8 @@ func TestFlowTeeRejectsOuterOutputsAndDuplicateTee(t *testing.T) {
 
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader("")))
 	audio := job.Audio()
-	audio.Tee(voice.To(goav.FileOutput("voice.ogg", io.Discard)))
-	_, err = audio.Tee(voice.To(goav.FileOutput("other.ogg", io.Discard))).Describe()
+	audio.Fork(voice.To(goav.FileOutput("voice.ogg", io.Discard)))
+	_, err = audio.Fork(voice.To(goav.FileOutput("other.ogg", io.Discard))).Describe()
 	if !errors.As(err, &buildErr) || buildErr.Code != "flow_duplicate" {
 		t.Fatalf("err = %v, want flow_duplicate", err)
 	}
@@ -650,23 +660,40 @@ func TestFlowRejectsTransformsAfterEncode(t *testing.T) {
 	}
 }
 
-func TestFlowTeeRejectsLiveInputsWithActionableDiagnostic(t *testing.T) {
+func TestFlowForkDescribesLiveInputBranches(t *testing.T) {
 	voice := goav.AudioFlow("voice").OpusVoice()
+	archive := goav.AudioFlow("archive").OpusMusic()
 
-	_, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.Opus())).
+	job := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.Opus())).
 		Audio().
-		Tee(voice.To(goav.FileOutput("voice.ogg", io.Discard))).
-		Describe()
+		Fork(
+			voice.To(goav.FileOutput("voice.ogg", io.Discard)),
+			archive.To(goav.FileOutput("archive.ogg", io.Discard)),
+		)
 
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "flow_tee_live_unsupported" {
-		t.Fatalf("err = %v, want flow_tee_live_unsupported", err)
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if buildErr.Operation != "build tee" ||
-		!strings.Contains(err.Error(), "RTP/WebRTC") ||
-		!strings.Contains(err.Error(), "Runtime.Graph") ||
-		!errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want live Tee guidance", err)
+	text := specText(spec)
+	for _, want := range []string{
+		"audio -> select-audio",
+		"select-audio -> decode-audio",
+		"decode-audio -> encode-voice",
+		"decode-audio -> encode-archive",
+		"encode-voice -> voice.ogg",
+		"encode-archive -> archive.ogg",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec missing %q:\n%s", want, text)
+		}
+	}
+	intent := job.Intent()
+	if len(intent.Streams) != 2 || len(intent.Outputs) != 2 ||
+		intent.Streams[0].Select.Type != av.MediaAudio ||
+		intent.Streams[0].Encode.ID != av.CodecOpus ||
+		intent.Streams[1].Encode.ID != av.CodecOpus {
+		t.Fatalf("intent: %+v", intent)
 	}
 }
 

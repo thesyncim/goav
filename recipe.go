@@ -837,14 +837,14 @@ func (s OutputSpec) intent() OutputIntent {
 }
 
 type Job struct {
-	name       string
-	runtime    Runtime
-	inputs     []InputSpec
-	outputs    []OutputSpec
-	stream     *jobStreamBuild
-	teeStreams []streamBuild
-	teeOutputs []namedOutputSpec
-	err        error
+	name        string
+	runtime     Runtime
+	inputs      []InputSpec
+	outputs     []OutputSpec
+	stream      *jobStreamBuild
+	forkStreams []streamBuild
+	forkOutputs []namedOutputSpec
+	err         error
 }
 
 type jobStreamBuild struct {
@@ -929,8 +929,8 @@ func (j *Job) setErr(err error) {
 }
 
 func (j *Job) To(outputs ...OutputSpec) *Job {
-	if len(j.teeStreams) != 0 {
-		j.setErr(flowTeeOutputScopeError("tee"))
+	if len(j.forkStreams) != 0 {
+		j.setErr(flowForkOutputScopeError("fork"))
 		return j
 	}
 	j.outputs = append(j.outputs, outputs...)
@@ -971,9 +971,9 @@ func (j *Job) Intent() Intent {
 	for i := range j.inputs {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())
 	}
-	if len(j.teeStreams) != 0 {
-		for i := range j.teeStreams {
-			intent.Streams = append(intent.Streams, transcodeStreamIntent(j.teeStreams[i]))
+	if len(j.forkStreams) != 0 {
+		for i := range j.forkStreams {
+			intent.Streams = append(intent.Streams, transcodeStreamIntent(j.forkStreams[i]))
 		}
 	} else if j.stream != nil {
 		intent.Streams = append(intent.Streams, jobStreamIntent(j.stream))
@@ -1130,10 +1130,10 @@ func jobOutputLabelSet(outputs []OutputSpec) map[string]struct{} {
 }
 
 func (j *Job) allOutputs() []OutputSpec {
-	if len(j.teeOutputs) != 0 {
-		outputs := make([]OutputSpec, 0, len(j.teeOutputs))
-		for i := range j.teeOutputs {
-			outputs = append(outputs, j.teeOutputs[i].output)
+	if len(j.forkOutputs) != 0 {
+		outputs := make([]OutputSpec, 0, len(j.forkOutputs))
+		for i := range j.forkOutputs {
+			outputs = append(outputs, j.forkOutputs[i].output)
 		}
 		return outputs
 	}
@@ -2307,35 +2307,35 @@ func (b *JobStreamBuilder) Apply(flow Flow) *JobStreamBuilder {
 	return b
 }
 
-func (b *JobStreamBuilder) Tee(branches ...FlowBranch) *Job {
+func (b *JobStreamBuilder) Fork(branches ...FlowBranch) *Job {
 	stream := b.current()
 	job := b.job
 	if len(branches) == 0 {
-		job.setErr(flowTeeMissingError(jobStreamName(stream)))
+		job.setErr(flowForkMissingError(jobStreamName(stream)))
 		return job
 	}
-	if len(job.teeStreams) != 0 {
-		job.setErr(flowTeeDuplicateError(jobStreamName(stream)))
+	if len(job.forkStreams) != 0 {
+		job.setErr(flowForkDuplicateError(jobStreamName(stream)))
 		return job
 	}
 	if len(job.inputs) != 1 {
-		job.setErr(flowTeeInputCountError(jobStreamName(stream), len(job.inputs)))
+		job.setErr(flowForkInputCountError(jobStreamName(stream), len(job.inputs)))
 		return job
 	}
 	if len(job.outputs) != 0 || len(stream.outputs) != 0 {
-		job.setErr(flowTeeOutputScopeError(jobStreamName(stream)))
+		job.setErr(flowForkOutputScopeError(jobStreamName(stream)))
 		return job
 	}
 
-	job.teeStreams = job.teeStreams[:0]
-	job.teeOutputs = job.teeOutputs[:0]
+	forkStreams := make([]streamBuild, 0, len(branches))
+	forkOutputs := make([]namedOutputSpec, 0, len(branches))
 	for i := range branches {
 		spec := branches[i].spec
 		if spec.err != nil {
 			job.setErr(spec.err)
 			return job
 		}
-		if err := validateFlowMedia("build tee", jobStreamName(stream), stream.selector.Type, spec); err != nil {
+		if err := validateFlowMedia("build fork", jobStreamName(stream), stream.selector.Type, spec); err != nil {
 			job.setErr(err)
 			return job
 		}
@@ -2355,15 +2355,17 @@ func (b *JobStreamBuilder) Tee(branches ...FlowBranch) *Job {
 			encode:     spec.encode,
 			labels:     outputLabels(branches[i].outputs),
 		}
-		job.teeStreams = append(job.teeStreams, branch)
+		forkStreams = append(forkStreams, branch)
 		for j := range branches[i].outputs {
 			label := branch.labels[j]
-			job.teeOutputs = append(job.teeOutputs, namedOutputSpec{
+			forkOutputs = append(forkOutputs, namedOutputSpec{
 				name:   label,
 				output: branches[i].outputs[j].Name(firstNonEmpty(branches[i].outputs[j].name, label)),
 			})
 		}
 	}
+	job.forkStreams = forkStreams
+	job.forkOutputs = forkOutputs
 	return job
 }
 
@@ -2456,7 +2458,7 @@ type TranscodeJob struct {
 	outputs []namedOutputSpec
 	err     error
 
-	fromFlowTee bool
+	fromFlowFork bool
 }
 
 type namedOutputSpec struct {
@@ -2636,15 +2638,14 @@ func validateTranscodeBranchIntentShape(stream StreamIntent, index int) error {
 	return validateTranscodeBranchOutputLabels(stream)
 }
 
-func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpec, fromFlowTee bool) error {
+func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpec, fromFlowFork bool) error {
 	if err := input.validate(); err != nil {
 		return err
 	}
 	if input.rtp != nil {
-		if fromFlowTee {
-			return flowTeeLiveUnsupportedError()
+		if !fromFlowFork {
+			return transcodeUnsupportedRTPInputError()
 		}
-		return transcodeUnsupportedRTPInputError()
 	}
 	seen := make(map[string]struct{}, len(namedOutputs))
 	for i := range namedOutputs {
@@ -2759,20 +2760,6 @@ func transcodeUnsupportedRTPInputError() error {
 		Suggestions: []string{
 			"use Record(...) for packet recording",
 			"use From(...).Audio() or From(...).Video() for one selected RTP receive path",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func flowTeeLiveUnsupportedError() error {
-	return &BuildError{
-		Code:      "flow_tee_live_unsupported",
-		Operation: "build tee",
-		Reason:    "live RTP/WebRTC flow Tee needs a dedicated realtime branch compiler",
-		Suggestions: []string{
-			"use From(input).Audio().Apply(flow).To(output) for one selected live receive branch",
-			"use Runtime.Graph() to manually fan out rtpav.Source, decode, encode, and mux stages today",
-			"use file/protocol inputs with .Audio().Tee(...) when branch composition can use the transcode compiler",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

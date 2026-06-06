@@ -7,11 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pion/rtp"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/transcode"
 )
 
@@ -227,6 +229,118 @@ func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T)
 	}
 	if !demuxer.closed || !audioDecoder.closed || !videoDecoder.closed || !muxer.closed {
 		t.Fatalf("closed demux=%v audio=%v video=%v mux=%v", demuxer.closed, audioDecoder.closed, videoDecoder.closed, muxer.closed)
+	}
+}
+
+func TestRuntimeBuilderRTPTranscodeForksDecodedStreamToOutputs(t *testing.T) {
+	ctx := context.Background()
+	stream := audioOpusTestStream()
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    2,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &decodeTestDecoder{}
+	encoderFactory := &encodeTestEncoderFactory{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
+	)
+	plan := transcode.Plan{
+		Renditions: []transcode.Rendition{
+			{
+				Name:     "voice",
+				Selector: testSelectAudio(),
+				Encode:   pcmEncodeConfig(),
+				Labels:   []string{"archive"},
+			},
+			{
+				Name:     "preview",
+				Selector: testSelectAudio(),
+				Encode:   pcmEncodeConfig(),
+				Labels:   []string{"archive", "preview"},
+			},
+		},
+		Outputs: []transcode.Output{
+			{
+				Name:       "archive.ogg",
+				Format:     av.FormatOgg,
+				Renditions: []string{"archive"},
+			},
+			{
+				Name:       "preview.ogg",
+				Format:     av.FormatOgg,
+				Renditions: []string{"preview"},
+			},
+		},
+	}
+
+	builder := newTestBuilder(t, formats, codecs).
+		RTP(receiver,
+			withRTPName("live-audio"),
+			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+		).
+		Transcode(plan)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(planned)
+	if !strings.Contains(text, "live-audio -> select-audio") ||
+		!strings.Contains(text, "decode-audio -> encode-voice") ||
+		!strings.Contains(text, "decode-audio -> encode-preview") ||
+		!strings.Contains(text, "encode-voice -> archive.ogg") ||
+		!strings.Contains(text, "encode-preview -> preview.ogg") {
+		t.Fatalf("planned:\n%s", text)
+	}
+
+	task, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || decoder.flushes != 1 {
+		t.Fatalf("decodes=%d flushes=%d", decoder.decodes, decoder.flushes)
+	}
+	if len(encoderFactory.encoders) != 2 || encoderFactory.encoders[0].encodes != 1 || encoderFactory.encoders[1].encodes != 1 {
+		t.Fatalf("encoders=%d first=%+v second=%+v", len(encoderFactory.encoders), encoderAt(encoderFactory.encoders, 0), encoderAt(encoderFactory.encoders, 1))
+	}
+	if len(muxers.muxers) != 2 {
+		t.Fatalf("muxers=%d, want 2", len(muxers.muxers))
+	}
+	archive := muxers.muxers[0]
+	preview := muxers.muxers[1]
+	if !archive.opened || archive.writes != 2 || !streamIDsEqual(archive.writtenStreams, []av.StreamID{"voice", "preview"}) {
+		t.Fatalf("archive opened=%v writes=%d written=%+v", archive.opened, archive.writes, archive.writtenStreams)
+	}
+	if !preview.opened || preview.writes != 1 || !streamIDsEqual(preview.writtenStreams, []av.StreamID{"preview"}) {
+		t.Fatalf("preview opened=%v writes=%d written=%+v", preview.opened, preview.writes, preview.writtenStreams)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed || !decoder.closed || !archive.closed || !preview.closed {
+		t.Fatalf("closed receiver=%v decoder=%v archive=%v preview=%v", receiver.closed, decoder.closed, archive.closed, preview.closed)
 	}
 }
 

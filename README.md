@@ -64,8 +64,11 @@ that need WebM, Ogg, or tagged encoder adapters are called out explicitly below.
 
 ## Adapter-Backed Workflows
 
-Record audio and video tracks together when the selected runtime has a WebM
-muxer:
+These examples are intentionally outside the 30-second section: they need
+adapters beyond today's default IVF and Annex B containers. The API shape stays
+the same; only the selected runtime's adapter set changes.
+
+Record a live call into one muxed WebM output when WebM is available:
 
 ```go
 return goav.From(goav.WebRTCTrack(audio)).
@@ -74,20 +77,25 @@ return goav.From(goav.WebRTCTrack(audio)).
     Run(ctx)
 ```
 
-Build a small VP9 ladder when the selected runtime has WebM and VP9 encode
-adapters:
+Build a muxed audio/video ladder when WebM plus VP8/VP9 and Opus encode paths
+are available. Output labels are mux groups; several branches can feed the same
+label:
 
 ```go
-return goav.Transcode(goav.FileInput("input.webm", in)).
-    Video("720p").Resize(1280, 720).VP9(2_000_000).To("web").
-    Video("360p").Resize(640, 360).VP9(600_000).To("preview").
-    Output("web", goav.FileOutput("web.webm", web)).
-    Output("preview", goav.FileOutput("preview.webm", preview)).
+return goav.Transcode(goav.FileInput("source.webm", in)).
+    Video("v1080").Resize(1920, 1080).VP9(4_000_000).To("watch").
+    Video("v720").Resize(1280, 720).VP9(2_000_000).To("watch", "mobile").
+    Video("v360").Resize(640, 360).VP8(600_000).To("mobile").
+    Audio("a128").Resample(48_000, goav.Stereo).Opus(128_000).To("watch").
+    Audio("a48").Resample(48_000, goav.Stereo).Opus(48_000).To("mobile").
+    Output("watch", goav.FileOutput("watch.webm", watch)).
+    Output("mobile", goav.FileOutput("mobile.webm", mobile)).
     Run(ctx)
 ```
 
-Reuse audio branches when the selected runtime has the matching input and
-output adapters:
+Reuse flow branches for live or file inputs. `Fork` is the public branch verb:
+one decoded stream feeds named flow branches, each with its own transform,
+encoder, and output.
 
 ```go
 voice := goav.AudioFlow("voice").
@@ -100,7 +108,7 @@ archive := goav.AudioFlow("archive").
 
 return goav.From(goav.FileInput("input.webm", in)).
     Audio().
-    Tee(
+    Fork(
         voice.To(goav.FileOutput("voice.ogg", voiceFile)),
         archive.To(goav.FileOutput("archive.ogg", archiveFile)),
     ).
@@ -109,68 +117,100 @@ return goav.From(goav.FileInput("input.webm", in)).
 
 ## Common Recipes
 
-- `goav.Record(input, output...)` records, remuxes, or fans out packet streams.
-- `goav.From(input).To(output...)` is the generic recipe form.
-  These packet-preserving forms write to `FileOutput` or `URIOutput`; decoded
-  frame sinks use `Decode` or a stream-scoped `Audio()`/`Video()` chain.
-- `goav.From(input).And(other).To(output)` records repeated RTP/WebRTC receive
-  inputs through one shared output graph; explicit realtime input names must be
-  unique.
-- `goav.From(input).Audio().To(goav.FrameSink(frames))` decodes one selected
-  audio stream without manual selectors.
-- `goav.From(input).Audio().Resample(16_000, goav.Mono).Opus(48_000).To(output)`
-  resamples and encodes one selected audio stream.
-- `goav.From(input).Video().Resize(1280, 720).VP9(2_000_000).To(output)`
-  resizes and encodes one selected video stream.
-- `goav.From(input).Audio().Do(meter).Opus(96_000).To(output)` adds a
-  stream-local custom stage before encoding.
-- `goav.AudioFlow(name)` and `goav.VideoFlow(name)` define reusable stream
-  fragments. Apply one with `.Audio().Apply(flow)` or route several encoded
-  file/protocol branches with `.Audio().Tee(flow.To(output), ...)`.
-- `goav.From(input).Video().OnCodecChange(goav.RealtimeCodecChangePolicy())`
-  names today's live receive policy: rebind compatible replacement streams,
-  request video keyframes, drop until sync, and fail on different decoder
-  codecs.
-- A `From` stream recipe carries one `Audio()` or `Video()` chain; use
-  stream-local `.To(...)` outputs there, and use `Transcode` when one input
-  needs multiple branches. A stream chain sends decoded frames to frame sinks
-  or encoded packets to file/URI outputs, not both. Declare `.Do(...)`,
-  `.Resize(...)`, or `.Resample(...)` before the one terminal encoder, then
-  attach outputs with `.To(...)`.
-- `goav.Decode(input, goav.FrameSink(frames))` decodes an unambiguous stream
-  into a frame sink; use the stream-scoped `From(...).Audio()` or
-  `From(...).Video()` shape when selection matters.
-- `goav.Transcode(input)` builds named audio or video branches and outputs.
-  Transcode branch `.To(...)` accepts output labels, and each label is defined
-  once with `.Output(label, goav.FileOutput(...))` or `URIOutput`; each branch
-  must route to a muxed output and currently carries at most one resize or
-  resample transform.
-  Audio and video branches can share one output label when they should be muxed
-  into the same file.
-  Branch names are required and unique; output labels are required and unique,
-  and each branch lists each output once. Share one output by reusing its label
-  in `.To(...)` on each branch. Branches decode implicitly, transforms come
-  before one terminal encoder, and resize dimensions, resample rates, and
-  channel counts must be positive. Branches currently choose concrete Opus,
-  VP8, or VP9 recipe encoders; `Auto()` and `Copy()` fail early.
-- `goav.WebRTCTrack(track)` adapts a Pion `TrackRemote` into the same realtime
-  receive path as RTP.
-- `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive
-  intent without making the caller wire depacketizers by hand for Opus, VP8,
-  VP9, H264, or AV1; `reader` must be a non-nil Pion-backed packet reader.
-  Raw RTP recipes require `.Codec(...)`; `WebRTCTrack(track)` derives that
-  intent from Pion track metadata. Unknown WebRTC codecs fail before graph
-  build with supported-codec guidance.
-  Single-stream readers can provide the stream ID; `.Name(...)` gives the
-  graph and stream a stable label when the reader metadata is not enough.
-  Unsupported RTP codec intents fail with supported-codec guidance first;
-  custom RTP payload adapters stay an advanced path.
-- `goav.FileInput`, `goav.URI`, `goav.FileOutput`, and `goav.URIOutput` cover
-  ordinary input and output declarations. `FrameSink` requires a non-nil sink,
-  and `FileOutput` requires a writer. Writer-only outputs need a filename,
-  `.MIME(...)`, URI, or explicit `.Format(...)` so the container is not guessed
-  from nothing. Inputs can also use `.MIME(...)` when a reader or URI lacks a
-  useful name. Output names are unique within a recipe.
+Record and fan out packet streams:
+
+```go
+return goav.Record(input, archive, preview).Run(ctx)
+```
+
+Decode one stream into frames:
+
+```go
+return goav.From(input).
+    Audio().
+    To(goav.FrameSink(frames)).
+    Run(ctx)
+```
+
+Transform and encode one selected stream:
+
+```go
+return goav.From(input).
+    Video().
+    Resize(1280, 720).
+    VP9(2_000_000).
+    To(goav.FileOutput("preview.ivf", preview)).
+    Run(ctx)
+```
+
+Insert custom work in the stream chain:
+
+```go
+return goav.From(input).
+    Audio().
+    Do(meter).
+    Opus(96_000).
+    To(output).
+    Run(ctx)
+```
+
+Fork one decoded stream into reusable branches:
+
+```go
+archive := goav.VideoFlow("archive").VP8(2_000_000)
+thumbs := goav.VideoFlow("thumbs").Resize(320, 180).VP8(300_000)
+
+return goav.From(input).
+    Video().
+    Fork(
+        archive.To(goav.FileOutput("archive.ivf", archiveFile)),
+        thumbs.To(goav.FileOutput("thumbs.ivf", thumbsFile)),
+    ).
+    Run(ctx)
+```
+
+Compose several audio/video branches into muxed outputs:
+
+```go
+return goav.Transcode(input).
+    Video("v720").Resize(1280, 720).VP9(2_000_000).To("main").
+    Audio("a96").Resample(48_000, goav.Stereo).Opus(96_000).To("main").
+    Output("main", output).
+    Run(ctx)
+```
+
+Name live receive behavior explicitly:
+
+```go
+return goav.From(goav.WebRTCTrack(track)).
+    Video().
+    OnCodecChange(goav.RealtimeCodecChangePolicy()).
+    To(goav.FrameSink(preview)).
+    Run(ctx)
+```
+
+`Fork` is build-time today: it splits the current selected stream into reusable
+flow branches before the task starts. Runtime-attached forks are the next
+control-plane shape for screenshots, late outputs, and observability taps, but
+they should grow from the same word and the same flow model instead of adding a
+second branching API.
+
+`Record` and `From(input).To(...)` are packet-preserving forms. A stream chain
+such as `From(input).Audio()` or `From(input).Video()` sends decoded frames to
+frame sinks or encoded packets to file/URI outputs, not both. Transcode outputs
+are labels for mux groups; reuse a label from several branches when they should
+land in the same output.
+
+`goav.WebRTCTrack(track)` adapts a Pion `TrackRemote` into the same receive
+path as `goav.RTP(reader).Name("audio").Codec(goav.Opus())`. Raw RTP recipes
+require codec intent; WebRTC tracks derive it from Pion track metadata. Opus,
+VP8, VP9, H264, and AV1 receive/decode intents are recognized, while recipe
+encode conveniences are currently strongest for Opus, VP8, and VP9.
+
+`FileInput`, `URI`, `FileOutput`, `URIOutput`, and `FrameSink` cover ordinary
+boundaries. Writer-only outputs need a filename, MIME type, URI, or explicit
+format so the container is not guessed from nothing. Output names are unique
+within a recipe.
 
 If `Audio()` or `Video()` matches more than one stream, build errors list the
 available streams and suggest `StreamID`, `StreamName`, or `StreamIndex(0)`.

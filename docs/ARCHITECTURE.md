@@ -88,6 +88,9 @@ The current compilers cover:
 - one or more RTP/WebRTC packet readers to selected-stream
   decode/filter/encode outputs through the same decoder, filter, encoder, and
   mux stages used by file or protocol inputs
+- live RTP/WebRTC flow forks that receive through `rtpav.Source`, share the
+  selected stream decode, then route each reusable flow branch through its own
+  transforms, encoder, and mux output
 - transcode recipes for one input grouped by selected stream: video branches can
   share a video decode, audio branches can share an audio decode, and one output
   label is a mux group that can receive coordinated encoded audio and video
