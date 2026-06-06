@@ -77,7 +77,13 @@ session, err := webrtcav.NewSession(ctx, webrtcav.SessionConfig{})
 answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
 err := goav.Record(
-    goav.WebRTCRemote(remote),
+    goav.WebRTCTrack(remote.Track,
+        goav.WithTrackCodec(remote.Codec),
+        goav.WithTrackStream(remote.Stream),
+        goav.WithTrackPayloads(remote.Payloads),
+        goav.WithTrackFeedback(remote.Feedback),
+        goav.WithTrackMetadata(remote.Metadata),
+    ),
     goav.FileOutput("recording.ivf", file),
 ).Run(ctx)
 ```

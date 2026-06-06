@@ -301,10 +301,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Opus/VP8/VP9 recipe targets, and route to outputs while lowering through
     the existing selected-stream runtime compilers. H264 and AV1 recipe encode
     paths return an explicit work-in-progress diagnostic. Done.
-93. Add WebRTC recipe input constructors: `WebRTCTrack(track)` and
-    `WebRTCRemote(remote)` adapt Pion tracks through `webrtcav` into the same
-    RTP receive graph, derive codec/depacketizer intent from the track stream,
-    and report invalid tracks through recipe build diagnostics. Done.
+93. Add the WebRTC recipe input constructor: `WebRTCTrack(track)` adapts Pion
+    tracks through `webrtcav` into the same RTP receive graph, derives
+    codec/depacketizer intent from the track stream, and reports invalid tracks
+    through recipe build diagnostics. Done.
 94. Add multi-input realtime recipe composition: `From(input).And(other...)`
     accepts repeated RTP/WebRTC inputs and lowers through the existing realtime
     receive compiler, while non-realtime multi-input attempts fail with an
@@ -473,7 +473,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     package-private compiler plumbing so recipe users configure RTP through
     `goav.RTP(reader).Name(...).Codec(...).RTPBuffer(...)`.
     Done.
-148. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+148. Hide `WebRTCRemote` and `TrackOption` so the root WebRTC recipe has one
+    constructor, `WebRTCTrack(track, options...)`, while advanced session
+    orchestration stays in `webrtcav`.
+    Done.
+149. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

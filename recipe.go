@@ -1092,7 +1092,7 @@ func (j *Job) validateInputs() error {
 			Reason:    "multiple recipe inputs currently require realtime RTP/WebRTC packet readers",
 			Suggestions: []string{
 				"use goav.From(goav.RTP(...)).And(goav.RTP(...)) for repeated live inputs",
-				"use goav.WebRTCTrack(...) or goav.WebRTCRemote(...) for Pion WebRTC tracks",
+				"use goav.WebRTCTrack(...) for Pion WebRTC tracks",
 				"build an explicit graph when combining multiple file or protocol sources",
 			},
 		}

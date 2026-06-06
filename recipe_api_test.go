@@ -104,6 +104,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"WithRTPBufferLimits":    true,
 		"WithRTPDecodeBounds":    true,
 		"WithRTPMaxTimestampGap": true,
+		"WebRTCRemote":           true,
 	}
 	legacyTypes := map[string]bool{
 		"Builder":         true,
@@ -117,6 +118,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Metadata":        true,
 		"CodecParameters": true,
 		"RTPOption":       true,
+		"TrackOption":     true,
 	}
 	for filename, file := range pkg.Files {
 		for _, decl := range file.Decls {

@@ -10,43 +10,43 @@ import (
 	"github.com/thesyncim/goav/webrtcav"
 )
 
-type TrackOption func(*webrtcav.RemoteTrack)
+type trackOption func(*webrtcav.RemoteTrack)
 
-func WithTrackCodec(codec webrtc.RTPCodecParameters) TrackOption {
+func WithTrackCodec(codec webrtc.RTPCodecParameters) trackOption {
 	return func(remote *webrtcav.RemoteTrack) {
 		remote.Codec = codec
 	}
 }
 
-func WithTrackStream(stream av.Stream) TrackOption {
+func WithTrackStream(stream av.Stream) trackOption {
 	return func(remote *webrtcav.RemoteTrack) {
 		remote.Stream = stream
 	}
 }
 
-func WithTrackPayloads(payloads rtpav.PayloadMap) TrackOption {
+func WithTrackPayloads(payloads rtpav.PayloadMap) trackOption {
 	return func(remote *webrtcav.RemoteTrack) {
 		remote.Payloads = payloads
 	}
 }
 
-func WithTrackFeedback(feedback rtpav.FeedbackWriter) TrackOption {
+func WithTrackFeedback(feedback rtpav.FeedbackWriter) trackOption {
 	return func(remote *webrtcav.RemoteTrack) {
 		remote.Feedback = feedback
 	}
 }
 
-func WithTrackMetadata(metadata av.Metadata) TrackOption {
+func WithTrackMetadata(metadata av.Metadata) trackOption {
 	return func(remote *webrtcav.RemoteTrack) {
 		remote.Metadata = metadata
 	}
 }
 
-func WebRTCTrack(track *webrtc.TrackRemote, options ...TrackOption) InputSpec {
-	return WebRTCRemote(webrtcav.RemoteTrack{Track: track}, options...)
+func WebRTCTrack(track *webrtc.TrackRemote, options ...trackOption) InputSpec {
+	return webRTCRemote(webrtcav.RemoteTrack{Track: track}, options...)
 }
 
-func WebRTCRemote(remote webrtcav.RemoteTrack, options ...TrackOption) InputSpec {
+func webRTCRemote(remote webrtcav.RemoteTrack, options ...trackOption) InputSpec {
 	for i := range options {
 		if options[i] != nil {
 			options[i](&remote)
