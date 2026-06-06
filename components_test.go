@@ -110,3 +110,142 @@ func TestComponentFileRemuxFanout(t *testing.T) {
 		t.Fatalf("closed demux=%v archive=%v preview=%v", demuxer.closed, archiveMuxer.closed, previewMuxer.closed)
 	}
 }
+
+func TestComponentCustomStageForwardsEvents(t *testing.T) {
+	source := &componentEventSource{
+		name: "events",
+		events: []av.Event{
+			{Type: av.EventStreamAdded, StreamID: "audio"},
+			{Type: av.EventPacketLoss, StreamID: "audio"},
+			{Type: av.EventEndOfStream, StreamID: "audio"},
+		},
+	}
+	stage := &componentForwardStage{name: "forward"}
+	sink := &componentEventSink{name: "sink"}
+
+	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "component-custom-stage"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddStage(stage, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(pipeline.Route{From: "events", To: []string{"forward"}, Policy: pipeline.RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(pipeline.Route{From: "forward", To: []string{"sink"}, Policy: pipeline.RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := graph.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if source.starts != 1 || stage.events != 3 || sink.events != 3 || sink.lastEvent != av.EventEndOfStream {
+		t.Fatalf("starts=%d stage events=%d sink events=%d last=%s", source.starts, stage.events, sink.events, sink.lastEvent)
+	}
+
+	stats := graph.Stats()
+	if stats.Events != 6 || stats.Delivered != 6 || stats.LastEvent.Type != av.EventEndOfStream {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !source.closed || !stage.closed || !sink.closed {
+		t.Fatalf("closed source=%v stage=%v sink=%v", source.closed, stage.closed, sink.closed)
+	}
+}
+
+type componentEventSource struct {
+	name   string
+	events []av.Event
+	msg    pipeline.Message
+	starts int
+	closed bool
+}
+
+func (s *componentEventSource) Name() string {
+	return s.name
+}
+
+func (s *componentEventSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	s.starts++
+	for i := range s.events {
+		s.msg.Kind = pipeline.MessageEvent
+		s.msg.Packet = nil
+		s.msg.Frame = nil
+		s.msg.Event = &s.events[i]
+		if err := emitter.Emit(ctx, &s.msg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *componentEventSource) Close() error {
+	s.closed = true
+	return nil
+}
+
+type componentForwardStage struct {
+	name   string
+	event  av.Event
+	msg    pipeline.Message
+	events int
+	closed bool
+}
+
+func (s *componentForwardStage) Name() string {
+	return s.name
+}
+
+func (s *componentForwardStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+	if msg == nil {
+		return nil
+	}
+	if msg.Kind != pipeline.MessageEvent || msg.Event == nil {
+		return emitter.Emit(ctx, msg)
+	}
+	s.events++
+	s.event = *msg.Event
+	s.msg.Kind = pipeline.MessageEvent
+	s.msg.Packet = nil
+	s.msg.Frame = nil
+	s.msg.Event = &s.event
+	return emitter.Emit(ctx, &s.msg)
+}
+
+func (s *componentForwardStage) Close() error {
+	s.closed = true
+	return nil
+}
+
+type componentEventSink struct {
+	name      string
+	events    int
+	lastEvent av.EventType
+	closed    bool
+}
+
+func (s *componentEventSink) Name() string {
+	return s.name
+}
+
+func (s *componentEventSink) Handle(_ context.Context, msg *pipeline.Message) error {
+	if msg != nil && msg.Kind == pipeline.MessageEvent && msg.Event != nil {
+		s.events++
+		s.lastEvent = msg.Event.Type
+	}
+	return nil
+}
+
+func (s *componentEventSink) Close() error {
+	s.closed = true
+	return nil
+}

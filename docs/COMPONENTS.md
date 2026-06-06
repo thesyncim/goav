@@ -193,3 +193,6 @@ A reusable custom stage should:
 - return deterministic errors for unsupported media or missing scratch;
 - document whether it is safe with direct and bounded buffered execution;
 - document ownership expectations for borrowed packets, frames, and planes.
+
+`TestComponentCustomStageForwardsEvents` covers the minimal event-forwarding
+shape with reusable stage-owned scratch.

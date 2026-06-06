@@ -715,6 +715,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `format.DemuxSource`, two `format.MuxStage` instances, and `pipeline.Graph`
     fanout in `TestComponentFileRemuxFanout`, including graph spec details,
     packet delivery, stats, and lifecycle closure. Done.
+210. Prove reusable custom stage composition: add
+    `TestComponentCustomStageForwardsEvents`, which wires a handwritten
+    `pipeline.Stage` with reusable event/message scratch into a direct graph
+    and verifies event forwarding, stats, and lifecycle closure without recipe
+    builders. Done.
 
 ## First Vertical Slice
 
@@ -988,6 +993,8 @@ components do the media work, and expert graphs compose those same components
 directly.
 The first named component proof now builds file remux fanout directly from
 format and pipeline components without recipe lowering.
+The second named component proof covers a custom reusable stage that preserves
+events while owning its scratch.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and
