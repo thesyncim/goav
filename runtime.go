@@ -97,7 +97,7 @@ type builderAPI interface {
 	Build(context.Context) (Task, error)
 }
 
-func (r *runtime) Probe(ctx context.Context, request ProbeRequest) (ProbeResult, error) {
+func (r *runtime) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {
 	return r.formats.Probe(ctx, request)
 }
 

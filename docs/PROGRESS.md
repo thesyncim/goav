@@ -453,7 +453,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     structs stay in `format`, while recipes keep `FileInput`, `URI`, `RTP`,
     `WebRTCTrack`, `FileOutput`, `URIOutput`, and `FrameSink` as the front door.
     Done.
-143. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+143. Remove top-level `ProbeRequest` and `ProbeResult` aliases so format
+    probing details stay in `format`, while `Runtime.Probe` remains available
+    for applications that need it.
+    Done.
+144. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

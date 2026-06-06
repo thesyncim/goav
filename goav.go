@@ -10,8 +10,6 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-type ProbeRequest = format.ProbeRequest
-type ProbeResult = format.ProbeResult
 type Packet = av.Packet
 type Frame = av.Frame
 type Event = av.Event
@@ -24,7 +22,7 @@ type Sink = pipeline.Sink
 
 // Runtime is the composition root for applications embedding goav.
 type Runtime interface {
-	Probe(context.Context, ProbeRequest) (ProbeResult, error)
+	Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error)
 	Graph() GraphBuilder
 }
 

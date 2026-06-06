@@ -17,6 +17,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
@@ -27,8 +28,8 @@ type recipeAPIRTPReader struct{}
 
 type recipeAPIRuntimeWithoutBuilder struct{}
 
-func (recipeAPIRuntimeWithoutBuilder) Probe(context.Context, goav.ProbeRequest) (goav.ProbeResult, error) {
-	return goav.ProbeResult{}, nil
+func (recipeAPIRuntimeWithoutBuilder) Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error) {
+	return format.ProbeResult{}, nil
 }
 
 func (recipeAPIRuntimeWithoutBuilder) Graph() goav.GraphBuilder {
@@ -84,9 +85,11 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Route":       true,
 	}
 	legacyTypes := map[string]bool{
-		"Builder": true,
-		"Input":   true,
-		"Output":  true,
+		"Builder":      true,
+		"Input":        true,
+		"Output":       true,
+		"ProbeRequest": true,
+		"ProbeResult":  true,
 	}
 	for _, decl := range file.Decls {
 		switch decl := decl.(type) {

@@ -212,10 +212,10 @@ func TestNewRuntimeDefaults(t *testing.T) {
 	if rt.codecs == nil || rt.formats == nil || rt.filters == nil {
 		t.Fatalf("runtime defaults incomplete: %+v", rt)
 	}
-	if _, err := rt.Probe(context.Background(), ProbeRequest{}); !errors.Is(err, format.ErrNotFound) {
+	if _, err := rt.Probe(context.Background(), format.ProbeRequest{}); !errors.Is(err, format.ErrNotFound) {
 		t.Fatalf("probe err = %v, want format.ErrNotFound", err)
 	}
-	result, err := rt.Probe(context.Background(), ProbeRequest{Name: "audio.opus"})
+	result, err := rt.Probe(context.Background(), format.ProbeRequest{Name: "audio.opus"})
 	if err != nil {
 		t.Fatalf("probe opus: %v", err)
 	}
