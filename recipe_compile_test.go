@@ -234,6 +234,70 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 	}
 }
 
+func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
+	tests := []struct {
+		name  string
+		pass  recipeCompilePass
+		state recipeCompileState
+		want  string
+	}{
+		{
+			name: "job probed format",
+			pass: validateJobOutputFormatAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightOutputAdapters: true},
+				runtime:   Default(),
+				outputAttachments: []OutputSpec{
+					FileOutput("recording.webm", io.Discard),
+				},
+			},
+			want: `format "matroska"`,
+		},
+		{
+			name: "job explicit format",
+			pass: validateJobOutputFormatAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightOutputAdapters: true},
+				runtime:   Default(),
+				outputAttachments: []OutputSpec{
+					FileOutput("", io.Discard).Format(av.FormatOgg),
+				},
+			},
+			want: `format "ogg"`,
+		},
+		{
+			name: "transcode probed format",
+			pass: validateTranscodeOutputFormatAdaptersPass(),
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				options:   recipeCompileOptions{preflightOutputAdapters: true},
+				runtime:   Default(),
+				transcodeOutputAttachments: []namedOutputSpec{{
+					name:   "web",
+					output: FileOutput("web.webm", io.Discard),
+				}},
+			},
+			want: `format "matroska"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "output_muxer_missing" || !errors.Is(err, format.ErrNotFound) {
+				t.Fatalf("err = %v, want output_muxer_missing wrapping format.ErrNotFound", err)
+			}
+			if !strings.Contains(err.Error(), tt.want) ||
+				!strings.Contains(err.Error(), "no muxer is registered") ||
+				!strings.Contains(err.Error(), "WithFormatAdapter") {
+				t.Fatalf("err = %v, want muxer guidance with %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 	frameSink := FrameSink(SinkFunc("frames", func(context.Context, Message) error { return nil }))
 	fileOutput := FileOutput("archive.ogg", io.Discard)

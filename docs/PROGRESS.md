@@ -651,6 +651,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     that fail to match the migration compiler set now return an actionable
     `recipe_graph_unsupported` build error with recipe counts and front-door
     suggestions instead of leaking a bare unsupported graph sentinel. Done.
+194. Preflight recipe output format adapters: ordinary and transcode muxed
+    outputs now resolve probed or explicit output formats and missing muxers in
+    compiler passes before runtime builder lowering opens inputs or creates
+    graph nodes. Done.
 
 ## First Vertical Slice
 
@@ -890,6 +894,8 @@ stream step attachments and output-kind rules are checked before stream
 lowering. Runtime capability checks for live codec-change and transforms now
 also run before ordinary stream lowering. Migration graph-compiler selection
 now reports recipe-focused diagnostics when no standard compiler matches.
+Output format and muxer availability for ordinary and transcode recipes are
+preflighted before runtime builder lowering.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

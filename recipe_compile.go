@@ -23,6 +23,7 @@ type recipeCompileState struct {
 	operation string
 	intent    Intent
 	runtime   Runtime
+	options   recipeCompileOptions
 
 	jobPresent       bool
 	transcodePresent bool
@@ -43,6 +44,10 @@ type recipeCompileState struct {
 	compiler  builderCompiler
 	spec      pipeline.Spec
 	specReady bool
+}
+
+type recipeCompileOptions struct {
+	preflightOutputAdapters bool
 }
 
 type recipeCompilePass interface {
@@ -120,8 +125,17 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 }
 
 func compileJobRecipe(job *Job) (recipeResolved, error) {
+	return compileJobRecipeWithOptions(job, recipeCompileOptions{})
+}
+
+func compileJobRecipeForBuild(job *Job) (recipeResolved, error) {
+	return compileJobRecipeWithOptions(job, recipeCompileOptions{preflightOutputAdapters: true})
+}
+
+func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
 	state := recipeCompileState{
 		operation: "build job",
+		options:   options,
 	}
 	if job != nil {
 		state.jobPresent = true
@@ -142,6 +156,7 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 		validateJobOutputBindingsPass(),
 		validateJobStreamOutputKindsPass(),
 		validatePacketJobOutputsPass(),
+		validateJobOutputFormatAdaptersPass(),
 		openRecipeRuntimeBuilderPass(),
 		validateJobStreamRuntimeCapabilitiesPass(),
 		lowerJobInputsPass(),
@@ -153,8 +168,17 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 }
 
 func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
+	return compileTranscodeRecipeWithOptions(job, recipeCompileOptions{})
+}
+
+func compileTranscodeRecipeForBuild(job *TranscodeJob) (recipeResolved, error) {
+	return compileTranscodeRecipeWithOptions(job, recipeCompileOptions{preflightOutputAdapters: true})
+}
+
+func compileTranscodeRecipeWithOptions(job *TranscodeJob, options recipeCompileOptions) (recipeResolved, error) {
 	state := recipeCompileState{
 		operation: transcodeRecipeOperation,
+		options:   options,
 	}
 	if job != nil {
 		state.transcodePresent = true
@@ -170,6 +194,7 @@ func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 		validateRecipeAttachmentConsistencyPass(),
 		validateTranscodeAttachmentsPass(),
 		validateTranscodeOutputBindingsPass(),
+		validateTranscodeOutputFormatAdaptersPass(),
 		planTranscodeIntentPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerTranscodePlanPass(),
@@ -370,6 +395,15 @@ func validateJobAttachmentsPass() recipeCompilePass {
 	}}
 }
 
+func validateJobOutputFormatAdaptersPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job output format adapters", fn: func(state *recipeCompileState) error {
+		if !state.options.preflightOutputAdapters {
+			return nil
+		}
+		return validateOutputFormatAdapters(context.Background(), state.runtime, state.outputAttachments)
+	}}
+}
+
 func validateJobStreamAttachmentsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job stream attachments", fn: func(state *recipeCompileState) error {
 		stream, ok := jobIntentStream(state.intent)
@@ -465,6 +499,23 @@ func validateTranscodeIntentShapePass() recipeCompilePass {
 func validateTranscodeAttachmentsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode attachments", fn: func(state *recipeCompileState) error {
 		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeOutputAttachments)
+	}}
+}
+
+func validateTranscodeOutputFormatAdaptersPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate transcode output format adapters", fn: func(state *recipeCompileState) error {
+		if !state.options.preflightOutputAdapters {
+			return nil
+		}
+		outputs := make([]OutputSpec, 0, len(state.transcodeOutputAttachments))
+		for i := range state.transcodeOutputAttachments {
+			output := state.transcodeOutputAttachments[i].output.Name(firstNonEmpty(
+				state.transcodeOutputAttachments[i].output.name,
+				state.transcodeOutputAttachments[i].name,
+			))
+			outputs = append(outputs, output)
+		}
+		return validateOutputFormatAdapters(context.Background(), state.runtime, outputs)
 	}}
 }
 

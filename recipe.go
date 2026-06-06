@@ -961,7 +961,7 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 }
 
 func (j *Job) Build(ctx context.Context) (Task, error) {
-	resolved, err := compileJobRecipe(j)
+	resolved, err := compileJobRecipeForBuild(j)
 	if err != nil {
 		return nil, err
 	}
@@ -1458,6 +1458,30 @@ func validateOutputSpecs(operation string, outputs []OutputSpec) error {
 			return duplicateOutputError(operation, name)
 		}
 		seen[name] = struct{}{}
+	}
+	return nil
+}
+
+func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []OutputSpec) error {
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return nil
+	}
+	for i := range outputs {
+		if outputs[i].sink != nil {
+			continue
+		}
+		formatID := outputs[i].format
+		if formatID == "" {
+			result, err := standard.formats.Probe(ctx, outputProbeRequest(outputs[i].output))
+			if err != nil {
+				return outputFormatProbeError(outputs[i].output, i, err)
+			}
+			formatID = result.Format
+		}
+		if _, err := standard.formats.MuxerFactory(formatID); err != nil {
+			return outputMuxerMissingError(outputs[i].output, i, formatID, err)
+		}
 	}
 	return nil
 }
@@ -2301,7 +2325,7 @@ func (j *TranscodeJob) Describe() (pipeline.Spec, error) {
 }
 
 func (j *TranscodeJob) Build(ctx context.Context) (Task, error) {
-	resolved, err := compileTranscodeRecipe(j)
+	resolved, err := compileTranscodeRecipeForBuild(j)
 	if err != nil {
 		return nil, err
 	}
