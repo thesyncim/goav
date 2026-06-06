@@ -250,10 +250,10 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
 				runtime:   Default(),
 				outputAttachments: []OutputSpec{
-					FileOutput("recording.webm", io.Discard),
+					FileOutput("recording.mp4", io.Discard),
 				},
 			},
-			want: `format "matroska"`,
+			want: `format "mp4"`,
 		},
 		{
 			name: "job explicit format",
@@ -277,10 +277,10 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 				runtime:   Default(),
 				transcodeOutputAttachments: []namedOutputSpec{{
 					name:   "web",
-					output: FileOutput("web.webm", io.Discard),
+					output: FileOutput("web.mp4", io.Discard),
 				}},
 			},
-			want: `format "matroska"`,
+			want: `format "mp4"`,
 		},
 	}
 	for _, tt := range tests {
@@ -490,10 +490,10 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 				operation:                transcodeRecipeOperation,
 				options:                  recipeCompileOptions{preflightInputAdapters: true},
 				runtime:                  Default(),
-				transcodeInputAttachment: FileInput("input.webm", strings.NewReader("")),
+				transcodeInputAttachment: FileInput("input.mp4", strings.NewReader("")),
 			},
 			code: "input_demuxer_missing",
-			want: []string{`format "matroska"`, "no demuxer is registered", "WithFormatAdapter"},
+			want: []string{`format "mp4"`, "no demuxer is registered", "WithFormatAdapter"},
 		},
 		{
 			name: "unknown input format",

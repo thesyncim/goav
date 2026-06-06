@@ -661,14 +661,14 @@ func TestRecordRecipeReportsMissingInputDemuxer(t *testing.T) {
 func TestRecordRecipeReportsMissingOutputMuxer(t *testing.T) {
 	_, err := goav.Record(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
-		goav.FileOutput("recording.webm", io.Discard),
+		goav.FileOutput("recording.mp4", io.Discard),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_muxer_missing" {
 		t.Fatalf("err = %v, want output_muxer_missing", err)
 	}
-	if !strings.Contains(err.Error(), `format "matroska"`) ||
+	if !strings.Contains(err.Error(), `format "mp4"`) ||
 		!strings.Contains(err.Error(), "no muxer is registered") ||
 		!strings.Contains(err.Error(), ".ivf") {
 		t.Fatalf("err = %v, want muxer adapter guidance", err)
