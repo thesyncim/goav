@@ -154,7 +154,8 @@ format.DemuxSource
 ```
 
 Use this when packet formats already match and the graph should stay
-packet-preserving.
+packet-preserving. `TestComponentFileRemuxFanout` covers this shape without
+using recipe builders.
 
 ### Analysis Hook
 

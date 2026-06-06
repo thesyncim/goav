@@ -711,6 +711,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     codec, format, filter, WebRTC, and adapter components, link it from the
     README, and guard the recipe/component/expert-graph contract with a doc
     test. Done.
+209. Prove a reusable component pipeline without recipes: manually compose
+    `format.DemuxSource`, two `format.MuxStage` instances, and `pipeline.Graph`
+    fanout in `TestComponentFileRemuxFanout`, including graph spec details,
+    packet delivery, stats, and lifecycle closure. Done.
 
 ## First Vertical Slice
 
@@ -982,6 +986,8 @@ unknown modes with concrete input and target dimensions.
 The reusable component catalog is now explicit: recipes are the front door,
 components do the media work, and expert graphs compose those same components
 directly.
+The first named component proof now builds file remux fanout directly from
+format and pipeline components without recipe lowering.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and
