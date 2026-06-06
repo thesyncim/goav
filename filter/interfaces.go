@@ -2,8 +2,20 @@ package filter
 
 import (
 	"context"
+	"errors"
 
 	"github.com/thesyncim/goav/av"
+)
+
+var (
+	ErrNotFound   = errors.New("filter: not found")
+	ErrNilFilter  = errors.New("filter: nil filter")
+	ErrResultFull = errors.New("filter: result capacity full")
+)
+
+const (
+	FactoryResize   = "resize"
+	FactoryResample = "resample"
 )
 
 type Descriptor struct {

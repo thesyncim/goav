@@ -34,9 +34,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `pipeline` | direct executor, fanout, simple node-to-node links, stream/event routes, backpressure guard, graph specs with text/DOT/Mermaid rendering | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh, stream-scoped EOS for single-stream readers | richer multi-stream receive |
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
-| `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
-| `transcode` | ladder contracts, rendition-to-output selection model | resize/resample branch execution |
-| runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler, multi-RTP/WebRTC packet-reader record/fanout compiler | resize/resample branch compilers |
+| `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | concrete allocation-safe filters later |
+| `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
+| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph connections with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, multi-RTP/WebRTC packet-reader record/fanout compiler | concrete resize/resample adapters |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264`; `govpx`, `goav1`, and default-build `goh264` descriptor boundaries report unavailable factories explicitly | concrete video adapter allocation guards |
 
 ## Implementation Order
@@ -95,7 +95,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 28. Add `Transcode(plan)` compiler for one selected decode feeding multiple
     named encoder branches and mux outputs that select renditions by name or
     label. Done.
-29. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+29. Add filter registry and frame-transform stage, then let transcode renditions
+    insert resize/resample branch stages when matching filter factories are
+    registered. Done.
+30. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -130,6 +133,8 @@ Required proof:
   loss events.
 - `codec.EncoderStage` converts frame messages into packet messages while
   preserving realtime events and flushing delayed packets before EOS.
+- `filter.Stage` converts frame messages into transformed frame messages while
+  preserving realtime events and flushing before EOS.
 - `format.DemuxSource` and `format.MuxStage` adapt container boundaries into
   the event-aware pipeline without per-packet allocation.
 - The runtime builder can plan and compile explicit source/stage/sink graphs
@@ -165,8 +170,8 @@ Required proof:
   `Transcode(plan).Build(ctx)` when all renditions resolve to one selected
   stream. Each rendition becomes a named encoded stream, outputs can select
   renditions by name or label, and graph description is equivalent before and
-  after build. Resize and resample branch configs are rejected until concrete
-  filter-stage factories exist.
+  after build. Resize and resample branch configs insert filter stages when
+  matching filter factories are registered, and fail explicitly when missing.
 - `rtpav.Source` now forwards realtime events into depacketizers before graph
   delivery, so loss-aware depacketizers can reset or drop partial payloads.
 - `rtpav.Source` refreshes payload maps on `EventCodecChanged`, and
@@ -217,7 +222,7 @@ Required proof:
 | Gate | Evidence | State |
 | --- | --- | --- |
 | Clear minimal architecture | `README.md`, `docs/ARCHITECTURE.md`, package boundaries | active |
-| Simple high-level API | runtime builder, named graph connections, remux/fanout compiler, decode-to-sink compiler, RTP record/fanout compiler, selected encode-to-output compiler, shared-decode transcode compiler | first slices active |
+| Simple high-level API | runtime builder, named graph connections, remux/fanout compiler, decode-to-sink compiler, RTP record/fanout compiler, selected encode-to-output compiler, shared-decode transcode compiler with transform branches | first slices active |
 | Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts | active |
 | Realtime Opus vertical slice | RTP/WebRTC boundary, Opus depacketizer, `gopus` decoder | active |
 | Allocation guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters | active for implemented paths |
@@ -234,8 +239,9 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: add resize/resample branch execution for transcode
-plans, then harden concrete video adapters with allocation and lifecycle tests.
+Current pressure point: add concrete allocation-safe resize/resample filter
+adapters, then harden concrete video adapters with allocation and lifecycle
+tests.
 
 ## Validation Gates
 

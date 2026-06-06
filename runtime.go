@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
@@ -32,6 +33,7 @@ type Option func(*runtime)
 func New(options ...Option) Runtime {
 	runtime := &runtime{
 		codecs:    codec.NewRegistry(),
+		filters:   filter.NewRegistry(),
 		formats:   format.NewRegistry(format.WithProber(format.DefaultProber())),
 		pipelines: pipeline.NewDirectFactory(),
 		realtime:  true,
@@ -58,6 +60,14 @@ func WithFormatRegistry(registry format.Registry) Option {
 	}
 }
 
+func WithFilterRegistry(registry filter.Registry) Option {
+	return func(runtime *runtime) {
+		if registry != nil {
+			runtime.filters = registry
+		}
+	}
+}
+
 func WithPipelineFactory(factory pipeline.Factory) Option {
 	return func(runtime *runtime) {
 		if factory != nil {
@@ -78,6 +88,15 @@ func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
 func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
 	return func(runtime *runtime) {
 		registry, ok := runtime.formats.(*format.SimpleRegistry)
+		if ok && register != nil {
+			register(registry)
+		}
+	}
+}
+
+func WithFilterAdapter(register func(*filter.SimpleRegistry)) Option {
+	return func(runtime *runtime) {
+		registry, ok := runtime.filters.(*filter.SimpleRegistry)
 		if ok && register != nil {
 			register(registry)
 		}
@@ -110,6 +129,7 @@ func WithMetrics(metrics Metrics) Option {
 
 type runtime struct {
 	codecs    codec.Registry
+	filters   filter.Registry
 	formats   format.Registry
 	pipelines pipeline.Factory
 	buffer    pipeline.BufferPolicy
@@ -124,6 +144,10 @@ func (r *runtime) Codecs() codec.Registry {
 
 func (r *runtime) Formats() format.Registry {
 	return r.formats
+}
+
+func (r *runtime) Filters() filter.Registry {
+	return r.filters
 }
 
 func (r *runtime) Pipelines() pipeline.Factory {

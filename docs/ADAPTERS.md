@@ -1,15 +1,16 @@
 # Adapters
 
-Adapters keep codec and container implementations out of the core import graph.
+Adapters keep codec, container, and filter implementations out of the core
+import graph.
 
-Core packages such as `av`, `codec`, `format`, `pipeline`, `rtpav`, and
-`webrtcav` should not import sibling codec modules directly. Concrete
+Core packages such as `av`, `codec`, `format`, `filter`, `pipeline`, `rtpav`,
+and `webrtcav` should not import sibling codec modules directly. Concrete
 integrations belong under `adapters/...`.
 
 ## Rules
 
 - Implement `codec.DecoderFactory`, `codec.EncoderFactory`,
-  `format.DemuxerFactory`, or `format.MuxerFactory`.
+  `format.DemuxerFactory`, `format.MuxerFactory`, or `filter.Factory`.
 - Register with an explicit registry instance; blank-import registration can be
   added later as optional convenience.
 - Allocate only during construction or `Open`.
@@ -32,6 +33,7 @@ integrations belong under `adapters/...`.
 | `adapters/govpx` | descriptor-only VP8/VP9 boundary |
 | `adapters/goav1` | descriptor-only AV1 boundary |
 | `adapters/goh264` | descriptor-only by default; `goav_goh264` enables H264 decode |
+| resize/resample adapters | planned; filter registry and stage boundary are active |
 
 ## `ivf`
 

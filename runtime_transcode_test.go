@@ -122,7 +122,121 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 	}
 }
 
-func TestRuntimeBuilderTranscodeRejectsUncompiledTransforms(t *testing.T) {
+func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := format.NewRegistry(
+		format.WithProber(remuxTestProber{streams: streams}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		format.WithMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &decodeTestDecoder{}
+	encoderFactory := &encodeTestEncoderFactory{}
+	codecs := codec.NewRegistry(
+		codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		codec.WithEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
+	)
+	resampler := &transcodeTestFilter{}
+	filterFactory := &transcodeTestFilterFactory{filter: resampler}
+	filters := filter.NewRegistry(filter.WithFactory(filter.Descriptor{
+		Name:   filter.FactoryResample,
+		Input:  av.MediaAudio,
+		Output: av.MediaAudio,
+	}, filterFactory))
+	plan := transcode.Plan{
+		Input: format.Input{Name: "input.ogg"},
+		Renditions: []transcode.Rendition{
+			{
+				Name:     "audio-main",
+				Selector: SelectAudio(),
+				Encode:   pcmEncodeConfig(),
+			},
+			{
+				Name:     "audio-low",
+				Selector: SelectAudio(),
+				Resample: &filter.ResampleConfig{
+					SampleRate: 16000,
+					Channels:   1,
+				},
+				Encode: codec.EncodeConfig{
+					Parameters: av.CodecParameters{ID: av.CodecPCM, Type: av.MediaAudio},
+				},
+			},
+		},
+		Outputs: []transcode.Output{{Name: "archive.ogg", Format: av.FormatOgg}},
+	}
+
+	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs), WithFilterRegistry(filters)).New().
+		Transcode(plan)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Nodes) != 7 || len(planned.Edges) != 7 {
+		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
+	}
+	if !strings.Contains(planned.String(), "decode-audio -> resample-audio-low") ||
+		!strings.Contains(planned.String(), "resample-audio-low -> encode-audio-low") {
+		t.Fatalf("planned:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if filterFactory.config.Stream.ID != "audio" || filterFactory.config.Audio == nil ||
+		filterFactory.config.Audio.SampleRate != 16000 || filterFactory.config.Audio.Channels != 1 {
+		t.Fatalf("filter config: %+v", filterFactory.config)
+	}
+	if resampler.frames != 1 || resampler.flushes != 1 {
+		t.Fatalf("resampler frames=%d flushes=%d", resampler.frames, resampler.flushes)
+	}
+	if len(encoderFactory.encoders) != 2 || encoderFactory.encoders[0].encodes != 1 || encoderFactory.encoders[1].encodes != 1 {
+		t.Fatalf("encoders=%d first=%+v second=%+v", len(encoderFactory.encoders), encoderAt(encoderFactory.encoders, 0), encoderAt(encoderFactory.encoders, 1))
+	}
+	if len(encoderFactory.configs) != 2 ||
+		encoderFactory.configs[1].Parameters.SampleRate != 16000 ||
+		encoderFactory.configs[1].Parameters.ClockRate != 16000 ||
+		encoderFactory.configs[1].Parameters.Channels != 1 {
+		t.Fatalf("encode configs: %+v", encoderFactory.configs)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 2 ||
+		!streamIDsEqual(muxers.muxers[0].writtenStreams, []av.StreamID{"audio-main", "audio-low"}) {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !resampler.closed {
+		t.Fatal("resampler not closed")
+	}
+}
+
+func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	formats := format.NewRegistry(
+		format.WithProber(remuxTestProber{streams: streams}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		format.WithMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+	)
+	codecs := codec.NewRegistry(
+		codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		codec.WithEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
 		Renditions: []transcode.Rendition{{
@@ -137,9 +251,14 @@ func TestRuntimeBuilderTranscodeRejectsUncompiledTransforms(t *testing.T) {
 		Outputs: []transcode.Output{{Name: "preview.ogg"}},
 	}
 
-	_, err := New().New().Transcode(plan).Describe()
-	if err != ErrUnsupportedBuild {
-		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+		Transcode(plan).
+		Build(context.Background())
+	if err != filter.ErrNotFound {
+		t.Fatalf("err = %v, want filter.ErrNotFound", err)
+	}
+	if !demuxer.closed {
+		t.Fatal("demux source should be closed after missing filter factory")
 	}
 }
 
@@ -168,4 +287,61 @@ func encoderAt(encoders []*encodeTestEncoder, index int) *encodeTestEncoder {
 		return nil
 	}
 	return encoders[index]
+}
+
+type transcodeTestFilterFactory struct {
+	filter *transcodeTestFilter
+	config filter.Config
+}
+
+func (f *transcodeTestFilterFactory) NewFilter(_ context.Context, config filter.Config) (filter.FrameFilter, error) {
+	f.config = config
+	if f.filter == nil {
+		f.filter = &transcodeTestFilter{}
+	}
+	return f.filter, nil
+}
+
+type transcodeTestFilter struct {
+	frames  int
+	flushes int
+	closed  bool
+}
+
+func (f *transcodeTestFilter) Descriptor() filter.Descriptor {
+	return filter.Descriptor{Name: filter.FactoryResample, Input: av.MediaAudio, Output: av.MediaAudio}
+}
+
+func (f *transcodeTestFilter) Open(context.Context, filter.Config) error {
+	return nil
+}
+
+func (f *transcodeTestFilter) FilterInto(_ context.Context, frame *av.Frame, out *filter.Result) error {
+	if frame == nil {
+		return nil
+	}
+	if len(out.Frames) == cap(out.Frames) {
+		return filter.ErrResultFull
+	}
+	index := len(out.Frames)
+	out.Frames = out.Frames[:index+1]
+	outFrame := &out.Frames[index]
+	outFrame.Reset()
+	*outFrame = *frame
+	f.frames++
+	return nil
+}
+
+func (f *transcodeTestFilter) FlushInto(context.Context, *filter.Result) error {
+	f.flushes++
+	return nil
+}
+
+func (f *transcodeTestFilter) HandleEvent(context.Context, *av.Event) error {
+	return nil
+}
+
+func (f *transcodeTestFilter) Close() error {
+	f.closed = true
+	return nil
 }

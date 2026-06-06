@@ -112,8 +112,8 @@ plan := transcode.Plan{
 task, err := runtime.New().Transcode(plan).Build(ctx)
 ```
 
-Resize and resample configs remain plan-level contracts until filter stage
-factories land.
+Resize and resample configs become branch-local filter stages when matching
+filter factories are registered.
 
 Expected graph:
 

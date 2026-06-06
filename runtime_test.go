@@ -10,6 +10,7 @@ import (
 	ivfadapter "github.com/thesyncim/goav/adapters/ivf"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -87,7 +88,7 @@ func (s *runtimeTestSink) Close() error {
 
 func TestNewRuntimeDefaults(t *testing.T) {
 	runtime := New()
-	if runtime.Codecs() == nil || runtime.Formats() == nil || runtime.Pipelines() == nil {
+	if runtime.Codecs() == nil || runtime.Formats() == nil || runtime.Filters() == nil || runtime.Pipelines() == nil {
 		t.Fatalf("runtime defaults incomplete: %+v", runtime)
 	}
 	if _, err := runtime.Probe(context.Background(), ProbeRequest{}); !errors.Is(err, format.ErrNotFound) {
@@ -118,6 +119,16 @@ func TestRuntimeWithFormatAdapter(t *testing.T) {
 	}
 	if _, err := runtime.Formats().MuxerFactory(av.FormatIVF); err != nil {
 		t.Fatalf("muxer factory: %v", err)
+	}
+}
+
+func TestRuntimeWithFilterAdapter(t *testing.T) {
+	runtime := New(WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResample}, &transcodeTestFilterFactory{})
+	}))
+
+	if _, err := runtime.Filters().Factory(filter.FactoryResample); err != nil {
+		t.Fatalf("filter factory: %v", err)
 	}
 }
 

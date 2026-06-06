@@ -51,7 +51,8 @@ validation gates. This roadmap keeps the broader phase view.
 - Decode sharing across renditions. First compiler active.
 - Per-rendition encoder configs. First compiler active.
 - Multiple mux/output targets from one plan. First compiler active.
-- Resize/resample branch execution.
+- Resize/resample branch execution. Adapter boundary active; concrete
+  allocation-safe implementations pending.
 
 ## Phase 4: H264 and concrete AV1 decode
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
@@ -22,6 +23,7 @@ type ProbeResult = format.ProbeResult
 type Runtime interface {
 	Codecs() codec.Registry
 	Formats() format.Registry
+	Filters() filter.Registry
 	Pipelines() pipeline.Factory
 	Probe(context.Context, ProbeRequest) (ProbeResult, error)
 	New() Builder

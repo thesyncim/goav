@@ -157,7 +157,8 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `webrtcav`: Pion PeerConnection session, TrackSet multi-track coordinator,
   replaceable TrackRemote readers, RTCP feedback, and codec-update event
   boundaries.
-- `filter`: resize/resample contracts.
+- `filter`: resize/resample contracts, registry, and frame-transform pipeline
+  stage.
 - `transcode`: rendition and ladder planning contracts, with a first
   shared-decode multi-rendition compiler.
 - `adapters/ivf`: IVF demux/mux for VP8, VP9, and AV1 packet recording.
@@ -184,7 +185,8 @@ Implemented slices:
 - Fluent selected-stream decode-to-sink compiler, with optional filter stages.
 - Fluent selected-stream decode/filter/encode-to-output compiler.
 - Fluent `Transcode(plan)` compiler for one selected decode feeding multiple
-  named encode/output branches.
+  named encode/output branches, including resize/resample branch stages when
+  filter factories are registered.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
   `RTP(...)` inputs.
 - Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,
@@ -205,9 +207,8 @@ Implemented slices:
 
 Next pressure points:
 
-- Resize/resample branch compilation for transcode plans.
+- Concrete allocation-safe resize/resample filter adapters.
 - Allocation and lifecycle hardening for concrete video decode paths.
-- Allocation-safe resize and resample implementations.
 
 ## Working Loop
 

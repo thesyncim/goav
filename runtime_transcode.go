@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/transcode"
 )
@@ -12,9 +13,17 @@ import (
 type transcodeGraphCompiler struct{}
 
 type transcodeBranch struct {
-	name      string
-	rendition transcode.Rendition
-	request   encodeRequest
+	name       string
+	rendition  transcode.Rendition
+	transforms []transcodeTransform
+	request    encodeRequest
+}
+
+type transcodeTransform struct {
+	name    string
+	factory string
+	video   *filter.ResizeConfig
+	audio   *filter.ResampleConfig
 }
 
 type transcodeOutputBranch struct {
@@ -53,7 +62,7 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 		return pipeline.Spec{}, err
 	}
 
-	nodes := make(map[string]plannedNode, 3+len(branches)+len(outputs))
+	nodes := make(map[string]plannedNode, 3+len(branches)+transcodeTransformCount(branches)+len(outputs))
 	sourceName := demuxNodeName(plan.Input)
 	sourceRef := pipeline.NodeRef(sourceName)
 	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
@@ -66,18 +75,36 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 	}
 
 	encodeRefs := make([]pipeline.NodeRef, len(branches))
+	branchNodeOrder := make([]pipeline.NodeRef, 0, len(branches)+transcodeTransformCount(branches))
+	outgoing := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(branches)*2+transcodeTransformCount(branches))
 	for i := range branches {
+		branchRef := previous
+		for j := range branches[i].transforms {
+			transformRef := pipeline.NodeRef(branches[i].transforms[j].name)
+			if err := addPlannedNode(nodes, &spec, branches[i].transforms[j].name, pipeline.NodeStage, transformRef); err != nil {
+				return pipeline.Spec{}, err
+			}
+			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
+				From:   branchRef,
+				To:     transformRef,
+				Policy: pipeline.RouteAll,
+			})
+			branchRef = transformRef
+			branchNodeOrder = append(branchNodeOrder, transformRef)
+		}
+
 		encodeName := encodeNodeName(branches[i].request)
 		encodeRef := pipeline.NodeRef(encodeName)
 		if err := addPlannedNode(nodes, &spec, encodeName, pipeline.NodeStage, encodeRef); err != nil {
 			return pipeline.Spec{}, err
 		}
-		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-			From:   previous,
+		outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
+			From:   branchRef,
 			To:     encodeRef,
 			Policy: pipeline.RouteAll,
 		})
 		encodeRefs[i] = encodeRef
+		branchNodeOrder = append(branchNodeOrder, encodeRef)
 	}
 
 	for i := range outputs {
@@ -87,12 +114,17 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 			return pipeline.Spec{}, err
 		}
 		for _, branchIndex := range outputs[i].matches {
-			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
+			encodeRef := encodeRefs[branchIndex]
+			outgoing[encodeRef] = append(outgoing[encodeRef], pipeline.EdgeSpec{
 				From:   encodeRefs[branchIndex],
 				To:     outputRef,
 				Policy: pipeline.RouteAll,
 			})
 		}
+	}
+	spec.Edges = append(spec.Edges, outgoing[previous]...)
+	for i := range branchNodeOrder {
+		spec.Edges = append(spec.Edges, outgoing[branchNodeOrder[i]]...)
 	}
 	return spec, nil
 }
@@ -150,11 +182,30 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 	encodeRefs := make([]pipeline.NodeRef, len(branches))
 	encodedStreams := make([]av.Stream, len(branches))
 	for i := range branches {
-		config, encodedStream, err := prepareEncodeConfig(stream, branches[i].request, realtime)
+		branchRef := previousRef
+		branchStream := stream
+		for j := range branches[i].transforms {
+			stage, outputStream, err := b.newTranscodeFilterStage(ctx, branches[i].transforms[j], branchStream, realtime)
+			if err != nil {
+				return err
+			}
+			stageRef, err := graph.AddStage(stage, b.runtime.buffer)
+			if err != nil {
+				stage.Close()
+				return err
+			}
+			if err := graph.Link(pipeline.Link{From: branchRef, To: stageRef}); err != nil {
+				return err
+			}
+			branchRef = stageRef
+			branchStream = outputStream
+		}
+
+		config, encodedStream, err := prepareEncodeConfig(branchStream, branches[i].request, realtime)
 		if err != nil {
 			return err
 		}
-		encodeRef, err := b.compileEncodeStage(ctx, graph, previousRef, branches[i].request, config)
+		encodeRef, err := b.compileEncodeStage(ctx, graph, branchRef, branches[i].request, config)
 		if err != nil {
 			return err
 		}
@@ -185,6 +236,37 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 	return nil
 }
 
+func (b *builder) newTranscodeFilterStage(ctx context.Context, transform transcodeTransform, stream av.Stream, realtime bool) (*filter.Stage, av.Stream, error) {
+	outputStream, err := applyTranscodeTransformToStream(stream, transform)
+	if err != nil {
+		return nil, av.Stream{}, err
+	}
+	factory, err := b.runtime.filters.Factory(transform.factory)
+	if err != nil {
+		return nil, av.Stream{}, err
+	}
+	config := filter.Config{
+		Stream:   stream,
+		Realtime: realtime,
+		Video:    transform.video,
+		Audio:    transform.audio,
+	}
+	frameFilter, err := factory.NewFilter(ctx, config)
+	if err != nil {
+		return nil, av.Stream{}, err
+	}
+	stage, err := filter.NewStage(filter.StageConfig{
+		Name:   transform.name,
+		Filter: frameFilter,
+		Result: filterResultForStream(outputStream),
+	})
+	if err != nil {
+		frameFilter.Close()
+		return nil, av.Stream{}, err
+	}
+	return stage, outputStream, nil
+}
+
 func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOutputBranch, error) {
 	if len(plan.Renditions) == 0 || len(plan.Outputs) == 0 {
 		return nil, nil, ErrUnsupportedBuild
@@ -205,14 +287,15 @@ func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
 	names := make(map[string]struct{}, len(plan.Renditions))
 	for i := range plan.Renditions {
 		rendition := plan.Renditions[i]
-		if rendition.Resize != nil || rendition.Resample != nil {
-			return nil, ErrUnsupportedBuild
-		}
 		name := transcodeRenditionName(rendition, i, len(plan.Renditions))
 		if _, ok := names[name]; ok {
 			return nil, ErrUnsupportedBuild
 		}
 		names[name] = struct{}{}
+		transforms, err := transcodeTransforms(name, rendition)
+		if err != nil {
+			return nil, err
+		}
 
 		config := rendition.Encode
 		if config.Stream.ID == "" {
@@ -225,8 +308,9 @@ func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
 			config.Stream.Metadata = rendition.Metadata
 		}
 		branches[i] = transcodeBranch{
-			name:      name,
-			rendition: rendition,
+			name:       name,
+			rendition:  rendition,
+			transforms: transforms,
 			request: encodeRequest{
 				name:     name,
 				selector: rendition.Selector,
@@ -235,6 +319,77 @@ func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
 		}
 	}
 	return branches, nil
+}
+
+func transcodeTransforms(name string, rendition transcode.Rendition) ([]transcodeTransform, error) {
+	if rendition.Resize != nil && rendition.Resample != nil {
+		return nil, ErrUnsupportedBuild
+	}
+	if rendition.Resize != nil {
+		return []transcodeTransform{{
+			name:    "resize-" + name,
+			factory: filter.FactoryResize,
+			video:   rendition.Resize,
+		}}, nil
+	}
+	if rendition.Resample != nil {
+		return []transcodeTransform{{
+			name:    "resample-" + name,
+			factory: filter.FactoryResample,
+			audio:   rendition.Resample,
+		}}, nil
+	}
+	return nil, nil
+}
+
+func transcodeTransformCount(branches []transcodeBranch) int {
+	count := 0
+	for i := range branches {
+		count += len(branches[i].transforms)
+	}
+	return count
+}
+
+func applyTranscodeTransformToStream(stream av.Stream, transform transcodeTransform) (av.Stream, error) {
+	out := stream
+	switch {
+	case transform.audio != nil:
+		if stream.Type != av.MediaAudio && stream.Codec.Type != av.MediaAudio {
+			return av.Stream{}, ErrUnsupportedBuild
+		}
+		out.Type = av.MediaAudio
+		out.Codec.Type = av.MediaAudio
+		if transform.audio.SampleRate != 0 {
+			out.Codec.SampleRate = transform.audio.SampleRate
+			out.Codec.ClockRate = uint32(transform.audio.SampleRate)
+			out.TimeBase = av.TimeBase{Num: 1, Den: int64(transform.audio.SampleRate)}
+		}
+		if transform.audio.Channels != 0 {
+			out.Codec.Channels = transform.audio.Channels
+		}
+		if transform.audio.ChannelLayout != "" {
+			out.Codec.ChannelLayout = transform.audio.ChannelLayout
+		}
+		if transform.audio.SampleFormat != "" {
+			out.Codec.SampleFormat = transform.audio.SampleFormat
+		}
+	case transform.video != nil:
+		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
+			return av.Stream{}, ErrUnsupportedBuild
+		}
+		out.Type = av.MediaVideo
+		out.Codec.Type = av.MediaVideo
+		if transform.video.Width != 0 {
+			out.Codec.Width = transform.video.Width
+		}
+		if transform.video.Height != 0 {
+			out.Codec.Height = transform.video.Height
+		}
+		if transform.video.PixelFormat != "" {
+			out.Codec.PixelFormat = transform.video.PixelFormat
+		}
+	}
+	return out, nil
 }
 
 func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transcodeOutputBranch, error) {
@@ -312,4 +467,18 @@ func transcodeOutputSelectsBranch(output transcode.Output, branch transcodeBranc
 		}
 	}
 	return false
+}
+
+func filterResultForStream(stream av.Stream) filter.Result {
+	frame := av.Frame{}
+	if stream.Type == av.MediaAudio || stream.Codec.Type == av.MediaAudio {
+		frame.Planes = []av.Plane{{Buffer: av.Buffer{Bytes: make([]byte, 0, audioDecodeBufferSize(stream))}}}
+	}
+	if stream.Type == av.MediaVideo || stream.Codec.Type == av.MediaVideo {
+		frame.Planes = make([]av.Plane, 3)
+	}
+	return filter.Result{
+		Frames: []av.Frame{frame}[:0],
+		Events: make([]av.Event, 0, 1),
+	}
 }

@@ -63,11 +63,12 @@ The current compilers cover:
   mux stages used by file or protocol inputs
 - `Transcode(plan)` for one input where all renditions resolve to the same
   selected stream, sharing one decode and fanning frames into multiple named
-  encoder branches; outputs can receive all renditions or select branches by
+  encoder branches; resize/resample configs insert filter stages through the
+  filter registry, and outputs can receive all renditions or select branches by
   rendition name or label
 
-Resize and resample branch configs still return a clear unsupported error until
-the runtime has concrete filter-stage factories to attach before each encoder.
+Resize and resample branch configs fail explicitly at build time when no matching
+filter factory is registered.
 
 ## Core media model
 
@@ -157,6 +158,12 @@ EOS events. `MuxStage` writes packet messages through a `format.Muxer` and emits
 write-result events through the graph, so output-side state remains observable
 instead of disappearing inside a terminal sink.
 
+The filter package follows the codec stage model for frame transforms.
+`filter.Stage` adapts a `filter.FrameFilter` to frame and event messages,
+flushes before EOS, and uses caller-owned result scratch. Runtime transcode
+branches resolve resize and resample configs through the filter registry before
+attaching the stage ahead of each encoder.
+
 The RTP package provides the live receive source. `rtpav.Source` keeps Pion RTP
 packets at the boundary, applies optional jitter and depacketizers, forwards
 realtime events into those depacketizers, and emits normal packet/event messages
@@ -187,8 +194,8 @@ That shape supports:
 The `transcode` package describes ladders and renditions without deciding how
 they are executed. The first runtime compiler turns a plan into a graph with one
 shared selected decode, multiple encoder branches, and mux outputs that select
-renditions by name or label. It deliberately rejects resize and resample branch
-configs until those filter contracts have concrete stage factories.
+renditions by name or label. Resize and resample branch configs become filter
+stages when matching factories are registered.
 
 Typical use cases:
 
