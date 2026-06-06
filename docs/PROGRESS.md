@@ -31,7 +31,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `av` | reset helpers, ownership docs, RTP timebase helpers, allocation-free timestamp and duration rescale/compare helpers | richer timestamp metadata helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages, decode bounds for realtime adapter scratch planning | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
-| `pipeline` | direct executor, fanout, first-class node-to-node connections, branch helpers, stream/event routing options, backpressure guard, graph specs with detail-aware text/DOT/Mermaid rendering | bounded async connections and drop-policy tests |
+| `pipeline` | direct executor, fanout, first-class node-to-node connections, branch helpers, stream/event routing options, backpressure guard, allocation-free drop-policy decisions, graph specs with detail-aware text/DOT/Mermaid rendering | bounded async connections using the shared drop controller |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh, stream-scoped EOS for single-stream readers | richer multi-stream receive |
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
@@ -137,7 +137,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     allocation guard, and deterministic close behavior. Done.
 42. Add `codec.DecodeBounds` so realtime adapters can merge caller-provided
     stream limits with adapter defaults before binding large scratch. Done.
-43. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+43. Add an allocation-free pipeline drop controller for `BufferPolicy` so
+    backpressure, drop-oldest, drop-newest, wait-for-sync, and non-key-video
+    decisions are tested before bounded async execution uses them. Done.
+44. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -263,6 +266,10 @@ Required proof:
 - `codec.DecodeBounds` gives future realtime adapters a small common place to
   receive payload, retained-fragment, output-count, and geometry limits while
   keeping adapter-specific arenas behind documented `OpaqueState` types.
+- `pipeline.BufferPolicy` now has one allocation-free decision point for
+  direct backpressure, oldest/newest dropping, wait-for-sync recovery, and
+  non-key-video dropping. This keeps the future bounded executor from spreading
+  policy logic across connection code.
 
 ## Adapter Targets
 
@@ -308,7 +315,8 @@ Required proof:
 5. Update this tracker with the new evidence and next pressure point.
 
 Current pressure point: extend the next concrete video path, likely AV1 decode
-if the sibling module surface is ready without expanding the core import graph.
+if the sibling module surface is ready without expanding the core import graph,
+and wire bounded async execution through the shared drop controller.
 
 ## Validation Gates
 

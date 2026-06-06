@@ -43,6 +43,7 @@ Current allocation guards cover:
 - `av.Packet`, `av.Frame`, and `av.Event` reset
 - `av.TimeBase`, `av.Timestamp`, and `av.Duration` conversion helpers
 - codec result reset
+- pipeline drop-policy decisions
 - direct pipeline pass-through
 - codec decoder stage packet-to-frame flow
 - codec encoder stage frame-to-packet flow

@@ -141,8 +141,9 @@ can emit zero or more messages.
 The default executor is a synchronous direct-call graph. It does not create
 goroutines or channels per packet, and fanout delivers the same message and
 payload references unless a future explicit policy asks for copying. Buffered
-edges are intentionally separate from the direct executor so backpressure and
-drop behavior remain visible.
+connections are intentionally separate from the direct executor so backpressure
+and drop behavior remain visible. Drop-policy decisions are centralized in the
+pipeline package before a bounded async executor depends on them.
 
 Builders and graphs can produce a `pipeline.Spec`: structured nodes and edges
 plus human-readable text, DOT, and Mermaid rendering. Nodes may include short

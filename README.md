@@ -157,8 +157,8 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `av`: media identifiers, streams, packets, frames, timestamps, events,
   timebase conversion helpers, reset helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, fanout, stream/event routes,
-  backpressure surface, simple node-to-node connections and branches,
-  detail-aware text/DOT/Mermaid graph specs.
+  backpressure surface, drop-policy decisions, simple node-to-node connections
+  and branches, detail-aware text/DOT/Mermaid graph specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, realtime decode bounds, registry,
   decoder and encoder pipeline stages.
@@ -246,12 +246,13 @@ Implemented slices:
   honors keyframe request events, and has allocation and lifecycle tests.
 - Decode bounds give realtime video adapters a common way to prebind bounded
   scratch without importing codec internals into the core.
+- Pipeline drop-policy decisions are isolated and allocation-free, ready for a
+  bounded async executor without changing graph APIs.
 
 Next pressure points:
 
-- Extend the next concrete video path: AV1 decode once the sibling module is a
-  clean optional dependency and the stream runner can bind from explicit decode
-  bounds without hidden allocation.
+- Wire bounded async execution through the existing buffer/drop-policy surface,
+  then extend AV1 decode once the sibling module is a clean optional dependency.
 
 ## Working Loop
 

@@ -50,6 +50,8 @@ type StreamID string
 type Epoch uint64
 type Metadata map[string]string
 
+const MetadataMediaType = "media_type"
+
 const (
 	SampleFormatS16    = "s16"
 	SampleFormatF32    = "f32"
