@@ -567,6 +567,70 @@ func TestRuntimeBuilderTranscodeRequiresMatchingOutputSelection(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderTranscodeReportsEmptyPlanParts(t *testing.T) {
+	tests := []struct {
+		name string
+		plan transcode.Plan
+		want string
+	}{
+		{
+			name: "renditions",
+			plan: transcode.Plan{
+				Input:   format.Input{Name: "input.ogg"},
+				Outputs: []transcode.Output{{Name: "preview.ogg"}},
+			},
+			want: "no renditions",
+		},
+		{
+			name: "outputs",
+			plan: transcode.Plan{
+				Input: format.Input{Name: "input.ogg"},
+				Renditions: []transcode.Rendition{{
+					Name:     "audio-main",
+					Selector: testSelectAudio(),
+					Encode:   pcmEncodeConfig(),
+				}},
+			},
+			want: "no outputs",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newTestBuilder(t).Transcode(tt.plan).Describe()
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "transcode_plan_empty" || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want transcode_plan_empty wrapping ErrUnsupportedBuild", err)
+			}
+			if !strings.Contains(err.Error(), tt.want) ||
+				!strings.Contains(err.Error(), "goav.Transcode") {
+				t.Fatalf("err = %v, want empty plan guidance", err)
+			}
+		})
+	}
+}
+
+func TestRuntimeBuilderTranscodeReportsDuplicateRenditionNames(t *testing.T) {
+	plan := transcode.Plan{
+		Input: format.Input{Name: "input.ogg"},
+		Renditions: []transcode.Rendition{
+			{Name: "audio-main", Selector: testSelectAudio(), Encode: pcmEncodeConfig()},
+			{Name: "audio-main", Selector: testSelectAudio(), Encode: pcmEncodeConfig()},
+		},
+		Outputs: []transcode.Output{{Name: "preview.ogg"}},
+	}
+
+	_, err := newTestBuilder(t).Transcode(plan).Describe()
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_rendition_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transcode_rendition_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "audio-main") ||
+		!strings.Contains(err.Error(), "duplicate index: 1") ||
+		!strings.Contains(err.Error(), "unique Name") {
+		t.Fatalf("err = %v, want duplicate rendition guidance", err)
+	}
+}
+
 func TestTranscodeVideoFilterResultPreallocatesI420Planes(t *testing.T) {
 	stream := av.Stream{
 		ID:   "video",

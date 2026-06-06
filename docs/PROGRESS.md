@@ -694,6 +694,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     plans whose output `Renditions` select no branch now return
     `transcode_output_unmatched` with branch-name and label guidance instead of
     a bare unsupported sentinel. Done.
+205. Make invalid advanced transcode plan shapes actionable: empty
+    rendition/output lists and duplicate rendition names now return structured
+    build errors with concrete plan-shape guidance instead of bare unsupported
+    sentinels. Done.
 
 ## First Vertical Slice
 
@@ -956,6 +960,8 @@ stream recipes, so `Auto()` and `Copy()` remain explicit future work rather
 than half-admitted branch targets.
 Advanced transcode output-group matching now reports unmatched branch labels
 with branch-name guidance instead of a generic unsupported graph error.
+Empty advanced transcode plans and duplicate rendition names now report
+structured plan-shape diagnostics too.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

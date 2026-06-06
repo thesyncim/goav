@@ -309,8 +309,11 @@ func (b *builder) newTranscodeFilterStage(ctx context.Context, transform transco
 }
 
 func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOutputBranch, error) {
-	if len(plan.Renditions) == 0 || len(plan.Outputs) == 0 {
-		return nil, nil, ErrUnsupportedBuild
+	if len(plan.Renditions) == 0 {
+		return nil, nil, transcodePlanEmptyError("renditions")
+	}
+	if len(plan.Outputs) == 0 {
+		return nil, nil, transcodePlanEmptyError("outputs")
 	}
 	branches, err := transcodeBranches(plan)
 	if err != nil {
@@ -321,6 +324,23 @@ func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOu
 		return nil, nil, err
 	}
 	return branches, outputs, nil
+}
+
+func transcodePlanEmptyError(kind string) error {
+	suggestions := []string{
+		"add at least one transcode.Rendition with a selector and encoder",
+		"add at least one transcode.Output with a target output",
+		"use goav.Transcode(input).Video(...).To(...).Output(...) for the recipe API",
+	}
+	reason := "transcode plan has no " + kind
+	return &BuildError{
+		Code:        "transcode_plan_empty",
+		Operation:   "build transcode",
+		Node:        kind,
+		Reason:      reason,
+		Suggestions: suggestions,
+		Cause:       ErrUnsupportedBuild,
+	}
 }
 
 func transcodeSelectorGroups(branches []transcodeBranch) []transcodeSelectorGroup {
@@ -389,7 +409,7 @@ func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
 		rendition := plan.Renditions[i]
 		name := transcodeRenditionName(rendition, i, len(plan.Renditions))
 		if _, ok := names[name]; ok {
-			return nil, ErrUnsupportedBuild
+			return nil, transcodeDuplicateRenditionError(name, i)
 		}
 		names[name] = struct{}{}
 		transforms, err := transcodeTransforms(name, rendition)
@@ -419,6 +439,23 @@ func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
 		}
 	}
 	return branches, nil
+}
+
+func transcodeDuplicateRenditionError(name string, index int) error {
+	return &BuildError{
+		Code:      "transcode_rendition_duplicate",
+		Operation: "build transcode",
+		Node:      name,
+		Reason:    "transcode rendition name is defined more than once",
+		Details: []string{
+			"duplicate index: " + strconv.Itoa(index),
+		},
+		Suggestions: []string{
+			"give each transcode.Rendition a stable unique Name",
+			"use distinct branch names when multiple renditions share one selected stream",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func transcodeTransforms(name string, rendition transcode.Rendition) ([]transcodeTransform, error) {
