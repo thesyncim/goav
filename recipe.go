@@ -1685,18 +1685,12 @@ func newStreamSelector(media av.MediaType, options ...StreamOption) av.StreamSel
 }
 
 type streamBuild struct {
-	name           string
-	selector       av.StreamSelector
-	decode         bool
-	transforms     []TransformSpec
-	encode         CodecSpec
-	labels         []string
-	invalidTargets []invalidOutputTarget
-}
-
-type invalidOutputTarget struct {
-	index       int
-	description string
+	name       string
+	selector   av.StreamSelector
+	decode     bool
+	transforms []TransformSpec
+	encode     CodecSpec
+	labels     []string
 }
 
 func StreamID(id av.StreamID) StreamOption {
@@ -1908,9 +1902,6 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 	renditionNames := make(map[string]int, len(j.streams))
 	for i := range j.streams {
 		stream := j.streams[i]
-		if len(stream.invalidTargets) != 0 {
-			return transcodepkg.Plan{}, transcodeOutputTargetError(stream)
-		}
 		if stream.name == "" {
 			return transcodepkg.Plan{}, transcodeBranchNameMissingError(i, stream)
 		}
@@ -1939,7 +1930,7 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 				Reason:    "stream has no output target",
 				Suggestions: []string{
 					"call .To(\"label\") and define it with .Output(label, goav.FileOutput(...))",
-					"pass goav.FileOutput(...) directly to .To(...) for a branch-local output",
+					"reuse the same output label from multiple branches when they should share an output",
 				},
 				Cause: ErrUnsupportedBuild,
 			}
@@ -1986,7 +1977,7 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 				Reason:    "output " + label + " is referenced but not defined",
 				Suggestions: []string{
 					"call .Output(" + label + ", goav.FileOutput(...))",
-					"pass goav.FileOutput(...) directly to .To(...)",
+					"define shared outputs once and route branches by label",
 				},
 				Cause: ErrUnsupportedBuild,
 			}
@@ -2121,47 +2112,30 @@ func (b *StreamBuilder) VP9(bitrate int, options ...CodecOption) *StreamBuilder 
 	return b.encode(VP9(append([]CodecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *StreamBuilder) To(targets ...any) *TranscodeJob {
+func (b *StreamBuilder) To(labels ...string) *TranscodeJob {
 	stream := b.current()
-	for i := range targets {
-		switch target := targets[i].(type) {
-		case string:
-			if target != "" {
-				stream.labels = append(stream.labels, target)
-			} else {
-				stream.invalidTargets = append(stream.invalidTargets, invalidOutputTarget{
-					index:       i,
-					description: "empty string output label",
-				})
-			}
-		case OutputSpec:
-			name := target.label(fmt.Sprintf("%s-output-%d", stream.name, len(b.job.outputs)))
-			b.job.Output(name, target)
-			stream.labels = append(stream.labels, name)
-		default:
-			stream.invalidTargets = append(stream.invalidTargets, invalidOutputTarget{
-				index:       i,
-				description: "unsupported target type " + outputTargetType(target),
-			})
+	for i := range labels {
+		if labels[i] == "" {
+			b.job.setErr(transcodeEmptyOutputLabelError(*stream, i))
+			continue
 		}
+		stream.labels = append(stream.labels, labels[i])
 	}
 	return b.job
 }
 
-func transcodeOutputTargetError(stream streamBuild) error {
-	details := make([]string, 0, len(stream.invalidTargets))
-	for i := range stream.invalidTargets {
-		details = append(details, fmt.Sprintf("target %d: %s", stream.invalidTargets[i].index, stream.invalidTargets[i].description))
-	}
+func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 	return &BuildError{
-		Code:      "output_target_invalid",
+		Code:      "output_label_invalid",
 		Operation: "plan transcode",
 		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
-		Reason:    ".To(...) accepts output labels or output specs",
-		Details:   details,
+		Reason:    "transcode output labels must be non-empty",
+		Details: []string{
+			fmt.Sprintf("target index: %d", index),
+		},
 		Suggestions: []string{
-			"pass a string label that is defined with .Output(label, goav.FileOutput(...))",
-			"pass goav.FileOutput(...) directly to .To(...) for a branch-local output",
+			"call .To(\"label\") with a non-empty output label",
+			"define the label once with .Output(label, goav.FileOutput(...))",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -2176,7 +2150,6 @@ func transcodeDuplicateOutputError(name string) error {
 		Suggestions: []string{
 			"use a unique .Output(label, ...) label for each transcode output",
 			"route multiple branches to one shared output by calling .To(label) on each branch",
-			"pass distinct goav.FileOutput(...) values directly to .To(...) for branch-local outputs",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -2331,13 +2304,6 @@ func transcodeTransformChainError(stream streamBuild) error {
 
 func transcodeBranchName(stream streamBuild) string {
 	return firstNonEmpty(stream.name, string(stream.selector.Type), "stream")
-}
-
-func outputTargetType(target any) string {
-	if target == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%T", target)
 }
 
 func (b *StreamBuilder) encode(codec CodecSpec) *StreamBuilder {

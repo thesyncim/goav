@@ -112,9 +112,9 @@ for _, edge := range spec.Edges {
   into a frame sink; use the stream-scoped `From(...).Audio()` or
   `From(...).Video()` shape when selection matters.
 - `goav.Transcode(input)` builds named audio or video branches and outputs.
-  Transcode branch `.To(...)` accepts either a named output label or an
-  `OutputSpec` such as `goav.FileOutput(...)`; each branch must route to an
-  output and currently carries at most one resize or resample transform.
+  Transcode branch `.To(...)` accepts output labels, and each label is defined
+  once with `.Output(label, goav.FileOutput(...))`; each branch must route to
+  an output and currently carries at most one resize or resample transform.
   Branch names are required and unique; output names are unique, and each
   branch lists each output once. Share one output by reusing its label in
   `.To(...)` on each branch. Branch transforms come before one terminal encoder.

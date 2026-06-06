@@ -323,9 +323,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 98. Add stream-mismatch diagnostics for filter and encode requests, plus
     missing encode-target diagnostics that preserve `ErrUnsupportedBuild`.
     Done.
-99. Tighten transcode branch targets so `.To(...)` accepts output labels or
-    `OutputSpec` values, and invalid target values fail with an actionable
-    `output_target_invalid` diagnostic. Done.
+99. Tighten transcode branch targets so `.To(...)` validates output labels
+    before planning and empty labels fail with actionable output guidance.
+    Done.
 100. Add intent-layer transcode diagnostics for missing branches and branches
     without output routes, preserving the same unsupported-build compatibility
     sentinel. Done.
@@ -358,8 +358,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     fail before probing with direct selector guidance. Done.
 112. Add recipe encode value validation so negative bitrates and invalid
     explicit audio overrides fail before encoder construction. Done.
-113. Add transcode output-label validation so duplicate named or direct outputs
-    fail before a later definition can silently replace an earlier one. Done.
+113. Add transcode output-label validation so duplicate named outputs fail
+    before a later definition can silently replace an earlier one. Done.
 114. Add shared recipe output-label validation so repeated file, URI, or frame
     sink output names fail before graph construction. Done.
 115. Add ordinary stream-recipe validation so repeated `Audio()`/`Video()`
@@ -407,7 +407,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     output specs, matching the rest of the recipe API and rejecting mux outputs
     with direct guidance.
     Done.
-131. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+131. Prune transcode branch-local direct outputs so branches route through one
+    label-only `.To(...)` path and outputs are defined once with `.Output(...)`.
+    Done.
+132. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
