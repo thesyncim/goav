@@ -205,6 +205,7 @@ type rtpInput struct {
 	jitter        rtpav.JitterBuffer
 	depacketizers []rtpav.Depacketizer
 	limits        RTPBufferLimits
+	maxTSGap      av.Duration
 }
 
 func (b *builder) Input(input Input) Builder {

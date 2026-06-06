@@ -58,6 +58,12 @@ func WithRTPBufferLimits(limits RTPBufferLimits) RTPOption {
 	}
 }
 
+func WithRTPMaxTimestampGap(gap av.Duration) RTPOption {
+	return func(input *rtpInput) {
+		input.maxTSGap = gap
+	}
+}
+
 func (rtpRecordGraphCompiler) match(b *builder) bool {
 	return len(b.rtpInputs) > 0 &&
 		len(b.outputs) > 0 &&
@@ -166,17 +172,18 @@ func (b *builder) openRTPSource(ctx context.Context, input rtpInput, index int) 
 		return rtpBuild{}, err
 	}
 	source, err := rtpav.NewSource(rtpav.SourceConfig{
-		Name:          rtpNodeName(input, index),
-		Detail:        rtpInputDetail(input),
-		Receiver:      input.receiver,
-		Feedback:      input.feedback,
-		Jitter:        input.jitter,
-		Depacketizers: input.depacketizers,
-		Streams:       streams,
-		MaxReady:      input.limits.MaxReady,
-		MaxEvents:     input.limits.MaxEvents,
-		MaxFeedback:   input.limits.MaxFeedback,
-		MaxPackets:    input.limits.MaxPackets,
+		Name:            rtpNodeName(input, index),
+		Detail:          rtpInputDetail(input),
+		Receiver:        input.receiver,
+		Feedback:        input.feedback,
+		Jitter:          input.jitter,
+		Depacketizers:   input.depacketizers,
+		Streams:         streams,
+		MaxTimestampGap: input.maxTSGap,
+		MaxReady:        input.limits.MaxReady,
+		MaxEvents:       input.limits.MaxEvents,
+		MaxFeedback:     input.limits.MaxFeedback,
+		MaxPackets:      input.limits.MaxPackets,
 	})
 	if err != nil {
 		return rtpBuild{}, err

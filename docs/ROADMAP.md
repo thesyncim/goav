@@ -26,6 +26,7 @@ validation gates. This roadmap keeps the broader phase view.
 - Protocol source contracts outside the core runtime.
 - Demux boundaries for protocol/file adapters.
 - Live input events for connect, disconnect, and timestamp discontinuity.
+  Timestamp discontinuity first slice active for RTP receive.
 - Shared packet flow into the same pipeline graph used by WebRTC.
 - Core timestamp/timebase rescale helpers. First slice active.
 

@@ -105,6 +105,19 @@ func (t Timestamp) ToDuration() (time.Duration, bool) {
 	return t.Base.ToDuration(t.Value)
 }
 
+// Sub returns t-previous in t's timebase.
+func (t Timestamp) Sub(previous Timestamp) (Duration, bool) {
+	value, ok := RescaleValue(previous.Value, previous.Base, t.Base)
+	if !ok {
+		return Duration{}, false
+	}
+	delta, ok := checkedSub(t.Value, value)
+	if !ok {
+		return Duration{}, false
+	}
+	return Duration{Value: delta, Base: t.Base}, true
+}
+
 // Rescale converts the duration to another timebase.
 func (d Duration) Rescale(base TimeBase) (Duration, bool) {
 	value, ok := RescaleValue(d.Value, d.Base, base)
@@ -117,6 +130,22 @@ func (d Duration) Rescale(base TimeBase) (Duration, bool) {
 // ToDuration converts the media duration to a standard Go duration.
 func (d Duration) ToDuration() (time.Duration, bool) {
 	return d.Base.ToDuration(d.Value)
+}
+
+// Compare compares d and other after converting other into d's timebase.
+func (d Duration) Compare(other Duration) (int, bool) {
+	value, ok := RescaleValue(other.Value, other.Base, d.Base)
+	if !ok {
+		return 0, false
+	}
+	switch {
+	case d.Value < value:
+		return -1, true
+	case d.Value > value:
+		return 1, true
+	default:
+		return 0, true
+	}
 }
 
 // TimestampFromStdDuration converts elapsed time from zero into a timestamp.
@@ -429,4 +458,14 @@ func checkedMul(a int64, b int64) (int64, bool) {
 		return 0, false
 	}
 	return a * b, true
+}
+
+func checkedSub(a int64, b int64) (int64, bool) {
+	if b > 0 && a < minInt64+b {
+		return 0, false
+	}
+	if b < 0 && a > maxInt64+b {
+		return 0, false
+	}
+	return a - b, true
 }

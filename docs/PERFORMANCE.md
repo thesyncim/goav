@@ -55,7 +55,8 @@ Current allocation guards cover:
 - RTP jitter ring
 - Opus depacketization
 - VP8, VP9, AV1, and H264 video depacketization
-- RTP source packet-to-pipeline loop
+- RTP source packet-to-pipeline loop, including timestamp discontinuity
+  tracking
 - RTCP feedback scratch for NACK/PLI/FIR
 - `gopus` packet-loss decode into a preallocated frame
 - build-tagged `goh264` adapter borrowed-frame mapping and loss request

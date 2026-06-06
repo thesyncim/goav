@@ -20,6 +20,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Caller-owned buffers and result structs on hot paths.
 - RTP metadata, loss, discontinuity, codec epochs, keyframe requests, EOS, and
   backpressure are first-class events.
+- RTP receive can surface backward timestamps and configured timestamp gaps as
+  discontinuity events.
 - Pion RTP/RTCP/WebRTC types stay at package boundaries.
 - Codec implementations stay in adapter packages for `gopus`, `govpx`,
   `goav1`, and `goh264`.
@@ -157,7 +159,8 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `codec`: decoder/encoder contracts, registry, decoder and encoder pipeline
   stages.
 - `rtpav`: Pion RTP/RTCP boundary, payload map, loss detection, jitter ring,
-  Opus/VP8/VP9/AV1/H264 depacketizers, feedback helpers, RTP source.
+  timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers,
+  feedback helpers, RTP source.
 - `webrtcav`: Pion PeerConnection session, TrackSet multi-track coordinator,
   replaceable TrackRemote readers, RTCP feedback, and codec-update event
   boundaries.
@@ -188,6 +191,8 @@ Implemented slices:
 - Loss/discontinuity events from RTP sequence gaps.
 - Allocation-free timestamp/timebase rescale helpers for RTP, codec, and
   transcode boundaries.
+- RTP source timestamp discontinuity detection for backward timestamps and
+  configured max-gap thresholds.
 - Opus RTP depacketization.
 - Opus decode through `gopus` into caller-owned PCM frames.
 - Event-aware decoder and encoder stages.

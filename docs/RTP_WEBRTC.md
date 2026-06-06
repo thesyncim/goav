@@ -45,6 +45,8 @@ Current `rtpav` building blocks:
   `av.Packet` values.
 - `Source` for reading RTP packets, applying optional jitter, depacketizing, and
   emitting normal pipeline messages.
+- `Source` can emit timestamp discontinuity events when depacketized packet
+  timestamps move backward or exceed a configured max gap.
 - Depacketizers receive realtime events before graph delivery, so loss-aware
   payload handlers can reset or drop incomplete frames.
 - `codec.DecoderStage` for turning depacketized packet messages into decoded
@@ -147,6 +149,9 @@ Loss is not just an error return. It should become visible as:
 - packet `LossBefore`
 - packet `Discontinuous`
 - RTCP feedback requests where useful
+
+Timestamp regressions and configured timestamp gaps also become
+`av.EventDiscontinuity` before the affected packet is delivered downstream.
 
 ## Codec switches
 

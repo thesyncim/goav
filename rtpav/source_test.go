@@ -224,6 +224,112 @@ func TestSourceDepacketizesRTPIntoPipelinePackets(t *testing.T) {
 	}
 }
 
+func TestSourceEmitsTimestampDiscontinuityOnBackwardPTS(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{ID: "audio", Codec: av.CodecParameters{ID: av.CodecOpus, ClockRate: 48000}}
+	receiver := &fakeReceiver{
+		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    MIMEOpus,
+			ClockRate:   48000,
+		}}),
+		packets: []*rtp.Packet{
+			{Header: rtp.Header{PayloadType: 111, Timestamp: 960}, Payload: []byte{1}},
+			{Header: rtp.Header{PayloadType: 111, Timestamp: 480}, Payload: []byte{2}},
+		},
+		events: make(chan av.Event),
+	}
+	source, err := NewSource(SourceConfig{
+		Receiver:      receiver,
+		Depacketizers: []Depacketizer{NewOpusDepacketizer(stream)},
+		Streams:       []av.Stream{stream},
+		MaxPackets:    2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &packetSink{name: "sink"}
+	graph, err := pipeline.NewDirectGraph(pipeline.GraphConfig{Name: "rtp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRef, err := graph.AddSource(source, pipeline.BufferPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sinkRef, err := graph.AddSink(sink, pipeline.BufferPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Link(pipeline.Link{From: sourceRef, To: sinkRef}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := graph.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.packets) != 2 || !sink.packets[1].Discontinuous {
+		t.Fatalf("packets = %+v", sink.packets)
+	}
+	if len(sink.events) != 2 || sink.events[0].Type != av.EventDiscontinuity || sink.events[1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v", sink.events)
+	}
+	if sink.events[0].StreamID != stream.ID || sink.events[0].Timestamp.Value != 480 ||
+		sink.events[0].Reason != "timestamp moved backward" {
+		t.Fatalf("discontinuity = %+v", sink.events[0])
+	}
+}
+
+func TestSourceEmitsTimestampDiscontinuityOnLargeGap(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{ID: "audio", Codec: av.CodecParameters{ID: av.CodecOpus, ClockRate: 48000}}
+	receiver := &fakeReceiver{
+		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    MIMEOpus,
+			ClockRate:   48000,
+		}}),
+		packets: []*rtp.Packet{
+			{Header: rtp.Header{PayloadType: 111, Timestamp: 0}, Payload: []byte{1}},
+			{Header: rtp.Header{PayloadType: 111, Timestamp: 48000}, Payload: []byte{2}},
+		},
+		events: make(chan av.Event),
+	}
+	source, err := NewSource(SourceConfig{
+		Receiver:        receiver,
+		Depacketizers:   []Depacketizer{NewOpusDepacketizer(stream)},
+		Streams:         []av.Stream{stream},
+		MaxTimestampGap: av.SamplesDuration(960, 48000),
+		MaxPackets:      2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packets []av.Packet
+	var events []av.Event
+
+	if err := source.Start(ctx, testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		switch msg.Kind {
+		case pipeline.MessagePacket:
+			packets = append(packets, *msg.Packet)
+		case pipeline.MessageEvent:
+			events = append(events, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(packets) != 2 || !packets[1].Discontinuous {
+		t.Fatalf("packets = %+v", packets)
+	}
+	if len(events) != 2 || events[0].Type != av.EventDiscontinuity || events[0].Reason != "timestamp gap" ||
+		events[1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v", events)
+	}
+}
+
 func TestSourceJitterOrdersPackets(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{ID: "audio", Codec: av.CodecParameters{ID: av.CodecOpus, ClockRate: 48000}}
@@ -495,9 +601,11 @@ func TestSourceStartAllocs(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	source, err := NewSource(SourceConfig{
-		Receiver:      receiver,
-		Depacketizers: []Depacketizer{NewOpusDepacketizer(stream)},
-		MaxPackets:    1,
+		Receiver:        receiver,
+		Depacketizers:   []Depacketizer{NewOpusDepacketizer(stream)},
+		Streams:         []av.Stream{stream},
+		MaxTimestampGap: av.SamplesDuration(960, 48000),
+		MaxPackets:      1,
 	})
 	if err != nil {
 		t.Fatal(err)

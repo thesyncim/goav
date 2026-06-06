@@ -20,6 +20,9 @@ type SourceConfig struct {
 	Jitter        JitterBuffer
 	Depacketizers []Depacketizer
 	Streams       []av.Stream
+	// MaxTimestampGap emits a discontinuity when a positive packet timestamp
+	// delta exceeds this threshold. Backward timestamps always emit one.
+	MaxTimestampGap av.Duration
 
 	MaxReady    int
 	MaxEvents   int
@@ -36,11 +39,21 @@ type Source struct {
 	jitter        JitterBuffer
 	depacketizers []Depacketizer
 	streams       []av.Stream
+	timestamps    []sourceTimestampState
+	maxTSGap      av.Duration
 	jitterOut     JitterResult
 	depacketOut   DepacketizeResult
 	message       pipeline.Message
 	eos           av.Event
+	discontinuity av.Event
 	closed        bool
+}
+
+type sourceTimestampState struct {
+	streamID    av.StreamID
+	initialized bool
+	epoch       av.Epoch
+	timestamp   av.Timestamp
 }
 
 var _ pipeline.Source = (*Source)(nil)
@@ -68,6 +81,8 @@ func NewSource(config SourceConfig) (*Source, error) {
 		jitter:        config.Jitter,
 		depacketizers: config.Depacketizers,
 		streams:       cloneStreams(config.Streams),
+		timestamps:    makeTimestampStates(config.Streams),
+		maxTSGap:      config.MaxTimestampGap,
 		jitterOut: JitterResult{
 			Ready:    make([]*rtp.Packet, 0, maxReady),
 			Events:   make([]av.Event, 0, maxEvents),
@@ -167,6 +182,9 @@ func (s *Source) depacketize(ctx context.Context, emitter pipeline.Emitter, pack
 		return err
 	}
 	for i := range s.depacketOut.Packets {
+		if err := s.observePacketTimestamp(ctx, emitter, &s.depacketOut.Packets[i]); err != nil {
+			return err
+		}
 		s.message.Kind = pipeline.MessagePacket
 		s.message.Packet = &s.depacketOut.Packets[i]
 		s.message.Frame = nil
@@ -202,6 +220,9 @@ func (s *Source) flush(ctx context.Context, emitter pipeline.Emitter) error {
 			return err
 		}
 		for j := range s.depacketOut.Packets {
+			if err := s.observePacketTimestamp(ctx, emitter, &s.depacketOut.Packets[j]); err != nil {
+				return err
+			}
 			s.message.Kind = pipeline.MessagePacket
 			s.message.Packet = &s.depacketOut.Packets[j]
 			s.message.Frame = nil
@@ -254,6 +275,7 @@ func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
 	if event != nil && event.Type == av.EventCodecChanged {
 		s.payloads = s.receiver.PayloadMap()
 	}
+	s.resetTimestampState(event)
 	for i := range s.depacketizers {
 		if err := s.depacketizers[i].HandleEvent(ctx, event); err != nil {
 			return err
@@ -270,6 +292,100 @@ func (s *Source) writeFeedback(ctx context.Context, feedback []rtcp.Packet) erro
 		return nil
 	}
 	return s.feedback.WriteRTCP(ctx, feedback)
+}
+
+func (s *Source) observePacketTimestamp(ctx context.Context, emitter pipeline.Emitter, packet *av.Packet) error {
+	state := s.timestampState(packet)
+	if state == nil || !packet.PTS.Base.Valid() {
+		return nil
+	}
+	if !state.initialized || state.epoch != packet.CodecEpoch {
+		state.init(packet)
+		return nil
+	}
+	gap, ok := packet.PTS.Sub(state.timestamp)
+	if !ok {
+		state.init(packet)
+		return nil
+	}
+	if timestampDiscontinuous(gap, s.maxTSGap) {
+		packet.Discontinuous = true
+		if err := s.emitTimestampDiscontinuity(ctx, emitter, packet, gap); err != nil {
+			return err
+		}
+	}
+	state.init(packet)
+	return nil
+}
+
+func (s *Source) timestampState(packet *av.Packet) *sourceTimestampState {
+	if packet == nil || len(s.timestamps) == 0 {
+		return nil
+	}
+	for i := range s.timestamps {
+		if s.timestamps[i].streamID == packet.StreamID || (packet.StreamID == "" && len(s.timestamps) == 1) {
+			return &s.timestamps[i]
+		}
+	}
+	return nil
+}
+
+func (s *Source) emitTimestampDiscontinuity(ctx context.Context, emitter pipeline.Emitter, packet *av.Packet, gap av.Duration) error {
+	s.discontinuity.Reset()
+	s.discontinuity.Type = av.EventDiscontinuity
+	s.discontinuity.StreamID = packet.StreamID
+	s.discontinuity.Epoch = packet.CodecEpoch
+	s.discontinuity.Timestamp = packet.PTS
+	if gap.Value < 0 {
+		s.discontinuity.Reason = "timestamp moved backward"
+	} else {
+		s.discontinuity.Reason = "timestamp gap"
+	}
+	return s.emitEvent(ctx, emitter, &s.discontinuity)
+}
+
+func (s *Source) resetTimestampState(event *av.Event) {
+	if event == nil {
+		return
+	}
+	switch event.Type {
+	case av.EventCodecChanged, av.EventDiscontinuity, av.EventEndOfStream, av.EventStreamRemoved:
+	default:
+		return
+	}
+	for i := range s.timestamps {
+		if event.StreamID == "" || event.StreamID == s.timestamps[i].streamID {
+			s.timestamps[i].initialized = false
+		}
+	}
+}
+
+func (s *sourceTimestampState) init(packet *av.Packet) {
+	s.initialized = true
+	s.epoch = packet.CodecEpoch
+	s.timestamp = packet.PTS
+}
+
+func makeTimestampStates(streams []av.Stream) []sourceTimestampState {
+	if len(streams) == 0 {
+		return nil
+	}
+	states := make([]sourceTimestampState, len(streams))
+	for i := range streams {
+		states[i].streamID = streams[i].ID
+	}
+	return states
+}
+
+func timestampDiscontinuous(gap av.Duration, maxGap av.Duration) bool {
+	if gap.Value < 0 {
+		return true
+	}
+	if maxGap.Value <= 0 || !maxGap.Base.Valid() {
+		return false
+	}
+	cmp, ok := gap.Compare(maxGap)
+	return ok && cmp > 0
 }
 
 func (s *Source) depacketizerFor(payload PayloadCodec) Depacketizer {

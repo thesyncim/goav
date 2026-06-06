@@ -178,6 +178,8 @@ The RTP package provides the live receive source. `rtpav.Source` keeps Pion RTP
 packets at the boundary, applies optional jitter and depacketizers, forwards
 realtime events into those depacketizers, and emits normal packet/event messages
 for the same mux, decode, and analysis stages used by file or protocol inputs.
+It also tracks configured stream timestamps and emits discontinuity events when
+timestamps move backward or exceed an application-provided maximum gap.
 When a packet reader represents one stream, its EOS event carries that stream ID
 and epoch so selected live-decode graphs do not flush unrelated decoders.
 

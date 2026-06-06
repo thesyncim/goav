@@ -85,6 +85,31 @@ func TestTimeBaseRescaleHelpers(t *testing.T) {
 	}
 }
 
+func TestTimestampDeltaAndDurationCompare(t *testing.T) {
+	audio := RTPTimeBase(48000)
+	video := RTPTimeBase(90000)
+
+	delta, ok := (Timestamp{Value: 90000, Base: video}).Sub(Timestamp{Value: 48000, Base: audio})
+	if !ok || delta.Value != 0 || delta.Base != video {
+		t.Fatalf("delta = %+v ok=%v", delta, ok)
+	}
+
+	backward, ok := (Timestamp{Value: 40000, Base: audio}).Sub(Timestamp{Value: 90000, Base: video})
+	if !ok || backward.Value != -8000 || backward.Base != audio {
+		t.Fatalf("backward = %+v ok=%v", backward, ok)
+	}
+
+	cmp, ok := (Duration{Value: 960, Base: audio}).Compare(Duration{Value: 1800, Base: video})
+	if !ok || cmp != 0 {
+		t.Fatalf("compare equal = %d ok=%v", cmp, ok)
+	}
+
+	cmp, ok = (Duration{Value: 961, Base: audio}).Compare(Duration{Value: 1800, Base: video})
+	if !ok || cmp <= 0 {
+		t.Fatalf("compare greater = %d ok=%v", cmp, ok)
+	}
+}
+
 func TestTimeBaseStdDurationHelpers(t *testing.T) {
 	video := RTPTimeBase(90000)
 
@@ -127,7 +152,9 @@ func TestTimeBaseHelpersAllocs(t *testing.T) {
 
 	if allocs := testing.AllocsPerRun(1000, func() {
 		_, _ = ts.Rescale(video)
+		_, _ = ts.Sub(Timestamp{Value: 90000, Base: video})
 		_, _ = duration.Rescale(audio)
+		_, _ = duration.Compare(Duration{Value: 1600, Base: audio})
 		_, _ = duration.ToDuration()
 		_, _ = TimestampFromStdDuration(20*time.Millisecond, audio)
 		_, _ = DurationFromStdDuration(20*time.Millisecond, audio)

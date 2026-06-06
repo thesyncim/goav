@@ -95,6 +95,7 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 		RTP(receiver,
 			WithRTPName("remote-audio"),
 			WithRTPDepacketizer(rtpav.NewOpusDepacketizer(stream)),
+			WithRTPMaxTimestampGap(av.SamplesDuration(960, 48000)),
 			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 2, MaxEvents: 2}),
 		).
 		Output(Output{Name: "archive.ogg"}).
@@ -107,6 +108,7 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
 	if !strings.Contains(planned.String(), "remote-audio -> archive.ogg") ||
+		!strings.Contains(planned.String(), "timestamp gap") ||
 		!strings.Contains(planned.Mermaid(), "preview.ogg\\nstage") {
 		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), planned.Mermaid())
 	}
