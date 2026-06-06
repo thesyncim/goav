@@ -360,7 +360,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     explicit audio overrides fail before encoder construction. Done.
 113. Add transcode output-label validation so duplicate named or direct outputs
     fail before a later definition can silently replace an earlier one. Done.
-114. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+114. Add shared recipe output-label validation so repeated file, URI, or frame
+    sink output names fail before graph construction. Done.
+115. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

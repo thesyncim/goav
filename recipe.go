@@ -1069,12 +1069,34 @@ func outputsContainFrameSink(outputs []OutputSpec) bool {
 }
 
 func validateOutputSpecs(operation string, outputs []OutputSpec) error {
+	seen := make(map[string]struct{}, len(outputs))
 	for i := range outputs {
-		if err := outputs[i].validate(operation, fmt.Sprintf("output-%d", i)); err != nil {
+		fallback := fmt.Sprintf("output-%d", i)
+		if err := outputs[i].validate(operation, fallback); err != nil {
 			return err
 		}
+		name := outputs[i].label(fallback)
+		if _, ok := seen[name]; ok {
+			return duplicateOutputError(operation, name)
+		}
+		seen[name] = struct{}{}
 	}
 	return nil
+}
+
+func duplicateOutputError(operation string, name string) error {
+	return &BuildError{
+		Code:      "output_duplicate",
+		Operation: operation,
+		Node:      name,
+		Reason:    fmt.Sprintf("output label %q is defined more than once", name),
+		Suggestions: []string{
+			"use a unique output name for each output in the recipe",
+			"remove repeated outputs when one output should receive the stream once",
+			"call .Name(...) on outputs or choose distinct sink names when labels should differ",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func validateRecipeStreamSelector(operation string, node string, selector av.StreamSelector) error {

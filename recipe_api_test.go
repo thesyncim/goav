@@ -262,6 +262,45 @@ func TestRecordRecipeRejectsFileOutputWithoutWriter(t *testing.T) {
 	}
 }
 
+func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
+		To(
+			goav.FileOutput("recording.ivf", io.Discard),
+			goav.FileOutput("recording.ivf", io.Discard),
+		).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), `output label "recording.ivf"`) ||
+		!strings.Contains(err.Error(), "unique output name") {
+		t.Fatalf("err = %v, want duplicate output guidance", err)
+	}
+}
+
+func TestStreamRecipeRejectsDuplicateFrameSinkOutputs(t *testing.T) {
+	sink := func(context.Context, goav.Message) error { return nil }
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		To(
+			goav.FrameSink(goav.SinkFunc("frames", sink)),
+			goav.FrameSink(goav.SinkFunc("frames", sink)),
+		).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), `output label "frames"`) ||
+		!strings.Contains(err.Error(), ".Name") {
+		t.Fatalf("err = %v, want duplicate sink guidance", err)
+	}
+}
+
 func TestRTPRecipeRejectsNilReader(t *testing.T) {
 	_, err := goav.Record(
 		goav.RTP(nil).Name("audio"),

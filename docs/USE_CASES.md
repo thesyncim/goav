@@ -116,6 +116,9 @@ task, err := goav.From(goav.FileInput("input.ivf", in)).
     Build(ctx)
 ```
 
+Output names are unique within a recipe, including `FrameSink` sink names.
+Use distinct labels when two outputs should both receive the stream.
+
 When packet formats already match, recording can stay packet-preserving. IVF is
 the first concrete target for single-stream VP8, VP9, and AV1 packet recording;
 Annex B covers packet-preserving H264 recording after RTP depacketization.
