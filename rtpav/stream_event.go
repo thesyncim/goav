@@ -13,7 +13,7 @@ func applyCodecChangedEvent(stream *av.Stream, codec av.CodecID, event *av.Event
 	if stream == nil || event == nil || event.Type != av.EventCodecChanged {
 		return false
 	}
-	if !eventMatchesStream(*stream, event) {
+	if !eventMatchesStream(*stream, event) && !codecChangedReplacementMatches(*stream, codec, event) {
 		return false
 	}
 	if event.Codec != nil && event.Codec.ID != "" && event.Codec.ID != codec {
@@ -58,4 +58,21 @@ func applyCodecChangedEvent(stream *av.Stream, codec av.CodecID, event *av.Event
 		}
 	}
 	return true
+}
+
+func codecChangedReplacementMatches(stream av.Stream, codec av.CodecID, event *av.Event) bool {
+	if event == nil || event.Type != av.EventCodecChanged || event.Stream == nil {
+		return false
+	}
+	next := *event.Stream
+	if event.Codec != nil {
+		next.Codec = *event.Codec
+	}
+	if next.Codec.ID != "" && next.Codec.ID != codec {
+		return false
+	}
+	if next.Type != "" && stream.Type != "" && next.Type != stream.Type {
+		return false
+	}
+	return next.ID != "" && next.ID != stream.ID
 }

@@ -274,6 +274,7 @@ func (s *Source) emitEvent(ctx context.Context, emitter pipeline.Emitter, event 
 func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
 	if event != nil && event.Type == av.EventCodecChanged {
 		s.payloads = s.receiver.PayloadMap()
+		s.applyCodecChangedStream(event)
 	}
 	s.resetTimestampState(event)
 	for i := range s.depacketizers {
@@ -282,6 +283,77 @@ func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
 		}
 	}
 	return nil
+}
+
+func (s *Source) applyCodecChangedStream(event *av.Event) {
+	if event == nil || event.Type != av.EventCodecChanged || len(s.streams) == 0 {
+		return
+	}
+	for i := range s.streams {
+		if !eventMatchesStream(s.streams[i], event) && !sourceCodecChangedReplacementMatches(s.streams[i], event, len(s.streams) == 1) {
+			continue
+		}
+		s.streams[i] = streamWithCodecChangedEvent(s.streams[i], event)
+		if i < len(s.timestamps) {
+			s.timestamps[i].streamID = s.streams[i].ID
+			s.timestamps[i].epoch = s.streams[i].Epoch
+			s.timestamps[i].initialized = false
+		}
+		return
+	}
+}
+
+func sourceCodecChangedReplacementMatches(stream av.Stream, event *av.Event, singleStream bool) bool {
+	if !singleStream || event == nil || event.Type != av.EventCodecChanged || event.Stream == nil {
+		return false
+	}
+	next := *event.Stream
+	if next.ID == "" && event.StreamID != "" {
+		next.ID = event.StreamID
+	}
+	if event.Codec != nil {
+		next.Codec = *event.Codec
+	}
+	if next.Type != "" && stream.Type != "" && next.Type != stream.Type {
+		return false
+	}
+	if next.Codec.Type != "" && stream.Type != "" && next.Codec.Type != stream.Type {
+		return false
+	}
+	return next.ID != "" && next.ID != stream.ID
+}
+
+func streamWithCodecChangedEvent(stream av.Stream, event *av.Event) av.Stream {
+	next := stream
+	if event.Stream != nil {
+		next = *event.Stream
+	}
+	if next.ID == "" {
+		if event.StreamID != "" {
+			next.ID = event.StreamID
+		} else {
+			next.ID = stream.ID
+		}
+	}
+	if next.Type == "" {
+		next.Type = stream.Type
+	}
+	if next.Codec.ID == "" {
+		next.Codec = stream.Codec
+	}
+	if event.Codec != nil {
+		next.Codec = *event.Codec
+		if next.Codec.Type != "" {
+			next.Type = next.Codec.Type
+		}
+	}
+	if next.TimeBase == (av.TimeBase{}) {
+		next.TimeBase = stream.TimeBase
+	}
+	if next.Epoch == 0 && event.Epoch != 0 {
+		next.Epoch = event.Epoch
+	}
+	return next
 }
 
 func (s *Source) writeFeedback(ctx context.Context, feedback []rtcp.Packet) error {

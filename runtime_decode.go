@@ -223,7 +223,7 @@ func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Gr
 	if err := b.validateFiltersForStream(stream); err != nil {
 		return "", err
 	}
-	selectStage := newStreamSelectStage(selectNodeName(selector), stream.ID, selectNodeDetail(selector))
+	selectStage := newStreamSelectStage(selectNodeName(selector), stream, selector, selectNodeDetail(selector))
 	selectRef, err := graph.AddStage(selectStage, b.runtime.buffer)
 	if err != nil {
 		selectStage.Close()

@@ -224,6 +224,49 @@ func TestSourceDepacketizesRTPIntoPipelinePackets(t *testing.T) {
 	}
 }
 
+func TestSourceCodecChangedReplacementUpdatesEOSStream(t *testing.T) {
+	initial := av.Stream{
+		ID:    "video-main",
+		Type:  av.MediaVideo,
+		Epoch: 1,
+		Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo, ClockRate: 90000},
+	}
+	updated := initial
+	updated.ID = "video-replaced"
+	updated.Epoch = 2
+	events := make(chan av.Event, 1)
+	events <- av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: updated.ID,
+		Epoch:    updated.Epoch,
+		Stream:   &updated,
+		Codec:    &updated.Codec,
+	}
+	source, err := NewSource(SourceConfig{
+		Receiver: &fakeReceiver{events: events},
+		Streams:  []av.Stream{initial},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got []av.Event
+	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		if msg.Kind == pipeline.MessageEvent && msg.Event != nil {
+			got = append(got, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Type != av.EventCodecChanged || got[1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v", got)
+	}
+	if got[1].StreamID != updated.ID || got[1].Epoch != updated.Epoch {
+		t.Fatalf("eos = %+v", got[1])
+	}
+}
+
 func TestSourceEmitsTimestampDiscontinuityOnBackwardPTS(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{ID: "audio", Codec: av.CodecParameters{ID: av.CodecOpus, ClockRate: 48000}}

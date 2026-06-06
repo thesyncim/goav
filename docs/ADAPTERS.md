@@ -144,8 +144,8 @@ Current tagged surface:
 - steady decode reuses a bound runner when the next plan fits the existing
   arena
 - result-capacity, allocation, sync-recovery, raw RTP retained-fragment,
-  runtime RTP decode for gray8 and 4:2:0, same-stream RTP codec-change recovery,
-  and close-lifecycle tests
+  runtime RTP decode for gray8 and 4:2:0, same-stream and replacement-stream
+  RTP codec-change recovery, and close-lifecycle tests
 
 The generic `codec.Decoder` path still expects packets produced by `rtpav`'s AV1
 depacketizer. Lower-level applications that bypass that depacketizer can type

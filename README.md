@@ -173,7 +173,7 @@ as private graph compilers that must support both `Describe` and `Build`.
   optional decode-state provisioning, decoder and encoder pipeline stages.
 - `rtpav`: Pion RTP/RTCP boundary, payload map, loss detection, jitter ring,
   timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers,
-  feedback helpers, RTP source.
+  feedback helpers, RTP source, replacement-stream codec-change handling.
 - `webrtcav`: Pion PeerConnection session, TrackSet multi-track coordinator,
   replaceable TrackRemote readers, RTCP feedback, and codec-update event
   boundaries.
@@ -240,6 +240,9 @@ Implemented slices:
 - WebRTC track codec updates and replacement tracks emit codec-change events
   consumed by RTP sources.
 - RTP codec-change events refresh payload maps and depacketizer epochs.
+- RTP codec-change events can also carry a replacement stream identity for
+  single-stream receivers; sources, depacketizers, EOS, and type-selected
+  decode graphs follow that replacement while ID-pinned selectors stay strict.
 - Descriptor-only codec adapters are discoverable while unavailable factories
   fail explicitly with `codec.ErrUnavailable`.
 - Build-tagged H264 decode maps real `goh264` output into borrowed `av.Frame`
@@ -280,9 +283,9 @@ Implemented slices:
 - Tagged AV1 RTP receive now covers both `gray8` and planar 8-bit 4:2:0:
   `i420` and `yuv420p` stream declarations bind the same backend format and
   emit canonical `i420` frame planes.
-- The same AV1 RTP builder path now has a same-stream codec-change proof:
-  payload-map refresh, epoch update, drop-until-sync, keyframe request, and
-  resumed decode on the next sync packet.
+- The same AV1 RTP builder path now has same-stream and replacement-stream
+  codec-change proofs: payload-map refresh, epoch/identity update,
+  drop-until-sync, keyframe request, and resumed decode on the next sync packet.
 - The concrete tagged AV1 decoder can also consume raw AV1 RTP aggregation
   payload bytes through `DecodeRTPPayloadInto`, including retained fragments
   and after-loss recovery that preserves known sequence state.
@@ -290,9 +293,10 @@ Implemented slices:
 Next pressure points:
 
 - Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
-  RTP/WebRTC AV1 streams: broader codec-switch cases, additional output
-  formats beyond 8-bit 4:2:0, richer scratch sizing policy, and deciding how
-  much of the raw RTP runner path should surface in high-level builders.
+  RTP/WebRTC AV1 streams: remaining multi-stream/new-codec switch cases,
+  additional output formats beyond 8-bit 4:2:0, richer scratch sizing policy,
+  and deciding how much of the raw RTP runner path should surface in high-level
+  builders.
 
 ## Working Loop
 

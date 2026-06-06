@@ -178,16 +178,20 @@ explicit payload map, increments the stream epoch when the caller does not
 provide one, and emits `EventCodecChanged`. `TrackReader.UpdateTrack` applies
 the same update while swapping the RTP reader to a replacement Pion track.
 `rtpav.Source` refreshes its receiver payload map when it observes the event.
-Matching depacketizers update their stream epoch from the event; video
-depacketizers drop partial frames and request sync before emitting packets for
-the new epoch. AV1 decode currently sync-gates depacketized low-overhead OBU
-packets after loss until a packet keyframe marker or parseable
-sequence-header/key-frame payload appears. The concrete tagged decoder also has
-a raw AV1 RTP payload path that retains fragments across payloads and can
-recover after loss while preserving known sequence state. The high-level
-`RTP(...).Decode(...).Sink(...)` path covers same-stream AV1 codec changes with
-payload-map refresh and resumed decode on the next sync packet; broader
-RTP/WebRTC AV1 recovery is still being expanded.
+For single-stream receivers, a codec-change event that carries a replacement
+stream also updates source stream identity, timestamp tracking, and EOS
+identity. Matching video depacketizers adopt the replacement stream when the
+codec still matches, drop partial frames, and request sync before emitting
+packets for the new epoch. Type-based selected decode graphs follow that
+replacement stream; ID-pinned selectors stay strict. AV1 decode currently
+sync-gates depacketized low-overhead OBU packets after loss until a packet
+keyframe marker or parseable sequence-header/key-frame payload appears. The
+concrete tagged decoder also has a raw AV1 RTP payload path that retains
+fragments across payloads and can recover after loss while preserving known
+sequence state. The high-level `RTP(...).Decode(...).Sink(...)` path covers
+same-stream and replacement-stream AV1 codec changes with payload-map refresh
+and resumed decode on the next sync packet; broader RTP/WebRTC AV1 recovery is
+still being expanded.
 
 Session-level code still owns the policy decision for when renegotiation should
 call `UpdateCodec`. Accepted replacement tracks for the same stream can flow

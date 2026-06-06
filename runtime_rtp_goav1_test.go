@@ -236,6 +236,79 @@ func TestRuntimeBuilderRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderRTPAV1CodecChangedAdoptsReplacementStream(t *testing.T) {
+	ctx := context.Background()
+	initial := av.Stream{
+		ID:       "video-main",
+		Type:     av.MediaVideo,
+		Epoch:    1,
+		TimeBase: av.RTPTimeBase(90000),
+		Codec: av.CodecParameters{
+			ID:          av.CodecAV1,
+			Type:        av.MediaVideo,
+			ClockRate:   90000,
+			Width:       16,
+			Height:      16,
+			PixelFormat: av.PixelFormatGray8,
+		},
+	}
+	updated := initial
+	updated.ID = "video-replaced"
+	updated.Epoch = 2
+
+	receiver := newRuntimeAV1SwitchReceiver(initial, updated, []*rtp.Packet{
+		{
+			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			Payload: runtimeAV1RTPPayload(),
+		},
+		{
+			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 6000},
+			Payload: []byte{0x10, 0x30, 0xcc},
+		},
+		{
+			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 9000},
+			Payload: runtimeAV1RTPPayload(),
+		},
+	})
+	sink := &runtimeTestSink{name: "frames"}
+
+	task, err := New(WithCodecAdapter(goav1adapter.Register)).New().
+		RTP(receiver,
+			WithRTPName("av1-rtp"),
+			WithRTPDepacketizer(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
+			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
+		).
+		Decode(SelectVideo()).
+		Sink(sink).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if sink.frames != 2 ||
+		sink.lastFrame.StreamID != updated.ID ||
+		sink.lastFrame.CodecEpoch != updated.Epoch ||
+		sink.lastFrame.PTS.Value != 9000 ||
+		sink.lastFrame.Video == nil ||
+		sink.lastFrame.Video.PixelFormat != av.PixelFormatGray8 {
+		t.Fatalf("frames=%d last=%+v video=%+v", sink.frames, sink.lastFrame, sink.lastFrame.Video)
+	}
+	gotEvents := drainTaskEvents(task)
+	if countEventsForStream(gotEvents, av.EventCodecChanged, updated.ID) == 0 ||
+		countEventsForStream(gotEvents, av.EventKeyframeRequired, updated.ID) == 0 ||
+		countEventsForStream(gotEvents, av.EventEndOfStream, updated.ID) == 0 {
+		t.Fatalf("events = %+v", gotEvents)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed || !sink.closed {
+		t.Fatalf("closed receiver=%v sink=%v", receiver.closed, sink.closed)
+	}
+}
+
 type runtimeAV1SwitchReceiver struct {
 	initial  av.Stream
 	updated  av.Stream
