@@ -92,14 +92,16 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Route":       true,
 	}
 	legacyTypes := map[string]bool{
-		"Builder":      true,
-		"Input":        true,
-		"Output":       true,
-		"ProbeRequest": true,
-		"ProbeResult":  true,
-		"Source":       true,
-		"Stage":        true,
-		"Sink":         true,
+		"Builder":         true,
+		"Input":           true,
+		"Output":          true,
+		"ProbeRequest":    true,
+		"ProbeResult":     true,
+		"Source":          true,
+		"Stage":           true,
+		"Sink":            true,
+		"Metadata":        true,
+		"CodecParameters": true,
 	}
 	for _, decl := range file.Decls {
 		switch decl := decl.(type) {

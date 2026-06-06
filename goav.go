@@ -14,8 +14,6 @@ type Packet = av.Packet
 type Frame = av.Frame
 type Event = av.Event
 type Stream = av.Stream
-type Metadata = av.Metadata
-type CodecParameters = av.CodecParameters
 
 // Runtime is the composition root for applications embedding goav.
 type Runtime interface {

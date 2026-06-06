@@ -465,7 +465,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Intent`, `Describe`, `Build`, and `Run`, while diagnostics speak in recipe
     terms instead of `transcode.Plan`.
     Done.
-146. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+146. Remove top-level `Metadata` and `CodecParameters` aliases so low-level
+    media structs stay in `av`, while recipes continue to expose codec and
+    stream intent through `CodecSpec`, options, and input/output specs.
+    Done.
+147. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
