@@ -61,11 +61,56 @@ type ResiliencePolicy struct {
 	MaxReorderDelay  time.Duration
 }
 
+type DecodeBounds struct {
+	// MaxFramesPerInput bounds decoded frames emitted from one DecodeInto call.
+	MaxFramesPerInput int
+	// MaxEventsPerInput bounds events emitted from one DecodeInto call.
+	MaxEventsPerInput int
+	// MaxRequestsPerInput bounds control requests emitted from one DecodeInto call.
+	MaxRequestsPerInput int
+	// MaxPayloadBytes bounds one encoded input payload.
+	MaxPayloadBytes int
+	// MaxRetainedBytes bounds data a decoder may keep across DecodeInto calls,
+	// such as a partial realtime video fragment.
+	MaxRetainedBytes int
+	// MaxWidth and MaxHeight bound video output geometry when known before open.
+	MaxWidth  int
+	MaxHeight int
+}
+
+func (b DecodeBounds) WithDefaults(defaults DecodeBounds) DecodeBounds {
+	if b.MaxFramesPerInput <= 0 {
+		b.MaxFramesPerInput = defaults.MaxFramesPerInput
+	}
+	if b.MaxEventsPerInput <= 0 {
+		b.MaxEventsPerInput = defaults.MaxEventsPerInput
+	}
+	if b.MaxRequestsPerInput <= 0 {
+		b.MaxRequestsPerInput = defaults.MaxRequestsPerInput
+	}
+	if b.MaxPayloadBytes <= 0 {
+		b.MaxPayloadBytes = defaults.MaxPayloadBytes
+	}
+	if b.MaxRetainedBytes <= 0 {
+		b.MaxRetainedBytes = defaults.MaxRetainedBytes
+	}
+	if b.MaxWidth <= 0 {
+		b.MaxWidth = defaults.MaxWidth
+	}
+	if b.MaxHeight <= 0 {
+		b.MaxHeight = defaults.MaxHeight
+	}
+	return b
+}
+
 type DecodeConfig struct {
-	Stream      av.Stream
-	Realtime    bool
-	LowLatency  bool
-	Resilience  ResiliencePolicy
+	Stream     av.Stream
+	Realtime   bool
+	LowLatency bool
+	Resilience ResiliencePolicy
+	Bounds     DecodeBounds
+	// OpaqueState carries adapter-specific, caller-owned state. Adapter
+	// packages must document the concrete type before reading it.
 	OpaqueState any
 }
 

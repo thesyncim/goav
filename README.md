@@ -25,6 +25,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - RTP receive can surface backward timestamps and configured timestamp gaps as
   discontinuity events.
 - Pion RTP/RTCP/WebRTC types stay at package boundaries.
+- Realtime decoder adapters can receive explicit payload, retained-fragment,
+  output-count, and geometry bounds before binding scratch.
 - Codec implementations stay in adapter packages for `gopus`, `govpx`,
   `goav1`, and `goh264`.
 
@@ -158,8 +160,8 @@ as private graph compilers that must support both `Describe` and `Build`.
   backpressure surface, simple node-to-node connections and branches,
   detail-aware text/DOT/Mermaid graph specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
-- `codec`: decoder/encoder contracts, registry, decoder and encoder pipeline
-  stages.
+- `codec`: decoder/encoder contracts, realtime decode bounds, registry,
+  decoder and encoder pipeline stages.
 - `rtpav`: Pion RTP/RTCP boundary, payload map, loss detection, jitter ring,
   timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers,
   feedback helpers, RTP source.
@@ -180,7 +182,8 @@ as private graph compilers that must support both `Describe` and `Build`.
   caller-owned I420 frames, plus VP8 and VP9 encode into caller-owned packet
   buffers.
 - `adapters/goav1`: descriptor boundary for future concrete adapters; factory
-  lookups return `codec.ErrUnavailable` until a real adapter is registered.
+  lookups return `codec.ErrUnavailable` until a real packet-by-packet adapter is
+  registered.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
   H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
   video frames.
@@ -241,11 +244,14 @@ Implemented slices:
 - Build-tagged VP9 encode maps caller-owned I420 `av.Frame` input into
   caller-owned `av.Packet` payload buffers through `govpx` profile 0 encode,
   honors keyframe request events, and has allocation and lifecycle tests.
+- Decode bounds give realtime video adapters a common way to prebind bounded
+  scratch without importing codec internals into the core.
 
 Next pressure points:
 
-- Extend the next concrete video path: AV1 decode if the sibling module surface
-  is ready without expanding the core import graph.
+- Extend the next concrete video path: AV1 decode once the sibling module is a
+  clean optional dependency and the stream runner can bind from explicit decode
+  bounds without hidden allocation.
 
 ## Working Loop
 

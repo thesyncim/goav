@@ -29,7 +29,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | Area | Status | Next |
 | --- | --- | --- |
 | `av` | reset helpers, ownership docs, RTP timebase helpers, allocation-free timestamp and duration rescale/compare helpers | richer timestamp metadata helpers |
-| `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
+| `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages, decode bounds for realtime adapter scratch planning | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, fanout, first-class node-to-node connections, branch helpers, stream/event routing options, backpressure guard, graph specs with detail-aware text/DOT/Mermaid rendering | bounded async connections and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh, stream-scoped EOS for single-stream readers | richer multi-stream receive |
@@ -37,7 +37,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
 | runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph connections and branches with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, multi-RTP/WebRTC packet-reader record/fanout compiler | next codec adapter validation |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` and default-build optional video adapters report unavailable factories explicitly | extend the next concrete video path |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` and default-build optional video adapters report unavailable factories explicitly | AV1 tagged decode once the sibling module is a clean dependency and the stream runner can bind from decode bounds without hidden allocation |
 
 ## Implementation Order
 
@@ -129,13 +129,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 39. Add timestamp delta/compare helpers and let `rtpav.Source` emit
     discontinuity events for backward timestamps or configured max-gap
     thresholds, with fluent `WithRTPMaxTimestampGap` graph detail. Done.
-40. Promote `pipeline.Connection` as the simple direct graph edge API, thread
+40. Promote `pipeline.Connection` as the simple direct graph connection API, thread
     runtime explicit graph helpers through it, and keep low-level link/route
     structs as escape hatches. Done.
 41. Add build-tagged `govpx` VP9 encoder factory with caller-owned packet
     output buffers, keyframe request handling, descriptor merge proof,
     allocation guard, and deterministic close behavior. Done.
-42. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+42. Add `codec.DecodeBounds` so realtime adapters can merge caller-provided
+    stream limits with adapter defaults before binding large scratch. Done.
+43. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -184,7 +186,7 @@ Required proof:
   graph specs with text, DOT, and Mermaid renderers before or after build.
   Runtime-created nodes and any explicit node that implements the optional
   node-describer contract can include short graph details without introducing
-  lower-level endpoint concepts into the public builder.
+  lower-level executor vocabulary into the public builder.
 - The runtime builder can also plan and compile simple remux/fanout jobs from
   `Input(...).Output(...).Build(ctx)` when registered format adapters can probe,
   demux, and mux the selected boundaries.
@@ -258,6 +260,9 @@ Required proof:
   caller-owned I420 frames into caller-owned packet buffers, forcing keyframes
   on request or discontinuity, and preserving merged descriptors for decode and
   encode.
+- `codec.DecodeBounds` gives future realtime adapters a small common place to
+  receive payload, retained-fragment, output-count, and geometry limits while
+  keeping adapter-specific arenas behind documented `OpaqueState` types.
 
 ## Adapter Targets
 

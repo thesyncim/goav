@@ -33,7 +33,7 @@ type Connection = pipeline.Connection
 
 type ConnectOption func(*Connection)
 
-// Builder describes the intended fluent edge API without constraining the
+// Builder describes the intended fluent connection API without constraining the
 // internal graph representation.
 type Builder interface {
 	Input(Input) Builder

@@ -22,6 +22,9 @@ integrations belong under `adapters/...`.
 - Descriptor-only registrations may advertise planned capabilities, but factory
   lookup must fail with `codec.ErrUnavailable` until a concrete factory is
   registered.
+- Realtime decoders that need large internal arenas should honor
+  `codec.DecodeConfig.Bounds` and document any adapter-specific
+  `OpaqueState` type they accept.
 
 ## Current Adapters
 
@@ -109,6 +112,22 @@ Current tagged surface:
 
 It has VP8/VP9 decode and encode for now. SVC controls, color metadata, and
 format conversion remain future slices.
+
+## `goav1`
+
+The `goav1` adapter is still descriptor-only in `goav`. The sibling module has
+AV1 low-overhead and RTP payload stream runners with caller-owned scratch, but a
+tagged decoder should register here only after the dependency can be required
+cleanly and the adapter can bind a reusable packet-by-packet runner from
+`codec.DecodeConfig.Bounds`, stream metadata, and documented `OpaqueState`.
+
+The first concrete surface should stay narrow:
+
+- receive depacketized AV1 payload bytes and realtime events from `rtpav`
+- clear retained fragments after loss/discontinuity and request a keyframe
+- reset stream state on codec-change events and preserve codec epochs
+- expose 8-bit 4:2:0 I420 frames first, with explicit buffer ownership
+- prove lifecycle, allocation behavior, and result-capacity failures
 
 ## `resample`
 

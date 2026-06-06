@@ -90,6 +90,7 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 	if err != nil {
 		return nil, err
 	}
+	result := decodeResultForStream(stream)
 	decoder, err := factory.NewDecoder(ctx, codec.DecodeConfig{
 		Stream:     stream,
 		Realtime:   realtime,
@@ -100,6 +101,7 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 			DropDamagedVideo: stream.Type == av.MediaVideo,
 			RequestKeyframes: stream.Type == av.MediaVideo,
 		},
+		Bounds: decodeBoundsForStream(stream, result),
 	})
 	if err != nil {
 		return nil, err
@@ -108,7 +110,7 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 		Name:            decodeNodeName(selector),
 		Detail:          decodeNodeDetail(selector),
 		Decoder:         decoder,
-		Result:          decodeResultForStream(stream),
+		Result:          result,
 		DropInputEvents: dropInputEvents,
 	})
 	if err != nil {
@@ -303,6 +305,16 @@ func decodeResultForStream(stream av.Stream) codec.DecodeResult {
 		Frames:   []av.Frame{frame}[:0],
 		Events:   make([]av.Event, 0, 1),
 		Requests: make([]codec.ControlRequest, 0, 1),
+	}
+}
+
+func decodeBoundsForStream(stream av.Stream, result codec.DecodeResult) codec.DecodeBounds {
+	return codec.DecodeBounds{
+		MaxFramesPerInput:   cap(result.Frames),
+		MaxEventsPerInput:   cap(result.Events),
+		MaxRequestsPerInput: cap(result.Requests),
+		MaxWidth:            stream.Codec.Width,
+		MaxHeight:           stream.Codec.Height,
 	}
 }
 

@@ -179,6 +179,11 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	if decoderFactory.config.Stream.ID != "audio" || !decoderFactory.config.Realtime || !decoderFactory.config.LowLatency {
 		t.Fatalf("decode config: %+v", decoderFactory.config)
 	}
+	if decoderFactory.config.Bounds.MaxFramesPerInput != 1 ||
+		decoderFactory.config.Bounds.MaxEventsPerInput != 1 ||
+		decoderFactory.config.Bounds.MaxRequestsPerInput != 1 {
+		t.Fatalf("decode bounds: %+v", decoderFactory.config.Bounds)
+	}
 
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
@@ -365,5 +370,28 @@ func TestDecodeResultForVideoPreallocatesPlaneSlots(t *testing.T) {
 	frames := result.Frames[:cap(result.Frames)]
 	if len(frames) != 1 || cap(frames[0].Planes) < 3 {
 		t.Fatalf("frames=%d plane cap=%d", len(frames), cap(frames[0].Planes))
+	}
+}
+
+func TestDecodeBoundsForVideoStream(t *testing.T) {
+	stream := av.Stream{
+		ID:   "video",
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			ID:     av.CodecAV1,
+			Type:   av.MediaVideo,
+			Width:  1280,
+			Height: 720,
+		},
+	}
+	result := decodeResultForStream(stream)
+
+	bounds := decodeBoundsForStream(stream, result)
+	if bounds.MaxFramesPerInput != 1 ||
+		bounds.MaxEventsPerInput != 1 ||
+		bounds.MaxRequestsPerInput != 1 ||
+		bounds.MaxWidth != 1280 ||
+		bounds.MaxHeight != 720 {
+		t.Fatalf("bounds = %+v", bounds)
 	}
 }
