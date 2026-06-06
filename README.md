@@ -107,7 +107,7 @@ fmt.Println(spec)
   receive path as RTP.
 - `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive
   intent without making the caller wire depacketizers by hand for Opus, VP8,
-  VP9, H264, or AV1.
+  VP9, H264, or AV1; `reader` must be a non-nil Pion-backed packet reader.
 - `goav.FileInput`, `goav.URI`, `goav.FileOutput`, and `goav.URIOutput` cover
   ordinary input and output declarations. `FrameSink` requires a non-nil sink,
   and `FileOutput` requires a writer.

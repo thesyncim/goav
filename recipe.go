@@ -409,7 +409,27 @@ func (s InputSpec) validate() error {
 			Cause: s.err,
 		}
 	}
+	if err := s.validateRTPReceiver(); err != nil {
+		return err
+	}
 	return s.validateRTPCodec()
+}
+
+func (s InputSpec) validateRTPReceiver() error {
+	if s.rtp == nil || s.rtp.receiver != nil {
+		return nil
+	}
+	return &BuildError{
+		Code:      "rtp_reader_missing",
+		Operation: "build input",
+		Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
+		Reason:    "RTP input has no packet reader",
+		Suggestions: []string{
+			"pass a non-nil rtpav.PacketReader to goav.RTP(reader)",
+			"use goav.WebRTCTrack(track) for Pion WebRTC receive",
+		},
+		Cause: ErrNilSource,
+	}
 }
 
 func (s InputSpec) validateRTPCodec() error {

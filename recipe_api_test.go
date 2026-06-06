@@ -9,10 +9,34 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/webrtcav"
 )
+
+type recipeAPIRTPReader struct{}
+
+func (recipeAPIRTPReader) Streams(context.Context) ([]goav.Stream, error) {
+	return []goav.Stream{{ID: "audio", Type: "audio"}}, nil
+}
+
+func (recipeAPIRTPReader) PayloadMap() rtpav.PayloadMap {
+	return nil
+}
+
+func (recipeAPIRTPReader) ReadRTP(context.Context) (*rtp.Packet, error) {
+	return nil, io.EOF
+}
+
+func (recipeAPIRTPReader) Events() <-chan goav.Event {
+	return nil
+}
+
+func (recipeAPIRTPReader) Close() error {
+	return nil
+}
 
 func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	job := goav.Record(
@@ -203,9 +227,23 @@ func TestRecordRecipeRejectsFileOutputWithoutWriter(t *testing.T) {
 	}
 }
 
+func TestRTPRecipeRejectsNilReader(t *testing.T) {
+	_, err := goav.Record(
+		goav.RTP(nil).Name("audio"),
+		goav.FileOutput("recording.ogg", io.Discard),
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "rtp_reader_missing" || !errors.Is(err, goav.ErrNilSource) {
+		t.Fatalf("err = %v, want rtp_reader_missing wrapping ErrNilSource", err)
+	}
+	if !strings.Contains(err.Error(), "non-nil rtpav.PacketReader") {
+		t.Fatalf("err = %v, want RTP reader guidance", err)
+	}
+}
+
 func TestRTPRecipeRejectsUnsupportedAutoCodecIntent(t *testing.T) {
 	_, err := goav.Record(
-		goav.RTP(nil).Name("audio").Codec(goav.CodecSpec{ID: "pcm"}),
+		goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.CodecSpec{ID: "pcm"}),
 		goav.FileOutput("recording.ogg", io.Discard),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
@@ -230,7 +268,7 @@ func TestRTPRecipeRejectsUnresolvedCodecIntents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := goav.Record(
-				goav.RTP(nil).Name("audio").Codec(tt.spec),
+				goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(tt.spec),
 				goav.FileOutput("recording.ogg", io.Discard),
 			).Build(context.Background())
 			var buildErr *goav.BuildError

@@ -34,7 +34,7 @@ func (recipeTestDepacketizer) HandleEvent(context.Context, *av.Event) error {
 }
 
 func TestRTPRecipeAllowsCustomCodecWithManualDepacketizer(t *testing.T) {
-	err := RTP(nil).
+	err := RTP(&runtimeRTPReceiver{}).
 		Name("audio").
 		Codec(CodecSpec{ID: "pcm"}).
 		Depacketize(recipeTestDepacketizer{}).

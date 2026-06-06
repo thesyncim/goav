@@ -340,7 +340,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     custom codec escape hatch. Done.
 104. Add recipe output validation so nil frame sinks, empty output specs, and
     file outputs without writers fail before graph compilation. Done.
-105. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+105. Add recipe RTP reader validation so nil packet readers fail before source
+    construction while codec-intent diagnostics still cover valid readers.
+    Done.
+106. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
