@@ -119,6 +119,9 @@ for _, edge := range spec.Edges {
 - `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive
   intent without making the caller wire depacketizers by hand for Opus, VP8,
   VP9, H264, or AV1; `reader` must be a non-nil Pion-backed packet reader.
+  `RTPBuffer(...)` limit fields use zero for defaults and positive values for
+  explicit bounds; `MaxTimestampGap(...)` needs a positive duration with a
+  valid timebase when enabled.
 - `goav.FileInput`, `goav.URI`, `goav.FileOutput`, and `goav.URIOutput` cover
   ordinary input and output declarations. `FrameSink` requires a non-nil sink,
   and `FileOutput` requires a writer. Writer-only outputs need a filename,

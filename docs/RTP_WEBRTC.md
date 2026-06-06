@@ -172,6 +172,9 @@ Loss is not just an error return. It should become visible as:
 
 Timestamp regressions and configured timestamp gaps also become
 `av.EventDiscontinuity` before the affected packet is delivered downstream.
+`RTPBuffer(...)` limits use zero for defaults and positive values for explicit
+bounds; `MaxTimestampGap(...)` needs a positive duration with a valid timebase
+when enabled.
 
 ## Codec switches
 

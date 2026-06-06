@@ -399,6 +399,81 @@ func TestRTPRecipeRejectsNilReader(t *testing.T) {
 	}
 }
 
+func TestRTPRecipeRejectsNegativeBufferLimits(t *testing.T) {
+	tests := []struct {
+		name  string
+		field string
+		limit goav.RTPBufferLimits
+	}{
+		{name: "max ready", field: "MaxReady", limit: goav.RTPBufferLimits{MaxReady: -1}},
+		{name: "max events", field: "MaxEvents", limit: goav.RTPBufferLimits{MaxEvents: -1}},
+		{name: "max feedback", field: "MaxFeedback", limit: goav.RTPBufferLimits{MaxFeedback: -1}},
+		{name: "max packets", field: "MaxPackets", limit: goav.RTPBufferLimits{MaxPackets: -1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := goav.Record(
+				goav.RTP(recipeAPIRTPReader{}).
+					Name("audio").
+					Codec(goav.Opus()).
+					RTPBuffer(tt.limit),
+				goav.FileOutput("recording.ogg", io.Discard),
+			).Build(context.Background())
+			var buildErr *goav.BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "rtp_buffer_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want rtp_buffer_invalid wrapping ErrUnsupportedBuild", err)
+			}
+			if !strings.Contains(err.Error(), tt.field+"=-1") ||
+				!strings.Contains(err.Error(), "zero for defaults") {
+				t.Fatalf("err = %v, want RTP buffer guidance", err)
+			}
+		})
+	}
+}
+
+func TestRTPRecipeRejectsInvalidTimestampGap(t *testing.T) {
+	tests := []struct {
+		name string
+		gap  av.Duration
+		want string
+	}{
+		{
+			name: "negative",
+			gap:  av.Duration{Value: -1, Base: av.RTPTimeBase(48000)},
+			want: "negative timestamp gap",
+		},
+		{
+			name: "missing timebase",
+			gap:  av.Duration{Value: 960},
+			want: "invalid timebase",
+		},
+		{
+			name: "invalid denominator",
+			gap:  av.Duration{Value: 960, Base: av.TimeBase{Num: 1}},
+			want: "invalid timebase",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := goav.Record(
+				goav.RTP(recipeAPIRTPReader{}).
+					Name("audio").
+					Codec(goav.Opus()).
+					MaxTimestampGap(tt.gap),
+				goav.FileOutput("recording.ogg", io.Discard),
+			).Build(context.Background())
+			var buildErr *goav.BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "rtp_timestamp_gap_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want rtp_timestamp_gap_invalid wrapping ErrUnsupportedBuild", err)
+			}
+			if !strings.Contains(err.Error(), tt.want) ||
+				!strings.Contains(err.Error(), "MaxTimestampGap") {
+				t.Fatalf("err = %v, want RTP timestamp-gap guidance", err)
+			}
+		})
+	}
+}
+
 func TestRTPRecipeRejectsUnsupportedAutoCodecIntent(t *testing.T) {
 	_, err := goav.Record(
 		goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.CodecSpec{ID: "pcm"}),

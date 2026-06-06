@@ -386,7 +386,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 124. Add recipe-level `.MIME(...)` customization for inputs and outputs so
     unnamed readers and writer-backed outputs can still drive format probing.
     Done.
-125. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+125. Add recipe RTP policy validation so negative buffer limits and invalid
+    timestamp-gap durations fail before source construction. Done.
+126. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

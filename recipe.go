@@ -422,6 +422,9 @@ func (s InputSpec) validate() error {
 	if err := s.validatePlainInput(); err != nil {
 		return err
 	}
+	if err := s.validateRTPPolicy(); err != nil {
+		return err
+	}
 	return s.validateRTPCodec()
 }
 
@@ -460,6 +463,69 @@ func (s InputSpec) validateRTPReceiver() error {
 			"use goav.WebRTCTrack(track) for Pion WebRTC receive",
 		},
 		Cause: ErrNilSource,
+	}
+}
+
+func (s InputSpec) validateRTPPolicy() error {
+	if s.rtp == nil {
+		return nil
+	}
+	limits := s.rtp.limits
+	switch {
+	case limits.MaxReady < 0:
+		return s.invalidRTPBufferLimitError("MaxReady", limits.MaxReady)
+	case limits.MaxEvents < 0:
+		return s.invalidRTPBufferLimitError("MaxEvents", limits.MaxEvents)
+	case limits.MaxFeedback < 0:
+		return s.invalidRTPBufferLimitError("MaxFeedback", limits.MaxFeedback)
+	case limits.MaxPackets < 0:
+		return s.invalidRTPBufferLimitError("MaxPackets", limits.MaxPackets)
+	}
+
+	gap := s.rtp.maxTSGap
+	if gap == (av.Duration{}) {
+		return nil
+	}
+	if gap.Value < 0 {
+		return s.invalidRTPTimestampGapError("negative timestamp gap", gap)
+	}
+	if gap.Value > 0 && !gap.Base.Valid() {
+		return s.invalidRTPTimestampGapError("timestamp gap has an invalid timebase", gap)
+	}
+	return nil
+}
+
+func (s InputSpec) invalidRTPBufferLimitError(field string, value int) error {
+	return &BuildError{
+		Code:      "rtp_buffer_invalid",
+		Operation: "build input",
+		Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
+		Reason:    "RTP buffer limits must be positive when set",
+		Details: []string{
+			fmt.Sprintf("%s=%d", field, value),
+		},
+		Suggestions: []string{
+			"use positive RTP buffer limits or leave fields zero for defaults",
+			"set MaxPackets, MaxEvents, MaxReady, or MaxFeedback only when tightening realtime buffering",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func (s InputSpec) invalidRTPTimestampGapError(reason string, gap av.Duration) error {
+	return &BuildError{
+		Code:      "rtp_timestamp_gap_invalid",
+		Operation: "build input",
+		Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
+		Reason:    reason,
+		Details: []string{
+			fmt.Sprintf("gap=%d base=%d/%d", gap.Value, gap.Base.Num, gap.Base.Den),
+		},
+		Suggestions: []string{
+			"use goav.SamplesDuration(samples, clockRate) or a positive av.Duration with a valid timebase",
+			"omit .MaxTimestampGap(...) when no gap threshold is needed",
+		},
+		Cause: ErrUnsupportedBuild,
 	}
 }
 
