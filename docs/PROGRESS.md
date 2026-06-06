@@ -445,7 +445,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     stream selection stays recipe-scoped and expert graph wiring stays
     handle-based.
     Done.
-141. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+141. Make the legacy fluent builder interface package-internal so the public
+    top-level API exposes recipes, graph handles, and tasks, not compiler
+    plumbing.
+    Done.
+142. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

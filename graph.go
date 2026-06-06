@@ -42,7 +42,7 @@ func (n GraphNode) Event(event av.EventType) GraphOutlet {
 }
 
 type graphBuilder struct {
-	builder Builder
+	builder builderAPI
 	err     error
 }
 

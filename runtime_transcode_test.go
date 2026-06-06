@@ -295,7 +295,7 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 	}
 }
 
-func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (Builder, *decodeTestDemuxer, *remuxTestMuxerFactory, *decodeTestDecoder, *encodeTestEncoderFactory) {
+func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (builderAPI, *decodeTestDemuxer, *remuxTestMuxerFactory, *decodeTestDecoder, *encodeTestEncoderFactory) {
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{
 		streams: streams,

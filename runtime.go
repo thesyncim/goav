@@ -81,11 +81,27 @@ type runtime struct {
 	realtime bool
 }
 
+type builderAPI interface {
+	Input(Input) builderAPI
+	RTP(rtpav.PacketReader, ...RTPOption) builderAPI
+	Output(Output) builderAPI
+	Decode(av.StreamSelector) builderAPI
+	Encode(av.StreamSelector, codec.EncodeConfig) builderAPI
+	Filter(av.StreamSelector, Stage) builderAPI
+	Transcode(transcode.Plan) builderAPI
+	Source(Source) builderAPI
+	Stage(Stage) builderAPI
+	Sink(Sink) builderAPI
+	Routes(...pipeline.Route) builderAPI
+	Describe() (pipeline.Spec, error)
+	Build(context.Context) (Task, error)
+}
+
 func (r *runtime) Probe(ctx context.Context, request ProbeRequest) (ProbeResult, error) {
 	return r.formats.Probe(ctx, request)
 }
 
-func (r *runtime) New() Builder {
+func (r *runtime) New() builderAPI {
 	return &builder{runtime: r}
 }
 
@@ -142,12 +158,12 @@ type rtpInput struct {
 	maxTSGap      av.Duration
 }
 
-func (b *builder) Input(input Input) Builder {
+func (b *builder) Input(input Input) builderAPI {
 	b.inputs = append(b.inputs, input)
 	return b
 }
 
-func (b *builder) RTP(receiver rtpav.PacketReader, options ...RTPOption) Builder {
+func (b *builder) RTP(receiver rtpav.PacketReader, options ...RTPOption) builderAPI {
 	input := rtpInput{receiver: receiver}
 	for i := range options {
 		if options[i] != nil {
@@ -158,11 +174,11 @@ func (b *builder) RTP(receiver rtpav.PacketReader, options ...RTPOption) Builder
 	return b
 }
 
-func (b *builder) Output(output Output) Builder {
+func (b *builder) Output(output Output) builderAPI {
 	return b.outputWithFormat(output, "")
 }
 
-func (b *builder) outputWithFormat(output Output, format av.FormatID) Builder {
+func (b *builder) outputWithFormat(output Output, format av.FormatID) builderAPI {
 	b.outputs = append(b.outputs, output)
 	b.outputFmts = append(b.outputFmts, format)
 	return b
@@ -175,47 +191,47 @@ func (b *builder) outputFormat(index int) av.FormatID {
 	return b.outputFmts[index]
 }
 
-func (b *builder) Decode(selector av.StreamSelector) Builder {
+func (b *builder) Decode(selector av.StreamSelector) builderAPI {
 	b.decodes = append(b.decodes, selector)
 	return b
 }
 
-func (b *builder) Encode(selector av.StreamSelector, config codec.EncodeConfig) Builder {
+func (b *builder) Encode(selector av.StreamSelector, config codec.EncodeConfig) builderAPI {
 	b.encodes = append(b.encodes, encodeRequest{selector: selector, config: config})
 	return b
 }
 
-func (b *builder) Filter(selector av.StreamSelector, stage pipeline.Stage) Builder {
+func (b *builder) Filter(selector av.StreamSelector, stage pipeline.Stage) builderAPI {
 	b.filters = append(b.filters, filterRequest{selector: selector, stage: stage})
 	return b
 }
 
-func (b *builder) transform(selector av.StreamSelector, transform transcodeTransform) Builder {
+func (b *builder) transform(selector av.StreamSelector, transform transcodeTransform) builderAPI {
 	b.filters = append(b.filters, filterRequest{selector: selector, transform: &transform})
 	return b
 }
 
-func (b *builder) Transcode(plan transcode.Plan) Builder {
+func (b *builder) Transcode(plan transcode.Plan) builderAPI {
 	b.transcodes = append(b.transcodes, plan)
 	return b
 }
 
-func (b *builder) Source(source pipeline.Source) Builder {
+func (b *builder) Source(source pipeline.Source) builderAPI {
 	b.sources = append(b.sources, source)
 	return b
 }
 
-func (b *builder) Stage(stage pipeline.Stage) Builder {
+func (b *builder) Stage(stage pipeline.Stage) builderAPI {
 	b.stages = append(b.stages, stage)
 	return b
 }
 
-func (b *builder) Sink(sink pipeline.Sink) Builder {
+func (b *builder) Sink(sink pipeline.Sink) builderAPI {
 	b.sinks = append(b.sinks, sink)
 	return b
 }
 
-func (b *builder) Routes(routes ...pipeline.Route) Builder {
+func (b *builder) Routes(routes ...pipeline.Route) builderAPI {
 	b.routes = append(b.routes, routes...)
 	return b
 }

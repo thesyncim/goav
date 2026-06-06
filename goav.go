@@ -6,11 +6,8 @@ import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/rtpav"
-	"github.com/thesyncim/goav/transcode"
 )
 
 type Input = format.Input
@@ -40,24 +37,6 @@ type GraphBuilder interface {
 	Stage(string, Stage) GraphNode
 	Sink(string, Sink) GraphNode
 	Connect(GraphOutlet, ...GraphInlet) GraphBuilder
-	Describe() (pipeline.Spec, error)
-	Build(context.Context) (Task, error)
-}
-
-// Builder is the legacy advanced builder and compiler target used by recipes
-// and graph handles. Prefer recipes or Runtime.Graph for new application code.
-type Builder interface {
-	Input(Input) Builder
-	RTP(rtpav.PacketReader, ...RTPOption) Builder
-	Output(Output) Builder
-	Decode(av.StreamSelector) Builder
-	Encode(av.StreamSelector, codec.EncodeConfig) Builder
-	Filter(av.StreamSelector, Stage) Builder
-	Transcode(transcode.Plan) Builder
-	Source(Source) Builder
-	Stage(Stage) Builder
-	Sink(Sink) Builder
-	Routes(...pipeline.Route) Builder
 	Describe() (pipeline.Spec, error)
 	Build(context.Context) (Task, error)
 }

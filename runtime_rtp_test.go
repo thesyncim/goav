@@ -624,7 +624,7 @@ func TestRuntimeBuilderRTPDecodeFilterSink(t *testing.T) {
 	}
 }
 
-func newBufferedRTPRecordCopyFixture(policy pipeline.BufferPolicy) (Builder, *runtimeRTPReceiver, *remuxTestMuxerFactory) {
+func newBufferedRTPRecordCopyFixture(policy pipeline.BufferPolicy) (builderAPI, *runtimeRTPReceiver, *remuxTestMuxerFactory) {
 	stream := av.Stream{
 		ID:       "audio",
 		Type:     av.MediaAudio,

@@ -100,7 +100,7 @@ func runtimeValue(t *testing.T, rt Runtime) *runtime {
 	return r
 }
 
-func newTestBuilder(t *testing.T, options ...Option) Builder {
+func newTestBuilder(t *testing.T, options ...Option) builderAPI {
 	t.Helper()
 	return runtimeValue(t, New(options...)).New()
 }

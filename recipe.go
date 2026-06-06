@@ -127,7 +127,7 @@ type jobConfig struct {
 }
 
 type builderProvider interface {
-	New() Builder
+	New() builderAPI
 }
 
 func UseRuntime(runtime Runtime) JobOption {
@@ -416,7 +416,7 @@ func (s InputSpec) MaxTimestampGap(gap av.Duration) InputSpec {
 	return s
 }
 
-func (s InputSpec) apply(builder Builder) Builder {
+func (s InputSpec) apply(builder builderAPI) builderAPI {
 	if s.rtp == nil {
 		input := s.input
 		input.Realtime = input.Realtime || s.realtime
@@ -665,7 +665,7 @@ type OutputSpec struct {
 }
 
 type formattedOutputBuilder interface {
-	outputWithFormat(Output, av.FormatID) Builder
+	outputWithFormat(Output, av.FormatID) builderAPI
 }
 
 func FileOutput(name string, writer io.Writer) OutputSpec {
@@ -716,7 +716,7 @@ func (s OutputSpec) Format(format av.FormatID) OutputSpec {
 	return s
 }
 
-func (s OutputSpec) apply(builder Builder) (Builder, error) {
+func (s OutputSpec) apply(builder builderAPI) (builderAPI, error) {
 	if s.sink != nil {
 		return builder.Sink(s.sink), nil
 	}
@@ -1007,7 +1007,7 @@ func (j *Job) Run(ctx context.Context) error {
 	return task.Run(ctx)
 }
 
-func (j *Job) builder() (Builder, error) {
+func (j *Job) builder() (builderAPI, error) {
 	if j.runtime == nil {
 		return nil, &BuildError{Code: "runtime_missing", Operation: "build job", Reason: "no runtime is configured"}
 	}
@@ -1054,7 +1054,7 @@ func (j *Job) builder() (Builder, error) {
 	return builder, nil
 }
 
-func newRuntimeBuilder(runtime Runtime, operation string) (Builder, error) {
+func newRuntimeBuilder(runtime Runtime, operation string) (builderAPI, error) {
 	provider, ok := runtime.(builderProvider)
 	if !ok {
 		return nil, &BuildError{
@@ -1164,7 +1164,7 @@ func (j *Job) allOutputs() []OutputSpec {
 	return outputs
 }
 
-func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, error) {
+func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAPI, error) {
 	if stream == nil {
 		return builder, nil
 	}
@@ -1234,7 +1234,7 @@ func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, err
 			return nil, err
 		}
 		internal, ok := builder.(interface {
-			transform(av.StreamSelector, transcodeTransform) Builder
+			transform(av.StreamSelector, transcodeTransform) builderAPI
 		})
 		if !ok {
 			return nil, &BuildError{
@@ -2072,7 +2072,7 @@ func (j *TranscodeJob) Run(ctx context.Context) error {
 	return task.Run(ctx)
 }
 
-func (j *TranscodeJob) builder() (Builder, error) {
+func (j *TranscodeJob) builder() (builderAPI, error) {
 	if j.runtime == nil {
 		return nil, &BuildError{Code: "runtime_missing", Operation: "build transcode", Reason: "no runtime is configured"}
 	}

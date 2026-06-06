@@ -78,18 +78,32 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := map[string]bool{
+	legacyFuncs := map[string]bool{
 		"SelectAudio": true,
 		"SelectVideo": true,
 		"Route":       true,
 	}
+	legacyTypes := map[string]bool{
+		"Builder": true,
+	}
 	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv != nil {
+		switch decl := decl.(type) {
+		case *ast.FuncDecl:
+			if decl.Recv != nil {
+				continue
+			}
+			if legacyFuncs[decl.Name.Name] {
+				t.Fatalf("goav.%s keeps a legacy helper on the front door", decl.Name.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range decl.Specs {
+				typeSpec, ok := spec.(*ast.TypeSpec)
+				if ok && legacyTypes[typeSpec.Name.Name] {
+					t.Fatalf("goav.%s keeps a legacy type on the front door", typeSpec.Name.Name)
+				}
+			}
+		default:
 			continue
-		}
-		if legacy[fn.Name.Name] {
-			t.Fatalf("goav.%s keeps a legacy helper on the front door", fn.Name.Name)
 		}
 	}
 }

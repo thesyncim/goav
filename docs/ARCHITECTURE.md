@@ -36,15 +36,16 @@ container, and filter integrations. `goav.Default()` registers the standard
 in-repo adapters for the beginner path, while `goav.New(...)` keeps minimal and
 embedded runtimes explicit. Package-level recipes such as `Record(...)`,
 `Decode(...)`, and `Transcode(...)` are now the beginner-facing front door. They
-produce a small intent model, then lower into the existing runtime builder and
+produce a small intent model, then lower into the internal runtime builder and
 graph compilers.
 
 The handle-based graph builder remains available as the advanced layer through
 `Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed
 handles such as `source.Stream("audio")` and `decode.Out()` to node inputs.
-The legacy builder remains a compiler target, but it is no longer a method on
-the public `Runtime` interface. Runtime builders compile through private graph
-compilers. Each compiler owns one workflow shape and must
+The legacy builder remains an internal compiler target, but it is no longer a
+method on the public `Runtime` interface or an exported top-level type. Runtime
+builders compile through private graph compilers. Each compiler owns one
+workflow shape and must
 implement both pre-build description and runnable graph construction, so
 described graphs and execution graphs stay equivalent. The graph layer stays
 available for inspection and custom stages; optional diagram output lives
