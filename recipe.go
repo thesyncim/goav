@@ -137,7 +137,7 @@ func UseRuntime(runtime Runtime) JobOption {
 	}
 }
 
-type RecordOption interface {
+type recordOption interface {
 	applyRecord(*recordConfig)
 }
 
@@ -843,7 +843,7 @@ type jobStreamStep struct {
 	transform TransformSpec
 }
 
-func Record(input InputSpec, output OutputSpec, options ...RecordOption) *Job {
+func Record(input InputSpec, output OutputSpec, options ...recordOption) *Job {
 	config := recordConfig{
 		job:     jobConfig{runtime: Default()},
 		outputs: []OutputSpec{output},

@@ -110,6 +110,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Builder":         true,
 		"Input":           true,
 		"Output":          true,
+		"RecordOption":    true,
 		"ProbeRequest":    true,
 		"ProbeResult":     true,
 		"Source":          true,
