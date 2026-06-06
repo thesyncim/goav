@@ -1974,105 +1974,15 @@ func (j *TranscodeJob) Intent() Intent {
 	return intent
 }
 
-func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOutputSpec, recipeErr error) (transcodepkg.Plan, error) {
-	if recipeErr != nil {
-		return transcodepkg.Plan{}, recipeErr
-	}
-	if err := input.validate(); err != nil {
-		return transcodepkg.Plan{}, err
-	}
-	if input.rtp != nil {
-		return transcodepkg.Plan{}, &BuildError{
-			Code:      "unsupported_input",
-			Operation: transcodeRecipeOperation,
-			Reason:    "RTP transcode recipes are not supported by the transcode recipe compiler yet",
-			Suggestions: []string{
-				"use Record(...) for packet recording",
-				"use From(...).Audio() or From(...).Video() for one selected RTP receive path",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	}
+func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOutputSpec) (transcodepkg.Plan, error) {
 	streams := intent.Streams
-	if len(streams) == 0 {
-		return transcodepkg.Plan{}, &BuildError{
-			Code:      "stream_missing",
-			Operation: transcodeRecipeOperation,
-			Reason:    "no audio or video branches are configured",
-			Suggestions: []string{
-				"add a video branch such as .Video(\"720p\").Resize(...).VP9(...).To(...)",
-				"add an audio branch such as .Audio(\"main\").Resample(...).Opus(...).To(...)",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	}
-	renditionNames := make(map[string]int, len(streams))
-	for i := range streams {
-		stream := streams[i]
-		selector := streamIntentSelector(stream)
-		if stream.Name == "" {
-			return transcodepkg.Plan{}, transcodeIntentBranchNameMissingError(i, stream)
-		}
-		if err := validateRecipeStreamSelector(transcodeRecipeOperation, transcodeIntentBranchName(stream), selector); err != nil {
-			return transcodepkg.Plan{}, err
-		}
-		if stream.Encode.ID == "" && !stream.Encode.Copy {
-			return transcodepkg.Plan{}, &BuildError{
-				Code:      "encode_missing",
-				Operation: transcodeRecipeOperation,
-				Node:      stream.Name,
-				Reason:    "stream has no codec target",
-				Suggestions: []string{
-					"call .Opus(...), .VP8(...), or .VP9(...) before .To(...)",
-				},
-				Cause: ErrUnsupportedBuild,
-			}
-		}
-		if err := validateRecipeEncode(stream.Encode, transcodeRecipeOperation, stream.Name); err != nil {
-			return transcodepkg.Plan{}, err
-		}
-		if len(stream.RouteTo) == 0 {
-			return transcodepkg.Plan{}, &BuildError{
-				Code:      "output_missing",
-				Operation: transcodeRecipeOperation,
-				Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
-				Reason:    "stream has no output target",
-				Suggestions: []string{
-					"call .To(\"label\") and define it with .Output(label, goav.FileOutput(...))",
-					"reuse the same output label from multiple branches when they should share an output",
-				},
-				Cause: ErrUnsupportedBuild,
-			}
-		}
-		if err := validateTranscodeBranchOutputLabels(stream); err != nil {
-			return transcodepkg.Plan{}, err
-		}
-		renditionName := stream.Name
-		if firstIndex, ok := renditionNames[renditionName]; ok {
-			return transcodepkg.Plan{}, transcodeDuplicateBranchError(renditionName, firstIndex, i)
-		}
-		renditionNames[renditionName] = i
-	}
-
-	outputs := make(map[string]OutputSpec, len(namedOutputs))
-	outputOrder := make([]string, 0, len(namedOutputs))
-	for i := range namedOutputs {
-		if err := namedOutputs[i].output.validate(transcodeRecipeOperation, fmt.Sprintf("output-%d", i)); err != nil {
-			return transcodepkg.Plan{}, err
-		}
-		if namedOutputs[i].output.sink != nil {
-			return transcodepkg.Plan{}, transcodeFrameSinkOutputError(namedOutputs[i].name, namedOutputs[i].output)
-		}
-		name := namedOutputs[i].name
-		if _, ok := outputs[name]; ok {
-			return transcodepkg.Plan{}, transcodeDuplicateOutputError(name)
-		}
-		outputOrder = append(outputOrder, name)
-		outputs[name] = namedOutputs[i].output.Name(firstNonEmpty(namedOutputs[i].output.name, name))
-	}
+	outputs, outputOrder := transcodeOutputAttachmentSet(namedOutputs)
 
 	renditions := make([]transcodepkg.Rendition, 0, len(streams))
 	outputRenditions := make(map[string][]string, len(outputs))
+	if len(streams) == 0 {
+		return transcodepkg.Plan{}, transcodeStreamMissingError()
+	}
 	for i := range streams {
 		stream := streams[i]
 		for _, label := range stream.RouteTo {
@@ -2132,6 +2042,156 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 		Renditions: renditions,
 		Outputs:    planOutputs,
 	}, nil
+}
+
+func validateTranscodeIntentShape(operation string, intent Intent) error {
+	if len(intent.Inputs) == 0 {
+		return &BuildError{Code: "input_missing", Operation: operation, Reason: "no input is configured", Cause: ErrUnsupportedBuild}
+	}
+	if len(intent.Inputs) > 1 {
+		return &BuildError{
+			Code:      "input_count_unsupported",
+			Operation: operation,
+			Reason:    "transcode recipes currently take one input",
+			Details: []string{
+				fmt.Sprintf("inputs=%d", len(intent.Inputs)),
+			},
+			Suggestions: []string{
+				"use one goav.Transcode(input) source per transcode job",
+				"use the expert graph API when multiple sources must be composed manually",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	streams := intent.Streams
+	if len(streams) == 0 {
+		return transcodeStreamMissingError()
+	}
+	renditionNames := make(map[string]int, len(streams))
+	for i := range streams {
+		stream := streams[i]
+		if err := validateTranscodeBranchIntentShape(stream, i); err != nil {
+			return err
+		}
+		if _, _, err := transcodeBranchTransformConfigs(stream); err != nil {
+			return err
+		}
+		renditionName := stream.Name
+		if firstIndex, ok := renditionNames[renditionName]; ok {
+			return transcodeDuplicateBranchError(renditionName, firstIndex, i)
+		}
+		renditionNames[renditionName] = i
+	}
+	return nil
+}
+
+func validateTranscodeBranchIntentShape(stream StreamIntent, index int) error {
+	selector := streamIntentSelector(stream)
+	if stream.Name == "" {
+		return transcodeIntentBranchNameMissingError(index, stream)
+	}
+	if err := validateRecipeStreamSelector(transcodeRecipeOperation, transcodeIntentBranchName(stream), selector); err != nil {
+		return err
+	}
+	if stream.Encode.ID == "" && !stream.Encode.Copy {
+		return transcodeEncodeMissingError(stream)
+	}
+	if err := validateRecipeEncode(stream.Encode, transcodeRecipeOperation, stream.Name); err != nil {
+		return err
+	}
+	if len(stream.RouteTo) == 0 {
+		return transcodeBranchOutputMissingError(stream)
+	}
+	return validateTranscodeBranchOutputLabels(stream)
+}
+
+func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpec) error {
+	if err := input.validate(); err != nil {
+		return err
+	}
+	if input.rtp != nil {
+		return transcodeUnsupportedRTPInputError()
+	}
+	seen := make(map[string]struct{}, len(namedOutputs))
+	for i := range namedOutputs {
+		if err := namedOutputs[i].output.validate(transcodeRecipeOperation, fmt.Sprintf("output-%d", i)); err != nil {
+			return err
+		}
+		if namedOutputs[i].output.sink != nil {
+			return transcodeFrameSinkOutputError(namedOutputs[i].name, namedOutputs[i].output)
+		}
+		name := namedOutputs[i].name
+		if _, ok := seen[name]; ok {
+			return transcodeDuplicateOutputError(name)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
+}
+
+func transcodeOutputAttachmentSet(namedOutputs []namedOutputSpec) (map[string]OutputSpec, []string) {
+	outputs := make(map[string]OutputSpec, len(namedOutputs))
+	outputOrder := make([]string, 0, len(namedOutputs))
+	for i := range namedOutputs {
+		name := namedOutputs[i].name
+		outputOrder = append(outputOrder, name)
+		outputs[name] = namedOutputs[i].output.Name(firstNonEmpty(namedOutputs[i].output.name, name))
+	}
+	return outputs, outputOrder
+}
+
+func transcodeStreamMissingError() error {
+	return &BuildError{
+		Code:      "stream_missing",
+		Operation: transcodeRecipeOperation,
+		Reason:    "no audio or video branches are configured",
+		Suggestions: []string{
+			"add a video branch such as .Video(\"720p\").Resize(...).VP9(...).To(...)",
+			"add an audio branch such as .Audio(\"main\").Resample(...).Opus(...).To(...)",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeEncodeMissingError(stream StreamIntent) error {
+	return &BuildError{
+		Code:      "encode_missing",
+		Operation: transcodeRecipeOperation,
+		Node:      stream.Name,
+		Reason:    "stream has no codec target",
+		Suggestions: []string{
+			"call .Opus(...), .VP8(...), or .VP9(...) before .To(...)",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeBranchOutputMissingError(stream StreamIntent) error {
+	selector := streamIntentSelector(stream)
+	return &BuildError{
+		Code:      "output_missing",
+		Operation: transcodeRecipeOperation,
+		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
+		Reason:    "stream has no output target",
+		Suggestions: []string{
+			"call .To(\"label\") and define it with .Output(label, goav.FileOutput(...))",
+			"reuse the same output label from multiple branches when they should share an output",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeUnsupportedRTPInputError() error {
+	return &BuildError{
+		Code:      "unsupported_input",
+		Operation: transcodeRecipeOperation,
+		Reason:    "RTP transcode recipes are not supported by the transcode recipe compiler yet",
+		Suggestions: []string{
+			"use Record(...) for packet recording",
+			"use From(...).Audio() or From(...).Video() for one selected RTP receive path",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func (j *TranscodeJob) Describe() (pipeline.Spec, error) {

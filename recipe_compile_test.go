@@ -173,6 +173,164 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	}
 }
 
+func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
+	tests := []struct {
+		name  string
+		state recipeCompileState
+		code  string
+		want  string
+	}{
+		{
+			name: "input missing",
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				intent: Intent{
+					Streams: []StreamIntent{{
+						Name:    "360p",
+						Select:  StreamSelect{Type: av.MediaVideo},
+						Encode:  VP9(Bitrate(600_000)),
+						RouteTo: []string{"web"},
+					}},
+				},
+			},
+			code: "input_missing",
+			want: "no input is configured",
+		},
+		{
+			name: "stream missing",
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ivf"}},
+				},
+			},
+			code: "stream_missing",
+			want: "no audio or video branches are configured",
+		},
+		{
+			name: "branch name missing",
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ivf"}},
+					Streams: []StreamIntent{{
+						Select:  StreamSelect{Type: av.MediaVideo},
+						Encode:  VP9(Bitrate(600_000)),
+						RouteTo: []string{"web"},
+					}},
+				},
+			},
+			code: "stream_name_missing",
+			want: "transcode branches need stable names",
+		},
+		{
+			name: "encode missing",
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ivf"}},
+					Streams: []StreamIntent{{
+						Name:    "360p",
+						Select:  StreamSelect{Type: av.MediaVideo},
+						RouteTo: []string{"web"},
+					}},
+				},
+			},
+			code: "encode_missing",
+			want: "stream has no codec target",
+		},
+		{
+			name: "duplicate branch output",
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input.ivf"}},
+					Streams: []StreamIntent{{
+						Name:    "360p",
+						Select:  StreamSelect{Type: av.MediaVideo},
+						Encode:  VP9(Bitrate(600_000)),
+						RouteTo: []string{"web", "web"},
+					}},
+				},
+			},
+			code: "output_duplicate",
+			want: "more than once",
+		},
+	}
+	pass := validateTranscodeIntentShapePass()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T) {
+	tests := []struct {
+		name  string
+		state recipeCompileState
+		code  string
+		want  string
+	}{
+		{
+			name: "rtp input",
+			state: recipeCompileState{
+				transcodeInputAttachment: RTP(&runtimeRTPReceiver{}).Name("video").Codec(VP8()),
+				transcodeOutputAttachments: []namedOutputSpec{{
+					name:   "web",
+					output: FileOutput("web.ivf", io.Discard),
+				}},
+			},
+			code: "unsupported_input",
+			want: "RTP transcode recipes",
+		},
+		{
+			name: "frame sink output",
+			state: recipeCompileState{
+				transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
+				transcodeOutputAttachments: []namedOutputSpec{{
+					name:   "frames",
+					output: FrameSink(SinkFunc("frames", func(context.Context, Message) error { return nil })),
+				}},
+			},
+			code: "output_kind_invalid",
+			want: "transcode outputs are muxed output groups",
+		},
+		{
+			name: "duplicate output labels",
+			state: recipeCompileState{
+				transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
+				transcodeOutputAttachments: []namedOutputSpec{
+					{name: "web", output: FileOutput("web.ivf", io.Discard)},
+					{name: "web", output: FileOutput("preview.ivf", io.Discard)},
+				},
+			},
+			code: "output_duplicate",
+			want: "defined more than once",
+		},
+	}
+	pass := validateTranscodeAttachmentsPass()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	job := Record(
 		FileInput("input.ivf", strings.NewReader("")),

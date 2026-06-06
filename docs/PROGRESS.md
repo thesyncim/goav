@@ -618,6 +618,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     scope, stream operation, selector, encode, and codec-change policy now fail
     from public `Intent` before readers, writers, sinks, and stage attachments
     are validated. Done.
+186. Split transcode recipe validation the same way: one input, branch presence,
+    branch names, selectors, encode targets, branch output routes, duplicate
+    branch routes, duplicate branch names, and transform shape now fail from
+    public `Intent`, while RTP rejection and mux-output attachment validation
+    stay in a concrete attachment pass before plan lowering. Done.
 
 ## First Vertical Slice
 
@@ -843,14 +848,14 @@ Required proof:
 7. Update this tracker with the new evidence and next pressure point.
 
 Current pressure point: keep moving real work into the intent compiler path.
-Ordinary recipe validation is now split into public intent shape checks and
-concrete attachment checks; transcode planning, builder lowering, migration
-graph-compiler selection, and planned spec emission also flow through a private
-recipe compiler state that carries captured recipe attachments instead of raw
-recipe builder pointers. Ordinary stream recipe lowering and transcode branch
-planning now read `Intent.Streams`, ordinary output attachments are no longer
-split into builder-shaped fields, and attachment consistency is checked before
-lowering.
+Ordinary and transcode recipe validation are now split into public intent shape
+checks and concrete attachment checks; transcode planning, builder lowering,
+migration graph-compiler selection, and planned spec emission also flow through
+a private recipe compiler state that carries captured recipe attachments instead
+of raw recipe builder pointers. Ordinary stream recipe lowering and transcode
+branch planning now read `Intent.Streams`, ordinary output attachments are no
+longer split into builder-shaped fields, and attachment consistency is checked
+before lowering.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

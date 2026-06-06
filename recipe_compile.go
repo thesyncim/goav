@@ -159,7 +159,10 @@ func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 		state.transcodeOutputAttachments = append([]namedOutputSpec(nil), job.outputs...)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
+		validateTranscodeRecipePass(),
+		validateTranscodeIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
+		validateTranscodeAttachmentsPass(),
 		planTranscodeIntentPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerTranscodePlanPass(),
@@ -300,6 +303,38 @@ func validateJobAttachmentsPass() recipeCompilePass {
 	}}
 }
 
+func validateTranscodeRecipePass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate transcode recipe", fn: func(state *recipeCompileState) error {
+		if !state.transcodePresent {
+			return &BuildError{
+				Code:      "job_invalid",
+				Operation: state.operation,
+				Reason:    "nil transcode job",
+				Cause:     ErrUnsupportedBuild,
+			}
+		}
+		if state.runtime == nil {
+			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
+		}
+		if state.recipeErr != nil {
+			return state.recipeErr
+		}
+		return nil
+	}}
+}
+
+func validateTranscodeIntentShapePass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate transcode intent shape", fn: func(state *recipeCompileState) error {
+		return validateTranscodeIntentShape(state.operation, state.intent)
+	}}
+}
+
+func validateTranscodeAttachmentsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate transcode attachments", fn: func(state *recipeCompileState) error {
+		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeOutputAttachments)
+	}}
+}
+
 func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe attachments", fn: func(state *recipeCompileState) error {
 		switch {
@@ -415,18 +450,7 @@ func lowerJobOutputsPass() recipeCompilePass {
 
 func planTranscodeIntentPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "plan transcode intent", fn: func(state *recipeCompileState) error {
-		if !state.transcodePresent {
-			return &BuildError{
-				Code:      "job_invalid",
-				Operation: state.operation,
-				Reason:    "nil transcode job",
-				Cause:     ErrUnsupportedBuild,
-			}
-		}
-		if state.runtime == nil {
-			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
-		}
-		plan, err := planTranscodeRecipe(state.intent, state.transcodeInputAttachment, state.transcodeOutputAttachments, state.recipeErr)
+		plan, err := planTranscodeRecipe(state.intent, state.transcodeInputAttachment, state.transcodeOutputAttachments)
 		if err != nil {
 			return err
 		}
