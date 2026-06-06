@@ -4,9 +4,12 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"time"
 
 	"github.com/thesyncim/goav/container/ebml"
 )
+
+var ebmlDateEpoch = time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func writeBinary(w *ebml.Writer, id ebml.ID, payload []byte) error {
 	if err := w.WriteHeader(id, uint64(len(payload))); err != nil {
@@ -14,6 +17,29 @@ func writeBinary(w *ebml.Writer, id ebml.ID, payload []byte) error {
 	}
 	_, err := w.Write(payload)
 	return err
+}
+
+func writeDate(w *ebml.Writer, id ebml.ID, value time.Time) error {
+	nanos, err := ebmlDateNanos(value)
+	if err != nil {
+		return err
+	}
+	if err := w.WriteHeader(id, 8); err != nil {
+		return err
+	}
+	var scratch [8]byte
+	binary.BigEndian.PutUint64(scratch[:], uint64(nanos))
+	_, err = w.Write(scratch[:])
+	return err
+}
+
+func ebmlDateNanos(value time.Time) (int64, error) {
+	utc := value.UTC()
+	nanos := utc.Sub(ebmlDateEpoch)
+	if !ebmlDateEpoch.Add(nanos).Equal(utc) {
+		return 0, ErrInvalidData
+	}
+	return int64(nanos), nil
 }
 
 func readUIntPayload(r io.Reader, size uint64) (uint64, error) {
@@ -61,6 +87,21 @@ func readIntPayload(r io.Reader, size uint64) (int64, error) {
 		}
 	}
 	return int64(binary.BigEndian.Uint64(scratch[:])), nil
+}
+
+func readDatePayload(r io.Reader, size uint64) (time.Time, error) {
+	switch size {
+	case 0:
+		return ebmlDateEpoch, nil
+	case 8:
+		value, err := readIntPayload(r, size)
+		if err != nil {
+			return time.Time{}, err
+		}
+		return ebmlDateEpoch.Add(time.Duration(value)), nil
+	default:
+		return time.Time{}, ErrInvalidData
+	}
 }
 
 func readFloatPayload(r io.Reader, size uint64) (float64, error) {

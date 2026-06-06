@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/container/ebml"
@@ -34,6 +35,78 @@ func TestRegisterProvidesFactoriesAndProber(t *testing.T) {
 	}
 	if _, err := registry.MuxerFactory(av.FormatMatroska); err != nil {
 		t.Fatalf("muxer factory: %v", err)
+	}
+}
+
+func TestMuxerDemuxerPreservesSegmentInfoMetadata(t *testing.T) {
+	created := time.Date(2026, 6, 7, 12, 34, 56, 789, time.FixedZone("test", 3600))
+	wantInfo := SegmentInfo{
+		SegmentUUID:     []byte{0x10, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f},
+		SegmentFilename: "camera-a.mkv",
+		PrevUUID:        []byte{0x20, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f},
+		PrevFilename:    "camera-prev.mkv",
+		NextUUID:        []byte{0x30, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f},
+		NextFilename:    "camera-next.mkv",
+		Title:           "camera main",
+		DateUTC:         created.UTC(),
+		DateUTCSet:      true,
+		MuxingApp:       "goav-test-mux",
+		WritingApp:      "goav-test-write",
+	}
+
+	var buffer bytes.Buffer
+	opts := MuxerOptions{
+		MuxingApp:  wantInfo.MuxingApp,
+		WritingApp: wantInfo.WritingApp,
+		Info: SegmentInfo{
+			SegmentUUID:     append([]byte(nil), wantInfo.SegmentUUID...),
+			SegmentFilename: wantInfo.SegmentFilename,
+			PrevUUID:        append([]byte(nil), wantInfo.PrevUUID...),
+			PrevFilename:    wantInfo.PrevFilename,
+			NextUUID:        append([]byte(nil), wantInfo.NextUUID...),
+			NextFilename:    wantInfo.NextFilename,
+			Title:           wantInfo.Title,
+			DateUTC:         created,
+			DateUTCSet:      true,
+		},
+	}
+	muxer, err := NewMuxer(&buffer, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.Info.SegmentUUID[0] = 0xff
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotInfo := demuxer.Info()
+	if !reflect.DeepEqual(gotInfo, wantInfo) {
+		t.Fatalf("info = %+v, want %+v", gotInfo, wantInfo)
+	}
+	gotInfo.SegmentUUID[0] = 0xee
+	fresh := demuxer.Info()
+	if !bytes.Equal(fresh.SegmentUUID, wantInfo.SegmentUUID) {
+		t.Fatalf("segment uuid alias was not protected: %x", fresh.SegmentUUID)
 	}
 }
 
@@ -2222,6 +2295,43 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsInvalidSegmentInfoMetadata(t *testing.T) {
+	tests := []struct {
+		name string
+		info SegmentInfo
+	}{
+		{
+			name: "short segment uuid",
+			info: SegmentInfo{SegmentUUID: []byte{1, 2, 3}},
+		},
+		{
+			name: "zero segment uuid",
+			info: SegmentInfo{SegmentUUID: make([]byte, 16)},
+		},
+		{
+			name: "prev uuid equals segment uuid",
+			info: SegmentInfo{
+				SegmentUUID: []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				PrevUUID:    []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			},
+		},
+		{
+			name: "date out of range",
+			info: SegmentInfo{
+				DateUTC:    time.Time{},
+				DateUTCSet: true,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewMuxer(discardWriter{}, MuxerOptions{Info: tt.info}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
 func TestMuxerSplitsClustersBeforeBlockTimecodeOverflow(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -3215,6 +3325,43 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 	t.Run("audio nan output sample rate", func(t *testing.T) {
 		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
 			return writeTracksWithAudioOutputMetadata(writer, 48000, math.NaN(), 2, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+}
+
+func TestDemuxerRejectsInvalidSegmentInfoMetadata(t *testing.T) {
+	t.Run("short segment uuid", func(t *testing.T) {
+		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeInfoWithElements(writer, func(w *ebml.Writer) error {
+				return writeBinary(w, idSegmentUUID, []byte{1, 2, 3})
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("zero segment uuid", func(t *testing.T) {
+		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeInfoWithElements(writer, func(w *ebml.Writer) error {
+				return writeBinary(w, idSegmentUUID, make([]byte, 16))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("invalid date size", func(t *testing.T) {
+		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeInfoWithElements(writer, func(w *ebml.Writer) error {
+				if err := w.WriteHeader(idDateUTC, 4); err != nil {
+					return err
+				}
+				_, err := w.Write([]byte{0, 0, 0, 0})
+				return err
+			})
 		})
 		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
 			t.Fatalf("err = %v, want ErrInvalidData", err)
@@ -4241,6 +4388,49 @@ func makeTrackMetadataMatroskaData(tb testing.TB, writeTracks func(*ebml.Writer)
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func makeInfoMetadataMatroskaData(tb testing.TB, writeInfo func(*ebml.Writer) error) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.writeEBMLHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.ebml.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
+		tb.Fatal(err)
+	}
+	muxer.segmentData = muxer.ebml.Offset()
+	if err := writeInfo(muxer.ebml); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeTracksWithVideoDimensions(muxer.ebml, 16, 16); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func writeInfoWithElements(writer *ebml.Writer, writeExtra func(*ebml.Writer) error) error {
+	var info bytes.Buffer
+	iw := ebml.NewWriter(&info)
+	if writeExtra != nil {
+		if err := writeExtra(iw); err != nil {
+			return err
+		}
+	}
+	if err := iw.WriteUInt(idTimestampScale, uint64(defaultTimecodeScaleNS)); err != nil {
+		return err
+	}
+	if err := iw.WriteString(idMuxingApp, defaultMuxingApp); err != nil {
+		return err
+	}
+	if err := iw.WriteString(idWritingApp, defaultWritingApp); err != nil {
+		return err
+	}
+	return writer.WriteElement(idInfo, info.Bytes())
 }
 
 func writeMatroskaSegmentPrefix(tb testing.TB, muxer *Muxer) {

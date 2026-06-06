@@ -14,16 +14,24 @@ const (
 	idCRC32              ebml.ID = 0xbf
 	idVoid               ebml.ID = 0xec
 
-	idSegment        ebml.ID = 0x18538067
-	idSeekHead       ebml.ID = 0x114d9b74
-	idSeek           ebml.ID = 0x4dbb
-	idSeekID         ebml.ID = 0x53ab
-	idSeekPosition   ebml.ID = 0x53ac
-	idInfo           ebml.ID = 0x1549a966
-	idTimestampScale ebml.ID = 0x2ad7b1
-	idDuration       ebml.ID = 0x4489
-	idMuxingApp      ebml.ID = 0x4d80
-	idWritingApp     ebml.ID = 0x5741
+	idSegment         ebml.ID = 0x18538067
+	idSeekHead        ebml.ID = 0x114d9b74
+	idSeek            ebml.ID = 0x4dbb
+	idSeekID          ebml.ID = 0x53ab
+	idSeekPosition    ebml.ID = 0x53ac
+	idInfo            ebml.ID = 0x1549a966
+	idSegmentUUID     ebml.ID = 0x73a4
+	idSegmentFilename ebml.ID = 0x7384
+	idPrevUUID        ebml.ID = 0x3cb923
+	idPrevFilename    ebml.ID = 0x3c83ab
+	idNextUUID        ebml.ID = 0x3eb923
+	idNextFilename    ebml.ID = 0x3e83bb
+	idTimestampScale  ebml.ID = 0x2ad7b1
+	idDuration        ebml.ID = 0x4489
+	idDateUTC         ebml.ID = 0x4461
+	idTitle           ebml.ID = 0x7ba9
+	idMuxingApp       ebml.ID = 0x4d80
+	idWritingApp      ebml.ID = 0x5741
 
 	idTracks               ebml.ID = 0x1654ae6b
 	idTrackEntry           ebml.ID = 0xae

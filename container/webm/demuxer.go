@@ -33,6 +33,13 @@ func (d *Demuxer) Tracks() []Track {
 	return d.inner.Tracks()
 }
 
+func (d *Demuxer) Info() SegmentInfo {
+	if d == nil || d.inner == nil {
+		return SegmentInfo{}
+	}
+	return d.inner.Info()
+}
+
 func (d *Demuxer) ReadPacket(dst *Packet) error {
 	return d.inner.ReadPacket(dst)
 }

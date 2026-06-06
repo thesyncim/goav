@@ -43,6 +43,9 @@ func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
 		return nil, ErrNilWriter
 	}
 	opts = normalizeMuxerOptions(opts)
+	if err := validateSegmentInfo(opts.Info); err != nil {
+		return nil, err
+	}
 	m := &Muxer{}
 	m.init(w, opts)
 	return m, nil
@@ -52,6 +55,7 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.writer = w
 	m.ebml = ebml.NewWriter(w)
 	m.options = normalizeMuxerOptions(opts)
+	m.options.Info = cloneSegmentInfo(m.options.Info)
 	m.tracks = m.tracks[:0]
 	m.cues = m.cues[:0]
 	m.headerWritten = false
@@ -476,13 +480,7 @@ func (m *Muxer) writeInfo() error {
 	}
 	var payload bytes.Buffer
 	w := ebml.NewWriter(&payload)
-	if err := w.WriteUInt(idTimestampScale, uint64(m.options.TimecodeScaleNS)); err != nil {
-		return err
-	}
-	if err := w.WriteString(idMuxingApp, m.options.MuxingApp); err != nil {
-		return err
-	}
-	if err := w.WriteString(idWritingApp, m.options.WritingApp); err != nil {
+	if err := m.writeInfoFields(w, false); err != nil {
 		return err
 	}
 	return m.ebml.WriteElement(idInfo, payload.Bytes())
@@ -493,25 +491,111 @@ func (m *Muxer) writeSeekableInfo() error {
 	if err != nil {
 		return err
 	}
-	if err := m.ebml.WriteUInt(idTimestampScale, uint64(m.options.TimecodeScaleNS)); err != nil {
-		return err
-	}
-	if err := m.ebml.WriteHeader(idDuration, 8); err != nil {
-		return err
-	}
-	m.durationOffset = m.ebml.Offset()
-	clear(m.blockScratch[:8])
-	if _, err := m.ebml.Write(m.blockScratch[:8]); err != nil {
-		return err
-	}
-	m.durationPatch = true
-	if err := m.ebml.WriteString(idMuxingApp, m.options.MuxingApp); err != nil {
-		return err
-	}
-	if err := m.ebml.WriteString(idWritingApp, m.options.WritingApp); err != nil {
+	if err := m.writeInfoFields(m.ebml, true); err != nil {
 		return err
 	}
 	return m.ebml.FinishSizedElement(patch)
+}
+
+func (m *Muxer) writeInfoFields(w *ebml.Writer, includeDuration bool) error {
+	info := m.options.Info
+	if err := writeOptionalBinary(w, idSegmentUUID, info.SegmentUUID); err != nil {
+		return err
+	}
+	if info.SegmentFilename != "" {
+		if err := w.WriteString(idSegmentFilename, info.SegmentFilename); err != nil {
+			return err
+		}
+	}
+	if err := writeOptionalBinary(w, idPrevUUID, info.PrevUUID); err != nil {
+		return err
+	}
+	if info.PrevFilename != "" {
+		if err := w.WriteString(idPrevFilename, info.PrevFilename); err != nil {
+			return err
+		}
+	}
+	if err := writeOptionalBinary(w, idNextUUID, info.NextUUID); err != nil {
+		return err
+	}
+	if info.NextFilename != "" {
+		if err := w.WriteString(idNextFilename, info.NextFilename); err != nil {
+			return err
+		}
+	}
+	if err := w.WriteUInt(idTimestampScale, uint64(m.options.TimecodeScaleNS)); err != nil {
+		return err
+	}
+	if includeDuration {
+		if err := w.WriteHeader(idDuration, 8); err != nil {
+			return err
+		}
+		m.durationOffset = w.Offset()
+		clear(m.blockScratch[:8])
+		if _, err := w.Write(m.blockScratch[:8]); err != nil {
+			return err
+		}
+		m.durationPatch = true
+	}
+	if info.DateUTCSet {
+		if err := writeDate(w, idDateUTC, info.DateUTC); err != nil {
+			return err
+		}
+	}
+	if info.Title != "" {
+		if err := w.WriteString(idTitle, info.Title); err != nil {
+			return err
+		}
+	}
+	if err := w.WriteString(idMuxingApp, m.options.MuxingApp); err != nil {
+		return err
+	}
+	return w.WriteString(idWritingApp, m.options.WritingApp)
+}
+
+func writeOptionalBinary(w *ebml.Writer, id ebml.ID, value []byte) error {
+	if len(value) == 0 {
+		return nil
+	}
+	return writeBinary(w, id, value)
+}
+
+func validateSegmentInfo(info SegmentInfo) error {
+	if err := validateSegmentUUID(info.SegmentUUID); err != nil {
+		return err
+	}
+	if err := validateSegmentUUID(info.PrevUUID); err != nil {
+		return err
+	}
+	if err := validateSegmentUUID(info.NextUUID); err != nil {
+		return err
+	}
+	if len(info.SegmentUUID) != 0 {
+		if bytes.Equal(info.SegmentUUID, info.PrevUUID) || bytes.Equal(info.SegmentUUID, info.NextUUID) {
+			return ErrInvalidData
+		}
+	}
+	if info.DateUTCSet {
+		if _, err := ebmlDateNanos(info.DateUTC); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSegmentUUID(value []byte) error {
+	if len(value) == 0 {
+		return nil
+	}
+	if len(value) != 16 {
+		return ErrInvalidData
+	}
+	for i := range value {
+		if value[i] != 0 {
+			return nil
+		}
+	}
+	return ErrInvalidData
 }
 
 func (m *Muxer) writeTracks() error {

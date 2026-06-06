@@ -202,6 +202,20 @@ type SeekEntry struct {
 	Position uint64
 }
 
+type SegmentInfo struct {
+	SegmentUUID     []byte
+	SegmentFilename string
+	PrevUUID        []byte
+	PrevFilename    string
+	NextUUID        []byte
+	NextFilename    string
+	Title           string
+	DateUTC         time.Time
+	DateUTCSet      bool
+	MuxingApp       string
+	WritingApp      string
+}
+
 func (p *Packet) Reset() {
 	data := p.Data[:0]
 	references := p.ReferenceBlockTimeNS[:0]
@@ -214,6 +228,7 @@ type MuxerOptions struct {
 	DocTypeReadVersion   uint64
 	MuxingApp            string
 	WritingApp           string
+	Info                 SegmentInfo
 	TimecodeScaleNS      int64
 	ClusterMaxDurationNS int64
 	Streaming            bool

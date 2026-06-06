@@ -26,6 +26,7 @@ type VideoConfig = matroska.VideoConfig
 type VideoColourConfig = matroska.VideoColourConfig
 type VideoMasteringMetadataConfig = matroska.VideoMasteringMetadataConfig
 type VideoProjectionConfig = matroska.VideoProjectionConfig
+type SegmentInfo = matroska.SegmentInfo
 type Track = matroska.Track
 type Packet = matroska.Packet
 type LacedPacket = matroska.LacedPacket
@@ -42,6 +43,7 @@ const (
 type MuxerOptions struct {
 	MuxingApp            string
 	WritingApp           string
+	Info                 SegmentInfo
 	TimecodeScaleNS      int64
 	ClusterMaxDurationNS int64
 	Streaming            bool
@@ -56,6 +58,7 @@ func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 		DocTypeReadVersion:   2,
 		MuxingApp:            opts.MuxingApp,
 		WritingApp:           opts.WritingApp,
+		Info:                 opts.Info,
 		TimecodeScaleNS:      opts.TimecodeScaleNS,
 		ClusterMaxDurationNS: opts.ClusterMaxDurationNS,
 		Streaming:            opts.Streaming,

@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/container/matroska"
@@ -70,6 +71,69 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 		},
 	}); !errors.Is(err, matroska.ErrInvalidTrack) {
 		t.Fatalf("err = %v, want matroska.ErrInvalidTrack", err)
+	}
+}
+
+func TestMuxerRejectsInvalidSegmentInfoMetadata(t *testing.T) {
+	if _, err := NewMuxer(io.Discard, MuxerOptions{
+		Info: SegmentInfo{SegmentUUID: []byte{1, 2, 3}},
+	}); !errors.Is(err, matroska.ErrInvalidData) {
+		t.Fatalf("err = %v, want matroska.ErrInvalidData", err)
+	}
+}
+
+func TestMuxerDemuxerPreservesSegmentInfoMetadata(t *testing.T) {
+	created := time.Date(2026, 6, 7, 12, 34, 56, 789, time.FixedZone("test", 3600))
+	wantInfo := SegmentInfo{
+		SegmentUUID:     []byte{0x10, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f},
+		SegmentFilename: "camera-a.webm",
+		Title:           "camera webm",
+		DateUTC:         created.UTC(),
+		DateUTCSet:      true,
+		MuxingApp:       "goav-webm-test-mux",
+		WritingApp:      "goav-webm-test-write",
+	}
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{
+		MuxingApp:  wantInfo.MuxingApp,
+		WritingApp: wantInfo.WritingApp,
+		Info: SegmentInfo{
+			SegmentUUID:     append([]byte(nil), wantInfo.SegmentUUID...),
+			SegmentFilename: wantInfo.SegmentFilename,
+			Title:           wantInfo.Title,
+			DateUTC:         created,
+			DateUTCSet:      true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := demuxer.Info(); !reflect.DeepEqual(got, wantInfo) {
+		t.Fatalf("info = %+v, want %+v", got, wantInfo)
 	}
 }
 

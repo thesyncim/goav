@@ -16,6 +16,7 @@ type Demuxer struct {
 	docType         string
 	segmentData     int64
 	timecodeScaleNS int64
+	info            SegmentInfo
 	tracks          []Track
 	cues            []CuePoint
 	seekEntries     []SeekEntry
@@ -88,6 +89,7 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.docType = ""
 	d.segmentData = 0
 	d.timecodeScaleNS = defaultTimecodeScaleNS
+	d.info = SegmentInfo{}
 	d.tracks = d.tracks[:0]
 	d.cues = d.cues[:0]
 	d.seekEntries = d.seekEntries[:0]
@@ -231,11 +233,31 @@ func cloneTrack(track Track) Track {
 	return track
 }
 
+func cloneSegmentInfo(info SegmentInfo) SegmentInfo {
+	if len(info.SegmentUUID) != 0 {
+		info.SegmentUUID = append([]byte(nil), info.SegmentUUID...)
+	}
+	if len(info.PrevUUID) != 0 {
+		info.PrevUUID = append([]byte(nil), info.PrevUUID...)
+	}
+	if len(info.NextUUID) != 0 {
+		info.NextUUID = append([]byte(nil), info.NextUUID...)
+	}
+	return info
+}
+
 func (d *Demuxer) DocType() string {
 	if d == nil {
 		return ""
 	}
 	return d.docType
+}
+
+func (d *Demuxer) Info() SegmentInfo {
+	if d == nil {
+		return SegmentInfo{}
+	}
+	return cloneSegmentInfo(d.info)
 }
 
 func (d *Demuxer) Cues() []CuePoint {
@@ -537,6 +559,42 @@ func (d *Demuxer) parseInfo(header ebml.Header) error {
 			return err
 		}
 		switch child.ID {
+		case idSegmentUUID:
+			value, err := readBinaryPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			d.info.SegmentUUID = value
+		case idSegmentFilename:
+			value, err := readStringPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			d.info.SegmentFilename = value
+		case idPrevUUID:
+			value, err := readBinaryPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			d.info.PrevUUID = value
+		case idPrevFilename:
+			value, err := readStringPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			d.info.PrevFilename = value
+		case idNextUUID:
+			value, err := readBinaryPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			d.info.NextUUID = value
+		case idNextFilename:
+			value, err := readStringPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			d.info.NextFilename = value
 		case idTimestampScale:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
@@ -546,13 +604,38 @@ func (d *Demuxer) parseInfo(header ebml.Header) error {
 				return ErrInvalidData
 			}
 			d.timecodeScaleNS = int64(value)
+		case idDateUTC:
+			value, err := readDatePayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			d.info.DateUTC = value
+			d.info.DateUTCSet = true
+		case idTitle:
+			value, err := readStringPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			d.info.Title = value
+		case idMuxingApp:
+			value, err := readStringPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			d.info.MuxingApp = value
+		case idWritingApp:
+			value, err := readStringPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			d.info.WritingApp = value
 		default:
 			if err := skipElement(reader, child); err != nil {
 				return err
 			}
 		}
 	}
-	return nil
+	return validateSegmentInfo(d.info)
 }
 
 func (d *Demuxer) parseTracks(header ebml.Header) error {
