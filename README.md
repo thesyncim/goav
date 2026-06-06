@@ -121,9 +121,6 @@ for _, edge := range spec.Edges {
   graph and stream a stable label when the reader metadata is not enough.
   Unsupported RTP codec intents fail with supported-codec guidance first;
   custom RTP payload adapters stay an advanced path.
-  `RTPBuffer(...)` limit fields use zero for defaults and positive values for
-  explicit bounds; `MaxTimestampGap(...)` needs a positive duration with a
-  valid timebase when enabled.
 - `goav.FileInput`, `goav.URI`, `goav.FileOutput`, and `goav.URIOutput` cover
   ordinary input and output declarations. `FrameSink` requires a non-nil sink,
   and `FileOutput` requires a writer. Writer-only outputs need a filename,
@@ -143,27 +140,11 @@ caller needs a `Task` for graph specs, events, or explicit lifecycle control.
 Recipes carry intent: input kind, selected stream, target codec, transforms, and
 outputs. The runtime chooses concrete adapters from its registries.
 
-For small examples, the package-level recipes use `goav.Default()`. Applications
-that need exact adapter control can pass a runtime explicitly:
-
-```go
-rt := goav.New(goav.WithFormatAdapter(ivf.Register))
-
-task, err := goav.Record(
-    goav.FileInput("input.ivf", in),
-    goav.FileOutput("preview.ivf", preview),
-    goav.UseRuntime(rt),
-).Build(ctx)
-```
-
-The explicit registration path remains important for embedded builds and narrow
-deployments. The recipe API is the stable front door as the default adapter
-bundle grows.
-
-`goav.Default()` currently includes concrete IVF and Annex B format adapters.
-Containers such as WebM or Ogg need a matching adapter registered on the runtime.
-When a container is detected but no demuxer or muxer exists, builds fail with an
-actionable diagnostic naming the missing adapter role.
+Package-level recipes use `goav.Default()`, which currently includes concrete
+IVF and Annex B format adapters. Containers such as WebM or Ogg need a matching
+adapter in the selected runtime; missing demuxers or muxers fail with actionable
+diagnostics. Exact adapter registration remains available for embedded and
+narrow deployments in [docs/ADAPTERS.md](docs/ADAPTERS.md).
 
 Recipe encode conveniences currently target Opus, VP8, and VP9. H264 and AV1
 codec specs are useful for receive, record, and decode paths while recipe encode

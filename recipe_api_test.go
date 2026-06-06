@@ -158,6 +158,24 @@ func TestInputSpecKeepsManualDepacketizersOutOfRecipeFrontDoor(t *testing.T) {
 	}
 }
 
+func TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor(t *testing.T) {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, advanced := range []string{
+		"WithFormatAdapter",
+		"UseRuntime",
+		"RTPBuffer",
+		"MaxTimestampGap",
+	} {
+		if strings.Contains(text, advanced) {
+			t.Fatalf("README exposes %s in the front-door guide", advanced)
+		}
+	}
+}
+
 func TestRecipeReportsRuntimeWithoutCompilerBuilder(t *testing.T) {
 	_, err := goav.Record(
 		goav.FileInput("input.ivf", strings.NewReader("")),

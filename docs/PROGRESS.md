@@ -514,7 +514,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     codec intent, while advanced runtime compilers can still use explicit
     depacketizers internally.
     Done.
-158. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+158. Trim README front-door guidance so exact adapter registration and RTP
+    buffering/gap knobs stay in advanced docs instead of the getting-started
+    path.
+    Done.
+159. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
