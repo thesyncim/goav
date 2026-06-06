@@ -139,6 +139,7 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 		validateJobAttachmentsPass(),
 		validateJobStreamAttachmentsPass(),
 		validateJobOutputBindingsPass(),
+		validateJobStreamOutputKindsPass(),
 		validatePacketJobOutputsPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerJobInputsPass(),
@@ -420,6 +421,16 @@ func validateJobOutputBindingsPass() recipeCompilePass {
 			return nil
 		}
 		return validateJobOutputBindings(state.operation, stream, state.outputAttachments)
+	}}
+}
+
+func validateJobStreamOutputKindsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job stream output kinds", fn: func(state *recipeCompileState) error {
+		stream, ok := jobIntentStream(state.intent)
+		if !ok {
+			return nil
+		}
+		return validateJobStreamOutputKinds(state.operation, stream, state.outputAttachments)
 	}}
 }
 

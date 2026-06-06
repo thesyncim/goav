@@ -201,6 +201,77 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 	}
 }
 
+func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
+	frameSink := FrameSink(SinkFunc("frames", func(context.Context, Message) error { return nil }))
+	fileOutput := FileOutput("archive.ogg", io.Discard)
+	tests := []struct {
+		name    string
+		stream  StreamIntent
+		outputs []OutputSpec
+		code    string
+		want    []string
+	}{
+		{
+			name: "mixed frame and mux outputs",
+			stream: StreamIntent{
+				Name:    "audio",
+				Decode:  true,
+				RouteTo: []string{"frames", "archive.ogg"},
+			},
+			outputs: []OutputSpec{frameSink, fileOutput},
+			code:    "output_kind_mixed",
+			want:    []string{"cannot mix frame sinks and muxed outputs", "goav.Transcode"},
+		},
+		{
+			name: "mux output without encoder",
+			stream: StreamIntent{
+				Name:    "audio",
+				Decode:  true,
+				RouteTo: []string{"archive.ogg"},
+			},
+			outputs: []OutputSpec{fileOutput},
+			code:    "encode_missing",
+			want:    []string{"decoded frames cannot be written", ".Opus"},
+		},
+		{
+			name: "encoded output to frame sink",
+			stream: StreamIntent{
+				Name:    "audio",
+				Decode:  true,
+				Encode:  Opus(Bitrate(96_000)),
+				RouteTo: []string{"frames"},
+			},
+			outputs: []OutputSpec{frameSink},
+			code:    "encoded_sink_unsupported",
+			want:    []string{"encoded packets", "FileOutput"},
+		},
+	}
+	pass := validateJobStreamOutputKindsPass()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := recipeCompileState{
+				operation: "build job",
+				intent: Intent{
+					Inputs:  []InputIntent{{Name: "input.ogg"}},
+					Streams: []StreamIntent{tt.stream},
+					Outputs: []OutputIntent{{Name: "unused"}},
+				},
+				outputAttachments: tt.outputs,
+			}
+			err := pass.Apply(&state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 	tests := []struct {
 		name  string

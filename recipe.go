@@ -1124,36 +1124,8 @@ func applyJobStream(builder builderAPI, outputs []OutputSpec, stream StreamInten
 	if err := validateJobStreamIntentShape("build stream", stream, steps); err != nil {
 		return nil, err
 	}
-	if outputsContainFrameSink(outputs) && outputsContainMuxTarget(outputs) {
-		return nil, mixedStreamOutputError(stream)
-	}
-	if stream.Encode.ID == "" && outputsContainMuxTarget(outputs) {
-		return nil, &BuildError{
-			Code:      "encode_missing",
-			Operation: "build stream",
-			Node:      stream.Name,
-			Reason:    "decoded frames cannot be written to a muxed output without an encoder",
-			Suggestions: []string{
-				"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...))",
-				"send decoded frames to goav.FrameSink(...)",
-				"use goav.Record(input, output) if you want to copy packets without decoding",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	}
-	if stream.Encode.ID != "" && outputsContainFrameSink(outputs) {
-		return nil, &BuildError{
-			Code:      "encoded_sink_unsupported",
-			Operation: "build stream",
-			Node:      stream.Name,
-			Reason:    "stream recipes currently send encoded packets to file or URI outputs, not frame sinks",
-			Suggestions: []string{
-				"use .To(goav.FrameSink(...)) for decoded frames",
-				"send encoded output to goav.FileOutput(...) or goav.URIOutput(...)",
-				"use the expert graph API for custom packet sink wiring",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
+	if err := validateJobStreamOutputKinds("build stream", stream, outputs); err != nil {
+		return nil, err
 	}
 	if stream.Decode || len(steps) != 0 || stream.Encode.ID != "" {
 		if codecChangePolicySet(stream.CodecChange) {
@@ -1303,16 +1275,59 @@ func streamStageMissingError(stream StreamIntent) error {
 	}
 }
 
-func mixedStreamOutputError(stream StreamIntent) error {
+func validateJobStreamOutputKinds(operation string, stream StreamIntent, outputs []OutputSpec) error {
+	if outputsContainFrameSink(outputs) && outputsContainMuxTarget(outputs) {
+		return mixedStreamOutputError(operation, stream)
+	}
+	if stream.Encode.ID == "" && outputsContainMuxTarget(outputs) {
+		return streamEncodeMissingError(operation, stream)
+	}
+	if stream.Encode.ID != "" && outputsContainFrameSink(outputs) {
+		return encodedStreamFrameSinkError(operation, stream)
+	}
+	return nil
+}
+
+func mixedStreamOutputError(operation string, stream StreamIntent) error {
 	return &BuildError{
 		Code:      "output_kind_mixed",
-		Operation: "build stream",
+		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes cannot mix frame sinks and muxed outputs",
 		Suggestions: []string{
 			"use .To(goav.FrameSink(...)) for decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...)) for encoded output",
 			"use goav.Transcode(input) or the expert graph API when one stream needs separate decoded and encoded branches",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func streamEncodeMissingError(operation string, stream StreamIntent) error {
+	return &BuildError{
+		Code:      "encode_missing",
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
+		Suggestions: []string{
+			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...))",
+			"send decoded frames to goav.FrameSink(...)",
+			"use goav.Record(input, output) if you want to copy packets without decoding",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func encodedStreamFrameSinkError(operation string, stream StreamIntent) error {
+	return &BuildError{
+		Code:      "encoded_sink_unsupported",
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    "stream recipes currently send encoded packets to file or URI outputs, not frame sinks",
+		Suggestions: []string{
+			"use .To(goav.FrameSink(...)) for decoded frames",
+			"send encoded output to goav.FileOutput(...) or goav.URIOutput(...)",
+			"use the expert graph API for custom packet sink wiring",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

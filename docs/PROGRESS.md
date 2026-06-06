@@ -639,6 +639,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `.Do(...)` stages and mismatched transform attachments now fail in a
     dedicated compiler pass before the stream lowerer mutates the runtime
     builder. Done.
+191. Validate ordinary stream output kinds before lowering: mixed frame/mux
+    outputs, mux outputs without an encoder, and encoded packets routed to
+    frame sinks now fail in a dedicated compiler pass before runtime builder
+    mutation. Done.
 
 ## First Vertical Slice
 
@@ -874,7 +878,8 @@ longer split into builder-shaped fields, attachment consistency is checked
 before lowering, and both ordinary stream and transcode branch output routes
 bind in their own passes before stream lowering or mux-group plan assembly.
 Ordinary stream transform shape now validates from intent too, and concrete
-stream step attachments are checked before stream lowering.
+stream step attachments and output-kind rules are checked before stream
+lowering.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and
