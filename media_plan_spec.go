@@ -8,6 +8,8 @@ import (
 const (
 	graphSpecOriginMediaPlan = "media_plan"
 	graphSpecOriginMigration = "migration"
+
+	mediaBuildKindPacketCopy = "packet_copy"
 )
 
 func emitMediaPlanGraphSpecPass() recipeCompilePass {
@@ -19,6 +21,7 @@ func emitMediaPlanGraphSpecPass() recipeCompilePass {
 		state.spec = spec
 		state.specReady = true
 		state.specOrigin = graphSpecOriginMediaPlan
+		state.mediaBuildKind = mediaBuildKindPacketCopy
 		return nil
 	}}
 }
@@ -117,4 +120,8 @@ func allRTPInputSpecs(inputs []InputSpec) bool {
 
 func outputSpecGraphFormat(output OutputSpec) av.FormatID {
 	return output.format
+}
+
+func outputSpecOpenFormat(output OutputSpec) av.FormatID {
+	return outputSpecFormat(output)
 }

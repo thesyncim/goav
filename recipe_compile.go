@@ -13,12 +13,16 @@ import (
 
 type recipeResolved struct {
 	intent                   Intent
+	runtime                  Runtime
 	builder                  builderAPI
 	migration                *builder
 	compiler                 builderCompiler
 	spec                     pipeline.Spec
 	specReady                bool
 	specOrigin               string
+	mediaBuildKind           string
+	inputAttachments         []InputSpec
+	outputAttachments        []OutputSpec
 	inputProbes              []format.ProbeResult
 	transcodeInputProbe      format.ProbeResult
 	transcodeInputProbeReady bool
@@ -51,12 +55,13 @@ type recipeCompileState struct {
 
 	plan transcodepkg.Plan
 
-	builder    builderAPI
-	migration  *builder
-	compiler   builderCompiler
-	spec       pipeline.Spec
-	specReady  bool
-	specOrigin string
+	builder        builderAPI
+	migration      *builder
+	compiler       builderCompiler
+	spec           pipeline.Spec
+	specReady      bool
+	specOrigin     string
+	mediaBuildKind string
 }
 
 type recipeCompileOptions struct {
@@ -158,12 +163,16 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 	}
 	return recipeResolved{
 		intent:                   state.intent,
+		runtime:                  state.runtime,
 		builder:                  state.builder,
 		migration:                state.migration,
 		compiler:                 state.compiler,
 		spec:                     state.spec,
 		specReady:                state.specReady,
 		specOrigin:               state.specOrigin,
+		mediaBuildKind:           state.mediaBuildKind,
+		inputAttachments:         append([]InputSpec(nil), state.inputAttachments...),
+		outputAttachments:        append([]OutputSpec(nil), state.outputAttachments...),
 		inputProbes:              append([]format.ProbeResult(nil), state.inputProbes...),
 		transcodeInputProbe:      state.transcodeInputProbe,
 		transcodeInputProbeReady: state.transcodeInputProbeReady,
@@ -185,7 +194,9 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 		task Task
 		err  error
 	)
-	if r.compiler != nil && r.migration != nil {
+	if r.mediaBuildKind == mediaBuildKindPacketCopy {
+		task, err = r.buildMediaPlanPacketCopyTask(ctx)
+	} else if r.compiler != nil && r.migration != nil {
 		task, err = r.compiler.build(ctx, r.migration)
 	} else {
 		task, err = r.builder.Build(ctx)
@@ -982,6 +993,9 @@ func lowerTranscodePlanPass() recipeCompilePass {
 
 func selectMigrationGraphCompilerPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "select migration graph compiler", fn: func(state *recipeCompileState) error {
+		if state.mediaBuildKind != "" {
+			return nil
+		}
 		builder, ok := state.builder.(*builder)
 		if !ok {
 			return nil

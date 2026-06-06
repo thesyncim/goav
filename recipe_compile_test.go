@@ -385,7 +385,7 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 	}
 }
 
-func TestResolvedJobOutputFormatsLowerIntoBuilder(t *testing.T) {
+func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 	runtime := New(
 		WithDefaults(),
 		withTestFormats(
@@ -410,15 +410,26 @@ func TestResolvedJobOutputFormatsLowerIntoBuilder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuild() error = %v", err)
 	}
-	builder := resolved.migration
-	if builder == nil {
-		t.Fatal("migration builder is nil")
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("packet-copy recipe selected a migration graph compiler")
 	}
-	if got := builder.outputOpenFormat(0); got != av.FormatOgg {
-		t.Fatalf("builder open output format = %q, want resolved Ogg format", got)
+	if len(resolved.outputAttachments) != 1 {
+		t.Fatalf("resolved output attachments = %d, want 1", len(resolved.outputAttachments))
 	}
-	if got := builder.outputFormat(0); got != "" {
-		t.Fatalf("builder graph detail output format = %q, want inferred format hidden from graph detail", got)
+	if got := outputSpecOpenFormat(resolved.outputAttachments[0]); got != av.FormatOgg {
+		t.Fatalf("open output format = %q, want resolved Ogg format", got)
+	}
+	if got := outputSpecGraphFormat(resolved.outputAttachments[0]); got != "" {
+		t.Fatalf("graph detail output format = %q, want inferred format hidden from graph detail", got)
+	}
+	task, err := resolved.Build(context.Background())
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	spec := task.Describe()
+	if len(spec.Nodes) != 2 || spec.Nodes[1].Name != "recording.ogg" || spec.Nodes[1].Detail != "mux, protocol=file" {
+		t.Fatalf("built spec = %+v, want inferred format hidden from mux detail", spec)
 	}
 }
 
@@ -1645,7 +1656,7 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 	}
 }
 
-func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
+func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
 	).Copy().To(FileOutput("recording.ivf", io.Discard))
@@ -1657,14 +1668,17 @@ func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	if resolved.builder == nil {
 		t.Fatal("compileJobRecipe() produced nil builder")
 	}
-	if resolved.compiler == nil || resolved.migration == nil {
-		t.Fatal("compileJobRecipe() did not select a migration graph compiler")
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("packet-copy recipe selected a migration graph compiler")
 	}
 	if !resolved.specReady {
 		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
 	}
 	if resolved.specOrigin != graphSpecOriginMediaPlan {
 		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginMediaPlan)
+	}
+	if resolved.mediaBuildKind != mediaBuildKindPacketCopy {
+		t.Fatalf("resolved media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindPacketCopy)
 	}
 	if resolved.intent.Name != "from" {
 		t.Fatalf("intent name = %q, want from", resolved.intent.Name)
@@ -1808,7 +1822,7 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	}
 }
 
-func TestRecipeResolvedBuildUsesPlannedCompiler(t *testing.T) {
+func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	job := From(
 		RTP(&runtimeRTPReceiver{
 			streams: []Stream{{
@@ -1825,6 +1839,12 @@ func TestRecipeResolvedBuildUsesPlannedCompiler(t *testing.T) {
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	if resolved.compiler != nil || resolved.migration != nil {
+		t.Fatal("packet-copy recipe selected a migration graph compiler")
+	}
+	if resolved.mediaBuildKind != mediaBuildKindPacketCopy {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindPacketCopy)
 	}
 	planned, err := resolved.Describe()
 	if err != nil {
