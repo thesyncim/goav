@@ -1158,6 +1158,9 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 	if index > 0 {
 		suffix = "-" + fmt.Sprint(index+1)
 	}
+	if err := validateTransformSpec("build stream", base, spec); err != nil {
+		return transcodeTransform{}, err
+	}
 	switch {
 	case spec.Resize != nil && spec.Resample != nil:
 		return transcodeTransform{}, &BuildError{
@@ -1197,6 +1200,53 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 				"call .Resample(sampleRate, channels) for audio streams",
 			},
 		}
+	}
+}
+
+func validateTransformSpec(operation string, node string, spec TransformSpec) error {
+	switch {
+	case spec.Resize != nil && spec.Resample != nil:
+		return nil
+	case spec.Resize != nil:
+		if spec.Resize.Width > 0 && spec.Resize.Height > 0 {
+			return nil
+		}
+		return &BuildError{
+			Code:      "transform_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    "resize requires positive width and height",
+			Details: []string{
+				fmt.Sprintf("width=%d", spec.Resize.Width),
+				fmt.Sprintf("height=%d", spec.Resize.Height),
+			},
+			Suggestions: []string{
+				"call .Resize(width, height) with positive dimensions",
+				"remove .Resize(...) when no video scaling is needed",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	case spec.Resample != nil:
+		if spec.Resample.SampleRate > 0 && spec.Resample.Channels > 0 {
+			return nil
+		}
+		return &BuildError{
+			Code:      "transform_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    "resample requires positive sample rate and channels",
+			Details: []string{
+				fmt.Sprintf("sample_rate=%d", spec.Resample.SampleRate),
+				fmt.Sprintf("channels=%d", spec.Resample.Channels),
+			},
+			Suggestions: []string{
+				"call .Resample(sampleRate, channels) with positive values",
+				"remove .Resample(...) when no audio conversion is needed",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	default:
+		return nil
 	}
 }
 
@@ -1658,6 +1708,9 @@ func transcodeBranchTransformConfigs(stream streamBuild) (*filter.ResizeConfig, 
 	var resample *filter.ResampleConfig
 	for i := range stream.transforms {
 		transform := stream.transforms[i]
+		if err := validateTransformSpec("plan transcode", transcodeBranchName(stream), transform); err != nil {
+			return nil, nil, err
+		}
 		switch {
 		case transform.Resize != nil && transform.Resample != nil:
 			return nil, nil, &BuildError{

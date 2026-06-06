@@ -431,6 +431,24 @@ func TestStreamRecipeRejectsWrongMediaTransform(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeRejectsInvalidResize(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Resize(0, 720).
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transform_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "positive width and height") ||
+		!strings.Contains(err.Error(), "width=0") {
+		t.Fatalf("err = %v, want resize value guidance", err)
+	}
+}
+
 func TestStreamRecipeRequiresEncoderForFileOutput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -628,6 +646,22 @@ func TestTranscodeRecipeRejectsWrongMediaTransform(t *testing.T) {
 	if !strings.Contains(err.Error(), "resample applies to audio branches") ||
 		!strings.Contains(err.Error(), ".Video(...).Resize(...)") {
 		t.Fatalf("err = %v, want media transform guidance", err)
+	}
+}
+
+func TestTranscodeRecipeRejectsInvalidResample(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Audio("bad").Resample(0, goav.Mono).Opus(64_000).
+		To(goav.FileOutput("bad.ogg", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transform_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "positive sample rate and channels") ||
+		!strings.Contains(err.Error(), "sample_rate=0") {
+		t.Fatalf("err = %v, want resample value guidance", err)
 	}
 }
 
