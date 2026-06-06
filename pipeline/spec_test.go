@@ -15,13 +15,13 @@ func TestSpecTextAndDOT(t *testing.T) {
 		},
 		Edges: []EdgeSpec{
 			{
-				From:   PadRef{Node: "source", Pad: "out"},
-				To:     PadRef{Node: "decode", Pad: "inout"},
+				From:   Node("source"),
+				To:     Node("decode"),
 				Policy: RouteAll,
 			},
 			{
-				From:   PadRef{Node: "decode", Pad: "inout"},
-				To:     PadRef{Node: "sink", Pad: "in"},
+				From:   Node("decode"),
+				To:     Node("sink"),
 				Policy: RouteByStream,
 				Label:  "audio",
 			},
@@ -31,7 +31,7 @@ func TestSpecTextAndDOT(t *testing.T) {
 	text := spec.String()
 	if !strings.Contains(text, "pipeline receive") ||
 		!strings.Contains(text, "source source") ||
-		!strings.Contains(text, "decode:inout -> sink:in [by_stream:audio]") {
+		!strings.Contains(text, "decode -> sink [by_stream:audio]") {
 		t.Fatalf("text spec:\n%s", text)
 	}
 

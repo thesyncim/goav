@@ -85,14 +85,19 @@ type Sink interface {
 	Close() error
 }
 
-type PadRef struct {
-	Node string
-	Pad  string
+type NodeRef string
+
+func Node(name string) NodeRef {
+	return NodeRef(name)
+}
+
+func (r NodeRef) String() string {
+	return string(r)
 }
 
 type Link struct {
-	From PadRef
-	To   PadRef
+	From NodeRef
+	To   NodeRef
 }
 
 type RoutePolicy string
@@ -105,16 +110,16 @@ const (
 )
 
 type Route struct {
-	From   PadRef
-	To     []PadRef
+	From   NodeRef
+	To     []NodeRef
 	Policy RoutePolicy
 	Label  string
 }
 
 type Graph interface {
-	AddSource(Source, BufferPolicy) (PadRef, error)
-	AddStage(Stage, BufferPolicy) (PadRef, error)
-	AddSink(Sink, BufferPolicy) (PadRef, error)
+	AddSource(Source, BufferPolicy) (NodeRef, error)
+	AddStage(Stage, BufferPolicy) (NodeRef, error)
+	AddSink(Sink, BufferPolicy) (NodeRef, error)
 	Link(Link) error
 	Route(Route) error
 	Spec() Spec

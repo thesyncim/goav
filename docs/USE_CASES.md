@@ -56,7 +56,8 @@ task, err := runtime.New().
 ```
 
 When packet formats already match, recording can stay packet-preserving. IVF is
-the first concrete target for single-stream VP8, VP9, and AV1 packet recording.
+the first concrete target for single-stream VP8, VP9, and AV1 packet recording;
+Annex B covers packet-preserving H264 recording after RTP depacketization.
 
 Expected graph:
 

@@ -35,7 +35,7 @@ func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error 
 	if err != nil {
 		return err
 	}
-	sourcePad, err := graph.AddSource(demux.source, b.runtime.buffer)
+	sourceRef, err := graph.AddSource(demux.source, b.runtime.buffer)
 	if err != nil {
 		demux.source.Close()
 		return err
@@ -72,12 +72,12 @@ func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error 
 			muxer.Close()
 			return err
 		}
-		stagePad, err := graph.AddStage(stage, b.runtime.buffer)
+		stageRef, err := graph.AddStage(stage, b.runtime.buffer)
 		if err != nil {
 			stage.Close()
 			return err
 		}
-		if err := graph.Link(pipeline.Link{From: sourcePad, To: stagePad}); err != nil {
+		if err := graph.Link(pipeline.Link{From: sourceRef, To: stageRef}); err != nil {
 			return err
 		}
 	}

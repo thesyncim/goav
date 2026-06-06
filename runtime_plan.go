@@ -3,7 +3,7 @@ package goav
 import "github.com/thesyncim/goav/pipeline"
 
 type plannedNode struct {
-	pad  pipeline.PadRef
+	ref  pipeline.NodeRef
 	kind pipeline.NodeKind
 }
 
@@ -22,19 +22,19 @@ func (b *builder) Describe() (pipeline.Spec, error) {
 func (b *builder) planRemux(spec pipeline.Spec) (pipeline.Spec, error) {
 	nodes := make(map[string]plannedNode, 1+len(b.outputs))
 	sourceName := demuxNodeName(b.inputs[0])
-	sourcePad := pipeline.PadRef{Node: sourceName, Pad: "out"}
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourcePad); err != nil {
+	sourceRef := pipeline.NodeRef(sourceName)
+	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
 		return pipeline.Spec{}, err
 	}
 	for i := range b.outputs {
 		stageName := muxNodeName(b.outputs[i], i)
-		stagePad := pipeline.PadRef{Node: stageName, Pad: "inout"}
-		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stagePad); err != nil {
+		stageRef := pipeline.NodeRef(stageName)
+		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef); err != nil {
 			return pipeline.Spec{}, err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-			From:   sourcePad,
-			To:     stagePad,
+			From:   sourceRef,
+			To:     stageRef,
 			Policy: pipeline.RouteAll,
 		})
 	}
@@ -47,42 +47,42 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 	}
 
 	nodes := make(map[string]plannedNode, len(b.sources)+len(b.stages)+len(b.sinks))
-	sourcePads := make([]pipeline.PadRef, len(b.sources))
-	stagePads := make([]pipeline.PadRef, len(b.stages))
-	sinkPads := make([]pipeline.PadRef, len(b.sinks))
+	sourceRefs := make([]pipeline.NodeRef, len(b.sources))
+	stageRefs := make([]pipeline.NodeRef, len(b.stages))
+	sinkRefs := make([]pipeline.NodeRef, len(b.sinks))
 
 	for i := range b.sources {
 		if b.sources[i] == nil {
 			return pipeline.Spec{}, ErrNilSource
 		}
 		name := b.sources[i].Name()
-		pad := pipeline.PadRef{Node: name, Pad: "out"}
-		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeSource, pad); err != nil {
+		ref := pipeline.NodeRef(name)
+		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeSource, ref); err != nil {
 			return pipeline.Spec{}, err
 		}
-		sourcePads[i] = pad
+		sourceRefs[i] = ref
 	}
 	for i := range b.stages {
 		if b.stages[i] == nil {
 			return pipeline.Spec{}, ErrNilStage
 		}
 		name := b.stages[i].Name()
-		pad := pipeline.PadRef{Node: name, Pad: "inout"}
-		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeStage, pad); err != nil {
+		ref := pipeline.NodeRef(name)
+		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeStage, ref); err != nil {
 			return pipeline.Spec{}, err
 		}
-		stagePads[i] = pad
+		stageRefs[i] = ref
 	}
 	for i := range b.sinks {
 		if b.sinks[i] == nil {
 			return pipeline.Spec{}, ErrNilSink
 		}
 		name := b.sinks[i].Name()
-		pad := pipeline.PadRef{Node: name, Pad: "in"}
-		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeSink, pad); err != nil {
+		ref := pipeline.NodeRef(name)
+		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeSink, ref); err != nil {
 			return pipeline.Spec{}, err
 		}
-		sinkPads[i] = pad
+		sinkRefs[i] = ref
 	}
 
 	if len(b.links) != 0 || len(b.routes) != 0 {
@@ -92,19 +92,19 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		return spec, nil
 	}
 
-	if len(stagePads) == 0 {
-		planLinks(&spec, sourcePads, sinkPads)
+	if len(stageRefs) == 0 {
+		planLinks(&spec, sourceRefs, sinkRefs)
 		return spec, nil
 	}
-	planLinks(&spec, sourcePads, stagePads[:1])
-	for i := 0; i < len(stagePads)-1; i++ {
+	planLinks(&spec, sourceRefs, stageRefs[:1])
+	for i := 0; i < len(stageRefs)-1; i++ {
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-			From:   stagePads[i],
-			To:     stagePads[i+1],
+			From:   stageRefs[i],
+			To:     stageRefs[i+1],
 			Policy: pipeline.RouteAll,
 		})
 	}
-	planLinks(&spec, stagePads[len(stagePads)-1:], sinkPads)
+	planLinks(&spec, stageRefs[len(stageRefs)-1:], sinkRefs)
 	return spec, nil
 }
 
@@ -122,19 +122,19 @@ func (b *builder) planExplicitEdges(nodes map[string]plannedNode, spec *pipeline
 	return nil
 }
 
-func addPlannedNode(nodes map[string]plannedNode, spec *pipeline.Spec, name string, kind pipeline.NodeKind, pad pipeline.PadRef) error {
+func addPlannedNode(nodes map[string]plannedNode, spec *pipeline.Spec, name string, kind pipeline.NodeKind, ref pipeline.NodeRef) error {
 	if name == "" {
 		return pipeline.ErrUnknownNode
 	}
 	if _, ok := nodes[name]; ok {
 		return pipeline.ErrNodeExists
 	}
-	nodes[name] = plannedNode{pad: pad, kind: kind}
+	nodes[name] = plannedNode{ref: ref, kind: kind}
 	spec.Nodes = append(spec.Nodes, pipeline.NodeSpec{Name: name, Kind: kind})
 	return nil
 }
 
-func planLinks(spec *pipeline.Spec, from []pipeline.PadRef, to []pipeline.PadRef) {
+func planLinks(spec *pipeline.Spec, from []pipeline.NodeRef, to []pipeline.NodeRef) {
 	for i := range from {
 		for j := range to {
 			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
@@ -163,11 +163,11 @@ func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline
 	if route.Policy == pipeline.RouteByLabel {
 		return pipeline.ErrUnsupportedRoute
 	}
-	fromPad, err := resolvePlannedPad(nodes, route.From)
+	fromRef, err := resolvePlannedNode(nodes, route.From)
 	if err != nil {
 		return err
 	}
-	from, ok := nodes[fromPad.Node]
+	from, ok := nodes[fromRef.String()]
 	if !ok {
 		return pipeline.ErrUnknownNode
 	}
@@ -175,11 +175,11 @@ func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline
 		return pipeline.ErrInvalidLink
 	}
 	for i := range route.To {
-		toPad, err := resolvePlannedPad(nodes, route.To[i])
+		toRef, err := resolvePlannedNode(nodes, route.To[i])
 		if err != nil {
 			return err
 		}
-		to, ok := nodes[toPad.Node]
+		to, ok := nodes[toRef.String()]
 		if !ok {
 			return pipeline.ErrUnknownNode
 		}
@@ -187,8 +187,8 @@ func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline
 			return pipeline.ErrInvalidLink
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-			From:   fromPad,
-			To:     toPad,
+			From:   fromRef,
+			To:     toRef,
 			Policy: route.Policy,
 			Label:  route.Label,
 		})
@@ -196,15 +196,15 @@ func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline
 	return nil
 }
 
-func validatePlannedEdge(nodes map[string]plannedNode, from pipeline.PadRef, to pipeline.PadRef) error {
-	fromNode, ok := nodes[from.Node]
+func validatePlannedEdge(nodes map[string]plannedNode, from pipeline.NodeRef, to pipeline.NodeRef) error {
+	fromNode, ok := nodes[from.String()]
 	if !ok {
 		return pipeline.ErrUnknownNode
 	}
 	if fromNode.kind == pipeline.NodeSink {
 		return pipeline.ErrInvalidLink
 	}
-	toNode, ok := nodes[to.Node]
+	toNode, ok := nodes[to.String()]
 	if !ok {
 		return pipeline.ErrUnknownNode
 	}
@@ -214,28 +214,25 @@ func validatePlannedEdge(nodes map[string]plannedNode, from pipeline.PadRef, to 
 	return nil
 }
 
-func resolvePlannedEdge(nodes map[string]plannedNode, from pipeline.PadRef, to pipeline.PadRef) (pipeline.PadRef, pipeline.PadRef, error) {
-	fromPad, err := resolvePlannedPad(nodes, from)
+func resolvePlannedEdge(nodes map[string]plannedNode, from pipeline.NodeRef, to pipeline.NodeRef) (pipeline.NodeRef, pipeline.NodeRef, error) {
+	fromRef, err := resolvePlannedNode(nodes, from)
 	if err != nil {
-		return pipeline.PadRef{}, pipeline.PadRef{}, err
+		return "", "", err
 	}
-	toPad, err := resolvePlannedPad(nodes, to)
+	toRef, err := resolvePlannedNode(nodes, to)
 	if err != nil {
-		return pipeline.PadRef{}, pipeline.PadRef{}, err
+		return "", "", err
 	}
-	if err := validatePlannedEdge(nodes, fromPad, toPad); err != nil {
-		return pipeline.PadRef{}, pipeline.PadRef{}, err
+	if err := validatePlannedEdge(nodes, fromRef, toRef); err != nil {
+		return "", "", err
 	}
-	return fromPad, toPad, nil
+	return fromRef, toRef, nil
 }
 
-func resolvePlannedPad(nodes map[string]plannedNode, ref pipeline.PadRef) (pipeline.PadRef, error) {
-	if ref.Pad != "" {
-		return ref, nil
-	}
-	node, ok := nodes[ref.Node]
+func resolvePlannedNode(nodes map[string]plannedNode, ref pipeline.NodeRef) (pipeline.NodeRef, error) {
+	node, ok := nodes[ref.String()]
 	if !ok {
-		return pipeline.PadRef{}, pipeline.ErrUnknownNode
+		return "", pipeline.ErrUnknownNode
 	}
-	return node.pad, nil
+	return node.ref, nil
 }

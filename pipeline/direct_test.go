@@ -102,22 +102,22 @@ func TestDirectGraphPassThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourcePad, err := graph.AddSource(source, BufferPolicy{})
+	sourceRef, err := graph.AddSource(source, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	stagePad, err := graph.AddStage(stage, BufferPolicy{})
+	stageRef, err := graph.AddStage(stage, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sinkPad, err := graph.AddSink(sink, BufferPolicy{})
+	sinkRef, err := graph.AddSink(sink, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Link(Link{From: sourcePad, To: stagePad}); err != nil {
+	if err := graph.Link(Link{From: sourceRef, To: stageRef}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Link(Link{From: stagePad, To: sinkPad}); err != nil {
+	if err := graph.Link(Link{From: stageRef, To: sinkRef}); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(ctx); err != nil {
@@ -140,24 +140,24 @@ func TestDirectGraphSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourcePad, err := graph.AddSource(source, BufferPolicy{})
+	sourceRef, err := graph.AddSource(source, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	stagePad, err := graph.AddStage(stage, BufferPolicy{})
+	stageRef, err := graph.AddStage(stage, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sinkPad, err := graph.AddSink(sink, BufferPolicy{})
+	sinkRef, err := graph.AddSink(sink, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Link(Link{From: sourcePad, To: stagePad}); err != nil {
+	if err := graph.Link(Link{From: sourceRef, To: stageRef}); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Route(Route{
-		From:   stagePad,
-		To:     []PadRef{sinkPad},
+		From:   stageRef,
+		To:     []NodeRef{sinkRef},
 		Policy: RouteByStream,
 		Label:  "audio",
 	}); err != nil {
@@ -191,19 +191,19 @@ func TestDirectGraphFanoutSharesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourcePad, err := graph.AddSource(source, BufferPolicy{})
+	sourceRef, err := graph.AddSource(source, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	leftPad, err := graph.AddSink(left, BufferPolicy{})
+	leftRef, err := graph.AddSink(left, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	rightPad, err := graph.AddSink(right, BufferPolicy{})
+	rightRef, err := graph.AddSink(right, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Route(Route{From: sourcePad, To: []PadRef{leftPad, rightPad}, Policy: RouteAll}); err != nil {
+	if err := graph.Route(Route{From: sourceRef, To: []NodeRef{leftRef, rightRef}, Policy: RouteAll}); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(context.Background()); err != nil {
@@ -229,22 +229,22 @@ func TestDirectGraphRouteByStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourcePad, err := graph.AddSource(source, BufferPolicy{})
+	sourceRef, err := graph.AddSource(source, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	videoPad, err := graph.AddSink(video, BufferPolicy{})
+	videoRef, err := graph.AddSink(video, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	audioPad, err := graph.AddSink(audio, BufferPolicy{})
+	audioRef, err := graph.AddSink(audio, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Route(Route{From: sourcePad, To: []PadRef{videoPad}, Policy: RouteByStream, Label: "video-main"}); err != nil {
+	if err := graph.Route(Route{From: sourceRef, To: []NodeRef{videoRef}, Policy: RouteByStream, Label: "video-main"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Route(Route{From: sourcePad, To: []PadRef{audioPad}, Policy: RouteByStream, Label: "audio-main"}); err != nil {
+	if err := graph.Route(Route{From: sourceRef, To: []NodeRef{audioRef}, Policy: RouteByStream, Label: "audio-main"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(context.Background()); err != nil {
@@ -266,22 +266,22 @@ func TestDirectGraphRouteByEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourcePad, err := graph.AddSource(source, BufferPolicy{})
+	sourceRef, err := graph.AddSource(source, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	lossPad, err := graph.AddSink(loss, BufferPolicy{})
+	lossRef, err := graph.AddSink(loss, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	statsPad, err := graph.AddSink(stats, BufferPolicy{})
+	statsRef, err := graph.AddSink(stats, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Route(Route{From: sourcePad, To: []PadRef{lossPad}, Policy: RouteByEvent, Label: string(av.EventPacketLoss)}); err != nil {
+	if err := graph.Route(Route{From: sourceRef, To: []NodeRef{lossRef}, Policy: RouteByEvent, Label: string(av.EventPacketLoss)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Route(Route{From: sourcePad, To: []PadRef{statsPad}, Policy: RouteByEvent, Label: string(av.EventStats)}); err != nil {
+	if err := graph.Route(Route{From: sourceRef, To: []NodeRef{statsRef}, Policy: RouteByEvent, Label: string(av.EventStats)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(context.Background()); err != nil {
@@ -336,22 +336,22 @@ func TestDirectGraphRunAllocs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourcePad, err := graph.AddSource(source, BufferPolicy{})
+	sourceRef, err := graph.AddSource(source, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	stagePad, err := graph.AddStage(stage, BufferPolicy{})
+	stageRef, err := graph.AddStage(stage, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sinkPad, err := graph.AddSink(sink, BufferPolicy{})
+	sinkRef, err := graph.AddSink(sink, BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Link(Link{From: sourcePad, To: stagePad}); err != nil {
+	if err := graph.Link(Link{From: sourceRef, To: stageRef}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Link(Link{From: stagePad, To: sinkPad}); err != nil {
+	if err := graph.Link(Link{From: stageRef, To: sinkRef}); err != nil {
 		t.Fatal(err)
 	}
 

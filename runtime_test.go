@@ -160,7 +160,7 @@ func TestRuntimeBuilderExplicitGraph(t *testing.T) {
 	if len(spec.Nodes) != 4 || len(spec.Edges) != 3 {
 		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
 	}
-	if !strings.Contains(spec.String(), "stage:inout -> left:in") ||
+	if !strings.Contains(spec.String(), "stage -> left") ||
 		!strings.Contains(spec.DOT(), "\"stage\" -> \"right\"") {
 		t.Fatalf("spec text:\n%s\ndot:\n%s", spec.String(), spec.DOT())
 	}
@@ -265,7 +265,7 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 	if len(spec.Edges) != 2 {
 		t.Fatalf("edges=%d, want 2", len(spec.Edges))
 	}
-	if !strings.Contains(spec.String(), "source:out -> audio:in [by_stream:audio]") ||
+	if !strings.Contains(spec.String(), "source -> audio [by_stream:audio]") ||
 		!strings.Contains(spec.Mermaid(), "-- \"by_stream:video\" -->") {
 		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
 	}
@@ -300,7 +300,7 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 	if len(spec.Edges) != 2 {
 		t.Fatalf("edges=%d, want 2", len(spec.Edges))
 	}
-	if !strings.Contains(spec.String(), "source:out -> audio:in [by_stream:audio]") ||
+	if !strings.Contains(spec.String(), "source -> audio [by_stream:audio]") ||
 		!strings.Contains(spec.Mermaid(), "-- \"by_stream:video\" -->") {
 		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
 	}
@@ -326,7 +326,7 @@ func TestRuntimeBuilderExplicitEventRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if !strings.Contains(spec.String(), "source:out -> stats:in [by_event:stats]") {
+	if !strings.Contains(spec.String(), "source -> stats [by_event:stats]") {
 		t.Fatalf("spec:\n%s", spec.String())
 	}
 	if err := task.Run(context.Background()); err != nil {
@@ -417,8 +417,8 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 		Source(validSource).
 		Sink(validSink).
 		Link(pipeline.Link{
-			From: pipeline.PadRef{Node: "missing"},
-			To:   pipeline.PadRef{Node: "sink"},
+			From: pipeline.Node("missing"),
+			To:   pipeline.Node("sink"),
 		}).
 		Describe(); !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("unknown err = %v, want ErrUnknownNode", err)
@@ -427,8 +427,8 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 		Source(validSource).
 		Sink(validSink).
 		Route(pipeline.Route{
-			From:   pipeline.PadRef{Node: "source"},
-			To:     []pipeline.PadRef{{Node: "sink"}},
+			From:   pipeline.Node("source"),
+			To:     []pipeline.NodeRef{pipeline.Node("sink")},
 			Policy: pipeline.RouteByLabel,
 		}).
 		Describe(); !errors.Is(err, pipeline.ErrUnsupportedRoute) {
@@ -467,8 +467,8 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 		Source(source).
 		Sink(sink).
 		Link(pipeline.Link{
-			From: pipeline.PadRef{Node: "missing"},
-			To:   pipeline.PadRef{Node: "sink"},
+			From: pipeline.Node("missing"),
+			To:   pipeline.Node("sink"),
 		}).
 		Build(context.Background())
 	if !errors.Is(err, pipeline.ErrUnknownNode) {

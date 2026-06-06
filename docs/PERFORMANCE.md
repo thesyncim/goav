@@ -46,10 +46,11 @@ Current allocation guards cover:
 - format demux source packet/event flow
 - format mux stage packet write flow
 - IVF demux and mux packet read/write paths
+- Annex B mux packet write path
 - RTP sequence detection
 - RTP jitter ring
 - Opus depacketization
-- VP8, VP9, and AV1 video depacketization
+- VP8, VP9, AV1, and H264 video depacketization
 - RTP source packet-to-pipeline loop
 - RTCP feedback scratch for NACK/PLI/FIR
 - `gopus` packet-loss decode into a preallocated frame

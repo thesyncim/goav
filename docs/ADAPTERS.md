@@ -24,6 +24,7 @@ integrations belong under `adapters/...`.
 | Adapter | Status |
 | --- | --- |
 | `adapters/ivf` | IVF VP8/VP9/AV1 packet demux/mux |
+| `adapters/annexb` | H264 Annex B packet mux |
 | `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
 | `adapters/govpx` | descriptor-only VP8/VP9 boundary |
 | `adapters/goav1` | descriptor-only AV1 boundary |
@@ -45,6 +46,21 @@ Current surface:
 
 It is intentionally narrow: no indexing, no frame parsing, no multi-stream
 container behavior, and no codec conversion.
+
+## `annexb`
+
+The `annexb` adapter supports packet-preserving H264 recording after RTP
+depacketization has produced Annex B access-unit payloads.
+
+Current surface:
+
+- explicit registry registration through `annexb.Register`
+- `.h264`, `.264`, `.annexb`, and start-code probing
+- mux from one H264 video packet stream
+- zero-allocation write hot-path tests
+
+It is mux-only for now. H264 parsing, demuxing, and codec decode belong in later
+adapter slices.
 
 ## `gopus`
 

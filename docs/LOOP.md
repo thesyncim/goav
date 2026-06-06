@@ -15,6 +15,10 @@ The loop is intentionally small:
 7. Remove any abstraction that does not make the next slice simpler.
 8. Update `docs/PROGRESS.md` with evidence and the next pressure point.
 
+Graph descriptions should stay at the workflow level: named nodes connected by
+named routes. Lower-level executor vocabulary should not leak into fluent APIs
+or rendered specs unless a future multi-endpoint stage truly needs it.
+
 ## Compiler Rule
 
 High-level builder features must compile through private graph compilers. A new

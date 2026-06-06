@@ -93,16 +93,18 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `av`: media identifiers, streams, packets, frames, timestamps, events, reset
   helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, fanout, stream/event routes,
-  backpressure surface, text/DOT/Mermaid graph specs.
+  backpressure surface, simple node-to-node connections, text/DOT/Mermaid graph
+  specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, registry, decoder and encoder pipeline
   stages.
 - `rtpav`: Pion RTP/RTCP boundary, payload map, loss detection, jitter ring,
-  Opus/VP8/VP9/AV1 depacketizers, feedback helpers, RTP source.
+  Opus/VP8/VP9/AV1/H264 depacketizers, feedback helpers, RTP source.
 - `webrtcav`: Pion PeerConnection session and TrackRemote reader boundaries.
 - `filter`: resize/resample contracts.
 - `transcode`: rendition and ladder planning contracts.
 - `adapters/ivf`: IVF demux/mux for VP8, VP9, and AV1 packet recording.
+- `adapters/annexb`: H264 Annex B packet mux for `.h264` recording.
 - `adapters/gopus`: active Opus decoder adapter.
 - `adapters/govpx`, `adapters/goav1`, `adapters/goh264`: descriptor
   boundaries for future concrete adapters.
@@ -122,13 +124,15 @@ Implemented slices:
 - Fluent RTP packet-reader record/fanout compiler.
 - Pre-build and runtime graph rendering as text, DOT, and Mermaid.
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.
-- VP8/VP9/AV1 RTP depacketizers for packet-preserving video recording.
+- Annex B packet mux adapter for H264 recording.
+- VP8/VP9/AV1/H264 RTP depacketizers for packet-preserving video recording.
 - WebRTC session track accept loop with RTCP feedback routed through Pion.
 - RTP codec-change events refresh payload maps and depacketizer epochs.
 
 Next pressure points:
 
-- H264 RTP/codec adapter validation.
+- WebRTC renegotiation-to-codec-change mapping.
+- Concrete H264 decode adapter validation.
 - Allocation-safe resize and resample implementations.
 
 ## Working Loop

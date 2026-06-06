@@ -147,9 +147,9 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	if len(planned.Nodes) != 4 || len(planned.Edges) != 3 {
 		t.Fatalf("planned nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "input.ogg:out -> select-audio:inout") ||
-		!strings.Contains(planned.String(), "select-audio:inout -> decode-audio:inout") ||
-		!strings.Contains(planned.String(), "decode-audio:inout -> frames:in") {
+	if !strings.Contains(planned.String(), "input.ogg -> select-audio") ||
+		!strings.Contains(planned.String(), "select-audio -> decode-audio") ||
+		!strings.Contains(planned.String(), "decode-audio -> frames") {
 		t.Fatalf("planned spec:\n%s", planned.String())
 	}
 
@@ -212,7 +212,7 @@ func TestRuntimeBuilderInputDecodeSinkSelectsMatchingStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(planned.String(), "input.ogg:out -> select-audio:inout") {
+	if !strings.Contains(planned.String(), "input.ogg -> select-audio") {
 		t.Fatalf("planned spec:\n%s", planned.String())
 	}
 

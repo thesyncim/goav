@@ -85,44 +85,44 @@ func NewDirectGraph(config GraphConfig) (*DirectGraph, error) {
 	}, nil
 }
 
-func (g *DirectGraph) AddSource(source Source, policy BufferPolicy) (PadRef, error) {
+func (g *DirectGraph) AddSource(source Source, policy BufferPolicy) (NodeRef, error) {
 	if !policy.IsDirect() {
-		return PadRef{}, ErrBufferedEdgesUnsupported
+		return "", ErrBufferedEdgesUnsupported
 	}
 	index, err := g.addNode(directNode{name: source.Name(), kind: nodeSource, source: source})
 	if err != nil {
-		return PadRef{}, err
+		return "", err
 	}
 	g.sources = append(g.sources, index)
-	return PadRef{Node: g.nodes[index].name, Pad: "out"}, nil
+	return NodeRef(g.nodes[index].name), nil
 }
 
-func (g *DirectGraph) AddStage(stage Stage, policy BufferPolicy) (PadRef, error) {
+func (g *DirectGraph) AddStage(stage Stage, policy BufferPolicy) (NodeRef, error) {
 	if !policy.IsDirect() {
-		return PadRef{}, ErrBufferedEdgesUnsupported
+		return "", ErrBufferedEdgesUnsupported
 	}
 	index, err := g.addNode(directNode{name: stage.Name(), kind: nodeStage, stage: stage})
 	if err != nil {
-		return PadRef{}, err
+		return "", err
 	}
-	return PadRef{Node: g.nodes[index].name, Pad: "inout"}, nil
+	return NodeRef(g.nodes[index].name), nil
 }
 
-func (g *DirectGraph) AddSink(sink Sink, policy BufferPolicy) (PadRef, error) {
+func (g *DirectGraph) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
 	if !policy.IsDirect() {
-		return PadRef{}, ErrBufferedEdgesUnsupported
+		return "", ErrBufferedEdgesUnsupported
 	}
 	index, err := g.addNode(directNode{name: sink.Name(), kind: nodeSink, sink: sink})
 	if err != nil {
-		return PadRef{}, err
+		return "", err
 	}
-	return PadRef{Node: g.nodes[index].name, Pad: "in"}, nil
+	return NodeRef(g.nodes[index].name), nil
 }
 
 func (g *DirectGraph) Link(link Link) error {
 	return g.Route(Route{
 		From:   link.From,
-		To:     []PadRef{link.To},
+		To:     []NodeRef{link.To},
 		Policy: RouteAll,
 	})
 }
@@ -131,7 +131,7 @@ func (g *DirectGraph) Route(route Route) error {
 	if route.Policy == RouteByLabel {
 		return ErrUnsupportedRoute
 	}
-	from, ok := g.index[route.From.Node]
+	from, ok := g.index[route.From.String()]
 	if !ok {
 		return ErrUnknownNode
 	}
@@ -141,7 +141,7 @@ func (g *DirectGraph) Route(route Route) error {
 
 	targets := make([]int, 0, len(route.To))
 	for i := range route.To {
-		to, ok := g.index[route.To[i].Node]
+		to, ok := g.index[route.To[i].String()]
 		if !ok {
 			return ErrUnknownNode
 		}
@@ -185,8 +185,8 @@ func (g *DirectGraph) Spec() Spec {
 			for k := range route.to {
 				to := &g.nodes[route.to[k]]
 				spec.Edges = append(spec.Edges, EdgeSpec{
-					From:   PadRef{Node: node.name, Pad: directOutputPad(node.kind)},
-					To:     PadRef{Node: to.name, Pad: directInputPad(to.kind)},
+					From:   NodeRef(node.name),
+					To:     NodeRef(to.name),
 					Policy: route.policy,
 					Label:  route.label,
 				})
@@ -336,28 +336,6 @@ func directSpecKind(kind nodeKind) NodeKind {
 		return NodeStage
 	case nodeSink:
 		return NodeSink
-	default:
-		return ""
-	}
-}
-
-func directOutputPad(kind nodeKind) string {
-	switch kind {
-	case nodeSource:
-		return "out"
-	case nodeStage:
-		return "inout"
-	default:
-		return ""
-	}
-}
-
-func directInputPad(kind nodeKind) string {
-	switch kind {
-	case nodeStage:
-		return "inout"
-	case nodeSink:
-		return "in"
 	default:
 		return ""
 	}

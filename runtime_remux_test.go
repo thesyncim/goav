@@ -117,7 +117,7 @@ func TestRuntimeBuilderDescribeRemux(t *testing.T) {
 	if len(spec.Nodes) != 3 || len(spec.Edges) != 2 {
 		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
 	}
-	if !strings.Contains(spec.String(), "input.ogg:out -> archive.ogg:inout") ||
+	if !strings.Contains(spec.String(), "input.ogg -> archive.ogg") ||
 		!strings.Contains(spec.Mermaid(), "preview.ogg\\nstage") {
 		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
 	}
@@ -152,7 +152,7 @@ func TestRuntimeBuilderInputOutputRemux(t *testing.T) {
 	if len(spec.Nodes) != 3 || len(spec.Edges) != 2 {
 		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
 	}
-	if !strings.Contains(spec.String(), "input.ogg:out -> archive.ogg:inout") ||
+	if !strings.Contains(spec.String(), "input.ogg -> archive.ogg") ||
 		!strings.Contains(spec.Mermaid(), "preview.ogg\\nstage") {
 		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
 	}

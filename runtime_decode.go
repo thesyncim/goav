@@ -40,42 +40,42 @@ func (b *builder) planDecodeToSink(spec pipeline.Spec) (pipeline.Spec, error) {
 
 	nodes := make(map[string]plannedNode, 3)
 	sourceName := demuxNodeName(b.inputs[0])
-	sourcePad := pipeline.PadRef{Node: sourceName, Pad: "out"}
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourcePad); err != nil {
+	sourceRef := pipeline.NodeRef(sourceName)
+	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
 		return pipeline.Spec{}, err
 	}
 
 	selectName := selectNodeName(b.decodes[0])
-	selectPad := pipeline.PadRef{Node: selectName, Pad: "inout"}
-	if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectPad); err != nil {
+	selectRef := pipeline.NodeRef(selectName)
+	if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef); err != nil {
 		return pipeline.Spec{}, err
 	}
 
 	decodeName := decodeNodeName(b.decodes[0])
-	decodePad := pipeline.PadRef{Node: decodeName, Pad: "inout"}
-	if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodePad); err != nil {
+	decodeRef := pipeline.NodeRef(decodeName)
+	if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef); err != nil {
 		return pipeline.Spec{}, err
 	}
 
 	sinkName := b.sinks[0].Name()
-	sinkPad := pipeline.PadRef{Node: sinkName, Pad: "in"}
-	if err := addPlannedNode(nodes, &spec, sinkName, pipeline.NodeSink, sinkPad); err != nil {
+	sinkRef := pipeline.NodeRef(sinkName)
+	if err := addPlannedNode(nodes, &spec, sinkName, pipeline.NodeSink, sinkRef); err != nil {
 		return pipeline.Spec{}, err
 	}
 
 	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-		From:   sourcePad,
-		To:     selectPad,
+		From:   sourceRef,
+		To:     selectRef,
 		Policy: pipeline.RouteAll,
 	})
 	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-		From:   selectPad,
-		To:     decodePad,
+		From:   selectRef,
+		To:     decodeRef,
 		Policy: pipeline.RouteAll,
 	})
 	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-		From:   decodePad,
-		To:     sinkPad,
+		From:   decodeRef,
+		To:     sinkRef,
 		Policy: pipeline.RouteAll,
 	})
 	return spec, nil
@@ -102,7 +102,7 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 	if err != nil {
 		return err
 	}
-	sourcePad, err := graph.AddSource(demux.source, b.runtime.buffer)
+	sourceRef, err := graph.AddSource(demux.source, b.runtime.buffer)
 	if err != nil {
 		demux.source.Close()
 		return err
@@ -114,7 +114,7 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 		return err
 	}
 	selectStage := newStreamSelectStage(selectNodeName(selector), stream.ID)
-	selectPad, err := graph.AddStage(selectStage, b.runtime.buffer)
+	selectRef, err := graph.AddStage(selectStage, b.runtime.buffer)
 	if err != nil {
 		selectStage.Close()
 		return err
@@ -148,23 +148,23 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 		decoder.Close()
 		return err
 	}
-	stagePad, err := graph.AddStage(stage, b.runtime.buffer)
+	stageRef, err := graph.AddStage(stage, b.runtime.buffer)
 	if err != nil {
 		stage.Close()
 		return err
 	}
-	sinkPad, err := graph.AddSink(b.sinks[0], b.runtime.buffer)
+	sinkRef, err := graph.AddSink(b.sinks[0], b.runtime.buffer)
 	if err != nil {
 		return err
 	}
 
-	if err := graph.Link(pipeline.Link{From: sourcePad, To: selectPad}); err != nil {
+	if err := graph.Link(pipeline.Link{From: sourceRef, To: selectRef}); err != nil {
 		return err
 	}
-	if err := graph.Link(pipeline.Link{From: selectPad, To: stagePad}); err != nil {
+	if err := graph.Link(pipeline.Link{From: selectRef, To: stageRef}); err != nil {
 		return err
 	}
-	return graph.Link(pipeline.Link{From: stagePad, To: sinkPad})
+	return graph.Link(pipeline.Link{From: stageRef, To: sinkRef})
 }
 
 func selectDecodeStream(streams []av.Stream, selector av.StreamSelector) (av.Stream, error) {

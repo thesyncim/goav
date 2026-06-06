@@ -40,8 +40,9 @@ Current `rtpav` building blocks:
 - `SequenceDetector` for explicit gap state.
 - `JitterRing` for bounded sequence-ordered packet release.
 - `OpusDepacketizer` for borrowed RTP Opus payloads into `av.Packet`.
-- `VP8Depacketizer`, `VP9Depacketizer`, and `AV1Depacketizer` for bounded frame
-  assembly into packet-preserving video `av.Packet` values.
+- `VP8Depacketizer`, `VP9Depacketizer`, `AV1Depacketizer`, and
+  `H264Depacketizer` for bounded frame assembly into packet-preserving video
+  `av.Packet` values.
 - `Source` for reading RTP packets, applying optional jitter, depacketizing, and
   emitting normal pipeline messages.
 - Depacketizers receive realtime events before graph delivery, so loss-aware
@@ -85,8 +86,9 @@ task, err := runtime.New().
 `reader` can be a raw RTP receiver or a `webrtcav.TrackReader` produced from a
 Pion `TrackRemote`. A track reader produced from a WebRTC session can also route
 RTCP feedback back through the session peer connection. The generated graph is
-`rtpav.Source -> format.MuxStage...`; events remain visible through the task
-event channel while mux stages receive packet messages for each output.
+`rtpav.Source -> format.MuxStage...`; rendered specs show simple node-to-node
+connections, and events remain visible through the task event channel while mux
+stages receive packet messages for each output.
 
 ## Loss
 

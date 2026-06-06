@@ -194,15 +194,15 @@ func TestSourceDepacketizesRTPIntoPipelinePackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourcePad, err := graph.AddSource(source, pipeline.BufferPolicy{})
+	sourceRef, err := graph.AddSource(source, pipeline.BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sinkPad, err := graph.AddSink(sink, pipeline.BufferPolicy{})
+	sinkRef, err := graph.AddSink(sink, pipeline.BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Link(pipeline.Link{From: sourcePad, To: sinkPad}); err != nil {
+	if err := graph.Link(pipeline.Link{From: sourceRef, To: sinkRef}); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(ctx); err != nil {
@@ -260,15 +260,15 @@ func TestSourceJitterOrdersPackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourcePad, err := graph.AddSource(source, pipeline.BufferPolicy{})
+	sourceRef, err := graph.AddSource(source, pipeline.BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sinkPad, err := graph.AddSink(sink, pipeline.BufferPolicy{})
+	sinkRef, err := graph.AddSink(sink, pipeline.BufferPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Link(pipeline.Link{From: sourcePad, To: sinkPad}); err != nil {
+	if err := graph.Link(pipeline.Link{From: sourceRef, To: sinkRef}); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(ctx); err != nil {

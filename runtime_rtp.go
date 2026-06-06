@@ -80,19 +80,19 @@ func (rtpRecordGraphCompiler) build(ctx context.Context, b *builder) (Task, erro
 func (b *builder) planRTPRecord(spec pipeline.Spec) (pipeline.Spec, error) {
 	nodes := make(map[string]plannedNode, 1+len(b.outputs))
 	sourceName := rtpNodeName(b.rtpInputs[0])
-	sourcePad := pipeline.PadRef{Node: sourceName, Pad: "out"}
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourcePad); err != nil {
+	sourceRef := pipeline.NodeRef(sourceName)
+	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef); err != nil {
 		return pipeline.Spec{}, err
 	}
 	for i := range b.outputs {
 		stageName := muxNodeName(b.outputs[i], i)
-		stagePad := pipeline.PadRef{Node: stageName, Pad: "inout"}
-		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stagePad); err != nil {
+		stageRef := pipeline.NodeRef(stageName)
+		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef); err != nil {
 			return pipeline.Spec{}, err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-			From:   sourcePad,
-			To:     stagePad,
+			From:   sourceRef,
+			To:     stageRef,
 			Policy: pipeline.RouteAll,
 		})
 	}
@@ -117,7 +117,7 @@ func (b *builder) compileRTPRecord(ctx context.Context, graph pipeline.Graph) er
 	if err != nil {
 		return err
 	}
-	sourcePad, err := graph.AddSource(receiver.source, b.runtime.buffer)
+	sourceRef, err := graph.AddSource(receiver.source, b.runtime.buffer)
 	if err != nil {
 		receiver.source.Close()
 		return err
@@ -154,12 +154,12 @@ func (b *builder) compileRTPRecord(ctx context.Context, graph pipeline.Graph) er
 			muxer.Close()
 			return err
 		}
-		stagePad, err := graph.AddStage(stage, b.runtime.buffer)
+		stageRef, err := graph.AddStage(stage, b.runtime.buffer)
 		if err != nil {
 			stage.Close()
 			return err
 		}
-		if err := graph.Link(pipeline.Link{From: sourcePad, To: stagePad}); err != nil {
+		if err := graph.Link(pipeline.Link{From: sourceRef, To: stageRef}); err != nil {
 			return err
 		}
 	}

@@ -109,7 +109,8 @@ drop behavior remain visible.
 Builders and graphs can produce a `pipeline.Spec`: structured nodes and edges
 plus human-readable text, DOT, and Mermaid rendering. This makes generated
 pipelines easy to validate, log, inspect, or visualize before running media
-through them.
+through them. Specs render simple node-to-node connections; executor-specific
+details stay behind the graph implementation.
 
 The codec package includes generic decoder and encoder stages. They adapt
 `codec.Decoder` and `codec.Encoder` implementations to pipeline messages using
@@ -133,6 +134,10 @@ for the same mux, decode, and analysis stages used by file or protocol inputs.
 `adapters/ivf` is the first concrete format adapter. It keeps the scope small:
 one VP8, VP9, or AV1 video stream, packet demux/mux only, and no container
 features beyond what the first recording path needs.
+
+`adapters/annexb` adds the equivalent narrow packet recording target for H264:
+one H264 video stream, mux-only, writing Annex B access-unit bytes exactly as
+the depacketizer produced them.
 
 That shape supports:
 

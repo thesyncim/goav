@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/pion/rtp"
+	annexbadapter "github.com/thesyncim/goav/adapters/annexb"
 	ivfadapter "github.com/thesyncim/goav/adapters/ivf"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
@@ -104,7 +105,7 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 	if len(planned.Nodes) != 3 || len(planned.Edges) != 2 {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "remote-audio:out -> archive.ogg:inout") ||
+	if !strings.Contains(planned.String(), "remote-audio -> archive.ogg") ||
 		!strings.Contains(planned.Mermaid(), "preview.ogg\\nstage") {
 		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), planned.Mermaid())
 	}
@@ -277,6 +278,56 @@ func TestRuntimeBuilderRTPAV1RecordIVF(t *testing.T) {
 	}
 	if err := demuxer.ReadInto(ctx, &read); !errors.Is(err, io.EOF) {
 		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
+func TestRuntimeBuilderRTPH264RecordAnnexB(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: 90000},
+		Codec: av.CodecParameters{
+			ID:        av.CodecH264,
+			Type:      av.MediaVideo,
+			ClockRate: 90000,
+			Width:     640,
+			Height:    360,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 96,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEH264,
+			ClockRate:   90000,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
+			Payload: []byte{0x65, 0xaa, 0xbb},
+		}},
+		events: make(chan av.Event),
+	}
+	var recording bytes.Buffer
+
+	task, err := New(WithFormatAdapter(annexbadapter.Register)).New().
+		RTP(receiver, WithRTPDepacketizer(rtpav.NewH264Depacketizer(stream))).
+		Output(Output{Name: "recording.h264", Writer: &recording}).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []byte{0x00, 0x00, 0x00, 0x01, 0x65, 0xaa, 0xbb}
+	if !bytes.Equal(recording.Bytes(), want) {
+		t.Fatalf("recording = %v, want %v", recording.Bytes(), want)
 	}
 }
 

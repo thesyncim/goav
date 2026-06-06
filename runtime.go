@@ -240,16 +240,16 @@ func (b *builder) Sink(sink pipeline.Sink) Builder {
 
 func (b *builder) Connect(from string, to string) Builder {
 	b.links = append(b.links, pipeline.Link{
-		From: pipeline.PadRef{Node: from},
-		To:   pipeline.PadRef{Node: to},
+		From: pipeline.NodeRef(from),
+		To:   pipeline.NodeRef(to),
 	})
 	return b
 }
 
 func (b *builder) ConnectStream(from string, to string, stream av.StreamID) Builder {
 	b.routes = append(b.routes, pipeline.Route{
-		From:   pipeline.PadRef{Node: from},
-		To:     []pipeline.PadRef{{Node: to}},
+		From:   pipeline.NodeRef(from),
+		To:     []pipeline.NodeRef{pipeline.NodeRef(to)},
 		Policy: pipeline.RouteByStream,
 		Label:  string(stream),
 	})
@@ -258,8 +258,8 @@ func (b *builder) ConnectStream(from string, to string, stream av.StreamID) Buil
 
 func (b *builder) ConnectEvent(from string, to string, event av.EventType) Builder {
 	b.routes = append(b.routes, pipeline.Route{
-		From:   pipeline.PadRef{Node: from},
-		To:     []pipeline.PadRef{{Node: to}},
+		From:   pipeline.NodeRef(from),
+		To:     []pipeline.NodeRef{pipeline.NodeRef(to)},
 		Policy: pipeline.RouteByEvent,
 		Label:  string(event),
 	})
@@ -299,66 +299,66 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 		return ErrUnsupportedBuild
 	}
 
-	sourcePads := make([]pipeline.PadRef, len(b.sources))
-	stagePads := make([]pipeline.PadRef, len(b.stages))
-	sinkPads := make([]pipeline.PadRef, len(b.sinks))
+	sourceRefs := make([]pipeline.NodeRef, len(b.sources))
+	stageRefs := make([]pipeline.NodeRef, len(b.stages))
+	sinkRefs := make([]pipeline.NodeRef, len(b.sinks))
 
 	for i := range b.sources {
 		if b.sources[i] == nil {
 			return ErrNilSource
 		}
-		pad, err := graph.AddSource(b.sources[i], b.runtime.buffer)
+		ref, err := graph.AddSource(b.sources[i], b.runtime.buffer)
 		if err != nil {
 			return err
 		}
-		sourcePads[i] = pad
+		sourceRefs[i] = ref
 	}
 	for i := range b.stages {
 		if b.stages[i] == nil {
 			return ErrNilStage
 		}
-		pad, err := graph.AddStage(b.stages[i], b.runtime.buffer)
+		ref, err := graph.AddStage(b.stages[i], b.runtime.buffer)
 		if err != nil {
 			return err
 		}
-		stagePads[i] = pad
+		stageRefs[i] = ref
 	}
 	for i := range b.sinks {
 		if b.sinks[i] == nil {
 			return ErrNilSink
 		}
-		pad, err := graph.AddSink(b.sinks[i], b.runtime.buffer)
+		ref, err := graph.AddSink(b.sinks[i], b.runtime.buffer)
 		if err != nil {
 			return err
 		}
-		sinkPads[i] = pad
+		sinkRefs[i] = ref
 	}
 
 	if len(b.links) != 0 || len(b.routes) != 0 {
-		pads := make(map[string]pipeline.PadRef, len(sourcePads)+len(stagePads)+len(sinkPads))
-		addRuntimePads(pads, sourcePads)
-		addRuntimePads(pads, stagePads)
-		addRuntimePads(pads, sinkPads)
-		return b.compileExplicitEdges(graph, pads)
+		nodes := make(map[string]pipeline.NodeRef, len(sourceRefs)+len(stageRefs)+len(sinkRefs))
+		addRuntimeNodes(nodes, sourceRefs)
+		addRuntimeNodes(nodes, stageRefs)
+		addRuntimeNodes(nodes, sinkRefs)
+		return b.compileExplicitEdges(graph, nodes)
 	}
 
-	if len(stagePads) == 0 {
-		return linkMany(graph, sourcePads, sinkPads)
+	if len(stageRefs) == 0 {
+		return linkMany(graph, sourceRefs, sinkRefs)
 	}
-	if err := linkMany(graph, sourcePads, stagePads[:1]); err != nil {
+	if err := linkMany(graph, sourceRefs, stageRefs[:1]); err != nil {
 		return err
 	}
-	for i := 0; i < len(stagePads)-1; i++ {
-		if err := graph.Link(pipeline.Link{From: stagePads[i], To: stagePads[i+1]}); err != nil {
+	for i := 0; i < len(stageRefs)-1; i++ {
+		if err := graph.Link(pipeline.Link{From: stageRefs[i], To: stageRefs[i+1]}); err != nil {
 			return err
 		}
 	}
-	return linkMany(graph, stagePads[len(stagePads)-1:], sinkPads)
+	return linkMany(graph, stageRefs[len(stageRefs)-1:], sinkRefs)
 }
 
-func (b *builder) compileExplicitEdges(graph pipeline.Graph, pads map[string]pipeline.PadRef) error {
+func (b *builder) compileExplicitEdges(graph pipeline.Graph, nodes map[string]pipeline.NodeRef) error {
 	for i := range b.links {
-		link, err := resolveRuntimeLink(pads, b.links[i])
+		link, err := resolveRuntimeLink(nodes, b.links[i])
 		if err != nil {
 			return err
 		}
@@ -367,7 +367,7 @@ func (b *builder) compileExplicitEdges(graph pipeline.Graph, pads map[string]pip
 		}
 	}
 	for i := range b.routes {
-		route, err := resolveRuntimeRoute(pads, b.routes[i])
+		route, err := resolveRuntimeRoute(nodes, b.routes[i])
 		if err != nil {
 			return err
 		}
@@ -378,18 +378,18 @@ func (b *builder) compileExplicitEdges(graph pipeline.Graph, pads map[string]pip
 	return nil
 }
 
-func addRuntimePads(pads map[string]pipeline.PadRef, refs []pipeline.PadRef) {
+func addRuntimeNodes(nodes map[string]pipeline.NodeRef, refs []pipeline.NodeRef) {
 	for i := range refs {
-		pads[refs[i].Node] = refs[i]
+		nodes[refs[i].String()] = refs[i]
 	}
 }
 
-func resolveRuntimeLink(pads map[string]pipeline.PadRef, link pipeline.Link) (pipeline.Link, error) {
-	from, err := resolveRuntimePad(pads, link.From)
+func resolveRuntimeLink(nodes map[string]pipeline.NodeRef, link pipeline.Link) (pipeline.Link, error) {
+	from, err := resolveRuntimeNode(nodes, link.From)
 	if err != nil {
 		return pipeline.Link{}, err
 	}
-	to, err := resolveRuntimePad(pads, link.To)
+	to, err := resolveRuntimeNode(nodes, link.To)
 	if err != nil {
 		return pipeline.Link{}, err
 	}
@@ -398,15 +398,15 @@ func resolveRuntimeLink(pads map[string]pipeline.PadRef, link pipeline.Link) (pi
 	return link, nil
 }
 
-func resolveRuntimeRoute(pads map[string]pipeline.PadRef, route pipeline.Route) (pipeline.Route, error) {
-	from, err := resolveRuntimePad(pads, route.From)
+func resolveRuntimeRoute(nodes map[string]pipeline.NodeRef, route pipeline.Route) (pipeline.Route, error) {
+	from, err := resolveRuntimeNode(nodes, route.From)
 	if err != nil {
 		return pipeline.Route{}, err
 	}
 	route.From = from
-	toRefs := make([]pipeline.PadRef, len(route.To))
+	toRefs := make([]pipeline.NodeRef, len(route.To))
 	for i := range route.To {
-		to, err := resolveRuntimePad(pads, route.To[i])
+		to, err := resolveRuntimeNode(nodes, route.To[i])
 		if err != nil {
 			return pipeline.Route{}, err
 		}
@@ -416,18 +416,15 @@ func resolveRuntimeRoute(pads map[string]pipeline.PadRef, route pipeline.Route) 
 	return route, nil
 }
 
-func resolveRuntimePad(pads map[string]pipeline.PadRef, ref pipeline.PadRef) (pipeline.PadRef, error) {
-	if ref.Pad != "" {
-		return ref, nil
-	}
-	pad, ok := pads[ref.Node]
+func resolveRuntimeNode(nodes map[string]pipeline.NodeRef, ref pipeline.NodeRef) (pipeline.NodeRef, error) {
+	node, ok := nodes[ref.String()]
 	if !ok {
-		return pipeline.PadRef{}, pipeline.ErrUnknownNode
+		return "", pipeline.ErrUnknownNode
 	}
-	return pad, nil
+	return node, nil
 }
 
-func linkMany(graph pipeline.Graph, from []pipeline.PadRef, to []pipeline.PadRef) error {
+func linkMany(graph pipeline.Graph, from []pipeline.NodeRef, to []pipeline.NodeRef) error {
 	for i := range from {
 		for j := range to {
 			if err := graph.Link(pipeline.Link{From: from[i], To: to[j]}); err != nil {

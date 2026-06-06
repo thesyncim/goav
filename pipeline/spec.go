@@ -20,8 +20,8 @@ type NodeSpec struct {
 }
 
 type EdgeSpec struct {
-	From   PadRef
-	To     PadRef
+	From   NodeRef
+	To     NodeRef
 	Policy RoutePolicy
 	Label  string
 }
@@ -63,7 +63,7 @@ func (s Spec) WriteText(w io.Writer) error {
 	}
 	for i := range s.Edges {
 		edge := &s.Edges[i]
-		if err := writeStrings(w, "  ", edge.From.Node, ":", edge.From.Pad, " -> ", edge.To.Node, ":", edge.To.Pad); err != nil {
+		if err := writeStrings(w, "  ", edge.From.String(), " -> ", edge.To.String()); err != nil {
 			return err
 		}
 		label := edgeTextLabel(edge)
@@ -98,7 +98,7 @@ func (s Spec) WriteDOT(w io.Writer) error {
 	}
 	for i := range s.Edges {
 		edge := &s.Edges[i]
-		if err := writeStrings(w, "  ", quoteDOT(edge.From.Node), " -> ", quoteDOT(edge.To.Node)); err != nil {
+		if err := writeStrings(w, "  ", quoteDOT(edge.From.String()), " -> ", quoteDOT(edge.To.String())); err != nil {
 			return err
 		}
 		label := edgeTextLabel(edge)
@@ -141,8 +141,8 @@ func (s Spec) WriteMermaid(w io.Writer) error {
 	}
 	for i := range s.Edges {
 		edge := &s.Edges[i]
-		from := mermaidNodeID(ids, edge.From.Node)
-		to := mermaidNodeID(ids, edge.To.Node)
+		from := mermaidNodeID(ids, edge.From.String())
+		to := mermaidNodeID(ids, edge.To.String())
 		label := edgeTextLabel(edge)
 		if label == "" {
 			if err := writeStrings(w, "  ", from, " --> ", to, "\n"); err != nil {
