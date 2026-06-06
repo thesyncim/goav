@@ -643,6 +643,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     outputs, mux outputs without an encoder, and encoded packets routed to
     frame sinks now fail in a dedicated compiler pass before runtime builder
     mutation. Done.
+192. Validate ordinary stream runtime capabilities before lowering: custom
+    recipe runtimes that lack live codec-change or transform support now fail
+    in a dedicated compiler pass before inputs, streams, or outputs mutate the
+    builder. Done.
 
 ## First Vertical Slice
 
@@ -879,7 +883,8 @@ before lowering, and both ordinary stream and transcode branch output routes
 bind in their own passes before stream lowering or mux-group plan assembly.
 Ordinary stream transform shape now validates from intent too, and concrete
 stream step attachments and output-kind rules are checked before stream
-lowering.
+lowering. Runtime capability checks for live codec-change and transforms now
+also run before ordinary stream lowering.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

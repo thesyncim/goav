@@ -1127,23 +1127,16 @@ func applyJobStream(builder builderAPI, outputs []OutputSpec, stream StreamInten
 	if err := validateJobStreamOutputKinds("build stream", stream, outputs); err != nil {
 		return nil, err
 	}
+	if err := validateJobStreamRuntimeCapabilities("build stream", builder, stream); err != nil {
+		return nil, err
+	}
 	if stream.Decode || len(steps) != 0 || stream.Encode.ID != "" {
 		if codecChangePolicySet(stream.CodecChange) {
 			internal, ok := builder.(interface {
 				decodeWithPolicy(av.StreamSelector, CodecChangePolicy) builderAPI
 			})
 			if !ok {
-				return nil, &BuildError{
-					Code:      "codec_change_runtime_unsupported",
-					Operation: "build stream",
-					Node:      node,
-					Reason:    "codec-change policy requires the standard runtime builder",
-					Suggestions: []string{
-						"use goav.Default() or goav.New(...) for live stream recipes",
-						"remove .OnCodecChange(...) when using a custom recipe runtime",
-					},
-					Cause: ErrUnsupportedBuild,
-				}
+				return nil, streamCodecChangeRuntimeUnsupportedError("build stream", node)
 			}
 			builder = internal.decodeWithPolicy(selector, stream.CodecChange)
 		} else {
@@ -1167,17 +1160,7 @@ func applyJobStream(builder builderAPI, outputs []OutputSpec, stream StreamInten
 			transform(av.StreamSelector, transcodeTransform) builderAPI
 		})
 		if !ok {
-			return nil, &BuildError{
-				Code:      "transform_runtime_unsupported",
-				Operation: "build stream",
-				Node:      stream.Name,
-				Reason:    "stream transforms require the standard runtime builder",
-				Suggestions: []string{
-					"use goav.Default() or goav.New(...) for recipe transforms",
-					"use .Do(stage) when a custom runtime must provide its own filter stage",
-				},
-				Cause: ErrUnsupportedBuild,
-			}
+			return nil, streamTransformRuntimeUnsupportedError("build stream", node)
 		}
 		builder = internal.transform(selector, transform)
 	}
@@ -1328,6 +1311,67 @@ func encodedStreamFrameSinkError(operation string, stream StreamIntent) error {
 			"use .To(goav.FrameSink(...)) for decoded frames",
 			"send encoded output to goav.FileOutput(...) or goav.URIOutput(...)",
 			"use the expert graph API for custom packet sink wiring",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func validateJobStreamRuntimeCapabilities(operation string, builder builderAPI, stream StreamIntent) error {
+	node := jobStreamIntentName(stream)
+	if builder == nil {
+		return &BuildError{
+			Code:      "runtime_builder_missing",
+			Operation: operation,
+			Node:      node,
+			Reason:    "recipe compiler produced no runtime builder",
+			Suggestions: []string{
+				"use goav.Default() for the standard recipe runtime",
+				"use goav.New(...) when customizing adapters",
+				"use runtime.Graph() for explicit graph wiring",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if codecChangePolicySet(stream.CodecChange) {
+		if _, ok := builder.(interface {
+			decodeWithPolicy(av.StreamSelector, CodecChangePolicy) builderAPI
+		}); !ok {
+			return streamCodecChangeRuntimeUnsupportedError(operation, node)
+		}
+	}
+	if len(stream.Transforms) != 0 {
+		if _, ok := builder.(interface {
+			transform(av.StreamSelector, transcodeTransform) builderAPI
+		}); !ok {
+			return streamTransformRuntimeUnsupportedError(operation, node)
+		}
+	}
+	return nil
+}
+
+func streamCodecChangeRuntimeUnsupportedError(operation string, node string) error {
+	return &BuildError{
+		Code:      "codec_change_runtime_unsupported",
+		Operation: operation,
+		Node:      node,
+		Reason:    "codec-change policy requires the standard runtime builder",
+		Suggestions: []string{
+			"use goav.Default() or goav.New(...) for live stream recipes",
+			"remove .OnCodecChange(...) when using a custom recipe runtime",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func streamTransformRuntimeUnsupportedError(operation string, node string) error {
+	return &BuildError{
+		Code:      "transform_runtime_unsupported",
+		Operation: operation,
+		Node:      node,
+		Reason:    "stream transforms require the standard runtime builder",
+		Suggestions: []string{
+			"use goav.Default() or goav.New(...) for recipe transforms",
+			"use .Do(stage) when a custom runtime must provide its own filter stage",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
