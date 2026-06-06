@@ -183,11 +183,11 @@ for _, node := range spec.Nodes {
 ```
 
 `pipeline.Spec` is the core graph object: structured nodes and edges only.
-Text and diagram exporters live in the small `graphrender` utility package, so
-generated output can evolve without becoming part of runtime composition.
+Exporters live in the small `graphrender` utility package behind URI targets,
+so generated output can evolve without becoming part of runtime composition.
 
 ```go
-text := graphrender.Render(spec, graphrender.Text)
+text, err := graphrender.RenderURI(spec, "goav:graph")
 ```
 
 ## Custom Processing

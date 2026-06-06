@@ -66,3 +66,49 @@ func TestRenderTextDOTAndMermaid(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnsupportedFormat", err)
 	}
 }
+
+func TestRenderURI(t *testing.T) {
+	spec := pipeline.Spec{
+		Name: "receive",
+		Nodes: []pipeline.NodeSpec{
+			{Name: "source", Kind: pipeline.NodeSource, Detail: "rtp receive"},
+			{Name: "sink", Kind: pipeline.NodeSink},
+		},
+		Edges: []pipeline.EdgeSpec{{
+			From: pipeline.NodeRef("source"),
+			To:   pipeline.NodeRef("sink"),
+		}},
+	}
+
+	text, err := RenderURI(spec, "goav:graph")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "pipeline receive") ||
+		!strings.Contains(text, "source -> sink") {
+		t.Fatalf("text:\n%s", text)
+	}
+
+	mermaid, err := RenderURI(spec, "goav:graph?format=mermaid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(mermaid, "flowchart LR") {
+		t.Fatalf("mermaid:\n%s", mermaid)
+	}
+
+	dot, err := RenderURI(spec, "goav://graph/dot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dot, "digraph \"receive\"") {
+		t.Fatalf("dot:\n%s", dot)
+	}
+
+	if _, err := RenderURI(spec, "file:///tmp/graph.dot"); !errors.Is(err, ErrUnsupportedURI) {
+		t.Fatalf("err = %v, want ErrUnsupportedURI", err)
+	}
+	if _, err := RenderURI(spec, "goav:graph?format=json"); !errors.Is(err, ErrUnsupportedFormat) {
+		t.Fatalf("err = %v, want ErrUnsupportedFormat", err)
+	}
+}

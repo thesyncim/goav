@@ -185,10 +185,10 @@ are the core inspection contract. Nodes may include short workflow details such
 as `rtp receive`, `packets -> frames`, `frames -> packets`, `resize`, or `mux`.
 This makes generated pipelines easy to validate, log, inspect, or visualize
 before running media through them. Optional exporters live outside the runtime
-core in `graphrender`, so diagram formats can evolve without changing graph
-composition. Specs keep routed edges labeled as media concepts such as
-`stream=video` or `event=packet_loss`; executor-specific details stay behind
-the graph implementation.
+core in `graphrender` behind URI targets, so generated graph output can evolve
+without changing graph composition. Specs keep routed edges labeled as media
+concepts such as `stream=video` or `event=packet_loss`; executor-specific
+details stay behind the graph implementation.
 
 The codec package includes generic decoder and encoder stages. They adapt
 `codec.Decoder` and `codec.Encoder` implementations to pipeline messages using

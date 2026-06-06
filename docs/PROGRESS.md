@@ -388,7 +388,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Done.
 125. Add recipe RTP policy validation so negative buffer limits and invalid
     timestamp-gap durations fail before source construction. Done.
-126. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+126. Add URI-target graph rendering in the optional `graphrender` package so
+    `pipeline.Spec` stays structured-only while exports gain one simple target
+    path.
+    Done.
+127. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

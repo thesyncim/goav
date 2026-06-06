@@ -3,6 +3,7 @@ package graphrender
 import (
 	"errors"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 )
 
 var ErrUnsupportedFormat = errors.New("graphrender: unsupported format")
+var ErrUnsupportedURI = errors.New("graphrender: unsupported uri")
 
 type Format string
 
@@ -25,6 +27,14 @@ func Render(spec pipeline.Spec, format Format) string {
 	return out.String()
 }
 
+func RenderURI(spec pipeline.Spec, target string) (string, error) {
+	var out strings.Builder
+	if err := WriteURI(&out, spec, target); err != nil {
+		return "", err
+	}
+	return out.String(), nil
+}
+
 func Write(w io.Writer, spec pipeline.Spec, format Format) error {
 	switch format {
 	case "", Text:
@@ -36,6 +46,32 @@ func Write(w io.Writer, spec pipeline.Spec, format Format) error {
 	default:
 		return ErrUnsupportedFormat
 	}
+}
+
+func WriteURI(w io.Writer, spec pipeline.Spec, target string) error {
+	format, err := FormatURI(target)
+	if err != nil {
+		return err
+	}
+	return Write(w, spec, format)
+}
+
+func FormatURI(target string) (Format, error) {
+	if target == "" {
+		return Text, nil
+	}
+	uri, err := url.Parse(target)
+	if err != nil {
+		return "", err
+	}
+	if uri.Scheme != "goav" || !isGraphURI(uri) {
+		return "", ErrUnsupportedURI
+	}
+	format := graphURIFormat(uri)
+	if format == "" {
+		return Text, nil
+	}
+	return parseFormat(format)
 }
 
 func writeText(w io.Writer, spec pipeline.Spec) error {
@@ -150,6 +186,35 @@ func writeMermaid(w io.Writer, spec pipeline.Spec) error {
 		}
 	}
 	return nil
+}
+
+func isGraphURI(uri *url.URL) bool {
+	return uri.Opaque == "graph" ||
+		uri.Host == "graph" ||
+		(uri.Host == "" && strings.Trim(uri.Path, "/") == "graph")
+}
+
+func graphURIFormat(uri *url.URL) string {
+	if format := uri.Query().Get("format"); format != "" {
+		return format
+	}
+	if uri.Host != "graph" {
+		return ""
+	}
+	return strings.Trim(uri.Path, "/")
+}
+
+func parseFormat(value string) (Format, error) {
+	switch Format(strings.ToLower(value)) {
+	case "", Text:
+		return Text, nil
+	case DOT:
+		return DOT, nil
+	case Mermaid:
+		return Mermaid, nil
+	default:
+		return "", ErrUnsupportedFormat
+	}
 }
 
 func writeStrings(w io.Writer, values ...string) error {
