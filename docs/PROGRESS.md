@@ -320,7 +320,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Video().Resize(...)` lower through the existing filter registry before
     encode or frame sinks, and Opus recipe defaults no longer override
     transformed audio geometry unless the user sets codec parameters. Done.
-98. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+98. Add stream-mismatch diagnostics for filter and encode requests, plus
+    missing encode-target diagnostics that preserve `ErrUnsupportedBuild`.
+    Done.
+99. Tighten transcode branch targets so `.To(...)` accepts output labels or
+    `OutputSpec` values, and invalid target values fail with an actionable
+    `output_target_invalid` diagnostic. Done.
+100. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

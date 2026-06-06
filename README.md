@@ -100,6 +100,8 @@ fmt.Println(spec)
   stream-local custom stage before encoding.
 - `goav.Decode(input, sink)` decodes one selected stream into a frame sink.
 - `goav.Transcode(input)` builds named audio or video branches and outputs.
+  Transcode branch `.To(...)` accepts either a named output label or an
+  `OutputSpec` such as `goav.FileOutput(...)`.
 - `goav.WebRTCTrack(track)` adapts a Pion `TrackRemote` into the same realtime
   receive path as RTP.
 - `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive

@@ -330,6 +330,42 @@ func TestReadmeTranscodeLadderRecipeIsSmall(t *testing.T) {
 	}
 }
 
+func TestTranscodeRecipeAcceptsDirectOutputSpec(t *testing.T) {
+	job := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("360p").Resize(640, 360).VP9(600_000).
+		To(goav.FileOutput("preview.webm", io.Discard))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := spec.String()
+	if !strings.Contains(text, "encode-360p -> preview.webm") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || len(intent.Streams[0].RouteTo) != 1 || len(intent.Outputs) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestTranscodeRecipeRejectsInvalidOutputTarget(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("360p").VP9(600_000).
+		To(42).
+		Output("preview", goav.FileOutput("preview.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_target_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_target_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "target 0: unsupported target type int") ||
+		!strings.Contains(err.Error(), "goav.FileOutput") {
+		t.Fatalf("err = %v, want target type and output guidance", err)
+	}
+}
+
 func tinyIVF() []byte {
 	var data bytes.Buffer
 	var header [32]byte

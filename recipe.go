@@ -1020,12 +1020,18 @@ func newStreamSelector(media av.MediaType, options ...StreamOption) av.StreamSel
 }
 
 type streamBuild struct {
-	name       string
-	selector   av.StreamSelector
-	decode     bool
-	transforms []TransformSpec
-	encode     CodecSpec
-	labels     []string
+	name           string
+	selector       av.StreamSelector
+	decode         bool
+	transforms     []TransformSpec
+	encode         CodecSpec
+	labels         []string
+	invalidTargets []invalidOutputTarget
+}
+
+type invalidOutputTarget struct {
+	index       int
+	description string
 }
 
 func StreamID(id av.StreamID) StreamOption {
@@ -1208,6 +1214,9 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 	outputRenditions := make(map[string][]string, len(outputs))
 	for i := range j.streams {
 		stream := j.streams[i]
+		if len(stream.invalidTargets) != 0 {
+			return transcodepkg.Plan{}, transcodeOutputTargetError(stream)
+		}
 		if stream.encode.ID == "" && !stream.encode.Copy {
 			return transcodepkg.Plan{}, &BuildError{
 				Code:      "encode_missing",
@@ -1370,16 +1379,50 @@ func (b *StreamBuilder) To(targets ...any) *TranscodeJob {
 		case string:
 			if target != "" {
 				stream.labels = append(stream.labels, target)
+			} else {
+				stream.invalidTargets = append(stream.invalidTargets, invalidOutputTarget{
+					index:       i,
+					description: "empty string output label",
+				})
 			}
 		case OutputSpec:
 			name := target.label(fmt.Sprintf("%s-output-%d", stream.name, len(b.job.outputs)))
 			b.job.Output(name, target)
 			stream.labels = append(stream.labels, name)
 		default:
-			stream.labels = append(stream.labels, fmt.Sprint(target))
+			stream.invalidTargets = append(stream.invalidTargets, invalidOutputTarget{
+				index:       i,
+				description: "unsupported target type " + outputTargetType(target),
+			})
 		}
 	}
 	return b.job
+}
+
+func transcodeOutputTargetError(stream streamBuild) error {
+	details := make([]string, 0, len(stream.invalidTargets))
+	for i := range stream.invalidTargets {
+		details = append(details, fmt.Sprintf("target %d: %s", stream.invalidTargets[i].index, stream.invalidTargets[i].description))
+	}
+	return &BuildError{
+		Code:      "output_target_invalid",
+		Operation: "plan transcode",
+		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
+		Reason:    ".To(...) accepts output labels or output specs",
+		Details:   details,
+		Suggestions: []string{
+			"pass a string label that is defined with .Output(label, goav.FileOutput(...))",
+			"pass goav.FileOutput(...) directly to .To(...) for a branch-local output",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func outputTargetType(target any) string {
+	if target == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("%T", target)
 }
 
 func (b *StreamBuilder) encode(codec CodecSpec) *StreamBuilder {
