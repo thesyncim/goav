@@ -962,50 +962,11 @@ func (j *Job) Run(ctx context.Context) error {
 }
 
 func (j *Job) builder() (builderAPI, error) {
-	if j.runtime == nil {
-		return nil, &BuildError{Code: "runtime_missing", Operation: "build job", Reason: "no runtime is configured"}
-	}
-	if j.err != nil {
-		return nil, j.err
-	}
-	if len(j.inputs) == 0 {
-		return nil, &BuildError{Code: "input_missing", Operation: "build job", Reason: "no input is configured"}
-	}
-	if err := j.validateInputs(); err != nil {
-		return nil, err
-	}
-	if err := j.validateOutputScope(); err != nil {
-		return nil, err
-	}
-	outputs := j.allOutputs()
-	if len(outputs) == 0 {
-		return nil, &BuildError{Code: "output_missing", Operation: "build job", Reason: "no output is configured"}
-	}
-	if err := validateOutputSpecs("build job", outputs); err != nil {
-		return nil, err
-	}
-	builder, err := newRuntimeBuilder(j.runtime, "build job")
+	resolved, err := compileJobRecipe(j)
 	if err != nil {
 		return nil, err
 	}
-	for i := range j.inputs {
-		builder = j.inputs[i].apply(builder)
-	}
-	if j.stream != nil {
-		var err error
-		builder, err = j.applyStream(builder, j.stream)
-		if err != nil {
-			return nil, err
-		}
-	}
-	for i := range outputs {
-		var err error
-		builder, err = outputs[i].apply(builder)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return builder, nil
+	return resolved.builder, nil
 }
 
 func newRuntimeBuilder(runtime Runtime, operation string) (builderAPI, error) {
@@ -2108,18 +2069,11 @@ func (j *TranscodeJob) Run(ctx context.Context) error {
 }
 
 func (j *TranscodeJob) builder() (builderAPI, error) {
-	if j.runtime == nil {
-		return nil, &BuildError{Code: "runtime_missing", Operation: "build transcode", Reason: "no runtime is configured"}
-	}
-	plan, err := j.plan()
+	resolved, err := compileTranscodeRecipe(j)
 	if err != nil {
 		return nil, err
 	}
-	builder, err := newRuntimeBuilder(j.runtime, "build transcode")
-	if err != nil {
-		return nil, err
-	}
-	return builder.Transcode(plan), nil
+	return resolved.builder, nil
 }
 
 func (j *TranscodeJob) stream(name string, media av.MediaType, options ...streamOption) *StreamBuilder {

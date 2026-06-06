@@ -41,7 +41,11 @@ that validates, probes, resolves streams, resolves formats/codecs, inserts
 demux or depacketize boundaries, inserts decode/transform/encode/mux stages,
 assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
 the runnable graph. The current private graph compilers are migration
-scaffolding while each workflow moves onto that shared path.
+scaffolding while each workflow moves onto that shared path. The first active
+slice is a private recipe intent compiler state: `Job` and `TranscodeJob` carry
+their public `Intent` plus concrete readers, writers, sinks, and stages through
+validation, planning, and lowering passes before handing off to the migration
+builder.
 
 The handle-based graph builder remains available as the advanced layer through
 `Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed

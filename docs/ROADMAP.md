@@ -18,7 +18,8 @@ make the implementation and adapter coverage match the promise.
    validation, probing, stream resolution, format/codec resolution,
    demux/depacketize, decode, transform, encode, mux, route, buffer-policy, and
    graph-emission passes instead of adding a new matcher for each workflow
-   combination. The existing fixed compiler list is migration scaffolding.
+   combination. First private recipe intent compiler state is active; the
+   existing fixed graph compiler list is migration scaffolding.
 4. Continue expanding transcode into a media output composer: one output label is
    a mux group that can receive coordinated audio and video branches, not a
    synonym for one rendition. First mixed-stream compiler slice active.
