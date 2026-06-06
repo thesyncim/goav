@@ -1607,6 +1607,69 @@ func validateRecipeEncodeAdapters(operation string, rt Runtime, streams []Stream
 	return nil
 }
 
+func validateRecipeTransformAdapters(operation string, rt Runtime, streams []StreamIntent) error {
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return nil
+	}
+	for i := range streams {
+		stream := streams[i]
+		for j := range stream.Transforms {
+			name := transformFactoryName(stream.Transforms[j])
+			if name == "" {
+				continue
+			}
+			if _, err := standard.filters.Factory(name); err != nil {
+				return recipeTransformAdapterError(operation, stream, name, err)
+			}
+		}
+	}
+	return nil
+}
+
+func transformFactoryName(spec TransformSpec) string {
+	switch {
+	case spec.Resize != nil:
+		return filter.FactoryResize
+	case spec.Resample != nil:
+		return filter.FactoryResample
+	default:
+		return ""
+	}
+}
+
+func recipeTransformAdapterError(operation string, stream StreamIntent, name string, cause error) error {
+	if !errors.Is(cause, filter.ErrNotFound) {
+		return cause
+	}
+	return &BuildError{
+		Code:      "transform_adapter_missing",
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    "no " + name + " filter adapter is registered",
+		Details: []string{
+			"transform=" + name,
+		},
+		Suggestions: []string{
+			"register a filter adapter that provides " + name,
+			"use goav.Default() or goav.New(goav.WithDefaults()) for standard resize and resample adapters",
+			"remove ." + transformMethodName(name) + "(...) when that conversion is not needed",
+		},
+		Cause: cause,
+	}
+}
+
+func transformMethodName(name string) string {
+	switch name {
+	case filter.FactoryResize:
+		return "Resize"
+	case filter.FactoryResample:
+		return "Resample"
+	default:
+		return "Do"
+	}
+}
+
 func recipeEncodeAdapterError(operation string, stream StreamIntent, registry *codec.SimpleRegistry, cause error) error {
 	code := "encode_adapter_missing"
 	reason := "no encoder adapter is registered for " + string(stream.Encode.ID)

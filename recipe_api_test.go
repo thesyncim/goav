@@ -18,6 +18,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
@@ -1288,6 +1289,27 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 		strings.Contains(err.Error(), "stream") ||
 		strings.Contains(err.Error(), "cannot open input") {
 		t.Fatalf("err = %v, want decode adapter guidance before live input diagnostics", err)
+	}
+}
+
+func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(goav.New(goav.WithStdCodecs())).
+		Audio().
+		Resample(16_000, goav.Mono).
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_missing" || !errors.Is(err, filter.ErrNotFound) {
+		t.Fatalf("err = %v, want transform_adapter_missing wrapping filter.ErrNotFound", err)
+	}
+	if !strings.Contains(err.Error(), "transform=resample") ||
+		!strings.Contains(err.Error(), "goav.Default") ||
+		strings.Contains(err.Error(), "input_demuxer_missing") ||
+		strings.Contains(err.Error(), "cannot open input") {
+		t.Fatalf("err = %v, want transform adapter guidance before input diagnostics", err)
 	}
 }
 

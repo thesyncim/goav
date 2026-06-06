@@ -47,10 +47,11 @@ type recipeCompileState struct {
 }
 
 type recipeCompileOptions struct {
-	preflightInputAdapters  bool
-	preflightOutputAdapters bool
-	preflightDecodeAdapters bool
-	preflightEncodeAdapters bool
+	preflightInputAdapters     bool
+	preflightOutputAdapters    bool
+	preflightDecodeAdapters    bool
+	preflightEncodeAdapters    bool
+	preflightTransformAdapters bool
 }
 
 type recipeCompilePass interface {
@@ -133,10 +134,11 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 
 func compileJobRecipeForBuild(job *Job) (recipeResolved, error) {
 	return compileJobRecipeWithOptions(job, recipeCompileOptions{
-		preflightInputAdapters:  true,
-		preflightOutputAdapters: true,
-		preflightDecodeAdapters: true,
-		preflightEncodeAdapters: true,
+		preflightInputAdapters:     true,
+		preflightOutputAdapters:    true,
+		preflightDecodeAdapters:    true,
+		preflightEncodeAdapters:    true,
+		preflightTransformAdapters: true,
 	})
 }
 
@@ -167,6 +169,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobOutputFormatAdaptersPass(),
 		validateJobDecodeAdaptersPass(),
 		validateJobEncodeAdaptersPass(),
+		validateJobTransformAdaptersPass(),
 		validateJobInputFormatAdaptersPass(),
 		openRecipeRuntimeBuilderPass(),
 		validateJobStreamRuntimeCapabilitiesPass(),
@@ -184,9 +187,10 @@ func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 
 func compileTranscodeRecipeForBuild(job *TranscodeJob) (recipeResolved, error) {
 	return compileTranscodeRecipeWithOptions(job, recipeCompileOptions{
-		preflightInputAdapters:  true,
-		preflightOutputAdapters: true,
-		preflightEncodeAdapters: true,
+		preflightInputAdapters:     true,
+		preflightOutputAdapters:    true,
+		preflightEncodeAdapters:    true,
+		preflightTransformAdapters: true,
 	})
 }
 
@@ -211,6 +215,7 @@ func compileTranscodeRecipeWithOptions(job *TranscodeJob, options recipeCompileO
 		validateTranscodeOutputBindingsPass(),
 		validateTranscodeOutputFormatAdaptersPass(),
 		validateTranscodeEncodeAdaptersPass(),
+		validateTranscodeTransformAdaptersPass(),
 		validateTranscodeInputFormatAdaptersPass(),
 		planTranscodeIntentPass(),
 		openRecipeRuntimeBuilderPass(),
@@ -448,6 +453,15 @@ func validateJobEncodeAdaptersPass() recipeCompilePass {
 	}}
 }
 
+func validateJobTransformAdaptersPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job transform adapters", fn: func(state *recipeCompileState) error {
+		if !state.options.preflightTransformAdapters {
+			return nil
+		}
+		return validateRecipeTransformAdapters(state.operation, state.runtime, state.intent.Streams)
+	}}
+}
+
 func validateJobStreamAttachmentsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job stream attachments", fn: func(state *recipeCompileState) error {
 		stream, ok := jobIntentStream(state.intent)
@@ -578,6 +592,15 @@ func validateTranscodeEncodeAdaptersPass() recipeCompilePass {
 			return nil
 		}
 		return validateRecipeEncodeAdapters(state.operation, state.runtime, state.intent.Streams)
+	}}
+}
+
+func validateTranscodeTransformAdaptersPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate transcode transform adapters", fn: func(state *recipeCompileState) error {
+		if !state.options.preflightTransformAdapters {
+			return nil
+		}
+		return validateRecipeTransformAdapters(state.operation, state.runtime, state.intent.Streams)
 	}}
 }
 

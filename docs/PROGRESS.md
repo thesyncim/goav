@@ -667,6 +667,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     transcode file/protocol inputs now resolve metadata-detected containers and
     missing demuxers before runtime builder lowering, while RTP/WebRTC receive
     stays on the live input path. Done.
+198. Preflight recipe transform adapters at build time: ordinary and transcode
+    `Resize`/`Resample` intents now fail on missing filter factories before
+    inputs are opened, while custom `.Do(...)` stages remain caller-provided
+    graph components. Done.
 
 ## First Vertical Slice
 
@@ -912,7 +916,8 @@ availability for metadata-detected ordinary and transcode inputs is preflighted
 too. Build-time encode adapter availability is preflighted before input open,
 and known live RTP/WebRTC decode adapter availability is preflighted without
 masking ambiguous receive selection, while graph `Describe()` remains
-adapter-agnostic.
+adapter-agnostic. Resize/resample filter factory availability is also
+preflighted before input open.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

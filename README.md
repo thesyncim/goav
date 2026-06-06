@@ -179,6 +179,7 @@ Build-time recipe checks validate concrete encoder adapters for explicit encode
 intents and concrete decoder adapters when a live RTP/WebRTC decode codec is
 already known. `Describe()` remains graph inspection and does not require those
 adapters to be present.
+Resize and resample recipes also validate their filter adapters during build.
 
 ## Inspect The Graph
 

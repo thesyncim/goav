@@ -10,6 +10,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
@@ -554,6 +555,60 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, tt.cause) {
 				t.Fatalf("err = %v, want %s wrapping %v", err, tt.code, tt.cause)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
+	tests := []struct {
+		name  string
+		pass  recipeCompilePass
+		state recipeCompileState
+		want  []string
+	}{
+		{
+			name: "job missing resample filter",
+			pass: validateJobTransformAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightTransformAdapters: true},
+				runtime:   New(),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:       "audio",
+					Select:     StreamSelect{Type: av.MediaAudio},
+					Transforms: []TransformSpec{Resample(16_000, Mono)},
+				}}},
+			},
+			want: []string{"no resample filter adapter", "transform=resample", "goav.Default", ".Resample"},
+		},
+		{
+			name: "transcode missing resize filter",
+			pass: validateTranscodeTransformAdaptersPass(),
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				options:   recipeCompileOptions{preflightTransformAdapters: true},
+				runtime:   New(),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:       "720p",
+					Select:     StreamSelect{Type: av.MediaVideo},
+					Transforms: []TransformSpec{Resize(1280, 720)},
+				}}},
+			},
+			want: []string{"no resize filter adapter", "transform=resize", "goav.Default", ".Resize"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_missing" || !errors.Is(err, filter.ErrNotFound) {
+				t.Fatalf("err = %v, want transform_adapter_missing wrapping filter.ErrNotFound", err)
 			}
 			for _, want := range tt.want {
 				if !strings.Contains(err.Error(), want) {
