@@ -147,6 +147,8 @@ Current tagged surface:
   runtime RTP decode for gray8 and 4:2:0, same-stream and replacement-stream
   RTP codec-change recovery for old-ID and replacement-ID event targets, and
   close-lifecycle tests
+- selected runtime decode graphs now report unsupported different-codec live
+  switches explicitly instead of sending new-codec packets into the old decoder
 
 The generic `codec.Decoder` path still expects packets produced by `rtpav`'s AV1
 depacketizer. Lower-level applications that bypass that depacketizer can type

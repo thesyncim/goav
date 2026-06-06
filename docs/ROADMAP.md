@@ -72,10 +72,12 @@ validation gates. This roadmap keeps the broader phase view.
   `RTP(...).Decode(...).Sink(...)` has tagged receive, same-stream
   codec-change, and replacement-stream codec-change proofs for old-ID and
   replacement-ID event targets. The concrete decoder also has raw RTP payload
-  runner integration with retained-fragment and after-loss tests. Richer
-  scratch sizing, remaining new-codec recovery, and high-level raw-RTP policy
-  remain; 8-bit 4:2:0 receive is active through both `i420` and `yuv420p`
-  declarations.
+  runner integration with retained-fragment and after-loss tests. RTP sources
+  can hand off packets to a different registered depacketizer after payload-map
+  refresh, while selected decode graphs fail explicitly until dynamic decoder
+  graph rebind policy exists. Richer scratch sizing, high-level raw-RTP policy,
+  and additional output formats remain; 8-bit 4:2:0 receive is active through
+  both `i420` and `yuv420p` declarations.
 - `goav1` adapter as it matures.
 
 ## Phase 5: High-level API

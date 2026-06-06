@@ -55,6 +55,74 @@ func (r *runtimeRTPReceiver) Close() error {
 	return nil
 }
 
+type runtimeRTPSwitchReceiver struct {
+	initial  av.Stream
+	updated  av.Stream
+	payload  rtpav.PayloadMap
+	packets  []*rtp.Packet
+	events   chan av.Event
+	index    int
+	switched bool
+	closed   bool
+}
+
+func newRuntimeRTPSwitchReceiver(initial av.Stream, updated av.Stream, packets []*rtp.Packet) *runtimeRTPSwitchReceiver {
+	return &runtimeRTPSwitchReceiver{
+		initial: initial,
+		updated: updated,
+		payload: rtpav.NewStaticPayloadMap(1, []rtpav.PayloadCodec{{
+			PayloadType: 96,
+			Parameters:  initial.Codec,
+			MIMEType:    rtpav.MIMEVP8,
+			ClockRate:   90000,
+		}}),
+		packets: packets,
+		events:  make(chan av.Event, 1),
+	}
+}
+
+func (r *runtimeRTPSwitchReceiver) Streams(context.Context) ([]av.Stream, error) {
+	return []av.Stream{r.initial}, nil
+}
+
+func (r *runtimeRTPSwitchReceiver) PayloadMap() rtpav.PayloadMap {
+	return r.payload
+}
+
+func (r *runtimeRTPSwitchReceiver) ReadRTP(context.Context) (*rtp.Packet, error) {
+	if r.index >= len(r.packets) {
+		return nil, io.EOF
+	}
+	packet := r.packets[r.index]
+	r.index++
+	if r.index == 1 && !r.switched {
+		r.payload = rtpav.NewStaticPayloadMap(2, []rtpav.PayloadCodec{{
+			PayloadType: 97,
+			Parameters:  r.updated.Codec,
+			MIMEType:    rtpav.MIMEH264,
+			ClockRate:   90000,
+		}})
+		r.events <- av.Event{
+			Type:     av.EventCodecChanged,
+			StreamID: r.initial.ID,
+			Epoch:    r.updated.Epoch,
+			Stream:   &r.updated,
+			Codec:    &r.updated.Codec,
+		}
+		r.switched = true
+	}
+	return packet, nil
+}
+
+func (r *runtimeRTPSwitchReceiver) Events() <-chan av.Event {
+	return r.events
+}
+
+func (r *runtimeRTPSwitchReceiver) Close() error {
+	r.closed = true
+	return nil
+}
+
 func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
@@ -302,6 +370,71 @@ func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
 	gotEvents := drainTaskEvents(task)
 	if countEvents(gotEvents, av.EventEndOfStream) != 2 || countEventsForStream(gotEvents, av.EventEndOfStream, "audio") != 2 {
 		t.Fatalf("events = %+v", gotEvents)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed || !decoder.closed || !sink.closed {
+		t.Fatalf("closed receiver=%v decoder=%v sink=%v", receiver.closed, decoder.closed, sink.closed)
+	}
+}
+
+func TestRuntimeBuilderRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
+	ctx := context.Background()
+	initial := av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		Epoch:    1,
+		TimeBase: av.RTPTimeBase(90000),
+		Codec: av.CodecParameters{
+			ID:        av.CodecVP8,
+			Type:      av.MediaVideo,
+			ClockRate: 90000,
+			Width:     640,
+			Height:    360,
+		},
+	}
+	updated := initial
+	updated.Epoch = 2
+	updated.Codec = av.CodecParameters{
+		ID:        av.CodecH264,
+		Type:      av.MediaVideo,
+		ClockRate: 90000,
+		Width:     640,
+		Height:    360,
+	}
+	receiver := newRuntimeRTPSwitchReceiver(initial, updated, []*rtp.Packet{
+		{
+			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			Payload: []byte{0x10, 0x00, 0xaa},
+		},
+		{
+			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 6000},
+			Payload: []byte{0x65, 0xbb},
+		},
+	})
+	decoder := &decodeTestDecoder{}
+	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: decoder}))
+	sink := &runtimeTestSink{name: "frames"}
+
+	task, err := New(WithCodecRegistry(codecs)).New().
+		RTP(receiver,
+			WithRTPName("video-rtp"),
+			WithRTPDepacketizer(rtpav.NewVP8Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16))),
+			WithRTPDepacketizer(rtpav.NewH264Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16))),
+			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
+		).
+		Decode(SelectVideo()).
+		Sink(sink).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); !errors.Is(err, codec.ErrUnsupportedCodecSwitch) {
+		t.Fatalf("err = %v, want ErrUnsupportedCodecSwitch", err)
+	}
+	if decoder.decodes != 1 || sink.frames != 1 || sink.lastFrame.StreamID != initial.ID {
+		t.Fatalf("decodes=%d frames=%d last=%+v", decoder.decodes, sink.frames, sink.lastFrame)
 	}
 	if err := task.Close(); err != nil {
 		t.Fatal(err)

@@ -2,6 +2,7 @@ package codec
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -285,6 +286,79 @@ func TestDecoderStageFlushesBeforeEOS(t *testing.T) {
 	}
 	if emitter.order != [2]pipeline.MessageKind{pipeline.MessageFrame, pipeline.MessageEvent} {
 		t.Fatalf("order = %+v", emitter.order)
+	}
+}
+
+func TestDecoderStageTracksSameCodecReplacementStream(t *testing.T) {
+	decoder := &fakeDecoder{}
+	stream := av.Stream{
+		ID:    "video-main",
+		Type:  av.MediaVideo,
+		Epoch: 1,
+		Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo},
+	}
+	updated := stream
+	updated.ID = "video-replaced"
+	updated.Epoch = 2
+	stage, err := NewDecoderStage(DecoderStageConfig{
+		InputStream: stream,
+		Decoder:     decoder,
+		Result:      DecodeResult{Frames: make([]av.Frame, 0, 1)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: updated.ID,
+		Epoch:    updated.Epoch,
+		Stream:   &updated,
+		Codec:    &updated.Codec,
+	}
+	message := pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
+
+	if err := stage.Handle(context.Background(), &message, &stageEmitter{}); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.events != 1 || stage.inputStream.ID != updated.ID || stage.inputStream.Epoch != updated.Epoch {
+		t.Fatalf("events=%d input=%+v", decoder.events, stage.inputStream)
+	}
+}
+
+func TestDecoderStageRejectsDifferentCodecReplacementStream(t *testing.T) {
+	decoder := &fakeDecoder{}
+	stream := av.Stream{
+		ID:    "video",
+		Type:  av.MediaVideo,
+		Epoch: 1,
+		Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo},
+	}
+	updated := stream
+	updated.Epoch = 2
+	updated.Codec = av.CodecParameters{ID: av.CodecH264, Type: av.MediaVideo}
+	stage, err := NewDecoderStage(DecoderStageConfig{
+		InputStream: stream,
+		Decoder:     decoder,
+		Result:      DecodeResult{Frames: make([]av.Frame, 0, 1)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: stream.ID,
+		Epoch:    updated.Epoch,
+		Stream:   &updated,
+		Codec:    &updated.Codec,
+	}
+	message := pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
+
+	err = stage.Handle(context.Background(), &message, &stageEmitter{})
+	if !errors.Is(err, ErrUnsupportedCodecSwitch) {
+		t.Fatalf("err = %v, want ErrUnsupportedCodecSwitch", err)
+	}
+	if decoder.events != 0 {
+		t.Fatalf("decoder events = %d, want 0", decoder.events)
 	}
 }
 

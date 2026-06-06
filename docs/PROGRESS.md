@@ -29,14 +29,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | Area | Status | Next |
 | --- | --- | --- |
 | `av` | reset helpers, ownership docs, RTP timebase helpers, allocation-free timestamp and duration rescale/compare helpers | richer timestamp metadata helpers |
-| `codec` | Into-style contracts, capabilities, explicit registry, optional decode-state provisioning, decoder and encoder pipeline stages, decode bounds for realtime adapter scratch planning | richer concrete adapter alloc tests |
+| `codec` | Into-style contracts, capabilities, explicit registry, optional decode-state provisioning, decoder and encoder pipeline stages, decode bounds for realtime adapter scratch planning, explicit unsupported live codec-switch guard for bound decoder stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, bounded buffered executor, fanout, simple route helpers over the one connection model, one-to-many targets, stream/event scoped routing rendered as `stream=...` or `event=...`, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, buffered runtime transcode and live receive proofs, graph specs with detail-aware text/DOT/Mermaid rendering | richer realtime lifecycle proof |
-| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh, replacement-stream identity adoption for single-stream readers, targeted old-ID replacement for multi-stream readers, stream-scoped EOS | richer multi-stream receive |
+| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh including new-codec depacketizer handoff when registered, replacement-stream identity adoption for single-stream readers, targeted old-ID replacement for multi-stream readers, stream-scoped EOS | richer multi-stream receive |
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
-| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, decoder state-provider hook, `Routes(goav.From(...).To(...))` route-map helpers plus compatibility `Connect...` shorthands, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | next codec adapter validation |
+| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, decoder state-provider hook, `Routes(goav.From(...).To(...))` route-map helpers plus compatibility `Connect...` shorthands, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | next codec adapter validation |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420 frame output with yuv420p accepted as a 4:2:0 alias, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
@@ -204,7 +204,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     the old stream and `Event.Stream` for the replacement identity, canonicalize
     accepted events downstream, and prove AV1/H264 depacketizer plus tagged AV1
     runtime recovery for old-ID replacement targets. Done.
-62. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+62. Let RTP sources switch payload maps across codecs when a matching
+    depacketizer is present, and make selected runtime decode graphs fail
+    explicitly with `codec.ErrUnsupportedCodecSwitch` when a live codec-change
+    event would require a different decoder factory. Done.
+63. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -295,8 +299,10 @@ Required proof:
   replacement stream identity for single-stream readers, can update a targeted
   stream in multi-stream readers when the event names the old ID and carries a
   replacement stream, and keeps EOS and timestamp tracking aligned with the
-  accepted identity. Video depacketizers update matching stream epochs or
-  replacement identities while dropping partial video until the next sync frame.
+  accepted identity. With multiple depacketizers registered, payload-map refresh
+  can hand packets to a new codec depacketizer. Video depacketizers update
+  matching stream epochs or replacement identities while dropping partial video
+  until the next sync frame.
 - `webrtcav.TrackReader.UpdateCodec` accepts new Pion codec parameters or a
   custom payload map, bumps the stream epoch, emits `EventCodecChanged`, and is
   covered by an RTP-source test that depacketizes packets using the new payload
@@ -417,10 +423,10 @@ Required proof:
 5. Update this tracker with the new evidence and next pressure point.
 
 Current pressure point: broaden tagged AV1 decode toward real RTP/WebRTC
-receive, especially remaining new-codec switch cases, richer scratch sizing
-policy, output formats beyond 8-bit 4:2:0, and deciding whether the concrete
-raw RTP payload path should remain low-level or grow a high-level builder
-policy.
+receive, especially dynamic new-codec graph rebind policy, richer scratch
+sizing policy, output formats beyond 8-bit 4:2:0, and deciding whether the
+concrete raw RTP payload path should remain low-level or grow a high-level
+builder policy.
 
 ## Validation Gates
 

@@ -246,6 +246,10 @@ Implemented slices:
 - Multi-stream RTP sources can use `Event.StreamID` as the old stream target
   while `Event.Stream` carries the replacement identity; accepted events emit
   the canonical replacement stream downstream.
+- RTP sources can refresh payload maps across codec changes when matching
+  depacketizers are present; selected runtime decode graphs now fail explicitly
+  with `codec.ErrUnsupportedCodecSwitch` when that change would require a
+  different decoder factory.
 - Descriptor-only codec adapters are discoverable while unavailable factories
   fail explicitly with `codec.ErrUnavailable`.
 - Build-tagged H264 decode maps real `goh264` output into borrowed `av.Frame`
@@ -297,9 +301,9 @@ Implemented slices:
 Next pressure points:
 
 - Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
-  RTP/WebRTC AV1 streams: remaining new-codec switch cases, additional output
-  formats beyond 8-bit 4:2:0, richer scratch sizing policy, and deciding how
-  much of the raw RTP runner path should surface in high-level builders.
+  RTP/WebRTC AV1 streams: dynamic new-codec graph rebind policy, additional
+  output formats beyond 8-bit 4:2:0, richer scratch sizing policy, and deciding
+  how much of the raw RTP runner path should surface in high-level builders.
 
 ## Working Loop
 

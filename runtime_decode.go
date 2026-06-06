@@ -120,6 +120,7 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 	stage, err := codec.NewDecoderStage(codec.DecoderStageConfig{
 		Name:            decodeNodeName(selector),
 		Detail:          decodeNodeDetail(selector),
+		InputStream:     stream,
 		Decoder:         decoder,
 		Result:          result,
 		DropInputEvents: dropInputEvents,

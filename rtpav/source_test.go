@@ -347,6 +347,85 @@ func TestSourceCodecChangedUpdatesTargetedStreamInMultiStreamSource(t *testing.T
 	}
 }
 
+func TestSourceCodecChangedCanSwitchDepacketizerCodec(t *testing.T) {
+	initial := av.Stream{
+		ID:    "video",
+		Type:  av.MediaVideo,
+		Epoch: 1,
+		Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo, ClockRate: 90000},
+	}
+	updated := initial
+	updated.Epoch = 2
+	updated.Codec = av.CodecParameters{ID: av.CodecH264, Type: av.MediaVideo, ClockRate: 90000}
+	events := make(chan av.Event, 1)
+	events <- av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: initial.ID,
+		Epoch:    updated.Epoch,
+		Stream:   &updated,
+		Codec:    &updated.Codec,
+	}
+	receiver := &fakeReceiver{
+		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
+			PayloadType: 96,
+			Parameters:  initial.Codec,
+			MIMEType:    MIMEVP8,
+			ClockRate:   90000,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 9000},
+			Payload: []byte{0x65, 0xcc},
+		}},
+		events: events,
+	}
+	source, err := NewSource(SourceConfig{
+		Receiver: receiver,
+		Streams:  []av.Stream{initial},
+		Depacketizers: []Depacketizer{
+			NewVP8Depacketizer(initial, WithMaxVideoFrameSize(16)),
+			NewH264Depacketizer(initial, WithMaxVideoFrameSize(16)),
+		},
+		MaxPackets: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiver.payloads = NewStaticPayloadMap(2, []PayloadCodec{{
+		PayloadType: 97,
+		Parameters:  updated.Codec,
+		MIMEType:    MIMEH264,
+		ClockRate:   90000,
+	}})
+
+	var packets []av.Packet
+	var eventsOut []av.Event
+	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		switch msg.Kind {
+		case pipeline.MessagePacket:
+			packets = append(packets, *msg.Packet)
+		case pipeline.MessageEvent:
+			eventsOut = append(eventsOut, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(eventsOut) != 2 || eventsOut[0].Type != av.EventCodecChanged || eventsOut[1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v", eventsOut)
+	}
+	if eventsOut[0].StreamID != updated.ID || eventsOut[0].Epoch != updated.Epoch ||
+		eventsOut[1].StreamID != updated.ID || eventsOut[1].Epoch != updated.Epoch {
+		t.Fatalf("events = %+v", eventsOut)
+	}
+	if len(packets) != 1 ||
+		packets[0].StreamID != updated.ID ||
+		packets[0].CodecEpoch != updated.Epoch ||
+		!packets[0].Keyframe ||
+		packets[0].Payload.Bytes[4] != 0x65 {
+		t.Fatalf("packets = %+v", packets)
+	}
+}
+
 func TestSourceEmitsTimestampDiscontinuityOnBackwardPTS(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{ID: "audio", Codec: av.CodecParameters{ID: av.CodecOpus, ClockRate: 48000}}

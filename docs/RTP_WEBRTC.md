@@ -185,16 +185,20 @@ identity. Multi-stream sources can also accept a targeted replacement when
 identity; after the source accepts it, downstream events and packets use the
 replacement stream ID. Matching video depacketizers adopt the replacement stream
 when the codec still matches, drop partial frames, and request sync before
-emitting packets for the new epoch. Type-based selected decode graphs follow
-that replacement stream; ID-pinned selectors stay strict. AV1 decode currently
-sync-gates depacketized low-overhead OBU packets after loss until a packet
-keyframe marker or parseable sequence-header/key-frame payload appears. The
-concrete tagged decoder also has a raw AV1 RTP payload path that retains
-fragments across payloads and can recover after loss while preserving known
-sequence state. The high-level `RTP(...).Decode(...).Sink(...)` path covers
-same-stream and replacement-stream AV1 codec changes with payload-map refresh,
-old-ID or replacement-ID event targeting, and resumed decode on the next sync
-packet; broader RTP/WebRTC AV1 recovery is still being expanded.
+emitting packets for the new epoch. If a payload-map refresh changes the codec
+and a matching depacketizer is present, `rtpav.Source` can emit packets for the
+new codec. Selected runtime decode graphs are intentionally stricter: they
+follow same-codec replacement streams, keep ID-pinned selectors strict, and
+return `codec.ErrUnsupportedCodecSwitch` when a live event would require a
+different decoder factory. AV1 decode currently sync-gates depacketized
+low-overhead OBU packets after loss until a packet keyframe marker or parseable
+sequence-header/key-frame payload appears. The concrete tagged decoder also has
+a raw AV1 RTP payload path that retains fragments across payloads and can
+recover after loss while preserving known sequence state. The high-level
+`RTP(...).Decode(...).Sink(...)` path covers same-stream and replacement-stream
+AV1 codec changes with payload-map refresh, old-ID or replacement-ID event
+targeting, and resumed decode on the next sync packet; dynamic graph rebind for
+new-codec switches is still a future policy.
 
 Session-level code still owns the policy decision for when renegotiation should
 call `UpdateCodec`. Accepted replacement tracks for the same stream can flow

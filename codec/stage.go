@@ -11,6 +11,9 @@ type DecoderStageConfig struct {
 	Name string
 	// Detail is optional graph-rendering context for humans.
 	Detail string
+	// InputStream is the stream this decoder was opened for. When set, codec
+	// change events that switch that stream to another codec fail explicitly.
+	InputStream av.Stream
 	// Decoder receives packets and events and writes decoded frames into Result.
 	Decoder Decoder
 	// Result is caller-owned scratch. Its slice capacities define how many
@@ -48,6 +51,7 @@ type EncoderStageConfig struct {
 type DecoderStage struct {
 	name         string
 	detail       string
+	inputStream  av.Stream
 	decoder      Decoder
 	result       DecodeResult
 	message      pipeline.Message
@@ -83,11 +87,12 @@ func NewDecoderStage(config DecoderStageConfig) (*DecoderStage, error) {
 		name = "decode"
 	}
 	return &DecoderStage{
-		name:       name,
-		detail:     config.Detail,
-		decoder:    config.Decoder,
-		result:     config.Result,
-		dropEvents: config.DropInputEvents,
+		name:        name,
+		detail:      config.Detail,
+		inputStream: config.InputStream,
+		decoder:     config.Decoder,
+		result:      config.Result,
+		dropEvents:  config.DropInputEvents,
 	}, nil
 }
 
@@ -205,6 +210,9 @@ func (s *DecoderStage) handleEvent(ctx context.Context, msg *pipeline.Message, e
 	if msg.Event == nil {
 		return nil
 	}
+	if err := s.observeCodecChanged(msg.Event); err != nil {
+		return err
+	}
 	if err := s.decoder.HandleEvent(ctx, msg.Event); err != nil {
 		return err
 	}
@@ -232,6 +240,64 @@ func (s *DecoderStage) handleEvent(ctx context.Context, msg *pipeline.Message, e
 		return err
 	}
 	return s.emitResult(ctx, emitter)
+}
+
+func (s *DecoderStage) observeCodecChanged(event *av.Event) error {
+	if event == nil || event.Type != av.EventCodecChanged || s.inputStream.Codec.ID == "" {
+		return nil
+	}
+	next, ok := codecChangedStream(s.inputStream, event)
+	if !ok {
+		return nil
+	}
+	if next.Codec.ID != "" && next.Codec.ID != s.inputStream.Codec.ID {
+		return ErrUnsupportedCodecSwitch
+	}
+	s.inputStream = next
+	return nil
+}
+
+func codecChangedStream(current av.Stream, event *av.Event) (av.Stream, bool) {
+	if event == nil || event.Type != av.EventCodecChanged {
+		return av.Stream{}, false
+	}
+	matchesCurrent := event.StreamID == "" || current.ID == "" || event.StreamID == current.ID
+	if !matchesCurrent && event.Stream == nil {
+		return av.Stream{}, false
+	}
+	next := current
+	if event.Stream != nil {
+		next = *event.Stream
+	}
+	if !matchesCurrent && next.Type != "" && current.Type != "" && next.Type != current.Type {
+		return av.Stream{}, false
+	}
+	if next.ID == "" {
+		if event.StreamID != "" {
+			next.ID = event.StreamID
+		} else {
+			next.ID = current.ID
+		}
+	}
+	if next.Type == "" {
+		next.Type = current.Type
+	}
+	if next.Codec.ID == "" {
+		next.Codec = current.Codec
+	}
+	if event.Codec != nil {
+		next.Codec = *event.Codec
+		if next.Codec.Type != "" {
+			next.Type = next.Codec.Type
+		}
+	}
+	if next.TimeBase == (av.TimeBase{}) {
+		next.TimeBase = current.TimeBase
+	}
+	if next.Epoch == 0 && event.Epoch != 0 {
+		next.Epoch = event.Epoch
+	}
+	return next, true
 }
 
 func (s *EncoderStage) handleEvent(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
