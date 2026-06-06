@@ -55,12 +55,13 @@ func (s *runtimeTestStage) Close() error {
 }
 
 type runtimeTestSink struct {
-	name       string
-	count      int
-	frames     int
-	lastPacket *av.Packet
-	lastFrame  av.Frame
-	closed     bool
+	name            string
+	count           int
+	frames          int
+	lastPacket      *av.Packet
+	lastPacketValue av.Packet
+	lastFrame       av.Frame
+	closed          bool
 }
 
 func (s *runtimeTestSink) Name() string {
@@ -71,6 +72,9 @@ func (s *runtimeTestSink) Handle(_ context.Context, msg *pipeline.Message) error
 	s.count++
 	if msg.Kind == pipeline.MessagePacket {
 		s.lastPacket = msg.Packet
+		if msg.Packet != nil {
+			s.lastPacketValue = *msg.Packet
+		}
 	}
 	if msg.Kind == pipeline.MessageFrame {
 		s.frames++
@@ -226,8 +230,8 @@ func TestRuntimeBuilderExplicitGraphWithBufferPolicy(t *testing.T) {
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if stage.count != 1 || sink.count != 1 || sink.lastPacket == nil || sink.lastPacket.StreamID != "audio" {
-		t.Fatalf("stage=%d sink=%d packet=%+v", stage.count, sink.count, sink.lastPacket)
+	if stage.count != 1 || sink.count != 1 || sink.lastPacketValue.StreamID != "audio" {
+		t.Fatalf("stage=%d sink=%d packet=%+v", stage.count, sink.count, sink.lastPacketValue)
 	}
 	if err := task.Close(); err != nil {
 		t.Fatal(err)

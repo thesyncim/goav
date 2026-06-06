@@ -17,7 +17,9 @@ type bufferedNode struct {
 	sink       Sink
 	policy     BufferPolicy
 	drop       dropController
-	queue      chan bufferedMessage
+	queue      chan *bufferedMessage
+	free       chan *bufferedMessage
+	slots      []bufferedMessage
 	routes     []directRoute
 	emitter    bufferedEmitter
 	queueMutex sync.Mutex
@@ -33,11 +35,13 @@ func (e *bufferedEmitter) Emit(ctx context.Context, msg *Message) error {
 }
 
 type bufferedMessage struct {
-	message Message
-	packet  av.Packet
-	frame   av.Frame
-	event   av.Event
-	planes  [bufferedMaxFramePlanes]av.Plane
+	message       Message
+	packet        av.Packet
+	frame         av.Frame
+	event         av.Event
+	planes        [bufferedMaxFramePlanes]av.Plane
+	packetBacking []byte
+	frameBacking  []byte
 }
 
 type BufferedGraph struct {
@@ -295,7 +299,14 @@ func (g *BufferedGraph) openQueues() {
 		if node.kind == nodeSource {
 			continue
 		}
-		node.queue = make(chan bufferedMessage, node.policy.Capacity)
+		slotCount := node.policy.Capacity + 1
+		node.queue = make(chan *bufferedMessage, node.policy.Capacity)
+		node.free = make(chan *bufferedMessage, slotCount)
+		node.slots = make([]bufferedMessage, slotCount)
+		for i := range node.slots {
+			node.slots[i].init(node.policy)
+			node.free <- &node.slots[i]
+		}
 		node.drop = newDropController(node.policy)
 	}
 }
@@ -341,8 +352,7 @@ func (g *BufferedGraph) emit(ctx context.Context, from int, msg *Message) error 
 
 func (g *BufferedGraph) enqueue(ctx context.Context, to int, msg *Message) error {
 	node := &g.nodes[to]
-	var queued bufferedMessage
-	if err := queued.bind(msg); err != nil {
+	if err := validateBufferedMessage(msg, node.policy); err != nil {
 		return err
 	}
 
@@ -352,32 +362,41 @@ func (g *BufferedGraph) enqueue(ctx context.Context, to int, msg *Message) error
 	action := node.drop.decide(len(node.queue), msg)
 	switch action {
 	case bufferAdmit:
-		g.pending.Add(1)
-		if err := enqueueMessage(ctx, node.queue, queued); err != nil {
-			g.pending.Done()
-			return err
-		}
-		return nil
+		return g.enqueueBound(ctx, node, msg)
 	case bufferDropIncoming:
 		return nil
 	case bufferDropOldest:
 		select {
-		case <-node.queue:
+		case dropped := <-node.queue:
+			node.releaseSlot(dropped)
 			g.pending.Done()
 		default:
 		}
-		g.pending.Add(1)
-		if err := enqueueMessage(ctx, node.queue, queued); err != nil {
-			g.pending.Done()
-			return err
-		}
-		return nil
+		return g.enqueueBound(ctx, node, msg)
 	default:
 		return ErrBackpressure
 	}
 }
 
-func enqueueMessage(ctx context.Context, queue chan bufferedMessage, msg bufferedMessage) error {
+func (g *BufferedGraph) enqueueBound(ctx context.Context, node *bufferedNode, msg *Message) error {
+	slot, err := node.acquireSlot()
+	if err != nil {
+		return err
+	}
+	if err := slot.bind(msg, node.policy); err != nil {
+		node.releaseSlot(slot)
+		return err
+	}
+	g.pending.Add(1)
+	if err := enqueueMessage(ctx, node.queue, slot); err != nil {
+		g.pending.Done()
+		node.releaseSlot(slot)
+		return err
+	}
+	return nil
+}
+
+func enqueueMessage(ctx context.Context, queue chan *bufferedMessage, msg *bufferedMessage) error {
 	select {
 	case queue <- msg:
 		return nil
@@ -397,6 +416,7 @@ func (g *BufferedGraph) runNode(ctx context.Context, index int) error {
 				first = err
 			}
 		}
+		node.releaseSlot(msg)
 		g.pending.Done()
 	}
 	return first
@@ -426,7 +446,34 @@ func (g *BufferedGraph) publishEvent(msg *Message) error {
 	}
 }
 
-func (m *bufferedMessage) bind(src *Message) error {
+func (n *bufferedNode) acquireSlot() (*bufferedMessage, error) {
+	select {
+	case slot := <-n.free:
+		return slot, nil
+	default:
+		return nil, ErrBackpressure
+	}
+}
+
+func (n *bufferedNode) releaseSlot(slot *bufferedMessage) {
+	if slot == nil {
+		return
+	}
+	slot.Reset()
+	n.free <- slot
+}
+
+func (m *bufferedMessage) init(policy BufferPolicy) {
+	if policy.CopyPacketBytes > 0 && cap(m.packetBacking) < policy.CopyPacketBytes {
+		m.packetBacking = make([]byte, policy.CopyPacketBytes)
+	}
+	if policy.CopyFrameBytes > 0 && cap(m.frameBacking) < policy.CopyFrameBytes {
+		m.frameBacking = make([]byte, policy.CopyFrameBytes)
+	}
+	m.Reset()
+}
+
+func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
 	m.Reset()
 	if src == nil {
 		return ErrNilMessage
@@ -437,10 +484,20 @@ func (m *bufferedMessage) bind(src *Message) error {
 		if src.Packet == nil {
 			return nil
 		}
-		if !bufferSafe(src.Packet.Payload) {
-			return ErrBufferedMessageUnsafe
-		}
+		packetBacking := m.packetBacking
 		m.packet = *src.Packet
+		if !bufferSafe(src.Packet.Payload) {
+			if policy.CopyPacketBytes <= 0 {
+				return ErrBufferedMessageUnsafe
+			}
+			if len(src.Packet.Payload.Bytes) > cap(packetBacking) {
+				return ErrMessageTooLarge
+			}
+			m.packet.Payload.Bytes = packetBacking[:len(src.Packet.Payload.Bytes)]
+			copy(m.packet.Payload.Bytes, src.Packet.Payload.Bytes)
+			m.packet.Payload.Ownership = av.BufferBorrowed
+			m.packet.Payload.Owner = nil
+		}
 		m.message.Packet = &m.packet
 	case MessageFrame:
 		if src.Frame == nil {
@@ -449,13 +506,27 @@ func (m *bufferedMessage) bind(src *Message) error {
 		if len(src.Frame.Planes) > len(m.planes) {
 			return ErrMessageTooLarge
 		}
-		for i := range src.Frame.Planes {
-			if !bufferSafe(src.Frame.Planes[i].Buffer) {
-				return ErrBufferedMessageUnsafe
-			}
-		}
+		frameBacking := m.frameBacking
 		m.frame = *src.Frame
-		copy(m.planes[:], src.Frame.Planes)
+		offset := 0
+		for i := range src.Frame.Planes {
+			plane := src.Frame.Planes[i]
+			if !bufferSafe(plane.Buffer) {
+				if policy.CopyFrameBytes <= 0 {
+					return ErrBufferedMessageUnsafe
+				}
+				if len(plane.Buffer.Bytes) > cap(frameBacking)-offset {
+					return ErrMessageTooLarge
+				}
+				dst := frameBacking[offset : offset+len(plane.Buffer.Bytes)]
+				copy(dst, plane.Buffer.Bytes)
+				plane.Buffer.Bytes = dst
+				plane.Buffer.Ownership = av.BufferBorrowed
+				plane.Buffer.Owner = nil
+				offset += len(dst)
+			}
+			m.planes[i] = plane
+		}
 		m.frame.Planes = m.planes[:len(src.Frame.Planes)]
 		m.message.Frame = &m.frame
 	case MessageEvent:
@@ -472,12 +543,15 @@ func (m *bufferedMessage) bind(src *Message) error {
 
 func (m *bufferedMessage) Reset() {
 	m.message.Reset()
+	frameBacking := m.frameBacking
 	m.packet.Reset()
 	m.frame.Reset()
 	m.event.Reset()
 	for i := range m.planes {
 		m.planes[i].Reset()
 	}
+	m.packet.Payload.Bytes = m.packetBacking[:0]
+	m.frameBacking = frameBacking[:0]
 }
 
 func bufferSafe(buffer av.Buffer) bool {
@@ -485,6 +559,49 @@ func bufferSafe(buffer av.Buffer) bool {
 		return true
 	}
 	return buffer.Ownership == av.BufferImmutable
+}
+
+func validateBufferedMessage(msg *Message, policy BufferPolicy) error {
+	if msg == nil {
+		return ErrNilMessage
+	}
+	switch msg.Kind {
+	case MessagePacket:
+		if msg.Packet == nil {
+			return nil
+		}
+		if bufferSafe(msg.Packet.Payload) {
+			return nil
+		}
+		if policy.CopyPacketBytes <= 0 {
+			return ErrBufferedMessageUnsafe
+		}
+		if len(msg.Packet.Payload.Bytes) > policy.CopyPacketBytes {
+			return ErrMessageTooLarge
+		}
+	case MessageFrame:
+		if msg.Frame == nil {
+			return nil
+		}
+		if len(msg.Frame.Planes) > bufferedMaxFramePlanes {
+			return ErrMessageTooLarge
+		}
+		needed := 0
+		for i := range msg.Frame.Planes {
+			buffer := msg.Frame.Planes[i].Buffer
+			if bufferSafe(buffer) {
+				continue
+			}
+			if policy.CopyFrameBytes <= 0 {
+				return ErrBufferedMessageUnsafe
+			}
+			needed += len(buffer.Bytes)
+			if needed > policy.CopyFrameBytes {
+				return ErrMessageTooLarge
+			}
+		}
+	}
+	return nil
 }
 
 func bufferedNodeSpec(node *bufferedNode) NodeSpec {

@@ -57,6 +57,12 @@ type BufferPolicy struct {
 	Drop          DropPolicy
 	TargetLatency time.Duration
 	MaxLatency    time.Duration
+	// CopyPacketBytes bounds graph-owned packet payload copies for buffered
+	// execution when a packet buffer is not immutable.
+	CopyPacketBytes int
+	// CopyFrameBytes bounds graph-owned frame plane copies for buffered
+	// execution when frame plane buffers are not immutable.
+	CopyFrameBytes int
 }
 
 func (p BufferPolicy) IsDirect() bool {

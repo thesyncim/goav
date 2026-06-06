@@ -46,13 +46,38 @@ func (s *bufferedPacketSource) Close() error {
 	return nil
 }
 
-type bufferedBlockingSink struct {
+type bufferedFrameSource struct {
 	name    string
-	started chan struct{}
-	release chan struct{}
-	once    sync.Once
-	mu      sync.Mutex
-	values  []byte
+	frame   av.Frame
+	done    chan struct{}
+	message Message
+}
+
+func (s *bufferedFrameSource) Name() string {
+	return s.name
+}
+
+func (s *bufferedFrameSource) Start(ctx context.Context, emitter Emitter) error {
+	defer close(s.done)
+	s.message.Kind = MessageFrame
+	s.message.Packet = nil
+	s.message.Frame = &s.frame
+	s.message.Event = nil
+	return emitter.Emit(ctx, &s.message)
+}
+
+func (s *bufferedFrameSource) Close() error {
+	return nil
+}
+
+type bufferedBlockingSink struct {
+	name        string
+	started     chan struct{}
+	release     chan struct{}
+	once        sync.Once
+	mu          sync.Mutex
+	values      []byte
+	frameValues []byte
 }
 
 func (s *bufferedBlockingSink) Name() string {
@@ -73,6 +98,11 @@ func (s *bufferedBlockingSink) Handle(ctx context.Context, msg *Message) error {
 	if msg != nil && msg.Packet != nil && len(msg.Packet.Payload.Bytes) != 0 {
 		s.mu.Lock()
 		s.values = append(s.values, msg.Packet.Payload.Bytes[0])
+		s.mu.Unlock()
+	}
+	if msg != nil && msg.Frame != nil && len(msg.Frame.Planes) != 0 && len(msg.Frame.Planes[0].Buffer.Bytes) != 0 {
+		s.mu.Lock()
+		s.frameValues = append(s.frameValues, msg.Frame.Planes[0].Buffer.Bytes[0])
 		s.mu.Unlock()
 	}
 	return nil
@@ -150,6 +180,200 @@ func TestBufferedGraphRejectsBorrowedPacketPayload(t *testing.T) {
 
 	if err := graph.Run(context.Background()); !errors.Is(err, ErrBufferedMessageUnsafe) {
 		t.Fatalf("err = %v, want ErrBufferedMessageUnsafe", err)
+	}
+}
+
+func TestBufferedGraphCopiesBorrowedPacketPayload(t *testing.T) {
+	afterFirst := make(chan struct{})
+	source := &bufferedPacketSource{
+		name: "source",
+		packets: []av.Packet{{
+			Payload: av.Buffer{
+				Bytes:     []byte{7},
+				Ownership: av.BufferBorrowed,
+			},
+		}},
+		done: make(chan struct{}),
+	}
+	sink := &bufferedBlockingSink{
+		name:    "sink",
+		started: make(chan struct{}),
+		release: afterFirst,
+	}
+
+	graph, err := NewBufferedGraph(GraphConfig{
+		Name: "copy-packet",
+		Buffer: BufferPolicy{
+			Capacity:        1,
+			Drop:            DropOldest,
+			CopyPacketBytes: 1,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Connect("source", "sink")); err != nil {
+		t.Fatal(err)
+	}
+
+	errs := make(chan error, 1)
+	go func() {
+		errs <- graph.Run(context.Background())
+	}()
+	<-sink.started
+	<-source.done
+	source.packets[0].Payload.Bytes[0] = 9
+	close(afterFirst)
+	if err := <-errs; err != nil {
+		t.Fatal(err)
+	}
+	if !equalBytes(sink.values, []byte{7}) {
+		t.Fatalf("values = %v, want copied payload 7", sink.values)
+	}
+}
+
+func TestBufferedMessageKeepsPacketCopyBackingAfterImmutableReuse(t *testing.T) {
+	var slot bufferedMessage
+	slot.init(BufferPolicy{CopyPacketBytes: 1})
+
+	immutablePayload := []byte{1}
+	immutable := Message{
+		Kind: MessagePacket,
+		Packet: &av.Packet{
+			Payload: av.Buffer{
+				Bytes:     immutablePayload,
+				Ownership: av.BufferImmutable,
+			},
+		},
+	}
+	if err := slot.bind(&immutable, BufferPolicy{CopyPacketBytes: 1}); err != nil {
+		t.Fatal(err)
+	}
+	slot.Reset()
+
+	borrowedPayload := []byte{5}
+	borrowed := Message{
+		Kind: MessagePacket,
+		Packet: &av.Packet{
+			Payload: av.Buffer{
+				Bytes:     borrowedPayload,
+				Ownership: av.BufferBorrowed,
+			},
+		},
+	}
+	if err := slot.bind(&borrowed, BufferPolicy{CopyPacketBytes: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if immutablePayload[0] != 1 {
+		t.Fatalf("immutable payload was reused as copy backing: %v", immutablePayload)
+	}
+	borrowedPayload[0] = 9
+	if got := slot.message.Packet.Payload.Bytes[0]; got != 5 {
+		t.Fatalf("copied payload = %d, want 5", got)
+	}
+}
+
+func TestBufferedGraphRejectsOversizedBorrowedPacketPayload(t *testing.T) {
+	source := &bufferedPacketSource{
+		name: "source",
+		packets: []av.Packet{{
+			Payload: av.Buffer{
+				Bytes:     []byte{1, 2},
+				Ownership: av.BufferBorrowed,
+			},
+		}},
+		done: make(chan struct{}),
+	}
+	sink := &bufferedBlockingSink{name: "sink", started: make(chan struct{})}
+
+	graph, err := NewBufferedGraph(GraphConfig{
+		Name: "copy-packet-too-small",
+		Buffer: BufferPolicy{
+			Capacity:        1,
+			Drop:            DropOldest,
+			CopyPacketBytes: 1,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Connect("source", "sink")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := graph.Run(context.Background()); !errors.Is(err, ErrMessageTooLarge) {
+		t.Fatalf("err = %v, want ErrMessageTooLarge", err)
+	}
+}
+
+func TestBufferedGraphCopiesBorrowedFramePlane(t *testing.T) {
+	release := make(chan struct{})
+	source := &bufferedFrameSource{
+		name: "source",
+		frame: av.Frame{
+			Type: av.MediaVideo,
+			Planes: []av.Plane{{
+				Buffer: av.Buffer{
+					Bytes:     []byte{4},
+					Ownership: av.BufferBorrowed,
+				},
+				Stride: 1,
+			}},
+		},
+		done: make(chan struct{}),
+	}
+	sink := &bufferedBlockingSink{
+		name:    "sink",
+		started: make(chan struct{}),
+		release: release,
+	}
+
+	graph, err := NewBufferedGraph(GraphConfig{
+		Name: "copy-frame",
+		Buffer: BufferPolicy{
+			Capacity:       1,
+			Drop:           DropOldest,
+			CopyFrameBytes: 1,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Connect("source", "sink")); err != nil {
+		t.Fatal(err)
+	}
+
+	errs := make(chan error, 1)
+	go func() {
+		errs <- graph.Run(context.Background())
+	}()
+	<-sink.started
+	<-source.done
+	source.frame.Planes[0].Buffer.Bytes[0] = 8
+	close(release)
+	if err := <-errs; err != nil {
+		t.Fatal(err)
+	}
+	if !equalBytes(sink.frameValues, []byte{4}) {
+		t.Fatalf("frame values = %v, want copied plane 4", sink.frameValues)
 	}
 }
 

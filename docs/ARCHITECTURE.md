@@ -143,8 +143,12 @@ goroutines or channels per packet, and fanout delivers the same message and
 payload references unless a future explicit policy asks for copying. When a
 non-direct `BufferPolicy` is configured, the default factory builds a bounded
 buffered graph instead. That graph copies message headers into per-node queues,
-uses the shared drop controller for backpressure and drop behavior, and rejects
-borrowed packet/frame buffers until preallocated media copy slots exist.
+uses the shared drop controller for backpressure and drop behavior, shares
+immutable media buffers, and copies borrowed packet payloads or frame planes
+into preallocated per-node slots when `BufferPolicy` provides explicit byte
+bounds. Borrowed media without a configured copy bound fails early instead of
+extending unsafe lifetimes. Buffered handlers must copy any message header or
+buffer data they need after `Handle` returns; slot-owned pointers are reused.
 
 Builders and graphs can produce a `pipeline.Spec`: structured nodes and edges
 plus human-readable text, DOT, and Mermaid rendering. Nodes may include short

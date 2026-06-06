@@ -45,7 +45,8 @@ Current allocation guards cover:
 - codec result reset
 - pipeline drop-policy decisions
 - direct pipeline pass-through
-- bounded buffered graph immutable-message pass-through and drop decisions
+- bounded buffered graph immutable-message pass-through, copied borrowed media
+  slots, and drop decisions
 - codec decoder stage packet-to-frame flow
 - codec encoder stage frame-to-packet flow
 - format demux source packet/event flow
