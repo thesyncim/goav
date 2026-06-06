@@ -124,32 +124,12 @@ type Connection struct {
 // low-level graph code has one edge model.
 type Route = Connection
 
-type RouteBuilder struct {
-	from string
-}
-
 func Connect(from string, to ...string) Connection {
 	return Connection{
 		From:   from,
 		To:     append([]string(nil), to...),
 		Policy: RouteAll,
 	}
-}
-
-func From(from string) RouteBuilder {
-	return RouteBuilder{from: from}
-}
-
-func (b RouteBuilder) To(to ...string) Connection {
-	return Connect(b.from, to...)
-}
-
-func (b RouteBuilder) Stream(stream av.StreamID, to ...string) Connection {
-	return Connect(b.from, to...).ByStream(stream)
-}
-
-func (b RouteBuilder) Event(event av.EventType, to ...string) Connection {
-	return Connect(b.from, to...).ByEvent(event)
 }
 
 func (c Connection) ByStream(stream av.StreamID) Connection {

@@ -329,8 +329,10 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 		Source(source).
 		Sink(audio).
 		Sink(video).
-		ConnectStream("source", "audio", "audio").
-		ConnectStream("source", "video", "video").
+		Routes(
+			StreamRoute("source", "audio", "audio"),
+			StreamRoute("source", "video", "video"),
+		).
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -367,7 +369,7 @@ func TestRuntimeBuilderExplicitFanout(t *testing.T) {
 		Sink(record).
 		Sink(preview).
 		Sink(stats).
-		Connect("source", "record", "preview", "stats").
+		Routes(Route("source", "record", "preview", "stats")).
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -405,8 +407,10 @@ func TestRuntimeBuilderExplicitStreamFanout(t *testing.T) {
 		Sink(record).
 		Sink(preview).
 		Sink(audio).
-		ConnectStream("source", "video", "record", "preview").
-		ConnectStream("source", "audio", "audio").
+		Routes(
+			StreamRoute("source", "video", "record", "preview"),
+			StreamRoute("source", "audio", "audio"),
+		).
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -475,8 +479,10 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 		Source(source).
 		Sink(audio).
 		Sink(video).
-		ConnectStream("source", "audio", "audio").
-		ConnectStream("source", "video", "video").
+		Routes(
+			StreamRoute("source", "audio", "audio"),
+			StreamRoute("source", "video", "video"),
+		).
 		Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -503,8 +509,10 @@ func TestRuntimeBuilderExplicitEventRoute(t *testing.T) {
 		Source(source).
 		Sink(stats).
 		Sink(loss).
-		ConnectEvent("source", av.EventStats, "stats").
-		ConnectEvent("source", av.EventPacketLoss, "loss").
+		Routes(
+			EventRoute("source", av.EventStats, "stats"),
+			EventRoute("source", av.EventPacketLoss, "loss"),
+		).
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -534,7 +542,7 @@ func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 		Source(source).
 		Stage(unused).
 		Sink(sink).
-		Connect("source", "sink").
+		Routes(Route("source", "sink")).
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -600,14 +608,14 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 	if _, err := New().New().
 		Source(validSource).
 		Sink(validSink).
-		Connect("missing", "sink").
+		Routes(Route("missing", "sink")).
 		Describe(); !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("unknown err = %v, want ErrUnknownNode", err)
 	}
 	if _, err := New().New().
 		Source(validSource).
 		Sink(validSink).
-		Connection(pipeline.Connection{
+		Routes(pipeline.Route{
 			From:   "source",
 			To:     []string{"sink"},
 			Policy: pipeline.RoutePolicy("unsupported"),
@@ -647,7 +655,7 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 	_, err = New().New().
 		Source(source).
 		Sink(sink).
-		Connect("missing", "sink").
+		Routes(Route("missing", "sink")).
 		Build(context.Background())
 	if !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("connect err = %v, want ErrUnknownNode", err)

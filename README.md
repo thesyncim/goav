@@ -17,8 +17,7 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
   multiple targets.
 - A route may match all media, one stream, or one event type.
 - The explicit graph API reads as `goav.Route("source", "sink")` or
-  `goav.StreamRoute("source", "video", "sink")`; `From(...)` and `Connect...`
-  remain compatibility shorthands over the same route model.
+  `goav.StreamRoute("source", "video", "sink")`.
 - Rendered graph nodes can carry short workflow details without changing the
   simple node-to-node API; routed edges render as `stream=video` or
   `event=packet_loss`.
@@ -222,8 +221,7 @@ Implemented slices:
   named encode/output branches, including resize/resample branch stages when
   filter factories are registered.
 - Fluent `Routes(goav.Route(...))`, `StreamRoute(...)`, and `EventRoute(...)`
-  helpers, with `From(...)`, `Connect(...)`, `ConnectStream(...)`, and
-  `ConnectEvent(...)` kept as compatibility shorthands over the same model.
+  helpers for explicit application graphs.
 - First-class route helpers for direct graph composition without extra graph
   concepts.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
@@ -282,9 +280,8 @@ Implemented slices:
 - Runtime RTP/WebRTC packet-reader record/fanout builds are covered through
   buffered execution with policy-bounded copies of depacketizer-owned packet
   payloads.
-- The friendly explicit graph surface now prefers `Route`, `StreamRoute`, and
-  `EventRoute`, with `From` and `Connect...` helpers kept as compatibility
-  paths over the same route model.
+- The friendly explicit graph surface now has one route shape: `Routes(...)`
+  with `Route`, `StreamRoute`, or `EventRoute`.
 - Tagged AV1 decode now registers a factory behind `goav_goav1`, consumes
   depacketized low-overhead OBU payloads through caller-owned `DecoderState`,
   can provision conservative runtime state for high-level builders, maps

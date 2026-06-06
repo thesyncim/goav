@@ -264,40 +264,9 @@ func (b *builder) Sink(sink pipeline.Sink) Builder {
 	return b
 }
 
-func (b *builder) Connect(from string, to ...string) Builder {
-	return b.connect(from, pipeline.RouteAll, "", to...)
-}
-
-func (b *builder) ConnectStream(from string, stream av.StreamID, to ...string) Builder {
-	return b.connect(from, pipeline.RouteByStream, string(stream), to...)
-}
-
-func (b *builder) ConnectEvent(from string, event av.EventType, to ...string) Builder {
-	return b.connect(from, pipeline.RouteByEvent, string(event), to...)
-}
-
-func (b *builder) Route(route pipeline.Route) Builder {
-	return b.Routes(route)
-}
-
 func (b *builder) Routes(routes ...pipeline.Route) Builder {
 	b.connections = append(b.connections, routes...)
 	return b
-}
-
-func (b *builder) connect(from string, policy pipeline.RoutePolicy, label string, to ...string) Builder {
-	if len(to) == 0 {
-		return b
-	}
-	connection := pipeline.Connect(from, to...)
-	connection.Policy = policy
-	connection.Label = label
-	b.connections = append(b.connections, connection)
-	return b
-}
-
-func (b *builder) Connection(connection pipeline.Connection) Builder {
-	return b.Route(connection)
 }
 
 func (b *builder) Build(ctx context.Context) (Task, error) {
