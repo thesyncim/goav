@@ -128,18 +128,6 @@ type runtime struct {
 	metrics  Metrics
 }
 
-func (r *runtime) Codecs() codec.Registry {
-	return r.codecs
-}
-
-func (r *runtime) Formats() format.Registry {
-	return r.formats
-}
-
-func (r *runtime) Filters() filter.Registry {
-	return r.filters
-}
-
 func (r *runtime) Probe(ctx context.Context, request ProbeRequest) (ProbeResult, error) {
 	return r.formats.Probe(ctx, request)
 }

@@ -90,15 +90,24 @@ func (s *runtimeTestSink) Close() error {
 	return nil
 }
 
-func TestNewRuntimeDefaults(t *testing.T) {
-	runtime := New()
-	if runtime.Codecs() == nil || runtime.Formats() == nil || runtime.Filters() == nil {
-		t.Fatalf("runtime defaults incomplete: %+v", runtime)
+func runtimeValue(t *testing.T, rt Runtime) *runtime {
+	t.Helper()
+	r, ok := rt.(*runtime)
+	if !ok {
+		t.Fatalf("runtime = %T, want *runtime", rt)
 	}
-	if _, err := runtime.Probe(context.Background(), ProbeRequest{}); !errors.Is(err, format.ErrNotFound) {
+	return r
+}
+
+func TestNewRuntimeDefaults(t *testing.T) {
+	rt := runtimeValue(t, New())
+	if rt.codecs == nil || rt.formats == nil || rt.filters == nil {
+		t.Fatalf("runtime defaults incomplete: %+v", rt)
+	}
+	if _, err := rt.Probe(context.Background(), ProbeRequest{}); !errors.Is(err, format.ErrNotFound) {
 		t.Fatalf("probe err = %v, want format.ErrNotFound", err)
 	}
-	result, err := runtime.Probe(context.Background(), ProbeRequest{Name: "audio.opus"})
+	result, err := rt.Probe(context.Background(), ProbeRequest{Name: "audio.opus"})
 	if err != nil {
 		t.Fatalf("probe opus: %v", err)
 	}
@@ -108,30 +117,30 @@ func TestNewRuntimeDefaults(t *testing.T) {
 }
 
 func TestRuntimeWithCodecAdapter(t *testing.T) {
-	runtime := New(WithCodecAdapter(gopusadapter.Register))
+	rt := runtimeValue(t, New(WithCodecAdapter(gopusadapter.Register)))
 
-	if _, err := runtime.Codecs().DecoderFactory(av.CodecOpus); err != nil {
+	if _, err := rt.codecs.DecoderFactory(av.CodecOpus); err != nil {
 		t.Fatalf("decoder factory: %v", err)
 	}
 }
 
 func TestRuntimeWithFormatAdapter(t *testing.T) {
-	runtime := New(WithFormatAdapter(ivfadapter.Register))
+	rt := runtimeValue(t, New(WithFormatAdapter(ivfadapter.Register)))
 
-	if _, err := runtime.Formats().DemuxerFactory(av.FormatIVF); err != nil {
+	if _, err := rt.formats.DemuxerFactory(av.FormatIVF); err != nil {
 		t.Fatalf("demuxer factory: %v", err)
 	}
-	if _, err := runtime.Formats().MuxerFactory(av.FormatIVF); err != nil {
+	if _, err := rt.formats.MuxerFactory(av.FormatIVF); err != nil {
 		t.Fatalf("muxer factory: %v", err)
 	}
 }
 
 func TestRuntimeWithFilterAdapter(t *testing.T) {
-	runtime := New(WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+	rt := runtimeValue(t, New(WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 		registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResample}, &transcodeTestFilterFactory{})
-	}))
+	})))
 
-	if _, err := runtime.Filters().Factory(filter.FactoryResample); err != nil {
+	if _, err := rt.filters.Factory(filter.FactoryResample); err != nil {
 		t.Fatalf("filter factory: %v", err)
 	}
 }
@@ -667,9 +676,9 @@ func TestRuntimeWithCustomCodecRegistry(t *testing.T) {
 		ID:    av.CodecAV1,
 		Modes: []codec.Mode{codec.ModeDecode},
 	}))
-	runtime := New(WithCodecRegistry(registry))
+	rt := runtimeValue(t, New(WithCodecRegistry(registry)))
 
-	found, err := runtime.Codecs().Find(av.CodecAV1, codec.ModeDecode)
+	found, err := rt.codecs.Find(av.CodecAV1, codec.ModeDecode)
 	if err != nil {
 		t.Fatal(err)
 	}
