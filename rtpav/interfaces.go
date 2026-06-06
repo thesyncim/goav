@@ -123,16 +123,3 @@ type Receiver interface {
 	PacketReader
 	FeedbackWriter
 }
-
-type ReceiverFactory interface {
-	NewReceiver(context.Context, ReceiverConfig) (Receiver, error)
-}
-
-type ReceiverConfig struct {
-	Streams       []av.Stream
-	Payloads      PayloadMap
-	Jitter        JitterBuffer
-	Depacketizers []Depacketizer
-	Feedback      FeedbackWriter
-	Metadata      av.Metadata
-}

@@ -14,9 +14,6 @@ const (
 	defaultSessionEventBuffer = 8
 )
 
-// PeerConnectionSessionFactory creates Pion-backed receive sessions.
-type PeerConnectionSessionFactory struct{}
-
 type peerConnectionSession struct {
 	pc       *webrtc.PeerConnection
 	tracks   chan RemoteTrack
@@ -28,20 +25,9 @@ type peerConnectionSession struct {
 }
 
 var _ Session = (*peerConnectionSession)(nil)
-var _ Negotiator = (*peerConnectionSession)(nil)
-
-// NewPeerConnectionSessionFactory creates sessions backed by Pion peer connections.
-func NewPeerConnectionSessionFactory() PeerConnectionSessionFactory {
-	return PeerConnectionSessionFactory{}
-}
 
 // NewSession creates a Pion-backed WebRTC receive session.
 func NewSession(ctx context.Context, config SessionConfig) (Session, error) {
-	return NewPeerConnectionSessionFactory().NewSession(ctx, config)
-}
-
-// NewSession creates a Pion peer connection and wraps it as a receive session.
-func (PeerConnectionSessionFactory) NewSession(ctx context.Context, config SessionConfig) (Session, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

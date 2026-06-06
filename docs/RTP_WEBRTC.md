@@ -56,8 +56,7 @@ Current `rtpav` building blocks:
 
 Current `webrtcav` building blocks:
 
-- `PeerConnectionSessionFactory` and `NewSession` for Pion `PeerConnection`
-  receive sessions.
+- `NewSession` for Pion `PeerConnection` receive sessions.
 - bounded `AcceptTrack(ctx)` queue with stream-added and backpressure events.
 - `TrackSet` for turning accepted remote tracks into one long-lived reader per
   logical stream.
