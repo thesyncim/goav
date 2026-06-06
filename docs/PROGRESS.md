@@ -505,7 +505,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     RTP codecs now suggest explicit built-in codec specs before pointing custom
     payload work at advanced receive adapters.
     Done.
-156. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+156. Replace recipe RTP graph details like `depacketizers=1` with codec-intent
+    details such as `codec=opus` or `codec=vp8`, keeping implementation counts
+    out of beginner graph inspection.
+    Done.
+157. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

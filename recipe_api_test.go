@@ -282,7 +282,8 @@ func TestReadmeWebRTCTrackRecordRecipeIsSmall(t *testing.T) {
 	}
 	text := specText(spec)
 	if !strings.Contains(text, "video -> recording.ivf") ||
-		!strings.Contains(text, "rtp receive, depacketizers=1") {
+		!strings.Contains(text, "rtp receive, codec=vp8") ||
+		strings.Contains(text, "depacketizers=") {
 		t.Fatalf("spec:\n%s", text)
 	}
 	intent := job.Intent()
@@ -330,7 +331,9 @@ func TestReadmeWebRTCTrackRecordMultiInputRecipeIsSmall(t *testing.T) {
 	text := specText(spec)
 	if !strings.Contains(text, "audio -> recording.webm") ||
 		!strings.Contains(text, "video -> recording.webm") ||
-		strings.Count(text, "depacketizers=1") != 2 {
+		!strings.Contains(text, "rtp receive, codec=opus") ||
+		!strings.Contains(text, "rtp receive, codec=vp8") ||
+		strings.Contains(text, "depacketizers=") {
 		t.Fatalf("spec:\n%s", text)
 	}
 	intent := job.Intent()
