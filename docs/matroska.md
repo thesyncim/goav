@@ -13,8 +13,9 @@ The implementation is split into three packages:
   and seekable size patching.
 - `container/matroska` provides the high-level Matroska API around tracks,
   packets, timestamps, muxing, demuxing, and format registry adapters.
-- `container/webm` wraps Matroska with WebM profile restrictions and registers
-  a distinct `av.FormatWebM` format ID when explicitly enabled.
+- `container/webm` wraps Matroska with WebM profile restrictions, shares the
+  same streaming/seekable output behavior, and registers a distinct
+  `av.FormatWebM` format ID when explicitly enabled.
 
 The Matroska and WebM packages depend only on generic `goav` vocabulary (`av`
 and `format`) plus EBML. They do not depend on codec implementations, RTP,

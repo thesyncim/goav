@@ -31,6 +31,7 @@ type MuxerOptions struct {
 	WritingApp           string
 	TimecodeScaleNS      int64
 	ClusterMaxDurationNS int64
+	Streaming            bool
 }
 
 type DemuxerOptions = matroska.DemuxerOptions
@@ -44,7 +45,7 @@ func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 		WritingApp:           opts.WritingApp,
 		TimecodeScaleNS:      opts.TimecodeScaleNS,
 		ClusterMaxDurationNS: opts.ClusterMaxDurationNS,
-		Streaming:            true,
+		Streaming:            opts.Streaming,
 	}
 }
 
