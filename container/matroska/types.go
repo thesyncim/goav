@@ -25,9 +25,10 @@ const (
 )
 
 type AudioConfig struct {
-	SampleRate int
-	Channels   int
-	BitDepth   int
+	SampleRate       int
+	OutputSampleRate int
+	Channels         int
+	BitDepth         int
 }
 
 type VideoConfig struct {

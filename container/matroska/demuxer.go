@@ -938,10 +938,19 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 			if err != nil {
 				return AudioConfig{}, err
 			}
-			if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > float64(maxIntValue) {
+			if invalidAudioFrequency(value) {
 				return AudioConfig{}, ErrInvalidData
 			}
 			audio.SampleRate = int(value)
+		case idOutputFreq:
+			value, err := readFloatPayload(reader, child.Size.Value)
+			if err != nil {
+				return AudioConfig{}, err
+			}
+			if invalidAudioFrequency(value) {
+				return AudioConfig{}, ErrInvalidData
+			}
+			audio.OutputSampleRate = int(value)
 		case idChannels:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
@@ -967,6 +976,10 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 		}
 	}
 	return audio, nil
+}
+
+func invalidAudioFrequency(value float64) bool {
+	return math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 || value > float64(maxIntValue)
 }
 
 func (d *Demuxer) enterCluster(header ebml.Header) error {

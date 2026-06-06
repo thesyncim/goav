@@ -1520,6 +1520,11 @@ func writeAudio(w *ebml.Writer, audio AudioConfig) error {
 	if err := aw.WriteFloat64(idSamplingFreq, float64(sampleRate)); err != nil {
 		return err
 	}
+	if audio.OutputSampleRate > 0 {
+		if err := aw.WriteFloat64(idOutputFreq, float64(audio.OutputSampleRate)); err != nil {
+			return err
+		}
+	}
 	if err := aw.WriteUInt(idChannels, uint64(channels)); err != nil {
 		return err
 	}
@@ -1543,7 +1548,7 @@ func validateTrack(track Track) error {
 	}
 	switch track.Type {
 	case TrackAudio:
-		if track.Audio.SampleRate < 0 || track.Audio.Channels < 0 || track.Audio.BitDepth < 0 {
+		if track.Audio.SampleRate < 0 || track.Audio.OutputSampleRate < 0 || track.Audio.Channels < 0 || track.Audio.BitDepth < 0 {
 			return ErrInvalidTrack
 		}
 		switch track.Codec {

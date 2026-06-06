@@ -46,6 +46,7 @@ const (
 	idPixelHeight  ebml.ID = 0xba
 	idAudio        ebml.ID = 0xe1
 	idSamplingFreq ebml.ID = 0xb5
+	idOutputFreq   ebml.ID = 0x78b5
 	idChannels     ebml.ID = 0x9f
 	idBitDepth     ebml.ID = 0x6264
 	idDefaultDur   ebml.ID = 0x23e383

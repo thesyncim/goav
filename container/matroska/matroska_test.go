@@ -101,6 +101,49 @@ func TestMuxerDemuxerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesAudioOutputSampleRate(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{
+			SampleRate:       44100,
+			OutputSampleRate: 48000,
+			Channels:         2,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x01, 0x02},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Audio.SampleRate != 44100 || tracks[0].Audio.OutputSampleRate != 48000 {
+		t.Fatalf("audio = %+v", tracks[0].Audio)
+	}
+}
+
 func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1544,6 +1587,14 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			},
 		},
 		{
+			name: "audio output sample rate",
+			track: Track{
+				Type:  TrackAudio,
+				Codec: CodecOpus,
+				Audio: AudioConfig{SampleRate: 48000, OutputSampleRate: -1, Channels: 2},
+			},
+		},
+		{
 			name: "audio channels",
 			track: Track{
 				Type:  TrackAudio,
@@ -2394,9 +2445,41 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			t.Fatalf("err = %v, want ErrInvalidData", err)
 		}
 	})
+	t.Run("audio zero sample rate", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithAudioMetadata(writer, 0, 2, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
 	t.Run("audio nan sample rate", func(t *testing.T) {
 		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
 			return writeTracksWithAudioMetadata(writer, math.NaN(), 2, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("audio negative output sample rate", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithAudioOutputMetadata(writer, 48000, -1, 2, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("audio zero output sample rate", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithAudioOutputMetadata(writer, 48000, 0, 2, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("audio nan output sample rate", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithAudioOutputMetadata(writer, 48000, math.NaN(), 2, 16)
 		})
 		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
 			t.Fatalf("err = %v, want ErrInvalidData", err)
@@ -3529,6 +3612,14 @@ func writeTracksWithVideoDimensions(writer *ebml.Writer, width uint64, height ui
 }
 
 func writeTracksWithAudioMetadata(writer *ebml.Writer, sampleRate float64, channels uint64, bitDepth uint64) error {
+	return writeTracksWithAudioMetadataValues(writer, sampleRate, 0, false, channels, bitDepth)
+}
+
+func writeTracksWithAudioOutputMetadata(writer *ebml.Writer, sampleRate float64, outputSampleRate float64, channels uint64, bitDepth uint64) error {
+	return writeTracksWithAudioMetadataValues(writer, sampleRate, outputSampleRate, true, channels, bitDepth)
+}
+
+func writeTracksWithAudioMetadataValues(writer *ebml.Writer, sampleRate float64, outputSampleRate float64, writeOutputSampleRate bool, channels uint64, bitDepth uint64) error {
 	var tracks bytes.Buffer
 	tw := ebml.NewWriter(&tracks)
 	var entry bytes.Buffer
@@ -3549,6 +3640,11 @@ func writeTracksWithAudioMetadata(writer *ebml.Writer, sampleRate float64, chann
 	aw := ebml.NewWriter(&audio)
 	if err := aw.WriteFloat64(idSamplingFreq, sampleRate); err != nil {
 		return err
+	}
+	if writeOutputSampleRate {
+		if err := aw.WriteFloat64(idOutputFreq, outputSampleRate); err != nil {
+			return err
+		}
 	}
 	if err := aw.WriteUInt(idChannels, channels); err != nil {
 		return err
