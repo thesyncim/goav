@@ -35,8 +35,8 @@ The high-level record/fanout shape accepts one or more packet readers:
 
 ```go
 task, err := runtime.New().
-    RTP(audio, goav.WithRTPDepacketizer(opus)).
-    RTP(video, goav.WithRTPDepacketizer(vp8)).
+    RTP(audio, goav.WithRTPDepacketizers(opus)).
+    RTP(video, goav.WithRTPDepacketizers(vp8)).
     Output(goav.Output{Name: "recording.webm"}).
     Build(ctx)
 ```
@@ -47,7 +47,7 @@ encoder, and one or more mux outputs:
 
 ```go
 task, err := runtime.New().
-    RTP(audio, goav.WithRTPDepacketizer(opus)).
+    RTP(audio, goav.WithRTPDepacketizers(opus)).
     Decode(goav.SelectAudio()).
     Filter(goav.SelectAudio(), meter).
     Encode(goav.SelectAudio(), opusEncode).

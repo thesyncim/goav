@@ -216,7 +216,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     advertise `i422`/`yuv422p` and `i444`/`yuv444p`, stream aliases bind exact
     backend frame pools, and decoded frame mapping emits canonical `i422` and
     `i444` borrowed planes. Done.
-66. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+66. Collapse RTP depacketizer configuration to one variadic public option:
+    `WithRTPDepacketizers(...)` handles one or many depacketizers. Done.
+67. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -277,9 +279,10 @@ Required proof:
 - `adapters/ivf` provides a narrow packet recording boundary for one VP8, VP9,
   or AV1 video stream with allocation-guarded demux/mux hot paths.
 - The runtime builder can plan and compile RTP/WebRTC packet-reader record jobs
-  from `RTP(...).Output(...).Build(ctx)`, including jitter/depacketizer options,
-  repeated RTP/WebRTC inputs, aggregated stream lists for muxers, multiple mux
-  outputs, lifecycle closure, graph rendering, and event visibility.
+  from `RTP(...).Output(...).Build(ctx)`, including jitter and the variadic
+  depacketizer option, repeated RTP/WebRTC inputs, aggregated stream lists for
+  muxers, multiple mux outputs, lifecycle closure, graph rendering, and event
+  visibility.
 - The runtime builder can plan and compile selected-stream live decode jobs from
   `RTP(...).Decode(...).Sink(...).Build(ctx)`, including repeated RTP/WebRTC
   inputs, graph rendering, decoder lifecycle closure, and filtering of

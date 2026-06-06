@@ -36,14 +36,6 @@ func WithRTPJitter(jitter rtpav.JitterBuffer) RTPOption {
 	}
 }
 
-func WithRTPDepacketizer(depacketizer rtpav.Depacketizer) RTPOption {
-	return func(input *rtpInput) {
-		if depacketizer != nil {
-			input.depacketizers = append(input.depacketizers, depacketizer)
-		}
-	}
-}
-
 func WithRTPDepacketizers(depacketizers ...rtpav.Depacketizer) RTPOption {
 	return func(input *rtpInput) {
 		for i := range depacketizers {

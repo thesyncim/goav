@@ -200,7 +200,7 @@ func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
 	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
 		RTP(receiver,
 			WithRTPName("live-audio"),
-			WithRTPDepacketizer(rtpav.NewOpusDepacketizer(stream)),
+			WithRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
 		).
 		Decode(SelectAudio()).
 		Filter(SelectAudio(), filter).

@@ -50,7 +50,7 @@ func TestRuntimeBuilderRTPAV1DecodeSink(t *testing.T) {
 	builder := New(WithCodecAdapter(goav1adapter.Register)).New().
 		RTP(receiver,
 			WithRTPName("av1-rtp"),
-			WithRTPDepacketizer(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
+			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 		).
 		Decode(SelectVideo()).
 		Sink(sink)
@@ -133,7 +133,7 @@ func testRuntimeBuilderRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 	task, err := New(WithCodecAdapter(goav1adapter.Register)).New().
 		RTP(receiver,
 			WithRTPName("av1-rtp"),
-			WithRTPDepacketizer(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
+			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 		).
 		Decode(SelectVideo()).
 		Sink(sink).
@@ -200,7 +200,7 @@ func TestRuntimeBuilderRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 	task, err := New(WithCodecAdapter(goav1adapter.Register)).New().
 		RTP(receiver,
 			WithRTPName("av1-rtp"),
-			WithRTPDepacketizer(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
+			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
 		).
 		Decode(SelectVideo()).
@@ -288,7 +288,7 @@ func testRuntimeBuilderRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTa
 	task, err := New(WithCodecAdapter(goav1adapter.Register)).New().
 		RTP(receiver,
 			WithRTPName("av1-rtp"),
-			WithRTPDepacketizer(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
+			WithRTPDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
 		).
 		Decode(SelectVideo()).

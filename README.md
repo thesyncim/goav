@@ -79,11 +79,11 @@ task, err := rt.New().
     RTP(audio,
         goav.WithRTPName("audio"),
         goav.WithRTPJitter(jitter),
-        goav.WithRTPDepacketizer(opus),
+        goav.WithRTPDepacketizers(opus),
     ).
     RTP(video,
         goav.WithRTPName("video"),
-        goav.WithRTPDepacketizer(vp8),
+        goav.WithRTPDepacketizers(vp8),
     ).
     Output(goav.Output{Name: "recording.webm", Writer: file}).
     Build(ctx)
@@ -95,7 +95,7 @@ Decode a selected live RTP/WebRTC stream directly into a frame sink:
 task, err := rt.New().
     RTP(audio,
         goav.WithRTPName("audio"),
-        goav.WithRTPDepacketizer(opus),
+        goav.WithRTPDepacketizers(opus),
     ).
     Decode(goav.SelectAudio()).
     Sink(frames).
@@ -109,7 +109,7 @@ filter, and mux adapters are registered:
 task, err := rt.New().
     RTP(audio,
         goav.WithRTPName("audio"),
-        goav.WithRTPDepacketizer(opus),
+        goav.WithRTPDepacketizers(opus),
     ).
     Decode(goav.SelectAudio()).
     Filter(goav.SelectAudio(), resample).
