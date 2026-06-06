@@ -1503,6 +1503,41 @@ func writeVideo(w *ebml.Writer, video VideoConfig) error {
 	if err := vw.WriteUInt(idPixelHeight, uint64(video.Height)); err != nil {
 		return err
 	}
+	if video.PixelCropBottom > 0 {
+		if err := vw.WriteUInt(idPixelCropBottom, uint64(video.PixelCropBottom)); err != nil {
+			return err
+		}
+	}
+	if video.PixelCropTop > 0 {
+		if err := vw.WriteUInt(idPixelCropTop, uint64(video.PixelCropTop)); err != nil {
+			return err
+		}
+	}
+	if video.PixelCropLeft > 0 {
+		if err := vw.WriteUInt(idPixelCropLeft, uint64(video.PixelCropLeft)); err != nil {
+			return err
+		}
+	}
+	if video.PixelCropRight > 0 {
+		if err := vw.WriteUInt(idPixelCropRight, uint64(video.PixelCropRight)); err != nil {
+			return err
+		}
+	}
+	if video.DisplayWidth > 0 {
+		if err := vw.WriteUInt(idDisplayWidth, uint64(video.DisplayWidth)); err != nil {
+			return err
+		}
+	}
+	if video.DisplayHeight > 0 {
+		if err := vw.WriteUInt(idDisplayHeight, uint64(video.DisplayHeight)); err != nil {
+			return err
+		}
+	}
+	if video.DisplayUnit > 0 {
+		if err := vw.WriteUInt(idDisplayUnit, uint64(video.DisplayUnit)); err != nil {
+			return err
+		}
+	}
 	return w.WriteElement(idVideo, payload.Bytes())
 }
 
@@ -1561,6 +1596,13 @@ func validateTrack(track Track) error {
 			return ErrInvalidTrack
 		}
 	case TrackVideo:
+		if track.Video.Width < 0 || track.Video.Height < 0 ||
+			track.Video.PixelCropBottom < 0 || track.Video.PixelCropTop < 0 ||
+			track.Video.PixelCropLeft < 0 || track.Video.PixelCropRight < 0 ||
+			track.Video.DisplayWidth < 0 || track.Video.DisplayHeight < 0 ||
+			track.Video.DisplayUnit < 0 {
+			return ErrInvalidTrack
+		}
 		switch track.Codec {
 		case CodecAV1:
 			if len(track.CodecPrivate) != 0 {
@@ -1576,9 +1618,6 @@ func validateTrack(track Track) error {
 			}
 		case CodecVP8, CodecVP9, CodecH265:
 		default:
-			return ErrInvalidTrack
-		}
-		if track.Video.Width < 0 || track.Video.Height < 0 {
 			return ErrInvalidTrack
 		}
 	}

@@ -32,8 +32,15 @@ type AudioConfig struct {
 }
 
 type VideoConfig struct {
-	Width  int
-	Height int
+	Width           int
+	Height          int
+	PixelCropBottom int
+	PixelCropTop    int
+	PixelCropLeft   int
+	PixelCropRight  int
+	DisplayWidth    int
+	DisplayHeight   int
+	DisplayUnit     int
 }
 
 type Track struct {

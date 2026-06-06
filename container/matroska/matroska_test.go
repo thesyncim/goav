@@ -144,6 +144,56 @@ func TestMuxerDemuxerPreservesAudioOutputSampleRate(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesVideoDisplayMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVideo := VideoConfig{
+		Width:           1920,
+		Height:          1080,
+		PixelCropBottom: 2,
+		PixelCropTop:    4,
+		PixelCropLeft:   6,
+		PixelCropRight:  8,
+		DisplayWidth:    16,
+		DisplayHeight:   9,
+		DisplayUnit:     3,
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: wantVideo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x9d, 0x01, 0x2a},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Video != wantVideo {
+		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
+	}
+}
+
 func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1627,6 +1677,30 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			},
 		},
 		{
+			name: "video crop",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 16, Height: 16, PixelCropLeft: -1},
+			},
+		},
+		{
+			name: "video display width",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 16, Height: 16, DisplayWidth: -1},
+			},
+		},
+		{
+			name: "video display unit",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 16, Height: 16, DisplayUnit: -1},
+			},
+		},
+		{
 			name: "default duration",
 			track: Track{
 				Type:              TrackVideo,
@@ -2424,6 +2498,62 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 	t.Run("video dimension overflow", func(t *testing.T) {
 		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
 			return writeTracksWithVideoDimensions(writer, maxIntValue+1, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video zero pixel width", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoDimensions(writer, 0, 16)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video display width overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoElements(writer,
+				videoUIntElement{idPixelWidth, 16},
+				videoUIntElement{idPixelHeight, 16},
+				videoUIntElement{idDisplayWidth, maxIntValue + 1},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video zero display width", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoElements(writer,
+				videoUIntElement{idPixelWidth, 16},
+				videoUIntElement{idPixelHeight, 16},
+				videoUIntElement{idDisplayWidth, 0},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video crop overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoElements(writer,
+				videoUIntElement{idPixelWidth, 16},
+				videoUIntElement{idPixelHeight, 16},
+				videoUIntElement{idPixelCropLeft, maxIntValue + 1},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video display unit overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoElements(writer,
+				videoUIntElement{idPixelWidth, 16},
+				videoUIntElement{idPixelHeight, 16},
+				videoUIntElement{idDisplayUnit, maxIntValue + 1},
+			)
 		})
 		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
 			t.Fatalf("err = %v, want ErrInvalidData", err)
@@ -3578,6 +3708,18 @@ func writeTracksWithFlagValue(writer *ebml.Writer, flagID ebml.ID, value uint64)
 }
 
 func writeTracksWithVideoDimensions(writer *ebml.Writer, width uint64, height uint64) error {
+	return writeTracksWithVideoElements(writer,
+		videoUIntElement{idPixelWidth, width},
+		videoUIntElement{idPixelHeight, height},
+	)
+}
+
+type videoUIntElement struct {
+	id    ebml.ID
+	value uint64
+}
+
+func writeTracksWithVideoElements(writer *ebml.Writer, elements ...videoUIntElement) error {
 	var tracks bytes.Buffer
 	tw := ebml.NewWriter(&tracks)
 	var entry bytes.Buffer
@@ -3596,11 +3738,10 @@ func writeTracksWithVideoDimensions(writer *ebml.Writer, width uint64, height ui
 	}
 	var video bytes.Buffer
 	vw := ebml.NewWriter(&video)
-	if err := vw.WriteUInt(idPixelWidth, width); err != nil {
-		return err
-	}
-	if err := vw.WriteUInt(idPixelHeight, height); err != nil {
-		return err
+	for i := range elements {
+		if err := vw.WriteUInt(elements[i].id, elements[i].value); err != nil {
+			return err
+		}
 	}
 	if err := ew.WriteElement(idVideo, video.Bytes()); err != nil {
 		return err

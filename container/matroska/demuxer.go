@@ -898,7 +898,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			if err != nil {
 				return VideoConfig{}, err
 			}
-			video.Width, err = intFromUint(value)
+			video.Width, err = nonZeroIntFromUint(value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -907,7 +907,70 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			if err != nil {
 				return VideoConfig{}, err
 			}
-			video.Height, err = intFromUint(value)
+			video.Height, err = nonZeroIntFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+		case idPixelCropBottom:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.PixelCropBottom, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+		case idPixelCropTop:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.PixelCropTop, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+		case idPixelCropLeft:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.PixelCropLeft, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+		case idPixelCropRight:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.PixelCropRight, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+		case idDisplayWidth:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.DisplayWidth, err = nonZeroIntFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+		case idDisplayHeight:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.DisplayHeight, err = nonZeroIntFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+		case idDisplayUnit:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.DisplayUnit, err = intFromUint(value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1185,6 +1248,13 @@ func intFromUint(value uint64) (int, error) {
 		return 0, ErrInvalidData
 	}
 	return int(value), nil
+}
+
+func nonZeroIntFromUint(value uint64) (int, error) {
+	if value == 0 {
+		return 0, ErrInvalidData
+	}
+	return intFromUint(value)
 }
 
 func drainLimited(r *io.LimitedReader) error {
