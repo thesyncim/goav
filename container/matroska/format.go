@@ -272,13 +272,14 @@ func trackFromAVStream(stream av.Stream, fallbackID uint32) (Track, error) {
 		return Track{}, ErrUnsupportedCodec
 	}
 	track := Track{
-		ID:           fallbackID,
-		Name:         stream.Name,
-		Language:     stream.Language,
-		TimebaseNum:  stream.TimeBase.Num,
-		TimebaseDen:  stream.TimeBase.Den,
-		Codec:        codec,
-		CodecPrivate: stream.Codec.ExtraData.Bytes,
+		ID:            fallbackID,
+		Name:          stream.Name,
+		Language:      stream.Language,
+		LanguageBCP47: stream.Language,
+		TimebaseNum:   stream.TimeBase.Num,
+		TimebaseDen:   stream.TimeBase.Den,
+		Codec:         codec,
+		CodecPrivate:  stream.Codec.ExtraData.Bytes,
 	}
 	if track.Language == "" {
 		track.Language = "und"
@@ -322,7 +323,7 @@ func streamFromTrack(track Track, index int) av.Stream {
 		Index:    index,
 		Type:     streamType,
 		TimeBase: av.TimeBase{Num: 1, Den: timeNS},
-		Language: track.Language,
+		Language: trackLanguage(track),
 		Name:     track.Name,
 		Codec: av.CodecParameters{
 			ID:         codecToAV(track.Codec),
@@ -338,6 +339,13 @@ func streamFromTrack(track Track, index int) av.Stream {
 		stream.Codec.ClockRate = uint32(stream.Codec.SampleRate)
 	}
 	return stream
+}
+
+func trackLanguage(track Track) string {
+	if track.LanguageBCP47 != "" {
+		return track.LanguageBCP47
+	}
+	return track.Language
 }
 
 func hasMatroskaExtension(name string) bool {

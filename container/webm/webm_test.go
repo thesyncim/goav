@@ -481,6 +481,47 @@ func TestFormatDemuxerStreamsReturnsExtraDataCopies(t *testing.T) {
 	}
 }
 
+func TestFormatDemuxerPrefersLanguageBCP47(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:          TrackAudio,
+		Codec:         CodecOpus,
+		Language:      "eng",
+		LanguageBCP47: "en-GB",
+		Audio:         AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0xf8, 0xff, 0xfe},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &FormatDemuxer{}
+	if err := demuxer.Open(context.Background(), format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	streams := demuxer.Streams()
+	if len(streams) != 1 {
+		t.Fatalf("streams = %d, want 1", len(streams))
+	}
+	if streams[0].Language != "en-GB" {
+		t.Fatalf("stream language = %q, want en-GB", streams[0].Language)
+	}
+}
+
 func TestFormatMuxerRejectsNegativeDuration(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

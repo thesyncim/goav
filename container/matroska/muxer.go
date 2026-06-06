@@ -1415,6 +1415,11 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 			return err
 		}
 	}
+	if track.LanguageBCP47 != "" {
+		if err := tw.WriteString(idLanguageBCP, track.LanguageBCP47); err != nil {
+			return err
+		}
+	}
 	codecID, err := matroskaCodecID(track.Codec)
 	if err != nil {
 		return err

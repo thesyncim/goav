@@ -36,6 +36,7 @@ const (
 	idFlagLacing   ebml.ID = 0x9c
 	idName         ebml.ID = 0x536e
 	idLanguage     ebml.ID = 0x22b59c
+	idLanguageBCP  ebml.ID = 0x22b59d
 	idCodecID      ebml.ID = 0x86
 	idCodecPrivate ebml.ID = 0x63a2
 	idCodecDelay   ebml.ID = 0x56aa

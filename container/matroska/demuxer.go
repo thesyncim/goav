@@ -787,6 +787,12 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 			track.Language = value
+		case idLanguageBCP:
+			value, err := readStringPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.LanguageBCP47 = value
 		case idCodecID:
 			value, err := readStringPayload(reader, child.Size.Value)
 			if err != nil {

@@ -42,6 +42,7 @@ type Track struct {
 	Codec             Codec
 	Name              string
 	Language          string
+	LanguageBCP47     string
 	TimebaseNum       int64
 	TimebaseDen       int64
 	DefaultDurationNS int64

@@ -273,6 +273,88 @@ func TestMuxerDemuxerPreservesTrackUIDAndFlags(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesLanguageBCP47(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:          TrackAudio,
+		Codec:         CodecOpus,
+		Language:      "por",
+		LanguageBCP47: "pt-BR",
+		Audio:         AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0xf8, 0xff, 0xfe},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Language != "por" || tracks[0].LanguageBCP47 != "pt-BR" {
+		t.Fatalf("track language legacy=%q bcp47=%q", tracks[0].Language, tracks[0].LanguageBCP47)
+	}
+}
+
+func TestFormatDemuxerPrefersLanguageBCP47(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:          TrackAudio,
+		Codec:         CodecOpus,
+		Language:      "eng",
+		LanguageBCP47: "en-US",
+		Audio:         AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0xf8, 0xff, 0xfe},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &FormatDemuxer{}
+	if err := demuxer.Open(context.Background(), format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	streams := demuxer.Streams()
+	if len(streams) != 1 {
+		t.Fatalf("streams = %d, want 1", len(streams))
+	}
+	if streams[0].Language != "en-US" {
+		t.Fatalf("stream language = %q, want en-US", streams[0].Language)
+	}
+}
+
 func TestMuxerDefaultsTrackUIDAndFlags(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
