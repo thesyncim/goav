@@ -1580,7 +1580,145 @@ func writeVideo(w *ebml.Writer, video VideoConfig) error {
 			return err
 		}
 	}
+	if videoColourHasMetadata(video.Colour) {
+		if err := writeColour(vw, video.Colour); err != nil {
+			return err
+		}
+	}
 	return w.WriteElement(idVideo, payload.Bytes())
+}
+
+func videoColourHasMetadata(colour VideoColourConfig) bool {
+	return colour.MatrixCoefficientsSet ||
+		colour.BitsPerChannelSet ||
+		colour.ChromaSubsamplingHorzSet ||
+		colour.ChromaSubsamplingVertSet ||
+		colour.CbSubsamplingHorzSet ||
+		colour.CbSubsamplingVertSet ||
+		colour.ChromaSitingHorzSet ||
+		colour.ChromaSitingVertSet ||
+		colour.RangeSet ||
+		colour.TransferCharacteristicsSet ||
+		colour.PrimariesSet ||
+		colour.MaxCLLSet ||
+		colour.MaxFALLSet ||
+		masteringMetadataHasValues(colour.MasteringMetadata)
+}
+
+func masteringMetadataHasValues(metadata VideoMasteringMetadataConfig) bool {
+	return metadata.PrimaryRChromaticityXSet ||
+		metadata.PrimaryRChromaticityYSet ||
+		metadata.PrimaryGChromaticityXSet ||
+		metadata.PrimaryGChromaticityYSet ||
+		metadata.PrimaryBChromaticityXSet ||
+		metadata.PrimaryBChromaticityYSet ||
+		metadata.WhitePointChromaticityXSet ||
+		metadata.WhitePointChromaticityYSet ||
+		metadata.LuminanceMaxSet ||
+		metadata.LuminanceMinSet
+}
+
+func writeColour(w *ebml.Writer, colour VideoColourConfig) error {
+	var payload bytes.Buffer
+	cw := ebml.NewWriter(&payload)
+	if err := writeOptionalUInt(cw, idMatrixCoefficients, colour.MatrixCoefficients, colour.MatrixCoefficientsSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idBitsPerChannel, colour.BitsPerChannel, colour.BitsPerChannelSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idChromaSubsampleHorz, colour.ChromaSubsamplingHorz, colour.ChromaSubsamplingHorzSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idChromaSubsampleVert, colour.ChromaSubsamplingVert, colour.ChromaSubsamplingVertSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idCbSubsampleHorz, colour.CbSubsamplingHorz, colour.CbSubsamplingHorzSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idCbSubsampleVert, colour.CbSubsamplingVert, colour.CbSubsamplingVertSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idChromaSitingHorz, colour.ChromaSitingHorz, colour.ChromaSitingHorzSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idChromaSitingVert, colour.ChromaSitingVert, colour.ChromaSitingVertSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idColourRange, colour.Range, colour.RangeSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idTransferChar, colour.TransferCharacteristics, colour.TransferCharacteristicsSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idPrimaries, colour.Primaries, colour.PrimariesSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idMaxCLL, colour.MaxCLL, colour.MaxCLLSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(cw, idMaxFALL, colour.MaxFALL, colour.MaxFALLSet); err != nil {
+		return err
+	}
+	if masteringMetadataHasValues(colour.MasteringMetadata) {
+		if err := writeMasteringMetadata(cw, colour.MasteringMetadata); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idColour, payload.Bytes())
+}
+
+func writeMasteringMetadata(w *ebml.Writer, metadata VideoMasteringMetadataConfig) error {
+	var payload bytes.Buffer
+	mw := ebml.NewWriter(&payload)
+	if err := writeOptionalFloat64(mw, idPrimaryRX, metadata.PrimaryRChromaticityX, metadata.PrimaryRChromaticityXSet); err != nil {
+		return err
+	}
+	if err := writeOptionalFloat64(mw, idPrimaryRY, metadata.PrimaryRChromaticityY, metadata.PrimaryRChromaticityYSet); err != nil {
+		return err
+	}
+	if err := writeOptionalFloat64(mw, idPrimaryGX, metadata.PrimaryGChromaticityX, metadata.PrimaryGChromaticityXSet); err != nil {
+		return err
+	}
+	if err := writeOptionalFloat64(mw, idPrimaryGY, metadata.PrimaryGChromaticityY, metadata.PrimaryGChromaticityYSet); err != nil {
+		return err
+	}
+	if err := writeOptionalFloat64(mw, idPrimaryBX, metadata.PrimaryBChromaticityX, metadata.PrimaryBChromaticityXSet); err != nil {
+		return err
+	}
+	if err := writeOptionalFloat64(mw, idPrimaryBY, metadata.PrimaryBChromaticityY, metadata.PrimaryBChromaticityYSet); err != nil {
+		return err
+	}
+	if err := writeOptionalFloat64(mw, idWhitePointX, metadata.WhitePointChromaticityX, metadata.WhitePointChromaticityXSet); err != nil {
+		return err
+	}
+	if err := writeOptionalFloat64(mw, idWhitePointY, metadata.WhitePointChromaticityY, metadata.WhitePointChromaticityYSet); err != nil {
+		return err
+	}
+	if err := writeOptionalFloat64(mw, idLuminanceMax, metadata.LuminanceMax, metadata.LuminanceMaxSet); err != nil {
+		return err
+	}
+	if err := writeOptionalFloat64(mw, idLuminanceMin, metadata.LuminanceMin, metadata.LuminanceMinSet); err != nil {
+		return err
+	}
+	return w.WriteElement(idMasteringMetadata, payload.Bytes())
+}
+
+func writeOptionalUInt(w *ebml.Writer, id ebml.ID, value int, set bool) error {
+	if !set {
+		return nil
+	}
+	if value < 0 {
+		return ErrInvalidTrack
+	}
+	return w.WriteUInt(id, uint64(value))
+}
+
+func writeOptionalFloat64(w *ebml.Writer, id ebml.ID, value float64, set bool) error {
+	if !set {
+		return nil
+	}
+	return w.WriteFloat64(id, value)
 }
 
 func writeAudio(w *ebml.Writer, audio AudioConfig) error {
@@ -1646,6 +1784,9 @@ func validateTrack(track Track) error {
 			track.Video.DisplayUnit < 0 {
 			return ErrInvalidTrack
 		}
+		if err := validateVideoColour(track.Video.Colour); err != nil {
+			return err
+		}
 		switch track.Codec {
 		case CodecAV1:
 			if len(track.CodecPrivate) != 0 {
@@ -1666,6 +1807,76 @@ func validateTrack(track Track) error {
 	}
 	if (track.TimebaseNum == 0) != (track.TimebaseDen == 0) ||
 		track.TimebaseNum < 0 || track.TimebaseDen < 0 {
+		return ErrInvalidTrack
+	}
+	return nil
+}
+
+func validateVideoColour(colour VideoColourConfig) error {
+	if colour.MatrixCoefficients < 0 ||
+		colour.BitsPerChannel < 0 ||
+		colour.ChromaSubsamplingHorz < 0 ||
+		colour.ChromaSubsamplingVert < 0 ||
+		colour.CbSubsamplingHorz < 0 ||
+		colour.CbSubsamplingVert < 0 ||
+		colour.ChromaSitingHorz < 0 ||
+		colour.ChromaSitingVert < 0 ||
+		colour.Range < 0 ||
+		colour.TransferCharacteristics < 0 ||
+		colour.Primaries < 0 ||
+		colour.MaxCLL < 0 ||
+		colour.MaxFALL < 0 {
+		return ErrInvalidTrack
+	}
+	return validateMasteringMetadata(colour.MasteringMetadata)
+}
+
+func validateMasteringMetadata(metadata VideoMasteringMetadataConfig) error {
+	if err := validateChromaticity(metadata.PrimaryRChromaticityX, metadata.PrimaryRChromaticityXSet); err != nil {
+		return err
+	}
+	if err := validateChromaticity(metadata.PrimaryRChromaticityY, metadata.PrimaryRChromaticityYSet); err != nil {
+		return err
+	}
+	if err := validateChromaticity(metadata.PrimaryGChromaticityX, metadata.PrimaryGChromaticityXSet); err != nil {
+		return err
+	}
+	if err := validateChromaticity(metadata.PrimaryGChromaticityY, metadata.PrimaryGChromaticityYSet); err != nil {
+		return err
+	}
+	if err := validateChromaticity(metadata.PrimaryBChromaticityX, metadata.PrimaryBChromaticityXSet); err != nil {
+		return err
+	}
+	if err := validateChromaticity(metadata.PrimaryBChromaticityY, metadata.PrimaryBChromaticityYSet); err != nil {
+		return err
+	}
+	if err := validateChromaticity(metadata.WhitePointChromaticityX, metadata.WhitePointChromaticityXSet); err != nil {
+		return err
+	}
+	if err := validateChromaticity(metadata.WhitePointChromaticityY, metadata.WhitePointChromaticityYSet); err != nil {
+		return err
+	}
+	if err := validateNonNegativeFloat(metadata.LuminanceMax, metadata.LuminanceMaxSet); err != nil {
+		return err
+	}
+	return validateNonNegativeFloat(metadata.LuminanceMin, metadata.LuminanceMinSet)
+}
+
+func validateChromaticity(value float64, set bool) error {
+	if !set {
+		return nil
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 1 {
+		return ErrInvalidTrack
+	}
+	return nil
+}
+
+func validateNonNegativeFloat(value float64, set bool) error {
+	if !set {
+		return nil
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
 		return ErrInvalidTrack
 	}
 	return nil

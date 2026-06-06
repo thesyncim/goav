@@ -45,6 +45,60 @@ type VideoConfig struct {
 	DisplayWidth    int
 	DisplayHeight   int
 	DisplayUnit     int
+	Colour          VideoColourConfig
+}
+
+type VideoColourConfig struct {
+	MatrixCoefficients         int
+	MatrixCoefficientsSet      bool
+	BitsPerChannel             int
+	BitsPerChannelSet          bool
+	ChromaSubsamplingHorz      int
+	ChromaSubsamplingHorzSet   bool
+	ChromaSubsamplingVert      int
+	ChromaSubsamplingVertSet   bool
+	CbSubsamplingHorz          int
+	CbSubsamplingHorzSet       bool
+	CbSubsamplingVert          int
+	CbSubsamplingVertSet       bool
+	ChromaSitingHorz           int
+	ChromaSitingHorzSet        bool
+	ChromaSitingVert           int
+	ChromaSitingVertSet        bool
+	Range                      int
+	RangeSet                   bool
+	TransferCharacteristics    int
+	TransferCharacteristicsSet bool
+	Primaries                  int
+	PrimariesSet               bool
+	MaxCLL                     int
+	MaxCLLSet                  bool
+	MaxFALL                    int
+	MaxFALLSet                 bool
+	MasteringMetadata          VideoMasteringMetadataConfig
+}
+
+type VideoMasteringMetadataConfig struct {
+	PrimaryRChromaticityX      float64
+	PrimaryRChromaticityXSet   bool
+	PrimaryRChromaticityY      float64
+	PrimaryRChromaticityYSet   bool
+	PrimaryGChromaticityX      float64
+	PrimaryGChromaticityXSet   bool
+	PrimaryGChromaticityY      float64
+	PrimaryGChromaticityYSet   bool
+	PrimaryBChromaticityX      float64
+	PrimaryBChromaticityXSet   bool
+	PrimaryBChromaticityY      float64
+	PrimaryBChromaticityYSet   bool
+	WhitePointChromaticityX    float64
+	WhitePointChromaticityXSet bool
+	WhitePointChromaticityY    float64
+	WhitePointChromaticityYSet bool
+	LuminanceMax               float64
+	LuminanceMaxSet            bool
+	LuminanceMin               float64
+	LuminanceMinSet            bool
 }
 
 type Track struct {

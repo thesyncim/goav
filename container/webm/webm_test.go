@@ -201,6 +201,99 @@ func TestMuxerDemuxerPreservesVideoModeMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesVideoColourMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVideo := VideoConfig{
+		Width:  640,
+		Height: 360,
+		Colour: VideoColourConfig{
+			MatrixCoefficients:         9,
+			MatrixCoefficientsSet:      true,
+			BitsPerChannel:             0,
+			BitsPerChannelSet:          true,
+			ChromaSubsamplingHorz:      1,
+			ChromaSubsamplingHorzSet:   true,
+			ChromaSubsamplingVert:      1,
+			ChromaSubsamplingVertSet:   true,
+			CbSubsamplingHorz:          1,
+			CbSubsamplingHorzSet:       true,
+			CbSubsamplingVert:          1,
+			CbSubsamplingVertSet:       true,
+			ChromaSitingHorz:           0,
+			ChromaSitingHorzSet:        true,
+			ChromaSitingVert:           0,
+			ChromaSitingVertSet:        true,
+			Range:                      1,
+			RangeSet:                   true,
+			TransferCharacteristics:    16,
+			TransferCharacteristicsSet: true,
+			Primaries:                  9,
+			PrimariesSet:               true,
+			MaxCLL:                     1000,
+			MaxCLLSet:                  true,
+			MaxFALL:                    400,
+			MaxFALLSet:                 true,
+			MasteringMetadata: VideoMasteringMetadataConfig{
+				PrimaryRChromaticityX:      0.708,
+				PrimaryRChromaticityXSet:   true,
+				PrimaryRChromaticityY:      0.292,
+				PrimaryRChromaticityYSet:   true,
+				PrimaryGChromaticityX:      0.17,
+				PrimaryGChromaticityXSet:   true,
+				PrimaryGChromaticityY:      0.797,
+				PrimaryGChromaticityYSet:   true,
+				PrimaryBChromaticityX:      0.131,
+				PrimaryBChromaticityXSet:   true,
+				PrimaryBChromaticityY:      0.046,
+				PrimaryBChromaticityYSet:   true,
+				WhitePointChromaticityX:    0.3127,
+				WhitePointChromaticityXSet: true,
+				WhitePointChromaticityY:    0.329,
+				WhitePointChromaticityYSet: true,
+				LuminanceMax:               1000,
+				LuminanceMaxSet:            true,
+				LuminanceMin:               0.005,
+				LuminanceMinSet:            true,
+			},
+		},
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: wantVideo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Video != wantVideo {
+		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
+	}
+}
+
 func TestMuxerDemuxerPreservesTrackSelectionFlags(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})

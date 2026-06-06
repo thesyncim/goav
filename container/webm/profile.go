@@ -23,6 +23,8 @@ const (
 
 type AudioConfig = matroska.AudioConfig
 type VideoConfig = matroska.VideoConfig
+type VideoColourConfig = matroska.VideoColourConfig
+type VideoMasteringMetadataConfig = matroska.VideoMasteringMetadataConfig
 type Track = matroska.Track
 type Packet = matroska.Packet
 type LacedPacket = matroska.LacedPacket

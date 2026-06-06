@@ -1038,6 +1038,12 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			if err != nil {
 				return VideoConfig{}, err
 			}
+		case idColour:
+			colour, err := d.parseColour(reader, child)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.Colour = colour
 		default:
 			if err := skipElement(reader, child); err != nil {
 				return VideoConfig{}, err
@@ -1045,6 +1051,194 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 		}
 	}
 	return video, nil
+}
+
+func (d *Demuxer) parseColour(parent io.Reader, header ebml.Header) (VideoColourConfig, error) {
+	if header.Size.Unknown {
+		return VideoColourConfig{}, ErrInvalidData
+	}
+	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
+	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	var colour VideoColourConfig
+	for limited.N > 0 {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return VideoColourConfig{}, err
+		}
+		switch child.ID {
+		case idMatrixCoefficients:
+			colour.MatrixCoefficients, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.MatrixCoefficientsSet = true
+		case idBitsPerChannel:
+			colour.BitsPerChannel, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.BitsPerChannelSet = true
+		case idChromaSubsampleHorz:
+			colour.ChromaSubsamplingHorz, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.ChromaSubsamplingHorzSet = true
+		case idChromaSubsampleVert:
+			colour.ChromaSubsamplingVert, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.ChromaSubsamplingVertSet = true
+		case idCbSubsampleHorz:
+			colour.CbSubsamplingHorz, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.CbSubsamplingHorzSet = true
+		case idCbSubsampleVert:
+			colour.CbSubsamplingVert, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.CbSubsamplingVertSet = true
+		case idChromaSitingHorz:
+			colour.ChromaSitingHorz, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.ChromaSitingHorzSet = true
+		case idChromaSitingVert:
+			colour.ChromaSitingVert, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.ChromaSitingVertSet = true
+		case idColourRange:
+			colour.Range, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.RangeSet = true
+		case idTransferChar:
+			colour.TransferCharacteristics, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.TransferCharacteristicsSet = true
+		case idPrimaries:
+			colour.Primaries, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.PrimariesSet = true
+		case idMaxCLL:
+			colour.MaxCLL, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.MaxCLLSet = true
+		case idMaxFALL:
+			colour.MaxFALL, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.MaxFALLSet = true
+		case idMasteringMetadata:
+			metadata, err := d.parseMasteringMetadata(reader, child)
+			if err != nil {
+				return VideoColourConfig{}, err
+			}
+			colour.MasteringMetadata = metadata
+		default:
+			if err := skipElement(reader, child); err != nil {
+				return VideoColourConfig{}, err
+			}
+		}
+	}
+	return colour, nil
+}
+
+func (d *Demuxer) parseMasteringMetadata(parent io.Reader, header ebml.Header) (VideoMasteringMetadataConfig, error) {
+	if header.Size.Unknown {
+		return VideoMasteringMetadataConfig{}, ErrInvalidData
+	}
+	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
+	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	var metadata VideoMasteringMetadataConfig
+	for limited.N > 0 {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return VideoMasteringMetadataConfig{}, err
+		}
+		switch child.ID {
+		case idPrimaryRX:
+			metadata.PrimaryRChromaticityX, err = readChromaticityPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+			metadata.PrimaryRChromaticityXSet = true
+		case idPrimaryRY:
+			metadata.PrimaryRChromaticityY, err = readChromaticityPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+			metadata.PrimaryRChromaticityYSet = true
+		case idPrimaryGX:
+			metadata.PrimaryGChromaticityX, err = readChromaticityPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+			metadata.PrimaryGChromaticityXSet = true
+		case idPrimaryGY:
+			metadata.PrimaryGChromaticityY, err = readChromaticityPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+			metadata.PrimaryGChromaticityYSet = true
+		case idPrimaryBX:
+			metadata.PrimaryBChromaticityX, err = readChromaticityPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+			metadata.PrimaryBChromaticityXSet = true
+		case idPrimaryBY:
+			metadata.PrimaryBChromaticityY, err = readChromaticityPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+			metadata.PrimaryBChromaticityYSet = true
+		case idWhitePointX:
+			metadata.WhitePointChromaticityX, err = readChromaticityPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+			metadata.WhitePointChromaticityXSet = true
+		case idWhitePointY:
+			metadata.WhitePointChromaticityY, err = readChromaticityPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+			metadata.WhitePointChromaticityYSet = true
+		case idLuminanceMax:
+			metadata.LuminanceMax, err = readNonNegativeFloatPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+			metadata.LuminanceMaxSet = true
+		case idLuminanceMin:
+			metadata.LuminanceMin, err = readNonNegativeFloatPayload(reader, child.Size.Value)
+			if err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+			metadata.LuminanceMinSet = true
+		default:
+			if err := skipElement(reader, child); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
+		}
+	}
+	return metadata, nil
 }
 
 func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig, error) {
@@ -1314,11 +1508,41 @@ func intFromUint(value uint64) (int, error) {
 	return int(value), nil
 }
 
+func readIntPayloadFromUInt(r io.Reader, size uint64) (int, error) {
+	value, err := readUIntPayload(r, size)
+	if err != nil {
+		return 0, err
+	}
+	return intFromUint(value)
+}
+
 func nonZeroIntFromUint(value uint64) (int, error) {
 	if value == 0 {
 		return 0, ErrInvalidData
 	}
 	return intFromUint(value)
+}
+
+func readChromaticityPayload(r io.Reader, size uint64) (float64, error) {
+	value, err := readFloatPayload(r, size)
+	if err != nil {
+		return 0, err
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 1 {
+		return 0, ErrInvalidData
+	}
+	return value, nil
+}
+
+func readNonNegativeFloatPayload(r io.Reader, size uint64) (float64, error) {
+	value, err := readFloatPayload(r, size)
+	if err != nil {
+		return 0, err
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0, ErrInvalidData
+	}
+	return value, nil
 }
 
 func readNonZeroInt64Payload(r io.Reader, size uint64) (int64, error) {

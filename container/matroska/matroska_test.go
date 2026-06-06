@@ -241,6 +241,99 @@ func TestMuxerDemuxerPreservesVideoModeMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesVideoColourMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVideo := VideoConfig{
+		Width:  640,
+		Height: 360,
+		Colour: VideoColourConfig{
+			MatrixCoefficients:         9,
+			MatrixCoefficientsSet:      true,
+			BitsPerChannel:             0,
+			BitsPerChannelSet:          true,
+			ChromaSubsamplingHorz:      1,
+			ChromaSubsamplingHorzSet:   true,
+			ChromaSubsamplingVert:      1,
+			ChromaSubsamplingVertSet:   true,
+			CbSubsamplingHorz:          1,
+			CbSubsamplingHorzSet:       true,
+			CbSubsamplingVert:          1,
+			CbSubsamplingVertSet:       true,
+			ChromaSitingHorz:           0,
+			ChromaSitingHorzSet:        true,
+			ChromaSitingVert:           0,
+			ChromaSitingVertSet:        true,
+			Range:                      1,
+			RangeSet:                   true,
+			TransferCharacteristics:    16,
+			TransferCharacteristicsSet: true,
+			Primaries:                  9,
+			PrimariesSet:               true,
+			MaxCLL:                     1000,
+			MaxCLLSet:                  true,
+			MaxFALL:                    400,
+			MaxFALLSet:                 true,
+			MasteringMetadata: VideoMasteringMetadataConfig{
+				PrimaryRChromaticityX:      0.708,
+				PrimaryRChromaticityXSet:   true,
+				PrimaryRChromaticityY:      0.292,
+				PrimaryRChromaticityYSet:   true,
+				PrimaryGChromaticityX:      0.17,
+				PrimaryGChromaticityXSet:   true,
+				PrimaryGChromaticityY:      0.797,
+				PrimaryGChromaticityYSet:   true,
+				PrimaryBChromaticityX:      0.131,
+				PrimaryBChromaticityXSet:   true,
+				PrimaryBChromaticityY:      0.046,
+				PrimaryBChromaticityYSet:   true,
+				WhitePointChromaticityX:    0.3127,
+				WhitePointChromaticityXSet: true,
+				WhitePointChromaticityY:    0.329,
+				WhitePointChromaticityYSet: true,
+				LuminanceMax:               1000,
+				LuminanceMaxSet:            true,
+				LuminanceMin:               0.005,
+				LuminanceMinSet:            true,
+			},
+		},
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: wantVideo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Video != wantVideo {
+		t.Fatalf("video = %+v, want %+v", tracks[0].Video, wantVideo)
+	}
+}
+
 func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1871,6 +1964,52 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			},
 		},
 		{
+			name: "video colour",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{
+					Width:  16,
+					Height: 16,
+					Colour: VideoColourConfig{MatrixCoefficients: -1, MatrixCoefficientsSet: true},
+				},
+			},
+		},
+		{
+			name: "video colour chromaticity",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{
+					Width:  16,
+					Height: 16,
+					Colour: VideoColourConfig{
+						MasteringMetadata: VideoMasteringMetadataConfig{
+							PrimaryRChromaticityX:    1.1,
+							PrimaryRChromaticityXSet: true,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "video colour luminance",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{
+					Width:  16,
+					Height: 16,
+					Colour: VideoColourConfig{
+						MasteringMetadata: VideoMasteringMetadataConfig{
+							LuminanceMin:    -0.1,
+							LuminanceMinSet: true,
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "default duration",
 			track: Track{
 				Type:              TrackVideo,
@@ -2756,6 +2895,36 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 				videoUIntElement{idPixelWidth, 16},
 				videoUIntElement{idPixelHeight, 16},
 				videoUIntElement{idDisplayUnit, maxIntValue + 1},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video colour overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoColourElements(writer,
+				colourUIntElement{idMaxCLL, maxIntValue + 1},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video colour chromaticity range", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoMasteringFloatElements(writer,
+				colourFloatElement{idPrimaryRX, 1.1},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video colour luminance range", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoMasteringFloatElements(writer,
+				colourFloatElement{idLuminanceMin, -0.1},
 			)
 		})
 		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
@@ -3988,6 +4157,80 @@ func writeTracksWithVideoElements(writer *ebml.Writer, elements ...videoUIntElem
 		if err := vw.WriteUInt(elements[i].id, elements[i].value); err != nil {
 			return err
 		}
+	}
+	if err := ew.WriteElement(idVideo, video.Bytes()); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+type colourUIntElement struct {
+	id    ebml.ID
+	value uint64
+}
+
+type colourFloatElement struct {
+	id    ebml.ID
+	value float64
+}
+
+func writeTracksWithVideoColourElements(writer *ebml.Writer, elements ...colourUIntElement) error {
+	return writeTracksWithVideoColourMetadata(writer, elements, nil)
+}
+
+func writeTracksWithVideoMasteringFloatElements(writer *ebml.Writer, elements ...colourFloatElement) error {
+	return writeTracksWithVideoColourMetadata(writer, nil, elements)
+}
+
+func writeTracksWithVideoColourMetadata(writer *ebml.Writer, uints []colourUIntElement, floats []colourFloatElement) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	if err := ew.WriteUInt(idTrackNumber, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, matroskaTrackVideo); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, "V_VP8"); err != nil {
+		return err
+	}
+	var video bytes.Buffer
+	vw := ebml.NewWriter(&video)
+	if err := vw.WriteUInt(idPixelWidth, 16); err != nil {
+		return err
+	}
+	if err := vw.WriteUInt(idPixelHeight, 16); err != nil {
+		return err
+	}
+	var colour bytes.Buffer
+	cw := ebml.NewWriter(&colour)
+	for i := range uints {
+		if err := cw.WriteUInt(uints[i].id, uints[i].value); err != nil {
+			return err
+		}
+	}
+	if len(floats) != 0 {
+		var mastering bytes.Buffer
+		mw := ebml.NewWriter(&mastering)
+		for i := range floats {
+			if err := mw.WriteFloat64(floats[i].id, floats[i].value); err != nil {
+				return err
+			}
+		}
+		if err := cw.WriteElement(idMasteringMetadata, mastering.Bytes()); err != nil {
+			return err
+		}
+	}
+	if err := vw.WriteElement(idColour, colour.Bytes()); err != nil {
+		return err
 	}
 	if err := ew.WriteElement(idVideo, video.Bytes()); err != nil {
 		return err
