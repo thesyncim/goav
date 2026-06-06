@@ -282,7 +282,7 @@ func (b *builder) hasExplicitGraph() bool {
 
 func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 	if len(b.sources) == 0 {
-		return ErrUnsupportedBuild
+		return explicitGraphMissingSourceError()
 	}
 
 	sourceRefs := make([]pipeline.NodeRef, len(b.sources))

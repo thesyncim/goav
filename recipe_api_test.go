@@ -229,6 +229,43 @@ func TestReadmeThirtySecondExamplesUseDefaultFormats(t *testing.T) {
 	}
 }
 
+func TestReusableComponentCatalogIsDocumented(t *testing.T) {
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), "docs/COMPONENTS.md") {
+		t.Fatal("README should link the reusable component catalog")
+	}
+
+	body, err := os.ReadFile("docs/COMPONENTS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, want := range []string{
+		"recipes express intent",
+		"components do the media work",
+		"expert graphs compose those components directly",
+		"codec.DecoderStage",
+		"format.DemuxSource",
+		"format.MuxStage",
+		"filter.Stage",
+		"rtpav.Source",
+		"rtpav.SequenceDetector",
+		"webrtcav.TrackSet",
+		"goav.PacketFunc or goav.FrameFunc meter",
+		"stable",
+		"experimental",
+		"descriptor-only",
+		"internal migration scaffold",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("docs/COMPONENTS.md missing %q", want)
+		}
+	}
+}
+
 func TestRecordSignatureAcceptsOnlyInputAndOutputs(t *testing.T) {
 	typ := reflect.TypeOf(goav.Record)
 	if !typ.IsVariadic() || typ.NumIn() != 2 || typ.NumOut() != 1 {

@@ -678,8 +678,14 @@ func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
 		Decode(testSelectAudio()).
 		Output(format.Output{Name: "output"}).
 		Build(context.Background())
-	if !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime_graph_unsupported wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "decodes: 1") ||
+		!strings.Contains(err.Error(), "outputs: 1") ||
+		!strings.Contains(err.Error(), "FrameSink") {
+		t.Fatalf("err = %v, want unsupported shape guidance", err)
 	}
 }
 
@@ -694,8 +700,14 @@ func TestRuntimeBuilderRefusesMixedGraph(t *testing.T) {
 		Input(format.Input{Name: "input"}).
 		Source(source).
 		Build(context.Background())
-	if !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime_graph_unsupported wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "inputs: 1") ||
+		!strings.Contains(err.Error(), "sources: 1") ||
+		!strings.Contains(err.Error(), "avoid mixing explicit Source/Stage/Sink") {
+		t.Fatalf("err = %v, want mixed graph guidance", err)
 	}
 }
 
@@ -749,8 +761,13 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 	}
 
 	_, err = newTestBuilder(t).Stage(&runtimeTestStage{name: "stage"}).Build(context.Background())
-	if !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("stage err = %v, want ErrUnsupportedBuild", err)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "explicit_graph_source_missing" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("stage err = %v, want explicit_graph_source_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "no source node") ||
+		!strings.Contains(err.Error(), "Source(...)") {
+		t.Fatalf("stage err = %v, want missing source guidance", err)
 	}
 
 	packet := av.Packet{StreamID: "audio"}

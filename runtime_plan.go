@@ -17,7 +17,7 @@ func (b *builder) Describe() (pipeline.Spec, error) {
 
 func (b *builder) describeWithCompiler(compiler builderCompiler) (pipeline.Spec, error) {
 	if compiler == nil {
-		return pipeline.Spec{}, ErrUnsupportedBuild
+		return pipeline.Spec{}, missingRuntimeCompilerError()
 	}
 	return compiler.describe(b, pipeline.Spec{
 		Name:     "goav",
@@ -49,7 +49,7 @@ func (b *builder) planRemux(spec pipeline.Spec) (pipeline.Spec, error) {
 
 func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 	if len(b.sources) == 0 {
-		return pipeline.Spec{}, ErrUnsupportedBuild
+		return pipeline.Spec{}, explicitGraphMissingSourceError()
 	}
 
 	nodes := make(map[string]plannedNode, len(b.sources)+len(b.stages)+len(b.sinks))
@@ -112,6 +112,31 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 	}
 	planLinks(&spec, stageRefs[len(stageRefs)-1:], sinkRefs)
 	return spec, nil
+}
+
+func missingRuntimeCompilerError() error {
+	return &BuildError{
+		Code:      "runtime_compiler_missing",
+		Operation: "build runtime graph",
+		Reason:    "no runtime compiler was selected",
+		Suggestions: []string{
+			"build through goav.Record, goav.Decode, goav.Transcode, or Runtime.Graph()",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func explicitGraphMissingSourceError() error {
+	return &BuildError{
+		Code:      "explicit_graph_source_missing",
+		Operation: "build explicit graph",
+		Reason:    "explicit graph has no source node",
+		Suggestions: []string{
+			"add at least one Source(...) before Stage(...) or Sink(...)",
+			"use Record, From, Decode, or Transcode when you want recipe lowering instead of explicit graph wiring",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func (b *builder) planExplicitRoutes(nodes map[string]plannedNode, spec *pipeline.Spec) error {

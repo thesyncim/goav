@@ -706,6 +706,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     fit/fill geometry and unknown resize modes now return structured build
     errors with mode, input geometry, target geometry, and resize-mode guidance
     instead of bare unsupported sentinels. Done.
+208. Make the reusable component-kit promise explicit: add
+    `docs/COMPONENTS.md` as the concise catalog for core media, pipeline, RTP,
+    codec, format, filter, WebRTC, and adapter components, link it from the
+    README, and guard the recipe/component/expert-graph contract with a doc
+    test. Done.
 
 ## First Vertical Slice
 
@@ -974,6 +979,9 @@ Advanced transcode transform failures now report mixed-transform and
 wrong-media diagnostics with branch and selected-stream details.
 Advanced transcode resize planning now reports impossible fit/fill geometry and
 unknown modes with concrete input and target dimensions.
+The reusable component catalog is now explicit: recipes are the front door,
+components do the media work, and expert graphs compose those same components
+directly.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

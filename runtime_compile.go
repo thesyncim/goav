@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -30,7 +31,35 @@ func (b *builder) selectCompiler() (builderCompiler, error) {
 			return builderCompilers[i], nil
 		}
 	}
-	return nil, ErrUnsupportedBuild
+	return nil, unsupportedRuntimeGraphError(b)
+}
+
+func unsupportedRuntimeGraphError(b *builder) error {
+	details := []string{
+		"inputs: " + strconv.Itoa(len(b.inputs)),
+		"rtp inputs: " + strconv.Itoa(len(b.rtpInputs)),
+		"outputs: " + strconv.Itoa(len(b.outputs)),
+		"decodes: " + strconv.Itoa(len(b.decodes)),
+		"encodes: " + strconv.Itoa(len(b.encodes)),
+		"filters: " + strconv.Itoa(len(b.filters)),
+		"transcodes: " + strconv.Itoa(len(b.transcodes)),
+		"sources: " + strconv.Itoa(len(b.sources)),
+		"stages: " + strconv.Itoa(len(b.stages)),
+		"sinks: " + strconv.Itoa(len(b.sinks)),
+		"routes: " + strconv.Itoa(len(b.routes)),
+	}
+	return &BuildError{
+		Code:      "runtime_graph_unsupported",
+		Operation: "build runtime graph",
+		Reason:    "no compiler matches this builder shape",
+		Details:   details,
+		Suggestions: []string{
+			"use Record or From(...).To(...) for packet-preserving record and remux jobs",
+			"use Decode or From(...).Audio()/Video().To(FrameSink(...)) for frame output",
+			"avoid mixing explicit Source/Stage/Sink graph nodes with high-level runtime builder requests",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func (b *builder) newGraph(_ context.Context) (pipeline.Graph, error) {

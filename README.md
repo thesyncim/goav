@@ -257,6 +257,9 @@ This layer accepts `pipeline.Source`, `pipeline.Stage`, and `pipeline.Sink`
 components, then connects them through typed handles, route policies, buffer
 policies, and graph specs. It is valuable for custom realtime systems, but it
 is no longer the first API a normal record/transcode workflow has to learn.
+The reusable component catalog in [docs/COMPONENTS.md](docs/COMPONENTS.md)
+describes the same building blocks recipes compile to and expert graphs wire
+directly.
 
 ## Project Shape
 
@@ -288,6 +291,7 @@ Implemented today:
 Advanced implementation notes live in:
 
 - `docs/ARCHITECTURE.md`
+- `docs/COMPONENTS.md`
 - `docs/USE_CASES.md`
 - `docs/RTP_WEBRTC.md`
 - `docs/ADAPTERS.md`
