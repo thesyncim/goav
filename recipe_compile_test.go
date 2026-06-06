@@ -378,6 +378,108 @@ func TestInputFormatAdapterPassSkipsLiveReceiveInputs(t *testing.T) {
 	}
 }
 
+func TestInputFormatAdapterPassStoresProbeStreams(t *testing.T) {
+	streams := []av.Stream{{
+		Index: 0,
+		ID:    "eng",
+		Name:  "English",
+		Type:  av.MediaAudio,
+		Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
+	}}
+	state := recipeCompileState{
+		operation: "build job",
+		options:   recipeCompileOptions{preflightInputAdapters: true},
+		runtime: New(withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{}),
+		)),
+		inputAttachments: []InputSpec{
+			FileInput("input.ogg", strings.NewReader("")),
+		},
+	}
+
+	if err := validateJobInputFormatAdaptersPass().Apply(&state); err != nil {
+		t.Fatalf("err = %v, want input probe stored", err)
+	}
+	if len(state.inputProbes) != 1 || len(state.inputProbes[0].Streams) != 1 {
+		t.Fatalf("input probes = %+v, want one probed stream", state.inputProbes)
+	}
+	if got := state.inputProbes[0].Streams[0]; got.ID != "eng" || got.Codec.ID != av.CodecOpus {
+		t.Fatalf("probed stream = %+v, want English Opus stream", got)
+	}
+}
+
+func TestKnownInputStreamSelectionPassRejectsProbedAmbiguousAndMissingStreams(t *testing.T) {
+	streams := []av.Stream{
+		{
+			Index: 0,
+			ID:    "eng",
+			Name:  "English",
+			Type:  av.MediaAudio,
+			Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
+		},
+		{
+			Index: 1,
+			ID:    "spa",
+			Name:  "Spanish",
+			Type:  av.MediaAudio,
+			Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
+		},
+	}
+	tests := []struct {
+		name   string
+		stream StreamIntent
+		code   string
+		want   []string
+	}{
+		{
+			name: "ambiguous probed audio",
+			stream: StreamIntent{
+				Name:   "audio",
+				Select: StreamSelect{Type: av.MediaAudio},
+				Decode: true,
+			},
+			code: "stream_ambiguous",
+			want: []string{"multiple streams match type=audio", "id=eng", "id=spa", `.Audio(goav.StreamID("eng"))`, ".Audio(goav.StreamIndex(0))"},
+		},
+		{
+			name: "missing probed video",
+			stream: StreamIntent{
+				Name:   "video",
+				Select: StreamSelect{Type: av.MediaVideo},
+				Decode: true,
+			},
+			code: "stream_missing",
+			want: []string{"no stream matches type=video", "audio[0]", "id=eng", "codec=opus"},
+		},
+	}
+	pass := validateJobKnownInputStreamSelectionPass()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := recipeCompileState{
+				operation: "build job",
+				intent: Intent{Streams: []StreamIntent{
+					tt.stream,
+				}},
+				inputProbes: []format.ProbeResult{{
+					Format:  av.FormatOgg,
+					Streams: streams,
+				}},
+			}
+			err := pass.Apply(&state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -1173,6 +1275,49 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 	if !strings.Contains(err.Error(), "output missing is referenced but not defined") ||
 		!strings.Contains(err.Error(), "define shared outputs once") {
 		t.Fatalf("err = %v, want output binding guidance", err)
+	}
+}
+
+func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *testing.T) {
+	streams := []av.Stream{
+		{
+			Index: 0,
+			ID:    "camera",
+			Type:  av.MediaVideo,
+			Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo},
+		},
+		{
+			Index: 1,
+			ID:    "screen",
+			Type:  av.MediaVideo,
+			Codec: av.CodecParameters{ID: av.CodecVP9, Type: av.MediaVideo},
+		},
+	}
+	state := recipeCompileState{
+		operation: transcodeRecipeOperation,
+		intent: Intent{Streams: []StreamIntent{{
+			Name:    "720p",
+			Select:  StreamSelect{Type: av.MediaVideo},
+			Encode:  VP9(Bitrate(2_000_000)),
+			RouteTo: []string{"web"},
+		}}},
+		transcodeInputProbeReady: true,
+		transcodeInputProbe: format.ProbeResult{
+			Format:  av.FormatMatroska,
+			Streams: streams,
+		},
+	}
+
+	err := validateTranscodeKnownInputStreamSelectionPass().Apply(&state)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "multiple streams match type=video") ||
+		!strings.Contains(err.Error(), "id=camera") ||
+		!strings.Contains(err.Error(), "id=screen") ||
+		!strings.Contains(err.Error(), `.Video(goav.StreamID("camera"))`) {
+		t.Fatalf("err = %v, want probed transcode stream-selection guidance", err)
 	}
 }
 

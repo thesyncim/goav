@@ -675,6 +675,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     stream recipes now report obvious ambiguous or missing `Audio()`/`Video()`
     selections from intent before opening live receivers or checking decoder
     adapter availability. Done.
+200. Reuse build-time input probe results for recipe stream selection:
+    ordinary and transcode file/protocol recipes now report obvious ambiguous
+    or missing `Audio()`/`Video()` branch selections before demuxers are opened
+    whenever the registered prober already exposes streams. Done.
 
 ## First Vertical Slice
 
@@ -923,7 +927,9 @@ masking ambiguous receive selection, while graph `Describe()` remains
 adapter-agnostic. Resize/resample filter factory availability is also
 preflighted before input open. Live RTP/WebRTC stream selection now fails from
 intent before live receivers are opened when the described inputs already prove
-an obvious ambiguous or missing selection.
+an obvious ambiguous or missing selection. File/protocol stream selection now
+does the same when input probes already expose stream metadata, while adapters
+that only discover streams on open still defer to graph build.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

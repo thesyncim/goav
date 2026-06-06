@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	transcodepkg "github.com/thesyncim/goav/transcode"
 )
@@ -33,9 +34,12 @@ type recipeCompileState struct {
 	jobOutputCount    int
 	streamSteps       []jobStreamStepAttachment
 	outputAttachments []OutputSpec
+	inputProbes       []format.ProbeResult
 
 	transcodeInputAttachment   InputSpec
 	transcodeOutputAttachments []namedOutputSpec
+	transcodeInputProbe        format.ProbeResult
+	transcodeInputProbeReady   bool
 
 	plan transcodepkg.Plan
 
@@ -174,6 +178,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobEncodeAdaptersPass(),
 		validateJobTransformAdaptersPass(),
 		validateJobInputFormatAdaptersPass(),
+		validateJobKnownInputStreamSelectionPass(),
 		openRecipeRuntimeBuilderPass(),
 		validateJobStreamRuntimeCapabilitiesPass(),
 		lowerJobInputsPass(),
@@ -220,6 +225,7 @@ func compileTranscodeRecipeWithOptions(job *TranscodeJob, options recipeCompileO
 		validateTranscodeEncodeAdaptersPass(),
 		validateTranscodeTransformAdaptersPass(),
 		validateTranscodeInputFormatAdaptersPass(),
+		validateTranscodeKnownInputStreamSelectionPass(),
 		planTranscodeIntentPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerTranscodePlanPass(),
@@ -434,7 +440,12 @@ func validateJobInputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightInputAdapters {
 			return nil
 		}
-		return validateInputFormatAdapters(context.Background(), state.runtime, state.inputAttachments)
+		probes, err := validateInputFormatAdapters(context.Background(), state.runtime, state.inputAttachments)
+		if err != nil {
+			return err
+		}
+		state.inputProbes = probes
+		return nil
 	}}
 }
 
@@ -585,7 +596,15 @@ func validateTranscodeInputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightInputAdapters {
 			return nil
 		}
-		return validateInputFormatAdapters(context.Background(), state.runtime, []InputSpec{state.transcodeInputAttachment})
+		probes, err := validateInputFormatAdapters(context.Background(), state.runtime, []InputSpec{state.transcodeInputAttachment})
+		if err != nil {
+			return err
+		}
+		if len(probes) != 0 {
+			state.transcodeInputProbe = probes[0]
+			state.transcodeInputProbeReady = true
+		}
+		return nil
 	}}
 }
 
@@ -689,6 +708,47 @@ func validateJobLiveStreamSelectionPass() recipeCompilePass {
 		}
 		return validateLiveStreamSelection(state.intent.Inputs, stream)
 	}}
+}
+
+func validateJobKnownInputStreamSelectionPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job known input stream selection", fn: func(state *recipeCompileState) error {
+		stream, ok := jobIntentStream(state.intent)
+		if !ok || !streamNeedsDecode(stream) {
+			return nil
+		}
+		return validateKnownInputStreamSelection(state.inputProbes, stream)
+	}}
+}
+
+func validateTranscodeKnownInputStreamSelectionPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate transcode known input stream selection", fn: func(state *recipeCompileState) error {
+		if !state.transcodeInputProbeReady || len(state.transcodeInputProbe.Streams) == 0 {
+			return nil
+		}
+		for i := range state.intent.Streams {
+			if err := validateKnownProbeStreamSelection(state.transcodeInputProbe, state.intent.Streams[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}}
+}
+
+func validateKnownInputStreamSelection(probes []format.ProbeResult, stream StreamIntent) error {
+	for i := range probes {
+		if err := validateKnownProbeStreamSelection(probes[i], stream); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateKnownProbeStreamSelection(probe format.ProbeResult, stream StreamIntent) error {
+	if len(probe.Streams) == 0 {
+		return nil
+	}
+	_, err := selectDecodeStream(probe.Streams, streamIntentSelector(stream))
+	return err
 }
 
 func openRecipeRuntimeBuilderPass() recipeCompilePass {

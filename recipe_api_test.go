@@ -30,6 +30,29 @@ type recipeAPIRTPReader struct{}
 
 type recipeAPIRuntimeWithoutBuilder struct{}
 
+type recipeAPIStreamProber struct {
+	streams []av.Stream
+}
+
+func (p recipeAPIStreamProber) Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error) {
+	return format.ProbeResult{
+		Format:  av.FormatOgg,
+		Score:   100,
+		Streams: p.streams,
+	}, nil
+}
+
+type recipeAPIDemuxerFactory struct {
+	called *bool
+}
+
+func (f recipeAPIDemuxerFactory) NewDemuxer(context.Context, format.ProbeResult) (format.Demuxer, error) {
+	if f.called != nil {
+		*f.called = true
+	}
+	return nil, errors.New("demuxer should not open during stream selection preflight")
+}
+
 func (recipeAPIRuntimeWithoutBuilder) Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error) {
 	return format.ProbeResult{}, nil
 }
@@ -1309,6 +1332,51 @@ func TestStreamRecipeReportsAmbiguousLiveSelectionBeforeDecoderAdapter(t *testin
 		!strings.Contains(err.Error(), `.Video(goav.StreamID("front"))`) ||
 		strings.Contains(err.Error(), "decoder adapter") {
 		t.Fatalf("err = %v, want live stream-selection guidance before decoder diagnostics", err)
+	}
+}
+
+func TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput(t *testing.T) {
+	streams := []av.Stream{
+		{
+			Index: 0,
+			ID:    "eng",
+			Name:  "English",
+			Type:  av.MediaAudio,
+			Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
+		},
+		{
+			Index: 1,
+			ID:    "spa",
+			Name:  "Spanish",
+			Type:  av.MediaAudio,
+			Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
+		},
+	}
+	demuxerOpened := false
+	rt := goav.New(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		registry.RegisterProber(recipeAPIStreamProber{streams: streams})
+		registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
+	}))
+
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Audio().
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
+	}
+	if demuxerOpened {
+		t.Fatal("demuxer opened before known stream selection failed")
+	}
+	if !strings.Contains(err.Error(), "id=eng") ||
+		!strings.Contains(err.Error(), "id=spa") ||
+		!strings.Contains(err.Error(), `.Audio(goav.StreamID("eng"))`) ||
+		strings.Contains(err.Error(), "cannot open input") {
+		t.Fatalf("err = %v, want probed stream-selection guidance before input diagnostics", err)
 	}
 }
 

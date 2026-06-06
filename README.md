@@ -150,8 +150,9 @@ return goav.Transcode(goav.FileInput("input.webm", in)).
 If `Audio()` or `Video()` matches more than one stream, build errors list the
 available streams and suggest `StreamID`, `StreamName`, or `StreamIndex(0)`.
 Stream indexes are zero-based and must be non-negative.
-For RTP/WebRTC inputs described by recipe intent, those stream-selection errors
-are reported before the live receivers are opened.
+For RTP/WebRTC inputs described by recipe intent, and file/protocol inputs whose
+format prober already reports streams, those stream-selection errors are
+reported before receivers or demuxers are opened.
 
 Use `.Run(ctx)` when the recipe is the whole job. Use `.Build(ctx)` when the
 caller needs a `Task` for graph specs, events, or explicit lifecycle control.
@@ -171,7 +172,9 @@ diagnostics. Exact adapter registration remains available for embedded and
 narrow deployments in [docs/ADAPTERS.md](docs/ADAPTERS.md).
 Build-time recipe checks validate input demuxers and output muxers when a
 container can be inferred from the input or output name, MIME type, URI, or
-explicit output format. Full stream probing still belongs to graph build.
+explicit output format. When an input prober already reports stream metadata,
+build-time checks also validate obvious `Audio()`/`Video()` selection errors;
+otherwise full stream discovery still belongs to graph build.
 
 Recipe encode conveniences currently target Opus, VP8, and VP9. H264 and AV1
 codec specs are useful for receive, record, and decode paths while recipe encode
