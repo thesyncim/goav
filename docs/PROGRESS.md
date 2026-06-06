@@ -586,6 +586,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     after `Run(ctx)`, `Task.Stats()` reports packet totals, EOS event counts,
     delivery totals, last-event state, and no buffered drops without touching
     pipeline internals. Done.
+179. Extend public recipe task observability proof to stream-scoped decode:
+    `From(input).Audio(StreamIndex(0)).To(FrameSink(...))` now proves
+    `Task.Stats()` reports decoded frame totals, stream-added and EOS event
+    counts, delivery totals, last-event state, and no drops. Done.
 
 ## First Vertical Slice
 

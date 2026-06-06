@@ -564,6 +564,17 @@ func TestStreamRecipeSelectsFirstStreamByIndex(t *testing.T) {
 	if decoder.decodes != 1 || sink.frames != 1 || sink.lastFrame.StreamID != "audio-main" {
 		t.Fatalf("decodes=%d frames=%d last=%s", decoder.decodes, sink.frames, sink.lastFrame.StreamID)
 	}
+	stats := task.Stats()
+	if stats.Packets == 0 ||
+		stats.Frames != 1 ||
+		stats.EventsByType[av.EventStreamAdded] == 0 ||
+		stats.EventsByType[av.EventEndOfStream] == 0 ||
+		stats.Delivered == 0 ||
+		stats.Dropped != 0 ||
+		!stats.LastEventPresent ||
+		stats.LastEvent.Type != av.EventEndOfStream {
+		t.Fatalf("stats = %+v", stats)
+	}
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
 	}
