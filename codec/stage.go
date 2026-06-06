@@ -402,10 +402,6 @@ func controlRequestEvent(request *ControlRequest, event *av.Event) bool {
 	switch request.Type {
 	case ControlRequestKeyframe:
 		event.Type = av.EventKeyframeRequired
-	case ControlResetDecoder:
-		event.Type = av.EventDiscontinuity
-	case ControlDropUntilSync:
-		event.Type = av.EventDiscontinuity
 	default:
 		return false
 	}

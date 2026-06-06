@@ -167,8 +167,6 @@ type ControlType string
 
 const (
 	ControlRequestKeyframe ControlType = "request_keyframe"
-	ControlResetDecoder    ControlType = "reset_decoder"
-	ControlDropUntilSync   ControlType = "drop_until_sync"
 )
 
 type Decoder interface {

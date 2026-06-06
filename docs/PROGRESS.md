@@ -256,7 +256,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 78. Prune the bundled RTP receiver interface: receive keeps the direct
     `PacketReader` and `FeedbackWriter` contracts without a second combined
     name. Done.
-79. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+79. Prune unused codec control request types: decoder stages expose the
+    implemented keyframe request path and drop unproduced reset/drop request
+    names. Done.
+80. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
