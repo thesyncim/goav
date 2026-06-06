@@ -43,6 +43,7 @@ const (
 	idLanguage             ebml.ID = 0x22b59c
 	idLanguageBCP          ebml.ID = 0x22b59d
 	idCodecID              ebml.ID = 0x86
+	idCodecName            ebml.ID = 0x258688
 	idCodecPrivate         ebml.ID = 0x63a2
 	idCodecDelay           ebml.ID = 0x56aa
 	idSeekPreRoll          ebml.ID = 0x56bb

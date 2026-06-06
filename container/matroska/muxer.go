@@ -1442,6 +1442,11 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 	if err := tw.WriteString(idCodecID, codecID); err != nil {
 		return err
 	}
+	if track.CodecName != "" {
+		if err := tw.WriteString(idCodecName, track.CodecName); err != nil {
+			return err
+		}
+	}
 	if track.DefaultDurationNS > 0 {
 		if err := tw.WriteUInt(idDefaultDur, uint64(track.DefaultDurationNS)); err != nil {
 			return err

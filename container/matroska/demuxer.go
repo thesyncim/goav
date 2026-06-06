@@ -834,6 +834,12 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 			codecID = value
+		case idCodecName:
+			value, err := readStringPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.CodecName = value
 		case idDefaultDur:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
