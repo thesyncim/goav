@@ -1663,6 +1663,9 @@ func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	if !resolved.specReady {
 		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
 	}
+	if resolved.specOrigin != graphSpecOriginMediaPlan {
+		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginMediaPlan)
+	}
 	if resolved.intent.Name != "from" {
 		t.Fatalf("intent name = %q, want from", resolved.intent.Name)
 	}
@@ -1681,6 +1684,81 @@ func TestCompileJobRecipeCarriesIntentAndBuilder(t *testing.T) {
 	}
 	if got, want := spec, resolved.spec; got.Name != want.Name || len(got.Nodes) != len(want.Nodes) || len(got.Edges) != len(want.Edges) {
 		t.Fatalf("resolved.Describe() = %+v, want stored spec %+v", got, want)
+	}
+}
+
+func TestMediaPlanGraphSpecPassPlansFileCopy(t *testing.T) {
+	job := From(
+		FileInput("input.ivf", strings.NewReader("")),
+	).Copy().To(FileOutput("recording.ivf", io.Discard).Format(av.FormatIVF))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	if resolved.specOrigin != graphSpecOriginMediaPlan {
+		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginMediaPlan)
+	}
+	spec, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	want := pipeline.Spec{
+		Name:     "goav",
+		Realtime: true,
+		Nodes: []pipeline.NodeSpec{
+			{Name: "input.ivf", Kind: pipeline.NodeSource, Detail: "demux, protocol=file"},
+			{Name: "recording.ivf", Kind: pipeline.NodeStage, Detail: "mux, format=ivf, protocol=file"},
+		},
+		Edges: []pipeline.EdgeSpec{{
+			From:   pipeline.NodeRef("input.ivf"),
+			To:     pipeline.NodeRef("recording.ivf"),
+			Policy: pipeline.RouteAll,
+		}},
+	}
+	if !reflect.DeepEqual(spec, want) {
+		t.Fatalf("spec = %+v, want %+v", spec, want)
+	}
+}
+
+func TestMediaPlanGraphSpecPassPlansRTPCopy(t *testing.T) {
+	job := From(
+		RTP(&runtimeRTPReceiver{streams: []Stream{{
+			ID:   "video",
+			Type: av.MediaVideo,
+			Codec: av.CodecParameters{
+				ID:   av.CodecVP8,
+				Type: av.MediaVideo,
+			},
+		}}}).Name("video").Codec(VP8()),
+	).Copy().To(FileOutput("recording.ivf", io.Discard).Format(av.FormatIVF))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	if resolved.specOrigin != graphSpecOriginMediaPlan {
+		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginMediaPlan)
+	}
+	spec, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	want := pipeline.Spec{
+		Name:     "goav",
+		Realtime: true,
+		Nodes: []pipeline.NodeSpec{
+			{Name: "video", Kind: pipeline.NodeSource, Detail: "rtp receive, codec=vp8"},
+			{Name: "recording.ivf", Kind: pipeline.NodeStage, Detail: "mux, format=ivf, protocol=file"},
+		},
+		Edges: []pipeline.EdgeSpec{{
+			From:   pipeline.NodeRef("video"),
+			To:     pipeline.NodeRef("recording.ivf"),
+			Policy: pipeline.RouteAll,
+		}},
+	}
+	if !reflect.DeepEqual(spec, want) {
+		t.Fatalf("spec = %+v, want %+v", spec, want)
 	}
 }
 

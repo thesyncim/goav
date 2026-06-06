@@ -752,6 +752,72 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+	)
+	meter := &runtimeTestStage{name: "meter"}
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Do(meter).
+		Tap("audio.after-meter").
+		Opus(96_000).
+		Tap("audio.encoded").
+		To(FileOutput("archive.ogg", io.Discard))
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	var customTap, encodedTap TapInfo
+	for _, tap := range task.Taps() {
+		switch tap.Name {
+		case "audio.after-meter":
+			customTap = tap
+		case "audio.encoded":
+			encodedTap = tap
+		}
+	}
+	if customTap.Name == "" || customTap.Domain != DomainFrame || customTap.MediaKind != av.MediaAudio || customTap.Node != "meter" {
+		t.Fatalf("custom tap = %+v, want frame audio tap on meter", customTap)
+	}
+	if encodedTap.Name == "" || encodedTap.Domain != DomainPacket || encodedTap.MediaKind != av.MediaAudio || encodedTap.Node != "encode-audio" {
+		t.Fatalf("encoded tap = %+v, want packet audio tap on encode-audio", encodedTap)
+	}
+
+	frameAttachment, err := task.Attach(ctx, Branch("levels").FromTap("audio.after-meter").To(SinkFunc("levels", func(context.Context, Message) error {
+		return nil
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	packetAttachment, err := task.Attach(ctx, Branch("packets").FromTap("audio.encoded").To(SinkFunc("packets", func(context.Context, Message) error {
+		return nil
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Detach(ctx, frameAttachment); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Detach(ctx, packetAttachment); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{{

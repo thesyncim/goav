@@ -18,6 +18,7 @@ type recipeResolved struct {
 	compiler                 builderCompiler
 	spec                     pipeline.Spec
 	specReady                bool
+	specOrigin               string
 	inputProbes              []format.ProbeResult
 	transcodeInputProbe      format.ProbeResult
 	transcodeInputProbeReady bool
@@ -50,11 +51,12 @@ type recipeCompileState struct {
 
 	plan transcodepkg.Plan
 
-	builder   builderAPI
-	migration *builder
-	compiler  builderCompiler
-	spec      pipeline.Spec
-	specReady bool
+	builder    builderAPI
+	migration  *builder
+	compiler   builderCompiler
+	spec       pipeline.Spec
+	specReady  bool
+	specOrigin string
 }
 
 type recipeCompileOptions struct {
@@ -161,6 +163,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		compiler:                 state.compiler,
 		spec:                     state.spec,
 		specReady:                state.specReady,
+		specOrigin:               state.specOrigin,
 		inputProbes:              append([]format.ProbeResult(nil), state.inputProbes...),
 		transcodeInputProbe:      state.transcodeInputProbe,
 		transcodeInputProbeReady: state.transcodeInputProbeReady,
@@ -287,6 +290,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		lowerJobInputsPass(),
 		lowerJobStreamPass(),
 		lowerJobOutputsPass(),
+		emitMediaPlanGraphSpecPass(),
 		selectMigrationGraphCompilerPass(),
 		emitMigrationGraphSpecPass(),
 	}}.Compile(state)
@@ -1018,6 +1022,9 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 
 func emitMigrationGraphSpecPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "emit migration graph spec", fn: func(state *recipeCompileState) error {
+		if state.specReady {
+			return nil
+		}
 		if state.migration == nil || state.compiler == nil {
 			return nil
 		}
@@ -1027,6 +1034,7 @@ func emitMigrationGraphSpecPass() recipeCompilePass {
 		}
 		state.spec = spec
 		state.specReady = true
+		state.specOrigin = graphSpecOriginMigration
 		return nil
 	}}
 }

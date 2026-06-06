@@ -803,6 +803,18 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Task.Taps()` plus `goav.Branch(name).FromTap(name)`. Built tasks now carry
     planned tap metadata for stable runtime attachment points, including taps
     after decode, transforms, custom stages, and encode in the media plan. Done.
+225. Start moving graph description off the migration compiler list:
+    packet-preserving `From(input).Copy().To(...)` file/remux and RTP/WebRTC
+    record/fanout recipes now emit exact `pipeline.Spec` values from the
+    recipe compiler's media-plan pass before the migration compiler is selected,
+    while `Build` still uses the existing runtime graph compilers until the
+    remaining decoded and branch paths move to `MediaPlan -> pipeline.Graph`.
+    Done.
+226. Harden runtime branch attachment at operation boundaries:
+    stream recipes now have coverage for `Task.Attach(...FromTap(...))` after a
+    custom frame stage and after encode, proving named taps resolve to the
+    correct frame-domain or packet-domain runtime node and can be detached
+    cleanly. Done.
 
 ## First Vertical Slice
 

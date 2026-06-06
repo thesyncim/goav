@@ -387,11 +387,29 @@ func (s InputSpec) MaxTimestampGap(gap av.Duration) InputSpec {
 
 func (s InputSpec) apply(builder builderAPI) builderAPI {
 	if s.rtp == nil {
-		input := s.input
-		input.Realtime = input.Realtime || s.realtime
-		return builder.Input(input)
+		return builder.Input(s.formatInput())
 	}
 	return builder.RTP(s.rtp.receiver, s.rtpOptions()...)
+}
+
+func (s InputSpec) formatInput() format.Input {
+	input := s.input
+	input.Realtime = input.Realtime || s.realtime
+	return input
+}
+
+func (s InputSpec) rtpBuildInput() rtpInput {
+	input := rtpInput{}
+	if s.rtp != nil {
+		input.receiver = s.rtp.receiver
+	}
+	options := s.rtpOptions()
+	for i := range options {
+		if options[i] != nil {
+			options[i](&input)
+		}
+	}
+	return input
 }
 
 func (s InputSpec) validate() error {
