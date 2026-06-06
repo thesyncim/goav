@@ -165,11 +165,10 @@ func TestStageFlushesBeforeEOS(t *testing.T) {
 	}
 }
 
-func TestStageCanDropInputEvents(t *testing.T) {
+func TestStagePassesEventsThrough(t *testing.T) {
 	stage, err := NewStage(StageConfig{
-		Filter:          &fakeFilter{},
-		Result:          Result{Frames: make([]av.Frame, 0, 1)},
-		DropInputEvents: true,
+		Filter: &fakeFilter{},
+		Result: Result{Frames: make([]av.Frame, 0, 1)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +180,7 @@ func TestStageCanDropInputEvents(t *testing.T) {
 	if err := stage.Handle(context.Background(), &message, emitter); err != nil {
 		t.Fatal(err)
 	}
-	if emitter.events != 0 || emitter.frames != 0 {
+	if emitter.events != 1 || emitter.lastEvent != av.EventStats || emitter.frames != 0 {
 		t.Fatalf("events=%d frames=%d", emitter.events, emitter.frames)
 	}
 }

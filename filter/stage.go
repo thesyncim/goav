@@ -16,19 +16,15 @@ type StageConfig struct {
 	// Result is caller-owned scratch. Its slice capacities define how many
 	// frames and events can be emitted per input message.
 	Result Result
-	// DropInputEvents suppresses forwarding upstream events after the filter
-	// has observed them. By default, events stay visible downstream.
-	DropInputEvents bool
 }
 
 type Stage struct {
-	name       string
-	detail     string
-	filter     FrameFilter
-	result     Result
-	message    pipeline.Message
-	dropEvents bool
-	closed     bool
+	name    string
+	detail  string
+	filter  FrameFilter
+	result  Result
+	message pipeline.Message
+	closed  bool
 }
 
 var _ pipeline.Stage = (*Stage)(nil)
@@ -46,11 +42,10 @@ func NewStage(config StageConfig) (*Stage, error) {
 		name = "filter"
 	}
 	return &Stage{
-		name:       name,
-		detail:     config.Detail,
-		filter:     config.Filter,
-		result:     config.Result,
-		dropEvents: config.DropInputEvents,
+		name:   name,
+		detail: config.Detail,
+		filter: config.Filter,
+		result: config.Result,
 	}, nil
 }
 
@@ -115,14 +110,7 @@ func (s *Stage) handleEvent(ctx context.Context, msg *pipeline.Message, emitter 
 		if err := s.emitResult(ctx, emitter); err != nil {
 			return err
 		}
-		return s.emitInputEvent(ctx, msg, emitter)
-	}
-	return s.emitInputEvent(ctx, msg, emitter)
-}
-
-func (s *Stage) emitInputEvent(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
-	if s.dropEvents {
-		return nil
+		return emitter.Emit(ctx, msg)
 	}
 	return emitter.Emit(ctx, msg)
 }
