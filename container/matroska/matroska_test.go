@@ -191,8 +191,12 @@ func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 		t.Fatalf("tracks = %d, want %d", len(tracks), len(tests))
 	}
 	for i := range tests {
+		wantPrivate := tests[i].track.CodecPrivate
+		if tests[i].track.Codec == CodecOpus && len(wantPrivate) == 0 {
+			wantPrivate = expectedOpusHead(tests[i].track.Audio.Channels, tests[i].track.Audio.SampleRate)
+		}
 		if tracks[i].Codec != tests[i].track.Codec || tracks[i].Type != tests[i].track.Type ||
-			!bytes.Equal(tracks[i].CodecPrivate, tests[i].track.CodecPrivate) {
+			!bytes.Equal(tracks[i].CodecPrivate, wantPrivate) {
 			t.Fatalf("%s track = %+v, want %+v", tests[i].name, tracks[i], tests[i].track)
 		}
 	}
@@ -208,6 +212,68 @@ func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 	}
 	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
 		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
+func TestMuxerWritesDefaultOpusHead(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{1, 2, 3},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Codec != CodecOpus || tracks[0].Audio.Channels != 1 ||
+		!bytes.Equal(tracks[0].CodecPrivate, expectedOpusHead(1, 48000)) {
+		t.Fatalf("track = %+v private=%v", tracks[0], tracks[0].CodecPrivate)
+	}
+}
+
+func TestDemuxerRejectsInvalidOpusHead(t *testing.T) {
+	tests := []struct {
+		name    string
+		private []byte
+	}{
+		{name: "short", private: []byte("OpusHead")},
+		{name: "bad magic", private: []byte("OpusHed\x01\x02\x00\x00\x80\xbb\x00\x00\x00\x00\x00")},
+		{name: "zero channels", private: []byte("OpusHead\x01\x00\x00\x00\x80\xbb\x00\x00\x00\x00\x00")},
+		{name: "family zero surround", private: []byte("OpusHead\x01\x03\x00\x00\x80\xbb\x00\x00\x00\x00\x00")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+				return writeTracksWithOpusPrivate(writer, tt.private)
+			})
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
 	}
 }
 
@@ -367,6 +433,14 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 				Type:  TrackAudio,
 				Codec: CodecPCMU,
 				Audio: AudioConfig{SampleRate: 8000, Channels: 1, BitDepth: -1},
+			},
+		},
+		{
+			name: "opus surround without private data",
+			track: Track{
+				Type:  TrackAudio,
+				Codec: CodecOpus,
+				Audio: AudioConfig{SampleRate: 48000, Channels: 6},
 			},
 		},
 		{
@@ -1282,8 +1356,12 @@ func TestFormatMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 		t.Fatalf("streams = %d, want %d", len(gotStreams), len(streams))
 	}
 	for i := range streams {
+		wantPrivate := streams[i].Codec.ExtraData.Bytes
+		if streams[i].Codec.ID == av.CodecOpus && len(wantPrivate) == 0 {
+			wantPrivate = expectedOpusHead(streams[i].Codec.Channels, streams[i].Codec.SampleRate)
+		}
 		if gotStreams[i].Codec.ID != streams[i].Codec.ID || gotStreams[i].Type != streams[i].Type ||
-			!bytes.Equal(gotStreams[i].Codec.ExtraData.Bytes, streams[i].Codec.ExtraData.Bytes) {
+			!bytes.Equal(gotStreams[i].Codec.ExtraData.Bytes, wantPrivate) {
 			t.Fatalf("%s stream = %+v, want %+v", streams[i].ID, gotStreams[i], streams[i])
 		}
 	}
@@ -1711,6 +1789,21 @@ func makeLaceFrames(count int, frame []byte) [][]byte {
 	return frames
 }
 
+func expectedOpusHead(channels int, sampleRate int) []byte {
+	if channels == 0 {
+		channels = 2
+	}
+	if sampleRate == 0 {
+		sampleRate = 48000
+	}
+	header := make([]byte, 19)
+	copy(header, "OpusHead")
+	header[8] = 1
+	header[9] = byte(channels)
+	binary.LittleEndian.PutUint32(header[12:16], uint32(sampleRate))
+	return header
+}
+
 func makeLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, defaultDurationNS int64) []byte {
 	tb.Helper()
 	var buffer bytes.Buffer
@@ -1926,6 +2019,35 @@ func writeTracksWithAudioMetadata(writer *ebml.Writer, sampleRate float64, chann
 		return err
 	}
 	if err := ew.WriteElement(idAudio, audio.Bytes()); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+func writeTracksWithOpusPrivate(writer *ebml.Writer, private []byte) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	if err := ew.WriteUInt(idTrackNumber, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, matroskaTrackAudio); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, "A_OPUS"); err != nil {
+		return err
+	}
+	if err := writeBinary(ew, idCodecPrivate, private); err != nil {
+		return err
+	}
+	if err := writeAudio(ew, AudioConfig{SampleRate: 48000, Channels: 2}); err != nil {
 		return err
 	}
 	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {

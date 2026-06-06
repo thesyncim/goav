@@ -34,7 +34,7 @@ type Muxer struct {
 	maxTimeNS       int64
 	clusterTimecode int64
 	closed          bool
-	scratch         [18]byte
+	scratch         [codecPrivateScratchSize]byte
 	blockScratch    [16]byte
 }
 
@@ -1128,7 +1128,7 @@ func maxKnownSize(width int) uint64 {
 	return (uint64(1) << uint(7*width)) - 2
 }
 
-func writeTrackEntry(w *ebml.Writer, track Track, scratch *[18]byte) error {
+func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchSize]byte) error {
 	var payload bytes.Buffer
 	tw := ebml.NewWriter(&payload)
 	if err := tw.WriteUInt(idTrackNumber, uint64(track.ID)); err != nil {
@@ -1252,7 +1252,11 @@ func validateTrack(track Track) error {
 			return ErrInvalidTrack
 		}
 		switch track.Codec {
-		case CodecOpus, CodecPCMU, CodecPCMA:
+		case CodecOpus:
+			if len(track.CodecPrivate) == 0 && !canWriteDefaultOpusHead(track) {
+				return ErrInvalidTrack
+			}
+		case CodecPCMU, CodecPCMA:
 		default:
 			return ErrInvalidTrack
 		}
@@ -1271,6 +1275,18 @@ func validateTrack(track Track) error {
 		return ErrInvalidTrack
 	}
 	return nil
+}
+
+func canWriteDefaultOpusHead(track Track) bool {
+	channels := track.Audio.Channels
+	if channels == 0 {
+		channels = 2
+	}
+	sampleRate := track.Audio.SampleRate
+	if sampleRate == 0 {
+		sampleRate = 48000
+	}
+	return channels >= 1 && channels <= 2 && uint64(sampleRate) <= uint64(^uint32(0))
 }
 
 const timeNS = 1000000000

@@ -70,6 +70,9 @@ Current milestone:
 - The WebRTC codec surface exposed by `av` is covered by Matroska:
   Opus, AV1, H.264, VP9, and VP8. WebM covers the valid WebM subset:
   Opus, AV1, VP9, and VP8.
+- Opus tracks generate mono/stereo `OpusHead` codec-private data when callers
+  do not provide their own, and demuxers validate `OpusHead` before exposing
+  Opus track metadata.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with
   WebM demuxers requiring the `webm` EBML document type.
 - Format registry adapters for `av.Stream` and `av.Packet`.
@@ -138,7 +141,8 @@ buffer must be large enough for skipped packets and the returned packet.
 
 Current mappings:
 
-- Opus: `A_OPUS`
+- Opus: `A_OPUS` with generated and parsed `OpusHead` codec-private data for
+  mono/stereo tracks.
 - PCMU/PCMA: `A_MS/ACM` with generated WAVEFORMATEX codec private data
 - VP8: `V_VP8`
 - VP9: `V_VP9`

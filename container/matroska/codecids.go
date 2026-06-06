@@ -6,6 +6,8 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
+const codecPrivateScratchSize = 32
+
 const (
 	codecIDOpus = "A_OPUS"
 	codecIDMS   = "A_MS/ACM"
@@ -102,8 +104,31 @@ func codecToAV(codec Codec) av.CodecID {
 	}
 }
 
-func defaultCodecPrivate(track Track, scratch *[18]byte) []byte {
+func defaultCodecPrivate(track Track, scratch *[codecPrivateScratchSize]byte) []byte {
 	switch track.Codec {
+	case CodecOpus:
+		channels := track.Audio.Channels
+		if channels == 0 {
+			channels = 2
+		}
+		if channels < 1 || channels > 2 {
+			return nil
+		}
+		sampleRate := track.Audio.SampleRate
+		if sampleRate == 0 {
+			sampleRate = 48000
+		}
+		if sampleRate < 0 || uint64(sampleRate) > uint64(^uint32(0)) {
+			return nil
+		}
+		copy(scratch[:], "OpusHead")
+		scratch[8] = 1
+		scratch[9] = byte(channels)
+		binary.LittleEndian.PutUint16(scratch[10:12], 0)
+		binary.LittleEndian.PutUint32(scratch[12:16], uint32(sampleRate))
+		binary.LittleEndian.PutUint16(scratch[16:18], 0)
+		scratch[18] = 0
+		return scratch[:19]
 	case CodecPCMU, CodecPCMA:
 		tag := uint16(0x0007)
 		if track.Codec == CodecPCMA {
@@ -128,4 +153,64 @@ func defaultCodecPrivate(track Track, scratch *[18]byte) []byte {
 	default:
 		return nil
 	}
+}
+
+type opusHead struct {
+	Channels   int
+	SampleRate int
+}
+
+func parseOpusHead(private []byte) (opusHead, error) {
+	if len(private) < 19 || !hasOpusHeadMagic(private) {
+		return opusHead{}, ErrInvalidData
+	}
+	if private[8]&0xf0 != 0 {
+		return opusHead{}, ErrInvalidData
+	}
+	channels := int(private[9])
+	if channels == 0 {
+		return opusHead{}, ErrInvalidData
+	}
+	sampleRate := binary.LittleEndian.Uint32(private[12:16])
+	if uint64(sampleRate) > maxIntValue {
+		return opusHead{}, ErrInvalidData
+	}
+	mappingFamily := private[18]
+	if mappingFamily == 0 {
+		if channels > 2 || len(private) != 19 {
+			return opusHead{}, ErrInvalidData
+		}
+		return opusHead{Channels: channels, SampleRate: int(sampleRate)}, nil
+	}
+	if len(private) != 21+channels {
+		return opusHead{}, ErrInvalidData
+	}
+	streams := int(private[19])
+	coupled := int(private[20])
+	if streams == 0 || coupled > streams {
+		return opusHead{}, ErrInvalidData
+	}
+	decodedChannels := streams + coupled
+	if decodedChannels > 255 {
+		return opusHead{}, ErrInvalidData
+	}
+	for i := 0; i < channels; i++ {
+		index := private[21+i]
+		if index != 255 && int(index) >= decodedChannels {
+			return opusHead{}, ErrInvalidData
+		}
+	}
+	return opusHead{Channels: channels, SampleRate: int(sampleRate)}, nil
+}
+
+func hasOpusHeadMagic(private []byte) bool {
+	return len(private) >= 8 &&
+		private[0] == 'O' &&
+		private[1] == 'p' &&
+		private[2] == 'u' &&
+		private[3] == 's' &&
+		private[4] == 'H' &&
+		private[5] == 'e' &&
+		private[6] == 'a' &&
+		private[7] == 'd'
 }

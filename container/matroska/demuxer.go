@@ -721,6 +721,13 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 		}
 	}
 	track.Codec = codecFromMatroskaID(codecID, track.CodecPrivate)
+	if track.Codec == CodecOpus && len(track.CodecPrivate) != 0 {
+		head, err := parseOpusHead(track.CodecPrivate)
+		if err != nil {
+			return Track{}, err
+		}
+		track.Audio.Channels = head.Channels
+	}
 	return track, nil
 }
 
