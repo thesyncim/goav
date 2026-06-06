@@ -1109,6 +1109,24 @@ func TestTranscodeRecipeRejectsEmptyOutputLabel(t *testing.T) {
 	}
 }
 
+func TestTranscodeRecipeRejectsEmptyOutputDefinitionLabel(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("720p").VP9(2_000_000).
+		To("web").
+		Output("", goav.FileOutput("web.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_label_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_label_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), `Output("label"`) ||
+		!strings.Contains(err.Error(), `To("label"`) ||
+		!strings.Contains(err.Error(), "output name: web.webm") {
+		t.Fatalf("err = %v, want output definition label guidance", err)
+	}
+}
+
 func TestTranscodeRecipeRejectsDuplicateBranchNames(t *testing.T) {
 	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").VP9(2_000_000).To("archive").

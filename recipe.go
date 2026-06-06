@@ -1827,6 +1827,10 @@ func (j *TranscodeJob) Video(name string, options ...StreamOption) *StreamBuilde
 }
 
 func (j *TranscodeJob) Output(name string, output OutputSpec) *TranscodeJob {
+	if name == "" {
+		j.setErr(transcodeEmptyOutputDefinitionLabelError(output))
+		return j
+	}
 	j.outputs = append(j.outputs, namedOutputSpec{name: name, output: output.Name(firstNonEmpty(output.name, name))})
 	return j
 }
@@ -1952,9 +1956,6 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 			return transcodepkg.Plan{}, err
 		}
 		name := j.outputs[i].name
-		if name == "" {
-			name = j.outputs[i].output.label(fmt.Sprintf("output-%d", i))
-		}
 		if _, ok := outputs[name]; ok {
 			return transcodepkg.Plan{}, transcodeDuplicateOutputError(name)
 		}
@@ -2139,6 +2140,24 @@ func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 		},
 		Cause: ErrUnsupportedBuild,
 	}
+}
+
+func transcodeEmptyOutputDefinitionLabelError(output OutputSpec) error {
+	err := &BuildError{
+		Code:      "output_label_invalid",
+		Operation: "plan transcode",
+		Node:      output.label("output"),
+		Reason:    "transcode output labels must be non-empty",
+		Suggestions: []string{
+			"call .Output(\"label\", goav.FileOutput(...)) with a stable output label",
+			"route branches with .To(\"label\") using that same label",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+	if output.name != "" {
+		err.Details = append(err.Details, "output name: "+output.name)
+	}
+	return err
 }
 
 func transcodeDuplicateOutputError(name string) error {

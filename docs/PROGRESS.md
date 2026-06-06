@@ -414,7 +414,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     acceptance tests, while keeping `.Build(ctx)` for task events, graph specs,
     and explicit lifecycle control.
     Done.
-133. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+133. Reject empty transcode output definition labels so `.Output(...)` uses one
+    explicit stable label path instead of falling back to filenames or generated
+    handles.
+    Done.
+134. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

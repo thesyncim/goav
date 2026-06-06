@@ -167,10 +167,11 @@ task, err := goav.Transcode(goav.FileInput("input.webm", in)).
     Build(ctx)
 ```
 
-Branch names are required, unique handles; output labels are unique handles.
-Each branch lists each output once. Route multiple branches to the same output
-by reusing the output label in `.To(...)`, not by defining the output twice.
-The containers shown here require matching demuxer and muxer adapters.
+Branch names are required, unique handles; output labels are required, unique
+handles. Each branch lists each output once. Route multiple branches to the
+same output by reusing the output label in `.To(...)`, not by defining the
+output twice. The containers shown here require matching demuxer and muxer
+adapters.
 
 Resize and resample configs become branch-local filter stages when matching
 filter factories are registered. The first concrete filters cover S16 audio
