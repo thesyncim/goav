@@ -53,6 +53,8 @@ type Track struct {
 	FlagDefaultSet    bool
 	FlagForced        bool
 	FlagForcedSet     bool
+	FlagLacing        bool
+	FlagLacingSet     bool
 	Audio             AudioConfig
 	Video             VideoConfig
 

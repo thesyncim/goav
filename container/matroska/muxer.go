@@ -127,6 +127,9 @@ func normalizeTrackIdentity(track *Track) {
 	if !track.FlagDefaultSet {
 		track.FlagDefault = true
 	}
+	if !track.FlagLacingSet {
+		track.FlagLacing = true
+	}
 }
 
 func (m *Muxer) WritePacket(packet Packet) error {
@@ -200,6 +203,9 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 	track := m.tracks[trackIndex]
 	if packet.TimeNS < 0 {
 		return ErrInvalidData
+	}
+	if track.FlagLacingSet && !track.FlagLacing {
+		return ErrInvalidTrack
 	}
 	if !m.headerWritten {
 		var err error
@@ -1394,6 +1400,9 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 		return err
 	}
 	if err := tw.WriteUInt(idFlagForced, boolFlagUInt(track.FlagForced)); err != nil {
+		return err
+	}
+	if err := tw.WriteUInt(idFlagLacing, boolFlagUInt(track.FlagLacing)); err != nil {
 		return err
 	}
 	if track.Name != "" {

@@ -707,7 +707,7 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 	}
 	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
 	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
-	track := Track{Language: "und", TimebaseNum: 1, TimebaseDen: timeNS, FlagEnabled: true, FlagDefault: true}
+	track := Track{Language: "und", TimebaseNum: 1, TimebaseDen: timeNS, FlagEnabled: true, FlagDefault: true, FlagLacing: true}
 	var codecID string
 	for limited.N > 0 {
 		child, err := reader.ReadHeader()
@@ -768,6 +768,13 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.FlagForced = value
 			track.FlagForcedSet = true
+		case idFlagLacing:
+			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.FlagLacing = value
+			track.FlagLacingSet = true
 		case idName:
 			value, err := readStringPayload(reader, child.Size.Value)
 			if err != nil {
@@ -1090,6 +1097,9 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 	}
 	flags := d.blockHeader[2]
 	lacing := flags & simpleBlockLacingMask
+	if lacing != 0 && track.FlagLacingSet && !track.FlagLacing {
+		return ErrInvalidData
+	}
 	if d.blockLimit.N < 0 || d.blockLimit.N > int64(^uint(0)>>1) {
 		return ErrInvalidData
 	}

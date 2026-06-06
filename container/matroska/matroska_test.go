@@ -233,6 +233,8 @@ func TestMuxerDemuxerPreservesTrackUIDAndFlags(t *testing.T) {
 		FlagDefaultSet: true,
 		FlagForced:     true,
 		FlagForcedSet:  true,
+		FlagLacing:     false,
+		FlagLacingSet:  true,
 		Video:          VideoConfig{Width: 640, Height: 360},
 	})
 	if err != nil {
@@ -265,7 +267,8 @@ func TestMuxerDemuxerPreservesTrackUIDAndFlags(t *testing.T) {
 	if track.ID != 7 || track.UID != 12345 ||
 		track.FlagEnabled || !track.FlagEnabledSet ||
 		track.FlagDefault || !track.FlagDefaultSet ||
-		!track.FlagForced || !track.FlagForcedSet {
+		!track.FlagForced || !track.FlagForcedSet ||
+		track.FlagLacing || !track.FlagLacingSet {
 		t.Fatalf("track = %+v", track)
 	}
 }
@@ -307,7 +310,8 @@ func TestMuxerDefaultsTrackUIDAndFlags(t *testing.T) {
 	if tracks[0].UID != uint64(trackID) ||
 		!tracks[0].FlagEnabled || !tracks[0].FlagEnabledSet ||
 		!tracks[0].FlagDefault || !tracks[0].FlagDefaultSet ||
-		tracks[0].FlagForced || !tracks[0].FlagForcedSet {
+		tracks[0].FlagForced || !tracks[0].FlagForcedSet ||
+		!tracks[0].FlagLacing || !tracks[0].FlagLacingSet {
 		t.Fatalf("track = %+v", tracks[0])
 	}
 }
@@ -343,6 +347,7 @@ func TestDemuxerRejectsInvalidTrackFlags(t *testing.T) {
 		{name: "enabled", id: idFlagEnabled},
 		{name: "default", id: idFlagDefault},
 		{name: "forced", id: idFlagForced},
+		{name: "lacing", id: idFlagLacing},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -353,6 +358,73 @@ func TestDemuxerRejectsInvalidTrackFlags(t *testing.T) {
 				t.Fatalf("err = %v, want ErrInvalidData", err)
 			}
 		})
+	}
+}
+
+func TestMuxerRejectsLacedPacketWhenTrackDisablesLacing(t *testing.T) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		FlagLacing:        false,
+		FlagLacingSet:     true,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames:   [][]byte{{1}, {2}},
+	}); !errors.Is(err, ErrInvalidTrack) {
+		t.Fatalf("err = %v, want ErrInvalidTrack", err)
+	}
+}
+
+func TestDemuxerRejectsLacedBlockWhenTrackDisablesLacing(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		FlagLacing:        false,
+		FlagLacingSet:     true,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.writeHeader(); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeLacedSimpleBlock(muxer.ebml, trackID, simpleBlockLacingXiph, [][]byte{{1}, {2}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 4)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
 	}
 }
 
