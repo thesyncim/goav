@@ -201,6 +201,73 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 	}
 }
 
+func TestJobIntentShapePassRejectsStreamTransforms(t *testing.T) {
+	tests := []struct {
+		name   string
+		stream StreamIntent
+		code   string
+		want   string
+	}{
+		{
+			name: "invalid resize",
+			stream: StreamIntent{
+				Name:       "video",
+				Select:     StreamSelect{Type: av.MediaVideo},
+				Decode:     true,
+				Transforms: []TransformSpec{Resize(0, 720)},
+				RouteTo:    []string{"frames"},
+			},
+			code: "transform_invalid",
+			want: "positive width and height",
+		},
+		{
+			name: "wrong media",
+			stream: StreamIntent{
+				Name:       "audio",
+				Select:     StreamSelect{Type: av.MediaAudio},
+				Decode:     true,
+				Transforms: []TransformSpec{Resize(320, 180)},
+				RouteTo:    []string{"frames"},
+			},
+			code: "transform_media_mismatch",
+			want: "resize applies to video streams",
+		},
+		{
+			name: "empty transform",
+			stream: StreamIntent{
+				Name:       "video",
+				Select:     StreamSelect{Type: av.MediaVideo},
+				Decode:     true,
+				Transforms: []TransformSpec{{}},
+				RouteTo:    []string{"frames"},
+			},
+			code: "transform_invalid",
+			want: "empty stream transform",
+		},
+	}
+	pass := validateJobIntentShapePass()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := recipeCompileState{
+				operation: "build job",
+				intent: Intent{
+					Inputs:  []InputIntent{{Name: "input"}},
+					Streams: []StreamIntent{tt.stream},
+					Outputs: []OutputIntent{{Name: "frames"}},
+				},
+			}
+			err := pass.Apply(&state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code {
+				t.Fatalf("err = %v, want %s", err, tt.code)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 	transcodepkg "github.com/thesyncim/goav/transcode"
 )
@@ -293,7 +294,52 @@ func validateJobStreamIntentShape(operation string, stream StreamIntent, steps [
 	if err := validateRecipeEncode(stream.Encode, operation, stream.Name); err != nil {
 		return err
 	}
-	return validateCodecChangePolicy(operation, node, stream.CodecChange)
+	if err := validateCodecChangePolicy(operation, node, stream.CodecChange); err != nil {
+		return err
+	}
+	return validateJobStreamTransformIntentShape(operation, stream)
+}
+
+func validateJobStreamTransformIntentShape(operation string, stream StreamIntent) error {
+	selector := streamIntentSelector(stream)
+	node := jobStreamIntentName(stream)
+	for i := range stream.Transforms {
+		transform := stream.Transforms[i]
+		if err := validateTransformSpec(operation, node, transform); err != nil {
+			return err
+		}
+		switch {
+		case transform.Resize != nil && transform.Resample != nil:
+			return &BuildError{
+				Code:      "transform_invalid",
+				Operation: operation,
+				Node:      node,
+				Reason:    "one stream transform cannot be both resize and resample",
+				Cause:     ErrUnsupportedBuild,
+			}
+		case transform.Resize != nil:
+			if selector.Type == av.MediaAudio {
+				return transformMediaError(node, "resize", "video")
+			}
+		case transform.Resample != nil:
+			if selector.Type == av.MediaVideo {
+				return transformMediaError(node, "resample", "audio")
+			}
+		default:
+			return &BuildError{
+				Code:      "transform_invalid",
+				Operation: operation,
+				Node:      node,
+				Reason:    "empty stream transform",
+				Suggestions: []string{
+					"call .Resize(width, height) for video streams",
+					"call .Resample(sampleRate, channels) for audio streams",
+				},
+				Cause: ErrUnsupportedBuild,
+			}
+		}
+	}
+	return nil
 }
 
 func streamOperationMissingError(operation string, node string) error {

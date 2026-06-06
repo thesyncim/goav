@@ -631,6 +631,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `.Audio()`/`.Video()` `RouteTo` labels now check against concrete
     stream-local output attachments in their own compiler pass, matching the
     transcode route-binding shape. Done.
+189. Validate ordinary stream recipe transforms from intent: stream-scoped
+    `Resize`/`Resample` value, empty-transform, and media-mismatch errors now
+    fail during public `StreamIntent` validation instead of first surfacing
+    during builder lowering. Done.
 
 ## First Vertical Slice
 
@@ -865,6 +869,7 @@ branch planning now read `Intent.Streams`, ordinary output attachments are no
 longer split into builder-shaped fields, attachment consistency is checked
 before lowering, and both ordinary stream and transcode branch output routes
 bind in their own passes before stream lowering or mux-group plan assembly.
+Ordinary stream transform shape now validates from intent too.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and
