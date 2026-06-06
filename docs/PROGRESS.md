@@ -31,7 +31,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `av` | reset helpers, ownership docs, RTP timebase helpers, allocation-free timestamp and duration rescale/compare helpers | richer timestamp metadata helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry, optional decode-state provisioning, decoder and encoder pipeline stages, decode bounds for realtime adapter scratch planning, explicit unsupported live codec-switch guard for bound decoder stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
-| `pipeline` | direct executor, bounded buffered executor, fanout, one route model with one-to-many targets, stream/event scoped routing rendered as `stream=...` or `event=...`, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, buffered runtime transcode and live receive proofs, graph specs with detail-aware text/DOT/Mermaid rendering | richer realtime lifecycle proof |
+| `pipeline` | direct executor, bounded buffered executor, fanout, one route model with one-to-many targets, stream/event scoped routing rendered as `stream=...` or `event=...`, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, buffered runtime transcode and live receive proofs, detail-aware graph specs with one text/DOT/Mermaid render API | richer realtime lifecycle proof |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh including new-codec depacketizer handoff when registered, replacement-stream identity adoption for single-stream readers, targeted old-ID replacement for multi-stream readers, stream-scoped EOS | richer multi-stream receive |
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
@@ -226,7 +226,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 68. Prune unused public planning vocabulary: transcode keeps one explicit
     `Plan` path through `Runtime.Transcode(plan)`, and graph specs use
     `pipeline.NodeRef` directly instead of a duplicate node helper. Done.
-69. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+69. Collapse graph rendering to one public surface: `Spec.Render(format)` and
+    `Spec.Write(w, format)` handle text, DOT, and Mermaid; `String` remains the
+    text debug view. Done.
+70. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

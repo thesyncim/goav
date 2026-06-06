@@ -53,7 +53,7 @@ if err != nil {
     return err
 }
 
-_ = task.Describe().Mermaid()
+_ = task.Describe().Render("mermaid")
 
 if err := task.Run(ctx); err != nil {
     return err
@@ -154,7 +154,7 @@ spec, err := builder.Describe()
 if err != nil {
     return err
 }
-_ = spec.DOT()
+_ = spec.Render("dot")
 ```
 
 Unsupported fluent combinations fail early. New high-level workflows are added
@@ -167,7 +167,8 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `pipeline`: direct-call graph executor, bounded buffered graph executor,
   fanout, one `Route` edge value, stream/event route modifiers, backpressure
   surface, drop-policy decisions, bounded copy slots for borrowed media buffers,
-  detail-aware text/DOT/Mermaid graph specs.
+  detail-aware graph specs rendered through `Spec.Render(...)` or
+  `Spec.Write(...)`.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, realtime decode bounds, registry,
   optional decode-state provisioning, decoder and encoder pipeline stages.
@@ -228,7 +229,8 @@ Implemented slices:
   `RTP(...)` inputs.
 - Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,
   with optional filter stages.
-- Pre-build and runtime graph rendering as text, DOT, and Mermaid.
+- Pre-build and runtime graph rendering as text, DOT, and Mermaid through one
+  `Spec.Render(...)` / `Spec.Write(...)` surface.
 - Detail-aware graph descriptions for runtime-created sources, select stages,
   codecs, filters, RTP receive nodes, and mux outputs.
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.

@@ -159,9 +159,10 @@ transcode and RTP/WebRTC packet-reader record/fanout graphs can switch from
 direct calls to bounded buffered execution without a separate graph shape.
 
 Builders and graphs can produce a `pipeline.Spec`: structured nodes and edges
-plus human-readable text, DOT, and Mermaid rendering. Nodes may include short
-workflow details such as `rtp receive`, `packets -> frames`, `frames ->
-packets`, `resize`, or `mux`. This makes generated pipelines easy to validate,
+rendered as text, DOT, or Mermaid through one `Render`/`Write` API. Nodes may
+include short workflow details such as `rtp receive`, `packets -> frames`,
+`frames -> packets`, `resize`, or `mux`. This makes generated pipelines easy
+to validate,
 log, inspect, or visualize before running media through them. Specs render
 plain node-to-node routes, with routed edges labeled as media concepts such as
 `stream=video` or `event=packet_loss`; executor-specific details stay behind the

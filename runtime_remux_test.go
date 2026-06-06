@@ -129,8 +129,8 @@ func TestRuntimeBuilderDescribeRemux(t *testing.T) {
 		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
 	}
 	if !strings.Contains(spec.String(), "input.ogg -> archive.ogg") ||
-		!strings.Contains(spec.Mermaid(), "preview.ogg\\nstage") {
-		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
+		!strings.Contains(spec.Render("mermaid"), "preview.ogg\\nstage") {
+		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Render("mermaid"))
 	}
 }
 
@@ -157,15 +157,15 @@ func TestRuntimeBuilderInputOutputRemux(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || planned.Mermaid() != spec.Mermaid() {
+	if planned.String() != spec.String() || planned.Render("mermaid") != spec.Render("mermaid") {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
 	}
 	if len(spec.Nodes) != 3 || len(spec.Edges) != 2 {
 		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
 	}
 	if !strings.Contains(spec.String(), "input.ogg -> archive.ogg") ||
-		!strings.Contains(spec.Mermaid(), "preview.ogg\\nstage") {
-		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
+		!strings.Contains(spec.Render("mermaid"), "preview.ogg\\nstage") {
+		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Render("mermaid"))
 	}
 
 	if err := task.Run(context.Background()); err != nil {

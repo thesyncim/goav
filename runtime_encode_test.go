@@ -118,15 +118,15 @@ func TestRuntimeBuilderInputDecodeFilterEncodeOutputs(t *testing.T) {
 	}
 	if !strings.Contains(planned.String(), "meter -> encode-audio") ||
 		!strings.Contains(planned.String(), "encode-audio -> archive.ogg") ||
-		!strings.Contains(planned.Mermaid(), "preview.ogg\\nstage") {
-		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), planned.Mermaid())
+		!strings.Contains(planned.Render("mermaid"), "preview.ogg\\nstage") {
+		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), planned.Render("mermaid"))
 	}
 
 	task, err := builder.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+	if planned.String() != task.Describe().String() || planned.Render("mermaid") != task.Describe().Render("mermaid") {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
 	}
 	if err := task.Run(context.Background()); err != nil {
@@ -223,7 +223,7 @@ func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+	if planned.String() != task.Describe().String() || planned.Render("mermaid") != task.Describe().Render("mermaid") {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
 	}
 	if err := task.Run(ctx); err != nil {

@@ -86,7 +86,7 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+	if planned.String() != task.Describe().String() || planned.Render("mermaid") != task.Describe().Render("mermaid") {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
 	}
 	if err := task.Run(context.Background()); err != nil {
@@ -160,7 +160,7 @@ func TestRuntimeBuilderBufferedTranscodeCopiesEncodedPacketsToOutputs(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+	if planned.String() != task.Describe().String() || planned.Render("mermaid") != task.Describe().Render("mermaid") {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
 	}
 	if err := task.Run(context.Background()); err != nil {
@@ -261,7 +261,7 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+	if planned.String() != task.Describe().String() || planned.Render("mermaid") != task.Describe().Render("mermaid") {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
 	}
 	if err := task.Run(context.Background()); err != nil {

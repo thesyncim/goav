@@ -1,6 +1,8 @@
 package pipeline
 
 import (
+	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -35,7 +37,7 @@ func TestSpecTextAndDOT(t *testing.T) {
 		t.Fatalf("text spec:\n%s", text)
 	}
 
-	dot := spec.DOT()
+	dot := spec.Render(SpecDOT)
 	if !strings.Contains(dot, "digraph \"receive\"") ||
 		!strings.Contains(dot, "source\\nsource\\nrtp receive") ||
 		!strings.Contains(dot, "\"source\" -> \"decode\"") ||
@@ -43,10 +45,22 @@ func TestSpecTextAndDOT(t *testing.T) {
 		t.Fatalf("dot spec:\n%s", dot)
 	}
 
-	mermaid := spec.Mermaid()
+	mermaid := spec.Render(SpecMermaid)
 	if !strings.Contains(mermaid, "flowchart LR") ||
 		!strings.Contains(mermaid, "n0([\"source\\nsource\\nrtp receive\"])") ||
 		!strings.Contains(mermaid, "n1 -- \"stream=audio\" --> n2") {
 		t.Fatalf("mermaid spec:\n%s", mermaid)
+	}
+
+	var out bytes.Buffer
+	if err := spec.Write(&out, SpecMermaid); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != mermaid {
+		t.Fatalf("write mermaid:\n%s\nwant:\n%s", out.String(), mermaid)
+	}
+
+	if err := spec.Write(&out, SpecFormat("json")); !errors.Is(err, ErrUnsupportedSpecFormat) {
+		t.Fatalf("err = %v, want ErrUnsupportedSpecFormat", err)
 	}
 }

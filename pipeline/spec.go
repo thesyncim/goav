@@ -1,9 +1,21 @@
 package pipeline
 
 import (
+	"errors"
 	"io"
 	"strconv"
 	"strings"
+)
+
+var ErrUnsupportedSpecFormat = errors.New("pipeline: unsupported spec format")
+
+// SpecFormat selects a textual graph rendering format.
+type SpecFormat string
+
+const (
+	SpecText    SpecFormat = "text"
+	SpecDOT     SpecFormat = "dot"
+	SpecMermaid SpecFormat = "mermaid"
 )
 
 type NodeKind string
@@ -35,24 +47,31 @@ type Spec struct {
 }
 
 func (s Spec) String() string {
+	return s.Render(SpecText)
+}
+
+// Render returns the graph spec in the requested format.
+func (s Spec) Render(format SpecFormat) string {
 	var out strings.Builder
-	_ = s.WriteText(&out)
+	_ = s.Write(&out, format)
 	return out.String()
 }
 
-func (s Spec) DOT() string {
-	var out strings.Builder
-	_ = s.WriteDOT(&out)
-	return out.String()
+// Write renders the graph spec to w in the requested format.
+func (s Spec) Write(w io.Writer, format SpecFormat) error {
+	switch format {
+	case "", SpecText:
+		return s.writeText(w)
+	case SpecDOT:
+		return s.writeDOT(w)
+	case SpecMermaid:
+		return s.writeMermaid(w)
+	default:
+		return ErrUnsupportedSpecFormat
+	}
 }
 
-func (s Spec) Mermaid() string {
-	var out strings.Builder
-	_ = s.WriteMermaid(&out)
-	return out.String()
-}
-
-func (s Spec) WriteText(w io.Writer) error {
+func (s Spec) writeText(w io.Writer) error {
 	if err := writeStrings(w, "pipeline ", specName(s.Name), "\n"); err != nil {
 		return err
 	}
@@ -88,7 +107,7 @@ func (s Spec) WriteText(w io.Writer) error {
 	return nil
 }
 
-func (s Spec) WriteDOT(w io.Writer) error {
+func (s Spec) writeDOT(w io.Writer) error {
 	if err := writeStrings(w, "digraph ", quoteDOT(specName(s.Name)), " {\n  rankdir=LR;\n"); err != nil {
 		return err
 	}
@@ -123,7 +142,7 @@ func (s Spec) WriteDOT(w io.Writer) error {
 	return writeStrings(w, "}\n")
 }
 
-func (s Spec) WriteMermaid(w io.Writer) error {
+func (s Spec) writeMermaid(w io.Writer) error {
 	if err := writeStrings(w, "flowchart LR\n"); err != nil {
 		return err
 	}
