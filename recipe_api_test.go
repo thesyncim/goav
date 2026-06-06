@@ -1275,6 +1275,28 @@ func TestDefaultRecordIVFRecipeRunShortcutRuns(t *testing.T) {
 	}
 }
 
+func TestRecordRecipeDescribeMatchesBuiltGraph(t *testing.T) {
+	var out bytes.Buffer
+	job := goav.Record(
+		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
+		goav.FileOutput("preview.ivf", &out),
+	)
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := job.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}
+
 func TestDefaultFromFanoutRecipeRunShortcutRuns(t *testing.T) {
 	var recording bytes.Buffer
 	var preview bytes.Buffer
@@ -1288,6 +1310,30 @@ func TestDefaultFromFanoutRecipeRunShortcutRuns(t *testing.T) {
 	}
 	if recording.Len() == 0 || preview.Len() == 0 {
 		t.Fatalf("recording=%d preview=%d, want both non-empty", recording.Len(), preview.Len())
+	}
+}
+
+func TestFromFanoutRecipeDescribeMatchesBuiltGraph(t *testing.T) {
+	var recording bytes.Buffer
+	var preview bytes.Buffer
+	job := goav.From(goav.FileInput("input.ivf", bytes.NewReader(tinyIVF()))).
+		To(
+			goav.FileOutput("recording.ivf", &recording),
+			goav.FileOutput("preview.ivf", &preview),
+		)
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := job.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
 

@@ -572,6 +572,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 174. Give `WebRTCTrack(track)` its own unknown-codec diagnostic when Pion track
     metadata does not map to Opus, VP8, VP9, H264, or AV1, instead of reusing
     raw-RTP missing-codec guidance. Done.
+175. Add public recipe acceptance coverage proving `Describe()` and `Build(ctx)`
+    resolve the same `pipeline.Spec` for default record and fanout recipes.
+    Done.
 
 ## First Vertical Slice
 

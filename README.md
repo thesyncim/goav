@@ -153,6 +153,7 @@ Stream indexes are zero-based and must be non-negative.
 
 Use `.Run(ctx)` when the recipe is the whole job. Use `.Build(ctx)` when the
 caller needs a `Task` for graph specs, events, or explicit lifecycle control.
+`Describe()` resolves the same graph spec that `Build(ctx)` returns on the task.
 `Task.Stats()` reports packet/frame/event totals, event counts by type, buffered
 drops, and the last event observed by the graph.
 
