@@ -23,15 +23,6 @@ return goav.Record(
 ).Run(ctx)
 ```
 
-Record audio and video tracks together:
-
-```go
-return goav.From(goav.WebRTCTrack(audio)).
-    And(goav.WebRTCTrack(video)).
-    To(goav.FileOutput("call.webm", file)).
-    Run(ctx)
-```
-
 Record an RTP packet reader:
 
 ```go
@@ -51,17 +42,6 @@ return goav.Record(
 ).Run(ctx)
 ```
 
-Build a small video ladder:
-
-```go
-return goav.Transcode(goav.FileInput("input.webm", in)).
-    Video("720p").Resize(1280, 720).VP9(2_000_000).To("web").
-    Video("360p").Resize(640, 360).VP9(600_000).To("preview").
-    Output("web", goav.FileOutput("web.webm", web)).
-    Output("preview", goav.FileOutput("preview.webm", preview)).
-    Run(ctx)
-```
-
 Inspect the graph data before running:
 
 ```go
@@ -77,6 +57,33 @@ if err != nil {
 for _, edge := range spec.Edges {
     fmt.Printf("%s -> %s\n", edge.From, edge.To)
 }
+```
+
+The examples above use containers available in `goav.Default()` today. Workflows
+that need WebM, Ogg, or tagged encoder adapters are called out explicitly below.
+
+## Adapter-Backed Workflows
+
+Record audio and video tracks together when the selected runtime has a WebM
+muxer:
+
+```go
+return goav.From(goav.WebRTCTrack(audio)).
+    And(goav.WebRTCTrack(video)).
+    To(goav.FileOutput("call.webm", file)).
+    Run(ctx)
+```
+
+Build a small VP9 ladder when the selected runtime has WebM and VP9 encode
+adapters:
+
+```go
+return goav.Transcode(goav.FileInput("input.webm", in)).
+    Video("720p").Resize(1280, 720).VP9(2_000_000).To("web").
+    Video("360p").Resize(640, 360).VP9(600_000).To("preview").
+    Output("web", goav.FileOutput("web.webm", web)).
+    Output("preview", goav.FileOutput("preview.webm", preview)).
+    Run(ctx)
 ```
 
 ## Common Recipes

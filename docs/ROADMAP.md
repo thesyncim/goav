@@ -3,6 +3,40 @@
 `PROGRESS.md` is the compact tracker for current implementation status and
 validation gates. This roadmap keeps the broader phase view.
 
+## Next-Level Priorities
+
+The recipe surface is now pointed in the right direction; the next work is to
+make the implementation and adapter coverage match the promise.
+
+1. Keep first-page examples executable with `goav.Default()`, or move examples
+   that require unavailable containers into clearly labeled adapter sections.
+2. Add product-facing container adapters, starting with WebM and Ogg, then WAV
+   and Y4M where they unlock common record/transcode workflows.
+3. Make `Intent` the single compiler input: recipes should lower through
+   validation, probing, stream resolution, format/codec resolution,
+   demux/depacketize, decode, transform, encode, mux, route, buffer-policy, and
+   graph-emission passes instead of growing one matcher per workflow.
+4. Expand transcode from same-stream ladders into a media output composer where
+   one muxed output can receive coordinated audio and video branches.
+5. Add an `Explain` report above `Describe` so users can inspect selected
+   streams, required adapters, missing adapters, warnings, and the graph without
+   reading raw node/edge details first.
+6. Add reusable flow/subflow builders so common audio or video processing blocks
+   can be named, reused, and teed without manual graph wiring.
+7. Promote live codec-change behavior into explicit policy: compatible rebind,
+   keyframe request, drop-until-sync, and different-codec failure/rebuild
+   choices should be visible to realtime users.
+8. Add runtime observability through task stats, traces, drop reasons, and
+   latency counters.
+9. Make beginner signatures describe exactly what callers may pass, especially
+   `Record(input, outputs...)`, before freezing a v0.1 API.
+10. Prepare v0.1 only after README examples compile/run or clearly name their
+    adapter requirements, default and tagged tests pass, core stays cgo-free,
+    hot-path allocation guards remain green, and one public RTP/WebRTC record
+    path plus one public file transcode path work end to end. Confirm the
+    `go.mod` Go version is an intentional user installation floor before
+    tagging.
+
 ## Phase 0: API sketch
 
 - Core media types.

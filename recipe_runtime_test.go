@@ -9,11 +9,102 @@ import (
 	"testing"
 
 	"github.com/pion/rtp"
+	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/rtpav"
+	"github.com/thesyncim/goav/webrtcav"
 )
+
+func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
+	job := Record(
+		webRTCRemote(webrtcav.RemoteTrack{
+			Track: &webrtc.TrackRemote{},
+			Codec: webrtc.RTPCodecParameters{
+				RTPCodecCapability: webrtc.RTPCodecCapability{
+					MimeType:  webrtc.MimeTypeVP8,
+					ClockRate: 90000,
+				},
+				PayloadType: 96,
+			},
+			Stream: av.Stream{
+				ID:   "video",
+				Type: av.MediaVideo,
+			},
+		}),
+		FileOutput("recording.ivf", io.Discard),
+	)
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "video -> recording.ivf") ||
+		!strings.Contains(text, "rtp receive, codec=vp8") ||
+		strings.Contains(text, "depacketizers=") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Inputs) != 1 ||
+		intent.Inputs[0].Protocol != av.ProtocolWebRTC ||
+		intent.Inputs[0].Codec.ID != av.CodecVP8 {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
+	job := From(webRTCRemote(webrtcav.RemoteTrack{
+		Track: &webrtc.TrackRemote{},
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypeOpus,
+				ClockRate: 48000,
+				Channels:  2,
+			},
+			PayloadType: 111,
+		},
+		Stream: av.Stream{
+			ID:   "audio",
+			Type: av.MediaAudio,
+		},
+	})).
+		And(webRTCRemote(webrtcav.RemoteTrack{
+			Track: &webrtc.TrackRemote{},
+			Codec: webrtc.RTPCodecParameters{
+				RTPCodecCapability: webrtc.RTPCodecCapability{
+					MimeType:  webrtc.MimeTypeVP8,
+					ClockRate: 90000,
+				},
+				PayloadType: 96,
+			},
+			Stream: av.Stream{
+				ID:   "video",
+				Type: av.MediaVideo,
+			},
+		})).
+		To(FileOutput("recording.webm", io.Discard))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "audio -> recording.webm") ||
+		!strings.Contains(text, "video -> recording.webm") ||
+		!strings.Contains(text, "rtp receive, codec=opus") ||
+		!strings.Contains(text, "rtp receive, codec=vp8") ||
+		strings.Contains(text, "depacketizers=") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Inputs) != 2 ||
+		intent.Inputs[0].Codec.ID != av.CodecOpus ||
+		intent.Inputs[1].Codec.ID != av.CodecVP8 {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
 
 func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 	ctx := context.Background()

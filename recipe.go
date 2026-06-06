@@ -1106,7 +1106,7 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 		Suggestions: []string{
 			"give each repeated realtime input a distinct .Name(...)",
 			"use stable names such as \"audio\" and \"video\" for separate RTP/WebRTC streams",
-			"use goav.WebRTCTrack(..., goav.WithTrackStream(...)) when track metadata should provide the name",
+			"use goav.WebRTCTrack(track).Name(...) when track metadata is not enough",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

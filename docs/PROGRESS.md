@@ -474,8 +474,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `goav.RTP(reader).Name(...).Codec(...).RTPBuffer(...)`.
     Done.
 148. Hide `WebRTCRemote` and `TrackOption` so the root WebRTC recipe has one
-    constructor, `WebRTCTrack(track, options...)`, while advanced session
-    orchestration stays in `webrtcav`.
+    constructor, `WebRTCTrack(track)`, while advanced session orchestration
+    stays in `webrtcav`.
     Done.
 149. Remove `RTPInputOption` and the `RTP(reader, options...)` constructor path
     so RTP recipe configuration has one shape: `RTP(reader).Name(...).Codec(...)`
@@ -518,7 +518,18 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     buffering/gap knobs stay in advanced docs instead of the getting-started
     path.
     Done.
-159. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+159. Demote WebRTC track option helpers to package-private test/runtime
+    plumbing so the public WebRTC recipe shape is only `WebRTCTrack(track)`.
+    Done.
+160. Move WebM and tagged-encoder examples out of the README 30-second path so
+    first-page examples only use formats available in `goav.Default()` today.
+    Done.
+161. Extend the roadmap around executable examples, WebM/Ogg adapter coverage,
+    Intent compiler passes, mixed audio/video transcode composition, Explain
+    reports, reusable flows, live codec-change policy, observability, beginner
+    signature cleanup, and v0.1 readiness.
+    Done.
+162. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

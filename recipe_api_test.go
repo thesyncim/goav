@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/pion/rtp"
-	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
@@ -104,6 +103,11 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"WithRTPBufferLimits":    true,
 		"WithRTPDecodeBounds":    true,
 		"WithRTPMaxTimestampGap": true,
+		"WithTrackCodec":         true,
+		"WithTrackStream":        true,
+		"WithTrackPayloads":      true,
+		"WithTrackFeedback":      true,
+		"WithTrackMetadata":      true,
 		"WebRTCRemote":           true,
 	}
 	legacyTypes := map[string]bool{
@@ -172,6 +176,29 @@ func TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor(t *testing.T) {
 	} {
 		if strings.Contains(text, advanced) {
 			t.Fatalf("README exposes %s in the front-door guide", advanced)
+		}
+	}
+}
+
+func TestReadmeThirtySecondExamplesUseDefaultFormats(t *testing.T) {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	start := strings.Index(text, "## 30-Second Examples")
+	end := strings.Index(text, "## Adapter-Backed Workflows")
+	if start < 0 || end < 0 || end <= start {
+		t.Fatalf("README sections not found")
+	}
+	frontDoor := text[start:end]
+	for _, unsupported := range []string{
+		".webm",
+		".ogg",
+		"Transcode(",
+	} {
+		if strings.Contains(frontDoor, unsupported) {
+			t.Fatalf("30-second README examples include %s without default adapter support", unsupported)
 		}
 	}
 }
@@ -279,92 +306,6 @@ func TestReadmeDecodeShortcutUsesFrameSink(t *testing.T) {
 	}
 	intent := job.Intent()
 	if len(intent.Streams) != 1 || string(intent.Streams[0].Select.Codec) != "opus" || !intent.Streams[0].Decode {
-		t.Fatalf("intent: %+v", intent)
-	}
-}
-
-func TestReadmeWebRTCTrackRecordRecipeIsSmall(t *testing.T) {
-	job := goav.Record(
-		goav.WebRTCTrack(&webrtc.TrackRemote{},
-			goav.WithTrackCodec(webrtc.RTPCodecParameters{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					MimeType:  webrtc.MimeTypeVP8,
-					ClockRate: 90000,
-				},
-				PayloadType: 96,
-			}),
-			goav.WithTrackStream(goav.Stream{
-				ID:   "video",
-				Type: "video",
-			}),
-		),
-		goav.FileOutput("recording.ivf", io.Discard),
-	)
-
-	spec, err := job.Describe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := specText(spec)
-	if !strings.Contains(text, "video -> recording.ivf") ||
-		!strings.Contains(text, "rtp receive, codec=vp8") ||
-		strings.Contains(text, "depacketizers=") {
-		t.Fatalf("spec:\n%s", text)
-	}
-	intent := job.Intent()
-	if len(intent.Inputs) != 1 ||
-		string(intent.Inputs[0].Protocol) != "webrtc" ||
-		string(intent.Inputs[0].Codec.ID) != "vp8" {
-		t.Fatalf("intent: %+v", intent)
-	}
-}
-
-func TestReadmeWebRTCTrackRecordMultiInputRecipeIsSmall(t *testing.T) {
-	job := goav.From(goav.WebRTCTrack(&webrtc.TrackRemote{},
-		goav.WithTrackCodec(webrtc.RTPCodecParameters{
-			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType:  webrtc.MimeTypeOpus,
-				ClockRate: 48000,
-				Channels:  2,
-			},
-			PayloadType: 111,
-		}),
-		goav.WithTrackStream(goav.Stream{
-			ID:   "audio",
-			Type: "audio",
-		}),
-	)).
-		And(goav.WebRTCTrack(&webrtc.TrackRemote{},
-			goav.WithTrackCodec(webrtc.RTPCodecParameters{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					MimeType:  webrtc.MimeTypeVP8,
-					ClockRate: 90000,
-				},
-				PayloadType: 96,
-			}),
-			goav.WithTrackStream(goav.Stream{
-				ID:   "video",
-				Type: "video",
-			}),
-		)).
-		To(goav.FileOutput("recording.webm", io.Discard))
-
-	spec, err := job.Describe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := specText(spec)
-	if !strings.Contains(text, "audio -> recording.webm") ||
-		!strings.Contains(text, "video -> recording.webm") ||
-		!strings.Contains(text, "rtp receive, codec=opus") ||
-		!strings.Contains(text, "rtp receive, codec=vp8") ||
-		strings.Contains(text, "depacketizers=") {
-		t.Fatalf("spec:\n%s", text)
-	}
-	intent := job.Intent()
-	if len(intent.Inputs) != 2 ||
-		string(intent.Inputs[0].Codec.ID) != "opus" ||
-		string(intent.Inputs[1].Codec.ID) != "vp8" {
 		t.Fatalf("intent: %+v", intent)
 	}
 }
