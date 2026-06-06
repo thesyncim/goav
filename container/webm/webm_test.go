@@ -154,6 +154,60 @@ func TestMuxerDemuxerPreservesVideoDisplayMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesTrackSelectionFlags(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:                    TrackAudio,
+		Codec:                   CodecOpus,
+		FlagHearingImpaired:     true,
+		FlagHearingImpairedSet:  true,
+		FlagVisualImpaired:      false,
+		FlagVisualImpairedSet:   true,
+		FlagTextDescriptions:    true,
+		FlagTextDescriptionsSet: true,
+		FlagOriginal:            true,
+		FlagOriginalSet:         true,
+		FlagCommentary:          false,
+		FlagCommentarySet:       true,
+		Audio:                   AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0xf8, 0xff, 0xfe},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	track := tracks[0]
+	if !track.FlagHearingImpaired || !track.FlagHearingImpairedSet ||
+		track.FlagVisualImpaired || !track.FlagVisualImpairedSet ||
+		!track.FlagTextDescriptions || !track.FlagTextDescriptionsSet ||
+		!track.FlagOriginal || !track.FlagOriginalSet ||
+		track.FlagCommentary || !track.FlagCommentarySet {
+		t.Fatalf("track = %+v", track)
+	}
+}
+
 func TestDemuxerRejectsMatroskaDocType(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := matroska.NewMuxer(&buffer, matroska.MuxerOptions{})

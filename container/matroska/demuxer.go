@@ -768,6 +768,41 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.FlagForced = value
 			track.FlagForcedSet = true
+		case idFlagHearingImpaired:
+			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.FlagHearingImpaired = value
+			track.FlagHearingImpairedSet = true
+		case idFlagVisualImpaired:
+			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.FlagVisualImpaired = value
+			track.FlagVisualImpairedSet = true
+		case idFlagTextDescriptions:
+			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.FlagTextDescriptions = value
+			track.FlagTextDescriptionsSet = true
+		case idFlagOriginal:
+			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.FlagOriginal = value
+			track.FlagOriginalSet = true
+		case idFlagCommentary:
+			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.FlagCommentary = value
+			track.FlagCommentarySet = true
 		case idFlagLacing:
 			value, err := readBoolFlagPayload(reader, child.Size.Value)
 			if err != nil {

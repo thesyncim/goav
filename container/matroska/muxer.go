@@ -1402,6 +1402,21 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 	if err := tw.WriteUInt(idFlagForced, boolFlagUInt(track.FlagForced)); err != nil {
 		return err
 	}
+	if err := writeOptionalBoolFlag(tw, idFlagHearingImpaired, track.FlagHearingImpaired, track.FlagHearingImpairedSet); err != nil {
+		return err
+	}
+	if err := writeOptionalBoolFlag(tw, idFlagVisualImpaired, track.FlagVisualImpaired, track.FlagVisualImpairedSet); err != nil {
+		return err
+	}
+	if err := writeOptionalBoolFlag(tw, idFlagTextDescriptions, track.FlagTextDescriptions, track.FlagTextDescriptionsSet); err != nil {
+		return err
+	}
+	if err := writeOptionalBoolFlag(tw, idFlagOriginal, track.FlagOriginal, track.FlagOriginalSet); err != nil {
+		return err
+	}
+	if err := writeOptionalBoolFlag(tw, idFlagCommentary, track.FlagCommentary, track.FlagCommentarySet); err != nil {
+		return err
+	}
 	if err := tw.WriteUInt(idFlagLacing, boolFlagUInt(track.FlagLacing)); err != nil {
 		return err
 	}
@@ -1492,6 +1507,13 @@ func boolFlagUInt(value bool) uint64 {
 		return 1
 	}
 	return 0
+}
+
+func writeOptionalBoolFlag(w *ebml.Writer, id ebml.ID, value bool, set bool) error {
+	if !set {
+		return nil
+	}
+	return w.WriteUInt(id, boolFlagUInt(value))
 }
 
 func writeVideo(w *ebml.Writer, video VideoConfig) error {

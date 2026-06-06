@@ -44,28 +44,38 @@ type VideoConfig struct {
 }
 
 type Track struct {
-	ID                uint32
-	UID               uint64
-	Type              TrackType
-	Codec             Codec
-	Name              string
-	Language          string
-	LanguageBCP47     string
-	TimebaseNum       int64
-	TimebaseDen       int64
-	DefaultDurationNS int64
-	CodecDelayNS      int64
-	SeekPreRollNS     int64
-	FlagEnabled       bool
-	FlagEnabledSet    bool
-	FlagDefault       bool
-	FlagDefaultSet    bool
-	FlagForced        bool
-	FlagForcedSet     bool
-	FlagLacing        bool
-	FlagLacingSet     bool
-	Audio             AudioConfig
-	Video             VideoConfig
+	ID                      uint32
+	UID                     uint64
+	Type                    TrackType
+	Codec                   Codec
+	Name                    string
+	Language                string
+	LanguageBCP47           string
+	TimebaseNum             int64
+	TimebaseDen             int64
+	DefaultDurationNS       int64
+	CodecDelayNS            int64
+	SeekPreRollNS           int64
+	FlagEnabled             bool
+	FlagEnabledSet          bool
+	FlagDefault             bool
+	FlagDefaultSet          bool
+	FlagForced              bool
+	FlagForcedSet           bool
+	FlagHearingImpaired     bool
+	FlagHearingImpairedSet  bool
+	FlagVisualImpaired      bool
+	FlagVisualImpairedSet   bool
+	FlagTextDescriptions    bool
+	FlagTextDescriptionsSet bool
+	FlagOriginal            bool
+	FlagOriginalSet         bool
+	FlagCommentary          bool
+	FlagCommentarySet       bool
+	FlagLacing              bool
+	FlagLacingSet           bool
+	Audio                   AudioConfig
+	Video                   VideoConfig
 
 	CodecPrivate []byte
 }

@@ -316,19 +316,29 @@ func TestMuxerDemuxerPreservesTrackUIDAndFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	trackID, err := muxer.AddTrack(Track{
-		ID:             7,
-		UID:            12345,
-		Type:           TrackVideo,
-		Codec:          CodecVP8,
-		FlagEnabled:    false,
-		FlagEnabledSet: true,
-		FlagDefault:    false,
-		FlagDefaultSet: true,
-		FlagForced:     true,
-		FlagForcedSet:  true,
-		FlagLacing:     false,
-		FlagLacingSet:  true,
-		Video:          VideoConfig{Width: 640, Height: 360},
+		ID:                      7,
+		UID:                     12345,
+		Type:                    TrackVideo,
+		Codec:                   CodecVP8,
+		FlagEnabled:             false,
+		FlagEnabledSet:          true,
+		FlagDefault:             false,
+		FlagDefaultSet:          true,
+		FlagForced:              true,
+		FlagForcedSet:           true,
+		FlagHearingImpaired:     true,
+		FlagHearingImpairedSet:  true,
+		FlagVisualImpaired:      false,
+		FlagVisualImpairedSet:   true,
+		FlagTextDescriptions:    true,
+		FlagTextDescriptionsSet: true,
+		FlagOriginal:            false,
+		FlagOriginalSet:         true,
+		FlagCommentary:          true,
+		FlagCommentarySet:       true,
+		FlagLacing:              false,
+		FlagLacingSet:           true,
+		Video:                   VideoConfig{Width: 640, Height: 360},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -361,6 +371,11 @@ func TestMuxerDemuxerPreservesTrackUIDAndFlags(t *testing.T) {
 		track.FlagEnabled || !track.FlagEnabledSet ||
 		track.FlagDefault || !track.FlagDefaultSet ||
 		!track.FlagForced || !track.FlagForcedSet ||
+		!track.FlagHearingImpaired || !track.FlagHearingImpairedSet ||
+		track.FlagVisualImpaired || !track.FlagVisualImpairedSet ||
+		!track.FlagTextDescriptions || !track.FlagTextDescriptionsSet ||
+		track.FlagOriginal || !track.FlagOriginalSet ||
+		!track.FlagCommentary || !track.FlagCommentarySet ||
 		track.FlagLacing || !track.FlagLacingSet {
 		t.Fatalf("track = %+v", track)
 	}
@@ -486,6 +501,11 @@ func TestMuxerDefaultsTrackUIDAndFlags(t *testing.T) {
 		!tracks[0].FlagEnabled || !tracks[0].FlagEnabledSet ||
 		!tracks[0].FlagDefault || !tracks[0].FlagDefaultSet ||
 		tracks[0].FlagForced || !tracks[0].FlagForcedSet ||
+		tracks[0].FlagHearingImpairedSet ||
+		tracks[0].FlagVisualImpairedSet ||
+		tracks[0].FlagTextDescriptionsSet ||
+		tracks[0].FlagOriginalSet ||
+		tracks[0].FlagCommentarySet ||
 		!tracks[0].FlagLacing || !tracks[0].FlagLacingSet {
 		t.Fatalf("track = %+v", tracks[0])
 	}
@@ -522,6 +542,11 @@ func TestDemuxerRejectsInvalidTrackFlags(t *testing.T) {
 		{name: "enabled", id: idFlagEnabled},
 		{name: "default", id: idFlagDefault},
 		{name: "forced", id: idFlagForced},
+		{name: "hearing", id: idFlagHearingImpaired},
+		{name: "visual", id: idFlagVisualImpaired},
+		{name: "text descriptions", id: idFlagTextDescriptions},
+		{name: "original", id: idFlagOriginal},
+		{name: "commentary", id: idFlagCommentary},
 		{name: "lacing", id: idFlagLacing},
 	}
 	for _, tt := range tests {
