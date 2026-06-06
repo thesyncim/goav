@@ -63,6 +63,8 @@ Current milestone:
   WebM demuxers requiring the `webm` EBML document type.
 - Format registry adapters for `av.Stream` and `av.Packet`.
 - Caller-owned packet data for demuxing.
+- Demux validation rejects on-disk track, cue, and block track numbers that
+  cannot fit the public `uint32` track ID surface.
 
 ## Deferred Features
 

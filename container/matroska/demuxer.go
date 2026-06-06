@@ -47,6 +47,8 @@ type laceFrame struct {
 	size   int
 }
 
+const maxTrackID = uint64(^uint32(0))
+
 func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
 	if r == nil {
 		return nil, ErrNilReader
@@ -586,7 +588,10 @@ func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (
 			if err != nil {
 				return 0, 0, err
 			}
-			trackID = uint32(value)
+			trackID, err = trackIDFromUint(value)
+			if err != nil {
+				return 0, 0, err
+			}
 		case idCueClusterPosition:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
@@ -621,7 +626,11 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			if err != nil {
 				return Track{}, err
 			}
-			track.ID = uint32(value)
+			trackID, err := trackIDFromUint(value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.ID = trackID
 		case idTrackType:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
@@ -866,6 +875,10 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 	if err != nil {
 		return err
 	}
+	trackNumber, err := trackIDFromUint(trackID)
+	if err != nil {
+		return err
+	}
 	if _, err := io.ReadFull(&d.blockLimit, d.blockHeader[:]); err != nil {
 		return err
 	}
@@ -880,7 +893,7 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 		return ErrInvalidData
 	}
 	if lacing != 0 {
-		return d.readLacedBlockPayload(trackID, timecode, flags, lacing, dst, simple)
+		return d.readLacedBlockPayload(trackNumber, timecode, flags, lacing, dst, simple)
 	}
 	frameSize := int(d.blockLimit.N)
 	if cap(dst.Data) < frameSize {
@@ -893,7 +906,7 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 	if _, err := io.ReadFull(&d.blockLimit, dst.Data); err != nil {
 		return err
 	}
-	dst.TrackID = uint32(trackID)
+	dst.TrackID = trackNumber
 	dst.TimeNS = timecode * d.timecodeScaleNS
 	if simple {
 		dst.Keyframe = flags&simpleBlockKeyframe != 0
@@ -905,6 +918,13 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 	return nil
 }
 
+func trackIDFromUint(value uint64) (uint32, error) {
+	if value == 0 || value > maxTrackID {
+		return 0, ErrInvalidData
+	}
+	return uint32(value), nil
+}
+
 func drainLimited(r *io.LimitedReader) error {
 	if r.N <= 0 {
 		return nil
@@ -913,7 +933,7 @@ func drainLimited(r *io.LimitedReader) error {
 	return err
 }
 
-func (d *Demuxer) readLacedBlockPayload(trackID uint64, timecode int64, flags byte, lacing byte, dst *Packet, simple bool) error {
+func (d *Demuxer) readLacedBlockPayload(trackID uint32, timecode int64, flags byte, lacing byte, dst *Packet, simple bool) error {
 	frameCountByte, err := d.readBlockByte()
 	if err != nil {
 		return err
@@ -956,9 +976,9 @@ func (d *Demuxer) readLacedBlockPayload(trackID uint64, timecode int64, flags by
 		d.laceFrames[i].offset = offset
 		offset += d.laceFrames[i].size
 	}
-	d.laceTrackID = uint32(trackID)
+	d.laceTrackID = trackID
 	d.laceTimeNS = timecode * d.timecodeScaleNS
-	d.laceDurationNS = d.defaultDurationNS(uint32(trackID))
+	d.laceDurationNS = d.defaultDurationNS(trackID)
 	d.laceFrameCount = frameCount
 	d.laceFrameIndex = 0
 	d.laceKeyframe = simple && flags&simpleBlockKeyframe != 0

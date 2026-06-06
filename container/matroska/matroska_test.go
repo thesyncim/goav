@@ -582,6 +582,33 @@ func TestDemuxerRejectsLaceFrameCountOverLimit(t *testing.T) {
 	}
 }
 
+func TestDemuxerRejectsOversizedTrackIDs(t *testing.T) {
+	oversized := maxTrackID + 1
+	t.Run("track entry", func(t *testing.T) {
+		data := makeTrackNumberMatroskaData(t, oversized)
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("cue track", func(t *testing.T) {
+		data := makeCueTrackNumberMatroskaData(t, oversized)
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("block track", func(t *testing.T) {
+		data := makeBlockTrackNumberMatroskaData(t, oversized)
+		demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		packet := Packet{Data: make([]byte, 0, 8)}
+		if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+}
+
 func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
@@ -955,6 +982,153 @@ func makeLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, defaultD
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func makeTrackNumberMatroskaData(tb testing.TB, trackNumber uint64) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	writeMatroskaSegmentPrefix(tb, muxer)
+	if err := writeTracksWithTrackNumber(muxer.ebml, trackNumber); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func makeCueTrackNumberMatroskaData(tb testing.TB, cueTrackNumber uint64) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	}); err != nil {
+		tb.Fatal(err)
+	}
+	writeMatroskaSegmentPrefix(tb, muxer)
+	if err := muxer.writeTracks(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeCuesWithTrackNumber(muxer.ebml, cueTrackNumber); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func makeBlockTrackNumberMatroskaData(tb testing.TB, trackNumber uint64) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	}); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.writeHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeSimpleBlockWithTrackNumber(muxer.ebml, trackNumber, []byte{1}); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func writeMatroskaSegmentPrefix(tb testing.TB, muxer *Muxer) {
+	tb.Helper()
+	if err := muxer.writeEBMLHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.ebml.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
+		tb.Fatal(err)
+	}
+	muxer.segmentData = muxer.ebml.Offset()
+	if err := muxer.writeInfo(); err != nil {
+		tb.Fatal(err)
+	}
+}
+
+func writeTracksWithTrackNumber(writer *ebml.Writer, trackNumber uint64) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	if err := ew.WriteUInt(idTrackNumber, trackNumber); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, matroskaTrackVideo); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, "V_VP8"); err != nil {
+		return err
+	}
+	if err := writeVideo(ew, VideoConfig{Width: 16, Height: 16}); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+func writeCuesWithTrackNumber(writer *ebml.Writer, trackNumber uint64) error {
+	var cues bytes.Buffer
+	cw := ebml.NewWriter(&cues)
+	var point bytes.Buffer
+	pw := ebml.NewWriter(&point)
+	if err := pw.WriteUInt(idCueTime, 0); err != nil {
+		return err
+	}
+	var positions bytes.Buffer
+	tw := ebml.NewWriter(&positions)
+	if err := tw.WriteUInt(idCueTrack, trackNumber); err != nil {
+		return err
+	}
+	if err := tw.WriteUInt(idCueClusterPosition, 0); err != nil {
+		return err
+	}
+	if err := pw.WriteElement(idCueTrackPositions, positions.Bytes()); err != nil {
+		return err
+	}
+	if err := cw.WriteElement(idCuePoint, point.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idCues, cues.Bytes())
+}
+
+func writeSimpleBlockWithTrackNumber(writer *ebml.Writer, trackNumber uint64, frame []byte) error {
+	var payload bytes.Buffer
+	var scratch [ebml.MaxSizeWidth]byte
+	n, err := ebml.EncodeUnsignedVINT(scratch[:], trackNumber)
+	if err != nil {
+		return err
+	}
+	payload.Write(scratch[:n])
+	var blockHeader [3]byte
+	blockHeader[2] = simpleBlockKeyframe
+	payload.Write(blockHeader[:])
+	payload.Write(frame)
+	return writer.WriteElement(idSimpleBlock, payload.Bytes())
 }
 
 func writeLacedSimpleBlock(writer *ebml.Writer, trackID uint32, lacing byte, frames [][]byte) error {
