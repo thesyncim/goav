@@ -52,6 +52,99 @@ func TestDecoderDecodesLowOverheadIntoBorrowedFrame(t *testing.T) {
 	}
 }
 
+func TestDecoderDecodesRTPPayloadIntoBorrowedFrame(t *testing.T) {
+	payload := testRTPPayload()
+	decoder, workerPool := newTestRTPDecoder(t, payload)
+	defer workerPool.Close()
+
+	result := testDecodeResult(1, 1)
+	pkt := &av.Packet{
+		StreamID:   "video",
+		CodecEpoch: 7,
+		Payload:    av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		PTS:        av.RTPToTimestamp(9000, 90000),
+		Duration:   av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
+		Keyframe:   true,
+		Metadata:   av.Metadata{"rid": "q"},
+	}
+	if err := decoder.DecodeRTPPayloadInto(context.Background(), pkt, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 1 {
+		t.Fatalf("frames = %d, want 1", len(result.Frames))
+	}
+	frame := &result.Frames[0]
+	if frame.StreamID != "video" || frame.CodecEpoch != 7 || frame.Type != av.MediaVideo {
+		t.Fatalf("frame identity = %+v", frame)
+	}
+	if frame.Video == nil || frame.Video.Width != 16 || frame.Video.Height != 16 ||
+		frame.Video.PixelFormat != av.PixelFormatGray8 {
+		t.Fatalf("video = %+v", frame.Video)
+	}
+	if len(frame.Planes) != 1 ||
+		frame.Planes[0].Buffer.Ownership != av.BufferBorrowed ||
+		len(frame.Planes[0].Buffer.Bytes) == 0 ||
+		frame.Planes[0].Stride == 0 {
+		t.Fatalf("planes = %+v", frame.Planes)
+	}
+	if frame.PTS != pkt.PTS || frame.Duration != pkt.Duration || frame.Metadata["rid"] != "q" {
+		t.Fatalf("timestamps/metadata = %+v", frame)
+	}
+}
+
+func TestDecoderRTPPayloadAfterLossPreservesSequenceState(t *testing.T) {
+	key := testRTPPayload()
+	delta := testRTPFramePayload()
+	decoder, workerPool := newTestRTPDecoder(t, key, delta)
+	defer workerPool.Close()
+
+	result := testDecodeResult(2, 1)
+	if err := decoder.DecodeRTPPayloadInto(context.Background(), &av.Packet{
+		StreamID: "video",
+		Payload:  av.Buffer{Bytes: key, Ownership: av.BufferImmutable},
+		Keyframe: true,
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 1 {
+		t.Fatalf("initial frames = %d, want 1", len(result.Frames))
+	}
+
+	result.Reset()
+	if err := decoder.DecodeRTPPayloadInto(context.Background(), &av.Packet{
+		StreamID:   "video",
+		Payload:    av.Buffer{Bytes: delta, Ownership: av.BufferImmutable},
+		Keyframe:   true,
+		LossBefore: true,
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 1 || len(result.Requests) != 0 {
+		t.Fatalf("after-loss result = %+v", result)
+	}
+}
+
+func TestDecoderRTPPayloadRetainsFragments(t *testing.T) {
+	payloads := testFragmentedRTPPayloads()
+	decoder, workerPool := newTestRTPDecoder(t, payloads...)
+	defer workerPool.Close()
+
+	result := testDecodeResult(1, 1)
+	for i := range payloads {
+		err := decoder.DecodeRTPPayloadInto(context.Background(), &av.Packet{
+			StreamID: "video",
+			Payload:  av.Buffer{Bytes: payloads[i], Ownership: av.BufferImmutable},
+			Keyframe: true,
+		}, &result)
+		if err != nil {
+			t.Fatalf("payload %d: %v", i, err)
+		}
+	}
+	if len(result.Frames) != 1 || len(result.Requests) != 0 {
+		t.Fatalf("fragmented result = %+v", result)
+	}
+}
+
 func TestDecoderRequestsKeyframeAfterLoss(t *testing.T) {
 	payload := testLowOverheadStream()
 	decoder, workerPool := newTestDecoder(t, payload)
@@ -289,6 +382,23 @@ func TestDecoderCloseLifecycle(t *testing.T) {
 func newTestDecoder(t *testing.T, payload []byte) (*Decoder, *backend.TileWorkerPool) {
 	t.Helper()
 	probe := testLowOverheadPlan(t, payload)
+	return newTestDecoderWithScratch(t, len(payload), len(payload), probe.Size)
+}
+
+func newTestRTPDecoder(t *testing.T, payloads ...[]byte) (*Decoder, *backend.TileWorkerPool) {
+	t.Helper()
+	probe := testRTPPayloadsPlan(t, payloads)
+	maxPayload := 0
+	for i := range payloads {
+		if len(payloads[i]) > maxPayload {
+			maxPayload = len(payloads[i])
+		}
+	}
+	return newTestDecoderWithScratch(t, maxPayload, maxPayload, probe.Size)
+}
+
+func newTestDecoderWithScratch(t *testing.T, maxPayload int, maxRetained int, scratch backend.DecoderFrameWorkResidualStreamScratchSize) (*Decoder, *backend.TileWorkerPool) {
+	t.Helper()
 	workerPool, err := backend.NewTileWorkerPool(1)
 	if err != nil {
 		t.Fatal(err)
@@ -296,10 +406,10 @@ func newTestDecoder(t *testing.T, payload []byte) (*Decoder, *backend.TileWorker
 	state, err := NewDecoderState(DecoderStateConfig{
 		Bounds: codec.DecodeBounds{
 			MaxFramesPerInput:   1,
-			MaxEventsPerInput:   probe.Size.Events,
+			MaxEventsPerInput:   scratch.Events,
 			MaxRequestsPerInput: 1,
-			MaxPayloadBytes:     len(payload),
-			MaxRetainedBytes:    0,
+			MaxPayloadBytes:     maxPayload,
+			MaxRetainedBytes:    maxRetained,
 			MaxWidth:            16,
 			MaxHeight:           16,
 		},
@@ -312,7 +422,7 @@ func newTestDecoder(t *testing.T, payload []byte) (*Decoder, *backend.TileWorker
 			SubsamplingY: true,
 			Align:        defaultAlign,
 		},
-		Scratch:    probe.Size,
+		Scratch:    scratch,
 		WorkerPool: workerPool,
 	})
 	if err != nil {

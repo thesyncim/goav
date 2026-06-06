@@ -138,8 +138,7 @@ One receive graph should be able to drive several sinks at once:
 - stats/analysis
 - archival transcode
 
-Explicit application-owned graphs can use a multi-target connection for this
-shape:
+Explicit application-owned graphs can use a multi-target route for this shape:
 
 ```go
 task, err := runtime.New().
@@ -148,8 +147,10 @@ task, err := runtime.New().
     Sink(record).
     Sink(preview).
     Sink(stats).
-    Connect("source", "decode").
-    Connect("decode", "record", "preview", "stats").
+    Routes(
+        goav.From("source").To("decode"),
+        goav.From("decode").To("record", "preview", "stats"),
+    ).
     Build(ctx)
 ```
 

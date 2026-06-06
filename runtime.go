@@ -275,6 +275,15 @@ func (b *builder) ConnectEvent(from string, event av.EventType, to ...string) Bu
 	return b.connect(from, pipeline.RouteByEvent, string(event), to...)
 }
 
+func (b *builder) Route(route pipeline.Route) Builder {
+	return b.Routes(route)
+}
+
+func (b *builder) Routes(routes ...pipeline.Route) Builder {
+	b.connections = append(b.connections, routes...)
+	return b
+}
+
 func (b *builder) connect(from string, policy pipeline.RoutePolicy, label string, to ...string) Builder {
 	if len(to) == 0 {
 		return b
@@ -287,8 +296,7 @@ func (b *builder) connect(from string, policy pipeline.RoutePolicy, label string
 }
 
 func (b *builder) Connection(connection pipeline.Connection) Builder {
-	b.connections = append(b.connections, connection)
-	return b
+	return b.Route(connection)
 }
 
 func (b *builder) Build(ctx context.Context) (Task, error) {

@@ -106,7 +106,7 @@ Each reader can be a raw RTP receiver or a `webrtcav.TrackReader` produced from
 a Pion `TrackRemote`. A track reader produced from a WebRTC session can also
 route RTCP feedback back through the session peer connection. The generated
 graph is one `rtpav.Source` per reader feeding shared `format.MuxStage` outputs;
-rendered specs show simple node-to-node connections, and events remain visible
+rendered specs show simple node-to-node routes, and events remain visible
 through the task event channel while mux stages receive packet messages for each
 output.
 
@@ -129,6 +129,9 @@ Decoder factories can optionally provide adapter-specific reusable state for
 this high-level path. That lets the AV1 adapter bind conservative scratch and a
 worker pool for `RTP(...).Decode(...).Sink(...)` while applications with exact
 stream knowledge can still pass tuned state through the lower-level codec API.
+The high-level AV1 path receives depacketized packets from `rtpav`; lower-level
+callers that intentionally keep raw AV1 RTP aggregation payload bytes can use
+the tagged concrete decoder's `DecodeRTPPayloadInto` method.
 
 The same selected live stream can continue into an encoder and one or more mux
 outputs when the target codec is explicit:
@@ -179,7 +182,9 @@ Matching depacketizers update their stream epoch from the event; video
 depacketizers drop partial frames and request sync before emitting packets for
 the new epoch. AV1 decode currently sync-gates depacketized low-overhead OBU
 packets after loss until a packet keyframe marker or parseable
-sequence-header/key-frame payload appears. The high-level
+sequence-header/key-frame payload appears. The concrete tagged decoder also has
+a raw AV1 RTP payload path that retains fragments across payloads and can
+recover after loss while preserving known sequence state. The high-level
 `RTP(...).Decode(...).Sink(...)` path covers same-stream AV1 codec changes with
 payload-map refresh and resumed decode on the next sync packet; broader
 RTP/WebRTC AV1 recovery is still being expanded.

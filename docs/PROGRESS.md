@@ -31,13 +31,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `av` | reset helpers, ownership docs, RTP timebase helpers, allocation-free timestamp and duration rescale/compare helpers | richer timestamp metadata helpers |
 | `codec` | Into-style contracts, capabilities, explicit registry, optional decode-state provisioning, decoder and encoder pipeline stages, decode bounds for realtime adapter scratch planning | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
-| `pipeline` | direct executor, bounded buffered executor, fanout, simple connection-only graph surface, one-to-many targets, stream/event scoped routing rendered as `stream=...` or `event=...`, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, buffered runtime transcode and live receive proofs, graph specs with detail-aware text/DOT/Mermaid rendering | richer realtime lifecycle proof |
+| `pipeline` | direct executor, bounded buffered executor, fanout, simple route helpers over the one connection model, one-to-many targets, stream/event scoped routing rendered as `stream=...` or `event=...`, backpressure guard, allocation-free drop-policy decisions, preallocated copy slots for borrowed media buffers, buffered runtime transcode and live receive proofs, graph specs with detail-aware text/DOT/Mermaid rendering | richer realtime lifecycle proof |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh, stream-scoped EOS for single-stream readers | richer multi-stream receive |
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
-| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, decoder state-provider hook, simple named graph connections with multi-target fanout and stream/event scoped variants, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | next codec adapter validation |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning, low-overhead AV1 decode, high-level RTP receive proof, borrowed gray8/I420 frame output with yuv420p accepted as a 4:2:0 alias, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed low-overhead sequence/key-frame payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
+| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, decoder state-provider hook, `Routes(goav.From(...).To(...))` route-map helpers plus compatibility `Connect...` shorthands, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | next codec adapter validation |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive proof, borrowed gray8/I420 frame output with yuv420p accepted as a 4:2:0 alias, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
 
@@ -188,7 +188,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 57. Prove tagged AV1 RTP receive for planar 8-bit 4:2:0 through the high-level
     builder, accepting both `i420` and `yuv420p` declarations and emitting
     canonical `i420` frame planes. Done.
-58. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+58. Simplify explicit graph authoring with route-map helpers:
+    `Routes(goav.From(...).To(...))`, stream/event route builders, and
+    compatibility with the existing connection model. Done.
+59. Add concrete tagged AV1 raw RTP payload decode through
+    `DecodeRTPPayloadInto`, with separate planning RTP scratch, retained
+    fragment preservation across rebinds, and after-loss recovery that preserves
+    known sequence state. Done.
+60. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -233,7 +240,7 @@ Required proof:
 - `format.DemuxSource` and `format.MuxStage` adapt container boundaries into
   the event-aware pipeline without per-packet allocation.
 - The runtime builder can plan and compile explicit source/stage/sink graphs
-  with direct connections plus stream/event route options, and expose generated
+  with direct routes plus stream/event match options, and expose generated
   graph specs with text, DOT, and Mermaid renderers before or after build.
   Runtime-created nodes and any explicit node that implements the optional
   node-describer contract can include short graph details without introducing
@@ -316,14 +323,16 @@ Required proof:
   encode.
 - With `goav_goav1`, `adapters/goav1` registers a concrete decoder factory over
   `github.com/thesyncim/goav1`, consumes depacketized low-overhead AV1 OBU
-  payloads through caller-owned or runtime-provided `DecoderState`, maps
-  decoded 8-bit gray8/I420 backend frames into borrowed `av.Frame` planes,
-  accepts `yuv420p` as the same 4:2:0 layout, resets and requests keyframes
-  after loss/discontinuity/corrupt packets, drops packets until a packet
-  keyframe marker or parseable low-overhead sequence/key-frame payload, updates
+  payloads through caller-owned or runtime-provided `DecoderState`, and exposes
+  a concrete `DecodeRTPPayloadInto` path for raw AV1 RTP aggregation payloads.
+  It maps decoded 8-bit gray8/I420 backend frames into borrowed `av.Frame`
+  planes, accepts `yuv420p` as the same 4:2:0 layout, resets and requests
+  keyframes after loss/discontinuity/corrupt packets, drops packets until a
+  packet keyframe marker or parseable sequence/key-frame payload, updates
   identity on codec-change events, reuses the bound runner in steady state, and
-  has allocation, result-capacity, sync-recovery, high-level RTP receive,
-  same-stream RTP codec-change recovery, and close-lifecycle tests.
+  has allocation, result-capacity, sync-recovery, high-level RTP receive, raw
+  RTP retained-fragment and after-loss recovery, same-stream RTP codec-change
+  recovery, and close-lifecycle tests.
 - `codec.DecodeBounds` gives future realtime adapters a small common place to
   receive payload, retained-fragment, output-count, and geometry limits while
   keeping adapter-specific arenas behind documented `OpaqueState` types.
@@ -364,8 +373,8 @@ Required proof:
   low-overhead AV1 decode over caller-owned or runtime-provided state, borrowed
   gray8/I420 output with yuv420p accepted as a 4:2:0 alias, loss keyframe
   requests, drop-until-sync recovery from packet markers or parsed
-  low-overhead payloads, high-level RTP receive proof, runner reuse, and
-  allocation/lifecycle guards.
+  payloads, concrete raw RTP payload decode with retained-fragment recovery,
+  high-level RTP receive proof, runner reuse, and allocation/lifecycle guards.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` activates a
   decode factory for 8-bit planar H264 frames, with adapter-owned allocation
   and lifecycle guards active.
@@ -375,7 +384,7 @@ Required proof:
 | Gate | Evidence | State |
 | --- | --- | --- |
 | Clear minimal architecture | `README.md`, `docs/ARCHITECTURE.md`, package boundaries | active |
-| Simple high-level API | runtime builder, named graph connections, remux/fanout compiler, decode-to-sink compiler, RTP record/fanout compiler, selected encode-to-output compiler, shared-decode transcode compiler with transform branches | first slices active |
+| Simple high-level API | runtime builder, named graph routes, remux/fanout compiler, decode-to-sink compiler, RTP record/fanout compiler, selected encode-to-output compiler, shared-decode transcode compiler with transform branches | first slices active |
 | Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts | active |
 | Realtime Opus vertical slice | RTP/WebRTC boundary, Opus depacketizer, `gopus` decoder | active |
 | Allocation guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters | active for implemented paths |
@@ -393,9 +402,9 @@ Required proof:
 5. Update this tracker with the new evidence and next pressure point.
 
 Current pressure point: broaden tagged AV1 decode toward real RTP/WebRTC
-receive, especially broader codec-switch cases, raw RTP runner integration,
-richer scratch sizing policy, and output formats beyond 8-bit 4:2:0 without
-expanding the core API.
+receive, especially broader codec-switch cases, richer scratch sizing policy,
+output formats beyond 8-bit 4:2:0, and deciding whether the concrete raw RTP
+payload path should remain low-level or grow a high-level builder policy.
 
 ## Validation Gates
 

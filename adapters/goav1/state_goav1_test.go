@@ -206,6 +206,65 @@ func TestDecoderStatePlansBindsAndRunsLowOverhead(t *testing.T) {
 	}
 }
 
+func TestDecoderStatePlansBindsAndRunsRTPPayloads(t *testing.T) {
+	payloads := testFragmentedRTPPayloads()
+	probe := testRTPPayloadsPlan(t, payloads)
+	workerPool, err := backend.NewTileWorkerPool(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workerPool.Close()
+
+	state, err := NewDecoderState(DecoderStateConfig{
+		Bounds: codec.DecodeBounds{
+			MaxFramesPerInput: 1,
+			MaxEventsPerInput: probe.Size.Events,
+			MaxPayloadBytes:   128,
+			MaxRetainedBytes:  128,
+			MaxWidth:          16,
+			MaxHeight:         16,
+		},
+		Format: backend.FrameFormat{
+			Width:        16,
+			Height:       16,
+			BitDepth:     8,
+			MonoChrome:   true,
+			SubsamplingX: true,
+			SubsamplingY: true,
+			Align:        defaultAlign,
+		},
+		Scratch:    probe.Size,
+		WorkerPool: workerPool,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner, err := state.BindRunner(probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result backend.DecoderFrameWorkResidualStreamResult
+	for i := range payloads {
+		plan, err := state.PlanRTPPayload(payloads[i])
+		if err != nil {
+			t.Fatalf("plan payload %d: %v", i, err)
+		}
+		if !decoderStreamScratchFits(probe.Size, plan.Size) {
+			t.Fatalf("payload %d plan does not fit probe: plan=%+v probe=%+v", i, plan.Size, probe.Size)
+		}
+		if err := runner.RunRTPPayloadInto(&result, payloads[i], nil); err != nil {
+			t.Fatalf("run payload %d: %v", i, err)
+		}
+	}
+	if result.Run.CompletedFrames != 1 ||
+		result.Run.OutputCount != 1 ||
+		result.Run.Outputs[0] == nil ||
+		state.runner.RTPUsed != 0 {
+		t.Fatalf("result = %+v retained=%d", result, state.runner.RTPUsed)
+	}
+}
+
 func TestNewDecoderStateRejectsMissingGeometry(t *testing.T) {
 	_, err := NewDecoderState(DecoderStateConfig{})
 	if !errors.Is(err, codec.ErrUnsupportedFormat) {
@@ -235,12 +294,128 @@ func testLowOverheadPlan(t *testing.T, payload []byte) backend.DecoderFrameWorkR
 	return plan
 }
 
+func testRTPPayloadsPlan(t *testing.T, payloads [][]byte) backend.DecoderFrameWorkResidualStreamPlan {
+	t.Helper()
+	var stream backend.DecoderStream
+	events := make([]backend.DecoderEvent, 4)
+	rtpBuffer := make([]byte, 256)
+	rtpSpans := make([]backend.RTPObuSpan, 4)
+	spans := make([]backend.TileSpan, 1)
+	jobs := make([]backend.TileJob, 1)
+	batches := make([]backend.TileBatch, 1)
+	plan, err := backend.DecoderFrameWorkResidualRTPPayloadsStreamPlan(
+		stream,
+		0,
+		payloads,
+		1,
+		rtpBuffer,
+		rtpSpans,
+		events,
+		spans,
+		jobs,
+		batches,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan
+}
+
 func testLowOverheadStream() []byte {
 	var stream []byte
 	stream = appendTestLowOverheadOBU(stream, backend.OBUSequenceHeader, testSequenceHeaderPayload())
 	stream = appendTestLowOverheadOBU(stream, backend.OBUFrameHeader, testFrameHeaderPayload())
 	stream = appendTestLowOverheadOBU(stream, backend.OBUTileGroup, []byte{0x80})
 	return stream
+}
+
+func testRTPPayload() []byte {
+	elements := [...]backend.RTPElement{
+		{Data: testRTPElement(backend.OBUSequenceHeader, testSequenceHeaderPayload())},
+		{Data: testRTPElement(backend.OBUFrameHeader, testFrameHeaderPayload())},
+		{Data: testRTPElement(backend.OBUTileGroup, []byte{0x80})},
+	}
+	payload := make([]byte, 128)
+	n, err := backend.PutRTPPayload(payload, backend.RTPAggregationHeader{
+		ElementCount:                uint8(len(elements)),
+		StartsNewCodedVideoSequence: true,
+	}, elements[:])
+	if err != nil {
+		panic(err)
+	}
+	return payload[:n]
+}
+
+func testRTPFramePayload() []byte {
+	elements := [...]backend.RTPElement{
+		{Data: testRTPElement(backend.OBUFrameHeader, testFrameHeaderPayload())},
+		{Data: testRTPElement(backend.OBUTileGroup, []byte{0x80})},
+	}
+	payload := make([]byte, 128)
+	n, err := backend.PutRTPPayload(payload, backend.RTPAggregationHeader{
+		ElementCount: uint8(len(elements)),
+	}, elements[:])
+	if err != nil {
+		panic(err)
+	}
+	return payload[:n]
+}
+
+func testFragmentedRTPPayloads() [][]byte {
+	payloads := make([][]byte, 0, 4)
+
+	sequence := [...]backend.RTPElement{
+		{Data: testRTPElement(backend.OBUSequenceHeader, testSequenceHeaderPayload())},
+	}
+	var packet [128]byte
+	n, err := backend.PutRTPPayload(packet[:], backend.RTPAggregationHeader{
+		ElementCount:                1,
+		StartsNewCodedVideoSequence: true,
+	}, sequence[:])
+	if err != nil {
+		panic(err)
+	}
+	payloads = append(payloads, append([]byte(nil), packet[:n]...))
+
+	frameHeader := testRTPElement(backend.OBUFrameHeader, testFrameHeaderPayload())
+	n, next, more, err := backend.PutRTPFragment(packet[:], frameHeader, 0, 2, false)
+	if err != nil {
+		panic(err)
+	}
+	if !more {
+		panic("expected frame header RTP fragment")
+	}
+	payloads = append(payloads, append([]byte(nil), packet[:n]...))
+	n, _, more, err = backend.PutRTPFragment(packet[:], frameHeader, next, len(packet), false)
+	if err != nil {
+		panic(err)
+	}
+	if more {
+		panic("unexpected third frame header RTP fragment")
+	}
+	payloads = append(payloads, append([]byte(nil), packet[:n]...))
+
+	tile := [...]backend.RTPElement{
+		{Data: testRTPElement(backend.OBUTileGroup, []byte{0x80})},
+	}
+	n, err = backend.PutRTPPayload(packet[:], backend.RTPAggregationHeader{ElementCount: 1}, tile[:])
+	if err != nil {
+		panic(err)
+	}
+	payloads = append(payloads, append([]byte(nil), packet[:n]...))
+	return payloads
+}
+
+func testRTPElement(typ backend.OBUType, payload []byte) []byte {
+	var header [2]byte
+	n, err := backend.PutOBUHeader(header[:], backend.OBUHeader{Type: typ})
+	if err != nil {
+		panic(err)
+	}
+	element := make([]byte, 0, n+len(payload))
+	element = append(element, header[:n]...)
+	element = append(element, payload...)
+	return element
 }
 
 func appendTestLowOverheadOBU(dst []byte, typ backend.OBUType, payload []byte) []byte {

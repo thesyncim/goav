@@ -68,12 +68,14 @@ type DecoderState struct {
 	referenceFrames   []*backend.Frame
 	releases          []int
 
-	sideData backend.DecoderFrameWorkSideData
-	stats    backend.DecoderFrameWorkTileResidualStats
-	batch    backend.DecoderFrameWorkBatchResidualRunner
-	scratch  backend.DecoderFrameWorkResidualStreamScratch
-	runner   backend.DecoderFrameWorkResidualStreamRunner
-	bound    bool
+	sideData      backend.DecoderFrameWorkSideData
+	stats         backend.DecoderFrameWorkTileResidualStats
+	batch         backend.DecoderFrameWorkBatchResidualRunner
+	scratch       backend.DecoderFrameWorkResidualStreamScratch
+	planRTPBuffer []byte
+	planRTPSpans  []backend.RTPObuSpan
+	runner        backend.DecoderFrameWorkResidualStreamRunner
+	bound         bool
 
 	workerPool    *backend.TileWorkerPool
 	ownWorkerPool bool
@@ -261,6 +263,8 @@ func NewDecoderState(config DecoderStateConfig) (*DecoderState, error) {
 	if err := state.scratch.Check(scratchSize); err != nil {
 		return nil, err
 	}
+	state.planRTPBuffer = make([]byte, scratchSize.RTPBuffer)
+	state.planRTPSpans = make([]backend.RTPObuSpan, scratchSize.RTPSpans)
 	return state, nil
 }
 
@@ -415,6 +419,57 @@ func (s *DecoderState) PlanLowOverheads(payloads [][]byte) (backend.DecoderFrame
 		s.scratch.Event.Jobs,
 		s.scratch.Event.Batches,
 	)
+}
+
+// PlanRTPPayload validates one raw AV1 RTP payload against a copy of the
+// current stream state and retained fragment bytes.
+func (s *DecoderState) PlanRTPPayload(payload []byte) (backend.DecoderFrameWorkResidualStreamPlan, error) {
+	return s.planRTPPayload(payload, false)
+}
+
+// PlanRTPPayloadAfterLoss validates one raw AV1 RTP payload as the first
+// payload after loss. It clears retained RTP fragment state in the planning
+// copy while preserving sequence/reference parser state.
+func (s *DecoderState) PlanRTPPayloadAfterLoss(payload []byte) (backend.DecoderFrameWorkResidualStreamPlan, error) {
+	return s.planRTPPayload(payload, true)
+}
+
+func (s *DecoderState) planRTPPayload(payload []byte, afterLoss bool) (backend.DecoderFrameWorkResidualStreamPlan, error) {
+	if s == nil {
+		return backend.DecoderFrameWorkResidualStreamPlan{}, backend.ErrDecoderInvalidFrameWorkState
+	}
+	stream := s.stream
+	used := 0
+	if afterLoss {
+		stream.ResetRTP()
+	} else if s.bound {
+		used = s.runner.RTPUsed
+	}
+	if used > len(s.planRTPBuffer) {
+		return backend.DecoderFrameWorkResidualStreamPlan{}, backend.ErrRTPShortBuffer
+	}
+	if used > 0 {
+		copy(s.planRTPBuffer, s.runner.RTPBuffer[:used])
+	}
+	return backend.DecoderFrameWorkResidualRTPPayloadStreamPlan(
+		stream,
+		used,
+		payload,
+		s.workers,
+		s.planRTPBuffer,
+		s.planRTPSpans,
+		s.scratch.Events,
+		s.scratch.Event.Spans,
+		s.scratch.Event.Jobs,
+		s.scratch.Event.Batches,
+	)
+}
+
+func (s *DecoderState) HasSequenceHeader() bool {
+	if s == nil {
+		return false
+	}
+	return s.stream.HasSequenceHeader()
 }
 
 // BindRunner binds the reusable backend runner for a previously planned stream

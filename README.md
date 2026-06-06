@@ -13,11 +13,12 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pure Go core, no cgo runtime dependency.
 - Simple fluent API for natural workflows.
 - Explicit graph API for custom realtime systems.
-- Graphs are named sources, stages, sinks, and connections; fanout is one
-  connection with multiple targets.
-- A connection may match all media, one stream, or one event type.
-- The graph API starts with `pipeline.Connect("source", "sink")`; fluent graph
-  builders use `Connect`, `ConnectStream`, and `ConnectEvent`.
+- Graphs are named sources, stages, sinks, and routes; fanout is one route with
+  multiple targets.
+- A route may match all media, one stream, or one event type.
+- The explicit graph API reads as `goav.From("source").To("sink")`; existing
+  `Connect`, `ConnectStream`, and `ConnectEvent` helpers remain compatibility
+  shorthands over the same edge model.
 - Rendered graph nodes can carry short workflow details without changing the
   simple node-to-node API; routed edges render as `stream=video` or
   `event=packet_loss`.
@@ -143,8 +144,10 @@ builder := rt.New().
     Sink(record).
     Sink(preview).
     Sink(stats).
-    ConnectStream("source", "audio", "decode").
-    Connect("decode", "record", "preview", "stats")
+    Routes(
+        goav.From("source").Stream("audio", "decode"),
+        goav.From("decode").To("record", "preview", "stats"),
+    )
 
 spec, err := builder.Describe()
 if err != nil {
@@ -161,9 +164,10 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `av`: media identifiers, streams, packets, frames, timestamps, events,
   timebase conversion helpers, reset helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, bounded buffered graph executor,
-  fanout, stream/event routes, backpressure surface, drop-policy decisions,
-  bounded copy slots for borrowed media buffers, simple connection-only graph
-  surface, detail-aware text/DOT/Mermaid graph specs.
+  fanout, `From(...).To(...)` route helpers, stream/event routes,
+  backpressure surface, drop-policy decisions, bounded copy slots for borrowed
+  media buffers, simple route graph surface, detail-aware text/DOT/Mermaid graph
+  specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, realtime decode bounds, registry,
   optional decode-state provisioning, decoder and encoder pipeline stages.
@@ -188,8 +192,8 @@ as private graph compilers that must support both `Describe` and `Build`.
   buffers.
 - `adapters/goav1`: descriptor-only by default; `goav_goav1` enables a first
   AV1 decoder factory over caller-owned `DecoderState`, depacketized
-  low-overhead OBU payloads, borrowed 8-bit `gray8`/4:2:0 frame planes, and
-  drop-until-sync recovery after loss.
+  low-overhead OBU payloads, concrete raw RTP payload decode, borrowed 8-bit
+  `gray8`/4:2:0 frame planes, and drop-until-sync recovery after loss.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
   H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
   video frames.
@@ -214,8 +218,9 @@ Implemented slices:
 - Fluent `Transcode(plan)` compiler for one selected decode feeding multiple
   named encode/output branches, including resize/resample branch stages when
   filter factories are registered.
-- Fluent `Connect(...)`, `ConnectStream(...)`, and `ConnectEvent(...)` helpers
-  for one-to-one and one-to-many explicit graph connections.
+- Fluent `Routes(goav.From(...).To(...))` helpers, with `Connect(...)`,
+  `ConnectStream(...)`, and `ConnectEvent(...)` kept as shorthands for
+  one-to-one and one-to-many explicit graph connections.
 - First-class `pipeline.Connection` helpers for direct graph composition without
   extra graph concepts.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
@@ -278,13 +283,16 @@ Implemented slices:
 - The same AV1 RTP builder path now has a same-stream codec-change proof:
   payload-map refresh, epoch update, drop-until-sync, keyframe request, and
   resumed decode on the next sync packet.
+- The concrete tagged AV1 decoder can also consume raw AV1 RTP aggregation
+  payload bytes through `DecodeRTPPayloadInto`, including retained fragments
+  and after-loss recovery that preserves known sequence state.
 
 Next pressure points:
 
 - Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
   RTP/WebRTC AV1 streams: broader codec-switch cases, additional output
-  formats beyond 8-bit 4:2:0, raw RTP runner integration, and richer scratch
-  sizing policy.
+  formats beyond 8-bit 4:2:0, richer scratch sizing policy, and deciding how
+  much of the raw RTP runner path should surface in high-level builders.
 
 ## Working Loop
 

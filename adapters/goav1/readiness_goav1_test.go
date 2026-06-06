@@ -21,6 +21,18 @@ func TestTaggedBackendRealtimeAPISurface(t *testing.T) {
 	var _ func(
 		backend.DecoderStream,
 		int,
+		[]byte,
+		int,
+		[]byte,
+		[]backend.RTPObuSpan,
+		[]backend.DecoderEvent,
+		[]backend.TileSpan,
+		[]backend.TileJob,
+		[]backend.TileBatch,
+	) (backend.DecoderFrameWorkResidualStreamPlan, error) = backend.DecoderFrameWorkResidualRTPPayloadStreamPlan
+	var _ func(
+		backend.DecoderStream,
+		int,
 		[][]byte,
 		int,
 		[]byte,

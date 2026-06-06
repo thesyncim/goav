@@ -70,9 +70,11 @@ validation gates. This roadmap keeps the broader phase view.
   low-overhead sequence/key-frame payloads. The runtime can provision
   conservative decoder state for high-level AV1 receive, and
   `RTP(...).Decode(...).Sink(...)` has tagged receive and same-stream
-  codec-change proofs. Richer scratch sizing, raw RTP runner integration, and
-  broader RTP/WebRTC recovery remain; 8-bit 4:2:0 receive is active through
-  both `i420` and `yuv420p` declarations.
+  codec-change proofs. The concrete decoder also has raw RTP payload runner
+  integration with retained-fragment and after-loss tests. Richer scratch
+  sizing, broader RTP/WebRTC recovery, and high-level raw-RTP policy remain;
+  8-bit 4:2:0 receive is active through both `i420` and `yuv420p`
+  declarations.
 - `goav1` adapter as it matures.
 
 ## Phase 5: High-level API
@@ -80,7 +82,6 @@ validation gates. This roadmap keeps the broader phase view.
 - Fluent receive/decode/filter/encode/output builder compilers for selected
   streams. First file/protocol and RTP/WebRTC slices are active.
 - Branchable multi-rendition transcode builder compilers and fluent explicit
-  graph fanout through multi-target `Connect`. First shared-decode slice is
-  active.
+  graph fanout through multi-target routes. First shared-decode slice is active.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

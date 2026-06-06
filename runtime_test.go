@@ -405,6 +405,43 @@ func TestRuntimeBuilderExplicitStreamFanout(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderExplicitRoutesHelper(t *testing.T) {
+	packet := av.Packet{StreamID: "video"}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	record := &runtimeTestSink{name: "record"}
+	preview := &runtimeTestSink{name: "preview"}
+	audio := &runtimeTestSink{name: "audio"}
+
+	task, err := New().New().
+		Source(source).
+		Sink(record).
+		Sink(preview).
+		Sink(audio).
+		Routes(
+			From("source").Stream("video", "record", "preview"),
+			From("source").Stream("audio", "audio"),
+		).
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := task.Describe()
+	if !strings.Contains(spec.String(), "source -> record [stream=video]") ||
+		!strings.Contains(spec.String(), "source -> preview [stream=video]") {
+		t.Fatalf("spec:\n%s", spec.String())
+	}
+
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if record.count != 1 || preview.count != 1 || audio.count != 0 {
+		t.Fatalf("record=%d preview=%d audio=%d", record.count, preview.count, audio.count)
+	}
+}
+
 func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 	packet := av.Packet{StreamID: "audio"}
 	source := &runtimeTestSource{

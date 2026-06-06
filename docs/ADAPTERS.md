@@ -39,7 +39,7 @@ integrations belong under `adapters/...`.
 | `adapters/resize` | pure-Go I420/YUV420P video resize filter |
 | `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
 | `adapters/govpx` | descriptor-only by default; `goav_govpx` enables VP8/VP9 decode and encode |
-| `adapters/goav1` | descriptor-only by default; `goav_goav1` enables first AV1 low-overhead decode |
+| `adapters/goav1` | descriptor-only by default; `goav_goav1` enables AV1 low-overhead and concrete raw RTP payload decode |
 | `adapters/goh264` | descriptor-only by default; `goav_goh264` enables H264 decode |
 
 ## `ivf`
@@ -130,6 +130,9 @@ Current tagged surface:
 - exact-format frame pools, retained RTP scratch, event/parser scratch,
   reference/output slots, and backend runtime handles owned by `DecoderState`
 - depacketized low-overhead OBU payload decode through the backend runner
+- concrete `DecodeRTPPayloadInto` for callers that intentionally own raw AV1
+  RTP aggregation payload bytes, including retained fragments and after-loss
+  recovery that preserves known sequence state
 - borrowed decoded frame planes for 8-bit monochrome `gray8` and 4:2:0 I420;
   `yuv420p` stream declarations are accepted as the same 4:2:0 layout and
   normalized to canonical `i420` output
@@ -140,19 +143,22 @@ Current tagged surface:
   sequence-header/key-frame payload
 - steady decode reuses a bound runner when the next plan fits the existing
   arena
-- result-capacity, allocation, sync-recovery, runtime RTP decode for gray8 and
-  4:2:0, same-stream RTP codec-change recovery, and close-lifecycle tests
+- result-capacity, allocation, sync-recovery, raw RTP retained-fragment,
+  runtime RTP decode for gray8 and 4:2:0, same-stream RTP codec-change recovery,
+  and close-lifecycle tests
 
-RTP/WebRTC callers should feed this decoder packets produced by `rtpav`'s AV1
-depacketizer, not raw AV1 RTP aggregation payloads. The frame format passed to
-`DecoderState` is exact, not merely a maximum envelope, because the backend
-frame pool must match the accepted sequence/frame format. Applications that know
-their stream shape should still pass a tuned `DecoderState`; the runtime state
-provider is a conservative convenience path for simple receive graphs.
+The generic `codec.Decoder` path still expects packets produced by `rtpav`'s AV1
+depacketizer. Lower-level applications that bypass that depacketizer can type
+assert the concrete decoder and call `DecodeRTPPayloadInto`. The frame format
+passed to `DecoderState` is exact, not merely a maximum envelope, because the
+backend frame pool must match the accepted sequence/frame format. Applications
+that know their stream shape should still pass a tuned `DecoderState`; the
+runtime state provider is a conservative convenience path for simple receive
+graphs.
 
-It is intentionally narrow for now. Raw RTP payload runner integration, richer
-scratch sizing policy, high bit-depth output, color metadata, film grain policy,
-and broader frame format conversion beyond 8-bit 4:2:0 remain future slices.
+It is intentionally narrow for now. Richer scratch sizing policy, high bit-depth
+output, color metadata, film grain policy, high-level raw-RTP policy, and
+broader frame format conversion beyond 8-bit 4:2:0 remain future slices.
 
 ## `resample`
 
