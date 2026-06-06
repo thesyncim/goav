@@ -15,6 +15,9 @@ func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
 	if err != nil {
 		return nil, err
 	}
+	if demuxer.DocType() != "webm" {
+		return nil, ErrUnsupportedWebMDocType
+	}
 	for _, track := range demuxer.Tracks() {
 		if err := validateTrack(track); err != nil {
 			return nil, err

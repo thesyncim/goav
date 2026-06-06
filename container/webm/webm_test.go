@@ -46,6 +46,36 @@ func TestMuxerEnforcesProfile(t *testing.T) {
 	}
 }
 
+func TestDemuxerRejectsMatroskaDocType(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := matroska.NewMuxer(&buffer, matroska.MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(matroska.Track{
+		Type:  matroska.TrackVideo,
+		Codec: matroska.CodecVP8,
+		Video: matroska.VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(matroska.Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{1, 2, 3},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{}); !errors.Is(err, ErrUnsupportedWebMDocType) {
+		t.Fatalf("err = %v, want ErrUnsupportedWebMDocType", err)
+	}
+}
+
 func TestMuxerDemuxerRoundTrip(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -148,6 +178,7 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 		StreamID: stream.ID,
 		Payload:  av.Buffer{Bytes: []byte{9, 8, 7}},
 		PTS:      av.Timestamp{Value: 960, Base: stream.TimeBase},
+		Duration: av.Duration{Value: 960, Base: stream.TimeBase},
 		Keyframe: true,
 	}, nil); err != nil {
 		t.Fatal(err)
@@ -169,6 +200,7 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !result.PacketReady || result.Packet.StreamID != "1" || result.Packet.PTS.Value != 20_000_000 ||
+		result.Packet.Duration.Value != 20_000_000 ||
 		!bytes.Equal(result.Packet.Payload.Bytes, []byte{9, 8, 7}) {
 		t.Fatalf("result = %+v packet=%+v", result, result.Packet)
 	}

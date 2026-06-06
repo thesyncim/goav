@@ -136,11 +136,20 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 	if !ok {
 		return matroska.ErrInvalidData
 	}
+	var durationNS int64
+	if packet.Duration.Base.Valid() {
+		durationValue, ok := packet.Duration.ToDuration()
+		if !ok {
+			return matroska.ErrInvalidData
+		}
+		durationNS = int64(durationValue)
+	}
 	return m.muxer.WritePacket(Packet{
-		TrackID:  trackID,
-		TimeNS:   int64(timeValue),
-		Keyframe: packet.Keyframe,
-		Data:     packet.Payload.Bytes,
+		TrackID:    trackID,
+		TimeNS:     int64(timeValue),
+		DurationNS: durationNS,
+		Keyframe:   packet.Keyframe,
+		Data:       packet.Payload.Bytes,
 	})
 }
 
@@ -227,6 +236,9 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	out.Packet.Payload.Bytes = packet.Data
 	out.Packet.Payload.Ownership = av.BufferOwned
 	out.Packet.PTS = av.Timestamp{Value: packet.TimeNS, Base: av.TimeBase{Num: 1, Den: 1000000000}}
+	if packet.DurationNS > 0 {
+		out.Packet.Duration = av.Duration{Value: packet.DurationNS, Base: av.TimeBase{Num: 1, Den: 1000000000}}
+	}
 	out.Packet.Keyframe = packet.Keyframe
 	out.PacketReady = true
 	return nil

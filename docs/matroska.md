@@ -59,7 +59,8 @@ Current milestone:
 - Xiph, fixed-size, and EBML laced block demuxing with bounded scratch buffers.
 - Matroska mux/demux for Opus, PCMU, PCMA, VP8, VP9, AV1, H.264, and H.265
   track declarations, with WebM enforcing Opus, VP8, VP9, and AV1 only.
-- WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata.
+- WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with
+  WebM demuxers requiring the `webm` EBML document type.
 - Format registry adapters for `av.Stream` and `av.Packet`.
 - Caller-owned packet data for demuxing.
 
@@ -119,7 +120,8 @@ Current mappings:
 - H.265: `V_MPEGH/ISO/HEVC`
 
 WebM accepts only Opus, VP8, VP9, and AV1. It rejects H.264, H.265, PCM
-variants, repair streams, retransmission streams, and FEC streams.
+variants, repair streams, retransmission streams, FEC streams, and non-WebM
+Matroska document types.
 
 ## Zero-Allocation Strategy
 

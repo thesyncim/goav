@@ -146,6 +146,13 @@ func (d *Demuxer) Tracks() []Track {
 	return tracks
 }
 
+func (d *Demuxer) DocType() string {
+	if d == nil {
+		return ""
+	}
+	return d.docType
+}
+
 func (d *Demuxer) Cues() []CuePoint {
 	if d == nil || len(d.cues) == 0 {
 		return nil
