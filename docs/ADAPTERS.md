@@ -138,8 +138,8 @@ Current tagged surface:
   sequence-header/key-frame payload
 - steady decode reuses a bound runner when the next plan fits the existing
   arena
-- result-capacity, allocation, sync-recovery, runtime RTP decode, and
-  close-lifecycle tests
+- result-capacity, allocation, sync-recovery, runtime RTP decode,
+  same-stream RTP codec-change recovery, and close-lifecycle tests
 
 RTP/WebRTC callers should feed this decoder packets produced by `rtpav`'s AV1
 depacketizer, not raw AV1 RTP aggregation payloads. The frame format passed to

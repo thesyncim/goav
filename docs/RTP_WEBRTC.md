@@ -179,8 +179,10 @@ Matching depacketizers update their stream epoch from the event; video
 depacketizers drop partial frames and request sync before emitting packets for
 the new epoch. AV1 decode currently sync-gates depacketized low-overhead OBU
 packets after loss until a packet keyframe marker or parseable
-sequence-header/key-frame payload appears; broader RTP/WebRTC AV1 recovery is
-still being expanded.
+sequence-header/key-frame payload appears. The high-level
+`RTP(...).Decode(...).Sink(...)` path covers same-stream AV1 codec changes with
+payload-map refresh and resumed decode on the next sync packet; broader
+RTP/WebRTC AV1 recovery is still being expanded.
 
 Session-level code still owns the policy decision for when renegotiation should
 call `UpdateCodec`. Accepted replacement tracks for the same stream can flow

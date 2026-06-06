@@ -4,6 +4,7 @@ package goav
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -86,6 +87,147 @@ func TestRuntimeBuilderRTPAV1DecodeSink(t *testing.T) {
 	if !receiver.closed || !sink.closed {
 		t.Fatalf("closed receiver=%v sink=%v", receiver.closed, sink.closed)
 	}
+}
+
+func TestRuntimeBuilderRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
+	ctx := context.Background()
+	initial := av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		Epoch:    1,
+		TimeBase: av.RTPTimeBase(90000),
+		Codec: av.CodecParameters{
+			ID:          av.CodecAV1,
+			Type:        av.MediaVideo,
+			ClockRate:   90000,
+			Width:       16,
+			Height:      16,
+			PixelFormat: av.PixelFormatGray8,
+		},
+	}
+	updated := initial
+	updated.Epoch = 2
+
+	receiver := newRuntimeAV1SwitchReceiver(initial, updated, []*rtp.Packet{
+		{
+			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			Payload: runtimeAV1RTPPayload(),
+		},
+		{
+			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 6000},
+			Payload: []byte{0x10, 0x30, 0xcc},
+		},
+		{
+			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 9000},
+			Payload: runtimeAV1RTPPayload(),
+		},
+	})
+	sink := &runtimeTestSink{name: "frames"}
+
+	task, err := New(WithCodecAdapter(goav1adapter.Register)).New().
+		RTP(receiver,
+			WithRTPName("av1-rtp"),
+			WithRTPDepacketizer(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
+			WithRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
+		).
+		Decode(SelectVideo()).
+		Sink(sink).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if sink.frames != 2 ||
+		sink.lastFrame.StreamID != updated.ID ||
+		sink.lastFrame.CodecEpoch != updated.Epoch ||
+		sink.lastFrame.PTS.Value != 9000 ||
+		sink.lastFrame.Video == nil ||
+		sink.lastFrame.Video.Width != 16 ||
+		sink.lastFrame.Video.Height != 16 ||
+		sink.lastFrame.Video.PixelFormat != av.PixelFormatGray8 {
+		t.Fatalf("frames=%d last=%+v video=%+v", sink.frames, sink.lastFrame, sink.lastFrame.Video)
+	}
+	gotEvents := drainTaskEvents(task)
+	if countEventsForStream(gotEvents, av.EventCodecChanged, updated.ID) == 0 ||
+		countEventsForStream(gotEvents, av.EventKeyframeRequired, updated.ID) == 0 ||
+		countEventsForStream(gotEvents, av.EventEndOfStream, updated.ID) == 0 {
+		t.Fatalf("events = %+v", gotEvents)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed || !sink.closed {
+		t.Fatalf("closed receiver=%v sink=%v", receiver.closed, sink.closed)
+	}
+}
+
+type runtimeAV1SwitchReceiver struct {
+	initial  av.Stream
+	updated  av.Stream
+	payload  rtpav.PayloadMap
+	packets  []*rtp.Packet
+	events   chan av.Event
+	index    int
+	switched bool
+	closed   bool
+}
+
+func newRuntimeAV1SwitchReceiver(initial av.Stream, updated av.Stream, packets []*rtp.Packet) *runtimeAV1SwitchReceiver {
+	return &runtimeAV1SwitchReceiver{
+		initial: initial,
+		updated: updated,
+		payload: runtimeAV1PayloadMap(1, 96, initial),
+		packets: packets,
+		events:  make(chan av.Event, 1),
+	}
+}
+
+func (r *runtimeAV1SwitchReceiver) Streams(context.Context) ([]av.Stream, error) {
+	return []av.Stream{r.initial}, nil
+}
+
+func (r *runtimeAV1SwitchReceiver) PayloadMap() rtpav.PayloadMap {
+	return r.payload
+}
+
+func (r *runtimeAV1SwitchReceiver) ReadRTP(context.Context) (*rtp.Packet, error) {
+	if r.index >= len(r.packets) {
+		return nil, io.EOF
+	}
+	packet := r.packets[r.index]
+	r.index++
+	if r.index == 1 && !r.switched {
+		r.payload = runtimeAV1PayloadMap(2, 97, r.updated)
+		r.events <- av.Event{
+			Type:     av.EventCodecChanged,
+			StreamID: r.updated.ID,
+			Epoch:    r.updated.Epoch,
+			Stream:   &r.updated,
+			Codec:    &r.updated.Codec,
+		}
+		r.switched = true
+	}
+	return packet, nil
+}
+
+func (r *runtimeAV1SwitchReceiver) Events() <-chan av.Event {
+	return r.events
+}
+
+func (r *runtimeAV1SwitchReceiver) Close() error {
+	r.closed = true
+	return nil
+}
+
+func runtimeAV1PayloadMap(epoch av.Epoch, payloadType uint8, stream av.Stream) rtpav.PayloadMap {
+	return rtpav.NewStaticPayloadMap(epoch, []rtpav.PayloadCodec{{
+		PayloadType: payloadType,
+		Parameters:  stream.Codec,
+		MIMEType:    rtpav.MIMEAV1,
+		ClockRate:   90000,
+	}})
 }
 
 func runtimeAV1RTPPayload() []byte {

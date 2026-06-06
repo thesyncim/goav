@@ -69,8 +69,9 @@ validation gates. This roadmap keeps the broader phase view.
   behind `goav_goav1`; recovery can use packet keyframe markers or parsed
   low-overhead sequence/key-frame payloads. The runtime can provision
   conservative decoder state for high-level AV1 receive, and
-  `RTP(...).Decode(...).Sink(...)` has a tagged proof. Richer scratch sizing,
-  raw RTP runner integration, and broader RTP/WebRTC recovery remain.
+  `RTP(...).Decode(...).Sink(...)` has tagged receive and same-stream
+  codec-change proofs. Richer scratch sizing, raw RTP runner integration, and
+  broader RTP/WebRTC recovery remain.
 - `goav1` adapter as it matures.
 
 ## Phase 5: High-level API

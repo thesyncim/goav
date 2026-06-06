@@ -272,12 +272,15 @@ Implemented slices:
 - Tagged AV1 RTP receive is covered through the high-level
   `RTP(...).Decode(...).Sink(...)` builder path: Pion RTP packet, AV1
   depacketizer, runtime-provided decoder state, and borrowed frame output.
+- The same AV1 RTP builder path now has a same-stream codec-change proof:
+  payload-map refresh, epoch update, drop-until-sync, keyframe request, and
+  resumed decode on the next sync packet.
 
 Next pressure points:
 
 - Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
-  RTP/WebRTC AV1 streams: codec-switch recovery, additional output formats,
-  raw RTP runner integration, and richer scratch sizing policy.
+  RTP/WebRTC AV1 streams: broader codec-switch cases, additional output
+  formats, raw RTP runner integration, and richer scratch sizing policy.
 
 ## Working Loop
 

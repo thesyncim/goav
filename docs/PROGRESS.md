@@ -181,7 +181,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     builders can open adapters that need large caller-owned arenas, then prove
     tagged AV1 RTP receive through `RTP(...).Decode(...).Sink(...)` with
     runtime-provided decoder state. Done.
-56. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+56. Prove same-stream tagged AV1 RTP codec-change recovery through the
+    high-level receive builder: payload-map refresh, epoch update,
+    drop-until-sync, keyframe request, and resumed decode on the next sync
+    packet. Done.
+57. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -315,7 +319,8 @@ Required proof:
   packets until a packet keyframe marker or parseable low-overhead
   sequence/key-frame payload, updates identity on codec-change events, reuses
   the bound runner in steady state, and has allocation, result-capacity,
-  sync-recovery, high-level RTP receive, and close-lifecycle tests.
+  sync-recovery, high-level RTP receive, same-stream RTP codec-change recovery,
+  and close-lifecycle tests.
 - `codec.DecodeBounds` gives future realtime adapters a small common place to
   receive payload, retained-fragment, output-count, and geometry limits while
   keeping adapter-specific arenas behind documented `OpaqueState` types.
@@ -384,9 +389,9 @@ Required proof:
 5. Update this tracker with the new evidence and next pressure point.
 
 Current pressure point: broaden tagged AV1 decode toward real RTP/WebRTC
-receive, especially codec-switch recovery, raw RTP runner integration, richer
-scratch sizing policy, and additional output formats without expanding the core
-API.
+receive, especially broader codec-switch cases, raw RTP runner integration,
+richer scratch sizing policy, and additional output formats without expanding
+the core API.
 
 ## Validation Gates
 
