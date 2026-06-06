@@ -655,6 +655,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     outputs now resolve probed or explicit output formats and missing muxers in
     compiler passes before runtime builder lowering opens inputs or creates
     graph nodes. Done.
+195. Preflight recipe encode adapters at build time: ordinary and transcode
+    encode intents now fail on missing or descriptor-only encoder factories
+    before inputs are opened, while `Describe()` remains adapter-agnostic graph
+    inspection. Done.
 
 ## First Vertical Slice
 
@@ -895,7 +899,9 @@ lowering. Runtime capability checks for live codec-change and transforms now
 also run before ordinary stream lowering. Migration graph-compiler selection
 now reports recipe-focused diagnostics when no standard compiler matches.
 Output format and muxer availability for ordinary and transcode recipes are
-preflighted before runtime builder lowering.
+preflighted before runtime builder lowering. Build-time encode adapter
+availability is preflighted before input open while graph `Describe()` remains
+adapter-agnostic.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

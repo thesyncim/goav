@@ -17,6 +17,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
@@ -1235,6 +1236,24 @@ func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
 	if !strings.Contains(err.Error(), "sample rate must be positive") ||
 		!strings.Contains(err.Error(), "sample_rate=0") {
 		t.Fatalf("err = %v, want sample-rate guidance", err)
+	}
+}
+
+func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Opus(96_000).
+		To(goav.FileOutput("archive.ivf", io.Discard)).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_missing" || !errors.Is(err, codec.ErrNotFound) {
+		t.Fatalf("err = %v, want encode_adapter_missing wrapping codec.ErrNotFound", err)
+	}
+	if !strings.Contains(err.Error(), "codec=opus") ||
+		!strings.Contains(err.Error(), "FrameSink") ||
+		strings.Contains(err.Error(), "cannot open input") ||
+		strings.Contains(err.Error(), "input_demuxer_missing") {
+		t.Fatalf("err = %v, want encode adapter guidance before input diagnostics", err)
 	}
 }
 

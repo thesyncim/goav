@@ -298,6 +298,81 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 	}
 }
 
+func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
+	descriptorOnly := codec.NewRegistry()
+	descriptorOnly.RegisterDescriptor(codec.Descriptor{
+		ID:    av.CodecVP9,
+		Name:  "vp9",
+		Modes: []codec.Mode{codec.ModeEncode},
+		Capabilities: codec.Capabilities{
+			BuildTags: []string{"goav_govpx"},
+		},
+		Backend: codec.Backend{
+			Name:   "govpx",
+			Status: "planned-build-tagged",
+		},
+	})
+	descriptorRuntime := New(func(runtime *runtime) {
+		runtime.codecs = descriptorOnly
+	})
+
+	tests := []struct {
+		name  string
+		pass  recipeCompilePass
+		state recipeCompileState
+		code  string
+		cause error
+		want  []string
+	}{
+		{
+			name: "job missing encoder",
+			pass: validateJobEncodeAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightEncodeAdapters: true},
+				runtime:   Default(),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:   "audio",
+					Encode: Opus(Bitrate(96_000)),
+				}}},
+			},
+			code:  "encode_adapter_missing",
+			cause: codec.ErrNotFound,
+			want:  []string{"no encoder adapter", "codec=opus", "FrameSink"},
+		},
+		{
+			name: "transcode descriptor-only encoder",
+			pass: validateTranscodeEncodeAdaptersPass(),
+			state: recipeCompileState{
+				operation: transcodeRecipeOperation,
+				options:   recipeCompileOptions{preflightEncodeAdapters: true},
+				runtime:   descriptorRuntime,
+				intent: Intent{Streams: []StreamIntent{{
+					Name:   "360p",
+					Encode: VP9(Bitrate(600_000)),
+				}}},
+			},
+			code:  "encode_adapter_unavailable",
+			cause: codec.ErrUnavailable,
+			want:  []string{"descriptor-only", "codec=vp9", "backend=govpx", "build_tags=goav_govpx"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, tt.cause) {
+				t.Fatalf("err = %v, want %s wrapping %v", err, tt.code, tt.cause)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 	frameSink := FrameSink(SinkFunc("frames", func(context.Context, Message) error { return nil }))
 	fileOutput := FileOutput("archive.ogg", io.Discard)

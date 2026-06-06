@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -1484,6 +1485,68 @@ func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []Out
 		}
 	}
 	return nil
+}
+
+func validateRecipeEncodeAdapters(operation string, rt Runtime, streams []StreamIntent) error {
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return nil
+	}
+	for i := range streams {
+		codecID := streams[i].Encode.ID
+		if codecID == "" {
+			continue
+		}
+		if _, err := standard.codecs.EncoderFactory(codecID); err != nil {
+			return recipeEncodeAdapterError(operation, streams[i], standard.codecs, err)
+		}
+	}
+	return nil
+}
+
+func recipeEncodeAdapterError(operation string, stream StreamIntent, registry *codec.SimpleRegistry, cause error) error {
+	code := "encode_adapter_missing"
+	reason := "no encoder adapter is registered for " + string(stream.Encode.ID)
+	if errors.Is(cause, codec.ErrUnavailable) {
+		code = "encode_adapter_unavailable"
+		reason = string(stream.Encode.ID) + " encoder adapter is descriptor-only in this build"
+	}
+	details := []string{"codec=" + string(stream.Encode.ID)}
+	if registry != nil {
+		descriptors, err := registry.Find(stream.Encode.ID, codec.ModeEncode)
+		if err == nil {
+			details = append(details, encodeDescriptorDetails(descriptors)...)
+		}
+	}
+	return &BuildError{
+		Code:      code,
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    reason,
+		Details:   details,
+		Suggestions: []string{
+			"register a codec adapter that provides a " + string(stream.Encode.ID) + " encoder",
+			"use .To(goav.FrameSink(...)) to receive decoded frames without encoding",
+			"use goav.Record(input, output) for packet-preserving output when re-encoding is not needed",
+		},
+		Cause: cause,
+	}
+}
+
+func encodeDescriptorDetails(descriptors []codec.Descriptor) []string {
+	details := make([]string, 0, len(descriptors)*3)
+	for i := range descriptors {
+		if descriptors[i].Backend.Name != "" {
+			details = append(details, "backend="+descriptors[i].Backend.Name)
+		}
+		if len(descriptors[i].Capabilities.BuildTags) != 0 {
+			details = append(details, "build_tags="+strings.Join(descriptors[i].Capabilities.BuildTags, ","))
+		}
+		if descriptors[i].Backend.Status != "" {
+			details = append(details, "status="+descriptors[i].Backend.Status)
+		}
+	}
+	return details
 }
 
 func duplicateOutputError(operation string, name string) error {
