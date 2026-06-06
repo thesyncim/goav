@@ -148,6 +148,105 @@ func TestMuxerDemuxerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerSupportsWebMCodecs(t *testing.T) {
+	tests := []struct {
+		name  string
+		track Track
+		data  []byte
+	}{
+		{
+			name: "opus",
+			track: Track{
+				Type:  TrackAudio,
+				Codec: CodecOpus,
+				Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+			},
+			data: []byte{0x01, 0x02},
+		},
+		{
+			name: "vp8",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 640, Height: 360},
+			},
+			data: []byte{0x9d, 0x01, 0x2a},
+		},
+		{
+			name: "vp9",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP9,
+				Video: VideoConfig{Width: 640, Height: 360},
+			},
+			data: []byte{0x83, 0x49, 0x83},
+		},
+		{
+			name: "av1",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecAV1,
+				Video: VideoConfig{Width: 640, Height: 360},
+			},
+			data: []byte{0x12, 0x00, 0x0a},
+		},
+	}
+
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackIDs := make([]uint32, len(tests))
+	for i := range tests {
+		trackID, err := muxer.AddTrack(tests[i].track)
+		if err != nil {
+			t.Fatalf("%s add track: %v", tests[i].name, err)
+		}
+		trackIDs[i] = trackID
+	}
+	for i := range tests {
+		if err := muxer.WritePacket(Packet{
+			TrackID:  trackIDs[i],
+			TimeNS:   int64(i) * 20_000_000,
+			Keyframe: true,
+			Data:     tests[i].data,
+		}); err != nil {
+			t.Fatalf("%s write packet: %v", tests[i].name, err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != len(tests) {
+		t.Fatalf("tracks = %d, want %d", len(tracks), len(tests))
+	}
+	for i := range tests {
+		if tracks[i].Codec != tests[i].track.Codec || tracks[i].Type != tests[i].track.Type {
+			t.Fatalf("%s track = %+v, want %+v", tests[i].name, tracks[i], tests[i].track)
+		}
+	}
+	got := Packet{Data: make([]byte, 0, 16)}
+	for i := range tests {
+		if err := demuxer.ReadPacket(&got); err != nil {
+			t.Fatalf("%s read packet: %v", tests[i].name, err)
+		}
+		if got.TrackID != trackIDs[i] || got.TimeNS != int64(i)*20_000_000 ||
+			!bytes.Equal(got.Data, tests[i].data) {
+			t.Fatalf("%s packet = %+v data=%v", tests[i].name, got, got.Data)
+		}
+	}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
 func TestDemuxerSeekToTime(t *testing.T) {
 	file := writeSeekableCompatibilityWebM(t)
 	data, err := os.ReadFile(file)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"strconv"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -93,6 +94,116 @@ func TestMuxerDemuxerRoundTrip(t *testing.T) {
 		if got.TrackID != want[i].TrackID || got.TimeNS != want[i].TimeNS || got.Keyframe != want[i].Keyframe ||
 			!bytes.Equal(got.Data, want[i].Data) {
 			t.Fatalf("packet %d = %+v data=%v, want %+v data=%v", i, got, got.Data, want[i], want[i].Data)
+		}
+	}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
+func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
+	tests := []struct {
+		name  string
+		track Track
+		data  []byte
+	}{
+		{
+			name: "opus",
+			track: Track{
+				Type:  TrackAudio,
+				Codec: CodecOpus,
+				Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+			},
+			data: []byte{0x01, 0x02},
+		},
+		{
+			name: "av1",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecAV1,
+				Video: VideoConfig{Width: 640, Height: 360},
+			},
+			data: []byte{0x12, 0x00, 0x0a},
+		},
+		{
+			name: "h264",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecH264,
+				Video:        VideoConfig{Width: 640, Height: 360},
+				CodecPrivate: []byte{0x01, 0x64, 0x00, 0x1f},
+			},
+			data: []byte{0x00, 0x00, 0x00, 0x01, 0x65},
+		},
+		{
+			name: "vp9",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP9,
+				Video: VideoConfig{Width: 640, Height: 360},
+			},
+			data: []byte{0x83, 0x49, 0x83},
+		},
+		{
+			name: "vp8",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 640, Height: 360},
+			},
+			data: []byte{0x9d, 0x01, 0x2a},
+		},
+	}
+
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackIDs := make([]uint32, len(tests))
+	for i := range tests {
+		trackID, err := muxer.AddTrack(tests[i].track)
+		if err != nil {
+			t.Fatalf("%s add track: %v", tests[i].name, err)
+		}
+		trackIDs[i] = trackID
+	}
+	for i := range tests {
+		if err := muxer.WritePacket(Packet{
+			TrackID:  trackIDs[i],
+			TimeNS:   int64(i) * 20_000_000,
+			Keyframe: true,
+			Data:     tests[i].data,
+		}); err != nil {
+			t.Fatalf("%s write packet: %v", tests[i].name, err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != len(tests) {
+		t.Fatalf("tracks = %d, want %d", len(tracks), len(tests))
+	}
+	for i := range tests {
+		if tracks[i].Codec != tests[i].track.Codec || tracks[i].Type != tests[i].track.Type ||
+			!bytes.Equal(tracks[i].CodecPrivate, tests[i].track.CodecPrivate) {
+			t.Fatalf("%s track = %+v, want %+v", tests[i].name, tracks[i], tests[i].track)
+		}
+	}
+	got := Packet{Data: make([]byte, 0, 16)}
+	for i := range tests {
+		if err := demuxer.ReadPacket(&got); err != nil {
+			t.Fatalf("%s read packet: %v", tests[i].name, err)
+		}
+		if got.TrackID != trackIDs[i] || got.TimeNS != int64(i)*20_000_000 ||
+			!bytes.Equal(got.Data, tests[i].data) {
+			t.Fatalf("%s packet = %+v data=%v", tests[i].name, got, got.Data)
 		}
 	}
 	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
@@ -726,6 +837,18 @@ func TestDemuxerRejectsOversizedTrackIDs(t *testing.T) {
 	})
 }
 
+func TestDemuxerRejectsBlockForUnknownTrack(t *testing.T) {
+	data := makeBlockTrackNumberMatroskaData(t, 2)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrUnknownTrack) {
+		t.Fatalf("err = %v, want ErrUnknownTrack", err)
+	}
+}
+
 func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 	t.Run("video dimension overflow", func(t *testing.T) {
 		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
@@ -807,6 +930,128 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	if !result.PacketReady || result.Packet.StreamID != "1" || result.Packet.PTS.Value != 20_000_000 ||
 		!bytes.Equal(result.Packet.Payload.Bytes, []byte{1, 2, 3}) {
 		t.Fatalf("result = %+v packet=%+v", result, result.Packet)
+	}
+}
+
+func TestFormatMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{
+		{
+			ID:       "opus",
+			Index:    0,
+			Type:     av.MediaAudio,
+			TimeBase: av.TimeBase{Num: 1, Den: 1000},
+			Codec: av.CodecParameters{
+				ID:         av.CodecOpus,
+				Type:       av.MediaAudio,
+				SampleRate: 48000,
+				Channels:   2,
+			},
+		},
+		{
+			ID:       "av1",
+			Index:    1,
+			Type:     av.MediaVideo,
+			TimeBase: av.TimeBase{Num: 1, Den: 1000},
+			Codec: av.CodecParameters{
+				ID:     av.CodecAV1,
+				Type:   av.MediaVideo,
+				Width:  640,
+				Height: 360,
+			},
+		},
+		{
+			ID:       "h264",
+			Index:    2,
+			Type:     av.MediaVideo,
+			TimeBase: av.TimeBase{Num: 1, Den: 1000},
+			Codec: av.CodecParameters{
+				ID:        av.CodecH264,
+				Type:      av.MediaVideo,
+				Width:     640,
+				Height:    360,
+				ExtraData: av.Buffer{Bytes: []byte{0x01, 0x64, 0x00, 0x1f}},
+			},
+		},
+		{
+			ID:       "vp9",
+			Index:    3,
+			Type:     av.MediaVideo,
+			TimeBase: av.TimeBase{Num: 1, Den: 1000},
+			Codec: av.CodecParameters{
+				ID:     av.CodecVP9,
+				Type:   av.MediaVideo,
+				Width:  640,
+				Height: 360,
+			},
+		},
+		{
+			ID:       "vp8",
+			Index:    4,
+			Type:     av.MediaVideo,
+			TimeBase: av.TimeBase{Num: 1, Den: 1000},
+			Codec: av.CodecParameters{
+				ID:     av.CodecVP8,
+				Type:   av.MediaVideo,
+				Width:  640,
+				Height: 360,
+			},
+		},
+	}
+	payloads := [][]byte{
+		{0x01, 0x02},
+		{0x12, 0x00, 0x0a},
+		{0x00, 0x00, 0x00, 0x01, 0x65},
+		{0x83, 0x49, 0x83},
+		{0x9d, 0x01, 0x2a},
+	}
+
+	var buffer bytes.Buffer
+	muxer := &FormatMuxer{}
+	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, streams, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range streams {
+		if err := muxer.Write(ctx, &av.Packet{
+			StreamID: streams[i].ID,
+			Payload:  av.Buffer{Bytes: payloads[i]},
+			PTS:      av.Timestamp{Value: int64(i) * 20, Base: streams[i].TimeBase},
+			Keyframe: true,
+		}, nil); err != nil {
+			t.Fatalf("%s write packet: %v", streams[i].ID, err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &FormatDemuxer{}
+	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	gotStreams := demuxer.Streams()
+	if len(gotStreams) != len(streams) {
+		t.Fatalf("streams = %d, want %d", len(gotStreams), len(streams))
+	}
+	for i := range streams {
+		if gotStreams[i].Codec.ID != streams[i].Codec.ID || gotStreams[i].Type != streams[i].Type ||
+			!bytes.Equal(gotStreams[i].Codec.ExtraData.Bytes, streams[i].Codec.ExtraData.Bytes) {
+			t.Fatalf("%s stream = %+v, want %+v", streams[i].ID, gotStreams[i], streams[i])
+		}
+	}
+	result := format.ReadResult{Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, 8)}}}
+	for i := range streams {
+		if err := demuxer.ReadInto(ctx, &result); err != nil {
+			t.Fatalf("%s read packet: %v", streams[i].ID, err)
+		}
+		if !result.PacketReady || result.Packet.StreamID != av.StreamID(strconv.Itoa(i+1)) ||
+			result.Packet.PTS.Value != int64(i)*20_000_000 ||
+			!bytes.Equal(result.Packet.Payload.Bytes, payloads[i]) {
+			t.Fatalf("%s result = %+v packet=%+v", streams[i].ID, result, result.Packet)
+		}
+	}
+	if err := demuxer.ReadInto(ctx, &result); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
 	}
 }
 

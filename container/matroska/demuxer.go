@@ -897,6 +897,9 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 	if err != nil {
 		return err
 	}
+	if !d.hasTrack(trackNumber) {
+		return ErrUnknownTrack
+	}
 	if _, err := io.ReadFull(&d.blockLimit, d.blockHeader[:]); err != nil {
 		return err
 	}
@@ -1161,6 +1164,15 @@ func (d *Demuxer) defaultDurationNS(trackID uint32) int64 {
 		}
 	}
 	return 0
+}
+
+func (d *Demuxer) hasTrack(id uint32) bool {
+	for i := range d.tracks {
+		if d.tracks[i].ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Demuxer) upsertTrack(track Track) {

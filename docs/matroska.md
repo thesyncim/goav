@@ -59,12 +59,16 @@ Current milestone:
 - Xiph, fixed-size, and EBML laced block demuxing with bounded scratch buffers.
 - Matroska mux/demux for Opus, PCMU, PCMA, VP8, VP9, AV1, H.264, and H.265
   track declarations, with WebM enforcing Opus, VP8, VP9, and AV1 only.
+- The WebRTC codec surface exposed by `av` is covered by Matroska:
+  Opus, AV1, H.264, VP9, and VP8. WebM covers the valid WebM subset:
+  Opus, AV1, VP9, and VP8.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with
   WebM demuxers requiring the `webm` EBML document type.
 - Format registry adapters for `av.Stream` and `av.Packet`.
 - Caller-owned packet data for demuxing.
 - Demux validation rejects on-disk track, cue, and block track numbers that
-  cannot fit the public `uint32` track ID surface.
+  cannot fit the public `uint32` track ID surface, and blocks that reference
+  undeclared tracks.
 - Mux and demux validation rejects negative or overflowing track timing,
   audio, and video metadata before it can wrap into EBML unsigned integers or
   public `int` fields.
