@@ -59,6 +59,8 @@ Current `webrtcav` building blocks:
 - bounded `AcceptTrack(ctx)` queue with stream-added and backpressure events.
 - `TrackRemoteAdapter` for Pion `TrackRemote`.
 - stream and payload-map mapping from Pion `RTPCodecParameters`.
+- `TrackReader.UpdateCodec(ctx, update)` for turning renegotiated Pion codec
+  parameters or custom payload maps into `EventCodecChanged`.
 - preservation of track metadata such as RID, SSRC, stream ID, and track ID.
 - EOS events when the track reader reaches end-of-stream.
 
@@ -113,10 +115,15 @@ The intended model is:
 4. Depacketizers and decoders reset or drain.
 5. Downstream stages drop until sync if needed.
 
-`rtpav.Source` now refreshes its receiver payload map when it observes
-`EventCodecChanged`. Matching depacketizers update their stream epoch from the
-event; video depacketizers drop partial frames and request sync before emitting
-packets for the new epoch.
+`TrackReader.UpdateCodec` now accepts a new Pion `RTPCodecParameters` value or
+an explicit payload map, increments the stream epoch when the caller does not
+provide one, and emits `EventCodecChanged`. `rtpav.Source` refreshes its
+receiver payload map when it observes that event. Matching depacketizers update
+their stream epoch from the event; video depacketizers drop partial frames and
+request sync before emitting packets for the new epoch.
+
+Session-level code still owns the policy decision for when renegotiation or
+track replacement should call `UpdateCodec`.
 
 ## Feedback
 

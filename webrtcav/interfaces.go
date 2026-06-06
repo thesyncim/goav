@@ -21,9 +21,17 @@ type RemoteTrack struct {
 	Metadata    av.Metadata
 }
 
+type TrackCodecUpdate struct {
+	Codec    webrtc.RTPCodecParameters
+	Stream   av.Stream
+	Payloads rtpav.PayloadMap
+	Metadata av.Metadata
+}
+
 type TrackReader interface {
 	Streams(context.Context) ([]av.Stream, error)
 	PayloadMap() rtpav.PayloadMap
+	UpdateCodec(context.Context, TrackCodecUpdate) error
 	ReadRTP(context.Context) (*rtp.Packet, error)
 	Events() <-chan av.Event
 	Close() error

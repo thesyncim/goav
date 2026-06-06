@@ -32,8 +32,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, fanout, simple node-to-node links, stream/event routes, backpressure guard, graph specs with text/DOT/Mermaid rendering | bounded async edges and drop-policy tests |
-| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh | WebRTC renegotiation mapping |
-| `webrtcav` | Pion PeerConnection session, track accept queue, TrackRemote reader, stream mapping, payload map boundary, RTCP feedback bridge | codec-change/session renegotiation events |
+| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh | richer multi-stream receive |
+| `webrtcav` | Pion PeerConnection session, track accept queue, TrackRemote reader, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | session-level renegotiation orchestration |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
 | runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level selected-stream decode-to-sink compiler, RTP packet-reader record/fanout compiler | encode/filter/transcode graph compilers |
@@ -68,7 +68,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 16. Simplify explicit graph references to node-to-node connections while
     keeping text/DOT/Mermaid rendering equivalent to runtime graphs. Done.
 17. Add bounded H264 RTP depacketization and Annex B packet recording. Done.
-18. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+18. Add WebRTC track codec-update events that refresh RTP payload maps and
+    depacketizer epochs through the existing RTP source. Done.
+19. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -127,6 +129,10 @@ Required proof:
 - `rtpav.Source` refreshes payload maps on `EventCodecChanged`, and
   depacketizers update matching stream epochs while dropping partial video until
   the next sync frame.
+- `webrtcav.TrackReader.UpdateCodec` accepts new Pion codec parameters or a
+  custom payload map, bumps the stream epoch, emits `EventCodecChanged`, and is
+  covered by an RTP-source test that depacketizes packets using the new payload
+  type.
 - `rtpav.NewVP8Depacketizer`, `rtpav.NewVP9Depacketizer`,
   `rtpav.NewAV1Depacketizer`, and `rtpav.NewH264Depacketizer` strip RTP payload
   headers, assemble fragmented frames in bounded scratch, emit
@@ -170,9 +176,10 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: map WebRTC renegotiation or track replacement into
-payload-map and codec-change events, then validate concrete H264 decode adapter
-behavior without pulling codec internals into the core runtime.
+Current pressure point: add session-level renegotiation or track-replacement
+orchestration over the `TrackReader.UpdateCodec` boundary, then validate
+concrete H264 decode adapter behavior without pulling codec internals into the
+core runtime.
 
 ## Validation Gates
 

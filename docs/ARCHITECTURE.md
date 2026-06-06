@@ -81,6 +81,10 @@ When codec parameters change, the receiver emits `av.EventCodecChanged` with a
 new epoch. Downstream decoders can then drain, reset, or drop until sync without
 guessing whether a packet belongs to old state.
 
+WebRTC track readers expose that boundary through `UpdateCodec`, using Pion
+codec parameters and payload maps directly. The RTP source consumes the event by
+refreshing its payload map before depacketizing subsequent packets.
+
 ## Planned codec backends
 
 The first adapters should wrap existing pure-Go codec projects:

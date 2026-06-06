@@ -16,10 +16,13 @@ import (
 )
 
 var (
-	ErrClosed         = errors.New("webrtcav: closed")
-	ErrNilTrack       = errors.New("webrtcav: nil track")
-	ErrTrackQueueFull = errors.New("webrtcav: track queue full")
+	ErrClosed             = errors.New("webrtcav: closed")
+	ErrInvalidCodecUpdate = errors.New("webrtcav: invalid codec update")
+	ErrNilTrack           = errors.New("webrtcav: nil track")
+	ErrTrackQueueFull     = errors.New("webrtcav: track queue full")
 )
+
+const defaultTrackEventBuffer = 4
 
 type TrackRemoteAdapter struct{}
 
@@ -84,7 +87,7 @@ func newTrackReader(remote RemoteTrack, reader trackRTPReader) *trackReader {
 	return &trackReader{
 		remote:  remote,
 		reader:  reader,
-		events:  make(chan av.Event, 1),
+		events:  make(chan av.Event, defaultTrackEventBuffer),
 		streams: []av.Stream{stream},
 	}
 }
@@ -129,6 +132,42 @@ func (r *trackReader) PayloadMap() rtpav.PayloadMap {
 	return r.remote.Payloads
 }
 
+func (r *trackReader) UpdateCodec(ctx context.Context, update TrackCodecUpdate) error {
+	if r.closed {
+		return ErrClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !hasCodecUpdate(update) {
+		return ErrInvalidCodecUpdate
+	}
+	current := r.remote.Stream
+	if len(r.streams) != 0 {
+		current = r.streams[0]
+	}
+	next := streamFromCodecUpdate(current, update)
+	payloads := update.Payloads
+	if payloads == nil {
+		codec := update.Codec
+		if !hasWebRTCCodec(codec) {
+			codec = r.remote.Codec
+		}
+		payloads = rtpav.NewStaticPayloadMap(next.Epoch, []rtpav.PayloadCodec{
+			payloadCodecFromWebRTC(codec, next.Codec),
+		})
+	}
+	r.remote.Stream = next
+	if hasWebRTCCodec(update.Codec) {
+		r.remote.Codec = update.Codec
+	}
+	r.remote.Payloads = payloads
+	r.remote.Metadata = mergeMetadata(r.remote.Metadata, update.Metadata)
+	r.streams = []av.Stream{next}
+	r.emitCodecChanged(next)
+	return nil
+}
+
 func (r *trackReader) WriteRTCP(ctx context.Context, packets []rtcp.Packet) error {
 	if r.closed {
 		return ErrClosed
@@ -147,6 +186,17 @@ func (r *trackReader) emit(event av.Event) {
 	case r.events <- event:
 	default:
 	}
+}
+
+func (r *trackReader) emitCodecChanged(stream av.Stream) {
+	r.emit(av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: stream.ID,
+		Epoch:    stream.Epoch,
+		Stream:   &stream,
+		Codec:    &stream.Codec,
+		Reason:   "webrtc track codec changed",
+	})
 }
 
 func streamFromRemoteTrack(remote RemoteTrack) av.Stream {
@@ -180,6 +230,111 @@ func streamFromRemoteTrack(remote RemoteTrack) av.Stream {
 	return stream
 }
 
+func streamFromCodecUpdate(current av.Stream, update TrackCodecUpdate) av.Stream {
+	next := mergeStream(current, update.Stream)
+	if update.Metadata != nil {
+		next.Metadata = mergeMetadata(next.Metadata, update.Metadata)
+	}
+	if hasWebRTCCodec(update.Codec) {
+		mergeWebRTCCodec(&next, update.Codec)
+	}
+	if next.Type == "" {
+		next.Type = next.Codec.Type
+	}
+	if next.TimeBase == (av.TimeBase{}) && next.Codec.ClockRate != 0 {
+		next.TimeBase = av.RTPTimeBase(next.Codec.ClockRate)
+	}
+	if update.Stream.Epoch == 0 && update.Payloads != nil && update.Payloads.Epoch() != 0 {
+		next.Epoch = update.Payloads.Epoch()
+	}
+	if next.Epoch == current.Epoch {
+		next.Epoch = current.Epoch + 1
+		if next.Epoch == 0 {
+			next.Epoch = 1
+		}
+	}
+	return next
+}
+
+func mergeStream(base av.Stream, update av.Stream) av.Stream {
+	out := base
+	if update.ID != "" {
+		out.ID = update.ID
+	}
+	if update.Type != "" {
+		out.Type = update.Type
+	}
+	if update.TimeBase != (av.TimeBase{}) {
+		out.TimeBase = update.TimeBase
+	}
+	if update.Language != "" {
+		out.Language = update.Language
+	}
+	if update.Name != "" {
+		out.Name = update.Name
+	}
+	if update.Epoch != 0 {
+		out.Epoch = update.Epoch
+	}
+	out.Metadata = mergeMetadata(out.Metadata, update.Metadata)
+	mergeCodecParameters(&out.Codec, update.Codec)
+	return out
+}
+
+func mergeCodecParameters(base *av.CodecParameters, update av.CodecParameters) {
+	if update.ID != "" {
+		base.ID = update.ID
+	}
+	if update.Type != "" {
+		base.Type = update.Type
+	}
+	if update.Profile != "" {
+		base.Profile = update.Profile
+	}
+	if update.Level != "" {
+		base.Level = update.Level
+	}
+	if update.ClockRate != 0 {
+		base.ClockRate = update.ClockRate
+	}
+	if update.SampleRate != 0 {
+		base.SampleRate = update.SampleRate
+	}
+	if update.Channels != 0 {
+		base.Channels = update.Channels
+	}
+	if update.ChannelLayout != "" {
+		base.ChannelLayout = update.ChannelLayout
+	}
+	if update.Width != 0 {
+		base.Width = update.Width
+	}
+	if update.Height != 0 {
+		base.Height = update.Height
+	}
+	if update.PixelFormat != "" {
+		base.PixelFormat = update.PixelFormat
+	}
+	if update.SampleFormat != "" {
+		base.SampleFormat = update.SampleFormat
+	}
+	if len(update.ExtraData.Bytes) != 0 {
+		base.ExtraData = update.ExtraData
+	}
+	base.Attributes = mergeMetadata(base.Attributes, update.Attributes)
+}
+
+func mergeWebRTCCodec(stream *av.Stream, codec webrtc.RTPCodecParameters) {
+	params := codecParametersFromWebRTC(codec)
+	mergeCodecParameters(&stream.Codec, params)
+	if stream.Type == "" || params.Type != "" {
+		stream.Type = params.Type
+	}
+	if params.ClockRate != 0 {
+		stream.TimeBase = av.RTPTimeBase(params.ClockRate)
+	}
+}
+
 func codecParametersFromWebRTC(codec webrtc.RTPCodecParameters) av.CodecParameters {
 	id, media := codecIDFromMIME(codec.MimeType)
 	params := av.CodecParameters{
@@ -194,6 +349,15 @@ func codecParametersFromWebRTC(codec webrtc.RTPCodecParameters) av.CodecParamete
 		},
 	}
 	return params
+}
+
+func hasCodecUpdate(update TrackCodecUpdate) bool {
+	return hasWebRTCCodec(update.Codec) || update.Payloads != nil || update.Stream.Codec.ID != "" ||
+		update.Stream.Epoch != 0 || update.Stream.Type != "" || update.Stream.TimeBase != (av.TimeBase{})
+}
+
+func hasWebRTCCodec(codec webrtc.RTPCodecParameters) bool {
+	return codec.PayloadType != 0 || codec.MimeType != "" || codec.ClockRate != 0 || codec.SDPFmtpLine != ""
 }
 
 func payloadCodecFromWebRTC(codec webrtc.RTPCodecParameters, params av.CodecParameters) rtpav.PayloadCodec {

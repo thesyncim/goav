@@ -124,6 +124,196 @@ func TestNewTrackReaderMapsStreamAndPayload(t *testing.T) {
 	}
 }
 
+func TestTrackReaderUpdateCodecEmitsCodecChanged(t *testing.T) {
+	reader := newTrackReader(RemoteTrack{
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypeOpus,
+				ClockRate: 48000,
+				Channels:  2,
+			},
+			PayloadType: 111,
+		},
+		Stream: av.Stream{ID: "audio", Epoch: 1},
+	}, &fakeTrackRTPReader{})
+
+	err := reader.UpdateCodec(context.Background(), TrackCodecUpdate{
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:    webrtc.MimeTypeOpus,
+				ClockRate:   48000,
+				Channels:    2,
+				SDPFmtpLine: "minptime=20",
+			},
+			PayloadType: 112,
+		},
+		Metadata: av.Metadata{"rid": "f"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	streams, err := reader.Streams(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(streams) != 1 {
+		t.Fatalf("streams = %d, want 1", len(streams))
+	}
+	stream := streams[0]
+	if stream.ID != "audio" || stream.Epoch != 2 || stream.Codec.ID != av.CodecOpus {
+		t.Fatalf("stream = %+v", stream)
+	}
+	if stream.Codec.Attributes["fmtp"] != "minptime=20" || stream.Metadata["rid"] != "f" {
+		t.Fatalf("stream metadata/attrs = %+v %+v", stream.Metadata, stream.Codec.Attributes)
+	}
+
+	payload, ok := reader.PayloadMap().Lookup(112)
+	if !ok {
+		t.Fatal("payload 112 not found")
+	}
+	if reader.PayloadMap().Epoch() != 2 || payload.MIMEType != webrtc.MimeTypeOpus || payload.FMTP != "minptime=20" {
+		t.Fatalf("payload map epoch=%d payload=%+v", reader.PayloadMap().Epoch(), payload)
+	}
+
+	select {
+	case event := <-reader.Events():
+		if event.Type != av.EventCodecChanged || event.StreamID != "audio" || event.Epoch != 2 {
+			t.Fatalf("event = %+v", event)
+		}
+		if event.Stream == nil || event.Stream.Codec.ID != av.CodecOpus || event.Codec == nil || event.Codec.ID != av.CodecOpus {
+			t.Fatalf("event stream/codec = %+v %+v", event.Stream, event.Codec)
+		}
+	default:
+		t.Fatal("missing codec changed event")
+	}
+}
+
+func TestTrackReaderUpdateCodecUsesCustomPayloadEpoch(t *testing.T) {
+	reader := newTrackReader(RemoteTrack{
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypeOpus,
+				ClockRate: 48000,
+				Channels:  2,
+			},
+			PayloadType: 111,
+		},
+		Stream: av.Stream{ID: "audio", Epoch: 1},
+	}, &fakeTrackRTPReader{})
+	payloads := rtpav.NewStaticPayloadMap(9, []rtpav.PayloadCodec{{
+		PayloadType: 120,
+		Parameters: av.CodecParameters{
+			ID:        av.CodecOpus,
+			Type:      av.MediaAudio,
+			ClockRate: 48000,
+			Channels:  2,
+		},
+		MIMEType:  webrtc.MimeTypeOpus,
+		ClockRate: 48000,
+		Channels:  2,
+	}})
+
+	if err := reader.UpdateCodec(context.Background(), TrackCodecUpdate{Payloads: payloads}); err != nil {
+		t.Fatal(err)
+	}
+
+	streams, err := reader.Streams(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if streams[0].Epoch != 9 || reader.PayloadMap().Epoch() != 9 {
+		t.Fatalf("stream epoch=%d payload epoch=%d", streams[0].Epoch, reader.PayloadMap().Epoch())
+	}
+	select {
+	case event := <-reader.Events():
+		if event.Epoch != 9 {
+			t.Fatalf("event = %+v", event)
+		}
+	default:
+		t.Fatal("missing codec changed event")
+	}
+}
+
+func TestTrackReaderUpdateCodecFeedsRTPSource(t *testing.T) {
+	initial := av.Stream{
+		ID:       "audio",
+		Epoch:    1,
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:        av.CodecOpus,
+			Type:      av.MediaAudio,
+			ClockRate: 48000,
+			Channels:  2,
+		},
+	}
+	reader := newTrackReader(RemoteTrack{
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypeOpus,
+				ClockRate: 48000,
+				Channels:  2,
+			},
+			PayloadType: 111,
+		},
+		Stream: initial,
+	}, &fakeTrackRTPReader{
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 112, Timestamp: 960},
+			Payload: []byte{9, 8, 7},
+		}},
+	})
+	if err := reader.UpdateCodec(context.Background(), TrackCodecUpdate{
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypeOpus,
+				ClockRate: 48000,
+				Channels:  2,
+			},
+			PayloadType: 112,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	source, err := rtpav.NewSource(rtpav.SourceConfig{
+		Receiver:      reader,
+		Depacketizers: []rtpav.Depacketizer{rtpav.NewOpusDepacketizer(initial)},
+		MaxPackets:    1,
+		MaxEvents:     2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packets []av.Packet
+	var events []av.Event
+	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		switch msg.Kind {
+		case pipeline.MessagePacket:
+			packets = append(packets, *msg.Packet)
+		case pipeline.MessageEvent:
+			events = append(events, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(events) != 2 || events[0].Type != av.EventCodecChanged || events[1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v", events)
+	}
+	if len(packets) != 1 {
+		t.Fatalf("packets = %d, want 1", len(packets))
+	}
+	if packets[0].StreamID != "audio" || packets[0].CodecEpoch != 2 || packets[0].PTS.Value != 960 {
+		t.Fatalf("packet = %+v", packets[0])
+	}
+	if len(packets[0].Payload.Bytes) != 3 || packets[0].Payload.Bytes[0] != 9 {
+		t.Fatalf("payload = %v", packets[0].Payload.Bytes)
+	}
+}
+
 func TestTrackReaderReadRTPAndClose(t *testing.T) {
 	packet := &rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 10}}
 	reader := newTrackReader(RemoteTrack{Stream: av.Stream{ID: "video"}}, &fakeTrackRTPReader{
