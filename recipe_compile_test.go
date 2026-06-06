@@ -15,6 +15,7 @@ func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 	forbidden := map[reflect.Type]string{
 		reflect.TypeOf((*Job)(nil)):          "*Job",
 		reflect.TypeOf((*TranscodeJob)(nil)): "*TranscodeJob",
+		reflect.TypeOf([]streamBuild(nil)):   "[]streamBuild",
 	}
 	for i := 0; i < stateType.NumField(); i++ {
 		field := stateType.Field(i)

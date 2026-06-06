@@ -31,7 +31,6 @@ type recipeCompileState struct {
 	stream     *jobStreamBuild
 
 	transcodeInput   InputSpec
-	transcodeStreams []streamBuild
 	transcodeOutputs []namedOutputSpec
 
 	outputs []OutputSpec
@@ -153,7 +152,6 @@ func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
 		state.runtime = job.runtime
 		state.recipeErr = job.err
 		state.transcodeInput = job.input
-		state.transcodeStreams = cloneStreamBuilds(job.streams)
 		state.transcodeOutputs = append([]namedOutputSpec(nil), job.outputs...)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
@@ -284,7 +282,7 @@ func planTranscodeIntentPass() recipeCompilePass {
 		if state.runtime == nil {
 			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
 		}
-		plan, err := planTranscodeRecipe(state.transcodeInput, state.transcodeStreams, state.transcodeOutputs, state.recipeErr)
+		plan, err := planTranscodeRecipe(state.intent, state.transcodeInput, state.transcodeOutputs, state.recipeErr)
 		if err != nil {
 			return err
 		}
