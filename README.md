@@ -102,7 +102,7 @@ fmt.Println(spec)
 - `goav.Transcode(input)` builds named audio or video branches and outputs.
   Transcode branch `.To(...)` accepts either a named output label or an
   `OutputSpec` such as `goav.FileOutput(...)`; each branch must route to an
-  output.
+  output and currently carries at most one resize or resample transform.
 - `goav.WebRTCTrack(track)` adapts a Pion `TrackRemote` into the same realtime
   receive path as RTP.
 - `goav.RTP(reader).Name("audio").Codec(goav.Opus())` describes live receive

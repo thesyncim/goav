@@ -1286,16 +1286,12 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 		for _, label := range stream.labels {
 			outputRenditions[label] = append(outputRenditions[label], renditionName)
 		}
-		for j := range stream.transforms {
-			if stream.transforms[j].Resize != nil {
-				resize := *stream.transforms[j].Resize
-				rendition.Resize = &resize
-			}
-			if stream.transforms[j].Resample != nil {
-				resample := *stream.transforms[j].Resample
-				rendition.Resample = &resample
-			}
+		resize, resample, err := transcodeBranchTransformConfigs(stream)
+		if err != nil {
+			return transcodepkg.Plan{}, err
 		}
+		rendition.Resize = resize
+		rendition.Resample = resample
 		renditions = append(renditions, rendition)
 	}
 
@@ -1442,6 +1438,87 @@ func transcodeOutputTargetError(stream streamBuild) error {
 		},
 		Cause: ErrUnsupportedBuild,
 	}
+}
+
+func transcodeBranchTransformConfigs(stream streamBuild) (*filter.ResizeConfig, *filter.ResampleConfig, error) {
+	var resize *filter.ResizeConfig
+	var resample *filter.ResampleConfig
+	for i := range stream.transforms {
+		transform := stream.transforms[i]
+		switch {
+		case transform.Resize != nil && transform.Resample != nil:
+			return nil, nil, &BuildError{
+				Code:      "transform_invalid",
+				Operation: "plan transcode",
+				Node:      transcodeBranchName(stream),
+				Reason:    "one transform cannot be both resize and resample",
+				Cause:     ErrUnsupportedBuild,
+			}
+		case transform.Resize != nil:
+			if stream.selector.Type == av.MediaAudio {
+				return nil, nil, transcodeTransformMediaError(stream, "resize", "video")
+			}
+			if resize != nil || resample != nil {
+				return nil, nil, transcodeTransformChainError(stream)
+			}
+			config := *transform.Resize
+			resize = &config
+		case transform.Resample != nil:
+			if stream.selector.Type == av.MediaVideo {
+				return nil, nil, transcodeTransformMediaError(stream, "resample", "audio")
+			}
+			if resize != nil || resample != nil {
+				return nil, nil, transcodeTransformChainError(stream)
+			}
+			config := *transform.Resample
+			resample = &config
+		default:
+			return nil, nil, &BuildError{
+				Code:      "transform_invalid",
+				Operation: "plan transcode",
+				Node:      transcodeBranchName(stream),
+				Reason:    "empty stream transform",
+				Suggestions: []string{
+					"call .Resize(width, height) once on video branches",
+					"call .Resample(sampleRate, channels) once on audio branches",
+				},
+				Cause: ErrUnsupportedBuild,
+			}
+		}
+	}
+	return resize, resample, nil
+}
+
+func transcodeTransformMediaError(stream streamBuild, transform string, media string) error {
+	return &BuildError{
+		Code:      "transform_media_mismatch",
+		Operation: "plan transcode",
+		Node:      transcodeBranchName(stream),
+		Reason:    transform + " applies to " + media + " branches",
+		Suggestions: []string{
+			"use .Video(...).Resize(...) for video ladder branches",
+			"use .Audio(...).Resample(...) for audio branches",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeTransformChainError(stream streamBuild) error {
+	return &BuildError{
+		Code:      "transform_chain_unsupported",
+		Operation: "plan transcode",
+		Node:      transcodeBranchName(stream),
+		Reason:    "transcode branches currently support one media transform",
+		Suggestions: []string{
+			"call one Resize or Resample per branch",
+			"create another Video(...) or Audio(...) branch for another output shape",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeBranchName(stream streamBuild) string {
+	return firstNonEmpty(stream.name, string(stream.selector.Type), "stream")
 }
 
 func outputTargetType(target any) string {

@@ -329,7 +329,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 100. Add intent-layer transcode diagnostics for missing branches and branches
     without output routes, preserving the same unsupported-build compatibility
     sentinel. Done.
-101. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+101. Add intent-layer transcode transform diagnostics so wrong-media transforms
+    and transform chains fail before the single-transform plan silently drops
+    intent. Done.
+102. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

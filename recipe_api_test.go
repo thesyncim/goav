@@ -394,6 +394,38 @@ func TestTranscodeRecipeRequiresBranchOutput(t *testing.T) {
 	}
 }
 
+func TestTranscodeRecipeRejectsWrongMediaTransform(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("bad").Resample(16_000, goav.Mono).VP9(600_000).
+		To(goav.FileOutput("bad.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_media_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transform_media_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "resample applies to audio branches") ||
+		!strings.Contains(err.Error(), ".Video(...).Resize(...)") {
+		t.Fatalf("err = %v, want media transform guidance", err)
+	}
+}
+
+func TestTranscodeRecipeRejectsTransformChainUntilPlanSupportsIt(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("360p").Resize(1280, 720).Resize(640, 360).VP9(600_000).
+		To(goav.FileOutput("preview.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_chain_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transform_chain_unsupported wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "one media transform") ||
+		!strings.Contains(err.Error(), "create another Video") {
+		t.Fatalf("err = %v, want transform chain guidance", err)
+	}
+}
+
 func tinyIVF() []byte {
 	var data bytes.Buffer
 	var header [32]byte
