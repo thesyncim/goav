@@ -493,7 +493,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Audio(goav.StreamIndex(0))` and branch selection stay fluent without
     making stream option types part of the beginner surface.
     Done.
-153. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+153. Demote the `CodecOption` marker type to package-private plumbing so codec
+    recipes keep `Opus(goav.Bitrate(...))`, `VP8(...)`, and `VP9(...)` without
+    advertising another option type as public API.
+    Done.
+154. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

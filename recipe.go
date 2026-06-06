@@ -160,7 +160,7 @@ func Default() Runtime {
 	return New(WithDefaults())
 }
 
-type CodecOption func(*CodecSpec)
+type codecOption func(*CodecSpec)
 
 type CodecSpec struct {
 	ID            av.CodecID
@@ -181,7 +181,7 @@ func Copy() CodecSpec {
 	return CodecSpec{Copy: true}
 }
 
-func Opus(options ...CodecOption) CodecSpec {
+func Opus(options ...codecOption) CodecSpec {
 	return codecSpec(av.CodecOpus, av.MediaAudio, av.CodecParameters{
 		ID:            av.CodecOpus,
 		Type:          av.MediaAudio,
@@ -200,7 +200,7 @@ func OpusMusic() CodecSpec {
 	return Opus(Bitrate(128_000), Channels(Stereo))
 }
 
-func VP8(options ...CodecOption) CodecSpec {
+func VP8(options ...codecOption) CodecSpec {
 	return codecSpec(av.CodecVP8, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecVP8,
 		Type:      av.MediaVideo,
@@ -208,7 +208,7 @@ func VP8(options ...CodecOption) CodecSpec {
 	}, options...)
 }
 
-func VP9(options ...CodecOption) CodecSpec {
+func VP9(options ...codecOption) CodecSpec {
 	return codecSpec(av.CodecVP9, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecVP9,
 		Type:      av.MediaVideo,
@@ -216,7 +216,7 @@ func VP9(options ...CodecOption) CodecSpec {
 	}, options...)
 }
 
-func H264(options ...CodecOption) CodecSpec {
+func H264(options ...codecOption) CodecSpec {
 	return codecSpec(av.CodecH264, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecH264,
 		Type:      av.MediaVideo,
@@ -224,7 +224,7 @@ func H264(options ...CodecOption) CodecSpec {
 	}, options...)
 }
 
-func AV1(options ...CodecOption) CodecSpec {
+func AV1(options ...codecOption) CodecSpec {
 	return codecSpec(av.CodecAV1, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecAV1,
 		Type:      av.MediaVideo,
@@ -232,13 +232,13 @@ func AV1(options ...CodecOption) CodecSpec {
 	}, options...)
 }
 
-func Bitrate(bitsPerSecond int) CodecOption {
+func Bitrate(bitsPerSecond int) codecOption {
 	return func(spec *CodecSpec) {
 		spec.Bitrate = bitsPerSecond
 	}
 }
 
-func Channels(channels int) CodecOption {
+func Channels(channels int) codecOption {
 	return func(spec *CodecSpec) {
 		spec.Parameters.Channels = channels
 		spec.channelsSet = true
@@ -251,7 +251,7 @@ func Channels(channels int) CodecOption {
 	}
 }
 
-func SampleRate(sampleRate int) CodecOption {
+func SampleRate(sampleRate int) codecOption {
 	return func(spec *CodecSpec) {
 		spec.Parameters.SampleRate = sampleRate
 		spec.Parameters.ClockRate = uint32(sampleRate)
@@ -259,7 +259,7 @@ func SampleRate(sampleRate int) CodecOption {
 	}
 }
 
-func codecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, options ...CodecOption) CodecSpec {
+func codecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, options ...codecOption) CodecSpec {
 	spec := CodecSpec{ID: id, Type: media, Parameters: params}
 	for i := range options {
 		if options[i] != nil {
@@ -1778,16 +1778,16 @@ func (b *JobStreamBuilder) Encode(codec CodecSpec) *JobStreamBuilder {
 	return b
 }
 
-func (b *JobStreamBuilder) Opus(bitrate int, options ...CodecOption) *JobStreamBuilder {
-	return b.Encode(Opus(append([]CodecOption{Bitrate(bitrate)}, options...)...))
+func (b *JobStreamBuilder) Opus(bitrate int, options ...codecOption) *JobStreamBuilder {
+	return b.Encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *JobStreamBuilder) VP8(bitrate int, options ...CodecOption) *JobStreamBuilder {
-	return b.Encode(VP8(append([]CodecOption{Bitrate(bitrate)}, options...)...))
+func (b *JobStreamBuilder) VP8(bitrate int, options ...codecOption) *JobStreamBuilder {
+	return b.Encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *JobStreamBuilder) VP9(bitrate int, options ...CodecOption) *JobStreamBuilder {
-	return b.Encode(VP9(append([]CodecOption{Bitrate(bitrate)}, options...)...))
+func (b *JobStreamBuilder) VP9(bitrate int, options ...codecOption) *JobStreamBuilder {
+	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
 func (b *JobStreamBuilder) To(outputs ...OutputSpec) *Job {
@@ -2117,16 +2117,16 @@ func (b *StreamBuilder) Resample(sampleRate int, channels int, options ...AudioO
 	return b
 }
 
-func (b *StreamBuilder) Opus(bitrate int, options ...CodecOption) *StreamBuilder {
-	return b.encode(Opus(append([]CodecOption{Bitrate(bitrate)}, options...)...))
+func (b *StreamBuilder) Opus(bitrate int, options ...codecOption) *StreamBuilder {
+	return b.encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *StreamBuilder) VP8(bitrate int, options ...CodecOption) *StreamBuilder {
-	return b.encode(VP8(append([]CodecOption{Bitrate(bitrate)}, options...)...))
+func (b *StreamBuilder) VP8(bitrate int, options ...codecOption) *StreamBuilder {
+	return b.encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *StreamBuilder) VP9(bitrate int, options ...CodecOption) *StreamBuilder {
-	return b.encode(VP9(append([]CodecOption{Bitrate(bitrate)}, options...)...))
+func (b *StreamBuilder) VP9(bitrate int, options ...codecOption) *StreamBuilder {
+	return b.encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
 func (b *StreamBuilder) To(labels ...string) *TranscodeJob {
