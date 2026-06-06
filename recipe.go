@@ -973,6 +973,7 @@ func newRuntimeBuilder(runtime Runtime, operation string) (builderAPI, error) {
 				"use goav.New(...) when customizing adapters",
 				"use runtime.Graph() for explicit graph wiring",
 			},
+			Cause: ErrUnsupportedBuild,
 		}
 	}
 	return provider.New(), nil
@@ -1001,6 +1002,7 @@ func (j *Job) validateInputs() error {
 				"use goav.WebRTCTrack(...) for Pion WebRTC tracks",
 				"build an explicit graph when combining multiple file or protocol sources",
 			},
+			Cause: ErrUnsupportedBuild,
 		}
 	}
 	if err := validateRealtimeInputNames(j.inputs); err != nil {
@@ -1087,6 +1089,7 @@ func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAP
 				"call .Opus(...), .VP8(...), or .VP9(...) before writing to a file output",
 				"use goav.Record(input, output) for packet-preserving record or remux",
 			},
+			Cause: ErrUnsupportedBuild,
 		}
 	}
 	if err := validateRecipeStreamSelector("build stream", jobStreamName(stream), stream.selector); err != nil {
@@ -1112,6 +1115,7 @@ func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAP
 				"send decoded frames to goav.FrameSink(...)",
 				"use goav.Record(input, output) if you want to copy packets without decoding",
 			},
+			Cause: ErrUnsupportedBuild,
 		}
 	}
 	if stream.encode.ID != "" && outputsContainFrameSink(outputs) {
@@ -1125,6 +1129,7 @@ func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAP
 				"send encoded output to goav.FileOutput(...) or goav.URIOutput(...)",
 				"use the expert graph API for custom packet sink wiring",
 			},
+			Cause: ErrUnsupportedBuild,
 		}
 	}
 	if stream.decode || len(stream.steps) != 0 || stream.encode.ID != "" {
@@ -1176,6 +1181,7 @@ func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAP
 					"use goav.Default() or goav.New(...) for recipe transforms",
 					"use .Do(stage) when a custom runtime must provide its own filter stage",
 				},
+				Cause: ErrUnsupportedBuild,
 			}
 		}
 		builder = internal.transform(stream.selector, transform)
@@ -1899,6 +1905,7 @@ func (j *TranscodeJob) plan() (transcodepkg.Plan, error) {
 				"use Record(...) for packet recording",
 				"use From(...).Audio() or From(...).Video() for one selected RTP receive path",
 			},
+			Cause: ErrUnsupportedBuild,
 		}
 	}
 	if len(j.streams) == 0 {
@@ -1931,6 +1938,7 @@ func (j *TranscodeJob) plan() (transcodepkg.Plan, error) {
 				Suggestions: []string{
 					"call .Opus(...), .VP8(...), or .VP9(...) before .To(...)",
 				},
+				Cause: ErrUnsupportedBuild,
 			}
 		}
 		if err := validateRecipeEncode(stream.encode, transcodeRecipeOperation, stream.name); err != nil {

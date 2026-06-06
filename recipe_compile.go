@@ -160,13 +160,13 @@ func validateJobIntentPass() recipeCompilePass {
 			}
 		}
 		if job.runtime == nil {
-			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured"}
+			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
 		}
 		if job.err != nil {
 			return job.err
 		}
 		if len(job.inputs) == 0 {
-			return &BuildError{Code: "input_missing", Operation: state.operation, Reason: "no input is configured"}
+			return &BuildError{Code: "input_missing", Operation: state.operation, Reason: "no input is configured", Cause: ErrUnsupportedBuild}
 		}
 		if err := job.validateInputs(); err != nil {
 			return err
@@ -176,7 +176,7 @@ func validateJobIntentPass() recipeCompilePass {
 		}
 		state.outputs = job.allOutputs()
 		if len(state.outputs) == 0 {
-			return &BuildError{Code: "output_missing", Operation: state.operation, Reason: "no output is configured"}
+			return &BuildError{Code: "output_missing", Operation: state.operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
 		}
 		return validateOutputSpecs(state.operation, state.outputs)
 	}}
@@ -267,7 +267,7 @@ func planTranscodeIntentPass() recipeCompilePass {
 			}
 		}
 		if job.runtime == nil {
-			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured"}
+			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
 		}
 		plan, err := job.plan()
 		if err != nil {

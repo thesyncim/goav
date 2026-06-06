@@ -562,6 +562,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 171. Reject `FrameSink` as a `Transcode(...).Output(label, ...)` target because
     transcode outputs are muxed output groups; keep decoded frame sinks on
     `Decode` or stream-scoped `From` recipes. Done.
+172. Preserve `ErrUnsupportedBuild` through more recipe `BuildError`
+    diagnostics for unsupported shapes such as multiple file inputs, selected
+    streams with no operation, missing encoders for mux outputs, and RTP inputs
+    on `Transcode` recipes. Done.
 
 ## First Vertical Slice
 

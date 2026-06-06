@@ -412,8 +412,8 @@ func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
 		To(goav.FileOutput("out.ivf", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "multi_input_unsupported" {
-		t.Fatalf("err = %v, want multi_input_unsupported", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "multi_input_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want multi_input_unsupported wrapping ErrUnsupportedBuild", err)
 	}
 }
 
@@ -921,8 +921,8 @@ func TestStreamRecipeRequiresOperationForMuxOutput(t *testing.T) {
 		To(goav.FileOutput("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_operation_missing" {
-		t.Fatalf("err = %v, want stream_operation_missing", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_operation_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_operation_missing wrapping ErrUnsupportedBuild", err)
 	}
 }
 
@@ -1060,8 +1060,8 @@ func TestStreamRecipeRequiresEncoderForFileOutput(t *testing.T) {
 		To(goav.FileOutput("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" {
-		t.Fatalf("err = %v, want encode_missing", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
 	}
 }
 
@@ -1507,6 +1507,22 @@ func TestTranscodeRecipeRejectsInvalidOutputSpec(t *testing.T) {
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want output_writer_missing wrapping ErrUnsupportedBuild", err)
+	}
+}
+
+func TestTranscodeRecipeRejectsRTPInputWithSentinel(t *testing.T) {
+	_, err := goav.Transcode(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.Opus())).
+		Audio("main").Opus(96_000).To("archive").
+		Output("archive", goav.FileOutput("archive.ogg", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "unsupported_input" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want unsupported_input wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "RTP transcode recipes") ||
+		!strings.Contains(err.Error(), "From(...).Audio()") {
+		t.Fatalf("err = %v, want RTP transcode guidance", err)
 	}
 }
 
