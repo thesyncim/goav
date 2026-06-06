@@ -8,14 +8,14 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
 
 var runtimeAttachmentSeq atomic.Uint64
 
-// RuntimeBranch describes a branch attached to an already-built task.
-type RuntimeBranch struct {
+// runtimeBranch is the internal graph mutation plan for a branch attached to an
+// already-built task.
+type runtimeBranch struct {
 	name   string
 	from   string
 	tap    string
@@ -27,11 +27,6 @@ type RuntimeBranch struct {
 	err    error
 }
 
-// RuntimeBranchBuilder builds a runtime branch without exposing graph mutation.
-type RuntimeBranchBuilder struct {
-	branch RuntimeBranch
-}
-
 // Attachment is a live runtime branch attached to a task.
 type Attachment interface {
 	ID() string
@@ -41,89 +36,12 @@ type Attachment interface {
 	Close(context.Context) error
 }
 
-// Branch starts a runtime branch description. Attach it with Task.Attach.
-func Branch(name string) *RuntimeBranchBuilder {
-	return &RuntimeBranchBuilder{branch: RuntimeBranch{name: name}}
-}
-
-func (b *RuntimeBranchBuilder) From(node string) *RuntimeBranchBuilder {
-	if b == nil {
-		return b
-	}
-	b.branch.from = node
-	b.branch.tap = ""
-	return b
-}
-
-func (b *RuntimeBranchBuilder) FromTap(name string) *RuntimeBranchBuilder {
-	if b == nil {
-		return b
-	}
-	b.branch.tap = name
-	b.branch.from = ""
-	return b
-}
-
-func (b *RuntimeBranchBuilder) Stream(stream av.StreamID) *RuntimeBranchBuilder {
-	if b == nil {
-		return b
-	}
-	b.branch.policy = pipeline.RouteByStream
-	b.branch.label = string(stream)
-	return b
-}
-
-func (b *RuntimeBranchBuilder) Event(event av.EventType) *RuntimeBranchBuilder {
-	if b == nil {
-		return b
-	}
-	b.branch.policy = pipeline.RouteByEvent
-	b.branch.label = string(event)
-	return b
-}
-
-func (b *RuntimeBranchBuilder) Buffer(policy pipeline.BufferPolicy) *RuntimeBranchBuilder {
-	if b == nil {
-		return b
-	}
-	b.branch.buffer = policy
-	return b
-}
-
-func (b *RuntimeBranchBuilder) Do(stages ...pipeline.Stage) *RuntimeBranchBuilder {
-	if b == nil {
-		return b
-	}
-	for i := range stages {
-		if stages[i] == nil {
-			b.setErr(runtimeBranchInvalidError("stage is nil", "pass non-nil pipeline.Stage values or omit Do(...)"))
-			return b
-		}
-		b.branch.stages = append(b.branch.stages, stages[i])
-	}
-	return b
-}
-
-func (b *RuntimeBranchBuilder) To(sink pipeline.Sink) RuntimeBranch {
-	if b == nil {
-		return RuntimeBranch{err: runtimeBranchInvalidError("branch builder is nil", "start with goav.Branch(name)")}
-	}
-	if sink == nil {
-		b.setErr(runtimeBranchInvalidError("sink is nil", "pass a non-nil pipeline.Sink such as goav.SinkFunc(...)"))
-		return b.branch
-	}
-	b.branch.sink = sink
-	return b.branch
-}
-
-func (b *RuntimeBranchBuilder) setErr(err error) {
-	if b.branch.err == nil {
-		b.branch.err = err
-	}
-}
-
-func (t *task) Attach(ctx context.Context, branch RuntimeBranch) (Attachment, error) {
+func (t *task) Attach(ctx context.Context, spec BranchSpec) (Attachment, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	branch, err := runtimeBranchFromSpec(spec)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateRuntimeBranch(branch); err != nil {
@@ -132,14 +50,13 @@ func (t *task) Attach(ctx context.Context, branch RuntimeBranch) (Attachment, er
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 
-	spec := t.graph.Spec()
-	var err error
-	branch.from, err = t.resolveRuntimeBranchAnchor(branch, spec)
+	graphSpec := t.graph.Spec()
+	branch.from, err = t.resolveRuntimeBranchAnchor(branch, graphSpec)
 	if err != nil {
 		return nil, err
 	}
 
-	nodeNames, err := runtimeBranchNodeNames(branch, spec)
+	nodeNames, err := runtimeBranchNodeNames(branch, graphSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +76,44 @@ func (t *task) Attach(ctx context.Context, branch RuntimeBranch) (Attachment, er
 	return attachment, nil
 }
 
-func (t *task) resolveRuntimeBranchAnchor(branch RuntimeBranch, spec pipeline.Spec) (string, error) {
+func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
+	if spec.err != nil {
+		return runtimeBranch{err: spec.err}, spec.err
+	}
+	branch := runtimeBranch{
+		name:   spec.name,
+		from:   spec.from,
+		tap:    spec.tap,
+		policy: spec.policy,
+		label:  spec.label,
+		buffer: spec.buffer,
+	}
+	for i := range spec.steps {
+		step := spec.steps[i]
+		switch {
+		case step.stage != nil:
+			branch.stages = append(branch.stages, step.stage)
+		case step.transform.Resize != nil || step.transform.Resample != nil:
+			return branch, runtimeBranchInvalidError("runtime branch transforms are not dynamic yet", "attach runtime branches with .Do(stage).To(goav.FrameSink(...)) or plan resize/resample branches before Build")
+		case step.tap != "":
+			return branch, runtimeBranchInvalidError("runtime branch taps are not dynamic yet", "attach from an existing tap with .FromTap(name) and add stages before the sink")
+		}
+	}
+	if codecIntentSet(spec.encode) {
+		return branch, runtimeBranchInvalidError("runtime branch encoding is not dynamic yet", "plan encode branches before Build or attach a sink branch from a decoded tap")
+	}
+	if len(spec.targets) != 1 {
+		return branch, runtimeBranchInvalidError("runtime branch needs exactly one sink endpoint", "finish the branch with .To(goav.FrameSink(sink))")
+	}
+	endpoint := spec.targets[0].endpoint
+	if endpoint.sink == nil {
+		return branch, runtimeBranchInvalidError("runtime branch target must be a sink endpoint", "use .To(goav.FrameSink(sink)) for runtime branches")
+	}
+	branch.sink = endpoint.sink
+	return branch, nil
+}
+
+func (t *task) resolveRuntimeBranchAnchor(branch runtimeBranch, spec pipeline.Spec) (string, error) {
 	if branch.tap != "" {
 		for _, tap := range t.Taps() {
 			if tap.Name == branch.tap {
@@ -174,7 +128,7 @@ func (t *task) resolveRuntimeBranchAnchor(branch RuntimeBranch, spec pipeline.Sp
 	return branch.from, nil
 }
 
-func (t *task) attachRuntimeBranch(branch RuntimeBranch, nodeNames []string) ([]pipeline.NodeRef, []pipeline.Route, error) {
+func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]pipeline.NodeRef, []pipeline.Route, error) {
 	refs := make([]pipeline.NodeRef, 0, len(nodeNames))
 	routes := make([]pipeline.Route, 0, len(nodeNames))
 	var previous pipeline.NodeRef
@@ -348,7 +302,7 @@ func isStoppedAttachmentError(err error) bool {
 		errors.Is(err, pipeline.ErrClosed)
 }
 
-func validateRuntimeBranch(branch RuntimeBranch) error {
+func validateRuntimeBranch(branch runtimeBranch) error {
 	if branch.err != nil {
 		return branch.err
 	}
@@ -364,7 +318,7 @@ func validateRuntimeBranch(branch RuntimeBranch) error {
 	return nil
 }
 
-func runtimeBranchNodeNames(branch RuntimeBranch, spec pipeline.Spec) ([]string, error) {
+func runtimeBranchNodeNames(branch runtimeBranch, spec pipeline.Spec) ([]string, error) {
 	names := make([]string, 0, len(branch.stages)+1)
 	seen := make(map[string]struct{}, len(branch.stages)+1)
 	for i := range branch.stages {
@@ -397,7 +351,7 @@ func runtimeBranchNodeName(branchName string, localName string, fallback string)
 	return branchName + "/" + localName
 }
 
-func runtimeBranchRoute(from pipeline.NodeRef, to pipeline.NodeRef, branch RuntimeBranch) pipeline.Route {
+func runtimeBranchRoute(from pipeline.NodeRef, to pipeline.NodeRef, branch runtimeBranch) pipeline.Route {
 	policy := branch.policy
 	if policy == "" {
 		policy = pipeline.RouteAll

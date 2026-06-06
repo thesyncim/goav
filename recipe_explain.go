@@ -146,6 +146,7 @@ func newPlanReport(operation string, resolved recipeResolved) (PlanReport, error
 	report.Outputs = explainOutputs(resolved.intent.Outputs, resolved.outputFormats, resolved.mediaPlan.Outputs)
 	report.Decisions = explainDecisions(resolved.mediaPlan.Decisions)
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, report)
+	report.Warnings = appendPlanDiagnostics(report.Warnings, muxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
 	report.Summary = explainSummary(report)
 	return report, nil
 }
@@ -591,13 +592,13 @@ func adapterRequirementKey(requirement AdapterRequirement) string {
 func annotatePlanReportError(report *PlanReport, err error) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr == nil {
-		report.Warnings = append(report.Warnings, PlanDiagnostic{
+		report.Warnings = appendPlanDiagnostics(report.Warnings, PlanDiagnostic{
 			Code:    "explain_preflight_error",
 			Message: err.Error(),
 		})
 		return
 	}
-	report.Warnings = append(report.Warnings, PlanDiagnostic{
+	report.Warnings = appendPlanDiagnostics(report.Warnings, PlanDiagnostic{
 		Code:        buildErr.Code,
 		Node:        buildErr.Node,
 		Message:     buildErr.Reason,
@@ -606,6 +607,9 @@ func annotatePlanReportError(report *PlanReport, err error) {
 	})
 	requirement, ok := adapterRequirementFromBuildError(buildErr)
 	if !ok {
+		if buildErr.Code == "output_mux_incompatible" {
+			return
+		}
 		report.Missing = append(report.Missing, Requirement{
 			Kind:       firstNonEmpty(buildErr.Code, "requirement"),
 			Name:       firstNonEmpty(buildErr.Node, buildErr.Reason),
@@ -719,6 +723,24 @@ func appendMissingRequirement(requirements []Requirement, requirement Requiremen
 		}
 	}
 	return append(requirements, requirement)
+}
+
+func appendPlanDiagnostics(diagnostics []PlanDiagnostic, next ...PlanDiagnostic) []PlanDiagnostic {
+	for i := range next {
+		found := false
+		for j := range diagnostics {
+			if diagnostics[j].Code == next[i].Code &&
+				diagnostics[j].Node == next[i].Node &&
+				diagnostics[j].Message == next[i].Message {
+				found = true
+				break
+			}
+		}
+		if !found {
+			diagnostics = append(diagnostics, next[i])
+		}
+	}
+	return diagnostics
 }
 
 func explainSummary(report PlanReport) string {

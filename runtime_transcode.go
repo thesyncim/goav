@@ -18,7 +18,7 @@ type rtpTranscodeGraphCompiler struct{}
 
 type transcodeBranch struct {
 	name    string
-	path    transcode.Path
+	branch  transcode.Branch
 	steps   []transcodeTransform
 	request encodeRequest
 }
@@ -448,8 +448,8 @@ func (b *builder) newTranscodeFilterStage(ctx context.Context, transform transco
 }
 
 func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOutputBranch, error) {
-	if len(plan.Paths) == 0 {
-		return nil, nil, transcodePlanEmptyError("paths")
+	if len(plan.Branches) == 0 {
+		return nil, nil, transcodePlanEmptyError("branches")
 	}
 	if len(plan.Outputs) == 0 {
 		return nil, nil, transcodePlanEmptyError("outputs")
@@ -467,9 +467,9 @@ func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOu
 
 func transcodePlanEmptyError(kind string) error {
 	suggestions := []string{
-		"add at least one transcode.Path with a selector and encoder",
+		"add at least one transcode.Branch with a selector and encoder",
 		"add at least one transcode.Output with a target output",
-		"use goav.From(input).Video().Decode().Paths(goav.Path(name).To(label)).Outputs(goav.Output(label, output)) for the recipe API",
+		"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for the recipe API",
 	}
 	reason := "transcode plan has no " + kind
 	return &BuildError{
@@ -486,12 +486,12 @@ func transcodeSelectorGroups(branches []transcodeBranch) []transcodeSelectorGrou
 	groups := make([]transcodeSelectorGroup, 0, len(branches))
 	index := make(map[string]int, len(branches))
 	for i := range branches {
-		key := transcodeSelectorKey(branches[i].path.Selector)
+		key := transcodeSelectorKey(branches[i].branch.Selector)
 		groupIndex, ok := index[key]
 		if !ok {
 			groupIndex = len(groups)
 			index[key] = groupIndex
-			groups = append(groups, transcodeSelectorGroup{selector: branches[i].path.Selector})
+			groups = append(groups, transcodeSelectorGroup{selector: branches[i].branch.Selector})
 		}
 		groups[groupIndex].branches = append(groups[groupIndex].branches, i)
 	}
@@ -502,7 +502,7 @@ func resolveTranscodeStreamGroups(streams []av.Stream, branches []transcodeBranc
 	groups := make([]transcodeStreamGroup, 0, len(branches))
 	index := make(map[string]int, len(branches))
 	for i := range branches {
-		stream, err := selectDecodeStream(streams, branches[i].path.Selector)
+		stream, err := selectDecodeStream(streams, branches[i].branch.Selector)
 		if err != nil {
 			return nil, err
 		}
@@ -512,7 +512,7 @@ func resolveTranscodeStreamGroups(streams []av.Stream, branches []transcodeBranc
 			groupIndex = len(groups)
 			index[key] = groupIndex
 			groups = append(groups, transcodeStreamGroup{
-				selector: branches[i].path.Selector,
+				selector: branches[i].branch.Selector,
 				stream:   stream,
 			})
 		}
@@ -542,37 +542,37 @@ func transcodeStreamKey(stream av.Stream) string {
 }
 
 func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
-	branches := make([]transcodeBranch, len(plan.Paths))
-	names := make(map[string]struct{}, len(plan.Paths))
-	for i := range plan.Paths {
-		path := plan.Paths[i]
-		name := transcodePathName(path, i, len(plan.Paths))
+	branches := make([]transcodeBranch, len(plan.Branches))
+	names := make(map[string]struct{}, len(plan.Branches))
+	for i := range plan.Branches {
+		branch := plan.Branches[i]
+		name := runtimeTranscodeBranchName(branch, i, len(plan.Branches))
 		if _, ok := names[name]; ok {
-			return nil, transcodeDuplicatePathError(name, i)
+			return nil, runtimeTranscodeDuplicateBranchError(name, i)
 		}
 		names[name] = struct{}{}
-		steps, err := transcodeSteps(name, path)
+		steps, err := transcodeSteps(name, branch)
 		if err != nil {
 			return nil, err
 		}
 
-		config := path.Encode
+		config := branch.Encode
 		if config.Stream.ID == "" {
 			config.Stream.ID = av.StreamID(name)
 		}
 		if config.Stream.Name == "" {
 			config.Stream.Name = name
 		}
-		if config.Stream.Metadata == nil && path.Metadata != nil {
-			config.Stream.Metadata = path.Metadata
+		if config.Stream.Metadata == nil && branch.Metadata != nil {
+			config.Stream.Metadata = branch.Metadata
 		}
 		branches[i] = transcodeBranch{
-			name:  name,
-			path:  path,
-			steps: steps,
+			name:   name,
+			branch: branch,
+			steps:  steps,
 			request: encodeRequest{
 				name:     name,
-				selector: path.Selector,
+				selector: branch.Selector,
 				config:   config,
 			},
 		}
@@ -580,35 +580,35 @@ func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
 	return branches, nil
 }
 
-func transcodeDuplicatePathError(name string, index int) error {
+func runtimeTranscodeDuplicateBranchError(name string, index int) error {
 	return &BuildError{
-		Code:      "transcode_path_duplicate",
+		Code:      "transcode_branch_duplicate",
 		Operation: "build transcode",
 		Node:      name,
-		Reason:    "transcode path name is defined more than once",
+		Reason:    "transcode branch name is defined more than once",
 		Details: []string{
 			"duplicate index: " + strconv.Itoa(index),
 		},
 		Suggestions: []string{
-			"give each transcode.Path a stable unique Name",
-			"use distinct branch names when multiple paths share one selected stream",
+			"give each transcode.Branch a stable unique Name",
+			"use distinct branch names when multiple branches share one selected stream",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeSteps(name string, path transcode.Path) ([]transcodeTransform, error) {
-	if len(path.Steps) == 0 {
-		return transcodeStepsFromLegacyFields(name, path)
+func transcodeSteps(name string, branch transcode.Branch) ([]transcodeTransform, error) {
+	if len(branch.Steps) == 0 {
+		return transcodeStepsFromLegacyFields(name, branch)
 	}
-	steps := make([]transcodeTransform, 0, len(path.Steps))
+	steps := make([]transcodeTransform, 0, len(branch.Steps))
 	transformIndex := 0
-	for i := range path.Steps {
-		step, err := transcodeStep(name, transformIndex, path.Steps[i])
+	for i := range branch.Steps {
+		step, err := transcodeStep(name, transformIndex, branch.Steps[i])
 		if err != nil {
 			return nil, err
 		}
-		if path.Steps[i].Stage == nil {
+		if branch.Steps[i].Stage == nil {
 			transformIndex++
 		}
 		steps = append(steps, step)
@@ -616,22 +616,22 @@ func transcodeSteps(name string, path transcode.Path) ([]transcodeTransform, err
 	return steps, nil
 }
 
-func transcodeStepsFromLegacyFields(name string, path transcode.Path) ([]transcodeTransform, error) {
-	if path.Resize != nil && path.Resample != nil {
-		return nil, advancedTranscodeStepError(name, "transcode path cannot combine resize and resample in one step")
+func transcodeStepsFromLegacyFields(name string, branch transcode.Branch) ([]transcodeTransform, error) {
+	if branch.Resize != nil && branch.Resample != nil {
+		return nil, advancedTranscodeStepError(name, "transcode branch cannot combine resize and resample in one step")
 	}
 	switch {
-	case path.Resize != nil:
+	case branch.Resize != nil:
 		return []transcodeTransform{{
 			name:    "resize-" + name,
 			factory: filter.FactoryResize,
-			video:   path.Resize,
+			video:   branch.Resize,
 		}}, nil
-	case path.Resample != nil:
+	case branch.Resample != nil:
 		return []transcodeTransform{{
 			name:    "resample-" + name,
 			factory: filter.FactoryResample,
-			audio:   path.Resample,
+			audio:   branch.Resample,
 		}}, nil
 	default:
 		return nil, nil
@@ -685,8 +685,8 @@ func advancedTranscodeStepError(name string, reason string) error {
 		Reason:    reason,
 		Suggestions: []string{
 			"use one operation per transcode.Step",
-			"use resize on video paths and resample on audio paths",
-			"use goav.Path(name).Do(stage).Resize(...).VP9(...).To(label) for recipe path steps",
+			"use resize on video branches and resample on audio branches",
+			"use goav.Branch(name).Do(stage).Resize(...).VP9(...).To(goav.Target(\"web\", output)) for recipe branch steps",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -752,9 +752,9 @@ func advancedTranscodeTransformMediaError(transform transcodeTransform, stream a
 		Reason:    operation + " applies to " + media + " streams",
 		Details:   details,
 		Suggestions: []string{
-			"use resize on video paths",
-			"use resample on audio paths",
-			"check the transcode.Path selector for this branch",
+			"use resize on video branches",
+			"use resample on audio branches",
+			"check the transcode.Branch selector for this branch",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -781,8 +781,8 @@ func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transc
 func transcodeOutputUnmatchedError(output transcode.Output, target format.Output) error {
 	node := firstNonEmpty(output.Name, target.Name, target.URI, "output")
 	details := make([]string, 0, 1)
-	if len(output.Paths) != 0 {
-		details = append(details, "requested: "+strings.Join(output.Paths, ", "))
+	if len(output.Branches) != 0 {
+		details = append(details, "requested: "+strings.Join(output.Branches, ", "))
 	}
 	return &BuildError{
 		Code:      "transcode_output_unmatched",
@@ -791,9 +791,9 @@ func transcodeOutputUnmatchedError(output transcode.Output, target format.Output
 		Reason:    "output selects no transcode branches",
 		Details:   details,
 		Suggestions: []string{
-			"reference a branch name from transcode.Path.Name",
+			"reference a branch name from transcode.Branch.Name",
 			"reference a label listed on the branch",
-			"leave Paths empty when the output should receive every branch",
+			"leave Branches empty when the output should receive every branch",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -803,14 +803,14 @@ func transcodeOutputOpenFormat(output transcode.Output) av.FormatID {
 	return output.OpenFormat()
 }
 
-func transcodePathName(path transcode.Path, index int, total int) string {
-	if path.Name != "" {
-		return path.Name
+func runtimeTranscodeBranchName(branch transcode.Branch, index int, total int) string {
+	if branch.Name != "" {
+		return branch.Name
 	}
 	if total == 1 {
-		return "path"
+		return "branch"
 	}
-	return "path-" + strconv.Itoa(index+1)
+	return "branch-" + strconv.Itoa(index+1)
 }
 
 func transcodeOutputTarget(plan transcode.Plan, output transcode.Output) format.Output {
@@ -830,7 +830,7 @@ func transcodeOutputTarget(plan transcode.Plan, output transcode.Output) format.
 }
 
 func transcodeOutputMatches(output transcode.Output, branches []transcodeBranch) []int {
-	if len(output.Paths) == 0 {
+	if len(output.Branches) == 0 {
 		matches := make([]int, len(branches))
 		for i := range branches {
 			matches[i] = i
@@ -838,7 +838,7 @@ func transcodeOutputMatches(output transcode.Output, branches []transcodeBranch)
 		return matches
 	}
 
-	matches := make([]int, 0, len(output.Paths))
+	matches := make([]int, 0, len(output.Branches))
 	for i := range branches {
 		if transcodeOutputSelectsBranch(output, branches[i]) {
 			matches = append(matches, i)
@@ -848,13 +848,13 @@ func transcodeOutputMatches(output transcode.Output, branches []transcodeBranch)
 }
 
 func transcodeOutputSelectsBranch(output transcode.Output, branch transcodeBranch) bool {
-	for i := range output.Paths {
-		name := output.Paths[i]
-		if name == branch.name || name == branch.path.Name {
+	for i := range output.Branches {
+		name := output.Branches[i]
+		if name == branch.name || name == branch.branch.Name {
 			return true
 		}
-		for j := range branch.path.Labels {
-			if name == branch.path.Labels[j] {
+		for j := range branch.branch.Labels {
+			if name == branch.branch.Labels[j] {
 				return true
 			}
 		}

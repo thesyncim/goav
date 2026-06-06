@@ -17,7 +17,7 @@ import (
 	"github.com/thesyncim/goav/transcode"
 )
 
-func TestRuntimeBuilderTranscodeBranchesPathsToOutputs(t *testing.T) {
+func TestRuntimeBuilderTranscodeBranchesRouteToOutputs(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{
 		streams: streams,
@@ -40,7 +40,7 @@ func TestRuntimeBuilderTranscodeBranchesPathsToOutputs(t *testing.T) {
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Paths: []transcode.Path{
+		Branches: []transcode.Branch{
 			{
 				Name:     "audio-main",
 				Selector: testSelectAudio(),
@@ -56,14 +56,14 @@ func TestRuntimeBuilderTranscodeBranchesPathsToOutputs(t *testing.T) {
 		},
 		Outputs: []transcode.Output{
 			{
-				Name:   "archive.ogg",
-				Format: av.FormatOgg,
-				Paths:  []string{"archive"},
+				Name:     "archive.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"archive"},
 			},
 			{
-				Name:   "preview.ogg",
-				Format: av.FormatOgg,
-				Paths:  []string{"audio-low"},
+				Name:     "preview.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"audio-low"},
 			},
 		},
 	}
@@ -151,7 +151,7 @@ func TestRuntimeBuilderTranscodeRunsBranchStageStep(t *testing.T) {
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Paths: []transcode.Path{{
+		Branches: []transcode.Branch{{
 			Name:     "audio-main",
 			Selector: testSelectAudio(),
 			Steps:    []transcode.Step{{Stage: stage}},
@@ -221,7 +221,7 @@ func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T)
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.webm"},
-		Paths: []transcode.Path{
+		Branches: []transcode.Branch{
 			{
 				Name:     "a96",
 				Selector: testSelectAudio(),
@@ -236,9 +236,9 @@ func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T)
 			},
 		},
 		Outputs: []transcode.Output{{
-			Name:   "web.ogg",
-			Format: av.FormatOgg,
-			Paths:  []string{"web"},
+			Name:     "web.ogg",
+			Format:   av.FormatOgg,
+			Branches: []string{"web"},
 		}},
 	}
 
@@ -293,7 +293,7 @@ func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T)
 	}
 }
 
-func TestRuntimeBuilderRTPTranscodePathsDecodedStreamToOutputs(t *testing.T) {
+func TestRuntimeBuilderRTPTranscodeBranchesDecodedStreamToOutputs(t *testing.T) {
 	ctx := context.Background()
 	stream := audioOpusTestStream()
 	receiver := &runtimeRTPReceiver{
@@ -323,7 +323,7 @@ func TestRuntimeBuilderRTPTranscodePathsDecodedStreamToOutputs(t *testing.T) {
 		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
 	)
 	plan := transcode.Plan{
-		Paths: []transcode.Path{
+		Branches: []transcode.Branch{
 			{
 				Name:     "voice",
 				Selector: testSelectAudio(),
@@ -339,14 +339,14 @@ func TestRuntimeBuilderRTPTranscodePathsDecodedStreamToOutputs(t *testing.T) {
 		},
 		Outputs: []transcode.Output{
 			{
-				Name:   "archive.ogg",
-				Format: av.FormatOgg,
-				Paths:  []string{"archive"},
+				Name:     "archive.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"archive"},
 			},
 			{
-				Name:   "preview.ogg",
-				Format: av.FormatOgg,
-				Paths:  []string{"preview"},
+				Name:     "preview.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"preview"},
 			},
 		},
 	}
@@ -502,7 +502,7 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 	}, filterFactory))
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Paths: []transcode.Path{
+		Branches: []transcode.Branch{
 			{
 				Name:     "audio-main",
 				Selector: testSelectAudio(),
@@ -601,7 +601,7 @@ func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (builderAPI, 
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Paths: []transcode.Path{
+		Branches: []transcode.Branch{
 			{
 				Name:     "audio-main",
 				Selector: testSelectAudio(),
@@ -617,14 +617,14 @@ func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (builderAPI, 
 		},
 		Outputs: []transcode.Output{
 			{
-				Name:   "archive.ogg",
-				Format: av.FormatOgg,
-				Paths:  []string{"archive"},
+				Name:     "archive.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"archive"},
 			},
 			{
-				Name:   "preview.ogg",
-				Format: av.FormatOgg,
-				Paths:  []string{"audio-low"},
+				Name:     "preview.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"audio-low"},
 			},
 		},
 	}
@@ -693,7 +693,7 @@ func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Paths: []transcode.Path{{
+		Branches: []transcode.Branch{{
 			Name:     "audio-low",
 			Selector: testSelectAudio(),
 			Resample: &filter.ResampleConfig{
@@ -719,14 +719,14 @@ func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
 func TestRuntimeBuilderTranscodeRequiresMatchingOutputSelection(t *testing.T) {
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Paths: []transcode.Path{{
+		Branches: []transcode.Branch{{
 			Name:     "audio-main",
 			Selector: testSelectAudio(),
 			Encode:   pcmEncodeConfig(),
 		}},
 		Outputs: []transcode.Output{{
-			Name:  "preview.ogg",
-			Paths: []string{"missing"},
+			Name:     "preview.ogg",
+			Branches: []string{"missing"},
 		}},
 	}
 
@@ -749,18 +749,18 @@ func TestRuntimeBuilderTranscodeReportsEmptyPlanParts(t *testing.T) {
 		want string
 	}{
 		{
-			name: "paths",
+			name: "branches",
 			plan: transcode.Plan{
 				Input:   format.Input{Name: "input.ogg"},
 				Outputs: []transcode.Output{{Name: "preview.ogg"}},
 			},
-			want: "no paths",
+			want: "no branches",
 		},
 		{
 			name: "outputs",
 			plan: transcode.Plan{
 				Input: format.Input{Name: "input.ogg"},
-				Paths: []transcode.Path{{
+				Branches: []transcode.Branch{{
 					Name:     "audio-main",
 					Selector: testSelectAudio(),
 					Encode:   pcmEncodeConfig(),
@@ -784,10 +784,10 @@ func TestRuntimeBuilderTranscodeReportsEmptyPlanParts(t *testing.T) {
 	}
 }
 
-func TestRuntimeBuilderTranscodeReportsDuplicatePathNames(t *testing.T) {
+func TestRuntimeBuilderTranscodeReportsDuplicateBranchNames(t *testing.T) {
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Paths: []transcode.Path{
+		Branches: []transcode.Branch{
 			{Name: "audio-main", Selector: testSelectAudio(), Encode: pcmEncodeConfig()},
 			{Name: "audio-main", Selector: testSelectAudio(), Encode: pcmEncodeConfig()},
 		},
@@ -796,20 +796,20 @@ func TestRuntimeBuilderTranscodeReportsDuplicatePathNames(t *testing.T) {
 
 	_, err := newTestBuilder(t).Transcode(plan).Describe()
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_path_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transcode_path_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_branch_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transcode_branch_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "audio-main") ||
 		!strings.Contains(err.Error(), "duplicate index: 1") ||
 		!strings.Contains(err.Error(), "unique Name") {
-		t.Fatalf("err = %v, want duplicate path guidance", err)
+		t.Fatalf("err = %v, want duplicate branch guidance", err)
 	}
 }
 
 func TestRuntimeBuilderTranscodeReportsInvalidStep(t *testing.T) {
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Paths: []transcode.Path{{
+		Branches: []transcode.Branch{{
 			Name:     "mixed",
 			Selector: testSelectAudio(),
 			Steps: []transcode.Step{{
@@ -844,7 +844,7 @@ func TestRuntimeBuilderTranscodeReportsTransformMediaMismatch(t *testing.T) {
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Paths: []transcode.Path{{
+		Branches: []transcode.Branch{{
 			Name:     "video-as-audio",
 			Selector: testSelectVideo(),
 			Steps: []transcode.Step{{
@@ -862,7 +862,7 @@ func TestRuntimeBuilderTranscodeReportsTransformMediaMismatch(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "resample applies to audio streams") ||
 		!strings.Contains(err.Error(), "stream id: video") ||
-		!strings.Contains(err.Error(), "transcode.Path selector") {
+		!strings.Contains(err.Error(), "transcode.Branch selector") {
 		t.Fatalf("err = %v, want transform media guidance", err)
 	}
 	if !demuxer.closed {

@@ -9,18 +9,18 @@ The recipe surface is now pointed in the right direction; the next work is to
 make the implementation match the composable planner promise.
 
 1. Make `Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph` the normal
-   recipe path. Normal recipes should require media-plan recognition instead of
+   recipe branch. Normal recipes should require media-plan recognition instead of
    adding workflow-specific matchers.
-2. Treat paths as generic ordered stream operations and mux groups.
-   `From(input).Audio()/Video().Paths(...)`, `Path(...)`, and
+2. Treat branches as generic ordered stream operations and mux groups.
+   `From(input).Audio()/Video().Branches(...)`, `Branch(...)`, and
    `AudioFlow`/`VideoFlow` values should produce equivalent `MediaPlan` shapes
-   where possible. Paths must be orthogonal at operation boundaries: after
+   where possible. Branches must be orthogonal at operation boundaries: after
    decode, after resize/resample, after custom stages, after taps, and later
    after sink/output attachment where runtime support makes sense. Custom stage
    and transform steps are active; custom filter adapter metadata and late muxed
    runtime outputs remain next slices.
 3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
-   for `From`, packet copy, stream decode, path composition, and reusable flows
+   for `From`, packet copy, stream decode, branch composition, and reusable flows
    onto direct media-plan graph construction.
 4. Add a capability model for streams, codecs, filters, and containers so the
    planner can explain copy/decode/encode choices, missing adapters, transform
@@ -34,10 +34,10 @@ make the implementation match the composable planner promise.
 7. Treat adapter coverage as product surface after the planner can absorb it.
    WebM and Ogg remain the next high-value containers because they unlock
    expected RTP/WebRTC record and muxed audio/video examples.
-8. Generalize flows as reusable intent fragments over stream chains, not as a
-   second graph DSL. Flows become `PathSpec` with `.To(label)` and compose
-   through `Paths(...)`; runtime `Task.Attach(ctx, goav.Branch(...))` remains
-   the late control-plane tap for running direct graphs.
+8. Generalize flows as reusable operation sequences over stream chains, not as a
+   second graph DSL. Branches own targets through `.To(goav.Target(...))`;
+   runtime `Task.Attach(ctx, goav.Branch(...))` remains the late control-plane
+   tap for running direct graphs.
 9. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
    choices should be visible to realtime users.
@@ -47,7 +47,7 @@ make the implementation match the composable planner promise.
 11. Prepare v0.1 only after README examples compile/run or clearly name their
     adapter requirements, default and tagged tests pass, core stays cgo-free,
     hot-path allocation guards remain green, and one public RTP/WebRTC record
-    path plus one public file transcode path work end to end.
+    branch plus one public file transcode branch work end to end.
 12. Confirm `go 1.26` in `go.mod` is intentional before tagging; it sets the
     installation floor for users and CI.
 
@@ -63,7 +63,7 @@ make the implementation match the composable planner promise.
 
 - Pion WebRTC remote track adapter.
 - RTP sequence/loss event surface.
-- Opus depacketizer path.
+- Opus depacketizer branch.
 - `gopus` decoder adapter.
 - Raw PCM sink for validation.
 
@@ -88,8 +88,8 @@ make the implementation match the composable planner promise.
 
 ## Phase 3: Recording and remux
 
-- High-level one-input/many-output remux recipe path.
-- High-level one-or-more RTP packet-readers to output recipe path.
+- High-level one-input/many-output remux recipe branch.
+- High-level one-or-more RTP packet-readers to output recipe branch.
 - IVF output for VP8/VP9/AV1 packet recording.
 - WebRTC session receive to file.
 - Probe output and stream inspection.
@@ -99,9 +99,9 @@ make the implementation match the composable planner promise.
 
 - Resize filter contract implementation. I420/YUV420P adapter active.
 - Resample filter contract implementation. S16 adapter active.
-- Decode sharing across paths. First planner path active.
-- Per-path encoder configs. First planner path active.
-- Multiple mux/output targets from one plan. First planner path active.
+- Decode sharing across branches. First planner branch active.
+- Per-branch encoder configs. First planner branch active.
+- Multiple mux/output targets from one plan. First planner branch active.
 - Resize/resample branch execution. First concrete adapters active.
 
 ## Phase 4: H264 and concrete AV1 decode
@@ -136,10 +136,10 @@ make the implementation match the composable planner promise.
 - Fluent receive/decode/filter/encode/output recipes for selected streams.
   First file/protocol and RTP/WebRTC planner slices are active.
 - `MediaPlan` as the shared branch-operation IR for record, decode, reusable
-  paths, and transcode recipes. First `Explain(ctx)` report slice is active;
+  branches, and transcode recipes. First `Explain(ctx)` report slice is active;
   direct `Describe`/`Build` lowering remains planned.
-- Reusable `AudioFlow`/`VideoFlow` values that become `PathSpec` through
-  `.To(label)`. Build-time file/protocol and RTP/WebRTC path slices are active;
+- Reusable `AudioFlow`/`VideoFlow` values that apply to stream chains or
+  branches. Build-time file/protocol and RTP/WebRTC branch slices are active;
   runtime stage/sink attachments are active for direct task graphs; buffered
   attachments and late recording outputs remain planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain

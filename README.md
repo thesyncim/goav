@@ -1,14 +1,26 @@
 # goav
 
-`goav` is a pure-Go realtime media runtime in progress. It is being shaped
-around one public idea:
+`goav` is a pure-Go realtime media runtime in progress. The public contract is
+small:
 
 ```text
 describe the media work once, then compile it into an inspectable graph
 ```
 
-The front door is `From(input)`. Simple jobs stay simple; complex jobs stay
-composable.
+The front door is `From(input)`. Simple jobs stay simple; complex jobs are built
+from the same few concepts.
+
+## Vocabulary
+
+- `Input`: where media comes from.
+- `Stream`: the selected audio/video stream.
+- `Operation`: decode, resize, resample, custom stage, encode, or copy.
+- `Tap`: a stable typed attach point.
+- `Branch`: a downstream chain from a stream point or tap.
+- `Target`: a named destination group, such as a mux group.
+- `Endpoint`: the actual file, URI, writer, or sink.
+- `Flow`: a reusable operation sequence, not a destination.
+- `Task`: a running graph with attach/detach, events, stats, and taps.
 
 ## 30-Second Examples
 
@@ -33,7 +45,7 @@ return goav.From(goav.FileInput("input.ivf", in)).
     Run(ctx)
 ```
 
-Decode one stream to frames:
+Decode one WebRTC audio track to frames:
 
 ```go
 return goav.From(goav.WebRTCTrack(track)).
@@ -43,7 +55,7 @@ return goav.From(goav.WebRTCTrack(track)).
     Run(ctx)
 ```
 
-Resize and encode one selected video stream:
+Resize and encode one video stream:
 
 ```go
 return goav.From(input).
@@ -55,85 +67,116 @@ return goav.From(input).
     Run(ctx)
 ```
 
-These examples use containers available in `goav.Default()` today. WebM, Ogg,
-WAV, and Y4M are adapter surface, not hidden core magic.
+These examples use formats available in `goav.Default()` today. WebM, Ogg, WAV,
+and Y4M belong in adapters, not hidden core magic.
 
-## Paths
+## Adapter-Backed Workflows
 
-Use `Paths` when one selected stream should become several encoded output
-paths. A path can start after the operations already declared on the stream, so
-splits are natural after decode, after resize or resample, after a custom
-stage, or after any declared tap. The same anchor model should stay
-orthogonal: transforms, custom processing, observation sinks, and late runtime
-attachments are operation boundaries, not separate workflow families.
+The next examples show the shape `goav` is designed for when matching container
+adapters are registered by the application or an adapter bundle.
+
+### Branches And Targets
+
+Use branches when one selected stream should become multiple encoded outputs.
+Targets are typed values, so normal recipes do not route by string labels.
 
 ```go
+archive := goav.Target("archive", goav.FileOutput("archive.ivf", archiveFile))
+preview := goav.Target("preview", goav.FileOutput("preview.ivf", previewFile))
+
 return goav.From(input).
     Video().
     Decode().
     Tap("video.decoded").
-    Resize(1920, 1080).
-    Paths(
-        goav.Path("archive").
+    Branches(
+        goav.Branch("archive").
+            Resize(1920, 1080).
             VP9(4_000_000).
-            To("archive"),
-        goav.Path("preview").
+            To(archive),
+        goav.Branch("preview").
             Resize(640, 360).
             Do(frameMeter).
             Tap("video.preview.frames").
             VP8(600_000).
-            To("preview"),
-    ).
-    Outputs(
-        goav.Output("archive", goav.FileOutput("archive.ivf", archive)),
-        goav.Output("preview", goav.FileOutput("preview.ivf", preview)),
+            To(preview),
     ).
     Run(ctx)
 ```
 
-Reusable flows produce the same `PathSpec` values as ad hoc paths, so there is
-one way to split:
+Several branches can share one target when the container supports that group:
 
 ```go
-archive := goav.VideoFlow("archive").
-    VP9(2_000_000)
+web := goav.Target("web", goav.FileOutput("web.webm", webFile))
 
-preview := goav.VideoFlow("preview").
-    Resize(640, 360).
-    VP8(600_000)
-
-return goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
+return goav.From(goav.FileInput("source.webm", in)).
     Video().
     Decode().
-    Paths(
-        archive.To("archive"),
-        preview.To("preview"),
+    Branches(
+        goav.Branch("v720").
+            Resize(1280, 720).
+            VP9(2_000_000).
+            To(web),
     ).
-    Outputs(
-        goav.Output("archive", goav.FileOutput("archive.ivf", archiveFile)),
-        goav.Output("preview", goav.FileOutput("preview.ivf", previewFile)),
+    Audio().
+    Decode().
+    Branches(
+        goav.Branch("a96").
+            Resample(48_000, goav.Stereo).
+            Opus(96_000).
+            To(web),
     ).
     Run(ctx)
 ```
 
-## Runtime Branches
+Recipe encode conveniences are strongest for Opus, VP8, and VP9. H264 and AV1
+are receive/decode codec specs today; recipe encode support for them is still
+work in progress.
 
-Build a task when the application needs graph inspection, events, stats, or late
-runtime attachment.
+### Flows
+
+A flow is reusable work. A branch owns the target.
 
 ```go
+voice := goav.AudioFlow("voice").
+    Resample(16_000, goav.Mono).
+    OpusVoice()
+
+archive := goav.AudioFlow("archive").
+    Resample(48_000, goav.Stereo).
+    OpusMusic()
+
+voiceTarget := goav.Target("voice", goav.FileOutput("voice.ogg", voiceFile))
+archiveTarget := goav.Target("archive", goav.FileOutput("archive.ogg", archiveFile))
+
+return goav.From(goav.WebRTCTrack(audio)).
+    Audio().
+    Decode().
+    Branches(
+        goav.Branch("voice").Apply(voice).To(voiceTarget),
+        goav.Branch("archive").Apply(archive).To(archiveTarget),
+    ).
+    Run(ctx)
+```
+
+## Runtime Attach
+
+Build a task when the application needs graph inspection, events, stats, or late
+attachment. Place taps where future work may attach: after decode, after resize
+or resample, after a custom stage, or after encode.
+
+```go
+web := goav.Target("web", goav.FileOutput("web.ivf", webFile))
+
 task, err := goav.From(input).
     Video().
     Decode().
-    Tap("video.decoded").
-    Paths(
-        goav.Path("720p").
+    Branches(
+        goav.Branch("720p").
             Resize(1280, 720).
             Tap("video.720p.frames").
             VP9(2_000_000).
-            To("web"),
+            To(web),
     ).
-    Outputs(goav.Output("web", goav.FileOutput("web.ivf", web))).
     Build(ctx)
 if err != nil {
     return err
@@ -144,80 +187,21 @@ go func() { _ = task.Run(ctx) }()
 shots, err := task.Attach(ctx,
     goav.Branch("screenshots").
         FromTap("video.720p.frames").
-        To(goav.SinkFunc("screenshots", collectScreenshot)),
+        To(goav.FrameSink(goav.SinkFunc("screenshots", collectScreenshot))),
 )
 if err != nil {
     return err
 }
-
 return task.Detach(ctx, shots)
 ```
 
-`Task.Taps()` lists the stable outlets available for runtime attachment.
-`Attach` adds a downstream stage/sink branch to a running direct task graph
-without rebuilding upstream. `Attachment.Close(ctx)` or `Task.Detach(ctx, h)`
-removes that branch. Late muxed outputs and buffered runtime attachment are
-separate runtime slices. Place taps where future work may attach: after decode,
-after a resize or resample, after a custom stage, or beside sink-style
-observation.
+`Task.Taps()` lists available attach points. `Attach` adds a downstream sink
+branch to a running direct task graph without rebuilding upstream.
 
-## Adapter-Backed Workflows
+## Explain And Inspect
 
-Output labels are mux groups. Several encoded audio/video branches can feed the
-same label when the selected runtime has the needed demuxer, muxer, codec, and
-filter adapters.
-
-```go
-return goav.From(goav.FileInput("source.webm", in)).
-    Video().
-    Decode().
-    Tap("video.decoded").
-    Paths(
-        goav.Path("v1080").
-            Resize(1920, 1080).
-            VP9(4_000_000).
-            To("watch"),
-        goav.Path("v360").
-            Resize(640, 360).
-            Do(frameMeter).
-            VP8(600_000).
-            To("mobile"),
-    ).
-    Audio().
-    Decode().
-    Tap("audio.decoded").
-    Paths(
-        goav.Path("a96").
-            Resample(48_000, goav.Stereo).
-            Opus(96_000).
-            To("watch", "mobile"),
-    ).
-    Outputs(
-        goav.Output("watch", goav.FileOutput("watch.webm", watch)),
-        goav.Output("mobile", goav.FileOutput("mobile.webm", mobile)),
-    ).
-    Run(ctx)
-```
-
-Recipe encode conveniences are strongest for Opus, VP8, and VP9. H264 and AV1
-are first-class receive/decode codec specs; their recipe encode paths are still
-work in progress.
-
-## Inspect And Explain
-
-`Describe()` returns the structured graph spec. Rendering is outside core; graph
-generators can consume the spec through one URI-style entry point.
-
-```go
-spec, err := job.Describe()
-if err != nil {
-    return err
-}
-uri, err := graphrender.RenderURI(spec, "goav:graph")
-```
-
-`Explain(ctx)` is workflow-level inspection: inputs, branches, taps, outputs,
-planner decisions, adapter requirements, warnings, and the graph.
+`Explain(ctx)` reports the workflow: inputs, branches, targets, taps, decisions,
+adapter requirements, warnings, and the planned graph.
 
 ```go
 report, err := job.Explain(ctx)
@@ -229,14 +213,18 @@ if err != nil {
 }
 ```
 
-When build preflight finds a missing adapter, `Explain(ctx)` still returns the
-structured report it can prove, including a warning and a
-`RequiredAdapters` entry with status `missing` or `unavailable`.
-Adapter requirements are derived from the planned operation chain, so a resize
-inside a path reports a branch-local filter requirement, while muxers and
-demuxers stay attached to outputs and inputs.
+`Describe()` returns the structured graph spec. Rendering is outside core; graph
+generators consume the spec through one URI-style entry point.
 
-## Custom Processing
+```go
+spec, err := job.Describe()
+if err != nil {
+    return err
+}
+uri, err := graphrender.RenderURI(spec, "goav:graph")
+```
+
+## Custom Components
 
 Small hooks should not require implementing the full graph interfaces.
 
@@ -250,62 +238,22 @@ return goav.From(input).
     Audio().
     Decode().
     Do(meter).
-    Opus(96_000).
-    To(output).
-    Run(ctx)
-```
-
-Use `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` for metering,
-analysis, preview, stats, and integration points. Custom components are
-orthogonal: a recipe can add a stage before encode, send decoded frames to a
-custom sink, or attach a late sink from any declared tap on a running task.
-
-```go
-levels := goav.SinkFunc("levels", collectLevel)
-
-return goav.From(input).
-    Audio().
-    Decode().
-    Do(meter).
     To(goav.FrameSink(levels)).
     Run(ctx)
 ```
 
-Full `pipeline.Source`, `pipeline.Stage`, and `pipeline.Sink` components remain
-available through the expert graph API.
+Use `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` for metering,
+analysis, preview, stats, and integration points. Full `pipeline.Source`,
+`pipeline.Stage`, and `pipeline.Sink` components remain available through the
+expert graph API.
 
 ## Custom Codecs
 
-Custom codecs use the same recipe concepts as built-ins: register a concrete
-decoder or encoder factory on the runtime, then reference it with `Codec`.
-
-```go
-desc := goav.CodecDescriptor{
-    ID:   "pcm_s16",
-    Name: "PCM S16",
-    Type: av.MediaAudio,
-}
-
-func newRuntime() goav.Runtime {
-    return goav.New(
-        goav.WithDefaults(),
-        goav.WithDecoder(desc, pcmDecoderFactory{}),
-        goav.WithEncoder(desc, pcmEncoderFactory{}),
-    )
-}
-
-pcm := goav.Codec("pcm_s16", av.MediaAudio,
-    goav.SampleRate(48_000),
-    goav.Channels(goav.Stereo),
-)
-
-return goav.From(input).
-    Audio().
-    Decode().
-    Encode(pcm).
-    To(output).
-    Run(ctx)
-```
+Custom codecs use the same recipe concepts as built-ins: register decoder or
+encoder factories in the application runtime, then reference them with generic
+`Codec` specs in streams, branches, or flows. Adapter authoring details live in
+[`docs/ADAPTERS.md`](docs/ADAPTERS.md). The reusable component catalog and
+allocation proof map live in [`docs/COMPONENTS.md`](docs/COMPONENTS.md).
 
 ## Expert Graph API
 
@@ -334,30 +282,15 @@ learn.
 Implemented now:
 
 - `From(input)` as the public composition front door.
-- packet-preserving `Copy().To(...)`;
-- stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode;
-- custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
-  generic `Codec` specs;
-- custom stages, sinks, adapter hooks, and late runtime branch sinks as optional
-  composition points instead of a separate workflow model;
-- reusable `AudioFlow` and `VideoFlow` values that become `PathSpec` with
-  `.To(label)`;
-- grouped `Path(...)` output paths from one selected stream, with ordered custom
-  stage, tap, transform, and encode steps;
-- output groups through `.Outputs(goav.Output(label, output), ...)`;
-- runtime branch attachment through `Task.Taps()` and `Branch(...).FromTap(...)`;
-- structured `Explain(ctx)` reports with branch operations, taps, decisions, and
-  adapter requirements;
-- `Describe()` graph specs, with rendering kept outside core;
-- Pion-based RTP/WebRTC receive boundaries;
-- pure-Go adapter hooks for codecs, containers, and filters.
+- Packet-preserving `Copy().To(...)`.
+- Stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode.
+- Typed `Branch`, `Target`, endpoint, and `Flow` composition.
+- Runtime branch attachment from named taps with `Attachment.Close(ctx)` and
+  `Task.Detach(ctx, h)`.
+- Custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
+  generic `Codec` specs.
+- Structured `Explain(ctx)` reports and `Describe()` graph specs.
+- Pion-based RTP/WebRTC receive boundaries.
+- Pure-Go adapter hooks for codecs, containers, and filters.
 
-Advanced notes live in:
-
-- `docs/ARCHITECTURE.md`
-- `docs/COMPONENTS.md`
-- `docs/USE_CASES.md`
-- `docs/RTP_WEBRTC.md`
-- `docs/ADAPTERS.md`
-- `docs/PERFORMANCE.md`
-- `docs/PROGRESS.md`
+Advanced notes live in `docs/`.

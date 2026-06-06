@@ -141,7 +141,7 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	attachment, err := task.Attach(ctx, Branch("screenshots").From("source").Do(stage).To(late))
+	attachment, err := task.Attach(ctx, Branch("screenshots").From("source").Do(stage).To(FrameSink(late)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,11 +216,11 @@ func TestTaskDetachClosesRuntimeBranches(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	left, err := task.Attach(ctx, Branch("left").From("source").Do(leftStage).To(leftSink))
+	left, err := task.Attach(ctx, Branch("left").From("source").Do(leftStage).To(FrameSink(leftSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	right, err := task.Attach(ctx, Branch("right").From("source").Do(rightStage).To(rightSink))
+	right, err := task.Attach(ctx, Branch("right").From("source").Do(rightStage).To(FrameSink(rightSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestTaskCloseStopsRuntimeAttachments(t *testing.T) {
 	}
 	stage := &runtimeTestStage{name: "stage"}
 	sink := &runtimeTestSink{name: "sink"}
-	attachment, err := task.Attach(context.Background(), Branch("close").From("source").Do(stage).To(sink))
+	attachment, err := task.Attach(context.Background(), Branch("close").From("source").Do(stage).To(FrameSink(sink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = task.Attach(context.Background(), Branch("late").From("missing").To(&runtimeTestSink{name: "late"}))
+	_, err = task.Attach(context.Background(), Branch("late").From("missing").To(FrameSink(&runtimeTestSink{name: "late"})))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_anchor_missing" || !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("err = %v, want runtime_branch_anchor_missing wrapping ErrUnknownNode", err)
@@ -321,7 +321,7 @@ func TestTaskAttachRejectsRunningBufferedGraph(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	_, err = task.Attach(ctx, Branch("late").From("source").To(&runtimeTestSink{name: "late"}))
+	_, err = task.Attach(ctx, Branch("late").From("source").To(FrameSink(&runtimeTestSink{name: "late"})))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_graph_error" || !errors.Is(err, pipeline.ErrDynamicGraphUnsupported) {
 		t.Fatalf("err = %v, want runtime_branch_graph_error wrapping ErrDynamicGraphUnsupported", err)
@@ -333,11 +333,11 @@ func TestTaskAttachRejectsRunningBufferedGraph(t *testing.T) {
 }
 
 func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
-	audio := Branch("levels").FromTap("audio.decoded").To(&runtimeTestSink{name: "levels"})
+	audio := Branch("levels").FromTap("audio.decoded").To(FrameSink(&runtimeTestSink{name: "levels"}))
 	if audio.tap != "audio.decoded" || audio.from != "" {
 		t.Fatalf("audio anchor tap=%q from=%q, want tap only", audio.tap, audio.from)
 	}
-	expert := Branch("expert").From("decode-audio").To(&runtimeTestSink{name: "expert"})
+	expert := Branch("expert").From("decode-audio").To(FrameSink(&runtimeTestSink{name: "expert"}))
 	if expert.from != "decode-audio" || expert.tap != "" {
 		t.Fatalf("expert anchor tap=%q from=%q, want node only", expert.tap, expert.from)
 	}

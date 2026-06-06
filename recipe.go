@@ -898,14 +898,14 @@ func (s OutputSpec) intentWithName(name string) OutputIntent {
 }
 
 type Job struct {
-	name        string
-	runtime     Runtime
-	inputs      []InputSpec
-	outputs     []OutputSpec
-	stream      *jobStreamBuild
-	pathStreams []streamBuild
-	pathOutputs []namedOutputSpec
-	err         error
+	name          string
+	runtime       Runtime
+	inputs        []InputSpec
+	outputs       []OutputSpec
+	stream        *jobStreamBuild
+	branchStreams []streamBuild
+	branchTargets []namedTargetSpec
+	err           error
 }
 
 type jobStreamBuild struct {
@@ -967,30 +967,47 @@ func (j *Job) setErr(err error) {
 }
 
 func (j *Job) To(outputs ...OutputSpec) *Job {
-	if len(j.pathStreams) != 0 {
-		j.setErr(pathOutputScopeError("paths"))
+	if len(j.branchStreams) != 0 {
+		j.setErr(branchOutputScopeError("branches"))
 		return j
 	}
 	j.outputs = append(j.outputs, outputs...)
 	return j
 }
 
-func (j *Job) Outputs(outputs ...OutputBinding) *Job {
-	for i := range outputs {
-		if outputs[i].err != nil {
-			j.setErr(outputs[i].err)
-			continue
-		}
-		if outputs[i].name == "" {
-			j.setErr(transcodeEmptyOutputDefinitionLabelError(outputs[i].output))
-			continue
-		}
-		j.pathOutputs = append(j.pathOutputs, namedOutputSpec{
-			name:   outputs[i].name,
-			output: outputs[i].output.Name(firstNonEmpty(outputs[i].output.name, outputs[i].name)),
-		})
+func (j *Job) Targets(targets ...TargetSpec) *Job {
+	if err := j.addBranchTargets(targets...); err != nil {
+		j.setErr(err)
 	}
 	return j
+}
+
+func (j *Job) addBranchTargets(targets ...TargetSpec) error {
+	seen := make(map[string]string, len(j.branchTargets)+len(targets))
+	for i := range j.branchTargets {
+		seen[j.branchTargets[i].name] = targetIdentity(j.branchTargets[i])
+	}
+	for i := range targets {
+		target := cloneTargetSpec(targets[i])
+		if target.err != nil {
+			return target.err
+		}
+		if target.name == "" {
+			return targetNameMissingError(target.endpoint)
+		}
+		target.endpoint = target.endpoint.Name(firstNonEmpty(target.endpoint.name, target.name))
+		named := namedTargetSpec{name: target.name, output: target.endpoint}
+		identity := targetIdentity(named)
+		if existing, ok := seen[named.name]; ok {
+			if existing != identity {
+				return transcodeDuplicateTargetError(named.name)
+			}
+			continue
+		}
+		seen[named.name] = identity
+		j.branchTargets = append(j.branchTargets, named)
+	}
+	return nil
 }
 
 func (j *Job) And(inputs ...InputSpec) *Job {
@@ -1016,7 +1033,7 @@ func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOp
 		selector: newStreamSelector(media, options...),
 	}
 	if j.stream != nil {
-		if len(j.pathStreams) != 0 {
+		if len(j.branchStreams) != 0 {
 			j.stream = stream
 			return &JobStreamBuilder{job: j, stream: stream}
 		}
@@ -1035,12 +1052,12 @@ func (j *Job) Intent() Intent {
 	for i := range j.inputs {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())
 	}
-	if len(j.pathStreams) != 0 {
-		for i := range j.pathStreams {
-			intent.Streams = append(intent.Streams, transcodeStreamIntent(j.pathStreams[i]))
+	if len(j.branchStreams) != 0 {
+		for i := range j.branchStreams {
+			intent.Streams = append(intent.Streams, transcodeStreamIntent(j.branchStreams[i]))
 		}
-		for i := range j.pathOutputs {
-			intent.Outputs = append(intent.Outputs, j.pathOutputs[i].output.intentWithName(j.pathOutputs[i].name))
+		for i := range j.branchTargets {
+			intent.Outputs = append(intent.Outputs, j.branchTargets[i].output.intentWithName(j.branchTargets[i].name))
 		}
 		return intent
 	} else if j.stream != nil {
@@ -1198,10 +1215,10 @@ func jobOutputLabelSet(outputs []OutputSpec) map[string]struct{} {
 }
 
 func (j *Job) allOutputs() []OutputSpec {
-	if len(j.pathOutputs) != 0 {
-		outputs := make([]OutputSpec, 0, len(j.pathOutputs))
-		for i := range j.pathOutputs {
-			outputs = append(outputs, j.pathOutputs[i].output)
+	if len(j.branchTargets) != 0 {
+		outputs := make([]OutputSpec, 0, len(j.branchTargets))
+		for i := range j.branchTargets {
+			outputs = append(outputs, j.branchTargets[i].output)
 		}
 		return outputs
 	}
@@ -1543,7 +1560,7 @@ func mixedStreamOutputError(operation string, stream StreamIntent) error {
 		Suggestions: []string{
 			"use .To(goav.FrameSink(...)) for decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...)) for encoded output",
-			"use .Paths(...) when one stream needs separate decoded and encoded branches",
+			"use .Branches(...) when one stream needs separate decoded and encoded branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1663,7 +1680,7 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 		},
 		Suggestions: []string{
 			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
-			"use goav.From(input).Video().Decode().Paths(...) for multiple paths from one stream",
+			"use goav.From(input).Video().Decode().Branches(...) for multiple branches from one stream",
 			"use the expert graph API for custom multi-stream routing",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -1715,17 +1732,17 @@ func cloneJobStreamSteps(steps []jobStreamStep) []jobStreamStep {
 	return out
 }
 
-func appendPathSteps(prefix []jobStreamStep, path []jobStreamStep) []jobStreamStep {
-	out := make([]jobStreamStep, 0, len(prefix)+len(path))
+func appendBranchSteps(prefix []jobStreamStep, branch []jobStreamStep) []jobStreamStep {
+	out := make([]jobStreamStep, 0, len(prefix)+len(branch))
 	out = append(out, cloneJobStreamSteps(prefix)...)
-	out = append(out, cloneJobStreamSteps(path)...)
+	out = append(out, cloneJobStreamSteps(branch)...)
 	return out
 }
 
-func appendTransformSpecs(prefix []TransformSpec, path []TransformSpec) []TransformSpec {
-	out := make([]TransformSpec, 0, len(prefix)+len(path))
+func appendTransformSpecs(prefix []TransformSpec, branch []TransformSpec) []TransformSpec {
+	out := make([]TransformSpec, 0, len(prefix)+len(branch))
 	out = append(out, cloneTransformSpecs(prefix)...)
-	out = append(out, cloneTransformSpecs(path)...)
+	out = append(out, cloneTransformSpecs(branch)...)
 	return out
 }
 
@@ -2103,7 +2120,7 @@ func duplicateOutputError(operation string, name string) error {
 		Code:      "output_duplicate",
 		Operation: operation,
 		Node:      name,
-		Reason:    fmt.Sprintf("output label %q is defined more than once", name),
+		Reason:    fmt.Sprintf("output name %q is defined more than once", name),
 		Suggestions: []string{
 			"use a unique output name for each output in the recipe",
 			"remove repeated outputs when one output should receive the stream once",
@@ -2167,7 +2184,7 @@ func duplicateStreamEncodeError(operation string, node string, first CodecSpec, 
 		},
 		Suggestions: []string{
 			"choose one output codec for the stream chain",
-			"use .Paths(...) when one input needs multiple encoded branches",
+			"use .Branches(...) when one input needs multiple encoded branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -2231,10 +2248,10 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			Code:      "encode_work_in_progress",
 			Operation: operation,
 			Node:      node,
-			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode paths currently target opus, vp8, and vp9",
+			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode branches currently target opus, vp8, and vp9",
 			Suggestions: []string{
 				"decode the stream with .To(goav.FrameSink(...))",
-				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode paths",
+				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode branches",
 				"use the expert builder with an explicit codec.EncodeConfig when testing an experimental encoder",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -2684,29 +2701,29 @@ type transcodeJob struct {
 	name    string
 	input   InputSpec
 	streams []streamBuild
-	outputs []namedOutputSpec
+	outputs []namedTargetSpec
 	err     error
 
-	fromPathSplit bool
+	fromBranchSplit bool
 }
 
-type namedOutputSpec struct {
+type namedTargetSpec struct {
 	name   string
 	output OutputSpec
 }
 
-// Output binds a stable output label to a concrete muxed output.
-func Output(name string, output OutputSpec) OutputBinding {
-	if name == "" {
-		return OutputBinding{output: output, err: transcodeEmptyOutputDefinitionLabelError(output)}
-	}
-	return OutputBinding{name: name, output: output}
-}
-
-type OutputBinding struct {
-	name   string
-	output OutputSpec
-	err    error
+func targetIdentity(target namedTargetSpec) string {
+	output := target.output
+	return strings.Join([]string{
+		target.name,
+		output.label(""),
+		output.output.Name,
+		output.output.URI,
+		string(output.output.Protocol),
+		output.output.MIMEType,
+		string(output.format),
+		string(output.resolvedFormat),
+	}, "\x00")
 }
 
 const transcodeRecipeOperation = "build branch composition"
@@ -2734,21 +2751,21 @@ func (j *transcodeJob) Intent() Intent {
 	return intent
 }
 
-func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOutputSpec) (transcodepkg.Plan, error) {
+func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedTargetSpec) (transcodepkg.Plan, error) {
 	streams := intent.Streams
-	outputs, outputOrder := transcodeOutputAttachmentSet(namedOutputs)
+	outputs, outputOrder := transcodeTargetAttachmentSet(namedOutputs)
 
-	paths := make([]transcodepkg.Path, 0, len(streams))
-	outputPaths := make(map[string][]string, len(outputs))
+	branches := make([]transcodepkg.Branch, 0, len(streams))
+	outputBranches := make(map[string][]string, len(outputs))
 	if len(streams) == 0 {
 		return transcodepkg.Plan{}, transcodeStreamMissingError()
 	}
 	for i := range streams {
 		stream := streams[i]
-		pathName := stream.Name
+		branchName := stream.Name
 		selector := streamIntentSelector(stream)
-		path := transcodepkg.Path{
-			Name:     pathName,
+		branch := transcodepkg.Branch{
+			Name:     branchName,
 			Selector: selector,
 			Decode:   true,
 			Encode: codec.EncodeConfig{
@@ -2757,14 +2774,14 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 			},
 			Labels: append([]string(nil), stream.RouteTo...),
 		}
-		path.Steps = transcodePathSteps(stream)
+		branch.Steps = transcodeBranchSteps(stream)
 		for _, label := range stream.RouteTo {
-			outputPaths[label] = append(outputPaths[label], pathName)
+			outputBranches[label] = append(outputBranches[label], branchName)
 		}
 		if err := validateTranscodeBranchTransforms(stream); err != nil {
 			return transcodepkg.Plan{}, err
 		}
-		paths = append(paths, path)
+		branches = append(branches, branch)
 	}
 
 	planOutputs := make([]transcodepkg.Output, 0, len(outputOrder))
@@ -2772,10 +2789,10 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 		name := outputOrder[i]
 		output := outputs[name]
 		planOutput := transcodepkg.Output{
-			Name:   name,
-			Target: output.output,
-			Format: output.format,
-			Paths:  append([]string(nil), outputPaths[name]...),
+			Name:     name,
+			Target:   output.output,
+			Format:   output.format,
+			Branches: append([]string(nil), outputBranches[name]...),
 		}
 		if output.resolvedFormat != "" {
 			planOutput = transcodepkg.ResolveOutputFormat(planOutput, output.resolvedFormat)
@@ -2783,14 +2800,14 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedOut
 		planOutputs = append(planOutputs, planOutput)
 	}
 	return transcodepkg.Plan{
-		Name:    "transcode",
-		Input:   input.input,
-		Paths:   paths,
-		Outputs: planOutputs,
+		Name:     "transcode",
+		Input:    input.input,
+		Branches: branches,
+		Outputs:  planOutputs,
 	}, nil
 }
 
-func transcodePathSteps(stream StreamIntent) []transcodepkg.Step {
+func transcodeBranchSteps(stream StreamIntent) []transcodepkg.Step {
 	if len(stream.Operations) != 0 {
 		return transcodeStepsFromOperations(stream.Operations)
 	}
@@ -2870,7 +2887,7 @@ func validateTranscodeIntentShape(operation string, intent Intent) error {
 	if len(streams) == 0 {
 		return transcodeStreamMissingError()
 	}
-	pathNames := make(map[string]int, len(streams))
+	branchNames := make(map[string]int, len(streams))
 	for i := range streams {
 		stream := streams[i]
 		if err := validateTranscodeBranchIntentShape(stream, i); err != nil {
@@ -2879,11 +2896,11 @@ func validateTranscodeIntentShape(operation string, intent Intent) error {
 		if err := validateTranscodeBranchTransforms(stream); err != nil {
 			return err
 		}
-		pathName := stream.Name
-		if firstIndex, ok := pathNames[pathName]; ok {
-			return transcodeDuplicateBranchError(pathName, firstIndex, i)
+		branchName := stream.Name
+		if firstIndex, ok := branchNames[branchName]; ok {
+			return transcodeDuplicateBranchError(branchName, firstIndex, i)
 		}
-		pathNames[pathName] = i
+		branchNames[branchName] = i
 	}
 	return nil
 }
@@ -2908,12 +2925,12 @@ func validateTranscodeBranchIntentShape(stream StreamIntent, index int) error {
 	return validateTranscodeBranchOutputLabels(stream)
 }
 
-func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpec, fromPathSplit bool) error {
+func validateTranscodeAttachments(input InputSpec, namedOutputs []namedTargetSpec, fromBranchSplit bool) error {
 	if err := input.validate(); err != nil {
 		return err
 	}
 	if input.rtp != nil {
-		if !fromPathSplit {
+		if !fromBranchSplit {
 			return transcodeUnsupportedRTPInputError()
 		}
 	}
@@ -2927,15 +2944,15 @@ func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpe
 		}
 		name := namedOutputs[i].name
 		if _, ok := seen[name]; ok {
-			return transcodeDuplicateOutputError(name)
+			return transcodeDuplicateTargetError(name)
 		}
 		seen[name] = struct{}{}
 	}
 	return nil
 }
 
-func validateTranscodeOutputBindings(intent Intent, namedOutputs []namedOutputSpec) error {
-	outputs := transcodeOutputLabelSet(namedOutputs)
+func validateTranscodeOutputBindings(intent Intent, namedOutputs []namedTargetSpec) error {
+	outputs := transcodeTargetLabelSet(namedOutputs)
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
 		for _, label := range stream.RouteTo {
@@ -2948,7 +2965,7 @@ func validateTranscodeOutputBindings(intent Intent, namedOutputs []namedOutputSp
 	return nil
 }
 
-func transcodeOutputAttachmentSet(namedOutputs []namedOutputSpec) (map[string]OutputSpec, []string) {
+func transcodeTargetAttachmentSet(namedOutputs []namedTargetSpec) (map[string]OutputSpec, []string) {
 	outputs := make(map[string]OutputSpec, len(namedOutputs))
 	outputOrder := make([]string, 0, len(namedOutputs))
 	for i := range namedOutputs {
@@ -2959,7 +2976,7 @@ func transcodeOutputAttachmentSet(namedOutputs []namedOutputSpec) (map[string]Ou
 	return outputs, outputOrder
 }
 
-func transcodeOutputLabelSet(namedOutputs []namedOutputSpec) map[string]struct{} {
+func transcodeTargetLabelSet(namedOutputs []namedTargetSpec) map[string]struct{} {
 	outputs := make(map[string]struct{}, len(namedOutputs))
 	for i := range namedOutputs {
 		outputs[namedOutputs[i].name] = struct{}{}
@@ -2996,13 +3013,13 @@ func transcodeEncodeMissingError(stream StreamIntent) error {
 func transcodeBranchOutputMissingError(stream StreamIntent) error {
 	selector := streamIntentSelector(stream)
 	return &BuildError{
-		Code:      "output_missing",
+		Code:      "target_missing",
 		Operation: transcodeRecipeOperation,
 		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
-		Reason:    "stream has no output target",
+		Reason:    "branch has no target",
 		Suggestions: []string{
-			"call .To(\"label\") and define it with .Outputs(goav.Output(\"label\", goav.FileOutput(...)))",
-			"reuse the same output label from multiple branches when they should share an output",
+			"finish the branch with .To(goav.Target(\"web\", goav.FileOutput(...)))",
+			"reuse the same target value from multiple branches when they should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3010,13 +3027,13 @@ func transcodeBranchOutputMissingError(stream StreamIntent) error {
 
 func transcodeOutputReferenceMissingError(stream StreamIntent, label string) error {
 	return &BuildError{
-		Code:      "output_missing",
+		Code:      "target_missing",
 		Operation: transcodeRecipeOperation,
 		Node:      stream.Name,
-		Reason:    "output " + label + " is referenced but not defined",
+		Reason:    "target " + label + " is referenced but not defined",
 		Suggestions: []string{
-			"call .Outputs(goav.Output(" + label + ", goav.FileOutput(...)))",
-			"define shared outputs once and route branches by label",
+			"pass a goav.Target(\"" + label + "\", endpoint) value to the branch .To(...) call",
+			"reuse typed target values instead of routing by string label",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3037,16 +3054,16 @@ func transcodeUnsupportedRTPInputError() error {
 
 func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 	return &BuildError{
-		Code:      "output_label_invalid",
+		Code:      "target_invalid",
 		Operation: transcodeRecipeOperation,
 		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
-		Reason:    "transcode output labels must be non-empty",
+		Reason:    "branch targets must be non-empty",
 		Details: []string{
 			fmt.Sprintf("target index: %d", index),
 		},
 		Suggestions: []string{
-			"call .To(\"label\") with a non-empty output label",
-			"define the label once with .Outputs(goav.Output(\"label\", goav.FileOutput(...)))",
+			"call .To(goav.Target(\"web\", goav.FileOutput(...))) with a non-empty target name",
+			"pass an endpoint directly when a separate target name is not needed",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3054,13 +3071,13 @@ func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 
 func transcodeEmptyOutputDefinitionLabelError(output OutputSpec) error {
 	err := &BuildError{
-		Code:      "output_label_invalid",
+		Code:      "target_invalid",
 		Operation: transcodeRecipeOperation,
 		Node:      output.label("output"),
-		Reason:    "transcode output labels must be non-empty",
+		Reason:    "target name is empty",
 		Suggestions: []string{
-			"call .Outputs(goav.Output(\"label\", goav.FileOutput(...))) with a stable output label",
-			"route branches with .To(\"label\") using that same label",
+			"call goav.Target(\"web\", goav.FileOutput(...)) with a stable target name",
+			"pass goav.FileOutput(...) directly to .To(...) when a separate target name is not needed",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3072,14 +3089,14 @@ func transcodeEmptyOutputDefinitionLabelError(output OutputSpec) error {
 
 func transcodeFrameSinkOutputError(label string, output OutputSpec) error {
 	err := &BuildError{
-		Code:      "output_kind_invalid",
+		Code:      "target_kind_invalid",
 		Operation: transcodeRecipeOperation,
 		Node:      firstNonEmpty(label, output.label("output")),
-		Reason:    "transcode outputs are muxed output groups, not frame sinks",
+		Reason:    "planned branch targets are muxed output groups, not frame sinks",
 		Suggestions: []string{
-			"use goav.FileOutput(...) or goav.URIOutput(...) in .Outputs(goav.Output(label, ...))",
+			"use goav.Target(name, goav.FileOutput(...)) or goav.Target(name, goav.URIOutput(...)) for planned mux branches",
 			"use goav.From(input).Audio().Decode().To(goav.FrameSink(sink)) or .Video().Decode().To(...) for decoded frames",
-			"use the expert graph API when one pipeline must feed both decoded frame sinks and muxed outputs",
+			"use Task.Attach(ctx, goav.Branch(name).FromTap(tap).To(goav.FrameSink(sink))) for live sink branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3089,15 +3106,15 @@ func transcodeFrameSinkOutputError(label string, output OutputSpec) error {
 	return err
 }
 
-func transcodeDuplicateOutputError(name string) error {
+func transcodeDuplicateTargetError(name string) error {
 	return &BuildError{
-		Code:      "output_duplicate",
+		Code:      "target_duplicate",
 		Operation: transcodeRecipeOperation,
 		Node:      name,
-		Reason:    fmt.Sprintf("output label %q is defined more than once", name),
+		Reason:    fmt.Sprintf("target %q is defined more than once with different endpoints", name),
 		Suggestions: []string{
-			"use a unique .Outputs(goav.Output(label, ...)) label for each transcode output",
-			"route multiple branches to one shared output by calling .To(label) on each branch",
+			"reuse the same goav.Target value when multiple branches should share one mux group",
+			"use distinct target names when branches should write to different endpoints",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3115,8 +3132,8 @@ func transcodeDuplicateBranchError(name string, firstIndex int, secondIndex int)
 		},
 		Suggestions: []string{
 			"use unique names such as .Video(\"720p\") and .Video(\"360p\")",
-			"route one branch to multiple outputs by calling .To(label, otherLabel)",
-			"route different branches to the same output by reusing the output label",
+			"route one branch to multiple targets by calling .To(target, otherTarget)",
+			"route different branches to the same target by reusing the target value",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3153,18 +3170,18 @@ func validateTranscodeBranchOutputLabels(stream StreamIntent) error {
 
 func transcodeDuplicateBranchOutputError(stream StreamIntent, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Code:      "output_duplicate",
+		Code:      "target_duplicate",
 		Operation: transcodeRecipeOperation,
 		Node:      transcodeIntentBranchName(stream),
-		Reason:    fmt.Sprintf("branch routes to output %q more than once", label),
+		Reason:    fmt.Sprintf("branch routes to target %q more than once", label),
 		Details: []string{
 			fmt.Sprintf("first target index: %d", firstIndex),
 			fmt.Sprintf("second target index: %d", secondIndex),
 		},
 		Suggestions: []string{
-			"list each output label once in .To(...)",
-			"route one branch to multiple outputs with distinct labels such as .To(\"archive\", \"preview\")",
-			"define shared outputs once with .Outputs(goav.Output(\"label\", goav.FileOutput(...)))",
+			"list each target once in .To(...)",
+			"route one branch to multiple targets with distinct values such as .To(archive, preview)",
+			"reuse typed target values instead of repeating string labels",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

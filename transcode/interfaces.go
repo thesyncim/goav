@@ -11,12 +11,12 @@ import (
 type Plan struct {
 	Name     string
 	Input    format.Input
-	Paths    []Path
+	Branches []Branch
 	Outputs  []Output
 	Metadata av.Metadata
 }
 
-type Path struct {
+type Branch struct {
 	Name     string
 	Selector av.StreamSelector
 	Decode   bool
@@ -38,7 +38,7 @@ type Output struct {
 	Name           string
 	Target         format.Output
 	Format         av.FormatID
-	Paths          []string
+	Branches       []string
 	Metadata       av.Metadata
 	resolvedFormat av.FormatID
 }

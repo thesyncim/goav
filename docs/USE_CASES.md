@@ -59,41 +59,42 @@ err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
 When a media type matches several streams, the build error lists candidates and
 suggests `StreamID`, `StreamName`, or `StreamIndex(0)`.
 
-## Paths
+## Branches
 
-`Tap` names a stable point. `Paths` declares encoded alternatives from one
-selected stream. Each path is an ordered branch chain: custom stages,
-transforms, taps, encode, then output labels. This keeps complex work natural
-without exposing graph wiring.
+`Tap` names a stable point. `Branches` declares downstream alternatives from
+one selected stream. Each branch is an ordered chain: custom stages, transforms,
+taps, encode, then typed targets. This keeps complex work natural without
+exposing graph wiring.
 
 ```go
+main := goav.Target("main", goav.FileOutput("main.webm", out))
+
 err := goav.From(input).
     Video().
     Decode().
     Tap("video.decoded").
-    Paths(
-        goav.Path("720p").
+    Branches(
+        goav.Branch("720p").
             Resize(1280, 720).
             Do(frameMeter).
             Tap("video.720p.frames").
             VP9(2_000_000).
-            To("main"),
+            To(main),
     ).
     Audio().
     Decode().
     Tap("audio.decoded").
-    Paths(
-        goav.Path("a96").
+    Branches(
+        goav.Branch("a96").
             Resample(48_000, goav.Stereo).
             Opus(96_000).
-            To("main"),
+            To(main),
     ).
-    Outputs(goav.Output("main", goav.FileOutput("main.webm", out))).
     Run(ctx)
 ```
 
-One output label is a mux group. Several encoded branches can feed the same
-label. Containers shown outside IVF/Annex B require matching adapters.
+One target can be a mux group. Several encoded branches can feed the same
+target. Containers shown outside IVF/Annex B require matching adapters.
 
 ## Custom Components
 
@@ -115,28 +116,27 @@ err := goav.From(input).
     Run(ctx)
 ```
 
-Path-local custom stages and transforms share the ordered operation model.
+Branch-local custom stages and transforms share the ordered operation model.
 Custom filter adapters and late muxed runtime outputs should extend that same
 model instead of growing special-case APIs.
 
 ## Reusable Flows
 
-Flows become paths, so reusable and ad hoc splits use the same API.
+Flows are reusable operation sequences. Branches own targets, so reusable and
+ad hoc splits use the same API.
 
 ```go
 voice := goav.AudioFlow("voice").Resample(16_000, goav.Mono).OpusVoice()
 archive := goav.AudioFlow("archive").Resample(48_000, goav.Stereo).OpusMusic()
+voiceTarget := goav.Target("voice", goav.FileOutput("voice.ogg", voiceFile))
+archiveTarget := goav.Target("archive", goav.FileOutput("archive.ogg", archiveFile))
 
 err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
     Decode().
-    Paths(
-        voice.To("voice"),
-        archive.To("archive"),
-    ).
-    Outputs(
-        goav.Output("voice", goav.FileOutput("voice.ogg", voiceFile)),
-        goav.Output("archive", goav.FileOutput("archive.ogg", archiveFile)),
+    Branches(
+        goav.Branch("voice").Apply(voice).To(voiceTarget),
+        goav.Branch("archive").Apply(archive).To(archiveTarget),
     ).
     Run(ctx)
 ```
@@ -157,7 +157,7 @@ go func() { _ = task.Run(ctx) }()
 levels, err := task.Attach(ctx,
     goav.Branch("level-meter").
         FromTap("audio.decoded").
-        To(goav.SinkFunc("levels", collectLevel)),
+        To(goav.FrameSink(goav.SinkFunc("levels", collectLevel))),
 )
 if err != nil {
     return err
@@ -166,8 +166,9 @@ defer levels.Close(ctx)
 ```
 
 Use `Task.Taps()` to discover stable outlets. Use `Task.Detach(ctx, h)` when
-the caller wants the task to own detach semantics. Late muxed recording outputs
-and buffered runtime branches remain planned runtime slices.
+the caller wants the task to own detach semantics. Runtime branches currently
+attach sink-oriented observation work; late muxed recording and buffered dynamic
+branch mutation remain explicit roadmap slices.
 
 ## Generic File Or Protocol Ingest
 
@@ -197,6 +198,6 @@ channel conversion.
 ## Resize
 
 Video filters express exact, fit, fill, and passthrough modes so the same
-contract works for ladders, previews, thumbnails, and recording paths. The first
+contract works for ladders, previews, thumbnails, and recording branches. The first
 concrete adapter covers planar 8-bit 4:2:0 frames with nearest-neighbor scaling
 and caller-owned output planes.

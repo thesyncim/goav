@@ -17,7 +17,7 @@ and keyframe recovery are represented as events instead of hidden side effects.
 ```text
 Application
   |
-Recipes: From, stream chains, taps, branches, outputs
+Recipes: From, stream chains, taps, branches, targets
   |
 Intent graph: inputs, streams, transforms, outputs, policies
   |
@@ -36,20 +36,20 @@ container, and filter integrations. `goav.Default()` registers the standard
 in-repo adapters for the beginner path, while `goav.New(...)` keeps minimal and
 embedded runtimes explicit. `From(input)` is the beginner-facing front door. It
 produces a small intent model for packet copy, stream decode, transform, encode,
-declared path composition, and runtime tap naming. The target architecture is one media planner that
+declared branch composition, and runtime tap naming. The target architecture is one media planner that
 validates, probes, resolves streams, resolves formats/codecs, chooses
-packet-copy or decode paths, inserts demux or depacketize boundaries, inserts
-select/decode/transform/stage/tap/encode operations, groups paths by outputs,
+packet-copy or decode branches, inserts demux or depacketize boundaries, inserts
+select/decode/transform/stage/tap/encode operations, groups branches by targets,
 assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
 the runnable graph. `MediaPlan` is the planner IR for that work: declared
-paths, reusable flow paths, decode recipes, and packet-preserving copy/remux
+branches, reusable flow branches, decode recipes, and packet-preserving copy/remux
 all become ordinary branch operations over the same model. Recipe compilation
 must recognize a media-plan shape before it can describe or build a normal
 workflow.
 
 The active recipe compiler state carries public `Intent` plus concrete readers,
 writers, sinks, and stages through validation, media-plan creation, planner
-lowering, and planned-spec emission. Paths carry ordered stage, transform, tap,
+lowering, and planned-spec emission. Branches carry ordered stage, transform, tap,
 and encode operations and can start after earlier stream operations such as
 decode, resize, resample, custom stages, and taps. `Job.Explain(ctx)` reports the
 `MediaPlan` branch operations, taps, and decisions. The next architectural
@@ -108,14 +108,14 @@ Current graph execution covers:
 - one or more RTP/WebRTC packet readers to selected-stream
   decode/filter/encode outputs through the same decoder, filter, encoder, and
   mux stages used by file or protocol inputs
-- live RTP/WebRTC reusable paths that receive through `rtpav.Source`, share the
-  selected stream decode, then route each flow-derived path through its own
+- live RTP/WebRTC reusable branches that receive through `rtpav.Source`, share the
+  selected stream decode, then route each flow-derived branch through its own
   transforms, encoder, and mux output
 - transcode recipes for one input grouped by selected stream: video branches can
   share a video decode, audio branches can share an audio decode, and one output
   label is a mux group that can receive coordinated encoded audio and video
   branches. Resize/resample configs insert filter stages through the filter
-  registry, and outputs select branches by branch name or label.
+  registry, and outputs select branches by branch name.
 
 Resize and resample branch configs fail explicitly at build time when no matching
 filter factory is registered.
@@ -283,15 +283,15 @@ That shape supports:
 ## Multi-output media planning
 
 `Transcode` is user-facing syntax, not a runtime engine. It lowers into the
-same `MediaPlan` branch shape as `From(input).Audio()/Video().Paths(...)` and
-flow-derived paths: input ref, stream selector, operation chain, output refs,
+same `MediaPlan` branch shape as `From(input).Audio()/Video().Branches(...)` and
+flow-derived branches: input ref, stream selector, operation chain, target refs,
 and mux groups. Mixed audio/video outputs are modeled as mux groups receiving
 ordinary encoded branches.
 
 Multiple branches that select the same input stream should share upstream demux,
 selection, and decode nodes unless a future isolation policy asks otherwise.
-One output label is a mux group that can receive coordinated encoded branches
-from different media streams. Resize, resample, and custom stage steps become
+One target can be a mux group that receives coordinated encoded branches from
+different media streams. Resize, resample, and custom stage steps become
 ordinary branch operations; transform steps use matching filter factories when
 registered.
 

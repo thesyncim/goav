@@ -99,7 +99,7 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 				transcodePresent:           true,
 				intent:                     Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Outputs: []OutputIntent{{Name: "web.ivf"}}},
 				transcodeInputAttachment:   FileInput("input.ivf", strings.NewReader("")),
-				transcodeOutputAttachments: nil,
+				transcodeTargetAttachments: nil,
 			},
 			want: "outputs",
 		},
@@ -275,7 +275,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 				operation: transcodeRecipeOperation,
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
 				runtime:   Default(),
-				transcodeOutputAttachments: []namedOutputSpec{{
+				transcodeTargetAttachments: []namedTargetSpec{{
 					name:   "web",
 					output: FileOutput("web.webm", io.Discard),
 				}},
@@ -339,18 +339,18 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 					testFormatProber(remuxTestProber{}),
 					testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 				)),
-				transcodeOutputAttachments: []namedOutputSpec{{
+				transcodeTargetAttachments: []namedTargetSpec{{
 					name:   "web",
 					output: FileOutput("web.ogg", io.Discard),
 				}},
 			},
 			validate: func(t *testing.T, state recipeCompileState) {
 				t.Helper()
-				if len(state.transcodeOutputAttachments) != 1 ||
-					state.transcodeOutputAttachments[0].output.format != "" ||
-					state.transcodeOutputAttachments[0].output.resolvedFormat != av.FormatOgg ||
-					state.transcodeOutputAttachments[0].output.output.Name != "web.ogg" {
-					t.Fatalf("transcode output attachments = %+v, want resolved Ogg format", state.transcodeOutputAttachments)
+				if len(state.transcodeTargetAttachments) != 1 ||
+					state.transcodeTargetAttachments[0].output.format != "" ||
+					state.transcodeTargetAttachments[0].output.resolvedFormat != av.FormatOgg ||
+					state.transcodeTargetAttachments[0].output.output.Name != "web.ogg" {
+					t.Fatalf("transcode output attachments = %+v, want resolved Ogg format", state.transcodeTargetAttachments)
 				}
 			},
 		},
@@ -452,7 +452,7 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 			Outputs: []OutputIntent{{Name: "archive"}},
 		},
 		transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
-		transcodeOutputAttachments: []namedOutputSpec{{
+		transcodeTargetAttachments: []namedTargetSpec{{
 			name:   "archive",
 			output: FileOutput("archive.ogg", io.Discard),
 		}},
@@ -1134,7 +1134,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			},
 			outputs: []OutputSpec{frameSink, fileOutput},
 			code:    "output_kind_mixed",
-			want:    []string{"cannot mix frame sinks and muxed outputs", ".Paths(...)"},
+			want:    []string{"cannot mix frame sinks and muxed outputs", ".Branches(...)"},
 		},
 		{
 			name: "mux output without encoder",
@@ -1261,7 +1261,7 @@ func TestRequireMediaPlanGraphSpecPassWrapsUnsupportedRecipeShape(t *testing.T) 
 	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want recipe_graph_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	for _, want := range []string{"recipe intent", "inputs: 1", "outputs: 0", "goav.From", ".Copy().To", ".Paths"} {
+	for _, want := range []string{"recipe intent", "inputs: 1", "outputs: 0", "goav.From", ".Copy().To", ".Branches"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
@@ -1505,7 +1505,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					}},
 				},
 			},
-			code: "output_duplicate",
+			code: "target_duplicate",
 			want: "more than once",
 		},
 	}
@@ -1535,7 +1535,7 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 			name: "rtp input",
 			state: recipeCompileState{
 				transcodeInputAttachment: RTP(&runtimeRTPReceiver{}).Name("video").Codec(VP8()),
-				transcodeOutputAttachments: []namedOutputSpec{{
+				transcodeTargetAttachments: []namedTargetSpec{{
 					name:   "web",
 					output: FileOutput("web.ivf", io.Discard),
 				}},
@@ -1544,27 +1544,27 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 			want: "RTP transcode recipes",
 		},
 		{
-			name: "frame sink output",
+			name: "frame sink target",
 			state: recipeCompileState{
 				transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
-				transcodeOutputAttachments: []namedOutputSpec{{
+				transcodeTargetAttachments: []namedTargetSpec{{
 					name:   "frames",
 					output: FrameSink(SinkFunc("frames", func(context.Context, Message) error { return nil })),
 				}},
 			},
-			code: "output_kind_invalid",
-			want: "transcode outputs are muxed output groups",
+			code: "target_kind_invalid",
+			want: "planned branch targets are muxed output groups",
 		},
 		{
-			name: "duplicate output labels",
+			name: "duplicate targets",
 			state: recipeCompileState{
 				transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
-				transcodeOutputAttachments: []namedOutputSpec{
+				transcodeTargetAttachments: []namedTargetSpec{
 					{name: "web", output: FileOutput("web.ivf", io.Discard)},
 					{name: "web", output: FileOutput("preview.ivf", io.Discard)},
 				},
 			},
-			code: "output_duplicate",
+			code: "target_duplicate",
 			want: "defined more than once",
 		},
 	}
@@ -1596,7 +1596,7 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 			}},
 			Outputs: []OutputIntent{{Name: "web.ivf"}},
 		},
-		transcodeOutputAttachments: []namedOutputSpec{{
+		transcodeTargetAttachments: []namedTargetSpec{{
 			name:   "web",
 			output: FileOutput("web.ivf", io.Discard),
 		}},
@@ -1604,12 +1604,12 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 
 	err := validateTranscodeOutputBindingsPass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_missing" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want target_missing wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "output missing is referenced but not defined") ||
-		!strings.Contains(err.Error(), "define shared outputs once") {
-		t.Fatalf("err = %v, want output binding guidance", err)
+	if !strings.Contains(err.Error(), "target missing is referenced but not defined") ||
+		!strings.Contains(err.Error(), "typed target values") {
+		t.Fatalf("err = %v, want target binding guidance", err)
 	}
 }
 
@@ -1774,17 +1774,17 @@ func TestMediaPlanGraphSpecPassPlansRTPCopy(t *testing.T) {
 }
 
 func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
+	web := Target("web", FileOutput("web.ivf", io.Discard))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
 		Tap("video.decoded").
-		Paths(
-			Path("360p").
+		Branches(
+			Branch("360p").
 				Resize(640, 360).
 				VP9(600_000).
-				To("web"),
-		).
-		Outputs(Output("web", FileOutput("web.ivf", io.Discard)))
+				To(web),
+		)
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -1821,18 +1821,16 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	}
 }
 
-func TestCompileLiveFlowPathsRecipeUsesMediaPlanBranchComposer(t *testing.T) {
+func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) {
+	voice := Target("voice", FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg))
+	archive := Target("archive", FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg))
 	job := From(RTP(&runtimeRTPReceiver{
 		streams: []Stream{audioOpusTestStream()},
 	}).Name("audio").Codec(Opus())).
 		Audio().
-		Paths(
-			AudioFlow("voice").OpusVoice().To("voice"),
-			AudioFlow("archive").OpusMusic().To("archive"),
-		).
-		Outputs(
-			Output("voice", FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg)),
-			Output("archive", FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg)),
+		Branches(
+			Branch("voice").Apply(AudioFlow("voice").OpusVoice()).To(voice),
+			Branch("archive").Apply(AudioFlow("archive").OpusMusic()).To(archive),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -1877,8 +1875,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 		Audio().
 		Decode().
 		Tap("audio.decoded").
-		Paths(Path("main").Opus(96_000).To("archive")).
-		Outputs(Output("archive", FileOutput("archive.ogg", io.Discard)))
+		Branches(Branch("main").Opus(96_000).To(Target("archive", FileOutput("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {

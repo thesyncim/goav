@@ -45,10 +45,10 @@ type recipeCompileState struct {
 	inputProbes       []format.ProbeResult
 
 	transcodeInputAttachment   InputSpec
-	transcodeOutputAttachments []namedOutputSpec
+	transcodeTargetAttachments []namedTargetSpec
 	transcodeInputProbe        format.ProbeResult
 	transcodeInputProbeReady   bool
-	transcodePathSplit         bool
+	transcodeBranchSplit       bool
 
 	plan transcodepkg.Plan
 
@@ -67,6 +67,7 @@ type recipeCompileOptions struct {
 	preflightEncodeAdapters    bool
 	preflightTransformAdapters bool
 	preflightLiveStreams       bool
+	preflightMuxCompatibility  bool
 }
 
 func (o recipeCompileOptions) Context() context.Context {
@@ -85,12 +86,12 @@ func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 		}
 		formats[s.outputAttachments[i].label(fmt.Sprintf("output-%d", i))] = formatID
 	}
-	for i := range s.transcodeOutputAttachments {
-		formatID := outputSpecFormat(s.transcodeOutputAttachments[i].output)
+	for i := range s.transcodeTargetAttachments {
+		formatID := outputSpecFormat(s.transcodeTargetAttachments[i].output)
 		if formatID == "" {
 			continue
 		}
-		label := firstNonEmpty(s.transcodeOutputAttachments[i].name, s.transcodeOutputAttachments[i].output.label(fmt.Sprintf("output-%d", i)))
+		label := firstNonEmpty(s.transcodeTargetAttachments[i].name, s.transcodeTargetAttachments[i].output.label(fmt.Sprintf("output-%d", i)))
 		formats[label] = formatID
 	}
 	if len(formats) == 0 {
@@ -256,12 +257,13 @@ func compileJobRecipeForBuildContext(ctx context.Context, job *Job) (recipeResol
 		preflightEncodeAdapters:    true,
 		preflightTransformAdapters: true,
 		preflightLiveStreams:       true,
+		preflightMuxCompatibility:  true,
 	})
 }
 
 func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
-	if job != nil && len(job.pathStreams) != 0 {
-		return compileJobPathRecipeWithOptions(job, options)
+	if job != nil && len(job.branchStreams) != 0 {
+		return compileJobBranchRecipeWithOptions(job, options)
 	}
 	state := recipeCompileState{
 		operation: "build job",
@@ -300,23 +302,24 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		lowerJobStreamPass(),
 		lowerJobOutputsPass(),
 		emitMediaPlanGraphSpecPass(),
+		validateMuxCompatibilityPass(),
 		requireMediaPlanGraphSpecPass(),
 	}}.Compile(state)
 }
 
-func compileJobPathRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
+func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
 	branchJob := &transcodeJob{
-		runtime:       job.runtime,
-		name:          job.name,
-		streams:       append([]streamBuild(nil), job.pathStreams...),
-		outputs:       append([]namedOutputSpec(nil), job.pathOutputs...),
-		err:           job.err,
-		fromPathSplit: true,
+		runtime:         job.runtime,
+		name:            job.name,
+		streams:         append([]streamBuild(nil), job.branchStreams...),
+		outputs:         append([]namedTargetSpec(nil), job.branchTargets...),
+		err:             job.err,
+		fromBranchSplit: true,
 	}
 	if len(job.inputs) == 1 {
 		branchJob.input = job.inputs[0]
 	} else if branchJob.err == nil {
-		branchJob.err = pathInputCountError("paths", len(job.inputs))
+		branchJob.err = branchInputCountError("branches", len(job.inputs))
 	}
 	return compileTranscodeRecipeWithOptions(branchJob, options)
 }
@@ -332,8 +335,8 @@ func compileTranscodeRecipeWithOptions(job *transcodeJob, options recipeCompileO
 		state.runtime = job.runtime
 		state.recipeErr = job.err
 		state.transcodeInputAttachment = job.input
-		state.transcodeOutputAttachments = append([]namedOutputSpec(nil), job.outputs...)
-		state.transcodePathSplit = job.fromPathSplit
+		state.transcodeTargetAttachments = append([]namedTargetSpec(nil), job.outputs...)
+		state.transcodeBranchSplit = job.fromBranchSplit
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateTranscodeRecipePass(),
@@ -351,6 +354,7 @@ func compileTranscodeRecipeWithOptions(job *transcodeJob, options recipeCompileO
 		openRecipeRuntimeBuilderPass(),
 		lowerTranscodePlanPass(),
 		emitMediaPlanGraphSpecPass(),
+		validateMuxCompatibilityPass(),
 		requireMediaPlanGraphSpecPass(),
 	}}.Compile(state)
 }
@@ -420,7 +424,7 @@ func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
-			"use goav.From(input).Video().Decode().Paths(goav.Path(name).To(label)).Outputs(goav.Output(label, output)) for named paths",
+			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -435,7 +439,7 @@ func jobOutputReferenceMissingError(operation string, stream StreamIntent, label
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
-			"define named path outputs with .Outputs(goav.Output(label, output))",
+			"finish each branch with a typed target such as .To(goav.Target(\"web\", output))",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -448,7 +452,7 @@ func jobIntentTooManyStreamsError(operation string, streams []StreamIntent) erro
 		Reason:    "ordinary stream recipes select one audio or video stream",
 		Suggestions: []string{
 			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
-			"use goav.From(input).Video().Decode().Paths(...) for multiple branches from one stream",
+			"use goav.From(input).Video().Decode().Branches(...) for multiple branches from one stream",
 			"use the expert graph API for custom multi-stream routing",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -699,7 +703,7 @@ func validateTranscodeIntentShapePass() recipeCompilePass {
 
 func validateTranscodeAttachmentsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode attachments", fn: func(state *recipeCompileState) error {
-		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeOutputAttachments, state.transcodePathSplit)
+		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeTargetAttachments, state.transcodeBranchSplit)
 	}}
 }
 
@@ -708,11 +712,11 @@ func validateTranscodeOutputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs := make([]OutputSpec, 0, len(state.transcodeOutputAttachments))
-		for i := range state.transcodeOutputAttachments {
-			output := state.transcodeOutputAttachments[i].output.Name(firstNonEmpty(
-				state.transcodeOutputAttachments[i].output.name,
-				state.transcodeOutputAttachments[i].name,
+		outputs := make([]OutputSpec, 0, len(state.transcodeTargetAttachments))
+		for i := range state.transcodeTargetAttachments {
+			output := state.transcodeTargetAttachments[i].output.Name(firstNonEmpty(
+				state.transcodeTargetAttachments[i].output.name,
+				state.transcodeTargetAttachments[i].name,
 			))
 			outputs = append(outputs, output)
 		}
@@ -720,8 +724,8 @@ func validateTranscodeOutputFormatAdaptersPass() recipeCompilePass {
 		if err != nil {
 			return err
 		}
-		for i := range state.transcodeOutputAttachments {
-			state.transcodeOutputAttachments[i].output = resolved[i]
+		for i := range state.transcodeTargetAttachments {
+			state.transcodeTargetAttachments[i].output = resolved[i]
 		}
 		return nil
 	}}
@@ -764,7 +768,7 @@ func validateTranscodeTransformAdaptersPass() recipeCompilePass {
 
 func validateTranscodeOutputBindingsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode output bindings", fn: func(state *recipeCompileState) error {
-		return validateTranscodeOutputBindings(state.intent, state.transcodeOutputAttachments)
+		return validateTranscodeOutputBindings(state.intent, state.transcodeTargetAttachments)
 	}}
 }
 
@@ -782,8 +786,8 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 			if len(state.intent.Inputs) != 1 {
 				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), 1)
 			}
-			if len(state.intent.Outputs) != len(state.transcodeOutputAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "outputs", len(state.intent.Outputs), len(state.transcodeOutputAttachments))
+			if len(state.intent.Outputs) != len(state.transcodeTargetAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "outputs", len(state.intent.Outputs), len(state.transcodeTargetAttachments))
 			}
 		}
 		return nil
@@ -969,7 +973,7 @@ func lowerJobOutputsPass() recipeCompilePass {
 
 func planTranscodeIntentPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "plan transcode intent", fn: func(state *recipeCompileState) error {
-		plan, err := planTranscodeRecipe(state.intent, state.transcodeInputAttachment, state.transcodeOutputAttachments)
+		plan, err := planTranscodeRecipe(state.intent, state.transcodeInputAttachment, state.transcodeTargetAttachments)
 		if err != nil {
 			return err
 		}
@@ -980,7 +984,7 @@ func planTranscodeIntentPass() recipeCompilePass {
 
 func lowerTranscodePlanPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "lower transcode plan", fn: func(state *recipeCompileState) error {
-		if state.transcodePathSplit && state.transcodeInputAttachment.rtp != nil {
+		if state.transcodeBranchSplit && state.transcodeInputAttachment.rtp != nil {
 			state.builder = state.transcodeInputAttachment.apply(state.builder)
 		}
 		state.builder = state.builder.Transcode(state.plan)
@@ -1003,7 +1007,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		Suggestions: []string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
 			"use goav.From(input).Audio().To(goav.FrameSink(...)) or .Video().To(...) for decoded frames",
-			"use goav.From(input).Video().Decode().Paths(goav.Path(name).To(label)).Outputs(goav.Output(label, output)) for named paths",
+			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

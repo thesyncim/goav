@@ -674,8 +674,7 @@ func TestBranchCompositionRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 		Audio().
 		Decode().
 		Tap("audio.decoded").
-		Paths(Path("main").Opus(96_000).To("archive")).
-		Outputs(Output("archive", FileOutput("archive.ogg", io.Discard)))
+		Branches(Branch("main").Opus(96_000).To(Target("archive", FileOutput("archive.ogg", io.Discard))))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -715,14 +714,13 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 		Video().
 		Decode().
 		Tap("video.decoded").
-		Paths(
-			Path("720p").
+		Branches(
+			Branch("720p").
 				Resize(1280, 720).
 				Tap("video.720p.frames").
 				VP9(2_000_000).
-				To("web"),
-		).
-		Outputs(Output("web", FileOutput("web.ogg", io.Discard)))
+				To(Target("web", FileOutput("web.ogg", io.Discard))),
+		)
 
 	task, err := job.Build(ctx)
 	if err != nil {
@@ -741,9 +739,9 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 		t.Fatalf("resize tap = %+v, want frame video tap with graph node", resizeTap)
 	}
 
-	attachment, err := task.Attach(ctx, Branch("screenshots").FromTap("video.720p.frames").To(SinkFunc("screenshots", func(context.Context, Message) error {
+	attachment, err := task.Attach(ctx, Branch("screenshots").FromTap("video.720p.frames").To(FrameSink(SinkFunc("screenshots", func(context.Context, Message) error {
 		return nil
-	})))
+	}))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -798,15 +796,15 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 		t.Fatalf("encoded tap = %+v, want packet audio tap on encode-audio", encodedTap)
 	}
 
-	frameAttachment, err := task.Attach(ctx, Branch("levels").FromTap("audio.after-meter").To(SinkFunc("levels", func(context.Context, Message) error {
+	frameAttachment, err := task.Attach(ctx, Branch("levels").FromTap("audio.after-meter").To(FrameSink(SinkFunc("levels", func(context.Context, Message) error {
 		return nil
-	})))
+	}))))
 	if err != nil {
 		t.Fatal(err)
 	}
-	packetAttachment, err := task.Attach(ctx, Branch("packets").FromTap("audio.encoded").To(SinkFunc("packets", func(context.Context, Message) error {
+	packetAttachment, err := task.Attach(ctx, Branch("packets").FromTap("audio.encoded").To(FrameSink(SinkFunc("packets", func(context.Context, Message) error {
 		return nil
-	})))
+	}))))
 	if err != nil {
 		t.Fatal(err)
 	}

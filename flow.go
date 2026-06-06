@@ -9,7 +9,7 @@ import (
 // Flow is a reusable stream-local recipe fragment.
 //
 // Build flows with AudioFlow or VideoFlow, then apply them to one stream chain
-// or route them as named paths with JobStreamBuilder.Paths.
+// or to a Branch. A flow is only an operation sequence; branches own targets.
 type Flow interface {
 	Name() string
 	isFlow()
@@ -95,13 +95,6 @@ func (b *AudioFlowBuilder) OpusMusic() *AudioFlowBuilder {
 	return b.Encode(OpusMusic())
 }
 
-func (b *AudioFlowBuilder) To(labels ...string) PathSpec {
-	if b == nil {
-		return pathFromFlow(streamFlowSpec{err: nilFlowError()}, labels...)
-	}
-	return b.flowBuilder.to(labels...)
-}
-
 func (b *AudioFlowBuilder) flowSpec() streamFlowSpec {
 	if b == nil {
 		return streamFlowSpec{err: nilFlowError()}
@@ -131,13 +124,6 @@ func (b *VideoFlowBuilder) VP8(bitrate int, options ...codecOption) *VideoFlowBu
 
 func (b *VideoFlowBuilder) VP9(bitrate int, options ...codecOption) *VideoFlowBuilder {
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *VideoFlowBuilder) To(labels ...string) PathSpec {
-	if b == nil {
-		return pathFromFlow(streamFlowSpec{err: nilFlowError()}, labels...)
-	}
-	return b.flowBuilder.to(labels...)
 }
 
 func (b *VideoFlowBuilder) flowSpec() streamFlowSpec {
@@ -174,10 +160,6 @@ func (b *flowBuilder) encode(codec CodecSpec) {
 		return
 	}
 	b.spec.encode = codec
-}
-
-func (b *flowBuilder) to(labels ...string) PathSpec {
-	return pathFromFlow(b.snapshot(), labels...)
 }
 
 func (b *flowBuilder) snapshot() streamFlowSpec {
@@ -234,18 +216,6 @@ func cloneTransformSpec(spec TransformSpec) TransformSpec {
 	return out
 }
 
-func pathFromFlow(spec streamFlowSpec, labels ...string) PathSpec {
-	return PathSpec{
-		name:       spec.name,
-		media:      spec.media,
-		steps:      streamStepsFromTransforms(spec.transforms),
-		transforms: cloneTransformSpecs(spec.transforms),
-		encode:     spec.encode,
-		labels:     append([]string(nil), labels...),
-		err:        spec.err,
-	}
-}
-
 func flowTransformStepName(spec TransformSpec) string {
 	switch {
 	case spec.Resize != nil:
@@ -290,32 +260,32 @@ func validateFlowMedia(operation string, node string, selected av.MediaType, spe
 	}
 }
 
-func pathInputCountError(node string, count int) error {
+func branchInputCountError(node string, count int) error {
 	return &BuildError{
 		Code:      "input_count_unsupported",
-		Operation: "build paths",
+		Operation: "build branches",
 		Node:      node,
-		Reason:    "paths currently compose from one input",
+		Reason:    "branches currently compose from one input",
 		Details: []string{
 			fmt.Sprintf("inputs=%d", count),
 		},
 		Suggestions: []string{
-			"start paths from goav.From(input).Audio() or goav.From(input).Video() with one input",
+			"start branches from goav.From(input).Audio() or goav.From(input).Video() with one input",
 			"use the expert graph API when combining several sources manually",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func pathOutputScopeError(node string) error {
+func branchOutputScopeError(node string) error {
 	return &BuildError{
 		Code:      "output_scope_mixed",
-		Operation: "build paths",
+		Operation: "build branches",
 		Node:      node,
-		Reason:    "path outputs are declared as labeled output groups",
+		Reason:    "branch targets are declared inside Branch(...).To(...)",
 		Suggestions: []string{
-			"route paths with .To(\"label\")",
-			"declare output groups once with .Outputs(goav.Output(\"label\", goav.FileOutput(...)))",
+			"route branches with .Branches(goav.Branch(name).To(goav.Target(name, endpoint)))",
+			"use stream .To(endpoint) only for one ordinary stream output",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
