@@ -410,8 +410,8 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuild() error = %v", err)
 	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("packet-copy recipe selected a migration graph compiler")
+	if resolved.mediaBuildKind != mediaBuildKindPacketCopy {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindPacketCopy)
 	}
 	if len(resolved.outputAttachments) != 1 {
 		t.Fatalf("resolved output attachments = %d, want 1", len(resolved.outputAttachments))
@@ -1244,7 +1244,7 @@ func TestJobStreamRuntimeCapabilitiesPassRejectsUnsupportedBuilder(t *testing.T)
 	}
 }
 
-func TestMigrationGraphCompilerPassWrapsUnsupportedRecipeShape(t *testing.T) {
+func TestRequireMediaPlanGraphSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
 	runtime := New().(*runtime)
 	builder := (&builder{runtime: runtime}).Input(format.Input{Name: "input.ivf"})
 	state := recipeCompileState{
@@ -1256,7 +1256,7 @@ func TestMigrationGraphCompilerPassWrapsUnsupportedRecipeShape(t *testing.T) {
 		builder: builder,
 	}
 
-	err := selectMigrationGraphCompilerPass().Apply(&state)
+	err := requireMediaPlanGraphSpecPass().Apply(&state)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want recipe_graph_unsupported wrapping ErrUnsupportedBuild", err)
@@ -1266,8 +1266,8 @@ func TestMigrationGraphCompilerPassWrapsUnsupportedRecipeShape(t *testing.T) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
 	}
-	if state.compiler != nil || state.migration != nil {
-		t.Fatalf("state compiler=%T migration=%T, want unset after unsupported selection", state.compiler, state.migration)
+	if state.specReady || state.mediaBuildKind != "" {
+		t.Fatalf("state specReady=%v mediaBuildKind=%q, want unset after unsupported selection", state.specReady, state.mediaBuildKind)
 	}
 }
 
@@ -1668,9 +1668,6 @@ func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
 	if resolved.builder == nil {
 		t.Fatal("compileJobRecipe() produced nil builder")
 	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("packet-copy recipe selected a migration graph compiler")
-	}
 	if !resolved.specReady {
 		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
 	}
@@ -1798,9 +1795,6 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	if len(builder.transcodes) != 1 {
 		t.Fatalf("builder transcodes = %d, want 1", len(builder.transcodes))
 	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("branch composition recipe selected a migration graph compiler")
-	}
 	if resolved.mediaBuildKind != mediaBuildKindBranch {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindBranch)
 	}
@@ -1846,9 +1840,6 @@ func TestCompileLiveFlowTeeRecipeUsesMediaPlanBranchComposer(t *testing.T) {
 	if len(builder.transcodes) != 1 || len(builder.rtpInputs) != 1 {
 		t.Fatalf("builder transcodes=%d rtp=%d, want live branch composer", len(builder.transcodes), len(builder.rtpInputs))
 	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("live flow tee recipe selected a migration graph compiler")
-	}
 	if resolved.mediaBuildKind != mediaBuildKindBranch {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindBranch)
 	}
@@ -1889,9 +1880,6 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("branch composition recipe selected a migration graph compiler")
-	}
 	if resolved.mediaBuildKind != mediaBuildKindBranch {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindBranch)
 	}
@@ -1926,9 +1914,6 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("packet-copy recipe selected a migration graph compiler")
 	}
 	if resolved.mediaBuildKind != mediaBuildKindPacketCopy {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindPacketCopy)
@@ -1968,9 +1953,6 @@ func TestRecipeResolvedBuildUsesMediaPlanFileFrameSink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("frame-sink recipe selected a migration graph compiler")
-	}
 	if resolved.mediaBuildKind != mediaBuildKindFrameSink {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindFrameSink)
 	}
@@ -2009,9 +1991,6 @@ func TestRecipeResolvedMediaPlanFrameSinkPreservesCustomStage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("custom-stage frame-sink recipe selected a migration graph compiler")
-	}
 	if resolved.mediaBuildKind != mediaBuildKindFrameSink {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindFrameSink)
 	}
@@ -2039,9 +2018,6 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPFrameSink(t *testing.T) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
-	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("RTP frame-sink recipe selected a migration graph compiler")
 	}
 	if resolved.mediaBuildKind != mediaBuildKindFrameSink {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindFrameSink)
@@ -2085,9 +2061,6 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
-	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("file encode recipe selected a migration graph compiler")
 	}
 	if resolved.mediaBuildKind != mediaBuildKindEncode {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindEncode)
@@ -2133,9 +2106,6 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
-	}
-	if resolved.compiler != nil || resolved.migration != nil {
-		t.Fatal("RTP encode recipe selected a migration graph compiler")
 	}
 	if resolved.mediaBuildKind != mediaBuildKindEncode {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindEncode)

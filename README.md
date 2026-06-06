@@ -228,6 +228,39 @@ analysis, preview, stats, and integration points. Full `pipeline.Source`,
 `pipeline.Stage`, and `pipeline.Sink` components remain available through the
 expert graph API.
 
+## Custom Codecs
+
+Custom codecs use the same recipe concepts as built-ins: register a concrete
+decoder or encoder factory on the runtime, then reference it with `Codec`.
+
+```go
+desc := goav.CodecDescriptor{
+    ID:   "pcm_s16",
+    Name: "PCM S16",
+    Type: av.MediaAudio,
+}
+
+func newRuntime() goav.Runtime {
+    return goav.New(
+        goav.WithDefaults(),
+        goav.WithDecoder(desc, pcmDecoderFactory{}),
+        goav.WithEncoder(desc, pcmEncoderFactory{}),
+    )
+}
+
+pcm := goav.Codec("pcm_s16", av.MediaAudio,
+    goav.SampleRate(48_000),
+    goav.Channels(goav.Stereo),
+)
+
+return goav.From(input).
+    Audio().
+    Decode().
+    Encode(pcm).
+    To(output).
+    Run(ctx)
+```
+
 ## Expert Graph API
 
 `Runtime.Graph()` is the escape hatch for manual wiring.
@@ -257,6 +290,8 @@ Implemented now:
 - `From(input)` as the public composition front door.
 - packet-preserving `Copy().To(...)`;
 - stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode;
+- custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
+  generic `Codec` specs;
 - reusable `AudioFlow` and `VideoFlow` with planned `Tee`;
 - branch composition through `Tap(...).Branch(...).To(label).Output(label, ...)`;
 - runtime branch attachment through `Task.Taps()` and `Branch(...).FromTap(...)`;

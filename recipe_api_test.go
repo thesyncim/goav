@@ -669,7 +669,7 @@ func TestReusableComponentCatalogIsDocumented(t *testing.T) {
 		"stable",
 		"experimental",
 		"descriptor-only",
-		"internal migration scaffold",
+		"internal scaffold",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("docs/COMPONENTS.md missing %q", want)

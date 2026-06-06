@@ -38,7 +38,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | single `NewSession` PeerConnection entry, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit factory registry, event-preserving frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | internal migration `Plan` contract, branch-to-output selection model, mixed audio/video output grouping, resize/resample branch insertion through filter factories | retire as a special runtime path in favor of generic `MediaPlan` branches |
-| runtime | composition-first `From(input)` recipe front door with packet-preserving `Copy().To(...)`, explicit stream `.Decode()`, stream-scoped audio/video builders, `Tap(...).Branch(...)` declared branches, reusable `AudioFlow`/`VideoFlow` intent fragments with `Tee`, stream-local `Resize`/`Resample` transforms, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, private recipe intent compiler state with validation, `MediaPlan` branch IR and `Explain(ctx)` branch/decision/tap reports, internal transcode-plan migration lowering, migration graph-compiler selection, planned `pipeline.Spec` emission for `Job`, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for migration compiler coverage, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, grouped audio/video branch compiler with transform branches and shared mux outputs, buffered multi-output proof, live RTP/WebRTC flow `Tee` compiler, direct-graph runtime `Task.Attach` stage/sink attachments from named taps with `Attachment.Close(ctx)`/`Task.Detach(ctx, h)`, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | move `Describe` and `Build` onto `MediaPlan -> pipeline.Spec -> pipeline.Graph`, then shrink workflow-specific compiler dispatch |
+| runtime | composition-first `From(input)` recipe front door with packet-preserving `Copy().To(...)`, explicit stream `.Decode()`, stream-scoped audio/video builders, `Tap(...).Branch(...)` declared branches, reusable `AudioFlow`/`VideoFlow` intent fragments with `Tee`, stream-local `Resize`/`Resample` transforms, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, built-in and generic `Codec` specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, custom codec registration through `WithDecoder` and `WithEncoder`, private recipe intent compiler state with validation, `MediaPlan` branch IR and `Explain(ctx)` branch/decision/tap reports, media-plan graph recognition required for normal recipe build/describe, planned `pipeline.Spec` emission for `Job`, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for current media-plan build kinds, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, grouped audio/video branch compiler with transform branches and shared mux outputs, buffered multi-output proof, live RTP/WebRTC flow `Tee` compiler, direct-graph runtime `Task.Attach` stage/sink attachments from named taps with `Attachment.Close(ctx)`/`Task.Detach(ctx, h)`, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | complete direct media-plan graph construction for remaining composer/transcode paths and deepen capability planning |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning from RTP decode bounds, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420/I422/I444 frame mapping with yuv420p/yuv422p/yuv444p accepted as aliases, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
@@ -786,14 +786,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     same build-preflight path, return `PlanReport` with structured inputs,
     streams, outputs, adapter requirements, warnings, and `pipeline.Spec`, and
     keep text/diagram rendering outside core. Done.
-223. Add the first `MediaPlan` migration IR:
+223. Add the first `MediaPlan` planner IR:
     recipe compilation now emits inputs, stream selectors, branch operations,
-    outputs, and planner decisions before lowering to the migration builder.
+    outputs, and planner decisions before runtime lowering.
     `Explain(ctx)` reports branch operation chains and decisions, and transcode
     explains as ordinary demux/select/decode/transform/encode branches instead
-    of a special transcode operation. `Build` and `Describe` still use the
-    migration compilers while the next slices move execution onto
-    `MediaPlan -> pipeline.Spec -> pipeline.Graph`. Done.
+    of a special transcode operation. Done.
 224. Move the public recipe direction to composition-first `From`:
     top-level workflow helper sugar is removed before release, packet-preserving
     work is expressed as `From(input).Copy().To(...)`, stream work is expressed
@@ -803,12 +801,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Task.Taps()` plus `goav.Branch(name).FromTap(name)`. Built tasks now carry
     planned tap metadata for stable runtime attachment points, including taps
     after decode, transforms, custom stages, and encode in the media plan. Done.
-225. Start moving graph description off the migration compiler list:
+225. Start moving graph description onto the media-plan compiler path:
     packet-preserving `From(input).Copy().To(...)` file/remux and RTP/WebRTC
     record/fanout recipes now emit exact `pipeline.Spec` values from the
-    recipe compiler's media-plan pass, with migration graph description kept as
-    the fallback only for lower-level or not-yet-recognized runtime shapes while
-    recipes move to `MediaPlan -> pipeline.Graph`.
+    recipe compiler's media-plan pass while recipes move to
+    `MediaPlan -> pipeline.Graph`.
     Done.
 226. Harden runtime branch attachment at operation boundaries:
     stream recipes now have coverage for `Task.Attach(...FromTap(...))` after a
@@ -836,6 +833,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     branch-composer path, preserving shared decode, per-branch transforms,
     encoders, shared mux outputs, and RTP/WebRTC receive without migration
     compiler selection. Done.
+231. Require media-plan recognition for recipe compilation and keep custom
+    codecs orthogonal:
+    normal `Job` and flow/transcode recipe compile chains now end with a
+    media-plan requirement instead of falling back to the fixed runtime compiler
+    list. Unsupported recipe shapes fail with `recipe_graph_unsupported` after
+    the media-plan pass. Custom codec intent uses the same `Codec` spec as
+    built-ins, with concrete factories registered through `WithDecoder` and
+    `WithEncoder`; descriptor-only registration still reports unavailable
+    factories instead of pretending encode/decode is implemented. Done.
 
 ## First Vertical Slice
 
@@ -1034,7 +1040,7 @@ Required proof:
 | Gate | Evidence | State |
 | --- | --- | --- |
 | Clear minimal architecture | `README.md`, `docs/ARCHITECTURE.md`, package boundaries | active |
-| Simple high-level API | recipes, stream builders, flow tee, runtime attach, structured `Explain(ctx)`, `MediaPlan` branch IR, and migration compilers for current execution | first slices active |
+| Simple high-level API | recipes, stream builders, flow tee, runtime attach, structured `Explain(ctx)`, `MediaPlan` branch IR, media-plan build kinds, and custom codec hooks | first slices active |
 | Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts | active |
 | Realtime Opus vertical slice | RTP/WebRTC boundary, Opus depacketizer, `gopus` decoder | active |
 | Allocation guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters | active for implemented paths |
@@ -1045,43 +1051,42 @@ Required proof:
 
 ## Next Slices
 
-1. Move `Describe()` to `MediaPlan.Spec()` equivalence for packet copy, generic
-   `From`, stream decode, flow tee, and branch composition recipes.
-2. Move `Build(ctx)` for `From`, packet copy, stream decode, flow tee, and
-   branch composition to direct `MediaPlan -> pipeline.Spec -> pipeline.Graph`
-   construction, keeping the old builder/compiler dispatch only as migration
-   fallback.
-3. Replace the special transcode plan/compiler path with generic branch
+1. Complete `MediaPlan.Spec()` equivalence for remaining generic `From` and
+   mixed-output composer shapes.
+2. Move the remaining media-plan build kinds toward direct
+   `MediaPlan -> pipeline.Spec -> pipeline.Graph` construction and shrink
+   internal builder lowering behind those build kinds.
+3. Replace the special transcode plan path with generic branch
    lowering: selected stream, operation chain, output refs, mux groups, and
    shared upstream decode where branches select the same input stream.
 4. Add first-class capability data for stream, codec, transform, and container
    planning so missing adapters and incompatible mux/transform chains fail
    before runtime execution with useful suggestions.
-5. Prove equivalent plans where possible between declared
+5. Keep custom codec support orthogonal by proving generic `Codec` specs through
+   decode, transform, encode, flow, and branch paths without codec-specific
+   helpers.
+6. Prove equivalent plans where possible between declared
    `From(...).Tap(...).Branch(...)` paths and reusable `Tee(...)` flows.
-6. Keep README examples executable with `Default()` or clearly behind explicit
+7. Keep README examples executable with `Default()` or clearly behind explicit
    adapter requirements; WebM/Ogg remain high-value adapter work after the
    planner can compose them naturally.
-7. Extend observability from `Task.Stats()` into traces, drop reasons, and
+8. Extend observability from `Task.Stats()` into traces, drop reasons, and
    latency counters for realtime debugging.
-8. Add allocation, event, lifecycle, graph-equivalence, and no-dispatch
+9. Add allocation, event, lifecycle, graph-equivalence, and no-dispatch
    regression tests for each planner slice.
-9. Update this tracker with the new evidence and next pressure point.
+10. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: normal recipes must move off workflow dispatch. The
-public recipe surface is already small, flows expand into intent instead of a
-parallel graph language, `Tee` remains planned fanout, and runtime
-`Task.Attach` remains the late branch control plane for running direct graphs.
-`MediaPlan` is now the migration IR that expresses record, stream decode,
+Current pressure point: keep normal recipes on one media-plan compiler path.
+The public recipe surface is small: `From`, stream builders, `Tap`, `Branch`,
+`Tee`, `Codec`, outputs, and runtime `Attach`. Flows expand into intent instead
+of a parallel graph language, and `Task.Attach` remains the late branch control
+plane for running direct graphs. `MediaPlan` expresses record, stream decode,
 encode, flow tee, and transcode as input refs, stream selectors, branch
-operations, output refs, and planner decisions. `Explain(ctx)` reports that
-shape today, proving mixed audio/video transcode as ordinary branch operations
-instead of a special transcode runtime mode. `Build` and `Describe` still lower
-through the migration builder and fixed graph compiler list, so the next
-implementation work is to make `MediaPlan` emit the authoritative
-`pipeline.Spec`, then build the graph directly from that spec. Capability
-planning and mux compatibility diagnostics are the next correctness layer
-needed before WebM/Ogg and late muxed runtime outputs can land cleanly.
+operations, output refs, taps, and planner decisions. `Describe`, `Build`, and
+`Explain(ctx)` now require a supported media-plan shape for normal recipes.
+The next implementation work is to finish direct graph construction from that
+plan, then add capability planning and mux compatibility diagnostics before
+WebM/Ogg and late muxed runtime outputs land cleanly.
 
 ## Validation Gates
 

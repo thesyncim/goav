@@ -41,32 +41,31 @@ validates, probes, resolves streams, resolves formats/codecs, chooses
 packet-copy or decode paths, inserts demux or depacketize boundaries, inserts
 select/decode/transform/stage/encode operations, groups branches by outputs,
 assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
-the runnable graph. `MediaPlan` is the migration IR for that work: declared
+the runnable graph. `MediaPlan` is the planner IR for that work: declared
 branches, flow tee branches, decode recipes, and packet-preserving copy/remux
-all become ordinary branch operations over the same model. The current private
-graph compilers are migration scaffolding while each workflow moves onto that
-shared path.
+all become ordinary branch operations over the same model. Recipe compilation
+must recognize a media-plan shape before it can describe or build a normal
+workflow.
 
 The active recipe compiler state carries public `Intent` plus concrete readers,
-writers, sinks, and stages through validation, media-plan creation, migration
-builder lowering, and planned-spec emission. `Job.Explain(ctx)` already reports
-the `MediaPlan` branch operations, taps, and decisions. `Build` and `Describe`
-still use the migration graph compilers for
-execution, so the next architectural pressure is moving those calls to
-`MediaPlan -> pipeline.Spec -> pipeline.Graph` directly.
+writers, sinks, and stages through validation, media-plan creation, planner
+lowering, and planned-spec emission. `Job.Explain(ctx)` reports the
+`MediaPlan` branch operations, taps, and decisions. The next architectural
+pressure is to shrink the remaining internal builder lowering behind each
+media-plan build kind until graph construction is directly
+`MediaPlan -> pipeline.Spec -> pipeline.Graph`.
 
 The handle-based graph builder remains available as the advanced layer through
 `Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed
 handles such as `source.Stream("audio")` and `decode.Out()` to node inputs.
-The legacy builder remains an internal compiler target, but it is no longer a
-method on the public `Runtime` interface or an exported top-level type.
-Described graphs and execution graphs must stay equivalent, whether the current
-slice is still using a fixed compiler or has moved onto intent passes. The graph
-layer stays available for inspection and custom stages. Recipe `Explain(ctx)`
-returns structured workflow-report data, branch operations, planner decisions,
-and the same `pipeline.Spec`; optional diagram or prose rendering lives outside
-runtime composition. A route carries all media by default, or matches one stream
-or event type.
+The internal builder is no longer a method on the public `Runtime` interface or
+an exported top-level type. Described graphs and execution graphs must stay
+equivalent for every media-plan build kind. The graph layer stays available for
+inspection and custom stages. Recipe `Explain(ctx)` returns structured
+workflow-report data, branch operations, planner decisions, and the same
+`pipeline.Spec`; optional diagram or prose rendering lives outside runtime
+composition. A route carries all media by default, or matches one stream or
+event type.
 
 `Task.Attach` is the first runtime control-plane operation. It attaches a named
 stage/sink branch to a built direct graph and returns an attachment handle with
@@ -80,7 +79,7 @@ rebuilding the task. Buffered runtime attachments and late muxed output branches
 remain separate slices because they need queue, worker, and mux-output lifecycle
 management.
 
-The current compilers cover:
+Current graph execution covers:
 
 - empty graphs for lifecycle tests
 - explicit `Source -> Stage -> Sink` graphs with handle-based connects,
@@ -284,8 +283,8 @@ That shape supports:
 `Transcode` is user-facing syntax, not a runtime engine. It lowers into the
 same `MediaPlan` branch shape as `From(input).Audio()/Video()` and flow
 `Tee(...)`: input ref, stream selector, operation chain, output refs, and mux
-groups. The older `transcode` package and runtime compiler remain migration
-scaffolding while execution moves onto direct media-plan graph construction.
+groups. Mixed audio/video outputs are modeled as mux groups receiving ordinary
+encoded branches.
 
 Multiple branches that select the same input stream should share upstream demux,
 selection, and decode nodes unless a future isolation policy asks otherwise.

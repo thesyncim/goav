@@ -7,7 +7,6 @@ import (
 
 const (
 	graphSpecOriginMediaPlan = "media_plan"
-	graphSpecOriginMigration = "migration"
 
 	mediaBuildKindPacketCopy = "packet_copy"
 	mediaBuildKindFrameSink  = "frame_sink"

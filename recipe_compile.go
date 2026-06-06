@@ -2,7 +2,6 @@ package goav
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
@@ -15,8 +14,6 @@ type recipeResolved struct {
 	intent                   Intent
 	runtime                  Runtime
 	builder                  builderAPI
-	migration                *builder
-	compiler                 builderCompiler
 	spec                     pipeline.Spec
 	specReady                bool
 	specOrigin               string
@@ -56,8 +53,6 @@ type recipeCompileState struct {
 	plan transcodepkg.Plan
 
 	builder        builderAPI
-	migration      *builder
-	compiler       builderCompiler
 	spec           pipeline.Spec
 	specReady      bool
 	specOrigin     string
@@ -165,8 +160,6 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		intent:                   state.intent,
 		runtime:                  state.runtime,
 		builder:                  state.builder,
-		migration:                state.migration,
-		compiler:                 state.compiler,
 		spec:                     state.spec,
 		specReady:                state.specReady,
 		specOrigin:               state.specOrigin,
@@ -204,11 +197,7 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 	case mediaBuildKindBranch:
 		task, err = r.buildMediaPlanBranchComposerTask(ctx)
 	default:
-		if r.compiler != nil && r.migration != nil {
-			task, err = r.compiler.build(ctx, r.migration)
-		} else {
-			task, err = r.builder.Build(ctx)
-		}
+		err = recipeGraphUnsupportedError("build recipe", r.intent)
 	}
 	if err != nil {
 		return nil, err
@@ -311,8 +300,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		lowerJobStreamPass(),
 		lowerJobOutputsPass(),
 		emitMediaPlanGraphSpecPass(),
-		selectMigrationGraphCompilerPass(),
-		emitMigrationGraphSpecPass(),
+		requireMediaPlanGraphSpecPass(),
 	}}.Compile(state)
 }
 
@@ -363,8 +351,7 @@ func compileTranscodeRecipeWithOptions(job *transcodeJob, options recipeCompileO
 		openRecipeRuntimeBuilderPass(),
 		lowerTranscodePlanPass(),
 		emitMediaPlanGraphSpecPass(),
-		selectMigrationGraphCompilerPass(),
-		emitMigrationGraphSpecPass(),
+		requireMediaPlanGraphSpecPass(),
 	}}.Compile(state)
 }
 
@@ -1001,28 +988,6 @@ func lowerTranscodePlanPass() recipeCompilePass {
 	}}
 }
 
-func selectMigrationGraphCompilerPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "select migration graph compiler", fn: func(state *recipeCompileState) error {
-		if state.mediaBuildKind != "" {
-			return nil
-		}
-		builder, ok := state.builder.(*builder)
-		if !ok {
-			return nil
-		}
-		compiler, err := builder.selectCompiler()
-		if err != nil {
-			if errors.Is(err, ErrUnsupportedBuild) {
-				return recipeGraphUnsupportedError(state.operation, state.intent)
-			}
-			return err
-		}
-		state.migration = builder
-		state.compiler = compiler
-		return nil
-	}}
-}
-
 func recipeGraphUnsupportedError(operation string, intent Intent) error {
 	details := []string{
 		fmt.Sprintf("recipe: %s", firstNonEmpty(intent.Name, "unnamed")),
@@ -1033,7 +998,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 	return &BuildError{
 		Code:      "recipe_graph_unsupported",
 		Operation: operation,
-		Reason:    "recipe intent did not match any standard graph compiler",
+		Reason:    "recipe intent did not match a supported media-plan graph",
 		Details:   details,
 		Suggestions: []string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
@@ -1044,21 +1009,11 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 	}
 }
 
-func emitMigrationGraphSpecPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "emit migration graph spec", fn: func(state *recipeCompileState) error {
-		if state.specReady {
+func requireMediaPlanGraphSpecPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "require media plan graph spec", fn: func(state *recipeCompileState) error {
+		if state.specReady && state.specOrigin == graphSpecOriginMediaPlan && state.mediaBuildKind != "" {
 			return nil
 		}
-		if state.migration == nil || state.compiler == nil {
-			return nil
-		}
-		spec, err := state.migration.describeWithCompiler(state.compiler)
-		if err != nil {
-			return err
-		}
-		state.spec = spec
-		state.specReady = true
-		state.specOrigin = graphSpecOriginMigration
-		return nil
+		return recipeGraphUnsupportedError(state.operation, state.intent)
 	}}
 }

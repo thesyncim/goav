@@ -46,6 +46,24 @@ func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
 	}
 }
 
+func WithCodecDescriptor(desc CodecDescriptor) Option {
+	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		registry.RegisterDescriptor(desc)
+	})
+}
+
+func WithDecoder(desc CodecDescriptor, factory DecoderFactory) Option {
+	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		registry.RegisterDecoder(desc, factory)
+	})
+}
+
+func WithEncoder(desc CodecDescriptor, factory EncoderFactory) Option {
+	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		registry.RegisterEncoder(desc, factory)
+	})
+}
+
 func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
 	return func(runtime *runtime) {
 		if register != nil {

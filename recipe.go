@@ -170,6 +170,13 @@ func Copy() CodecSpec {
 	return CodecSpec{Copy: true}
 }
 
+func Codec(id av.CodecID, media av.MediaType, options ...codecOption) CodecSpec {
+	return codecSpec(id, media, av.CodecParameters{
+		ID:   id,
+		Type: media,
+	}, options...)
+}
+
 func Opus(options ...codecOption) CodecSpec {
 	return codecSpec(av.CodecOpus, av.MediaAudio, av.CodecParameters{
 		ID:            av.CodecOpus,
@@ -245,6 +252,24 @@ func SampleRate(sampleRate int) codecOption {
 		spec.Parameters.SampleRate = sampleRate
 		spec.Parameters.ClockRate = uint32(sampleRate)
 		spec.sampleRateSet = true
+	}
+}
+
+func ClockRate(clockRate uint32) codecOption {
+	return func(spec *CodecSpec) {
+		spec.Parameters.ClockRate = clockRate
+	}
+}
+
+func Parameters(parameters av.CodecParameters) codecOption {
+	return func(spec *CodecSpec) {
+		spec.Parameters = parameters
+		if spec.Parameters.ID == "" {
+			spec.Parameters.ID = spec.ID
+		}
+		if spec.Parameters.Type == "" {
+			spec.Parameters.Type = spec.Type
+		}
 	}
 }
 

@@ -11,8 +11,9 @@ integrations belong under `adapters/...`.
 
 - Implement `codec.DecoderFactory`, `codec.EncoderFactory`,
   `format.DemuxerFactory`, `format.MuxerFactory`, or `filter.Factory`.
-- Register with an explicit registry instance; blank-import registration can be
-  added later as optional convenience.
+- Application-local codec factories can be registered with `goav.WithDecoder`
+  and `goav.WithEncoder`. Adapter packages should still expose an explicit
+  `Register(*codec.SimpleRegistry)` hook for runtime bundles.
 - Allocate only during construction or `Open`.
 - Hot-path methods must use caller-owned result structs and preallocated output
   buffers.
@@ -33,6 +34,11 @@ integrations belong under `adapters/...`.
 - Decoder factories may implement `codec.DecodeStateFactory` so high-level
   runtimes can provision adapter state while low-level callers still pass exact
   `OpaqueState` values explicitly.
+
+For codecs outside the built-in Opus, VP8, VP9, H264, and AV1 specs, use
+`goav.Codec(id, media, ...)` in recipes. The planner treats custom specs the
+same way as built-ins; availability comes from the decoder and encoder
+factories registered on the selected runtime.
 
 ## Current Adapters
 
