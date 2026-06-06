@@ -110,6 +110,84 @@ func TestMuxerDemuxerPreservesSegmentInfoMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesAttachments(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	opts := MuxerOptions{
+		Attachments: []Attachment{
+			{
+				Filename:    "cover.png",
+				MIMEType:    "image/png",
+				Description: "cover art",
+				Data:        []byte{0x89, 0x50, 0x4e, 0x47},
+			},
+			{
+				UID:      42,
+				Filename: "font.otf",
+				MIMEType: "font/otf",
+				Data:     []byte{1, 2, 3, 4},
+			},
+		},
+	}
+	muxer, err := NewMuxer(ws, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.Attachments[0].Data[0] = 0xff
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	positions := collectTopLevelPositions(t, ws.bytes)
+	if _, ok := positions[idAttachments]; !ok {
+		t.Fatalf("missing attachments in top-level positions %+v", positions)
+	}
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSeekEntry(t, demuxer.SeekEntries(), idAttachments, positions[idAttachments])
+	want := []Attachment{
+		{
+			UID:         1,
+			Filename:    "cover.png",
+			MIMEType:    "image/png",
+			Description: "cover art",
+			Data:        []byte{0x89, 0x50, 0x4e, 0x47},
+		},
+		{
+			UID:      42,
+			Filename: "font.otf",
+			MIMEType: "font/otf",
+			Data:     []byte{1, 2, 3, 4},
+		},
+	}
+	got := demuxer.Attachments()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("attachments = %+v, want %+v", got, want)
+	}
+	got[0].Data[0] = 0xee
+	fresh := demuxer.Attachments()
+	if !bytes.Equal(fresh[0].Data, want[0].Data) {
+		t.Fatalf("attachment data alias was not protected: %x", fresh[0].Data)
+	}
+}
+
 func TestMuxerDemuxerRoundTrip(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{DocType: "webm"})
@@ -2332,6 +2410,49 @@ func TestMuxerRejectsInvalidSegmentInfoMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsInvalidAttachments(t *testing.T) {
+	tests := []struct {
+		name        string
+		attachments []Attachment
+	}{
+		{
+			name: "missing filename",
+			attachments: []Attachment{{
+				MIMEType: "text/plain",
+				Data:     []byte{1},
+			}},
+		},
+		{
+			name: "missing media type",
+			attachments: []Attachment{{
+				Filename: "note.txt",
+				Data:     []byte{1},
+			}},
+		},
+		{
+			name: "missing data",
+			attachments: []Attachment{{
+				Filename: "note.txt",
+				MIMEType: "text/plain",
+			}},
+		},
+		{
+			name: "duplicate uid",
+			attachments: []Attachment{
+				{UID: 7, Filename: "one.txt", MIMEType: "text/plain", Data: []byte{1}},
+				{UID: 7, Filename: "two.txt", MIMEType: "text/plain", Data: []byte{2}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewMuxer(discardWriter{}, MuxerOptions{Attachments: tt.attachments}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
 func TestMuxerSplitsClustersBeforeBlockTimecodeOverflow(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -3392,6 +3513,7 @@ func TestDemuxerValidatesTopLevelMetadataCRC32(t *testing.T) {
 		{name: "seekhead", id: idSeekHead},
 		{name: "tracks", id: idTracks},
 		{name: "cues", id: idCues},
+		{name: "attachments", id: idAttachments},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name+" valid crc32", func(t *testing.T) {
@@ -3402,6 +3524,37 @@ func TestDemuxerValidatesTopLevelMetadataCRC32(t *testing.T) {
 		})
 		t.Run(tt.name+" crc32 mismatch", func(t *testing.T) {
 			data := makeMetadataCRCMatroskaData(t, tt.id, func(payload []byte) {
+				payload[len(payload)-1] ^= 0x01
+			})
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestDemuxerValidatesNestedMetadataCRC32(t *testing.T) {
+	tests := []string{
+		"seek",
+		"track",
+		"video",
+		"audio",
+		"colour",
+		"mastering",
+		"projection",
+		"cuepoint",
+		"cuepositions",
+		"attachedfile",
+	}
+	for _, name := range tests {
+		t.Run(name+" valid crc32", func(t *testing.T) {
+			data := makeNestedCRCMatroskaData(t, name, nil)
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		t.Run(name+" crc32 mismatch", func(t *testing.T) {
+			data := makeNestedCRCMatroskaData(t, name, func(payload []byte) {
 				payload[len(payload)-1] ^= 0x01
 			})
 			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
@@ -4589,10 +4742,302 @@ func makeMetadataCRCMatroskaData(tb testing.TB, checkedID ebml.ID, mutate func([
 			tb.Fatal(err)
 		}
 	}
+	if checkedID == idAttachments {
+		var payload bytes.Buffer
+		if err := writeAttachedFile(ebml.NewWriter(&payload), Attachment{
+			UID:      1,
+			Filename: "note.txt",
+			MIMEType: "text/plain",
+			Data:     []byte("hello"),
+		}); err != nil {
+			tb.Fatal(err)
+		}
+		if err := writeMasterWithCRC32(muxer.ebml, idAttachments, payload.Bytes(), mutate); err != nil {
+			tb.Fatal(err)
+		}
+	}
 	if err := muxer.ebml.WriteElement(idCluster, nil); err != nil {
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func makeNestedCRCMatroskaData(tb testing.TB, target string, mutate func([]byte)) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.writeEBMLHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.ebml.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
+		tb.Fatal(err)
+	}
+	muxer.segmentData = muxer.ebml.Offset()
+	if target == "seek" {
+		if err := muxer.ebml.WriteElement(idSeekHead, checkedElement(tb, idSeek, seekEntryPayload(tb, idInfo, 0), mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if err := writeInfoWithElements(muxer.ebml, nil); err != nil {
+		tb.Fatal(err)
+	}
+	switch target {
+	case "track", "video", "audio", "colour", "mastering", "projection":
+		if err := writeNestedCRCTracks(muxer.ebml, target, mutate); err != nil {
+			tb.Fatal(err)
+		}
+	default:
+		if err := writeTracksWithVideoDimensions(muxer.ebml, 16, 16); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	switch target {
+	case "cuepoint":
+		if err := muxer.ebml.WriteElement(idCues, checkedElement(tb, idCuePoint, cuePointPayload(tb, false, nil), mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	case "cuepositions":
+		if err := muxer.ebml.WriteElement(idCues, cuePointElement(tb, true, mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if target == "attachedfile" {
+		if err := muxer.ebml.WriteElement(idAttachments, checkedElement(tb, idAttachedFile, attachedFilePayload(tb), mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if err := muxer.ebml.WriteElement(idCluster, nil); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func writeNestedCRCTracks(writer *ebml.Writer, target string, mutate func([]byte)) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	trackType := uint64(matroskaTrackVideo)
+	codecID := codecIDVP8
+	if target == "audio" {
+		trackType = matroskaTrackAudio
+		codecID = codecIDOpus
+	}
+	if err := ew.WriteUInt(idTrackNumber, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, trackType); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, codecID); err != nil {
+		return err
+	}
+	switch target {
+	case "audio":
+		if _, err := ew.Write(checkedElement(nil, idAudio, audioPayload(), mutate)); err != nil {
+			return err
+		}
+	case "video", "colour", "mastering", "projection":
+		if _, err := ew.Write(videoElementForNestedCRC(target, mutate)); err != nil {
+			return err
+		}
+	default:
+		if err := writeVideo(ew, VideoConfig{Width: 16, Height: 16}); err != nil {
+			return err
+		}
+	}
+	if target == "track" {
+		if _, err := tw.Write(checkedElement(nil, idTrackEntry, entry.Bytes(), mutate)); err != nil {
+			return err
+		}
+	} else if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+func videoElementForNestedCRC(target string, mutate func([]byte)) []byte {
+	var video bytes.Buffer
+	vw := ebml.NewWriter(&video)
+	if err := vw.WriteUInt(idPixelWidth, 16); err != nil {
+		panic(err)
+	}
+	if err := vw.WriteUInt(idPixelHeight, 16); err != nil {
+		panic(err)
+	}
+	switch target {
+	case "colour", "mastering":
+		if _, err := vw.Write(colourElementForNestedCRC(target, mutate)); err != nil {
+			panic(err)
+		}
+	case "projection":
+		if _, err := vw.Write(checkedElement(nil, idProjection, projectionPayload(), mutate)); err != nil {
+			panic(err)
+		}
+	}
+	if target == "video" {
+		return checkedElement(nil, idVideo, video.Bytes(), mutate)
+	}
+	return elementBytes(idVideo, video.Bytes())
+}
+
+func colourElementForNestedCRC(target string, mutate func([]byte)) []byte {
+	var colour bytes.Buffer
+	cw := ebml.NewWriter(&colour)
+	if err := cw.WriteUInt(idMatrixCoefficients, 1); err != nil {
+		panic(err)
+	}
+	if target == "mastering" {
+		if _, err := cw.Write(checkedElement(nil, idMasteringMetadata, masteringPayload(), mutate)); err != nil {
+			panic(err)
+		}
+	}
+	if target == "colour" {
+		return checkedElement(nil, idColour, colour.Bytes(), mutate)
+	}
+	return elementBytes(idColour, colour.Bytes())
+}
+
+func checkedElement(tb testing.TB, id ebml.ID, payload []byte, mutate func([]byte)) []byte {
+	if tb != nil {
+		tb.Helper()
+	}
+	var buffer bytes.Buffer
+	writer := ebml.NewWriter(&buffer)
+	if err := writeMasterWithCRC32(writer, id, payload, mutate); err != nil {
+		if tb != nil {
+			tb.Fatal(err)
+		}
+		panic(err)
+	}
+	return buffer.Bytes()
+}
+
+func elementBytes(id ebml.ID, payload []byte) []byte {
+	var buffer bytes.Buffer
+	writer := ebml.NewWriter(&buffer)
+	if err := writer.WriteElement(id, payload); err != nil {
+		panic(err)
+	}
+	return buffer.Bytes()
+}
+
+func seekEntryPayload(tb testing.TB, id ebml.ID, position uint64) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	var idPayload [ebml.MaxIDWidth]byte
+	n, err := ebml.EncodeID(idPayload[:], id)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeBinary(writer, idSeekID, idPayload[:n]); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idSeekPosition, position); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func cuePointElement(tb testing.TB, checkedPositions bool, mutate func([]byte)) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	writer := ebml.NewWriter(&buffer)
+	payload := cuePointPayload(tb, checkedPositions, mutate)
+	if err := writer.WriteElement(idCuePoint, payload); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func cuePointPayload(tb testing.TB, checkedPositions bool, mutate func([]byte)) []byte {
+	tb.Helper()
+	var point bytes.Buffer
+	writer := ebml.NewWriter(&point)
+	if err := writer.WriteUInt(idCueTime, 0); err != nil {
+		tb.Fatal(err)
+	}
+	positionsPayload := cueTrackPositionsPayload(tb)
+	if checkedPositions {
+		if _, err := writer.Write(checkedElement(tb, idCueTrackPositions, positionsPayload, mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	} else if err := writer.WriteElement(idCueTrackPositions, positionsPayload); err != nil {
+		tb.Fatal(err)
+	}
+	return point.Bytes()
+}
+
+func cueTrackPositionsPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var positions bytes.Buffer
+	writer := ebml.NewWriter(&positions)
+	if err := writer.WriteUInt(idCueTrack, 1); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idCueClusterPosition, 0); err != nil {
+		tb.Fatal(err)
+	}
+	return positions.Bytes()
+}
+
+func audioPayload() []byte {
+	var audio bytes.Buffer
+	writer := ebml.NewWriter(&audio)
+	if err := writer.WriteFloat64(idSamplingFreq, 48000); err != nil {
+		panic(err)
+	}
+	if err := writer.WriteUInt(idChannels, 2); err != nil {
+		panic(err)
+	}
+	return audio.Bytes()
+}
+
+func masteringPayload() []byte {
+	var metadata bytes.Buffer
+	writer := ebml.NewWriter(&metadata)
+	if err := writer.WriteFloat64(idLuminanceMax, 1000); err != nil {
+		panic(err)
+	}
+	if err := writer.WriteFloat64(idLuminanceMin, 0.01); err != nil {
+		panic(err)
+	}
+	return metadata.Bytes()
+}
+
+func projectionPayload() []byte {
+	var projection bytes.Buffer
+	writer := ebml.NewWriter(&projection)
+	if err := writer.WriteUInt(idProjectionType, 0); err != nil {
+		panic(err)
+	}
+	return projection.Bytes()
+}
+
+func attachedFilePayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writer.WriteString(idFileName, "note.txt"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteString(idFileMediaType, "text/plain"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeBinary(writer, idFileData, []byte("hello")); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idFileUID, 1); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
 }
 
 func seekHeadPayload(tb testing.TB) []byte {

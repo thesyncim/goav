@@ -23,6 +23,7 @@ type Muxer struct {
 	seekHeadReserve int
 	infoPosition    uint64
 	tracksPosition  uint64
+	attachPosition  uint64
 	cuesPosition    uint64
 	clusterPosition uint64
 	segmentPatch    ebml.SizePatch
@@ -46,6 +47,11 @@ func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
 	if err := validateSegmentInfo(opts.Info); err != nil {
 		return nil, err
 	}
+	attachments, err := normalizeAttachments(opts.Attachments)
+	if err != nil {
+		return nil, err
+	}
+	opts.Attachments = attachments
 	m := &Muxer{}
 	m.init(w, opts)
 	return m, nil
@@ -56,6 +62,7 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.ebml = ebml.NewWriter(w)
 	m.options = normalizeMuxerOptions(opts)
 	m.options.Info = cloneSegmentInfo(m.options.Info)
+	m.options.Attachments = cloneAttachments(m.options.Attachments)
 	m.tracks = m.tracks[:0]
 	m.cues = m.cues[:0]
 	m.headerWritten = false
@@ -66,6 +73,7 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.seekHeadReserve = 0
 	m.infoPosition = 0
 	m.tracksPosition = 0
+	m.attachPosition = 0
 	m.cuesPosition = 0
 	m.clusterPosition = 0
 	m.segmentPatch = ebml.SizePatch{}
@@ -401,6 +409,12 @@ func (m *Muxer) writeHeader() error {
 	if err := m.writeTracks(); err != nil {
 		return err
 	}
+	if len(m.options.Attachments) != 0 {
+		m.attachPosition = m.relativeSegmentPosition()
+		if err := m.writeAttachments(); err != nil {
+			return err
+		}
+	}
 	m.headerWritten = true
 	return nil
 }
@@ -598,6 +612,47 @@ func validateSegmentUUID(value []byte) error {
 	return ErrInvalidData
 }
 
+func normalizeAttachments(attachments []Attachment) ([]Attachment, error) {
+	if len(attachments) == 0 {
+		return nil, nil
+	}
+	out := cloneAttachments(attachments)
+	used := make(map[uint64]struct{}, len(out))
+	for i := range out {
+		if out[i].UID == 0 {
+			continue
+		}
+		if _, ok := used[out[i].UID]; ok {
+			return nil, ErrInvalidData
+		}
+		used[out[i].UID] = struct{}{}
+	}
+	var next uint64 = 1
+	for i := range out {
+		if out[i].UID == 0 {
+			for {
+				if _, ok := used[next]; !ok {
+					break
+				}
+				next++
+			}
+			out[i].UID = next
+			used[next] = struct{}{}
+		}
+		if err := validateAttachment(out[i]); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func validateAttachment(attachment Attachment) error {
+	if attachment.UID == 0 || attachment.Filename == "" || attachment.MIMEType == "" || attachment.Data == nil {
+		return ErrInvalidData
+	}
+	return nil
+}
+
 func (m *Muxer) writeTracks() error {
 	var payload bytes.Buffer
 	w := ebml.NewWriter(&payload)
@@ -607,6 +662,40 @@ func (m *Muxer) writeTracks() error {
 		}
 	}
 	return m.ebml.WriteElement(idTracks, payload.Bytes())
+}
+
+func (m *Muxer) writeAttachments() error {
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	for i := range m.options.Attachments {
+		if err := writeAttachedFile(w, m.options.Attachments[i]); err != nil {
+			return err
+		}
+	}
+	return m.ebml.WriteElement(idAttachments, payload.Bytes())
+}
+
+func writeAttachedFile(w *ebml.Writer, attachment Attachment) error {
+	var payload bytes.Buffer
+	aw := ebml.NewWriter(&payload)
+	if attachment.Description != "" {
+		if err := aw.WriteString(idFileDescription, attachment.Description); err != nil {
+			return err
+		}
+	}
+	if err := aw.WriteString(idFileName, attachment.Filename); err != nil {
+		return err
+	}
+	if err := aw.WriteString(idFileMediaType, attachment.MIMEType); err != nil {
+		return err
+	}
+	if err := writeBinary(aw, idFileData, attachment.Data); err != nil {
+		return err
+	}
+	if err := aw.WriteUInt(idFileUID, attachment.UID); err != nil {
+		return err
+	}
+	return w.WriteElement(idAttachedFile, payload.Bytes())
 }
 
 func (m *Muxer) startCluster(timecode int64) error {
@@ -788,6 +877,7 @@ func (m *Muxer) buildSeekHeadPayload() ([]byte, error) {
 	}{
 		{id: idInfo, position: m.infoPosition},
 		{id: idTracks, position: m.tracksPosition},
+		{id: idAttachments, position: m.attachPosition},
 		{id: idCues, position: m.cuesPosition},
 	} {
 		if entry.position == 0 {

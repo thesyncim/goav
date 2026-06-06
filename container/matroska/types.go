@@ -216,6 +216,14 @@ type SegmentInfo struct {
 	WritingApp      string
 }
 
+type Attachment struct {
+	UID         uint64
+	Filename    string
+	MIMEType    string
+	Description string
+	Data        []byte
+}
+
 func (p *Packet) Reset() {
 	data := p.Data[:0]
 	references := p.ReferenceBlockTimeNS[:0]
@@ -229,6 +237,7 @@ type MuxerOptions struct {
 	MuxingApp            string
 	WritingApp           string
 	Info                 SegmentInfo
+	Attachments          []Attachment
 	TimecodeScaleNS      int64
 	ClusterMaxDurationNS int64
 	Streaming            bool

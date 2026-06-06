@@ -122,6 +122,14 @@ const (
 	idCueTrack           ebml.ID = 0xf7
 	idCueClusterPosition ebml.ID = 0xf1
 	idCueRelativePos     ebml.ID = 0xf0
+
+	idAttachments     ebml.ID = 0x1941a469
+	idAttachedFile    ebml.ID = 0x61a7
+	idFileDescription ebml.ID = 0x467e
+	idFileName        ebml.ID = 0x466e
+	idFileMediaType   ebml.ID = 0x4660
+	idFileData        ebml.ID = 0x465c
+	idFileUID         ebml.ID = 0x46ae
 )
 
 const (

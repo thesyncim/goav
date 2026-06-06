@@ -20,6 +20,7 @@ type Demuxer struct {
 	timecodeScaleNS int64
 	info            SegmentInfo
 	tracks          []Track
+	attachments     []Attachment
 	cues            []CuePoint
 	seekEntries     []SeekEntry
 	inSegment       bool
@@ -93,6 +94,7 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.timecodeScaleNS = defaultTimecodeScaleNS
 	d.info = SegmentInfo{}
 	d.tracks = d.tracks[:0]
+	d.attachments = d.attachments[:0]
 	d.cues = d.cues[:0]
 	d.seekEntries = d.seekEntries[:0]
 	d.inSegment = false
@@ -248,6 +250,20 @@ func cloneSegmentInfo(info SegmentInfo) SegmentInfo {
 	return info
 }
 
+func cloneAttachments(attachments []Attachment) []Attachment {
+	if len(attachments) == 0 {
+		return nil
+	}
+	out := make([]Attachment, len(attachments))
+	for i := range attachments {
+		out[i] = attachments[i]
+		if attachments[i].Data != nil {
+			out[i].Data = append([]byte(nil), attachments[i].Data...)
+		}
+	}
+	return out
+}
+
 func (d *Demuxer) DocType() string {
 	if d == nil {
 		return ""
@@ -260,6 +276,13 @@ func (d *Demuxer) Info() SegmentInfo {
 		return SegmentInfo{}
 	}
 	return cloneSegmentInfo(d.info)
+}
+
+func (d *Demuxer) Attachments() []Attachment {
+	if d == nil || len(d.attachments) == 0 {
+		return nil
+	}
+	return cloneAttachments(d.attachments)
 }
 
 func (d *Demuxer) Cues() []CuePoint {
@@ -346,6 +369,10 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 			}
 		case idTracks:
 			if err := d.parseTracks(header); err != nil {
+				return err
+			}
+		case idAttachments:
+			if err := d.parseAttachments(header); err != nil {
 				return err
 			}
 		case idCues:
@@ -441,6 +468,10 @@ func (d *Demuxer) readSegmentHeaders() error {
 			if err := d.parseTracks(header); err != nil {
 				return err
 			}
+		case idAttachments:
+			if err := d.parseAttachments(header); err != nil {
+				return err
+			}
 		case idCues:
 			if err := d.parseCues(header); err != nil {
 				return err
@@ -494,32 +525,37 @@ func (d *Demuxer) parseSeekEntry(parent io.Reader, header ebml.Header) (SeekEntr
 	if header.Size.Unknown {
 		return SeekEntry{}, ErrInvalidData
 	}
-	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return SeekEntry{}, err
+	}
 	var entry SeekEntry
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return SeekEntry{}, err
 		}
 		switch child.ID {
 		case idSeekID:
-			value, err := readElementIDPayload(reader, child.Size.Value)
+			value, err := readElementIDPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return SeekEntry{}, err
 			}
 			entry.ID = uint64(value)
 		case idSeekPosition:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return SeekEntry{}, err
 			}
 			entry.Position = value
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return SeekEntry{}, err
 			}
 		}
+	}
+	if err := master.Validate(); err != nil {
+		return SeekEntry{}, err
 	}
 	return entry, nil
 }
@@ -805,21 +841,112 @@ func (d *Demuxer) parseCues(header ebml.Header) error {
 	return master.Validate()
 }
 
+func (d *Demuxer) parseAttachments(header ebml.Header) error {
+	if header.Size.Unknown {
+		return ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(d.reader, header.Size.Value)
+	if err != nil {
+		return err
+	}
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return err
+		}
+		switch child.ID {
+		case idAttachedFile:
+			attachment, err := d.parseAttachedFile(master.Reader(), child)
+			if err != nil {
+				return err
+			}
+			d.attachments = append(d.attachments, attachment)
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return err
+			}
+		}
+	}
+	return master.Validate()
+}
+
+func (d *Demuxer) parseAttachedFile(parent io.Reader, header ebml.Header) (Attachment, error) {
+	if header.Size.Unknown {
+		return Attachment{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return Attachment{}, err
+	}
+	var attachment Attachment
+	dataSeen := false
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return Attachment{}, err
+		}
+		switch child.ID {
+		case idFileDescription:
+			attachment.Description, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Attachment{}, err
+			}
+		case idFileName:
+			attachment.Filename, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Attachment{}, err
+			}
+		case idFileMediaType:
+			attachment.MIMEType, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Attachment{}, err
+			}
+		case idFileData:
+			attachment.Data, err = readBinaryPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Attachment{}, err
+			}
+			dataSeen = true
+		case idFileUID:
+			attachment.UID, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Attachment{}, err
+			}
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return Attachment{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return Attachment{}, err
+	}
+	if !dataSeen {
+		return Attachment{}, ErrInvalidData
+	}
+	if err := validateAttachment(attachment); err != nil {
+		return Attachment{}, ErrInvalidData
+	}
+	return attachment, nil
+}
+
 func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint, error) {
 	if header.Size.Unknown {
 		return CuePoint{}, ErrInvalidData
 	}
-	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return CuePoint{}, err
+	}
 	var cue CuePoint
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return CuePoint{}, err
 		}
 		switch child.ID {
 		case idCueTime:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CuePoint{}, err
 			}
@@ -828,7 +955,7 @@ func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint,
 			}
 			cue.TimeNS = int64(value) * d.timecodeScaleNS
 		case idCueTrackPositions:
-			position, err := d.parseCueTrackPositions(reader, child)
+			position, err := d.parseCueTrackPositions(master.Reader(), child)
 			if err != nil {
 				return CuePoint{}, err
 			}
@@ -837,10 +964,13 @@ func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint,
 			cue.RelativePosition = position.RelativePosition
 			cue.RelativePositionSet = position.RelativePositionSet
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return CuePoint{}, err
 			}
 		}
+	}
+	if err := master.Validate(); err != nil {
+		return CuePoint{}, err
 	}
 	return cue, nil
 }
@@ -856,17 +986,19 @@ func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (
 	if header.Size.Unknown {
 		return cueTrackPosition{}, ErrInvalidData
 	}
-	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return cueTrackPosition{}, err
+	}
 	var position cueTrackPosition
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return cueTrackPosition{}, err
 		}
 		switch child.ID {
 		case idCueTrack:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return cueTrackPosition{}, err
 			}
@@ -875,23 +1007,26 @@ func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (
 				return cueTrackPosition{}, err
 			}
 		case idCueClusterPosition:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return cueTrackPosition{}, err
 			}
 			position.ClusterPosition = value
 		case idCueRelativePos:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return cueTrackPosition{}, err
 			}
 			position.RelativePosition = value
 			position.RelativePositionSet = true
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return cueTrackPosition{}, err
 			}
 		}
+	}
+	if err := master.Validate(); err != nil {
+		return cueTrackPosition{}, err
 	}
 	return position, nil
 }
@@ -900,18 +1035,20 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 	if header.Size.Unknown {
 		return Track{}, ErrInvalidData
 	}
-	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return Track{}, err
+	}
 	track := Track{Language: "und", TimebaseNum: 1, TimebaseDen: timeNS, FlagEnabled: true, FlagDefault: true, FlagLacing: true}
 	var codecID string
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return Track{}, err
 		}
 		switch child.ID {
 		case idTrackNumber:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
@@ -921,7 +1058,7 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.ID = trackID
 		case idTrackUID:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
@@ -930,7 +1067,7 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.UID = value
 		case idTrackType:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
@@ -943,112 +1080,112 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				track.Type = TrackUnknown
 			}
 		case idFlagEnabled:
-			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.FlagEnabled = value
 			track.FlagEnabledSet = true
 		case idFlagDefault:
-			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.FlagDefault = value
 			track.FlagDefaultSet = true
 		case idFlagForced:
-			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.FlagForced = value
 			track.FlagForcedSet = true
 		case idFlagHearingImpaired:
-			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.FlagHearingImpaired = value
 			track.FlagHearingImpairedSet = true
 		case idFlagVisualImpaired:
-			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.FlagVisualImpaired = value
 			track.FlagVisualImpairedSet = true
 		case idFlagTextDescriptions:
-			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.FlagTextDescriptions = value
 			track.FlagTextDescriptionsSet = true
 		case idFlagOriginal:
-			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.FlagOriginal = value
 			track.FlagOriginalSet = true
 		case idFlagCommentary:
-			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.FlagCommentary = value
 			track.FlagCommentarySet = true
 		case idFlagLacing:
-			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.FlagLacing = value
 			track.FlagLacingSet = true
 		case idName:
-			value, err := readStringPayload(reader, child.Size.Value)
+			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.Name = value
 		case idLanguage:
-			value, err := readStringPayload(reader, child.Size.Value)
+			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.Language = value
 		case idLanguageBCP:
-			value, err := readStringPayload(reader, child.Size.Value)
+			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.LanguageBCP47 = value
 		case idCodecID:
-			value, err := readStringPayload(reader, child.Size.Value)
+			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			codecID = value
 		case idCodecName:
-			value, err := readStringPayload(reader, child.Size.Value)
+			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.CodecName = value
 		case idDefaultDur:
-			value, err := readNonZeroInt64Payload(reader, child.Size.Value)
+			value, err := readNonZeroInt64Payload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.DefaultDurationNS = value
 		case idDefaultDecodedDur:
-			value, err := readNonZeroInt64Payload(reader, child.Size.Value)
+			value, err := readNonZeroInt64Payload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.DefaultDecodedFieldDurationNS = value
 		case idCodecDelay:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
@@ -1057,7 +1194,7 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.CodecDelayNS = int64(value)
 		case idSeekPreRoll:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
@@ -1066,28 +1203,31 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.SeekPreRollNS = int64(value)
 		case idCodecPrivate:
-			value, err := readBinaryPayload(reader, child.Size.Value)
+			value, err := readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.CodecPrivate = value
 		case idVideo:
-			video, err := d.parseVideo(reader, child)
+			video, err := d.parseVideo(master.Reader(), child)
 			if err != nil {
 				return Track{}, err
 			}
 			track.Video = video
 		case idAudio:
-			audio, err := d.parseAudio(reader, child)
+			audio, err := d.parseAudio(master.Reader(), child)
 			if err != nil {
 				return Track{}, err
 			}
 			track.Audio = audio
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return Track{}, err
 			}
 		}
+	}
+	if err := master.Validate(); err != nil {
+		return Track{}, err
 	}
 	if track.UID == 0 {
 		track.UID = uint64(track.ID)
@@ -1123,17 +1263,19 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 	if header.Size.Unknown {
 		return VideoConfig{}, ErrInvalidData
 	}
-	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return VideoConfig{}, err
+	}
 	var video VideoConfig
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return VideoConfig{}, err
 		}
 		switch child.ID {
 		case idStereoMode:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1143,7 +1285,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			}
 			video.StereoModeSet = true
 		case idAlphaMode:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1153,7 +1295,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			}
 			video.AlphaModeSet = true
 		case idPixelWidth:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1162,7 +1304,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idPixelHeight:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1171,7 +1313,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idPixelCropBottom:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1180,7 +1322,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idPixelCropTop:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1189,7 +1331,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idPixelCropLeft:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1198,7 +1340,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idPixelCropRight:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1207,7 +1349,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idDisplayWidth:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1216,7 +1358,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idDisplayHeight:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1225,7 +1367,7 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idDisplayUnit:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
 			}
@@ -1234,22 +1376,25 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idColour:
-			colour, err := d.parseColour(reader, child)
+			colour, err := d.parseColour(master.Reader(), child)
 			if err != nil {
 				return VideoConfig{}, err
 			}
 			video.Colour = colour
 		case idProjection:
-			projection, err := d.parseProjection(reader, child)
+			projection, err := d.parseProjection(master.Reader(), child)
 			if err != nil {
 				return VideoConfig{}, err
 			}
 			video.Projection = projection
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return VideoConfig{}, err
 			}
 		}
+	}
+	if err := master.Validate(); err != nil {
+		return VideoConfig{}, err
 	}
 	return video, nil
 }
@@ -1258,46 +1403,51 @@ func (d *Demuxer) parseProjection(parent io.Reader, header ebml.Header) (VideoPr
 	if header.Size.Unknown {
 		return VideoProjectionConfig{}, ErrInvalidData
 	}
-	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return VideoProjectionConfig{}, err
+	}
 	projection := VideoProjectionConfig{Set: true}
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return VideoProjectionConfig{}, err
 		}
 		switch child.ID {
 		case idProjectionType:
-			projection.Type, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			projection.Type, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoProjectionConfig{}, err
 			}
 		case idProjectionPrivate:
-			value, err := readBinaryPayload(reader, child.Size.Value)
+			value, err := readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoProjectionConfig{}, err
 			}
 			projection.Private = value
 		case idProjectionPoseYaw:
-			projection.PoseYaw, err = readProjectionPosePayload(reader, child.Size.Value, -180, 180)
+			projection.PoseYaw, err = readProjectionPosePayload(master.Reader(), child.Size.Value, -180, 180)
 			if err != nil {
 				return VideoProjectionConfig{}, err
 			}
 		case idProjectionPosePitch:
-			projection.PosePitch, err = readProjectionPosePayload(reader, child.Size.Value, -90, 90)
+			projection.PosePitch, err = readProjectionPosePayload(master.Reader(), child.Size.Value, -90, 90)
 			if err != nil {
 				return VideoProjectionConfig{}, err
 			}
 		case idProjectionPoseRoll:
-			projection.PoseRoll, err = readProjectionPosePayload(reader, child.Size.Value, -180, 180)
+			projection.PoseRoll, err = readProjectionPosePayload(master.Reader(), child.Size.Value, -180, 180)
 			if err != nil {
 				return VideoProjectionConfig{}, err
 			}
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return VideoProjectionConfig{}, err
 			}
 		}
+	}
+	if err := master.Validate(); err != nil {
+		return VideoProjectionConfig{}, err
 	}
 	if err := validateVideoProjection(projection); err != nil {
 		return VideoProjectionConfig{}, ErrInvalidData
@@ -1309,104 +1459,109 @@ func (d *Demuxer) parseColour(parent io.Reader, header ebml.Header) (VideoColour
 	if header.Size.Unknown {
 		return VideoColourConfig{}, ErrInvalidData
 	}
-	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return VideoColourConfig{}, err
+	}
 	var colour VideoColourConfig
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return VideoColourConfig{}, err
 		}
 		switch child.ID {
 		case idMatrixCoefficients:
-			colour.MatrixCoefficients, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.MatrixCoefficients, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.MatrixCoefficientsSet = true
 		case idBitsPerChannel:
-			colour.BitsPerChannel, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.BitsPerChannel, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.BitsPerChannelSet = true
 		case idChromaSubsampleHorz:
-			colour.ChromaSubsamplingHorz, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.ChromaSubsamplingHorz, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.ChromaSubsamplingHorzSet = true
 		case idChromaSubsampleVert:
-			colour.ChromaSubsamplingVert, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.ChromaSubsamplingVert, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.ChromaSubsamplingVertSet = true
 		case idCbSubsampleHorz:
-			colour.CbSubsamplingHorz, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.CbSubsamplingHorz, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.CbSubsamplingHorzSet = true
 		case idCbSubsampleVert:
-			colour.CbSubsamplingVert, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.CbSubsamplingVert, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.CbSubsamplingVertSet = true
 		case idChromaSitingHorz:
-			colour.ChromaSitingHorz, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.ChromaSitingHorz, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.ChromaSitingHorzSet = true
 		case idChromaSitingVert:
-			colour.ChromaSitingVert, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.ChromaSitingVert, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.ChromaSitingVertSet = true
 		case idColourRange:
-			colour.Range, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.Range, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.RangeSet = true
 		case idTransferChar:
-			colour.TransferCharacteristics, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.TransferCharacteristics, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.TransferCharacteristicsSet = true
 		case idPrimaries:
-			colour.Primaries, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.Primaries, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.PrimariesSet = true
 		case idMaxCLL:
-			colour.MaxCLL, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.MaxCLL, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.MaxCLLSet = true
 		case idMaxFALL:
-			colour.MaxFALL, err = readIntPayloadFromUInt(reader, child.Size.Value)
+			colour.MaxFALL, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.MaxFALLSet = true
 		case idMasteringMetadata:
-			metadata, err := d.parseMasteringMetadata(reader, child)
+			metadata, err := d.parseMasteringMetadata(master.Reader(), child)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.MasteringMetadata = metadata
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return VideoColourConfig{}, err
 			}
 		}
+	}
+	if err := master.Validate(); err != nil {
+		return VideoColourConfig{}, err
 	}
 	return colour, nil
 }
@@ -1415,80 +1570,85 @@ func (d *Demuxer) parseMasteringMetadata(parent io.Reader, header ebml.Header) (
 	if header.Size.Unknown {
 		return VideoMasteringMetadataConfig{}, ErrInvalidData
 	}
-	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return VideoMasteringMetadataConfig{}, err
+	}
 	var metadata VideoMasteringMetadataConfig
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return VideoMasteringMetadataConfig{}, err
 		}
 		switch child.ID {
 		case idPrimaryRX:
-			metadata.PrimaryRChromaticityX, err = readChromaticityPayload(reader, child.Size.Value)
+			metadata.PrimaryRChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryRChromaticityXSet = true
 		case idPrimaryRY:
-			metadata.PrimaryRChromaticityY, err = readChromaticityPayload(reader, child.Size.Value)
+			metadata.PrimaryRChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryRChromaticityYSet = true
 		case idPrimaryGX:
-			metadata.PrimaryGChromaticityX, err = readChromaticityPayload(reader, child.Size.Value)
+			metadata.PrimaryGChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryGChromaticityXSet = true
 		case idPrimaryGY:
-			metadata.PrimaryGChromaticityY, err = readChromaticityPayload(reader, child.Size.Value)
+			metadata.PrimaryGChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryGChromaticityYSet = true
 		case idPrimaryBX:
-			metadata.PrimaryBChromaticityX, err = readChromaticityPayload(reader, child.Size.Value)
+			metadata.PrimaryBChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryBChromaticityXSet = true
 		case idPrimaryBY:
-			metadata.PrimaryBChromaticityY, err = readChromaticityPayload(reader, child.Size.Value)
+			metadata.PrimaryBChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryBChromaticityYSet = true
 		case idWhitePointX:
-			metadata.WhitePointChromaticityX, err = readChromaticityPayload(reader, child.Size.Value)
+			metadata.WhitePointChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.WhitePointChromaticityXSet = true
 		case idWhitePointY:
-			metadata.WhitePointChromaticityY, err = readChromaticityPayload(reader, child.Size.Value)
+			metadata.WhitePointChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.WhitePointChromaticityYSet = true
 		case idLuminanceMax:
-			metadata.LuminanceMax, err = readNonNegativeFloatPayload(reader, child.Size.Value)
+			metadata.LuminanceMax, err = readNonNegativeFloatPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.LuminanceMaxSet = true
 		case idLuminanceMin:
-			metadata.LuminanceMin, err = readNonNegativeFloatPayload(reader, child.Size.Value)
+			metadata.LuminanceMin, err = readNonNegativeFloatPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.LuminanceMinSet = true
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 		}
+	}
+	if err := master.Validate(); err != nil {
+		return VideoMasteringMetadataConfig{}, err
 	}
 	return metadata, nil
 }
@@ -1497,17 +1657,19 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 	if header.Size.Unknown {
 		return AudioConfig{}, ErrInvalidData
 	}
-	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
-	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return AudioConfig{}, err
+	}
 	audio := AudioConfig{SampleRate: 48000, Channels: 2}
-	for limited.N > 0 {
-		child, err := reader.ReadHeader()
+	for !master.Done() {
+		child, err := master.ReadHeader()
 		if err != nil {
 			return AudioConfig{}, err
 		}
 		switch child.ID {
 		case idSamplingFreq:
-			value, err := readFloatPayload(reader, child.Size.Value)
+			value, err := readFloatPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return AudioConfig{}, err
 			}
@@ -1516,7 +1678,7 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 			}
 			audio.SampleRate = int(value)
 		case idOutputFreq:
-			value, err := readFloatPayload(reader, child.Size.Value)
+			value, err := readFloatPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return AudioConfig{}, err
 			}
@@ -1525,7 +1687,7 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 			}
 			audio.OutputSampleRate = int(value)
 		case idChannels:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return AudioConfig{}, err
 			}
@@ -1534,7 +1696,7 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 				return AudioConfig{}, err
 			}
 		case idBitDepth:
-			value, err := readUIntPayload(reader, child.Size.Value)
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return AudioConfig{}, err
 			}
@@ -1543,10 +1705,13 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 				return AudioConfig{}, err
 			}
 		default:
-			if err := skipElement(reader, child); err != nil {
+			if err := skipElement(master.Reader(), child); err != nil {
 				return AudioConfig{}, err
 			}
 		}
+	}
+	if err := master.Validate(); err != nil {
+		return AudioConfig{}, err
 	}
 	return audio, nil
 }

@@ -92,6 +92,12 @@ Current milestone:
   is written.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with
   WebM demuxers requiring the `webm` EBML document type.
+- Matroska attachment mux/demux for `AttachedFile` entries, including
+  filename, media type, description, UID, binary data, defensive cloning, and
+  SeekHead entries in seekable output.
+- EBML CRC-32 validation for finite metadata masters, including top-level
+  SeekHead, Info, Tracks, Cues, Attachments and nested track, video, audio,
+  colour, projection, cue, seek, and attachment masters.
 - Format registry adapters for `av.Stream` and `av.Packet`.
 - Caller-owned packet data for demuxing.
 - Demux validation rejects on-disk track, cue, and block track numbers that
@@ -107,8 +113,8 @@ These are intentionally not in the first milestone:
 
 - Dense indexing and frame-exact random access beyond cue-assisted
   `ReadPacketAtTime`.
-- Chapters, tags, attachments, language variants, default/forced flags beyond
-  basic defaults, and unknown-element preservation.
+- Chapters, tags, language variants, default/forced flags beyond basic
+  defaults, and unknown-element preservation.
 - Full codec-private generation and parsers for every codec family.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
 
@@ -147,9 +153,9 @@ Negative packet durations and packet end times that overflow `int64` are
 rejected before bytes are written.
 Seekable mode also writes Cues for keyframe packets using Segment-relative
 Cluster positions plus `CueRelativePosition` offsets to the referenced block
-inside the Cluster. It also writes a SeekHead that points to Info, Tracks, and
-Cues. The muxer updates duration and cue state only after the packet bytes are
-written successfully.
+inside the Cluster. It also writes a SeekHead that points to Info, Tracks,
+Attachments when present, and Cues. The muxer updates duration and cue state
+only after the packet bytes are written successfully.
 `SeekToTime` uses those Cues to jump to the nearest preceding cue. When that cue
 has `CueRelativePosition`, the demuxer parses preceding Cluster metadata and
 positions the next read directly on the cued block. A successful seek clears
