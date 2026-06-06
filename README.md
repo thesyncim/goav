@@ -146,7 +146,8 @@ bundle grows.
 
 Recipe encode conveniences currently target Opus, VP8, and VP9. H264 and AV1
 codec specs are useful for receive, record, and decode paths while recipe encode
-support continues to mature.
+support continues to mature. Recipe encode bitrates cannot be negative, and
+explicit sample-rate or channel overrides must be positive.
 
 ## Inspect The Graph
 

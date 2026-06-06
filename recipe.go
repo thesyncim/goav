@@ -1145,7 +1145,7 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 	}
 	switch spec.ID {
 	case av.CodecOpus, av.CodecVP8, av.CodecVP9:
-		return nil
+		return validateRecipeEncodeValues(spec, operation, node)
 	case av.CodecH264, av.CodecAV1:
 		return &BuildError{
 			Code:      "encode_work_in_progress",
@@ -1172,6 +1172,58 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			},
 			Cause: ErrUnsupportedBuild,
 		}
+	}
+}
+
+func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) error {
+	switch {
+	case spec.Bitrate < 0:
+		return &BuildError{
+			Code:      "encode_parameter_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    "encode bitrate must be non-negative",
+			Details: []string{
+				fmt.Sprintf("bitrate=%d", spec.Bitrate),
+			},
+			Suggestions: []string{
+				"pass a positive bitrate to .Opus(...), .VP8(...), or .VP9(...)",
+				"omit goav.Bitrate(...) when the encoder should choose its default",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	case spec.sampleRateSet && spec.Parameters.SampleRate <= 0:
+		return &BuildError{
+			Code:      "encode_parameter_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    "explicit encode sample rate must be positive",
+			Details: []string{
+				fmt.Sprintf("sample_rate=%d", spec.Parameters.SampleRate),
+			},
+			Suggestions: []string{
+				"use goav.SampleRate(rate) with a positive rate",
+				"omit goav.SampleRate(...) to use the selected stream rate",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	case spec.channelsSet && spec.Parameters.Channels <= 0:
+		return &BuildError{
+			Code:      "encode_parameter_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    "explicit encode channel count must be positive",
+			Details: []string{
+				fmt.Sprintf("channels=%d", spec.Parameters.Channels),
+			},
+			Suggestions: []string{
+				"use goav.Channels(goav.Mono), goav.Channels(goav.Stereo), or another positive channel count",
+				"omit goav.Channels(...) to use the selected stream channel count",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	default:
+		return nil
 	}
 }
 

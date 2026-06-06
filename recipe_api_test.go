@@ -508,6 +508,38 @@ func TestStreamRecipeRejectsUnsupportedRecipeEncoder(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Opus(-1).
+		To(goav.FileOutput("archive.ogg", io.Discard)).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_parameter_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "bitrate must be non-negative") ||
+		!strings.Contains(err.Error(), "bitrate=-1") {
+		t.Fatalf("err = %v, want bitrate guidance", err)
+	}
+}
+
+func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Encode(goav.Opus(goav.SampleRate(0))).
+		To(goav.FileOutput("archive.ogg", io.Discard)).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_parameter_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "sample rate must be positive") ||
+		!strings.Contains(err.Error(), "sample_rate=0") {
+		t.Fatalf("err = %v, want sample-rate guidance", err)
+	}
+}
+
 func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 	tests := []struct {
 		name string
@@ -697,6 +729,22 @@ func TestTranscodeRecipeRejectsInvalidResample(t *testing.T) {
 	if !strings.Contains(err.Error(), "positive sample rate and channels") ||
 		!strings.Contains(err.Error(), "sample_rate=0") {
 		t.Fatalf("err = %v, want resample value guidance", err)
+	}
+}
+
+func TestTranscodeRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("bad").VP9(-1).
+		To(goav.FileOutput("bad.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_parameter_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "bitrate must be non-negative") ||
+		!strings.Contains(err.Error(), "bitrate=-1") {
+		t.Fatalf("err = %v, want bitrate guidance", err)
 	}
 }
 
