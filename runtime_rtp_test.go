@@ -176,10 +176,10 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 	if len(planned.Nodes) != 3 || len(planned.Edges) != 2 {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "remote-audio -> archive.ogg") ||
-		!strings.Contains(planned.String(), "timestamp gap") ||
+	if !strings.Contains(specText(planned), "remote-audio -> archive.ogg") ||
+		!strings.Contains(specText(planned), "timestamp gap") ||
 		!strings.Contains(specMermaid(planned), "preview.ogg\\nstage") {
-		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), specMermaid(planned))
+		t.Fatalf("planned:\n%s\nmermaid:\n%s", specText(planned), specMermaid(planned))
 	}
 
 	task, err := builder.Build(ctx)
@@ -187,8 +187,8 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || specMermaid(planned) != specMermaid(spec) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
+	if specText(planned) != specText(spec) || specMermaid(planned) != specMermaid(spec) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(spec))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
@@ -249,17 +249,17 @@ func TestRuntimeBuilderBufferedRTPRecordCopiesPacketsToOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(planned.String(), "live-audio -> archive.ogg") ||
-		!strings.Contains(planned.String(), "live-audio -> preview.ogg") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "live-audio -> archive.ogg") ||
+		!strings.Contains(specText(planned), "live-audio -> preview.ogg") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || specMermaid(planned) != specMermaid(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
@@ -344,10 +344,10 @@ func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
 	if len(planned.Nodes) != 4 || len(planned.Edges) != 3 {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "live-audio -> select-audio") ||
-		!strings.Contains(planned.String(), "select-audio -> decode-audio") ||
-		!strings.Contains(planned.String(), "decode-audio -> frames") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "live-audio -> select-audio") ||
+		!strings.Contains(specText(planned), "select-audio -> decode-audio") ||
+		!strings.Contains(specText(planned), "decode-audio -> frames") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(ctx)
@@ -355,8 +355,8 @@ func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || specMermaid(planned) != specMermaid(spec) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
+	if specText(planned) != specText(spec) || specMermaid(planned) != specMermaid(spec) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(spec))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
@@ -433,8 +433,8 @@ func TestRuntimeBuilderRTPDecodeUsesRTPDecodeBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(planned.String(), "decode bounds") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "decode bounds") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(ctx)
@@ -598,17 +598,17 @@ func TestRuntimeBuilderRTPDecodeFilterSink(t *testing.T) {
 	if len(planned.Nodes) != 5 || len(planned.Edges) != 4 {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "decode-audio -> meter") ||
-		!strings.Contains(planned.String(), "meter -> frames") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "decode-audio -> meter") ||
+		!strings.Contains(specText(planned), "meter -> frames") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || specMermaid(planned) != specMermaid(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
@@ -744,9 +744,9 @@ func TestRuntimeBuilderMultiRTPDecodeSelectsOneStream(t *testing.T) {
 	if len(planned.Nodes) != 5 || len(planned.Edges) != 4 {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "audio-rtp -> select-audio") ||
-		!strings.Contains(planned.String(), "video-rtp -> select-audio") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "audio-rtp -> select-audio") ||
+		!strings.Contains(specText(planned), "video-rtp -> select-audio") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(ctx)
@@ -852,9 +852,9 @@ func TestRuntimeBuilderMultiRTPRecordFanout(t *testing.T) {
 	if len(planned.Nodes) != 4 || len(planned.Edges) != 4 {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "audio-rtp -> archive.ogg") ||
-		!strings.Contains(planned.String(), "video-rtp -> preview.ogg") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "audio-rtp -> archive.ogg") ||
+		!strings.Contains(specText(planned), "video-rtp -> preview.ogg") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(ctx)
@@ -862,8 +862,8 @@ func TestRuntimeBuilderMultiRTPRecordFanout(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || specMermaid(planned) != specMermaid(spec) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
+	if specText(planned) != specText(spec) || specMermaid(planned) != specMermaid(spec) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(spec))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
@@ -913,9 +913,9 @@ func TestRuntimeBuilderMultiRTPRecordDefaultNames(t *testing.T) {
 	if len(spec.Nodes) != 3 || len(spec.Edges) != 2 {
 		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
 	}
-	if !strings.Contains(spec.String(), "rtp -> archive.ogg") ||
-		!strings.Contains(spec.String(), "rtp-1 -> archive.ogg") {
-		t.Fatalf("spec:\n%s", spec.String())
+	if !strings.Contains(specText(spec), "rtp -> archive.ogg") ||
+		!strings.Contains(specText(spec), "rtp-1 -> archive.ogg") {
+		t.Fatalf("spec:\n%s", specText(spec))
 	}
 }
 

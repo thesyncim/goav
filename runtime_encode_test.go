@@ -117,18 +117,18 @@ func TestRuntimeBuilderInputDecodeFilterEncodeOutputs(t *testing.T) {
 	if len(planned.Nodes) != 7 || len(planned.Edges) != 6 {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "meter -> encode-audio") ||
-		!strings.Contains(planned.String(), "encode-audio -> archive.ogg") ||
+	if !strings.Contains(specText(planned), "meter -> encode-audio") ||
+		!strings.Contains(specText(planned), "encode-audio -> archive.ogg") ||
 		!strings.Contains(specMermaid(planned), "preview.ogg\\nstage") {
-		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), specMermaid(planned))
+		t.Fatalf("planned:\n%s\nmermaid:\n%s", specText(planned), specMermaid(planned))
 	}
 
 	task, err := builder.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || specMermaid(planned) != specMermaid(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
@@ -214,18 +214,18 @@ func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
 	if len(planned.Nodes) != 6 || len(planned.Edges) != 5 {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "live-audio -> select-audio") ||
-		!strings.Contains(planned.String(), "meter -> encode-audio") ||
-		!strings.Contains(planned.String(), "encode-audio -> encoded.ogg") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "live-audio -> select-audio") ||
+		!strings.Contains(specText(planned), "meter -> encode-audio") ||
+		!strings.Contains(specText(planned), "encode-audio -> encoded.ogg") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || specMermaid(planned) != specMermaid(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)

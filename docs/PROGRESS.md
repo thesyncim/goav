@@ -228,8 +228,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Plan` path through `Runtime.Transcode(plan)`, and graph specs use
     `pipeline.NodeRef` directly instead of a duplicate node helper. Done.
 69. Keep graph inspection core and diagram generation optional:
-    `pipeline.Spec` is the runtime graph object, `String` remains the debug
-    view, and exporters live in the small `graphrender` utility package instead
+    `pipeline.Spec` is the structured runtime graph object, while text and
+    diagram exporters live in the small `graphrender` utility package instead
     of the pipeline core. Done.
 70. Prune unused receive factory vocabulary: WebRTC sessions use one
     `NewSession(ctx, config)` entry, and RTP receive keeps the direct
@@ -345,7 +345,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Done.
 106. Add plain recipe input validation so zero-value input specs fail with
     constructor guidance before format probing. Done.
-107. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+107. Remove text rendering from `pipeline.Spec` so core graph inspection stays
+    structured-only and all string/diagram exporters live in `graphrender`.
+    Done.
+108. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

@@ -9,7 +9,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func TestRenderDOTAndMermaid(t *testing.T) {
+func TestRenderTextDOTAndMermaid(t *testing.T) {
 	spec := pipeline.Spec{
 		Name: "receive",
 		Nodes: []pipeline.NodeSpec{
@@ -33,8 +33,10 @@ func TestRenderDOTAndMermaid(t *testing.T) {
 	}
 
 	text := Render(spec, Text)
-	if text != spec.String() {
-		t.Fatalf("text:\n%s\nwant:\n%s", text, spec.String())
+	if !strings.Contains(text, "pipeline receive") ||
+		!strings.Contains(text, "source source [rtp receive]") ||
+		!strings.Contains(text, "decode -> sink [stream=audio]") {
+		t.Fatalf("text spec:\n%s", text)
 	}
 
 	dot := Render(spec, DOT)

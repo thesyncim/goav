@@ -161,15 +161,15 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	if len(planned.Nodes) != 4 || len(planned.Edges) != 3 {
 		t.Fatalf("planned nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "input.ogg -> select-audio") ||
-		!strings.Contains(planned.String(), "select-audio -> decode-audio") ||
-		!strings.Contains(planned.String(), "decode-audio -> frames") {
-		t.Fatalf("planned spec:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "input.ogg -> select-audio") ||
+		!strings.Contains(specText(planned), "select-audio -> decode-audio") ||
+		!strings.Contains(specText(planned), "decode-audio -> frames") {
+		t.Fatalf("planned spec:\n%s", specText(planned))
 	}
-	if !strings.Contains(planned.String(), "source input.ogg [demux]") ||
-		!strings.Contains(planned.String(), "stage select-audio [select, type=audio]") ||
-		!strings.Contains(planned.String(), "stage decode-audio [packets -> frames, type=audio]") {
-		t.Fatalf("planned details:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "source input.ogg [demux]") ||
+		!strings.Contains(specText(planned), "stage select-audio [select, type=audio]") ||
+		!strings.Contains(specText(planned), "stage decode-audio [packets -> frames, type=audio]") {
+		t.Fatalf("planned details:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(context.Background())
@@ -177,8 +177,8 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || specMermaid(planned) != specMermaid(spec) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
+	if specText(planned) != specText(spec) || specMermaid(planned) != specMermaid(spec) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(spec))
 	}
 
 	if err := task.Run(context.Background()); err != nil {
@@ -292,17 +292,17 @@ func TestRuntimeBuilderInputDecodeFilterSink(t *testing.T) {
 	if len(planned.Nodes) != 5 || len(planned.Edges) != 4 {
 		t.Fatalf("planned nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "decode-audio -> meter") ||
-		!strings.Contains(planned.String(), "meter -> frames") {
-		t.Fatalf("planned spec:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "decode-audio -> meter") ||
+		!strings.Contains(specText(planned), "meter -> frames") {
+		t.Fatalf("planned spec:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	if specText(planned) != specText(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
@@ -378,8 +378,8 @@ func TestRuntimeBuilderInputDecodeSinkSelectsMatchingStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(planned.String(), "input.ogg -> select-audio") {
-		t.Fatalf("planned spec:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "input.ogg -> select-audio") {
+		t.Fatalf("planned spec:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(context.Background())
@@ -387,8 +387,8 @@ func TestRuntimeBuilderInputDecodeSinkSelectsMatchingStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if planned.String() != spec.String() || specMermaid(planned) != specMermaid(spec) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), spec.String())
+	if specText(planned) != specText(spec) || specMermaid(planned) != specMermaid(spec) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(spec))
 	}
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)

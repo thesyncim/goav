@@ -75,19 +75,19 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 	if len(planned.Nodes) != 7 || len(planned.Edges) != 7 {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "decode-audio -> encode-audio-main") ||
-		!strings.Contains(planned.String(), "decode-audio -> encode-audio-low") ||
-		!strings.Contains(planned.String(), "encode-audio-main -> archive.ogg") ||
-		!strings.Contains(planned.String(), "encode-audio-low -> preview.ogg") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "decode-audio -> encode-audio-main") ||
+		!strings.Contains(specText(planned), "decode-audio -> encode-audio-low") ||
+		!strings.Contains(specText(planned), "encode-audio-main -> archive.ogg") ||
+		!strings.Contains(specText(planned), "encode-audio-low -> preview.ogg") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || specMermaid(planned) != specMermaid(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
@@ -151,17 +151,17 @@ func TestRuntimeBuilderBufferedTranscodeCopiesEncodedPacketsToOutputs(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(planned.String(), "decode-audio -> encode-audio-main") ||
-		!strings.Contains(planned.String(), "encode-audio-low -> preview.ogg") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "decode-audio -> encode-audio-main") ||
+		!strings.Contains(specText(planned), "encode-audio-low -> preview.ogg") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || specMermaid(planned) != specMermaid(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
@@ -252,17 +252,17 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 	if len(planned.Nodes) != 7 || len(planned.Edges) != 7 {
 		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
 	}
-	if !strings.Contains(planned.String(), "decode-audio -> resample-audio-low") ||
-		!strings.Contains(planned.String(), "resample-audio-low -> encode-audio-low") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "decode-audio -> resample-audio-low") ||
+		!strings.Contains(specText(planned), "resample-audio-low -> encode-audio-low") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || specMermaid(planned) != specMermaid(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)

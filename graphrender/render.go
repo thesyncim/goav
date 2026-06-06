@@ -28,8 +28,7 @@ func Render(spec pipeline.Spec, format Format) string {
 func Write(w io.Writer, spec pipeline.Spec, format Format) error {
 	switch format {
 	case "", Text:
-		_, err := io.WriteString(w, spec.String())
-		return err
+		return writeText(w, spec)
 	case DOT:
 		return writeDOT(w, spec)
 	case Mermaid:
@@ -37,6 +36,42 @@ func Write(w io.Writer, spec pipeline.Spec, format Format) error {
 	default:
 		return ErrUnsupportedFormat
 	}
+}
+
+func writeText(w io.Writer, spec pipeline.Spec) error {
+	if err := writeStrings(w, "pipeline ", specName(spec.Name), "\n"); err != nil {
+		return err
+	}
+	for i := range spec.Nodes {
+		node := &spec.Nodes[i]
+		if err := writeStrings(w, "  ", string(node.Kind), " ", node.Name); err != nil {
+			return err
+		}
+		if node.Detail != "" {
+			if err := writeStrings(w, " [", node.Detail, "]"); err != nil {
+				return err
+			}
+		}
+		if err := writeStrings(w, "\n"); err != nil {
+			return err
+		}
+	}
+	for i := range spec.Edges {
+		edge := &spec.Edges[i]
+		if err := writeStrings(w, "  ", edge.From.String(), " -> ", edge.To.String()); err != nil {
+			return err
+		}
+		label := edgeTextLabel(edge)
+		if label != "" {
+			if err := writeStrings(w, " [", label, "]"); err != nil {
+				return err
+			}
+		}
+		if err := writeStrings(w, "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func writeDOT(w io.Writer, spec pipeline.Spec) error {

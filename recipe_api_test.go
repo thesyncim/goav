@@ -12,6 +12,8 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/graphrender"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/webrtcav"
 )
@@ -38,6 +40,10 @@ func (recipeAPIRTPReader) Close() error {
 	return nil
 }
 
+func specText(spec pipeline.Spec) string {
+	return graphrender.Render(spec, graphrender.Text)
+}
+
 func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	job := goav.Record(
 		goav.FileInput("input.ogg", strings.NewReader("")),
@@ -48,8 +54,8 @@ func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(spec.String(), "input.ogg -> recording.ogg") {
-		t.Fatalf("spec:\n%s", spec.String())
+	if !strings.Contains(specText(spec), "input.ogg -> recording.ogg") {
+		t.Fatalf("spec:\n%s", specText(spec))
 	}
 	intent := job.Intent()
 	if intent.Name != "record" || len(intent.Inputs) != 1 || len(intent.Outputs) != 1 {
@@ -70,7 +76,7 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := spec.String()
+	text := specText(spec)
 	if !strings.Contains(text, "input.ogg -> select-audio") ||
 		!strings.Contains(text, "select-audio -> decode-audio") ||
 		!strings.Contains(text, "decode-audio -> frames") {
@@ -104,7 +110,7 @@ func TestReadmeWebRTCTrackRecordRecipeIsSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := spec.String()
+	text := specText(spec)
 	if !strings.Contains(text, "video -> recording.ivf") ||
 		!strings.Contains(text, "rtp receive, depacketizers=1") {
 		t.Fatalf("spec:\n%s", text)
@@ -151,7 +157,7 @@ func TestReadmeWebRTCTrackRecordMultiInputRecipeIsSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := spec.String()
+	text := specText(spec)
 	if !strings.Contains(text, "audio -> recording.webm") ||
 		!strings.Contains(text, "video -> recording.webm") ||
 		strings.Count(text, "depacketizers=1") != 2 {
@@ -309,7 +315,7 @@ func TestReadmeAudioEncodeRecipeIsSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := spec.String()
+	text := specText(spec)
 	if !strings.Contains(text, "decode-audio -> meter") ||
 		!strings.Contains(text, "meter -> encode-audio") ||
 		!strings.Contains(text, "encode-audio -> archive.ogg") {
@@ -329,7 +335,7 @@ func TestReadmeAudioResampleEncodeRecipeIsSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := spec.String()
+	text := specText(spec)
 	if !strings.Contains(text, "decode-audio -> resample-audio") ||
 		!strings.Contains(text, "resample-audio -> encode-audio") ||
 		!strings.Contains(text, "16000 Hz") ||
@@ -354,7 +360,7 @@ func TestReadmeVideoResizeEncodeRecipeIsSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := spec.String()
+	text := specText(spec)
 	if !strings.Contains(text, "decode-video -> resize-video") ||
 		!strings.Contains(text, "resize-video -> encode-video") ||
 		!strings.Contains(text, "1280x720") {
@@ -488,7 +494,7 @@ func TestReadmeTranscodeLadderRecipeIsSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := spec.String()
+	text := specText(spec)
 	if !strings.Contains(text, "resize, 1280x720") ||
 		!strings.Contains(text, "codec=vp9") ||
 		!strings.Contains(text, "web.webm") ||
@@ -510,7 +516,7 @@ func TestTranscodeRecipeAcceptsDirectOutputSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := spec.String()
+	text := specText(spec)
 	if !strings.Contains(text, "encode-360p -> preview.webm") {
 		t.Fatalf("spec:\n%s", text)
 	}

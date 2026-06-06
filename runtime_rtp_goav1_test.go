@@ -58,17 +58,17 @@ func TestRuntimeBuilderRTPAV1DecodeSink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(planned.String(), "av1-rtp -> select-video") ||
-		!strings.Contains(planned.String(), "decode-video -> frames") {
-		t.Fatalf("planned:\n%s", planned.String())
+	if !strings.Contains(specText(planned), "av1-rtp -> select-video") ||
+		!strings.Contains(specText(planned), "decode-video -> frames") {
+		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
 	task, err := builder.Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planned.String() != task.Describe().String() || specMermaid(planned) != specMermaid(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)

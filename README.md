@@ -69,7 +69,7 @@ task, err := goav.Transcode(goav.FileInput("input.webm", in)).
     Build(ctx)
 ```
 
-Inspect before running:
+Inspect the graph data before running:
 
 ```go
 job := goav.Record(
@@ -81,7 +81,9 @@ spec, err := job.Describe()
 if err != nil {
     return err
 }
-fmt.Println(spec)
+for _, edge := range spec.Edges {
+    fmt.Printf("%s -> %s\n", edge.From, edge.To)
+}
 ```
 
 ## Common Recipes
@@ -150,12 +152,21 @@ Every recipe can describe the graph it will build:
 
 ```go
 spec, err := job.Describe()
-fmt.Println(spec)
+if err != nil {
+    return err
+}
+for _, node := range spec.Nodes {
+    fmt.Printf("%s: %s\n", node.Name, node.Kind)
+}
 ```
 
-`pipeline.Spec` is the core graph object. Diagram exporters live in the small
-`graphrender` utility package, so generated diagram output can evolve without
-becoming part of runtime composition.
+`pipeline.Spec` is the core graph object: structured nodes and edges only.
+Text and diagram exporters live in the small `graphrender` utility package, so
+generated output can evolve without becoming part of runtime composition.
+
+```go
+text := graphrender.Render(spec, graphrender.Text)
+```
 
 ## Custom Processing
 
