@@ -307,6 +307,17 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
+	stats := task.Stats()
+	if stats.Messages < 2 ||
+		stats.Packets != 1 ||
+		stats.Events == 0 ||
+		stats.EventsByType[av.EventEndOfStream] != 1 ||
+		stats.Delivered < 2 ||
+		stats.Dropped != 0 ||
+		!stats.LastEventPresent ||
+		stats.LastEvent.Type != av.EventEndOfStream {
+		t.Fatalf("stats = %+v", stats)
+	}
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
 	}

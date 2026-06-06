@@ -582,6 +582,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 177. Extend recipe Describe/Build equivalence coverage to realtime receive:
     WebRTC track recording and default RTP VP8 packet recording now prove the
     planned `pipeline.Spec` matches the built task graph. Done.
+178. Prove public recipe task observability on the default RTP VP8 record path:
+    after `Run(ctx)`, `Task.Stats()` reports packet totals, EOS event counts,
+    delivery totals, last-event state, and no buffered drops without touching
+    pipeline internals. Done.
 
 ## First Vertical Slice
 
