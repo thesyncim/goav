@@ -29,7 +29,9 @@ func Register(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(desc, NewDecoderFactory())
 			registry.RegisterEncoder(desc, NewVP8EncoderFactory())
 		case av.CodecVP9:
-			registry.RegisterDecoder(activeVP9Descriptor(descriptors[i]), NewVP9DecoderFactory())
+			desc := activeVP9Descriptor(descriptors[i])
+			registry.RegisterDecoder(desc, NewVP9DecoderFactory())
+			registry.RegisterEncoder(desc, NewVP9EncoderFactory())
 		default:
 			registry.RegisterDescriptor(descriptors[i])
 		}

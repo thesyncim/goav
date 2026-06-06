@@ -31,8 +31,8 @@ func TestRegisterWithBuildTagProvidesVP8AndVP9Factories(t *testing.T) {
 	if _, err := registry.EncoderFactory(av.CodecVP8); err != nil {
 		t.Fatalf("VP8 encoder factory: %v", err)
 	}
-	if _, err := registry.EncoderFactory(av.CodecVP9); !errors.Is(err, codec.ErrUnavailable) {
-		t.Fatalf("VP9 encoder factory err = %v, want ErrUnavailable", err)
+	if _, err := registry.EncoderFactory(av.CodecVP9); err != nil {
+		t.Fatalf("VP9 encoder factory: %v", err)
 	}
 	if descriptors := registry.Descriptors(); len(descriptors) != 2 {
 		t.Fatalf("descriptors = %d, want merged VP8 and VP9 descriptors", len(descriptors))

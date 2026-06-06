@@ -37,7 +37,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
 | runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph connections and branches with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, multi-RTP/WebRTC packet-reader record/fanout compiler | next codec adapter validation |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and VP8 encoder active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` and default-build optional video adapters report unavailable factories explicitly | extend the next concrete video path |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` and default-build optional video adapters report unavailable factories explicitly | extend the next concrete video path |
 
 ## Implementation Order
 
@@ -132,7 +132,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 40. Promote `pipeline.Connection` as the simple direct graph edge API, thread
     runtime explicit graph helpers through it, and keep low-level link/route
     structs as escape hatches. Done.
-41. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+41. Add build-tagged `govpx` VP9 encoder factory with caller-owned packet
+    output buffers, keyframe request handling, descriptor merge proof,
+    allocation guard, and deterministic close behavior. Done.
+42. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -251,10 +254,10 @@ Required proof:
   startup or loss, requests keyframes through `codec.ControlRequest`, resets on
   codec-change/discontinuity events, and has allocation guards for adapter
   output preparation and loss request emission plus closed-state lifecycle
-  tests. The same build tag now registers VP8 encode, mapping caller-owned I420
-  frames into caller-owned packet buffers, forcing keyframes on request or
-  discontinuity, and preserving one merged VP8 descriptor for decode and encode.
-  VP9 encode remains descriptor-only until its adapter path is proven.
+  tests. The same build tag now registers VP8 and VP9 encode, mapping
+  caller-owned I420 frames into caller-owned packet buffers, forcing keyframes
+  on request or discontinuity, and preserving merged descriptors for decode and
+  encode.
 
 ## Adapter Targets
 
@@ -269,8 +272,8 @@ Required proof:
 - `adapters/gopus`: Opus decode first is active, PLC via loss events works,
   encode adapter remains unclaimed.
 - `adapters/govpx`: descriptor-only by default; `goav_govpx` activates VP8 and
-  VP9 decode into caller-owned I420 frames plus VP8 encode into caller-owned
-  packet buffers. VP9 encode still needs concrete adapter validation.
+  VP9 decode into caller-owned I420 frames plus VP8 and VP9 encode into
+  caller-owned packet buffers.
 - `adapters/goav1`: descriptor boundary exists; concrete AV1 decode path still
   needs capability validation.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` activates a
@@ -299,8 +302,8 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: extend the next concrete video path, likely VP9 encode
-or AV1 decode, without expanding the core import graph.
+Current pressure point: extend the next concrete video path, likely AV1 decode
+if the sibling module surface is ready without expanding the core import graph.
 
 ## Validation Gates
 

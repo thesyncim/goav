@@ -34,8 +34,7 @@ validation gates. This roadmap keeps the broader phase view.
 
 - VP8/VP9 depacketization.
 - `govpx` VP8/VP9 decode adapters behind `goav_govpx`. First slices active.
-- `govpx` VP8 encode adapter behind `goav_govpx`. First slice active.
-- `govpx` VP9 encode adapter.
+- `govpx` VP8/VP9 encode adapters behind `goav_govpx`. First slices active.
 - Keyframe request events.
 - Loss recovery and drop-until-sync behavior.
 
@@ -63,9 +62,9 @@ validation gates. This roadmap keeps the broader phase view.
 - Descriptor-only H264 adapter availability checks. Done.
 - Build-tagged `goh264` decoder factory. Done.
 - Allocation and lifecycle hardening for concrete video decode paths. H264 and
-  VP8/VP9 tagged adapter guards active; next concrete video path pending.
-- Allocation and lifecycle hardening for concrete video encode paths. VP8
-  tagged adapter guard active; VP9 encode pending.
+  VP8/VP9 tagged adapter guards active.
+- Allocation and lifecycle hardening for concrete video encode paths. VP8/VP9
+  tagged adapter guards active.
 - AV1 decode adapter validation.
 - `goav1` adapter as it matures.
 
