@@ -21,6 +21,21 @@ func readUIntPayload(r io.Reader, size uint64) (uint64, error) {
 	return readUIntPayloadScratch(r, size, &scratch)
 }
 
+func readBoolFlagPayload(r io.Reader, size uint64) (bool, error) {
+	value, err := readUIntPayload(r, size)
+	if err != nil {
+		return false, err
+	}
+	switch value {
+	case 0:
+		return false, nil
+	case 1:
+		return true, nil
+	default:
+		return false, ErrInvalidData
+	}
+}
+
 func readUIntPayloadScratch(r io.Reader, size uint64, scratch *[8]byte) (uint64, error) {
 	if size > 8 {
 		return 0, ErrInvalidData

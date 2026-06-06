@@ -97,8 +97,9 @@ func (m *Muxer) AddTrack(track Track) (uint32, error) {
 	if track.ID == 0 {
 		track.ID = uint32(len(m.tracks) + 1)
 	}
+	normalizeTrackIdentity(&track)
 	for i := range m.tracks {
-		if m.tracks[i].ID == track.ID {
+		if m.tracks[i].ID == track.ID || m.tracks[i].UID == track.UID {
 			return 0, ErrInvalidTrack
 		}
 	}
@@ -114,6 +115,18 @@ func (m *Muxer) AddTrack(track Track) (uint32, error) {
 	}
 	m.tracks = append(m.tracks, track)
 	return track.ID, nil
+}
+
+func normalizeTrackIdentity(track *Track) {
+	if track.UID == 0 {
+		track.UID = uint64(track.ID)
+	}
+	if !track.FlagEnabledSet {
+		track.FlagEnabled = true
+	}
+	if !track.FlagDefaultSet {
+		track.FlagDefault = true
+	}
 }
 
 func (m *Muxer) WritePacket(packet Packet) error {
@@ -1359,7 +1372,7 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 	if err := tw.WriteUInt(idTrackNumber, uint64(track.ID)); err != nil {
 		return err
 	}
-	if err := tw.WriteUInt(idTrackUID, uint64(track.ID)); err != nil {
+	if err := tw.WriteUInt(idTrackUID, track.UID); err != nil {
 		return err
 	}
 	switch track.Type {
@@ -1374,10 +1387,13 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 	default:
 		return ErrInvalidTrack
 	}
-	if err := tw.WriteUInt(idFlagEnabled, 1); err != nil {
+	if err := tw.WriteUInt(idFlagEnabled, boolFlagUInt(track.FlagEnabled)); err != nil {
 		return err
 	}
-	if err := tw.WriteUInt(idFlagDefault, 1); err != nil {
+	if err := tw.WriteUInt(idFlagDefault, boolFlagUInt(track.FlagDefault)); err != nil {
+		return err
+	}
+	if err := tw.WriteUInt(idFlagForced, boolFlagUInt(track.FlagForced)); err != nil {
 		return err
 	}
 	if track.Name != "" {
@@ -1455,6 +1471,13 @@ func trackCodecTiming(track Track, private []byte) (int64, int64, error) {
 		seekPreRollNS = opusDefaultSeekPreRollNS
 	}
 	return codecDelayNS, seekPreRollNS, nil
+}
+
+func boolFlagUInt(value bool) uint64 {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func writeVideo(w *ebml.Writer, video VideoConfig) error {

@@ -32,6 +32,7 @@ const (
 	idTrackType    ebml.ID = 0x83
 	idFlagEnabled  ebml.ID = 0xb9
 	idFlagDefault  ebml.ID = 0x88
+	idFlagForced   ebml.ID = 0x55aa
 	idName         ebml.ID = 0x536e
 	idLanguage     ebml.ID = 0x22b59c
 	idCodecID      ebml.ID = 0x86

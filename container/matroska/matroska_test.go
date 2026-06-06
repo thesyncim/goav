@@ -216,6 +216,146 @@ func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesTrackUIDAndFlags(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		ID:             7,
+		UID:            12345,
+		Type:           TrackVideo,
+		Codec:          CodecVP8,
+		FlagEnabled:    false,
+		FlagEnabledSet: true,
+		FlagDefault:    false,
+		FlagDefaultSet: true,
+		FlagForced:     true,
+		FlagForcedSet:  true,
+		Video:          VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trackID != 7 {
+		t.Fatalf("trackID = %d, want 7", trackID)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	track := tracks[0]
+	if track.ID != 7 || track.UID != 12345 ||
+		track.FlagEnabled || !track.FlagEnabledSet ||
+		track.FlagDefault || !track.FlagDefaultSet ||
+		!track.FlagForced || !track.FlagForcedSet {
+		t.Fatalf("track = %+v", track)
+	}
+}
+
+func TestMuxerDefaultsTrackUIDAndFlags(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].UID != uint64(trackID) ||
+		!tracks[0].FlagEnabled || !tracks[0].FlagEnabledSet ||
+		!tracks[0].FlagDefault || !tracks[0].FlagDefaultSet ||
+		tracks[0].FlagForced || !tracks[0].FlagForcedSet {
+		t.Fatalf("track = %+v", tracks[0])
+	}
+}
+
+func TestMuxerRejectsDuplicateTrackUID(t *testing.T) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		UID:   42,
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		UID:   42,
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+	}); !errors.Is(err, ErrInvalidTrack) {
+		t.Fatalf("err = %v, want ErrInvalidTrack", err)
+	}
+}
+
+func TestDemuxerRejectsInvalidTrackFlags(t *testing.T) {
+	tests := []struct {
+		name string
+		id   ebml.ID
+	}{
+		{name: "enabled", id: idFlagEnabled},
+		{name: "default", id: idFlagDefault},
+		{name: "forced", id: idFlagForced},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+				return writeTracksWithFlagValue(writer, tt.id, 2)
+			})
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
 func TestDemuxerTracksReturnsCodecPrivateCopies(t *testing.T) {
 	data := makeH264AVCMatroskaData(t, 1)
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
@@ -3157,6 +3297,35 @@ func writeTracksWithTrackNumber(writer *ebml.Writer, trackNumber uint64) error {
 		return err
 	}
 	if err := ew.WriteUInt(idTrackType, matroskaTrackVideo); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, "V_VP8"); err != nil {
+		return err
+	}
+	if err := writeVideo(ew, VideoConfig{Width: 16, Height: 16}); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+func writeTracksWithFlagValue(writer *ebml.Writer, flagID ebml.ID, value uint64) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	if err := ew.WriteUInt(idTrackNumber, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, matroskaTrackVideo); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(flagID, value); err != nil {
 		return err
 	}
 	if err := ew.WriteString(idCodecID, "V_VP8"); err != nil {

@@ -37,6 +37,7 @@ type VideoConfig struct {
 
 type Track struct {
 	ID                uint32
+	UID               uint64
 	Type              TrackType
 	Codec             Codec
 	Name              string
@@ -46,6 +47,12 @@ type Track struct {
 	DefaultDurationNS int64
 	CodecDelayNS      int64
 	SeekPreRollNS     int64
+	FlagEnabled       bool
+	FlagEnabledSet    bool
+	FlagDefault       bool
+	FlagDefaultSet    bool
+	FlagForced        bool
+	FlagForcedSet     bool
 	Audio             AudioConfig
 	Video             VideoConfig
 

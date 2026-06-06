@@ -707,7 +707,7 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 	}
 	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
 	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
-	track := Track{Language: "und", TimebaseNum: 1, TimebaseDen: timeNS}
+	track := Track{Language: "und", TimebaseNum: 1, TimebaseDen: timeNS, FlagEnabled: true, FlagDefault: true}
 	var codecID string
 	for limited.N > 0 {
 		child, err := reader.ReadHeader()
@@ -725,6 +725,15 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 			track.ID = trackID
+		case idTrackUID:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			if value == 0 {
+				return Track{}, ErrInvalidData
+			}
+			track.UID = value
 		case idTrackType:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
@@ -738,6 +747,27 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			default:
 				track.Type = TrackUnknown
 			}
+		case idFlagEnabled:
+			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.FlagEnabled = value
+			track.FlagEnabledSet = true
+		case idFlagDefault:
+			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.FlagDefault = value
+			track.FlagDefaultSet = true
+		case idFlagForced:
+			value, err := readBoolFlagPayload(reader, child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.FlagForced = value
+			track.FlagForcedSet = true
 		case idName:
 			value, err := readStringPayload(reader, child.Size.Value)
 			if err != nil {
@@ -806,6 +836,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 		}
+	}
+	if track.UID == 0 {
+		track.UID = uint64(track.ID)
 	}
 	track.Codec = codecFromMatroskaID(codecID, track.CodecPrivate)
 	if track.Codec == CodecOpus && len(track.CodecPrivate) != 0 {
