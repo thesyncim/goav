@@ -289,6 +289,79 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderExplicitBranch(t *testing.T) {
+	packet := av.Packet{StreamID: "video"}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	record := &runtimeTestSink{name: "record"}
+	preview := &runtimeTestSink{name: "preview"}
+	stats := &runtimeTestSink{name: "stats"}
+
+	task, err := New().New().
+		Source(source).
+		Sink(record).
+		Sink(preview).
+		Sink(stats).
+		Branch("source", "record", "preview", "stats").
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := task.Describe()
+	if len(spec.Edges) != 3 {
+		t.Fatalf("edges=%d, want 3", len(spec.Edges))
+	}
+	if !strings.Contains(spec.String(), "source -> record") ||
+		!strings.Contains(spec.String(), "source -> preview") ||
+		!strings.Contains(spec.String(), "source -> stats") {
+		t.Fatalf("spec:\n%s", spec.String())
+	}
+
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if record.count != 1 || preview.count != 1 || stats.count != 1 {
+		t.Fatalf("record=%d preview=%d stats=%d", record.count, preview.count, stats.count)
+	}
+}
+
+func TestRuntimeBuilderExplicitBranchStream(t *testing.T) {
+	packet := av.Packet{StreamID: "video"}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	record := &runtimeTestSink{name: "record"}
+	preview := &runtimeTestSink{name: "preview"}
+	audio := &runtimeTestSink{name: "audio"}
+
+	task, err := New().New().
+		Source(source).
+		Sink(record).
+		Sink(preview).
+		Sink(audio).
+		BranchStream("source", "video", "record", "preview").
+		ConnectStream("source", "audio", "audio").
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := task.Describe()
+	if !strings.Contains(spec.String(), "source -> record [by_stream:video]") ||
+		!strings.Contains(spec.String(), "source -> preview [by_stream:video]") {
+		t.Fatalf("spec:\n%s", spec.String())
+	}
+
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if record.count != 1 || preview.count != 1 || audio.count != 0 {
+		t.Fatalf("record=%d preview=%d audio=%d", record.count, preview.count, audio.count)
+	}
+}
+
 func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 	packet := av.Packet{StreamID: "audio"}
 	source := &runtimeTestSource{

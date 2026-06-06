@@ -315,6 +315,42 @@ func (b *builder) ConnectEvent(from string, to string, event av.EventType) Build
 	return b.Connect(from, to, ForEvent(event))
 }
 
+func (b *builder) Branch(from string, to ...string) Builder {
+	return b.branch(from, pipeline.RouteAll, "", to...)
+}
+
+func (b *builder) BranchStream(from string, stream av.StreamID, to ...string) Builder {
+	return b.branch(from, pipeline.RouteByStream, string(stream), to...)
+}
+
+func (b *builder) BranchEvent(from string, event av.EventType, to ...string) Builder {
+	return b.branch(from, pipeline.RouteByEvent, string(event), to...)
+}
+
+func (b *builder) branch(from string, policy pipeline.RoutePolicy, label string, to ...string) Builder {
+	if len(to) == 0 {
+		return b
+	}
+	if len(to) == 1 && (policy == "" || policy == pipeline.RouteAll) && label == "" {
+		b.links = append(b.links, pipeline.Link{
+			From: pipeline.NodeRef(from),
+			To:   pipeline.NodeRef(to[0]),
+		})
+		return b
+	}
+	refs := make([]pipeline.NodeRef, len(to))
+	for i := range to {
+		refs[i] = pipeline.NodeRef(to[i])
+	}
+	b.routes = append(b.routes, pipeline.Route{
+		From:   pipeline.NodeRef(from),
+		To:     refs,
+		Policy: policy,
+		Label:  label,
+	})
+	return b
+}
+
 func (b *builder) Link(link pipeline.Link) Builder {
 	b.links = append(b.links, link)
 	return b

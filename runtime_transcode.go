@@ -379,11 +379,8 @@ func applyTranscodeTransformToStream(stream av.Stream, transform transcodeTransf
 		}
 		out.Type = av.MediaVideo
 		out.Codec.Type = av.MediaVideo
-		if transform.video.Width != 0 {
-			out.Codec.Width = transform.video.Width
-		}
-		if transform.video.Height != 0 {
-			out.Codec.Height = transform.video.Height
+		if err := applyResizeConfigToStream(&out, *transform.video); err != nil {
+			return av.Stream{}, err
 		}
 		if transform.video.PixelFormat != "" {
 			out.Codec.PixelFormat = transform.video.PixelFormat
@@ -475,10 +472,74 @@ func filterResultForStream(stream av.Stream) filter.Result {
 		frame.Planes = []av.Plane{{Buffer: av.Buffer{Bytes: make([]byte, 0, audioDecodeBufferSize(stream))}}}
 	}
 	if stream.Type == av.MediaVideo || stream.Codec.Type == av.MediaVideo {
-		frame.Planes = make([]av.Plane, 3)
+		frame = preallocVideoFilterFrame(stream)
 	}
 	return filter.Result{
 		Frames: []av.Frame{frame}[:0],
 		Events: make([]av.Event, 0, 1),
 	}
+}
+
+func applyResizeConfigToStream(stream *av.Stream, config filter.ResizeConfig) error {
+	mode := config.Mode
+	if mode == "" {
+		mode = filter.ResizeExact
+	}
+	switch mode {
+	case filter.ResizePassthrough:
+		return nil
+	case filter.ResizeExact:
+		if config.Width != 0 {
+			stream.Codec.Width = config.Width
+		}
+		if config.Height != 0 {
+			stream.Codec.Height = config.Height
+		}
+		return nil
+	case filter.ResizeFit:
+		if config.Width <= 0 || config.Height <= 0 || stream.Codec.Width <= 0 || stream.Codec.Height <= 0 {
+			return ErrUnsupportedBuild
+		}
+		stream.Codec.Width, stream.Codec.Height = resizeFitStreamDimensions(stream.Codec.Width, stream.Codec.Height, config.Width, config.Height)
+		if stream.Codec.Width == 0 || stream.Codec.Height == 0 {
+			return ErrUnsupportedBuild
+		}
+		return nil
+	case filter.ResizeFill:
+		if config.Width <= 0 || config.Height <= 0 {
+			return ErrUnsupportedBuild
+		}
+		stream.Codec.Width = config.Width
+		stream.Codec.Height = config.Height
+		return nil
+	default:
+		return ErrUnsupportedBuild
+	}
+}
+
+func preallocVideoFilterFrame(stream av.Stream) av.Frame {
+	frame := av.Frame{Planes: make([]av.Plane, 3)}
+	width := stream.Codec.Width
+	height := stream.Codec.Height
+	if width <= 0 || height <= 0 || width%2 != 0 || height%2 != 0 {
+		return frame
+	}
+	frame.Planes[0].Buffer.Bytes = make([]byte, 0, width*height)
+	frame.Planes[1].Buffer.Bytes = make([]byte, 0, width*height/4)
+	frame.Planes[2].Buffer.Bytes = make([]byte, 0, width*height/4)
+	return frame
+}
+
+func resizeFitStreamDimensions(inputWidth int, inputHeight int, targetWidth int, targetHeight int) (int, int) {
+	if targetWidth*inputHeight <= targetHeight*inputWidth {
+		return evenStreamDimension(targetWidth), evenStreamDimension((inputHeight*targetWidth + inputWidth/2) / inputWidth)
+	}
+	return evenStreamDimension((inputWidth*targetHeight + inputHeight/2) / inputHeight), evenStreamDimension(targetHeight)
+}
+
+func evenStreamDimension(value int) int {
+	if value < 2 {
+		return 0
+	}
+	return value &^ 1
 }

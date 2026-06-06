@@ -46,12 +46,12 @@ validation gates. This roadmap keeps the broader phase view.
 
 ## Phase 3b: Transcode ladders
 
-- Resize filter contract implementation.
+- Resize filter contract implementation. I420/YUV420P adapter active.
 - Resample filter contract implementation. S16 adapter active.
 - Decode sharing across renditions. First compiler active.
 - Per-rendition encoder configs. First compiler active.
 - Multiple mux/output targets from one plan. First compiler active.
-- Resize/resample branch execution. Resample adapter active; resize pending.
+- Resize/resample branch execution. First concrete adapters active.
 
 ## Phase 4: H264 and concrete AV1 decode
 
@@ -66,6 +66,6 @@ validation gates. This roadmap keeps the broader phase view.
 
 - Fluent receive/decode/filter/encode/output builder compilers for selected
   streams. First file/protocol and RTP/WebRTC slices are active.
-- Branchable multi-rendition transcode builder compilers. First shared-decode
-  slice is active.
+- Branchable multi-rendition transcode builder compilers and fluent explicit
+  graph branch helpers. First shared-decode slice is active.
 - Stats, tracing, and graph introspection.

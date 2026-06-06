@@ -282,6 +282,51 @@ func TestRuntimeBuilderTranscodeRequiresMatchingOutputSelection(t *testing.T) {
 	}
 }
 
+func TestTranscodeVideoFilterResultPreallocatesI420Planes(t *testing.T) {
+	stream := av.Stream{
+		ID:   "video",
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			Type:        av.MediaVideo,
+			Width:       640,
+			Height:      360,
+			PixelFormat: av.PixelFormatYUV420P,
+		},
+	}
+
+	result := filterResultForStream(stream)
+	if len(result.Frames) != 0 || cap(result.Frames) != 1 {
+		t.Fatalf("frames len=%d cap=%d", len(result.Frames), cap(result.Frames))
+	}
+	frame := result.Frames[:1][0]
+	if len(frame.Planes) != 3 {
+		t.Fatalf("planes = %d, want 3", len(frame.Planes))
+	}
+	if cap(frame.Planes[0].Buffer.Bytes) != 640*360 ||
+		cap(frame.Planes[1].Buffer.Bytes) != 640*360/4 ||
+		cap(frame.Planes[2].Buffer.Bytes) != 640*360/4 {
+		t.Fatalf("plane caps = %d %d %d", cap(frame.Planes[0].Buffer.Bytes), cap(frame.Planes[1].Buffer.Bytes), cap(frame.Planes[2].Buffer.Bytes))
+	}
+}
+
+func TestApplyResizeConfigToStreamFit(t *testing.T) {
+	stream := av.Stream{
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			Type:   av.MediaVideo,
+			Width:  1920,
+			Height: 1080,
+		},
+	}
+
+	if err := applyResizeConfigToStream(&stream, filter.ResizeConfig{Width: 1280, Height: 720, Mode: filter.ResizeFit}); err != nil {
+		t.Fatal(err)
+	}
+	if stream.Codec.Width != 1280 || stream.Codec.Height != 720 {
+		t.Fatalf("geometry = %dx%d, want 1280x720", stream.Codec.Width, stream.Codec.Height)
+	}
+}
+
 func encoderAt(encoders []*encodeTestEncoder, index int) *encodeTestEncoder {
 	if index >= len(encoders) {
 		return nil

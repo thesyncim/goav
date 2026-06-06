@@ -30,11 +30,11 @@ integrations belong under `adapters/...`.
 | `adapters/ivf` | IVF VP8/VP9/AV1 packet demux/mux |
 | `adapters/annexb` | H264 Annex B packet mux |
 | `adapters/resample` | pure-Go S16 audio resample and channel conversion filter |
+| `adapters/resize` | pure-Go I420/YUV420P video resize filter |
 | `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
 | `adapters/govpx` | descriptor-only VP8/VP9 boundary |
 | `adapters/goav1` | descriptor-only AV1 boundary |
 | `adapters/goh264` | descriptor-only by default; `goav_goh264` enables H264 decode |
-| resize adapters | planned; filter registry and stage boundary are active |
 
 ## `ivf`
 
@@ -84,7 +84,7 @@ It does not currently claim encode support.
 
 ## `resample`
 
-The `resample` adapter is the first concrete filter adapter. It supports
+The `resample` adapter is the first concrete audio filter adapter. It supports
 interleaved signed 16-bit PCM audio frames.
 
 Current surface:
@@ -97,6 +97,22 @@ Current surface:
 
 It is intentionally narrow: no floating-point PCM, no dithering, and no
 streaming phase carry yet.
+
+## `resize`
+
+The `resize` adapter is the first concrete video filter adapter. It supports
+planar 8-bit 4:2:0 frames with `i420` or `yuv420p` layout.
+
+Current surface:
+
+- explicit registry registration through `resize.Register`
+- exact, fit, fill, and passthrough geometry modes
+- deterministic nearest-neighbor scaling
+- caller-owned output frame and plane buffers
+- zero-allocation hot-path test
+
+It is intentionally narrow: no RGB, NV12, high bit-depth, color conversion,
+interlaced handling, or high-quality scaler yet.
 
 ## `goh264`
 

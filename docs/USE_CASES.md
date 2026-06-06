@@ -113,7 +113,8 @@ task, err := runtime.New().Transcode(plan).Build(ctx)
 ```
 
 Resize and resample configs become branch-local filter stages when matching
-filter factories are registered.
+filter factories are registered. The first concrete filters cover S16 audio
+resample/channel conversion and I420/YUV420P video resize.
 
 Expected graph:
 
@@ -137,6 +138,20 @@ One receive graph should be able to drive several sinks at once:
 - stats/analysis
 - archival transcode
 
+Explicit application-owned graphs can use branch helpers for this shape:
+
+```go
+task, err := runtime.New().
+    Source(source).
+    Stage(decode).
+    Sink(record).
+    Sink(preview).
+    Sink(stats).
+    Connect("source", "decode").
+    Branch("decode", "record", "preview", "stats").
+    Build(ctx)
+```
+
 ## Resample
 
 Audio filters should express sample-rate, channel-count, channel-layout, and
@@ -148,3 +163,5 @@ sample-rate conversion and basic channel conversion.
 
 Video filters should express exact, fit, fill, and passthrough modes so the same
 contract works for ABR ladders, previews, thumbnails, and recording paths.
+The first concrete adapter covers planar 8-bit 4:2:0 frames with
+nearest-neighbor scaling and caller-owned output planes.

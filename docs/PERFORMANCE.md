@@ -47,6 +47,7 @@ Current allocation guards cover:
 - format mux stage packet write flow
 - IVF demux and mux packet read/write paths
 - Annex B mux packet write path
+- I420/YUV420P resize filter path
 - RTP sequence detection
 - RTP jitter ring
 - Opus depacketization

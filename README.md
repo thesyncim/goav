@@ -13,8 +13,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pure Go core, no cgo runtime dependency.
 - Simple fluent API for natural workflows.
 - Explicit graph API for custom realtime systems.
-- Graphs are named sources, stages, sinks, and direct links; stream/event
-  routing is a connection option.
+- Graphs are named sources, stages, sinks, connections, and branches;
+  stream/event routing is a connection option.
 - Caller-owned buffers and result structs on hot paths.
 - RTP metadata, loss, discontinuity, codec epochs, keyframe requests, EOS, and
   backpressure are first-class events.
@@ -128,9 +128,11 @@ Build an explicit graph when the application owns the stages:
 builder := rt.New().
     Source(source).
     Stage(decode).
+    Sink(record).
+    Sink(preview).
+    Sink(stats).
     Connect("source", "decode", goav.ForStream("audio")).
-    Connect("decode", "record").
-    Sink(record)
+    Branch("decode", "record", "preview", "stats")
 
 spec, err := builder.Describe()
 if err != nil {
@@ -147,8 +149,8 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `av`: media identifiers, streams, packets, frames, timestamps, events, reset
   helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, fanout, stream/event routes,
-  backpressure surface, simple node-to-node connections, text/DOT/Mermaid graph
-  specs.
+  backpressure surface, simple node-to-node connections and branches,
+  text/DOT/Mermaid graph specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, registry, decoder and encoder pipeline
   stages.
@@ -164,6 +166,7 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `adapters/ivf`: IVF demux/mux for VP8, VP9, and AV1 packet recording.
 - `adapters/annexb`: H264 Annex B packet mux for `.h264` recording.
 - `adapters/resample`: pure-Go `s16` audio resample/channel conversion filter.
+- `adapters/resize`: pure-Go planar 8-bit 4:2:0 video resize filter.
 - `adapters/gopus`: active Opus decoder adapter.
 - `adapters/govpx`, `adapters/goav1`: descriptor boundaries for future
   concrete adapters; factory lookups return `codec.ErrUnavailable` until a
@@ -188,6 +191,8 @@ Implemented slices:
 - Fluent `Transcode(plan)` compiler for one selected decode feeding multiple
   named encode/output branches, including resize/resample branch stages when
   filter factories are registered.
+- Fluent `Branch(...)`, `BranchStream(...)`, and `BranchEvent(...)` helpers for
+  one-to-many explicit graph fanout without low-level edge objects.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
   `RTP(...)` inputs.
 - Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,
@@ -196,6 +201,7 @@ Implemented slices:
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.
 - Annex B packet mux adapter for H264 recording.
 - S16 audio resample filter adapter with allocation-guarded hot path.
+- I420/YUV420P video resize filter adapter with allocation-guarded hot path.
 - VP8/VP9/AV1/H264 RTP depacketizers for packet-preserving video recording.
 - WebRTC session track accept loop with RTCP feedback routed through Pion.
 - WebRTC TrackSet keeps one long-lived reader per logical stream.
@@ -209,8 +215,8 @@ Implemented slices:
 
 Next pressure points:
 
-- Concrete allocation-safe resize filter adapter.
 - Allocation and lifecycle hardening for concrete video decode paths.
+- Concrete video adapter allocation guards beyond the first resize filter.
 
 ## Working Loop
 

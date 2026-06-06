@@ -52,6 +52,9 @@ type Builder interface {
 	Connect(from string, to string, options ...ConnectOption) Builder
 	ConnectStream(from string, to string, stream av.StreamID) Builder
 	ConnectEvent(from string, to string, event av.EventType) Builder
+	Branch(from string, to ...string) Builder
+	BranchStream(from string, stream av.StreamID, to ...string) Builder
+	BranchEvent(from string, event av.EventType, to ...string) Builder
 	Link(pipeline.Link) Builder
 	Route(pipeline.Route) Builder
 	Describe() (pipeline.Spec, error)

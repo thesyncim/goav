@@ -33,7 +33,8 @@ compilers. Each compiler owns one workflow shape and must implement both
 pre-build description and runnable graph construction, so rendered graphs and
 execution graphs stay equivalent. The fluent API stays centered on media work:
 source, decode, filter, encode, output, and sink. The graph layer stays
-available as named nodes and links for inspection, custom stages, and rendering.
+available as named nodes, connections, and branches for inspection, custom
+stages, and rendering.
 
 The current compilers cover:
 
@@ -69,6 +70,8 @@ The current compilers cover:
 
 Resize and resample branch configs fail explicitly at build time when no matching
 filter factory is registered.
+When output geometry is known, branch filter stages receive preallocated frame
+scratch so concrete resize filters can keep plane ownership with the caller.
 
 ## Core media model
 
@@ -163,6 +166,8 @@ The filter package follows the codec stage model for frame transforms.
 flushes before EOS, and uses caller-owned result scratch. Runtime transcode
 branches resolve resize and resample configs through the filter registry before
 attaching the stage ahead of each encoder.
+The first concrete filters are `adapters/resample` for interleaved S16 audio and
+`adapters/resize` for planar 8-bit 4:2:0 video.
 
 The RTP package provides the live receive source. `rtpav.Source` keeps Pion RTP
 packets at the boundary, applies optional jitter and depacketizers, forwards

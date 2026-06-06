@@ -51,8 +51,10 @@ type Epoch uint64
 type Metadata map[string]string
 
 const (
-	SampleFormatS16 = "s16"
-	SampleFormatF32 = "f32"
+	SampleFormatS16    = "s16"
+	SampleFormatF32    = "f32"
+	PixelFormatI420    = "i420"
+	PixelFormatYUV420P = "yuv420p"
 )
 
 type TimeBase struct {
