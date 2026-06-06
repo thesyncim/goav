@@ -89,7 +89,7 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 		return nil, err
 	}
 	result := decodeResultForStream(stream)
-	decoder, err := factory.NewDecoder(ctx, codec.DecodeConfig{
+	config := codec.DecodeConfig{
 		Stream:     stream,
 		Realtime:   realtime,
 		LowLatency: realtime,
@@ -100,8 +100,21 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 			RequestKeyframes: stream.Type == av.MediaVideo,
 		},
 		Bounds: decodeBoundsForStream(stream, result),
-	})
+	}
+	stateFromFactory := false
+	if stateFactory, ok := factory.(codec.DecodeStateFactory); ok {
+		state, err := stateFactory.NewDecodeState(ctx, config)
+		if err != nil {
+			return nil, err
+		}
+		config.OpaqueState = state
+		stateFromFactory = true
+	}
+	decoder, err := factory.NewDecoder(ctx, config)
 	if err != nil {
+		if stateFromFactory {
+			closeDecodeState(config.OpaqueState)
+		}
 		return nil, err
 	}
 	stage, err := codec.NewDecoderStage(codec.DecoderStageConfig{
@@ -116,6 +129,13 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 		return nil, err
 	}
 	return stage, nil
+}
+
+func closeDecodeState(state any) {
+	closer, ok := state.(interface{ Close() })
+	if ok {
+		closer.Close()
+	}
 }
 
 func (b *builder) planDecodeFramePath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, selector av.StreamSelector) error {

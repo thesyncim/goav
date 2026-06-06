@@ -203,6 +203,13 @@ type DecoderFactory interface {
 	NewDecoder(context.Context, DecodeConfig) (Decoder, error)
 }
 
+// DecodeStateFactory is an optional extension for decoder factories that can
+// provision adapter-specific state for high-level runtimes. Low-level callers
+// may still pass DecodeConfig.OpaqueState directly when they need exact control.
+type DecodeStateFactory interface {
+	NewDecodeState(context.Context, DecodeConfig) (any, error)
+}
+
 type EncoderFactory interface {
 	NewEncoder(context.Context, EncodeConfig) (Encoder, error)
 }

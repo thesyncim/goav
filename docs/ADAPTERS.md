@@ -25,6 +25,9 @@ integrations belong under `adapters/...`.
 - Realtime decoders that need large internal arenas should honor
   `codec.DecodeConfig.Bounds` and document any adapter-specific
   `OpaqueState` type they accept.
+- Decoder factories may implement `codec.DecodeStateFactory` so high-level
+  runtimes can provision adapter state while low-level callers still pass exact
+  `OpaqueState` values explicitly.
 
 ## Current Adapters
 
@@ -122,6 +125,8 @@ Current tagged surface:
 
 - explicit registry registration through `goav1.Register`
 - `DecoderState` as the documented `codec.DecodeConfig.OpaqueState`
+- optional `codec.DecodeStateFactory` support for high-level runtime decode
+  builders, with a conservative first-slice realtime scratch arena
 - exact-format frame pools, retained RTP scratch, event/parser scratch,
   reference/output slots, and backend runtime handles owned by `DecoderState`
 - depacketized low-overhead OBU payload decode through the backend runner
@@ -133,16 +138,19 @@ Current tagged surface:
   sequence-header/key-frame payload
 - steady decode reuses a bound runner when the next plan fits the existing
   arena
-- result-capacity, allocation, sync-recovery, and close-lifecycle tests
+- result-capacity, allocation, sync-recovery, runtime RTP decode, and
+  close-lifecycle tests
 
 RTP/WebRTC callers should feed this decoder packets produced by `rtpav`'s AV1
 depacketizer, not raw AV1 RTP aggregation payloads. The frame format passed to
 `DecoderState` is exact, not merely a maximum envelope, because the backend
-frame pool must match the accepted sequence/frame format.
+frame pool must match the accepted sequence/frame format. Applications that know
+their stream shape should still pass a tuned `DecoderState`; the runtime state
+provider is a conservative convenience path for simple receive graphs.
 
-It is intentionally narrow for now. Raw RTP payload runner integration, high
-bit-depth output, color metadata, film grain policy, and broader frame format
-conversion remain future slices.
+It is intentionally narrow for now. Raw RTP payload runner integration, richer
+scratch sizing policy, high bit-depth output, color metadata, film grain policy,
+and broader frame format conversion remain future slices.
 
 ## `resample`
 

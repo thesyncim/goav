@@ -3,6 +3,7 @@
 package goav1
 
 import (
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	backend "github.com/thesyncim/goav1"
 )
@@ -12,6 +13,7 @@ const (
 	defaultSurfaceCount  = backend.RefFrames + 1
 	defaultMaxFrames     = 1
 	defaultMaxEvents     = 1
+	defaultRuntimeEvents = 8
 	defaultMaxPayload    = 1200
 	defaultMaxRetained   = 4096
 	defaultDecoderWorker = 1
@@ -38,6 +40,8 @@ type DecoderStateConfig struct {
 	Workers int
 	// WorkerPool is caller-owned and required before running tile-bearing plans.
 	WorkerPool *backend.TileWorkerPool
+	// OwnWorkerPool closes WorkerPool when DecoderState.Close is called.
+	OwnWorkerPool bool
 }
 
 // DecoderState owns the reusable backend state and scratch required by a
@@ -71,7 +75,8 @@ type DecoderState struct {
 	runner   backend.DecoderFrameWorkResidualStreamRunner
 	bound    bool
 
-	workerPool *backend.TileWorkerPool
+	workerPool    *backend.TileWorkerPool
+	ownWorkerPool bool
 }
 
 // DecoderFrameFormatFromBounds converts DecodeBounds into the exact default
@@ -88,6 +93,38 @@ func DecoderFrameFormatFromBounds(bounds codec.DecodeBounds) (backend.FrameForma
 		SubsamplingX: true,
 		SubsamplingY: true,
 		Align:        defaultAlign,
+	}
+	if _, err := backend.FrameRequiredSize(format); err != nil {
+		return backend.FrameFormat{}, err
+	}
+	return format, nil
+}
+
+// DecoderFrameFormatFromStream converts stream metadata and bounds into the
+// exact frame-pool format used by the first AV1 adapter slice.
+func DecoderFrameFormatFromStream(stream av.Stream, bounds codec.DecodeBounds) (backend.FrameFormat, error) {
+	bounds = normalizeDecoderBounds(bounds)
+	if bounds.MaxWidth <= 0 {
+		bounds.MaxWidth = stream.Codec.Width
+	}
+	if bounds.MaxHeight <= 0 {
+		bounds.MaxHeight = stream.Codec.Height
+	}
+	format, err := DecoderFrameFormatFromBounds(bounds)
+	if err != nil {
+		return backend.FrameFormat{}, err
+	}
+	switch stream.Codec.PixelFormat {
+	case "", av.PixelFormatI420, av.PixelFormatYUV420P:
+		format.MonoChrome = false
+		format.SubsamplingX = true
+		format.SubsamplingY = true
+	case av.PixelFormatGray8:
+		format.MonoChrome = true
+		format.SubsamplingX = true
+		format.SubsamplingY = true
+	default:
+		return backend.FrameFormat{}, codec.ErrUnsupportedFormat
 	}
 	if _, err := backend.FrameRequiredSize(format); err != nil {
 		return backend.FrameFormat{}, err
@@ -113,6 +150,59 @@ func DecoderScratchSizeFromBounds(bounds codec.DecodeBounds) backend.DecoderFram
 			Outputs: bounds.MaxFramesPerInput,
 		},
 	}
+}
+
+// RuntimeDecoderScratchSizeFromBounds returns a conservative first-slice
+// scratch shape for high-level realtime runtimes. Applications with exact
+// stream knowledge can still pass a tuned DecoderState through OpaqueState.
+func RuntimeDecoderScratchSizeFromBounds(bounds codec.DecodeBounds, workers int) backend.DecoderFrameWorkResidualStreamScratchSize {
+	bounds = normalizeDecoderBounds(bounds)
+	if bounds.MaxEventsPerInput < defaultRuntimeEvents {
+		bounds.MaxEventsPerInput = defaultRuntimeEvents
+	}
+	if workers <= 0 {
+		workers = defaultDecoderWorker
+	}
+	size := DecoderScratchSizeFromBounds(bounds)
+	tileScratch := backend.MaxTiles
+	if tileScratch < 1 {
+		tileScratch = 1
+	}
+	size.Event.Plan = backend.DecoderTileWorkPlan{
+		SpanCount:  tileScratch,
+		JobCount:   tileScratch,
+		BatchCount: tileScratch,
+	}
+	framePixels := bounds.MaxWidth * bounds.MaxHeight
+	if framePixels < 4096 {
+		framePixels = 4096
+	}
+	sideEntries := framePixels / 16
+	if sideEntries < 64 {
+		sideEntries = 64
+	}
+	size.Event.SideData = backend.DecoderFrameWorkSideDataScratchSize{
+		CDEFIndexMap:             sideEntries,
+		CDEFReadMap:              sideEntries,
+		LoopFilterMap:            sideEntries,
+		RestorationRecords:       sideEntries,
+		RestorationBoundaryAbove: bounds.MaxWidth * 3,
+		RestorationBoundaryBelow: bounds.MaxWidth * 3,
+	}
+	batchScratch := backend.DecoderFrameWorkBatchResidualScratchSize{
+		Int32Scratch:     32768,
+		ResidualScratch:  32768,
+		LoopContextAbove: maxInt(bounds.MaxWidth*4, 1024),
+	}
+	size.Event.Runner = backend.DecoderFrameWorkBatchResidualRunnerScratchSize{
+		Workers:             workers,
+		Batch:               batchScratch,
+		RestorationRequests: workers,
+		Int32Scratch:        batchScratch.Int32Scratch * workers,
+		ResidualScratch:     batchScratch.ResidualScratch * workers,
+		LoopContextAbove:    batchScratch.LoopContextAbove * workers,
+	}
+	return size
 }
 
 // NewDecoderState allocates and binds reusable AV1 decoder state from explicit
@@ -161,6 +251,7 @@ func NewDecoderState(config DecoderStateConfig) (*DecoderState, error) {
 		referenceFrames:   make([]*backend.Frame, backend.InterRefsPerFrame),
 		releases:          make([]int, backend.RefFrames),
 		workerPool:        config.WorkerPool,
+		ownWorkerPool:     config.OwnWorkerPool,
 	}
 	state.pool, err = backend.BindFramePool(state.frameBacking[:backingSize], format, state.frames, state.free, state.used)
 	if err != nil {
@@ -376,4 +467,23 @@ func (s *DecoderState) Reset() {
 	s.batch = backend.DecoderFrameWorkBatchResidualRunner{}
 	s.runner = backend.DecoderFrameWorkResidualStreamRunner{}
 	s.bound = false
+}
+
+func (s *DecoderState) Close() {
+	if s == nil {
+		return
+	}
+	s.Reset()
+	if s.ownWorkerPool {
+		s.workerPool.Close()
+		s.workerPool = nil
+		s.ownWorkerPool = false
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

@@ -34,9 +34,8 @@ pre-build description and runnable graph construction, so rendered graphs and
 execution graphs stay equivalent. The fluent API stays centered on media work:
 source, decode, filter, encode, output, and sink. The graph layer stays
 available as named nodes, simple connections, and branches for inspection,
-custom stages, and rendering. Pads and ports are intentionally not part of the
-public graph model; a connection carries all media by default, or matches one
-stream or event type.
+custom stages, and rendering. A connection carries all media by default, or
+matches one stream or event type.
 
 The current compilers cover:
 
@@ -129,6 +128,10 @@ goav1   -> AV1 decode/development adapter
 
 These adapters should live behind `codec.DecoderFactory` and
 `codec.EncoderFactory`. The core runtime should not depend on codec internals.
+Decoder factories may also implement `codec.DecodeStateFactory` when a
+high-level runtime needs adapter-specific reusable state before opening the
+decoder; exact low-level applications can still pass their own state through
+`codec.DecodeConfig.OpaqueState`.
 Descriptor-only adapters are allowed for planned or optional backends; they are
 discoverable through registry descriptors, while factory lookup returns
 `codec.ErrUnavailable` until an active factory is registered. `goh264`,
@@ -169,8 +172,10 @@ The codec package includes generic decoder and encoder stages. They adapt
 caller-owned result scratch. The decoder stage turns packet messages into frame
 messages, keeps upstream events visible by default, flushes before EOS, and uses
 packet-loss events to trigger audio PLC paths such as Opus concealment. The
-encoder stage turns frame messages into packet messages and flushes delayed
-packets before EOS.
+runtime builder asks decoder factories for optional adapter-owned state before
+opening stages, so heavyweight backends can stay hidden behind the same fluent
+`Decode(...).Sink(...)` path. The encoder stage turns frame messages into packet
+messages and flushes delayed packets before EOS.
 
 The format package follows the same pattern for containers. `DemuxSource`
 adapts a `format.Demuxer` into packet and event messages, including stream and

@@ -13,6 +13,8 @@ import (
 
 type DecoderFactory struct{}
 
+var _ codec.DecodeStateFactory = DecoderFactory{}
+
 func NewDecoderFactory() DecoderFactory {
 	return DecoderFactory{}
 }
@@ -39,6 +41,43 @@ func (DecoderFactory) NewDecoder(ctx context.Context, config codec.DecodeConfig)
 		return nil, err
 	}
 	return decoder, nil
+}
+
+func (DecoderFactory) NewDecodeState(ctx context.Context, config codec.DecodeConfig) (any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if config.Stream.Codec.ID != "" && config.Stream.Codec.ID != av.CodecAV1 {
+		return nil, codec.ErrUnsupportedFormat
+	}
+	bounds := config.Bounds
+	if bounds.MaxWidth <= 0 {
+		bounds.MaxWidth = config.Stream.Codec.Width
+	}
+	if bounds.MaxHeight <= 0 {
+		bounds.MaxHeight = config.Stream.Codec.Height
+	}
+	format, err := DecoderFrameFormatFromStream(config.Stream, bounds)
+	if err != nil {
+		return nil, err
+	}
+	workerPool, err := backend.NewTileWorkerPool(defaultDecoderWorker)
+	if err != nil {
+		return nil, err
+	}
+	state, err := NewDecoderState(DecoderStateConfig{
+		Bounds:        bounds,
+		Format:        format,
+		Scratch:       RuntimeDecoderScratchSizeFromBounds(bounds, defaultDecoderWorker),
+		Workers:       defaultDecoderWorker,
+		WorkerPool:    workerPool,
+		OwnWorkerPool: true,
+	})
+	if err != nil {
+		workerPool.Close()
+		return nil, err
+	}
+	return state, nil
 }
 
 // Decoder consumes depacketized AV1 low-overhead OBU buffers. RTP/WebRTC
@@ -190,7 +229,7 @@ func (d *Decoder) Close() error {
 	}
 	d.closed = true
 	if d.state != nil {
-		d.state.Reset()
+		d.state.Close()
 	}
 	d.runner = nil
 	d.runnerSize = backend.DecoderFrameWorkResidualStreamScratchSize{}

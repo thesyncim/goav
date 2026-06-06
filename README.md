@@ -15,10 +15,9 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Explicit graph API for custom realtime systems.
 - Graphs are named sources, stages, sinks, and connections; fanout is one
   connection with multiple targets.
-- There is no public pad or port layer: a connection may simply match all
-  media, one stream, or one event type.
-- The graph API starts with `pipeline.Connect("source", "sink")`; the fluent
-  builder uses `Connect`, `ConnectStream`, and `ConnectEvent`.
+- A connection may match all media, one stream, or one event type.
+- The graph API starts with `pipeline.Connect("source", "sink")`; fluent graph
+  builders use `Connect`, `ConnectStream`, and `ConnectEvent`.
 - Rendered graph nodes can carry short workflow details without changing the
   simple node-to-node API; routed edges render as `stream=video` or
   `event=packet_loss`.
@@ -30,6 +29,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pion RTP/RTCP/WebRTC types stay at package boundaries.
 - Realtime decoder adapters can receive explicit payload, retained-fragment,
   output-count, and geometry bounds before binding scratch.
+- Decoder factories may optionally provision adapter-specific state for
+  high-level builders, while low-level callers can still own exact state.
 - Codec implementations stay in adapter packages for `gopus`, `govpx`,
   `goav1`, and `goh264`.
 
@@ -165,7 +166,7 @@ as private graph compilers that must support both `Describe` and `Build`.
   surface, detail-aware text/DOT/Mermaid graph specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, realtime decode bounds, registry,
-  decoder and encoder pipeline stages.
+  optional decode-state provisioning, decoder and encoder pipeline stages.
 - `rtpav`: Pion RTP/RTCP boundary, payload map, loss detection, jitter ring,
   timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers,
   feedback helpers, RTP source.
@@ -264,15 +265,19 @@ Implemented slices:
   stream/event-scoped variants.
 - Tagged AV1 decode now registers a factory behind `goav_goav1`, consumes
   depacketized low-overhead OBU payloads through caller-owned `DecoderState`,
-  maps decoded backend frames into borrowed `av.Frame` planes, reuses the bound
+  can provision conservative runtime state for high-level builders, maps
+  decoded backend frames into borrowed `av.Frame` planes, reuses the bound
   runner in steady state, and sync-gates post-loss packets until a packet
   keyframe marker or parseable low-overhead sequence-header/key-frame payload.
+- Tagged AV1 RTP receive is covered through the high-level
+  `RTP(...).Decode(...).Sink(...)` builder path: Pion RTP packet, AV1
+  depacketizer, runtime-provided decoder state, and borrowed frame output.
 
 Next pressure points:
 
 - Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
-  RTP/WebRTC AV1 streams: codec-switch recovery, additional output formats, and
-  raw RTP runner integration.
+  RTP/WebRTC AV1 streams: codec-switch recovery, additional output formats,
+  raw RTP runner integration, and richer scratch sizing policy.
 
 ## Working Loop
 

@@ -125,6 +125,10 @@ selector before the decoder. Single-stream RTP sources stamp EOS with the stream
 ID so unrelated inputs do not flush the selected decoder.
 Optional filter stages can be inserted after `Decode(...)` and before `Sink(...)`
 when their selector matches the decoded stream.
+Decoder factories can optionally provide adapter-specific reusable state for
+this high-level path. That lets the AV1 adapter bind conservative scratch and a
+worker pool for `RTP(...).Decode(...).Sink(...)` while applications with exact
+stream knowledge can still pass tuned state through the lower-level codec API.
 
 The same selected live stream can continue into an encoder and one or more mux
 outputs when the target codec is explicit:
@@ -173,7 +177,10 @@ the same update while swapping the RTP reader to a replacement Pion track.
 `rtpav.Source` refreshes its receiver payload map when it observes the event.
 Matching depacketizers update their stream epoch from the event; video
 depacketizers drop partial frames and request sync before emitting packets for
-the new epoch.
+the new epoch. AV1 decode currently sync-gates depacketized low-overhead OBU
+packets after loss until a packet keyframe marker or parseable
+sequence-header/key-frame payload appears; broader RTP/WebRTC AV1 recovery is
+still being expanded.
 
 Session-level code still owns the policy decision for when renegotiation should
 call `UpdateCodec`. Accepted replacement tracks for the same stream can flow

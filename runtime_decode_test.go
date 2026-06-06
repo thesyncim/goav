@@ -21,6 +21,19 @@ func (f *decodeTestDecoderFactory) NewDecoder(_ context.Context, config codec.De
 	return f.decoder, nil
 }
 
+type decodeStateTestFactory struct {
+	decodeTestDecoderFactory
+	state any
+}
+
+func (f *decodeStateTestFactory) NewDecodeState(_ context.Context, config codec.DecodeConfig) (any, error) {
+	if config.OpaqueState != nil || config.Stream.ID == "" || config.Bounds.MaxFramesPerInput == 0 {
+		return nil, ErrUnsupportedBuild
+	}
+	f.state = &struct{ stream av.StreamID }{stream: config.Stream.ID}
+	return f.state, nil
+}
+
 type decodeTestDecoder struct {
 	decodes int
 	flushes int
@@ -190,6 +203,54 @@ func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	}
 	if !demuxer.closed || !decoder.closed || !sink.closed {
 		t.Fatalf("closed demux=%v decoder=%v sink=%v", demuxer.closed, decoder.closed, sink.closed)
+	}
+}
+
+func TestRuntimeBuilderDecodeUsesFactoryStateProvider(t *testing.T) {
+	streams := []av.Stream{{
+		ID:   "video",
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			ID:     av.CodecVP8,
+			Type:   av.MediaVideo,
+			Width:  16,
+			Height: 16,
+		},
+	}}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{StreamID: "video", Payload: av.Buffer{Bytes: []byte{1}}}},
+	}
+	formats := format.NewRegistry(
+		format.WithProber(remuxTestProber{streams: streams}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	decoder := &decodeTestDecoder{}
+	factory := &decodeStateTestFactory{
+		decodeTestDecoderFactory: decodeTestDecoderFactory{decoder: decoder},
+	}
+	codecs := codec.NewRegistry(codec.WithDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, factory))
+	sink := &runtimeTestSink{name: "frames"}
+
+	task, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+		Input(Input{Name: "input.ivf"}).
+		Decode(SelectVideo()).
+		Sink(sink).
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if factory.state == nil || factory.config.OpaqueState != factory.state {
+		t.Fatalf("state provider=%p config=%p", factory.state, factory.config.OpaqueState)
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || sink.frames != 1 {
+		t.Fatalf("decodes=%d frames=%d", decoder.decodes, sink.frames)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
