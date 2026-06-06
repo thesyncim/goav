@@ -68,6 +68,107 @@ func TestDecoderRequestsKeyframeAfterLoss(t *testing.T) {
 	}
 }
 
+func TestDecoderDropsUntilKeyframeAfterLoss(t *testing.T) {
+	payload := testLowOverheadStream()
+	decoder, workerPool := newTestDecoder(t, payload)
+	defer workerPool.Close()
+
+	result := testDecodeResult(1, 1)
+	if err := decoder.DecodeInto(context.Background(), nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	result.Reset()
+	err := decoder.DecodeInto(context.Background(), &av.Packet{
+		StreamID: "video",
+		Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+	}, &result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 0 ||
+		len(result.Requests) != 1 ||
+		result.Requests[0].Type != codec.ControlRequestKeyframe ||
+		result.Requests[0].Reason != "av1 waiting for keyframe" {
+		t.Fatalf("result = %+v", result)
+	}
+
+	result.Reset()
+	err = decoder.DecodeInto(context.Background(), &av.Packet{
+		StreamID:   "video",
+		Payload:    av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Keyframe:   true,
+		LossBefore: true,
+	}, &result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 1 || len(result.Requests) != 0 {
+		t.Fatalf("result after keyframe = %+v", result)
+	}
+
+	result.Reset()
+	err = decoder.DecodeInto(context.Background(), &av.Packet{
+		StreamID: "video",
+		Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+	}, &result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Requests) != 0 {
+		t.Fatalf("requests after recovery = %+v", result.Requests)
+	}
+}
+
+func TestDecoderCodecChangedDropsUntilKeyframe(t *testing.T) {
+	payload := testLowOverheadStream()
+	decoder, workerPool := newTestDecoder(t, payload)
+	defer workerPool.Close()
+
+	updated := av.Stream{
+		ID:    "video2",
+		Epoch: 9,
+		Codec: av.CodecParameters{
+			ID:          av.CodecAV1,
+			Width:       16,
+			Height:      16,
+			PixelFormat: av.PixelFormatGray8,
+		},
+	}
+	if err := decoder.HandleEvent(context.Background(), &av.Event{
+		Type:   av.EventCodecChanged,
+		Stream: &updated,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result := testDecodeResult(1, 1)
+	err := decoder.DecodeInto(context.Background(), &av.Packet{
+		Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+	}, &result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 0 ||
+		len(result.Requests) != 1 ||
+		result.Requests[0].StreamID != "video2" {
+		t.Fatalf("result = %+v", result)
+	}
+
+	result.Reset()
+	err = decoder.DecodeInto(context.Background(), &av.Packet{
+		Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Keyframe: true,
+	}, &result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 1 ||
+		result.Frames[0].StreamID != "video2" ||
+		result.Frames[0].CodecEpoch != 9 {
+		t.Fatalf("frames = %+v", result.Frames)
+	}
+}
+
 func TestDecoderDecodeIntoAllocs(t *testing.T) {
 	payload := testLowOverheadStream()
 	decoder, workerPool := newTestDecoder(t, payload)

@@ -185,7 +185,7 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `adapters/goav1`: descriptor-only by default; `goav_goav1` enables a first
   AV1 decoder factory over caller-owned `DecoderState`, depacketized
   low-overhead OBU payloads, borrowed 8-bit `gray8`/I420 frame planes, and
-  keyframe requests after loss.
+  drop-until-keyframe recovery after loss.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
   H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
   video frames.
@@ -262,13 +262,13 @@ Implemented slices:
 - Tagged AV1 decode now registers a factory behind `goav_goav1`, consumes
   depacketized low-overhead OBU payloads through caller-owned `DecoderState`,
   maps decoded backend frames into borrowed `av.Frame` planes, reuses the bound
-  runner in steady state, and requests keyframes after packet loss.
+  runner in steady state, and sync-gates post-loss packets until a keyframe.
 
 Next pressure points:
 
 - Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
-  RTP/WebRTC AV1 streams: richer sync detection, codec-switch recovery, and
-  more output formats.
+  RTP/WebRTC AV1 streams: richer sync detection beyond packet flags, more
+  codec-switch recovery, and more output formats.
 
 ## Working Loop
 

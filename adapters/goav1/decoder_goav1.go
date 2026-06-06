@@ -52,6 +52,7 @@ type Decoder struct {
 	video            av.VideoFrame
 	requestKeyframes bool
 	dropDamagedVideo bool
+	dropUntilSync    bool
 	result           backend.DecoderFrameWorkResidualStreamResult
 	closed           bool
 }
@@ -88,6 +89,7 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	}
 	d.requestKeyframes = config.Resilience.RequestKeyframes
 	d.dropDamagedVideo = config.Resilience.DropDamagedVideo
+	d.dropUntilSync = false
 	d.result = backend.DecoderFrameWorkResidualStreamResult{}
 	d.closed = false
 	return nil
@@ -112,9 +114,6 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	}
 	if pkt.LossBefore || pkt.Discontinuous {
 		d.resetAfterLoss()
-		if err := d.appendKeyframeRequest(out, "av1 discontinuity"); err != nil {
-			return err
-		}
 	}
 	if pkt.Corrupt && d.dropDamagedVideo {
 		d.resetAfterLoss()
@@ -122,6 +121,9 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	}
 	if len(pkt.Payload.Bytes) == 0 {
 		return nil
+	}
+	if d.dropUntilSync && !pkt.Keyframe {
+		return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
 	}
 
 	plan, err := d.state.PlanLowOverhead(pkt.Payload.Bytes)
@@ -138,6 +140,9 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	d.result = backend.DecoderFrameWorkResidualStreamResult{}
 	if err := runner.RunLowOverheadInto(&d.result, pkt.Payload.Bytes, nil); err != nil {
 		return mapGoav1Error(err)
+	}
+	if pkt.Keyframe {
+		d.dropUntilSync = false
 	}
 	return d.appendDecodedFrames(pkt, &d.result, out)
 }
@@ -185,6 +190,7 @@ func (d *Decoder) Close() error {
 	}
 	d.runner = nil
 	d.runnerSize = backend.DecoderFrameWorkResidualStreamScratchSize{}
+	d.dropUntilSync = false
 	return nil
 }
 
@@ -194,6 +200,7 @@ func (d *Decoder) resetAfterLoss() {
 	}
 	d.runner = nil
 	d.runnerSize = backend.DecoderFrameWorkResidualStreamScratchSize{}
+	d.dropUntilSync = true
 	d.result = backend.DecoderFrameWorkResidualStreamResult{}
 }
 
