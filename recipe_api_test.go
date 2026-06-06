@@ -785,6 +785,44 @@ func TestStreamRecipeRejectsMixedEncodedOutputAndFrameSink(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeRejectsProcessingAfterEncoder(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Opus(96_000).
+		Resample(16_000, goav.Mono).
+		To(goav.FileOutput("archive.ogg", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_step_after_encode wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "step: resample") ||
+		!strings.Contains(err.Error(), "encoder: opus") ||
+		!strings.Contains(err.Error(), "before .Opus") {
+		t.Fatalf("err = %v, want terminal encoder guidance", err)
+	}
+}
+
+func TestStreamRecipeRejectsDuplicateEncoder(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Opus(96_000).
+		VP9(600_000).
+		To(goav.FileOutput("archive.ogg", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "first encoder: opus") ||
+		!strings.Contains(err.Error(), "second encoder: vp9") ||
+		!strings.Contains(err.Error(), "one terminal encoder") {
+		t.Fatalf("err = %v, want duplicate encoder guidance", err)
+	}
+}
+
 func TestStreamRecipeRejectsWorkInProgressRecipeEncoder(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.h264", strings.NewReader(""))).
 		Video().
@@ -1172,6 +1210,40 @@ func TestTranscodeRecipeRejectsInvalidResample(t *testing.T) {
 	if !strings.Contains(err.Error(), "positive sample rate and channels") ||
 		!strings.Contains(err.Error(), "sample_rate=0") {
 		t.Fatalf("err = %v, want resample value guidance", err)
+	}
+}
+
+func TestTranscodeRecipeRejectsProcessingAfterEncoder(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("360p").VP9(600_000).Resize(640, 360).
+		To(goav.FileOutput("preview.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_step_after_encode wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "step: resize") ||
+		!strings.Contains(err.Error(), "encoder: vp9") ||
+		!strings.Contains(err.Error(), ".To(...) after the encoder") {
+		t.Fatalf("err = %v, want transcode terminal encoder guidance", err)
+	}
+}
+
+func TestTranscodeRecipeRejectsDuplicateEncoder(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("360p").VP9(600_000).VP8(400_000).
+		To(goav.FileOutput("preview.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "first encoder: vp9") ||
+		!strings.Contains(err.Error(), "second encoder: vp8") ||
+		!strings.Contains(err.Error(), "multiple encoded branches") {
+		t.Fatalf("err = %v, want duplicate transcode encoder guidance", err)
 	}
 }
 

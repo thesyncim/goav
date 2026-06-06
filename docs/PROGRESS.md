@@ -392,7 +392,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `pipeline.Spec` stays structured-only while exports gain one simple target
     path.
     Done.
-127. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+127. Add stream-chain order validation so ordinary stream recipes and transcode
+    branches reject processing steps after the terminal encoder and reject
+    duplicate encoders instead of silently reordering or replacing intent.
+    Done.
+128. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

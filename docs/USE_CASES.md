@@ -94,7 +94,8 @@ The `From` stream recipe has one selected stream chain. Use `Transcode` for
 multiple audio/video branches from one input. Stream recipes attach outputs on
 the stream chain with `.To(...)`; generic `From(input).To(...)` remains the
 packet-preserving record/remux shape. A stream chain sends decoded frames to
-frame sinks or encoded packets to file/URI outputs, not both.
+frame sinks or encoded packets to file/URI outputs, not both. Processing steps
+come before one terminal encoder, and outputs attach after that encoder.
 
 When a media type matches several streams, the build error lists the candidates.
 Use the same stream-scoped shape with a narrower selector. `StreamIndex(0)`

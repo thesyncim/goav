@@ -104,7 +104,9 @@ for _, edge := range spec.Edges {
 - A `From` stream recipe carries one `Audio()` or `Video()` chain; use
   stream-local `.To(...)` outputs there, and use `Transcode` when one input
   needs multiple branches. A stream chain sends decoded frames to frame sinks
-  or encoded packets to file/URI outputs, not both.
+  or encoded packets to file/URI outputs, not both. Declare `.Do(...)`,
+  `.Resize(...)`, or `.Resample(...)` before the one terminal encoder, then
+  attach outputs with `.To(...)`.
 - `goav.Decode(input, sink)` decodes one selected stream into a frame sink.
 - `goav.Transcode(input)` builds named audio or video branches and outputs.
   Transcode branch `.To(...)` accepts either a named output label or an
@@ -112,7 +114,7 @@ for _, edge := range spec.Edges {
   output and currently carries at most one resize or resample transform.
   Branch names are required and unique; output names are unique, and each
   branch lists each output once. Share one output by reusing its label in
-  `.To(...)` on each branch.
+  `.To(...)` on each branch. Branch transforms come before one terminal encoder.
   Resize dimensions, resample rates, and channel counts must be positive.
 - `goav.WebRTCTrack(track)` adapts a Pion `TrackRemote` into the same realtime
   receive path as RTP.

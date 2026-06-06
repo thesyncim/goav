@@ -886,6 +886,12 @@ func (j *Job) named(name string) *Job {
 	return j
 }
 
+func (j *Job) setErr(err error) {
+	if j.err == nil {
+		j.err = err
+	}
+}
+
 func (j *Job) To(outputs ...OutputSpec) *Job {
 	j.outputs = append(j.outputs, outputs...)
 	return j
@@ -1345,6 +1351,59 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 	}
 }
 
+func codecIntentSet(spec CodecSpec) bool {
+	return spec.ID != "" || spec.Auto || spec.Copy
+}
+
+func streamStepAfterEncodeError(operation string, node string, step string, encode CodecSpec) error {
+	return &BuildError{
+		Code:      "stream_step_after_encode",
+		Operation: operation,
+		Node:      node,
+		Reason:    "stream processing steps must be declared before the encoder",
+		Details: []string{
+			"step: " + step,
+			"encoder: " + codecIntentName(encode),
+		},
+		Suggestions: []string{
+			"place .Do(...), .Resize(...), or .Resample(...) before .Opus(...), .VP8(...), or .VP9(...)",
+			"call .To(...) after the encoder to attach outputs",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func duplicateStreamEncodeError(operation string, node string, first CodecSpec, second CodecSpec) error {
+	return &BuildError{
+		Code:      "encode_duplicate",
+		Operation: operation,
+		Node:      node,
+		Reason:    "stream recipes allow one terminal encoder",
+		Details: []string{
+			"first encoder: " + codecIntentName(first),
+			"second encoder: " + codecIntentName(second),
+		},
+		Suggestions: []string{
+			"choose one output codec for the stream chain",
+			"use goav.Transcode(input) when one input needs multiple encoded branches",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func codecIntentName(spec CodecSpec) string {
+	switch {
+	case spec.Auto:
+		return "auto"
+	case spec.Copy:
+		return "copy"
+	case spec.ID != "":
+		return string(spec.ID)
+	default:
+		return "none"
+	}
+}
+
 func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
 	parameters := spec.Parameters
 	if spec.ID == av.CodecOpus {
@@ -1648,6 +1707,10 @@ func (b *JobStreamBuilder) Decode() *JobStreamBuilder {
 
 func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
 	stream := b.current()
+	if codecIntentSet(stream.encode) {
+		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", stream.encode))
+		return b
+	}
 	stream.decode = true
 	stream.steps = append(stream.steps, jobStreamStep{stage: stage})
 	return b
@@ -1655,6 +1718,10 @@ func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
 
 func (b *JobStreamBuilder) Resize(width int, height int, options ...ResizeOption) *JobStreamBuilder {
 	stream := b.current()
+	if codecIntentSet(stream.encode) {
+		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "resize", stream.encode))
+		return b
+	}
 	stream.decode = true
 	stream.steps = append(stream.steps, jobStreamStep{transform: Resize(width, height, options...)})
 	return b
@@ -1662,6 +1729,10 @@ func (b *JobStreamBuilder) Resize(width int, height int, options ...ResizeOption
 
 func (b *JobStreamBuilder) Resample(sampleRate int, channels int, options ...AudioOption) *JobStreamBuilder {
 	stream := b.current()
+	if codecIntentSet(stream.encode) {
+		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "resample", stream.encode))
+		return b
+	}
 	stream.decode = true
 	stream.steps = append(stream.steps, jobStreamStep{transform: Resample(sampleRate, channels, options...)})
 	return b
@@ -1669,6 +1740,10 @@ func (b *JobStreamBuilder) Resample(sampleRate int, channels int, options ...Aud
 
 func (b *JobStreamBuilder) Encode(codec CodecSpec) *JobStreamBuilder {
 	stream := b.current()
+	if codecIntentSet(stream.encode) {
+		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), stream.encode, codec))
+		return b
+	}
 	stream.decode = true
 	stream.encode = codec
 	return b
@@ -1708,6 +1783,7 @@ type TranscodeJob struct {
 	input   InputSpec
 	streams []streamBuild
 	outputs []namedOutputSpec
+	err     error
 }
 
 type namedOutputSpec struct {
@@ -1736,6 +1812,12 @@ func (j *TranscodeJob) Video(name string, options ...StreamOption) *StreamBuilde
 func (j *TranscodeJob) Output(name string, output OutputSpec) *TranscodeJob {
 	j.outputs = append(j.outputs, namedOutputSpec{name: name, output: output.Name(firstNonEmpty(output.name, name))})
 	return j
+}
+
+func (j *TranscodeJob) setErr(err error) {
+	if j.err == nil {
+		j.err = err
+	}
 }
 
 func (j *TranscodeJob) Intent() Intent {
@@ -1771,6 +1853,9 @@ func (j *TranscodeJob) Intent() Intent {
 }
 
 func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
+	if j.err != nil {
+		return transcodepkg.Plan{}, j.err
+	}
 	if err := j.input.validate(); err != nil {
 		return transcodepkg.Plan{}, err
 	}
@@ -1983,12 +2068,20 @@ func (b *StreamBuilder) Decode() *StreamBuilder {
 
 func (b *StreamBuilder) Resize(width int, height int, options ...ResizeOption) *StreamBuilder {
 	stream := b.current()
+	if codecIntentSet(stream.encode) {
+		b.job.setErr(streamStepAfterEncodeError("plan transcode", transcodeBranchName(*stream), "resize", stream.encode))
+		return b
+	}
 	stream.transforms = append(stream.transforms, Resize(width, height, options...))
 	return b
 }
 
 func (b *StreamBuilder) Resample(sampleRate int, channels int, options ...AudioOption) *StreamBuilder {
 	stream := b.current()
+	if codecIntentSet(stream.encode) {
+		b.job.setErr(streamStepAfterEncodeError("plan transcode", transcodeBranchName(*stream), "resample", stream.encode))
+		return b
+	}
 	stream.transforms = append(stream.transforms, Resample(sampleRate, channels, options...))
 	return b
 }
@@ -2225,7 +2318,12 @@ func outputTargetType(target any) string {
 }
 
 func (b *StreamBuilder) encode(codec CodecSpec) *StreamBuilder {
-	b.current().encode = codec
+	stream := b.current()
+	if codecIntentSet(stream.encode) {
+		b.job.setErr(duplicateStreamEncodeError("plan transcode", transcodeBranchName(*stream), stream.encode, codec))
+		return b
+	}
+	stream.encode = codec
 	return b
 }
 
