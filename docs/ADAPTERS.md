@@ -19,9 +19,12 @@ integrations belong under `adapters/...`.
 - Do not register encode/decode factories until the path is real.
 - Optional or unavailable modules should stay behind build tags or compile-safe
   descriptor packages.
-- Descriptor-only registrations may advertise planned capabilities, but factory
-  lookup must fail with `codec.ErrUnavailable` until a concrete factory is
-  registered.
+- Descriptors own codec identity, media type, modes, realtime, and experimental
+  status. Capability fields are for concrete sample format, pixel format, RTP
+  payload, and build-tag lists.
+- Descriptor-only registrations may advertise planned media compatibility, but
+  factory lookup must fail with `codec.ErrUnavailable` until a concrete factory
+  is registered.
 - Realtime decoders that need large internal arenas should honor
   `codec.DecodeConfig.Bounds` and document any adapter-specific
   `OpaqueState` type they accept.

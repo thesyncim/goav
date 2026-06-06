@@ -26,10 +26,6 @@ func Descriptor() codec.Descriptor {
 		Modes:    []codec.Mode{codec.ModeDecode},
 		Realtime: true,
 		Capabilities: codec.Capabilities{
-			CodecID:       av.CodecOpus,
-			Type:          av.MediaAudio,
-			Decode:        true,
-			Realtime:      true,
 			SampleFormats: []string{av.SampleFormatS16},
 			RTPPayloads:   []string{rtpav.MIMEOpus},
 		},

@@ -133,7 +133,8 @@ high-level runtime needs adapter-specific reusable state before opening the
 decoder; exact low-level applications can still pass their own state through
 `codec.DecodeConfig.OpaqueState`.
 Descriptor-only adapters are allowed for planned or optional backends; they are
-discoverable through registry descriptors, while factory lookup returns
+discoverable through registry descriptors and planned media compatibility lists,
+while factory lookup returns
 `codec.ErrUnavailable` until an active factory is registered. `goh264`,
 `govpx`, and `goav1` follow that pattern in normal builds and register concrete
 factories only when their build tags are enabled.

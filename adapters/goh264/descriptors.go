@@ -14,14 +14,9 @@ func Descriptor() codec.Descriptor {
 		Realtime:     true,
 		Experimental: true,
 		Capabilities: codec.Capabilities{
-			CodecID:      av.CodecH264,
-			Type:         av.MediaVideo,
-			Decode:       true,
-			Realtime:     true,
 			PixelFormats: []string{"yuv420p"},
 			RTPPayloads:  []string{"video/h264"},
 			BuildTags:    []string{"goav_goh264"},
-			Experimental: true,
 		},
 		Backend: codec.Backend{
 			Name:    "goh264",

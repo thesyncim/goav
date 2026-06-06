@@ -14,10 +14,6 @@ func Descriptor() codec.Descriptor {
 		Realtime:     true,
 		Experimental: true,
 		Capabilities: codec.Capabilities{
-			CodecID:  av.CodecAV1,
-			Type:     av.MediaVideo,
-			Decode:   true,
-			Realtime: true,
 			PixelFormats: []string{
 				av.PixelFormatI420,
 				av.PixelFormatYUV420P,
@@ -27,9 +23,8 @@ func Descriptor() codec.Descriptor {
 				av.PixelFormatYUV444P,
 				av.PixelFormatGray8,
 			},
-			RTPPayloads:  []string{"video/av1"},
-			BuildTags:    []string{"goav_goav1"},
-			Experimental: true,
+			RTPPayloads: []string{"video/av1"},
+			BuildTags:   []string{"goav_goav1"},
 		},
 		Backend: codec.Backend{
 			Name:    "goav1",

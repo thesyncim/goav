@@ -15,6 +15,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Runtime registries are owned by the runtime and extended through adapter hooks.
 - Registry packages use explicit `Register...` methods for codecs, formats,
   and filters.
+- Codec descriptors own identity, media type, modes, realtime, and experimental
+  status; capabilities carry concrete format, payload, and build-tag lists.
 - Explicit graph API for custom realtime systems.
 - One graph constructor: `pipeline.NewGraph` chooses direct or bounded buffered
   execution from `pipeline.BufferPolicy`.

@@ -23,15 +23,9 @@ func descriptor(id av.CodecID, name string, pixelFormats []string, rtpPayloads [
 		Realtime:     true,
 		Experimental: true,
 		Capabilities: codec.Capabilities{
-			CodecID:      id,
-			Type:         av.MediaVideo,
-			Decode:       true,
-			Encode:       true,
-			Realtime:     true,
 			PixelFormats: pixelFormats,
 			RTPPayloads:  rtpPayloads,
 			BuildTags:    []string{"goav_govpx"},
-			Experimental: true,
 		},
 		Backend: codec.Backend{
 			Name:    backendName,

@@ -16,7 +16,7 @@ func TestDescriptor(t *testing.T) {
 	if desc.ID != av.CodecOpus || !desc.Supports(codec.ModeDecode) {
 		t.Fatalf("descriptor = %+v", desc)
 	}
-	if desc.Capabilities.Encode {
+	if desc.Supports(codec.ModeEncode) {
 		t.Fatal("gopus adapter should not claim encode support yet")
 	}
 }

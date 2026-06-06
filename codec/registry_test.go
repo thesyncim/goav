@@ -87,14 +87,20 @@ func TestRegistryDescriptorsAreCopied(t *testing.T) {
 	}
 }
 
-func TestRegistryNormalizesCapabilityCodecIDForFactories(t *testing.T) {
+func TestRegistryFactoriesAddDescriptorModes(t *testing.T) {
 	registry := NewRegistry()
-	registry.RegisterDecoder(Descriptor{Capabilities: Capabilities{CodecID: av.CodecVP8}}, testDecoderFactory{})
+	registry.RegisterDecoder(Descriptor{ID: av.CodecVP8}, testDecoderFactory{})
+	registry.RegisterEncoder(Descriptor{ID: av.CodecVP8}, testEncoderFactory{})
 
 	if _, err := registry.DecoderFactory(av.CodecVP8); err != nil {
 		t.Fatalf("decoder factory: %v", err)
 	}
-	if descriptors := registry.Descriptors(); len(descriptors) != 1 || descriptors[0].ID != av.CodecVP8 {
-		t.Fatalf("descriptors = %+v, want normalized VP8 descriptor", descriptors)
+	if _, err := registry.EncoderFactory(av.CodecVP8); err != nil {
+		t.Fatalf("encoder factory: %v", err)
+	}
+	if descriptors := registry.Descriptors(); len(descriptors) != 1 ||
+		!descriptors[0].Supports(ModeDecode) ||
+		!descriptors[0].Supports(ModeEncode) {
+		t.Fatalf("descriptors = %+v, want decode and encode modes", descriptors)
 	}
 }

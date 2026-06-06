@@ -22,13 +22,11 @@ func NewRegistry() *SimpleRegistry {
 }
 
 func (r *SimpleRegistry) RegisterDescriptor(desc Descriptor) {
-	desc = normalizeDescriptor(desc)
 	r.upsertDescriptor(desc)
 }
 
 func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory) {
-	desc.Capabilities.Decode = true
-	desc = normalizeDescriptor(desc)
+	desc.Modes = mergeModes(desc.Modes, []Mode{ModeDecode})
 	r.upsertDescriptor(desc)
 	if factory != nil {
 		r.decoders[desc.ID] = factory
@@ -36,8 +34,7 @@ func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory
 }
 
 func (r *SimpleRegistry) RegisterEncoder(desc Descriptor, factory EncoderFactory) {
-	desc.Capabilities.Encode = true
-	desc = normalizeDescriptor(desc)
+	desc.Modes = mergeModes(desc.Modes, []Mode{ModeEncode})
 	r.upsertDescriptor(desc)
 	if factory != nil {
 		r.encoders[desc.ID] = factory
@@ -107,37 +104,12 @@ func (r *SimpleRegistry) hasDescriptor(id av.CodecID, mode Mode) bool {
 }
 
 func (d Descriptor) Supports(mode Mode) bool {
-	switch mode {
-	case ModeDecode:
-		if d.Capabilities.Decode {
-			return true
-		}
-	case ModeEncode:
-		if d.Capabilities.Encode {
-			return true
-		}
-	}
 	for _, candidate := range d.Modes {
 		if candidate == mode {
 			return true
 		}
 	}
 	return false
-}
-
-func pickCodecID(a av.CodecID, b av.CodecID) av.CodecID {
-	if a != "" {
-		return a
-	}
-	return b
-}
-
-func normalizeDescriptor(desc Descriptor) Descriptor {
-	desc.ID = pickCodecID(desc.ID, desc.Capabilities.CodecID)
-	if desc.Capabilities.CodecID == "" {
-		desc.Capabilities.CodecID = desc.ID
-	}
-	return desc
 }
 
 func (r *SimpleRegistry) upsertDescriptor(desc Descriptor) {
@@ -177,20 +149,10 @@ func mergeDescriptors(existing Descriptor, next Descriptor) Descriptor {
 
 func mergeCapabilities(existing Capabilities, next Capabilities) Capabilities {
 	merged := existing
-	if next.CodecID != "" {
-		merged.CodecID = next.CodecID
-	}
-	if next.Type != "" {
-		merged.Type = next.Type
-	}
-	merged.Decode = merged.Decode || next.Decode
-	merged.Encode = merged.Encode || next.Encode
-	merged.Realtime = merged.Realtime || next.Realtime
 	merged.SampleFormats = mergeStrings(merged.SampleFormats, next.SampleFormats)
 	merged.PixelFormats = mergeStrings(merged.PixelFormats, next.PixelFormats)
 	merged.RTPPayloads = mergeStrings(merged.RTPPayloads, next.RTPPayloads)
 	merged.BuildTags = mergeStrings(merged.BuildTags, next.BuildTags)
-	merged.Experimental = merged.Experimental || next.Experimental
 	return merged
 }
 

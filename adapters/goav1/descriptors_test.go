@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 )
 
 func TestDescriptor(t *testing.T) {
@@ -12,7 +13,7 @@ func TestDescriptor(t *testing.T) {
 	if desc.ID != av.CodecAV1 || desc.Backend.Module != "github.com/thesyncim/goav1" {
 		t.Fatalf("descriptor = %+v", desc)
 	}
-	if desc.Capabilities.Encode {
+	if desc.Supports(codec.ModeEncode) {
 		t.Fatal("goav1 descriptor should not claim encode support yet")
 	}
 	for _, pixelFormat := range []string{

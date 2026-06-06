@@ -26,17 +26,14 @@ type Descriptor struct {
 	Backend      Backend
 }
 
+// Capabilities carries concrete media compatibility details. Codec identity,
+// media type, supported modes, realtime status, and experimental status live on
+// Descriptor so each fact has one owner.
 type Capabilities struct {
-	CodecID       av.CodecID
-	Type          av.MediaType
-	Decode        bool
-	Encode        bool
-	Realtime      bool
 	SampleFormats []string
 	PixelFormats  []string
 	RTPPayloads   []string
 	BuildTags     []string
-	Experimental  bool
 }
 
 type Backend struct {
