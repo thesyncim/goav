@@ -3,8 +3,10 @@ package matroska
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -140,7 +142,7 @@ func TestMuxerDemuxerPreservesBlockGroupDuration(t *testing.T) {
 	}
 }
 
-func TestSeekableMuxerPatchesSegmentAndClusterSizes(t *testing.T) {
+func TestSeekableMuxerPatchesSegmentClusterAndDuration(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{})
 	if err != nil {
@@ -155,10 +157,11 @@ func TestSeekableMuxerPatchesSegmentAndClusterSizes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := muxer.WritePacket(Packet{
-		TrackID:  trackID,
-		TimeNS:   0,
-		Keyframe: true,
-		Data:     []byte{1, 2, 3},
+		TrackID:    trackID,
+		TimeNS:     40_000_000,
+		DurationNS: 20_000_000,
+		Keyframe:   true,
+		Data:       []byte{1, 2, 3},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -185,6 +188,7 @@ func TestSeekableMuxerPatchesSegmentAndClusterSizes(t *testing.T) {
 		t.Fatalf("segment = %+v, want known-size segment", segment)
 	}
 	var sawKnownCluster bool
+	var sawPatchedDuration bool
 	segmentEnd := segment.DataOffset + int64(segment.Size.Value)
 	for reader.Offset() < segmentEnd {
 		child, err := reader.ReadHeader()
@@ -198,6 +202,16 @@ func TestSeekableMuxerPatchesSegmentAndClusterSizes(t *testing.T) {
 			sawKnownCluster = true
 			break
 		}
+		if child.ID == idInfo {
+			duration, ok := readInfoDuration(t, ws.bytes[child.DataOffset:child.DataOffset+int64(child.Size.Value)])
+			if !ok {
+				t.Fatalf("seekable Info did not contain Duration")
+			}
+			if duration != 60 {
+				t.Fatalf("duration = %f, want 60 timestamp-scale ticks", duration)
+			}
+			sawPatchedDuration = true
+		}
 		if child.Size.Unknown {
 			t.Fatalf("unexpected unknown child before cluster: %+v", child)
 		}
@@ -207,6 +221,9 @@ func TestSeekableMuxerPatchesSegmentAndClusterSizes(t *testing.T) {
 	}
 	if !sawKnownCluster {
 		t.Fatalf("did not find known-size cluster")
+	}
+	if !sawPatchedDuration {
+		t.Fatalf("did not find patched duration")
 	}
 }
 
@@ -414,6 +431,34 @@ func makeMatroskaData(tb testing.TB, packets int) []byte {
 func ebmlReader(tb testing.TB, data []byte) *ebml.Reader {
 	tb.Helper()
 	return ebml.NewReader(bytes.NewReader(data), ebml.ReaderOptions{})
+}
+
+func readInfoDuration(tb testing.TB, payload []byte) (float64, bool) {
+	tb.Helper()
+	reader := ebml.NewReader(bytes.NewReader(payload), ebml.ReaderOptions{})
+	for reader.Offset() < int64(len(payload)) {
+		header, err := reader.ReadHeader()
+		if err != nil {
+			tb.Fatal(err)
+		}
+		if header.ID == idDuration {
+			if header.Size.Value != 8 {
+				tb.Fatalf("duration size = %d, want 8", header.Size.Value)
+			}
+			var scratch [8]byte
+			if err := reader.ReadFull(scratch[:]); err != nil {
+				tb.Fatal(err)
+			}
+			return math.Float64frombits(binary.BigEndian.Uint64(scratch[:])), true
+		}
+		if header.Size.Unknown {
+			tb.Fatalf("unexpected unknown Info child: %+v", header)
+		}
+		if err := reader.Skip(header.Size.Value); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	return 0, false
 }
 
 type discardWriter struct{}

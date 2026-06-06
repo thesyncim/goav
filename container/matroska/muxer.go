@@ -21,6 +21,9 @@ type Muxer struct {
 	segmentSized    bool
 	clusterPatch    ebml.SizePatch
 	clusterSized    bool
+	durationOffset  int64
+	durationPatch   bool
+	maxTimeNS       int64
 	clusterTimecode int64
 	closed          bool
 	scratch         [18]byte
@@ -49,6 +52,9 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.segmentSized = false
 	m.clusterPatch = ebml.SizePatch{}
 	m.clusterSized = false
+	m.durationOffset = 0
+	m.durationPatch = false
+	m.maxTimeNS = 0
 	m.clusterTimecode = 0
 	m.closed = false
 }
@@ -98,6 +104,7 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if packet.TimeNS < 0 {
 		return ErrInvalidData
 	}
+	m.updateMaxTime(packet)
 	if !m.headerWritten {
 		if err := m.writeHeader(); err != nil {
 			return err
@@ -133,6 +140,11 @@ func (m *Muxer) Close() error {
 			return err
 		}
 		m.clusterSized = false
+	}
+	if m.durationPatch {
+		if err := m.patchDuration(); err != nil {
+			return err
+		}
 	}
 	if m.segmentSized {
 		if err := m.ebml.FinishSizedElement(m.segmentPatch); err != nil {
@@ -222,6 +234,9 @@ func (m *Muxer) writeEBMLHeader() error {
 }
 
 func (m *Muxer) writeInfo() error {
+	if !m.options.Streaming && m.seekable {
+		return m.writeSeekableInfo()
+	}
 	var payload bytes.Buffer
 	w := ebml.NewWriter(&payload)
 	if err := w.WriteUInt(idTimestampScale, uint64(m.options.TimecodeScaleNS)); err != nil {
@@ -234,6 +249,32 @@ func (m *Muxer) writeInfo() error {
 		return err
 	}
 	return m.ebml.WriteElement(idInfo, payload.Bytes())
+}
+
+func (m *Muxer) writeSeekableInfo() error {
+	patch, err := m.ebml.StartSizedElement(idInfo, 4)
+	if err != nil {
+		return err
+	}
+	if err := m.ebml.WriteUInt(idTimestampScale, uint64(m.options.TimecodeScaleNS)); err != nil {
+		return err
+	}
+	if err := m.ebml.WriteHeader(idDuration, 8); err != nil {
+		return err
+	}
+	m.durationOffset = m.ebml.Offset()
+	clear(m.blockScratch[:8])
+	if _, err := m.ebml.Write(m.blockScratch[:8]); err != nil {
+		return err
+	}
+	m.durationPatch = true
+	if err := m.ebml.WriteString(idMuxingApp, m.options.MuxingApp); err != nil {
+		return err
+	}
+	if err := m.ebml.WriteString(idWritingApp, m.options.WritingApp); err != nil {
+		return err
+	}
+	return m.ebml.FinishSizedElement(patch)
 }
 
 func (m *Muxer) writeTracks() error {
@@ -279,6 +320,35 @@ func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16) error {
 		return m.writeBlockGroup(packet, blockTimecode)
 	}
 	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet))
+}
+
+func (m *Muxer) updateMaxTime(packet Packet) {
+	end := packet.TimeNS
+	if packet.DurationNS > 0 {
+		end += packet.DurationNS
+	}
+	if end > m.maxTimeNS {
+		m.maxTimeNS = end
+	}
+}
+
+func (m *Muxer) patchDuration() error {
+	seeker, ok := m.writer.(io.Seeker)
+	if !ok {
+		return nil
+	}
+	current := m.ebml.Offset()
+	if _, err := seeker.Seek(m.durationOffset, io.SeekStart); err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint64(m.blockScratch[:8], math.Float64bits(float64(m.maxTimeNS)/float64(m.options.TimecodeScaleNS)))
+	if err := writeFull(m.writer, m.blockScratch[:8]); err != nil {
+		return err
+	}
+	if _, err := seeker.Seek(current, io.SeekStart); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16) error {
@@ -436,6 +506,20 @@ func intPayloadWidthLocal(value int64) int {
 		}
 	}
 	return 8
+}
+
+func writeFull(writer io.Writer, payload []byte) error {
+	for len(payload) != 0 {
+		n, err := writer.Write(payload)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		payload = payload[n:]
+	}
+	return nil
 }
 
 func writeTrackEntry(w *ebml.Writer, track Track, scratch *[18]byte) error {
