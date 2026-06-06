@@ -53,6 +53,15 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 		intent.Inputs[0].Codec.ID != av.CodecVP8 {
 		t.Fatalf("intent: %+v", intent)
 	}
+
+	task, err := job.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(spec, built) {
+		t.Fatalf("planned = %+v, built = %+v", spec, built)
+	}
 }
 
 func TestWebRTCTrackRecipeRejectsUnknownCodecMetadata(t *testing.T) {
@@ -278,13 +287,22 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	var out bytes.Buffer
-
-	task, err := Record(
+	job := Record(
 		RTP(receiver).Name("video").Codec(VP8()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
 		FileOutput("recording.ivf", &out),
-	).Build(ctx)
+	)
+
+	planned, err := job.Describe()
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)

@@ -579,6 +579,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     frame sinks and transcode branches with muxed outputs, using test adapters
     so the public workflow contract stays true beyond packet-preserving recipes.
     Done.
+177. Extend recipe Describe/Build equivalence coverage to realtime receive:
+    WebRTC track recording and default RTP VP8 packet recording now prove the
+    planned `pipeline.Spec` matches the built task graph. Done.
 
 ## First Vertical Slice
 
