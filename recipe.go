@@ -1197,6 +1197,18 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 			},
 		}
 	}
+	if len(j.streams) == 0 {
+		return transcodepkg.Plan{}, &BuildError{
+			Code:      "stream_missing",
+			Operation: "plan transcode",
+			Reason:    "no audio or video branches are configured",
+			Suggestions: []string{
+				"add a video branch such as .Video(\"720p\").Resize(...).VP9(...).To(...)",
+				"add an audio branch such as .Audio(\"main\").Resample(...).Opus(...).To(...)",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
 	outputs := make(map[string]OutputSpec, len(j.outputs))
 	outputOrder := make([]string, 0, len(j.outputs))
 	for i := range j.outputs {
@@ -1231,6 +1243,19 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 		if err := validateRecipeEncode(stream.encode, "plan transcode", stream.name); err != nil {
 			return transcodepkg.Plan{}, err
 		}
+		if len(stream.labels) == 0 {
+			return transcodepkg.Plan{}, &BuildError{
+				Code:      "output_missing",
+				Operation: "plan transcode",
+				Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
+				Reason:    "stream has no output target",
+				Suggestions: []string{
+					"call .To(\"label\") and define it with .Output(label, goav.FileOutput(...))",
+					"pass goav.FileOutput(...) directly to .To(...) for a branch-local output",
+				},
+				Cause: ErrUnsupportedBuild,
+			}
+		}
 		for _, label := range stream.labels {
 			if _, ok := outputs[label]; ok {
 				continue
@@ -1244,6 +1269,7 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 					"call .Output(" + label + ", goav.FileOutput(...))",
 					"pass goav.FileOutput(...) directly to .To(...)",
 				},
+				Cause: ErrUnsupportedBuild,
 			}
 		}
 		renditionName := firstNonEmpty(stream.name, fmt.Sprintf("rendition-%d", i))

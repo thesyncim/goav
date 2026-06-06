@@ -326,7 +326,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 99. Tighten transcode branch targets so `.To(...)` accepts output labels or
     `OutputSpec` values, and invalid target values fail with an actionable
     `output_target_invalid` diagnostic. Done.
-100. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+100. Add intent-layer transcode diagnostics for missing branches and branches
+    without output routes, preserving the same unsupported-build compatibility
+    sentinel. Done.
+101. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

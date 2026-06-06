@@ -366,6 +366,34 @@ func TestTranscodeRecipeRejectsInvalidOutputTarget(t *testing.T) {
 	}
 }
 
+func TestTranscodeRecipeRequiresBranch(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), ".Video(\"720p\")") || !strings.Contains(err.Error(), ".Audio(\"main\")") {
+		t.Fatalf("err = %v, want branch guidance", err)
+	}
+}
+
+func TestTranscodeRecipeRequiresBranchOutput(t *testing.T) {
+	job := goav.Transcode(goav.FileInput("input.webm", strings.NewReader("")))
+	job.Video("360p").VP9(600_000)
+	_, err := job.Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "stream has no output target") ||
+		!strings.Contains(err.Error(), "goav.FileOutput") {
+		t.Fatalf("err = %v, want output guidance", err)
+	}
+}
+
 func tinyIVF() []byte {
 	var data bytes.Buffer
 	var header [32]byte
