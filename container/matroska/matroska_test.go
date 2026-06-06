@@ -142,6 +142,76 @@ func TestMuxerDemuxerPreservesBlockGroupDuration(t *testing.T) {
 	}
 }
 
+func TestNanosecondTimecodeScaleRoundTrip(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{TimecodeScaleNS: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Packet{
+		TrackID:    trackID,
+		TimeNS:     123_456_789,
+		DurationNS: 2_500_001,
+		Keyframe:   true,
+		Data:       []byte{1, 2, 3},
+	}
+	if err := muxer.WritePacket(want); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != want.TimeNS || got.DurationNS != want.DurationNS {
+		t.Fatalf("time=%d duration=%d, want time=%d duration=%d", got.TimeNS, got.DurationNS, want.TimeNS, want.DurationNS)
+	}
+}
+
+func TestMuxerSplitsClustersBeforeBlockTimecodeOverflow(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, packet := range []Packet{
+		{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}},
+		{TrackID: trackID, TimeNS: 33_000_000_000, Keyframe: true, Data: []byte{2}},
+	} {
+		if err := muxer.WritePacket(packet); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if clusters := countClusters(t, buffer.Bytes()); clusters != 2 {
+		t.Fatalf("clusters = %d, want 2", clusters)
+	}
+}
+
 func TestSeekableMuxerPatchesSegmentClusterAndDuration(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{})
@@ -431,6 +501,51 @@ func makeMatroskaData(tb testing.TB, packets int) []byte {
 func ebmlReader(tb testing.TB, data []byte) *ebml.Reader {
 	tb.Helper()
 	return ebml.NewReader(bytes.NewReader(data), ebml.ReaderOptions{})
+}
+
+func countClusters(tb testing.TB, data []byte) int {
+	tb.Helper()
+	reader := ebmlReader(tb, data)
+	header, err := reader.ReadHeader()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if header.ID != idEBML {
+		tb.Fatalf("first id = 0x%x, want EBML", uint64(header.ID))
+	}
+	if err := reader.Skip(header.Size.Value); err != nil {
+		tb.Fatal(err)
+	}
+	segment, err := reader.ReadHeader()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if segment.ID != idSegment {
+		tb.Fatalf("second id = 0x%x, want Segment", uint64(segment.ID))
+	}
+	clusters := 0
+	for {
+		child, err := reader.ReadHeader()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			tb.Fatal(err)
+		}
+		if child.ID == idCluster {
+			clusters++
+			if child.Size.Unknown {
+				continue
+			}
+		}
+		if child.Size.Unknown {
+			break
+		}
+		if err := reader.Skip(child.Size.Value); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	return clusters
 }
 
 func readInfoDuration(tb testing.TB, payload []byte) (float64, bool) {

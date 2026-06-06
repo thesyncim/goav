@@ -45,6 +45,33 @@ func TestSizeVINTBoundaries(t *testing.T) {
 	}
 }
 
+func TestSizeVINTRoundTripRepresentativeValues(t *testing.T) {
+	values := []uint64{
+		0, 1, 2, 10, 126, 127, 128,
+		255, 256, 16_382, 16_383, 16_384,
+		2_097_150, 2_097_151, 2_097_152,
+		1<<28 - 2, 1<<28 - 1, 1 << 28,
+		1<<35 - 2, 1<<35 - 1, 1 << 35,
+		1<<42 - 2, 1<<42 - 1, 1 << 42,
+		1<<49 - 2, 1<<49 - 1, 1 << 49,
+		1<<56 - 2,
+	}
+	var scratch [MaxSizeWidth]byte
+	for _, value := range values {
+		n, err := EncodeSizeVINT(scratch[:], value)
+		if err != nil {
+			t.Fatalf("EncodeSizeVINT(%d): %v", value, err)
+		}
+		size, err := DecodeSizeVINT(scratch[:n])
+		if err != nil {
+			t.Fatalf("DecodeSizeVINT(%d): %v", value, err)
+		}
+		if size.Value != value || size.Unknown || size.Width != n {
+			t.Fatalf("roundtrip %d = %+v width %d", value, size, n)
+		}
+	}
+}
+
 func TestUnknownSizeVINT(t *testing.T) {
 	tests := []struct {
 		width int
