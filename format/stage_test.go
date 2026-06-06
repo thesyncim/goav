@@ -294,26 +294,6 @@ func TestMuxStageWritesPacketAndEmitsEvents(t *testing.T) {
 	}
 }
 
-func TestMuxStagePassthroughPackets(t *testing.T) {
-	stage, err := NewMuxStage(MuxStageConfig{
-		Muxer:              &fakeMuxer{},
-		PassthroughPackets: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	packet := av.Packet{StreamID: "audio"}
-	message := pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet}
-	emitter := &formatEmitter{}
-
-	if err := stage.Handle(context.Background(), &message, emitter); err != nil {
-		t.Fatal(err)
-	}
-	if emitter.packets != 1 {
-		t.Fatalf("packets=%d, want 1", emitter.packets)
-	}
-}
-
 func TestMuxStagePassesAndDropsInputEvents(t *testing.T) {
 	stage, err := NewMuxStage(MuxStageConfig{Muxer: &fakeMuxer{}})
 	if err != nil {

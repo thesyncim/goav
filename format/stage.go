@@ -29,8 +29,6 @@ type MuxStageConfig struct {
 	Result WriteResult
 	// DropInputEvents suppresses forwarding upstream events.
 	DropInputEvents bool
-	// PassthroughPackets forwards packet messages after writing them.
-	PassthroughPackets bool
 }
 
 type DemuxSource struct {
@@ -46,14 +44,13 @@ type DemuxSource struct {
 }
 
 type MuxStage struct {
-	name               string
-	detail             string
-	muxer              Muxer
-	result             WriteResult
-	message            pipeline.Message
-	dropEvents         bool
-	passthroughPackets bool
-	closed             bool
+	name       string
+	detail     string
+	muxer      Muxer
+	result     WriteResult
+	message    pipeline.Message
+	dropEvents bool
+	closed     bool
 }
 
 var _ pipeline.Source = (*DemuxSource)(nil)
@@ -92,12 +89,11 @@ func NewMuxStage(config MuxStageConfig) (*MuxStage, error) {
 		name = "mux"
 	}
 	return &MuxStage{
-		name:               name,
-		detail:             config.Detail,
-		muxer:              config.Muxer,
-		result:             config.Result,
-		dropEvents:         config.DropInputEvents,
-		passthroughPackets: config.PassthroughPackets,
+		name:       name,
+		detail:     config.Detail,
+		muxer:      config.Muxer,
+		result:     config.Result,
+		dropEvents: config.DropInputEvents,
 	}, nil
 }
 
@@ -171,9 +167,6 @@ func (s *MuxStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pi
 		}
 		if err := s.emitEvents(ctx, emitter); err != nil {
 			return err
-		}
-		if s.passthroughPackets {
-			return emitter.Emit(ctx, msg)
 		}
 		return nil
 	case pipeline.MessageEvent:

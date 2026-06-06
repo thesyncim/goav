@@ -271,7 +271,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 83. Prune the filter stage event-drop knob: filters observe events and preserve
     them, while graph routes remain the one way to decide where events flow.
     Done.
-84. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+84. Prune mux packet passthrough: `MuxStage` writes packets and emits muxer
+    events, while packet fanout remains one graph route with one or many
+    targets. Done.
+85. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

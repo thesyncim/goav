@@ -183,7 +183,8 @@ The format package follows the same pattern for containers. `DemuxSource`
 adapts a `format.Demuxer` into packet and event messages, including stream and
 EOS events. `MuxStage` writes packet messages through a `format.Muxer` and emits
 write-result events through the graph, so output-side state remains observable
-instead of disappearing inside a terminal sink.
+instead of disappearing inside a terminal sink. Packet fanout happens before mux
+stages through graph routes.
 
 The filter package follows the codec stage model for frame transforms.
 `filter.Stage` adapts a `filter.FrameFilter` to frame and event messages,
