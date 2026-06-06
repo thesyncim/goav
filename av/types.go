@@ -55,6 +55,7 @@ const MetadataMediaType = "media_type"
 const (
 	SampleFormatS16    = "s16"
 	SampleFormatF32    = "f32"
+	PixelFormatGray8   = "gray8"
 	PixelFormatI420    = "i420"
 	PixelFormatYUV420P = "yuv420p"
 )

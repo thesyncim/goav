@@ -182,10 +182,10 @@ as private graph compilers that must support both `Describe` and `Build`.
   and VP9 decoder factories over `github.com/thesyncim/govpx` into
   caller-owned I420 frames, plus VP8 and VP9 encode into caller-owned packet
   buffers.
-- `adapters/goav1`: descriptor-only by default; `goav_goav1` pins the sibling
-  realtime AV1 stream-runner API plus reusable decoder state and low-overhead
-  runner binding, while factory lookups still return `codec.ErrUnavailable`
-  until packet-by-packet decode is wired.
+- `adapters/goav1`: descriptor-only by default; `goav_goav1` enables a first
+  AV1 decoder factory over caller-owned `DecoderState`, depacketized
+  low-overhead OBU payloads, borrowed 8-bit `gray8`/I420 frame planes, and
+  keyframe requests after loss.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
   H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
   video frames.
@@ -259,17 +259,16 @@ Implemented slices:
   payloads.
 - The runnable graph surface now uses one edge model: `Connect` plus
   stream/event-scoped variants.
-- Tagged AV1 decoder state binding now owns exact-format frame pools, retained
-  RTP scratch, event/parser scratch, references, and output slots for the
-  future packet-by-packet factory.
-- Tagged AV1 low-overhead planning/binding now drives the backend runner over
-  a tiny valid stream with caller-owned state, scratch, frame pool, and worker
-  pool.
+- Tagged AV1 decode now registers a factory behind `goav_goav1`, consumes
+  depacketized low-overhead OBU payloads through caller-owned `DecoderState`,
+  maps decoded backend frames into borrowed `av.Frame` planes, reuses the bound
+  runner in steady state, and requests keyframes after packet loss.
 
 Next pressure points:
 
-- Turn the tagged AV1 low-overhead runner boundary into a decoder factory with
-  loss, codec-change, output, and allocation proofs.
+- Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
+  RTP/WebRTC AV1 streams: richer sync detection, codec-switch recovery, and
+  more output formats.
 
 ## Working Loop
 

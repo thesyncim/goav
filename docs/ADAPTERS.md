@@ -36,7 +36,7 @@ integrations belong under `adapters/...`.
 | `adapters/resize` | pure-Go I420/YUV420P video resize filter |
 | `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
 | `adapters/govpx` | descriptor-only by default; `goav_govpx` enables VP8/VP9 decode and encode |
-| `adapters/goav1` | descriptor-only AV1 boundary |
+| `adapters/goav1` | descriptor-only by default; `goav_goav1` enables first AV1 low-overhead decode |
 | `adapters/goh264` | descriptor-only by default; `goav_goh264` enables H264 decode |
 
 ## `ivf`
@@ -115,31 +115,32 @@ format conversion remain future slices.
 
 ## `goav1`
 
-The `goav1` adapter is still descriptor-only by default in `goav`. The
-`goav_goav1` tag pins the sibling module's AV1 low-overhead and RTP payload
-stream runners with caller-owned scratch, and exposes `DecoderState` as the
-documented `codec.DecodeConfig.OpaqueState` shape for the future decoder
-factory. `DecoderState` binds exact-format frame pools, retained RTP buffers,
-event/parser scratch, reference/output slots, and backend runtime handles from
-generic decode bounds plus adapter-specific scratch sizing. The tagged surface
-also plans depacketized low-overhead OBU payloads, binds a reusable backend
-runner, and proves that runner against a tiny valid stream with caller-owned
-worker-pool state.
+The `goav1` adapter is descriptor-only by default. With `goav_goav1`, it wraps
+`github.com/thesyncim/goav1` and registers a first AV1 decoder factory.
 
-A decoder factory should register here only after packet-by-packet decode can
-map realtime packet loss, codec changes, decoded output frames, and
-result-capacity failures onto that runner boundary without hidden allocation.
-The frame format passed to `DecoderState` is exact, not merely a maximum
-envelope, because the AV1 backend frame pool must match the accepted
-sequence/frame format.
+Current tagged surface:
 
-The first concrete surface should stay narrow:
+- explicit registry registration through `goav1.Register`
+- `DecoderState` as the documented `codec.DecodeConfig.OpaqueState`
+- exact-format frame pools, retained RTP scratch, event/parser scratch,
+  reference/output slots, and backend runtime handles owned by `DecoderState`
+- depacketized low-overhead OBU payload decode through the backend runner
+- borrowed decoded frame planes for 8-bit monochrome `gray8` and 4:2:0 I420
+- packet-loss, corrupt-packet, and discontinuity paths reset runner state and
+  request keyframes
+- codec-change and discontinuity events update stream identity and reset state
+- steady decode reuses a bound runner when the next plan fits the existing
+  arena
+- result-capacity, allocation, and close-lifecycle tests
 
-- receive depacketized AV1 payload bytes and realtime events from `rtpav`
-- clear retained fragments after loss/discontinuity and request a keyframe
-- reset stream state on codec-change events and preserve codec epochs
-- expose 8-bit 4:2:0 I420 frames first, with explicit buffer ownership
-- prove lifecycle, allocation behavior, and result-capacity failures
+RTP/WebRTC callers should feed this decoder packets produced by `rtpav`'s AV1
+depacketizer, not raw AV1 RTP aggregation payloads. The frame format passed to
+`DecoderState` is exact, not merely a maximum envelope, because the backend
+frame pool must match the accepted sequence/frame format.
+
+It is intentionally narrow for now. Richer keyframe/sync detection, raw RTP
+payload runner integration, high bit-depth output, color metadata, film grain
+policy, and broader frame format conversion remain future slices.
 
 ## `resample`
 

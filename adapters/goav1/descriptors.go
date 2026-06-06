@@ -18,7 +18,7 @@ func Descriptor() codec.Descriptor {
 			Type:         av.MediaVideo,
 			Decode:       true,
 			Realtime:     true,
-			PixelFormats: []string{"i420"},
+			PixelFormats: []string{av.PixelFormatI420, av.PixelFormatGray8},
 			RTPPayloads:  []string{"video/av1"},
 			BuildTags:    []string{"goav_goav1"},
 			Experimental: true,
@@ -30,8 +30,4 @@ func Descriptor() codec.Descriptor {
 			Status:  "planned-build-tagged",
 		},
 	}
-}
-
-func Register(registry *codec.SimpleRegistry) {
-	registry.RegisterDescriptor(Descriptor())
 }
