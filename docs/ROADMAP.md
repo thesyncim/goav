@@ -29,7 +29,8 @@ make the implementation and adapter coverage match the promise.
    choices should be visible to realtime users. First recipe policy slice
    active for today's supported behavior.
 8. Add runtime observability through task stats, traces, drop reasons, and
-   latency counters.
+   latency counters. First task stats slice active for graph message/event/drop
+   counters.
 9. Make beginner signatures describe exactly what callers may pass, especially
    `Record(input, outputs...)`, before freezing a v0.1 API.
 10. Prepare v0.1 only after README examples compile/run or clearly name their

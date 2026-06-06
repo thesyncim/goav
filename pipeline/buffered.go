@@ -51,6 +51,8 @@ type bufferedRunner struct {
 	sources []int
 	events  chan av.Event
 	pending sync.WaitGroup
+	statsMu sync.Mutex
+	stats   GraphStats
 	closed  bool
 }
 
@@ -225,6 +227,12 @@ func (g *bufferedRunner) Events() <-chan av.Event {
 	return g.events
 }
 
+func (g *bufferedRunner) Stats() GraphStats {
+	g.statsMu.Lock()
+	defer g.statsMu.Unlock()
+	return cloneGraphStats(g.stats)
+}
+
 func (g *bufferedRunner) Close() error {
 	if g.closed {
 		return nil
@@ -311,6 +319,7 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	g.observeMessage(msg)
 	if err := g.publishEvent(msg); err != nil {
 		return err
 	}
@@ -344,12 +353,14 @@ func (g *bufferedRunner) enqueue(ctx context.Context, to int, msg *Message) erro
 	case bufferAdmit:
 		return g.enqueueBound(ctx, node, msg)
 	case bufferDropIncoming:
+		g.observeDrop(node.policy.Drop)
 		return nil
 	case bufferDropOldest:
 		select {
 		case dropped := <-node.queue:
 			node.releaseSlot(dropped)
 			g.pending.Done()
+			g.observeDrop(node.policy.Drop)
 		default:
 		}
 		return g.enqueueBound(ctx, node, msg)
@@ -403,6 +414,7 @@ func (g *bufferedRunner) runNode(ctx context.Context, index int) error {
 }
 
 func (g *bufferedRunner) deliver(ctx context.Context, to int, msg *Message) error {
+	g.observeDelivered()
 	node := &g.nodes[to]
 	switch node.kind {
 	case nodeStage:
@@ -412,6 +424,24 @@ func (g *bufferedRunner) deliver(ctx context.Context, to int, msg *Message) erro
 	default:
 		return ErrInvalidLink
 	}
+}
+
+func (g *bufferedRunner) observeMessage(msg *Message) {
+	g.statsMu.Lock()
+	defer g.statsMu.Unlock()
+	g.stats.observeMessage(msg)
+}
+
+func (g *bufferedRunner) observeDrop(policy DropPolicy) {
+	g.statsMu.Lock()
+	defer g.statsMu.Unlock()
+	g.stats.observeDrop(policy)
+}
+
+func (g *bufferedRunner) observeDelivered() {
+	g.statsMu.Lock()
+	defer g.statsMu.Unlock()
+	g.stats.Delivered++
 }
 
 func (g *bufferedRunner) publishEvent(msg *Message) error {

@@ -136,7 +136,21 @@ type Graph interface {
 	Spec() Spec
 	Run(context.Context) error
 	Events() <-chan av.Event
+	Stats() GraphStats
 	Close() error
+}
+
+type GraphStats struct {
+	Messages         uint64
+	Packets          uint64
+	Frames           uint64
+	Events           uint64
+	EventsByType     map[av.EventType]uint64
+	Dropped          uint64
+	DropReasons      map[DropPolicy]uint64
+	Delivered        uint64
+	LastEvent        av.Event
+	LastEventPresent bool
 }
 
 type GraphConfig struct {

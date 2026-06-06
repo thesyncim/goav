@@ -80,6 +80,14 @@ func TestRuntimeGraphHandleEventRoute(t *testing.T) {
 	if stats.count != 1 || loss.count != 0 {
 		t.Fatalf("stats=%d loss=%d", stats.count, loss.count)
 	}
+	taskStats := task.Stats()
+	if taskStats.Messages != 1 || taskStats.Events != 1 ||
+		taskStats.EventsByType[av.EventStats] != 1 ||
+		taskStats.Delivered != 1 ||
+		!taskStats.LastEventPresent ||
+		taskStats.LastEvent.Type != av.EventStats {
+		t.Fatalf("stats=%+v", taskStats)
+	}
 }
 
 func TestRuntimeGraphHandlesRejectNilNode(t *testing.T) {

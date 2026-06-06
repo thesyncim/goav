@@ -405,6 +405,10 @@ func (t *task) Events() <-chan av.Event {
 	return t.graph.Events()
 }
 
+func (t *task) Stats() TaskStats {
+	return t.graph.Stats()
+}
+
 func (t *task) Close() error {
 	return t.graph.Close()
 }

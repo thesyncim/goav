@@ -387,6 +387,20 @@ func TestGraphBufferedDropOldest(t *testing.T) {
 	}
 }
 
+func TestGraphBufferedDropStats(t *testing.T) {
+	values, stats, err := runBufferedBurstWithStats(BufferPolicy{Capacity: 1, Drop: DropOldest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []byte{1, 3}; !equalBytes(values, want) {
+		t.Fatalf("values = %v, want %v", values, want)
+	}
+	if stats.Messages != 3 || stats.Packets != 3 || stats.Delivered != 2 ||
+		stats.Dropped != 1 || stats.DropReasons[DropOldest] != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+}
+
 func TestGraphBufferedDropNewest(t *testing.T) {
 	values, err := runBufferedBurst(BufferPolicy{Capacity: 1, Drop: DropNewest})
 	if err != nil {
@@ -408,6 +422,11 @@ func TestGraphBufferedBackpressure(t *testing.T) {
 }
 
 func runBufferedBurst(policy BufferPolicy) ([]byte, error) {
+	values, _, err := runBufferedBurstWithStats(policy)
+	return values, err
+}
+
+func runBufferedBurstWithStats(policy BufferPolicy) ([]byte, GraphStats, error) {
 	afterFirst := make(chan struct{})
 	source := &bufferedPacketSource{
 		name:       "source",
@@ -423,16 +442,16 @@ func runBufferedBurst(policy BufferPolicy) ([]byte, error) {
 
 	graph, err := NewGraph(GraphConfig{Name: "burst", Buffer: policy})
 	if err != nil {
-		return nil, err
+		return nil, GraphStats{}, err
 	}
 	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
-		return nil, err
+		return nil, GraphStats{}, err
 	}
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
-		return nil, err
+		return nil, GraphStats{}, err
 	}
 	if err := graph.Connect(route("source", "sink")); err != nil {
-		return nil, err
+		return nil, GraphStats{}, err
 	}
 
 	errs := make(chan error, 1)
@@ -449,7 +468,7 @@ func runBufferedBurst(policy BufferPolicy) ([]byte, error) {
 	sink.mu.Lock()
 	values := append([]byte(nil), sink.values...)
 	sink.mu.Unlock()
-	return values, err
+	return values, graph.Stats(), err
 }
 
 func immutablePacket(value byte) av.Packet {

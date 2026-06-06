@@ -68,6 +68,7 @@ type directRunner struct {
 	nodes   []directNode
 	sources []int
 	events  chan av.Event
+	stats   GraphStats
 	closed  bool
 }
 
@@ -208,6 +209,10 @@ func (g *directRunner) Events() <-chan av.Event {
 	return g.events
 }
 
+func (g *directRunner) Stats() GraphStats {
+	return cloneGraphStats(g.stats)
+}
+
 func (g *directRunner) Close() error {
 	if g.closed {
 		return nil
@@ -257,6 +262,7 @@ func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	g.observeMessage(msg)
 	if err := g.publishEvent(msg); err != nil {
 		return err
 	}
@@ -277,6 +283,7 @@ func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 }
 
 func (g *directRunner) deliver(ctx context.Context, to int, msg *Message) error {
+	g.stats.Delivered++
 	node := &g.nodes[to]
 	switch node.kind {
 	case nodeStage:
@@ -298,6 +305,10 @@ func (g *directRunner) publishEvent(msg *Message) error {
 	default:
 		return ErrBackpressure
 	}
+}
+
+func (g *directRunner) observeMessage(msg *Message) {
+	g.stats.observeMessage(msg)
 }
 
 func (r *directRoute) matches(msg *Message) bool {

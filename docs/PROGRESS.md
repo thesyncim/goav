@@ -541,6 +541,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     receive recipes can name the supported compatible-rebind/keyframe/sync/drop
     policy while unsupported custom policies fail during build.
     Done.
+166. Add first task observability slice: `Task.Stats()` returns graph
+    packet/frame/event counters, event counts by type, buffered drop counts by
+    policy, and the last observed event.
+    Done.
 
 ## First Vertical Slice
 

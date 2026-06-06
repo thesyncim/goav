@@ -14,6 +14,7 @@ type Packet = av.Packet
 type Frame = av.Frame
 type Event = av.Event
 type Stream = av.Stream
+type TaskStats = pipeline.GraphStats
 
 // Runtime is the composition root for applications embedding goav.
 type Runtime interface {
@@ -37,5 +38,6 @@ type Task interface {
 	Describe() pipeline.Spec
 	Run(context.Context) error
 	Events() <-chan av.Event
+	Stats() TaskStats
 	Close() error
 }

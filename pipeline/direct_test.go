@@ -278,6 +278,11 @@ func TestGraphDirectRouteByEvent(t *testing.T) {
 	if loss.count != 1 || stats.count != 0 {
 		t.Fatalf("loss=%d stats=%d", loss.count, stats.count)
 	}
+	graphStats := graph.Stats()
+	if graphStats.Messages != 1 || graphStats.Events != 1 || graphStats.EventsByType[av.EventPacketLoss] != 1 ||
+		graphStats.Delivered != 1 || !graphStats.LastEventPresent || graphStats.LastEvent.Type != av.EventPacketLoss {
+		t.Fatalf("stats = %+v", graphStats)
+	}
 }
 
 func TestGraphDirectRejectsBufferedPolicy(t *testing.T) {
