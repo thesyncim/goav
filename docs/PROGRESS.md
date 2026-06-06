@@ -647,6 +647,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     recipe runtimes that lack live codec-change or transform support now fail
     in a dedicated compiler pass before inputs, streams, or outputs mutate the
     builder. Done.
+193. Make recipe graph compiler selection diagnostic: standard-runtime recipes
+    that fail to match the migration compiler set now return an actionable
+    `recipe_graph_unsupported` build error with recipe counts and front-door
+    suggestions instead of leaking a bare unsupported graph sentinel. Done.
 
 ## First Vertical Slice
 
@@ -884,7 +888,8 @@ bind in their own passes before stream lowering or mux-group plan assembly.
 Ordinary stream transform shape now validates from intent too, and concrete
 stream step attachments and output-kind rules are checked before stream
 lowering. Runtime capability checks for live codec-change and transforms now
-also run before ordinary stream lowering.
+also run before ordinary stream lowering. Migration graph-compiler selection
+now reports recipe-focused diagnostics when no standard compiler matches.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

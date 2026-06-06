@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
@@ -622,12 +623,36 @@ func selectMigrationGraphCompilerPass() recipeCompilePass {
 		}
 		compiler, err := builder.selectCompiler()
 		if err != nil {
+			if errors.Is(err, ErrUnsupportedBuild) {
+				return recipeGraphUnsupportedError(state.operation, state.intent)
+			}
 			return err
 		}
 		state.migration = builder
 		state.compiler = compiler
 		return nil
 	}}
+}
+
+func recipeGraphUnsupportedError(operation string, intent Intent) error {
+	details := []string{
+		fmt.Sprintf("recipe: %s", firstNonEmpty(intent.Name, "unnamed")),
+		fmt.Sprintf("inputs: %d", len(intent.Inputs)),
+		fmt.Sprintf("streams: %d", len(intent.Streams)),
+		fmt.Sprintf("outputs: %d", len(intent.Outputs)),
+	}
+	return &BuildError{
+		Code:      "recipe_graph_unsupported",
+		Operation: operation,
+		Reason:    "recipe intent did not match any standard graph compiler",
+		Details:   details,
+		Suggestions: []string{
+			"use goav.Record(input, output...) for packet-preserving record or remux",
+			"use goav.From(input).Audio().To(goav.FrameSink(...)) or .Video().To(...) for decoded frames",
+			"use goav.Transcode(input) when one input needs named branches or shared outputs",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func emitMigrationGraphSpecPass() recipeCompilePass {

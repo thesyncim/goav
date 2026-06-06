@@ -363,6 +363,33 @@ func TestJobStreamRuntimeCapabilitiesPassRejectsUnsupportedBuilder(t *testing.T)
 	}
 }
 
+func TestMigrationGraphCompilerPassWrapsUnsupportedRecipeShape(t *testing.T) {
+	runtime := New().(*runtime)
+	builder := (&builder{runtime: runtime}).Input(format.Input{Name: "input.ivf"})
+	state := recipeCompileState{
+		operation: "build job",
+		intent: Intent{
+			Name:   "record",
+			Inputs: []InputIntent{{Name: "input.ivf"}},
+		},
+		builder: builder,
+	}
+
+	err := selectMigrationGraphCompilerPass().Apply(&state)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want recipe_graph_unsupported wrapping ErrUnsupportedBuild", err)
+	}
+	for _, want := range []string{"recipe intent", "inputs: 1", "outputs: 0", "goav.Record", "goav.Transcode"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+	if state.compiler != nil || state.migration != nil {
+		t.Fatalf("state compiler=%T migration=%T, want unset after unsupported selection", state.compiler, state.migration)
+	}
+}
+
 func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 	tests := []struct {
 		name  string
