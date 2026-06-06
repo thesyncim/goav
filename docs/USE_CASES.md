@@ -168,9 +168,10 @@ err := goav.Transcode(goav.FileInput("input.webm", in)).
 Branch names are required, unique handles; output labels are required, unique
 handles. Each branch lists each output once. Route multiple branches to the
 same output by reusing the output label in `.To(...)`, not by defining the
-output twice. Branches decode implicitly before any resize, resample, or
-encoder step. The containers shown here require matching demuxer and muxer
-adapters.
+output twice. `.Output(label, ...)` defines a muxed `FileOutput` or `URIOutput`
+group; decoded frame sinks stay on `Decode` or stream-scoped `From` recipes.
+Branches decode implicitly before any resize, resample, or encoder step. The
+containers shown here require matching demuxer and muxer adapters.
 
 Resize and resample configs become branch-local filter stages when matching
 filter factories are registered. The first concrete filters cover S16 audio

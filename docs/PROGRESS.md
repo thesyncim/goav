@@ -559,6 +559,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `From(input).To(...)` recipes during intent validation, with guidance to use
     `Decode` or stream-scoped `Audio()`/`Video()` chains for decoded frames.
     Done.
+171. Reject `FrameSink` as a `Transcode(...).Output(label, ...)` target because
+    transcode outputs are muxed output groups; keep decoded frame sinks on
+    `Decode` or stream-scoped `From` recipes. Done.
 
 ## First Vertical Slice
 

@@ -1147,14 +1147,31 @@ func TestStreamRecipeRejectsDuplicateEncoder(t *testing.T) {
 }
 
 func TestStreamRecipeRejectsWorkInProgressRecipeEncoder(t *testing.T) {
-	_, err := goav.From(goav.FileInput("input.h264", strings.NewReader(""))).
-		Video().
-		Encode(goav.H264(goav.Bitrate(2_000_000))).
-		To(goav.FileOutput("archive.h264", io.Discard)).
-		Build(context.Background())
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_work_in_progress" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_work_in_progress wrapping ErrUnsupportedBuild", err)
+	tests := []struct {
+		name   string
+		input  string
+		output string
+		codec  goav.CodecSpec
+	}{
+		{name: "h264", input: "input.h264", output: "archive.h264", codec: goav.H264(goav.Bitrate(2_000_000))},
+		{name: "av1", input: "input.ivf", output: "archive.ivf", codec: goav.AV1(goav.Bitrate(2_000_000))},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := goav.From(goav.FileInput(tt.input, strings.NewReader(""))).
+				Video().
+				Encode(tt.codec).
+				To(goav.FileOutput(tt.output, io.Discard)).
+				Build(context.Background())
+			var buildErr *goav.BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "encode_work_in_progress" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want encode_work_in_progress wrapping ErrUnsupportedBuild", err)
+			}
+			if !strings.Contains(err.Error(), "recipe encoding is work in progress") ||
+				!strings.Contains(err.Error(), "opus, vp8, and vp9") {
+				t.Fatalf("err = %v, want work-in-progress encode guidance", err)
+			}
+		})
 	}
 }
 
@@ -1490,6 +1507,26 @@ func TestTranscodeRecipeRejectsInvalidOutputSpec(t *testing.T) {
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want output_writer_missing wrapping ErrUnsupportedBuild", err)
+	}
+}
+
+func TestTranscodeRecipeRejectsFrameSinkOutput(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("360p").VP9(600_000).
+		To("preview").
+		Output("preview", goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_kind_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "transcode outputs are muxed output groups") ||
+		!strings.Contains(err.Error(), "goav.FileOutput") ||
+		!strings.Contains(err.Error(), "goav.Decode") {
+		t.Fatalf("err = %v, want transcode output guidance", err)
 	}
 }
 

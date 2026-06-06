@@ -1965,6 +1965,9 @@ func (j *TranscodeJob) plan() (transcodepkg.Plan, error) {
 		if err := j.outputs[i].output.validate(transcodeRecipeOperation, fmt.Sprintf("output-%d", i)); err != nil {
 			return transcodepkg.Plan{}, err
 		}
+		if j.outputs[i].output.sink != nil {
+			return transcodepkg.Plan{}, transcodeFrameSinkOutputError(j.outputs[i].name, j.outputs[i].output)
+		}
 		name := j.outputs[i].name
 		if _, ok := outputs[name]; ok {
 			return transcodepkg.Plan{}, transcodeDuplicateOutputError(name)
@@ -2150,6 +2153,25 @@ func transcodeEmptyOutputDefinitionLabelError(output OutputSpec) error {
 	}
 	if output.name != "" {
 		err.Details = append(err.Details, "output name: "+output.name)
+	}
+	return err
+}
+
+func transcodeFrameSinkOutputError(label string, output OutputSpec) error {
+	err := &BuildError{
+		Code:      "output_kind_invalid",
+		Operation: transcodeRecipeOperation,
+		Node:      firstNonEmpty(label, output.label("output")),
+		Reason:    "transcode outputs are muxed output groups, not frame sinks",
+		Suggestions: []string{
+			"use goav.FileOutput(...) or goav.URIOutput(...) in .Output(label, ...)",
+			"use goav.Decode(input, goav.FrameSink(sink)) or goav.From(input).Audio()/Video().To(goav.FrameSink(sink)) for decoded frames",
+			"use the expert graph API when one pipeline must feed both decoded frame sinks and muxed outputs",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+	if output.sink != nil && output.sink.Name() != "" {
+		err.Details = append(err.Details, "sink: "+output.sink.Name())
 	}
 	return err
 }

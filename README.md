@@ -118,8 +118,9 @@ return goav.Transcode(goav.FileInput("input.webm", in)).
   `From(...).Video()` shape when selection matters.
 - `goav.Transcode(input)` builds named audio or video branches and outputs.
   Transcode branch `.To(...)` accepts output labels, and each label is defined
-  once with `.Output(label, goav.FileOutput(...))`; each branch must route to
-  an output and currently carries at most one resize or resample transform.
+  once with `.Output(label, goav.FileOutput(...))` or `URIOutput`; each branch
+  must route to a muxed output and currently carries at most one resize or
+  resample transform.
   Audio and video branches can share one output label when they should be muxed
   into the same file.
   Branch names are required and unique; output labels are required and unique,
