@@ -146,6 +146,29 @@ func hasRequirement(requirements []goav.AdapterRequirement, kind string, codecID
 	return false
 }
 
+func adapterRequirementByKind(requirements []goav.AdapterRequirement, kind string, name string) (goav.AdapterRequirement, bool) {
+	for i := range requirements {
+		requirement := requirements[i]
+		if requirement.Kind != kind {
+			continue
+		}
+		if name != "" && requirement.Name != name && string(requirement.Format) != name && string(requirement.Codec) != name && requirement.Transform != name {
+			continue
+		}
+		return requirement, true
+	}
+	return goav.AdapterRequirement{}, false
+}
+
+func hasPlanWarning(warnings []goav.PlanDiagnostic, code string) bool {
+	for i := range warnings {
+		if warnings[i].Code == code {
+			return true
+		}
+	}
+	return false
+}
+
 func operationKinds(operations []goav.OperationReport) []goav.OperationKind {
 	kinds := make([]goav.OperationKind, 0, len(operations))
 	for i := range operations {
@@ -419,6 +442,55 @@ func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 	}
 	if len(report.Warnings) != 0 {
 		t.Fatalf("warnings=%+v", report.Warnings)
+	}
+}
+
+func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
+	report, err := recordJob(
+		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
+		goav.FileOutput("recording.webm", io.Discard),
+	).Explain(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_muxer_missing" {
+		t.Fatalf("err = %v, want output_muxer_missing", err)
+	}
+	requirement, ok := adapterRequirementByKind(report.RequiredAdapters, "muxer", string(av.FormatMatroska))
+	if !ok || requirement.Status != "missing" || requirement.Format != av.FormatMatroska {
+		t.Fatalf("requirements=%+v, want missing matroska muxer", report.RequiredAdapters)
+	}
+	if len(report.Graph.Nodes) == 0 || report.Summary == "" {
+		t.Fatalf("partial report not populated: %+v", report)
+	}
+	if len(report.Warnings) != 1 || report.Warnings[0].Code != "output_muxer_missing" {
+		t.Fatalf("warnings=%+v", report.Warnings)
+	}
+	if len(report.Missing) != 1 || report.Missing[0].Kind != "muxer" || report.Missing[0].Status != "missing" {
+		t.Fatalf("missing=%+v", report.Missing)
+	}
+}
+
+func TestExplainReturnsPartialReportForMissingTransformAdapter(t *testing.T) {
+	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(goav.New(goav.WithStdCodecs())).
+		Audio().
+		Resample(16_000, goav.Mono).
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Explain(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_missing" {
+		t.Fatalf("err = %v, want transform_adapter_missing", err)
+	}
+	requirement, ok := adapterRequirementByKind(report.RequiredAdapters, "filter", "resample")
+	if !ok || requirement.Status != "missing" || requirement.Transform != "resample" {
+		t.Fatalf("requirements=%+v, want missing resample filter", report.RequiredAdapters)
+	}
+	if !hasPlanWarning(report.Warnings, "transform_adapter_missing") {
+		t.Fatalf("warnings=%+v", report.Warnings)
+	}
+	if len(report.Missing) != 1 || report.Missing[0].Name != "resample" {
+		t.Fatalf("missing=%+v", report.Missing)
 	}
 }
 

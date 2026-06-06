@@ -870,6 +870,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Path splits preserve upstream stream operations, so paths can begin after
     decode, resize/resample, custom stages, and taps; runtime attachment remains
     the late control plane through `Task.Attach` and named taps. Done.
+235. Make `Explain(ctx)` useful when adapter preflight fails:
+    build preflight errors now return the original `BuildError` together with a
+    partial `PlanReport` when the recipe shape can still be described. Missing
+    muxers, demuxers, decoders, encoders, and filters become structured
+    `RequiredAdapters` entries with `missing`, `unavailable`, or `unknown`
+    status, plus `Missing` and `Warnings` diagnostics so applications can show
+    actionable plan reports without pretending the build can run. Done.
 
 ## First Vertical Slice
 
@@ -1093,7 +1100,10 @@ Required proof:
 5. Keep custom composition orthogonal by proving generic `Codec` specs, custom
    filter adapters, sinks, and outputs through decode, transform, encode,
    reusable flows, planned paths, and runtime attachments without
-   workflow-specific helpers.
+   workflow-specific helpers. Paths and runtime attachments must be able to
+   anchor after meaningful operation boundaries, including post-decode,
+   post-resize/resample, post-custom-stage, and sink/observation boundaries,
+   instead of introducing a different concept for each workflow shape.
 6. Prove equivalent plans where possible between declared
    `From(...).Paths(...)` paths and reusable `Paths(...)` flows.
 7. Keep README examples executable with `Default()` or clearly behind explicit
@@ -1105,7 +1115,7 @@ Required proof:
    regression tests for each planner slice.
 10. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: finish direct media-plan graph construction and
+Current pressure point: finish direct media-plan graph construction and deepen
 capability planning around the ordered operation model. The public recipe
 surface is small: `From`, stream builders, `Tap`, `Path`, `Paths`, `Output`,
 `Codec`, and runtime `Attach`. Flows and paths expand into intent
@@ -1114,9 +1124,11 @@ control plane for running direct graphs. `MediaPlan` expresses record, stream
 decode, encode, path composition, and transcode as input refs, stream selectors,
 ordered operations, output refs, taps, and planner decisions. `Describe`, `Build`, and
 `Explain(ctx)` now require a supported media-plan shape for normal recipes. The
-next implementation work is to attach first-class capability data to operation
-chains, then extend the same model to custom filter adapters, mux compatibility
-diagnostics, and late muxed runtime outputs before WebM/Ogg land cleanly.
+next implementation work is to move capability data from error-derived
+diagnostics into first-class operation planning, then extend the same model to
+custom filter adapters, mux compatibility diagnostics, operation-boundary
+attachment after transforms and sink-style observation, and late muxed runtime
+outputs before WebM/Ogg land cleanly.
 
 ## Validation Gates
 

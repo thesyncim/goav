@@ -2,7 +2,9 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/filter"
@@ -111,10 +113,19 @@ type PlanDiagnostic struct {
 
 func (j *Job) Explain(ctx context.Context) (PlanReport, error) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
-	if err != nil {
+	if err == nil {
+		return newPlanReport("build job", resolved)
+	}
+	fallback, fallbackErr := compileJobRecipe(j)
+	if fallbackErr != nil {
 		return PlanReport{}, err
 	}
-	return newPlanReport("build job", resolved)
+	report, reportErr := newPlanReport("build job", fallback)
+	if reportErr != nil {
+		return PlanReport{}, err
+	}
+	annotatePlanReportError(&report, err)
+	return report, err
 }
 
 func newPlanReport(operation string, resolved recipeResolved) (PlanReport, error) {
@@ -456,8 +467,152 @@ func appendAdapterRequirement(requirements []AdapterRequirement, requirement Ada
 	return append(requirements, requirement)
 }
 
+func upsertAdapterRequirement(requirements []AdapterRequirement, requirement AdapterRequirement) []AdapterRequirement {
+	key := adapterRequirementKey(requirement)
+	for i := range requirements {
+		if adapterRequirementKey(requirements[i]) == key {
+			requirements[i] = requirement
+			return requirements
+		}
+	}
+	return append(requirements, requirement)
+}
+
 func adapterRequirementKey(requirement AdapterRequirement) string {
 	return requirement.Kind + "|" + string(requirement.Format) + "|" + string(requirement.Codec) + "|" + requirement.Transform + "|" + requirement.RequiredBy
+}
+
+func annotatePlanReportError(report *PlanReport, err error) {
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr == nil {
+		report.Warnings = append(report.Warnings, PlanDiagnostic{
+			Code:    "explain_preflight_error",
+			Message: err.Error(),
+		})
+		return
+	}
+	report.Warnings = append(report.Warnings, PlanDiagnostic{
+		Code:        buildErr.Code,
+		Node:        buildErr.Node,
+		Message:     buildErr.Reason,
+		Details:     append([]string(nil), buildErr.Details...),
+		Suggestions: append([]string(nil), buildErr.Suggestions...),
+	})
+	requirement, ok := adapterRequirementFromBuildError(buildErr)
+	if !ok {
+		report.Missing = append(report.Missing, Requirement{
+			Kind:       firstNonEmpty(buildErr.Code, "requirement"),
+			Name:       firstNonEmpty(buildErr.Node, buildErr.Reason),
+			RequiredBy: buildErr.Node,
+			Status:     "failed",
+		})
+		return
+	}
+	report.RequiredAdapters = upsertAdapterRequirement(report.RequiredAdapters, requirement)
+	report.Missing = appendMissingRequirement(report.Missing, Requirement{
+		Kind:       requirement.Kind,
+		Name:       firstNonEmpty(requirement.Name, string(requirement.Format), string(requirement.Codec), requirement.Transform),
+		RequiredBy: requirement.RequiredBy,
+		Status:     requirement.Status,
+	})
+}
+
+func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool) {
+	details := buildErrorDetailMap(err.Details)
+	status := adapterRequirementStatus(err.Code)
+	requiredBy := firstNonEmpty(err.Node, err.Operation)
+	switch err.Code {
+	case "input_demuxer_missing":
+		formatID := av.FormatID(details["format"])
+		return AdapterRequirement{
+			Kind:       "demuxer",
+			Name:       string(formatID),
+			Format:     formatID,
+			RequiredBy: requiredBy,
+			Status:     status,
+		}, formatID != ""
+	case "output_muxer_missing":
+		formatID := av.FormatID(details["format"])
+		return AdapterRequirement{
+			Kind:       "muxer",
+			Name:       string(formatID),
+			Format:     formatID,
+			RequiredBy: requiredBy,
+			Status:     status,
+		}, formatID != ""
+	case "decode_adapter_missing", "decode_adapter_unavailable":
+		codecID := av.CodecID(details["codec"])
+		return AdapterRequirement{
+			Kind:       "decoder",
+			Name:       string(codecID),
+			Codec:      codecID,
+			RequiredBy: requiredBy,
+			Status:     status,
+		}, codecID != ""
+	case "encode_adapter_missing", "encode_adapter_unavailable":
+		codecID := av.CodecID(details["codec"])
+		return AdapterRequirement{
+			Kind:       "encoder",
+			Name:       string(codecID),
+			Codec:      codecID,
+			RequiredBy: requiredBy,
+			Status:     status,
+		}, codecID != ""
+	case "transform_adapter_missing":
+		name := details["transform"]
+		return AdapterRequirement{
+			Kind:       "filter",
+			Name:       name,
+			Transform:  name,
+			RequiredBy: requiredBy,
+			Status:     status,
+		}, name != ""
+	default:
+		if strings.HasSuffix(err.Code, "_format_unknown") {
+			return AdapterRequirement{
+				Kind:       "format-prober",
+				Name:       firstNonEmpty(err.Node, "format"),
+				RequiredBy: requiredBy,
+				Status:     "unknown",
+			}, true
+		}
+		return AdapterRequirement{}, false
+	}
+}
+
+func adapterRequirementStatus(code string) string {
+	switch {
+	case strings.HasSuffix(code, "_unavailable"):
+		return "unavailable"
+	case strings.HasSuffix(code, "_unknown"):
+		return "unknown"
+	default:
+		return "missing"
+	}
+}
+
+func buildErrorDetailMap(details []string) map[string]string {
+	out := make(map[string]string, len(details))
+	for i := range details {
+		key, value, ok := strings.Cut(details[i], "=")
+		if !ok || key == "" {
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+func appendMissingRequirement(requirements []Requirement, requirement Requirement) []Requirement {
+	for i := range requirements {
+		if requirements[i].Kind == requirement.Kind &&
+			requirements[i].Name == requirement.Name &&
+			requirements[i].RequiredBy == requirement.RequiredBy {
+			requirements[i] = requirement
+			return requirements
+		}
+	}
+	return append(requirements, requirement)
 }
 
 func explainSummary(report PlanReport) string {

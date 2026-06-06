@@ -63,7 +63,9 @@ WAV, and Y4M are adapter surface, not hidden core magic.
 Use `Paths` when one selected stream should become several encoded output
 paths. A path can start after the operations already declared on the stream, so
 splits are natural after decode, after resize or resample, after a custom
-stage, or after any declared tap.
+stage, or after any declared tap. The same anchor model should stay
+orthogonal: transforms, custom processing, observation sinks, and late runtime
+attachments are operation boundaries, not separate workflow families.
 
 ```go
 return goav.From(input).
@@ -155,7 +157,9 @@ return task.Detach(ctx, shots)
 `Attach` adds a downstream stage/sink branch to a running direct task graph
 without rebuilding upstream. `Attachment.Close(ctx)` or `Task.Detach(ctx, h)`
 removes that branch. Late muxed outputs and buffered runtime attachment are
-separate runtime slices.
+separate runtime slices. Place taps where future work may attach: after decode,
+after a resize or resample, after a custom stage, or beside sink-style
+observation.
 
 ## Adapter-Backed Workflows
 
@@ -217,13 +221,17 @@ planner decisions, adapter requirements, warnings, and the graph.
 
 ```go
 report, err := job.Explain(ctx)
-if err != nil {
-    return err
-}
 for _, tap := range report.Taps {
     fmt.Println(tap.Name, tap.Domain, tap.MediaKind)
 }
+if err != nil {
+    return err
+}
 ```
+
+When build preflight finds a missing adapter, `Explain(ctx)` still returns the
+structured report it can prove, including a warning and a
+`RequiredAdapters` entry with status `missing` or `unavailable`.
 
 ## Custom Processing
 
