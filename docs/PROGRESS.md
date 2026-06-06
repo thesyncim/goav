@@ -759,6 +759,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `testing.AllocsPerRun` guards for core media, pipeline, RTP, codec,
     format, filter, and default adapters, and lock the catalog with a docs
     acceptance test. Done.
+218. Make live flow Tee fail honestly until the realtime branch compiler lands:
+    flow `Tee` lowering now marks the internal transcode job it creates and
+    RTP/WebRTC inputs return a dedicated `flow_tee_live_unsupported` diagnostic
+    with single-branch and expert-graph guidance instead of the generic
+    transcode RTP error. Done.
 
 ## First Vertical Slice
 
@@ -1039,14 +1044,16 @@ covering decoder EOS flush ordering, mux write events, stats, and closure.
 The RTP Opus decode component proof now exercises the realtime receive boundary
 through the real Opus depacketizer and decoder without recipe lowering.
 Reusable audio/video flows now expand into recipe intent instead of a parallel
-graph language; `Tee` stays on `Job` and branch graph descriptions reuse the
-existing branch composer.
+graph language; `Tee` stays on `Job`, branch graph descriptions reuse the
+existing branch composer, and live RTP/WebRTC `Tee` now fails with a dedicated
+diagnostic until its realtime branch compiler exists.
 The WebRTC TrackSet component proof now exercises same-stream replacement and
 reader reuse through direct RTP source graph composition.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and
-WebM/Ogg plus live RTP/WebRTC flow Tee remain the next coverage pressure.
+WebM/Ogg plus the live RTP/WebRTC flow Tee compiler remain the next coverage
+pressure.
 
 ## Validation Gates
 

@@ -40,6 +40,7 @@ type recipeCompileState struct {
 	transcodeOutputAttachments []namedOutputSpec
 	transcodeInputProbe        format.ProbeResult
 	transcodeInputProbeReady   bool
+	transcodeFlowTee           bool
 
 	plan transcodepkg.Plan
 
@@ -195,10 +196,11 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 
 func compileJobTeeRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
 	branchJob := &TranscodeJob{
-		runtime: job.runtime,
-		streams: append([]streamBuild(nil), job.teeStreams...),
-		outputs: append([]namedOutputSpec(nil), job.teeOutputs...),
-		err:     job.err,
+		runtime:     job.runtime,
+		streams:     append([]streamBuild(nil), job.teeStreams...),
+		outputs:     append([]namedOutputSpec(nil), job.teeOutputs...),
+		err:         job.err,
+		fromFlowTee: true,
 	}
 	if len(job.inputs) == 1 {
 		branchJob.input = job.inputs[0]
@@ -234,6 +236,7 @@ func compileTranscodeRecipeWithOptions(job *TranscodeJob, options recipeCompileO
 		state.recipeErr = job.err
 		state.transcodeInputAttachment = job.input
 		state.transcodeOutputAttachments = append([]namedOutputSpec(nil), job.outputs...)
+		state.transcodeFlowTee = job.fromFlowTee
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateTranscodeRecipePass(),
@@ -596,7 +599,7 @@ func validateTranscodeIntentShapePass() recipeCompilePass {
 
 func validateTranscodeAttachmentsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode attachments", fn: func(state *recipeCompileState) error {
-		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeOutputAttachments)
+		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeOutputAttachments, state.transcodeFlowTee)
 	}}
 }
 

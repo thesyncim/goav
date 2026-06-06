@@ -2455,6 +2455,8 @@ type TranscodeJob struct {
 	streams []streamBuild
 	outputs []namedOutputSpec
 	err     error
+
+	fromFlowTee bool
 }
 
 type namedOutputSpec struct {
@@ -2634,11 +2636,14 @@ func validateTranscodeBranchIntentShape(stream StreamIntent, index int) error {
 	return validateTranscodeBranchOutputLabels(stream)
 }
 
-func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpec) error {
+func validateTranscodeAttachments(input InputSpec, namedOutputs []namedOutputSpec, fromFlowTee bool) error {
 	if err := input.validate(); err != nil {
 		return err
 	}
 	if input.rtp != nil {
+		if fromFlowTee {
+			return flowTeeLiveUnsupportedError()
+		}
 		return transcodeUnsupportedRTPInputError()
 	}
 	seen := make(map[string]struct{}, len(namedOutputs))
@@ -2754,6 +2759,20 @@ func transcodeUnsupportedRTPInputError() error {
 		Suggestions: []string{
 			"use Record(...) for packet recording",
 			"use From(...).Audio() or From(...).Video() for one selected RTP receive path",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func flowTeeLiveUnsupportedError() error {
+	return &BuildError{
+		Code:      "flow_tee_live_unsupported",
+		Operation: "build tee",
+		Reason:    "live RTP/WebRTC flow Tee needs a dedicated realtime branch compiler",
+		Suggestions: []string{
+			"use From(input).Audio().Apply(flow).To(output) for one selected live receive branch",
+			"use Runtime.Graph() to manually fan out rtpav.Source, decode, encode, and mux stages today",
+			"use file/protocol inputs with .Audio().Tee(...) when branch composition can use the transcode compiler",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

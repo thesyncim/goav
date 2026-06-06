@@ -650,6 +650,26 @@ func TestFlowRejectsTransformsAfterEncode(t *testing.T) {
 	}
 }
 
+func TestFlowTeeRejectsLiveInputsWithActionableDiagnostic(t *testing.T) {
+	voice := goav.AudioFlow("voice").OpusVoice()
+
+	_, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.Opus())).
+		Audio().
+		Tee(voice.To(goav.FileOutput("voice.ogg", io.Discard))).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_tee_live_unsupported" {
+		t.Fatalf("err = %v, want flow_tee_live_unsupported", err)
+	}
+	if buildErr.Operation != "build tee" ||
+		!strings.Contains(err.Error(), "RTP/WebRTC") ||
+		!strings.Contains(err.Error(), "Runtime.Graph") ||
+		!errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want live Tee guidance", err)
+	}
+}
+
 func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
 	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 		return nil

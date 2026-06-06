@@ -126,7 +126,7 @@ return goav.From(goav.FileInput("input.webm", in)).
   stream-local custom stage before encoding.
 - `goav.AudioFlow(name)` and `goav.VideoFlow(name)` define reusable stream
   fragments. Apply one with `.Audio().Apply(flow)` or route several encoded
-  branches with `.Audio().Tee(flow.To(output), ...)`.
+  file/protocol branches with `.Audio().Tee(flow.To(output), ...)`.
 - `goav.From(input).Video().OnCodecChange(goav.RealtimeCodecChangePolicy())`
   names today's live receive policy: rebind compatible replacement streams,
   request video keyframes, drop until sync, and fail on different decoder
