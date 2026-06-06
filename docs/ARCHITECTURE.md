@@ -102,6 +102,9 @@ goav1   -> AV1 decode/development adapter
 
 These adapters should live behind `codec.DecoderFactory` and
 `codec.EncoderFactory`. The core runtime should not depend on codec internals.
+Descriptor-only adapters are allowed for planned backends; they are discoverable
+through registry descriptors, while factory lookup returns
+`codec.ErrUnavailable` until an active factory is registered.
 
 ## Realtime pipeline
 

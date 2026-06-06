@@ -25,7 +25,7 @@ func TestRegisterDescriptorOnly(t *testing.T) {
 	if _, err := registry.Find(av.CodecH264, codec.ModeDecode); err != nil {
 		t.Fatalf("find H264: %v", err)
 	}
-	if _, err := registry.DecoderFactory(av.CodecH264); !errors.Is(err, codec.ErrNotFound) {
-		t.Fatalf("factory err = %v, want ErrNotFound", err)
+	if _, err := registry.DecoderFactory(av.CodecH264); !errors.Is(err, codec.ErrUnavailable) {
+		t.Fatalf("factory err = %v, want ErrUnavailable", err)
 	}
 }

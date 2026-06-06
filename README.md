@@ -114,7 +114,8 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `adapters/annexb`: H264 Annex B packet mux for `.h264` recording.
 - `adapters/gopus`: active Opus decoder adapter.
 - `adapters/govpx`, `adapters/goav1`, `adapters/goh264`: descriptor
-  boundaries for future concrete adapters.
+  boundaries for future concrete adapters; factory lookups return
+  `codec.ErrUnavailable` until a real adapter is registered.
 
 ## Status
 
@@ -139,10 +140,12 @@ Implemented slices:
 - WebRTC track codec updates and replacement tracks emit codec-change events
   consumed by RTP sources.
 - RTP codec-change events refresh payload maps and depacketizer epochs.
+- Descriptor-only codec adapters are discoverable while unavailable factories
+  fail explicitly with `codec.ErrUnavailable`.
 
 Next pressure points:
 
-- Concrete H264 decode adapter validation.
+- Build-tagged H264 decoder factory over the `goh264` module surface.
 - Runtime-level decode/filter/encode graph composition for live receive.
 - Allocation-safe resize and resample implementations.
 

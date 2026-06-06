@@ -37,7 +37,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
 | runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level selected-stream decode-to-sink compiler, multi-RTP/WebRTC packet-reader record/fanout compiler | encode/filter/transcode graph compilers |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries | concrete video adapters |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries report unavailable factories explicitly | concrete video adapters |
 
 ## Implementation Order
 
@@ -77,7 +77,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `UpdateTrack`. Done.
 21. Add runtime-level multi-RTP/WebRTC input graph composition from repeated
     `RTP(...)` calls into shared mux outputs. Done.
-22. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+22. Separate descriptor-only codec discovery from factory availability with
+    `codec.ErrUnavailable`, including an H264 runtime decode build proof. Done.
+23. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -152,6 +154,9 @@ Required proof:
   headers, assemble fragmented frames in bounded scratch, emit
   `EventKeyframeRequired` after loss, keep dropping until sync, and feed the RTP
   record compiler into IVF or Annex B in end-to-end tests.
+- Descriptor-only codec adapters such as `adapters/goh264` remain visible in
+  registry discovery, but decode build attempts fail with `codec.ErrUnavailable`
+  until a concrete factory is registered.
 
 ## Adapter Targets
 
@@ -166,7 +171,7 @@ Required proof:
 - `adapters/goav1`: descriptor boundary exists; concrete AV1 decode path still
   needs capability validation.
 - `adapters/goh264`: descriptor boundary exists with `goav_goh264` build-tag
-  marker for future concrete integration.
+  marker and explicit unavailable-factory proof for future concrete integration.
 
 ## Done Criteria
 
@@ -190,9 +195,10 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: validate concrete H264 decode adapter behavior without
-pulling codec internals into the core runtime, then connect live multi-input
-receive graphs into decode/filter/encode composition.
+Current pressure point: add a build-tagged H264 decoder factory over the
+`goh264` module surface without pulling codec internals into the core runtime,
+then connect live multi-input receive graphs into decode/filter/encode
+composition.
 
 ## Validation Gates
 

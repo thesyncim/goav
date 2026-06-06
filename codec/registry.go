@@ -104,6 +104,9 @@ func (r *SimpleRegistry) Find(id av.CodecID, mode Mode) ([]Descriptor, error) {
 func (r *SimpleRegistry) DecoderFactory(id av.CodecID) (DecoderFactory, error) {
 	factory, ok := r.decoders[id]
 	if !ok {
+		if r.hasDescriptor(id, ModeDecode) {
+			return nil, ErrUnavailable
+		}
 		return nil, ErrNotFound
 	}
 	return factory, nil
@@ -112,9 +115,28 @@ func (r *SimpleRegistry) DecoderFactory(id av.CodecID) (DecoderFactory, error) {
 func (r *SimpleRegistry) EncoderFactory(id av.CodecID) (EncoderFactory, error) {
 	factory, ok := r.encoders[id]
 	if !ok {
+		if r.hasDescriptor(id, ModeEncode) {
+			return nil, ErrUnavailable
+		}
 		return nil, ErrNotFound
 	}
 	return factory, nil
+}
+
+func (r *SimpleRegistry) hasDescriptor(id av.CodecID, mode Mode) bool {
+	if id == "" {
+		return false
+	}
+	for i := range r.descriptors {
+		desc := r.descriptors[i]
+		if desc.ID != id {
+			continue
+		}
+		if desc.Supports(mode) {
+			return true
+		}
+	}
+	return false
 }
 
 func (d Descriptor) Supports(mode Mode) bool {

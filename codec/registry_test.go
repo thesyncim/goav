@@ -44,6 +44,26 @@ func TestRegistryFindsExplicitFactories(t *testing.T) {
 	if _, err := registry.DecoderFactory(av.CodecAV1); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing decoder error = %v, want ErrNotFound", err)
 	}
+	if _, err := registry.DecoderFactory(""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("empty decoder error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRegistryReportsDescriptorOnlyFactoriesUnavailable(t *testing.T) {
+	registry := NewRegistry(
+		WithDescriptor(Descriptor{ID: av.CodecH264, Modes: []Mode{ModeDecode}}),
+		WithDescriptor(Descriptor{ID: av.CodecVP8, Modes: []Mode{ModeEncode}}),
+	)
+
+	if _, err := registry.DecoderFactory(av.CodecH264); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("decoder factory err = %v, want ErrUnavailable", err)
+	}
+	if _, err := registry.EncoderFactory(av.CodecVP8); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("encoder factory err = %v, want ErrUnavailable", err)
+	}
+	if _, err := registry.DecoderFactory(av.CodecAV1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing decoder error = %v, want ErrNotFound", err)
+	}
 }
 
 func TestRegistryDescriptorsAreCopied(t *testing.T) {

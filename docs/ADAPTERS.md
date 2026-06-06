@@ -15,9 +15,12 @@ integrations belong under `adapters/...`.
 - Allocate only during construction or `Open`.
 - Hot-path methods must use caller-owned result structs and preallocated output
   buffers.
-- Do not claim encode/decode capabilities until the path is real.
+- Do not register encode/decode factories until the path is real.
 - Optional or unavailable modules should stay behind build tags or compile-safe
   descriptor packages.
+- Descriptor-only registrations may advertise planned capabilities, but factory
+  lookup must fail with `codec.ErrUnavailable` until a concrete factory is
+  registered.
 
 ## Current Adapters
 
@@ -81,6 +84,8 @@ It does not currently claim encode support.
 `govpx`, `goav1`, and `goh264` currently expose descriptors without importing
 their sibling modules. This lets applications see planned capabilities and build
 registries without breaking the default build or forcing heavy dependencies.
+When a descriptor exists but no factory is registered, `DecoderFactory` or
+`EncoderFactory` returns `codec.ErrUnavailable`, not `codec.ErrNotFound`.
 
 Concrete factories should replace these descriptor-only registrations once each
 codec path has caller-owned output buffers and allocation tests.

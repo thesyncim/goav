@@ -8,6 +8,7 @@ var (
 	ErrNilEncoder            = errors.New("codec: nil encoder")
 	ErrOutputBufferTooSmall  = errors.New("codec: output buffer too small")
 	ErrResultFull            = errors.New("codec: result capacity full")
+	ErrUnavailable           = errors.New("codec: unavailable")
 	ErrUnsupportedFormat     = errors.New("codec: unsupported format")
 	ErrUnsupportedSampleRate = errors.New("codec: unsupported sample rate")
 )

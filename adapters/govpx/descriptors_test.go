@@ -31,7 +31,7 @@ func TestRegisterDescriptorsOnly(t *testing.T) {
 	if len(found) != 1 {
 		t.Fatalf("found = %d, want 1", len(found))
 	}
-	if _, err := registry.DecoderFactory(av.CodecVP8); !errors.Is(err, codec.ErrNotFound) {
-		t.Fatalf("factory err = %v, want ErrNotFound", err)
+	if _, err := registry.DecoderFactory(av.CodecVP8); !errors.Is(err, codec.ErrUnavailable) {
+		t.Fatalf("factory err = %v, want ErrUnavailable", err)
 	}
 }

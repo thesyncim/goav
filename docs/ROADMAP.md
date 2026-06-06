@@ -55,7 +55,8 @@ validation gates. This roadmap keeps the broader phase view.
 ## Phase 4: H264 and concrete AV1 decode
 
 - H264 RTP depacketization and Annex B bridge. Done.
-- `goh264` adapter as it matures.
+- Descriptor-only H264 adapter availability checks. Done.
+- Build-tagged `goh264` decoder factory as the module surface stabilizes.
 - AV1 decode adapter validation.
 - `goav1` adapter as it matures.
 
