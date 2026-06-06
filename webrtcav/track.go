@@ -6,6 +6,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
@@ -63,6 +64,7 @@ func (r trackRemoteRTPReader) ReadRTP() (*rtp.Packet, interceptor.Attributes, er
 }
 
 type trackReader struct {
+	mu      sync.RWMutex
 	remote  RemoteTrack
 	reader  trackRTPReader
 	events  chan av.Event
@@ -93,16 +95,17 @@ func newTrackReader(remote RemoteTrack, reader trackRTPReader) *trackReader {
 }
 
 func (r *trackReader) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
-	if r.closed {
-		return nil, ErrClosed
-	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	packet, _, err := r.reader.ReadRTP()
+	reader, stream, err := r.snapshotReader()
+	if err != nil {
+		return nil, err
+	}
+	packet, _, err := reader.ReadRTP()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			r.emit(av.Event{Type: av.EventEndOfStream, StreamID: r.remote.Stream.ID, Epoch: r.remote.Stream.Epoch})
+			r.emit(av.Event{Type: av.EventEndOfStream, StreamID: stream.ID, Epoch: stream.Epoch})
 		}
 		return nil, err
 	}
@@ -114,6 +117,8 @@ func (r *trackReader) Events() <-chan av.Event {
 }
 
 func (r *trackReader) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.closed {
 		return nil
 	}
@@ -123,24 +128,81 @@ func (r *trackReader) Close() error {
 }
 
 func (r *trackReader) Streams(context.Context) ([]av.Stream, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	streams := make([]av.Stream, len(r.streams))
 	copy(streams, r.streams)
 	return streams, nil
 }
 
 func (r *trackReader) PayloadMap() rtpav.PayloadMap {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.remote.Payloads
 }
 
 func (r *trackReader) UpdateCodec(ctx context.Context, update TrackCodecUpdate) error {
-	if r.closed {
-		return ErrClosed
-	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if !hasCodecUpdate(update) {
 		return ErrInvalidCodecUpdate
+	}
+	next, _, err := r.applyCodecUpdate(update, nil)
+	if err != nil {
+		return err
+	}
+	r.emitCodecChanged(next)
+	return nil
+}
+
+func (r *trackReader) UpdateTrack(ctx context.Context, remote RemoteTrack) error {
+	return r.updateTrack(ctx, remote, nil)
+}
+
+func (r *trackReader) updateTrack(ctx context.Context, remote RemoteTrack, replacement trackRTPReader) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	remote = normalizeRemoteTrack(remote)
+	if replacement == nil && remote.Track != nil {
+		replacement = trackRemoteRTPReader{track: remote.Track}
+	}
+	update := TrackCodecUpdate{
+		Codec:    remote.Codec,
+		Stream:   remote.Stream,
+		Payloads: remote.Payloads,
+		Metadata: remote.Metadata,
+	}
+	if !hasCodecUpdate(update) && replacement == nil {
+		return ErrInvalidCodecUpdate
+	}
+	next, _, err := r.applyCodecUpdate(update, replacement)
+	if err != nil {
+		return err
+	}
+	r.mergeRemoteTrack(remote)
+	r.emitCodecChanged(next)
+	return nil
+}
+
+func (r *trackReader) snapshotReader() (trackRTPReader, av.Stream, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, av.Stream{}, ErrClosed
+	}
+	if r.reader == nil {
+		return nil, av.Stream{}, ErrNilTrack
+	}
+	return r.reader, r.remote.Stream, nil
+}
+
+func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trackRTPReader) (av.Stream, rtpav.PayloadMap, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return av.Stream{}, nil, ErrClosed
 	}
 	current := r.remote.Stream
 	if len(r.streams) != 0 {
@@ -161,27 +223,38 @@ func (r *trackReader) UpdateCodec(ctx context.Context, update TrackCodecUpdate) 
 	if hasWebRTCCodec(update.Codec) {
 		r.remote.Codec = update.Codec
 	}
+	if replacement != nil {
+		r.reader = replacement
+	}
 	r.remote.Payloads = payloads
 	r.remote.Metadata = mergeMetadata(r.remote.Metadata, update.Metadata)
 	r.streams = []av.Stream{next}
-	r.emitCodecChanged(next)
-	return nil
+	return next, payloads, nil
 }
 
 func (r *trackReader) WriteRTCP(ctx context.Context, packets []rtcp.Packet) error {
-	if r.closed {
-		return ErrClosed
-	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if len(packets) == 0 || r.remote.Feedback == nil {
+	r.mu.RLock()
+	if r.closed {
+		r.mu.RUnlock()
+		return ErrClosed
+	}
+	feedback := r.remote.Feedback
+	r.mu.RUnlock()
+	if len(packets) == 0 || feedback == nil {
 		return nil
 	}
-	return r.remote.Feedback.WriteRTCP(ctx, packets)
+	return feedback.WriteRTCP(ctx, packets)
 }
 
 func (r *trackReader) emit(event av.Event) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return
+	}
 	select {
 	case r.events <- event:
 	default:
@@ -197,6 +270,39 @@ func (r *trackReader) emitCodecChanged(stream av.Stream) {
 		Codec:    &stream.Codec,
 		Reason:   "webrtc track codec changed",
 	})
+}
+
+func normalizeRemoteTrack(remote RemoteTrack) RemoteTrack {
+	if remote.Track != nil {
+		if remote.Codec.PayloadType == 0 && remote.Codec.MimeType == "" {
+			remote.Codec = remote.Track.Codec()
+		}
+		if remote.Stream.ID == "" {
+			remote.Stream.ID = av.StreamID(remote.Track.ID())
+		}
+		if remote.Stream.Name == "" {
+			remote.Stream.Name = remote.Track.ID()
+		}
+		remote.Stream.Metadata = mergeMetadata(remote.Stream.Metadata, trackMetadata(remote.Track, remote.Metadata))
+	}
+	return remote
+}
+
+func (r *trackReader) mergeRemoteTrack(remote RemoteTrack) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if remote.Track != nil {
+		r.remote.Track = remote.Track
+	}
+	if remote.Receiver != nil {
+		r.remote.Receiver = remote.Receiver
+	}
+	if remote.Transceiver != nil {
+		r.remote.Transceiver = remote.Transceiver
+	}
+	if remote.Feedback != nil {
+		r.remote.Feedback = remote.Feedback
+	}
 }
 
 func streamFromRemoteTrack(remote RemoteTrack) av.Stream {

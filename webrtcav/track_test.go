@@ -1,6 +1,7 @@
 package webrtcav
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -311,6 +312,97 @@ func TestTrackReaderUpdateCodecFeedsRTPSource(t *testing.T) {
 	}
 	if len(packets[0].Payload.Bytes) != 3 || packets[0].Payload.Bytes[0] != 9 {
 		t.Fatalf("payload = %v", packets[0].Payload.Bytes)
+	}
+}
+
+func TestTrackReaderUpdateTrackReplacesReaderAndFeedsRTPSource(t *testing.T) {
+	initial := av.Stream{
+		ID:       "video",
+		Epoch:    3,
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: 90000},
+		Codec: av.CodecParameters{
+			ID:        av.CodecH264,
+			Type:      av.MediaVideo,
+			ClockRate: 90000,
+		},
+	}
+	reader := newTrackReader(RemoteTrack{
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypeH264,
+				ClockRate: 90000,
+			},
+			PayloadType: 96,
+		},
+		Stream: initial,
+	}, &fakeTrackRTPReader{
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 96, Timestamp: 1},
+			Payload: []byte{0x65, 0x00},
+		}},
+	})
+	replacement := &fakeTrackRTPReader{
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 90},
+			Payload: []byte{0x65, 0xaa},
+		}},
+	}
+	if err := reader.updateTrack(context.Background(), RemoteTrack{
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:    webrtc.MimeTypeH264,
+				ClockRate:   90000,
+				SDPFmtpLine: "profile-level-id=42e01f",
+			},
+			PayloadType: 97,
+		},
+		Stream: av.Stream{ID: "video"},
+	}, replacement); err != nil {
+		t.Fatal(err)
+	}
+
+	source, err := rtpav.NewSource(rtpav.SourceConfig{
+		Receiver:      reader,
+		Depacketizers: []rtpav.Depacketizer{rtpav.NewH264Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16))},
+		MaxPackets:    1,
+		MaxEvents:     2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packets []av.Packet
+	var events []av.Event
+	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		switch msg.Kind {
+		case pipeline.MessagePacket:
+			packets = append(packets, *msg.Packet)
+		case pipeline.MessageEvent:
+			events = append(events, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(events) != 2 || events[0].Type != av.EventCodecChanged || events[1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v", events)
+	}
+	if events[0].Epoch != 4 {
+		t.Fatalf("codec event = %+v", events[0])
+	}
+	if len(packets) != 1 {
+		t.Fatalf("packets = %d, want 1", len(packets))
+	}
+	if packets[0].StreamID != "video" || packets[0].CodecEpoch != 4 || !packets[0].Keyframe {
+		t.Fatalf("packet = %+v", packets[0])
+	}
+	want := []byte{0x00, 0x00, 0x00, 0x01, 0x65, 0xaa}
+	if !bytes.Equal(packets[0].Payload.Bytes, want) {
+		t.Fatalf("payload = %v, want %v", packets[0].Payload.Bytes, want)
+	}
+	if replacement.reads != 1 {
+		t.Fatalf("replacement reads = %d, want 1", replacement.reads)
 	}
 }
 

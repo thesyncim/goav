@@ -32,6 +32,7 @@ type TrackReader interface {
 	Streams(context.Context) ([]av.Stream, error)
 	PayloadMap() rtpav.PayloadMap
 	UpdateCodec(context.Context, TrackCodecUpdate) error
+	UpdateTrack(context.Context, RemoteTrack) error
 	ReadRTP(context.Context) (*rtp.Packet, error)
 	Events() <-chan av.Event
 	Close() error
