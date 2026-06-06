@@ -32,7 +32,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `codec` | Into-style contracts, capabilities, explicit registry, decoder and encoder pipeline stages | richer concrete adapter alloc tests |
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, fanout, stream/event routes, backpressure guard, graph specs with text/DOT/Mermaid rendering | bounded async edges and drop-policy tests |
-| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery | codec-switch epoch tests |
+| `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh | H264 RTP depacketizer |
 | `webrtcav` | Pion PeerConnection session, track accept queue, TrackRemote reader, stream mapping, payload map boundary, RTCP feedback bridge | codec-change/session renegotiation events |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
@@ -63,7 +63,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
    Done.
 14. Add WebRTC PeerConnection session receive boundary with track acceptance and
    RTCP feedback routing into the existing RTP source. Done.
-15. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+15. Add RTP codec-change payload-map refresh and depacketizer epoch reset
+   proof. Done.
+16. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -119,6 +121,9 @@ Required proof:
   visibility.
 - `rtpav.Source` now forwards realtime events into depacketizers before graph
   delivery, so loss-aware depacketizers can reset or drop partial payloads.
+- `rtpav.Source` refreshes payload maps on `EventCodecChanged`, and
+  depacketizers update matching stream epochs while dropping partial video until
+  the next sync frame.
 - `rtpav.NewVP8Depacketizer`, `rtpav.NewVP9Depacketizer`, and
   `rtpav.NewAV1Depacketizer` strip RTP payload headers, assemble fragmented
   frames in bounded scratch, emit `EventKeyframeRequired` after loss, keep
@@ -160,9 +165,8 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: prove codec-switch behavior around WebRTC payload-map
-epochs so depacketizers and decoders reset explicitly when renegotiation or
-track replacement changes codec parameters.
+Current pressure point: add H264 RTP depacketization and Annex B packet
+recording validation without pulling codec internals into the core runtime.
 
 ## Validation Gates
 

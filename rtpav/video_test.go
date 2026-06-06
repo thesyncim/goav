@@ -164,6 +164,99 @@ func TestVideoDepacketizerLossRequestsKeyframeAndDropsUntilSync(t *testing.T) {
 	}
 }
 
+func TestVideoDepacketizerCodecChangedUpdatesEpochAndDropsUntilSync(t *testing.T) {
+	stream := videoTestStream(av.CodecVP8)
+	depacketizer := NewVP8Depacketizer(stream, WithMaxVideoFrameSize(16))
+	payload := PayloadCodec{ClockRate: 90000}
+	out := DepacketizeResult{
+		Packets: make([]av.Packet, 0, 1),
+		Events:  make([]av.Event, 0, 1),
+	}
+
+	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
+		Header:  rtp.Header{Timestamp: 1},
+		Payload: []byte{0x10, 0xaa},
+	}, payload, &out); err != nil {
+		t.Fatal(err)
+	}
+	updated := stream
+	updated.Epoch = 4
+	if err := depacketizer.HandleEvent(context.Background(), &av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: updated.ID,
+		Epoch:    updated.Epoch,
+		Stream:   &updated,
+		Codec:    &updated.Codec,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
+		Header:  rtp.Header{Marker: true, Timestamp: 1},
+		Payload: []byte{0x00, 0xbb},
+	}, payload, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Packets) != 0 || len(out.Events) != 1 ||
+		out.Events[0].Type != av.EventKeyframeRequired || out.Events[0].Epoch != updated.Epoch {
+		t.Fatalf("out = %+v", out)
+	}
+
+	out.Reset()
+	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
+		Header:  rtp.Header{Marker: true, Timestamp: 2},
+		Payload: []byte{0x10, 0x00, 0xcc},
+	}, payload, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Packets) != 1 {
+		t.Fatalf("packets = %d, want 1", len(out.Packets))
+	}
+	packet := out.Packets[0]
+	if packet.CodecEpoch != updated.Epoch || !packet.LossBefore || !packet.Discontinuous || !packet.Keyframe {
+		t.Fatalf("packet = %+v", packet)
+	}
+}
+
+func TestVideoDepacketizerIgnoresUnrelatedCodecChanged(t *testing.T) {
+	stream := videoTestStream(av.CodecVP8)
+	depacketizer := NewVP8Depacketizer(stream, WithMaxVideoFrameSize(16))
+	payload := PayloadCodec{ClockRate: 90000}
+	out := DepacketizeResult{
+		Packets: make([]av.Packet, 0, 1),
+		Events:  make([]av.Event, 0, 1),
+	}
+
+	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
+		Header:  rtp.Header{Timestamp: 1},
+		Payload: []byte{0x10, 0xaa},
+	}, payload, &out); err != nil {
+		t.Fatal(err)
+	}
+	if err := depacketizer.HandleEvent(context.Background(), &av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: "other",
+		Epoch:    8,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
+		Header:  rtp.Header{Marker: true, Timestamp: 1},
+		Payload: []byte{0x00, 0xbb},
+	}, payload, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Events) != 0 || len(out.Packets) != 1 {
+		t.Fatalf("out = %+v", out)
+	}
+	if out.Packets[0].CodecEpoch != stream.Epoch || !bytes.Equal(out.Packets[0].Payload.Bytes, []byte{0xaa, 0xbb}) {
+		t.Fatalf("packet = %+v payload=%v", out.Packets[0], out.Packets[0].Payload.Bytes)
+	}
+}
+
 func TestVideoDepacketizerFrameTooLarge(t *testing.T) {
 	stream := videoTestStream(av.CodecVP8)
 	depacketizer := NewVP8Depacketizer(stream, WithMaxVideoFrameSize(1))

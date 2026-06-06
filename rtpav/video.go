@@ -196,9 +196,17 @@ func (a *videoFrameAssembler) handleEvent(ctx context.Context, event *av.Event) 
 	}
 	switch event.Type {
 	case av.EventPacketLoss:
-		a.markLoss(false)
-	case av.EventDiscontinuity, av.EventCodecChanged:
-		a.markLoss(true)
+		if eventMatchesStream(a.stream, event) {
+			a.markLoss(false)
+		}
+	case av.EventDiscontinuity:
+		if eventMatchesStream(a.stream, event) {
+			a.markLoss(true)
+		}
+	case av.EventCodecChanged:
+		if applyCodecChangedEvent(&a.stream, a.stream.Codec.ID, event) {
+			a.markLoss(true)
+		}
 	}
 	return nil
 }

@@ -355,6 +355,81 @@ func TestSourceForwardsEventsToDepacketizers(t *testing.T) {
 	}
 }
 
+func TestSourceCodecChangedRefreshesPayloadMapAndEpoch(t *testing.T) {
+	initial := av.Stream{
+		ID:    "audio",
+		Epoch: 1,
+		Codec: av.CodecParameters{
+			ID:        av.CodecOpus,
+			Type:      av.MediaAudio,
+			ClockRate: 48000,
+		},
+	}
+	updated := initial
+	updated.Epoch = 2
+	events := make(chan av.Event, 1)
+	events <- av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: updated.ID,
+		Epoch:    updated.Epoch,
+		Stream:   &updated,
+		Codec:    &updated.Codec,
+	}
+	receiver := &fakeReceiver{
+		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  initial.Codec,
+			MIMEType:    MIMEOpus,
+			ClockRate:   48000,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 112, Timestamp: 960},
+			Payload: []byte{9, 8, 7},
+		}},
+		events: events,
+	}
+	source, err := NewSource(SourceConfig{
+		Receiver:      receiver,
+		Depacketizers: []Depacketizer{NewOpusDepacketizer(initial)},
+		MaxPackets:    1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiver.payloads = NewStaticPayloadMap(2, []PayloadCodec{{
+		PayloadType: 112,
+		Parameters:  updated.Codec,
+		MIMEType:    MIMEOpus,
+		ClockRate:   48000,
+	}})
+	var packets []av.Packet
+	var gotEvents []av.Event
+
+	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		switch msg.Kind {
+		case pipeline.MessagePacket:
+			packets = append(packets, *msg.Packet)
+		case pipeline.MessageEvent:
+			gotEvents = append(gotEvents, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(gotEvents) != 2 || gotEvents[0].Type != av.EventCodecChanged || gotEvents[1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v", gotEvents)
+	}
+	if len(packets) != 1 {
+		t.Fatalf("packets = %d, want 1", len(packets))
+	}
+	if packets[0].StreamID != updated.ID || packets[0].CodecEpoch != updated.Epoch {
+		t.Fatalf("packet = %+v", packets[0])
+	}
+	if packets[0].PTS.Value != 960 || packets[0].Payload.Bytes[0] != 9 {
+		t.Fatalf("packet = %+v", packets[0])
+	}
+}
+
 func TestSourceErrors(t *testing.T) {
 	if _, err := NewSource(SourceConfig{}); !errors.Is(err, ErrNilReceiver) {
 		t.Fatalf("err = %v, want ErrNilReceiver", err)

@@ -115,8 +115,10 @@ func (d *AV1Depacketizer) HandleEvent(ctx context.Context, event *av.Event) erro
 	}
 	switch event.Type {
 	case av.EventPacketLoss, av.EventDiscontinuity, av.EventCodecChanged:
-		d.fragment = d.fragment[:0]
-		d.keyframe = false
+		if eventMatchesStream(d.assembler.stream, event) {
+			d.fragment = d.fragment[:0]
+			d.keyframe = false
+		}
 	}
 	return nil
 }

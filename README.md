@@ -124,11 +124,11 @@ Implemented slices:
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.
 - VP8/VP9/AV1 RTP depacketizers for packet-preserving video recording.
 - WebRTC session track accept loop with RTCP feedback routed through Pion.
+- RTP codec-change events refresh payload maps and depacketizer epochs.
 
 Next pressure points:
 
 - H264 RTP/codec adapter validation.
-- Codec-switch tests around payload-map epochs.
 - Allocation-safe resize and resample implementations.
 
 ## Working Loop

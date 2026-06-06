@@ -61,6 +61,10 @@ func (d *OpusDepacketizer) FlushInto(context.Context, *DepacketizeResult) error 
 	return nil
 }
 
-func (d *OpusDepacketizer) HandleEvent(context.Context, *av.Event) error {
+func (d *OpusDepacketizer) HandleEvent(ctx context.Context, event *av.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	applyCodecChangedEvent(&d.stream, av.CodecOpus, event)
 	return nil
 }

@@ -111,6 +111,11 @@ The intended model is:
 4. Depacketizers and decoders reset or drain.
 5. Downstream stages drop until sync if needed.
 
+`rtpav.Source` now refreshes its receiver payload map when it observes
+`EventCodecChanged`. Matching depacketizers update their stream epoch from the
+event; video depacketizers drop partial frames and request sync before emitting
+packets for the new epoch.
+
 ## Feedback
 
 The feedback path should stay explicit through `rtpav.FeedbackWriter`.

@@ -240,6 +240,9 @@ func (s *Source) emitEvent(ctx context.Context, emitter pipeline.Emitter, event 
 }
 
 func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
+	if event != nil && event.Type == av.EventCodecChanged {
+		s.payloads = s.receiver.PayloadMap()
+	}
 	for i := range s.depacketizers {
 		if err := s.depacketizers[i].HandleEvent(ctx, event); err != nil {
 			return err
