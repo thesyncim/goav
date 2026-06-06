@@ -2,12 +2,10 @@ package goav
 
 import (
 	"context"
-	"errors"
 	"io"
 	"strings"
 	"testing"
 
-	goh264adapter "github.com/thesyncim/goav/adapters/goh264"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
@@ -260,35 +258,17 @@ func TestRuntimeBuilderDecodeRequiresUnambiguousStream(t *testing.T) {
 	}
 }
 
-func TestRuntimeBuilderH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
-	streams := []av.Stream{{
+func TestDecodeResultForVideoPreallocatesPlaneSlots(t *testing.T) {
+	result := decodeResultForStream(av.Stream{
 		ID:   "video",
 		Type: av.MediaVideo,
 		Codec: av.CodecParameters{
-			ID:        av.CodecH264,
-			Type:      av.MediaVideo,
-			ClockRate: 90000,
-			Width:     640,
-			Height:    360,
+			ID:   av.CodecH264,
+			Type: av.MediaVideo,
 		},
-	}}
-	demuxer := &remuxTestDemuxer{streams: streams}
-	formats := format.NewRegistry(
-		format.WithProber(remuxTestProber{streams: streams}),
-		format.WithDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
-	)
-	codecs := codec.NewRegistry()
-	goh264adapter.Register(codecs)
-
-	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
-		Input(Input{Name: "input.ogg"}).
-		Decode(SelectVideo()).
-		Sink(&runtimeTestSink{name: "frames"}).
-		Build(context.Background())
-	if !errors.Is(err, codec.ErrUnavailable) {
-		t.Fatalf("err = %v, want codec.ErrUnavailable", err)
-	}
-	if !demuxer.closed {
-		t.Fatal("demux source should be closed after unavailable decoder")
+	})
+	frames := result.Frames[:cap(result.Frames)]
+	if len(frames) != 1 || cap(frames[0].Planes) < 3 {
+		t.Fatalf("frames=%d plane cap=%d", len(frames), cap(frames[0].Planes))
 	}
 }

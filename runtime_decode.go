@@ -210,6 +210,9 @@ func decodeResultForStream(stream av.Stream) codec.DecodeResult {
 	if stream.Type == av.MediaAudio || stream.Codec.Type == av.MediaAudio {
 		frame.Planes = []av.Plane{{Buffer: av.Buffer{Bytes: make([]byte, 0, audioDecodeBufferSize(stream))}}}
 	}
+	if stream.Type == av.MediaVideo || stream.Codec.Type == av.MediaVideo {
+		frame.Planes = make([]av.Plane, 3)
+	}
 	return codec.DecodeResult{
 		Frames:   []av.Frame{frame}[:0],
 		Events:   make([]av.Event, 0, 1),

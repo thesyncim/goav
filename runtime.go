@@ -238,32 +238,56 @@ func (b *builder) Sink(sink pipeline.Sink) Builder {
 	return b
 }
 
-func (b *builder) Connect(from string, to string) Builder {
-	b.links = append(b.links, pipeline.Link{
-		From: pipeline.NodeRef(from),
-		To:   pipeline.NodeRef(to),
+func ForStream(stream av.StreamID) ConnectOption {
+	return func(connection *Connection) {
+		connection.Policy = pipeline.RouteByStream
+		connection.Label = string(stream)
+	}
+}
+
+func ForEvent(event av.EventType) ConnectOption {
+	return func(connection *Connection) {
+		connection.Policy = pipeline.RouteByEvent
+		connection.Label = string(event)
+	}
+}
+
+func WithRoute(policy pipeline.RoutePolicy, label string) ConnectOption {
+	return func(connection *Connection) {
+		connection.Policy = policy
+		connection.Label = label
+	}
+}
+
+func (b *builder) Connect(from string, to string, options ...ConnectOption) Builder {
+	connection := Connection{Policy: pipeline.RouteAll}
+	for i := range options {
+		if options[i] != nil {
+			options[i](&connection)
+		}
+	}
+	if connection.Policy == "" || (connection.Policy == pipeline.RouteAll && connection.Label == "") {
+		b.links = append(b.links, pipeline.Link{
+			From: pipeline.NodeRef(from),
+			To:   pipeline.NodeRef(to),
+		})
+		return b
+	}
+	b.routes = append(b.routes, pipeline.Route{
+		From:   pipeline.NodeRef(from),
+		To:     []pipeline.NodeRef{pipeline.NodeRef(to)},
+		Policy: connection.Policy,
+		Label:  connection.Label,
 	})
 	return b
 }
 
 func (b *builder) ConnectStream(from string, to string, stream av.StreamID) Builder {
-	b.routes = append(b.routes, pipeline.Route{
-		From:   pipeline.NodeRef(from),
-		To:     []pipeline.NodeRef{pipeline.NodeRef(to)},
-		Policy: pipeline.RouteByStream,
-		Label:  string(stream),
-	})
-	return b
+	return b.Connect(from, to, ForStream(stream))
 }
 
 func (b *builder) ConnectEvent(from string, to string, event av.EventType) Builder {
-	b.routes = append(b.routes, pipeline.Route{
-		From:   pipeline.NodeRef(from),
-		To:     []pipeline.NodeRef{pipeline.NodeRef(to)},
-		Policy: pipeline.RouteByEvent,
-		Label:  string(event),
-	})
-	return b
+	return b.Connect(from, to, ForEvent(event))
 }
 
 func (b *builder) Link(link pipeline.Link) Builder {

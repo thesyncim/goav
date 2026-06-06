@@ -36,8 +36,8 @@ execution graphs stay equivalent.
 The current compilers cover:
 
 - empty graphs for lifecycle tests
-- explicit `Source -> Stage -> Sink` graphs with named links and stream/event
-  routes
+- explicit `Source -> Stage -> Sink` graphs with direct named connections and
+  stream/event route options
 - one-input/many-output remux and fanout through
   `format.DemuxSource -> format.MuxStage...` when the format registry can
   probe, demux, and mux the requested boundaries
@@ -96,15 +96,17 @@ The first adapters should wrap existing pure-Go codec projects:
 ```text
 gopus   -> Opus decode/encode
 govpx   -> VP8/VP9 decode/encode
-goh264  -> H264 decode/development adapter
+goh264  -> H264 decode adapter
 goav1   -> AV1 decode/development adapter
 ```
 
 These adapters should live behind `codec.DecoderFactory` and
 `codec.EncoderFactory`. The core runtime should not depend on codec internals.
-Descriptor-only adapters are allowed for planned backends; they are discoverable
-through registry descriptors, while factory lookup returns
-`codec.ErrUnavailable` until an active factory is registered.
+Descriptor-only adapters are allowed for planned or optional backends; they are
+discoverable through registry descriptors, while factory lookup returns
+`codec.ErrUnavailable` until an active factory is registered. `goh264` follows
+that pattern in normal builds and registers a decoder factory only when the
+`goav_goh264` build tag is enabled.
 
 ## Realtime pipeline
 

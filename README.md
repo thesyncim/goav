@@ -13,6 +13,7 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pure Go core, no cgo runtime dependency.
 - Simple fluent API for natural workflows.
 - Explicit graph API for custom realtime systems.
+- Named nodes connect directly; stream/event routing is a connection option.
 - Caller-owned buffers and result structs on hot paths.
 - RTP metadata, loss, discontinuity, codec epochs, keyframe requests, EOS, and
   backpressure are first-class events.
@@ -79,7 +80,7 @@ Build an explicit graph when the application owns the stages:
 builder := rt.New().
     Source(source).
     Stage(decode).
-    ConnectStream("source", "decode", "audio").
+    Connect("source", "decode", goav.ForStream("audio")).
     Connect("decode", "record").
     Sink(record)
 
@@ -113,9 +114,12 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `adapters/ivf`: IVF demux/mux for VP8, VP9, and AV1 packet recording.
 - `adapters/annexb`: H264 Annex B packet mux for `.h264` recording.
 - `adapters/gopus`: active Opus decoder adapter.
-- `adapters/govpx`, `adapters/goav1`, `adapters/goh264`: descriptor
-  boundaries for future concrete adapters; factory lookups return
-  `codec.ErrUnavailable` until a real adapter is registered.
+- `adapters/govpx`, `adapters/goav1`: descriptor boundaries for future
+  concrete adapters; factory lookups return `codec.ErrUnavailable` until a
+  real adapter is registered.
+- `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
+  H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
+  video frames.
 
 ## Status
 
@@ -142,11 +146,13 @@ Implemented slices:
 - RTP codec-change events refresh payload maps and depacketizer epochs.
 - Descriptor-only codec adapters are discoverable while unavailable factories
   fail explicitly with `codec.ErrUnavailable`.
+- Build-tagged H264 decode maps real `goh264` output into borrowed `av.Frame`
+  planes and requests keyframes after loss.
 
 Next pressure points:
 
-- Build-tagged H264 decoder factory over the `goh264` module surface.
 - Runtime-level decode/filter/encode graph composition for live receive.
+- Allocation and lifecycle hardening for concrete video decode paths.
 - Allocation-safe resize and resample implementations.
 
 ## Working Loop

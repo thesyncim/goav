@@ -31,7 +31,7 @@ integrations belong under `adapters/...`.
 | `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
 | `adapters/govpx` | descriptor-only VP8/VP9 boundary |
 | `adapters/goav1` | descriptor-only AV1 boundary |
-| `adapters/goh264` | descriptor-only H264 boundary, concrete adapter reserved for `goav_goh264` |
+| `adapters/goh264` | descriptor-only by default; `goav_goh264` enables H264 decode |
 
 ## `ivf`
 
@@ -79,13 +79,31 @@ Current surface:
 
 It does not currently claim encode support.
 
+## `goh264`
+
+The `goh264` adapter wraps `github.com/thesyncim/goh264` only when built with
+`goav_goh264`. Normal builds keep the descriptor visible without importing the
+module.
+
+Current tagged surface:
+
+- explicit registry registration through `goh264.Register`
+- H264 auto packet decode via the sibling module
+- codec-change and discontinuity events reset decoder state
+- packet-loss paths request keyframes through `codec.ControlRequest`
+- decoded 8-bit Y/Cb/Cr planes are exposed as borrowed `av.Frame` planes
+
+It is decode-only and intentionally narrow for now: no high bit-depth output,
+no color conversion, no encode adapter, and no allocation guard yet.
+
 ## Descriptor-only Boundaries
 
-`govpx`, `goav1`, and `goh264` currently expose descriptors without importing
-their sibling modules. This lets applications see planned capabilities and build
-registries without breaking the default build or forcing heavy dependencies.
-When a descriptor exists but no factory is registered, `DecoderFactory` or
-`EncoderFactory` returns `codec.ErrUnavailable`, not `codec.ErrNotFound`.
+`govpx`, `goav1`, and default-build `goh264` expose descriptors without
+importing their sibling modules. This lets applications see planned
+capabilities and build registries without breaking the default build or forcing
+heavy dependencies. When a descriptor exists but no factory is registered,
+`DecoderFactory` or `EncoderFactory` returns `codec.ErrUnavailable`, not
+`codec.ErrNotFound`.
 
 Concrete factories should replace these descriptor-only registrations once each
 codec path has caller-owned output buffers and allocation tests.

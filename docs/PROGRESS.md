@@ -36,8 +36,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level selected-stream decode-to-sink compiler, multi-RTP/WebRTC packet-reader record/fanout compiler | encode/filter/transcode graph compilers |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `gopus` Opus decoder active; `govpx`, `goav1`, `goh264` descriptor boundaries report unavailable factories explicitly | concrete video adapters |
+| runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level selected-stream decode-to-sink compiler, multi-RTP/WebRTC packet-reader record/fanout compiler | encode/filter/transcode graph compilers |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264`; `govpx`, `goav1`, and default-build `goh264` descriptor boundaries report unavailable factories explicitly | concrete video adapter allocation guards |
 
 ## Implementation Order
 
@@ -79,7 +79,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `RTP(...)` calls into shared mux outputs. Done.
 22. Separate descriptor-only codec discovery from factory availability with
     `codec.ErrUnavailable`, including an H264 runtime decode build proof. Done.
-23. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+23. Simplify explicit fluent graph routing to `Connect(..., ForStream(...))`
+    and `Connect(..., ForEvent(...))` while preserving low-level `Link` and
+    `Route` escape hatches. Done.
+24. Add build-tagged `goh264` decoder factory with real Annex B decode proof
+    into borrowed video planes and keyframe request behavior after loss. Done.
+25. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -117,8 +122,8 @@ Required proof:
 - `format.DemuxSource` and `format.MuxStage` adapt container boundaries into
   the event-aware pipeline without per-packet allocation.
 - The runtime builder can plan and compile explicit source/stage/sink graphs
-  with links/routes and expose generated graph specs with text, DOT, and
-  Mermaid renderers before or after build.
+  with direct connections plus stream/event route options, and expose generated
+  graph specs with text, DOT, and Mermaid renderers before or after build.
 - The runtime builder can also plan and compile simple remux/fanout jobs from
   `Input(...).Output(...).Build(ctx)` when registered format adapters can probe,
   demux, and mux the selected boundaries.
@@ -154,9 +159,13 @@ Required proof:
   headers, assemble fragmented frames in bounded scratch, emit
   `EventKeyframeRequired` after loss, keep dropping until sync, and feed the RTP
   record compiler into IVF or Annex B in end-to-end tests.
-- Descriptor-only codec adapters such as `adapters/goh264` remain visible in
-  registry discovery, but decode build attempts fail with `codec.ErrUnavailable`
-  until a concrete factory is registered.
+- Descriptor-only codec adapters such as `govpx`, `goav1`, and default-build
+  `goh264` remain visible in registry discovery, but decode build attempts fail
+  with `codec.ErrUnavailable` until a concrete factory is registered.
+- With `goav_goh264`, `adapters/goh264` registers a concrete decoder factory
+  over `github.com/thesyncim/goh264`, decodes real Annex B samples into
+  borrowed `av.Frame` video planes, resets on codec-change/discontinuity
+  events, and requests keyframes after packet loss.
 
 ## Adapter Targets
 
@@ -170,8 +179,9 @@ Required proof:
   stable caller-owned frame paths.
 - `adapters/goav1`: descriptor boundary exists; concrete AV1 decode path still
   needs capability validation.
-- `adapters/goh264`: descriptor boundary exists with `goav_goh264` build-tag
-  marker and explicit unavailable-factory proof for future concrete integration.
+- `adapters/goh264`: descriptor-only by default; `goav_goh264` activates a
+  decode factory for 8-bit planar H264 frames, with allocation guards still
+  pending.
 
 ## Done Criteria
 
@@ -195,10 +205,9 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: add a build-tagged H264 decoder factory over the
-`goh264` module surface without pulling codec internals into the core runtime,
-then connect live multi-input receive graphs into decode/filter/encode
-composition.
+Current pressure point: connect live multi-input receive graphs into
+decode/filter/encode composition, then harden concrete video adapters with
+allocation and lifecycle tests.
 
 ## Validation Gates
 

@@ -27,6 +27,13 @@ type Runtime interface {
 	New() Builder
 }
 
+type Connection struct {
+	Policy pipeline.RoutePolicy
+	Label  string
+}
+
+type ConnectOption func(*Connection)
+
 // Builder describes the intended fluent edge API without constraining the
 // internal graph representation.
 type Builder interface {
@@ -40,7 +47,7 @@ type Builder interface {
 	Source(pipeline.Source) Builder
 	Stage(pipeline.Stage) Builder
 	Sink(pipeline.Sink) Builder
-	Connect(from string, to string) Builder
+	Connect(from string, to string, options ...ConnectOption) Builder
 	ConnectStream(from string, to string, stream av.StreamID) Builder
 	ConnectEvent(from string, to string, event av.EventType) Builder
 	Link(pipeline.Link) Builder

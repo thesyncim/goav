@@ -255,8 +255,8 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 		Source(source).
 		Sink(audio).
 		Sink(video).
-		ConnectStream("source", "audio", "audio").
-		ConnectStream("source", "video", "video").
+		Connect("source", "audio", ForStream("audio")).
+		Connect("source", "video", ForStream("video")).
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -291,8 +291,8 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 		Source(source).
 		Sink(audio).
 		Sink(video).
-		ConnectStream("source", "audio", "audio").
-		ConnectStream("source", "video", "video").
+		Connect("source", "audio", ForStream("audio")).
+		Connect("source", "video", ForStream("video")).
 		Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -319,8 +319,8 @@ func TestRuntimeBuilderExplicitEventRoute(t *testing.T) {
 		Source(source).
 		Sink(stats).
 		Sink(loss).
-		ConnectEvent("source", "stats", av.EventStats).
-		ConnectEvent("source", "loss", av.EventPacketLoss).
+		Connect("source", "stats", ForEvent(av.EventStats)).
+		Connect("source", "loss", ForEvent(av.EventPacketLoss)).
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
