@@ -21,7 +21,7 @@ Recipes: Record, Decode, Transcode, From/To
   |
 Intent graph: inputs, streams, transforms, outputs, policies
   |
-Runtime builder
+Intent compiler passes
   |
 Pipeline graph
   |
@@ -36,21 +36,23 @@ container, and filter integrations. `goav.Default()` registers the standard
 in-repo adapters for the beginner path, while `goav.New(...)` keeps minimal and
 embedded runtimes explicit. Package-level recipes such as `Record(...)`,
 `Decode(...)`, and `Transcode(...)` are now the beginner-facing front door. They
-produce a small intent model, then lower into the internal runtime builder and
-graph compilers.
+produce a small intent model. The target architecture is one intent compiler
+that validates, probes, resolves streams, resolves formats/codecs, inserts
+demux or depacketize boundaries, inserts decode/transform/encode/mux stages,
+assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
+the runnable graph. The current private graph compilers are migration
+scaffolding while each workflow moves onto that shared path.
 
 The handle-based graph builder remains available as the advanced layer through
 `Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed
 handles such as `source.Stream("audio")` and `decode.Out()` to node inputs.
 The legacy builder remains an internal compiler target, but it is no longer a
-method on the public `Runtime` interface or an exported top-level type. Runtime
-builders compile through private graph compilers. Each compiler owns one
-workflow shape and must
-implement both pre-build description and runnable graph construction, so
-described graphs and execution graphs stay equivalent. The graph layer stays
-available for inspection and custom stages; optional diagram output lives
-outside the runtime core. A route carries all media by default, or matches one
-stream or event type.
+method on the public `Runtime` interface or an exported top-level type.
+Described graphs and execution graphs must stay equivalent, whether the current
+slice is still using a fixed compiler or has moved onto intent passes. The graph
+layer stays available for inspection and custom stages; optional diagram or
+workflow-report output lives outside the runtime core. A route carries all media
+by default, or matches one stream or event type.
 
 The current compilers cover:
 
@@ -79,11 +81,11 @@ The current compilers cover:
 - one or more RTP/WebRTC packet readers to selected-stream
   decode/filter/encode outputs through the same decoder, filter, encoder, and
   mux stages used by file or protocol inputs
-- transcode recipes for one input where all renditions resolve to the same
-  selected stream, sharing one decode and fanning frames into multiple named
-  encoder branches; resize/resample configs insert filter stages through the
-  filter registry, and outputs can receive all renditions or select branches by
-  rendition name or label
+- transcode recipes for one input grouped by selected stream: video branches can
+  share a video decode, audio branches can share an audio decode, and one output
+  label is a mux group that can receive coordinated encoded audio and video
+  branches. Resize/resample configs insert filter stages through the filter
+  registry, and outputs select branches by rendition name or label.
 
 Resize and resample branch configs fail explicitly at build time when no matching
 filter factory is registered.

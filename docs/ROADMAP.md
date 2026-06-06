@@ -10,20 +10,24 @@ make the implementation and adapter coverage match the promise.
 
 1. Keep first-page examples executable with `goav.Default()`, or move examples
    that require unavailable containers into clearly labeled adapter sections.
-2. Add product-facing container adapters, starting with WebM and Ogg, then WAV
-   and Y4M where they unlock common record/transcode workflows.
-3. Make `Intent` the single compiler input: recipes should lower through
+2. Treat adapter coverage as product surface, not internals. The next container
+   targets are WebM and Ogg because they unlock expected WebRTC/RTP record and
+   transcode examples; WAV and Y4M can follow when they unlock simple audio or
+   raw-video workflows.
+3. Make `Intent` the only recipe compiler input. Recipes should lower through
    validation, probing, stream resolution, format/codec resolution,
    demux/depacketize, decode, transform, encode, mux, route, buffer-policy, and
-   graph-emission passes instead of growing one matcher per workflow.
-4. Expand transcode from same-stream ladders into a media output composer where
-   one muxed output can receive coordinated audio and video branches. First
-   compiler slice active.
-5. Add an `Explain` report above `Describe` so users can inspect selected
-   streams, required adapters, missing adapters, warnings, and the graph without
-   reading raw node/edge details first.
-6. Add reusable flow/subflow builders so common audio or video processing blocks
-   can be named, reused, and teed without manual graph wiring.
+   graph-emission passes instead of adding a new matcher for each workflow
+   combination. The existing fixed compiler list is migration scaffolding.
+4. Continue expanding transcode into a media output composer: one output label is
+   a mux group that can receive coordinated audio and video branches, not a
+   synonym for one rendition. First mixed-stream compiler slice active.
+5. Keep `pipeline.Spec` as the core graph object. Human graph rendering and any
+   future workflow report should live outside runtime composition behind
+   optional tooling, not as text/DOT/Mermaid methods or beginner recipe APIs.
+6. Add reusable flow/subflow builders only when they remove repeated stream
+   chains. A flow should compose existing recipe steps; it should not introduce a
+   second way to build the same pipeline.
 7. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
    choices should be visible to realtime users. First recipe policy slice
@@ -31,14 +35,14 @@ make the implementation and adapter coverage match the promise.
 8. Add runtime observability through task stats, traces, drop reasons, and
    latency counters. First task stats slice active for graph message/event/drop
    counters.
-9. Make beginner signatures describe exactly what callers may pass, especially
-   `Record(input, outputs...)`, before freezing a v0.1 API.
+9. Keep beginner signatures literal and narrow. `Record(input, outputs...)` is
+   the model: public signatures should show exactly what callers may pass.
 10. Prepare v0.1 only after README examples compile/run or clearly name their
     adapter requirements, default and tagged tests pass, core stays cgo-free,
     hot-path allocation guards remain green, and one public RTP/WebRTC record
-    path plus one public file transcode path work end to end. Confirm the
-    `go.mod` Go version is an intentional user installation floor before
-    tagging.
+    path plus one public file transcode path work end to end.
+11. Confirm `go 1.26` in `go.mod` is intentional before tagging; it sets the
+    installation floor for users and CI.
 
 ## Phase 0: API sketch
 

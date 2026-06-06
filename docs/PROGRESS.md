@@ -37,8 +37,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, timestamp discontinuity detection, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh including new-codec depacketizer handoff when registered, replacement-stream identity adoption for single-stream readers, targeted old-ID replacement for multi-stream readers, stream-scoped EOS | richer multi-stream receive |
 | `webrtcav` | single `NewSession` PeerConnection entry, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit factory registry, event-preserving frame-transform pipeline stage | richer concrete filters later |
-| `transcode` | internal `Plan` contract, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
-| runtime | recipe front door with `Record`, `From`, `Decode`, `Transcode`, stream-scoped audio/video recipe builders, stream-local `Resize`/`Resample` transforms, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, private graph compiler loop, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for legacy compiler coverage, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, shared-decode multi-rendition transcode recipe compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | intent compiler passes and graph subflows |
+| `transcode` | internal `Plan` contract, branch-to-output selection model, mixed audio/video output grouping, resize/resample branch insertion through filter factories | intent-native branch planning |
+| runtime | recipe front door with `Record`, `From`, `Decode`, `Transcode`, stream-scoped audio/video recipe builders, stream-local `Resize`/`Resample` transforms, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, migration graph compiler list, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for legacy compiler coverage, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, grouped audio/video transcode recipe compiler with transform branches and shared mux outputs, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | intent compiler passes, optional flow/subflow reuse, traces and drop reasons |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning from RTP decode bounds, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420/I422/I444 frame mapping with yuv420p/yuv422p/yuv444p accepted as aliases, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
@@ -524,9 +524,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     first-page examples only use formats available in `goav.Default()` today.
     Done.
 161. Extend the roadmap around executable examples, WebM/Ogg adapter coverage,
-    Intent compiler passes, mixed audio/video transcode composition, Explain
-    reports, reusable flows, live codec-change policy, observability, beginner
-    signature cleanup, and v0.1 readiness.
+    Intent compiler passes, mixed audio/video transcode composition, optional
+    graph/report tooling outside core, reusable flows, live codec-change
+    policy, observability, beginner signature cleanup, and v0.1 readiness.
     Done.
 162. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 163. Make `Record(input, outputs...)` the real public signature and move custom
@@ -621,13 +621,13 @@ Required proof:
   jobs. The graph shares the selected decode/filter prefix, requires an
   explicit target codec, forwards EOS far enough to flush encoders, and can fan
   one encoded packet stream to multiple mux outputs.
-- The runtime builder can plan and compile shared-decode transcode recipe jobs
-  when all renditions resolve to one selected
-  stream. Each rendition becomes a named encoded stream, outputs can select
-  renditions by name or label, and graph description is equivalent before and
-  after build. Resize and resample branch configs insert filter stages when
-  matching filter factories are registered, preallocate branch frame scratch
-  when geometry is known, and fail explicitly when missing.
+- The runtime builder can plan and compile transcode recipe jobs grouped by
+  selected stream. Video branches share a video decode, audio branches share an
+  audio decode, each branch becomes a named encoded stream, and one mux output
+  can receive coordinated audio and video branches. Graph description is
+  equivalent before and after build. Resize and resample branch configs insert
+  filter stages when matching filter factories are registered, preallocate
+  branch frame scratch when geometry is known, and fail explicitly when missing.
 - `rtpav.Source` now forwards realtime events into depacketizers before graph
   delivery, so loss-aware depacketizers can reset or drop partial payloads.
 - `rtpav.Source` refreshes payload maps on `EventCodecChanged`, can adopt a
@@ -754,18 +754,25 @@ Required proof:
 
 ## Next Slices
 
-1. Choose one workflow and write its shortest fluent expression.
-2. Add the private graph compiler and structured graph spec first; keep
-   rendering/export outside core.
-3. Add the smallest runtime behavior behind existing stages/adapters.
-4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
-5. Update this tracker with the new evidence and next pressure point.
+1. Keep README examples executable with `Default()` or move them behind explicit
+   adapter requirements.
+2. Move recipes toward `Intent -> compiler passes -> pipeline.Spec -> graph`;
+   shrink the fixed compiler list rather than adding another permanent matcher.
+3. Add WebM and Ogg adapters before expanding exotic codec work, because they
+   unlock the examples users expect.
+4. Add reusable flow/subflow helpers only as expansion into existing recipe
+   intent, not as another graph-building surface.
+5. Extend observability from `Task.Stats()` into traces, drop reasons, and
+   latency counters for realtime debugging.
+6. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
+7. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: broaden tagged AV1 decode toward real RTP/WebRTC
-receive, especially dynamic new-codec graph rebind policy, richer scratch
-auto-sizing policy, runtime stream fixtures for broader planar formats, and
-deciding whether the concrete raw RTP payload path should remain low-level or
-grow a high-level builder policy.
+Current pressure point: make the public story fully true. First-page examples
+must stay executable with `Default()` or clearly name adapter requirements;
+WebM/Ogg adapters should unlock expected RTP/WebRTC record and transcode
+workflows; recipes should converge on `Intent -> passes -> pipeline.Spec ->
+graph`; and realtime receive needs visible codec-change policy, traces, drop
+reasons, and latency counters.
 
 ## Validation Gates
 

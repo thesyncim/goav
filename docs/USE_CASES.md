@@ -159,6 +159,7 @@ plan used by the runtime graph. Outputs can receive one or more named branches:
 err := goav.Transcode(goav.FileInput("input.webm", in)).
     Video("720p").Resize(1280, 720).VP9(2_000_000).To("archive").
     Video("360p").Resize(640, 360).VP9(600_000).To("preview").
+    Audio("a96").Resample(48_000, goav.Stereo).Opus(96_000).To("archive", "preview").
     Output("archive", goav.FileOutput("archive.webm", archive)).
     Output("preview", goav.FileOutput("preview.webm", preview)).
     Run(ctx)
@@ -184,11 +185,11 @@ Expected graph:
 ```text
 input
   -> demux/depacketize
-  -> decode
-  -> branch
-     -> resize 1080p -> encode -> output A
-     -> resize 720p  -> encode -> output B
-     -> resize 360p  -> encode -> output C
+  -> decode video
+     -> resize 720p -> encode VP9 -> mux archive
+     -> resize 360p -> encode VP9 -> mux preview
+  -> decode audio
+     -> resample -> encode Opus -> mux archive, mux preview
 ```
 
 ## Multiple outputs

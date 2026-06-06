@@ -23,23 +23,37 @@ advanced stage truly needs it.
 
 ## Compiler Rule
 
-High-level builder features must compile through private graph compilers. A new
-compiler is allowed only when it owns one clear shape, for example:
+High-level features must lower through recipe intent first. The desired path is:
 
 ```text
-Input -> DemuxSource -> MuxStage...
-Input -> DemuxSource -> stream select -> DecoderStage -> Sink
-Input -> Decode -> Filter branches -> Encode -> Mux outputs
-TrackRemote -> RTP source -> Depacketizer -> DecoderStage
+Recipe API
+  -> Intent
+  -> compiler passes
+  -> pipeline.Spec
+  -> pipeline.Graph
 ```
 
-The compiler must support both:
+The pass chain should stay explicit and boring:
 
-- `Describe`, so users can inspect the graph spec before running.
-- `Build`, so the described graph and runnable graph stay equivalent.
+- validate intent
+- probe inputs
+- resolve stream selectors
+- resolve formats and codecs
+- insert demux or depacketize boundaries
+- insert decode, transforms, encode, and mux
+- assign routes and buffer policy
+- emit `pipeline.Spec`
+- build the runnable graph from the same plan
 
-Unsupported combinations should fail early with the existing unsupported-builder
-error. Do not guess across codec, format, or protocol boundaries.
+The current fixed graph compilers are migration scaffolding. A new fixed matcher
+is allowed only as a temporary bridge for one proven workflow, and it should
+shrink into an intent pass as soon as the shared compiler can express it.
+
+`Describe` and `Build` must use the same resolved plan so the described graph
+and runnable graph stay equivalent. Unsupported combinations should fail early
+with actionable diagnostics that preserve the unsupported-build sentinel where
+compatibility requires it. Do not guess across codec, format, or protocol
+boundaries.
 
 ## Growth Rule
 
@@ -47,12 +61,16 @@ Prefer one reusable contract over many parallel helpers:
 
 - One result struct per hot path.
 - One explicit registry per capability family.
-- One graph compiler per fluent workflow shape.
+- One intent compiler path for recipe workflows.
 - One adapter package per codec/container integration.
 - One test fixture per boundary when possible.
 
 Complex workflows should become compositions of existing compiler/stage pieces,
 not new special cases.
+
+Reusable flows/subflows are allowed when they name a repeated stream chain and
+make a complex recipe shorter. They should expand into the same recipe intent as
+hand-written stream steps, not create a parallel graph API.
 
 ## Stop Conditions
 
