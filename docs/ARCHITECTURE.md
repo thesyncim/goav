@@ -220,8 +220,8 @@ That shape supports:
 
 ## Multi-output transcoding
 
-The `transcode` package describes ladders and renditions without deciding how
-they are executed. The first runtime compiler turns a plan into a graph with one
+The `transcode` package exposes one explicit plan shape for renditions and
+output selection. The runtime compiler turns that plan into a graph with one
 shared selected decode, multiple encoder branches, and mux outputs that select
 renditions by name or label. Resize and resample branch configs become filter
 stages when matching factories are registered.

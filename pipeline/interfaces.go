@@ -97,10 +97,6 @@ type NodeDescriber interface {
 
 type NodeRef string
 
-func Node(name string) NodeRef {
-	return NodeRef(name)
-}
-
 func (r NodeRef) String() string {
 	return string(r)
 }

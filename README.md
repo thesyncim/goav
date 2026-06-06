@@ -179,8 +179,8 @@ as private graph compilers that must support both `Describe` and `Build`.
   boundaries.
 - `filter`: resize/resample contracts, registry, and frame-transform pipeline
   stage.
-- `transcode`: rendition and ladder planning contracts, with a first
-  shared-decode multi-rendition compiler.
+- `transcode`: one explicit plan contract for renditions and output selection,
+  with a first shared-decode multi-rendition compiler.
 - `adapters/ivf`: IVF demux/mux for VP8, VP9, and AV1 packet recording.
 - `adapters/annexb`: H264 Annex B packet mux for `.h264` recording.
 - `adapters/resample`: pure-Go `s16` audio resample/channel conversion filter.

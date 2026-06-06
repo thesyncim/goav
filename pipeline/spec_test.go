@@ -15,13 +15,13 @@ func TestSpecTextAndDOT(t *testing.T) {
 		},
 		Edges: []EdgeSpec{
 			{
-				From:   Node("source"),
-				To:     Node("decode"),
+				From:   NodeRef("source"),
+				To:     NodeRef("decode"),
 				Policy: RouteAll,
 			},
 			{
-				From:   Node("decode"),
-				To:     Node("sink"),
+				From:   NodeRef("decode"),
+				To:     NodeRef("sink"),
 				Policy: RouteByStream,
 				Label:  "audio",
 			},

@@ -1,13 +1,10 @@
 package transcode
 
 import (
-	"context"
-
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/pipeline"
 )
 
 type Plan struct {
@@ -35,25 +32,4 @@ type Output struct {
 	Format     av.FormatID
 	Renditions []string
 	Metadata   av.Metadata
-}
-
-type Planner interface {
-	Plan(context.Context, Request) (Plan, error)
-}
-
-type Request struct {
-	Input    format.Input
-	Ladder   Ladder
-	Outputs  []format.Output
-	Realtime bool
-	Metadata av.Metadata
-}
-
-type Ladder struct {
-	Name       string
-	Renditions []Rendition
-}
-
-type Compiler interface {
-	Compile(context.Context, Plan) (pipeline.Graph, error)
 }
