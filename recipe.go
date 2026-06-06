@@ -922,15 +922,15 @@ func (j *Job) And(inputs ...InputSpec) *Job {
 	return j
 }
 
-func (j *Job) Audio(options ...StreamOption) *JobStreamBuilder {
+func (j *Job) Audio(options ...streamOption) *JobStreamBuilder {
 	return j.streamBuilder("audio", av.MediaAudio, options...)
 }
 
-func (j *Job) Video(options ...StreamOption) *JobStreamBuilder {
+func (j *Job) Video(options ...streamOption) *JobStreamBuilder {
 	return j.streamBuilder("video", av.MediaVideo, options...)
 }
 
-func (j *Job) streamBuilder(name string, media av.MediaType, options ...StreamOption) *JobStreamBuilder {
+func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOption) *JobStreamBuilder {
 	stream := &jobStreamBuild{
 		name:     name,
 		selector: newStreamSelector(media, options...),
@@ -1685,13 +1685,13 @@ func transformMediaError(stream string, transform string, media string) error {
 	}
 }
 
-type StreamOption func(*streamSelectConfig)
+type streamOption func(*streamSelectConfig)
 
 type streamSelectConfig struct {
 	selector av.StreamSelector
 }
 
-func newStreamSelector(media av.MediaType, options ...StreamOption) av.StreamSelector {
+func newStreamSelector(media av.MediaType, options ...streamOption) av.StreamSelector {
 	config := streamSelectConfig{selector: av.StreamSelector{Type: media}}
 	for i := range options {
 		if options[i] != nil {
@@ -1710,19 +1710,19 @@ type streamBuild struct {
 	labels     []string
 }
 
-func StreamID(id av.StreamID) StreamOption {
+func StreamID(id av.StreamID) streamOption {
 	return func(config *streamSelectConfig) {
 		config.selector.ID = id
 	}
 }
 
-func StreamName(name string) StreamOption {
+func StreamName(name string) streamOption {
 	return func(config *streamSelectConfig) {
 		config.selector.Name = name
 	}
 }
 
-func StreamIndex(index int) StreamOption {
+func StreamIndex(index int) streamOption {
 	return func(config *streamSelectConfig) {
 		config.selector.Index = index
 		config.selector.UseIndex = true
@@ -1835,11 +1835,11 @@ func Transcode(input InputSpec, options ...jobOption) *TranscodeJob {
 	return &TranscodeJob{runtime: config.runtime, input: input}
 }
 
-func (j *TranscodeJob) Audio(name string, options ...StreamOption) *StreamBuilder {
+func (j *TranscodeJob) Audio(name string, options ...streamOption) *StreamBuilder {
 	return j.stream(name, av.MediaAudio, options...)
 }
 
-func (j *TranscodeJob) Video(name string, options ...StreamOption) *StreamBuilder {
+func (j *TranscodeJob) Video(name string, options ...streamOption) *StreamBuilder {
 	return j.stream(name, av.MediaVideo, options...)
 }
 
@@ -2082,7 +2082,7 @@ func (j *TranscodeJob) builder() (builderAPI, error) {
 	return builder.Transcode(plan), nil
 }
 
-func (j *TranscodeJob) stream(name string, media av.MediaType, options ...StreamOption) *StreamBuilder {
+func (j *TranscodeJob) stream(name string, media av.MediaType, options ...streamOption) *StreamBuilder {
 	stream := streamBuild{
 		name:     name,
 		selector: newStreamSelector(media, options...),

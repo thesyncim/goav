@@ -489,7 +489,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `UseRuntime(...)` still composes with recipes without adding another
     public option noun.
     Done.
-152. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+152. Demote the `StreamOption` marker type to package-private plumbing so
+    `Audio(goav.StreamIndex(0))` and branch selection stay fluent without
+    making stream option types part of the beginner surface.
+    Done.
+153. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

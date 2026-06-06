@@ -121,6 +121,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"JobOption":       true,
 		"RTPOption":       true,
 		"RTPInputOption":  true,
+		"StreamOption":    true,
 		"TrackOption":     true,
 	}
 	for filename, file := range pkg.Files {
