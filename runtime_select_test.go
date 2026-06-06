@@ -34,6 +34,30 @@ func TestStreamSelectStageAdoptsReplacementForTypeSelector(t *testing.T) {
 	}
 }
 
+func TestStreamSelectStageAdoptsOldIDReplacementForTypeSelector(t *testing.T) {
+	initial := av.Stream{ID: "video-main", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecAV1, Type: av.MediaVideo}}
+	updated := initial
+	updated.ID = "video-replaced"
+	updated.Epoch = 2
+	stage := newStreamSelectStage("select-video", initial, SelectVideo(), "video")
+
+	if !stage.matches(&pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: initial.ID,
+		Epoch:    updated.Epoch,
+		Stream:   &updated,
+		Codec:    &updated.Codec,
+	}}) {
+		t.Fatal("old-ID replacement codec-change event did not match")
+	}
+	if stage.stream.ID != updated.ID || stage.stream.Epoch != updated.Epoch {
+		t.Fatalf("stage stream = %+v", stage.stream)
+	}
+	if !stage.matches(&pipeline.Message{Kind: pipeline.MessageFrame, Frame: &av.Frame{StreamID: updated.ID}}) {
+		t.Fatal("replacement frame did not match")
+	}
+}
+
 func TestStreamSelectStageAdoptsGlobalReplacementForTypeSelector(t *testing.T) {
 	initial := av.Stream{ID: "video-main", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecAV1, Type: av.MediaVideo}}
 	updated := initial

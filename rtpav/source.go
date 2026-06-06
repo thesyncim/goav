@@ -272,9 +272,11 @@ func (s *Source) emitEvent(ctx context.Context, emitter pipeline.Emitter, event 
 }
 
 func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
+	var canonical av.Stream
+	var canonicalize bool
 	if event != nil && event.Type == av.EventCodecChanged {
 		s.payloads = s.receiver.PayloadMap()
-		s.applyCodecChangedStream(event)
+		canonical, canonicalize = s.applyCodecChangedStream(event)
 	}
 	s.resetTimestampState(event)
 	for i := range s.depacketizers {
@@ -282,12 +284,15 @@ func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
 			return err
 		}
 	}
+	if canonicalize {
+		canonicalizeCodecChangedEvent(event, canonical)
+	}
 	return nil
 }
 
-func (s *Source) applyCodecChangedStream(event *av.Event) {
+func (s *Source) applyCodecChangedStream(event *av.Event) (av.Stream, bool) {
 	if event == nil || event.Type != av.EventCodecChanged || len(s.streams) == 0 {
-		return
+		return av.Stream{}, false
 	}
 	for i := range s.streams {
 		if !eventMatchesStream(s.streams[i], event) && !sourceCodecChangedReplacementMatches(s.streams[i], event, len(s.streams) == 1) {
@@ -299,8 +304,9 @@ func (s *Source) applyCodecChangedStream(event *av.Event) {
 			s.timestamps[i].epoch = s.streams[i].Epoch
 			s.timestamps[i].initialized = false
 		}
-		return
+		return s.streams[i], true
 	}
+	return av.Stream{}, false
 }
 
 func sourceCodecChangedReplacementMatches(stream av.Stream, event *av.Event, singleStream bool) bool {
@@ -321,6 +327,18 @@ func sourceCodecChangedReplacementMatches(stream av.Stream, event *av.Event, sin
 		return false
 	}
 	return next.ID != "" && next.ID != stream.ID
+}
+
+func canonicalizeCodecChangedEvent(event *av.Event, stream av.Stream) {
+	if event == nil || event.Type != av.EventCodecChanged {
+		return
+	}
+	if stream.ID != "" {
+		event.StreamID = stream.ID
+	}
+	if stream.Epoch != 0 {
+		event.Epoch = stream.Epoch
+	}
 }
 
 func streamWithCodecChangedEvent(stream av.Stream, event *av.Event) av.Stream {

@@ -237,6 +237,15 @@ func TestRuntimeBuilderRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 }
 
 func TestRuntimeBuilderRTPAV1CodecChangedAdoptsReplacementStream(t *testing.T) {
+	testRuntimeBuilderRTPAV1CodecChangedReplacementStream(t, false)
+}
+
+func TestRuntimeBuilderRTPAV1CodecChangedUsesOldIDReplacementTarget(t *testing.T) {
+	testRuntimeBuilderRTPAV1CodecChangedReplacementStream(t, true)
+}
+
+func testRuntimeBuilderRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget bool) {
+	t.Helper()
 	ctx := context.Background()
 	initial := av.Stream{
 		ID:       "video-main",
@@ -255,8 +264,12 @@ func TestRuntimeBuilderRTPAV1CodecChangedAdoptsReplacementStream(t *testing.T) {
 	updated := initial
 	updated.ID = "video-replaced"
 	updated.Epoch = 2
+	eventStreamID := updated.ID
+	if oldIDTarget {
+		eventStreamID = initial.ID
+	}
 
-	receiver := newRuntimeAV1SwitchReceiver(initial, updated, []*rtp.Packet{
+	receiver := newRuntimeAV1SwitchReceiverWithEventStreamID(initial, updated, eventStreamID, []*rtp.Packet{
 		{
 			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
 			Payload: runtimeAV1RTPPayload(),
@@ -310,14 +323,15 @@ func TestRuntimeBuilderRTPAV1CodecChangedAdoptsReplacementStream(t *testing.T) {
 }
 
 type runtimeAV1SwitchReceiver struct {
-	initial  av.Stream
-	updated  av.Stream
-	payload  rtpav.PayloadMap
-	packets  []*rtp.Packet
-	events   chan av.Event
-	index    int
-	switched bool
-	closed   bool
+	initial       av.Stream
+	updated       av.Stream
+	eventStreamID av.StreamID
+	payload       rtpav.PayloadMap
+	packets       []*rtp.Packet
+	events        chan av.Event
+	index         int
+	switched      bool
+	closed        bool
 }
 
 type runtimeAV1FrameSink struct {
@@ -358,12 +372,17 @@ func (s *runtimeAV1FrameSink) Close() error {
 }
 
 func newRuntimeAV1SwitchReceiver(initial av.Stream, updated av.Stream, packets []*rtp.Packet) *runtimeAV1SwitchReceiver {
+	return newRuntimeAV1SwitchReceiverWithEventStreamID(initial, updated, updated.ID, packets)
+}
+
+func newRuntimeAV1SwitchReceiverWithEventStreamID(initial av.Stream, updated av.Stream, eventStreamID av.StreamID, packets []*rtp.Packet) *runtimeAV1SwitchReceiver {
 	return &runtimeAV1SwitchReceiver{
-		initial: initial,
-		updated: updated,
-		payload: runtimeAV1PayloadMap(1, 96, initial),
-		packets: packets,
-		events:  make(chan av.Event, 1),
+		initial:       initial,
+		updated:       updated,
+		eventStreamID: eventStreamID,
+		payload:       runtimeAV1PayloadMap(1, 96, initial),
+		packets:       packets,
+		events:        make(chan av.Event, 1),
 	}
 }
 
@@ -385,7 +404,7 @@ func (r *runtimeAV1SwitchReceiver) ReadRTP(context.Context) (*rtp.Packet, error)
 		r.payload = runtimeAV1PayloadMap(2, 97, r.updated)
 		r.events <- av.Event{
 			Type:     av.EventCodecChanged,
-			StreamID: r.updated.ID,
+			StreamID: r.eventStreamID,
 			Epoch:    r.updated.Epoch,
 			Stream:   &r.updated,
 			Codec:    &r.updated.Codec,

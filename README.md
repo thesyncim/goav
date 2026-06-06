@@ -243,6 +243,9 @@ Implemented slices:
 - RTP codec-change events can also carry a replacement stream identity for
   single-stream receivers; sources, depacketizers, EOS, and type-selected
   decode graphs follow that replacement while ID-pinned selectors stay strict.
+- Multi-stream RTP sources can use `Event.StreamID` as the old stream target
+  while `Event.Stream` carries the replacement identity; accepted events emit
+  the canonical replacement stream downstream.
 - Descriptor-only codec adapters are discoverable while unavailable factories
   fail explicitly with `codec.ErrUnavailable`.
 - Build-tagged H264 decode maps real `goh264` output into borrowed `av.Frame`
@@ -285,7 +288,8 @@ Implemented slices:
   emit canonical `i420` frame planes.
 - The same AV1 RTP builder path now has same-stream and replacement-stream
   codec-change proofs: payload-map refresh, epoch/identity update,
-  drop-until-sync, keyframe request, and resumed decode on the next sync packet.
+  old-ID or replacement-ID event targeting, drop-until-sync, keyframe request,
+  and resumed decode on the next sync packet.
 - The concrete tagged AV1 decoder can also consume raw AV1 RTP aggregation
   payload bytes through `DecodeRTPPayloadInto`, including retained fragments
   and after-loss recovery that preserves known sequence state.
@@ -293,10 +297,9 @@ Implemented slices:
 Next pressure points:
 
 - Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
-  RTP/WebRTC AV1 streams: remaining multi-stream/new-codec switch cases,
-  additional output formats beyond 8-bit 4:2:0, richer scratch sizing policy,
-  and deciding how much of the raw RTP runner path should surface in high-level
-  builders.
+  RTP/WebRTC AV1 streams: remaining new-codec switch cases, additional output
+  formats beyond 8-bit 4:2:0, richer scratch sizing policy, and deciding how
+  much of the raw RTP runner path should surface in high-level builders.
 
 ## Working Loop
 

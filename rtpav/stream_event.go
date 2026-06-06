@@ -9,6 +9,16 @@ func eventMatchesStream(stream av.Stream, event *av.Event) bool {
 	return event.StreamID == "" || stream.ID == "" || event.StreamID == stream.ID
 }
 
+func eventAffectsCodecStream(stream av.Stream, codec av.CodecID, event *av.Event) bool {
+	if event == nil {
+		return false
+	}
+	if eventMatchesStream(stream, event) {
+		return true
+	}
+	return event.Type == av.EventCodecChanged && codecChangedReplacementMatches(stream, codec, event)
+}
+
 func applyCodecChangedEvent(stream *av.Stream, codec av.CodecID, event *av.Event) bool {
 	if stream == nil || event == nil || event.Type != av.EventCodecChanged {
 		return false

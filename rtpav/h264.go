@@ -102,6 +102,7 @@ func (d *H264Depacketizer) FlushInto(context.Context, *DepacketizeResult) error 
 }
 
 func (d *H264Depacketizer) HandleEvent(ctx context.Context, event *av.Event) error {
+	affected := eventAffectsCodecStream(d.assembler.stream, d.Codec(), event)
 	if err := d.assembler.handleEvent(ctx, event); err != nil {
 		return err
 	}
@@ -110,7 +111,7 @@ func (d *H264Depacketizer) HandleEvent(ctx context.Context, event *av.Event) err
 	}
 	switch event.Type {
 	case av.EventPacketLoss, av.EventDiscontinuity, av.EventCodecChanged:
-		if eventMatchesStream(d.assembler.stream, event) {
+		if affected {
 			d.keyframe = false
 			d.fragment = false
 		}

@@ -174,6 +174,42 @@ func TestAV1DepacketizerLossRequestsKeyframeAndDropsUntilSync(t *testing.T) {
 	}
 }
 
+func TestAV1DepacketizerCodecChangedAdoptsOldIDReplacementStream(t *testing.T) {
+	stream := videoTestStream(av.CodecAV1)
+	depacketizer := NewAV1Depacketizer(stream, WithMaxVideoFrameSize(16))
+	out := DepacketizeResult{
+		Packets: make([]av.Packet, 0, 1),
+		Events:  make([]av.Event, 0, 1),
+	}
+	updated := stream
+	updated.ID = "video-replaced"
+	updated.Epoch = 5
+
+	if err := depacketizer.HandleEvent(context.Background(), &av.Event{
+		Type:     av.EventCodecChanged,
+		StreamID: stream.ID,
+		Epoch:    updated.Epoch,
+		Stream:   &updated,
+		Codec:    &updated.Codec,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
+		Header:  rtp.Header{Marker: true, Timestamp: 3},
+		Payload: []byte{0x18, 0x30, 0xdd},
+	}, PayloadCodec{ClockRate: 90000}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Packets) != 1 ||
+		out.Packets[0].StreamID != updated.ID ||
+		out.Packets[0].CodecEpoch != updated.Epoch ||
+		!out.Packets[0].LossBefore ||
+		!out.Packets[0].Discontinuous ||
+		!out.Packets[0].Keyframe {
+		t.Fatalf("packets = %+v", out.Packets)
+	}
+}
+
 func TestAV1DepacketizerFrameTooLarge(t *testing.T) {
 	stream := videoTestStream(av.CodecAV1)
 	depacketizer := NewAV1Depacketizer(stream, WithMaxVideoFrameSize(2))

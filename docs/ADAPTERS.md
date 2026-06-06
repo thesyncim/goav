@@ -145,7 +145,8 @@ Current tagged surface:
   arena
 - result-capacity, allocation, sync-recovery, raw RTP retained-fragment,
   runtime RTP decode for gray8 and 4:2:0, same-stream and replacement-stream
-  RTP codec-change recovery, and close-lifecycle tests
+  RTP codec-change recovery for old-ID and replacement-ID event targets, and
+  close-lifecycle tests
 
 The generic `codec.Decoder` path still expects packets produced by `rtpav`'s AV1
 depacketizer. Lower-level applications that bypass that depacketizer can type

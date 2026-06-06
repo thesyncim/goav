@@ -107,6 +107,7 @@ func (d *AV1Depacketizer) FlushInto(context.Context, *DepacketizeResult) error {
 }
 
 func (d *AV1Depacketizer) HandleEvent(ctx context.Context, event *av.Event) error {
+	affected := eventAffectsCodecStream(d.assembler.stream, d.Codec(), event)
 	if err := d.assembler.handleEvent(ctx, event); err != nil {
 		return err
 	}
@@ -115,7 +116,7 @@ func (d *AV1Depacketizer) HandleEvent(ctx context.Context, event *av.Event) erro
 	}
 	switch event.Type {
 	case av.EventPacketLoss, av.EventDiscontinuity, av.EventCodecChanged:
-		if eventMatchesStream(d.assembler.stream, event) {
+		if affected {
 			d.fragment = d.fragment[:0]
 			d.keyframe = false
 		}
