@@ -313,12 +313,11 @@ type InputSpec struct {
 }
 
 type rtpInputSpec struct {
-	receiver      rtpav.PacketReader
-	feedback      rtpav.FeedbackWriter
-	jitter        rtpav.JitterBuffer
-	depacketizers []rtpav.Depacketizer
-	limits        RTPBufferLimits
-	maxTSGap      av.Duration
+	receiver rtpav.PacketReader
+	feedback rtpav.FeedbackWriter
+	jitter   rtpav.JitterBuffer
+	limits   RTPBufferLimits
+	maxTSGap av.Duration
 }
 
 func FileInput(name string, reader io.Reader) InputSpec {
@@ -362,18 +361,6 @@ func (s InputSpec) MIME(mimeType string) InputSpec {
 
 func (s InputSpec) Codec(codec CodecSpec) InputSpec {
 	s.codec = codec
-	return s
-}
-
-func (s InputSpec) Depacketize(depacketizers ...rtpav.Depacketizer) InputSpec {
-	if s.rtp == nil {
-		s.rtp = &rtpInputSpec{}
-	}
-	for i := range depacketizers {
-		if depacketizers[i] != nil {
-			s.rtp.depacketizers = append(s.rtp.depacketizers, depacketizers[i])
-		}
-	}
 	return s
 }
 
@@ -575,7 +562,7 @@ func (s InputSpec) validateRTPCodec() error {
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if s.codec.ID == "" || len(s.rtp.depacketizers) != 0 {
+	if s.codec.ID == "" {
 		return nil
 	}
 	switch s.codec.ID {
@@ -606,10 +593,6 @@ func (s InputSpec) rtpOptions() []rtpOption {
 	}
 	if s.rtp.jitter != nil {
 		options = append(options, withRTPJitter(s.rtp.jitter))
-	}
-	depacketizers := append([]rtpav.Depacketizer(nil), s.rtp.depacketizers...)
-	if len(depacketizers) != 0 {
-		options = append(options, withRTPDepacketizers(depacketizers...))
 	}
 	if s.codec.ID != "" {
 		options = append(options, withRTPCodec(s.codec))

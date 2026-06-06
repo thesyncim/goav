@@ -151,6 +151,13 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 	}
 }
 
+func TestInputSpecKeepsManualDepacketizersOutOfRecipeFrontDoor(t *testing.T) {
+	inputType := reflect.TypeOf(goav.InputSpec{})
+	if _, ok := inputType.MethodByName("Depacketize"); ok {
+		t.Fatal("InputSpec exposes manual depacketizer wiring; RTP recipes should use codec intent")
+	}
+}
+
 func TestRecipeReportsRuntimeWithoutCompilerBuilder(t *testing.T) {
 	_, err := goav.Record(
 		goav.FileInput("input.ivf", strings.NewReader("")),

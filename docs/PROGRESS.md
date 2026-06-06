@@ -334,9 +334,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 102. Tighten recipe encode target validation so unknown codec specs, automatic
     codec selection, copy requests, and H264/AV1 work-in-progress targets fail
     as actionable build diagnostics. Done.
-103. Tighten RTP recipe codec intent so built-in depacketizer wiring is limited
-    to Opus, VP8, VP9, H264, and AV1, while manual depacketizers remain the
-    custom codec escape hatch. Done.
+103. Tighten RTP recipe codec intent so built-in receive wiring is limited to
+    Opus, VP8, VP9, H264, and AV1, while custom payload handling stays in the
+    advanced runtime layer. Done.
 104. Add recipe output validation so nil frame sinks, empty output specs, and
     file outputs without writers fail before graph compilation. Done.
 105. Add recipe RTP reader validation so nil packet readers fail before source
@@ -479,7 +479,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Done.
 149. Remove `RTPInputOption` and the `RTP(reader, options...)` constructor path
     so RTP recipe configuration has one shape: `RTP(reader).Name(...).Codec(...)`
-    plus stream-local methods for depacketizers, buffering, feedback, and jitter.
+    plus stream-local methods for buffering, feedback, jitter, and receive
+    policy.
     Done.
 150. Demote the `RecordOption` marker interface to package-private plumbing so
     the public record recipe keeps the same call shape without exposing an
@@ -509,7 +510,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     details such as `codec=opus` or `codec=vp8`, keeping implementation counts
     out of beginner graph inspection.
     Done.
-157. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+157. Remove recipe-level `.Depacketize(...)` so RTP/WebRTC recipes stay on
+    codec intent, while advanced runtime compilers can still use explicit
+    depacketizers internally.
+    Done.
+158. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
