@@ -370,7 +370,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     hidden fallback rendition handles are generated. Done.
 118. Add per-branch transcode output validation so one branch cannot route the
     same rendition to the same output more than once. Done.
-119. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+119. Add repeated realtime-input validation so explicit RTP/WebRTC recipe names
+    are unique before graph source handles are planned. Done.
+120. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

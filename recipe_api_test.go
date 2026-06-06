@@ -193,6 +193,23 @@ func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
 	}
 }
 
+func TestRecipeAndRejectsDuplicateRealtimeInputNames(t *testing.T) {
+	_, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("media").Codec(goav.Opus())).
+		And(goav.RTP(recipeAPIRTPReader{}).Name("media").Codec(goav.VP8())).
+		To(goav.FileOutput("recording.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want input_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), `realtime input name "media"`) ||
+		!strings.Contains(err.Error(), "second input index: 1") ||
+		!strings.Contains(err.Error(), "distinct .Name") {
+		t.Fatalf("err = %v, want duplicate input guidance", err)
+	}
+}
+
 func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 	_, err := goav.Record(
 		goav.InputSpec{},

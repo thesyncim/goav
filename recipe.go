@@ -567,6 +567,10 @@ func (s InputSpec) intent() InputIntent {
 	}
 }
 
+func (s InputSpec) inputName(fallback string) string {
+	return firstNonEmpty(s.name, s.input.Name, s.input.URI, fallback)
+}
+
 func (s InputSpec) selector(media av.MediaType) av.StreamSelector {
 	selector := av.StreamSelector{Type: media}
 	if selector.Type == "" {
@@ -918,7 +922,44 @@ func (j *Job) validateInputs() error {
 			},
 		}
 	}
+	if err := validateRealtimeInputNames(j.inputs); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateRealtimeInputNames(inputs []InputSpec) error {
+	seen := make(map[string]int, len(inputs))
+	for i := range inputs {
+		name := inputs[i].inputName("")
+		if name == "" {
+			continue
+		}
+		if firstIndex, ok := seen[name]; ok {
+			return duplicateInputNameError(name, firstIndex, i)
+		}
+		seen[name] = i
+	}
+	return nil
+}
+
+func duplicateInputNameError(name string, firstIndex int, secondIndex int) error {
+	return &BuildError{
+		Code:      "input_duplicate",
+		Operation: "build job",
+		Node:      name,
+		Reason:    fmt.Sprintf("realtime input name %q is defined more than once", name),
+		Details: []string{
+			fmt.Sprintf("first input index: %d", firstIndex),
+			fmt.Sprintf("second input index: %d", secondIndex),
+		},
+		Suggestions: []string{
+			"give each repeated realtime input a distinct .Name(...)",
+			"use stable names such as \"audio\" and \"video\" for separate RTP/WebRTC streams",
+			"use goav.WebRTCTrack(..., goav.WithTrackStream(...)) when track metadata should provide the name",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func (j *Job) allOutputs() []OutputSpec {

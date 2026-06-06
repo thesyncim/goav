@@ -33,6 +33,9 @@ task, err := goav.From(goav.WebRTCTrack(audio)).
     Build(ctx)
 ```
 
+Repeated realtime inputs need distinct names when names are explicit, such as
+`audio` and `video`.
+
 Expected graph:
 
 ```text

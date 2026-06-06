@@ -112,6 +112,7 @@ Each reader can be a raw RTP receiver or a `webrtcav.TrackReader` produced from
 a Pion `TrackRemote`. Repeated realtime inputs use the same recipe shape:
 `goav.From(first).And(second...)`. A track reader produced from a WebRTC session
 can also route RTCP feedback back through the session peer connection. The
+recipe layer requires distinct explicit names for repeated realtime inputs. The
 generated graph is one `rtpav.Source` per reader feeding shared
 `format.MuxStage` outputs; graph specs show simple node-to-node routes, and
 events remain visible through the task event channel while mux stages receive

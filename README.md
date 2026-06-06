@@ -91,7 +91,8 @@ for _, edge := range spec.Edges {
 - `goav.Record(input, output)` records, remuxes, or fans out packet streams.
 - `goav.From(input).To(output...)` is the generic recipe form.
 - `goav.From(input).And(other).To(output)` records repeated RTP/WebRTC receive
-  inputs through one shared output graph.
+  inputs through one shared output graph; explicit realtime input names must be
+  unique.
 - `goav.From(input).Audio().Decode().To(goav.FrameSink(frames))` decodes one
   selected audio stream without manual selectors.
 - `goav.From(input).Audio().Decode().Resample(16_000, goav.Mono).Opus(48_000).To(output)`
