@@ -144,8 +144,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 	task, err := Record(
 		RTP(receiver).Name("audio").Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
 		FileOutput("recording.ogg", io.Discard),
-		UseRuntime(runtime),
-	).Build(ctx)
+	).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,8 +200,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 	task, err := Record(
 		RTP(receiver).Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
 		FileOutput("recording.ogg", io.Discard),
-		UseRuntime(runtime),
-	).Build(ctx)
+	).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,8 +279,7 @@ func TestRecordRecipeInputMIMEDrivesFormatProbe(t *testing.T) {
 	job := Record(
 		FileInput("", strings.NewReader("")).MIME("audio/ogg"),
 		FileOutput("recording.ogg", io.Discard),
-		UseRuntime(runtime),
-	)
+	).UseRuntime(runtime)
 	intent := job.Intent()
 	if len(intent.Inputs) != 1 || intent.Inputs[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
@@ -316,8 +313,7 @@ func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
 	job := Record(
 		FileInput("input.ogg", strings.NewReader("")),
 		FileOutput("", io.Discard).MIME("audio/ogg"),
-		UseRuntime(runtime),
-	)
+	).UseRuntime(runtime)
 	intent := job.Intent()
 	if len(intent.Outputs) != 1 || intent.Outputs[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
@@ -411,8 +407,7 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 
 	task, err := From(
 		RTP(audioReceiver).Name("audio").Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
-		UseRuntime(runtime),
-	).
+	).UseRuntime(runtime).
 		And(RTP(videoReceiver).Name("video").Codec(VP8()).RTPBuffer(RTPBufferLimits{MaxPackets: 2})).
 		To(FileOutput("recording.ogg", io.Discard)).
 		Build(ctx)
@@ -453,7 +448,7 @@ func TestStreamRecipeReportsAmbiguousStreams(t *testing.T) {
 	)
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 
-	_, err := From(FileInput("input.ogg", nil), UseRuntime(New(formats, codecs))).
+	_, err := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
 		Audio().
 		To(FrameSink(&runtimeTestSink{name: "frames"})).
 		Build(ctx)
@@ -496,7 +491,7 @@ func TestStreamRecipeSelectsFirstStreamByIndex(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}))
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := From(FileInput("input.ogg", nil), UseRuntime(New(formats, codecs))).
+	task, err := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
 		Audio(StreamIndex(0)).
 		To(FrameSink(sink)).
 		Build(ctx)
@@ -539,7 +534,7 @@ func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 	)
 	meter := &runtimeTestStage{name: "meter"}
 
-	task, err := From(FileInput("input.ogg", nil), UseRuntime(New(formats, codecs))).
+	task, err := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
 		Audio().
 		Do(meter).
 		Opus(96_000).
@@ -604,7 +599,7 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 	codecs.RegisterEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory)
 	runtime := New(formats, func(rt *runtime) { rt.codecs = codecs }, WithStdFilters())
 
-	task, err := From(FileInput("input.ogg", nil), UseRuntime(runtime)).
+	task, err := From(FileInput("input.ogg", nil)).UseRuntime(runtime).
 		Audio().
 		Resample(16_000, Mono).
 		Opus(48_000).

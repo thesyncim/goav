@@ -396,7 +396,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     duplicate encoders instead of silently reordering or replacing intent.
     Done.
 128. Let the beginner `Record(input, output...)` recipe fan out to multiple
-    outputs directly while preserving `UseRuntime(...)` on the same call.
+    outputs directly while preserving custom runtime selection on the job.
     Done.
 129. Lower recipe RTP codec intent after packet-reader stream discovery so
     unnamed single-stream readers keep their stream identity without manual
@@ -486,9 +486,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     the public record recipe keeps the same call shape without exposing an
     implementation detail.
     Done.
-151. Demote the `JobOption` marker type to package-private plumbing so
-    `UseRuntime(...)` still composes with recipes without adding another
-    public option noun.
+151. Remove the package-level job-option surface so custom runtimes compose
+    through `.UseRuntime(...)` on recipe jobs instead of constructor options.
     Done.
 152. Demote the `StreamOption` marker type to package-private plumbing so
     `Audio(goav.StreamIndex(0))` and branch selection stay fluent without
@@ -530,6 +529,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     signature cleanup, and v0.1 readiness.
     Done.
 162. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+163. Make `Record(input, outputs...)` the real public signature and move custom
+    runtime selection onto `.UseRuntime(...)` for recipe jobs and transcode jobs,
+    removing the old package-level runtime option path.
+    Done.
 
 ## First Vertical Slice
 

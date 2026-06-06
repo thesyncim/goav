@@ -108,6 +108,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"WithTrackPayloads":      true,
 		"WithTrackFeedback":      true,
 		"WithTrackMetadata":      true,
+		"UseRuntime":             true,
 		"WebRTCRemote":           true,
 	}
 	legacyTypes := map[string]bool{
@@ -203,12 +204,52 @@ func TestReadmeThirtySecondExamplesUseDefaultFormats(t *testing.T) {
 	}
 }
 
+func TestRecordSignatureAcceptsOnlyInputAndOutputs(t *testing.T) {
+	typ := reflect.TypeOf(goav.Record)
+	if !typ.IsVariadic() || typ.NumIn() != 2 || typ.NumOut() != 1 {
+		t.Fatalf("Record type = %s, want func(InputSpec, ...OutputSpec) *Job", typ)
+	}
+	if typ.In(0) != reflect.TypeOf(goav.InputSpec{}) ||
+		typ.In(1) != reflect.TypeOf([]goav.OutputSpec{}) ||
+		typ.Out(0) != reflect.TypeOf((*goav.Job)(nil)) {
+		t.Fatalf("Record type = %s, want func(InputSpec, ...OutputSpec) *Job", typ)
+	}
+}
+
+func TestRecipeConstructorsDoNotExposeRuntimeOptions(t *testing.T) {
+	inputType := reflect.TypeOf(goav.InputSpec{})
+	outputType := reflect.TypeOf(goav.OutputSpec{})
+	jobType := reflect.TypeOf((*goav.Job)(nil))
+	transcodeType := reflect.TypeOf((*goav.TranscodeJob)(nil))
+
+	cases := []struct {
+		name string
+		fn   any
+		in   []reflect.Type
+		out  reflect.Type
+	}{
+		{name: "From", fn: goav.From, in: []reflect.Type{inputType}, out: jobType},
+		{name: "Decode", fn: goav.Decode, in: []reflect.Type{inputType, outputType}, out: jobType},
+		{name: "Transcode", fn: goav.Transcode, in: []reflect.Type{inputType}, out: transcodeType},
+	}
+	for _, tc := range cases {
+		typ := reflect.TypeOf(tc.fn)
+		if typ.IsVariadic() || typ.NumIn() != len(tc.in) || typ.NumOut() != 1 || typ.Out(0) != tc.out {
+			t.Fatalf("%s type = %s", tc.name, typ)
+		}
+		for i := range tc.in {
+			if typ.In(i) != tc.in[i] {
+				t.Fatalf("%s type = %s", tc.name, typ)
+			}
+		}
+	}
+}
+
 func TestRecipeReportsRuntimeWithoutCompilerBuilder(t *testing.T) {
 	_, err := goav.Record(
 		goav.FileInput("input.ivf", strings.NewReader("")),
 		goav.FileOutput("recording.ivf", io.Discard),
-		goav.UseRuntime(recipeAPIRuntimeWithoutBuilder{}),
-	).Build(context.Background())
+	).UseRuntime(recipeAPIRuntimeWithoutBuilder{}).Build(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_builder_missing" {
@@ -404,6 +445,16 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 	if !strings.Contains(err.Error(), "goav.Decode(input, goav.FrameSink") ||
 		!strings.Contains(err.Error(), "goav.Record(input, output)") {
 		t.Fatalf("err = %v, want decode output guidance", err)
+	}
+}
+
+func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
+	_, err := goav.Record(
+		goav.FileInput("input.ogg", strings.NewReader("")),
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" {
+		t.Fatalf("err = %v, want output_missing", err)
 	}
 }
 

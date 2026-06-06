@@ -121,39 +121,8 @@ func (e *BuildError) Unwrap() error {
 	return e.Cause
 }
 
-type jobOption func(*jobConfig)
-
-type jobConfig struct {
-	runtime Runtime
-}
-
 type builderProvider interface {
 	New() builderAPI
-}
-
-func UseRuntime(runtime Runtime) jobOption {
-	return func(config *jobConfig) {
-		config.runtime = runtime
-	}
-}
-
-type recordOption interface {
-	applyRecord(*recordConfig)
-}
-
-type recordConfig struct {
-	job     jobConfig
-	outputs []OutputSpec
-}
-
-func (option jobOption) applyRecord(config *recordConfig) {
-	if option != nil {
-		option(&config.job)
-	}
-}
-
-func (s OutputSpec) applyRecord(config *recordConfig) {
-	config.outputs = append(config.outputs, s)
 }
 
 func Default() Runtime {
@@ -826,31 +795,20 @@ type jobStreamStep struct {
 	transform TransformSpec
 }
 
-func Record(input InputSpec, output OutputSpec, options ...recordOption) *Job {
-	config := recordConfig{
-		job:     jobConfig{runtime: Default()},
-		outputs: []OutputSpec{output},
-	}
-	for i := range options {
-		if options[i] != nil {
-			options[i].applyRecord(&config)
-		}
-	}
-	return (&Job{
-		name:    "record",
-		runtime: config.job.runtime,
-		inputs:  []InputSpec{input},
-	}).To(config.outputs...)
+func Record(input InputSpec, outputs ...OutputSpec) *Job {
+	job := newJob("record")
+	job.inputs = append(job.inputs, input)
+	return job.To(outputs...)
 }
 
-func From(input InputSpec, options ...jobOption) *Job {
-	job := newJob("from", options...)
+func From(input InputSpec) *Job {
+	job := newJob("from")
 	job.inputs = append(job.inputs, input)
 	return job
 }
 
-func Decode(input InputSpec, output OutputSpec, options ...jobOption) *Job {
-	job := newJob("decode", options...)
+func Decode(input InputSpec, output OutputSpec) *Job {
+	job := newJob("decode")
 	job.inputs = append(job.inputs, input)
 	job.stream = &jobStreamBuild{
 		selector: input.selector(""),
@@ -874,18 +832,19 @@ func Decode(input InputSpec, output OutputSpec, options ...jobOption) *Job {
 	return job
 }
 
-func newJob(name string, options ...jobOption) *Job {
-	config := jobConfig{runtime: Default()}
-	for i := range options {
-		if options[i] != nil {
-			options[i](&config)
-		}
-	}
-	return &Job{name: name, runtime: config.runtime}
+func newJob(name string) *Job {
+	return &Job{name: name, runtime: Default()}
 }
 
 func (j *Job) named(name string) *Job {
 	j.name = name
+	return j
+}
+
+func (j *Job) UseRuntime(runtime Runtime) *Job {
+	if j != nil {
+		j.runtime = runtime
+	}
 	return j
 }
 
@@ -1808,14 +1767,15 @@ type namedOutputSpec struct {
 
 const transcodeRecipeOperation = "build transcode"
 
-func Transcode(input InputSpec, options ...jobOption) *TranscodeJob {
-	config := jobConfig{runtime: Default()}
-	for i := range options {
-		if options[i] != nil {
-			options[i](&config)
-		}
+func Transcode(input InputSpec) *TranscodeJob {
+	return &TranscodeJob{runtime: Default(), input: input}
+}
+
+func (j *TranscodeJob) UseRuntime(runtime Runtime) *TranscodeJob {
+	if j != nil {
+		j.runtime = runtime
 	}
-	return &TranscodeJob{runtime: config.runtime, input: input}
+	return j
 }
 
 func (j *TranscodeJob) Audio(name string, options ...streamOption) *StreamBuilder {

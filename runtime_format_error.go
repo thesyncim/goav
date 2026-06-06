@@ -40,7 +40,7 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 		Suggestions: []string{
 			"register a format adapter that provides a " + string(id) + " demuxer",
 			"choose an input container supported by the runtime",
-			"pass goav.UseRuntime(goav.New(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
+			"call .UseRuntime(goav.New(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
 		},
 		Cause: cause,
 	}
@@ -78,7 +78,7 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		Suggestions: []string{
 			"register a format adapter that provides a " + string(id) + " muxer",
 			"choose an output container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
-			"pass goav.UseRuntime(goav.New(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
+			"call .UseRuntime(goav.New(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
 		},
 		Cause: cause,
 	}
