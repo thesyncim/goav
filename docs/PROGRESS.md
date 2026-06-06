@@ -690,6 +690,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 203. Validate unresolved transcode encode intents through the shared recipe
     encode rules: `Auto()` and `Copy()` branch targets now fail with explicit
     intent diagnostics instead of falling through as missing encoders. Done.
+204. Make unmatched transcode output groups actionable: advanced transcode
+    plans whose output `Renditions` select no branch now return
+    `transcode_output_unmatched` with branch-name and label guidance instead of
+    a bare unsupported sentinel. Done.
 
 ## First Vertical Slice
 
@@ -950,6 +954,8 @@ demuxer, while ambiguous selections stay with stream-selection diagnostics.
 Transcode branch validation now uses the same unresolved encode-intent rules as
 stream recipes, so `Auto()` and `Copy()` remain explicit future work rather
 than half-admitted branch targets.
+Advanced transcode output-group matching now reports unmatched branch labels
+with branch-name guidance instead of a generic unsupported graph error.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

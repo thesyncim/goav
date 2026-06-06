@@ -496,7 +496,7 @@ func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transc
 		target := transcodeOutputTarget(plan, output)
 		matches := transcodeOutputMatches(output, branches)
 		if len(matches) == 0 {
-			return nil, ErrUnsupportedBuild
+			return nil, transcodeOutputUnmatchedError(output, target)
 		}
 		outputs[i] = transcodeOutputBranch{
 			output:  output,
@@ -505,6 +505,27 @@ func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transc
 		}
 	}
 	return outputs, nil
+}
+
+func transcodeOutputUnmatchedError(output transcode.Output, target format.Output) error {
+	node := firstNonEmpty(output.Name, target.Name, target.URI, "output")
+	details := make([]string, 0, 1)
+	if len(output.Renditions) != 0 {
+		details = append(details, "requested: "+strings.Join(output.Renditions, ", "))
+	}
+	return &BuildError{
+		Code:      "transcode_output_unmatched",
+		Operation: "build transcode",
+		Node:      node,
+		Reason:    "output selects no transcode branches",
+		Details:   details,
+		Suggestions: []string{
+			"reference a branch name from transcode.Rendition.Name",
+			"reference a label listed on the branch",
+			"leave Renditions empty when the output should receive every branch",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func transcodeOutputOpenFormat(output transcode.Output) av.FormatID {

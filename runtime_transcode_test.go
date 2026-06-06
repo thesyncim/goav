@@ -556,8 +556,14 @@ func TestRuntimeBuilderTranscodeRequiresMatchingOutputSelection(t *testing.T) {
 	}
 
 	_, err := newTestBuilder(t).Transcode(plan).Describe()
-	if err != ErrUnsupportedBuild {
-		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_output_unmatched" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transcode_output_unmatched wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "output selects no transcode branches") ||
+		!strings.Contains(err.Error(), "requested: missing") ||
+		!strings.Contains(err.Error(), "branch name") {
+		t.Fatalf("err = %v, want unmatched output guidance", err)
 	}
 }
 
