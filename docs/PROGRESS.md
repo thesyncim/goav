@@ -627,6 +627,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     label is now checked against concrete `.Output(label, ...)` attachments in
     its own compiler pass, with public coverage for undefined output labels.
     Done.
+188. Bind ordinary stream recipe routes before lowering: stream-scoped
+    `.Audio()`/`.Video()` `RouteTo` labels now check against concrete
+    stream-local output attachments in their own compiler pass, matching the
+    transcode route-binding shape. Done.
 
 ## First Vertical Slice
 
@@ -859,8 +863,8 @@ a private recipe compiler state that carries captured recipe attachments instead
 of raw recipe builder pointers. Ordinary stream recipe lowering and transcode
 branch planning now read `Intent.Streams`, ordinary output attachments are no
 longer split into builder-shaped fields, attachment consistency is checked
-before lowering, and transcode branch output routes bind in their own pass
-before mux-group plan assembly.
+before lowering, and both ordinary stream and transcode branch output routes
+bind in their own passes before stream lowering or mux-group plan assembly.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

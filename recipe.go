@@ -1077,6 +1077,25 @@ func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool
 	return jobOutputScopeMixedError("build job", stream)
 }
 
+func validateJobOutputBindings(operation string, stream StreamIntent, outputs []OutputSpec) error {
+	labels := jobOutputLabelSet(outputs)
+	for _, label := range stream.RouteTo {
+		if _, ok := labels[label]; ok {
+			continue
+		}
+		return jobOutputReferenceMissingError(operation, stream, label)
+	}
+	return nil
+}
+
+func jobOutputLabelSet(outputs []OutputSpec) map[string]struct{} {
+	labels := make(map[string]struct{}, len(outputs))
+	for i := range outputs {
+		labels[outputs[i].label(fmt.Sprintf("output-%d", i))] = struct{}{}
+	}
+	return labels
+}
+
 func (j *Job) allOutputs() []OutputSpec {
 	return jobAllOutputs(j.outputs, jobStreamOutputs(j.stream))
 }

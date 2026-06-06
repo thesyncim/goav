@@ -173,6 +173,34 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	}
 }
 
+func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
+	state := recipeCompileState{
+		operation: "build job",
+		intent: Intent{
+			Inputs: []InputIntent{{Name: "input.ogg"}},
+			Streams: []StreamIntent{{
+				Name:    "audio",
+				Decode:  true,
+				RouteTo: []string{"missing"},
+			}},
+			Outputs: []OutputIntent{{Name: "archive.ogg"}},
+		},
+		outputAttachments: []OutputSpec{
+			FileOutput("archive.ogg", io.Discard),
+		},
+	}
+
+	err := validateJobOutputBindingsPass().Apply(&state)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "stream route output missing is not attached") ||
+		!strings.Contains(err.Error(), "selected stream chain") {
+		t.Fatalf("err = %v, want stream output binding guidance", err)
+	}
+}
+
 func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	tests := []struct {
 		name  string

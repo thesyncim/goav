@@ -136,6 +136,7 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 		validateJobIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
 		validateJobAttachmentsPass(),
+		validateJobOutputBindingsPass(),
 		validatePacketJobOutputsPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerJobInputsPass(),
@@ -243,6 +244,21 @@ func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
 	}
 }
 
+func jobOutputReferenceMissingError(operation string, stream StreamIntent, label string) error {
+	return &BuildError{
+		Code:      "output_missing",
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    "stream route output " + label + " is not attached",
+		Suggestions: []string{
+			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
+			"use goav.Record(input, output...) or goav.From(input).To(output...) for packet-preserving record/remux",
+			"use goav.Transcode(input) when a stream branch needs named output labels",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
 func jobIntentTooManyStreamsError(operation string, streams []StreamIntent) error {
 	err := &BuildError{
 		Code:      "stream_duplicate",
@@ -301,6 +317,16 @@ func validateJobAttachmentsPass() recipeCompilePass {
 			return err
 		}
 		return validateOutputSpecs(state.operation, state.outputAttachments)
+	}}
+}
+
+func validateJobOutputBindingsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate job output bindings", fn: func(state *recipeCompileState) error {
+		stream, ok := jobIntentStream(state.intent)
+		if !ok {
+			return nil
+		}
+		return validateJobOutputBindings(state.operation, stream, state.outputAttachments)
 	}}
 }
 
