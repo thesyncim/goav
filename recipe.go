@@ -1624,6 +1624,9 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 		if len(stream.invalidTargets) != 0 {
 			return transcodepkg.Plan{}, transcodeOutputTargetError(stream)
 		}
+		if stream.name == "" {
+			return transcodepkg.Plan{}, transcodeBranchNameMissingError(i, stream)
+		}
 		if err := validateRecipeStreamSelector("plan transcode", transcodeBranchName(stream), stream.selector); err != nil {
 			return transcodepkg.Plan{}, err
 		}
@@ -1871,6 +1874,24 @@ func transcodeDuplicateBranchError(name string, firstIndex int, secondIndex int)
 			"use unique names such as .Video(\"720p\") and .Video(\"360p\")",
 			"route one branch to multiple outputs by calling .To(label, otherLabel)",
 			"route different branches to the same output by reusing the output label",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeBranchNameMissingError(index int, stream streamBuild) error {
+	return &BuildError{
+		Code:      "stream_name_missing",
+		Operation: "plan transcode",
+		Node:      fmt.Sprintf("branch-%d", index),
+		Reason:    "transcode branches need stable names",
+		Details: []string{
+			"media type: " + firstNonEmpty(string(stream.selector.Type), "unknown"),
+		},
+		Suggestions: []string{
+			"call .Video(\"720p\") for video branches",
+			"call .Audio(\"main\") for audio branches",
+			"use branch names as handles for graph inspection and output routing",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

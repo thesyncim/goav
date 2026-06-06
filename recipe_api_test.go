@@ -744,6 +744,23 @@ func TestTranscodeRecipeRejectsDuplicateBranchNames(t *testing.T) {
 	}
 }
 
+func TestTranscodeRecipeRejectsMissingBranchName(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("").VP9(2_000_000).To("web").
+		Output("web", goav.FileOutput("web.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_name_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_name_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "transcode branches need stable names") ||
+		!strings.Contains(err.Error(), `.Video("720p")`) ||
+		!strings.Contains(err.Error(), "media type: video") {
+		t.Fatalf("err = %v, want branch name guidance", err)
+	}
+}
+
 func TestTranscodeRecipeRejectsInvalidOutputTarget(t *testing.T) {
 	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").VP9(600_000).
