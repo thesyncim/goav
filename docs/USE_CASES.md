@@ -141,6 +141,8 @@ One receive graph should be able to drive several sinks at once:
 
 Audio filters should express sample-rate, channel-count, channel-layout, and
 sample-format conversion without tying the API to one implementation.
+The first concrete adapter covers interleaved `s16` PCM with linear
+sample-rate conversion and basic channel conversion.
 
 ## Resize
 

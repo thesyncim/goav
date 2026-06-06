@@ -36,8 +36,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | concrete allocation-safe filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
-| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph connections with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, multi-RTP/WebRTC packet-reader record/fanout compiler | concrete resize/resample adapters |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264`; `govpx`, `goav1`, and default-build `goh264` descriptor boundaries report unavailable factories explicitly | concrete video adapter allocation guards |
+| runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, simple named graph connections with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, multi-RTP/WebRTC packet-reader record/fanout compiler | concrete resize adapter |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264`; `govpx`, `goav1`, and default-build `goh264` descriptor boundaries report unavailable factories explicitly | concrete resize/video adapter allocation guards |
 
 ## Implementation Order
 
@@ -98,7 +98,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 29. Add filter registry and frame-transform stage, then let transcode renditions
     insert resize/resample branch stages when matching filter factories are
     registered. Done.
-30. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+30. Add pure-Go S16 audio resample filter adapter with linear interpolation,
+    channel conversion, caller-owned output buffers, and allocation guard. Done.
+31. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -207,6 +209,8 @@ Required proof:
   and AV1 recording paths.
 - `adapters/annexb`: H264 Annex B packet mux is active for single-stream H264
   recording paths.
+- `adapters/resample`: S16 audio resample and channel conversion filter is
+  active, using caller-owned output buffers and allocation-guarded hot paths.
 - `adapters/gopus`: Opus decode first is active, PLC via loss events works,
   encode adapter remains unclaimed.
 - `adapters/govpx`: descriptor boundary exists; concrete VP8/VP9 adapters need
@@ -239,9 +243,8 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: add concrete allocation-safe resize/resample filter
-adapters, then harden concrete video adapters with allocation and lifecycle
-tests.
+Current pressure point: add a concrete allocation-safe resize filter adapter,
+then harden concrete video adapters with allocation and lifecycle tests.
 
 ## Validation Gates
 

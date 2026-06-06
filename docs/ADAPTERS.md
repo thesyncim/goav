@@ -29,11 +29,12 @@ integrations belong under `adapters/...`.
 | --- | --- |
 | `adapters/ivf` | IVF VP8/VP9/AV1 packet demux/mux |
 | `adapters/annexb` | H264 Annex B packet mux |
+| `adapters/resample` | pure-Go S16 audio resample and channel conversion filter |
 | `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
 | `adapters/govpx` | descriptor-only VP8/VP9 boundary |
 | `adapters/goav1` | descriptor-only AV1 boundary |
 | `adapters/goh264` | descriptor-only by default; `goav_goh264` enables H264 decode |
-| resize/resample adapters | planned; filter registry and stage boundary are active |
+| resize adapters | planned; filter registry and stage boundary are active |
 
 ## `ivf`
 
@@ -80,6 +81,22 @@ Current surface:
 - caller-owned frame and plane buffer output
 
 It does not currently claim encode support.
+
+## `resample`
+
+The `resample` adapter is the first concrete filter adapter. It supports
+interleaved signed 16-bit PCM audio frames.
+
+Current surface:
+
+- explicit registry registration through `resample.Register`
+- sample-rate conversion with linear interpolation
+- channel conversion for mono/stereo and simple channel count changes
+- caller-owned output frame and plane buffers
+- zero-allocation hot-path test
+
+It is intentionally narrow: no floating-point PCM, no dithering, and no
+streaming phase carry yet.
 
 ## `goh264`
 

@@ -47,12 +47,11 @@ validation gates. This roadmap keeps the broader phase view.
 ## Phase 3b: Transcode ladders
 
 - Resize filter contract implementation.
-- Resample filter contract implementation.
+- Resample filter contract implementation. S16 adapter active.
 - Decode sharing across renditions. First compiler active.
 - Per-rendition encoder configs. First compiler active.
 - Multiple mux/output targets from one plan. First compiler active.
-- Resize/resample branch execution. Adapter boundary active; concrete
-  allocation-safe implementations pending.
+- Resize/resample branch execution. Resample adapter active; resize pending.
 
 ## Phase 4: H264 and concrete AV1 decode
 

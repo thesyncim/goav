@@ -163,6 +163,7 @@ as private graph compilers that must support both `Describe` and `Build`.
   shared-decode multi-rendition compiler.
 - `adapters/ivf`: IVF demux/mux for VP8, VP9, and AV1 packet recording.
 - `adapters/annexb`: H264 Annex B packet mux for `.h264` recording.
+- `adapters/resample`: pure-Go `s16` audio resample/channel conversion filter.
 - `adapters/gopus`: active Opus decoder adapter.
 - `adapters/govpx`, `adapters/goav1`: descriptor boundaries for future
   concrete adapters; factory lookups return `codec.ErrUnavailable` until a
@@ -194,6 +195,7 @@ Implemented slices:
 - Pre-build and runtime graph rendering as text, DOT, and Mermaid.
 - IVF packet demux/mux adapter with allocation-guarded read/write paths.
 - Annex B packet mux adapter for H264 recording.
+- S16 audio resample filter adapter with allocation-guarded hot path.
 - VP8/VP9/AV1/H264 RTP depacketizers for packet-preserving video recording.
 - WebRTC session track accept loop with RTCP feedback routed through Pion.
 - WebRTC TrackSet keeps one long-lived reader per logical stream.
@@ -207,7 +209,7 @@ Implemented slices:
 
 Next pressure points:
 
-- Concrete allocation-safe resize/resample filter adapters.
+- Concrete allocation-safe resize filter adapter.
 - Allocation and lifecycle hardening for concrete video decode paths.
 
 ## Working Loop

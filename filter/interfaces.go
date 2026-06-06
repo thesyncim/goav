@@ -8,9 +8,11 @@ import (
 )
 
 var (
-	ErrNotFound   = errors.New("filter: not found")
-	ErrNilFilter  = errors.New("filter: nil filter")
-	ErrResultFull = errors.New("filter: result capacity full")
+	ErrNotFound             = errors.New("filter: not found")
+	ErrNilFilter            = errors.New("filter: nil filter")
+	ErrResultFull           = errors.New("filter: result capacity full")
+	ErrUnsupportedFormat    = errors.New("filter: unsupported format")
+	ErrOutputBufferTooSmall = errors.New("filter: output buffer too small")
 )
 
 const (
