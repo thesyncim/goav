@@ -362,7 +362,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     fail before a later definition can silently replace an earlier one. Done.
 114. Add shared recipe output-label validation so repeated file, URI, or frame
     sink output names fail before graph construction. Done.
-115. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+115. Add ordinary stream-recipe validation so repeated `Audio()`/`Video()`
+    selections fail instead of replacing the first selected stream. Done.
+116. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

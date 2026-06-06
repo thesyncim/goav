@@ -438,6 +438,31 @@ func TestStreamRecipeRequiresOperation(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeRejectsSecondStreamSelection(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Audio().
+		Decode().
+		To(goav.FrameSink(goav.SinkFunc("audio", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Video().
+		Decode().
+		To(goav.FrameSink(goav.SinkFunc("video", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "first stream: audio") ||
+		!strings.Contains(err.Error(), "second stream: video") ||
+		!strings.Contains(err.Error(), "goav.Transcode") {
+		t.Fatalf("err = %v, want duplicate stream guidance", err)
+	}
+}
+
 func TestStreamRecipeRejectsNegativeStreamIndex(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio(goav.StreamIndex(-1)).

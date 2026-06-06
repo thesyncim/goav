@@ -86,6 +86,9 @@ task, err := goav.From(input).
     Build(ctx)
 ```
 
+The `From` stream recipe has one selected stream chain. Use `Transcode` for
+multiple audio/video branches from one input.
+
 When a media type matches several streams, the build error lists the candidates.
 Use the same stream-scoped shape with a narrower selector. `StreamIndex(0)`
 selects the first stream when that is the intended one:

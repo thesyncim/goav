@@ -715,6 +715,7 @@ type Job struct {
 	inputs  []InputSpec
 	outputs []OutputSpec
 	stream  *jobStreamBuild
+	err     error
 }
 
 type jobStreamBuild struct {
@@ -786,11 +787,16 @@ func (j *Job) Video(options ...StreamOption) *JobStreamBuilder {
 }
 
 func (j *Job) streamBuilder(name string, media av.MediaType, options ...StreamOption) *JobStreamBuilder {
-	j.stream = &jobStreamBuild{
+	stream := &jobStreamBuild{
 		name:     name,
 		selector: newStreamSelector(media, options...),
 	}
-	return &JobStreamBuilder{job: j}
+	if j.stream != nil {
+		j.err = duplicateJobStreamError(j.stream, stream)
+		return &JobStreamBuilder{job: j, stream: stream}
+	}
+	j.stream = stream
+	return &JobStreamBuilder{job: j, stream: stream}
 }
 
 func (j *Job) Intent() Intent {
@@ -853,6 +859,9 @@ func (j *Job) Run(ctx context.Context) error {
 func (j *Job) builder() (Builder, error) {
 	if j.runtime == nil {
 		return nil, &BuildError{Code: "runtime_missing", Operation: "build job", Reason: "no runtime is configured"}
+	}
+	if j.err != nil {
+		return nil, j.err
 	}
 	if len(j.inputs) == 0 {
 		return nil, &BuildError{Code: "input_missing", Operation: "build job", Reason: "no input is configured"}
@@ -1031,6 +1040,25 @@ func jobStreamName(stream *jobStreamBuild) string {
 		return "stream"
 	}
 	return firstNonEmpty(stream.name, string(stream.selector.ID), string(stream.selector.Type), "stream")
+}
+
+func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) error {
+	return &BuildError{
+		Code:      "stream_duplicate",
+		Operation: "build job",
+		Node:      jobStreamName(next),
+		Reason:    "ordinary stream recipes select one audio or video stream",
+		Details: []string{
+			"first stream: " + jobStreamName(existing),
+			"second stream: " + jobStreamName(next),
+		},
+		Suggestions: []string{
+			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
+			"use goav.Transcode(input) for multiple audio or video branches",
+			"use the expert graph API for custom multi-stream routing",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func (s *jobStreamBuild) hasOperation() bool {
@@ -1411,7 +1439,8 @@ func StreamIndex(index int) StreamOption {
 }
 
 type JobStreamBuilder struct {
-	job *Job
+	job    *Job
+	stream *jobStreamBuild
 }
 
 func (b *JobStreamBuilder) Decode() *JobStreamBuilder {
@@ -1466,10 +1495,14 @@ func (b *JobStreamBuilder) To(outputs ...OutputSpec) *Job {
 }
 
 func (b *JobStreamBuilder) current() *jobStreamBuild {
-	if b.job.stream == nil {
-		b.job.stream = &jobStreamBuild{}
+	if b.stream != nil {
+		return b.stream
 	}
-	return b.job.stream
+	b.stream = &jobStreamBuild{}
+	if b.job.stream == nil {
+		b.job.stream = b.stream
+	}
+	return b.stream
 }
 
 type TranscodeJob struct {
