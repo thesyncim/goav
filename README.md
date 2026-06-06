@@ -13,10 +13,10 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pure Go core, no cgo runtime dependency.
 - Simple fluent API for natural workflows.
 - Explicit graph API for custom realtime systems.
-- Graphs are named sources, stages, sinks, connections, and branches;
-  stream/event routing is a connection option.
-- The graph API starts with `pipeline.Connect("source", "sink")`; `Connect`,
-  `ForStream`, `ForEvent`, and `Branch` are the public edge vocabulary.
+- Graphs are named sources, stages, sinks, and connections; fanout is one
+  connection with multiple targets.
+- The graph API starts with `pipeline.Connect("source", "sink")`; the fluent
+  builder uses `Connect`, `ConnectStream`, and `ConnectEvent`.
 - Rendered graph nodes can carry short workflow details without changing the
   simple node-to-node API.
 - Caller-owned buffers and result structs on hot paths.
@@ -139,8 +139,8 @@ builder := rt.New().
     Sink(record).
     Sink(preview).
     Sink(stats).
-    Connect("source", "decode", goav.ForStream("audio")).
-    Branch("decode", "record", "preview", "stats")
+    ConnectStream("source", "audio", "decode").
+    Connect("decode", "record", "preview", "stats")
 
 spec, err := builder.Describe()
 if err != nil {
@@ -158,8 +158,8 @@ as private graph compilers that must support both `Describe` and `Build`.
   timebase conversion helpers, reset helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, bounded buffered graph executor,
   fanout, stream/event routes, backpressure surface, drop-policy decisions,
-  bounded copy slots for borrowed media buffers, simple node-to-node
-  connections and branches, detail-aware text/DOT/Mermaid graph specs.
+  bounded copy slots for borrowed media buffers, simple node-to-node and
+  one-to-many connections, detail-aware text/DOT/Mermaid graph specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, realtime decode bounds, registry,
   decoder and encoder pipeline stages.
@@ -183,9 +183,9 @@ as private graph compilers that must support both `Describe` and `Build`.
   caller-owned I420 frames, plus VP8 and VP9 encode into caller-owned packet
   buffers.
 - `adapters/goav1`: descriptor-only by default; `goav_goav1` pins the sibling
-  realtime AV1 RTP stream-runner API and reusable decoder state binding, while
-  factory lookups still return `codec.ErrUnavailable` until packet-by-packet
-  decode is wired.
+  realtime AV1 stream-runner API plus reusable decoder state and low-overhead
+  runner binding, while factory lookups still return `codec.ErrUnavailable`
+  until packet-by-packet decode is wired.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
   H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
   video frames.
@@ -210,8 +210,8 @@ Implemented slices:
 - Fluent `Transcode(plan)` compiler for one selected decode feeding multiple
   named encode/output branches, including resize/resample branch stages when
   filter factories are registered.
-- Fluent `Branch(...)`, `BranchStream(...)`, and `BranchEvent(...)` helpers for
-  one-to-many explicit graph fanout with named connections.
+- Fluent `Connect(...)`, `ConnectStream(...)`, and `ConnectEvent(...)` helpers
+  for one-to-one and one-to-many explicit graph connections.
 - First-class `pipeline.Connection` helpers for direct graph composition without
   extra graph concepts.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
@@ -257,16 +257,19 @@ Implemented slices:
 - Runtime RTP/WebRTC packet-reader record/fanout builds are covered through
   buffered execution with policy-bounded copies of depacketizer-owned packet
   payloads.
-- The runnable graph surface now uses one edge model: `Connect` plus stream,
-  event, and branch helpers.
+- The runnable graph surface now uses one edge model: `Connect` plus
+  stream/event-scoped variants.
 - Tagged AV1 decoder state binding now owns exact-format frame pools, retained
   RTP scratch, event/parser scratch, references, and output slots for the
   future packet-by-packet factory.
+- Tagged AV1 low-overhead planning/binding now drives the backend runner over
+  a tiny valid stream with caller-owned state, scratch, frame pool, and worker
+  pool.
 
 Next pressure points:
 
-- Turn the tagged AV1 state binder into a decoder factory with loss,
-  codec-change, output, and allocation proofs.
+- Turn the tagged AV1 low-overhead runner boundary into a decoder factory with
+  loss, codec-change, output, and allocation proofs.
 
 ## Working Loop
 

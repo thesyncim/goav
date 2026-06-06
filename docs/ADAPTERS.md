@@ -121,13 +121,17 @@ stream runners with caller-owned scratch, and exposes `DecoderState` as the
 documented `codec.DecodeConfig.OpaqueState` shape for the future decoder
 factory. `DecoderState` binds exact-format frame pools, retained RTP buffers,
 event/parser scratch, reference/output slots, and backend runtime handles from
-generic decode bounds plus adapter-specific scratch sizing.
+generic decode bounds plus adapter-specific scratch sizing. The tagged surface
+also plans depacketized low-overhead OBU payloads, binds a reusable backend
+runner, and proves that runner against a tiny valid stream with caller-owned
+worker-pool state.
 
 A decoder factory should register here only after packet-by-packet decode can
 map realtime packet loss, codec changes, decoded output frames, and
-result-capacity failures onto that state without hidden allocation. The frame
-format passed to `DecoderState` is exact, not merely a maximum envelope, because
-the AV1 backend frame pool must match the accepted sequence/frame format.
+result-capacity failures onto that runner boundary without hidden allocation.
+The frame format passed to `DecoderState` is exact, not merely a maximum
+envelope, because the AV1 backend frame pool must match the accepted
+sequence/frame format.
 
 The first concrete surface should stay narrow:
 

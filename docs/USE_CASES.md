@@ -138,7 +138,8 @@ One receive graph should be able to drive several sinks at once:
 - stats/analysis
 - archival transcode
 
-Explicit application-owned graphs can use branch helpers for this shape:
+Explicit application-owned graphs can use a multi-target connection for this
+shape:
 
 ```go
 task, err := runtime.New().
@@ -148,7 +149,7 @@ task, err := runtime.New().
     Sink(preview).
     Sink(stats).
     Connect("source", "decode").
-    Branch("decode", "record", "preview", "stats").
+    Connect("decode", "record", "preview", "stats").
     Build(ctx)
 ```
 

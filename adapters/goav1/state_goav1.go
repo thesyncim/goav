@@ -36,7 +36,7 @@ type DecoderStateConfig struct {
 	SurfaceCount int
 	// Workers defaults to one and is retained for runner planning.
 	Workers int
-	// WorkerPool is caller-owned and is threaded into the backend runtime.
+	// WorkerPool is caller-owned and required before running tile-bearing plans.
 	WorkerPool *backend.TileWorkerPool
 }
 
@@ -68,6 +68,8 @@ type DecoderState struct {
 	stats    backend.DecoderFrameWorkTileResidualStats
 	batch    backend.DecoderFrameWorkBatchResidualRunner
 	scratch  backend.DecoderFrameWorkResidualStreamScratch
+	runner   backend.DecoderFrameWorkResidualStreamRunner
+	bound    bool
 
 	workerPool *backend.TileWorkerPool
 }
@@ -288,6 +290,79 @@ func (s *DecoderState) BatchRunner() *backend.DecoderFrameWorkBatchResidualRunne
 	return &s.batch
 }
 
+// PlanLowOverhead validates one depacketized AV1 low-overhead OBU buffer
+// against a copy of the current stream state and reports the scratch/bind shape
+// required by BindRunner.
+func (s *DecoderState) PlanLowOverhead(payload []byte) (backend.DecoderFrameWorkResidualStreamPlan, error) {
+	if s == nil {
+		return backend.DecoderFrameWorkResidualStreamPlan{}, backend.ErrDecoderInvalidFrameWorkState
+	}
+	return backend.DecoderFrameWorkResidualLowOverheadStreamPlan(
+		s.stream,
+		payload,
+		s.workers,
+		s.scratch.Events,
+		s.scratch.Event.Spans,
+		s.scratch.Event.Jobs,
+		s.scratch.Event.Batches,
+	)
+}
+
+// PlanLowOverheads validates an ordered batch of depacketized AV1
+// low-overhead OBU buffers against a copy of the current stream state and
+// returns a reusable max plan for BindRunner.
+func (s *DecoderState) PlanLowOverheads(payloads [][]byte) (backend.DecoderFrameWorkResidualStreamPlan, error) {
+	if s == nil {
+		return backend.DecoderFrameWorkResidualStreamPlan{}, backend.ErrDecoderInvalidFrameWorkState
+	}
+	return backend.DecoderFrameWorkResidualLowOverheadStreamsPlan(
+		s.stream,
+		payloads,
+		s.workers,
+		s.scratch.Events,
+		s.scratch.Event.Spans,
+		s.scratch.Event.Jobs,
+		s.scratch.Event.Batches,
+	)
+}
+
+// BindRunner binds the reusable backend runner for a previously planned stream
+// shape. Callers should re-plan and re-bind when codec parameters or accepted
+// sequence shape change.
+func (s *DecoderState) BindRunner(plan backend.DecoderFrameWorkResidualStreamPlan) (*backend.DecoderFrameWorkResidualStreamRunner, error) {
+	if s == nil {
+		return nil, backend.ErrDecoderInvalidFrameWorkState
+	}
+	if plan.Size.Event.Runner.Workers > 0 && s.workerPool == nil {
+		return nil, backend.ErrThreadingInvalidWorkerCount
+	}
+	if err := s.scratch.Check(plan.Size); err != nil {
+		return nil, err
+	}
+	runner, _, err := backend.BindDecoderFrameWorkResidualStreamPlanRunner(
+		plan,
+		&s.stream,
+		s.Runtime(),
+		s.scratch,
+		&s.batch,
+	)
+	if err != nil {
+		return nil, err
+	}
+	s.runner = runner
+	s.bound = true
+	return &s.runner, nil
+}
+
+// Runner returns the currently bound backend runner, when BindRunner has
+// succeeded and Reset has not cleared it.
+func (s *DecoderState) Runner() (*backend.DecoderFrameWorkResidualStreamRunner, bool) {
+	if s == nil || !s.bound {
+		return nil, false
+	}
+	return &s.runner, true
+}
+
 func (s *DecoderState) Reset() {
 	if s == nil {
 		return
@@ -299,4 +374,6 @@ func (s *DecoderState) Reset() {
 	s.sideData = backend.DecoderFrameWorkSideData{}
 	s.stats = backend.DecoderFrameWorkTileResidualStats{}
 	s.batch = backend.DecoderFrameWorkBatchResidualRunner{}
+	s.runner = backend.DecoderFrameWorkResidualStreamRunner{}
+	s.bound = false
 }

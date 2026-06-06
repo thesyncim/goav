@@ -309,8 +309,8 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 		Source(source).
 		Sink(audio).
 		Sink(video).
-		Connect("source", "audio", ForStream("audio")).
-		Connect("source", "video", ForStream("video")).
+		ConnectStream("source", "audio", "audio").
+		ConnectStream("source", "video", "video").
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -332,7 +332,7 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 	}
 }
 
-func TestRuntimeBuilderExplicitBranch(t *testing.T) {
+func TestRuntimeBuilderExplicitFanout(t *testing.T) {
 	packet := av.Packet{StreamID: "video"}
 	source := &runtimeTestSource{
 		name:    "source",
@@ -347,7 +347,7 @@ func TestRuntimeBuilderExplicitBranch(t *testing.T) {
 		Sink(record).
 		Sink(preview).
 		Sink(stats).
-		Branch("source", "record", "preview", "stats").
+		Connect("source", "record", "preview", "stats").
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -370,7 +370,7 @@ func TestRuntimeBuilderExplicitBranch(t *testing.T) {
 	}
 }
 
-func TestRuntimeBuilderExplicitBranchStream(t *testing.T) {
+func TestRuntimeBuilderExplicitStreamFanout(t *testing.T) {
 	packet := av.Packet{StreamID: "video"}
 	source := &runtimeTestSource{
 		name:    "source",
@@ -385,7 +385,7 @@ func TestRuntimeBuilderExplicitBranchStream(t *testing.T) {
 		Sink(record).
 		Sink(preview).
 		Sink(audio).
-		BranchStream("source", "video", "record", "preview").
+		ConnectStream("source", "video", "record", "preview").
 		ConnectStream("source", "audio", "audio").
 		Build(context.Background())
 	if err != nil {
@@ -418,8 +418,8 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 		Source(source).
 		Sink(audio).
 		Sink(video).
-		Connect("source", "audio", ForStream("audio")).
-		Connect("source", "video", ForStream("video")).
+		ConnectStream("source", "audio", "audio").
+		ConnectStream("source", "video", "video").
 		Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -446,8 +446,8 @@ func TestRuntimeBuilderExplicitEventRoute(t *testing.T) {
 		Source(source).
 		Sink(stats).
 		Sink(loss).
-		Connect("source", "stats", ForEvent(av.EventStats)).
-		Connect("source", "loss", ForEvent(av.EventPacketLoss)).
+		ConnectEvent("source", av.EventStats, "stats").
+		ConnectEvent("source", av.EventPacketLoss, "loss").
 		Build(context.Background())
 	if err != nil {
 		t.Fatal(err)

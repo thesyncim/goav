@@ -263,52 +263,19 @@ func (b *builder) Sink(sink pipeline.Sink) Builder {
 	return b
 }
 
-func ForStream(stream av.StreamID) ConnectOption {
-	return func(connection *Connection) {
-		connection.Policy = pipeline.RouteByStream
-		connection.Label = string(stream)
-	}
+func (b *builder) Connect(from string, to ...string) Builder {
+	return b.connect(from, pipeline.RouteAll, "", to...)
 }
 
-func ForEvent(event av.EventType) ConnectOption {
-	return func(connection *Connection) {
-		connection.Policy = pipeline.RouteByEvent
-		connection.Label = string(event)
-	}
+func (b *builder) ConnectStream(from string, stream av.StreamID, to ...string) Builder {
+	return b.connect(from, pipeline.RouteByStream, string(stream), to...)
 }
 
-func (b *builder) Connect(from string, to string, options ...ConnectOption) Builder {
-	connection := pipeline.Connect(from, to)
-	for i := range options {
-		if options[i] != nil {
-			options[i](&connection)
-		}
-	}
-	b.connections = append(b.connections, connection)
-	return b
+func (b *builder) ConnectEvent(from string, event av.EventType, to ...string) Builder {
+	return b.connect(from, pipeline.RouteByEvent, string(event), to...)
 }
 
-func (b *builder) ConnectStream(from string, to string, stream av.StreamID) Builder {
-	return b.Connect(from, to, ForStream(stream))
-}
-
-func (b *builder) ConnectEvent(from string, to string, event av.EventType) Builder {
-	return b.Connect(from, to, ForEvent(event))
-}
-
-func (b *builder) Branch(from string, to ...string) Builder {
-	return b.branch(from, pipeline.RouteAll, "", to...)
-}
-
-func (b *builder) BranchStream(from string, stream av.StreamID, to ...string) Builder {
-	return b.branch(from, pipeline.RouteByStream, string(stream), to...)
-}
-
-func (b *builder) BranchEvent(from string, event av.EventType, to ...string) Builder {
-	return b.branch(from, pipeline.RouteByEvent, string(event), to...)
-}
-
-func (b *builder) branch(from string, policy pipeline.RoutePolicy, label string, to ...string) Builder {
+func (b *builder) connect(from string, policy pipeline.RoutePolicy, label string, to ...string) Builder {
 	if len(to) == 0 {
 		return b
 	}

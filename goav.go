@@ -31,8 +31,6 @@ type Runtime interface {
 
 type Connection = pipeline.Connection
 
-type ConnectOption func(*Connection)
-
 // Builder describes the intended fluent connection API without constraining the
 // internal graph representation.
 type Builder interface {
@@ -46,12 +44,9 @@ type Builder interface {
 	Source(pipeline.Source) Builder
 	Stage(pipeline.Stage) Builder
 	Sink(pipeline.Sink) Builder
-	Connect(from string, to string, options ...ConnectOption) Builder
-	ConnectStream(from string, to string, stream av.StreamID) Builder
-	ConnectEvent(from string, to string, event av.EventType) Builder
-	Branch(from string, to ...string) Builder
-	BranchStream(from string, stream av.StreamID, to ...string) Builder
-	BranchEvent(from string, event av.EventType, to ...string) Builder
+	Connect(from string, to ...string) Builder
+	ConnectStream(from string, stream av.StreamID, to ...string) Builder
+	ConnectEvent(from string, event av.EventType, to ...string) Builder
 	Connection(pipeline.Connection) Builder
 	Describe() (pipeline.Spec, error)
 	Build(context.Context) (Task, error)
