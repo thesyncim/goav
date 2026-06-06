@@ -74,7 +74,6 @@ encoder, and one or more mux outputs:
 ```go
 task, err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
-    Decode().
     To(goav.FrameSink(frames)).
     Build(ctx)
 ```
@@ -84,7 +83,6 @@ Audio and video transforms stay stream-local in the recipe:
 ```go
 task, err := goav.From(input).
     Audio().
-    Decode().
     Resample(16_000, goav.Mono).
     Opus(48_000).
     To(goav.FileOutput("preview.ogg", preview)).
@@ -105,7 +103,6 @@ selects the first stream when that is the intended one:
 ```go
 task, err := goav.From(input).
     Audio(goav.StreamID("eng")).
-    Decode().
     To(goav.FrameSink(frames)).
     Build(ctx)
 ```

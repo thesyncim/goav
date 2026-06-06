@@ -86,13 +86,13 @@ for _, edge := range spec.Edges {
 - `goav.From(input).And(other).To(output)` records repeated RTP/WebRTC receive
   inputs through one shared output graph; explicit realtime input names must be
   unique.
-- `goav.From(input).Audio().Decode().To(goav.FrameSink(frames))` decodes one
-  selected audio stream without manual selectors.
-- `goav.From(input).Audio().Decode().Resample(16_000, goav.Mono).Opus(48_000).To(output)`
+- `goav.From(input).Audio().To(goav.FrameSink(frames))` decodes one selected
+  audio stream without manual selectors.
+- `goav.From(input).Audio().Resample(16_000, goav.Mono).Opus(48_000).To(output)`
   resamples and encodes one selected audio stream.
-- `goav.From(input).Video().Decode().Resize(1280, 720).VP9(2_000_000).To(output)`
+- `goav.From(input).Video().Resize(1280, 720).VP9(2_000_000).To(output)`
   resizes and encodes one selected video stream.
-- `goav.From(input).Audio().Decode().Do(meter).Opus(96_000).To(output)` adds a
+- `goav.From(input).Audio().Do(meter).Opus(96_000).To(output)` adds a
   stream-local custom stage before encoding.
 - A `From` stream recipe carries one `Audio()` or `Video()` chain; use
   stream-local `.To(...)` outputs there, and use `Transcode` when one input

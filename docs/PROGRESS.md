@@ -418,7 +418,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     explicit stable label path instead of falling back to filenames or generated
     handles.
     Done.
-134. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+134. Let stream-local frame sinks and frame-processing steps imply decode so
+    selected stream recipes read as `Audio().To(FrameSink(...))`,
+    `Audio().Resample(...).Opus(...).To(...)`, or
+    `Video().Resize(...).VP9(...).To(...)` while muxed outputs still require an
+    explicit encoder.
+    Done.
+135. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -472,7 +478,7 @@ Required proof:
   `Input(...).Output(...).Build(ctx)` when registered format adapters can probe,
   demux, and mux the selected boundaries.
 - The recipe/runtime path can plan and compile selected-stream decode jobs from
-  stream-scoped `.Decode().To(goav.FrameSink(...))` recipes when format probing
+  stream-scoped `.To(goav.FrameSink(...))` recipes when format probing
   resolves one matching stream and the codec registry has a decoder factory. The
   graph includes an explicit stream-select stage so unrelated packets do not
   reach the decoder, and optional filter stages can run before the sink.
@@ -484,7 +490,7 @@ Required proof:
   muxers, multiple mux outputs, lifecycle closure, graph specs, and event
   visibility.
 - The recipe/runtime path can plan and compile selected-stream live decode jobs
-  from stream-scoped RTP/WebRTC `.Decode().To(goav.FrameSink(...))` recipes,
+  from stream-scoped RTP/WebRTC `.To(goav.FrameSink(...))` recipes,
   including repeated RTP/WebRTC inputs, graph specs, decoder lifecycle closure,
   and filtering of unrelated packets and stream-scoped EOS before they reach the
   decoder.

@@ -92,7 +92,6 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	})
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Decode().
 		To(goav.FrameSink(sink))
 
 	spec, err := job.Describe()
@@ -580,7 +579,6 @@ func TestReadmeAudioEncodeRecipeIsSmall(t *testing.T) {
 	})
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Decode().
 		Do(meter).
 		Opus(96_000).
 		To(goav.FileOutput("archive.ogg", io.Discard))
@@ -600,7 +598,6 @@ func TestReadmeAudioEncodeRecipeIsSmall(t *testing.T) {
 func TestReadmeAudioResampleEncodeRecipeIsSmall(t *testing.T) {
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Decode().
 		Resample(16_000, goav.Mono).
 		Opus(48_000).
 		To(goav.FileOutput("preview.ogg", io.Discard))
@@ -625,7 +622,6 @@ func TestReadmeAudioResampleEncodeRecipeIsSmall(t *testing.T) {
 func TestReadmeVideoResizeEncodeRecipeIsSmall(t *testing.T) {
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video().
-		Decode().
 		Resize(1280, 720).
 		VP9(2_000_000).
 		To(goav.FileOutput("preview.webm", io.Discard))
@@ -646,12 +642,24 @@ func TestReadmeVideoResizeEncodeRecipeIsSmall(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeRequiresOperation(t *testing.T) {
+func TestStreamRecipeFrameSinkImpliesDecode(t *testing.T) {
+	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		return nil
+	})
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		To(goav.FrameSink(sink))
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || !intent.Streams[0].Decode {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestStreamRecipeRequiresOperationForMuxOutput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
-			return nil
-		}))).
+		To(goav.FileOutput("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_operation_missing" {
@@ -691,7 +699,7 @@ func TestStreamRecipeRejectsJobLevelOutput(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want output_scope_mixed wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), ".Audio().Decode()...To(...)") {
+	if !strings.Contains(err.Error(), ".Audio()...To(...)") {
 		t.Fatalf("err = %v, want stream-local To guidance", err)
 	}
 }
@@ -841,7 +849,7 @@ func TestStreamRecipeRejectsMixedEncodedOutputAndFrameSink(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want output_kind_mixed wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), ".Decode().To(goav.FrameSink") ||
+	if !strings.Contains(err.Error(), ".To(goav.FrameSink") ||
 		!strings.Contains(err.Error(), ".To(goav.FileOutput") {
 		t.Fatalf("err = %v, want decoded or encoded output guidance", err)
 	}

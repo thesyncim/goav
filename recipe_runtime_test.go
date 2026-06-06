@@ -437,7 +437,6 @@ func TestStreamRecipeSelectsFirstStreamByIndex(t *testing.T) {
 
 	task, err := From(FileInput("input.ogg", nil), UseRuntime(New(formats, codecs))).
 		Audio(StreamIndex(0)).
-		Decode().
 		To(FrameSink(sink)).
 		Build(ctx)
 	if err != nil {

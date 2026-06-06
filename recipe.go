@@ -885,7 +885,7 @@ func Decode(input InputSpec, output OutputSpec, options ...JobOption) *Job {
 			Reason:    "decode recipes write decoded frames to a frame sink",
 			Suggestions: []string{
 				"use goav.Decode(input, goav.FrameSink(sink)) for the decode shortcut",
-				"use goav.From(input).Audio().Decode().To(goav.FrameSink(sink)) when stream selection matters",
+				"use goav.From(input).Audio().To(goav.FrameSink(sink)) when stream selection matters",
 				"use goav.Record(input, output) for packet-preserving record or remux",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -1122,7 +1122,7 @@ func (j *Job) validateOutputScope() error {
 		Node:      jobStreamName(j.stream),
 		Reason:    "stream recipes use stream-local outputs",
 		Suggestions: []string{
-			"attach outputs to the selected stream chain with .Audio().Decode()...To(...) or .Video().Decode()...To(...)",
+			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.Record(input, output) or goav.From(input).To(output...) for packet-preserving record/remux",
 			"use goav.Transcode(input) when one input needs separate record, preview, or ladder branches",
 		},
@@ -1152,7 +1152,7 @@ func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, err
 			Node:      stream.name,
 			Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
 			Suggestions: []string{
-				"call .Decode().To(goav.FrameSink(...)) to receive frames",
+				"call .To(goav.FrameSink(...)) to receive decoded frames",
 				"call .Opus(...), .VP8(...), or .VP9(...) before writing to a file output",
 				"use goav.Record(input, output) for packet-preserving record or remux",
 			},
@@ -1187,7 +1187,7 @@ func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, err
 			Node:      stream.name,
 			Reason:    "stream recipes currently send encoded packets to file or URI outputs, not frame sinks",
 			Suggestions: []string{
-				"use .Decode().To(goav.FrameSink(...)) for decoded frames",
+				"use .To(goav.FrameSink(...)) for decoded frames",
 				"send encoded output to goav.FileOutput(...) or goav.URIOutput(...)",
 				"use the expert graph API for custom packet sink wiring",
 			},
@@ -1254,7 +1254,7 @@ func mixedStreamOutputError(stream *jobStreamBuild) error {
 		Node:      jobStreamName(stream),
 		Reason:    "stream recipes cannot mix frame sinks and muxed outputs",
 		Suggestions: []string{
-			"use .Decode().To(goav.FrameSink(...)) for decoded frames",
+			"use .To(goav.FrameSink(...)) for decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...)) for encoded output",
 			"use goav.Transcode(input) or the expert graph API when one stream needs separate decoded and encoded branches",
 		},
@@ -1483,7 +1483,7 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			Node:      node,
 			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode paths currently target opus, vp8, and vp9",
 			Suggestions: []string{
-				"decode the stream with .Decode().To(goav.FrameSink(...))",
+				"decode the stream with .To(goav.FrameSink(...))",
 				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode paths",
 				"use the expert builder with an explicit codec.EncodeConfig when testing an experimental encoder",
 			},
@@ -1781,6 +1781,9 @@ func (b *JobStreamBuilder) VP9(bitrate int, options ...CodecOption) *JobStreamBu
 func (b *JobStreamBuilder) To(outputs ...OutputSpec) *Job {
 	stream := b.current()
 	stream.outputs = append(stream.outputs, outputs...)
+	if outputsContainFrameSink(outputs) {
+		stream.decode = true
+	}
 	return b.job
 }
 
