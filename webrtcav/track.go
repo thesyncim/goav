@@ -20,7 +20,10 @@ var (
 	ErrClosed             = errors.New("webrtcav: closed")
 	ErrInvalidCodecUpdate = errors.New("webrtcav: invalid codec update")
 	ErrNilTrack           = errors.New("webrtcav: nil track")
+	ErrNilSession         = errors.New("webrtcav: nil session")
+	ErrStreamExists       = errors.New("webrtcav: stream already exists")
 	ErrTrackQueueFull     = errors.New("webrtcav: track queue full")
+	ErrUnknownStream      = errors.New("webrtcav: unknown stream")
 )
 
 const defaultTrackEventBuffer = 4

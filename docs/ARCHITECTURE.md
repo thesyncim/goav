@@ -83,8 +83,11 @@ guessing whether a packet belongs to old state.
 
 WebRTC track readers expose that boundary through `UpdateCodec` and
 `UpdateTrack`, using Pion codec parameters, payload maps, and replacement tracks
-directly. The RTP source consumes the event by refreshing its payload map before
-depacketizing subsequent packets.
+directly. `webrtcav.TrackSet` coordinates accepted tracks into one long-lived
+reader per logical stream, so same-stream replacements update existing graph
+inputs instead of forcing the application to rebuild around a new reader. The
+RTP source consumes the event by refreshing its payload map before depacketizing
+subsequent packets.
 
 ## Planned codec backends
 
@@ -150,6 +153,7 @@ That shape supports:
 - WebRTC track -> jitter buffer -> depacketizer -> decoder -> recorder
 - protocol source -> demux -> decode -> resize/resample -> encode ladder -> many outputs
 - RTP input -> loss monitor -> stats sink
+- WebRTC session -> TrackSet -> one RTP source per active stream
 - codec switch events -> decoder reset
 - packet loss events -> RTCP feedback and keyframe requests
 

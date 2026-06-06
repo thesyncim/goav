@@ -9,14 +9,16 @@ Receive one or more Pion `TrackRemote` values, preserve RTP metadata, detect
 loss, emit codec and track lifecycle events, depacketize, decode, and optionally
 record or forward.
 
-The current receive boundary accepts tracks from a Pion peer connection, adapts
-each track into the shared RTP reader contract, and routes RTCP feedback through
-the session peer connection.
+The current receive boundary accepts tracks from a Pion peer connection, keeps
+one long-lived reader per logical stream with `webrtcav.TrackSet`, applies
+same-stream replacement tracks as codec-change events, and routes RTCP feedback
+through the session peer connection.
 
 Expected graph:
 
 ```text
 WebRTC session
+  -> track set
   -> RTP receiver
   -> jitter/loss handling
   -> depacketizer

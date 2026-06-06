@@ -33,7 +33,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `format` | Into-style read/write contracts, registry, default static prober, demux source, mux stage | richer stream probing and more containers |
 | `pipeline` | direct executor, fanout, simple node-to-node links, stream/event routes, backpressure guard, graph specs with text/DOT/Mermaid rendering | bounded async edges and drop-policy tests |
 | `rtpav` | Pion boundary, static payload map, sequence loss detector, jitter ring, Opus/VP8/VP9/AV1/H264 depacketizers, RTCP feedback helpers, pipeline source, depacketizer event delivery, codec-change payload-map refresh | richer multi-stream receive |
-| `webrtcav` | Pion PeerConnection session, track accept queue, replaceable TrackRemote reader, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | multi-track receive orchestration |
+| `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | runtime-level multi-input graph composition |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
 | runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections, explicit Source/Stage/Sink builder graphs with links/routes, pre-build and task graph descriptions, high-level remux/fanout compiler, high-level selected-stream decode-to-sink compiler, RTP packet-reader record/fanout compiler | encode/filter/transcode graph compilers |
@@ -72,7 +72,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     depacketizer epochs through the existing RTP source. Done.
 19. Add WebRTC track replacement updates that swap the underlying RTP reader
     while reusing the same codec-change event path. Done.
-20. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+20. Add WebRTC TrackSet orchestration that keeps one long-lived reader per
+    logical stream while applying accepted replacement tracks through
+    `UpdateTrack`. Done.
+21. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -139,6 +142,9 @@ Required proof:
   the underlying RTP reader for the same logical stream, emits
   `EventCodecChanged`, and is covered by an H264 RTP-source test that drops
   until the replacement sync frame.
+- `webrtcav.TrackSet` accepts session tracks, adds one reader per new logical
+  stream, applies later same-stream tracks through `UpdateTrack`, preserves
+  reader order, and owns reader closure without closing the session.
 - `rtpav.NewVP8Depacketizer`, `rtpav.NewVP9Depacketizer`,
   `rtpav.NewAV1Depacketizer`, and `rtpav.NewH264Depacketizer` strip RTP payload
   headers, assemble fragmented frames in bounded scratch, emit
@@ -182,9 +188,9 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: add multi-track WebRTC receive orchestration over the
-track update boundaries, then validate concrete H264 decode adapter behavior
-without pulling codec internals into the core runtime.
+Current pressure point: add runtime-level multi-RTP/WebRTC input graph
+composition, then validate concrete H264 decode adapter behavior without
+pulling codec internals into the core runtime.
 
 ## Validation Gates
 

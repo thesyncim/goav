@@ -57,6 +57,8 @@ Current `webrtcav` building blocks:
 - `PeerConnectionSessionFactory` and `NewSession` for Pion `PeerConnection`
   receive sessions.
 - bounded `AcceptTrack(ctx)` queue with stream-added and backpressure events.
+- `TrackSet` for turning accepted remote tracks into one long-lived reader per
+  logical stream.
 - `TrackRemoteAdapter` for Pion `TrackRemote`.
 - stream and payload-map mapping from Pion `RTPCodecParameters`.
 - `TrackReader.UpdateCodec(ctx, update)` for turning renegotiated Pion codec
@@ -74,6 +76,19 @@ answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
 reader, err := webrtcav.NewTrackRemoteAdapter().AdaptTrack(ctx, remote)
 ```
+
+For multiple tracks, the orchestration boundary is explicit:
+
+```go
+tracks, err := webrtcav.NewTrackSet(webrtcav.TrackSetConfig{Session: session})
+update, err := tracks.Accept(ctx)
+reader := update.Reader
+```
+
+When a later accepted track has the same stream ID, `TrackSet` calls
+`UpdateTrack` on the existing reader and returns `TrackReplaced`, so existing
+RTP sources can observe the codec-change event without rebuilding the whole
+application graph.
 
 The runtime builder can compile a packet-reader recording graph directly:
 
@@ -127,7 +142,8 @@ depacketizers drop partial frames and request sync before emitting packets for
 the new epoch.
 
 Session-level code still owns the policy decision for when renegotiation should
-call `UpdateCodec` or a replacement should call `UpdateTrack`.
+call `UpdateCodec`. Accepted replacement tracks for the same stream can flow
+through `TrackSet`.
 
 ## Feedback
 
