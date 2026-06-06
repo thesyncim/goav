@@ -31,7 +31,9 @@ pipeline registries, with small adapter registration hooks for optional codec
 and container integrations. The builder compiles through private graph
 compilers. Each compiler owns one workflow shape and must implement both
 pre-build description and runnable graph construction, so rendered graphs and
-execution graphs stay equivalent.
+execution graphs stay equivalent. The fluent API stays centered on media work:
+source, decode, filter, encode, output, and sink. The graph layer stays
+available as named nodes and links for inspection, custom stages, and rendering.
 
 The current compilers cover:
 
@@ -45,6 +47,10 @@ The current compilers cover:
   `format.DemuxSource -> stream select -> codec.DecoderStage -> optional filter
   stages -> Sink` when the selector resolves to one stream and the codec
   registry has a decoder factory
+- one-input selected-stream decode/filter/encode to one or more outputs through
+  `format.DemuxSource -> stream select -> codec.DecoderStage -> optional filter
+  stages -> codec.EncoderStage -> format.MuxStage...` when the selected stream,
+  target encoder, and mux boundaries are explicit
 - one or more RTP/WebRTC packet readers to one or more outputs through
   `rtpav.Source -> format.MuxStage...` when the application provides
   depacketizers and the format registry can mux the output boundaries
@@ -52,9 +58,13 @@ The current compilers cover:
   `rtpav.Source... -> stream select -> codec.DecoderStage -> optional filter
   stages -> Sink` when one stream matches the selector and the codec registry
   has a decoder factory
+- one or more RTP/WebRTC packet readers to selected-stream
+  decode/filter/encode outputs through the same decoder, filter, encoder, and
+  mux stages used by file or protocol inputs
 
-Encode and transcode discovery still return a clear unsupported error until
-source, codec, filter, mux, and sink selection is ready.
+Branchable ladders and multi-rendition transcode discovery still return a clear
+unsupported error until the compiler can share decode work, split filter
+branches, and attach multiple encoders deliberately.
 
 ## Core media model
 

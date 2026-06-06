@@ -1,8 +1,8 @@
 # goav
 
 `goav` is a pure-Go realtime media runtime in progress. The goal is an API that
-feels small for common jobs, while compiling into explicit, inspectable pipeline
-graphs for serious media systems.
+keeps common jobs as one natural expression, while compiling into explicit,
+inspectable pipeline graphs for serious media systems.
 
 It is not a wrapper around FFmpeg or GStreamer. Codecs and containers live behind
 small Go interfaces and optional adapters, so WebRTC/RTP receive, recording,
@@ -13,7 +13,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pure Go core, no cgo runtime dependency.
 - Simple fluent API for natural workflows.
 - Explicit graph API for custom realtime systems.
-- Named nodes connect directly; stream/event routing is a connection option.
+- Graphs are named sources, stages, sinks, and direct links; stream/event
+  routing is a connection option.
 - Caller-owned buffers and result structs on hot paths.
 - RTP metadata, loss, discontinuity, codec epochs, keyframe requests, EOS, and
   backpressure are first-class events.
@@ -87,6 +88,23 @@ task, err := rt.New().
     Build(ctx)
 ```
 
+Transcode a selected stream into one or more outputs when decoder, encoder,
+filter, and mux adapters are registered:
+
+```go
+task, err := rt.New().
+    RTP(audio,
+        goav.WithRTPName("audio"),
+        goav.WithRTPDepacketizer(opus),
+    ).
+    Decode(goav.SelectAudio()).
+    Filter(goav.SelectAudio(), resample).
+    Encode(goav.SelectAudio(), opusEncode).
+    Output(goav.Output{Name: "archive.ogg", Writer: archive}).
+    Output(goav.Output{Name: "preview.ogg", Writer: preview}).
+    Build(ctx)
+```
+
 Build an explicit graph when the application owns the stages:
 
 ```go
@@ -146,6 +164,7 @@ Implemented slices:
 - Demux source and mux stage graph adapters.
 - Fluent remux/fanout compiler.
 - Fluent selected-stream decode-to-sink compiler, with optional filter stages.
+- Fluent selected-stream decode/filter/encode-to-output compiler.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
   `RTP(...)` inputs.
 - Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,
@@ -166,7 +185,7 @@ Implemented slices:
 
 Next pressure points:
 
-- Runtime-level encode composition for live receive.
+- Branchable multi-rendition encode and transcode planning.
 - Allocation and lifecycle hardening for concrete video decode paths.
 - Allocation-safe resize and resample implementations.
 

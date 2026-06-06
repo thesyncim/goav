@@ -42,14 +42,16 @@ task, err := runtime.New().
 ```
 
 The same receive boundary can decode a selected stream when a matching decoder
-factory is registered:
+factory is registered, and can continue into filters, an explicit target
+encoder, and one or more mux outputs:
 
 ```go
 task, err := runtime.New().
     RTP(audio, goav.WithRTPDepacketizer(opus)).
     Decode(goav.SelectAudio()).
     Filter(goav.SelectAudio(), meter).
-    Sink(frames).
+    Encode(goav.SelectAudio(), opusEncode).
+    Output(goav.Output{Name: "archive.ogg"}).
     Build(ctx)
 ```
 
@@ -80,7 +82,9 @@ Expected graph:
 protocol/file source
   -> format.DemuxSource / demuxer
   -> decode
-  -> branch
+  -> optional filters
+  -> encode
+  -> output
 ```
 
 ## Multi-layer transcode

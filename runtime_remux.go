@@ -42,34 +42,8 @@ func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error 
 	}
 
 	for i := range b.outputs {
-		output := b.outputs[i]
-		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
+		stage, err := b.openMuxStage(ctx, b.outputs[i], i, demux.streams)
 		if err != nil {
-			return err
-		}
-		muxFactory, err := b.runtime.formats.MuxerFactory(outputProbe.Format)
-		if err != nil {
-			return err
-		}
-		muxer, err := muxFactory.NewMuxer(ctx, outputProbe.Format)
-		if err != nil {
-			return err
-		}
-		if err := muxer.Open(ctx, output, demux.streams, format.OpenOptions{
-			Realtime: b.runtime.realtime || output.Realtime,
-			Metadata: output.Metadata,
-		}); err != nil {
-			muxer.Close()
-			return err
-		}
-		stage, err := format.NewMuxStage(format.MuxStageConfig{
-			Name:            muxNodeName(output, i),
-			Muxer:           muxer,
-			Result:          format.WriteResult{Events: make([]av.Event, 0, 1)},
-			DropInputEvents: true,
-		})
-		if err != nil {
-			muxer.Close()
 			return err
 		}
 		stageRef, err := graph.AddStage(stage, b.runtime.buffer)
@@ -82,6 +56,39 @@ func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error 
 		}
 	}
 	return nil
+}
+
+func (b *builder) openMuxStage(ctx context.Context, output Output, index int, streams []av.Stream) (*format.MuxStage, error) {
+	outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
+	if err != nil {
+		return nil, err
+	}
+	muxFactory, err := b.runtime.formats.MuxerFactory(outputProbe.Format)
+	if err != nil {
+		return nil, err
+	}
+	muxer, err := muxFactory.NewMuxer(ctx, outputProbe.Format)
+	if err != nil {
+		return nil, err
+	}
+	if err := muxer.Open(ctx, output, streams, format.OpenOptions{
+		Realtime: b.runtime.realtime || output.Realtime,
+		Metadata: output.Metadata,
+	}); err != nil {
+		muxer.Close()
+		return nil, err
+	}
+	stage, err := format.NewMuxStage(format.MuxStageConfig{
+		Name:            muxNodeName(output, index),
+		Muxer:           muxer,
+		Result:          format.WriteResult{Events: make([]av.Event, 0, 1)},
+		DropInputEvents: true,
+	})
+	if err != nil {
+		muxer.Close()
+		return nil, err
+	}
+	return stage, nil
 }
 
 func outputProbeRequest(output Output) format.ProbeRequest {

@@ -124,6 +124,20 @@ ID so unrelated inputs do not flush the selected decoder.
 Optional filter stages can be inserted after `Decode(...)` and before `Sink(...)`
 when their selector matches the decoded stream.
 
+The same selected live stream can continue into an encoder and one or more mux
+outputs when the target codec is explicit:
+
+```go
+task, err := runtime.New().
+    RTP(audio, goav.WithRTPName("audio"), goav.WithRTPDepacketizer(opus)).
+    Decode(goav.SelectAudio()).
+    Filter(goav.SelectAudio(), resample).
+    Encode(goav.SelectAudio(), opusEncode).
+    Output(goav.Output{Name: "archive.ogg", Writer: archive}).
+    Output(goav.Output{Name: "preview.ogg", Writer: preview}).
+    Build(ctx)
+```
+
 ## Loss
 
 Loss is not just an error return. It should become visible as:

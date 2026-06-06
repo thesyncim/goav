@@ -85,7 +85,7 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 	return b.compileDecodeFramePath(ctx, graph, []pipeline.NodeRef{sourceRef}, selector, stream, b.runtime.realtime || b.inputs[0].Realtime)
 }
 
-func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector, stream av.Stream, realtime bool) (*codec.DecoderStage, error) {
+func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector, stream av.Stream, realtime bool, dropInputEvents bool) (*codec.DecoderStage, error) {
 	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
 	if err != nil {
 		return nil, err
@@ -108,7 +108,7 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 		Name:            decodeNodeName(selector),
 		Decoder:         decoder,
 		Result:          decodeResultForStream(stream),
-		DropInputEvents: true,
+		DropInputEvents: dropInputEvents,
 	})
 	if err != nil {
 		decoder.Close()
@@ -118,16 +118,35 @@ func (b *builder) newDecodeStage(ctx context.Context, selector av.StreamSelector
 }
 
 func (b *builder) planDecodeFramePath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, selector av.StreamSelector) error {
+	previous, err := b.planDecodeFilterPath(nodes, spec, upstream, selector)
+	if err != nil {
+		return err
+	}
+
+	sinkName := b.sinks[0].Name()
+	sinkRef := pipeline.NodeRef(sinkName)
+	if err := addPlannedNode(nodes, spec, sinkName, pipeline.NodeSink, sinkRef); err != nil {
+		return err
+	}
+	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
+		From:   previous,
+		To:     sinkRef,
+		Policy: pipeline.RouteAll,
+	})
+	return nil
+}
+
+func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, selector av.StreamSelector) (pipeline.NodeRef, error) {
 	selectName := selectNodeName(selector)
 	selectRef := pipeline.NodeRef(selectName)
 	if err := addPlannedNode(nodes, spec, selectName, pipeline.NodeStage, selectRef); err != nil {
-		return err
+		return "", err
 	}
 
 	decodeName := decodeNodeName(selector)
 	decodeRef := pipeline.NodeRef(decodeName)
 	if err := addPlannedNode(nodes, spec, decodeName, pipeline.NodeStage, decodeRef); err != nil {
-		return err
+		return "", err
 	}
 
 	for i := range upstream {
@@ -146,12 +165,12 @@ func (b *builder) planDecodeFramePath(nodes map[string]plannedNode, spec *pipeli
 	previous := decodeRef
 	for i := range b.filters {
 		if b.filters[i].stage == nil {
-			return ErrNilStage
+			return "", ErrNilStage
 		}
 		name := b.filters[i].stage.Name()
 		ref := pipeline.NodeRef(name)
 		if err := addPlannedNode(nodes, spec, name, pipeline.NodeStage, ref); err != nil {
-			return err
+			return "", err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
 			From:   previous,
@@ -160,58 +179,13 @@ func (b *builder) planDecodeFramePath(nodes map[string]plannedNode, spec *pipeli
 		})
 		previous = ref
 	}
-
-	sinkName := b.sinks[0].Name()
-	sinkRef := pipeline.NodeRef(sinkName)
-	if err := addPlannedNode(nodes, spec, sinkName, pipeline.NodeSink, sinkRef); err != nil {
-		return err
-	}
-	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-		From:   previous,
-		To:     sinkRef,
-		Policy: pipeline.RouteAll,
-	})
-	return nil
+	return previous, nil
 }
 
 func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool) error {
-	if err := b.validateFiltersForStream(stream); err != nil {
-		return err
-	}
-	selectStage := newStreamSelectStage(selectNodeName(selector), stream.ID)
-	selectRef, err := graph.AddStage(selectStage, b.runtime.buffer)
-	if err != nil {
-		selectStage.Close()
-		return err
-	}
-
-	decodeStage, err := b.newDecodeStage(ctx, selector, stream, realtime)
+	previousRef, err := b.compileDecodeFilterPath(ctx, graph, upstream, selector, stream, realtime, true)
 	if err != nil {
 		return err
-	}
-	previousRef, err := graph.AddStage(decodeStage, b.runtime.buffer)
-	if err != nil {
-		decodeStage.Close()
-		return err
-	}
-	for i := range upstream {
-		if err := graph.Link(pipeline.Link{From: upstream[i], To: selectRef}); err != nil {
-			return err
-		}
-	}
-	if err := graph.Link(pipeline.Link{From: selectRef, To: previousRef}); err != nil {
-		return err
-	}
-
-	for i := range b.filters {
-		stageRef, err := graph.AddStage(b.filters[i].stage, b.runtime.buffer)
-		if err != nil {
-			return err
-		}
-		if err := graph.Link(pipeline.Link{From: previousRef, To: stageRef}); err != nil {
-			return err
-		}
-		previousRef = stageRef
 	}
 
 	sinkRef, err := graph.AddSink(b.sinks[0], b.runtime.buffer)
@@ -222,6 +196,48 @@ func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Gra
 		return err
 	}
 	return nil
+}
+
+func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, selector av.StreamSelector, stream av.Stream, realtime bool, dropDecodeEvents bool) (pipeline.NodeRef, error) {
+	if err := b.validateFiltersForStream(stream); err != nil {
+		return "", err
+	}
+	selectStage := newStreamSelectStage(selectNodeName(selector), stream.ID)
+	selectRef, err := graph.AddStage(selectStage, b.runtime.buffer)
+	if err != nil {
+		selectStage.Close()
+		return "", err
+	}
+
+	decodeStage, err := b.newDecodeStage(ctx, selector, stream, realtime, dropDecodeEvents)
+	if err != nil {
+		return "", err
+	}
+	previousRef, err := graph.AddStage(decodeStage, b.runtime.buffer)
+	if err != nil {
+		decodeStage.Close()
+		return "", err
+	}
+	for i := range upstream {
+		if err := graph.Link(pipeline.Link{From: upstream[i], To: selectRef}); err != nil {
+			return "", err
+		}
+	}
+	if err := graph.Link(pipeline.Link{From: selectRef, To: previousRef}); err != nil {
+		return "", err
+	}
+
+	for i := range b.filters {
+		stageRef, err := graph.AddStage(b.filters[i].stage, b.runtime.buffer)
+		if err != nil {
+			return "", err
+		}
+		if err := graph.Link(pipeline.Link{From: previousRef, To: stageRef}); err != nil {
+			return "", err
+		}
+		previousRef = stageRef
+	}
+	return previousRef, nil
 }
 
 func (b *builder) validateFiltersForStream(stream av.Stream) error {

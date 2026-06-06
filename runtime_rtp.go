@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
 )
@@ -140,34 +139,8 @@ func (b *builder) compileRTPRecord(ctx context.Context, graph pipeline.Graph) er
 	}
 
 	for i := range b.outputs {
-		output := b.outputs[i]
-		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
+		stage, err := b.openMuxStage(ctx, b.outputs[i], i, streams)
 		if err != nil {
-			return err
-		}
-		muxFactory, err := b.runtime.formats.MuxerFactory(outputProbe.Format)
-		if err != nil {
-			return err
-		}
-		muxer, err := muxFactory.NewMuxer(ctx, outputProbe.Format)
-		if err != nil {
-			return err
-		}
-		if err := muxer.Open(ctx, output, streams, format.OpenOptions{
-			Realtime: b.runtime.realtime || output.Realtime,
-			Metadata: output.Metadata,
-		}); err != nil {
-			muxer.Close()
-			return err
-		}
-		stage, err := format.NewMuxStage(format.MuxStageConfig{
-			Name:            muxNodeName(output, i),
-			Muxer:           muxer,
-			Result:          format.WriteResult{Events: make([]av.Event, 0, 1)},
-			DropInputEvents: true,
-		})
-		if err != nil {
-			muxer.Close()
 			return err
 		}
 		stageRef, err := graph.AddStage(stage, b.runtime.buffer)

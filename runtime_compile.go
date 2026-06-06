@@ -16,7 +16,9 @@ var builderCompilers = [...]builderCompiler{
 	emptyGraphCompiler{},
 	explicitGraphCompiler{},
 	remuxGraphCompiler{},
+	decodeEncodeToOutputGraphCompiler{},
 	decodeToSinkGraphCompiler{},
+	rtpDecodeEncodeToOutputGraphCompiler{},
 	rtpDecodeToSinkGraphCompiler{},
 	rtpRecordGraphCompiler{},
 }

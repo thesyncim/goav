@@ -36,7 +36,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | Pion PeerConnection session, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract | concrete allocation-safe filters later |
 | `transcode` | ladder contracts | graph compiler boundary |
-| runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, multi-RTP/WebRTC packet-reader record/fanout compiler | encode/transcode graph compilers |
+| runtime | `goav.New` options, adapter registration hooks, private graph compiler loop, simple named graph connections with stream/event options, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, multi-RTP/WebRTC packet-reader record/fanout compiler | branchable transcode graph compilers |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264`; `govpx`, `goav1`, and default-build `goh264` descriptor boundaries report unavailable factories explicitly | concrete video adapter allocation guards |
 
 ## Implementation Order
@@ -89,7 +89,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     selected decoder. Done.
 26. Allow selected decode paths to insert ordered filter stages before the sink
     for both file/protocol and RTP/WebRTC receive. Done.
-27. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+27. Add runtime-level selected decode/filter/encode-to-output compilers for
+    file/protocol inputs and RTP/WebRTC receive, with target-codec validation,
+    mux fanout, graph-equivalence tests, and encoder EOS flush proof. Done.
+28. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -149,6 +152,12 @@ Required proof:
   unrelated packets and stream-scoped EOS before they reach the decoder.
   Ordered filter stages can run between decode and the sink when their selector
   matches the decoded stream.
+- The runtime builder can plan and compile selected-stream encode jobs from
+  `Input(...).Decode(...).Filter(...).Encode(...).Output(...).Build(ctx)` and
+  `RTP(...).Decode(...).Filter(...).Encode(...).Output(...).Build(ctx)`. The
+  graph shares the selected decode/filter prefix, requires an explicit target
+  codec, forwards EOS far enough to flush encoders, and can fan one encoded
+  packet stream to multiple mux outputs.
 - `rtpav.Source` now forwards realtime events into depacketizers before graph
   delivery, so loss-aware depacketizers can reset or drop partial payloads.
 - `rtpav.Source` refreshes payload maps on `EventCodecChanged`, and
@@ -199,7 +208,7 @@ Required proof:
 | Gate | Evidence | State |
 | --- | --- | --- |
 | Clear minimal architecture | `README.md`, `docs/ARCHITECTURE.md`, package boundaries | active |
-| Simple high-level API | runtime builder, named graph connections, remux/fanout compiler, decode-to-sink compiler, RTP record/fanout compiler | first slices active |
+| Simple high-level API | runtime builder, named graph connections, remux/fanout compiler, decode-to-sink compiler, RTP record/fanout compiler, selected encode-to-output compiler | first slices active |
 | Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts | active |
 | Realtime Opus vertical slice | RTP/WebRTC boundary, Opus depacketizer, `gopus` decoder | active |
 | Allocation guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters | active for implemented paths |
@@ -216,9 +225,9 @@ Required proof:
 4. Add allocation, event, lifecycle, and graph-equivalence tests for that slice.
 5. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: add live encode composition on top of selected decode
-and filters, then harden concrete video adapters with allocation and lifecycle
-tests.
+Current pressure point: add branchable multi-rendition encode planning on top of
+shared decode/filter prefixes, then harden concrete video adapters with
+allocation and lifecycle tests.
 
 ## Validation Gates
 

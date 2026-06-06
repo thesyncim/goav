@@ -63,5 +63,7 @@ validation gates. This roadmap keeps the broader phase view.
 
 ## Phase 5: High-level API
 
-- Fluent receive/decode/filter/encode/record builder compilers.
+- Fluent receive/decode/filter/encode/output builder compilers for selected
+  streams. First file/protocol and RTP/WebRTC slices are active.
+- Branchable multi-rendition transcode builder compilers.
 - Stats, tracing, and graph introspection.

@@ -1,0 +1,319 @@
+package goav
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/pion/rtp"
+	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/rtpav"
+)
+
+type encodeTestEncoderFactory struct {
+	encoder *encodeTestEncoder
+	config  codec.EncodeConfig
+}
+
+func (f *encodeTestEncoderFactory) NewEncoder(_ context.Context, config codec.EncodeConfig) (codec.Encoder, error) {
+	f.config = config
+	return f.encoder, nil
+}
+
+type encodeTestEncoder struct {
+	encodes int
+	flushes int
+	closed  bool
+}
+
+func (e *encodeTestEncoder) Descriptor() codec.Descriptor {
+	return codec.Descriptor{ID: av.CodecPCM}
+}
+
+func (e *encodeTestEncoder) Open(context.Context, codec.EncodeConfig) error {
+	return nil
+}
+
+func (e *encodeTestEncoder) EncodeInto(_ context.Context, frame *av.Frame, out *codec.EncodeResult) error {
+	if frame == nil {
+		return nil
+	}
+	if len(out.Packets) == cap(out.Packets) {
+		return codec.ErrResultFull
+	}
+	index := len(out.Packets)
+	out.Packets = out.Packets[:index+1]
+	packet := &out.Packets[index]
+	packet.Reset()
+	packet.StreamID = frame.StreamID
+	packet.CodecEpoch = frame.CodecEpoch
+	packet.PTS = frame.PTS
+	packet.Duration = frame.Duration
+	packet.Payload.Bytes = append(packet.Payload.Bytes, 7)
+	e.encodes++
+	return nil
+}
+
+func (e *encodeTestEncoder) FlushInto(context.Context, *codec.EncodeResult) error {
+	e.flushes++
+	return nil
+}
+
+func (e *encodeTestEncoder) HandleEvent(context.Context, *av.Event) error {
+	return nil
+}
+
+func (e *encodeTestEncoder) Close() error {
+	e.closed = true
+	return nil
+}
+
+func TestRuntimeBuilderInputDecodeFilterEncodeOutputs(t *testing.T) {
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := format.NewRegistry(
+		format.WithProber(remuxTestProber{streams: streams}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		format.WithMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &decodeTestDecoder{}
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	codecs := codec.NewRegistry(
+		codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		codec.WithEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
+	)
+	filter := &runtimeTestStage{name: "meter"}
+
+	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+		Input(Input{Name: "input.ogg"}).
+		Decode(SelectAudio()).
+		Filter(SelectAudio(), filter).
+		Encode(SelectAudio(), pcmEncodeConfig()).
+		Output(Output{Name: "archive.ogg"}).
+		Output(Output{Name: "preview.ogg"})
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Nodes) != 7 || len(planned.Edges) != 6 {
+		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
+	}
+	if !strings.Contains(planned.String(), "meter -> encode-audio") ||
+		!strings.Contains(planned.String(), "encode-audio -> archive.ogg") ||
+		!strings.Contains(planned.Mermaid(), "preview.ogg\\nstage") {
+		t.Fatalf("planned:\n%s\nmermaid:\n%s", planned.String(), planned.Mermaid())
+	}
+
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || decoder.flushes != 1 || encoder.encodes != 1 || encoder.flushes != 1 {
+		t.Fatalf("decodes=%d decoder flushes=%d encodes=%d encoder flushes=%d", decoder.decodes, decoder.flushes, encoder.encodes, encoder.flushes)
+	}
+	if filter.count != 2 {
+		t.Fatalf("filter count = %d, want frame and EOS", filter.count)
+	}
+	if encoderFactory.config.Stream.ID != "audio" ||
+		encoderFactory.config.Parameters.ID != av.CodecPCM ||
+		!encoderFactory.config.Realtime ||
+		!encoderFactory.config.LowLatency {
+		t.Fatalf("encode config: %+v", encoderFactory.config)
+	}
+	if len(muxers.muxers) != 2 {
+		t.Fatalf("muxers = %d, want 2", len(muxers.muxers))
+	}
+	for i := range muxers.muxers {
+		muxer := muxers.muxers[i]
+		if !muxer.opened || muxer.writes != 1 || muxer.streamCount != 1 || muxer.lastStream != "audio" {
+			t.Fatalf("muxer[%d] opened=%v writes=%d streams=%d last=%s", i, muxer.opened, muxer.writes, muxer.streamCount, muxer.lastStream)
+		}
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !decoder.closed || !encoder.closed || !filter.closed {
+		t.Fatalf("closed demux=%v decoder=%v encoder=%v filter=%v", demuxer.closed, decoder.closed, encoder.closed, filter.closed)
+	}
+	for i := range muxers.muxers {
+		if !muxers.muxers[i].closed {
+			t.Fatalf("muxer[%d] not closed", i)
+		}
+	}
+}
+
+func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
+	ctx := context.Background()
+	stream := audioOpusTestStream()
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    2,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := format.NewRegistry(
+		format.WithProber(format.DefaultProber()),
+		format.WithMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &decodeTestDecoder{}
+	encoder := &encodeTestEncoder{}
+	codecs := codec.NewRegistry(
+		codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		codec.WithEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder}),
+	)
+	filter := &runtimeTestStage{name: "meter"}
+
+	builder := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+		RTP(receiver,
+			WithRTPName("live-audio"),
+			WithRTPDepacketizer(rtpav.NewOpusDepacketizer(stream)),
+		).
+		Decode(SelectAudio()).
+		Filter(SelectAudio(), filter).
+		Encode(SelectAudio(), pcmEncodeConfig()).
+		Output(Output{Name: "encoded.ogg"})
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Nodes) != 6 || len(planned.Edges) != 5 {
+		t.Fatalf("nodes=%d edges=%d", len(planned.Nodes), len(planned.Edges))
+	}
+	if !strings.Contains(planned.String(), "live-audio -> select-audio") ||
+		!strings.Contains(planned.String(), "meter -> encode-audio") ||
+		!strings.Contains(planned.String(), "encode-audio -> encoded.ogg") {
+		t.Fatalf("planned:\n%s", planned.String())
+	}
+
+	task, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.String() != task.Describe().String() || planned.Mermaid() != task.Describe().Mermaid() {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", planned.String(), task.Describe().String())
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || decoder.flushes != 1 || encoder.encodes != 1 || encoder.flushes != 1 || filter.count != 2 {
+		t.Fatalf("decodes=%d decoder flushes=%d encodes=%d encoder flushes=%d filter=%d", decoder.decodes, decoder.flushes, encoder.encodes, encoder.flushes, filter.count)
+	}
+	if len(muxers.muxers) != 1 || !muxers.muxers[0].opened || muxers.muxers[0].writes != 1 {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed || !decoder.closed || !encoder.closed || !filter.closed || !muxers.muxers[0].closed {
+		t.Fatalf("closed receiver=%v decoder=%v encoder=%v filter=%v mux=%v", receiver.closed, decoder.closed, encoder.closed, filter.closed, muxers.muxers[0].closed)
+	}
+}
+
+func TestRuntimeBuilderDecodeEncodeRequiresMatchingStream(t *testing.T) {
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	formats := format.NewRegistry(
+		format.WithProber(remuxTestProber{streams: streams}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		format.WithMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+	)
+	codecs := codec.NewRegistry(
+		codec.WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		codec.WithEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+	)
+
+	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+		Input(Input{Name: "input.ogg"}).
+		Decode(SelectAudio()).
+		Encode(SelectVideo(), pcmEncodeConfig()).
+		Output(Output{Name: "archive.ogg"}).
+		Build(context.Background())
+	if err != ErrUnsupportedBuild {
+		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	}
+	if !demuxer.closed {
+		t.Fatal("demux source should be closed after unsupported encode selector")
+	}
+}
+
+func TestRuntimeBuilderDecodeEncodeRequiresTargetCodec(t *testing.T) {
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	formats := format.NewRegistry(
+		format.WithProber(remuxTestProber{streams: streams}),
+		format.WithDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		format.WithMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+	)
+	codecs := codec.NewRegistry(codec.WithDecoder(
+		codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio},
+		&decodeTestDecoderFactory{decoder: &decodeTestDecoder{}},
+	))
+
+	_, err := New(WithFormatRegistry(formats), WithCodecRegistry(codecs)).New().
+		Input(Input{Name: "input.ogg"}).
+		Decode(SelectAudio()).
+		Encode(SelectAudio(), codec.EncodeConfig{}).
+		Output(Output{Name: "archive.ogg"}).
+		Build(context.Background())
+	if err != ErrUnsupportedBuild {
+		t.Fatalf("err = %v, want ErrUnsupportedBuild", err)
+	}
+	if !demuxer.closed {
+		t.Fatal("demux source should be closed after missing encode target")
+	}
+}
+
+func audioOpusTestStream() av.Stream {
+	return av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:           av.CodecOpus,
+			Type:         av.MediaAudio,
+			ClockRate:    48000,
+			SampleRate:   48000,
+			Channels:     2,
+			SampleFormat: av.SampleFormatS16,
+		},
+	}
+}
+
+func pcmEncodeConfig() codec.EncodeConfig {
+	return codec.EncodeConfig{
+		Parameters: av.CodecParameters{
+			ID:           av.CodecPCM,
+			Type:         av.MediaAudio,
+			ClockRate:    48000,
+			SampleRate:   48000,
+			Channels:     2,
+			SampleFormat: av.SampleFormatS16,
+		},
+	}
+}
