@@ -66,8 +66,9 @@ validation gates. This roadmap keeps the broader phase view.
 - Allocation and lifecycle hardening for concrete video encode paths. VP8/VP9
   tagged adapter guards active.
 - AV1 decode adapter validation. First low-overhead factory slice is active
-  behind `goav_goav1`; packet-flag sync recovery is active and richer
-  RTP/WebRTC recovery remains.
+  behind `goav_goav1`; recovery can use packet keyframe markers or parsed
+  low-overhead sequence/key-frame payloads, and richer RTP/WebRTC recovery
+  remains.
 - `goav1` adapter as it matures.
 
 ## Phase 5: High-level API

@@ -122,13 +122,17 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	if len(pkt.Payload.Bytes) == 0 {
 		return nil
 	}
-	if d.dropUntilSync && !pkt.Keyframe {
-		return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
-	}
 
 	plan, err := d.state.PlanLowOverhead(pkt.Payload.Bytes)
 	if err != nil {
+		if d.dropUntilSync {
+			return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
+		}
 		return mapGoav1Error(err)
+	}
+	sync := pkt.Keyframe || decoderPlanHasSync(plan, d.state.scratch.Events)
+	if d.dropUntilSync && !sync {
+		return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
 	}
 	if len(out.Frames)+plan.Size.Event.Outputs > cap(out.Frames) {
 		return codec.ErrResultFull
@@ -141,7 +145,7 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	if err := runner.RunLowOverheadInto(&d.result, pkt.Payload.Bytes, nil); err != nil {
 		return mapGoav1Error(err)
 	}
-	if pkt.Keyframe {
+	if sync {
 		d.dropUntilSync = false
 	}
 	return d.appendDecodedFrames(pkt, &d.result, out)
@@ -385,6 +389,28 @@ func decoderEventScratchFits(have, need backend.DecoderFrameWorkResidualEventScr
 		have.Plan.BatchCount >= need.Plan.BatchCount &&
 		decoderRunnerScratchFits(have.Runner, need.Runner) &&
 		decoderSideDataScratchFits(have.SideData, need.SideData)
+}
+
+func decoderPlanHasSync(plan backend.DecoderFrameWorkResidualStreamPlan, events []backend.DecoderEvent) bool {
+	eventCount := plan.Size.Events
+	if eventCount > len(events) {
+		eventCount = len(events)
+	}
+	haveSequence := false
+	for i := 0; i < eventCount; i++ {
+		event := &events[i]
+		switch event.Kind {
+		case backend.DecoderEventSequenceHeader:
+			haveSequence = true
+		case backend.DecoderEventFrameHeader,
+			backend.DecoderEventRedundantFrameHeader,
+			backend.DecoderEventFrame:
+			if haveSequence && event.FrameHeader.FrameType == backend.FrameTypeKey {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func decoderRunnerScratchFits(have, need backend.DecoderFrameWorkBatchResidualRunnerScratchSize) bool {

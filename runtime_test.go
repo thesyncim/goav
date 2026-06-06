@@ -319,8 +319,8 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 	if len(spec.Edges) != 2 {
 		t.Fatalf("edges=%d, want 2", len(spec.Edges))
 	}
-	if !strings.Contains(spec.String(), "source -> audio [by_stream:audio]") ||
-		!strings.Contains(spec.Mermaid(), "-- \"by_stream:video\" -->") {
+	if !strings.Contains(spec.String(), "source -> audio [stream=audio]") ||
+		!strings.Contains(spec.Mermaid(), "-- \"stream=video\" -->") {
 		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
 	}
 
@@ -392,8 +392,8 @@ func TestRuntimeBuilderExplicitStreamFanout(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if !strings.Contains(spec.String(), "source -> record [by_stream:video]") ||
-		!strings.Contains(spec.String(), "source -> preview [by_stream:video]") {
+	if !strings.Contains(spec.String(), "source -> record [stream=video]") ||
+		!strings.Contains(spec.String(), "source -> preview [stream=video]") {
 		t.Fatalf("spec:\n%s", spec.String())
 	}
 
@@ -427,8 +427,8 @@ func TestRuntimeBuilderDescribeRoutesBeforeBuild(t *testing.T) {
 	if len(spec.Edges) != 2 {
 		t.Fatalf("edges=%d, want 2", len(spec.Edges))
 	}
-	if !strings.Contains(spec.String(), "source -> audio [by_stream:audio]") ||
-		!strings.Contains(spec.Mermaid(), "-- \"by_stream:video\" -->") {
+	if !strings.Contains(spec.String(), "source -> audio [stream=audio]") ||
+		!strings.Contains(spec.Mermaid(), "-- \"stream=video\" -->") {
 		t.Fatalf("spec:\n%s\nmermaid:\n%s", spec.String(), spec.Mermaid())
 	}
 }
@@ -453,7 +453,7 @@ func TestRuntimeBuilderExplicitEventRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := task.Describe()
-	if !strings.Contains(spec.String(), "source -> stats [by_event:stats]") {
+	if !strings.Contains(spec.String(), "source -> stats [event=stats]") {
 		t.Fatalf("spec:\n%s", spec.String())
 	}
 	if err := task.Run(context.Background()); err != nil {

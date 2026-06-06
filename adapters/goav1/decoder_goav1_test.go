@@ -68,8 +68,9 @@ func TestDecoderRequestsKeyframeAfterLoss(t *testing.T) {
 	}
 }
 
-func TestDecoderDropsUntilKeyframeAfterLoss(t *testing.T) {
+func TestDecoderDropsUntilSyncAfterLoss(t *testing.T) {
 	payload := testLowOverheadStream()
+	unsyncable := testUnsyncableLowOverheadPayload()
 	decoder, workerPool := newTestDecoder(t, payload)
 	defer workerPool.Close()
 
@@ -80,7 +81,7 @@ func TestDecoderDropsUntilKeyframeAfterLoss(t *testing.T) {
 	result.Reset()
 	err := decoder.DecodeInto(context.Background(), &av.Packet{
 		StreamID: "video",
-		Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: unsyncable, Ownership: av.BufferImmutable},
 	}, &result)
 	if err != nil {
 		t.Fatal(err)
@@ -119,8 +120,32 @@ func TestDecoderDropsUntilKeyframeAfterLoss(t *testing.T) {
 	}
 }
 
-func TestDecoderCodecChangedDropsUntilKeyframe(t *testing.T) {
+func TestDecoderDetectsSyncFromLowOverheadPayload(t *testing.T) {
 	payload := testLowOverheadStream()
+	decoder, workerPool := newTestDecoder(t, payload)
+	defer workerPool.Close()
+
+	result := testDecodeResult(1, 1)
+	if err := decoder.DecodeInto(context.Background(), nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	result.Reset()
+	err := decoder.DecodeInto(context.Background(), &av.Packet{
+		StreamID:   "video",
+		Payload:    av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		LossBefore: true,
+	}, &result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 1 || len(result.Requests) != 0 {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestDecoderCodecChangedDropsUntilSync(t *testing.T) {
+	payload := testLowOverheadStream()
+	unsyncable := testUnsyncableLowOverheadPayload()
 	decoder, workerPool := newTestDecoder(t, payload)
 	defer workerPool.Close()
 
@@ -143,7 +168,7 @@ func TestDecoderCodecChangedDropsUntilKeyframe(t *testing.T) {
 
 	result := testDecodeResult(1, 1)
 	err := decoder.DecodeInto(context.Background(), &av.Packet{
-		Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload: av.Buffer{Bytes: unsyncable, Ownership: av.BufferImmutable},
 	}, &result)
 	if err != nil {
 		t.Fatal(err)
@@ -156,8 +181,7 @@ func TestDecoderCodecChangedDropsUntilKeyframe(t *testing.T) {
 
 	result.Reset()
 	err = decoder.DecodeInto(context.Background(), &av.Packet{
-		Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
-		Keyframe: true,
+		Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
 	}, &result)
 	if err != nil {
 		t.Fatal(err)
@@ -334,4 +358,9 @@ func testDecodeResult(maxFrames, maxRequests int) codec.DecodeResult {
 		Frames:   frames[:0],
 		Requests: make([]codec.ControlRequest, 0, maxRequests),
 	}
+}
+
+func testUnsyncableLowOverheadPayload() []byte {
+	var payload []byte
+	return appendTestLowOverheadOBU(payload, backend.OBUTileGroup, []byte{0x80})
 }

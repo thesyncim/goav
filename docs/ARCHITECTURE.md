@@ -33,8 +33,10 @@ compilers. Each compiler owns one workflow shape and must implement both
 pre-build description and runnable graph construction, so rendered graphs and
 execution graphs stay equivalent. The fluent API stays centered on media work:
 source, decode, filter, encode, output, and sink. The graph layer stays
-available as named nodes, connections, and branches for inspection, custom
-stages, and rendering.
+available as named nodes, simple connections, and branches for inspection,
+custom stages, and rendering. Pads and ports are intentionally not part of the
+public graph model; a connection carries all media by default, or matches one
+stream or event type.
 
 The current compilers cover:
 
@@ -157,9 +159,10 @@ Builders and graphs can produce a `pipeline.Spec`: structured nodes and edges
 plus human-readable text, DOT, and Mermaid rendering. Nodes may include short
 workflow details such as `rtp receive`, `packets -> frames`, `frames ->
 packets`, `resize`, or `mux`. This makes generated pipelines easy to validate,
-log, inspect, or visualize before running media through them. Specs still render
-simple node-to-node connections; executor-specific details stay behind the graph
-implementation.
+log, inspect, or visualize before running media through them. Specs render
+plain node-to-node connections, with routed edges labeled as media concepts such
+as `stream=video` or `event=packet_loss`; executor-specific details stay behind
+the graph implementation.
 
 The codec package includes generic decoder and encoder stages. They adapt
 `codec.Decoder` and `codec.Encoder` implementations to pipeline messages using

@@ -127,21 +127,22 @@ Current tagged surface:
 - depacketized low-overhead OBU payload decode through the backend runner
 - borrowed decoded frame planes for 8-bit monochrome `gray8` and 4:2:0 I420
 - packet-loss, corrupt-packet, and discontinuity paths reset runner state,
-  request keyframes, and drop non-key packets until sync
+  request keyframes, and drop packets until sync
 - codec-change and discontinuity events update stream identity, reset state,
-  and drop until the next keyframe
+  and drop until a packet keyframe marker or parseable low-overhead
+  sequence-header/key-frame payload
 - steady decode reuses a bound runner when the next plan fits the existing
   arena
-- result-capacity, allocation, and close-lifecycle tests
+- result-capacity, allocation, sync-recovery, and close-lifecycle tests
 
 RTP/WebRTC callers should feed this decoder packets produced by `rtpav`'s AV1
 depacketizer, not raw AV1 RTP aggregation payloads. The frame format passed to
 `DecoderState` is exact, not merely a maximum envelope, because the backend
 frame pool must match the accepted sequence/frame format.
 
-It is intentionally narrow for now. Richer sync detection beyond packet flags,
-raw RTP payload runner integration, high bit-depth output, color metadata, film
-grain policy, and broader frame format conversion remain future slices.
+It is intentionally narrow for now. Raw RTP payload runner integration, high
+bit-depth output, color metadata, film grain policy, and broader frame format
+conversion remain future slices.
 
 ## `resample`
 

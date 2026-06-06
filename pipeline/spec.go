@@ -221,14 +221,25 @@ func mermaidSafeID(value string) string {
 }
 
 func edgeTextLabel(edge *EdgeSpec) string {
-	if edge.Label == "" {
-		if edge.Policy == "" || edge.Policy == RouteAll {
-			return ""
-		}
-		return string(edge.Policy)
-	}
 	if edge.Policy == "" || edge.Policy == RouteAll {
 		return edge.Label
 	}
-	return string(edge.Policy) + ":" + edge.Label
+	switch edge.Policy {
+	case RouteByStream:
+		return routedEdgeLabel("stream", edge.Label)
+	case RouteByEvent:
+		return routedEdgeLabel("event", edge.Label)
+	default:
+		if edge.Label == "" {
+			return string(edge.Policy)
+		}
+		return string(edge.Policy) + "=" + edge.Label
+	}
+}
+
+func routedEdgeLabel(kind string, label string) string {
+	if label == "" {
+		return kind
+	}
+	return kind + "=" + label
 }
