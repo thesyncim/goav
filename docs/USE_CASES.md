@@ -149,6 +149,9 @@ task, err := goav.Transcode(goav.FileInput("input.webm", in)).
     Build(ctx)
 ```
 
+Output labels are unique handles. Route multiple branches to the same output by
+reusing the label in `.To(...)`, not by defining the output twice.
+
 Resize and resample configs become branch-local filter stages when matching
 filter factories are registered. The first concrete filters cover S16 audio
 resample/channel conversion and I420/YUV420P video resize.

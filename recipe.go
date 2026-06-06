@@ -1554,9 +1554,10 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 		if name == "" {
 			name = j.outputs[i].output.label(fmt.Sprintf("output-%d", i))
 		}
-		if _, ok := outputs[name]; !ok {
-			outputOrder = append(outputOrder, name)
+		if _, ok := outputs[name]; ok {
+			return transcodepkg.Plan{}, transcodeDuplicateOutputError(name)
 		}
+		outputOrder = append(outputOrder, name)
 		outputs[name] = j.outputs[i].output.Name(firstNonEmpty(j.outputs[i].output.name, name))
 	}
 
@@ -1776,6 +1777,21 @@ func transcodeOutputTargetError(stream streamBuild) error {
 		Suggestions: []string{
 			"pass a string label that is defined with .Output(label, goav.FileOutput(...))",
 			"pass goav.FileOutput(...) directly to .To(...) for a branch-local output",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeDuplicateOutputError(name string) error {
+	return &BuildError{
+		Code:      "output_duplicate",
+		Operation: "plan transcode",
+		Node:      name,
+		Reason:    fmt.Sprintf("output label %q is defined more than once", name),
+		Suggestions: []string{
+			"use a unique .Output(label, ...) label for each transcode output",
+			"route multiple branches to one shared output by calling .To(label) on each branch",
+			"pass distinct goav.FileOutput(...) values directly to .To(...) for branch-local outputs",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
