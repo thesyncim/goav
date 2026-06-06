@@ -783,6 +783,62 @@ func TestSeekableMuxerWritesSeekHeadAndCues(t *testing.T) {
 		if cues[i].ClusterPosition == 0 {
 			t.Fatalf("cue %d cluster position = 0, positions=%+v", i, positions)
 		}
+		if !cues[i].RelativePositionSet {
+			t.Fatalf("cue %d missing relative position: %+v", i, cues[i])
+		}
+	}
+}
+
+func TestDemuxerSeekToTimeUsesCueRelativePosition(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 60_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}},
+		{TrackID: trackID, TimeNS: 20_000_000, DurationNS: 10_000_000, Keyframe: true, Data: []byte{2}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(20_000_000); err != nil {
+		t.Fatal(err)
+	}
+	cues := demuxer.Cues()
+	if len(cues) != len(packets) {
+		t.Fatalf("cues = %+v, want %d cues", cues, len(packets))
+	}
+	if cues[0].ClusterPosition != cues[1].ClusterPosition {
+		t.Fatalf("cues are not in the same cluster: %+v", cues)
+	}
+	if !cues[1].RelativePositionSet || cues[1].RelativePosition <= cues[0].RelativePosition {
+		t.Fatalf("cues did not preserve relative block positions: %+v", cues)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != packets[1].TimeNS || got.DurationNS != packets[1].DurationNS || !bytes.Equal(got.Data, packets[1].Data) {
+		t.Fatalf("packet after seek = %+v data=%v, want %+v data=%v", got, got.Data, packets[1], packets[1].Data)
 	}
 }
 

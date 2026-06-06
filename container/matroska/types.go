@@ -89,9 +89,11 @@ type LacedPacket struct {
 }
 
 type CuePoint struct {
-	TrackID         uint32
-	TimeNS          int64
-	ClusterPosition uint64
+	TrackID             uint32
+	TimeNS              int64
+	ClusterPosition     uint64
+	RelativePosition    uint64
+	RelativePositionSet bool
 }
 
 type SeekEntry struct {

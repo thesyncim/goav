@@ -59,6 +59,7 @@ const (
 	idCueTrackPositions  ebml.ID = 0xb7
 	idCueTrack           ebml.ID = 0xf7
 	idCueClusterPosition ebml.ID = 0xf1
+	idCueRelativePos     ebml.ID = 0xf0
 )
 
 const (

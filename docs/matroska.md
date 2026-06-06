@@ -56,8 +56,10 @@ Current milestone:
   `io.Seeker`.
 - Seekable Info Duration patching when packet timestamps/durations are known.
 - SeekHead writing and parsing for seekable files.
-- Cues writing and parsing for keyframe packets in seekable files.
-- Cue-based `SeekToTime` for seekable demuxers.
+- Cues writing and parsing for keyframe packets in seekable files, including
+  `CueRelativePosition` for block-level precision inside clusters.
+- Cue-based `SeekToTime` for seekable demuxers, using `CueRelativePosition`
+  when present to position directly on the cued block.
 - Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
   a requested timestamp.
 - BlockGroup reading and writing for single-frame blocks with BlockDuration;
@@ -130,13 +132,14 @@ timestamp and are stored in timestamp-scale ticks.
 Negative packet durations and packet end times that overflow `int64` are
 rejected before bytes are written.
 Seekable mode also writes Cues for keyframe packets using Segment-relative
-Cluster positions, and a SeekHead that points to Info, Tracks, and Cues. The
-muxer updates duration and cue state only after the packet bytes are written
-successfully.
-`SeekToTime` uses those Cues to jump to the nearest preceding cue cluster;
-callers should continue reading until they reach the exact target packet. A
-successful seek clears pending laced-frame state before reading from the target
-cluster.
+Cluster positions plus `CueRelativePosition` offsets to the referenced block
+inside the Cluster. It also writes a SeekHead that points to Info, Tracks, and
+Cues. The muxer updates duration and cue state only after the packet bytes are
+written successfully.
+`SeekToTime` uses those Cues to jump to the nearest preceding cue. When that cue
+has `CueRelativePosition`, the demuxer parses preceding Cluster metadata and
+positions the next read directly on the cued block. A successful seek clears
+pending laced-frame state before reading from the target cluster.
 `ReadPacketAtTime` combines that cue seek with packet reads and returns the
 first packet at or after the requested timestamp. The caller-provided packet
 buffer must be large enough for skipped packets and the returned packet.

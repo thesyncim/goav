@@ -153,11 +153,12 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if delta < math.MinInt16 || delta > math.MaxInt16 {
 		return ErrTimecodeOverflow
 	}
+	relativePosition := m.relativeClusterPosition()
 	if err := m.writeSimpleBlock(packet, int16(delta)); err != nil {
 		return err
 	}
 	m.updateMaxTime(packet)
-	m.addCue(packet, timecode)
+	m.addCue(packet, timecode, relativePosition)
 	return nil
 }
 
@@ -203,13 +204,14 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 	if delta < math.MinInt16 || delta > math.MaxInt16 {
 		return ErrTimecodeOverflow
 	}
+	relativePosition := m.relativeClusterPosition()
 	if err := m.writeLacedBlock(packet, int16(delta), lacing, payloadSize); err != nil {
 		return err
 	}
 	if endTime > m.maxTimeNS {
 		m.maxTimeNS = endTime
 	}
-	m.addCue(Packet{TrackID: packet.TrackID, TimeNS: packet.TimeNS, Keyframe: packet.Keyframe}, timecode)
+	m.addCue(Packet{TrackID: packet.TrackID, TimeNS: packet.TimeNS, Keyframe: packet.Keyframe}, timecode, relativePosition)
 	return nil
 }
 
@@ -449,14 +451,16 @@ func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16) error {
 	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet))
 }
 
-func (m *Muxer) addCue(packet Packet, timecode int64) {
+func (m *Muxer) addCue(packet Packet, timecode int64, relativePosition uint64) {
 	if !m.collectsCues() || !packet.Keyframe {
 		return
 	}
 	m.cues = append(m.cues, CuePoint{
-		TrackID:         packet.TrackID,
-		TimeNS:          timecode * m.options.TimecodeScaleNS,
-		ClusterPosition: m.clusterPosition,
+		TrackID:             packet.TrackID,
+		TimeNS:              timecode * m.options.TimecodeScaleNS,
+		ClusterPosition:     m.clusterPosition,
+		RelativePosition:    relativePosition,
+		RelativePositionSet: true,
 	})
 }
 
@@ -493,6 +497,11 @@ func writeCuePoint(w *ebml.Writer, cue CuePoint, scaleNS int64) error {
 	}
 	if err := pw.WriteUInt(idCueClusterPosition, cue.ClusterPosition); err != nil {
 		return err
+	}
+	if cue.RelativePositionSet {
+		if err := pw.WriteUInt(idCueRelativePos, cue.RelativePosition); err != nil {
+			return err
+		}
 	}
 	if err := cw.WriteElement(idCueTrackPositions, positions.Bytes()); err != nil {
 		return err
@@ -614,6 +623,25 @@ func (m *Muxer) relativeSegmentPosition() uint64 {
 		return 0
 	}
 	return uint64(offset - m.segmentData)
+}
+
+func (m *Muxer) relativeClusterPosition() uint64 {
+	if !m.clusterOpen {
+		return 0
+	}
+	offset := m.ebml.Offset()
+	clusterData := m.clusterDataOffset()
+	if offset < clusterData {
+		return 0
+	}
+	return uint64(offset - clusterData)
+}
+
+func (m *Muxer) clusterDataOffset() int64 {
+	if m.clusterSized {
+		return m.clusterPatch.Start
+	}
+	return int64(m.clusterPosition) + m.segmentData + int64(ebml.MaxIDWidth+ebml.MaxSizeWidth)
 }
 
 func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16) error {

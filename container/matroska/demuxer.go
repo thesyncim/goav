@@ -139,6 +139,11 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 	if err := d.enterCluster(header); err != nil {
 		return err
 	}
+	if cue.RelativePositionSet {
+		if err := d.seekToCueRelativePosition(header, cue.RelativePosition); err != nil {
+			return err
+		}
+	}
 	d.clearLace()
 	return nil
 }
@@ -163,6 +168,45 @@ func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
 			return nil
 		}
 	}
+}
+
+func (d *Demuxer) seekToCueRelativePosition(cluster ebml.Header, relativePosition uint64) error {
+	if relativePosition > uint64(math.MaxInt64) {
+		return ErrInvalidData
+	}
+	target := cluster.DataOffset + int64(relativePosition)
+	if target < cluster.DataOffset || (!cluster.Size.Unknown && target >= cluster.DataOffset+int64(cluster.Size.Value)) {
+		return ErrInvalidData
+	}
+	for d.reader.Offset() < target {
+		header, err := d.reader.ReadHeader()
+		if err != nil {
+			return err
+		}
+		end := header.DataOffset + int64(header.Size.Value)
+		if header.Size.Unknown || end > target {
+			return ErrInvalidData
+		}
+		switch header.ID {
+		case idTimestamp:
+			value, err := readUIntPayloadScratch(d.reader, header.Size.Value, &d.uintScratch)
+			if err != nil {
+				return err
+			}
+			if value > uint64(math.MaxInt64) {
+				return ErrInvalidData
+			}
+			d.clusterTimecode = int64(value)
+		default:
+			if err := skipElement(d.reader, header); err != nil {
+				return err
+			}
+		}
+	}
+	if d.reader.Offset() != target {
+		return ErrInvalidData
+	}
+	return nil
 }
 
 func (d *Demuxer) Tracks() []Track {
@@ -579,12 +623,14 @@ func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint,
 			}
 			cue.TimeNS = int64(value) * d.timecodeScaleNS
 		case idCueTrackPositions:
-			trackID, position, err := d.parseCueTrackPositions(reader, child)
+			position, err := d.parseCueTrackPositions(reader, child)
 			if err != nil {
 				return CuePoint{}, err
 			}
-			cue.TrackID = trackID
-			cue.ClusterPosition = position
+			cue.TrackID = position.TrackID
+			cue.ClusterPosition = position.ClusterPosition
+			cue.RelativePosition = position.RelativePosition
+			cue.RelativePositionSet = position.RelativePositionSet
 		default:
 			if err := skipElement(reader, child); err != nil {
 				return CuePoint{}, err
@@ -594,42 +640,55 @@ func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint,
 	return cue, nil
 }
 
-func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (uint32, uint64, error) {
+type cueTrackPosition struct {
+	TrackID             uint32
+	ClusterPosition     uint64
+	RelativePosition    uint64
+	RelativePositionSet bool
+}
+
+func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (cueTrackPosition, error) {
 	if header.Size.Unknown {
-		return 0, 0, ErrInvalidData
+		return cueTrackPosition{}, ErrInvalidData
 	}
 	limited := &io.LimitedReader{R: parent, N: int64(header.Size.Value)}
 	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
-	var trackID uint32
-	var clusterPosition uint64
+	var position cueTrackPosition
 	for limited.N > 0 {
 		child, err := reader.ReadHeader()
 		if err != nil {
-			return 0, 0, err
+			return cueTrackPosition{}, err
 		}
 		switch child.ID {
 		case idCueTrack:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
-				return 0, 0, err
+				return cueTrackPosition{}, err
 			}
-			trackID, err = trackIDFromUint(value)
+			position.TrackID, err = trackIDFromUint(value)
 			if err != nil {
-				return 0, 0, err
+				return cueTrackPosition{}, err
 			}
 		case idCueClusterPosition:
 			value, err := readUIntPayload(reader, child.Size.Value)
 			if err != nil {
-				return 0, 0, err
+				return cueTrackPosition{}, err
 			}
-			clusterPosition = value
+			position.ClusterPosition = value
+		case idCueRelativePos:
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return cueTrackPosition{}, err
+			}
+			position.RelativePosition = value
+			position.RelativePositionSet = true
 		default:
 			if err := skipElement(reader, child); err != nil {
-				return 0, 0, err
+				return cueTrackPosition{}, err
 			}
 		}
 	}
-	return trackID, clusterPosition, nil
+	return position, nil
 }
 
 func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, error) {
