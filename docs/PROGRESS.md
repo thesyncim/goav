@@ -427,7 +427,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 135. Remove the redundant transcode branch `.Decode()` method because transcode
     branches decode by definition before transforms and the terminal encoder.
     Done.
-136. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+136. Remove the redundant ordinary stream `.Decode()` method because frame
+    sinks, custom stages, transforms, and encoders already imply decode intent.
+    Done.
+137. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

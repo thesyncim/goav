@@ -1717,11 +1717,6 @@ type JobStreamBuilder struct {
 	stream *jobStreamBuild
 }
 
-func (b *JobStreamBuilder) Decode() *JobStreamBuilder {
-	b.current().decode = true
-	return b
-}
-
 func (b *JobStreamBuilder) Do(stage Stage) *JobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {

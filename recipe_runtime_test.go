@@ -393,7 +393,6 @@ func TestStreamRecipeReportsAmbiguousStreams(t *testing.T) {
 
 	_, err := From(FileInput("input.ogg", nil), UseRuntime(New(formats, codecs))).
 		Audio().
-		Decode().
 		To(FrameSink(&runtimeTestSink{name: "frames"})).
 		Build(ctx)
 
@@ -453,7 +452,7 @@ func TestStreamRecipeSelectsFirstStreamByIndex(t *testing.T) {
 	}
 }
 
-func TestFromAudioStreamRecipeDecodeDoEncodeRuns(t *testing.T) {
+func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{
@@ -480,7 +479,6 @@ func TestFromAudioStreamRecipeDecodeDoEncodeRuns(t *testing.T) {
 
 	task, err := From(FileInput("input.ogg", nil), UseRuntime(New(formats, codecs))).
 		Audio().
-		Decode().
 		Do(meter).
 		Opus(96_000).
 		To(FileOutput("archive.ogg", io.Discard)).
@@ -546,7 +544,6 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 
 	task, err := From(FileInput("input.ogg", nil), UseRuntime(runtime)).
 		Audio().
-		Decode().
 		Resample(16_000, Mono).
 		Opus(48_000).
 		To(FileOutput("preview.ogg", io.Discard)).
