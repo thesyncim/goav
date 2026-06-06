@@ -40,3 +40,9 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 func (d *Demuxer) SeekToTime(timeNS int64) error {
 	return d.inner.SeekToTime(timeNS)
 }
+
+// ReadPacketAtTime seeks to the nearest preceding cue and reads forward until
+// it finds the first packet at or after timeNS.
+func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
+	return d.inner.ReadPacketAtTime(timeNS, dst)
+}

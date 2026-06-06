@@ -682,6 +682,100 @@ func TestDemuxerSeekToTimeUsesCues(t *testing.T) {
 	}
 }
 
+func TestDemuxerReadPacketAtTimeUsesCues(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 1_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}},
+		{TrackID: trackID, TimeNS: 2_000_000, Keyframe: true, Data: []byte{2}},
+		{TrackID: trackID, TimeNS: 4_000_000, Keyframe: true, Data: []byte{3}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacketAtTime(3_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != packets[2].TimeNS || !bytes.Equal(got.Data, packets[2].Data) {
+		t.Fatalf("packet at time = %+v data=%v, want %+v data=%v", got, got.Data, packets[2], packets[2].Data)
+	}
+}
+
+func TestDemuxerReadPacketAtTimeFindsLacedFrame(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := [][]byte{{1}, {2}, {3}}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames:   frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacketAtTime(20_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != 20_000_000 || got.DurationNS != 20_000_000 || !bytes.Equal(got.Data, frames[1]) {
+		t.Fatalf("packet at time = %+v data=%v, want second laced frame", got, got.Data)
+	}
+}
+
+func TestDemuxerReadPacketAtTimeRejectsNilPacket(t *testing.T) {
+	data := makeMatroskaData(t, 1)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.ReadPacketAtTime(0, nil); !errors.Is(err, ErrNilPacket) {
+		t.Fatalf("err = %v, want ErrNilPacket", err)
+	}
+}
+
 func TestDemuxerSeekToTimeClearsPendingLacedFrames(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 1_000_000})

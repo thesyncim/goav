@@ -143,6 +143,28 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 	return nil
 }
 
+// ReadPacketAtTime seeks to the nearest preceding cue and reads forward until
+// it finds the first packet at or after timeNS.
+func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
+	if d == nil || d.reader == nil {
+		return ErrNilReader
+	}
+	if dst == nil {
+		return ErrNilPacket
+	}
+	if err := d.SeekToTime(timeNS); err != nil {
+		return err
+	}
+	for {
+		if err := d.ReadPacket(dst); err != nil {
+			return err
+		}
+		if dst.TimeNS >= timeNS {
+			return nil
+		}
+	}
+}
+
 func (d *Demuxer) Tracks() []Track {
 	if d == nil || len(d.tracks) == 0 {
 		return nil

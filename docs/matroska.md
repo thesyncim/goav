@@ -39,6 +39,7 @@ demuxer, err := matroska.NewDemuxer(r, matroska.DemuxerOptions{})
 tracks := demuxer.Tracks()
 packet := matroska.Packet{Data: make([]byte, 0, maxFrame)}
 err = demuxer.ReadPacket(&packet)
+err = demuxer.ReadPacketAtTime(1_000_000_000, &packet)
 ```
 
 WebM uses the same shape through `container/webm`, but rejects non-WebM codecs.
@@ -57,6 +58,8 @@ Current milestone:
 - SeekHead writing and parsing for seekable files.
 - Cues writing and parsing for keyframe packets in seekable files.
 - Cue-based `SeekToTime` for seekable demuxers.
+- Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
+  a requested timestamp.
 - BlockGroup reading and writing for single-frame blocks with BlockDuration;
   non-keyframe BlockGroups use `ReferenceBlock=0` when exact dependency
   information is not available.
@@ -82,7 +85,8 @@ Current milestone:
 
 These are intentionally not in the first milestone:
 
-- Frame-exact random seeking and index-assisted extraction APIs.
+- Dense indexing and frame-exact random access beyond cue-assisted
+  `ReadPacketAtTime`.
 - Multiple-reference BlockGroup writing.
 - Chapters, tags, attachments, language variants, default/forced flags beyond
   basic defaults, and unknown-element preservation.
@@ -126,6 +130,9 @@ successfully.
 callers should continue reading until they reach the exact target packet. A
 successful seek clears pending laced-frame state before reading from the target
 cluster.
+`ReadPacketAtTime` combines that cue seek with packet reads and returns the
+first packet at or after the requested timestamp. The caller-provided packet
+buffer must be large enough for skipped packets and the returned packet.
 
 ## Codec Mapping
 
