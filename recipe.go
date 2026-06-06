@@ -1599,25 +1599,6 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	outputs := make(map[string]OutputSpec, len(j.outputs))
-	outputOrder := make([]string, 0, len(j.outputs))
-	for i := range j.outputs {
-		if err := j.outputs[i].output.validate("plan transcode", fmt.Sprintf("output-%d", i)); err != nil {
-			return transcodepkg.Plan{}, err
-		}
-		name := j.outputs[i].name
-		if name == "" {
-			name = j.outputs[i].output.label(fmt.Sprintf("output-%d", i))
-		}
-		if _, ok := outputs[name]; ok {
-			return transcodepkg.Plan{}, transcodeDuplicateOutputError(name)
-		}
-		outputOrder = append(outputOrder, name)
-		outputs[name] = j.outputs[i].output.Name(firstNonEmpty(j.outputs[i].output.name, name))
-	}
-
-	renditions := make([]transcodepkg.Rendition, 0, len(j.streams))
-	outputRenditions := make(map[string][]string, len(outputs))
 	renditionNames := make(map[string]int, len(j.streams))
 	for i := range j.streams {
 		stream := j.streams[i]
@@ -1657,6 +1638,37 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 				Cause: ErrUnsupportedBuild,
 			}
 		}
+		if err := validateTranscodeBranchOutputLabels(stream); err != nil {
+			return transcodepkg.Plan{}, err
+		}
+		renditionName := stream.name
+		if firstIndex, ok := renditionNames[renditionName]; ok {
+			return transcodepkg.Plan{}, transcodeDuplicateBranchError(renditionName, firstIndex, i)
+		}
+		renditionNames[renditionName] = i
+	}
+
+	outputs := make(map[string]OutputSpec, len(j.outputs))
+	outputOrder := make([]string, 0, len(j.outputs))
+	for i := range j.outputs {
+		if err := j.outputs[i].output.validate("plan transcode", fmt.Sprintf("output-%d", i)); err != nil {
+			return transcodepkg.Plan{}, err
+		}
+		name := j.outputs[i].name
+		if name == "" {
+			name = j.outputs[i].output.label(fmt.Sprintf("output-%d", i))
+		}
+		if _, ok := outputs[name]; ok {
+			return transcodepkg.Plan{}, transcodeDuplicateOutputError(name)
+		}
+		outputOrder = append(outputOrder, name)
+		outputs[name] = j.outputs[i].output.Name(firstNonEmpty(j.outputs[i].output.name, name))
+	}
+
+	renditions := make([]transcodepkg.Rendition, 0, len(j.streams))
+	outputRenditions := make(map[string][]string, len(outputs))
+	for i := range j.streams {
+		stream := j.streams[i]
 		for _, label := range stream.labels {
 			if _, ok := outputs[label]; ok {
 				continue
@@ -1673,11 +1685,7 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 				Cause: ErrUnsupportedBuild,
 			}
 		}
-		renditionName := firstNonEmpty(stream.name, fmt.Sprintf("rendition-%d", i))
-		if firstIndex, ok := renditionNames[renditionName]; ok {
-			return transcodepkg.Plan{}, transcodeDuplicateBranchError(renditionName, firstIndex, i)
-		}
-		renditionNames[renditionName] = i
+		renditionName := stream.name
 		rendition := transcodepkg.Rendition{
 			Name:     renditionName,
 			Selector: stream.selector,
@@ -1892,6 +1900,36 @@ func transcodeBranchNameMissingError(index int, stream streamBuild) error {
 			"call .Video(\"720p\") for video branches",
 			"call .Audio(\"main\") for audio branches",
 			"use branch names as handles for graph inspection and output routing",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func validateTranscodeBranchOutputLabels(stream streamBuild) error {
+	seen := make(map[string]int, len(stream.labels))
+	for i, label := range stream.labels {
+		if firstIndex, ok := seen[label]; ok {
+			return transcodeDuplicateBranchOutputError(stream, label, firstIndex, i)
+		}
+		seen[label] = i
+	}
+	return nil
+}
+
+func transcodeDuplicateBranchOutputError(stream streamBuild, label string, firstIndex int, secondIndex int) error {
+	return &BuildError{
+		Code:      "output_duplicate",
+		Operation: "plan transcode",
+		Node:      transcodeBranchName(stream),
+		Reason:    fmt.Sprintf("branch routes to output %q more than once", label),
+		Details: []string{
+			fmt.Sprintf("first target index: %d", firstIndex),
+			fmt.Sprintf("second target index: %d", secondIndex),
+		},
+		Suggestions: []string{
+			"list each output label once in .To(...)",
+			"route one branch to multiple outputs with distinct labels such as .To(\"archive\", \"preview\")",
+			"define shared outputs once with .Output(label, goav.FileOutput(...))",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

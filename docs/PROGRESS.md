@@ -368,7 +368,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     before outputs can refer to an ambiguous branch. Done.
 117. Add transcode branch-name validation so empty branch names fail before
     hidden fallback rendition handles are generated. Done.
-118. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+118. Add per-branch transcode output validation so one branch cannot route the
+    same rendition to the same output more than once. Done.
+119. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

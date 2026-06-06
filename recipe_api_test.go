@@ -725,6 +725,42 @@ func TestTranscodeRecipeRejectsDuplicateDirectOutputSpecs(t *testing.T) {
 	}
 }
 
+func TestTranscodeRecipeRejectsDuplicateBranchOutputLabels(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("720p").VP9(2_000_000).To("web", "web").
+		Output("web", goav.FileOutput("web.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), `branch routes to output "web" more than once`) ||
+		!strings.Contains(err.Error(), "second target index: 1") ||
+		!strings.Contains(err.Error(), "list each output label once") {
+		t.Fatalf("err = %v, want duplicate branch output guidance", err)
+	}
+}
+
+func TestTranscodeRecipeRejectsDuplicateDirectOutputSpecInBranch(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("720p").VP9(2_000_000).
+		To(
+			goav.FileOutput("same.webm", io.Discard),
+			goav.FileOutput("same.webm", io.Discard),
+		).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), `branch routes to output "same.webm" more than once`) ||
+		!strings.Contains(err.Error(), "distinct labels") {
+		t.Fatalf("err = %v, want duplicate direct branch output guidance", err)
+	}
+}
+
 func TestTranscodeRecipeRejectsDuplicateBranchNames(t *testing.T) {
 	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").VP9(2_000_000).To("archive").
