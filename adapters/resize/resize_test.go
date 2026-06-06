@@ -20,9 +20,12 @@ func TestRegister(t *testing.T) {
 	if factory == nil {
 		t.Fatal("nil factory")
 	}
-	descriptors := registry.Descriptors()
-	if len(descriptors) != 1 || descriptors[0].Name != filter.FactoryResize || descriptors[0].Input != av.MediaVideo {
-		t.Fatalf("descriptors = %+v", descriptors)
+}
+
+func TestDescriptor(t *testing.T) {
+	desc := Descriptor()
+	if desc.Name != filter.FactoryResize || desc.Input != av.MediaVideo || desc.Output != av.MediaVideo {
+		t.Fatalf("descriptor = %+v", desc)
 	}
 }
 

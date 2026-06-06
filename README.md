@@ -187,8 +187,8 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `webrtcav`: Pion PeerConnection session, TrackSet multi-track coordinator,
   replaceable TrackRemote readers, RTCP feedback, and codec-update event
   boundaries.
-- `filter`: resize/resample contracts, registry, and frame-transform pipeline
-  stage.
+- `filter`: resize/resample contracts, factory registry, and frame-transform
+  pipeline stage.
 - `transcode`: one explicit plan contract for renditions and output selection,
   with a first shared-decode multi-rendition compiler.
 - `adapters/ivf`: IVF demux/mux for VP8, VP9, and AV1 packet recording.

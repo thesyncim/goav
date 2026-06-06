@@ -14,9 +14,6 @@ func TestRegistryFactory(t *testing.T) {
 	if got != factory {
 		t.Fatalf("factory = %p, want %p", got, factory)
 	}
-	if len(registry.Descriptors()) != 1 {
-		t.Fatalf("descriptors = %d, want 1", len(registry.Descriptors()))
-	}
 }
 
 func TestRegistryFactoryNotFound(t *testing.T) {
