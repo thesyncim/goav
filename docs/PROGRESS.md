@@ -354,7 +354,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     hooks fail through normal recipe stage or sink diagnostics. Done.
 110. Add recipe transform value validation so non-positive resize dimensions,
     sample rates, and channel counts fail before filter compilation. Done.
-111. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+111. Add recipe stream selector validation so negative `StreamIndex(...)` values
+    fail before probing with direct selector guidance. Done.
+112. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

@@ -117,6 +117,7 @@ for _, edge := range spec.Edges {
 
 If `Audio()` or `Video()` matches more than one stream, build errors list the
 available streams and suggest `StreamID`, `StreamName`, or `StreamIndex(0)`.
+Stream indexes are zero-based and must be non-negative.
 
 Recipes compile into the existing runtime builder, so `Describe`, `Build`,
 `Run`, task events, and graph specs stay the same.

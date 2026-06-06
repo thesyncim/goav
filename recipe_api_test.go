@@ -399,6 +399,25 @@ func TestStreamRecipeRequiresOperation(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeRejectsNegativeStreamIndex(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio(goav.StreamIndex(-1)).
+		Decode().
+		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_selector_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_selector_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "stream index must be non-negative") ||
+		!strings.Contains(err.Error(), "index=-1") ||
+		!strings.Contains(err.Error(), "goav.StreamIndex(0)") {
+		t.Fatalf("err = %v, want stream index guidance", err)
+	}
+}
+
 func TestStreamRecipeRejectsNilCustomStage(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -630,6 +649,22 @@ func TestTranscodeRecipeRequiresBranchOutput(t *testing.T) {
 	if !strings.Contains(err.Error(), "stream has no output target") ||
 		!strings.Contains(err.Error(), "goav.FileOutput") {
 		t.Fatalf("err = %v, want output guidance", err)
+	}
+}
+
+func TestTranscodeRecipeRejectsNegativeStreamIndex(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Audio("bad", goav.StreamIndex(-1)).Opus(64_000).
+		To(goav.FileOutput("bad.ogg", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_selector_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_selector_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "stream index must be non-negative") ||
+		!strings.Contains(err.Error(), "index=-1") {
+		t.Fatalf("err = %v, want stream index guidance", err)
 	}
 }
 

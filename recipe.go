@@ -940,6 +940,9 @@ func (j *Job) applyStream(builder Builder, stream *jobStreamBuild) (Builder, err
 			},
 		}
 	}
+	if err := validateRecipeStreamSelector("build stream", jobStreamName(stream), stream.selector); err != nil {
+		return nil, err
+	}
 	if err := validateRecipeEncode(stream.encode, "build stream", stream.name); err != nil {
 		return nil, err
 	}
@@ -1072,6 +1075,26 @@ func validateOutputSpecs(operation string, outputs []OutputSpec) error {
 		}
 	}
 	return nil
+}
+
+func validateRecipeStreamSelector(operation string, node string, selector av.StreamSelector) error {
+	if selector.Index >= 0 {
+		return nil
+	}
+	return &BuildError{
+		Code:      "stream_selector_invalid",
+		Operation: operation,
+		Node:      node,
+		Reason:    "stream index must be non-negative",
+		Details: []string{
+			fmt.Sprintf("index=%d", selector.Index),
+		},
+		Suggestions: []string{
+			"use goav.StreamIndex(0) for the first matching stream",
+			"use goav.StreamID(...) or goav.StreamName(...) when stream metadata is stable",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
@@ -1491,6 +1514,9 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 		stream := j.streams[i]
 		if len(stream.invalidTargets) != 0 {
 			return transcodepkg.Plan{}, transcodeOutputTargetError(stream)
+		}
+		if err := validateRecipeStreamSelector("plan transcode", transcodeBranchName(stream), stream.selector); err != nil {
+			return transcodepkg.Plan{}, err
 		}
 		if stream.encode.ID == "" && !stream.encode.Copy {
 			return transcodepkg.Plan{}, &BuildError{
