@@ -366,6 +366,50 @@ func TestSeekableMuxerWritesSeekHeadAndCues(t *testing.T) {
 	}
 }
 
+func TestMuxerFailedPacketDoesNotAdvanceCuesOrDuration(t *testing.T) {
+	ws := &failToggleWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     0,
+		DurationNS: 10_000_000,
+		Keyframe:   true,
+		Data:       []byte{1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(muxer.cues) != 1 || muxer.maxTimeNS != 10_000_000 {
+		t.Fatalf("cues=%+v maxTimeNS=%d after first packet", muxer.cues, muxer.maxTimeNS)
+	}
+	ws.fail = true
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     20_000_000,
+		DurationNS: 10_000_000,
+		Keyframe:   true,
+		Data:       []byte{2},
+	}); !errors.Is(err, errFailingWriter) {
+		t.Fatalf("err = %v, want errFailingWriter", err)
+	}
+	if len(muxer.cues) != 1 {
+		t.Fatalf("cues = %+v, want only the successfully written packet", muxer.cues)
+	}
+	if muxer.maxTimeNS != 10_000_000 {
+		t.Fatalf("maxTimeNS = %d, want 10000000", muxer.maxTimeNS)
+	}
+}
+
 func TestDemuxerSeekToTimeUsesCues(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 1_000_000})
@@ -1154,4 +1198,18 @@ func (m *memoryWriteSeeker) Seek(offset int64, whence int) (int64, error) {
 	}
 	m.pos = offset
 	return offset, nil
+}
+
+var errFailingWriter = errors.New("failing writer")
+
+type failToggleWriteSeeker struct {
+	memoryWriteSeeker
+	fail bool
+}
+
+func (m *failToggleWriteSeeker) Write(payload []byte) (int, error) {
+	if m.fail {
+		return 0, errFailingWriter
+	}
+	return m.memoryWriteSeeker.Write(payload)
 }

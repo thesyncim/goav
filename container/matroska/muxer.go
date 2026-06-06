@@ -129,7 +129,6 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if packet.TimeNS < 0 {
 		return ErrInvalidData
 	}
-	m.updateMaxTime(packet)
 	if !m.headerWritten {
 		if err := m.writeHeader(); err != nil {
 			return err
@@ -145,8 +144,12 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if delta < math.MinInt16 || delta > math.MaxInt16 {
 		return ErrTimecodeOverflow
 	}
+	if err := m.writeSimpleBlock(packet, int16(delta)); err != nil {
+		return err
+	}
+	m.updateMaxTime(packet)
 	m.addCue(packet, timecode)
-	return m.writeSimpleBlock(packet, int16(delta))
+	return nil
 }
 
 func (m *Muxer) Close() error {
