@@ -45,7 +45,7 @@ type directRoute struct {
 }
 
 type directEmitter struct {
-	graph *DirectGraph
+	graph *directRunner
 	from  int
 }
 
@@ -53,20 +53,16 @@ func (e *directEmitter) Emit(ctx context.Context, msg *Message) error {
 	return e.graph.emit(ctx, e.from, msg)
 }
 
-type DirectFactory struct{}
-
-func NewDirectFactory() DirectFactory {
-	return DirectFactory{}
-}
-
-func (DirectFactory) NewGraph(_ context.Context, config GraphConfig) (Graph, error) {
+// NewGraph creates the single public pipeline graph. Direct execution is used
+// for direct buffer policy; bounded buffered execution is selected otherwise.
+func NewGraph(config GraphConfig) (Graph, error) {
 	if !config.Buffer.IsDirect() {
-		return NewBufferedGraph(config)
+		return newBufferedRunner(config)
 	}
-	return NewDirectGraph(config)
+	return newDirectRunner(config)
 }
 
-type DirectGraph struct {
+type directRunner struct {
 	config  GraphConfig
 	index   map[string]int
 	nodes   []directNode
@@ -75,7 +71,7 @@ type DirectGraph struct {
 	closed  bool
 }
 
-func NewDirectGraph(config GraphConfig) (*DirectGraph, error) {
+func newDirectRunner(config GraphConfig) (*directRunner, error) {
 	if !config.Buffer.IsDirect() {
 		return nil, ErrBufferedEdgesUnsupported
 	}
@@ -83,14 +79,14 @@ func NewDirectGraph(config GraphConfig) (*DirectGraph, error) {
 	if eventCapacity < 1 {
 		eventCapacity = 16
 	}
-	return &DirectGraph{
+	return &directRunner{
 		config: config,
 		index:  make(map[string]int),
 		events: make(chan av.Event, eventCapacity),
 	}, nil
 }
 
-func (g *DirectGraph) AddSource(source Source, policy BufferPolicy) (NodeRef, error) {
+func (g *directRunner) AddSource(source Source, policy BufferPolicy) (NodeRef, error) {
 	if !policy.IsDirect() {
 		return "", ErrBufferedEdgesUnsupported
 	}
@@ -102,7 +98,7 @@ func (g *DirectGraph) AddSource(source Source, policy BufferPolicy) (NodeRef, er
 	return NodeRef(g.nodes[index].name), nil
 }
 
-func (g *DirectGraph) AddStage(stage Stage, policy BufferPolicy) (NodeRef, error) {
+func (g *directRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, error) {
 	if !policy.IsDirect() {
 		return "", ErrBufferedEdgesUnsupported
 	}
@@ -113,7 +109,7 @@ func (g *DirectGraph) AddStage(stage Stage, policy BufferPolicy) (NodeRef, error
 	return NodeRef(g.nodes[index].name), nil
 }
 
-func (g *DirectGraph) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
+func (g *directRunner) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
 	if !policy.IsDirect() {
 		return "", ErrBufferedEdgesUnsupported
 	}
@@ -124,7 +120,7 @@ func (g *DirectGraph) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
 	return NodeRef(g.nodes[index].name), nil
 }
 
-func (g *DirectGraph) Connect(route Route) error {
+func (g *directRunner) Connect(route Route) error {
 	if len(route.To) == 0 {
 		return ErrInvalidLink
 	}
@@ -170,7 +166,7 @@ func normalizeRoutePolicy(policy RoutePolicy) (RoutePolicy, error) {
 	}
 }
 
-func (g *DirectGraph) Run(ctx context.Context) error {
+func (g *directRunner) Run(ctx context.Context) error {
 	if g.closed {
 		return ErrClosed
 	}
@@ -183,7 +179,7 @@ func (g *DirectGraph) Run(ctx context.Context) error {
 	return nil
 }
 
-func (g *DirectGraph) Spec() Spec {
+func (g *directRunner) Spec() Spec {
 	spec := Spec{
 		Name:     g.config.Name,
 		Realtime: g.config.Realtime,
@@ -208,11 +204,11 @@ func (g *DirectGraph) Spec() Spec {
 	return spec
 }
 
-func (g *DirectGraph) Events() <-chan av.Event {
+func (g *directRunner) Events() <-chan av.Event {
 	return g.events
 }
 
-func (g *DirectGraph) Close() error {
+func (g *directRunner) Close() error {
 	if g.closed {
 		return nil
 	}
@@ -237,7 +233,7 @@ func (g *DirectGraph) Close() error {
 	return first
 }
 
-func (g *DirectGraph) addNode(node directNode) (int, error) {
+func (g *directRunner) addNode(node directNode) (int, error) {
 	if node.name == "" {
 		return 0, ErrUnknownNode
 	}
@@ -251,7 +247,7 @@ func (g *DirectGraph) addNode(node directNode) (int, error) {
 	return index, nil
 }
 
-func (g *DirectGraph) emit(ctx context.Context, from int, msg *Message) error {
+func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 	if g.closed {
 		return ErrClosed
 	}
@@ -280,7 +276,7 @@ func (g *DirectGraph) emit(ctx context.Context, from int, msg *Message) error {
 	return nil
 }
 
-func (g *DirectGraph) deliver(ctx context.Context, to int, msg *Message) error {
+func (g *directRunner) deliver(ctx context.Context, to int, msg *Message) error {
 	node := &g.nodes[to]
 	switch node.kind {
 	case nodeStage:
@@ -292,7 +288,7 @@ func (g *DirectGraph) deliver(ctx context.Context, to int, msg *Message) error {
 	}
 }
 
-func (g *DirectGraph) publishEvent(msg *Message) error {
+func (g *directRunner) publishEvent(msg *Message) error {
 	if msg.Kind != MessageEvent || msg.Event == nil {
 		return nil
 	}

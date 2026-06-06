@@ -24,7 +24,6 @@ type Runtime interface {
 	Codecs() codec.Registry
 	Formats() format.Registry
 	Filters() filter.Registry
-	Pipelines() pipeline.Factory
 	Probe(context.Context, ProbeRequest) (ProbeResult, error)
 	New() Builder
 }

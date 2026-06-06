@@ -26,7 +26,7 @@ type bufferedNode struct {
 }
 
 type bufferedEmitter struct {
-	graph *BufferedGraph
+	graph *bufferedRunner
 	from  int
 }
 
@@ -44,7 +44,7 @@ type bufferedMessage struct {
 	frameBacking  []byte
 }
 
-type BufferedGraph struct {
+type bufferedRunner struct {
 	config  GraphConfig
 	index   map[string]int
 	nodes   []bufferedNode
@@ -54,7 +54,7 @@ type BufferedGraph struct {
 	closed  bool
 }
 
-func NewBufferedGraph(config GraphConfig) (*BufferedGraph, error) {
+func newBufferedRunner(config GraphConfig) (*bufferedRunner, error) {
 	if config.Buffer.IsDirect() {
 		return nil, ErrBufferedEdgesUnsupported
 	}
@@ -63,7 +63,7 @@ func NewBufferedGraph(config GraphConfig) (*BufferedGraph, error) {
 	if eventCapacity < 1 {
 		eventCapacity = 16
 	}
-	return &BufferedGraph{
+	return &bufferedRunner{
 		config: config,
 		index:  make(map[string]int),
 		events: make(chan av.Event, eventCapacity),
@@ -80,7 +80,7 @@ func normalizeBufferedPolicy(policy BufferPolicy) BufferPolicy {
 	return policy
 }
 
-func (g *BufferedGraph) AddSource(source Source, policy BufferPolicy) (NodeRef, error) {
+func (g *bufferedRunner) AddSource(source Source, policy BufferPolicy) (NodeRef, error) {
 	index, err := g.addNode(bufferedNode{name: source.Name(), kind: nodeSource, source: source, policy: g.nodePolicy(policy)})
 	if err != nil {
 		return "", err
@@ -89,7 +89,7 @@ func (g *BufferedGraph) AddSource(source Source, policy BufferPolicy) (NodeRef, 
 	return NodeRef(g.nodes[index].name), nil
 }
 
-func (g *BufferedGraph) AddStage(stage Stage, policy BufferPolicy) (NodeRef, error) {
+func (g *bufferedRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, error) {
 	index, err := g.addNode(bufferedNode{name: stage.Name(), kind: nodeStage, stage: stage, policy: g.nodePolicy(policy)})
 	if err != nil {
 		return "", err
@@ -97,7 +97,7 @@ func (g *BufferedGraph) AddStage(stage Stage, policy BufferPolicy) (NodeRef, err
 	return NodeRef(g.nodes[index].name), nil
 }
 
-func (g *BufferedGraph) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
+func (g *bufferedRunner) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
 	index, err := g.addNode(bufferedNode{name: sink.Name(), kind: nodeSink, sink: sink, policy: g.nodePolicy(policy)})
 	if err != nil {
 		return "", err
@@ -105,7 +105,7 @@ func (g *BufferedGraph) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error)
 	return NodeRef(g.nodes[index].name), nil
 }
 
-func (g *BufferedGraph) Connect(route Route) error {
+func (g *bufferedRunner) Connect(route Route) error {
 	if len(route.To) == 0 {
 		return ErrInvalidLink
 	}
@@ -140,7 +140,7 @@ func (g *BufferedGraph) Connect(route Route) error {
 	return nil
 }
 
-func (g *BufferedGraph) Run(ctx context.Context) error {
+func (g *bufferedRunner) Run(ctx context.Context) error {
 	if g.closed {
 		return ErrClosed
 	}
@@ -196,7 +196,7 @@ func (g *BufferedGraph) Run(ctx context.Context) error {
 	}
 }
 
-func (g *BufferedGraph) Spec() Spec {
+func (g *bufferedRunner) Spec() Spec {
 	spec := Spec{
 		Name:     g.config.Name,
 		Realtime: g.config.Realtime,
@@ -221,11 +221,11 @@ func (g *BufferedGraph) Spec() Spec {
 	return spec
 }
 
-func (g *BufferedGraph) Events() <-chan av.Event {
+func (g *bufferedRunner) Events() <-chan av.Event {
 	return g.events
 }
 
-func (g *BufferedGraph) Close() error {
+func (g *bufferedRunner) Close() error {
 	if g.closed {
 		return nil
 	}
@@ -250,7 +250,7 @@ func (g *BufferedGraph) Close() error {
 	return first
 }
 
-func (g *BufferedGraph) addNode(node bufferedNode) (int, error) {
+func (g *bufferedRunner) addNode(node bufferedNode) (int, error) {
 	if node.name == "" {
 		return 0, ErrUnknownNode
 	}
@@ -266,14 +266,14 @@ func (g *BufferedGraph) addNode(node bufferedNode) (int, error) {
 	return index, nil
 }
 
-func (g *BufferedGraph) nodePolicy(policy BufferPolicy) BufferPolicy {
+func (g *bufferedRunner) nodePolicy(policy BufferPolicy) BufferPolicy {
 	if policy.IsDirect() {
 		return g.config.Buffer
 	}
 	return normalizeBufferedPolicy(policy)
 }
 
-func (g *BufferedGraph) openQueues() {
+func (g *bufferedRunner) openQueues() {
 	for i := range g.nodes {
 		node := &g.nodes[i]
 		if node.kind == nodeSource {
@@ -291,7 +291,7 @@ func (g *BufferedGraph) openQueues() {
 	}
 }
 
-func (g *BufferedGraph) closeQueues() {
+func (g *bufferedRunner) closeQueues() {
 	for i := range g.nodes {
 		node := &g.nodes[i]
 		if node.kind == nodeSource || node.queue == nil {
@@ -301,7 +301,7 @@ func (g *BufferedGraph) closeQueues() {
 	}
 }
 
-func (g *BufferedGraph) emit(ctx context.Context, from int, msg *Message) error {
+func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error {
 	if g.closed {
 		return ErrClosed
 	}
@@ -330,7 +330,7 @@ func (g *BufferedGraph) emit(ctx context.Context, from int, msg *Message) error 
 	return nil
 }
 
-func (g *BufferedGraph) enqueue(ctx context.Context, to int, msg *Message) error {
+func (g *bufferedRunner) enqueue(ctx context.Context, to int, msg *Message) error {
 	node := &g.nodes[to]
 	if err := validateBufferedMessage(msg, node.policy); err != nil {
 		return err
@@ -358,7 +358,7 @@ func (g *BufferedGraph) enqueue(ctx context.Context, to int, msg *Message) error
 	}
 }
 
-func (g *BufferedGraph) enqueueBound(ctx context.Context, node *bufferedNode, msg *Message) error {
+func (g *bufferedRunner) enqueueBound(ctx context.Context, node *bufferedNode, msg *Message) error {
 	slot, err := node.acquireSlot()
 	if err != nil {
 		return err
@@ -387,7 +387,7 @@ func enqueueMessage(ctx context.Context, queue chan *bufferedMessage, msg *buffe
 	}
 }
 
-func (g *BufferedGraph) runNode(ctx context.Context, index int) error {
+func (g *bufferedRunner) runNode(ctx context.Context, index int) error {
 	node := &g.nodes[index]
 	var first error
 	for msg := range node.queue {
@@ -402,7 +402,7 @@ func (g *BufferedGraph) runNode(ctx context.Context, index int) error {
 	return first
 }
 
-func (g *BufferedGraph) deliver(ctx context.Context, to int, msg *Message) error {
+func (g *bufferedRunner) deliver(ctx context.Context, to int, msg *Message) error {
 	node := &g.nodes[to]
 	switch node.kind {
 	case nodeStage:
@@ -414,7 +414,7 @@ func (g *BufferedGraph) deliver(ctx context.Context, to int, msg *Message) error
 	}
 }
 
-func (g *BufferedGraph) publishEvent(msg *Message) error {
+func (g *bufferedRunner) publishEvent(msg *Message) error {
 	if msg.Kind != MessageEvent || msg.Event == nil {
 		return nil
 	}

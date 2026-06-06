@@ -32,11 +32,10 @@ type Option func(*runtime)
 
 func New(options ...Option) Runtime {
 	runtime := &runtime{
-		codecs:    codec.NewRegistry(),
-		filters:   filter.NewRegistry(),
-		formats:   format.NewRegistry(format.WithProber(format.DefaultProber())),
-		pipelines: pipeline.NewDirectFactory(),
-		realtime:  true,
+		codecs:   codec.NewRegistry(),
+		filters:  filter.NewRegistry(),
+		formats:  format.NewRegistry(format.WithProber(format.DefaultProber())),
+		realtime: true,
 	}
 	for _, option := range options {
 		option(runtime)
@@ -64,14 +63,6 @@ func WithFilterRegistry(registry filter.Registry) Option {
 	return func(runtime *runtime) {
 		if registry != nil {
 			runtime.filters = registry
-		}
-	}
-}
-
-func WithPipelineFactory(factory pipeline.Factory) Option {
-	return func(runtime *runtime) {
-		if factory != nil {
-			runtime.pipelines = factory
 		}
 	}
 }
@@ -128,14 +119,13 @@ func WithMetrics(metrics Metrics) Option {
 }
 
 type runtime struct {
-	codecs    codec.Registry
-	filters   filter.Registry
-	formats   format.Registry
-	pipelines pipeline.Factory
-	buffer    pipeline.BufferPolicy
-	realtime  bool
-	logger    Logger
-	metrics   Metrics
+	codecs   codec.Registry
+	filters  filter.Registry
+	formats  format.Registry
+	buffer   pipeline.BufferPolicy
+	realtime bool
+	logger   Logger
+	metrics  Metrics
 }
 
 func (r *runtime) Codecs() codec.Registry {
@@ -148,10 +138,6 @@ func (r *runtime) Formats() format.Registry {
 
 func (r *runtime) Filters() filter.Registry {
 	return r.filters
-}
-
-func (r *runtime) Pipelines() pipeline.Factory {
-	return r.pipelines
 }
 
 func (r *runtime) Probe(ctx context.Context, request ProbeRequest) (ProbeResult, error) {

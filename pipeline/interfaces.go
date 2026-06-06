@@ -139,10 +139,6 @@ type Graph interface {
 	Close() error
 }
 
-type Factory interface {
-	NewGraph(context.Context, GraphConfig) (Graph, error)
-}
-
 type GraphConfig struct {
 	Name          string
 	Realtime      bool

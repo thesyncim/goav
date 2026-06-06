@@ -190,7 +190,7 @@ func TestSourceDepacketizesRTPIntoPipelinePackets(t *testing.T) {
 		t.Fatal(err)
 	}
 	sink := &packetSink{name: "sink"}
-	graph, err := pipeline.NewDirectGraph(pipeline.GraphConfig{Name: "rtp"})
+	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "rtp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +456,7 @@ func TestSourceEmitsTimestampDiscontinuityOnBackwardPTS(t *testing.T) {
 		t.Fatal(err)
 	}
 	sink := &packetSink{name: "sink"}
-	graph, err := pipeline.NewDirectGraph(pipeline.GraphConfig{Name: "rtp"})
+	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "rtp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -572,7 +572,7 @@ func TestSourceJitterOrdersPackets(t *testing.T) {
 		t.Fatal(err)
 	}
 	sink := &packetSink{name: "sink"}
-	graph, err := pipeline.NewDirectGraph(pipeline.GraphConfig{Name: "rtp"})
+	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "rtp"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -33,8 +33,8 @@ func (b *builder) selectCompiler() (builderCompiler, error) {
 	return nil, ErrUnsupportedBuild
 }
 
-func (b *builder) newGraph(ctx context.Context) (pipeline.Graph, error) {
-	return b.runtime.pipelines.NewGraph(ctx, pipeline.GraphConfig{
+func (b *builder) newGraph(_ context.Context) (pipeline.Graph, error) {
+	return pipeline.NewGraph(pipeline.GraphConfig{
 		Name:     "goav",
 		Realtime: b.runtime.realtime,
 		Buffer:   b.runtime.buffer,

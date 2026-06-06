@@ -92,7 +92,7 @@ func (s *runtimeTestSink) Close() error {
 
 func TestNewRuntimeDefaults(t *testing.T) {
 	runtime := New()
-	if runtime.Codecs() == nil || runtime.Formats() == nil || runtime.Filters() == nil || runtime.Pipelines() == nil {
+	if runtime.Codecs() == nil || runtime.Formats() == nil || runtime.Filters() == nil {
 		t.Fatalf("runtime defaults incomplete: %+v", runtime)
 	}
 	if _, err := runtime.Probe(context.Background(), ProbeRequest{}); !errors.Is(err, format.ErrNotFound) {

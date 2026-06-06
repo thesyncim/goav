@@ -112,20 +112,20 @@ func (s *bufferedBlockingSink) Close() error {
 	return nil
 }
 
-func TestDirectFactoryBuildsBufferedGraphForBufferPolicy(t *testing.T) {
-	graph, err := NewDirectFactory().NewGraph(context.Background(), GraphConfig{
+func TestNewGraphBuildsBufferedExecutionForBufferPolicy(t *testing.T) {
+	graph, err := NewGraph(GraphConfig{
 		Name:   "buffered",
 		Buffer: BufferPolicy{Capacity: 2, Drop: DropOldest},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := graph.(*BufferedGraph); !ok {
-		t.Fatalf("graph = %T, want *BufferedGraph", graph)
+	if _, ok := graph.(*bufferedRunner); !ok {
+		t.Fatalf("graph = %T, want *bufferedRunner", graph)
 	}
 }
 
-func TestBufferedGraphPassThroughImmutablePacket(t *testing.T) {
+func TestGraphBufferedPassThroughImmutablePacket(t *testing.T) {
 	source := &bufferedPacketSource{
 		name:    "source",
 		packets: []av.Packet{immutablePacket(7)},
@@ -133,7 +133,7 @@ func TestBufferedGraphPassThroughImmutablePacket(t *testing.T) {
 	}
 	sink := &bufferedBlockingSink{name: "sink", started: make(chan struct{})}
 
-	graph, err := NewBufferedGraph(GraphConfig{Name: "pass", Buffer: BufferPolicy{Capacity: 2, Drop: DropOldest}})
+	graph, err := NewGraph(GraphConfig{Name: "pass", Buffer: BufferPolicy{Capacity: 2, Drop: DropOldest}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestBufferedGraphPassThroughImmutablePacket(t *testing.T) {
 	}
 }
 
-func TestBufferedGraphRejectsBorrowedPacketPayload(t *testing.T) {
+func TestGraphBufferedRejectsBorrowedPacketPayload(t *testing.T) {
 	packet := immutablePacket(1)
 	packet.Payload.Ownership = av.BufferBorrowed
 	source := &bufferedPacketSource{
@@ -164,7 +164,7 @@ func TestBufferedGraphRejectsBorrowedPacketPayload(t *testing.T) {
 	}
 	sink := &bufferedBlockingSink{name: "sink", started: make(chan struct{})}
 
-	graph, err := NewBufferedGraph(GraphConfig{Name: "unsafe", Buffer: BufferPolicy{Capacity: 1, Drop: DropOldest}})
+	graph, err := NewGraph(GraphConfig{Name: "unsafe", Buffer: BufferPolicy{Capacity: 1, Drop: DropOldest}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestBufferedGraphRejectsBorrowedPacketPayload(t *testing.T) {
 	}
 }
 
-func TestBufferedGraphCopiesBorrowedPacketPayload(t *testing.T) {
+func TestGraphBufferedCopiesBorrowedPacketPayload(t *testing.T) {
 	afterFirst := make(chan struct{})
 	source := &bufferedPacketSource{
 		name: "source",
@@ -201,7 +201,7 @@ func TestBufferedGraphCopiesBorrowedPacketPayload(t *testing.T) {
 		release: afterFirst,
 	}
 
-	graph, err := NewBufferedGraph(GraphConfig{
+	graph, err := NewGraph(GraphConfig{
 		Name: "copy-packet",
 		Buffer: BufferPolicy{
 			Capacity:        1,
@@ -279,7 +279,7 @@ func TestBufferedMessageKeepsPacketCopyBackingAfterImmutableReuse(t *testing.T) 
 	}
 }
 
-func TestBufferedGraphRejectsOversizedBorrowedPacketPayload(t *testing.T) {
+func TestGraphBufferedRejectsOversizedBorrowedPacketPayload(t *testing.T) {
 	source := &bufferedPacketSource{
 		name: "source",
 		packets: []av.Packet{{
@@ -292,7 +292,7 @@ func TestBufferedGraphRejectsOversizedBorrowedPacketPayload(t *testing.T) {
 	}
 	sink := &bufferedBlockingSink{name: "sink", started: make(chan struct{})}
 
-	graph, err := NewBufferedGraph(GraphConfig{
+	graph, err := NewGraph(GraphConfig{
 		Name: "copy-packet-too-small",
 		Buffer: BufferPolicy{
 			Capacity:        1,
@@ -318,7 +318,7 @@ func TestBufferedGraphRejectsOversizedBorrowedPacketPayload(t *testing.T) {
 	}
 }
 
-func TestBufferedGraphCopiesBorrowedFramePlane(t *testing.T) {
+func TestGraphBufferedCopiesBorrowedFramePlane(t *testing.T) {
 	release := make(chan struct{})
 	source := &bufferedFrameSource{
 		name: "source",
@@ -340,7 +340,7 @@ func TestBufferedGraphCopiesBorrowedFramePlane(t *testing.T) {
 		release: release,
 	}
 
-	graph, err := NewBufferedGraph(GraphConfig{
+	graph, err := NewGraph(GraphConfig{
 		Name: "copy-frame",
 		Buffer: BufferPolicy{
 			Capacity:       1,
@@ -377,7 +377,7 @@ func TestBufferedGraphCopiesBorrowedFramePlane(t *testing.T) {
 	}
 }
 
-func TestBufferedGraphDropOldest(t *testing.T) {
+func TestGraphBufferedDropOldest(t *testing.T) {
 	values, err := runBufferedBurst(BufferPolicy{Capacity: 1, Drop: DropOldest})
 	if err != nil {
 		t.Fatal(err)
@@ -387,7 +387,7 @@ func TestBufferedGraphDropOldest(t *testing.T) {
 	}
 }
 
-func TestBufferedGraphDropNewest(t *testing.T) {
+func TestGraphBufferedDropNewest(t *testing.T) {
 	values, err := runBufferedBurst(BufferPolicy{Capacity: 1, Drop: DropNewest})
 	if err != nil {
 		t.Fatal(err)
@@ -397,7 +397,7 @@ func TestBufferedGraphDropNewest(t *testing.T) {
 	}
 }
 
-func TestBufferedGraphBackpressure(t *testing.T) {
+func TestGraphBufferedBackpressure(t *testing.T) {
 	values, err := runBufferedBurst(BufferPolicy{Capacity: 1, Drop: DropNever})
 	if !errors.Is(err, ErrBackpressure) {
 		t.Fatalf("err = %v, want ErrBackpressure", err)
@@ -421,7 +421,7 @@ func runBufferedBurst(policy BufferPolicy) ([]byte, error) {
 		release: make(chan struct{}),
 	}
 
-	graph, err := NewBufferedGraph(GraphConfig{Name: "burst", Buffer: policy})
+	graph, err := NewGraph(GraphConfig{Name: "burst", Buffer: policy})
 	if err != nil {
 		return nil, err
 	}

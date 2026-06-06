@@ -388,7 +388,7 @@ Required proof:
   direct backpressure, oldest/newest dropping, wait-for-sync recovery, and
   non-key-video dropping. This keeps the future bounded executor from spreading
   policy logic across connection code.
-- `pipeline.BufferedGraph` is selected by the default factory whenever
+- `pipeline.NewGraph` selects bounded buffered execution whenever
   `GraphConfig.Buffer` is non-direct. It runs sources and downstream nodes with
   bounded per-node queues, copies message headers into queue slots, applies the
   shared drop controller, shares immutable media buffers, copies borrowed packet

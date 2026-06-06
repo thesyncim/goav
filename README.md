@@ -13,6 +13,8 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pure Go core, no cgo runtime dependency.
 - Simple fluent API for natural workflows.
 - Explicit graph API for custom realtime systems.
+- One graph constructor: `pipeline.NewGraph` chooses direct or bounded buffered
+  execution from `pipeline.BufferPolicy`.
 - Graphs are named sources, stages, sinks, and routes; fanout is one route with
   multiple targets.
 - A route may match all media, one stream, or one event type.
@@ -164,7 +166,7 @@ as private graph compilers that must support both `Describe` and `Build`.
 
 - `av`: media identifiers, streams, packets, frames, timestamps, events,
   timebase conversion helpers, reset helpers, and ownership markers.
-- `pipeline`: direct-call graph executor, bounded buffered graph executor,
+- `pipeline`: one graph constructor, direct-call and bounded buffered execution,
   fanout, one `Route` edge value, stream/event route modifiers, backpressure
   surface, drop-policy decisions, bounded copy slots for borrowed media buffers,
   detail-aware graph specs rendered through `Spec.Render(...)` or

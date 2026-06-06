@@ -95,7 +95,7 @@ func (s *directTestSink) Close() error {
 	return nil
 }
 
-func TestDirectGraphPassThrough(t *testing.T) {
+func TestGraphDirectPassThrough(t *testing.T) {
 	ctx := context.Background()
 	packet := av.Packet{StreamID: "audio"}
 	msg := Message{Kind: MessagePacket, Packet: &packet}
@@ -103,7 +103,7 @@ func TestDirectGraphPassThrough(t *testing.T) {
 	stage := &directPassStage{name: "stage"}
 	sink := &directTestSink{name: "sink"}
 
-	graph, err := NewDirectGraph(GraphConfig{Name: "test"})
+	graph, err := NewGraph(GraphConfig{Name: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,14 +131,14 @@ func TestDirectGraphPassThrough(t *testing.T) {
 	}
 }
 
-func TestDirectGraphSpec(t *testing.T) {
+func TestGraphDirectSpec(t *testing.T) {
 	packet := av.Packet{StreamID: "audio"}
 	msg := Message{Kind: MessagePacket, Packet: &packet}
 	source := &directTestSource{name: "source", msg: &msg}
 	stage := &directPassStage{name: "stage", detail: "meter"}
 	sink := &directTestSink{name: "sink"}
 
-	graph, err := NewDirectGraph(GraphConfig{Name: "spec", Realtime: true})
+	graph, err := NewGraph(GraphConfig{Name: "spec", Realtime: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestDirectGraphSpec(t *testing.T) {
 	}
 }
 
-func TestDirectGraphFanoutSharesPayload(t *testing.T) {
+func TestGraphDirectFanoutSharesPayload(t *testing.T) {
 	payload := []byte{1, 2, 3}
 	packet := av.Packet{Payload: av.Buffer{Bytes: payload, Ownership: av.BufferBorrowed}}
 	msg := Message{Kind: MessagePacket, Packet: &packet}
@@ -184,7 +184,7 @@ func TestDirectGraphFanoutSharesPayload(t *testing.T) {
 	left := &directTestSink{name: "left"}
 	right := &directTestSink{name: "right"}
 
-	graph, err := NewDirectGraph(GraphConfig{Name: "fanout"})
+	graph, err := NewGraph(GraphConfig{Name: "fanout"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,14 +212,14 @@ func TestDirectGraphFanoutSharesPayload(t *testing.T) {
 	}
 }
 
-func TestDirectGraphRouteByStream(t *testing.T) {
+func TestGraphDirectRouteByStream(t *testing.T) {
 	packet := av.Packet{StreamID: "video-main"}
 	msg := Message{Kind: MessagePacket, Packet: &packet}
 	source := &directTestSource{name: "source", msg: &msg}
 	video := &directTestSink{name: "video"}
 	audio := &directTestSink{name: "audio"}
 
-	graph, err := NewDirectGraph(GraphConfig{Name: "stream-route"})
+	graph, err := NewGraph(GraphConfig{Name: "stream-route"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,14 +246,14 @@ func TestDirectGraphRouteByStream(t *testing.T) {
 	}
 }
 
-func TestDirectGraphRouteByEvent(t *testing.T) {
+func TestGraphDirectRouteByEvent(t *testing.T) {
 	event := av.Event{Type: av.EventPacketLoss}
 	msg := Message{Kind: MessageEvent, Event: &event}
 	source := &directTestSource{name: "source", msg: &msg}
 	loss := &directTestSink{name: "loss"}
 	stats := &directTestSink{name: "stats"}
 
-	graph, err := NewDirectGraph(GraphConfig{Name: "event-route"})
+	graph, err := NewGraph(GraphConfig{Name: "event-route"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,8 +280,8 @@ func TestDirectGraphRouteByEvent(t *testing.T) {
 	}
 }
 
-func TestDirectGraphRejectsBufferedPolicy(t *testing.T) {
-	graph, err := NewDirectGraph(GraphConfig{Name: "direct"})
+func TestGraphDirectRejectsBufferedPolicy(t *testing.T) {
+	graph, err := NewGraph(GraphConfig{Name: "direct"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func TestDirectGraphRejectsBufferedPolicy(t *testing.T) {
 	}
 }
 
-func TestDirectGraphEventBackpressure(t *testing.T) {
+func TestGraphDirectEventBackpressure(t *testing.T) {
 	source := &directEventSource{
 		name: "source",
 		events: []av.Event{
@@ -299,7 +299,7 @@ func TestDirectGraphEventBackpressure(t *testing.T) {
 			{Type: av.EventBackpressure},
 		},
 	}
-	graph, err := NewDirectGraph(GraphConfig{Name: "events", EventCapacity: 1})
+	graph, err := NewGraph(GraphConfig{Name: "events", EventCapacity: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestDirectGraphEventBackpressure(t *testing.T) {
 	}
 }
 
-func TestDirectGraphRunAllocs(t *testing.T) {
+func TestGraphDirectRunAllocs(t *testing.T) {
 	ctx := context.Background()
 	packet := av.Packet{StreamID: "audio"}
 	msg := Message{Kind: MessagePacket, Packet: &packet}
@@ -320,7 +320,7 @@ func TestDirectGraphRunAllocs(t *testing.T) {
 	stage := &directPassStage{name: "stage"}
 	sink := &directTestSink{name: "sink"}
 
-	graph, err := NewDirectGraph(GraphConfig{Name: "alloc"})
+	graph, err := NewGraph(GraphConfig{Name: "alloc"})
 	if err != nil {
 		t.Fatal(err)
 	}
