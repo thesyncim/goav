@@ -496,10 +496,6 @@ func FileOutput(name string, writer io.Writer) OutputSpec {
 	}
 }
 
-func File(name string, writer io.Writer) OutputSpec {
-	return FileOutput(name, writer)
-}
-
 func URIOutput(uri string) OutputSpec {
 	return OutputSpec{
 		output: Output{

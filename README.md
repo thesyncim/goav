@@ -19,7 +19,7 @@ Record a WebRTC video track:
 ```go
 task, err := goav.Record(
     goav.WebRTCTrack(track),
-    goav.File("recording.ivf", file),
+    goav.FileOutput("recording.ivf", file),
 ).Build(ctx)
 if err != nil {
     return err
@@ -41,7 +41,7 @@ Record an RTP packet reader:
 ```go
 task, err := goav.Record(
     goav.RTP(video).Name("video").Codec(goav.VP8()),
-    goav.File("recording.ivf", file),
+    goav.FileOutput("recording.ivf", file),
 ).Build(ctx)
 if err != nil {
     return err
@@ -208,6 +208,7 @@ Implemented today:
 - stream-scoped recipe builders for selected audio/video decode, custom stages,
   and Opus/VP8/VP9 encode paths;
 - file, URI, RTP, WebRTC track, codec, resize, resample, and output specs;
+- one file-output constructor, `FileOutput`, instead of duplicate aliases;
 - multi-input realtime recipes with `From(input).And(other...)`;
 - actionable stream-selection diagnostics and first-stream `StreamIndex(0)`;
 - `Describe` graph specs plus optional `graphrender` exporters;
