@@ -116,14 +116,6 @@ func (j *Job) Explain(ctx context.Context) (PlanReport, error) {
 	return newPlanReport("build job", resolved)
 }
 
-func (j *TranscodeJob) Explain(ctx context.Context) (PlanReport, error) {
-	resolved, err := compileTranscodeRecipeForBuildContext(ctx, j)
-	if err != nil {
-		return PlanReport{}, err
-	}
-	return newPlanReport(transcodeRecipeOperation, resolved)
-}
-
 func newPlanReport(operation string, resolved recipeResolved) (PlanReport, error) {
 	graph, err := resolved.Describe()
 	if err != nil {

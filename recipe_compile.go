@@ -293,7 +293,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 }
 
 func compileJobTeeRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
-	branchJob := &TranscodeJob{
+	branchJob := &transcodeJob{
 		runtime:     job.runtime,
 		name:        job.name,
 		streams:     append([]streamBuild(nil), job.teeStreams...),
@@ -309,26 +309,7 @@ func compileJobTeeRecipeWithOptions(job *Job, options recipeCompileOptions) (rec
 	return compileTranscodeRecipeWithOptions(branchJob, options)
 }
 
-func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
-	return compileTranscodeRecipeWithOptions(job, recipeCompileOptions{})
-}
-
-func compileTranscodeRecipeForBuild(job *TranscodeJob) (recipeResolved, error) {
-	return compileTranscodeRecipeForBuildContext(context.Background(), job)
-}
-
-func compileTranscodeRecipeForBuildContext(ctx context.Context, job *TranscodeJob) (recipeResolved, error) {
-	return compileTranscodeRecipeWithOptions(job, recipeCompileOptions{
-		ctx:                        ctx,
-		preflightInputAdapters:     true,
-		preflightOutputAdapters:    true,
-		preflightDecodeAdapters:    true,
-		preflightEncodeAdapters:    true,
-		preflightTransformAdapters: true,
-	})
-}
-
-func compileTranscodeRecipeWithOptions(job *TranscodeJob, options recipeCompileOptions) (recipeResolved, error) {
+func compileTranscodeRecipeWithOptions(job *transcodeJob, options recipeCompileOptions) (recipeResolved, error) {
 	state := recipeCompileState{
 		operation: transcodeRecipeOperation,
 		options:   options,

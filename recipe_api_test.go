@@ -520,8 +520,10 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"JobOption":       true,
 		"RTPOption":       true,
 		"RTPInputOption":  true,
+		"StreamBuilder":   true,
 		"StreamOption":    true,
 		"TrackOption":     true,
+		"TranscodeJob":    true,
 	}
 	for filename, file := range pkg.Files {
 		for _, decl := range file.Decls {
@@ -564,7 +566,7 @@ func TestTeeIsTheOnlyPublicFlowBranchVerb(t *testing.T) {
 	}
 }
 
-func TestRuntimeBranchDecodedAnchorIsPublicAPI(t *testing.T) {
+func TestRuntimeBranchTapAnchorIsPublicAPI(t *testing.T) {
 	graph := goav.Default().Graph()
 	source := graph.Source("source", recipeAPISource{name: "source"})
 	decode := graph.Stage("decode-audio", goav.PacketFunc("decode-audio", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {

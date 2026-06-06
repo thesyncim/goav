@@ -2716,7 +2716,7 @@ func (b *JobStreamBuilder) current() *jobStreamBuild {
 	return b.stream
 }
 
-type TranscodeJob struct {
+type transcodeJob struct {
 	runtime Runtime
 	name    string
 	input   InputSpec
@@ -2734,37 +2734,13 @@ type namedOutputSpec struct {
 
 const transcodeRecipeOperation = "build branch composition"
 
-func (j *TranscodeJob) UseRuntime(runtime Runtime) *TranscodeJob {
-	if j != nil {
-		j.runtime = runtime
-	}
-	return j
-}
-
-func (j *TranscodeJob) Audio(name string, options ...streamOption) *StreamBuilder {
-	return j.stream(name, av.MediaAudio, options...)
-}
-
-func (j *TranscodeJob) Video(name string, options ...streamOption) *StreamBuilder {
-	return j.stream(name, av.MediaVideo, options...)
-}
-
-func (j *TranscodeJob) Output(name string, output OutputSpec) *TranscodeJob {
-	if name == "" {
-		j.setErr(transcodeEmptyOutputDefinitionLabelError(output))
-		return j
-	}
-	j.outputs = append(j.outputs, namedOutputSpec{name: name, output: output.Name(firstNonEmpty(output.name, name))})
-	return j
-}
-
-func (j *TranscodeJob) setErr(err error) {
+func (j *transcodeJob) setErr(err error) {
 	if j.err == nil {
 		j.err = err
 	}
 }
 
-func (j *TranscodeJob) Intent() Intent {
+func (j *transcodeJob) Intent() Intent {
 	intent := Intent{
 		Name:   firstNonEmpty(j.name, "transcode"),
 		Inputs: []InputIntent{j.input.intent()},
@@ -3027,112 +3003,6 @@ func transcodeUnsupportedRTPInputError() error {
 	}
 }
 
-func (j *TranscodeJob) Describe() (pipeline.Spec, error) {
-	resolved, err := compileTranscodeRecipe(j)
-	if err != nil {
-		return pipeline.Spec{}, err
-	}
-	return resolved.Describe()
-}
-
-func (j *TranscodeJob) Build(ctx context.Context) (Task, error) {
-	resolved, err := compileTranscodeRecipeForBuildContext(ctx, j)
-	if err != nil {
-		return nil, err
-	}
-	return resolved.Build(ctx)
-}
-
-func (j *TranscodeJob) Run(ctx context.Context) error {
-	task, err := j.Build(ctx)
-	if err != nil {
-		return err
-	}
-	defer task.Close()
-	return task.Run(ctx)
-}
-
-func (j *TranscodeJob) stream(name string, media av.MediaType, options ...streamOption) *StreamBuilder {
-	stream := streamBuild{
-		name:     name,
-		selector: newStreamSelector(media, options...),
-		decode:   true,
-	}
-	j.streams = append(j.streams, stream)
-	return &StreamBuilder{job: j, index: len(j.streams) - 1}
-}
-
-type StreamBuilder struct {
-	job   *TranscodeJob
-	index int
-}
-
-func (b *StreamBuilder) Apply(flow Flow) *StreamBuilder {
-	spec, err := flowSpecFrom(flow)
-	if err != nil {
-		b.job.setErr(err)
-		return b
-	}
-	stream := b.current()
-	if err := validateFlowMedia(transcodeRecipeOperation, transcodeBranchName(*stream), stream.selector.Type, spec); err != nil {
-		b.job.setErr(err)
-		return b
-	}
-	if codecIntentSet(stream.encode) && (len(spec.transforms) != 0 || codecIntentSet(spec.encode)) {
-		b.job.setErr(streamStepAfterEncodeError(transcodeRecipeOperation, transcodeBranchName(*stream), "flow", stream.encode))
-		return b
-	}
-	stream.transforms = append(stream.transforms, cloneTransformSpecs(spec.transforms)...)
-	if codecIntentSet(spec.encode) {
-		return b.encode(spec.encode)
-	}
-	return b
-}
-
-func (b *StreamBuilder) Resize(width int, height int, options ...resizeOption) *StreamBuilder {
-	stream := b.current()
-	if codecIntentSet(stream.encode) {
-		b.job.setErr(streamStepAfterEncodeError(transcodeRecipeOperation, transcodeBranchName(*stream), "resize", stream.encode))
-		return b
-	}
-	stream.transforms = append(stream.transforms, Resize(width, height, options...))
-	return b
-}
-
-func (b *StreamBuilder) Resample(sampleRate int, channels int, options ...audioOption) *StreamBuilder {
-	stream := b.current()
-	if codecIntentSet(stream.encode) {
-		b.job.setErr(streamStepAfterEncodeError(transcodeRecipeOperation, transcodeBranchName(*stream), "resample", stream.encode))
-		return b
-	}
-	stream.transforms = append(stream.transforms, Resample(sampleRate, channels, options...))
-	return b
-}
-
-func (b *StreamBuilder) Opus(bitrate int, options ...codecOption) *StreamBuilder {
-	return b.encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *StreamBuilder) VP8(bitrate int, options ...codecOption) *StreamBuilder {
-	return b.encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *StreamBuilder) VP9(bitrate int, options ...codecOption) *StreamBuilder {
-	return b.encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *StreamBuilder) To(labels ...string) *TranscodeJob {
-	stream := b.current()
-	for i := range labels {
-		if labels[i] == "" {
-			b.job.setErr(transcodeEmptyOutputLabelError(*stream, i))
-			continue
-		}
-		stream.labels = append(stream.labels, labels[i])
-	}
-	return b.job
-}
-
 func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 	return &BuildError{
 		Code:      "output_label_invalid",
@@ -3365,20 +3235,6 @@ func transcodeIntentBranchName(stream StreamIntent) string {
 
 func transcodeBranchName(stream streamBuild) string {
 	return firstNonEmpty(stream.name, string(stream.selector.Type), "stream")
-}
-
-func (b *StreamBuilder) encode(codec CodecSpec) *StreamBuilder {
-	stream := b.current()
-	if codecIntentSet(stream.encode) {
-		b.job.setErr(duplicateStreamEncodeError(transcodeRecipeOperation, transcodeBranchName(*stream), stream.encode, codec))
-		return b
-	}
-	stream.encode = codec
-	return b
-}
-
-func (b *StreamBuilder) current() *streamBuild {
-	return &b.job.streams[b.index]
 }
 
 func outputLabels(outputs []OutputSpec) []string {

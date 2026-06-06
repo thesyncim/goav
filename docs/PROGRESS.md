@@ -38,7 +38,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | single `NewSession` PeerConnection entry, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit factory registry, event-preserving frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | internal migration `Plan` contract, branch-to-output selection model, mixed audio/video output grouping, resize/resample branch insertion through filter factories | retire as a special runtime path in favor of generic `MediaPlan` branches |
-| runtime | recipe front door with `Record`, `From`, `Decode`, `Transcode`, stream-scoped audio/video recipe builders, reusable `AudioFlow`/`VideoFlow` intent fragments, stream-local `Resize`/`Resample` transforms, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, private recipe intent compiler state with validation, `MediaPlan` branch IR and `Explain(ctx)` branch/decision reports, transcode planning, builder lowering, migration graph-compiler selection, and planned `pipeline.Spec` emission for `Job` and `TranscodeJob`, migration graph compiler list, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for legacy compiler coverage, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, grouped audio/video transcode recipe compiler with transform branches and shared mux outputs, buffered multi-output transcode proof, live RTP/WebRTC flow `Tee` compiler, direct-graph runtime `Task.Attach` stage/sink attachments with decoded audio/video anchors and stoppable handles, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | move `Describe` and `Build` onto `MediaPlan -> pipeline.Spec -> pipeline.Graph`, then shrink workflow-specific compiler dispatch |
+| runtime | composition-first `From(input)` recipe front door with packet-preserving `Copy().To(...)`, explicit stream `.Decode()`, stream-scoped audio/video builders, `Tap(...).Branch(...)` declared branches, reusable `AudioFlow`/`VideoFlow` intent fragments with `Tee`, stream-local `Resize`/`Resample` transforms, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, codec/resize/resample specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, private recipe intent compiler state with validation, `MediaPlan` branch IR and `Explain(ctx)` branch/decision/tap reports, internal transcode-plan migration lowering, migration graph-compiler selection, planned `pipeline.Spec` emission for `Job`, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for migration compiler coverage, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for current Opus/VP8/VP9 readiness, grouped audio/video branch compiler with transform branches and shared mux outputs, buffered multi-output proof, live RTP/WebRTC flow `Tee` compiler, direct-graph runtime `Task.Attach` stage/sink attachments from named taps with `Attachment.Close(ctx)`/`Task.Detach(ctx, h)`, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | move `Describe` and `Build` onto `MediaPlan -> pipeline.Spec -> pipeline.Graph`, then shrink workflow-specific compiler dispatch |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning from RTP decode bounds, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420/I422/I444 frame mapping with yuv420p/yuv422p/yuv444p accepted as aliases, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
@@ -457,9 +457,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     primitives live in `pipeline`, while recipe helpers still expose
     `FrameSink`, `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc`.
     Done.
-145. Hide `TranscodeJob`'s internal plan compiler method so users stay on
-    `Intent`, `Describe`, `Build`, and `Run`, while diagnostics speak in recipe
-    terms instead of `transcode.Plan`.
+145. Hide the internal branch-plan compiler method so users stay on
+    composition recipes and diagnostics speak in recipe terms instead of
+    `transcode.Plan`.
     Done.
 146. Remove top-level `Metadata` and `CodecParameters` aliases so low-level
     media structs stay in `av`, while recipes continue to expose codec and
@@ -540,10 +540,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     packet/frame/event counters, event counts by type, buffered drop counts by
     policy, and the last observed event.
     Done.
-167. Route `Job` and `TranscodeJob` through a private recipe intent compiler
-    state that carries the public `Intent`, concrete IO attachments, validation
-    passes, transcode planning, and builder lowering before handing off to the
-    migration graph compilers. Done.
+167. Route `Job` and the internal branch-plan migration adapter through a
+    private recipe intent compiler state that carries the public `Intent`,
+    concrete IO attachments, validation passes, transcode planning, and builder
+    lowering before handing off to the migration graph compilers. Done.
 168. Move migration graph-compiler selection into the recipe intent pass chain,
     so `Describe` and `Build` use the resolved recipe compiler result instead
     of calling back into builder-level compiler matching. Done.
@@ -587,9 +587,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Task.Stats()` reports decoded frame totals, stream-added and EOS event
     counts, delivery totals, last-event state, and no drops. Done.
 180. Detach recipe compiler state from raw recipe builder pointers: compile
-    entrypoints now capture inputs, outputs, stream selections, transcode
-    branches, and recipe errors into pass state, with a guard test preventing
-    `*Job` or `*TranscodeJob` from returning to `recipeCompileState`. Done.
+    entrypoints now capture inputs, outputs, stream selections, branches, and
+    recipe errors into pass state, with a guard test preventing
+    `*Job` or internal branch-plan adapters from returning to
+    `recipeCompileState`. Done.
 181. Move transcode branch planning onto `Intent.Streams`: the transcode plan
     pass now derives branch selectors, transforms, encode targets, and output
     routes from public intent data while concrete outputs remain captured
@@ -781,7 +782,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     control plane, individual `Attachment.Close(ctx)` handles remain idempotent,
     and `Task.Close()` stops runtime attachments before closing the graph. Done.
 222. Add renderer-free recipe explanations:
-    `Job.Explain(ctx)` and `TranscodeJob.Explain(ctx)` now compile through the
+    `Job.Explain(ctx)` now compiles through the
     same build-preflight path, return `PlanReport` with structured inputs,
     streams, outputs, adapter requirements, warnings, and `pipeline.Spec`, and
     keep text/diagram rendering outside core. Done.
