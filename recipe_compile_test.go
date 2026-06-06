@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"strings"
@@ -24,9 +25,67 @@ func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 			t.Fatalf("recipeCompileState field %s carries %s; compiler passes should use captured intent attachments", field.Name, name)
 		}
 		switch field.Name {
-		case "jobOutputs", "streamOutputs":
-			t.Fatalf("recipeCompileState field %s splits output attachments; compiler passes should use one captured output attachment set", field.Name)
+		case "inputs", "outputs", "jobOutputs", "streamOutputs", "transcodeInput", "transcodeOutputs":
+			t.Fatalf("recipeCompileState field %s uses builder-shaped attachment naming", field.Name)
 		}
+	}
+}
+
+func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
+	tests := []struct {
+		name  string
+		state recipeCompileState
+		want  string
+	}{
+		{
+			name: "job inputs",
+			state: recipeCompileState{
+				operation:         "build job",
+				jobPresent:        true,
+				intent:            Intent{Inputs: []InputIntent{{Name: "input.ivf"}}},
+				outputAttachments: []OutputSpec{FileOutput("recording.ivf", io.Discard)},
+			},
+			want: "inputs",
+		},
+		{
+			name: "job outputs",
+			state: recipeCompileState{
+				operation:         "build job",
+				jobPresent:        true,
+				intent:            Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Outputs: []OutputIntent{{Name: "recording.ivf"}}},
+				inputAttachments:  []InputSpec{FileInput("input.ivf", strings.NewReader(""))},
+				outputAttachments: nil,
+			},
+			want: "outputs",
+		},
+		{
+			name: "transcode outputs",
+			state: recipeCompileState{
+				operation:                  transcodeRecipeOperation,
+				transcodePresent:           true,
+				intent:                     Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Outputs: []OutputIntent{{Name: "web.ivf"}}},
+				transcodeInputAttachment:   FileInput("input.ivf", strings.NewReader("")),
+				transcodeOutputAttachments: nil,
+			},
+			want: "outputs",
+		},
+	}
+	pass := validateRecipeAttachmentConsistencyPass()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !strings.Contains(err.Error(), tt.want) ||
+				!strings.Contains(err.Error(), "intent") ||
+				!strings.Contains(err.Error(), "attached") ||
+				!strings.Contains(err.Error(), "custom compiler passes") ||
+				!strings.Contains(err.Error(), "goav.Record") {
+				t.Fatalf("err = %v, want attachment mismatch guidance", err)
+			}
+			if !errors.As(err, &buildErr) || buildErr.Code != "recipe_attachment_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want recipe_attachment_mismatch wrapping ErrUnsupportedBuild", err)
+			}
+		})
 	}
 }
 
