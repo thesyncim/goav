@@ -170,6 +170,10 @@ Function helpers are for small reusable hooks. Implement `pipeline.Stage`
 directly when the component needs explicit lifecycle, scratch reuse, or
 backpressure-specific behavior.
 
+`TestComponentCodecStageFlushesOnEOS` and
+`TestComponentMuxStageEmitsWriteEvents` cover codec and format stages as
+directly wired graph components.
+
 ### WebRTC Receive
 
 ```text

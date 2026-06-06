@@ -720,6 +720,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `pipeline.Stage` with reusable event/message scratch into a direct graph
     and verifies event forwarding, stats, and lifecycle closure without recipe
     builders. Done.
+211. Prove codec and mux stages as reusable graph components: add
+    `TestComponentCodecStageFlushesOnEOS` and
+    `TestComponentMuxStageEmitsWriteEvents`, wiring exported
+    `codec.DecoderStage` and `format.MuxStage` directly into `pipeline.Graph`
+    without recipe builders and verifying EOS flush, mux write events, stats,
+    and lifecycle closure. Done.
 
 ## First Vertical Slice
 
@@ -995,6 +1001,8 @@ The first named component proof now builds file remux fanout directly from
 format and pipeline components without recipe lowering.
 The second named component proof covers a custom reusable stage that preserves
 events while owning its scratch.
+The third named component proof wires codec and mux stages directly into graphs,
+covering decoder EOS flush ordering, mux write events, stats, and closure.
 Probing, stream resolution, format/codec resolution, mux grouping, and route
 assignment still need to shrink the fixed compiler list. First-page examples
 must stay executable with `Default()` or clearly name adapter requirements, and

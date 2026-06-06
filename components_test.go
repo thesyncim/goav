@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -162,6 +163,126 @@ func TestComponentCustomStageForwardsEvents(t *testing.T) {
 	}
 }
 
+func TestComponentCodecStageFlushesOnEOS(t *testing.T) {
+	source := &componentEventSource{
+		name:   "eos",
+		events: []av.Event{{Type: av.EventEndOfStream, StreamID: "audio"}},
+	}
+	decoder := &componentFlushDecoder{}
+	stage, err := codec.NewDecoderStage(codec.DecoderStageConfig{
+		Name:    "decode",
+		Detail:  "component decoder",
+		Decoder: decoder,
+		Result:  codec.DecodeResult{Frames: make([]av.Frame, 0, 1)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &componentMediaSink{name: "frames"}
+
+	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "component-codec-eos"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddStage(stage, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(pipeline.Route{From: "eos", To: []string{"decode"}, Policy: pipeline.RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(pipeline.Route{From: "decode", To: []string{"frames"}, Policy: pipeline.RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := graph.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.events != 1 || decoder.flushes != 1 {
+		t.Fatalf("decoder events=%d flushes=%d", decoder.events, decoder.flushes)
+	}
+	if sink.frames != 1 || sink.events != 1 || sink.orderLen != 2 ||
+		sink.order != [2]pipeline.MessageKind{pipeline.MessageFrame, pipeline.MessageEvent} {
+		t.Fatalf("sink frames=%d events=%d order_len=%d order=%+v", sink.frames, sink.events, sink.orderLen, sink.order)
+	}
+	stats := graph.Stats()
+	if stats.Frames != 1 || stats.Events != 2 || stats.Delivered != 3 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !source.closed || !decoder.closed || !sink.closed {
+		t.Fatalf("closed source=%v decoder=%v sink=%v", source.closed, decoder.closed, sink.closed)
+	}
+}
+
+func TestComponentMuxStageEmitsWriteEvents(t *testing.T) {
+	source := &componentPacketSource{
+		name:   "packets",
+		packet: av.Packet{StreamID: "audio", Payload: av.Buffer{Bytes: []byte{9}}},
+	}
+	muxer := &componentEventMuxer{}
+	if err := muxer.Open(context.Background(), format.Output{Name: "events.ogg"}, []av.Stream{audioOpusTestStream()}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	stage, err := format.NewMuxStage(format.MuxStageConfig{
+		Name:   "mux",
+		Detail: "component mux",
+		Muxer:  muxer,
+		Result: format.WriteResult{Events: make([]av.Event, 0, 1)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &componentMediaSink{name: "events"}
+
+	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "component-mux-events"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddStage(stage, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(pipeline.Route{From: "packets", To: []string{"mux"}, Policy: pipeline.RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(pipeline.Route{From: "mux", To: []string{"events"}, Policy: pipeline.RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := graph.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if muxer.writes != 1 || muxer.lastPacket == nil || muxer.lastPacket.StreamID != "audio" {
+		t.Fatalf("writes=%d packet=%+v", muxer.writes, muxer.lastPacket)
+	}
+	if sink.events != 1 || sink.lastEvent != av.EventStats || sink.frames != 0 || sink.packets != 0 {
+		t.Fatalf("sink packets=%d frames=%d events=%d last=%s", sink.packets, sink.frames, sink.events, sink.lastEvent)
+	}
+	stats := graph.Stats()
+	if stats.Packets != 1 || stats.Events != 1 || stats.Delivered != 2 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !source.closed || !muxer.closed || !sink.closed {
+		t.Fatalf("closed source=%v muxer=%v sink=%v", source.closed, muxer.closed, sink.closed)
+	}
+}
+
 type componentEventSource struct {
 	name   string
 	events []av.Event
@@ -247,5 +368,138 @@ func (s *componentEventSink) Handle(_ context.Context, msg *pipeline.Message) er
 
 func (s *componentEventSink) Close() error {
 	s.closed = true
+	return nil
+}
+
+type componentPacketSource struct {
+	name   string
+	packet av.Packet
+	msg    pipeline.Message
+	closed bool
+}
+
+func (s *componentPacketSource) Name() string {
+	return s.name
+}
+
+func (s *componentPacketSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	s.msg.Kind = pipeline.MessagePacket
+	s.msg.Packet = &s.packet
+	s.msg.Frame = nil
+	s.msg.Event = nil
+	return emitter.Emit(ctx, &s.msg)
+}
+
+func (s *componentPacketSource) Close() error {
+	s.closed = true
+	return nil
+}
+
+type componentMediaSink struct {
+	name      string
+	packets   int
+	frames    int
+	events    int
+	lastEvent av.EventType
+	order     [2]pipeline.MessageKind
+	orderLen  int
+	closed    bool
+}
+
+func (s *componentMediaSink) Name() string {
+	return s.name
+}
+
+func (s *componentMediaSink) Handle(_ context.Context, msg *pipeline.Message) error {
+	if msg == nil {
+		return nil
+	}
+	switch msg.Kind {
+	case pipeline.MessagePacket:
+		s.packets++
+	case pipeline.MessageFrame:
+		s.frames++
+	case pipeline.MessageEvent:
+		s.events++
+		if msg.Event != nil {
+			s.lastEvent = msg.Event.Type
+		}
+	}
+	if s.orderLen < len(s.order) {
+		s.order[s.orderLen] = msg.Kind
+		s.orderLen++
+	}
+	return nil
+}
+
+func (s *componentMediaSink) Close() error {
+	s.closed = true
+	return nil
+}
+
+type componentFlushDecoder struct {
+	events  int
+	flushes int
+	closed  bool
+}
+
+func (d *componentFlushDecoder) Descriptor() codec.Descriptor {
+	return codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}
+}
+
+func (d *componentFlushDecoder) Open(context.Context, codec.DecodeConfig) error {
+	return nil
+}
+
+func (d *componentFlushDecoder) DecodeInto(context.Context, *av.Packet, *codec.DecodeResult) error {
+	return nil
+}
+
+func (d *componentFlushDecoder) FlushInto(_ context.Context, out *codec.DecodeResult) error {
+	d.flushes++
+	if len(out.Frames) == cap(out.Frames) {
+		return codec.ErrResultFull
+	}
+	index := len(out.Frames)
+	out.Frames = out.Frames[:index+1]
+	frame := &out.Frames[index]
+	frame.Reset()
+	frame.StreamID = "audio"
+	frame.Type = av.MediaAudio
+	return nil
+}
+
+func (d *componentFlushDecoder) HandleEvent(context.Context, *av.Event) error {
+	d.events++
+	return nil
+}
+
+func (d *componentFlushDecoder) Close() error {
+	d.closed = true
+	return nil
+}
+
+type componentEventMuxer struct {
+	writes     int
+	lastPacket *av.Packet
+	closed     bool
+}
+
+func (m *componentEventMuxer) Format() av.FormatID {
+	return av.FormatOgg
+}
+
+func (m *componentEventMuxer) Open(context.Context, format.Output, []av.Stream, format.OpenOptions) error {
+	return nil
+}
+
+func (m *componentEventMuxer) Write(_ context.Context, packet *av.Packet, out *format.WriteResult) error {
+	m.writes++
+	m.lastPacket = packet
+	return out.AddEvent(av.Event{Type: av.EventStats, StreamID: packet.StreamID})
+}
+
+func (m *componentEventMuxer) Close() error {
+	m.closed = true
 	return nil
 }
