@@ -120,10 +120,44 @@ type Route struct {
 	Label  string
 }
 
+type Connection struct {
+	From   string
+	To     []string
+	Policy RoutePolicy
+	Label  string
+}
+
+func Connect(from string, to ...string) Connection {
+	return Connection{
+		From:   from,
+		To:     append([]string(nil), to...),
+		Policy: RouteAll,
+	}
+}
+
+func (c Connection) ByStream(stream av.StreamID) Connection {
+	c.Policy = RouteByStream
+	c.Label = string(stream)
+	return c
+}
+
+func (c Connection) ByEvent(event av.EventType) Connection {
+	c.Policy = RouteByEvent
+	c.Label = string(event)
+	return c
+}
+
+func (c Connection) WithRoute(policy RoutePolicy, label string) Connection {
+	c.Policy = policy
+	c.Label = label
+	return c
+}
+
 type Graph interface {
 	AddSource(Source, BufferPolicy) (NodeRef, error)
 	AddStage(Stage, BufferPolicy) (NodeRef, error)
 	AddSink(Sink, BufferPolicy) (NodeRef, error)
+	Connect(Connection) error
 	Link(Link) error
 	Route(Route) error
 	Spec() Spec

@@ -119,10 +119,26 @@ func (g *DirectGraph) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
 	return NodeRef(g.nodes[index].name), nil
 }
 
-func (g *DirectGraph) Link(link Link) error {
+func (g *DirectGraph) Connect(connection Connection) error {
+	if len(connection.To) == 0 {
+		return ErrInvalidLink
+	}
+	to := make([]NodeRef, len(connection.To))
+	for i := range connection.To {
+		to[i] = NodeRef(connection.To[i])
+	}
 	return g.Route(Route{
-		From:   link.From,
-		To:     []NodeRef{link.To},
+		From:   NodeRef(connection.From),
+		To:     to,
+		Policy: connection.Policy,
+		Label:  connection.Label,
+	})
+}
+
+func (g *DirectGraph) Link(link Link) error {
+	return g.Connect(Connection{
+		From:   link.From.String(),
+		To:     []string{link.To.String()},
 		Policy: RouteAll,
 	})
 }

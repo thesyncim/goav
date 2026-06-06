@@ -163,19 +163,20 @@ func (r *runtime) New() Builder {
 }
 
 type builder struct {
-	runtime    *runtime
-	inputs     []Input
-	rtpInputs  []rtpInput
-	outputs    []Output
-	decodes    []av.StreamSelector
-	encodes    []encodeRequest
-	filters    []filterRequest
-	transcodes []transcode.Plan
-	sources    []pipeline.Source
-	stages     []pipeline.Stage
-	sinks      []pipeline.Sink
-	links      []pipeline.Link
-	routes     []pipeline.Route
+	runtime     *runtime
+	inputs      []Input
+	rtpInputs   []rtpInput
+	outputs     []Output
+	decodes     []av.StreamSelector
+	encodes     []encodeRequest
+	filters     []filterRequest
+	transcodes  []transcode.Plan
+	sources     []pipeline.Source
+	stages      []pipeline.Stage
+	sinks       []pipeline.Sink
+	connections []pipeline.Connection
+	links       []pipeline.Link
+	routes      []pipeline.Route
 }
 
 type encodeRequest struct {
@@ -286,25 +287,13 @@ func WithRoute(policy pipeline.RoutePolicy, label string) ConnectOption {
 }
 
 func (b *builder) Connect(from string, to string, options ...ConnectOption) Builder {
-	connection := Connection{Policy: pipeline.RouteAll}
+	connection := pipeline.Connect(from, to)
 	for i := range options {
 		if options[i] != nil {
 			options[i](&connection)
 		}
 	}
-	if connection.Policy == "" || (connection.Policy == pipeline.RouteAll && connection.Label == "") {
-		b.links = append(b.links, pipeline.Link{
-			From: pipeline.NodeRef(from),
-			To:   pipeline.NodeRef(to),
-		})
-		return b
-	}
-	b.routes = append(b.routes, pipeline.Route{
-		From:   pipeline.NodeRef(from),
-		To:     []pipeline.NodeRef{pipeline.NodeRef(to)},
-		Policy: connection.Policy,
-		Label:  connection.Label,
-	})
+	b.connections = append(b.connections, connection)
 	return b
 }
 
@@ -332,23 +321,12 @@ func (b *builder) branch(from string, policy pipeline.RoutePolicy, label string,
 	if len(to) == 0 {
 		return b
 	}
-	if len(to) == 1 && (policy == "" || policy == pipeline.RouteAll) && label == "" {
-		b.links = append(b.links, pipeline.Link{
-			From: pipeline.NodeRef(from),
-			To:   pipeline.NodeRef(to[0]),
-		})
-		return b
-	}
-	refs := make([]pipeline.NodeRef, len(to))
-	for i := range to {
-		refs[i] = pipeline.NodeRef(to[i])
-	}
-	b.routes = append(b.routes, pipeline.Route{
-		From:   pipeline.NodeRef(from),
-		To:     refs,
-		Policy: policy,
-		Label:  label,
-	})
+	b.connections = append(b.connections, pipeline.Connect(from, to...).WithRoute(policy, label))
+	return b
+}
+
+func (b *builder) Connection(connection pipeline.Connection) Builder {
+	b.connections = append(b.connections, connection)
 	return b
 }
 
@@ -377,7 +355,7 @@ func (b *builder) hasHighLevelRequests() bool {
 
 func (b *builder) hasExplicitGraph() bool {
 	return len(b.sources) != 0 || len(b.stages) != 0 || len(b.sinks) != 0 ||
-		len(b.links) != 0 || len(b.routes) != 0
+		len(b.connections) != 0 || len(b.links) != 0 || len(b.routes) != 0
 }
 
 func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
@@ -420,7 +398,7 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 		sinkRefs[i] = ref
 	}
 
-	if len(b.links) != 0 || len(b.routes) != 0 {
+	if len(b.connections) != 0 || len(b.links) != 0 || len(b.routes) != 0 {
 		nodes := make(map[string]pipeline.NodeRef, len(sourceRefs)+len(stageRefs)+len(sinkRefs))
 		addRuntimeNodes(nodes, sourceRefs)
 		addRuntimeNodes(nodes, stageRefs)
@@ -443,6 +421,15 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 }
 
 func (b *builder) compileExplicitEdges(graph pipeline.Graph, nodes map[string]pipeline.NodeRef) error {
+	for i := range b.connections {
+		connection, err := resolveRuntimeConnection(nodes, b.connections[i])
+		if err != nil {
+			return err
+		}
+		if err := graph.Connect(connection); err != nil {
+			return err
+		}
+	}
 	for i := range b.links {
 		link, err := resolveRuntimeLink(nodes, b.links[i])
 		if err != nil {
@@ -462,6 +449,24 @@ func (b *builder) compileExplicitEdges(graph pipeline.Graph, nodes map[string]pi
 		}
 	}
 	return nil
+}
+
+func resolveRuntimeConnection(nodes map[string]pipeline.NodeRef, connection pipeline.Connection) (pipeline.Connection, error) {
+	from, err := resolveRuntimeNode(nodes, pipeline.NodeRef(connection.From))
+	if err != nil {
+		return pipeline.Connection{}, err
+	}
+	to := make([]string, len(connection.To))
+	for i := range connection.To {
+		ref, err := resolveRuntimeNode(nodes, pipeline.NodeRef(connection.To[i]))
+		if err != nil {
+			return pipeline.Connection{}, err
+		}
+		to[i] = ref.String()
+	}
+	connection.From = from.String()
+	connection.To = to
+	return connection, nil
 }
 
 func addRuntimeNodes(nodes map[string]pipeline.NodeRef, refs []pipeline.NodeRef) {

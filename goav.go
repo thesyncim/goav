@@ -29,10 +29,7 @@ type Runtime interface {
 	New() Builder
 }
 
-type Connection struct {
-	Policy pipeline.RoutePolicy
-	Label  string
-}
+type Connection = pipeline.Connection
 
 type ConnectOption func(*Connection)
 
@@ -55,6 +52,7 @@ type Builder interface {
 	Branch(from string, to ...string) Builder
 	BranchStream(from string, stream av.StreamID, to ...string) Builder
 	BranchEvent(from string, event av.EventType, to ...string) Builder
+	Connection(pipeline.Connection) Builder
 	Link(pipeline.Link) Builder
 	Route(pipeline.Route) Builder
 	Describe() (pipeline.Spec, error)

@@ -16,9 +16,10 @@ The loop is intentionally small:
 8. Update `docs/PROGRESS.md` with evidence and the next pressure point.
 
 Graph descriptions should stay at the workflow level: named nodes connected by
-named routes, with short node details when they make the workflow easier to
-read. Lower-level executor vocabulary should not leak into fluent APIs or
-rendered specs unless a future multi-endpoint stage truly needs it.
+named connections, with short node details when they make the workflow easier to
+read. Stream and event routing are options on a connection. Lower-level executor
+vocabulary should not leak into fluent APIs or rendered specs unless a future
+multi-endpoint stage truly needs it.
 
 ## Compiler Rule
 

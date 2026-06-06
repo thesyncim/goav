@@ -13,8 +13,10 @@ remuxing, analysis, and transcoding can share the same packet/frame/event flow.
 - Pure Go core, no cgo runtime dependency.
 - Simple fluent API for natural workflows.
 - Explicit graph API for custom realtime systems.
-- Graphs are named sources, stages, sinks, links, and branches;
+- Graphs are named sources, stages, sinks, connections, and branches;
   stream/event routing is a connection option.
+- The graph API starts with `pipeline.Connect("source", "sink")`; lower-level
+  link/route structs are escape hatches.
 - Rendered graph nodes can carry short workflow details without changing the
   simple node-to-node API.
 - Caller-owned buffers and result structs on hot paths.
@@ -153,7 +155,7 @@ as private graph compilers that must support both `Describe` and `Build`.
 - `av`: media identifiers, streams, packets, frames, timestamps, events,
   timebase conversion helpers, reset helpers, and ownership markers.
 - `pipeline`: direct-call graph executor, fanout, stream/event routes,
-  backpressure surface, simple node-to-node links and branches,
+  backpressure surface, simple node-to-node connections and branches,
   detail-aware text/DOT/Mermaid graph specs.
 - `format`: probe/demux/mux contracts plus demux source and mux stage adapters.
 - `codec`: decoder/encoder contracts, registry, decoder and encoder pipeline
@@ -205,6 +207,8 @@ Implemented slices:
   filter factories are registered.
 - Fluent `Branch(...)`, `BranchStream(...)`, and `BranchEvent(...)` helpers for
   one-to-many explicit graph fanout without low-level edge objects.
+- First-class `pipeline.Connection` helpers for direct graph composition without
+  constructing lower-level edge objects.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
   `RTP(...)` inputs.
 - Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,
