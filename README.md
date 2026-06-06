@@ -107,8 +107,8 @@ for _, edge := range spec.Edges {
   Transcode branch `.To(...)` accepts either a named output label or an
   `OutputSpec` such as `goav.FileOutput(...)`; each branch must route to an
   output and currently carries at most one resize or resample transform.
-  Named outputs must be unique; share one output by reusing its label in
-  `.To(...)` on each branch.
+  Branch names and output names must be unique; share one output by reusing its
+  label in `.To(...)` on each branch.
   Resize dimensions, resample rates, and channel counts must be positive.
 - `goav.WebRTCTrack(track)` adapts a Pion `TrackRemote` into the same realtime
   receive path as RTP.

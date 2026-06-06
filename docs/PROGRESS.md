@@ -364,7 +364,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     sink output names fail before graph construction. Done.
 115. Add ordinary stream-recipe validation so repeated `Audio()`/`Video()`
     selections fail instead of replacing the first selected stream. Done.
-116. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+116. Add transcode branch-name validation so duplicate rendition handles fail
+    before outputs can refer to an ambiguous branch. Done.
+117. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

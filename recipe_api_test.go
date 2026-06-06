@@ -725,6 +725,25 @@ func TestTranscodeRecipeRejectsDuplicateDirectOutputSpecs(t *testing.T) {
 	}
 }
 
+func TestTranscodeRecipeRejectsDuplicateBranchNames(t *testing.T) {
+	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video("720p").VP9(2_000_000).To("archive").
+		Video("720p").VP9(1_000_000).To("preview").
+		Output("archive", goav.FileOutput("archive.webm", io.Discard)).
+		Output("preview", goav.FileOutput("preview.webm", io.Discard)).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), `transcode branch name "720p"`) ||
+		!strings.Contains(err.Error(), "first branch index: 0") ||
+		!strings.Contains(err.Error(), `.Video("360p")`) {
+		t.Fatalf("err = %v, want duplicate branch guidance", err)
+	}
+}
+
 func TestTranscodeRecipeRejectsInvalidOutputTarget(t *testing.T) {
 	_, err := goav.Transcode(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").VP9(600_000).

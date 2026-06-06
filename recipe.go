@@ -1618,6 +1618,7 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 
 	renditions := make([]transcodepkg.Rendition, 0, len(j.streams))
 	outputRenditions := make(map[string][]string, len(outputs))
+	renditionNames := make(map[string]int, len(j.streams))
 	for i := range j.streams {
 		stream := j.streams[i]
 		if len(stream.invalidTargets) != 0 {
@@ -1670,6 +1671,10 @@ func (j *TranscodeJob) Plan() (transcodepkg.Plan, error) {
 			}
 		}
 		renditionName := firstNonEmpty(stream.name, fmt.Sprintf("rendition-%d", i))
+		if firstIndex, ok := renditionNames[renditionName]; ok {
+			return transcodepkg.Plan{}, transcodeDuplicateBranchError(renditionName, firstIndex, i)
+		}
+		renditionNames[renditionName] = i
 		rendition := transcodepkg.Rendition{
 			Name:     renditionName,
 			Selector: stream.selector,
@@ -1847,6 +1852,25 @@ func transcodeDuplicateOutputError(name string) error {
 			"use a unique .Output(label, ...) label for each transcode output",
 			"route multiple branches to one shared output by calling .To(label) on each branch",
 			"pass distinct goav.FileOutput(...) values directly to .To(...) for branch-local outputs",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeDuplicateBranchError(name string, firstIndex int, secondIndex int) error {
+	return &BuildError{
+		Code:      "stream_duplicate",
+		Operation: "plan transcode",
+		Node:      name,
+		Reason:    fmt.Sprintf("transcode branch name %q is defined more than once", name),
+		Details: []string{
+			fmt.Sprintf("first branch index: %d", firstIndex),
+			fmt.Sprintf("second branch index: %d", secondIndex),
+		},
+		Suggestions: []string{
+			"use unique names such as .Video(\"720p\") and .Video(\"360p\")",
+			"route one branch to multiple outputs by calling .To(label, otherLabel)",
+			"route different branches to the same output by reusing the output label",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
