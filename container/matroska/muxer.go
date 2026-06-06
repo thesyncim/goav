@@ -123,10 +123,11 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if m.closed {
 		return ErrClosed
 	}
-	track, ok := m.track(packet.TrackID)
+	trackIndex, ok := m.trackIndex(packet.TrackID)
 	if packet.TrackID == 0 || !ok {
 		return ErrUnknownTrack
 	}
+	track := m.tracks[trackIndex]
 	if packet.TimeNS < 0 {
 		return ErrInvalidData
 	}
@@ -140,9 +141,16 @@ func (m *Muxer) WritePacket(packet Packet) error {
 		return err
 	}
 	if !m.headerWritten {
+		var err error
+		track, err = m.prepareTracksForHeader(trackIndex, [][]byte{packet.Data})
+		if err != nil {
+			return err
+		}
 		if err := m.writeHeader(); err != nil {
 			return err
 		}
+	} else if track.Codec == CodecH264 && len(track.CodecPrivate) == 0 {
+		return ErrInvalidTrack
 	}
 	timecode := packet.TimeNS / m.options.TimecodeScaleNS
 	if m.shouldStartCluster(timecode) {
@@ -172,12 +180,22 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 	if m.closed {
 		return ErrClosed
 	}
-	track, ok := m.track(packet.TrackID)
+	trackIndex, ok := m.trackIndex(packet.TrackID)
 	if packet.TrackID == 0 || !ok {
 		return ErrUnknownTrack
 	}
+	track := m.tracks[trackIndex]
 	if packet.TimeNS < 0 {
 		return ErrInvalidData
+	}
+	if !m.headerWritten {
+		var err error
+		track, err = m.prepareTracksForHeader(trackIndex, packet.Frames)
+		if err != nil {
+			return err
+		}
+	} else if track.Codec == CodecH264 && len(track.CodecPrivate) == 0 {
+		return ErrInvalidTrack
 	}
 	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
 		return m.writeH264LacedPacket(packet, track)
@@ -285,12 +303,20 @@ func (m *Muxer) hasTrack(id uint32) bool {
 }
 
 func (m *Muxer) track(id uint32) (Track, bool) {
+	index, ok := m.trackIndex(id)
+	if !ok {
+		return Track{}, false
+	}
+	return m.tracks[index], true
+}
+
+func (m *Muxer) trackIndex(id uint32) (int, bool) {
 	for i := range m.tracks {
 		if m.tracks[i].ID == id {
-			return m.tracks[i], true
+			return i, true
 		}
 	}
-	return Track{}, false
+	return 0, false
 }
 
 func (m *Muxer) defaultDurationNS(trackID uint32) int64 {
@@ -317,6 +343,9 @@ func (m *Muxer) shouldStartCluster(timecode int64) bool {
 func (m *Muxer) writeHeader() error {
 	if len(m.tracks) == 0 {
 		return ErrInvalidTrack
+	}
+	if err := m.validateTracksForHeader(); err != nil {
+		return err
 	}
 	if err := m.writeEBMLHeader(); err != nil {
 		return err
@@ -347,6 +376,37 @@ func (m *Muxer) writeHeader() error {
 		return err
 	}
 	m.headerWritten = true
+	return nil
+}
+
+func (m *Muxer) prepareTracksForHeader(trackIndex int, frames [][]byte) (Track, error) {
+	track := m.tracks[trackIndex]
+	if track.Codec == CodecH264 && len(track.CodecPrivate) == 0 {
+		private, err := h264AVCDecoderConfigurationRecordFromAnnexBFrames(frames)
+		if err != nil {
+			return Track{}, err
+		}
+		track.CodecPrivate = private
+	}
+	for i := range m.tracks {
+		candidate := m.tracks[i]
+		if i == trackIndex {
+			candidate = track
+		}
+		if candidate.Codec == CodecH264 && len(candidate.CodecPrivate) == 0 {
+			return Track{}, ErrInvalidTrack
+		}
+	}
+	m.tracks[trackIndex] = track
+	return track, nil
+}
+
+func (m *Muxer) validateTracksForHeader() error {
+	for i := range m.tracks {
+		if m.tracks[i].Codec == CodecH264 && len(m.tracks[i].CodecPrivate) == 0 {
+			return ErrInvalidTrack
+		}
+	}
 	return nil
 }
 

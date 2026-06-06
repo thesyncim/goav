@@ -7,6 +7,11 @@ import (
 
 var h264StartCode = [...]byte{0x00, 0x00, 0x00, 0x01}
 
+const (
+	h264NALUSPS = 7
+	h264NALUPPS = 8
+)
+
 func h264TrackNALULengthSize(track Track) (int, bool, error) {
 	if track.Codec != CodecH264 || len(track.CodecPrivate) == 0 {
 		return 0, false, nil
@@ -67,6 +72,67 @@ func h264AnnexBToAVCSize(data []byte, lengthSize int) (int, error) {
 		return 0, err
 	}
 	return total, nil
+}
+
+func h264AVCDecoderConfigurationRecordFromAnnexBFrames(frames [][]byte) ([]byte, error) {
+	var sps [][]byte
+	var pps [][]byte
+	for i := range frames {
+		if err := h264CollectParameterSets(frames[i], &sps, &pps); err != nil {
+			return nil, err
+		}
+	}
+	if len(sps) == 0 || len(pps) == 0 || len(sps) > 31 || len(pps) > 255 {
+		return nil, ErrInvalidData
+	}
+	firstSPS := sps[0]
+	if len(firstSPS) < 4 {
+		return nil, ErrInvalidData
+	}
+	total := 7
+	for i := range sps {
+		if len(sps[i]) == 0 || len(sps[i]) > 0xffff {
+			return nil, ErrInvalidData
+		}
+		total += 2 + len(sps[i])
+	}
+	for i := range pps {
+		if len(pps[i]) == 0 || len(pps[i]) > 0xffff {
+			return nil, ErrInvalidData
+		}
+		total += 2 + len(pps[i])
+	}
+	private := make([]byte, 0, total)
+	private = append(private, 1, firstSPS[1], firstSPS[2], firstSPS[3], 0xff, 0xe0|byte(len(sps)))
+	for i := range sps {
+		private = binary.BigEndian.AppendUint16(private, uint16(len(sps[i])))
+		private = append(private, sps[i]...)
+	}
+	private = append(private, byte(len(pps)))
+	for i := range pps {
+		private = binary.BigEndian.AppendUint16(private, uint16(len(pps[i])))
+		private = append(private, pps[i]...)
+	}
+	return private, nil
+}
+
+func h264CollectParameterSets(data []byte, sps *[][]byte, pps *[][]byte) error {
+	return h264IterAnnexBNALUs(data, func(nalu []byte) error {
+		naluType := nalu[0] & avcNALUTypeMask
+		switch naluType {
+		case h264NALUSPS:
+			if len(nalu) < 4 || len(*sps) == 31 {
+				return ErrInvalidData
+			}
+			*sps = append(*sps, nalu)
+		case h264NALUPPS:
+			if len(*pps) == 255 {
+				return ErrInvalidData
+			}
+			*pps = append(*pps, nalu)
+		}
+		return nil
+	})
 }
 
 func h264WriteAnnexBAsAVC(w io.Writer, data []byte, lengthSize int, scratch *[16]byte) error {

@@ -79,6 +79,9 @@ Current milestone:
 - H.264 tracks validate caller-provided AVCDecoderConfigurationRecord
   codec-private data on mux and demux before exposing or writing track
   metadata.
+- H.264 muxing can generate AVCDecoderConfigurationRecord codec-private data
+  from SPS/PPS NAL units in the first Annex B packet or laced packet before
+  the header is written.
 - H.264 packet muxing converts public Annex B access units, including laced
   frames, into length-prefixed AVC samples when AVC codec-private data is
   available; demuxing converts those AVC samples back into Annex B packets for
@@ -165,9 +168,12 @@ Current mappings:
 - AV1: `V_AV1` with AV1CodecConfigurationRecord validation when codec-private
   data is provided.
 - H.264: `V_MPEG4/ISO/AVC` with AVCDecoderConfigurationRecord validation when
-  codec-private data is provided. Public packets use Annex B access units;
-  stored samples use AVC length-prefixed NAL units when the length size is known
-  from codec-private data.
+  codec-private data is provided. If H.264 private data is omitted, the first
+  H.264 packet written before the header must be Annex B and must include SPS
+  and PPS NAL units so the muxer can generate the AVC configuration record.
+  Public packets use Annex B access units; stored samples use AVC
+  length-prefixed NAL units when the length size is known from codec-private
+  data.
 - H.265: `V_MPEGH/ISO/HEVC`
 
 WebM accepts only Opus, VP8, VP9, and AV1. It rejects H.264, H.265, PCM

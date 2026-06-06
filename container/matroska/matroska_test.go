@@ -399,6 +399,175 @@ func TestDemuxerRejectsInvalidH264CodecPrivate(t *testing.T) {
 	}
 }
 
+func TestH264AVCDecoderConfigurationRecordFromAnnexB(t *testing.T) {
+	private, err := h264AVCDecoderConfigurationRecordFromAnnexBFrames([][]byte{h264AnnexBParameterAccessUnit()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(private, h264AVCDecoderConfig()) {
+		t.Fatalf("private = %v, want %v", private, h264AVCDecoderConfig())
+	}
+	if _, err := parseAVCDecoderConfigurationRecord(private); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = h264AVCDecoderConfigurationRecordFromAnnexBFrames([][]byte{h264AnnexBAccessUnit()})
+	if !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
+	}
+}
+
+func TestMuxerGeneratesH264CodecPrivateFromFirstAnnexBPacket(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecH264,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	annexB := h264AnnexBParameterAccessUnit()
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: annexB}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	avc := h264AVCSampleWithParameterSetsLengthSize4()
+	if !bytes.Contains(buffer.Bytes(), h264AVCDecoderConfig()) {
+		t.Fatalf("muxed data does not contain generated AVC config")
+	}
+	if !bytes.Contains(buffer.Bytes(), avc) {
+		t.Fatalf("muxed data does not contain AVC sample %v", avc)
+	}
+	if bytes.Contains(buffer.Bytes(), annexB) {
+		t.Fatalf("muxed data still contains Annex B access unit")
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 || !bytes.Equal(tracks[0].CodecPrivate, h264AVCDecoderConfig()) {
+		t.Fatalf("tracks = %+v", tracks)
+	}
+	packet := Packet{Data: make([]byte, 0, len(annexB))}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TrackID != trackID || packet.TimeNS != 0 || !packet.Keyframe || !bytes.Equal(packet.Data, annexB) {
+		t.Fatalf("packet = %+v data=%v, want Annex B %v", packet, packet.Data, annexB)
+	}
+}
+
+func TestMuxerGeneratesH264CodecPrivateFromFirstLacedAnnexBPacket(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackVideo,
+		Codec:             CodecH264,
+		DefaultDurationNS: 20_000_000,
+		Video:             VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := [][]byte{h264AnnexBParameterAccessUnit(), h264AnnexBInterFrame()}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingEBML,
+		Frames:   frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 || !bytes.Equal(tracks[0].CodecPrivate, h264AVCDecoderConfig()) {
+		t.Fatalf("tracks = %+v", tracks)
+	}
+	packet := Packet{Data: make([]byte, 0, len(frames[0]))}
+	for i := range frames {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatalf("frame %d read: %v", i, err)
+		}
+		if packet.TrackID != trackID || packet.TimeNS != int64(i)*20_000_000 ||
+			packet.DurationNS != 20_000_000 || !packet.Keyframe ||
+			!bytes.Equal(packet.Data, frames[i]) {
+			t.Fatalf("frame %d packet=%+v data=%v want data=%v", i, packet, packet.Data, frames[i])
+		}
+	}
+}
+
+func TestMuxerRejectsHeaderWhenH264CodecPrivateIsMissing(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecH264,
+		Video: VideoConfig{Width: 16, Height: 16},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	audioTrack, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = muxer.WritePacket(Packet{TrackID: audioTrack, TimeNS: 0, Keyframe: true, Data: []byte{1, 2, 3}})
+	if !errors.Is(err, ErrInvalidTrack) {
+		t.Fatalf("err = %v, want ErrInvalidTrack", err)
+	}
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before rejecting missing H.264 private data", buffer.Len())
+	}
+}
+
+func TestMuxerCloseRejectsMissingH264CodecPrivate(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecH264,
+		Video: VideoConfig{Width: 16, Height: 16},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); !errors.Is(err, ErrInvalidTrack) {
+		t.Fatalf("err = %v, want ErrInvalidTrack", err)
+	}
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before rejecting missing H.264 private data", buffer.Len())
+	}
+}
+
 func TestMuxerWritesH264AnnexBPacketsAsAVCSamples(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -2285,8 +2454,8 @@ func av1SequenceHeaderOBU() []byte {
 }
 
 func h264AVCDecoderConfig() []byte {
-	sps := []byte{0x67, 0x42, 0x00, 0x0a, 0xf8, 0x41, 0xa2}
-	pps := []byte{0x68, 0xce, 0x0f, 0x2c, 0x80}
+	sps := h264SPS()
+	pps := h264PPS()
 	private := make([]byte, 0, 11+len(sps)+len(pps))
 	private = append(private, 0x01, sps[1], sps[2], sps[3], 0xff, 0xe1)
 	private = binary.BigEndian.AppendUint16(private, uint16(len(sps)))
@@ -2295,6 +2464,14 @@ func h264AVCDecoderConfig() []byte {
 	private = binary.BigEndian.AppendUint16(private, uint16(len(pps)))
 	private = append(private, pps...)
 	return private
+}
+
+func h264SPS() []byte {
+	return []byte{0x67, 0x42, 0x00, 0x0a, 0xf8, 0x41, 0xa2}
+}
+
+func h264PPS() []byte {
+	return []byte{0x68, 0xce, 0x0f, 0x2c, 0x80}
 }
 
 func h264AVCDecoderConfigWithLengthSize(lengthSize int) []byte {
@@ -2313,12 +2490,32 @@ func h264AnnexBAccessUnit() []byte {
 	return []byte{0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x99, 0x00, 0x00, 0x00, 0x01, 0x41, 0x9a}
 }
 
+func h264AnnexBParameterAccessUnit() []byte {
+	var data []byte
+	data = append(data, h264StartCode[:]...)
+	data = append(data, h264SPS()...)
+	data = append(data, h264StartCode[:]...)
+	data = append(data, h264PPS()...)
+	data = append(data, h264StartCode[:]...)
+	data = append(data, 0x65, 0x88, 0x99)
+	return data
+}
+
 func h264AnnexBInterFrame() []byte {
 	return []byte{0x00, 0x00, 0x00, 0x01, 0x41, 0xab, 0xcd}
 }
 
 func h264AVCSampleWithLengthSize2() []byte {
 	return []byte{0x00, 0x03, 0x65, 0x88, 0x99, 0x00, 0x02, 0x41, 0x9a}
+}
+
+func h264AVCSampleWithParameterSetsLengthSize4() []byte {
+	var data []byte
+	for _, nalu := range [][]byte{h264SPS(), h264PPS(), []byte{0x65, 0x88, 0x99}} {
+		data = binary.BigEndian.AppendUint32(data, uint32(len(nalu)))
+		data = append(data, nalu...)
+	}
+	return data
 }
 
 func h264AVCInterFrameWithLengthSize2() []byte {
