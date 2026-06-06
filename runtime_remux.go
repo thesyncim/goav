@@ -59,15 +59,22 @@ func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error 
 }
 
 func (b *builder) openMuxStage(ctx context.Context, output Output, index int, streams []av.Stream) (*format.MuxStage, error) {
-	outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
+	return b.openMuxStageWithFormat(ctx, output, index, streams, "")
+}
+
+func (b *builder) openMuxStageWithFormat(ctx context.Context, output Output, index int, streams []av.Stream, formatID av.FormatID) (*format.MuxStage, error) {
+	if formatID == "" {
+		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
+		if err != nil {
+			return nil, err
+		}
+		formatID = outputProbe.Format
+	}
+	muxFactory, err := b.runtime.formats.MuxerFactory(formatID)
 	if err != nil {
 		return nil, err
 	}
-	muxFactory, err := b.runtime.formats.MuxerFactory(outputProbe.Format)
-	if err != nil {
-		return nil, err
-	}
-	muxer, err := muxFactory.NewMuxer(ctx, outputProbe.Format)
+	muxer, err := muxFactory.NewMuxer(ctx, formatID)
 	if err != nil {
 		return nil, err
 	}

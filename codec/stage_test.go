@@ -155,6 +155,7 @@ type stageEmitter struct {
 	lastEvent  av.EventType
 	lastStream av.StreamID
 	lastPacket av.StreamID
+	lastEpoch  av.Epoch
 	order      [2]pipeline.MessageKind
 	orderLen   int
 }
@@ -165,6 +166,7 @@ func (e *stageEmitter) Emit(_ context.Context, msg *pipeline.Message) error {
 		e.packets++
 		if msg.Packet != nil {
 			e.lastPacket = msg.Packet.StreamID
+			e.lastEpoch = msg.Packet.CodecEpoch
 		}
 	case pipeline.MessageFrame:
 		e.frames++
@@ -189,6 +191,7 @@ func (e *stageEmitter) Reset() {
 	e.lastEvent = ""
 	e.lastStream = ""
 	e.lastPacket = ""
+	e.lastEpoch = 0
 	e.order = [2]pipeline.MessageKind{}
 	e.orderLen = 0
 }
@@ -384,6 +387,29 @@ func TestEncoderStageEmitsPackets(t *testing.T) {
 	}
 	if emitter.lastPacket != "audio" {
 		t.Fatalf("last packet stream = %s", emitter.lastPacket)
+	}
+}
+
+func TestEncoderStageCanStampOutputStream(t *testing.T) {
+	stage, err := NewEncoderStage(EncoderStageConfig{
+		Encoder:           &fakeEncoder{},
+		Result:            EncodeResult{Packets: make([]av.Packet, 0, 1)},
+		OutputStreamID:    "audio-low",
+		OutputCodecEpoch:  3,
+		StampOutputStream: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := av.Frame{StreamID: "audio"}
+	message := pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame}
+	emitter := &stageEmitter{}
+
+	if err := stage.Handle(context.Background(), &message, emitter); err != nil {
+		t.Fatal(err)
+	}
+	if emitter.lastPacket != "audio-low" || emitter.lastEpoch != 3 {
+		t.Fatalf("last packet stream=%s epoch=%d", emitter.lastPacket, emitter.lastEpoch)
 	}
 }
 

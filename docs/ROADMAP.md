@@ -48,9 +48,10 @@ validation gates. This roadmap keeps the broader phase view.
 
 - Resize filter contract implementation.
 - Resample filter contract implementation.
-- Decode sharing across renditions.
-- Per-rendition encoder configs.
-- Multiple mux/output targets from one plan.
+- Decode sharing across renditions. First compiler active.
+- Per-rendition encoder configs. First compiler active.
+- Multiple mux/output targets from one plan. First compiler active.
+- Resize/resample branch execution.
 
 ## Phase 4: H264 and concrete AV1 decode
 
@@ -65,5 +66,6 @@ validation gates. This roadmap keeps the broader phase view.
 
 - Fluent receive/decode/filter/encode/output builder compilers for selected
   streams. First file/protocol and RTP/WebRTC slices are active.
-- Branchable multi-rendition transcode builder compilers.
+- Branchable multi-rendition transcode builder compilers. First shared-decode
+  slice is active.
 - Stats, tracing, and graph introspection.

@@ -26,6 +26,16 @@ type EncoderStageConfig struct {
 	// Result is caller-owned scratch. Its slice capacities define how many
 	// packets and events can be emitted per input message.
 	Result EncodeResult
+	// OutputStreamID stamps emitted packets with the runtime-owned encoded
+	// stream ID when StampOutputStream is true.
+	OutputStreamID av.StreamID
+	// OutputCodecEpoch stamps emitted packets with the encoded stream epoch when
+	// StampOutputStream is true.
+	OutputCodecEpoch av.Epoch
+	// StampOutputStream overwrites packet StreamID and CodecEpoch before packets
+	// leave the stage. This is useful when one decoded stream fans out into
+	// several encoded output streams.
+	StampOutputStream bool
 	// DropInputEvents suppresses forwarding upstream events after the encoder
 	// has observed them. By default, events stay visible downstream.
 	DropInputEvents bool
@@ -42,12 +52,15 @@ type DecoderStage struct {
 }
 
 type EncoderStage struct {
-	name       string
-	encoder    Encoder
-	result     EncodeResult
-	message    pipeline.Message
-	dropEvents bool
-	closed     bool
+	name              string
+	encoder           Encoder
+	result            EncodeResult
+	message           pipeline.Message
+	outputStreamID    av.StreamID
+	outputCodecEpoch  av.Epoch
+	stampOutputStream bool
+	dropEvents        bool
+	closed            bool
 }
 
 var _ pipeline.Stage = (*DecoderStage)(nil)
@@ -78,10 +91,13 @@ func NewEncoderStage(config EncoderStageConfig) (*EncoderStage, error) {
 		name = "encode"
 	}
 	return &EncoderStage{
-		name:       name,
-		encoder:    config.Encoder,
-		result:     config.Result,
-		dropEvents: config.DropInputEvents,
+		name:              name,
+		encoder:           config.Encoder,
+		result:            config.Result,
+		outputStreamID:    config.OutputStreamID,
+		outputCodecEpoch:  config.OutputCodecEpoch,
+		stampOutputStream: config.StampOutputStream,
+		dropEvents:        config.DropInputEvents,
 	}, nil
 }
 
@@ -281,6 +297,10 @@ func (s *EncoderStage) emitResult(ctx context.Context, emitter pipeline.Emitter)
 		}
 	}
 	for i := range s.result.Packets {
+		if s.stampOutputStream {
+			s.result.Packets[i].StreamID = s.outputStreamID
+			s.result.Packets[i].CodecEpoch = s.outputCodecEpoch
+		}
 		s.message.Kind = pipeline.MessagePacket
 		s.message.Packet = &s.result.Packets[i]
 		s.message.Frame = nil

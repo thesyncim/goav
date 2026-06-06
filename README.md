@@ -105,6 +105,23 @@ task, err := rt.New().
     Build(ctx)
 ```
 
+Describe a small rendition plan when one decode should feed multiple encoders:
+
+```go
+plan := transcode.Plan{
+    Input: goav.Input{Name: "input.ogg", Reader: in},
+    Renditions: []transcode.Rendition{
+        {Name: "main", Selector: goav.SelectAudio(), Encode: opusMain, Labels: []string{"archive"}},
+        {Name: "low", Selector: goav.SelectAudio(), Encode: opusLow, Labels: []string{"archive", "preview"}},
+    },
+    Outputs: []transcode.Output{
+        {Name: "archive.ogg", Target: goav.Output{Writer: archive}, Renditions: []string{"archive"}},
+        {Name: "preview.ogg", Target: goav.Output{Writer: preview}, Renditions: []string{"low"}},
+    },
+}
+task, err := rt.New().Transcode(plan).Build(ctx)
+```
+
 Build an explicit graph when the application owns the stages:
 
 ```go
@@ -141,7 +158,8 @@ as private graph compilers that must support both `Describe` and `Build`.
   replaceable TrackRemote readers, RTCP feedback, and codec-update event
   boundaries.
 - `filter`: resize/resample contracts.
-- `transcode`: rendition and ladder planning contracts.
+- `transcode`: rendition and ladder planning contracts, with a first
+  shared-decode multi-rendition compiler.
 - `adapters/ivf`: IVF demux/mux for VP8, VP9, and AV1 packet recording.
 - `adapters/annexb`: H264 Annex B packet mux for `.h264` recording.
 - `adapters/gopus`: active Opus decoder adapter.
@@ -165,6 +183,8 @@ Implemented slices:
 - Fluent remux/fanout compiler.
 - Fluent selected-stream decode-to-sink compiler, with optional filter stages.
 - Fluent selected-stream decode/filter/encode-to-output compiler.
+- Fluent `Transcode(plan)` compiler for one selected decode feeding multiple
+  named encode/output branches.
 - Fluent RTP/WebRTC packet-reader record/fanout compiler, including repeated
   `RTP(...)` inputs.
 - Fluent RTP/WebRTC selected-stream decode-to-sink compiler for live receive,
@@ -185,7 +205,7 @@ Implemented slices:
 
 Next pressure points:
 
-- Branchable multi-rendition encode and transcode planning.
+- Resize/resample branch compilation for transcode plans.
 - Allocation and lifecycle hardening for concrete video decode paths.
 - Allocation-safe resize and resample implementations.
 

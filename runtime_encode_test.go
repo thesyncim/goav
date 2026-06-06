@@ -13,12 +13,20 @@ import (
 )
 
 type encodeTestEncoderFactory struct {
-	encoder *encodeTestEncoder
-	config  codec.EncodeConfig
+	encoder  *encodeTestEncoder
+	encoders []*encodeTestEncoder
+	config   codec.EncodeConfig
+	configs  []codec.EncodeConfig
 }
 
 func (f *encodeTestEncoderFactory) NewEncoder(_ context.Context, config codec.EncodeConfig) (codec.Encoder, error) {
 	f.config = config
+	f.configs = append(f.configs, config)
+	if f.encoder == nil {
+		encoder := &encodeTestEncoder{}
+		f.encoders = append(f.encoders, encoder)
+		return encoder, nil
+	}
 	return f.encoder, nil
 }
 

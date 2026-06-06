@@ -61,10 +61,13 @@ The current compilers cover:
 - one or more RTP/WebRTC packet readers to selected-stream
   decode/filter/encode outputs through the same decoder, filter, encoder, and
   mux stages used by file or protocol inputs
+- `Transcode(plan)` for one input where all renditions resolve to the same
+  selected stream, sharing one decode and fanning frames into multiple named
+  encoder branches; outputs can receive all renditions or select branches by
+  rendition name or label
 
-Branchable ladders and multi-rendition transcode discovery still return a clear
-unsupported error until the compiler can share decode work, split filter
-branches, and attach multiple encoders deliberately.
+Resize and resample branch configs still return a clear unsupported error until
+the runtime has concrete filter-stage factories to attach before each encoder.
 
 ## Core media model
 
@@ -182,8 +185,10 @@ That shape supports:
 ## Multi-output transcoding
 
 The `transcode` package describes ladders and renditions without deciding how
-they are executed. A compiler can later turn that plan into a pipeline graph with
-decode sharing, filter branches, multiple encoders, and multiple muxers.
+they are executed. The first runtime compiler turns a plan into a graph with one
+shared selected decode, multiple encoder branches, and mux outputs that select
+renditions by name or label. It deliberately rejects resize and resample branch
+configs until those filter contracts have concrete stage factories.
 
 Typical use cases:
 

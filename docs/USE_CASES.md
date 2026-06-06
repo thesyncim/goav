@@ -93,6 +93,28 @@ Decode once, then fan out into several video resize branches and audio resample
 branches. Each branch can encode with its own bitrate, codec parameters, and
 output target.
 
+The first plan compiler covers the shared-decode and multiple-encode/output
+part of that shape. Outputs can receive every rendition or select a subset by
+rendition name or label:
+
+```go
+plan := transcode.Plan{
+    Input: goav.Input{Name: "input"},
+    Renditions: []transcode.Rendition{
+        {Name: "main", Selector: goav.SelectVideo(), Encode: mainEncode, Labels: []string{"archive"}},
+        {Name: "preview", Selector: goav.SelectVideo(), Encode: previewEncode, Labels: []string{"preview"}},
+    },
+    Outputs: []transcode.Output{
+        {Name: "archive.webm", Renditions: []string{"archive"}},
+        {Name: "preview.webm", Renditions: []string{"preview"}},
+    },
+}
+task, err := runtime.New().Transcode(plan).Build(ctx)
+```
+
+Resize and resample configs remain plan-level contracts until filter stage
+factories land.
+
 Expected graph:
 
 ```text

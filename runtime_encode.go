@@ -208,16 +208,8 @@ func (b *builder) compileRTPDecodeEncodeToOutput(ctx context.Context, graph pipe
 }
 
 func (b *builder) compileEncodeOutputPath(ctx context.Context, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream) error {
-	stage, err := b.newEncodeStage(ctx, request, config)
+	encodeRef, err := b.compileEncodeStage(ctx, graph, upstream, request, config)
 	if err != nil {
-		return err
-	}
-	encodeRef, err := graph.AddStage(stage, b.runtime.buffer)
-	if err != nil {
-		stage.Close()
-		return err
-	}
-	if err := graph.Link(pipeline.Link{From: upstream, To: encodeRef}); err != nil {
 		return err
 	}
 
@@ -239,6 +231,22 @@ func (b *builder) compileEncodeOutputPath(ctx context.Context, graph pipeline.Gr
 	return nil
 }
 
+func (b *builder) compileEncodeStage(ctx context.Context, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, error) {
+	stage, err := b.newEncodeStage(ctx, request, config)
+	if err != nil {
+		return "", err
+	}
+	encodeRef, err := graph.AddStage(stage, b.runtime.buffer)
+	if err != nil {
+		stage.Close()
+		return "", err
+	}
+	if err := graph.Link(pipeline.Link{From: upstream, To: encodeRef}); err != nil {
+		return "", err
+	}
+	return encodeRef, nil
+}
+
 func (b *builder) newEncodeStage(ctx context.Context, request encodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, error) {
 	factory, err := b.runtime.codecs.EncoderFactory(config.Parameters.ID)
 	if err != nil {
@@ -249,10 +257,13 @@ func (b *builder) newEncodeStage(ctx context.Context, request encodeRequest, con
 		return nil, err
 	}
 	stage, err := codec.NewEncoderStage(codec.EncoderStageConfig{
-		Name:            encodeNodeName(request),
-		Encoder:         encoder,
-		Result:          encodeResultForStream(config.Stream),
-		DropInputEvents: true,
+		Name:              encodeNodeName(request),
+		Encoder:           encoder,
+		Result:            encodeResultForStream(config.Stream),
+		OutputStreamID:    config.Stream.ID,
+		OutputCodecEpoch:  config.Stream.Epoch,
+		StampOutputStream: true,
+		DropInputEvents:   true,
 	})
 	if err != nil {
 		encoder.Close()
@@ -410,6 +421,9 @@ func encodePacketBufferSize(stream av.Stream) int {
 }
 
 func encodeNodeName(request encodeRequest) string {
+	if request.name != "" {
+		return "encode-" + request.name
+	}
 	selector := request.selector
 	if selector.Name != "" {
 		return "encode-" + selector.Name

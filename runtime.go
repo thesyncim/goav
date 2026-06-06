@@ -155,6 +155,7 @@ type builder struct {
 }
 
 type encodeRequest struct {
+	name     string
 	selector av.StreamSelector
 	config   codec.EncodeConfig
 }
