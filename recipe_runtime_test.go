@@ -15,6 +15,35 @@ import (
 	"github.com/thesyncim/goav/rtpav"
 )
 
+type recipeTestDepacketizer struct{}
+
+func (recipeTestDepacketizer) Codec() av.CodecID {
+	return "pcm"
+}
+
+func (recipeTestDepacketizer) PushInto(context.Context, *rtp.Packet, rtpav.PayloadCodec, *rtpav.DepacketizeResult) error {
+	return nil
+}
+
+func (recipeTestDepacketizer) FlushInto(context.Context, *rtpav.DepacketizeResult) error {
+	return nil
+}
+
+func (recipeTestDepacketizer) HandleEvent(context.Context, *av.Event) error {
+	return nil
+}
+
+func TestRTPRecipeAllowsCustomCodecWithManualDepacketizer(t *testing.T) {
+	err := RTP(nil).
+		Name("audio").
+		Codec(CodecSpec{ID: "pcm"}).
+		Depacketize(recipeTestDepacketizer{}).
+		validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

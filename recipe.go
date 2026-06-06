@@ -396,19 +396,70 @@ func (s InputSpec) apply(builder Builder) Builder {
 }
 
 func (s InputSpec) validate() error {
-	if s.err == nil {
+	if s.err != nil {
+		return &BuildError{
+			Code:      "input_invalid",
+			Operation: "build input",
+			Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
+			Reason:    s.err.Error(),
+			Suggestions: []string{
+				"check the input constructor arguments",
+				"use goav.RTP(reader) when you already have an RTP packet reader",
+			},
+			Cause: s.err,
+		}
+	}
+	return s.validateRTPCodec()
+}
+
+func (s InputSpec) validateRTPCodec() error {
+	if s.rtp == nil {
 		return nil
 	}
-	return &BuildError{
-		Code:      "input_invalid",
-		Operation: "build input",
-		Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
-		Reason:    s.err.Error(),
-		Suggestions: []string{
-			"check the input constructor arguments",
-			"use goav.RTP(reader) when you already have an RTP packet reader",
-		},
-		Cause: s.err,
+	if s.codec.Auto {
+		return &BuildError{
+			Code:      "rtp_codec_auto_unresolved",
+			Operation: "build input",
+			Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
+			Reason:    "automatic RTP codec detection is not implemented for recipe inputs yet",
+			Suggestions: []string{
+				"call .Codec(goav.Opus()), .Codec(goav.VP8()), .Codec(goav.VP9()), .Codec(goav.H264()), or .Codec(goav.AV1())",
+				"pass a custom depacketizer with .Depacketize(...)",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if s.codec.Copy {
+		return &BuildError{
+			Code:      "rtp_codec_copy_invalid",
+			Operation: "build input",
+			Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
+			Reason:    "RTP input codec intent describes depacketization, not output copying",
+			Suggestions: []string{
+				"use goav.Record(goav.RTP(reader).Codec(...), output) for packet-preserving receive",
+				"omit .Codec(goav.Copy()) on RTP inputs",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if s.codec.ID == "" || len(s.rtp.depacketizers) != 0 {
+		return nil
+	}
+	switch s.codec.ID {
+	case av.CodecOpus, av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1:
+		return nil
+	default:
+		return &BuildError{
+			Code:      "rtp_codec_unsupported",
+			Operation: "build input",
+			Node:      firstNonEmpty(s.name, s.input.Name, string(s.codec.ID), "rtp"),
+			Reason:    string(s.codec.ID) + " has no built-in RTP depacketizer",
+			Suggestions: []string{
+				"use a built-in receive codec: Opus, VP8, VP9, H264, or AV1",
+				"pass a custom depacketizer with .Depacketize(...)",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
 	}
 }
 

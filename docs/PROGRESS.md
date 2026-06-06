@@ -335,7 +335,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 102. Tighten recipe encode target validation so unknown codec specs, automatic
     codec selection, copy requests, and H264/AV1 work-in-progress targets fail
     as actionable build diagnostics. Done.
-103. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+103. Tighten RTP recipe codec intent so built-in depacketizer wiring is limited
+    to Opus, VP8, VP9, H264, and AV1, while manual depacketizers remain the
+    custom codec escape hatch. Done.
+104. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

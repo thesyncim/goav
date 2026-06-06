@@ -163,6 +163,44 @@ func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
 	}
 }
 
+func TestRTPRecipeRejectsUnsupportedAutoCodecIntent(t *testing.T) {
+	_, err := goav.Record(
+		goav.RTP(nil).Name("audio").Codec(goav.CodecSpec{ID: "pcm"}),
+		goav.FileOutput("recording.ogg", io.Discard),
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "rtp_codec_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want rtp_codec_unsupported wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "pcm has no built-in RTP depacketizer") ||
+		!strings.Contains(err.Error(), ".Depacketize") {
+		t.Fatalf("err = %v, want RTP codec guidance", err)
+	}
+}
+
+func TestRTPRecipeRejectsUnresolvedCodecIntents(t *testing.T) {
+	tests := []struct {
+		name string
+		spec goav.CodecSpec
+		code string
+	}{
+		{name: "auto", spec: goav.Auto(), code: "rtp_codec_auto_unresolved"},
+		{name: "copy", spec: goav.Copy(), code: "rtp_codec_copy_invalid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := goav.Record(
+				goav.RTP(nil).Name("audio").Codec(tt.spec),
+				goav.FileOutput("recording.ogg", io.Discard),
+			).Build(context.Background())
+			var buildErr *goav.BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, goav.ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+		})
+	}
+}
+
 func TestReadmeAudioEncodeRecipeIsSmall(t *testing.T) {
 	meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
 		return emit.Frame(frame)
