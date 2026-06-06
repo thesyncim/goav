@@ -118,6 +118,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Metadata":        true,
 		"CodecParameters": true,
 		"RTPOption":       true,
+		"RTPInputOption":  true,
 		"TrackOption":     true,
 	}
 	for filename, file := range pkg.Files {

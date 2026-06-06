@@ -477,7 +477,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     constructor, `WebRTCTrack(track, options...)`, while advanced session
     orchestration stays in `webrtcav`.
     Done.
-149. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+149. Remove `RTPInputOption` and the `RTP(reader, options...)` constructor path
+    so RTP recipe configuration has one shape: `RTP(reader).Name(...).Codec(...)`
+    plus stream-local methods for depacketizers, buffering, feedback, and jitter.
+    Done.
+150. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

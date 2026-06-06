@@ -321,8 +321,6 @@ type rtpInputSpec struct {
 	maxTSGap      av.Duration
 }
 
-type RTPInputOption func(*InputSpec)
-
 func FileInput(name string, reader io.Reader) InputSpec {
 	return InputSpec{
 		input: format.Input{
@@ -344,17 +342,11 @@ func URI(uri string) InputSpec {
 	}
 }
 
-func RTP(receiver rtpav.PacketReader, options ...RTPInputOption) InputSpec {
-	spec := InputSpec{
+func RTP(receiver rtpav.PacketReader) InputSpec {
+	return InputSpec{
 		input: format.Input{Protocol: av.ProtocolRTP, Realtime: true},
 		rtp:   &rtpInputSpec{receiver: receiver},
 	}
-	for i := range options {
-		if options[i] != nil {
-			options[i](&spec)
-		}
-	}
-	return spec
 }
 
 func (s InputSpec) Name(name string) InputSpec {
