@@ -77,7 +77,7 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 				operation:         "build job",
 				jobPresent:        true,
 				intent:            Intent{Inputs: []InputIntent{{Name: "input.ivf"}}},
-				outputAttachments: []OutputSpec{FileOutput("recording.ivf", io.Discard)},
+				outputAttachments: []EndpointSpec{FileOutput("recording.ivf", io.Discard)},
 			},
 			want: "inputs",
 		},
@@ -219,7 +219,7 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 			}},
 			Outputs: []OutputIntent{{Name: "archive.ogg"}},
 		},
-		outputAttachments: []OutputSpec{
+		outputAttachments: []EndpointSpec{
 			FileOutput("archive.ogg", io.Discard),
 		},
 	}
@@ -249,7 +249,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
 				runtime:   Default(),
-				outputAttachments: []OutputSpec{
+				outputAttachments: []EndpointSpec{
 					FileOutput("recording.webm", io.Discard),
 				},
 			},
@@ -262,7 +262,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
 				runtime:   Default(),
-				outputAttachments: []OutputSpec{
+				outputAttachments: []EndpointSpec{
 					FileOutput("", io.Discard).Format(av.FormatOgg),
 				},
 			},
@@ -316,7 +316,7 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 					testFormatProber(remuxTestProber{}),
 					testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 				)),
-				outputAttachments: []OutputSpec{
+				outputAttachments: []EndpointSpec{
 					FileOutput("recording.ogg", io.Discard),
 				},
 			},
@@ -363,7 +363,7 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 				runtime: New(withTestFormats(
 					testFormatMuxer(av.FormatIVF, &remuxTestMuxerFactory{}),
 				)),
-				outputAttachments: []OutputSpec{
+				outputAttachments: []EndpointSpec{
 					FileOutput("recording.media", io.Discard).Format(av.FormatIVF),
 				},
 			},
@@ -416,10 +416,10 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 	if len(resolved.outputAttachments) != 1 {
 		t.Fatalf("resolved output attachments = %d, want 1", len(resolved.outputAttachments))
 	}
-	if got := outputSpecOpenFormat(resolved.outputAttachments[0]); got != av.FormatOgg {
+	if got := endpointSpecOpenFormat(resolved.outputAttachments[0]); got != av.FormatOgg {
 		t.Fatalf("open output format = %q, want resolved Ogg format", got)
 	}
-	if got := outputSpecGraphFormat(resolved.outputAttachments[0]); got != "" {
+	if got := endpointSpecGraphFormat(resolved.outputAttachments[0]); got != "" {
 		t.Fatalf("graph detail output format = %q, want inferred format hidden from graph detail", got)
 	}
 	task, err := resolved.Build(context.Background())
@@ -1121,7 +1121,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 	tests := []struct {
 		name    string
 		stream  StreamIntent
-		outputs []OutputSpec
+		outputs []EndpointSpec
 		code    string
 		want    []string
 	}{
@@ -1132,7 +1132,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 				Decode:  true,
 				RouteTo: []string{"frames", "archive.ogg"},
 			},
-			outputs: []OutputSpec{frameSink, fileOutput},
+			outputs: []EndpointSpec{frameSink, fileOutput},
 			code:    "output_kind_mixed",
 			want:    []string{"cannot mix frame sinks and muxed outputs", ".Branches(...)"},
 		},
@@ -1143,7 +1143,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 				Decode:  true,
 				RouteTo: []string{"archive.ogg"},
 			},
-			outputs: []OutputSpec{fileOutput},
+			outputs: []EndpointSpec{fileOutput},
 			code:    "encode_missing",
 			want:    []string{"decoded frames cannot be written", ".Opus"},
 		},
@@ -1155,7 +1155,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 				Encode:  Opus(Bitrate(96_000)),
 				RouteTo: []string{"frames"},
 			},
-			outputs: []OutputSpec{frameSink},
+			outputs: []EndpointSpec{frameSink},
 			code:    "encoded_sink_unsupported",
 			want:    []string{"encoded packets", "FileOutput"},
 		},

@@ -207,13 +207,13 @@ func mediaPlanPacketCopySources(spec *pipeline.Spec, nodes map[string]plannedNod
 	return refs, true, nil
 }
 
-func mediaPlanPacketCopyOutputs(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []OutputSpec) ([]pipeline.NodeRef, error) {
+func mediaPlanPacketCopyOutputs(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []EndpointSpec) ([]pipeline.NodeRef, error) {
 	refs := make([]pipeline.NodeRef, 0, len(outputs))
 	for i := range outputs {
 		output := outputs[i].output
 		name := muxNodeName(output, i)
 		ref := pipeline.NodeRef(name)
-		detail := outputNodeDetailWithFormat(output, outputSpecGraphFormat(outputs[i]))
+		detail := outputNodeDetailWithFormat(output, endpointSpecGraphFormat(outputs[i]))
 		if err := addPlannedNode(nodes, spec, name, pipeline.NodeStage, ref, detail); err != nil {
 			return nil, err
 		}
@@ -234,10 +234,10 @@ func allRTPInputSpecs(inputs []InputSpec) bool {
 	return true
 }
 
-func outputSpecGraphFormat(output OutputSpec) av.FormatID {
+func endpointSpecGraphFormat(output EndpointSpec) av.FormatID {
 	return output.format
 }
 
-func outputSpecOpenFormat(output OutputSpec) av.FormatID {
-	return outputSpecFormat(output)
+func endpointSpecOpenFormat(output EndpointSpec) av.FormatID {
+	return endpointSpecFormat(output)
 }

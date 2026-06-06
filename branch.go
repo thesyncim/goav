@@ -16,7 +16,7 @@ type BranchDestination interface {
 
 type branchDestination struct {
 	target      TargetSpec
-	endpoint    OutputSpec
+	endpoint    EndpointSpec
 	hasTarget   bool
 	hasEndpoint bool
 }
@@ -25,12 +25,12 @@ type branchDestination struct {
 // target so the runtime can mux or group them as one output.
 type TargetSpec struct {
 	name     string
-	endpoint OutputSpec
+	endpoint EndpointSpec
 	err      error
 }
 
 // Target binds a stable target name to a concrete endpoint.
-func Target(name string, endpoint OutputSpec) TargetSpec {
+func Target(name string, endpoint EndpointSpec) TargetSpec {
 	if name == "" {
 		return TargetSpec{endpoint: endpoint, err: targetNameMissingError(endpoint)}
 	}
@@ -41,7 +41,7 @@ func (t TargetSpec) branchDestination() branchDestination {
 	return branchDestination{target: t, hasTarget: true}
 }
 
-func (s OutputSpec) branchDestination() branchDestination {
+func (s EndpointSpec) branchDestination() branchDestination {
 	return branchDestination{endpoint: s, hasEndpoint: true}
 }
 
@@ -388,12 +388,12 @@ func cloneTargetSpecs(targets []TargetSpec) []TargetSpec {
 }
 
 func cloneTargetSpec(target TargetSpec) TargetSpec {
-	target.endpoint = cloneOutputSpec(target.endpoint)
+	target.endpoint = cloneEndpointSpec(target.endpoint)
 	return target
 }
 
-func cloneOutputSpec(output OutputSpec) OutputSpec {
-	return output
+func cloneEndpointSpec(endpoint EndpointSpec) EndpointSpec {
+	return endpoint
 }
 
 func branchMissingError(node string) error {
@@ -450,7 +450,7 @@ func branchDestinationInvalidError(name string, reason string) error {
 	}
 }
 
-func targetNameMissingError(endpoint OutputSpec) error {
+func targetNameMissingError(endpoint EndpointSpec) error {
 	return &BuildError{
 		Code:      "target_invalid",
 		Operation: "build target",

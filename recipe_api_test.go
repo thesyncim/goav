@@ -235,11 +235,11 @@ func branchByName(branches []goav.BranchReport, name string) (goav.BranchReport,
 	return goav.BranchReport{}, false
 }
 
-func recordJob(input goav.InputSpec, outputs ...goav.OutputSpec) *goav.Job {
+func recordJob(input goav.InputSpec, outputs ...goav.EndpointSpec) *goav.Job {
 	return goav.From(input).Copy().To(outputs...)
 }
 
-func decodeJob(input goav.InputSpec, output goav.OutputSpec) *goav.Job {
+func decodeJob(input goav.InputSpec, output goav.EndpointSpec) *goav.Job {
 	return goav.From(input).Stream().Decode().To(output)
 }
 
@@ -261,7 +261,7 @@ type testTranscodeBranch struct {
 
 type testTranscodeOutput struct {
 	name   string
-	output goav.OutputSpec
+	output goav.EndpointSpec
 }
 
 type testTranscodeBranchBuilder struct {
@@ -291,7 +291,7 @@ func (j *testTranscodeJob) stream(name string, media av.MediaType) *testTranscod
 	return &testTranscodeBranchBuilder{job: j, index: len(j.branches) - 1}
 }
 
-func (j *testTranscodeJob) Target(name string, output goav.OutputSpec) *testTranscodeJob {
+func (j *testTranscodeJob) Target(name string, output goav.EndpointSpec) *testTranscodeJob {
 	j.outputs = append(j.outputs, testTranscodeOutput{name: name, output: output})
 	return j
 }
@@ -788,6 +788,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Builder":         true,
 		"Input":           true,
 		"Output":          true,
+		"OutputSpec":      true,
 		"AudioOption":     true,
 		"RecordOption":    true,
 		"ProbeRequest":    true,
@@ -1761,16 +1762,16 @@ func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsEmptyOutputSpec(t *testing.T) {
+func TestRecordRecipeRejectsEmptyEndpointSpec(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		goav.OutputSpec{},
+		goav.EndpointSpec{},
 	).Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want output_invalid wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "empty output spec") ||
+	if !strings.Contains(err.Error(), "empty endpoint spec") ||
 		!strings.Contains(err.Error(), "goav.FileOutput") {
 		t.Fatalf("err = %v, want output constructor guidance", err)
 	}
@@ -1803,10 +1804,10 @@ func TestRecordRecipeRejectsUnnamedFileOutputWithoutFormat(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsFormatOnlyOutputSpec(t *testing.T) {
+func TestRecordRecipeRejectsFormatOnlyEndpointSpec(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
-		goav.OutputSpec{}.Format(av.FormatIVF),
+		goav.EndpointSpec{}.Format(av.FormatIVF),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -2954,7 +2955,7 @@ func TestTranscodeRecipeRejectsMissingBranchName(t *testing.T) {
 	}
 }
 
-func TestTranscodeRecipeRejectsInvalidOutputSpec(t *testing.T) {
+func TestTranscodeRecipeRejectsInvalidEndpointSpec(t *testing.T) {
 	_, err := transcodeJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").VP9(600_000).
 		To(goav.Target("preview", goav.FileOutput("preview.webm", nil))).

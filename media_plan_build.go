@@ -152,7 +152,7 @@ func (r recipeResolved) compileMediaPlanMuxOutputs(
 ) error {
 	for i := range r.outputAttachments {
 		output := r.outputAttachments[i]
-		stage, err := builder.openMuxStageWithFormat(ctx, output.output, i, streams, outputSpecOpenFormat(output), outputSpecGraphFormat(output))
+		stage, err := builder.openMuxStageWithFormat(ctx, output.output, i, streams, endpointSpecOpenFormat(output), endpointSpecGraphFormat(output))
 		if err != nil {
 			return err
 		}

@@ -19,7 +19,7 @@ type recipeResolved struct {
 	specOrigin               string
 	mediaBuildKind           string
 	inputAttachments         []InputSpec
-	outputAttachments        []OutputSpec
+	outputAttachments        []EndpointSpec
 	inputProbes              []format.ProbeResult
 	transcodeInputProbe      format.ProbeResult
 	transcodeInputProbeReady bool
@@ -41,7 +41,7 @@ type recipeCompileState struct {
 	inputAttachments  []InputSpec
 	jobOutputCount    int
 	streamSteps       []jobStreamStepAttachment
-	outputAttachments []OutputSpec
+	outputAttachments []EndpointSpec
 	inputProbes       []format.ProbeResult
 
 	transcodeInputAttachment   InputSpec
@@ -80,14 +80,14 @@ func (o recipeCompileOptions) Context() context.Context {
 func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 	formats := make(map[string]av.FormatID)
 	for i := range s.outputAttachments {
-		formatID := outputSpecFormat(s.outputAttachments[i])
+		formatID := endpointSpecFormat(s.outputAttachments[i])
 		if formatID == "" {
 			continue
 		}
 		formats[s.outputAttachments[i].label(fmt.Sprintf("output-%d", i))] = formatID
 	}
 	for i := range s.transcodeTargetAttachments {
-		formatID := outputSpecFormat(s.transcodeTargetAttachments[i].output)
+		formatID := endpointSpecFormat(s.transcodeTargetAttachments[i].output)
 		if formatID == "" {
 			continue
 		}
@@ -100,7 +100,7 @@ func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 	return formats
 }
 
-func outputSpecFormat(output OutputSpec) av.FormatID {
+func endpointSpecFormat(output EndpointSpec) av.FormatID {
 	if output.resolvedFormat != "" {
 		return output.resolvedFormat
 	}
@@ -166,7 +166,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		specOrigin:               state.specOrigin,
 		mediaBuildKind:           state.mediaBuildKind,
 		inputAttachments:         append([]InputSpec(nil), state.inputAttachments...),
-		outputAttachments:        append([]OutputSpec(nil), state.outputAttachments...),
+		outputAttachments:        append([]EndpointSpec(nil), state.outputAttachments...),
 		inputProbes:              append([]format.ProbeResult(nil), state.inputProbes...),
 		transcodeInputProbe:      state.transcodeInputProbe,
 		transcodeInputProbeReady: state.transcodeInputProbeReady,
@@ -547,7 +547,7 @@ func validateJobAttachmentsPass() recipeCompilePass {
 		if err := validateJobInputs(state.inputAttachments); err != nil {
 			return err
 		}
-		return validateOutputSpecs(state.operation, state.outputAttachments)
+		return validateEndpointSpecs(state.operation, state.outputAttachments)
 	}}
 }
 
@@ -712,7 +712,7 @@ func validateTranscodeOutputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs := make([]OutputSpec, 0, len(state.transcodeTargetAttachments))
+		outputs := make([]EndpointSpec, 0, len(state.transcodeTargetAttachments))
 		for i := range state.transcodeTargetAttachments {
 			output := state.transcodeTargetAttachments[i].output.Name(firstNonEmpty(
 				state.transcodeTargetAttachments[i].output.name,

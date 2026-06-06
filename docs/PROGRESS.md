@@ -339,7 +339,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 103. Tighten RTP recipe codec intent so built-in receive wiring is limited to
     Opus, VP8, VP9, H264, and AV1, while custom payload handling stays in the
     advanced runtime layer. Done.
-104. Add recipe output validation so nil frame sinks, empty output specs, and
+104. Add recipe output validation so nil frame sinks, empty endpoint specs, and
     file outputs without writers fail before graph compilation. Done.
 105. Add recipe RTP reader validation so nil packet readers fail before source
     construction while codec-intent diagnostics still cover valid readers.
@@ -405,7 +405,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     depacketizer wiring.
     Done.
 130. Earlier experiment: make a top-level `Decode(input, output)` helper use
-    `FrameSink(...)` output specs. Superseded before release by
+    `FrameSink(...)` endpoint specs. Superseded before release by
     `From(input).Stream()/Audio()/Video().Decode().To(FrameSink(...))`. Done.
 131. Earlier experiment: prune transcode branch-local direct outputs so branches
     route through labels and outputs are defined separately. Superseded before
@@ -466,7 +466,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Done.
 146. Remove top-level `Metadata` and `CodecParameters` aliases so low-level
     media structs stay in `av`, while recipes continue to expose codec and
-    stream intent through `CodecSpec`, options, and input/output specs.
+    stream intent through `CodecSpec`, options, and input/endpoint specs.
     Done.
 147. Demote legacy `WithRTP...` builder options and `RTPOption` to
     package-private compiler plumbing so recipe users configure RTP through
