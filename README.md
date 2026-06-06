@@ -188,7 +188,7 @@ as private graph compilers that must support both `Describe` and `Build`.
   buffers.
 - `adapters/goav1`: descriptor-only by default; `goav_goav1` enables a first
   AV1 decoder factory over caller-owned `DecoderState`, depacketized
-  low-overhead OBU payloads, borrowed 8-bit `gray8`/I420 frame planes, and
+  low-overhead OBU payloads, borrowed 8-bit `gray8`/4:2:0 frame planes, and
   drop-until-sync recovery after loss.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` enables a real
   H264 decoder factory over `github.com/thesyncim/goh264` for 8-bit planar
@@ -272,6 +272,9 @@ Implemented slices:
 - Tagged AV1 RTP receive is covered through the high-level
   `RTP(...).Decode(...).Sink(...)` builder path: Pion RTP packet, AV1
   depacketizer, runtime-provided decoder state, and borrowed frame output.
+- Tagged AV1 RTP receive now covers both `gray8` and planar 8-bit 4:2:0:
+  `i420` and `yuv420p` stream declarations bind the same backend format and
+  emit canonical `i420` frame planes.
 - The same AV1 RTP builder path now has a same-stream codec-change proof:
   payload-map refresh, epoch update, drop-until-sync, keyframe request, and
   resumed decode on the next sync packet.
@@ -280,7 +283,8 @@ Next pressure points:
 
 - Broaden the tagged AV1 factory from the tiny low-overhead proof toward real
   RTP/WebRTC AV1 streams: broader codec-switch cases, additional output
-  formats, raw RTP runner integration, and richer scratch sizing policy.
+  formats beyond 8-bit 4:2:0, raw RTP runner integration, and richer scratch
+  sizing policy.
 
 ## Working Loop
 

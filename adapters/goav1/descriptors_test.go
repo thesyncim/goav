@@ -1,6 +1,7 @@
 package goav1
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -13,6 +14,11 @@ func TestDescriptor(t *testing.T) {
 	}
 	if desc.Capabilities.Encode {
 		t.Fatal("goav1 descriptor should not claim encode support yet")
+	}
+	for _, pixelFormat := range []string{av.PixelFormatI420, av.PixelFormatYUV420P, av.PixelFormatGray8} {
+		if !slices.Contains(desc.Capabilities.PixelFormats, pixelFormat) {
+			t.Fatalf("pixel formats = %v, missing %s", desc.Capabilities.PixelFormats, pixelFormat)
+		}
 	}
 	if len(desc.Capabilities.BuildTags) != 1 || desc.Capabilities.BuildTags[0] != "goav_goav1" {
 		t.Fatalf("build tags = %v", desc.Capabilities.BuildTags)

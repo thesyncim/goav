@@ -130,7 +130,9 @@ Current tagged surface:
 - exact-format frame pools, retained RTP scratch, event/parser scratch,
   reference/output slots, and backend runtime handles owned by `DecoderState`
 - depacketized low-overhead OBU payload decode through the backend runner
-- borrowed decoded frame planes for 8-bit monochrome `gray8` and 4:2:0 I420
+- borrowed decoded frame planes for 8-bit monochrome `gray8` and 4:2:0 I420;
+  `yuv420p` stream declarations are accepted as the same 4:2:0 layout and
+  normalized to canonical `i420` output
 - packet-loss, corrupt-packet, and discontinuity paths reset runner state,
   request keyframes, and drop packets until sync
 - codec-change and discontinuity events update stream identity, reset state,
@@ -138,8 +140,8 @@ Current tagged surface:
   sequence-header/key-frame payload
 - steady decode reuses a bound runner when the next plan fits the existing
   arena
-- result-capacity, allocation, sync-recovery, runtime RTP decode,
-  same-stream RTP codec-change recovery, and close-lifecycle tests
+- result-capacity, allocation, sync-recovery, runtime RTP decode for gray8 and
+  4:2:0, same-stream RTP codec-change recovery, and close-lifecycle tests
 
 RTP/WebRTC callers should feed this decoder packets produced by `rtpav`'s AV1
 depacketizer, not raw AV1 RTP aggregation payloads. The frame format passed to
@@ -150,7 +152,7 @@ provider is a conservative convenience path for simple receive graphs.
 
 It is intentionally narrow for now. Raw RTP payload runner integration, richer
 scratch sizing policy, high bit-depth output, color metadata, film grain policy,
-and broader frame format conversion remain future slices.
+and broader frame format conversion beyond 8-bit 4:2:0 remain future slices.
 
 ## `resample`
 

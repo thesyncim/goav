@@ -112,7 +112,7 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	if err != nil {
 		return err
 	}
-	if config.Stream.Codec.PixelFormat != "" && config.Stream.Codec.PixelFormat != pixelFormat {
+	if requested := normalizeDecoderPixelFormat(config.Stream.Codec.PixelFormat); requested != "" && requested != pixelFormat {
 		return codec.ErrUnsupportedFormat
 	}
 
@@ -295,6 +295,7 @@ func normalizeDecoderStream(stream av.Stream, format backend.FrameFormat, pixelF
 	if stream.Codec.Height <= 0 {
 		stream.Codec.Height = format.Height
 	}
+	stream.Codec.PixelFormat = normalizeDecoderPixelFormat(stream.Codec.PixelFormat)
 	if stream.Codec.PixelFormat == "" {
 		stream.Codec.PixelFormat = pixelFormat
 	}
@@ -302,6 +303,13 @@ func normalizeDecoderStream(stream av.Stream, format backend.FrameFormat, pixelF
 		stream.TimeBase = av.RTPTimeBase(stream.Codec.ClockRate)
 	}
 	return stream
+}
+
+func normalizeDecoderPixelFormat(pixelFormat string) string {
+	if pixelFormat == av.PixelFormatYUV420P {
+		return av.PixelFormatI420
+	}
+	return pixelFormat
 }
 
 func (d *Decoder) appendDecodedFrames(pkt *av.Packet, result *backend.DecoderFrameWorkResidualStreamResult, out *codec.DecodeResult) error {

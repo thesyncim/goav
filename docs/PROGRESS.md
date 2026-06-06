@@ -37,7 +37,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `filter` | Into-style resize/resample result contract, explicit registry, frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | ladder contracts, rendition-to-output selection model, resize/resample branch insertion through filter factories | richer branch planning |
 | runtime | `goav.New` options, codec/format/filter adapter registration hooks, private graph compiler loop, decoder state-provider hook, simple named graph connections with multi-target fanout and stream/event scoped variants, explicit Source/Stage/Sink builder graphs, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, selected-stream decode-to-sink compilers with optional filter stages for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, shared-decode multi-rendition `Transcode(plan)` compiler with transform branches, buffered multi-output transcode proof, multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | next codec adapter validation |
-| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning, low-overhead AV1 decode, high-level RTP receive proof, borrowed gray8/I420 frame output, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed low-overhead sequence/key-frame payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
+| adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning, low-overhead AV1 decode, high-level RTP receive proof, borrowed gray8/I420 frame output with yuv420p accepted as a 4:2:0 alias, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed low-overhead sequence/key-frame payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
 
@@ -185,7 +185,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     high-level receive builder: payload-map refresh, epoch update,
     drop-until-sync, keyframe request, and resumed decode on the next sync
     packet. Done.
-57. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+57. Prove tagged AV1 RTP receive for planar 8-bit 4:2:0 through the high-level
+    builder, accepting both `i420` and `yuv420p` declarations and emitting
+    canonical `i420` frame planes. Done.
+58. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
@@ -315,12 +318,12 @@ Required proof:
   `github.com/thesyncim/goav1`, consumes depacketized low-overhead AV1 OBU
   payloads through caller-owned or runtime-provided `DecoderState`, maps
   decoded 8-bit gray8/I420 backend frames into borrowed `av.Frame` planes,
-  resets and requests keyframes after loss/discontinuity/corrupt packets, drops
-  packets until a packet keyframe marker or parseable low-overhead
-  sequence/key-frame payload, updates identity on codec-change events, reuses
-  the bound runner in steady state, and has allocation, result-capacity,
-  sync-recovery, high-level RTP receive, same-stream RTP codec-change recovery,
-  and close-lifecycle tests.
+  accepts `yuv420p` as the same 4:2:0 layout, resets and requests keyframes
+  after loss/discontinuity/corrupt packets, drops packets until a packet
+  keyframe marker or parseable low-overhead sequence/key-frame payload, updates
+  identity on codec-change events, reuses the bound runner in steady state, and
+  has allocation, result-capacity, sync-recovery, high-level RTP receive,
+  same-stream RTP codec-change recovery, and close-lifecycle tests.
 - `codec.DecodeBounds` gives future realtime adapters a small common place to
   receive payload, retained-fragment, output-count, and geometry limits while
   keeping adapter-specific arenas behind documented `OpaqueState` types.
@@ -359,9 +362,10 @@ Required proof:
   caller-owned packet buffers.
 - `adapters/goav1`: descriptor-only by default; `goav_goav1` activates first
   low-overhead AV1 decode over caller-owned or runtime-provided state, borrowed
-  gray8/I420 output, loss keyframe requests, drop-until-sync recovery from
-  packet markers or parsed low-overhead payloads, high-level RTP receive proof,
-  runner reuse, and allocation/lifecycle guards.
+  gray8/I420 output with yuv420p accepted as a 4:2:0 alias, loss keyframe
+  requests, drop-until-sync recovery from packet markers or parsed
+  low-overhead payloads, high-level RTP receive proof, runner reuse, and
+  allocation/lifecycle guards.
 - `adapters/goh264`: descriptor-only by default; `goav_goh264` activates a
   decode factory for 8-bit planar H264 frames, with adapter-owned allocation
   and lifecycle guards active.
@@ -390,8 +394,8 @@ Required proof:
 
 Current pressure point: broaden tagged AV1 decode toward real RTP/WebRTC
 receive, especially broader codec-switch cases, raw RTP runner integration,
-richer scratch sizing policy, and additional output formats without expanding
-the core API.
+richer scratch sizing policy, and output formats beyond 8-bit 4:2:0 without
+expanding the core API.
 
 ## Validation Gates
 

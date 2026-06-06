@@ -11,6 +11,7 @@ import (
 	"github.com/pion/rtp"
 	goav1adapter "github.com/thesyncim/goav/adapters/goav1"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
 	av1backend "github.com/thesyncim/goav1"
 )
@@ -80,6 +81,78 @@ func TestRuntimeBuilderRTPAV1DecodeSink(t *testing.T) {
 		sink.lastFrame.Video.PixelFormat != av.PixelFormatGray8 ||
 		sink.lastFrame.PTS.Value != 3000 {
 		t.Fatalf("frames=%d last=%+v video=%+v", sink.frames, sink.lastFrame, sink.lastFrame.Video)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed || !sink.closed {
+		t.Fatalf("closed receiver=%v sink=%v", receiver.closed, sink.closed)
+	}
+}
+
+func TestRuntimeBuilderRTPAV1DecodeSinkI420(t *testing.T) {
+	testRuntimeBuilderRTPAV1DecodeSink420(t, av.PixelFormatI420)
+}
+
+func TestRuntimeBuilderRTPAV1DecodeSinkYUV420P(t *testing.T) {
+	testRuntimeBuilderRTPAV1DecodeSink420(t, av.PixelFormatYUV420P)
+}
+
+func testRuntimeBuilderRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
+	t.Helper()
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		TimeBase: av.RTPTimeBase(90000),
+		Codec: av.CodecParameters{
+			ID:          av.CodecAV1,
+			Type:        av.MediaVideo,
+			ClockRate:   90000,
+			Width:       16,
+			Height:      16,
+			PixelFormat: pixelFormat,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 96,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEAV1,
+			ClockRate:   90000,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			Payload: runtimeAV1I420RTPPayload(),
+		}},
+		events: make(chan av.Event),
+	}
+	sink := &runtimeAV1FrameSink{name: "frames"}
+
+	task, err := New(WithCodecAdapter(goav1adapter.Register)).New().
+		RTP(receiver,
+			WithRTPName("av1-rtp"),
+			WithRTPDepacketizer(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
+		).
+		Decode(SelectVideo()).
+		Sink(sink).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if sink.frames != 1 ||
+		sink.lastVideo.Width != 16 ||
+		sink.lastVideo.Height != 16 ||
+		sink.lastVideo.PixelFormat != av.PixelFormatI420 ||
+		sink.lastPlaneCount != 3 ||
+		sink.lastPlaneBytes[0] == 0 ||
+		sink.lastPlaneBytes[1] == 0 ||
+		sink.lastPlaneBytes[2] == 0 {
+		t.Fatalf("frames=%d video=%+v planes=%d bytes=%+v", sink.frames, sink.lastVideo, sink.lastPlaneCount, sink.lastPlaneBytes)
 	}
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
@@ -174,6 +247,43 @@ type runtimeAV1SwitchReceiver struct {
 	closed   bool
 }
 
+type runtimeAV1FrameSink struct {
+	name           string
+	frames         int
+	lastVideo      av.VideoFrame
+	lastPlaneCount int
+	lastPlaneBytes [3]int
+	closed         bool
+}
+
+func (s *runtimeAV1FrameSink) Name() string {
+	return s.name
+}
+
+func (s *runtimeAV1FrameSink) Handle(_ context.Context, msg *pipeline.Message) error {
+	if msg == nil || msg.Kind != pipeline.MessageFrame || msg.Frame == nil {
+		return nil
+	}
+	s.frames++
+	if msg.Frame.Video != nil {
+		s.lastVideo = *msg.Frame.Video
+	}
+	s.lastPlaneCount = len(msg.Frame.Planes)
+	s.lastPlaneBytes = [3]int{}
+	for i := range msg.Frame.Planes {
+		if i >= len(s.lastPlaneBytes) {
+			break
+		}
+		s.lastPlaneBytes[i] = len(msg.Frame.Planes[i].Buffer.Bytes)
+	}
+	return nil
+}
+
+func (s *runtimeAV1FrameSink) Close() error {
+	s.closed = true
+	return nil
+}
+
 func newRuntimeAV1SwitchReceiver(initial av.Stream, updated av.Stream, packets []*rtp.Packet) *runtimeAV1SwitchReceiver {
 	return &runtimeAV1SwitchReceiver{
 		initial: initial,
@@ -231,8 +341,16 @@ func runtimeAV1PayloadMap(epoch av.Epoch, payloadType uint8, stream av.Stream) r
 }
 
 func runtimeAV1RTPPayload() []byte {
-	seq := runtimeAV1OBUElement(av1backend.OBUSequenceHeader, runtimeAV1SequenceHeaderPayload())
-	frame := runtimeAV1OBUElement(av1backend.OBUFrameHeader, runtimeAV1FrameHeaderPayload())
+	return runtimeAV1RTPPayloadWithSequence(runtimeAV1SequenceHeaderPayload(), runtimeAV1FrameHeaderPayload())
+}
+
+func runtimeAV1I420RTPPayload() []byte {
+	return runtimeAV1RTPPayloadWithSequence(runtimeAV1I420SequenceHeaderPayload(), runtimeAV1I420FrameHeaderPayload())
+}
+
+func runtimeAV1RTPPayloadWithSequence(sequenceHeader []byte, frameHeader []byte) []byte {
+	seq := runtimeAV1OBUElement(av1backend.OBUSequenceHeader, sequenceHeader)
+	frame := runtimeAV1OBUElement(av1backend.OBUFrameHeader, frameHeader)
 	tile := runtimeAV1OBUElement(av1backend.OBUTileGroup, []byte{0x80})
 	payload := []byte{0x38}
 	payload = append(payload, byte(len(seq)))
@@ -254,6 +372,14 @@ func runtimeAV1OBUElement(typ av1backend.OBUType, payload []byte) []byte {
 }
 
 func runtimeAV1SequenceHeaderPayload() []byte {
+	return runtimeAV1SequenceHeaderPayloadForMonochrome(true)
+}
+
+func runtimeAV1I420SequenceHeaderPayload() []byte {
+	return runtimeAV1SequenceHeaderPayloadForMonochrome(false)
+}
+
+func runtimeAV1SequenceHeaderPayloadForMonochrome(mono bool) []byte {
 	var w runtimeAV1BitWriter
 	w.writeBits(0, 3)
 	w.writeBool(true)
@@ -270,20 +396,36 @@ func runtimeAV1SequenceHeaderPayload() []byte {
 	w.writeBool(true)
 	w.writeBool(false)
 	w.writeBool(false)
-	w.writeBool(true)
+	w.writeBool(mono)
 	w.writeBool(false)
 	w.writeBool(false)
+	if !mono {
+		w.writeBits(0, 2)
+		w.writeBool(false)
+	}
 	w.writeBool(false)
 	return w.trailingBits()
 }
 
 func runtimeAV1FrameHeaderPayload() []byte {
+	return runtimeAV1FrameHeaderPayloadForMonochrome(true)
+}
+
+func runtimeAV1I420FrameHeaderPayload() []byte {
+	return runtimeAV1FrameHeaderPayloadForMonochrome(false)
+}
+
+func runtimeAV1FrameHeaderPayloadForMonochrome(mono bool) []byte {
 	var w runtimeAV1BitWriter
 	w.writeBool(true)
 	w.writeBool(false)
 	w.writeBool(false)
 	w.writeBits(0, 8)
 	w.writeBool(false)
+	if !mono {
+		w.writeBool(false)
+		w.writeBool(false)
+	}
 	w.writeBool(false)
 	w.writeBool(false)
 	w.writeBool(false)

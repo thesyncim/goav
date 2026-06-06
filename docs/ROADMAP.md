@@ -71,7 +71,8 @@ validation gates. This roadmap keeps the broader phase view.
   conservative decoder state for high-level AV1 receive, and
   `RTP(...).Decode(...).Sink(...)` has tagged receive and same-stream
   codec-change proofs. Richer scratch sizing, raw RTP runner integration, and
-  broader RTP/WebRTC recovery remain.
+  broader RTP/WebRTC recovery remain; 8-bit 4:2:0 receive is active through
+  both `i420` and `yuv420p` declarations.
 - `goav1` adapter as it matures.
 
 ## Phase 5: High-level API
