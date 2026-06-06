@@ -222,6 +222,20 @@ func TestDecodeRecipeRejectsNilFrameSink(t *testing.T) {
 	}
 }
 
+func TestDecodeRecipeRejectsNilSinkFuncCallback(t *testing.T) {
+	_, err := goav.Decode(
+		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.SinkFunc("frames", nil),
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrNilSink) {
+		t.Fatalf("err = %v, want output_invalid wrapping ErrNilSink", err)
+	}
+	if !strings.Contains(err.Error(), "non-nil sink") {
+		t.Fatalf("err = %v, want sink guidance", err)
+	}
+}
+
 func TestRecordRecipeRejectsEmptyOutputSpec(t *testing.T) {
 	_, err := goav.Record(
 		goav.FileInput("input.ogg", strings.NewReader("")),

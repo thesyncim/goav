@@ -45,6 +45,21 @@ func TestPacketFuncCanEmit(t *testing.T) {
 	}
 }
 
+func TestFunctionAdaptersRejectNilCallbacks(t *testing.T) {
+	if PacketFunc("packets", nil) != nil {
+		t.Fatal("PacketFunc with nil callback should return nil")
+	}
+	if FrameFunc("frames", nil) != nil {
+		t.Fatal("FrameFunc with nil callback should return nil")
+	}
+	if EventFunc("events", nil) != nil {
+		t.Fatal("EventFunc with nil callback should return nil")
+	}
+	if SinkFunc("sink", nil) != nil {
+		t.Fatal("SinkFunc with nil callback should return nil")
+	}
+}
+
 func TestSinkFuncReceivesMessage(t *testing.T) {
 	var got Message
 	sink := SinkFunc("collect", func(_ context.Context, msg Message) error {

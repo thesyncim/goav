@@ -185,9 +185,10 @@ sink := goav.SinkFunc("frames", func(ctx context.Context, msg goav.Message) erro
 ```
 
 Packet, frame, event, and sink helpers are meant for metering, stats, preview,
-analysis, and quick integration points. Full stages are still available when a
-component needs explicit lifecycle control. `.Do(stage)` expects a non-nil
-stage and reports recipe-level guidance before graph compilation.
+analysis, and quick integration points. Function helpers return nil for nil
+callbacks so recipes fail with ordinary stage or sink guidance before graph
+compilation. Full stages are still available when a component needs explicit
+lifecycle control.
 
 ## Expert Graph API
 

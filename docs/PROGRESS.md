@@ -350,7 +350,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Done.
 108. Add recipe custom-stage validation so `.Do(nil)` fails with stage guidance
     instead of looking like an empty resize/resample transform. Done.
-109. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+109. Make function stage/sink adapters return nil for nil callbacks so bad
+    hooks fail through normal recipe stage or sink diagnostics. Done.
+110. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 
