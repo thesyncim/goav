@@ -60,6 +60,7 @@ The high-level record/fanout shape accepts one or more packet readers:
 task, err := goav.Record(
     goav.RTP(video).Name("video").Codec(goav.VP8()),
     goav.FileOutput("recording.ivf", file),
+    goav.FileOutput("preview.ivf", preview),
 ).Build(ctx)
 ```
 
@@ -126,6 +127,9 @@ task, err := goav.From(goav.FileInput("input.ivf", in)).
     ).
     Build(ctx)
 ```
+
+For one input and packet-preserving outputs, `Record(input, output...)` is the
+shorter front door over the same graph shape.
 
 Output names are unique within a recipe, including `FrameSink` sink names.
 Use distinct labels when two outputs should both receive the stream.

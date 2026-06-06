@@ -132,6 +132,25 @@ func UseRuntime(runtime Runtime) JobOption {
 	}
 }
 
+type RecordOption interface {
+	applyRecord(*recordConfig)
+}
+
+type recordConfig struct {
+	job     jobConfig
+	outputs []OutputSpec
+}
+
+func (option JobOption) applyRecord(config *recordConfig) {
+	if option != nil {
+		option(&config.job)
+	}
+}
+
+func (s OutputSpec) applyRecord(config *recordConfig) {
+	config.outputs = append(config.outputs, s)
+}
+
 func Default() Runtime {
 	return New(WithDefaults())
 }
@@ -850,8 +869,21 @@ type jobStreamStep struct {
 	transform TransformSpec
 }
 
-func Record(input InputSpec, output OutputSpec, options ...JobOption) *Job {
-	return From(input, options...).named("record").To(output)
+func Record(input InputSpec, output OutputSpec, options ...RecordOption) *Job {
+	config := recordConfig{
+		job:     jobConfig{runtime: Default()},
+		outputs: []OutputSpec{output},
+	}
+	for i := range options {
+		if options[i] != nil {
+			options[i].applyRecord(&config)
+		}
+	}
+	return (&Job{
+		name:    "record",
+		runtime: config.job.runtime,
+		inputs:  []InputSpec{input},
+	}).To(config.outputs...)
 }
 
 func From(input InputSpec, options ...JobOption) *Job {

@@ -396,7 +396,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     branches reject processing steps after the terminal encoder and reject
     duplicate encoders instead of silently reordering or replacing intent.
     Done.
-128. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+128. Let the beginner `Record(input, output...)` recipe fan out to multiple
+    outputs directly while preserving `UseRuntime(...)` on the same call.
+    Done.
+129. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

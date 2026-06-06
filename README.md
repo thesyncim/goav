@@ -54,6 +54,7 @@ Remux or fan out a file-like input:
 ```go
 task, err := goav.Record(
     goav.FileInput("input.ivf", in),
+    goav.FileOutput("archive.ivf", archive),
     goav.FileOutput("preview.ivf", preview),
 ).Build(ctx)
 ```
@@ -88,7 +89,7 @@ for _, edge := range spec.Edges {
 
 ## Common Recipes
 
-- `goav.Record(input, output)` records, remuxes, or fans out packet streams.
+- `goav.Record(input, output...)` records, remuxes, or fans out packet streams.
 - `goav.From(input).To(output...)` is the generic recipe form.
 - `goav.From(input).And(other).To(output)` records repeated RTP/WebRTC receive
   inputs through one shared output graph; explicit realtime input names must be

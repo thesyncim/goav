@@ -64,6 +64,28 @@ func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	}
 }
 
+func TestReadmeRecordFanoutRecipeIsSmall(t *testing.T) {
+	job := goav.Record(
+		goav.FileInput("input.ivf", strings.NewReader("")),
+		goav.FileOutput("archive.ivf", io.Discard),
+		goav.FileOutput("preview.ivf", io.Discard),
+	)
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "input.ivf -> archive.ivf") ||
+		!strings.Contains(text, "input.ivf -> preview.ivf") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if intent.Name != "record" || len(intent.Inputs) != 1 || len(intent.Outputs) != 2 {
+		t.Fatalf("intent: %+v", intent)
+	}
+}
+
 func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 		return nil
