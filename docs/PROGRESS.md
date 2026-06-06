@@ -497,7 +497,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     recipes keep `Opus(goav.Bitrate(...))`, `VP8(...)`, and `VP9(...)` without
     advertising another option type as public API.
     Done.
-154. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
+154. Demote the `ResizeOption` and `AudioOption` marker types to
+    package-private plumbing so transform recipes stay on `.Resize(...)` and
+    `.Resample(...)` instead of teaching extra option nouns.
+    Done.
+155. Keep `gofmt`, `go test ./...`, allocation guards, and no-cgo hygiene green.
 
 ## First Vertical Slice
 

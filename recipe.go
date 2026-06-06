@@ -275,15 +275,15 @@ func codecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, opt
 	return spec
 }
 
-type ResizeOption func(*filter.ResizeConfig)
-type AudioOption func(*filter.ResampleConfig)
+type resizeOption func(*filter.ResizeConfig)
+type audioOption func(*filter.ResampleConfig)
 
 type TransformSpec struct {
 	Resize   *filter.ResizeConfig
 	Resample *filter.ResampleConfig
 }
 
-func Resize(width int, height int, options ...ResizeOption) TransformSpec {
+func Resize(width int, height int, options ...resizeOption) TransformSpec {
 	config := filter.ResizeConfig{Width: width, Height: height, Mode: filter.ResizeExact}
 	for i := range options {
 		if options[i] != nil {
@@ -293,7 +293,7 @@ func Resize(width int, height int, options ...ResizeOption) TransformSpec {
 	return TransformSpec{Resize: &config}
 }
 
-func Resample(sampleRate int, channels int, options ...AudioOption) TransformSpec {
+func Resample(sampleRate int, channels int, options ...audioOption) TransformSpec {
 	config := filter.ResampleConfig{SampleRate: sampleRate, Channels: channels}
 	for i := range options {
 		if options[i] != nil {
@@ -1745,7 +1745,7 @@ func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
 	return b
 }
 
-func (b *JobStreamBuilder) Resize(width int, height int, options ...ResizeOption) *JobStreamBuilder {
+func (b *JobStreamBuilder) Resize(width int, height int, options ...resizeOption) *JobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
 		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "resize", stream.encode))
@@ -1756,7 +1756,7 @@ func (b *JobStreamBuilder) Resize(width int, height int, options ...ResizeOption
 	return b
 }
 
-func (b *JobStreamBuilder) Resample(sampleRate int, channels int, options ...AudioOption) *JobStreamBuilder {
+func (b *JobStreamBuilder) Resample(sampleRate int, channels int, options ...audioOption) *JobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
 		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "resample", stream.encode))
@@ -2097,7 +2097,7 @@ type StreamBuilder struct {
 	index int
 }
 
-func (b *StreamBuilder) Resize(width int, height int, options ...ResizeOption) *StreamBuilder {
+func (b *StreamBuilder) Resize(width int, height int, options ...resizeOption) *StreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
 		b.job.setErr(streamStepAfterEncodeError(transcodeRecipeOperation, transcodeBranchName(*stream), "resize", stream.encode))
@@ -2107,7 +2107,7 @@ func (b *StreamBuilder) Resize(width int, height int, options ...ResizeOption) *
 	return b
 }
 
-func (b *StreamBuilder) Resample(sampleRate int, channels int, options ...AudioOption) *StreamBuilder {
+func (b *StreamBuilder) Resample(sampleRate int, channels int, options ...audioOption) *StreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
 		b.job.setErr(streamStepAfterEncodeError(transcodeRecipeOperation, transcodeBranchName(*stream), "resample", stream.encode))
