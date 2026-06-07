@@ -18,16 +18,16 @@ type transcodeGraphCompiler struct{}
 type rtpTranscodeGraphCompiler struct{}
 
 type branchComposeRoute struct {
-	name             string
-	branch           branchComposeBranch
-	copy             bool
-	decode           CodecSpec
-	codecChange      CodecChangePolicy
-	dropDecodeEvents bool
-	sourceDomain     MediaDomain
-	sharedSteps      []mediaTransform
-	steps            []mediaTransform
-	request          encodeRequest
+	name              string
+	branch            branchComposeBranch
+	copy              bool
+	decode            CodecSpec
+	codecChange       CodecChangePolicy
+	dropDecodeEvents  bool
+	sourceDomain      MediaDomain
+	sharedOperations  []OperationSpec
+	privateOperations []OperationSpec
+	request           encodeRequest
 }
 
 type mediaTransform struct {
@@ -58,8 +58,8 @@ type branchComposeStreamGroup struct {
 }
 
 type branchComposeSharedStepGroup struct {
-	steps    []mediaTransform
-	branches []int
+	operations []OperationSpec
+	branches   []int
 }
 
 func (transcodeGraphCompiler) match(b *builder) bool {
@@ -118,7 +118,7 @@ func (b *builder) planBranchComposePlan(spec pipeline.Spec, plan branchComposePl
 		return pipeline.Spec{}, err
 	}
 
-	nodes := make(map[string]plannedNode, 3+len(branches)+branchChainStepCount(branches)+len(outputs))
+	nodes := make(map[string]plannedNode, 3+len(branches)+branchComposeOperationStageCount(branches)+len(outputs))
 	sourceName := demuxNodeName(plan.Input)
 	sourceRef := pipeline.NodeRef(sourceName)
 	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(plan.Input)); err != nil {
@@ -142,7 +142,7 @@ func (b *builder) planRTPBranchComposePlan(spec pipeline.Spec, plan branchCompos
 		return pipeline.Spec{}, err
 	}
 
-	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3+len(branches)+branchChainStepCount(branches)+len(outputs))
+	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3+len(branches)+branchComposeOperationStageCount(branches)+len(outputs))
 	sourceRefs := make([]pipeline.NodeRef, len(b.rtpInputs))
 	for i := range b.rtpInputs {
 		sourceName := rtpNodeName(b.rtpInputs[i], i)
@@ -211,10 +211,18 @@ func planBranchComposeRoutes(
 		})
 		groupNodeOrder = append(groupNodeOrder, decodeRef)
 		for _, prefix := range branchComposeSharedStepGroups(decodedBranches, branches) {
+			if len(prefix.branches) == 0 {
+				continue
+			}
+			firstBranch := prefix.branches[0]
+			transforms, err := branchComposeRouteOperationTransformsForName(branchComposeSharedOperationName(branches[firstBranch]), prefix.operations)
+			if err != nil {
+				return pipeline.Spec{}, err
+			}
 			branchRef := decodeRef
-			for j := range prefix.steps {
-				stepRef := pipeline.NodeRef(prefix.steps[j].name)
-				if err := addPlannedNode(nodes, &spec, prefix.steps[j].name, pipeline.NodeStage, stepRef, mediaTransformDetail(prefix.steps[j])); err != nil {
+			for j := range transforms {
+				stepRef := pipeline.NodeRef(transforms[j].name)
+				if err := addPlannedNode(nodes, &spec, transforms[j].name, pipeline.NodeStage, stepRef, mediaTransformDetail(transforms[j])); err != nil {
 					return pipeline.Spec{}, err
 				}
 				outgoingEdge := pipeline.EdgeSpec{
@@ -233,13 +241,17 @@ func planBranchComposeRoutes(
 	}
 
 	branchOutputRefs := make([]pipeline.NodeRef, len(branches))
-	branchNodeOrder := make([]pipeline.NodeRef, 0, len(branches)+branchChainStepCount(branches))
-	outgoing := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(branches)*2+branchChainStepCount(branches))
+	branchNodeOrder := make([]pipeline.NodeRef, 0, len(branches)+branchComposeOperationStageCount(branches))
+	outgoing := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(branches)*2+branchComposeOperationStageCount(branches))
 	for i := range branches {
 		branchRef := branchInputs[i]
-		for j := range branches[i].steps {
-			stepRef := pipeline.NodeRef(branches[i].steps[j].name)
-			if err := addPlannedNode(nodes, &spec, branches[i].steps[j].name, pipeline.NodeStage, stepRef, mediaTransformDetail(branches[i].steps[j])); err != nil {
+		transforms, err := branchComposePrivateOperationTransforms(branches[i])
+		if err != nil {
+			return pipeline.Spec{}, err
+		}
+		for j := range transforms {
+			stepRef := pipeline.NodeRef(transforms[j].name)
+			if err := addPlannedNode(nodes, &spec, transforms[j].name, pipeline.NodeStage, stepRef, mediaTransformDetail(transforms[j])); err != nil {
 				return pipeline.Spec{}, err
 			}
 			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
@@ -515,12 +527,16 @@ func compileBranchComposeRoutes(
 		branchRef := branchInputs[firstBranch]
 		branchStream := branchStreams[firstBranch]
 		stepRefs := branchComposeSharedStepPlanRefs(sharedStepPlan, branches, prefix.branches)
-		for j := range prefix.steps {
+		transforms, err := branchComposeRouteOperationTransformsForName(branchComposeSharedOperationName(branches[firstBranch]), prefix.operations)
+		if err != nil {
+			return err
+		}
+		for j := range transforms {
 			stageName := ""
 			if j < len(stepRefs) {
 				stageName = stepRefs[j].String()
 			}
-			stage, outputStream, err := service.newBranchComposeStepStageNamed(ctx, stageName, prefix.steps[j], branchStream, realtime)
+			stage, outputStream, err := service.newBranchComposeStepStageNamed(ctx, stageName, transforms[j], branchStream, realtime)
 			if err != nil {
 				return err
 			}
@@ -547,12 +563,16 @@ func compileBranchComposeRoutes(
 		branchRef := branchRefs[i]
 		branchStream := branchInputStreams[i]
 		planned := branchPlan[branches[i].name]
-		for j := range branches[i].steps {
+		transforms, err := branchComposePrivateOperationTransforms(branches[i])
+		if err != nil {
+			return err
+		}
+		for j := range transforms {
 			stageName := ""
-			if j < len(planned.privateSteps) {
-				stageName = planned.privateSteps[j].String()
+			if j < len(planned.privateStageNodes) {
+				stageName = planned.privateStageNodes[j].String()
 			}
-			stage, outputStream, err := service.newBranchComposeStepStageNamed(ctx, stageName, branches[i].steps[j], branchStream, realtime)
+			stage, outputStream, err := service.newBranchComposeStepStageNamed(ctx, stageName, transforms[j], branchStream, realtime)
 			if err != nil {
 				return err
 			}
@@ -809,11 +829,8 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 			return nil, branchComposeDuplicateBranchError(name, i)
 		}
 		names[name] = struct{}{}
-		sharedSteps, err := branchComposeSharedRouteSteps(branch)
-		if err != nil {
-			return nil, err
-		}
-		steps, err := branchComposeRouteSteps(name, branch)
+		sharedOperations := branchComposeSharedRouteOperations(branch)
+		privateOperations, err := branchComposeRouteOperations(name, branch)
 		if err != nil {
 			return nil, err
 		}
@@ -829,14 +846,14 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 			config.Stream.Metadata = branch.Metadata
 		}
 		branches[i] = branchComposeRoute{
-			name:             name,
-			branch:           branch,
-			copy:             branch.Copy,
-			decode:           cloneCodecSpec(branch.DecodeConfig),
-			codecChange:      branch.CodecChange,
-			dropDecodeEvents: false,
-			sharedSteps:      sharedSteps,
-			steps:            steps,
+			name:              name,
+			branch:            branch,
+			copy:              branch.Copy,
+			decode:            cloneCodecSpec(branch.DecodeConfig),
+			codecChange:       branch.CodecChange,
+			dropDecodeEvents:  false,
+			sharedOperations:  cloneOperationSpecs(sharedOperations),
+			privateOperations: cloneOperationSpecs(privateOperations),
 			request: encodeRequest{
 				name:     name,
 				selector: branch.Selector,
@@ -847,11 +864,8 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 	return branches, nil
 }
 
-func branchComposeSharedRouteSteps(branch branchComposeBranch) ([]mediaTransform, error) {
-	if len(branch.SharedOperations) != 0 {
-		return branchComposeRouteOperationStepsForName(branchComposeSharedStepName(branch), branch.SharedOperations)
-	}
-	return nil, nil
+func branchComposeSharedRouteOperations(branch branchComposeBranch) []OperationSpec {
+	return cloneOperationSpecs(branch.SharedOperations)
 }
 
 func branchComposeRouteNeedsEncode(branch branchComposeRoute) bool {
@@ -1009,112 +1023,152 @@ func branchComposeDuplicateBranchError(name string, index int) error {
 	}
 }
 
-func branchComposeRouteSteps(name string, branch branchComposeBranch) ([]mediaTransform, error) {
+func branchComposeRouteOperations(name string, branch branchComposeBranch) ([]OperationSpec, error) {
 	if len(branch.PrivateOperations) != 0 {
-		return branchComposeRouteOperationStepsForName(name, branch.PrivateOperations)
+		return cloneOperationSpecs(branch.PrivateOperations), nil
 	}
-	return branchComposeInlineTransforms(name, branch)
+	return branchComposeInlineTransformOperations(name, branch)
 }
 
-func branchComposeRouteOperationStepsForName(name string, operations []OperationSpec) ([]mediaTransform, error) {
-	return branchComposeRouteStepsForName(name, branchComposeRouteStepsFromOperationSpecs(operations))
-}
-
-func branchComposeRouteStepsFromOperationSpecs(operations []OperationSpec) []chainStep {
-	if len(operations) == 0 {
-		return nil
-	}
-	steps := make([]chainStep, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
-		switch operation.Kind {
-		case OpStage:
-			steps = append(steps, chainStep{stage: operation.Stage})
-		case OpTransform:
-			steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
-		}
-	}
-	return steps
-}
-
-func branchComposeRouteStepsForName(name string, steps []chainStep) ([]mediaTransform, error) {
-	out := make([]mediaTransform, 0, len(steps))
+func branchComposeRouteOperationTransformsForName(name string, operations []OperationSpec) ([]mediaTransform, error) {
+	out := make([]mediaTransform, 0, len(operations))
 	transformIndex := 0
-	for i := range steps {
-		if !mediaShapeEmpty(steps[i].shape) {
-			continue
-		}
-		step, err := branchComposeRouteStep(name, transformIndex, steps[i])
+	for i := range operations {
+		step, err := branchComposeRouteOperationTransform(name, transformIndex, operations[i])
 		if err != nil {
 			return nil, err
 		}
-		if steps[i].transform.Resize != nil || steps[i].transform.Resample != nil {
+		if operations[i].Kind == OpTransform && (operations[i].Transform.Resize != nil || operations[i].Transform.Resample != nil) {
 			transformIndex++
 		}
-		out = append(out, step)
+		if !mediaTransformEmpty(step) {
+			out = append(out, step)
+		}
 	}
 	return out, nil
 }
 
-func branchComposeInlineTransforms(name string, branch branchComposeBranch) ([]mediaTransform, error) {
+func branchComposeInlineTransformOperations(name string, branch branchComposeBranch) ([]OperationSpec, error) {
 	if branch.Resize != nil && branch.Resample != nil {
 		return nil, branchChainStepError(name, "branch cannot combine resize and resample in one step")
 	}
 	switch {
 	case branch.Resize != nil:
-		return []mediaTransform{{
-			name:    "resize-" + name,
-			factory: filter.FactoryResize,
-			video:   branch.Resize,
-		}}, nil
+		return []OperationSpec{operationSpecForTransform(TransformSpec{Resize: branch.Resize})}, nil
 	case branch.Resample != nil:
-		return []mediaTransform{{
-			name:    "resample-" + name,
-			factory: filter.FactoryResample,
-			audio:   branch.Resample,
-		}}, nil
+		return []OperationSpec{operationSpecForTransform(TransformSpec{Resample: branch.Resample})}, nil
 	default:
 		return nil, nil
 	}
 }
 
-func branchComposeRouteStep(branchName string, transformIndex int, step chainStep) (mediaTransform, error) {
-	set := 0
-	if step.stage != nil {
-		set++
-	}
-	if step.transform.Resize != nil {
-		set++
-	}
-	if step.transform.Resample != nil {
-		set++
-	}
-	if set != 1 {
-		return mediaTransform{}, branchChainStepError(branchName, "branch step must contain exactly one stage or transform")
-	}
+func branchComposeRouteOperationTransform(branchName string, transformIndex int, operation OperationSpec) (mediaTransform, error) {
 	suffix := ""
 	if transformIndex > 0 {
 		suffix = "-" + strconv.Itoa(transformIndex+1)
 	}
-	switch {
-	case step.stage != nil:
+	switch operation.Kind {
+	case OpStage:
+		if operation.Stage == nil {
+			return mediaTransform{}, branchChainStepError(branchName, "branch stage operation has no stage")
+		}
 		return mediaTransform{
-			name:  step.stage.Name(),
-			stage: step.stage,
+			name:  operation.Stage.Name(),
+			stage: operation.Stage,
 		}, nil
-	case step.transform.Resize != nil:
-		return mediaTransform{
-			name:    "resize-" + branchName + suffix,
-			factory: filter.FactoryResize,
-			video:   step.transform.Resize,
-		}, nil
+	case OpTransform:
+		if operation.Transform.Resize != nil && operation.Transform.Resample != nil {
+			return mediaTransform{}, branchChainStepError(branchName, "branch transform operation cannot combine resize and resample")
+		}
+		if operation.Transform.Resize != nil {
+			resize := *operation.Transform.Resize
+			return mediaTransform{
+				name:    "resize-" + branchName + suffix,
+				factory: filter.FactoryResize,
+				video:   &resize,
+			}, nil
+		}
+		if operation.Transform.Resample != nil {
+			resample := *operation.Transform.Resample
+			return mediaTransform{
+				name:    "resample-" + branchName + suffix,
+				factory: filter.FactoryResample,
+				audio:   &resample,
+			}, nil
+		}
+		return mediaTransform{}, branchChainStepError(branchName, "branch transform operation is empty")
 	default:
-		return mediaTransform{
-			name:    "resample-" + branchName + suffix,
-			factory: filter.FactoryResample,
-			audio:   step.transform.Resample,
-		}, nil
+		return mediaTransform{}, nil
 	}
+}
+
+func mediaTransformEmpty(transform mediaTransform) bool {
+	return transform.name == "" &&
+		transform.factory == "" &&
+		transform.stage == nil &&
+		transform.video == nil &&
+		transform.audio == nil
+}
+
+func branchComposeRouteStageOperationCount(operations []OperationSpec) int {
+	count := 0
+	for i := range operations {
+		switch operations[i].Kind {
+		case OpStage:
+			if operations[i].Stage != nil {
+				count++
+			}
+		case OpTransform:
+			if operations[i].Transform.Resize != nil || operations[i].Transform.Resample != nil {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func branchComposeRouteStageOperations(operations []OperationSpec) []OperationSpec {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := make([]OperationSpec, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		switch operation.Kind {
+		case OpStage:
+			if operation.Stage != nil {
+				out = append(out, operation)
+			}
+		case OpTransform:
+			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
+				out = append(out, operation)
+			}
+		}
+	}
+	return cloneOperationSpecs(out)
+}
+
+func branchComposeRouteOperationsKey(operations []OperationSpec) string {
+	return mediaTransformsKeyFromOperations(branchComposeRouteStageOperations(operations))
+}
+
+func mediaTransformsKeyFromOperations(operations []OperationSpec) string {
+	if len(operations) == 0 {
+		return ""
+	}
+	transforms, err := branchComposeRouteOperationTransformsForName("", operations)
+	if err != nil {
+		return ""
+	}
+	return mediaTransformsKey(transforms)
+}
+
+func branchComposeSharedOperationName(branch branchComposeRoute) string {
+	return branchComposeSharedStepName(branch.branch)
+}
+
+func branchComposePrivateOperationTransforms(branch branchComposeRoute) ([]mediaTransform, error) {
+	return branchComposeRouteOperationTransformsForName(branch.name, branch.privateOperations)
 }
 
 func branchChainStepError(name string, reason string) error {
@@ -1124,18 +1178,19 @@ func branchChainStepError(name string, reason string) error {
 		Node:      name,
 		Reason:    reason,
 		Suggestions: []string{
-			"use one operation per branch step",
+			"use one operation per branch call",
 			"use resize on video branches and resample on audio branches",
-			"use goav.Branch(name).Do(stage).Resize(...).Encode(goav.VP9(...)).To(output) for recipe branch steps",
+			"use goav.Branch(name).Do(stage).Resize(...).Encode(goav.VP9(...)).To(output) for recipe branch operations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func branchChainStepCount(branches []branchComposeRoute) int {
+func branchComposeOperationStageCount(branches []branchComposeRoute) int {
 	count := 0
 	for i := range branches {
-		count += len(branches[i].sharedSteps) + len(branches[i].steps)
+		count += branchComposeRouteStageOperationCount(branches[i].sharedOperations) +
+			branchComposeRouteStageOperationCount(branches[i].privateOperations)
 	}
 	return count
 }
@@ -1148,13 +1203,13 @@ func branchComposeSharedStepGroups(indices []int, branches []branchComposeRoute)
 	groups := make([]branchComposeSharedStepGroup, 0, len(indices))
 	positions := make(map[string]int, len(indices))
 	for _, index := range indices {
-		key := mediaTransformsKey(branches[index].sharedSteps)
+		key := branchComposeRouteOperationsKey(branches[index].sharedOperations)
 		position, ok := positions[key]
 		if !ok {
 			position = len(groups)
 			positions[key] = position
 			groups = append(groups, branchComposeSharedStepGroup{
-				steps: append([]mediaTransform(nil), branches[index].sharedSteps...),
+				operations: cloneOperationSpecs(branches[index].sharedOperations),
 			})
 		}
 		groups[position].branches = append(groups[position].branches, index)
@@ -1171,14 +1226,14 @@ func branchComposeRuntimeSharedStepGroups(branches []branchComposeRoute, inputs 
 			string(streams[i].ID),
 			string(streams[i].Type),
 			string(streams[i].Codec.ID),
-			mediaTransformsKey(branches[i].sharedSteps),
+			branchComposeRouteOperationsKey(branches[i].sharedOperations),
 		}, "\x00")
 		position, ok := positions[key]
 		if !ok {
 			position = len(groups)
 			positions[key] = position
 			groups = append(groups, branchComposeSharedStepGroup{
-				steps: append([]mediaTransform(nil), branches[i].sharedSteps...),
+				operations: cloneOperationSpecs(branches[i].sharedOperations),
 			})
 		}
 		groups[position].branches = append(groups[position].branches, i)

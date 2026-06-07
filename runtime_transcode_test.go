@@ -826,9 +826,9 @@ func TestRuntimeBuilderTranscodeReportsInvalidStep(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "branch_operation_chain_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want branch_operation_chain_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "exactly one stage or transform") ||
-		!strings.Contains(err.Error(), "one operation per branch step") {
-		t.Fatalf("err = %v, want invalid step guidance", err)
+	if !strings.Contains(err.Error(), "cannot combine resize and resample") ||
+		!strings.Contains(err.Error(), "one operation per branch call") {
+		t.Fatalf("err = %v, want invalid operation guidance", err)
 	}
 }
 

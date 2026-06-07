@@ -263,7 +263,7 @@ func (p mediaPlanBranchComposeGraph) spec() (pipeline.Spec, error) {
 }
 
 func (p mediaPlanBranchComposeGraph) nodeCapacity() int {
-	return 1 + 3 + len(p.branches) + branchChainStepCount(p.branches) + len(p.destinations)
+	return 1 + 3 + len(p.branches) + branchComposeOperationStageCount(p.branches) + len(p.destinations)
 }
 
 func (p mediaPlanBranchComposeGraph) runtimeRef() *runtime {
@@ -287,14 +287,14 @@ func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, plan graphPlan, 
 	if err != nil {
 		return err
 	}
-	return compileBranchComposeRoutes(ctx, service, graph, p.branches, lowering.destinations, branchInputs, branchStreams, lowering.sharedSteps, lowering.branches, sources.realtime)
+	return compileBranchComposeRoutes(ctx, service, graph, p.branches, lowering.destinations, branchInputs, branchStreams, lowering.sharedStageNodes, lowering.branches, sources.realtime)
 }
 
 type graphPlanBranchComposeLowering struct {
-	inputs       map[string]graphPlanBranchComposeInputOperation
-	sharedSteps  map[string][]pipeline.NodeRef
-	branches     map[string]graphPlanBranchComposeBranchOperation
-	destinations []branchComposeTargetRoute
+	inputs           map[string]graphPlanBranchComposeInputOperation
+	sharedStageNodes map[string][]pipeline.NodeRef
+	branches         map[string]graphPlanBranchComposeBranchOperation
+	destinations     []branchComposeTargetRoute
 }
 
 type graphPlanBranchComposeInputOperation struct {
@@ -303,9 +303,9 @@ type graphPlanBranchComposeInputOperation struct {
 }
 
 type graphPlanBranchComposeBranchOperation struct {
-	privateSteps []pipeline.NodeRef
-	encodeNode   pipeline.NodeRef
-	encodeShape  MediaShape
+	privateStageNodes []pipeline.NodeRef
+	encodeNode        pipeline.NodeRef
+	encodeShape       MediaShape
 }
 
 func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan graphPlan) (graphPlanBranchComposeLowering, error) {
@@ -326,7 +326,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan 
 	if err != nil {
 		return graphPlanBranchComposeLowering{}, err
 	}
-	sharedSteps, err := p.prepareBranchComposeSharedStepOperations(branchOperations)
+	sharedStageNodes, err := p.prepareBranchComposeSharedStageOperations(branchOperations)
 	if err != nil {
 		return graphPlanBranchComposeLowering{}, err
 	}
@@ -338,7 +338,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan 
 	if err != nil {
 		return graphPlanBranchComposeLowering{}, err
 	}
-	return graphPlanBranchComposeLowering{inputs: inputs, sharedSteps: sharedSteps, branches: branches, destinations: destinations}, nil
+	return graphPlanBranchComposeLowering{inputs: inputs, sharedStageNodes: sharedStageNodes, branches: branches, destinations: destinations}, nil
 }
 
 func (p mediaPlanBranchComposeGraph) prepareBranchComposeInputOperations(branchOperations map[string][]graphPlanOperation) (map[string]graphPlanBranchComposeInputOperation, error) {
@@ -404,15 +404,15 @@ func assignBranchComposeInputNode(target *pipeline.NodeRef, node pipeline.NodeRe
 	return nil
 }
 
-func (p mediaPlanBranchComposeGraph) prepareBranchComposeSharedStepOperations(branchOperations map[string][]graphPlanOperation) (map[string][]pipeline.NodeRef, error) {
-	stepsByBranch := make(map[string][]pipeline.NodeRef, len(p.branches))
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeSharedStageOperations(branchOperations map[string][]graphPlanOperation) (map[string][]pipeline.NodeRef, error) {
+	nodesByBranch := make(map[string][]pipeline.NodeRef, len(p.branches))
 	for i := range p.branches {
 		branch := p.branches[i]
 		refs, err := graphPlanBranchStepOperationNodes(branchOperations[branch.name], true, branch.name)
 		if err != nil {
 			return nil, err
 		}
-		stepsByBranch[branch.name] = refs
+		nodesByBranch[branch.name] = refs
 	}
 	groups := branchComposeSelectorGroups(p.branches)
 	for i := range groups {
@@ -425,7 +425,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeSharedStepOperations(br
 					continue
 				}
 				branch := p.branches[branchIndex]
-				next := stepsByBranch[branch.name]
+				next := nodesByBranch[branch.name]
 				if firstBranch == "" {
 					firstBranch = branch.name
 					first = next
@@ -440,7 +440,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeSharedStepOperations(br
 			}
 		}
 	}
-	return stepsByBranch, nil
+	return nodesByBranch, nil
 }
 
 func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branchOperations map[string][]graphPlanOperation) (map[string]graphPlanBranchComposeBranchOperation, error) {
@@ -448,7 +448,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branch
 	for i := range p.branches {
 		branch := p.branches[i]
 		operations := branchOperations[branch.name]
-		privateSteps, err := graphPlanBranchStepOperationNodes(operations, false, branch.name)
+		privateStageNodes, err := graphPlanBranchStepOperationNodes(operations, false, branch.name)
 		if err != nil {
 			return nil, err
 		}
@@ -470,9 +470,9 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branch
 			encodeShape = operation.Shape
 		}
 		out[branch.name] = graphPlanBranchComposeBranchOperation{
-			privateSteps: privateSteps,
-			encodeNode:   encodeNode,
-			encodeShape:  encodeShape,
+			privateStageNodes: privateStageNodes,
+			encodeNode:        encodeNode,
+			encodeShape:       encodeShape,
 		}
 	}
 	return out, nil
@@ -529,18 +529,20 @@ func graphPlanBranchOperation(operations []graphPlanOperation, kind OperationKin
 func (p mediaPlanBranchComposeGraph) validateBranchComposeStepOperations(branch branchComposeRoute, operations []graphPlanOperation) error {
 	shared := graphPlanBranchStepOperationCount(operations, true)
 	private := graphPlanBranchStepOperationCount(operations, false)
-	if shared != len(branch.sharedSteps) {
+	wantShared := branchComposeRouteStageOperationCount(branch.sharedOperations)
+	wantPrivate := branchComposeRouteStageOperationCount(branch.privateOperations)
+	if shared != wantShared {
 		return graphPlanInvalidError("branch composition graph plan shared operations do not match branch chain", []string{
 			"branch=" + branch.name,
 			"planned=" + strconv.Itoa(shared),
-			"steps=" + strconv.Itoa(len(branch.sharedSteps)),
+			"operations=" + strconv.Itoa(wantShared),
 		})
 	}
-	if private != len(branch.steps) {
+	if private != wantPrivate {
 		return graphPlanInvalidError("branch composition graph plan operations do not match branch chain", []string{
 			"branch=" + branch.name,
 			"planned=" + strconv.Itoa(private),
-			"steps=" + strconv.Itoa(len(branch.steps)),
+			"operations=" + strconv.Itoa(wantPrivate),
 		})
 	}
 	return nil
@@ -1381,7 +1383,7 @@ func (p mediaPlanStreamGraph) frameStreamBranchComposeSpec() (pipeline.Spec, err
 
 func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeRoute, []branchComposeTargetRoute, error) {
 	branchName := firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "branch")
-	steps, err := mediaPlanFilterRouteSteps(p.filters)
+	operations, err := mediaPlanFilterRouteOperations(p.filters)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1393,8 +1395,8 @@ func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeR
 		}
 	}
 	branches := []branchComposeRoute{{
-		name:  branchName,
-		steps: steps,
+		name:              branchName,
+		privateOperations: operations,
 		branch: branchComposeBranch{
 			Name:         branchName,
 			Selector:     p.decode.selector,
@@ -1449,20 +1451,33 @@ func (p mediaPlanStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeR
 	return spec, sourceRefs, nodes, nil
 }
 
-func mediaPlanFilterRouteSteps(filters []filterRequest) ([]mediaTransform, error) {
-	steps := make([]mediaTransform, 0, len(filters))
+func mediaPlanFilterRouteOperations(filters []filterRequest) ([]OperationSpec, error) {
+	operations := make([]OperationSpec, 0, len(filters))
 	for i := range filters {
 		filter := filters[i]
 		switch {
 		case filter.stage != nil:
-			steps = append(steps, mediaTransform{name: filter.stage.Name(), stage: filter.stage})
+			operations = append(operations, operationSpecForStage(filter.stage))
 		case filter.transform != nil:
-			steps = append(steps, cloneMediaTransform(*filter.transform))
+			operations = append(operations, operationSpecForTransform(transformSpecFromMediaTransform(*filter.transform)))
 		default:
 			return nil, ErrNilStage
 		}
 	}
-	return steps, nil
+	return operations, nil
+}
+
+func transformSpecFromMediaTransform(transform mediaTransform) TransformSpec {
+	var spec TransformSpec
+	if transform.video != nil {
+		resize := *transform.video
+		spec.Resize = &resize
+	}
+	if transform.audio != nil {
+		resample := *transform.audio
+		spec.Resample = &resample
+	}
+	return spec
 }
 
 func cloneMediaTransform(transform mediaTransform) mediaTransform {
@@ -1513,9 +1528,9 @@ func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Contex
 	}
 	branchPlan := map[string]graphPlanBranchComposeBranchOperation{
 		branches[0].name: {
-			privateSteps: append([]pipeline.NodeRef(nil), lowering.filterNodes...),
-			encodeNode:   lowering.encodeNode,
-			encodeShape:  lowering.encodeShape,
+			privateStageNodes: append([]pipeline.NodeRef(nil), lowering.filterNodes...),
+			encodeNode:        lowering.encodeNode,
+			encodeShape:       lowering.encodeShape,
 		},
 	}
 	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, branches, inputPlan, sources.realtime)

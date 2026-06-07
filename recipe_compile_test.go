@@ -423,6 +423,29 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 		t.Fatal("BranchSpec should store OperationSpec, not a parallel step slice")
 	}
 
+	routeBody, err := os.ReadFile("runtime_transcode.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routeText := string(routeBody)
+	routeStart := strings.Index(routeText, "type branchComposeRoute struct")
+	if routeStart < 0 {
+		t.Fatal("could not locate branchComposeRoute boundary")
+	}
+	routeEnd := strings.Index(routeText[routeStart:], "type mediaTransform struct")
+	if routeEnd < 0 {
+		t.Fatal("could not locate branchComposeRoute boundary")
+	}
+	routeBlock := routeText[routeStart : routeStart+routeEnd]
+	if !strings.Contains(routeBlock, "sharedOperations  []OperationSpec") ||
+		!strings.Contains(routeBlock, "privateOperations []OperationSpec") {
+		t.Fatal("branchComposeRoute should carry shared/private OperationSpec records")
+	}
+	if strings.Contains(routeBlock, "sharedSteps") ||
+		strings.Contains(routeBlock, "steps            []mediaTransform") {
+		t.Fatal("branchComposeRoute should not store projected mediaTransform step slices")
+	}
+
 	composeBody, err := os.ReadFile("branch_compose_plan.go")
 	if err != nil {
 		t.Fatal(err)
@@ -696,16 +719,22 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	if len(routes) != 2 {
 		t.Fatalf("routes = %d, want 2", len(routes))
 	}
-	if len(routes[0].sharedSteps) != 0 ||
-		len(routes[0].steps) != 1 ||
-		routes[0].steps[0].video == nil ||
-		routes[0].steps[0].video.Width != 320 {
+	rawShared := branchComposeRouteStageOperations(routes[0].sharedOperations)
+	rawPrivate := branchComposeRouteStageOperations(routes[0].privateOperations)
+	if len(rawShared) != 0 ||
+		len(rawPrivate) != 1 ||
+		rawPrivate[0].Kind != OpTransform ||
+		rawPrivate[0].Transform.Resize == nil ||
+		rawPrivate[0].Transform.Resize.Width != 320 {
 		t.Fatalf("raw route = %+v, want private thumbnail resize from operation fields", routes[0])
 	}
-	if len(routes[1].sharedSteps) != 1 ||
-		routes[1].sharedSteps[0].video == nil ||
-		routes[1].sharedSteps[0].video.Width != 1280 ||
-		len(routes[1].steps) != 0 {
+	webShared := branchComposeRouteStageOperations(routes[1].sharedOperations)
+	webPrivate := branchComposeRouteStageOperations(routes[1].privateOperations)
+	if len(webShared) != 1 ||
+		webShared[0].Kind != OpTransform ||
+		webShared[0].Transform.Resize == nil ||
+		webShared[0].Transform.Resize.Width != 1280 ||
+		len(webPrivate) != 0 {
 		t.Fatalf("web route = %+v, want shared 720p resize from operation fields", routes[1])
 	}
 

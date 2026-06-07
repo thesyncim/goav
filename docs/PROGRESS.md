@@ -2190,14 +2190,14 @@ are:
     Tests pin implicit decode, parent-copy packet anchoring, earlier frame-tap
     slicing, and shared/private operation flags.
     Done.
-379. Project branch-compose bridge steps from split operations:
+379. Project branch-compose operation metadata from split operations:
     When planned branch stream builds carry split operation metadata, the branch
-    composition planner now derives `SharedSteps` and branch-local `Steps` from
-    `sharedOps` and `privateOps` instead of from the older `sharedSteps`/`steps`
-    bridge fields. This keeps the existing `branchComposePlan` lowerers stable
-    while moving their input source toward the single operation model. Tests
-    clear the bridge step fields before planning and prove shared parent resize
-    and private thumbnail resize still survive through operation projection.
+    composition planner now derives shared and private branch operation records
+    from `sharedOps` and `privateOps` instead of a parallel route-step model.
+    This keeps the existing `branchComposePlan` lowerers stable while moving
+    their input source toward the single operation model. Tests prove shared
+    parent resize and private thumbnail resize still survive through operation
+    projection.
     Done.
 380. Carry operation records through the branch-compose plan:
     `branchComposeBranch` now carries the flattened operation list plus
@@ -2632,15 +2632,15 @@ description now read ordered `OperationSpec` records directly; packet-copy
 streams accept only copy plus packet taps after copy, so runtime attach from
 packet taps stays supported without a second operation model.
 Planned and runtime branch specs now follow the same rule: `BranchSpec` stores
-ordered work only as `OperationSpec`, and the temporary `chainStep` view is
-derived while the older branch-compose and runtime attach lowerers still need
-it. Planned branch stream builds now also keep their work as `OperationSpec`
-plus split `sharedOps`/`privateOps`; they no longer store `sharedSteps` or
-branch `steps`. `branchComposePlan` now follows that shape too: branches carry
-flattened, shared, and private operation records instead of legacy
-`SharedSteps`/`Steps` fields. The remaining step bridge is now in lowerer route
-execution state and `runtimeBranch`, while the larger `branchComposePlan` model
-still needs to collapse into `WorkPlan`.
+ordered work only as `OperationSpec`. Planned branch stream builds now also
+keep their work as `OperationSpec` plus split `sharedOps`/`privateOps`; they no
+longer store a parallel route-step model. `branchComposePlan` follows that
+shape too: branches carry flattened, shared, and private operation records.
+`branchComposeRoute` now keeps
+shared/private `OperationSpec` records instead of projected `mediaTransform`
+step slices; concrete transforms are derived only at graph-spec and graph-build
+time. The larger `branchComposePlan` model still needs to collapse into
+`WorkPlan`.
 Runtime attach now starts from the same canonical sequence too:
 `runtimeBranch` carries `[]OperationSpec` from `BranchSpec`, shape validation
 uses those operations directly, and prepared runtime state now wraps each
