@@ -27,7 +27,6 @@ type chainSpec struct {
 	decodeCodec    CodecSpec
 	operations     []OperationSpec
 	postEncodeTaps []string
-	transforms     []TransformSpec
 	encode         CodecSpec
 	err            error
 }
@@ -348,7 +347,6 @@ func (b *chainBuilder) transform(spec TransformSpec) {
 		return
 	}
 	transform := cloneTransformSpec(spec)
-	b.spec.transforms = append(b.spec.transforms, cloneTransformSpec(spec))
 	b.spec.operations = append(b.spec.operations, operationSpecForTransform(transform))
 }
 
@@ -437,7 +435,6 @@ func (b *chainBuilder) snapshot() chainSpec {
 	spec.encode = cloneCodecSpec(spec.encode)
 	spec.operations = cloneOperationSpecs(spec.operations)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
-	spec.transforms = cloneTransformSpecs(spec.transforms)
 	return spec
 }
 

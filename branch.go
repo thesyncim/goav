@@ -131,7 +131,6 @@ type BranchSpec struct {
 	decodeCodec      CodecSpec
 	operations       []OperationSpec
 	postEncodeTaps   []string
-	transforms       []TransformSpec
 	encode           CodecSpec
 	destinations     []destinationRef
 	destinationNames []string
@@ -271,7 +270,6 @@ func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 		b.spec.decode = true
 		b.spec.decodeCodec = mergeDecodeCodecSpec(b.spec.decodeCodec, spec.decodeCodec)
 	}
-	b.spec.transforms = append(b.spec.transforms, cloneTransformSpecs(spec.transforms)...)
 	b.spec.operations = append(b.spec.operations, cloneOperationSpecs(spec.operations)...)
 	if codecIntentSet(spec.encode) {
 		if spec.encode.Copy && (b.spec.decode || branchOperationSpecsContainStep(b.spec.operations)) {
@@ -323,7 +321,6 @@ func (b *branchBuilder) Resize(width int, height int, options ...resizeOption) *
 		return b
 	}
 	transform := Resize(width, height, options...)
-	b.spec.transforms = append(b.spec.transforms, transform)
 	b.spec.operations = append(b.spec.operations, operationSpecForTransform(transform))
 	return b
 }
@@ -337,7 +334,6 @@ func (b *branchBuilder) Resample(sampleRate int, channels int, options ...audioO
 		return b
 	}
 	transform := Resample(sampleRate, channels, options...)
-	b.spec.transforms = append(b.spec.transforms, transform)
 	b.spec.operations = append(b.spec.operations, operationSpecForTransform(transform))
 	return b
 }
@@ -424,7 +420,6 @@ func (b *branchBuilder) snapshot() BranchSpec {
 	spec.encode = cloneCodecSpec(spec.encode)
 	spec.operations = cloneOperationSpecs(spec.operations)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
-	spec.transforms = cloneTransformSpecs(spec.transforms)
 	spec.destinations = cloneDestinationRefs(spec.destinations)
 	spec.destinationNames = append([]string(nil), spec.destinationNames...)
 	return spec
@@ -494,7 +489,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			encode = Copy()
 		}
 		decode := !parentPacket || branches[i].decode
-		sharedSteps, from, err := plannedBranchAnchor(stream, branches[i], parentPacket)
+		_, from, err := plannedBranchAnchor(stream, branches[i], parentPacket)
 		if err != nil {
 			job.setErr(err)
 			return job
@@ -515,7 +510,6 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 				append([]string(nil), stream.postEncodeTaps...),
 				branches[i].postEncodeTaps...,
 			),
-			transforms:       appendTransformSpecs(transformSpecsFromChainSteps(sharedSteps), branches[i].transforms),
 			encode:           encode,
 			destinationNames: append([]string(nil), branches[i].destinationNames...),
 		})
@@ -554,8 +548,9 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		return branchPacketEncodeUnsupportedError(stream, spec.encode)
 	}
 	if parentPacket && !spec.decode {
-		for i := range spec.transforms {
-			if err := validateTransformSpec("build branches", spec.name, spec.transforms[i]); err != nil {
+		transforms := transformSpecsFromOperationSpecs(spec.operations)
+		for i := range transforms {
+			if err := validateTransformSpec("build branches", spec.name, transforms[i]); err != nil {
 				return err
 			}
 			return branchPacketTransformUnsupportedError(stream)
@@ -736,19 +731,6 @@ func chainStepsThroughTap(steps []chainStep, tap string) ([]chainStep, bool) {
 		}
 	}
 	return nil, false
-}
-
-func transformSpecsFromChainSteps(steps []chainStep) []TransformSpec {
-	if len(steps) == 0 {
-		return nil
-	}
-	transforms := make([]TransformSpec, 0, len(steps))
-	for i := range steps {
-		if steps[i].transform.Resize != nil || steps[i].transform.Resample != nil {
-			transforms = append(transforms, cloneTransformSpec(steps[i].transform))
-		}
-	}
-	return transforms
 }
 
 func branchCopyParentOperationError(node string) error {

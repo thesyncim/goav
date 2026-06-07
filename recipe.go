@@ -1826,7 +1826,7 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 		Decode:       stream.decode,
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
 		Operations:   streamBuildOperationSpecs(stream),
-		Transforms:   cloneTransformSpecs(stream.transforms),
+		Transforms:   transformSpecsFromOperationSpecs(streamBuildOperationSpecs(stream)),
 		Taps:         append(chainStepTapIntents(steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:       cloneCodecSpec(stream.encode),
 		Destinations: append([]string(nil), stream.destinationNames...),
@@ -2288,17 +2288,6 @@ func jobStreamChainSteps(stream *jobStreamBuild) []chainStep {
 	return chainStepsFromChainOperations(stream.operations)
 }
 
-func chainStepsFromTransforms(transforms []TransformSpec) []chainStep {
-	if len(transforms) == 0 {
-		return nil
-	}
-	steps := make([]chainStep, 0, len(transforms))
-	for i := range transforms {
-		steps = append(steps, chainStep{transform: cloneTransformSpec(transforms[i])})
-	}
-	return steps
-}
-
 func cloneChainSteps(steps []chainStep) []chainStep {
 	if len(steps) == 0 {
 		return nil
@@ -2309,13 +2298,6 @@ func cloneChainSteps(steps []chainStep) []chainStep {
 		step.transform = cloneTransformSpec(step.transform)
 		out = append(out, step)
 	}
-	return out
-}
-
-func appendTransformSpecs(prefix []TransformSpec, branch []TransformSpec) []TransformSpec {
-	out := make([]TransformSpec, 0, len(prefix)+len(branch))
-	out = append(out, cloneTransformSpecs(prefix)...)
-	out = append(out, cloneTransformSpecs(branch)...)
 	return out
 }
 
@@ -3567,7 +3549,6 @@ type streamBuild struct {
 	sharedOps        []OperationSpec
 	privateOps       []OperationSpec
 	postEncodeTaps   []string
-	transforms       []TransformSpec
 	encode           CodecSpec
 	destinationNames []string
 }

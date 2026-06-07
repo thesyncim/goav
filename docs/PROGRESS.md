@@ -2645,8 +2645,10 @@ a real operation even though it has no stage, and mutable steps are no longer
 the reporting source of truth.
 Operation-backed transforms now drive validation, explanation, media planning,
 and filter lowering before the legacy `StreamIntent.Transforms` mirror is read.
-`Transforms` remains only a temporary report/migration mirror while the older
-lowerers are deleted.
+Private `chainSpec`, `BranchSpec`, and planned `streamBuild` state no longer
+store a parallel transform slice; transforms live in `OperationSpec` there.
+`StreamIntent.Transforms` remains only a temporary report/migration mirror while
+the older lowerers are deleted.
 
 ## Validation Gates
 

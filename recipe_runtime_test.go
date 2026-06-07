@@ -3234,7 +3234,6 @@ func TestTaskAttachRejectsRuntimeTransformDescriptorConfigBeforeMutation(t *test
 			return nil
 		})))
 	branch.operations[0].Transform.Resample.SampleFormat = av.SampleFormatF32
-	branch.transforms[0].Resample.SampleFormat = av.SampleFormatF32
 
 	_, err = task.Attach(ctx, branch)
 	var buildErr *BuildError
