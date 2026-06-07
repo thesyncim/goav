@@ -62,8 +62,18 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 	return d.inner.SeekToTime(timeNS)
 }
 
+func (d *Demuxer) SeekToTrackTime(trackID uint32, timeNS int64) error {
+	return d.inner.SeekToTrackTime(trackID, timeNS)
+}
+
 // ReadPacketAtTime seeks to the nearest preceding cue and reads forward until
 // it finds the first packet at or after timeNS.
 func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
 	return d.inner.ReadPacketAtTime(timeNS, dst)
+}
+
+// ReadTrackPacketAtTime seeks to the nearest preceding cue for trackID and
+// reads forward until it finds the first packet for trackID at or after timeNS.
+func (d *Demuxer) ReadTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packet) error {
+	return d.inner.ReadTrackPacketAtTime(trackID, timeNS, dst)
 }

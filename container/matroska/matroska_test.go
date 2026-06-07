@@ -6280,6 +6280,48 @@ func TestDemuxerCueForTime(t *testing.T) {
 	if got := unsorted.cueForTime(30_000_000); got.TimeNS != 10_000_000 {
 		t.Fatalf("unsorted fallback cue time = %d, want 10000000", got.TimeNS)
 	}
+
+	trackCues := Demuxer{
+		cuesSorted: true,
+		cues: []CuePoint{
+			{
+				TimeNS: 10_000_000,
+				Positions: []CueTrackPosition{{
+					TrackID:         1,
+					ClusterPosition: 10,
+				}},
+			},
+			{
+				TimeNS: 20_000_000,
+				Positions: []CueTrackPosition{{
+					TrackID:         2,
+					ClusterPosition: 20,
+				}},
+			},
+			{
+				TimeNS: 40_000_000,
+				Positions: []CueTrackPosition{
+					{TrackID: 1, ClusterPosition: 40},
+					{TrackID: 2, ClusterPosition: 41},
+				},
+			},
+		},
+	}
+	cue, position, ok := trackCues.cueForTrackTime(2, 30_000_000)
+	if !ok || cue.TimeNS != 20_000_000 || position.ClusterPosition != 20 {
+		t.Fatalf("track 2 cue at 30000000 = %+v position=%+v ok=%v, want cue 20000000 position 20", cue, position, ok)
+	}
+	cue, position, ok = trackCues.cueForTrackTime(2, 5_000_000)
+	if !ok || cue.TimeNS != 20_000_000 || position.ClusterPosition != 20 {
+		t.Fatalf("early track 2 cue = %+v position=%+v ok=%v, want first track 2 cue", cue, position, ok)
+	}
+	cue, position, ok = trackCues.cueForTrackTime(1, 50_000_000)
+	if !ok || cue.TimeNS != 40_000_000 || position.ClusterPosition != 40 {
+		t.Fatalf("late track 1 cue = %+v position=%+v ok=%v, want multi-position cue", cue, position, ok)
+	}
+	if _, _, ok := trackCues.cueForTrackTime(3, 50_000_000); ok {
+		t.Fatalf("track 3 unexpectedly had a cue")
+	}
 }
 
 func TestMuxerFailedPacketDoesNotAdvanceCuesOrDuration(t *testing.T) {
@@ -6408,6 +6450,104 @@ func TestDemuxerReadPacketAtTimeUsesCues(t *testing.T) {
 	}
 	if got.TimeNS != packets[2].TimeNS || !bytes.Equal(got.Data, packets[2].Data) {
 		t.Fatalf("packet at time = %+v data=%v, want %+v data=%v", got, got.Data, packets[2], packets[2].Data)
+	}
+}
+
+func TestDemuxerSeekToTrackTimeUsesTrackCues(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 60_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	videoID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: audioID, TimeNS: 0, DurationNS: 20_000_000, Data: []byte{0xa0}},
+		{TrackID: videoID, TimeNS: 0, Keyframe: true, Data: []byte{0xb0}},
+		{TrackID: audioID, TimeNS: 20_000_000, DurationNS: 20_000_000, Data: []byte{0xa1}},
+		{TrackID: videoID, TimeNS: 20_000_000, Data: []byte{0xb1}},
+		{TrackID: audioID, TimeNS: 40_000_000, DurationNS: 20_000_000, Data: []byte{0xa2}},
+		{TrackID: videoID, TimeNS: 40_000_000, Keyframe: true, Data: []byte{0xb2}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTrackTime(videoID, 30_000_000); err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != videoID || got.TimeNS != 0 || !bytes.Equal(got.Data, []byte{0xb0}) {
+		t.Fatalf("packet after video seek = %+v data=%v, want first video keyframe", got, got.Data)
+	}
+	if err := demuxer.SeekToTrackTime(audioID, 30_000_000); err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != audioID || got.TimeNS != 20_000_000 || !bytes.Equal(got.Data, []byte{0xa1}) {
+		t.Fatalf("packet after audio seek = %+v data=%v, want preceding audio cue", got, got.Data)
+	}
+	if err := demuxer.ReadTrackPacketAtTime(videoID, 30_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != videoID || got.TimeNS != 40_000_000 || !bytes.Equal(got.Data, []byte{0xb2}) {
+		t.Fatalf("video packet at time = %+v data=%v, want video at 40000000", got, got.Data)
+	}
+	if err := demuxer.ReadTrackPacketAtTime(audioID, 30_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != audioID || got.TimeNS != 40_000_000 || !bytes.Equal(got.Data, []byte{0xa2}) {
+		t.Fatalf("audio packet at time = %+v data=%v, want audio at 40000000", got, got.Data)
+	}
+}
+
+func TestDemuxerReadTrackPacketAtTimeRejectsInvalidInputs(t *testing.T) {
+	data := makeMatroskaData(t, 1)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.ReadTrackPacketAtTime(1, 0, nil); !errors.Is(err, ErrNilPacket) {
+		t.Fatalf("err = %v, want ErrNilPacket", err)
+	}
+	packet := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadTrackPacketAtTime(0, 0, &packet); !errors.Is(err, ErrUnknownTrack) {
+		t.Fatalf("err = %v, want ErrUnknownTrack", err)
+	}
+	if err := demuxer.ReadTrackPacketAtTime(99, 0, &packet); !errors.Is(err, ErrUnknownTrack) {
+		t.Fatalf("err = %v, want ErrUnknownTrack", err)
+	}
+	if err := demuxer.ReadTrackPacketAtTime(1, -1, &packet); !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
 	}
 }
 

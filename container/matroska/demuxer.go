@@ -139,6 +139,44 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 	if timeNS < 0 {
 		return ErrInvalidData
 	}
+	if err := d.ensureCues(); err != nil {
+		return err
+	}
+	cue := d.cueForTime(timeNS)
+	position, err := firstCuePosition(cue)
+	if err != nil {
+		return err
+	}
+	return d.seekToCuePosition(position)
+}
+
+// SeekToTrackTime seeks to the nearest preceding cue for trackID and timeNS.
+// If the requested time is before that track's first cue, it seeks to the
+// first cue for the track.
+func (d *Demuxer) SeekToTrackTime(trackID uint32, timeNS int64) error {
+	if d == nil || d.reader == nil {
+		return ErrNilReader
+	}
+	if d.seeker == nil {
+		return ErrNonSeekableReader
+	}
+	if timeNS < 0 {
+		return ErrInvalidData
+	}
+	if trackID == 0 || !d.hasTrack(trackID) {
+		return ErrUnknownTrack
+	}
+	if err := d.ensureCues(); err != nil {
+		return err
+	}
+	_, position, ok := d.cueForTrackTime(trackID, timeNS)
+	if !ok {
+		return ErrInvalidData
+	}
+	return d.seekToCuePosition(position)
+}
+
+func (d *Demuxer) ensureCues() error {
 	if len(d.cues) == 0 {
 		if err := d.loadCuesFromSeekHead(); err != nil {
 			return err
@@ -147,8 +185,15 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 	if len(d.cues) == 0 {
 		return ErrInvalidData
 	}
-	cue := d.cueForTime(timeNS)
-	offset := d.segmentData + int64(cue.ClusterPosition)
+	return nil
+}
+
+func (d *Demuxer) seekToCuePosition(position CueTrackPosition) error {
+	if position.ClusterPosition > uint64(math.MaxInt64) ||
+		int64(position.ClusterPosition) > math.MaxInt64-d.segmentData {
+		return ErrInvalidData
+	}
+	offset := d.segmentData + int64(position.ClusterPosition)
 	if _, err := d.seeker.Seek(offset, io.SeekStart); err != nil {
 		return err
 	}
@@ -163,13 +208,23 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 	if err := d.enterCluster(header); err != nil {
 		return err
 	}
-	if cue.RelativePositionSet {
-		if err := d.seekToCueRelativePosition(header, cue.RelativePosition); err != nil {
+	if position.RelativePositionSet {
+		if err := d.seekToCueRelativePosition(header, position.RelativePosition); err != nil {
 			return err
 		}
 	}
 	d.clearLace()
 	return nil
+}
+
+func firstCuePosition(cue CuePoint) (CueTrackPosition, error) {
+	if len(cue.Positions) != 0 {
+		return cue.Positions[0], nil
+	}
+	if cue.TrackID == 0 {
+		return CueTrackPosition{}, ErrInvalidData
+	}
+	return cueTrackPositionFromLegacy(cue), nil
 }
 
 func (d *Demuxer) cueForTime(timeNS int64) CuePoint {
@@ -192,6 +247,62 @@ func (d *Demuxer) cueForTime(timeNS int64) CuePoint {
 	return cue
 }
 
+func (d *Demuxer) cueForTrackTime(trackID uint32, timeNS int64) (CuePoint, CueTrackPosition, bool) {
+	if d.cuesSorted {
+		index := sort.Search(len(d.cues), func(i int) bool {
+			return d.cues[i].TimeNS > timeNS
+		})
+		for i := index - 1; i >= 0; i-- {
+			if position, ok := cuePositionForTrack(d.cues[i], trackID); ok {
+				return d.cues[i], position, true
+			}
+		}
+		for i := index; i < len(d.cues); i++ {
+			if position, ok := cuePositionForTrack(d.cues[i], trackID); ok {
+				return d.cues[i], position, true
+			}
+		}
+		return CuePoint{}, CueTrackPosition{}, false
+	}
+	var cue CuePoint
+	var position CueTrackPosition
+	found := false
+	for i := range d.cues {
+		if d.cues[i].TimeNS > timeNS {
+			break
+		}
+		if candidate, ok := cuePositionForTrack(d.cues[i], trackID); ok {
+			cue = d.cues[i]
+			position = candidate
+			found = true
+		}
+	}
+	if found {
+		return cue, position, true
+	}
+	for i := range d.cues {
+		if candidate, ok := cuePositionForTrack(d.cues[i], trackID); ok {
+			return d.cues[i], candidate, true
+		}
+	}
+	return CuePoint{}, CueTrackPosition{}, false
+}
+
+func cuePositionForTrack(cue CuePoint, trackID uint32) (CueTrackPosition, bool) {
+	if len(cue.Positions) == 0 {
+		if cue.TrackID != trackID {
+			return CueTrackPosition{}, false
+		}
+		return cueTrackPositionFromLegacy(cue), true
+	}
+	for i := range cue.Positions {
+		if cue.Positions[i].TrackID == trackID {
+			return cue.Positions[i], true
+		}
+	}
+	return CueTrackPosition{}, false
+}
+
 // ReadPacketAtTime seeks to the nearest preceding cue and reads forward until
 // it finds the first packet at or after timeNS.
 func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
@@ -209,6 +320,28 @@ func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
 			return err
 		}
 		if dst.TimeNS >= timeNS {
+			return nil
+		}
+	}
+}
+
+// ReadTrackPacketAtTime seeks to the nearest preceding cue for trackID and
+// reads forward until it finds the first packet for trackID at or after timeNS.
+func (d *Demuxer) ReadTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packet) error {
+	if d == nil || d.reader == nil {
+		return ErrNilReader
+	}
+	if dst == nil {
+		return ErrNilPacket
+	}
+	if err := d.SeekToTrackTime(trackID, timeNS); err != nil {
+		return err
+	}
+	for {
+		if err := d.ReadPacket(dst); err != nil {
+			return err
+		}
+		if dst.TrackID == trackID && dst.TimeNS >= timeNS {
 			return nil
 		}
 	}

@@ -40,6 +40,7 @@ tracks := demuxer.Tracks()
 packet := matroska.Packet{Data: make([]byte, 0, maxFrame)}
 err = demuxer.ReadPacket(&packet)
 err = demuxer.ReadPacketAtTime(1_000_000_000, &packet)
+err = demuxer.ReadTrackPacketAtTime(trackID, 1_000_000_000, &packet)
 ```
 
 WebM uses the same shape through `container/webm`, but rejects non-WebM codecs.
@@ -64,6 +65,8 @@ Current milestone:
   when present to position directly on the cued block.
 - Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
   a requested timestamp.
+- Track-specific cue-assisted `SeekToTrackTime` and `ReadTrackPacketAtTime`
+  for multi-track recordings with per-track cue positions.
 - BlockGroup reading and writing for single-frame and laced blocks with
   BlockDuration; packets may carry one or more `ReferenceBlock` offsets,
   reference priority, codec state, discard padding, and block additions.
@@ -119,7 +122,7 @@ Current milestone:
 
 These are intentionally not in the first milestone:
 
-- Frame-exact random access beyond cue-assisted `ReadPacketAtTime`.
+- Frame-exact random access without reading forward from a cue.
 - Unknown-element preservation.
 - Full codec-private generation and parsers for every codec family.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
@@ -176,6 +179,9 @@ pending laced-frame state before reading from the target cluster.
 `ReadPacketAtTime` combines that cue seek with packet reads and returns the
 first packet at or after the requested timestamp. The caller-provided packet
 buffer must be large enough for skipped packets and the returned packet.
+`SeekToTrackTime` and `ReadTrackPacketAtTime` use CueTrackPositions to choose
+the nearest cue for a specific track, then read forward until that track reaches
+the requested timestamp.
 
 ## Codec Mapping
 
