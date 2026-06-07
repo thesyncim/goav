@@ -2,6 +2,7 @@ package matroska
 
 import (
 	"bytes"
+	"compress/bzip2"
 	"compress/zlib"
 	"encoding/binary"
 	"errors"
@@ -3233,6 +3234,14 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 			if err := d.decodeZlibBlockFrame(track, frame, dst); err != nil {
 				return err
 			}
+		case blockContentTransformBzlib:
+			frame, err := d.readBlockFrameScratch(frameSize)
+			if err != nil {
+				return err
+			}
+			if err := d.decodeBzlibBlockFrame(track, frame, dst); err != nil {
+				return err
+			}
 		default:
 			return ErrUnsupportedContentEncoding
 		}
@@ -3290,6 +3299,15 @@ func (d *Demuxer) decodeZlibBlockFrame(track Track, frame []byte, dst *Packet) e
 	return d.finishTrackCodecPayload(track, dst)
 }
 
+func (d *Demuxer) decodeBzlibBlockFrame(track Track, frame []byte, dst *Packet) error {
+	decoded, err := bzip2DecompressInto(dst.Data[:0], frame)
+	if err != nil {
+		return err
+	}
+	dst.Data = decoded
+	return d.finishTrackCodecPayload(track, dst)
+}
+
 func (d *Demuxer) finishTrackCodecPayload(track Track, dst *Packet) error {
 	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
 		lengthSize, ok, err := h264TrackNALULengthSize(track)
@@ -3319,23 +3337,37 @@ func zlibDecompressInto(dst []byte, compressed []byte) ([]byte, error) {
 	if err != nil {
 		return nil, ErrInvalidData
 	}
+	return readCompressedInto(dst, reader, reader.Close)
+}
+
+func bzip2DecompressInto(dst []byte, compressed []byte) ([]byte, error) {
+	return readCompressedInto(dst, bzip2.NewReader(bytes.NewReader(compressed)), nil)
+}
+
+func readCompressedInto(dst []byte, reader io.Reader, close func() error) ([]byte, error) {
 	out := dst[:0]
 	for {
 		if len(out) == cap(out) {
 			var probe [1]byte
 			n, readErr := reader.Read(probe[:])
 			if n > 0 {
-				_ = reader.Close()
+				if close != nil {
+					_ = close()
+				}
 				return nil, ErrPayloadTooSmall
 			}
 			if readErr == io.EOF {
-				if err := reader.Close(); err != nil {
-					return nil, ErrInvalidData
+				if close != nil {
+					if err := close(); err != nil {
+						return nil, ErrInvalidData
+					}
 				}
 				return out, nil
 			}
 			if readErr != nil {
-				_ = reader.Close()
+				if close != nil {
+					_ = close()
+				}
 				return nil, ErrInvalidData
 			}
 			continue
@@ -3343,13 +3375,17 @@ func zlibDecompressInto(dst []byte, compressed []byte) ([]byte, error) {
 		n, readErr := reader.Read(out[len(out):cap(out)])
 		out = out[:len(out)+n]
 		if readErr == io.EOF {
-			if err := reader.Close(); err != nil {
-				return nil, ErrInvalidData
+			if close != nil {
+				if err := close(); err != nil {
+					return nil, ErrInvalidData
+				}
 			}
 			return out, nil
 		}
 		if readErr != nil {
-			_ = reader.Close()
+			if close != nil {
+				_ = close()
+			}
 			return nil, ErrInvalidData
 		}
 	}
@@ -3622,8 +3658,14 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 	}
 	frame := d.laceFrames[d.laceFrameIndex]
 	frameData := d.laceBuffer[frame.offset : frame.offset+frame.size]
-	if d.laceContent.transform == blockContentTransformZlib {
-		decoded, err := zlibDecompressInto(dst.Data[:0], frameData)
+	if d.laceContent.transform == blockContentTransformZlib || d.laceContent.transform == blockContentTransformBzlib {
+		var decoded []byte
+		var err error
+		if d.laceContent.transform == blockContentTransformZlib {
+			decoded, err = zlibDecompressInto(dst.Data[:0], frameData)
+		} else {
+			decoded, err = bzip2DecompressInto(dst.Data[:0], frameData)
+		}
 		if err != nil {
 			return err
 		}

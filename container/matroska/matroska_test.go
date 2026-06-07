@@ -5,6 +5,7 @@ import (
 	"compress/zlib"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"io"
 	"math"
@@ -1601,7 +1602,7 @@ func TestMuxerRejectsUnsupportedBlockContentEncoding(t *testing.T) {
 func TestDemuxerRejectsUnsupportedBlockContentEncoding(t *testing.T) {
 	data := makeContentEncodedBlockMatroskaData(t, contentEncodingsPayload(t,
 		contentEncodingPayload(t, func(w *ebml.Writer) error {
-			return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoBzlib, nil))
+			return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoLZO1X, nil))
 		}),
 	), []byte("compressed"))
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
@@ -1611,6 +1612,98 @@ func TestDemuxerRejectsUnsupportedBlockContentEncoding(t *testing.T) {
 	packet := Packet{Data: make([]byte, 0, 32)}
 	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrUnsupportedContentEncoding) {
 		t.Fatalf("err = %v, want ErrUnsupportedContentEncoding", err)
+	}
+}
+
+func TestDemuxerReadsBzlibContentEncoding(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		read func(*Demuxer)
+	}{
+		{
+			name: "simple block",
+			data: makeContentEncodedBlockMatroskaData(t, bzlibContentEncodings(t), bzlibCompressedPayload(t, "simple block")),
+			read: func(demuxer *Demuxer) {
+				want := bzlibTestPayload("simple block")
+				packet := Packet{Data: make([]byte, 0, len(want))}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(packet.Data, want) {
+					t.Fatalf("packet data = %q, want %q", packet.Data, want)
+				}
+			},
+		},
+		{
+			name: "laced block",
+			data: makeContentEncodedLacedMatroskaData(t, bzlibContentEncodings(t), [][]byte{
+				bzlibCompressedPayload(t, "laced first"),
+				bzlibCompressedPayload(t, "laced second"),
+			}),
+			read: func(demuxer *Demuxer) {
+				first := bzlibTestPayload("laced first")
+				packet := Packet{Data: make([]byte, 0, len(first))}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if packet.TimeNS != 0 || packet.DurationNS != 20_000_000 || !bytes.Equal(packet.Data, first) {
+					t.Fatalf("first packet = %+v data=%q, want %q", packet, packet.Data, first)
+				}
+				second := bzlibTestPayload("laced second")
+				packet.Data = make([]byte, 0, len(second))
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if packet.TimeNS != 20_000_000 || packet.DurationNS != 20_000_000 || !bytes.Equal(packet.Data, second) {
+					t.Fatalf("second packet = %+v data=%q, want %q", packet, packet.Data, second)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			demuxer, err := NewDemuxer(bytes.NewReader(tt.data), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tt.read(demuxer)
+		})
+	}
+}
+
+func TestDemuxerRetriesBzlibLacedFrameAfterSmallBuffer(t *testing.T) {
+	data := makeContentEncodedLacedMatroskaData(t, bzlibContentEncodings(t), [][]byte{
+		bzlibCompressedPayload(t, "laced first"),
+		bzlibCompressedPayload(t, "laced second"),
+	})
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := bzlibTestPayload("laced first")
+	packet := Packet{Data: make([]byte, 0, 4)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrPayloadTooSmall) {
+		t.Fatalf("err = %v, want ErrPayloadTooSmall", err)
+	}
+	packet.Data = make([]byte, 0, len(first))
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TimeNS != 0 || !bytes.Equal(packet.Data, first) {
+		t.Fatalf("retry packet = %+v data=%q, want %q", packet, packet.Data, first)
+	}
+}
+
+func TestDemuxerRejectsInvalidBzlibContentEncodingPayload(t *testing.T) {
+	data := makeContentEncodedBlockMatroskaData(t, bzlibContentEncodings(t), []byte("not a bzip2 stream"))
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 32)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
 	}
 }
 
@@ -1662,6 +1755,42 @@ func zlibTestPayload(label string) []byte {
 		payload = append(payload, prefix...)
 	}
 	return payload
+}
+
+func bzlibContentEncodings(t testing.TB) []byte {
+	t.Helper()
+	return contentEncodingsPayload(t,
+		contentEncodingPayload(t, func(w *ebml.Writer) error {
+			return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoBzlib, nil))
+		}),
+	)
+}
+
+func bzlibTestPayload(label string) []byte {
+	prefix := []byte("bzip2 content encoding test payload: " + label + ":")
+	payload := make([]byte, 0, len(prefix)*8)
+	for i := 0; i < 8; i++ {
+		payload = append(payload, prefix...)
+	}
+	return payload
+}
+
+func bzlibCompressedPayload(t testing.TB, label string) []byte {
+	t.Helper()
+	fixtures := map[string]string{
+		"simple block": "425a6839314159265359c57d93a80000339980400010103eafcc302000902984d34069881554d3d4068f51934dc662e1a0e45854762c207236102c2074207a205435171518161d0c0b8f87c282824486e1a0918141b091228207a2a3f177245385090c57d93a80",
+		"laced first":  "425a6839314159265359e931c9840000339980400010103fa5dc302000902984d340698815553f54dea6937a8d344f481e0d848fa286048d05c6048b0dc6050b8d0585c48dc205850c8c0919143c10287438091610351fc703210351d0c8f45dc914e14243a4c72610",
+		"laced second": "425a6839314159265359c10c71800000339980400010103ea5cc3020009029a6462626205553351a34c9ea34a0f440a0e45c48a8644881617123c18141020587a24586438181a1b8d0ec5c68545448ec6db8b0702e30282064687e2ee48a70a1218218e300",
+	}
+	value, ok := fixtures[label]
+	if !ok {
+		t.Fatalf("missing bzlib fixture %q", label)
+	}
+	out, err := hex.DecodeString(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func TestMuxerDemuxerPreservesDecodedFieldDuration(t *testing.T) {
@@ -6533,6 +6662,34 @@ func makeContentEncodedBlockMatroskaData(tb testing.TB, encodings []byte, frame 
 		tb.Fatal(err)
 	}
 	if err := writeSimpleBlockWithTrackNumber(muxer.ebml, 1, frame); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func makeContentEncodedLacedMatroskaData(tb testing.TB, encodings []byte, frames [][]byte) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	writeMatroskaSegmentPrefix(tb, muxer)
+	if err := writeTracksWithTrackExtra(muxer.ebml, func(ew *ebml.Writer) error {
+		if err := ew.WriteUInt(idDefaultDur, 20_000_000); err != nil {
+			return err
+		}
+		return ew.WriteElement(idContentEncodings, encodings)
+	}); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeLacedSimpleBlock(muxer.ebml, 1, simpleBlockLacingXiph, frames); err != nil {
 		tb.Fatal(err)
 	}
 	if err := muxer.Close(); err != nil {

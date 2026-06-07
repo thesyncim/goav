@@ -2108,6 +2108,8 @@ func blockPayloadSize(track Track, data []byte) (int, error) {
 			data = data[len(encoding.settings):]
 		case blockContentTransformZlib:
 			return 0, ErrInvalidData
+		case blockContentTransformBzlib:
+			return 0, ErrUnsupportedContentEncoding
 		}
 	}
 	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
@@ -3239,8 +3241,14 @@ func validateContentEncodings(encodings []ContentEncoding) error {
 }
 
 func validateWritableBlockContentEncodings(track Track) error {
-	_, err := blockContentEncoding(track)
-	return err
+	encoding, err := blockContentEncoding(track)
+	if err != nil {
+		return err
+	}
+	if encoding.transform == blockContentTransformBzlib {
+		return ErrUnsupportedContentEncoding
+	}
+	return nil
 }
 
 type blockContentTransform uint8
@@ -3249,6 +3257,7 @@ const (
 	blockContentTransformNone blockContentTransform = iota
 	blockContentTransformHeaderStripping
 	blockContentTransformZlib
+	blockContentTransformBzlib
 )
 
 type blockContentEncodingInfo struct {
@@ -3278,6 +3287,11 @@ func blockContentEncoding(track Track) (blockContentEncodingInfo, error) {
 				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 			}
 			out.transform = blockContentTransformZlib
+		case ContentCompAlgoBzlib:
+			if len(encoding.Compression.Settings) != 0 {
+				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+			}
+			out.transform = blockContentTransformBzlib
 		default:
 			return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 		}
