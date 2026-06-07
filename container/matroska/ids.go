@@ -134,6 +134,14 @@ const (
 	idCueTrack           ebml.ID = 0xf7
 	idCueClusterPosition ebml.ID = 0xf1
 	idCueRelativePos     ebml.ID = 0xf0
+	idCueDuration        ebml.ID = 0xb2
+	idCueBlockNumber     ebml.ID = 0x5378
+	idCueCodecState      ebml.ID = 0xea
+	idCueReference       ebml.ID = 0xdb
+	idCueRefTime         ebml.ID = 0x96
+	idCueRefCluster      ebml.ID = 0x97
+	idCueRefNumber       ebml.ID = 0x535f
+	idCueRefCodecState   ebml.ID = 0xeb
 
 	idAttachments     ebml.ID = 0x1941a469
 	idAttachedFile    ebml.ID = 0x61a7

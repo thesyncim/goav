@@ -28,6 +28,7 @@ type Muxer struct {
 	tagsPosition    uint64
 	cuesPosition    uint64
 	clusterPosition uint64
+	clusterBlock    uint64
 	segmentPatch    ebml.SizePatch
 	segmentSized    bool
 	clusterPatch    ebml.SizePatch
@@ -92,6 +93,7 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.tagsPosition = 0
 	m.cuesPosition = 0
 	m.clusterPosition = 0
+	m.clusterBlock = 0
 	m.segmentPatch = ebml.SizePatch{}
 	m.segmentSized = false
 	m.clusterPatch = ebml.SizePatch{}
@@ -246,11 +248,13 @@ func (m *Muxer) WritePacket(packet Packet) error {
 		return ErrTimecodeOverflow
 	}
 	relativePosition := m.relativeClusterPosition()
+	blockNumber := m.clusterBlock + 1
 	if err := m.writeSimpleBlock(packet, int16(delta), track); err != nil {
 		return err
 	}
+	m.clusterBlock = blockNumber
 	m.updateMaxTime(packet)
-	m.addCue(packet, timecode, relativePosition)
+	m.addCue(packet, timecode, relativePosition, blockNumber)
 	return nil
 }
 
@@ -330,13 +334,15 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 		return ErrTimecodeOverflow
 	}
 	relativePosition := m.relativeClusterPosition()
+	blockNumber := m.clusterBlock + 1
 	if err := m.writeLacedBlock(packet, int16(delta), lacing, payloadSize, track, muxedFrameSizes); err != nil {
 		return err
 	}
+	m.clusterBlock = blockNumber
 	if endTime > m.maxTimeNS {
 		m.maxTimeNS = endTime
 	}
-	m.addCue(Packet{TrackID: packet.TrackID, TimeNS: packet.TimeNS, Keyframe: packet.Keyframe}, timecode, relativePosition)
+	m.addCue(Packet{TrackID: packet.TrackID, TimeNS: packet.TimeNS, Keyframe: packet.Keyframe}, timecode, relativePosition, blockNumber)
 	return nil
 }
 
@@ -1151,6 +1157,7 @@ func (m *Muxer) startCluster(timecode int64) error {
 	}
 	m.clusterOpen = true
 	m.clusterTimecode = timecode
+	m.clusterBlock = 0
 	return nil
 }
 
@@ -1173,17 +1180,28 @@ func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16, track Track
 	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
 }
 
-func (m *Muxer) addCue(packet Packet, timecode int64, relativePosition uint64) {
+func (m *Muxer) addCue(packet Packet, timecode int64, relativePosition uint64, blockNumber uint64) {
 	if !m.collectsCues() || !packet.Keyframe {
 		return
 	}
-	m.cues = append(m.cues, CuePoint{
+	position := CueTrackPosition{
 		TrackID:             packet.TrackID,
-		TimeNS:              timecode * m.options.TimecodeScaleNS,
 		ClusterPosition:     m.clusterPosition,
 		RelativePosition:    relativePosition,
 		RelativePositionSet: true,
-	})
+		BlockNumber:         blockNumber,
+		BlockNumberSet:      blockNumber != 0,
+	}
+	if packet.DurationNS > 0 {
+		position.DurationNS = packet.DurationNS
+		position.DurationSet = true
+	}
+	cue := CuePoint{
+		TimeNS:    timecode * m.options.TimecodeScaleNS,
+		Positions: []CueTrackPosition{position},
+	}
+	applyCuePosition(&cue, position)
+	m.cues = append(m.cues, cue)
 }
 
 func (m *Muxer) collectsCues() bool {
@@ -1207,28 +1225,111 @@ func (m *Muxer) writeCues() error {
 }
 
 func writeCuePoint(w *ebml.Writer, cue CuePoint, scaleNS int64) error {
+	if scaleNS <= 0 || cue.TimeNS < 0 {
+		return ErrInvalidData
+	}
 	var payload bytes.Buffer
 	cw := ebml.NewWriter(&payload)
 	if err := cw.WriteUInt(idCueTime, uint64(cue.TimeNS/scaleNS)); err != nil {
 		return err
 	}
-	var positions bytes.Buffer
-	pw := ebml.NewWriter(&positions)
-	if err := pw.WriteUInt(idCueTrack, uint64(cue.TrackID)); err != nil {
-		return err
+	if len(cue.Positions) == 0 {
+		if cue.TrackID == 0 {
+			return ErrInvalidData
+		}
+		position := cueTrackPositionFromLegacy(cue)
+		if err := writeCueTrackPosition(cw, position, scaleNS); err != nil {
+			return err
+		}
+		return w.WriteElement(idCuePoint, payload.Bytes())
 	}
-	if err := pw.WriteUInt(idCueClusterPosition, cue.ClusterPosition); err != nil {
-		return err
-	}
-	if cue.RelativePositionSet {
-		if err := pw.WriteUInt(idCueRelativePos, cue.RelativePosition); err != nil {
+	for i := range cue.Positions {
+		if err := writeCueTrackPosition(cw, cue.Positions[i], scaleNS); err != nil {
 			return err
 		}
 	}
-	if err := cw.WriteElement(idCueTrackPositions, positions.Bytes()); err != nil {
+	return w.WriteElement(idCuePoint, payload.Bytes())
+}
+
+func cueTrackPositionFromLegacy(cue CuePoint) CueTrackPosition {
+	return CueTrackPosition{
+		TrackID:             cue.TrackID,
+		ClusterPosition:     cue.ClusterPosition,
+		RelativePosition:    cue.RelativePosition,
+		RelativePositionSet: cue.RelativePositionSet,
+		DurationNS:          cue.DurationNS,
+		DurationSet:         cue.DurationSet,
+		BlockNumber:         cue.BlockNumber,
+		BlockNumberSet:      cue.BlockNumberSet,
+		CodecStatePosition:  cue.CodecStatePosition,
+		CodecStateSet:       cue.CodecStateSet,
+		References:          cue.References,
+	}
+}
+
+func writeCueTrackPosition(w *ebml.Writer, position CueTrackPosition, scaleNS int64) error {
+	if position.TrackID == 0 || position.DurationNS < 0 || (position.BlockNumberSet && position.BlockNumber == 0) {
+		return ErrInvalidData
+	}
+	var positions bytes.Buffer
+	pw := ebml.NewWriter(&positions)
+	if err := pw.WriteUInt(idCueTrack, uint64(position.TrackID)); err != nil {
 		return err
 	}
-	return w.WriteElement(idCuePoint, payload.Bytes())
+	if err := pw.WriteUInt(idCueClusterPosition, position.ClusterPosition); err != nil {
+		return err
+	}
+	if position.RelativePositionSet {
+		if err := pw.WriteUInt(idCueRelativePos, position.RelativePosition); err != nil {
+			return err
+		}
+	}
+	if position.DurationSet {
+		if err := pw.WriteUInt(idCueDuration, scaledDurationTicks(position.DurationNS, scaleNS)); err != nil {
+			return err
+		}
+	}
+	if position.BlockNumberSet {
+		if err := pw.WriteUInt(idCueBlockNumber, position.BlockNumber); err != nil {
+			return err
+		}
+	}
+	if position.CodecStateSet {
+		if err := pw.WriteUInt(idCueCodecState, position.CodecStatePosition); err != nil {
+			return err
+		}
+	}
+	for i := range position.References {
+		if err := writeCueReference(pw, position.References[i], scaleNS); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idCueTrackPositions, positions.Bytes())
+}
+
+func writeCueReference(w *ebml.Writer, reference CueReference, scaleNS int64) error {
+	if reference.TimeNS < 0 || (reference.BlockNumberSet && reference.BlockNumber == 0) {
+		return ErrInvalidData
+	}
+	var payload bytes.Buffer
+	rw := ebml.NewWriter(&payload)
+	if err := rw.WriteUInt(idCueRefTime, uint64(reference.TimeNS/scaleNS)); err != nil {
+		return err
+	}
+	if err := rw.WriteUInt(idCueRefCluster, reference.ClusterPosition); err != nil {
+		return err
+	}
+	if reference.BlockNumberSet {
+		if err := rw.WriteUInt(idCueRefNumber, reference.BlockNumber); err != nil {
+			return err
+		}
+	}
+	if reference.CodecStateSet {
+		if err := rw.WriteUInt(idCueRefCodecState, reference.CodecStatePosition); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idCueReference, payload.Bytes())
 }
 
 func (m *Muxer) updateMaxTime(packet Packet) {

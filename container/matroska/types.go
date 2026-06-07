@@ -212,6 +212,37 @@ type CuePoint struct {
 	ClusterPosition     uint64
 	RelativePosition    uint64
 	RelativePositionSet bool
+	DurationNS          int64
+	DurationSet         bool
+	BlockNumber         uint64
+	BlockNumberSet      bool
+	CodecStatePosition  uint64
+	CodecStateSet       bool
+	References          []CueReference
+	Positions           []CueTrackPosition
+}
+
+type CueTrackPosition struct {
+	TrackID             uint32
+	ClusterPosition     uint64
+	RelativePosition    uint64
+	RelativePositionSet bool
+	DurationNS          int64
+	DurationSet         bool
+	BlockNumber         uint64
+	BlockNumberSet      bool
+	CodecStatePosition  uint64
+	CodecStateSet       bool
+	References          []CueReference
+}
+
+type CueReference struct {
+	TimeNS             int64
+	ClusterPosition    uint64
+	BlockNumber        uint64
+	BlockNumberSet     bool
+	CodecStatePosition uint64
+	CodecStateSet      bool
 }
 
 type SeekEntry struct {

@@ -326,6 +326,40 @@ func cloneTags(tags []Tag) []Tag {
 	return out
 }
 
+func cloneCues(cues []CuePoint) []CuePoint {
+	if len(cues) == 0 {
+		return nil
+	}
+	out := make([]CuePoint, len(cues))
+	for i := range cues {
+		out[i] = cues[i]
+		out[i].References = cloneCueReferences(cues[i].References)
+		out[i].Positions = cloneCueTrackPositions(cues[i].Positions)
+	}
+	return out
+}
+
+func cloneCueTrackPositions(positions []CueTrackPosition) []CueTrackPosition {
+	if len(positions) == 0 {
+		return nil
+	}
+	out := make([]CueTrackPosition, len(positions))
+	for i := range positions {
+		out[i] = positions[i]
+		out[i].References = cloneCueReferences(positions[i].References)
+	}
+	return out
+}
+
+func cloneCueReferences(references []CueReference) []CueReference {
+	if len(references) == 0 {
+		return nil
+	}
+	out := make([]CueReference, len(references))
+	copy(out, references)
+	return out
+}
+
 func cloneTagTarget(target TagTarget) TagTarget {
 	if len(target.TrackUIDs) != 0 {
 		target.TrackUIDs = append([]uint64(nil), target.TrackUIDs...)
@@ -396,9 +430,7 @@ func (d *Demuxer) Cues() []CuePoint {
 	if d == nil || len(d.cues) == 0 {
 		return nil
 	}
-	cues := make([]CuePoint, len(d.cues))
-	copy(cues, d.cues)
-	return cues
+	return cloneCues(d.cues)
 }
 
 func (d *Demuxer) SeekEntries() []SeekEntry {
@@ -1536,6 +1568,7 @@ func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint,
 		return CuePoint{}, err
 	}
 	var cue CuePoint
+	timeSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -1547,19 +1580,21 @@ func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint,
 			if err != nil {
 				return CuePoint{}, err
 			}
-			if value > uint64(math.MaxInt64)/uint64(d.timecodeScaleNS) {
+			timeNS, err := scaleCueTicks(value, d.timecodeScaleNS)
+			if err != nil {
 				return CuePoint{}, ErrInvalidData
 			}
-			cue.TimeNS = int64(value) * d.timecodeScaleNS
+			cue.TimeNS = timeNS
+			timeSeen = true
 		case idCueTrackPositions:
 			position, err := d.parseCueTrackPositions(master.Reader(), child)
 			if err != nil {
 				return CuePoint{}, err
 			}
-			cue.TrackID = position.TrackID
-			cue.ClusterPosition = position.ClusterPosition
-			cue.RelativePosition = position.RelativePosition
-			cue.RelativePositionSet = position.RelativePositionSet
+			cue.Positions = append(cue.Positions, position)
+			if len(cue.Positions) == 1 {
+				applyCuePosition(&cue, position)
+			}
 		default:
 			if err := skipElement(master.Reader(), child); err != nil {
 				return CuePoint{}, err
@@ -1569,63 +1604,186 @@ func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint,
 	if err := master.Validate(); err != nil {
 		return CuePoint{}, err
 	}
+	if !timeSeen || len(cue.Positions) == 0 {
+		return CuePoint{}, ErrInvalidData
+	}
 	return cue, nil
 }
 
-type cueTrackPosition struct {
-	TrackID             uint32
-	ClusterPosition     uint64
-	RelativePosition    uint64
-	RelativePositionSet bool
+func applyCuePosition(cue *CuePoint, position CueTrackPosition) {
+	cue.TrackID = position.TrackID
+	cue.ClusterPosition = position.ClusterPosition
+	cue.RelativePosition = position.RelativePosition
+	cue.RelativePositionSet = position.RelativePositionSet
+	cue.DurationNS = position.DurationNS
+	cue.DurationSet = position.DurationSet
+	cue.BlockNumber = position.BlockNumber
+	cue.BlockNumberSet = position.BlockNumberSet
+	cue.CodecStatePosition = position.CodecStatePosition
+	cue.CodecStateSet = position.CodecStateSet
+	cue.References = cloneCueReferences(position.References)
 }
 
-func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (cueTrackPosition, error) {
+func scaleCueTicks(value uint64, scaleNS int64) (int64, error) {
+	if scaleNS <= 0 || value > uint64(math.MaxInt64)/uint64(scaleNS) {
+		return 0, ErrInvalidData
+	}
+	return int64(value) * scaleNS, nil
+}
+
+func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (CueTrackPosition, error) {
 	if header.Size.Unknown {
-		return cueTrackPosition{}, ErrInvalidData
+		return CueTrackPosition{}, ErrInvalidData
 	}
 	master, err := d.checkedMasterReader(parent, header.Size.Value)
 	if err != nil {
-		return cueTrackPosition{}, err
+		return CueTrackPosition{}, err
 	}
-	var position cueTrackPosition
+	var position CueTrackPosition
+	trackSeen := false
+	clusterSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
-			return cueTrackPosition{}, err
+			return CueTrackPosition{}, err
 		}
 		switch child.ID {
 		case idCueTrack:
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
-				return cueTrackPosition{}, err
+				return CueTrackPosition{}, err
 			}
 			position.TrackID, err = trackIDFromUint(value)
 			if err != nil {
-				return cueTrackPosition{}, err
+				return CueTrackPosition{}, err
 			}
+			trackSeen = true
 		case idCueClusterPosition:
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
-				return cueTrackPosition{}, err
+				return CueTrackPosition{}, err
 			}
 			position.ClusterPosition = value
+			clusterSeen = true
 		case idCueRelativePos:
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
-				return cueTrackPosition{}, err
+				return CueTrackPosition{}, err
 			}
 			position.RelativePosition = value
 			position.RelativePositionSet = true
+		case idCueDuration:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return CueTrackPosition{}, err
+			}
+			position.DurationNS, err = scaleCueTicks(value, d.timecodeScaleNS)
+			if err != nil {
+				return CueTrackPosition{}, err
+			}
+			position.DurationSet = true
+		case idCueBlockNumber:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return CueTrackPosition{}, err
+			}
+			if value == 0 {
+				return CueTrackPosition{}, ErrInvalidData
+			}
+			position.BlockNumber = value
+			position.BlockNumberSet = true
+		case idCueCodecState:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return CueTrackPosition{}, err
+			}
+			position.CodecStatePosition = value
+			position.CodecStateSet = true
+		case idCueReference:
+			reference, err := d.parseCueReference(master.Reader(), child)
+			if err != nil {
+				return CueTrackPosition{}, err
+			}
+			position.References = append(position.References, reference)
 		default:
 			if err := skipElement(master.Reader(), child); err != nil {
-				return cueTrackPosition{}, err
+				return CueTrackPosition{}, err
 			}
 		}
 	}
 	if err := master.Validate(); err != nil {
-		return cueTrackPosition{}, err
+		return CueTrackPosition{}, err
+	}
+	if !trackSeen || !clusterSeen {
+		return CueTrackPosition{}, ErrInvalidData
 	}
 	return position, nil
+}
+
+func (d *Demuxer) parseCueReference(parent io.Reader, header ebml.Header) (CueReference, error) {
+	if header.Size.Unknown {
+		return CueReference{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return CueReference{}, err
+	}
+	reference := CueReference{BlockNumber: 1}
+	timeSeen := false
+	clusterSeen := false
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return CueReference{}, err
+		}
+		switch child.ID {
+		case idCueRefTime:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return CueReference{}, err
+			}
+			reference.TimeNS, err = scaleCueTicks(value, d.timecodeScaleNS)
+			if err != nil {
+				return CueReference{}, err
+			}
+			timeSeen = true
+		case idCueRefCluster:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return CueReference{}, err
+			}
+			reference.ClusterPosition = value
+			clusterSeen = true
+		case idCueRefNumber:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return CueReference{}, err
+			}
+			if value == 0 {
+				return CueReference{}, ErrInvalidData
+			}
+			reference.BlockNumber = value
+			reference.BlockNumberSet = true
+		case idCueRefCodecState:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return CueReference{}, err
+			}
+			reference.CodecStatePosition = value
+			reference.CodecStateSet = true
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return CueReference{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return CueReference{}, err
+	}
+	if !timeSeen || !clusterSeen {
+		return CueReference{}, ErrInvalidData
+	}
+	return reference, nil
 }
 
 func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, error) {

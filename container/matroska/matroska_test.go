@@ -3128,12 +3128,84 @@ func TestDemuxerSeekToTimeUsesCueRelativePosition(t *testing.T) {
 	if !cues[1].RelativePositionSet || cues[1].RelativePosition <= cues[0].RelativePosition {
 		t.Fatalf("cues did not preserve relative block positions: %+v", cues)
 	}
+	if cues[0].BlockNumber != 1 || !cues[0].BlockNumberSet ||
+		cues[1].BlockNumber != 2 || !cues[1].BlockNumberSet {
+		t.Fatalf("cues did not preserve cluster block numbers: %+v", cues)
+	}
+	if len(cues[1].Positions) != 1 || cues[1].Positions[0].BlockNumber != 2 {
+		t.Fatalf("cue positions = %+v, want second block number", cues[1].Positions)
+	}
+	if !cues[1].DurationSet || cues[1].DurationNS != packets[1].DurationNS ||
+		!cues[1].Positions[0].DurationSet || cues[1].Positions[0].DurationNS != packets[1].DurationNS {
+		t.Fatalf("cue duration = %+v positions=%+v, want %d", cues[1], cues[1].Positions, packets[1].DurationNS)
+	}
 	got := Packet{Data: make([]byte, 0, 8)}
 	if err := demuxer.ReadPacket(&got); err != nil {
 		t.Fatal(err)
 	}
 	if got.TimeNS != packets[1].TimeNS || got.DurationNS != packets[1].DurationNS || !bytes.Equal(got.Data, packets[1].Data) {
 		t.Fatalf("packet after seek = %+v data=%v, want %+v data=%v", got, got.Data, packets[1], packets[1].Data)
+	}
+}
+
+func TestDemuxerPreservesCueTrackPositionMetadata(t *testing.T) {
+	want := CuePoint{
+		TimeNS: 20_000_000,
+		Positions: []CueTrackPosition{
+			{
+				TrackID:             1,
+				ClusterPosition:     128,
+				RelativePosition:    12,
+				RelativePositionSet: true,
+				DurationNS:          5_000_000,
+				DurationSet:         true,
+				BlockNumber:         3,
+				BlockNumberSet:      true,
+				CodecStatePosition:  64,
+				CodecStateSet:       true,
+				References: []CueReference{{
+					TimeNS:             10_000_000,
+					ClusterPosition:    96,
+					BlockNumber:        2,
+					BlockNumberSet:     true,
+					CodecStatePosition: 32,
+					CodecStateSet:      true,
+				}},
+			},
+			{
+				TrackID:             1,
+				ClusterPosition:     256,
+				RelativePosition:    24,
+				RelativePositionSet: true,
+				BlockNumber:         4,
+				BlockNumberSet:      true,
+			},
+		},
+	}
+	applyCuePosition(&want, want.Positions[0])
+	data := makeCueMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+		var cues bytes.Buffer
+		cw := ebml.NewWriter(&cues)
+		if err := writeCuePoint(cw, want, defaultTimecodeScaleNS); err != nil {
+			return err
+		}
+		return writer.WriteElement(idCues, cues.Bytes())
+	})
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cues := demuxer.Cues()
+	if len(cues) != 1 {
+		t.Fatalf("cues = %+v, want one cue", cues)
+	}
+	if !equalCuePoint(cues[0], want) {
+		t.Fatalf("cue = %+v, want %+v", cues[0], want)
+	}
+	cues[0].Positions[0].References[0].TimeNS = 0
+	fresh := demuxer.Cues()
+	if fresh[0].Positions[0].References[0].TimeNS != 10_000_000 {
+		t.Fatalf("cue references alias was not protected: %+v", fresh[0].Positions[0].References)
 	}
 }
 
@@ -3626,6 +3698,129 @@ func TestDemuxerRejectsOversizedTrackIDs(t *testing.T) {
 			t.Fatalf("err = %v, want ErrInvalidData", err)
 		}
 	})
+}
+
+func TestDemuxerRejectsInvalidCueMetadata(t *testing.T) {
+	tests := []struct {
+		name     string
+		writeCue func(*ebml.Writer) error
+	}{
+		{
+			name: "missing cue time",
+			writeCue: func(w *ebml.Writer) error {
+				var point bytes.Buffer
+				pw := ebml.NewWriter(&point)
+				if err := pw.WriteElement(idCueTrackPositions, cueTrackPositionsPayload(t)); err != nil {
+					return err
+				}
+				return w.WriteElement(idCuePoint, point.Bytes())
+			},
+		},
+		{
+			name: "missing cue track positions",
+			writeCue: func(w *ebml.Writer) error {
+				var point bytes.Buffer
+				pw := ebml.NewWriter(&point)
+				if err := pw.WriteUInt(idCueTime, 0); err != nil {
+					return err
+				}
+				return w.WriteElement(idCuePoint, point.Bytes())
+			},
+		},
+		{
+			name: "missing cue track",
+			writeCue: func(w *ebml.Writer) error {
+				var positions bytes.Buffer
+				tw := ebml.NewWriter(&positions)
+				if err := tw.WriteUInt(idCueClusterPosition, 0); err != nil {
+					return err
+				}
+				return writeCuePointWithPositionsPayload(w, positions.Bytes())
+			},
+		},
+		{
+			name: "missing cue cluster position",
+			writeCue: func(w *ebml.Writer) error {
+				var positions bytes.Buffer
+				tw := ebml.NewWriter(&positions)
+				if err := tw.WriteUInt(idCueTrack, 1); err != nil {
+					return err
+				}
+				return writeCuePointWithPositionsPayload(w, positions.Bytes())
+			},
+		},
+		{
+			name: "zero cue block number",
+			writeCue: func(w *ebml.Writer) error {
+				var positions bytes.Buffer
+				tw := ebml.NewWriter(&positions)
+				if err := tw.WriteUInt(idCueTrack, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueClusterPosition, 0); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueBlockNumber, 0); err != nil {
+					return err
+				}
+				return writeCuePointWithPositionsPayload(w, positions.Bytes())
+			},
+		},
+		{
+			name: "cue reference missing time",
+			writeCue: func(w *ebml.Writer) error {
+				var reference bytes.Buffer
+				rw := ebml.NewWriter(&reference)
+				if err := rw.WriteUInt(idCueRefCluster, 0); err != nil {
+					return err
+				}
+				return writeCuePointWithReferencePayload(w, reference.Bytes())
+			},
+		},
+		{
+			name: "cue reference missing cluster",
+			writeCue: func(w *ebml.Writer) error {
+				var reference bytes.Buffer
+				rw := ebml.NewWriter(&reference)
+				if err := rw.WriteUInt(idCueRefTime, 0); err != nil {
+					return err
+				}
+				return writeCuePointWithReferencePayload(w, reference.Bytes())
+			},
+		},
+		{
+			name: "zero cue reference number",
+			writeCue: func(w *ebml.Writer) error {
+				var reference bytes.Buffer
+				rw := ebml.NewWriter(&reference)
+				if err := rw.WriteUInt(idCueRefTime, 0); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefCluster, 0); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefNumber, 0); err != nil {
+					return err
+				}
+				return writeCuePointWithReferencePayload(w, reference.Bytes())
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeCueMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+				var cues bytes.Buffer
+				cw := ebml.NewWriter(&cues)
+				if err := tt.writeCue(cw); err != nil {
+					return err
+				}
+				return writer.WriteElement(idCues, cues.Bytes())
+			})
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
 }
 
 func TestDemuxerRejectsBlockForUnknownTrack(t *testing.T) {
@@ -4980,6 +5175,56 @@ func equalBlockAdditionMapping(left BlockAdditionMapping, right BlockAdditionMap
 		bytes.Equal(left.ExtraData, right.ExtraData)
 }
 
+func equalCuePoint(left CuePoint, right CuePoint) bool {
+	if left.TrackID != right.TrackID ||
+		left.TimeNS != right.TimeNS ||
+		left.ClusterPosition != right.ClusterPosition ||
+		left.RelativePosition != right.RelativePosition ||
+		left.RelativePositionSet != right.RelativePositionSet ||
+		left.DurationNS != right.DurationNS ||
+		left.DurationSet != right.DurationSet ||
+		left.BlockNumber != right.BlockNumber ||
+		left.BlockNumberSet != right.BlockNumberSet ||
+		left.CodecStatePosition != right.CodecStatePosition ||
+		left.CodecStateSet != right.CodecStateSet ||
+		!equalCueReferences(left.References, right.References) ||
+		len(left.Positions) != len(right.Positions) {
+		return false
+	}
+	for i := range left.Positions {
+		if !equalCueTrackPosition(left.Positions[i], right.Positions[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func equalCueTrackPosition(left CueTrackPosition, right CueTrackPosition) bool {
+	return left.TrackID == right.TrackID &&
+		left.ClusterPosition == right.ClusterPosition &&
+		left.RelativePosition == right.RelativePosition &&
+		left.RelativePositionSet == right.RelativePositionSet &&
+		left.DurationNS == right.DurationNS &&
+		left.DurationSet == right.DurationSet &&
+		left.BlockNumber == right.BlockNumber &&
+		left.BlockNumberSet == right.BlockNumberSet &&
+		left.CodecStatePosition == right.CodecStatePosition &&
+		left.CodecStateSet == right.CodecStateSet &&
+		equalCueReferences(left.References, right.References)
+}
+
+func equalCueReferences(left []CueReference, right []CueReference) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func expectedOpusHead(channels int, sampleRate int) []byte {
 	if channels == 0 {
 		channels = 2
@@ -5164,6 +5409,36 @@ func makeCueTrackNumberMatroskaData(tb testing.TB, cueTrackNumber uint64) []byte
 		tb.Fatal(err)
 	}
 	if err := writeCuesWithTrackNumber(muxer.ebml, cueTrackNumber); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func makeCueMetadataMatroskaData(tb testing.TB, writeCues func(*ebml.Writer) error) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	}); err != nil {
+		tb.Fatal(err)
+	}
+	writeMatroskaSegmentPrefix(tb, muxer)
+	if err := muxer.writeTracks(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeCues(muxer.ebml); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeSimpleBlockWithTrackNumber(muxer.ebml, 1, []byte{1}); err != nil {
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
@@ -5899,6 +6174,33 @@ func cueTrackPositionsPayload(tb testing.TB) []byte {
 		tb.Fatal(err)
 	}
 	return positions.Bytes()
+}
+
+func writeCuePointWithPositionsPayload(w *ebml.Writer, positionsPayload []byte) error {
+	var point bytes.Buffer
+	pw := ebml.NewWriter(&point)
+	if err := pw.WriteUInt(idCueTime, 0); err != nil {
+		return err
+	}
+	if err := pw.WriteElement(idCueTrackPositions, positionsPayload); err != nil {
+		return err
+	}
+	return w.WriteElement(idCuePoint, point.Bytes())
+}
+
+func writeCuePointWithReferencePayload(w *ebml.Writer, referencePayload []byte) error {
+	var positions bytes.Buffer
+	tw := ebml.NewWriter(&positions)
+	if err := tw.WriteUInt(idCueTrack, 1); err != nil {
+		return err
+	}
+	if err := tw.WriteUInt(idCueClusterPosition, 0); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idCueReference, referencePayload); err != nil {
+		return err
+	}
+	return writeCuePointWithPositionsPayload(w, positions.Bytes())
 }
 
 func audioPayload() []byte {
