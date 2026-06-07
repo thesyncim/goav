@@ -70,17 +70,27 @@ func TestMediaPlanStreamGraphOwnsPacketCopyAndDirectStreams(t *testing.T) {
 	if reflect.TypeOf((*mediaPlanStreamGraph)(nil)).Elem().Name() != "mediaPlanStreamGraph" {
 		t.Fatal("mediaPlanStreamGraph should remain the common stream executable")
 	}
-	body, err := os.ReadFile("media_plan_build.go")
-	if err != nil {
-		t.Fatal(err)
+	var body strings.Builder
+	for _, file := range []string{"media_plan_build.go", "media_plan_spec.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
 	}
 	for _, forbidden := range []string{
 		"mediaPlanPacketCopyGraph",
 		"mediaPlanSingleStreamGraph",
+		"mediaPlanPacketCopySources",
+		"func (p mediaPlanBranchComposeGraph) specSources",
+		"func (p mediaPlanBranchComposeGraph) compileSources",
 	} {
-		if strings.Contains(string(body), "type "+forbidden) {
-			t.Fatalf("%s should not be a separate executable graph family", forbidden)
+		if strings.Contains(body.String(), forbidden) || strings.Contains(body.String(), "type "+forbidden) {
+			t.Fatalf("%s should not be a separate stream media-plan path", forbidden)
 		}
+	}
+	if !strings.Contains(body.String(), "compileMediaPlanSources") {
+		t.Fatal("media plan graphs should share source compilation")
 	}
 }
 

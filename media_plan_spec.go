@@ -132,7 +132,7 @@ func mediaPlanBranchComposerExecutable(state *recipeCompileState) (mediaPlanExec
 	return plan, true, nil
 }
 
-func mediaPlanPacketCopySources(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {
+func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {
 	if len(inputs) == 1 && inputs[0].rtp == nil {
 		input := inputs[0].formatInput()
 		name := demuxNodeName(input)

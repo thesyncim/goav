@@ -1579,6 +1579,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     single-stream, and branch families. Guard coverage rejects separate
     packet-copy and single-stream graph types.
     Done.
+322. Share media-plan source lowering:
+    stream and branch-composition graphs now use the same source-spec and
+    source-compile helpers for file and RTP/WebRTC inputs. Branch composition no
+    longer carries its own file/RTP source planning or opening methods, and
+    guard coverage keeps the branch-only source helpers and old packet-copy
+    source helper name from returning.
+    Done.
 
 ## First Vertical Slice
 

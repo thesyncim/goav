@@ -35,6 +35,13 @@ type mediaPlanBranchComposeGraph struct {
 	targets  []branchComposeTargetRoute
 }
 
+type mediaPlanCompiledSources struct {
+	refs      []pipeline.NodeRef
+	streams   []av.Stream
+	rtpBuilds []rtpBuild
+	realtime  bool
+}
+
 func buildMediaPlanTask(ctx context.Context, plan mediaPlanExecutable) (Task, error) {
 	runtime := plan.runtimeRef()
 	if runtime == nil {
@@ -145,7 +152,7 @@ func newMediaPlanPacketCopyStreamGraph(rt Runtime, inputs []InputSpec, outputs [
 func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
 	nodes := make(map[string]plannedNode, len(p.inputs)+len(p.outputs)+1)
-	sourceRefs, ok, err := mediaPlanPacketCopySources(&spec, nodes, p.inputs)
+	sourceRefs, ok, err := mediaPlanSourceSpecs(&spec, nodes, p.inputs)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
@@ -209,7 +216,7 @@ func newMediaPlanBranchComposeGraph(rt Runtime, input InputSpec, plan branchComp
 func (p mediaPlanBranchComposeGraph) spec() (pipeline.Spec, error) {
 	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
 	nodes := make(map[string]plannedNode, p.nodeCapacity())
-	sourceRefs, ok, err := p.specSources(&spec, nodes)
+	sourceRefs, ok, err := mediaPlanSourceSpecs(&spec, nodes, []InputSpec{p.input})
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
@@ -223,66 +230,20 @@ func (p mediaPlanBranchComposeGraph) nodeCapacity() int {
 	return 1 + 3 + len(p.branches) + branchComposeStepCount(p.branches) + len(p.targets)
 }
 
-func (p mediaPlanBranchComposeGraph) specSources(spec *pipeline.Spec, nodes map[string]plannedNode) ([]pipeline.NodeRef, bool, error) {
-	if p.input.rtp == nil {
-		input := p.input.formatInput()
-		name := demuxNodeName(input)
-		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, inputNodeDetail(input)); err != nil {
-			return nil, false, err
-		}
-		return []pipeline.NodeRef{ref}, true, nil
-	}
-	input := p.input.rtpBuildInput()
-	name := rtpNodeName(input, 0)
-	ref := pipeline.NodeRef(name)
-	if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, rtpInputDetail(input)); err != nil {
-		return nil, false, err
-	}
-	return []pipeline.NodeRef{ref}, true, nil
-}
-
 func (p mediaPlanBranchComposeGraph) compile(ctx context.Context, graph pipeline.Graph) error {
-	sourceRefs, streams, builds, realtime, err := p.compileSources(ctx, graph)
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, []InputSpec{p.input}, "build branch composition", Intent{Name: p.plan.Name})
 	if err != nil {
 		return err
 	}
-	groups, err := resolveBranchComposeStreamGroups(streams, p.branches)
+	groups, err := resolveBranchComposeStreamGroups(sources.streams, p.branches)
 	if err != nil {
 		return err
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sourceRefs, groups, builds, p.branches, realtime)
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, p.branches, sources.realtime)
 	if err != nil {
 		return err
 	}
-	return compileBranchComposeRoutes(ctx, p.runtime, graph, p.branches, p.targets, branchInputs, branchStreams, realtime)
-}
-
-func (p mediaPlanBranchComposeGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {
-	service := &builder{runtime: p.runtime}
-	if p.input.rtp == nil {
-		input := p.input.formatInput()
-		demux, err := service.openDemuxSource(ctx, input)
-		if err != nil {
-			return nil, nil, nil, false, err
-		}
-		sourceRef, err := graph.AddSource(demux.source, p.runtime.buffer)
-		if err != nil {
-			demux.source.Close()
-			return nil, nil, nil, false, err
-		}
-		return []pipeline.NodeRef{sourceRef}, demux.streams, nil, p.runtime.realtime || input.Realtime, nil
-	}
-	receiver, err := service.openRTPSource(ctx, p.input.rtpBuildInput(), 0)
-	if err != nil {
-		return nil, nil, nil, false, err
-	}
-	sourceRef, err := graph.AddSource(receiver.source, p.runtime.buffer)
-	if err != nil {
-		receiver.source.Close()
-		return nil, nil, nil, false, err
-	}
-	return []pipeline.NodeRef{sourceRef}, receiver.streams, []rtpBuild{receiver}, true, nil
+	return compileBranchComposeRoutes(ctx, p.runtime, graph, p.branches, p.targets, branchInputs, branchStreams, sources.realtime)
 }
 
 func (p mediaPlanStreamGraph) compilePacketCopy(ctx context.Context, graph pipeline.Graph) error {
@@ -396,7 +357,7 @@ func (p mediaPlanStreamGraph) encodeOutputSpec() (pipeline.Spec, error) {
 func (p mediaPlanStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeRef, map[string]plannedNode, error) {
 	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
 	nodes := make(map[string]plannedNode, len(p.inputs)+len(p.outputs)+len(p.filters)+3)
-	sourceRefs, ok, err := mediaPlanPacketCopySources(&spec, nodes, p.inputs)
+	sourceRefs, ok, err := mediaPlanSourceSpecs(&spec, nodes, p.inputs)
 	if err != nil {
 		return pipeline.Spec{}, nil, nil, err
 	}
@@ -465,40 +426,68 @@ func (p mediaPlanStreamGraph) compileEncodeOutput(ctx context.Context, graph pip
 }
 
 func (p mediaPlanStreamGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {
-	if len(p.inputs) == 1 && p.inputs[0].rtp == nil {
-		demux, err := (&builder{runtime: p.runtime}).openDemuxSource(ctx, p.inputs[0].formatInput())
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []StreamIntent{p.stream}})
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	return sources.refs, sources.streams, sources.rtpBuilds, sources.realtime, nil
+}
+
+func compileMediaPlanSources(
+	ctx context.Context,
+	runtime *runtime,
+	graph pipeline.Graph,
+	inputs []InputSpec,
+	operation string,
+	intent Intent,
+) (mediaPlanCompiledSources, error) {
+	if runtime == nil {
+		return mediaPlanCompiledSources{}, recipeGraphUnsupportedError(operation, intent)
+	}
+	service := &builder{runtime: runtime}
+	if len(inputs) == 1 && inputs[0].rtp == nil {
+		input := inputs[0].formatInput()
+		demux, err := service.openDemuxSource(ctx, input)
 		if err != nil {
-			return nil, nil, nil, false, err
+			return mediaPlanCompiledSources{}, err
 		}
-		sourceRef, err := graph.AddSource(demux.source, p.runtime.buffer)
+		sourceRef, err := graph.AddSource(demux.source, runtime.buffer)
 		if err != nil {
 			demux.source.Close()
-			return nil, nil, nil, false, err
+			return mediaPlanCompiledSources{}, err
 		}
-		return []pipeline.NodeRef{sourceRef}, demux.streams, nil, p.runtime.realtime || p.inputs[0].formatInput().Realtime, nil
+		return mediaPlanCompiledSources{
+			refs:     []pipeline.NodeRef{sourceRef},
+			streams:  demux.streams,
+			realtime: runtime.realtime || input.Realtime,
+		}, nil
 	}
-	if !allRTPInputSpecs(p.inputs) {
-		return nil, nil, nil, false, recipeGraphUnsupportedError("build job", Intent{Streams: []StreamIntent{p.stream}})
+	if !allRTPInputSpecs(inputs) {
+		return mediaPlanCompiledSources{}, recipeGraphUnsupportedError(operation, intent)
 	}
-	sourceRefs := make([]pipeline.NodeRef, 0, len(p.inputs))
-	streams := make([]av.Stream, 0, len(p.inputs))
-	builds := make([]rtpBuild, 0, len(p.inputs))
-	service := &builder{runtime: p.runtime}
-	for i := range p.inputs {
-		receiver, err := service.openRTPSource(ctx, p.inputs[i].rtpBuildInput(), i)
+	sourceRefs := make([]pipeline.NodeRef, 0, len(inputs))
+	streams := make([]av.Stream, 0, len(inputs))
+	builds := make([]rtpBuild, 0, len(inputs))
+	for i := range inputs {
+		receiver, err := service.openRTPSource(ctx, inputs[i].rtpBuildInput(), i)
 		if err != nil {
-			return nil, nil, nil, false, err
+			return mediaPlanCompiledSources{}, err
 		}
-		sourceRef, err := graph.AddSource(receiver.source, p.runtime.buffer)
+		sourceRef, err := graph.AddSource(receiver.source, runtime.buffer)
 		if err != nil {
 			receiver.source.Close()
-			return nil, nil, nil, false, err
+			return mediaPlanCompiledSources{}, err
 		}
 		sourceRefs = append(sourceRefs, sourceRef)
 		streams = append(streams, receiver.streams...)
 		builds = append(builds, receiver)
 	}
-	return sourceRefs, streams, builds, p.runtime.realtime, nil
+	return mediaPlanCompiledSources{
+		refs:      sourceRefs,
+		streams:   streams,
+		rtpBuilds: builds,
+		realtime:  runtime.realtime,
+	}, nil
 }
 
 func mediaPlanStreamFilters(stream StreamIntent) ([]filterRequest, error) {
