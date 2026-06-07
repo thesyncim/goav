@@ -2765,6 +2765,57 @@ func TestBranchComposeLowererUsesPlanSharedStepOperationNodes(t *testing.T) {
 	}
 }
 
+func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+		withTestFilters(testFilterFactory(filter.Descriptor{
+			Name:   filter.FactoryResample,
+			Input:  av.MediaAudio,
+			Output: av.MediaAudio,
+		}, &transcodeTestFilterFactory{})),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Branches(Branch("main").
+			Resample(16_000, Mono).
+			Opus(96_000).
+			To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "resample-main", "resample-plan-main")
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "encode-main", "encode-plan-main")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "resample-plan-main") || !specHasNode(planned, "encode-plan-main") {
+		t.Fatalf("planned = %+v, want renamed private step and encode nodes", planned)
+	}
+}
+
 func renameGraphPlanNodeRef(plan graphPlan, oldName string, newName string) graphPlan {
 	oldRef := pipeline.NodeRef(oldName)
 	newRef := pipeline.NodeRef(newName)

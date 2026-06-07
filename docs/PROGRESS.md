@@ -1835,6 +1835,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     shared resample node and prove the built graph still equals the described
     graph.
     Done.
+354. Lower branch-compose private steps and encoders from graph-plan refs:
+    branch-compose build preparation now records each branch's private
+    transform/stage refs and encode ref from ordered operations. Runtime branch
+    route lowering names private filters/custom stages and encoders from those
+    refs, with fallback names preserved for older advanced compiler paths.
+    Tests mutate planned private resample and encode node refs and prove the
+    built graph still equals the described graph.
+    Done.
 
 ## First Vertical Slice
 
@@ -2045,13 +2053,12 @@ Required proof:
 
 ## Next Slices
 
-1. Lower private branch transform/stage and encode work from `graphPlan`
-   ordered operations. Packet-copy, direct frame-stream, and grouped
-   branch-compose builds now consume the sequence for validation and target
-   binding; grouped branch-compose input lowering consumes select/decode refs,
-   and shared branch-compose transform/stage lowering consumes shared step refs.
-   The next step is to make private branch steps and encoder nodes follow the
-   same ordered operation records instead of the route structs.
+1. Finish branch-compose target/mux lowering from `graphPlan` ordered
+   operations. Packet-copy, direct frame-stream, and grouped branch-compose
+   builds now consume the sequence for validation, select/decode input refs,
+   shared step refs, private step refs, encode refs, and target binding. The
+   next step is to make mux/sink target node construction and branch-to-target
+   routing consume the same target operation records instead of route loops.
 2. Make direct chains implicit branches. Packet copy, decode-to-sink,
    transform/encode-to-target, planned branch composition, and mixed
    audio/video target groups should all lower through the same branch planner
@@ -2099,9 +2106,9 @@ Required proof:
 14. Update this tracker with the new evidence and next pressure point.
 
 Current pressure point: make branch-compose graph-plan lowerers consume ordered
-operation records for private transform/stage and encode lowering, not only
-pre-source validation, select/decode input lowering, shared step lowering, and
-target binding, and deepen capability planning around that ordered operation model. The public recipe surface is small: `From`, chains,
+operation records for mux/sink target construction and branch-to-target
+routing, not only validation, select/decode input lowering, shared/private step
+lowering, encode lowering, and target binding, and deepen capability planning around that ordered operation model. The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`,
 `File`, `URIOut`, `Sink`, `Flow`, `Codec`, and runtime `Attach`. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into
