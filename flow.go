@@ -111,6 +111,10 @@ func (b *AudioFlowBuilder) Encode(codec CodecSpec) *AudioFlowBuilder {
 	return b
 }
 
+func (b *AudioFlowBuilder) Copy() *AudioFlowBuilder {
+	return b.Encode(Copy())
+}
+
 func (b *AudioFlowBuilder) Opus(bitrate int, options ...codecOption) *AudioFlowBuilder {
 	return b.Encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
@@ -168,6 +172,10 @@ func (b *VideoFlowBuilder) Encode(codec CodecSpec) *VideoFlowBuilder {
 	}
 	b.flowBuilder.encode(codec)
 	return b
+}
+
+func (b *VideoFlowBuilder) Copy() *VideoFlowBuilder {
+	return b.Encode(Copy())
 }
 
 func (b *VideoFlowBuilder) VP8(bitrate int, options ...codecOption) *VideoFlowBuilder {
@@ -270,6 +278,10 @@ func (b *flowBuilder) encode(codec CodecSpec) {
 	}
 	if codecIntentSet(b.spec.encode) {
 		b.setErr(duplicateFlowEncodeError(b.spec.name, b.spec.encode, codec))
+		return
+	}
+	if codec.Copy && (b.spec.decode || len(b.spec.steps) != 0) {
+		b.setErr(flowCopyDomainError("build flow", firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
 	b.spec.encode = codec
@@ -384,6 +396,21 @@ func flowDecodeDomainError(operation string, node string) error {
 			"omit .Decode() when applying the flow after stream decode",
 			"use the flow from a packet branch or packet tap when it should own decode",
 			"split packet-preserving streams with .Copy().Branches(...) before applying the flow",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func flowCopyDomainError(operation string, node string) error {
+	return &BuildError{
+		Code:      "flow_copy_domain_mismatch",
+		Operation: operation,
+		Node:      firstNonEmpty(node, "flow"),
+		Reason:    "flow copying requires a packet-domain stream point",
+		Suggestions: []string{
+			"start packet-preserving reusable work with goav.AudioFlow(name).Copy() or goav.VideoFlow(name).Copy()",
+			"declare packet taps after copy with .Copy().Tap(name)",
+			"use .Decode().Resample(...).Opus(...) when the flow should transform frames",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

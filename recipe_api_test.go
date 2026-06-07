@@ -1951,6 +1951,39 @@ func TestFlowTapAfterEncodeIsPacketTap(t *testing.T) {
 	}
 }
 
+func TestFlowCopyAppliesToStreamRecipeIntent(t *testing.T) {
+	packets := goav.AudioFlow("packets").
+		Copy().
+		Tap("audio.copied")
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(packets).
+		To(goav.FileOutput("copy.ogg", io.Discard))
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	stream := intent.Streams[0]
+	if stream.Decode ||
+		!stream.Encode.Copy ||
+		len(stream.Operations) != 2 ||
+		stream.Operations[0].Kind != goav.OpCopy ||
+		stream.Operations[1].Kind != goav.OpTap ||
+		stream.Operations[1].Tap.Name != "audio.copied" ||
+		stream.Operations[1].Tap.Domain != goav.DomainPacket ||
+		stream.Operations[1].Tap.After != goav.OpCopy {
+		t.Fatalf("stream intent: %+v", stream)
+	}
+	if len(stream.Taps) != 1 ||
+		stream.Taps[0].Name != "audio.copied" ||
+		stream.Taps[0].Domain != goav.DomainPacket ||
+		stream.Taps[0].After != goav.OpCopy {
+		t.Fatalf("taps: %+v", stream.Taps)
+	}
+}
+
 func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 	voice := goav.AudioFlow("voice").
 		Resample(16_000, goav.Mono).
@@ -2441,6 +2474,53 @@ func TestFlowDecodeMustBeFirstOperation(t *testing.T) {
 	if !strings.Contains(err.Error(), "decode must be the first flow operation") ||
 		!strings.Contains(err.Error(), ".Decode().Resample") {
 		t.Fatalf("err = %v, want flow decode order guidance", err)
+	}
+}
+
+func TestFlowCopyRequiresPacketDomain(t *testing.T) {
+	tests := []struct {
+		name string
+		job  *goav.Job
+	}{
+		{
+			name: "after flow frame operation",
+			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+				Audio().
+				Apply(goav.AudioFlow("packets").
+					Resample(16_000, goav.Mono).
+					Copy()).
+				To(goav.FileOutput("copy.ogg", io.Discard)),
+		},
+		{
+			name: "after stream decode",
+			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+				Audio().
+				Decode().
+				Apply(goav.AudioFlow("packets").Copy()).
+				To(goav.FileOutput("copy.ogg", io.Discard)),
+		},
+		{
+			name: "after branch frame operation",
+			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+				Audio().
+				Branches(goav.Branch("copy").
+					Decode().
+					Apply(goav.AudioFlow("packets").Copy()).
+					To(goav.Target("copy", goav.FileOutput("copy.ogg", io.Discard)))),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.job.Describe()
+			var buildErr *goav.BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "flow_copy_domain_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want flow_copy_domain_mismatch wrapping ErrUnsupportedBuild", err)
+			}
+			if !strings.Contains(err.Error(), "requires a packet-domain stream point") ||
+				!strings.Contains(err.Error(), ".Copy().Tap") {
+				t.Fatalf("err = %v, want flow copy domain guidance", err)
+			}
+		})
 	}
 }
 

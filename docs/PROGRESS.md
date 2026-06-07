@@ -1474,6 +1474,16 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     work, and `TestPackageKeepsLegacyHelpersOutOfFrontDoor` rejects the old
     exported type name.
     Done.
+311. Make packet copy reusable as a flow operation:
+    `AudioFlow` and `VideoFlow` now expose `Copy()` as a packet-domain terminal
+    operation. Copy flows can publish post-copy packet taps, apply to direct
+    stream chains, planned packet branches, and runtime branches, and reject
+    attempts to copy after decode, resample, resize, custom stages, or frame
+    taps. `TestFlowCopyAppliesToStreamRecipeIntent`,
+    `TestFlowCopyRequiresPacketDomain`, and
+    `TestTaskAttachRuntimeFlowCopyBranchFromPacketTap` pin the intent,
+    diagnostics, and live attach behavior.
+    Done.
 
 ## First Vertical Slice
 

@@ -179,6 +179,10 @@ func (b *BranchBuilder) Apply(flow Flow) *BranchBuilder {
 	b.spec.steps = append(b.spec.steps, cloneJobStreamSteps(spec.steps)...)
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpecs(spec.transforms)...)
 	if codecIntentSet(spec.encode) {
+		if spec.encode.Copy && (b.spec.decode || len(b.spec.steps) != 0) {
+			b.setErr(flowCopyDomainError("build branch", firstNonEmpty(spec.name, b.spec.name, "flow")))
+			return b
+		}
 		b.Encode(spec.encode)
 	}
 	b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, spec.postEncodeTaps...)

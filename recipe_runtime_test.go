@@ -908,6 +908,74 @@ func TestStreamRecipeCopyFansOutToMuxAndSinkEndpoints(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRuntimeFlowCopyBranchFromPacketTap(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	base := &runtimeTestSink{name: "packets"}
+	task, err := From(FileInput("input.ogg", nil)).UseRuntime(New(formats)).
+		Audio().
+		Copy().
+		Tap("audio.packets").
+		To(SinkEndpoint(base)).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	late := &runtimeTestSink{name: "late-packets"}
+	flow := AudioFlow("late").
+		Copy().
+		Tap("audio.late.packets")
+	parent, err := task.Attach(ctx, Branch("late").
+		FromTap("audio.packets").
+		Apply(flow).
+		To(SinkEndpoint(late)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lateTap, ok := findTap(task.Taps(), "audio.late.packets")
+	if !ok ||
+		lateTap.Domain != DomainPacket ||
+		lateTap.MediaKind != av.MediaAudio ||
+		lateTap.After != OpCopy ||
+		lateTap.Caps.Codec != av.CodecOpus ||
+		lateTap.Node != "select-audio" {
+		t.Fatalf("late tap = %+v ok=%v, want packet Opus tap on select-audio", lateTap, ok)
+	}
+	watcher := &runtimeTestSink{name: "watch-late"}
+	child, err := task.Attach(ctx, Branch("watch").
+		FromTap("audio.late.packets").
+		Copy().
+		To(SinkEndpoint(watcher)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if base.lastPacket == nil || late.lastPacket == nil || watcher.lastPacket == nil {
+		t.Fatalf("base packet=%v late packet=%v watcher packet=%v", base.lastPacket, late.lastPacket, watcher.lastPacket)
+	}
+	if err := task.Detach(ctx, child); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Detach(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBranchCompositionCopyBranchesFanOutPackets(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
