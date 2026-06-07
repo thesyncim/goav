@@ -10699,6 +10699,96 @@ func TestDemuxerLoadsRequiredMetadataFromSeekHeadBeforeFirstCluster(t *testing.T
 	}
 }
 
+func TestDemuxerLoadsOptionalMetadataFromSeekHeadBeforeFirstCluster(t *testing.T) {
+	attachments := []Attachment{{
+		UID:         9,
+		Filename:    "late-cover.png",
+		MIMEType:    "image/png",
+		Description: "late cover",
+		Data:        []byte{0x89, 0x50, 0x4e, 0x47},
+	}}
+	chapters := []ChapterEdition{{
+		UID:     17,
+		Default: true,
+		Chapters: []Chapter{{
+			UID:        18,
+			StartNS:    0,
+			EndNS:      1_000_000_000,
+			EndSet:     true,
+			Enabled:    true,
+			EnabledSet: true,
+			Displays: []ChapterDisplay{{
+				String:   "Late Chapter",
+				Language: "eng",
+			}},
+		}},
+	}}
+	tags := []Tag{{
+		Target: TagTarget{
+			TypeValue:      50,
+			AttachmentUIDs: []uint64{9},
+			EditionUIDs:    []uint64{17},
+			ChapterUIDs:    []uint64{18},
+		},
+		Simple: []SimpleTag{{
+			Name:       "TITLE",
+			Default:    true,
+			DefaultSet: true,
+			String:     "Late Metadata",
+			StringSet:  true,
+		}},
+	}}
+	wantAttachments, err := normalizeAttachments(attachments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantChapters, err := normalizeChapters(chapters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTags, err := normalizeTags(tags)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name                   string
+		requiredMetadataBefore bool
+	}{
+		{name: "required metadata late", requiredMetadataBefore: false},
+		{name: "required metadata before cluster", requiredMetadataBefore: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeDeferredOptionalMetadataMatroskaData(t, tt.requiredMetadataBefore, attachments, chapters, tags)
+			demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := demuxer.Attachments(); !reflect.DeepEqual(got, wantAttachments) {
+				t.Fatalf("attachments = %+v, want %+v", got, wantAttachments)
+			}
+			if got := demuxer.Chapters(); !reflect.DeepEqual(got, wantChapters) {
+				t.Fatalf("chapters = %+v, want %+v", got, wantChapters)
+			}
+			if got := demuxer.Tags(); !reflect.DeepEqual(got, wantTags) {
+				t.Fatalf("tags = %+v, want %+v", got, wantTags)
+			}
+
+			packet := Packet{Data: make([]byte, 0, 8)}
+			if err := demuxer.ReadPacket(&packet); err != nil {
+				t.Fatal(err)
+			}
+			if packet.TrackID != 1 || packet.TimeNS != 0 || !bytes.Equal(packet.Data, []byte{0x77}) {
+				t.Fatalf("packet = %+v data=%x", packet, packet.Data)
+			}
+			if err := demuxer.ReadPacket(&packet); !errors.Is(err, io.EOF) {
+				t.Fatalf("err = %v, want EOF", err)
+			}
+		})
+	}
+}
+
 func TestDemuxerRejectsClusterBeforeRequiredMetadataWithoutSeekHead(t *testing.T) {
 	data := makeDeferredRequiredMetadataMatroskaData(t, false)
 	if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
@@ -14481,6 +14571,17 @@ func writeTagsWithTagPayload(w *ebml.Writer, writeTagPayload func(*ebml.Writer) 
 	return w.WriteElement(idTags, tags.Bytes())
 }
 
+func writeTagsElement(w *ebml.Writer, tags ...Tag) error {
+	var payload bytes.Buffer
+	tw := ebml.NewWriter(&payload)
+	for i := range tags {
+		if err := writeTag(tw, tags[i]); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idTags, payload.Bytes())
+}
+
 func validTagTargetsPayload(tb testing.TB) []byte {
 	tb.Helper()
 	var payload bytes.Buffer
@@ -15452,6 +15553,107 @@ func makeDeferredRequiredMetadataMatroskaData(tb testing.TB, withSeekHead bool) 
 			continue
 		}
 		if _, err := writer.Write(element); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	return buffer.Bytes()
+}
+
+func makeDeferredOptionalMetadataMatroskaData(tb testing.TB, requiredMetadataBeforeCluster bool, attachments []Attachment, chapters []ChapterEdition, tags []Tag) []byte {
+	tb.Helper()
+	infoElement := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+		return writeInfoWithElements(w, nil)
+	})
+	tracksElement := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+		return writeTracksWithVideoDimensions(w, 16, 16)
+	})
+	attachmentsElement := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+		return writeAttachmentsElement(w, attachments...)
+	})
+	chaptersElement := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+		return writeChaptersElement(w, chapters...)
+	})
+	tagsElement := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+		return writeTagsElement(w, tags...)
+	})
+	clusterElement := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+		var payload bytes.Buffer
+		cw := ebml.NewWriter(&payload)
+		if err := cw.WriteUInt(idTimestamp, 0); err != nil {
+			return err
+		}
+		if err := writeSimpleBlockWithTrackNumber(cw, 1, []byte{0x77}); err != nil {
+			return err
+		}
+		return w.WriteElement(idCluster, payload.Bytes())
+	})
+	lateElements := []struct {
+		id   ebml.ID
+		data []byte
+	}{
+		{id: idAttachments, data: attachmentsElement},
+		{id: idChapters, data: chaptersElement},
+		{id: idTags, data: tagsElement},
+	}
+	positionPrefix := len(clusterElement)
+	if !requiredMetadataBeforeCluster {
+		lateElements = append([]struct {
+			id   ebml.ID
+			data []byte
+		}{
+			{id: idInfo, data: infoElement},
+			{id: idTracks, data: tracksElement},
+		}, lateElements...)
+	} else {
+		positionPrefix += len(infoElement) + len(tracksElement)
+	}
+	var seekHeadElement []byte
+	seekHeadConverged := false
+	for attempt := 0; attempt < 8; attempt++ {
+		positions := make([]uint64, len(lateElements))
+		position := uint64(len(seekHeadElement) + positionPrefix)
+		for i := range lateElements {
+			positions[i] = position
+			position += uint64(len(lateElements[i].data))
+		}
+		next := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+			var payload bytes.Buffer
+			sw := ebml.NewWriter(&payload)
+			for i := range lateElements {
+				if err := writeSeekEntry(sw, lateElements[i].id, positions[i]); err != nil {
+					return err
+				}
+			}
+			return w.WriteElement(idSeekHead, payload.Bytes())
+		})
+		if len(next) == len(seekHeadElement) {
+			seekHeadElement = next
+			seekHeadConverged = true
+			break
+		}
+		seekHeadElement = next
+	}
+	if !seekHeadConverged {
+		tb.Fatal("SeekHead element size did not converge")
+	}
+
+	var buffer bytes.Buffer
+	writer := ebml.NewWriter(&buffer)
+	if err := writeEBMLHeaderFixture(writer, defaultEBMLHeaderFixture()); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
+		tb.Fatal(err)
+	}
+	elements := [][]byte{seekHeadElement}
+	if requiredMetadataBeforeCluster {
+		elements = append(elements, infoElement, tracksElement, clusterElement)
+	} else {
+		elements = append(elements, clusterElement, infoElement, tracksElement)
+	}
+	elements = append(elements, attachmentsElement, chaptersElement, tagsElement)
+	for i := range elements {
+		if _, err := writer.Write(elements[i]); err != nil {
 			tb.Fatal(err)
 		}
 	}

@@ -185,9 +185,10 @@ Current milestone:
   valid, laced, and profile-constrained corpus entries.
 - Demuxers enforce top-level Segment occurrence limits for SeekHead, Info,
   Tracks, Cues, Attachments, and Chapters. Seekable readers also resolve
-  required Info/Tracks masters through a pre-Cluster SeekHead when those
-  masters are stored after the first Cluster, then skip the same physical
-  elements during the later linear packet scan.
+  required Info/Tracks masters and optional Attachments/Chapters/Tags masters
+  through a pre-Cluster SeekHead when those masters are stored after the first
+  Cluster, then skip the same physical elements during the later linear packet
+  scan. Cues remain lazily loaded by the seek/read-at-time paths.
 - Demux validation rejects duplicate singleton child fields inside known Info,
   TrackEntry, TrackTranslate, BlockAdditionMapping, audio/video/colour/
   projection/mastering metadata, content encoding records, Cues, BlockGroup,
