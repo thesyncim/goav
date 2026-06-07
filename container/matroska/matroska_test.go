@@ -9523,6 +9523,234 @@ func TestDemuxerRejectsInvalidCueMetadata(t *testing.T) {
 	}
 }
 
+func TestDemuxerRejectsDuplicateCueMetadata(t *testing.T) {
+	tests := []struct {
+		name     string
+		writeCue func(*ebml.Writer) error
+	}{
+		{
+			name: "duplicate cue time",
+			writeCue: func(w *ebml.Writer) error {
+				var point bytes.Buffer
+				pw := ebml.NewWriter(&point)
+				if err := pw.WriteUInt(idCueTime, 0); err != nil {
+					return err
+				}
+				if err := pw.WriteUInt(idCueTime, 1); err != nil {
+					return err
+				}
+				if err := pw.WriteElement(idCueTrackPositions, cueTrackPositionsPayload(t)); err != nil {
+					return err
+				}
+				return w.WriteElement(idCuePoint, point.Bytes())
+			},
+		},
+		{
+			name: "duplicate cue track",
+			writeCue: func(w *ebml.Writer) error {
+				var positions bytes.Buffer
+				tw := ebml.NewWriter(&positions)
+				if err := tw.WriteUInt(idCueTrack, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueTrack, 2); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueClusterPosition, 0); err != nil {
+					return err
+				}
+				return writeCuePointWithPositionsPayload(w, positions.Bytes())
+			},
+		},
+		{
+			name: "duplicate cue cluster position",
+			writeCue: func(w *ebml.Writer) error {
+				var positions bytes.Buffer
+				tw := ebml.NewWriter(&positions)
+				if err := tw.WriteUInt(idCueTrack, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueClusterPosition, 0); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueClusterPosition, 1); err != nil {
+					return err
+				}
+				return writeCuePointWithPositionsPayload(w, positions.Bytes())
+			},
+		},
+		{
+			name: "duplicate cue relative position",
+			writeCue: func(w *ebml.Writer) error {
+				var positions bytes.Buffer
+				tw := ebml.NewWriter(&positions)
+				if err := tw.WriteUInt(idCueTrack, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueClusterPosition, 0); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueRelativePos, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueRelativePos, 2); err != nil {
+					return err
+				}
+				return writeCuePointWithPositionsPayload(w, positions.Bytes())
+			},
+		},
+		{
+			name: "duplicate cue duration",
+			writeCue: func(w *ebml.Writer) error {
+				var positions bytes.Buffer
+				tw := ebml.NewWriter(&positions)
+				if err := tw.WriteUInt(idCueTrack, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueClusterPosition, 0); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueDuration, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueDuration, 2); err != nil {
+					return err
+				}
+				return writeCuePointWithPositionsPayload(w, positions.Bytes())
+			},
+		},
+		{
+			name: "duplicate cue block number",
+			writeCue: func(w *ebml.Writer) error {
+				var positions bytes.Buffer
+				tw := ebml.NewWriter(&positions)
+				if err := tw.WriteUInt(idCueTrack, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueClusterPosition, 0); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueBlockNumber, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueBlockNumber, 2); err != nil {
+					return err
+				}
+				return writeCuePointWithPositionsPayload(w, positions.Bytes())
+			},
+		},
+		{
+			name: "duplicate cue codec state",
+			writeCue: func(w *ebml.Writer) error {
+				var positions bytes.Buffer
+				tw := ebml.NewWriter(&positions)
+				if err := tw.WriteUInt(idCueTrack, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueClusterPosition, 0); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueCodecState, 1); err != nil {
+					return err
+				}
+				if err := tw.WriteUInt(idCueCodecState, 2); err != nil {
+					return err
+				}
+				return writeCuePointWithPositionsPayload(w, positions.Bytes())
+			},
+		},
+		{
+			name: "duplicate cue reference time",
+			writeCue: func(w *ebml.Writer) error {
+				var reference bytes.Buffer
+				rw := ebml.NewWriter(&reference)
+				if err := rw.WriteUInt(idCueRefTime, 0); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefTime, 1); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefCluster, 0); err != nil {
+					return err
+				}
+				return writeCuePointWithReferencePayload(w, reference.Bytes())
+			},
+		},
+		{
+			name: "duplicate cue reference cluster",
+			writeCue: func(w *ebml.Writer) error {
+				var reference bytes.Buffer
+				rw := ebml.NewWriter(&reference)
+				if err := rw.WriteUInt(idCueRefTime, 0); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefCluster, 0); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefCluster, 1); err != nil {
+					return err
+				}
+				return writeCuePointWithReferencePayload(w, reference.Bytes())
+			},
+		},
+		{
+			name: "duplicate cue reference number",
+			writeCue: func(w *ebml.Writer) error {
+				var reference bytes.Buffer
+				rw := ebml.NewWriter(&reference)
+				if err := rw.WriteUInt(idCueRefTime, 0); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefCluster, 0); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefNumber, 1); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefNumber, 2); err != nil {
+					return err
+				}
+				return writeCuePointWithReferencePayload(w, reference.Bytes())
+			},
+		},
+		{
+			name: "duplicate cue reference codec state",
+			writeCue: func(w *ebml.Writer) error {
+				var reference bytes.Buffer
+				rw := ebml.NewWriter(&reference)
+				if err := rw.WriteUInt(idCueRefTime, 0); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefCluster, 0); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefCodecState, 1); err != nil {
+					return err
+				}
+				if err := rw.WriteUInt(idCueRefCodecState, 2); err != nil {
+					return err
+				}
+				return writeCuePointWithReferencePayload(w, reference.Bytes())
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeCueMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+				var cues bytes.Buffer
+				cw := ebml.NewWriter(&cues)
+				if err := tt.writeCue(cw); err != nil {
+					return err
+				}
+				return writer.WriteElement(idCues, cues.Bytes())
+			})
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
 func TestDemuxerRejectsInvalidEBMLHeaderMetadata(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -9923,6 +10151,28 @@ func TestDemuxerRejectsInvalidBlockAdditions(t *testing.T) {
 			},
 		},
 		{
+			name: "duplicate block add id in one block more",
+			writeAdditions: func(w *ebml.Writer) error {
+				var more bytes.Buffer
+				mw := ebml.NewWriter(&more)
+				if err := mw.WriteUInt(idBlockAddID, 2); err != nil {
+					return err
+				}
+				if err := mw.WriteUInt(idBlockAddID, 3); err != nil {
+					return err
+				}
+				if err := writeBinary(mw, idBlockAdditional, []byte{1}); err != nil {
+					return err
+				}
+				var additions bytes.Buffer
+				aw := ebml.NewWriter(&additions)
+				if err := aw.WriteElement(idBlockMore, more.Bytes()); err != nil {
+					return err
+				}
+				return w.WriteElement(idBlockAdditions, additions.Bytes())
+			},
+		},
+		{
 			name: "missing block additional",
 			writeAdditions: func(w *ebml.Writer) error {
 				var more bytes.Buffer
@@ -9948,6 +10198,390 @@ func TestDemuxerRejectsInvalidBlockAdditions(t *testing.T) {
 			}
 			packet := Packet{Data: make([]byte, 0, 8)}
 			if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestDemuxerRejectsDuplicateBlockGroupMetadata(t *testing.T) {
+	tests := []struct {
+		name       string
+		writeGroup func(*ebml.Writer, uint32) error
+	}{
+		{
+			name: "duplicate block",
+			writeGroup: func(w *ebml.Writer, trackID uint32) error {
+				if err := writeBlockWithTrackNumber(w, uint64(trackID), []byte{1}); err != nil {
+					return err
+				}
+				return writeBlockWithTrackNumber(w, uint64(trackID), []byte{2})
+			},
+		},
+		{
+			name: "duplicate block duration",
+			writeGroup: func(w *ebml.Writer, trackID uint32) error {
+				if err := writeBlockWithTrackNumber(w, uint64(trackID), []byte{1}); err != nil {
+					return err
+				}
+				if err := w.WriteUInt(idBlockDuration, 1); err != nil {
+					return err
+				}
+				return w.WriteUInt(idBlockDuration, 2)
+			},
+		},
+		{
+			name: "duplicate block additions",
+			writeGroup: func(w *ebml.Writer, trackID uint32) error {
+				if err := writeBlockWithTrackNumber(w, uint64(trackID), []byte{1}); err != nil {
+					return err
+				}
+				if err := writeBlockAdditions(w, []BlockAddition{{ID: 2, Data: []byte{1}}}); err != nil {
+					return err
+				}
+				return writeBlockAdditions(w, []BlockAddition{{ID: 3, Data: []byte{2}}})
+			},
+		},
+		{
+			name: "duplicate reference priority",
+			writeGroup: func(w *ebml.Writer, trackID uint32) error {
+				if err := writeBlockWithTrackNumber(w, uint64(trackID), []byte{1}); err != nil {
+					return err
+				}
+				if err := w.WriteUInt(idReferencePriority, 1); err != nil {
+					return err
+				}
+				return w.WriteUInt(idReferencePriority, 2)
+			},
+		},
+		{
+			name: "duplicate discard padding",
+			writeGroup: func(w *ebml.Writer, trackID uint32) error {
+				if err := writeBlockWithTrackNumber(w, uint64(trackID), []byte{1}); err != nil {
+					return err
+				}
+				if err := w.WriteInt(idDiscardPad, -1); err != nil {
+					return err
+				}
+				return w.WriteInt(idDiscardPad, -2)
+			},
+		},
+		{
+			name: "duplicate codec state",
+			writeGroup: func(w *ebml.Writer, trackID uint32) error {
+				if err := writeBlockWithTrackNumber(w, uint64(trackID), []byte{1}); err != nil {
+					return err
+				}
+				if err := writeBinary(w, idCodecState, []byte{1}); err != nil {
+					return err
+				}
+				return writeBinary(w, idCodecState, []byte{2})
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeBlockGroupMetadataMatroskaData(t, tt.writeGroup)
+			demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := Packet{Data: make([]byte, 0, 8)}
+			if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestDemuxerRejectsDuplicateTrackSingletonMetadata(t *testing.T) {
+	validCompressionEncodings := func(tb testing.TB) []byte {
+		tb.Helper()
+		return contentEncodingsPayload(tb, contentEncodingPayload(tb, func(w *ebml.Writer) error {
+			return w.WriteElement(idContentCompression, contentCompressionPayload(tb, ContentCompAlgoZlib, nil))
+		}))
+	}
+	tests := []struct {
+		name        string
+		writeTracks func(*ebml.Writer) error
+	}{
+		{
+			name: "duplicate track flag lacing",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackMetadata(w,
+					trackUIntElement{idFlagLacing, 1},
+					trackUIntElement{idFlagLacing, 0},
+				)
+			},
+		},
+		{
+			name: "duplicate track language",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackExtra(w, func(ew *ebml.Writer) error {
+					if err := ew.WriteString(idLanguage, "eng"); err != nil {
+						return err
+					}
+					return ew.WriteString(idLanguage, "fra")
+				})
+			},
+		},
+		{
+			name: "duplicate codec private",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackExtra(w, func(ew *ebml.Writer) error {
+					if err := writeBinary(ew, idCodecPrivate, []byte{1}); err != nil {
+						return err
+					}
+					return writeBinary(ew, idCodecPrivate, []byte{2})
+				})
+			},
+		},
+		{
+			name: "duplicate default duration",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackMetadata(w,
+					trackUIntElement{idDefaultDur, 1},
+					trackUIntElement{idDefaultDur, 2},
+				)
+			},
+		},
+		{
+			name: "duplicate codec delay",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackMetadata(w,
+					trackUIntElement{idCodecDelay, 1},
+					trackUIntElement{idCodecDelay, 2},
+				)
+			},
+		},
+		{
+			name: "duplicate content encodings",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackExtra(w, func(ew *ebml.Writer) error {
+					encodings := validCompressionEncodings(t)
+					if err := ew.WriteElement(idContentEncodings, encodings); err != nil {
+						return err
+					}
+					return ew.WriteElement(idContentEncodings, encodings)
+				})
+			},
+		},
+		{
+			name: "duplicate track translate id",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackExtra(w, func(ew *ebml.Writer) error {
+					var payload bytes.Buffer
+					tw := ebml.NewWriter(&payload)
+					if err := writeBinary(tw, idTrackTranslateTrack, []byte{1}); err != nil {
+						return err
+					}
+					if err := writeBinary(tw, idTrackTranslateTrack, []byte{2}); err != nil {
+						return err
+					}
+					if err := tw.WriteUInt(idTrackTranslateCodec, 1); err != nil {
+						return err
+					}
+					return ew.WriteElement(idTrackTranslate, payload.Bytes())
+				})
+			},
+		},
+		{
+			name: "duplicate block addition mapping name",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackExtra(w, func(ew *ebml.Writer) error {
+					if err := ew.WriteUInt(idMaxBlockAdditionID, 2); err != nil {
+						return err
+					}
+					var payload bytes.Buffer
+					mw := ebml.NewWriter(&payload)
+					if err := mw.WriteUInt(idBlockAddIDValue, 2); err != nil {
+						return err
+					}
+					if err := mw.WriteString(idBlockAddIDName, "first"); err != nil {
+						return err
+					}
+					if err := mw.WriteString(idBlockAddIDName, "second"); err != nil {
+						return err
+					}
+					if err := mw.WriteUInt(idBlockAddIDType, 1); err != nil {
+						return err
+					}
+					return ew.WriteElement(idBlockAdditionMapping, payload.Bytes())
+				})
+			},
+		},
+		{
+			name: "duplicate content encoding scope",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackExtra(w, func(ew *ebml.Writer) error {
+					return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+						contentEncodingPayload(t, func(cw *ebml.Writer) error {
+							if err := cw.WriteUInt(idContentEncodingScope, ContentEncodingScopeBlock); err != nil {
+								return err
+							}
+							if err := cw.WriteUInt(idContentEncodingScope, ContentEncodingScopePrivate); err != nil {
+								return err
+							}
+							return cw.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoZlib, nil))
+						}),
+					))
+				})
+			},
+		},
+		{
+			name: "duplicate content compression algorithm",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackExtra(w, func(ew *ebml.Writer) error {
+					var compression bytes.Buffer
+					cw := ebml.NewWriter(&compression)
+					if err := cw.WriteUInt(idContentCompAlgo, ContentCompAlgoZlib); err != nil {
+						return err
+					}
+					if err := cw.WriteUInt(idContentCompAlgo, ContentCompAlgoHeaderStripping); err != nil {
+						return err
+					}
+					return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+						contentEncodingPayload(t, func(encw *ebml.Writer) error {
+							return encw.WriteElement(idContentCompression, compression.Bytes())
+						}),
+					))
+				})
+			},
+		},
+		{
+			name: "duplicate content encryption key id",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackExtra(w, func(ew *ebml.Writer) error {
+					var encryption bytes.Buffer
+					enw := ebml.NewWriter(&encryption)
+					if err := enw.WriteUInt(idContentEncAlgo, ContentEncAlgoAES); err != nil {
+						return err
+					}
+					if err := writeBinary(enw, idContentEncKeyID, []byte{1}); err != nil {
+						return err
+					}
+					if err := writeBinary(enw, idContentEncKeyID, []byte{2}); err != nil {
+						return err
+					}
+					return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+						contentEncodingPayload(t, func(encw *ebml.Writer) error {
+							if err := encw.WriteUInt(idContentEncodingType, ContentEncodingTypeEncryption); err != nil {
+								return err
+							}
+							return encw.WriteElement(idContentEncryption, encryption.Bytes())
+						}),
+					))
+				})
+			},
+		},
+		{
+			name: "duplicate aes cipher",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithTrackExtra(w, func(ew *ebml.Writer) error {
+					var aes bytes.Buffer
+					aw := ebml.NewWriter(&aes)
+					if err := aw.WriteUInt(idContentEncAESCipher, ContentEncAESCipherModeCTR); err != nil {
+						return err
+					}
+					if err := aw.WriteUInt(idContentEncAESCipher, ContentEncAESCipherModeCTR); err != nil {
+						return err
+					}
+					var encryption bytes.Buffer
+					enw := ebml.NewWriter(&encryption)
+					if err := enw.WriteUInt(idContentEncAlgo, ContentEncAlgoAES); err != nil {
+						return err
+					}
+					if err := enw.WriteElement(idContentEncAES, aes.Bytes()); err != nil {
+						return err
+					}
+					return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+						contentEncodingPayload(t, func(encw *ebml.Writer) error {
+							if err := encw.WriteUInt(idContentEncodingType, ContentEncodingTypeEncryption); err != nil {
+								return err
+							}
+							return encw.WriteElement(idContentEncryption, encryption.Bytes())
+						}),
+					))
+				})
+			},
+		},
+		{
+			name: "duplicate video pixel width",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithVideoElements(w,
+					videoUIntElement{idPixelWidth, 16},
+					videoUIntElement{idPixelWidth, 32},
+					videoUIntElement{idPixelHeight, 16},
+				)
+			},
+		},
+		{
+			name: "duplicate video colour max cll",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithVideoColourElements(w,
+					colourUIntElement{idMaxCLL, 1},
+					colourUIntElement{idMaxCLL, 2},
+				)
+			},
+		},
+		{
+			name: "duplicate mastering luminance max",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithVideoMasteringFloatElements(w,
+					colourFloatElement{idLuminanceMax, 1},
+					colourFloatElement{idLuminanceMax, 2},
+				)
+			},
+		},
+		{
+			name: "duplicate projection pose yaw",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithVideoProjectionMetadata(w,
+					[]projectionUIntElement{{idProjectionType, 0}},
+					[]projectionFloatElement{{idProjectionPoseYaw, 0}, {idProjectionPoseYaw, 1}},
+					nil,
+				)
+			},
+		},
+		{
+			name: "duplicate audio sampling frequency",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithAudioElements(w, func(aw *ebml.Writer) error {
+					if err := aw.WriteFloat64(idSamplingFreq, 48000); err != nil {
+						return err
+					}
+					if err := aw.WriteFloat64(idSamplingFreq, 44100); err != nil {
+						return err
+					}
+					if err := aw.WriteUInt(idChannels, 2); err != nil {
+						return err
+					}
+					return aw.WriteUInt(idBitDepth, 16)
+				})
+			},
+		},
+		{
+			name: "duplicate audio channels",
+			writeTracks: func(w *ebml.Writer) error {
+				return writeTracksWithAudioElements(w, func(aw *ebml.Writer) error {
+					if err := aw.WriteFloat64(idSamplingFreq, 48000); err != nil {
+						return err
+					}
+					if err := aw.WriteUInt(idChannels, 2); err != nil {
+						return err
+					}
+					if err := aw.WriteUInt(idChannels, 1); err != nil {
+						return err
+					}
+					return aw.WriteUInt(idBitDepth, 16)
+				})
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeTrackMetadataMatroskaData(t, tt.writeTracks)
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
 				t.Fatalf("err = %v, want ErrInvalidData", err)
 			}
 		})
@@ -12872,6 +13506,42 @@ func makeBlockAdditionsMatroskaData(tb testing.TB, writeAdditions func(*ebml.Wri
 	return buffer.Bytes()
 }
 
+func makeBlockGroupMetadataMatroskaData(tb testing.TB, writeGroup func(*ebml.Writer, uint32) error) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:               TrackVideo,
+		Codec:              CodecVP8,
+		MaxBlockAdditionID: 4,
+		Video:              VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.writeHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		tb.Fatal(err)
+	}
+	var group bytes.Buffer
+	gw := ebml.NewWriter(&group)
+	if err := writeGroup(gw, trackID); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.ebml.WriteElement(idBlockGroup, group.Bytes()); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
 func makeContentEncodedBlockMatroskaData(tb testing.TB, encodings []byte, frame []byte) []byte {
 	tb.Helper()
 	var buffer bytes.Buffer
@@ -14668,6 +15338,39 @@ func writeTracksWithAudioMetadataValues(writer *ebml.Writer, sampleRate float64,
 	}
 	if err := aw.WriteUInt(idBitDepth, bitDepth); err != nil {
 		return err
+	}
+	if err := ew.WriteElement(idAudio, audio.Bytes()); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+func writeTracksWithAudioElements(writer *ebml.Writer, writeAudioElements func(*ebml.Writer) error) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	if err := ew.WriteUInt(idTrackNumber, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, matroskaTrackAudio); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, codecIDOpus); err != nil {
+		return err
+	}
+	var audio bytes.Buffer
+	aw := ebml.NewWriter(&audio)
+	if writeAudioElements != nil {
+		if err := writeAudioElements(aw); err != nil {
+			return err
+		}
 	}
 	if err := ew.WriteElement(idAudio, audio.Bytes()); err != nil {
 		return err

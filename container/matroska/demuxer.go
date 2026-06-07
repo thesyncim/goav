@@ -3723,6 +3723,9 @@ func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint,
 		}
 		switch child.ID {
 		case idCueTime:
+			if err := markElementSeen(&timeSeen); err != nil {
+				return CuePoint{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CuePoint{}, err
@@ -3732,7 +3735,6 @@ func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint,
 				return CuePoint{}, ErrInvalidData
 			}
 			cue.TimeNS = timeNS
-			timeSeen = true
 		case idCueTrackPositions:
 			position, err := d.parseCueTrackPositions(master.Reader(), child)
 			if err != nil {
@@ -3789,6 +3791,10 @@ func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (
 	var position CueTrackPosition
 	trackSeen := false
 	clusterSeen := false
+	relativeSeen := false
+	durationSeen := false
+	blockNumberSeen := false
+	codecStateSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -3796,6 +3802,9 @@ func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (
 		}
 		switch child.ID {
 		case idCueTrack:
+			if err := markElementSeen(&trackSeen); err != nil {
+				return CueTrackPosition{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CueTrackPosition{}, err
@@ -3804,15 +3813,19 @@ func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (
 			if err != nil {
 				return CueTrackPosition{}, err
 			}
-			trackSeen = true
 		case idCueClusterPosition:
+			if err := markElementSeen(&clusterSeen); err != nil {
+				return CueTrackPosition{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CueTrackPosition{}, err
 			}
 			position.ClusterPosition = value
-			clusterSeen = true
 		case idCueRelativePos:
+			if err := markElementSeen(&relativeSeen); err != nil {
+				return CueTrackPosition{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CueTrackPosition{}, err
@@ -3820,6 +3833,9 @@ func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (
 			position.RelativePosition = value
 			position.RelativePositionSet = true
 		case idCueDuration:
+			if err := markElementSeen(&durationSeen); err != nil {
+				return CueTrackPosition{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CueTrackPosition{}, err
@@ -3830,6 +3846,9 @@ func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (
 			}
 			position.DurationSet = true
 		case idCueBlockNumber:
+			if err := markElementSeen(&blockNumberSeen); err != nil {
+				return CueTrackPosition{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CueTrackPosition{}, err
@@ -3840,6 +3859,9 @@ func (d *Demuxer) parseCueTrackPositions(parent io.Reader, header ebml.Header) (
 			position.BlockNumber = value
 			position.BlockNumberSet = true
 		case idCueCodecState:
+			if err := markElementSeen(&codecStateSeen); err != nil {
+				return CueTrackPosition{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CueTrackPosition{}, err
@@ -3878,6 +3900,8 @@ func (d *Demuxer) parseCueReference(parent io.Reader, header ebml.Header) (CueRe
 	reference := CueReference{BlockNumber: 1}
 	timeSeen := false
 	clusterSeen := false
+	numberSeen := false
+	codecStateSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -3885,6 +3909,9 @@ func (d *Demuxer) parseCueReference(parent io.Reader, header ebml.Header) (CueRe
 		}
 		switch child.ID {
 		case idCueRefTime:
+			if err := markElementSeen(&timeSeen); err != nil {
+				return CueReference{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CueReference{}, err
@@ -3893,15 +3920,19 @@ func (d *Demuxer) parseCueReference(parent io.Reader, header ebml.Header) (CueRe
 			if err != nil {
 				return CueReference{}, err
 			}
-			timeSeen = true
 		case idCueRefCluster:
+			if err := markElementSeen(&clusterSeen); err != nil {
+				return CueReference{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CueReference{}, err
 			}
 			reference.ClusterPosition = value
-			clusterSeen = true
 		case idCueRefNumber:
+			if err := markElementSeen(&numberSeen); err != nil {
+				return CueReference{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CueReference{}, err
@@ -3912,6 +3943,9 @@ func (d *Demuxer) parseCueReference(parent io.Reader, header ebml.Header) (CueRe
 			reference.BlockNumber = value
 			reference.BlockNumberSet = true
 		case idCueRefCodecState:
+			if err := markElementSeen(&codecStateSeen); err != nil {
+				return CueReference{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return CueReference{}, err
@@ -3947,6 +3981,29 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 	trackUIDSeen := false
 	trackTypeSeen := false
 	codecIDSeen := false
+	flagEnabledSeen := false
+	flagDefaultSeen := false
+	flagForcedSeen := false
+	flagHearingImpairedSeen := false
+	flagVisualImpairedSeen := false
+	flagTextDescriptionsSeen := false
+	flagOriginalSeen := false
+	flagCommentarySeen := false
+	flagLacingSeen := false
+	nameSeen := false
+	languageSeen := false
+	languageBCPSeen := false
+	codecNameSeen := false
+	minCacheSeen := false
+	maxCacheSeen := false
+	defaultDurationSeen := false
+	defaultDecodedDurationSeen := false
+	maxBlockAdditionIDSeen := false
+	codecDecodeAllSeen := false
+	codecDelaySeen := false
+	seekPreRollSeen := false
+	contentEncodingsSeen := false
+	codecPrivateSeen := false
 	videoSeen := false
 	audioSeen := false
 	for !master.Done() {
@@ -4000,6 +4057,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			trackTypeSeen = true
 		case idFlagEnabled:
+			if err := markElementSeen(&flagEnabledSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4007,6 +4067,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			track.FlagEnabled = value
 			track.FlagEnabledSet = true
 		case idFlagDefault:
+			if err := markElementSeen(&flagDefaultSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4014,6 +4077,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			track.FlagDefault = value
 			track.FlagDefaultSet = true
 		case idFlagForced:
+			if err := markElementSeen(&flagForcedSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4021,6 +4087,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			track.FlagForced = value
 			track.FlagForcedSet = true
 		case idFlagHearingImpaired:
+			if err := markElementSeen(&flagHearingImpairedSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4028,6 +4097,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			track.FlagHearingImpaired = value
 			track.FlagHearingImpairedSet = true
 		case idFlagVisualImpaired:
+			if err := markElementSeen(&flagVisualImpairedSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4035,6 +4107,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			track.FlagVisualImpaired = value
 			track.FlagVisualImpairedSet = true
 		case idFlagTextDescriptions:
+			if err := markElementSeen(&flagTextDescriptionsSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4042,6 +4117,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			track.FlagTextDescriptions = value
 			track.FlagTextDescriptionsSet = true
 		case idFlagOriginal:
+			if err := markElementSeen(&flagOriginalSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4049,6 +4127,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			track.FlagOriginal = value
 			track.FlagOriginalSet = true
 		case idFlagCommentary:
+			if err := markElementSeen(&flagCommentarySeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4056,6 +4137,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			track.FlagCommentary = value
 			track.FlagCommentarySet = true
 		case idFlagLacing:
+			if err := markElementSeen(&flagLacingSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4063,18 +4147,27 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			track.FlagLacing = value
 			track.FlagLacingSet = true
 		case idName:
+			if err := markElementSeen(&nameSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.Name = value
 		case idLanguage:
+			if err := markElementSeen(&languageSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.Language = value
 		case idLanguageBCP:
+			if err := markElementSeen(&languageBCPSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4091,36 +4184,54 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			codecID = value
 			codecIDSeen = true
 		case idCodecName:
+			if err := markElementSeen(&codecNameSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.CodecName = value
 		case idMinCache:
+			if err := markElementSeen(&minCacheSeen); err != nil {
+				return Track{}, err
+			}
 			track.MinCache, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.MinCacheSet = true
 		case idMaxCache:
+			if err := markElementSeen(&maxCacheSeen); err != nil {
+				return Track{}, err
+			}
 			track.MaxCache, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.MaxCacheSet = true
 		case idDefaultDur:
+			if err := markElementSeen(&defaultDurationSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readNonZeroInt64Payload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.DefaultDurationNS = value
 		case idDefaultDecodedDur:
+			if err := markElementSeen(&defaultDecodedDurationSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readNonZeroInt64Payload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			track.DefaultDecodedFieldDurationNS = value
 		case idMaxBlockAdditionID:
+			if err := markElementSeen(&maxBlockAdditionIDSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4133,6 +4244,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.BlockAdditionMappings = append(track.BlockAdditionMappings, mapping)
 		case idCodecDecodeAll:
+			if err := markElementSeen(&codecDecodeAllSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4149,6 +4263,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.TrackOverlays = append(track.TrackOverlays, value)
 		case idCodecDelay:
+			if err := markElementSeen(&codecDelaySeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4158,6 +4275,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.CodecDelayNS = int64(value)
 		case idSeekPreRoll:
+			if err := markElementSeen(&seekPreRollSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4173,12 +4293,18 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.TrackTranslates = append(track.TrackTranslates, translate)
 		case idContentEncodings:
+			if err := markElementSeen(&contentEncodingsSeen); err != nil {
+				return Track{}, err
+			}
 			encodings, err := d.parseContentEncodings(master.Reader(), child)
 			if err != nil {
 				return Track{}, err
 			}
 			track.ContentEncodings = encodings
 		case idCodecPrivate:
+			if err := markElementSeen(&codecPrivateSeen); err != nil {
+				return Track{}, err
+			}
 			value, err := readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -4296,17 +4422,21 @@ func (d *Demuxer) parseTrackTranslate(parent io.Reader, header ebml.Header) (Tra
 		}
 		switch child.ID {
 		case idTrackTranslateTrack:
+			if err := markElementSeen(&trackIDSeen); err != nil {
+				return TrackTranslate{}, err
+			}
 			translate.TrackID, err = readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return TrackTranslate{}, err
 			}
-			trackIDSeen = true
 		case idTrackTranslateCodec:
+			if err := markElementSeen(&codecSeen); err != nil {
+				return TrackTranslate{}, err
+			}
 			translate.Codec, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return TrackTranslate{}, err
 			}
-			codecSeen = true
 		case idTrackTranslateEdit:
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
@@ -4338,6 +4468,9 @@ func (d *Demuxer) parseBlockAdditionMapping(parent io.Reader, header ebml.Header
 	}
 	var mapping BlockAdditionMapping
 	idSeen := false
+	nameSeen := false
+	typeSeen := false
+	extraDataSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -4345,22 +4478,33 @@ func (d *Demuxer) parseBlockAdditionMapping(parent io.Reader, header ebml.Header
 		}
 		switch child.ID {
 		case idBlockAddIDValue:
+			if err := markElementSeen(&idSeen); err != nil {
+				return BlockAdditionMapping{}, err
+			}
 			mapping.IDValue, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return BlockAdditionMapping{}, err
 			}
-			idSeen = true
 		case idBlockAddIDName:
+			if err := markElementSeen(&nameSeen); err != nil {
+				return BlockAdditionMapping{}, err
+			}
 			mapping.Name, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return BlockAdditionMapping{}, err
 			}
 		case idBlockAddIDType:
+			if err := markElementSeen(&typeSeen); err != nil {
+				return BlockAdditionMapping{}, err
+			}
 			mapping.Type, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return BlockAdditionMapping{}, err
 			}
 		case idBlockAddIDExtraData:
+			if err := markElementSeen(&extraDataSeen); err != nil {
+				return BlockAdditionMapping{}, err
+			}
 			mapping.ExtraData, err = readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return BlockAdditionMapping{}, err
@@ -4428,6 +4572,9 @@ func (d *Demuxer) parseContentEncoding(parent io.Reader, header ebml.Header) (Co
 		return ContentEncoding{}, err
 	}
 	encoding := ContentEncoding{Scope: ContentEncodingScopeBlock}
+	orderSeen := false
+	scopeSeen := false
+	typeSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -4435,16 +4582,25 @@ func (d *Demuxer) parseContentEncoding(parent io.Reader, header ebml.Header) (Co
 		}
 		switch child.ID {
 		case idContentEncodingOrd:
+			if err := markElementSeen(&orderSeen); err != nil {
+				return ContentEncoding{}, err
+			}
 			encoding.Order, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentEncoding{}, err
 			}
 		case idContentEncodingScope:
+			if err := markElementSeen(&scopeSeen); err != nil {
+				return ContentEncoding{}, err
+			}
 			encoding.Scope, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentEncoding{}, err
 			}
 		case idContentEncodingType:
+			if err := markElementSeen(&typeSeen); err != nil {
+				return ContentEncoding{}, err
+			}
 			encoding.Type, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentEncoding{}, err
@@ -4488,6 +4644,8 @@ func (d *Demuxer) parseContentCompression(parent io.Reader, header ebml.Header) 
 		return ContentCompression{}, err
 	}
 	var compression ContentCompression
+	algorithmSeen := false
+	settingsSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -4495,11 +4653,17 @@ func (d *Demuxer) parseContentCompression(parent io.Reader, header ebml.Header) 
 		}
 		switch child.ID {
 		case idContentCompAlgo:
+			if err := markElementSeen(&algorithmSeen); err != nil {
+				return ContentCompression{}, err
+			}
 			compression.Algorithm, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentCompression{}, err
 			}
 		case idContentCompSettings:
+			if err := markElementSeen(&settingsSeen); err != nil {
+				return ContentCompression{}, err
+			}
 			compression.Settings, err = readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentCompression{}, err
@@ -4525,6 +4689,12 @@ func (d *Demuxer) parseContentEncryption(parent io.Reader, header ebml.Header) (
 		return ContentEncryption{}, err
 	}
 	var encryption ContentEncryption
+	algorithmSeen := false
+	keyIDSeen := false
+	signatureSeen := false
+	signatureKeyIDSeen := false
+	signatureAlgorithmSeen := false
+	signatureHashAlgorithmSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -4532,11 +4702,17 @@ func (d *Demuxer) parseContentEncryption(parent io.Reader, header ebml.Header) (
 		}
 		switch child.ID {
 		case idContentEncAlgo:
+			if err := markElementSeen(&algorithmSeen); err != nil {
+				return ContentEncryption{}, err
+			}
 			encryption.Algorithm, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentEncryption{}, err
 			}
 		case idContentEncKeyID:
+			if err := markElementSeen(&keyIDSeen); err != nil {
+				return ContentEncryption{}, err
+			}
 			encryption.KeyID, err = readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentEncryption{}, err
@@ -4551,21 +4727,33 @@ func (d *Demuxer) parseContentEncryption(parent io.Reader, header ebml.Header) (
 			}
 			encryption.AESSettingsSet = true
 		case idContentSignature:
+			if err := markElementSeen(&signatureSeen); err != nil {
+				return ContentEncryption{}, err
+			}
 			encryption.Signature, err = readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentEncryption{}, err
 			}
 		case idContentSigKeyID:
+			if err := markElementSeen(&signatureKeyIDSeen); err != nil {
+				return ContentEncryption{}, err
+			}
 			encryption.SignatureKeyID, err = readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentEncryption{}, err
 			}
 		case idContentSigAlgo:
+			if err := markElementSeen(&signatureAlgorithmSeen); err != nil {
+				return ContentEncryption{}, err
+			}
 			encryption.SignatureAlgorithm, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentEncryption{}, err
 			}
 		case idContentSigHashAlgo:
+			if err := markElementSeen(&signatureHashAlgorithmSeen); err != nil {
+				return ContentEncryption{}, err
+			}
 			encryption.SignatureHashAlgorithm, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentEncryption{}, err
@@ -4599,11 +4787,13 @@ func (d *Demuxer) parseContentEncAESSettings(parent io.Reader, header ebml.Heade
 		}
 		switch child.ID {
 		case idContentEncAESCipher:
+			if err := markElementSeen(&cipherSeen); err != nil {
+				return ContentEncAESSettings{}, err
+			}
 			settings.CipherMode, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ContentEncAESSettings{}, err
 			}
-			cipherSeen = true
 		default:
 			if err := skipElement(master.Reader(), child); err != nil {
 				return ContentEncAESSettings{}, err
@@ -4628,6 +4818,22 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 		return VideoConfig{}, err
 	}
 	var video VideoConfig
+	flagInterlacedSeen := false
+	fieldOrderSeen := false
+	stereoModeSeen := false
+	alphaModeSeen := false
+	pixelWidthSeen := false
+	pixelHeightSeen := false
+	pixelCropBottomSeen := false
+	pixelCropTopSeen := false
+	pixelCropLeftSeen := false
+	pixelCropRightSeen := false
+	displayWidthSeen := false
+	displayHeightSeen := false
+	displayUnitSeen := false
+	aspectRatioTypeSeen := false
+	colourSeen := false
+	projectionSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -4635,6 +4841,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 		}
 		switch child.ID {
 		case idFlagInterlaced:
+			if err := markElementSeen(&flagInterlacedSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4645,6 +4854,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			}
 			video.FlagInterlacedSet = true
 		case idFieldOrder:
+			if err := markElementSeen(&fieldOrderSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4655,6 +4867,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			}
 			video.FieldOrderSet = true
 		case idStereoMode:
+			if err := markElementSeen(&stereoModeSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4665,6 +4880,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			}
 			video.StereoModeSet = true
 		case idAlphaMode:
+			if err := markElementSeen(&alphaModeSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4675,6 +4893,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			}
 			video.AlphaModeSet = true
 		case idPixelWidth:
+			if err := markElementSeen(&pixelWidthSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4684,6 +4905,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idPixelHeight:
+			if err := markElementSeen(&pixelHeightSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4693,6 +4917,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idPixelCropBottom:
+			if err := markElementSeen(&pixelCropBottomSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4702,6 +4929,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idPixelCropTop:
+			if err := markElementSeen(&pixelCropTopSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4711,6 +4941,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idPixelCropLeft:
+			if err := markElementSeen(&pixelCropLeftSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4720,6 +4953,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idPixelCropRight:
+			if err := markElementSeen(&pixelCropRightSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4729,6 +4965,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idDisplayWidth:
+			if err := markElementSeen(&displayWidthSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4738,6 +4977,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idDisplayHeight:
+			if err := markElementSeen(&displayHeightSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4747,6 +4989,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idDisplayUnit:
+			if err := markElementSeen(&displayUnitSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4756,6 +5001,9 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 				return VideoConfig{}, err
 			}
 		case idAspectRatioType:
+			if err := markElementSeen(&aspectRatioTypeSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4766,12 +5014,18 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			}
 			video.AspectRatioTypeSet = true
 		case idColour:
+			if err := markElementSeen(&colourSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			colour, err := d.parseColour(master.Reader(), child)
 			if err != nil {
 				return VideoConfig{}, err
 			}
 			video.Colour = colour
 		case idProjection:
+			if err := markElementSeen(&projectionSeen); err != nil {
+				return VideoConfig{}, err
+			}
 			projection, err := d.parseProjection(master.Reader(), child)
 			if err != nil {
 				return VideoConfig{}, err
@@ -4798,6 +5052,11 @@ func (d *Demuxer) parseProjection(parent io.Reader, header ebml.Header) (VideoPr
 		return VideoProjectionConfig{}, err
 	}
 	projection := VideoProjectionConfig{Set: true}
+	typeSeen := false
+	privateSeen := false
+	poseYawSeen := false
+	posePitchSeen := false
+	poseRollSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -4805,27 +5064,42 @@ func (d *Demuxer) parseProjection(parent io.Reader, header ebml.Header) (VideoPr
 		}
 		switch child.ID {
 		case idProjectionType:
+			if err := markElementSeen(&typeSeen); err != nil {
+				return VideoProjectionConfig{}, err
+			}
 			projection.Type, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoProjectionConfig{}, err
 			}
 		case idProjectionPrivate:
+			if err := markElementSeen(&privateSeen); err != nil {
+				return VideoProjectionConfig{}, err
+			}
 			value, err := readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoProjectionConfig{}, err
 			}
 			projection.Private = value
 		case idProjectionPoseYaw:
+			if err := markElementSeen(&poseYawSeen); err != nil {
+				return VideoProjectionConfig{}, err
+			}
 			projection.PoseYaw, err = readProjectionPosePayload(master.Reader(), child.Size.Value, -180, 180)
 			if err != nil {
 				return VideoProjectionConfig{}, err
 			}
 		case idProjectionPosePitch:
+			if err := markElementSeen(&posePitchSeen); err != nil {
+				return VideoProjectionConfig{}, err
+			}
 			projection.PosePitch, err = readProjectionPosePayload(master.Reader(), child.Size.Value, -90, 90)
 			if err != nil {
 				return VideoProjectionConfig{}, err
 			}
 		case idProjectionPoseRoll:
+			if err := markElementSeen(&poseRollSeen); err != nil {
+				return VideoProjectionConfig{}, err
+			}
 			projection.PoseRoll, err = readProjectionPosePayload(master.Reader(), child.Size.Value, -180, 180)
 			if err != nil {
 				return VideoProjectionConfig{}, err
@@ -4854,6 +5128,20 @@ func (d *Demuxer) parseColour(parent io.Reader, header ebml.Header) (VideoColour
 		return VideoColourConfig{}, err
 	}
 	var colour VideoColourConfig
+	matrixSeen := false
+	bitsPerChannelSeen := false
+	chromaSubsamplingHorzSeen := false
+	chromaSubsamplingVertSeen := false
+	cbSubsamplingHorzSeen := false
+	cbSubsamplingVertSeen := false
+	chromaSitingHorzSeen := false
+	chromaSitingVertSeen := false
+	rangeSeen := false
+	transferSeen := false
+	primariesSeen := false
+	maxCLLSeen := false
+	maxFALLSeen := false
+	masteringSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -4861,84 +5149,126 @@ func (d *Demuxer) parseColour(parent io.Reader, header ebml.Header) (VideoColour
 		}
 		switch child.ID {
 		case idMatrixCoefficients:
+			if err := markElementSeen(&matrixSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.MatrixCoefficients, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.MatrixCoefficientsSet = true
 		case idBitsPerChannel:
+			if err := markElementSeen(&bitsPerChannelSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.BitsPerChannel, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.BitsPerChannelSet = true
 		case idChromaSubsampleHorz:
+			if err := markElementSeen(&chromaSubsamplingHorzSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.ChromaSubsamplingHorz, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.ChromaSubsamplingHorzSet = true
 		case idChromaSubsampleVert:
+			if err := markElementSeen(&chromaSubsamplingVertSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.ChromaSubsamplingVert, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.ChromaSubsamplingVertSet = true
 		case idCbSubsampleHorz:
+			if err := markElementSeen(&cbSubsamplingHorzSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.CbSubsamplingHorz, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.CbSubsamplingHorzSet = true
 		case idCbSubsampleVert:
+			if err := markElementSeen(&cbSubsamplingVertSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.CbSubsamplingVert, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.CbSubsamplingVertSet = true
 		case idChromaSitingHorz:
+			if err := markElementSeen(&chromaSitingHorzSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.ChromaSitingHorz, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.ChromaSitingHorzSet = true
 		case idChromaSitingVert:
+			if err := markElementSeen(&chromaSitingVertSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.ChromaSitingVert, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.ChromaSitingVertSet = true
 		case idColourRange:
+			if err := markElementSeen(&rangeSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.Range, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.RangeSet = true
 		case idTransferChar:
+			if err := markElementSeen(&transferSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.TransferCharacteristics, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.TransferCharacteristicsSet = true
 		case idPrimaries:
+			if err := markElementSeen(&primariesSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.Primaries, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.PrimariesSet = true
 		case idMaxCLL:
+			if err := markElementSeen(&maxCLLSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.MaxCLL, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.MaxCLLSet = true
 		case idMaxFALL:
+			if err := markElementSeen(&maxFALLSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			colour.MaxFALL, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoColourConfig{}, err
 			}
 			colour.MaxFALLSet = true
 		case idMasteringMetadata:
+			if err := markElementSeen(&masteringSeen); err != nil {
+				return VideoColourConfig{}, err
+			}
 			metadata, err := d.parseMasteringMetadata(master.Reader(), child)
 			if err != nil {
 				return VideoColourConfig{}, err
@@ -4965,6 +5295,16 @@ func (d *Demuxer) parseMasteringMetadata(parent io.Reader, header ebml.Header) (
 		return VideoMasteringMetadataConfig{}, err
 	}
 	var metadata VideoMasteringMetadataConfig
+	primaryRXSeen := false
+	primaryRYSeen := false
+	primaryGXSeen := false
+	primaryGYSeen := false
+	primaryBXSeen := false
+	primaryBYSeen := false
+	whitePointXSeen := false
+	whitePointYSeen := false
+	luminanceMaxSeen := false
+	luminanceMinSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -4972,60 +5312,90 @@ func (d *Demuxer) parseMasteringMetadata(parent io.Reader, header ebml.Header) (
 		}
 		switch child.ID {
 		case idPrimaryRX:
+			if err := markElementSeen(&primaryRXSeen); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
 			metadata.PrimaryRChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryRChromaticityXSet = true
 		case idPrimaryRY:
+			if err := markElementSeen(&primaryRYSeen); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
 			metadata.PrimaryRChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryRChromaticityYSet = true
 		case idPrimaryGX:
+			if err := markElementSeen(&primaryGXSeen); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
 			metadata.PrimaryGChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryGChromaticityXSet = true
 		case idPrimaryGY:
+			if err := markElementSeen(&primaryGYSeen); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
 			metadata.PrimaryGChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryGChromaticityYSet = true
 		case idPrimaryBX:
+			if err := markElementSeen(&primaryBXSeen); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
 			metadata.PrimaryBChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryBChromaticityXSet = true
 		case idPrimaryBY:
+			if err := markElementSeen(&primaryBYSeen); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
 			metadata.PrimaryBChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.PrimaryBChromaticityYSet = true
 		case idWhitePointX:
+			if err := markElementSeen(&whitePointXSeen); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
 			metadata.WhitePointChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.WhitePointChromaticityXSet = true
 		case idWhitePointY:
+			if err := markElementSeen(&whitePointYSeen); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
 			metadata.WhitePointChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.WhitePointChromaticityYSet = true
 		case idLuminanceMax:
+			if err := markElementSeen(&luminanceMaxSeen); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
 			metadata.LuminanceMax, err = readNonNegativeFloatPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
 			}
 			metadata.LuminanceMaxSet = true
 		case idLuminanceMin:
+			if err := markElementSeen(&luminanceMinSeen); err != nil {
+				return VideoMasteringMetadataConfig{}, err
+			}
 			metadata.LuminanceMin, err = readNonNegativeFloatPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return VideoMasteringMetadataConfig{}, err
@@ -5052,6 +5422,10 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 		return AudioConfig{}, err
 	}
 	audio := AudioConfig{SampleRate: 48000, Channels: 2}
+	sampleRateSeen := false
+	outputSampleRateSeen := false
+	channelsSeen := false
+	bitDepthSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -5059,6 +5433,9 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 		}
 		switch child.ID {
 		case idSamplingFreq:
+			if err := markElementSeen(&sampleRateSeen); err != nil {
+				return AudioConfig{}, err
+			}
 			value, err := readFloatPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return AudioConfig{}, err
@@ -5068,6 +5445,9 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 			}
 			audio.SampleRate = int(value)
 		case idOutputFreq:
+			if err := markElementSeen(&outputSampleRateSeen); err != nil {
+				return AudioConfig{}, err
+			}
 			value, err := readFloatPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return AudioConfig{}, err
@@ -5077,6 +5457,9 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 			}
 			audio.OutputSampleRate = int(value)
 		case idChannels:
+			if err := markElementSeen(&channelsSeen); err != nil {
+				return AudioConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return AudioConfig{}, err
@@ -5086,6 +5469,9 @@ func (d *Demuxer) parseAudio(parent io.Reader, header ebml.Header) (AudioConfig,
 				return AudioConfig{}, err
 			}
 		case idBitDepth:
+			if err := markElementSeen(&bitDepthSeen); err != nil {
+				return AudioConfig{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return AudioConfig{}, err
@@ -5154,6 +5540,11 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 	d.groupReader.Reset(&d.groupLimit, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
 	haveBlock := false
 	referenceSeen := false
+	durationSeen := false
+	additionsSeen := false
+	prioritySeen := false
+	discardSeen := false
+	codecStateSeen := false
 	durationTicks := uint64(0)
 	var payloadErr error
 	for d.groupLimit.N > 0 {
@@ -5163,6 +5554,9 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 		}
 		switch child.ID {
 		case idBlock:
+			if err := markElementSeen(&haveBlock); err != nil {
+				return err
+			}
 			if payloadErr != nil {
 				if err := skipElement(d.groupReader, child); err != nil {
 					return err
@@ -5175,20 +5569,28 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 				}
 				payloadErr = err
 			}
-			haveBlock = true
 		case idBlockDuration:
+			if err := markElementSeen(&durationSeen); err != nil {
+				return err
+			}
 			value, err := readUIntPayloadScratch(d.groupReader, child.Size.Value, &d.uintScratch)
 			if err != nil {
 				return err
 			}
 			durationTicks = value
 		case idBlockAdditions:
+			if err := markElementSeen(&additionsSeen); err != nil {
+				return err
+			}
 			additions, err := d.parseBlockAdditions(d.groupReader, child)
 			if err != nil {
 				return err
 			}
 			dst.BlockAdditions = append(dst.BlockAdditions, additions...)
 		case idReferencePriority:
+			if err := markElementSeen(&prioritySeen); err != nil {
+				return err
+			}
 			value, err := readUIntPayloadScratch(d.groupReader, child.Size.Value, &d.uintScratch)
 			if err != nil {
 				return err
@@ -5206,12 +5608,18 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 			dst.ReferenceBlockTimeNS = append(dst.ReferenceBlockTimeNS, timeNS)
 			referenceSeen = true
 		case idDiscardPad:
+			if err := markElementSeen(&discardSeen); err != nil {
+				return err
+			}
 			paddingNS, err := readIntPayload(d.groupReader, child.Size.Value)
 			if err != nil {
 				return err
 			}
 			dst.DiscardPaddingNS = paddingNS
 		case idCodecState:
+			if err := markElementSeen(&codecStateSeen); err != nil {
+				return err
+			}
 			state, err := readBinaryPayload(d.groupReader, child.Size.Value)
 			if err != nil {
 				return err
@@ -5326,6 +5734,7 @@ func (d *Demuxer) parseBlockMore(parent *ebml.Reader, header ebml.Header) (Block
 	limit := io.LimitedReader{R: parent, N: int64(header.Size.Value)}
 	reader := ebml.NewReader(&limit, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
 	addition := BlockAddition{ID: 1}
+	idSeen := false
 	haveAdditional := false
 	for limit.N > 0 {
 		child, err := reader.ReadHeader()
@@ -5334,6 +5743,9 @@ func (d *Demuxer) parseBlockMore(parent *ebml.Reader, header ebml.Header) (Block
 		}
 		switch child.ID {
 		case idBlockAddID:
+			if err := markElementSeen(&idSeen); err != nil {
+				return BlockAddition{}, err
+			}
 			id, err := readUIntPayloadScratch(reader, child.Size.Value, &d.uintScratch)
 			if err != nil {
 				return BlockAddition{}, err

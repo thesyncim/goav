@@ -170,6 +170,8 @@ Current milestone:
   masters are stored after the first Cluster, then skip the same physical
   elements during the later linear packet scan.
 - Demux validation rejects duplicate singleton child fields inside known Info,
+  TrackEntry, TrackTranslate, BlockAdditionMapping, audio/video/colour/
+  projection/mastering metadata, content encoding records, Cues, BlockGroup,
   AttachedFile, EditionEntry, ChapterAtom, ChapterDisplay, Tag, Targets, and
   SimpleTag records instead of letting later values silently overwrite earlier
   metadata.
