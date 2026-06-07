@@ -184,7 +184,7 @@ return goav.From(goav.WebRTCTrack(audio)).
 ```
 
 Flows can also be applied to runtime branches. The flow still owns only the
-operation sequence; the branch owns the target.
+operation sequence; the branch owns the target or targets.
 
 ```go
 record, err := task.Attach(ctx,
@@ -270,9 +270,10 @@ defer record.Close(ctx)
 or endpoint branch to a running direct task graph without rebuilding upstream.
 Late branches can apply flows, run custom `.Do(...)` stages, resize/resample
 from frame taps, encode Opus/VP8/VP9 from frame taps, copy from packet taps, and
-expose their own `.Tap(name)` outlets for later attachments. H264 and AV1 recipe
-encoding remain work in progress. Detaching a parent attachment also removes
-dependent late branches anchored from its taps.
+write to one or more typed targets before exposing their own `.Tap(name)`
+outlets for later attachments. H264 and AV1 recipe encoding remain work in
+progress. Detaching a parent attachment also removes dependent late branches
+anchored from its taps.
 Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
 packet-domain taps.
 

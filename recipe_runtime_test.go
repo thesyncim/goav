@@ -1845,6 +1845,89 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRuntimeEncodeBranchFansOutToTargets(t *testing.T) {
+	ctx := context.Background()
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	codecs := withTestCodecs(
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
+	)
+	frame := av.Frame{
+		StreamID: "audio",
+		Type:     av.MediaAudio,
+		Audio: &av.AudioFrame{
+			SampleRate: 48000,
+			Channels:   Stereo,
+			Samples:    480,
+		},
+	}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	base := &runtimeTestSink{name: "base"}
+	graph := New(formats, codecs).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:     DomainFrame,
+			MediaKind:  av.MediaAudio,
+			StreamID:   "audio",
+			Codec:      av.CodecOpus,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	archive := Target("archive", FileOutput("archive.ogg", io.Discard))
+	monitor := Target("monitor", FileOutput("monitor.ogg", io.Discard))
+	attachment, err := builtTask.Attach(ctx, Branch("fanout").
+		FromTap("audio.frames").
+		Opus(96_000).
+		To(archive, monitor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachmentText := specText(attachment.Spec())
+	if !strings.Contains(attachmentText, "fanout/encode-fanout -> fanout/archive.ogg") ||
+		!strings.Contains(attachmentText, "fanout/encode-fanout -> fanout/monitor.ogg") {
+		t.Fatalf("attachment spec:\n%s", attachmentText)
+	}
+	if err := builtTask.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 1 || encoder.encodes != 1 {
+		t.Fatalf("base=%d encodes=%d", base.count, encoder.encodes)
+	}
+	if len(muxers.muxers) != 2 {
+		t.Fatalf("muxers=%d, want 2", len(muxers.muxers))
+	}
+	for i, muxer := range muxers.muxers {
+		if muxer.writes != 1 || muxer.lastStream != "fanout" {
+			t.Fatalf("muxer[%d]=%+v, want one fanout packet", i, muxer)
+		}
+	}
+	if err := builtTask.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 	ctx := context.Background()
 	customPCM := av.CodecID("x_pcm_s16")

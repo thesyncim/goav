@@ -1084,6 +1084,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     direct stream encode, planned `Branch(...).Encode(...).To(Target(...))`, and
     runtime `Task.Attach(ctx, Branch(...).FromTap(...).Encode(...))` mux
     branches without adding a built-in-only pathway. Done.
+265. Let runtime branches fan out to multiple typed targets:
+    `Task.Attach(ctx, goav.Branch(...).FromTap(...).Opus(...).To(archive, monitor))`
+    now encodes once, keeps terminal targets separate from the operation chain,
+    and connects the running branch to multiple mux/sink destinations under one
+    attachment. Runtime branches now match planned branch `.To(target, ...)`
+    grammar for target fanout while preserving detach and nested tap ownership.
+    Done.
 
 ## First Vertical Slice
 
