@@ -535,17 +535,26 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeTargets(plan graphPlan)
 		if err := validateBranchComposeTargetOperation(operation, target); err != nil {
 			return nil, err
 		}
-		if !branchComposeTargetBranchesMatch(target, p.branches, branchesByTarget[operation.Name]) {
+		matches, ok := branchComposeTargetOperationMatches(p.branches, branchesByTarget[operation.Name])
+		if !ok || !branchComposeTargetBranchesMatch(target, matches) {
 			return nil, graphPlanInvalidError("branch composition target operation branches do not match target routes", []string{
 				"target=" + operation.Name,
 			})
 		}
+		target.node = operation.Node
+		target.matches = matches
 		targets[i] = target
 	}
 	return targets, nil
 }
 
 func validateBranchComposeTargetOperation(operation graphPlanTargetOperation, target branchComposeTargetRoute) error {
+	if operation.Node == "" {
+		return graphPlanInvalidError("branch composition target operation has no node", []string{
+			"target=" + operation.Name,
+			"kind=" + string(operation.Kind),
+		})
+	}
 	if target.sink != nil {
 		if operation.Kind != OpSink {
 			return graphPlanInvalidError("branch composition target operation kind does not match sink target", []string{
@@ -584,15 +593,29 @@ func branchComposeTargetRouteName(target branchComposeTargetRoute) string {
 	return ""
 }
 
-func branchComposeTargetBranchesMatch(target branchComposeTargetRoute, branches []branchComposeRoute, actual map[string]struct{}) bool {
-	if len(target.matches) != len(actual) {
+func branchComposeTargetOperationMatches(branches []branchComposeRoute, actual map[string]struct{}) ([]int, bool) {
+	if len(actual) == 0 {
+		return nil, false
+	}
+	matches := make([]int, 0, len(actual))
+	for i := range branches {
+		if _, ok := actual[branches[i].name]; ok {
+			matches = append(matches, i)
+		}
+	}
+	return matches, len(matches) == len(actual)
+}
+
+func branchComposeTargetBranchesMatch(target branchComposeTargetRoute, matches []int) bool {
+	if len(target.matches) != len(matches) {
 		return false
 	}
+	seen := make(map[int]struct{}, len(target.matches))
 	for _, index := range target.matches {
-		if index < 0 || index >= len(branches) {
-			return false
-		}
-		if _, ok := actual[branches[index].name]; !ok {
+		seen[index] = struct{}{}
+	}
+	for _, index := range matches {
+		if _, ok := seen[index]; !ok {
 			return false
 		}
 	}

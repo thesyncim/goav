@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
@@ -104,7 +105,7 @@ func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, lowerer 
 		realtime:    spec.Realtime,
 		nodes:       append([]pipeline.NodeSpec(nil), spec.Nodes...),
 		edges:       append([]pipeline.EdgeSpec(nil), spec.Edges...),
-		operations:  graphPlanOperationsFromMediaPlan(plan),
+		operations:  graphPlanOperationsFromMediaPlan(spec, plan),
 		inputs:      clonePlanInputs(plan.Inputs),
 		streams:     clonePlanStreams(plan.Streams),
 		taps:        clonePlanTaps(plan.Taps),
@@ -116,11 +117,12 @@ func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, lowerer 
 	}
 }
 
-func graphPlanOperationsFromMediaPlan(plan mediaPlan) []graphPlanOperation {
+func graphPlanOperationsFromMediaPlan(spec pipeline.Spec, plan mediaPlan) []graphPlanOperation {
 	if len(plan.Branches) == 0 {
 		return nil
 	}
 	outputs := planOutputsByName(plan.Outputs)
+	outputNodes := graphPlanOutputNodesByName(spec, plan.Outputs)
 	var operations []graphPlanOperation
 	for i := range plan.Branches {
 		branch := plan.Branches[i]
@@ -138,9 +140,13 @@ func graphPlanOperationsFromMediaPlan(plan mediaPlan) []graphPlanOperation {
 		}
 		for _, target := range branch.Outputs {
 			output := outputs[target]
+			node := outputNodes[target]
+			if node == "" {
+				node = pipeline.NodeRef(firstNonEmpty(output.Name, target))
+			}
 			operations = append(operations, graphPlanOperation{
 				Branch:    branch.Name,
-				Node:      pipeline.NodeRef(firstNonEmpty(output.Name, target)),
+				Node:      node,
 				Kind:      output.Operation,
 				Component: output.Component,
 				Detail:    "target",
@@ -149,6 +155,40 @@ func graphPlanOperationsFromMediaPlan(plan mediaPlan) []graphPlanOperation {
 		}
 	}
 	return operations
+}
+
+func graphPlanOutputNodesByName(spec pipeline.Spec, outputs []planOutput) map[string]pipeline.NodeRef {
+	out := make(map[string]pipeline.NodeRef, len(outputs))
+	used := make(map[int]struct{}, len(outputs))
+	for i := range outputs {
+		output := outputs[i]
+		if output.Name == "" {
+			continue
+		}
+		for j := range spec.Nodes {
+			if _, ok := used[j]; ok {
+				continue
+			}
+			if !graphPlanNodeMatchesOutput(spec.Nodes[j], output) {
+				continue
+			}
+			out[output.Name] = pipeline.NodeRef(spec.Nodes[j].Name)
+			used[j] = struct{}{}
+			break
+		}
+	}
+	return out
+}
+
+func graphPlanNodeMatchesOutput(node pipeline.NodeSpec, output planOutput) bool {
+	switch output.Operation {
+	case OpSink:
+		return node.Kind == pipeline.NodeSink
+	case OpMux, OpWrite:
+		return node.Kind == pipeline.NodeStage && strings.HasPrefix(node.Detail, "mux")
+	default:
+		return false
+	}
 }
 
 func planOutputsByName(outputs []planOutput) map[string]planOutput {

@@ -36,6 +36,7 @@ type mediaTransform struct {
 }
 
 type branchComposeTargetRoute struct {
+	node    pipeline.NodeRef
 	output  branchComposeTarget
 	target  format.Output
 	sink    pipeline.Sink
@@ -568,7 +569,11 @@ func compileBranchComposeRoutes(
 
 	for i := range outputs {
 		if outputs[i].sink != nil {
-			sinkRef, err := graph.AddSink(outputs[i].sink, runtime.buffer)
+			sink := outputs[i].sink
+			if outputs[i].node != "" {
+				sink = namedSink{name: outputs[i].node.String(), sink: sink}
+			}
+			sinkRef, err := graph.AddSink(sink, runtime.buffer)
 			if err != nil {
 				return err
 			}
@@ -595,7 +600,11 @@ func compileBranchComposeRoutes(
 		if err != nil {
 			return err
 		}
-		muxRef, err := graph.AddStage(muxStage, runtime.buffer)
+		stage := pipeline.Stage(muxStage)
+		if outputs[i].node != "" {
+			stage = namedStage{name: outputs[i].node.String(), stage: muxStage}
+		}
+		muxRef, err := graph.AddStage(stage, runtime.buffer)
 		if err != nil {
 			muxStage.Close()
 			return err

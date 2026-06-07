@@ -2816,6 +2816,78 @@ func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testi
 	}
 }
 
+func TestBranchComposeLowererUsesPlanTargetOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	archive := Target("archive", fileDestination("archive.ogg", io.Discard))
+	frames := Target("frames", Sink(SinkFunc("frames", func(context.Context, Message) error {
+		return nil
+	})))
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Branches(
+			Branch("archive").Opus(96_000).To(archive),
+			Branch("frames").To(frames),
+		)
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	archiveNode, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, "archive")
+	if !ok {
+		t.Fatalf("graphPlan operations = %+v, want archive target operation", resolved.graphPlan.operations)
+	}
+	framesNode, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, "frames")
+	if !ok {
+		t.Fatalf("graphPlan operations = %+v, want frames target operation", resolved.graphPlan.operations)
+	}
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, archiveNode.String(), "target-plan-archive")
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, framesNode.String(), "target-plan-frames")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "target-plan-archive") || !specHasNode(planned, "target-plan-frames") {
+		t.Fatalf("planned = %+v, want renamed target nodes", planned)
+	}
+}
+
+func graphPlanTargetOperationNode(operations []graphPlanOperation, target string) (pipeline.NodeRef, bool) {
+	for i := range operations {
+		if !graphPlanOperationTargetsRequired(operations[i].Kind) {
+			continue
+		}
+		for _, next := range operations[i].Targets {
+			if next == target {
+				return operations[i].Node, true
+			}
+		}
+	}
+	return "", false
+}
+
 func renameGraphPlanNodeRef(plan graphPlan, oldName string, newName string) graphPlan {
 	oldRef := pipeline.NodeRef(oldName)
 	newRef := pipeline.NodeRef(newName)

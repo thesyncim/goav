@@ -96,16 +96,18 @@ and built graphs stay equivalent even when operation refs are changed by later
 planning passes. Shared branch-compose transform/stage lowering consumes the
 same operation refs and validates that branches sharing one selector group also
 share the same planned step refs. Private branch transform/stage and encoder
-lowering now consume branch-local operation refs too. The next architectural
-pressure is to make mux/sink target construction and branch-to-target routing
-execute directly from target operation records.
+lowering now consume branch-local operation refs too. Branch-compose mux/sink
+target construction and branch-to-target routing now consume target operation
+records, including planned target node refs. The next architectural pressure is
+to make direct chains lower as implicit branches and converge runtime attach on
+the same patchable planner model.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and
 sinks once, then connects typed handles such as `source.Stream("audio")` and
 `decode.Out()` to node inputs. The graph builder is no longer on the public
 `Runtime` interface or an exported top-level constructor. Described graphs and
-execution graphs must stay equivalent for every graph-plan lowerer. The graph
+execution graphs must stay equivalent across graph-plan lowerers. The graph
 layer stays available for inspection and custom stages. Recipe `Explain(ctx)`
 returns structured workflow-report data, branch operations, planner decisions,
 and the same
