@@ -206,6 +206,12 @@ func TestExternalMKVExtractWebMTrackPayloads(t *testing.T) {
 	assertMKVExtractWebMTrackPayloads(t, mkvextract, file, want)
 }
 
+func TestExternalMKVExtractWebMMetadata(t *testing.T) {
+	mkvextract := requireTool(t, "mkvextract")
+	file := writeMetadataOracleWebM(t)
+	assertMKVExtractWebMMetadata(t, mkvextract, file)
+}
+
 func TestExternalMKVToolNixCompat(t *testing.T) {
 	file := writeCompatibilityWebM(t)
 	if tool, ok := lookupTool("mkvalidator"); ok {
@@ -322,6 +328,87 @@ func writePacketOracleWebM(t testing.TB) (string, []externalWebMPacket) {
 		t.Fatal(err)
 	}
 	return file, want
+}
+
+func writeMetadataOracleWebM(t testing.TB) string {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "metadata-oracle.webm")
+	output, err := os.Create(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxer, err := NewMuxer(output, MuxerOptions{
+		Chapters: []ChapterEdition{{
+			Chapters: []Chapter{{
+				UID:       7,
+				StringUID: "intro",
+				StartNS:   0,
+				EndNS:     1_000_000_000,
+				EndSet:    true,
+				Displays: []ChapterDisplay{{
+					String:        "Intro",
+					Language:      "eng",
+					LanguageBCP47: "en-US",
+					Country:       "us",
+				}},
+				Children: []Chapter{{
+					UID:     8,
+					StartNS: 500_000_000,
+					Displays: []ChapterDisplay{{
+						String:   "Halfway",
+						Language: "eng",
+					}},
+				}},
+			}},
+		}},
+		Tags: []Tag{{
+			Target: TagTarget{
+				TypeValue: 50,
+				Type:      "MOVIE",
+				TrackUIDs: []uint64{11},
+			},
+			Simple: []SimpleTag{{
+				Name:       "TITLE",
+				Language:   "und",
+				Default:    true,
+				DefaultSet: true,
+				String:     "WebM Camera Roll",
+				StringSet:  true,
+			}},
+		}},
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		UID:   11,
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     0,
+		DurationNS: 20_000_000,
+		Keyframe:   true,
+		Data:       []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return file
 }
 
 func probeExternalWebMPackets(t testing.TB, tool string, file string) []externalWebMPacket {
@@ -599,6 +686,49 @@ func assertMKVExtractWebMTrackPayloads(t testing.TB, tool string, file string, w
 			t.Fatal(err)
 		}
 		assertExtractedWebMPayloads(t, stream, got, want[stream])
+	}
+}
+
+func assertMKVExtractWebMMetadata(t testing.TB, tool string, file string) {
+	t.Helper()
+	outDir := t.TempDir()
+	chapters := filepath.Join(outDir, "chapters.xml")
+	tags := filepath.Join(outDir, "tags.xml")
+	runExternal(t, tool, file, "chapters", chapters, "tags", tags)
+	assertWebMFileContainsAll(t, "mkvextract chapters", chapters, []string{
+		"<ChapterUID>7</ChapterUID>",
+		"<ChapterUID>8</ChapterUID>",
+		"<ChapterStringUID>intro</ChapterStringUID>",
+		"00:00:00.000000000",
+		"00:00:01.000000000",
+		"00:00:00.500000000",
+		"<ChapterString>Intro</ChapterString>",
+		"<ChapterString>Halfway</ChapterString>",
+		"eng",
+		"en-US",
+		"us",
+	})
+	assertWebMFileContainsAll(t, "mkvextract tags", tags, []string{
+		"<TargetTypeValue>50</TargetTypeValue>",
+		"<TargetType>MOVIE</TargetType>",
+		"<TrackUID>11</TrackUID>",
+		"<Name>TITLE</Name>",
+		"<String>WebM Camera Roll</String>",
+		"und",
+	})
+}
+
+func assertWebMFileContainsAll(t testing.TB, name string, file string, values []string) {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, value := range values {
+		if !strings.Contains(text, value) {
+			t.Fatalf("%s output missing %q:\n%s", name, value, text)
+		}
 	}
 }
 

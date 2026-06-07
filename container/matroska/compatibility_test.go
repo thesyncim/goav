@@ -267,6 +267,12 @@ func TestExternalMKVExtractMatroskaTrackPayloads(t *testing.T) {
 	assertMKVExtractMatroskaTrackPayloads(t, mkvextract, file, want)
 }
 
+func TestExternalMKVExtractMatroskaMetadata(t *testing.T) {
+	mkvextract := requireExternalTool(t, "mkvextract")
+	file := writeMetadataOracleMatroska(t)
+	assertMKVExtractMatroskaMetadata(t, mkvextract, file)
+}
+
 func writeFFmpegAV1OpusMatroskaRecording(t testing.TB) string {
 	t.Helper()
 	tool := requireExternalTool(t, "ffmpeg")
@@ -580,6 +586,102 @@ func writePacketOracleMatroska(t testing.TB) (string, []externalMatroskaPacket) 
 	return file, want
 }
 
+func writeMetadataOracleMatroska(t testing.TB) string {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "metadata-oracle.mkv")
+	output, err := os.Create(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxer, err := NewMuxer(output, MuxerOptions{
+		Chapters: []ChapterEdition{{
+			UID:     77,
+			Default: true,
+			Chapters: []Chapter{{
+				UID:       100,
+				StringUID: "intro",
+				StartNS:   1_000_000_000,
+				EndNS:     2_000_000_000,
+				EndSet:    true,
+				TrackUIDs: []uint64{1},
+				Displays: []ChapterDisplay{{
+					String:        "Intro",
+					Language:      "eng",
+					LanguageBCP47: "en-US",
+					Country:       "us",
+				}},
+				Children: []Chapter{{
+					UID:       101,
+					StringUID: "intro-a",
+					StartNS:   1_200_000_000,
+					EndNS:     1_500_000_000,
+					EndSet:    true,
+					Displays: []ChapterDisplay{{
+						String:   "Beat A",
+						Language: "eng",
+					}},
+				}},
+			}},
+		}},
+		Tags: []Tag{{
+			Target: TagTarget{
+				TypeValue:   50,
+				Type:        "MOVIE",
+				TrackUIDs:   []uint64{1},
+				EditionUIDs: []uint64{77},
+				ChapterUIDs: []uint64{100},
+			},
+			Simple: []SimpleTag{{
+				Name:          "TITLE",
+				Language:      "eng",
+				LanguageBCP47: "en-US",
+				Default:       true,
+				DefaultSet:    true,
+				String:        "Camera Roll",
+				StringSet:     true,
+				Children: []SimpleTag{{
+					Name:      "SORT_WITH",
+					Language:  "eng",
+					String:    "Camera Roll Sort Key",
+					StringSet: true,
+				}},
+			}},
+		}},
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		UID:   1,
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     0,
+		DurationNS: 20_000_000,
+		Keyframe:   true,
+		Data:       []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
 func probeExternalMatroskaPackets(t testing.TB, tool string, file string) []externalMatroskaPacket {
 	t.Helper()
 	output := runExternalTool(t, tool, "-v", "quiet", "-show_entries", "packet=stream_index,pts_time,duration_time,flags,size", "-of", "json", file)
@@ -862,6 +964,56 @@ func assertMKVExtractMatroskaTrackPayloads(t testing.TB, tool string, file strin
 			t.Fatal(err)
 		}
 		assertExtractedMatroskaPayloads(t, stream, got, want[stream])
+	}
+}
+
+func assertMKVExtractMatroskaMetadata(t testing.TB, tool string, file string) {
+	t.Helper()
+	outDir := t.TempDir()
+	chapters := filepath.Join(outDir, "chapters.xml")
+	tags := filepath.Join(outDir, "tags.xml")
+	runExternalTool(t, tool, file, "chapters", chapters, "tags", tags)
+	assertFileContainsAll(t, "mkvextract chapters", chapters, []string{
+		"<EditionUID>77</EditionUID>",
+		"<ChapterUID>100</ChapterUID>",
+		"<ChapterUID>101</ChapterUID>",
+		"<ChapterStringUID>intro</ChapterStringUID>",
+		"<ChapterStringUID>intro-a</ChapterStringUID>",
+		"00:00:01.000000000",
+		"00:00:02.000000000",
+		"00:00:01.200000000",
+		"<ChapterString>Intro</ChapterString>",
+		"<ChapterString>Beat A</ChapterString>",
+		"eng",
+		"en-US",
+		"us",
+	})
+	assertFileContainsAll(t, "mkvextract tags", tags, []string{
+		"<TargetTypeValue>50</TargetTypeValue>",
+		"<TargetType>MOVIE</TargetType>",
+		"<TrackUID>1</TrackUID>",
+		"<EditionUID>77</EditionUID>",
+		"<ChapterUID>100</ChapterUID>",
+		"<Name>TITLE</Name>",
+		"<String>Camera Roll</String>",
+		"<Name>SORT_WITH</Name>",
+		"<String>Camera Roll Sort Key</String>",
+		"eng",
+		"en-US",
+	})
+}
+
+func assertFileContainsAll(t testing.TB, name string, file string, values []string) {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, value := range values {
+		if !strings.Contains(text, value) {
+			t.Fatalf("%s output missing %q:\n%s", name, value, text)
+		}
 	}
 }
 
