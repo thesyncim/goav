@@ -2950,6 +2950,9 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 		}
 	}
 	private := track.CodecPrivate
+	if track.Type == TrackAudio {
+		normalizeAudioDefaults(track.Codec, &track.Audio)
+	}
 	if len(private) == 0 {
 		private = defaultCodecPrivate(track, scratch)
 	}
@@ -3485,6 +3488,26 @@ func validateTrack(track Track) error {
 				return ErrInvalidTrack
 			}
 		case CodecPCMU, CodecPCMA:
+			if len(track.CodecPrivate) != 0 {
+				format, err := parseMSACMWaveFormat(track.CodecPrivate)
+				if err != nil {
+					return ErrInvalidTrack
+				}
+				if err := validateG711MSACMWaveFormat(format, track.Codec); err != nil {
+					return ErrInvalidTrack
+				}
+				if track.Audio.SampleRate != 0 && track.Audio.SampleRate != format.SampleRate {
+					return ErrInvalidTrack
+				}
+				if track.Audio.Channels != 0 && track.Audio.Channels != format.Channels {
+					return ErrInvalidTrack
+				}
+				if track.Audio.BitDepth != 0 && track.Audio.BitDepth != format.BitsPerSample {
+					return ErrInvalidTrack
+				}
+			} else if !canWriteDefaultMSACMWaveFormat(track) {
+				return ErrInvalidTrack
+			}
 		default:
 			return ErrInvalidTrack
 		}
@@ -3847,6 +3870,36 @@ func canWriteDefaultOpusHead(track Track) bool {
 		sampleRate = 48000
 	}
 	return channels >= 1 && channels <= 2 && uint64(sampleRate) <= uint64(^uint32(0))
+}
+
+func normalizeAudioDefaults(codec Codec, audio *AudioConfig) {
+	if codec == CodecPCMU || codec == CodecPCMA {
+		if audio.SampleRate == 0 {
+			audio.SampleRate = 8000
+		}
+		if audio.Channels == 0 {
+			audio.Channels = 1
+		}
+		if audio.BitDepth == 0 {
+			audio.BitDepth = 8
+		}
+	}
+}
+
+func canWriteDefaultMSACMWaveFormat(track Track) bool {
+	audio := track.Audio
+	normalizeAudioDefaults(track.Codec, &audio)
+	if audio.SampleRate <= 0 || uint64(audio.SampleRate) > uint64(^uint32(0)) {
+		return false
+	}
+	if audio.Channels <= 0 || uint64(audio.Channels) > uint64(^uint16(0)) {
+		return false
+	}
+	if audio.BitDepth != 8 {
+		return false
+	}
+	avgBytesPerSec := uint64(audio.SampleRate) * uint64(audio.Channels)
+	return avgBytesPerSec <= uint64(^uint32(0))
 }
 
 const timeNS = 1000000000

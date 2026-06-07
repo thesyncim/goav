@@ -15,7 +15,7 @@ func TestExternalFFProbeRecognizesMatroskaWebRTCCodecs(t *testing.T) {
 	tool := requireExternalTool(t, "ffprobe")
 	file := writeCompatibilityMatroska(t)
 	output := runExternalTool(t, tool, "-v", "error", "-show_entries", "stream=codec_name,width,height,sample_rate,channels", "-of", "default=nw=1", file)
-	for _, codec := range []string{"opus", "av1", "h264", "vp9", "vp8"} {
+	for _, codec := range []string{"opus", "pcm_mulaw", "pcm_alaw", "av1", "h264", "vp9", "vp8"} {
 		if !strings.Contains(output, codec) {
 			t.Fatalf("ffprobe output missing %s:\n%s", codec, output)
 		}
@@ -37,6 +37,34 @@ func TestExternalFFProbeRecognizesGeneratedMatroskaCodecPrivate(t *testing.T) {
 			output := runExternalTool(t, tool, "-v", "error", "-show_entries", "stream=codec_name,width,height", "-of", "default=nw=1", tt.file)
 			if !strings.Contains(output, tt.codec) {
 				t.Fatalf("ffprobe output missing %s:\n%s", tt.codec, output)
+			}
+		})
+	}
+}
+
+func TestExternalFFProbeRecognizesGeneratedMSACMG711CodecPrivate(t *testing.T) {
+	tool := requireExternalTool(t, "ffprobe")
+	tests := []struct {
+		name      string
+		codec     Codec
+		probe     string
+		sample    []byte
+		wantAudio []string
+	}{
+		{name: "pcmu", codec: CodecPCMU, probe: "pcm_mulaw", sample: []byte{0xff}, wantAudio: []string{"sample_rate=8000", "channels=1", "bits_per_sample=8"}},
+		{name: "pcma", codec: CodecPCMA, probe: "pcm_alaw", sample: []byte{0xd5}, wantAudio: []string{"sample_rate=8000", "channels=1", "bits_per_sample=8"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := writeGeneratedG711Matroska(t, tt.codec, tt.sample)
+			output := runExternalTool(t, tool, "-v", "error", "-show_entries", "stream=codec_name,sample_rate,channels,bits_per_sample", "-of", "default=nw=1", file)
+			if !strings.Contains(output, tt.probe) {
+				t.Fatalf("ffprobe output missing %s:\n%s", tt.probe, output)
+			}
+			for _, want := range tt.wantAudio {
+				if !strings.Contains(output, want) {
+					t.Fatalf("ffprobe output missing %s:\n%s", want, output)
+				}
 			}
 		})
 	}
@@ -66,6 +94,8 @@ func TestExternalDemuxerReadsFFmpegMatroskaCodecs(t *testing.T) {
 		{name: "vp8", codec: CodecVP8, typ: TrackVideo, write: writeFFmpegVP8Matroska},
 		{name: "vp9", codec: CodecVP9, typ: TrackVideo, write: writeFFmpegVP9Matroska},
 		{name: "opus", codec: CodecOpus, typ: TrackAudio, write: writeFFmpegOpusMatroska},
+		{name: "pcmu", codec: CodecPCMU, typ: TrackAudio, write: writeFFmpegPCMUMatroska},
+		{name: "pcma", codec: CodecPCMA, typ: TrackAudio, write: writeFFmpegPCMAMatroska},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -89,8 +119,11 @@ func TestExternalDemuxerReadsFFmpegMatroskaCodecs(t *testing.T) {
 			if tt.typ == TrackVideo && (tracks[0].Video.Width != 16 || tracks[0].Video.Height != 16) {
 				t.Fatalf("video = %+v, want 16x16", tracks[0].Video)
 			}
-			if tt.typ == TrackAudio && (tracks[0].Audio.SampleRate != 48000 || tracks[0].Audio.Channels == 0) {
+			if tt.codec == CodecOpus && (tracks[0].Audio.SampleRate != 48000 || tracks[0].Audio.Channels == 0) {
 				t.Fatalf("audio = %+v, want 48000 Hz opus", tracks[0].Audio)
+			}
+			if (tt.codec == CodecPCMU || tt.codec == CodecPCMA) && (tracks[0].Audio.SampleRate != 8000 || tracks[0].Audio.Channels != 1 || tracks[0].Audio.BitDepth != 8) {
+				t.Fatalf("audio = %+v, want 8000 Hz mono 8-bit G.711", tracks[0].Audio)
 			}
 			packet := Packet{Data: make([]byte, 0, 1<<20)}
 			for {
@@ -133,6 +166,8 @@ func TestExternalRemuxesFFmpegMatroskaCodecs(t *testing.T) {
 		{name: "vp8", ffprobe: "vp8", write: writeFFmpegVP8Matroska, requireType: TrackVideo},
 		{name: "vp9", ffprobe: "vp9", write: writeFFmpegVP9Matroska, requireType: TrackVideo},
 		{name: "opus", ffprobe: "opus", write: writeFFmpegOpusMatroska, requireType: TrackAudio},
+		{name: "pcmu", ffprobe: "pcm_mulaw", write: writeFFmpegPCMUMatroska, requireType: TrackAudio},
+		{name: "pcma", ffprobe: "pcm_alaw", write: writeFFmpegPCMAMatroska, requireType: TrackAudio},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -297,6 +332,22 @@ func writeCompatibilityMatroska(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pcmuID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecPCMU,
+		Audio: AudioConfig{SampleRate: 8000, Channels: 1, BitDepth: 8},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pcmaID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecPCMA,
+		Audio: AudioConfig{SampleRate: 8000, Channels: 1, BitDepth: 8},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	av1ID, err := muxer.AddTrack(Track{
 		Type:         TrackVideo,
 		Codec:        CodecAV1,
@@ -333,6 +384,8 @@ func writeCompatibilityMatroska(t *testing.T) string {
 	}
 	packets := []Packet{
 		{TrackID: opusID, TimeNS: 0, Keyframe: true, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: pcmuID, TimeNS: 0, Keyframe: true, Data: []byte{0xff}},
+		{TrackID: pcmaID, TimeNS: 0, Keyframe: true, Data: []byte{0xd5}},
 		{TrackID: av1ID, TimeNS: 0, Keyframe: true, Data: av1SequenceHeaderOBU()},
 		{TrackID: h264ID, TimeNS: 0, Keyframe: true, Data: h264AnnexBAccessUnit()},
 		{TrackID: vp9ID, TimeNS: 0, Keyframe: true, Data: []byte{0x83, 0x49, 0x83}},
@@ -347,6 +400,33 @@ func writeCompatibilityMatroska(t *testing.T) string {
 		t.Fatal(err)
 	}
 	file := filepath.Join(t.TempDir(), "sample.mkv")
+	if err := os.WriteFile(file, buffer.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
+func writeGeneratedG711Matroska(t *testing.T, codec Codec, data []byte) string {
+	t.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: codec,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: data}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "generated-g711.mkv")
 	if err := os.WriteFile(file, buffer.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -445,6 +525,38 @@ func writeFFmpegOpusMatroska(t testing.TB) string {
 		"-c:a", "libopus",
 		"-application", "voip",
 		"-frame_duration", "20",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegPCMUMatroska(t testing.TB) string {
+	t.Helper()
+	tool := requireExternalTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-pcmu.mkv")
+	runExternalToolOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=8000:duration=0.02",
+		"-c:a", "pcm_mulaw",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegPCMAMatroska(t testing.TB) string {
+	t.Helper()
+	tool := requireExternalTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-pcma.mkv")
+	runExternalToolOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=8000:duration=0.02",
+		"-c:a", "pcm_alaw",
 		file,
 	)
 	return file

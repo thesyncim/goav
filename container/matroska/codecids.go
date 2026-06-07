@@ -25,6 +25,12 @@ const (
 )
 
 const (
+	waveFormatALaw       uint16 = 0x0006
+	waveFormatMuLaw      uint16 = 0x0007
+	waveFormatExBaseSize        = 18
+)
+
+const (
 	codecIDOpus = "A_OPUS"
 	codecIDMS   = "A_MS/ACM"
 	codecIDVP8  = "V_VP8"
@@ -71,15 +77,21 @@ func codecFromMatroskaID(id string, private []byte) Codec {
 		return CodecH265
 	case codecIDMS:
 		if len(private) >= 2 {
-			switch binary.LittleEndian.Uint16(private[:2]) {
-			case 0x0007:
-				return CodecPCMU
-			case 0x0006:
-				return CodecPCMA
-			}
+			return codecFromMSACMTag(binary.LittleEndian.Uint16(private[:2]))
 		}
 	}
 	return CodecUnknown
+}
+
+func codecFromMSACMTag(tag uint16) Codec {
+	switch tag {
+	case waveFormatMuLaw:
+		return CodecPCMU
+	case waveFormatALaw:
+		return CodecPCMA
+	default:
+		return CodecUnknown
+	}
 }
 
 func codecFromAV(id av.CodecID) Codec {
@@ -146,9 +158,9 @@ func defaultCodecPrivate(track Track, scratch *[codecPrivateScratchSize]byte) []
 		scratch[18] = 0
 		return scratch[:19]
 	case CodecPCMU, CodecPCMA:
-		tag := uint16(0x0007)
+		tag := waveFormatMuLaw
 		if track.Codec == CodecPCMA {
-			tag = 0x0006
+			tag = waveFormatALaw
 		}
 		channels := uint16(track.Audio.Channels)
 		if channels == 0 {
@@ -165,10 +177,73 @@ func defaultCodecPrivate(track Track, scratch *[codecPrivateScratchSize]byte) []
 		binary.LittleEndian.PutUint16(scratch[12:14], channels)
 		binary.LittleEndian.PutUint16(scratch[14:16], 8)
 		binary.LittleEndian.PutUint16(scratch[16:18], 0)
-		return scratch[:]
+		return scratch[:waveFormatExBaseSize]
 	default:
 		return nil
 	}
+}
+
+type msACMWaveFormat struct {
+	FormatTag      uint16
+	Channels       int
+	SampleRate     int
+	AvgBytesPerSec uint32
+	BlockAlign     int
+	BitsPerSample  int
+	ExtraSize      int
+}
+
+func parseMSACMWaveFormat(private []byte) (msACMWaveFormat, error) {
+	if len(private) < waveFormatExBaseSize {
+		return msACMWaveFormat{}, ErrInvalidData
+	}
+	extraSize := int(binary.LittleEndian.Uint16(private[16:18]))
+	if extraSize != len(private)-waveFormatExBaseSize {
+		return msACMWaveFormat{}, ErrInvalidData
+	}
+	sampleRate := binary.LittleEndian.Uint32(private[4:8])
+	if sampleRate == 0 || uint64(sampleRate) > maxIntValue {
+		return msACMWaveFormat{}, ErrInvalidData
+	}
+	channels := binary.LittleEndian.Uint16(private[2:4])
+	blockAlign := binary.LittleEndian.Uint16(private[12:14])
+	if channels == 0 || blockAlign == 0 {
+		return msACMWaveFormat{}, ErrInvalidData
+	}
+	avgBytesPerSec := binary.LittleEndian.Uint32(private[8:12])
+	if avgBytesPerSec == 0 {
+		return msACMWaveFormat{}, ErrInvalidData
+	}
+	return msACMWaveFormat{
+		FormatTag:      binary.LittleEndian.Uint16(private[0:2]),
+		Channels:       int(channels),
+		SampleRate:     int(sampleRate),
+		AvgBytesPerSec: avgBytesPerSec,
+		BlockAlign:     int(blockAlign),
+		BitsPerSample:  int(binary.LittleEndian.Uint16(private[14:16])),
+		ExtraSize:      extraSize,
+	}, nil
+}
+
+func validateG711MSACMWaveFormat(format msACMWaveFormat, codec Codec) error {
+	wantTag := waveFormatMuLaw
+	if codec == CodecPCMA {
+		wantTag = waveFormatALaw
+	}
+	if codec != CodecPCMU && codec != CodecPCMA {
+		return ErrInvalidData
+	}
+	if format.FormatTag != wantTag || format.BitsPerSample != 8 || format.ExtraSize != 0 {
+		return ErrInvalidData
+	}
+	if format.BlockAlign != format.Channels {
+		return ErrInvalidData
+	}
+	expectedAvg := uint64(format.SampleRate) * uint64(format.Channels)
+	if expectedAvg > uint64(^uint32(0)) || format.AvgBytesPerSec != uint32(expectedAvg) {
+		return ErrInvalidData
+	}
+	return nil
 }
 
 type avcDecoderConfigurationRecord struct {

@@ -949,6 +949,68 @@ func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesMSACMG711CodecPrivate(t *testing.T) {
+	tests := []struct {
+		name  string
+		codec Codec
+		data  []byte
+	}{
+		{name: "pcmu", codec: CodecPCMU, data: []byte{0xff, 0x7f}},
+		{name: "pcma", codec: CodecPCMA, data: []byte{0xd5, 0x2a}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			trackID, err := muxer.AddTrack(Track{
+				Type:  TrackAudio,
+				Codec: tt.codec,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.WritePacket(Packet{
+				TrackID:  trackID,
+				TimeNS:   0,
+				Keyframe: true,
+				Data:     tt.data,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tracks := demuxer.Tracks()
+			if len(tracks) != 1 {
+				t.Fatalf("tracks = %d, want 1", len(tracks))
+			}
+			wantPrivate := expectedMSACMWaveFormat(tt.codec, 1, 8000)
+			if tracks[0].Codec != tt.codec ||
+				tracks[0].Audio.SampleRate != 8000 ||
+				tracks[0].Audio.Channels != 1 ||
+				tracks[0].Audio.BitDepth != 8 ||
+				!bytes.Equal(tracks[0].CodecPrivate, wantPrivate) {
+				t.Fatalf("track = %+v private=%x, want codec %v audio 8000/1/8 private=%x", tracks[0], tracks[0].CodecPrivate, tt.codec, wantPrivate)
+			}
+			got := Packet{Data: make([]byte, 0, 8)}
+			if err := demuxer.ReadPacket(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got.TrackID != trackID || !bytes.Equal(got.Data, tt.data) {
+				t.Fatalf("packet = %+v data=%x, want track %d data=%x", got, got.Data, trackID, tt.data)
+			}
+		})
+	}
+}
+
 func TestMuxerDemuxerPreservesTrackUIDAndFlags(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -4314,6 +4376,190 @@ func TestDemuxerRejectsInvalidOpusHead(t *testing.T) {
 				t.Fatalf("err = %v, want ErrInvalidData", err)
 			}
 		})
+	}
+}
+
+func TestMSACMWaveFormatValidation(t *testing.T) {
+	format, err := parseMSACMWaveFormat(expectedMSACMWaveFormat(CodecPCMU, 2, 16000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if format.FormatTag != waveFormatMuLaw ||
+		format.Channels != 2 ||
+		format.SampleRate != 16000 ||
+		format.AvgBytesPerSec != 32000 ||
+		format.BlockAlign != 2 ||
+		format.BitsPerSample != 8 ||
+		format.ExtraSize != 0 {
+		t.Fatalf("format = %+v", format)
+	}
+
+	tests := []struct {
+		name    string
+		private []byte
+	}{
+		{name: "short", private: expectedMSACMWaveFormat(CodecPCMU, 1, 8000)[:17]},
+		{name: "trailing bytes without cbSize", private: append(expectedMSACMWaveFormat(CodecPCMU, 1, 8000), 0)},
+		{name: "zero channels", private: msACMWaveFormatBytes(waveFormatMuLaw, 0, 8000, 8000, 1, 8, nil)},
+		{name: "zero sample rate", private: msACMWaveFormatBytes(waveFormatMuLaw, 1, 0, 8000, 1, 8, nil)},
+		{name: "zero average bytes", private: msACMWaveFormatBytes(waveFormatMuLaw, 1, 8000, 0, 1, 8, nil)},
+		{name: "zero block align", private: msACMWaveFormatBytes(waveFormatMuLaw, 1, 8000, 8000, 0, 8, nil)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := parseMSACMWaveFormat(tt.private); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestMuxerRejectsInvalidMSACMG711CodecPrivate(t *testing.T) {
+	avgMismatch := expectedMSACMWaveFormat(CodecPCMU, 1, 8000)
+	binary.LittleEndian.PutUint32(avgMismatch[8:12], 1)
+	blockAlignMismatch := expectedMSACMWaveFormat(CodecPCMU, 1, 8000)
+	binary.LittleEndian.PutUint16(blockAlignMismatch[12:14], 2)
+
+	tests := []struct {
+		name  string
+		track Track
+	}{
+		{
+			name: "short",
+			track: Track{
+				Type:         TrackAudio,
+				Codec:        CodecPCMU,
+				Audio:        AudioConfig{SampleRate: 8000, Channels: 1},
+				CodecPrivate: []byte{0x07, 0x00},
+			},
+		},
+		{
+			name: "wrong tag",
+			track: Track{
+				Type:         TrackAudio,
+				Codec:        CodecPCMU,
+				Audio:        AudioConfig{SampleRate: 8000, Channels: 1},
+				CodecPrivate: expectedMSACMWaveFormat(CodecPCMA, 1, 8000),
+			},
+		},
+		{
+			name: "average bytes mismatch",
+			track: Track{
+				Type:         TrackAudio,
+				Codec:        CodecPCMU,
+				Audio:        AudioConfig{SampleRate: 8000, Channels: 1},
+				CodecPrivate: avgMismatch,
+			},
+		},
+		{
+			name: "block align mismatch",
+			track: Track{
+				Type:         TrackAudio,
+				Codec:        CodecPCMU,
+				Audio:        AudioConfig{SampleRate: 8000, Channels: 1},
+				CodecPrivate: blockAlignMismatch,
+			},
+		},
+		{
+			name: "audio sample rate mismatch",
+			track: Track{
+				Type:         TrackAudio,
+				Codec:        CodecPCMU,
+				Audio:        AudioConfig{SampleRate: 16000, Channels: 1},
+				CodecPrivate: expectedMSACMWaveFormat(CodecPCMU, 1, 8000),
+			},
+		},
+		{
+			name: "default channel overflow",
+			track: Track{
+				Type:  TrackAudio,
+				Codec: CodecPCMU,
+				Audio: AudioConfig{SampleRate: 8000, Channels: int(uint64(^uint16(0)) + 1)},
+			},
+		},
+		{
+			name: "default bit depth mismatch",
+			track: Track{
+				Type:  TrackAudio,
+				Codec: CodecPCMU,
+				Audio: AudioConfig{SampleRate: 8000, Channels: 1, BitDepth: 16},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := muxer.AddTrack(tt.track); !errors.Is(err, ErrInvalidTrack) {
+				t.Fatalf("err = %v, want ErrInvalidTrack", err)
+			}
+		})
+	}
+}
+
+func TestDemuxerRejectsInvalidMSACMG711CodecPrivate(t *testing.T) {
+	extraMismatch := expectedMSACMWaveFormat(CodecPCMU, 1, 8000)
+	extraMismatch = append(extraMismatch, 0)
+	avgMismatch := expectedMSACMWaveFormat(CodecPCMU, 1, 8000)
+	binary.LittleEndian.PutUint32(avgMismatch[8:12], 1)
+	blockAlignMismatch := expectedMSACMWaveFormat(CodecPCMU, 1, 8000)
+	binary.LittleEndian.PutUint16(blockAlignMismatch[12:14], 2)
+	bitDepthMismatch := expectedMSACMWaveFormat(CodecPCMU, 1, 8000)
+	binary.LittleEndian.PutUint16(bitDepthMismatch[14:16], 16)
+
+	tests := []struct {
+		name    string
+		private []byte
+	}{
+		{name: "short", private: []byte{0x07, 0x00}},
+		{name: "extra size mismatch", private: extraMismatch},
+		{name: "zero sample rate", private: msACMWaveFormatBytes(waveFormatMuLaw, 1, 0, 8000, 1, 8, nil)},
+		{name: "average bytes mismatch", private: avgMismatch},
+		{name: "block align mismatch", private: blockAlignMismatch},
+		{name: "bit depth mismatch", private: bitDepthMismatch},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+				return writeTracksWithMSACMPrivate(writer, tt.private, AudioConfig{SampleRate: 8000, Channels: 1, BitDepth: 8})
+			})
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestDemuxerReadsUnsupportedMSACMAsUnknown(t *testing.T) {
+	private := msACMWaveFormatBytes(0x0055, 2, 44100, 16000, 1, 0, nil)
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMatroskaSegmentPrefix(t, muxer)
+	if err := writeTracksWithMSACMPrivate(muxer.ebml, private, AudioConfig{SampleRate: 44100, Channels: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.ebml.WriteElement(idCluster, nil); err != nil {
+		t.Fatal(err)
+	}
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Codec != CodecUnknown ||
+		tracks[0].Audio.SampleRate != 44100 ||
+		tracks[0].Audio.Channels != 2 ||
+		tracks[0].Audio.BitDepth != 0 ||
+		!bytes.Equal(tracks[0].CodecPrivate, private) {
+		t.Fatalf("track = %+v private=%x", tracks[0], tracks[0].CodecPrivate)
 	}
 }
 
@@ -9299,6 +9545,27 @@ func expectedOpusHeadWithPreSkip(channels int, sampleRate int, preSkip int) []by
 	return header
 }
 
+func expectedMSACMWaveFormat(codec Codec, channels int, sampleRate int) []byte {
+	tag := waveFormatMuLaw
+	if codec == CodecPCMA {
+		tag = waveFormatALaw
+	}
+	return msACMWaveFormatBytes(tag, channels, sampleRate, uint32(sampleRate*channels), channels, 8, nil)
+}
+
+func msACMWaveFormatBytes(tag uint16, channels int, sampleRate int, avgBytesPerSec uint32, blockAlign int, bitsPerSample int, extra []byte) []byte {
+	private := make([]byte, waveFormatExBaseSize+len(extra))
+	binary.LittleEndian.PutUint16(private[0:2], tag)
+	binary.LittleEndian.PutUint16(private[2:4], uint16(channels))
+	binary.LittleEndian.PutUint32(private[4:8], uint32(sampleRate))
+	binary.LittleEndian.PutUint32(private[8:12], avgBytesPerSec)
+	binary.LittleEndian.PutUint16(private[12:14], uint16(blockAlign))
+	binary.LittleEndian.PutUint16(private[14:16], uint16(bitsPerSample))
+	binary.LittleEndian.PutUint16(private[16:18], uint16(len(extra)))
+	copy(private[waveFormatExBaseSize:], extra)
+	return private
+}
+
 func av1CodecConfig() []byte {
 	private := []byte{0x81, 0x05, 0x10, 0x00}
 	return append(private, av1SequenceHeaderOBU()...)
@@ -10936,6 +11203,35 @@ func writeTracksWithAudioMetadataValues(writer *ebml.Writer, sampleRate float64,
 
 func writeTracksWithOpusPrivate(writer *ebml.Writer, private []byte) error {
 	return writeTracksWithOpusPrivateAndTiming(writer, private, 0, 0)
+}
+
+func writeTracksWithMSACMPrivate(writer *ebml.Writer, private []byte, audioConfig AudioConfig) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	var entry bytes.Buffer
+	ew := ebml.NewWriter(&entry)
+	if err := ew.WriteUInt(idTrackNumber, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackUID, 1); err != nil {
+		return err
+	}
+	if err := ew.WriteUInt(idTrackType, matroskaTrackAudio); err != nil {
+		return err
+	}
+	if err := ew.WriteString(idCodecID, codecIDMS); err != nil {
+		return err
+	}
+	if err := writeBinary(ew, idCodecPrivate, private); err != nil {
+		return err
+	}
+	if err := writeAudio(ew, audioConfig); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+		return err
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
 }
 
 func writeTracksWithOpusPrivateAndTiming(writer *ebml.Writer, private []byte, codecDelayNS uint64, seekPreRollNS uint64) error {

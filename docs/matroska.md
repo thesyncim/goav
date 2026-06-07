@@ -195,7 +195,8 @@ Current mappings:
 
 - Opus: `A_OPUS` with generated and parsed `OpusHead` codec-private data for
   mono/stereo tracks.
-- PCMU/PCMA: `A_MS/ACM` with generated WAVEFORMATEX codec private data
+- PCMU/PCMA: `A_MS/ACM` with generated and parsed WAVEFORMATEX codec-private
+  data for G.711 mu-law and A-law tracks.
 - VP8: `V_VP8`
 - VP9: `V_VP9`
 - AV1: `V_AV1` with AV1CodecConfigurationRecord validation when codec-private

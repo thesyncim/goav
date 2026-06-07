@@ -2414,6 +2414,21 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 		track.UID = uint64(track.ID)
 	}
 	track.Codec = codecFromMatroskaID(codecID, track.CodecPrivate)
+	if codecID == codecIDMS {
+		format, err := parseMSACMWaveFormat(track.CodecPrivate)
+		if err != nil {
+			return Track{}, err
+		}
+		track.Codec = codecFromMSACMTag(format.FormatTag)
+		track.Audio.SampleRate = format.SampleRate
+		track.Audio.Channels = format.Channels
+		track.Audio.BitDepth = format.BitsPerSample
+		if track.Codec == CodecPCMU || track.Codec == CodecPCMA {
+			if err := validateG711MSACMWaveFormat(format, track.Codec); err != nil {
+				return Track{}, err
+			}
+		}
+	}
 	if track.Codec == CodecOpus && len(track.CodecPrivate) != 0 {
 		head, err := parseOpusHead(track.CodecPrivate)
 		if err != nil {
