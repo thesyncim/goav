@@ -1307,6 +1307,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     node already exists in the task graph. The opened filter, encoder, and
     muxer are closed, no branch node, edge, or tap is added, and the duplicate
     error stays actionable as `runtime_branch_node_duplicate`. Done.
+294. Prove runtime flow plus custom codec composition:
+    `TestTaskAttachRuntimeFlowCustomEncodeMuxBranch` now applies an
+    `AudioFlow(...).Encode(goav.Codec(...))` operation sequence to a live
+    `Branch(...).FromTap(...)`, writes through a typed `Target`, and verifies
+    custom encoder config, muxed packet delivery, and detach cleanup. This keeps
+    Flow as reusable operations rather than a destination and proves custom
+    codecs compose through the same runtime Branch/Target grammar as built-ins.
+    Done.
 
 ## First Vertical Slice
 
@@ -1570,6 +1578,9 @@ attachments. Direct and buffered graphs now reject dynamic node additions after
 close so runtime attach fails before mutating a closed graph while still closing
 prepared branch components, and duplicate runtime node-name validation closes
 already-prepared branch components before returning.
+Runtime attachments also now prove flow-applied custom `Codec(...)` encode
+branches to typed targets, matching the same operation grammar used by planned
+branches and direct stream chains.
 `MediaPlan` expresses record, stream decode, encode, and branch composition as
 input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and
