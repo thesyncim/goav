@@ -174,6 +174,33 @@ func TestInterFrameBeforeKeyframeRequestsKeyframe(t *testing.T) {
 	}
 }
 
+func TestPacketLossInterFrameRequestsOneKeyframe(t *testing.T) {
+	ctx := context.Background()
+	decoder, err := NewDecoderFactory().NewDecoder(ctx, codec.DecodeConfig{
+		Stream: vp8TestStream(),
+		Resilience: codec.ResiliencePolicy{
+			RequestKeyframes: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := encodedVP8TestFrame(t)
+	encoded[0] |= 1
+	result := vp8DecodeResult(1, 16, 16)
+	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: encoded}, LossBefore: true}
+
+	if err := decoder.DecodeInto(ctx, &packet, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 0 {
+		t.Fatalf("frames = %d, want 0", len(result.Frames))
+	}
+	if len(result.Requests) != 1 || result.Requests[0].Type != codec.ControlRequestKeyframe {
+		t.Fatalf("requests = %+v", result.Requests)
+	}
+}
+
 func TestPrepareI420FrameAllocs(t *testing.T) {
 	frame := av.Frame{
 		Planes: []av.Plane{

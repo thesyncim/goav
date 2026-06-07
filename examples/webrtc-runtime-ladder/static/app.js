@@ -3,12 +3,17 @@ const state = {
   sessionID: "",
   events: null,
   remoteTracks: new Map(),
-  last: null
+  last: null,
+  synthetic: null,
+  poller: null
 };
+
+const defaultReceiveKinds = ["video", "video"];
 
 const els = {
   start: document.querySelector("#start"),
   add: document.querySelector("#add"),
+  inputSource: document.querySelector("#inputSource"),
   uploadCodec: document.querySelector("#uploadCodec"),
   newKind: document.querySelector("#newKind"),
   newCodec: document.querySelector("#newCodec"),
@@ -66,11 +71,9 @@ function syncNewCodecOptions() {
 async function start() {
   setStatus("starting", "warn");
   els.start.disabled = true;
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
-    audio: true
-  });
+  const stream = await openInputStream();
   els.local.srcObject = stream;
+  playMedia(els.local);
 
   const pc = new RTCPeerConnection({ iceServers: [] });
   state.pc = pc;
@@ -88,15 +91,98 @@ async function start() {
     const audioTx = pc.addTransceiver(audioTrack, { direction: "sendonly" });
     preferCodec(audioTx, "opus");
   }
-  for (let i = 0; i < 10; i++) pc.addTransceiver("video", { direction: "recvonly" });
-  for (let i = 0; i < 2; i++) pc.addTransceiver("audio", { direction: "recvonly" });
+  reserveReceiveSlots(defaultReceiveKinds);
 
   const answer = await negotiate("/api/offer");
   state.sessionID = answer.id;
   connectEvents();
+  startPolling();
   els.add.disabled = false;
   setStatus("negotiated", "warn");
   await refreshState();
+}
+
+async function openInputStream() {
+  if (state.synthetic?.stop) state.synthetic.stop();
+  if (els.inputSource.value === "synthetic") {
+    return createSyntheticStream("synthetic source");
+  }
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+      audio: true
+    });
+  } catch (err) {
+    els.log.textContent = `${err.message || err}; using synthetic source`;
+    els.inputSource.value = "synthetic";
+    return createSyntheticStream("camera permission fallback");
+  }
+}
+
+function createSyntheticStream(label) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1280;
+  canvas.height = 720;
+  const ctx = canvas.getContext("2d");
+  let frame = 0;
+  let stopped = false;
+  const startedAt = performance.now();
+
+  function draw(now) {
+    if (stopped) return;
+    const t = (now - startedAt) / 1000;
+    const hue = Math.round((t * 44) % 360);
+    ctx.fillStyle = `hsl(${hue}, 38%, 12%)`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#34d0b6";
+    const x = 120 + (Math.sin(t * 1.4) + 1) * 470;
+    const y = 120 + (Math.cos(t * 1.1) + 1) * 210;
+    ctx.fillRect(x, y, 220, 150);
+
+    ctx.fillStyle = "#63a4ff";
+    ctx.beginPath();
+    ctx.arc(920 + Math.sin(t * 1.9) * 120, 360 + Math.cos(t * 1.7) * 120, 86, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#eef3f4";
+    ctx.font = "700 54px system-ui, sans-serif";
+    ctx.fillText("goav WebRTC runtime ladder", 58, 96);
+    ctx.font = "32px system-ui, sans-serif";
+    ctx.fillText(label, 60, 152);
+    ctx.font = "28px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillText(`frame ${frame++}`, 60, 640);
+    ctx.fillText(new Date().toLocaleTimeString(), 60, 682);
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+
+  const stream = canvas.captureStream(30);
+  const videoTrack = stream.getVideoTracks()[0];
+  if (videoTrack) videoTrack.contentHint = "motion";
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  let audioContext;
+  if (AudioContextClass) {
+    audioContext = new AudioContextClass();
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const destination = audioContext.createMediaStreamDestination();
+    oscillator.frequency.value = 220;
+    gain.gain.value = 0.015;
+    oscillator.connect(gain).connect(destination);
+    oscillator.start();
+    destination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
+  }
+
+  state.synthetic = {
+    stop() {
+      stopped = true;
+      stream.getTracks().forEach(track => track.stop());
+      if (audioContext) audioContext.close();
+    }
+  };
+  return stream;
 }
 
 async function negotiate(url) {
@@ -131,6 +217,13 @@ function connectEvents() {
   };
 }
 
+function startPolling() {
+  if (state.poller) clearInterval(state.poller);
+  state.poller = setInterval(() => {
+    refreshState().catch(err => console.warn(err));
+  }, 1000);
+}
+
 async function addRendition() {
   if (!state.sessionID) return;
   const spec = readNewSpec();
@@ -142,6 +235,7 @@ async function addRendition() {
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "add failed");
   if (payload.needsRenegotiate) {
+    reserveReceiveSlots([payload.rendition.kind]);
     await negotiate(`/api/sessions/${state.sessionID}/offer`);
   }
   await refreshState();
@@ -219,6 +313,8 @@ function onRemoteTrack(event) {
   mediaEl.controls = track.kind === "audio";
   mediaEl.muted = track.kind === "video";
   mediaEl.srcObject = new MediaStream([track]);
+  mediaEl.addEventListener("loadedmetadata", () => playMedia(mediaEl), { once: true });
+  playMedia(mediaEl);
   body.replaceChildren(mediaEl);
   track.onended = () => {
     state.remoteTracks.delete(id);
@@ -226,6 +322,18 @@ function onRemoteTrack(event) {
     updateRemoteCount();
   };
   updateRemoteCount();
+}
+
+function reserveReceiveSlots(kinds) {
+  if (!state.pc) return;
+  for (const kind of kinds) {
+    state.pc.addTransceiver(kind, { direction: "recvonly" });
+  }
+}
+
+function playMedia(mediaEl) {
+  const play = mediaEl.play?.();
+  if (play?.catch) play.catch(() => {});
 }
 
 function renderState(payload) {

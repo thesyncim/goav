@@ -648,9 +648,28 @@ func encodeResultForStream(stream av.Stream) codec.EncodeResult {
 
 func encodePacketBufferSize(stream av.Stream) int {
 	if stream.Type == av.MediaVideo || stream.Codec.Type == av.MediaVideo {
-		return 64 * 1024
+		return videoEncodePacketBufferSize(stream.Codec.Width, stream.Codec.Height)
 	}
 	return 4096
+}
+
+func videoEncodePacketBufferSize(width, height int) int {
+	const (
+		minVideoEncodePacketBuffer     = 4 * 1024 * 1024
+		defaultVideoEncodePacketBuffer = 4 * 1024 * 1024
+		maxVideoEncodePacketBuffer     = 32 * 1024 * 1024
+	)
+	if width <= 0 || height <= 0 {
+		return defaultVideoEncodePacketBuffer
+	}
+	size := int64(width) * int64(height) * 3
+	if size < minVideoEncodePacketBuffer {
+		return minVideoEncodePacketBuffer
+	}
+	if size > maxVideoEncodePacketBuffer {
+		return maxVideoEncodePacketBuffer
+	}
+	return int(size)
 }
 
 func encodeNodeName(request encodeRequest) string {
