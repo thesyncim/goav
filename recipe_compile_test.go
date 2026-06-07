@@ -1026,7 +1026,7 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 			},
 			code:  "encode_adapter_missing",
 			cause: codec.ErrNotFound,
-			want:  []string{"no encoder adapter", "codec=opus", "FrameSink"},
+			want:  []string{"no encoder adapter", "codec=opus", "SinkEndpoint"},
 		},
 		{
 			name: "transcode descriptor-only encoder",
@@ -1116,7 +1116,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 }
 
 func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
-	frameSink := FrameSink(SinkFunc("frames", func(context.Context, Message) error { return nil }))
+	frameSink := SinkEndpoint(SinkFunc("frames", func(context.Context, Message) error { return nil }))
 	fileOutput := FileOutput("archive.ogg", io.Discard)
 	tests := []struct {
 		name    string
@@ -1134,7 +1134,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			},
 			outputs: []EndpointSpec{frameSink, fileOutput},
 			code:    "output_kind_mixed",
-			want:    []string{"cannot mix frame sinks and muxed outputs", ".Branches(...)"},
+			want:    []string{"cannot mix sink endpoints and muxed outputs", ".Branches(...)"},
 		},
 		{
 			name: "mux output without encoder",
@@ -1146,18 +1146,6 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			outputs: []EndpointSpec{fileOutput},
 			code:    "encode_missing",
 			want:    []string{"decoded frames cannot be written", ".Opus"},
-		},
-		{
-			name: "encoded output to frame sink",
-			stream: StreamIntent{
-				Name:    "audio",
-				Decode:  true,
-				Encode:  Opus(Bitrate(96_000)),
-				Targets: []string{"frames"},
-			},
-			outputs: []EndpointSpec{frameSink},
-			code:    "encoded_sink_unsupported",
-			want:    []string{"encoded packets", "FileOutput"},
 		},
 	}
 	pass := validateJobStreamOutputKindsPass()
@@ -1544,12 +1532,12 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 			want: "RTP transcode recipes",
 		},
 		{
-			name: "frame sink target",
+			name: "sink endpoint target",
 			state: recipeCompileState{
 				transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
 				transcodeTargetAttachments: []namedTargetSpec{{
 					name:   "frames",
-					output: FrameSink(SinkFunc("frames", func(context.Context, Message) error { return nil })),
+					output: SinkEndpoint(SinkFunc("frames", func(context.Context, Message) error { return nil })),
 				}},
 			},
 			code: "target_kind_invalid",
@@ -1934,7 +1922,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	}
 }
 
-func TestRecipeResolvedBuildUsesMediaPlanFileFrameSink(t *testing.T) {
+func TestRecipeResolvedBuildUsesMediaPlanFileSinkEndpoint(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -1948,14 +1936,14 @@ func TestRecipeResolvedBuildUsesMediaPlanFileFrameSink(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		To(FrameSink(&runtimeTestSink{name: "frames"}))
+		To(SinkEndpoint(&runtimeTestSink{name: "frames"}))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	if resolved.mediaBuildKind != mediaBuildKindFrameSink {
-		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindFrameSink)
+	if resolved.mediaBuildKind != mediaBuildKindSinkEndpoint {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindSinkEndpoint)
 	}
 	planned, err := resolved.Describe()
 	if err != nil {
@@ -1971,7 +1959,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileFrameSink(t *testing.T) {
 	}
 }
 
-func TestRecipeResolvedMediaPlanFrameSinkPreservesCustomStage(t *testing.T) {
+func TestRecipeResolvedMediaPlanSinkEndpointPreservesCustomStage(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -1986,14 +1974,14 @@ func TestRecipeResolvedMediaPlanFrameSinkPreservesCustomStage(t *testing.T) {
 		Audio().
 		Decode().
 		Do(&runtimeTestStage{name: "meter"}).
-		To(FrameSink(&runtimeTestSink{name: "frames"}))
+		To(SinkEndpoint(&runtimeTestSink{name: "frames"}))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	if resolved.mediaBuildKind != mediaBuildKindFrameSink {
-		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindFrameSink)
+	if resolved.mediaBuildKind != mediaBuildKindSinkEndpoint {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindSinkEndpoint)
 	}
 	task, err := resolved.Build(ctx)
 	if err != nil {
@@ -2006,7 +1994,7 @@ func TestRecipeResolvedMediaPlanFrameSinkPreservesCustomStage(t *testing.T) {
 	}
 }
 
-func TestRecipeResolvedBuildUsesMediaPlanRTPFrameSink(t *testing.T) {
+func TestRecipeResolvedBuildUsesMediaPlanRTPSinkEndpoint(t *testing.T) {
 	ctx := context.Background()
 	stream := audioOpusTestStream()
 	receiver := &runtimeRTPReceiver{streams: []Stream{stream}}
@@ -2014,14 +2002,50 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPFrameSink(t *testing.T) {
 	job := From(RTP(receiver).Name("audio").Codec(Opus())).UseRuntime(runtime).
 		Audio().
 		Decode().
-		To(FrameSink(&runtimeTestSink{name: "frames"}))
+		To(SinkEndpoint(&runtimeTestSink{name: "frames"}))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	if resolved.mediaBuildKind != mediaBuildKindFrameSink {
-		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindFrameSink)
+	if resolved.mediaBuildKind != mediaBuildKindSinkEndpoint {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindSinkEndpoint)
+	}
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}
+
+func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkEndpoint(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Copy().
+		To(SinkEndpoint(&runtimeTestSink{name: "packets"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	if resolved.mediaBuildKind != mediaBuildKindPacketCopy {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindPacketCopy)
 	}
 	planned, err := resolved.Describe()
 	if err != nil {
@@ -2081,6 +2105,51 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	}
 	if !specHasNode(built, "meter") || !specHasNode(built, "encode-audio") || !specHasNode(built, "archive.ogg") {
 		t.Fatalf("built spec = %+v, want meter, encode, and mux nodes", built)
+	}
+}
+
+func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkEndpoint(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Opus(96_000).
+		To(SinkEndpoint(&runtimeTestSink{name: "packets"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	if resolved.mediaBuildKind != mediaBuildKindSinkEndpoint {
+		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindSinkEndpoint)
+	}
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	built := task.Describe()
+	if !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(built, "encode-audio") || !specHasNode(built, "packets") {
+		t.Fatalf("built spec = %+v, want encode and sink nodes", built)
 	}
 }
 

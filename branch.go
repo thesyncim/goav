@@ -9,7 +9,7 @@ import (
 
 // BranchDestination is a typed destination for a branch. Use Target for named
 // mux/sink groups, or pass an endpoint such as FileOutput, URIOutput, or
-// FrameSink directly.
+// SinkEndpoint directly.
 type BranchDestination interface {
 	branchDestination() branchDestination
 }
@@ -440,7 +440,7 @@ func branchDestinationInvalidError(name string, reason string) error {
 		Reason:    reason,
 		Suggestions: []string{
 			"use goav.Target(name, endpoint) for named mux/sink groups",
-			"use goav.FileOutput(...), goav.URIOutput(...), or goav.FrameSink(...) as endpoints",
+			"use goav.FileOutput(...), goav.URIOutput(...), or goav.SinkEndpoint(...) as endpoints",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

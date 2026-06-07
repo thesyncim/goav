@@ -22,7 +22,7 @@ Decoded preview:
 err := goav.From(goav.WebRTCTrack(track)).
     Video().
     Decode().
-    To(goav.FrameSink(preview)).
+    To(goav.SinkEndpoint(preview)).
     Run(ctx)
 ```
 
@@ -99,8 +99,8 @@ target. Containers shown outside IVF/Annex B require matching adapters.
 ## Custom Components
 
 Custom work should be optional and local. A stage can live inside a normal
-stream recipe, a sink can receive decoded frames, and a running task can attach
-a sink from a declared tap.
+stream recipe, a sink endpoint can receive frames before encode or packets
+after copy/encode, and a running task can attach a sink from a declared tap.
 
 ```go
 meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
@@ -112,7 +112,7 @@ err := goav.From(input).
     Audio().
     Decode().
     Do(meter).
-    To(goav.FrameSink(goav.SinkFunc("levels", collectLevel))).
+    To(goav.SinkEndpoint(goav.SinkFunc("levels", collectLevel))).
     Run(ctx)
 ```
 
@@ -161,7 +161,7 @@ go func() { _ = task.Run(ctx) }()
 levels, err := task.Attach(ctx,
     goav.Branch("level-meter").
         FromTap("audio.decoded").
-        To(goav.FrameSink(goav.SinkFunc("levels", collectLevel))),
+        To(goav.SinkEndpoint(goav.SinkFunc("levels", collectLevel))),
 )
 if err != nil {
     return err

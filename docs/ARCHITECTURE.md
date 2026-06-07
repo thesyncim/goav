@@ -94,7 +94,7 @@ Current graph execution covers:
 - one-input/many-output remux and fanout through
   `format.DemuxSource -> format.MuxStage...` when the format registry can
   probe, demux, and mux the requested boundaries
-- one-input selected-stream decode to a frame sink through
+- one-input selected-stream decode to a sink endpoint through
   `format.DemuxSource -> stream select -> codec.DecoderStage -> optional filter
   stages -> Sink` when the selector resolves to one stream and the codec
   registry has a decoder factory
@@ -106,7 +106,7 @@ Current graph execution covers:
   `rtpav.Source -> format.MuxStage...` when recipe codec intent or the
   application provides depacketizers and the format registry can mux the output
   boundaries
-- one or more RTP/WebRTC packet readers to a selected frame sink through
+- one or more RTP/WebRTC packet readers to a selected sink endpoint through
   `rtpav.Source... -> stream select -> codec.DecoderStage -> optional filter
   stages -> Sink` when one stream matches the selector and the codec registry
   has a decoder factory

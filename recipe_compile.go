@@ -191,8 +191,8 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 	switch r.mediaBuildKind {
 	case mediaBuildKindPacketCopy:
 		task, err = r.buildMediaPlanPacketCopyTask(ctx)
-	case mediaBuildKindFrameSink:
-		task, err = r.buildMediaPlanFrameSinkTask(ctx)
+	case mediaBuildKindSinkEndpoint:
+		task, err = r.buildMediaPlanSinkEndpointTask(ctx)
 	case mediaBuildKindEncode:
 		task, err = r.buildMediaPlanEncodeTask(ctx)
 	case mediaBuildKindBranch:
@@ -534,7 +534,7 @@ func streamOperationMissingError(operation string, node string) error {
 		Node:      node,
 		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
 		Suggestions: []string{
-			"call .To(goav.FrameSink(...)) to receive decoded frames",
+			"call .To(goav.SinkEndpoint(...)) to receive decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before writing to a file output",
 			"use .Copy().To(output) for packet-preserving record or remux",
 		},
@@ -813,26 +813,6 @@ func recipeAttachmentMismatchError(operation string, kind string, intentCount in
 
 func validatePacketJobOutputsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate packet job outputs", fn: func(state *recipeCompileState) error {
-		if !state.jobPresent || jobIntentHasStream(state.intent) {
-			return nil
-		}
-		for i := range state.outputAttachments {
-			if state.outputAttachments[i].sink == nil {
-				continue
-			}
-			return &BuildError{
-				Code:      "output_kind_invalid",
-				Operation: state.operation,
-				Node:      state.outputAttachments[i].label(fmt.Sprintf("output-%d", i)),
-				Reason:    "packet-preserving recipes write to muxed outputs, not frame sinks",
-				Suggestions: []string{
-					"use goav.From(input).Stream().Decode().To(goav.FrameSink(sink)) for decoded frames when the input has one obvious stream",
-					"use goav.From(input).Audio().Decode().To(goav.FrameSink(sink)) or .Video().Decode().To(...) when stream selection matters",
-					"use goav.FileOutput(...) or goav.URIOutput(...) with .Copy().To(...) for packet-preserving output",
-				},
-				Cause: ErrUnsupportedBuild,
-			}
-		}
 		return nil
 	}}
 }
@@ -1006,7 +986,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		Details:   details,
 		Suggestions: []string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
-			"use goav.From(input).Audio().To(goav.FrameSink(...)) or .Video().To(...) for decoded frames",
+			"use goav.From(input).Audio().To(goav.SinkEndpoint(...)) or .Video().To(...) for decoded frames",
 			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,

@@ -51,9 +51,12 @@ Decode one WebRTC audio track to frames:
 return goav.From(goav.WebRTCTrack(track)).
     Audio().
     Decode().
-    To(goav.FrameSink(frames)).
+    To(goav.SinkEndpoint(frames)).
     Run(ctx)
 ```
+
+`SinkEndpoint` receives frames at decoded points and packets after `.Copy()` or
+after an encoder such as `.Opus(...)`, `.VP8(...)`, or `.VP9(...)`.
 
 Resize and encode one video stream:
 
@@ -194,7 +197,7 @@ shots, err := task.Attach(ctx,
         FromTap("video.720p.frames").
         Resize(320, 180).
         Tap("video.screenshot.frames").
-        To(goav.FrameSink(goav.SinkFunc("screenshots", collectScreenshot))),
+        To(goav.SinkEndpoint(goav.SinkFunc("screenshots", collectScreenshot))),
 )
 if err != nil {
     return err
@@ -282,7 +285,7 @@ return goav.From(input).
     Audio().
     Decode().
     Do(meter).
-    To(goav.FrameSink(levels)).
+    To(goav.SinkEndpoint(levels)).
     Run(ctx)
 ```
 

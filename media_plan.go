@@ -439,6 +439,9 @@ func planTaps(branches []planBranch) []planTap {
 				currentDomain = DomainPacket
 				currentStreamID = av.StreamID(firstNonEmpty(branch.Name, string(currentStreamID)))
 			}
+			if operation.Kind == OpCopy {
+				continue
+			}
 			if operation.Kind != OpTap {
 				currentNode = planOperationNodeName(branch.Name, operation, j)
 				continue

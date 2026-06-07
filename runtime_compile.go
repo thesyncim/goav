@@ -56,7 +56,7 @@ func unsupportedRuntimeGraphError(b *builder) error {
 		Details:   details,
 		Suggestions: []string{
 			"use Record or From(...).To(...) for packet-preserving record and remux jobs",
-			"use Decode or From(...).Audio()/Video().To(FrameSink(...)) for frame output",
+			"use Decode or From(...).Audio()/Video().To(SinkEndpoint(...)) for frame output",
 			"avoid mixing explicit Source/Stage/Sink graph nodes with high-level runtime builder requests",
 		},
 		Cause: ErrUnsupportedBuild,

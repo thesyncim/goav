@@ -126,7 +126,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		}
 	}
 	if len(spec.targets) != 1 {
-		return branch, runtimeBranchInvalidError("runtime branch needs exactly one destination", "finish the branch with one .To(goav.FrameSink(sink)) or .To(goav.Target(name, endpoint))")
+		return branch, runtimeBranchInvalidError("runtime branch needs exactly one destination", "finish the branch with one .To(goav.SinkEndpoint(sink)) or .To(goav.Target(name, endpoint))")
 	}
 	target := cloneTargetSpec(spec.targets[0])
 	if target.err != nil {
@@ -237,7 +237,7 @@ func (t *task) prepareRuntimeBranchDestination(ctx context.Context, branch *runt
 	case endpointSpecHasOutput(branch.endpoint):
 		return t.prepareRuntimeBranchMuxEndpoint(ctx, branch, currentStream, currentCaps)
 	default:
-		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.FrameSink(sink)) or .To(goav.FileOutput(name, writer))")
+		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.SinkEndpoint(sink)) or .To(goav.FileOutput(name, writer))")
 	}
 }
 
@@ -632,7 +632,7 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 		return runtimeBranchInvalidError("branch source is empty", "call .FromTap(name) with a tap from Task.Taps() or .From(node) with an expert graph node")
 	}
 	if branch.sink == nil && !endpointSpecHasOutput(branch.endpoint) {
-		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.FrameSink(sink)) or .To(goav.FileOutput(name, writer))")
+		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.SinkEndpoint(sink)) or .To(goav.FileOutput(name, writer))")
 	}
 	return nil
 }
@@ -1073,7 +1073,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 		Suggestions: []string{
 			"call .Copy() when attaching from a packet tap",
 			"call .Opus(...), .VP8(...), or .VP9(...) when attaching from a frame tap",
-			"use .To(goav.FrameSink(...)) when the runtime branch should receive raw frames",
+			"use .To(goav.SinkEndpoint(...)) when the runtime branch should receive raw frames",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1121,7 +1121,7 @@ func runtimeBranchMuxCodecMissingError(branch string, caps StreamCaps) error {
 		Suggestions: []string{
 			"attach from a recipe tap with codec caps",
 			"set an explicit encoder such as .Opus(...), .VP8(...), or .VP9(...)",
-			"use .To(goav.FrameSink(...)) when the branch should stay raw",
+			"use .To(goav.SinkEndpoint(...)) when the branch should stay raw",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

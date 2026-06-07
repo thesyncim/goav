@@ -504,7 +504,7 @@ func TestExplainReturnsPartialReportForMissingTransformAdapter(t *testing.T) {
 		UseRuntime(goav.New(goav.WithStdCodecs())).
 		Audio().
 		Resample(16_000, goav.Mono).
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Explain(context.Background())
@@ -792,6 +792,11 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"WithTrackMetadata":      true,
 		"UseRuntime":             true,
 		"WebRTCRemote":           true,
+		"FrameSink":              true,
+		"Output":                 true,
+		"Outputs":                true,
+		"Path":                   true,
+		"Paths":                  true,
 	}
 	legacyTypes := map[string]bool{
 		"Builder":         true,
@@ -887,7 +892,7 @@ func TestRuntimeBranchTapAnchorIsPublicAPI(t *testing.T) {
 	attachment, err := task.Attach(context.Background(),
 		goav.Branch("levels").
 			FromTap("audio.decoded").
-			To(goav.FrameSink(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
+			To(goav.SinkEndpoint(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
 				return nil
 			}))),
 	)
@@ -1128,7 +1133,7 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	})
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		To(goav.FrameSink(sink))
+		To(goav.SinkEndpoint(sink))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -1158,7 +1163,7 @@ func TestReadmeCustomStageToCustomSinkRecipeIsSmall(t *testing.T) {
 		Audio().
 		Decode().
 		Do(meter).
-		To(goav.FrameSink(sink))
+		To(goav.SinkEndpoint(sink))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -1184,7 +1189,7 @@ func TestStreamRecipeNamesCodecChangePolicy(t *testing.T) {
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		OnCodecChange(policy).
-		To(goav.FrameSink(sink))
+		To(goav.SinkEndpoint(sink))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -1687,7 +1692,7 @@ func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		OnCodecChange(goav.CodecChangePolicy{RebindCompatible: true}).
-		To(goav.FrameSink(sink)).
+		To(goav.SinkEndpoint(sink)).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -1700,13 +1705,13 @@ func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
 	}
 }
 
-func TestReadmeDecodeShortcutUsesFrameSink(t *testing.T) {
+func TestReadmeDecodeShortcutUsesSinkEndpoint(t *testing.T) {
 	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 		return nil
 	})
 	job := decodeJob(
 		goav.RTP(recipeAPIRTPReader{}).Codec(goav.Opus()),
-		goav.FrameSink(sink),
+		goav.SinkEndpoint(sink),
 	)
 
 	spec, err := job.Describe()
@@ -1779,24 +1784,24 @@ func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 	}
 }
 
-func TestDecodeRecipeRejectsNilFrameSink(t *testing.T) {
+func TestDecodeRecipeRejectsNilSinkEndpoint(t *testing.T) {
 	_, err := decodeJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		goav.FrameSink(nil),
+		goav.SinkEndpoint(nil),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrNilSink) {
 		t.Fatalf("err = %v, want output_invalid wrapping ErrNilSink", err)
 	}
 	if !strings.Contains(err.Error(), "non-nil sink") {
-		t.Fatalf("err = %v, want frame sink guidance", err)
+		t.Fatalf("err = %v, want sink endpoint guidance", err)
 	}
 }
 
 func TestDecodeRecipeRejectsNilSinkFuncCallback(t *testing.T) {
 	_, err := decodeJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		goav.FrameSink(goav.SinkFunc("frames", nil)),
+		goav.SinkEndpoint(goav.SinkFunc("frames", nil)),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrNilSink) {
@@ -1816,28 +1821,25 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "goav.FrameSink") ||
+	if !strings.Contains(err.Error(), "goav.SinkEndpoint") ||
 		!strings.Contains(err.Error(), ".Copy().To(output)") {
 		t.Fatalf("err = %v, want decode output guidance", err)
 	}
 }
 
-func TestRecordRecipeRejectsFrameSinkOutput(t *testing.T) {
-	_, err := recordJob(
-		goav.FileInput("input.ogg", strings.NewReader("")),
-		goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+func TestPacketCopyRecipeAcceptsSinkEndpoint(t *testing.T) {
+	spec, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.Opus())).
+		Copy().
+		To(goav.SinkEndpoint(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
 			return nil
-		})),
-	).Build(context.Background())
-
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_kind_invalid wrapping ErrUnsupportedBuild", err)
+		}))).
+		Describe()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "packet-preserving recipes") ||
-		!strings.Contains(err.Error(), ".Stream().Decode().To(goav.FrameSink") ||
-		!strings.Contains(err.Error(), "goav.FileOutput") {
-		t.Fatalf("err = %v, want packet output guidance", err)
+	text := specText(spec)
+	if !strings.Contains(text, "audio -> packets") {
+		t.Fatalf("spec:\n%s", text)
 	}
 }
 
@@ -1961,13 +1963,13 @@ func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeRejectsDuplicateFrameSinkOutputs(t *testing.T) {
+func TestStreamRecipeRejectsDuplicateSinkEndpointOutputs(t *testing.T) {
 	sink := func(context.Context, goav.Message) error { return nil }
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		To(
-			goav.FrameSink(goav.SinkFunc("frames", sink)),
-			goav.FrameSink(goav.SinkFunc("frames", sink)),
+			goav.SinkEndpoint(goav.SinkFunc("frames", sink)),
+			goav.SinkEndpoint(goav.SinkFunc("frames", sink)),
 		).
 		Build(context.Background())
 
@@ -2212,10 +2214,10 @@ func TestStreamRecipeIntentOperationsImplyDecode(t *testing.T) {
 		job  *goav.Job
 	}{
 		{
-			name: "frame sink",
+			name: "sink endpoint",
 			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 				Audio().
-				To(goav.FrameSink(sink)),
+				To(goav.SinkEndpoint(sink)),
 		},
 		{
 			name: "custom stage",
@@ -2293,7 +2295,7 @@ func TestStreamRecipeRejectsGenericAndStreamOutputs(t *testing.T) {
 func TestStreamRecipeRejectsJobLevelOutput(t *testing.T) {
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader("")))
 	job.Audio()
-	job.To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+	job.To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 		return nil
 	})))
 	_, err := job.Build(context.Background())
@@ -2310,11 +2312,11 @@ func TestStreamRecipeRejectsJobLevelOutput(t *testing.T) {
 func TestStreamRecipeRejectsSecondStreamSelection(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio().
-		To(goav.FrameSink(goav.SinkFunc("audio", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("audio", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Video().
-		To(goav.FrameSink(goav.SinkFunc("video", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("video", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -2333,7 +2335,7 @@ func TestStreamRecipeRejectsSecondStreamSelection(t *testing.T) {
 func TestStreamRecipeRejectsNegativeStreamIndex(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio(goav.StreamIndex(-1)).
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -2352,7 +2354,7 @@ func TestStreamRecipeRejectsNilCustomStage(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Do(nil).
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -2370,7 +2372,7 @@ func TestStreamRecipeRejectsWrongMediaTransform(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Resize(320, 180).
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -2384,7 +2386,7 @@ func TestStreamRecipeRejectsInvalidResize(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video().
 		Resize(0, 720).
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -2410,11 +2412,11 @@ func TestStreamRecipeRequiresEncoderForFileOutput(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeRejectsMixedFrameSinkAndFileOutput(t *testing.T) {
+func TestStreamRecipeRejectsMixedSinkEndpointAndFileOutput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		To(
-			goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 				return nil
 			})),
 			goav.FileOutput("archive.ogg", io.Discard),
@@ -2425,19 +2427,19 @@ func TestStreamRecipeRejectsMixedFrameSinkAndFileOutput(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want output_kind_mixed wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "cannot mix frame sinks and muxed outputs") ||
+	if !strings.Contains(err.Error(), "cannot mix sink endpoints and muxed outputs") ||
 		!strings.Contains(err.Error(), ".Branches") {
 		t.Fatalf("err = %v, want mixed output guidance", err)
 	}
 }
 
-func TestStreamRecipeRejectsMixedEncodedOutputAndFrameSink(t *testing.T) {
+func TestStreamRecipeRejectsMixedEncodedOutputAndSinkEndpoint(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Opus(96_000).
 		To(
 			goav.FileOutput("archive.ogg", io.Discard),
-			goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 				return nil
 			})),
 		).
@@ -2447,7 +2449,7 @@ func TestStreamRecipeRejectsMixedEncodedOutputAndFrameSink(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want output_kind_mixed wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), ".To(goav.FrameSink") ||
+	if !strings.Contains(err.Error(), ".To(goav.SinkEndpoint") ||
 		!strings.Contains(err.Error(), ".To(goav.FileOutput") {
 		t.Fatalf("err = %v, want decoded or encoded output guidance", err)
 	}
@@ -2583,7 +2585,7 @@ func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T)
 		t.Fatalf("err = %v, want encode_adapter_missing wrapping codec.ErrNotFound", err)
 	}
 	if !strings.Contains(err.Error(), "codec=opus") ||
-		!strings.Contains(err.Error(), "FrameSink") ||
+		!strings.Contains(err.Error(), "SinkEndpoint") ||
 		strings.Contains(err.Error(), "cannot open input") ||
 		strings.Contains(err.Error(), "input_demuxer_missing") {
 		t.Fatalf("err = %v, want encode adapter guidance before input diagnostics", err)
@@ -2608,7 +2610,7 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 	_, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("video").Codec(goav.H264())).
 		UseRuntime(rt).
 		Video().
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -2628,7 +2630,7 @@ func TestStreamRecipeReportsAmbiguousLiveSelectionBeforeDecoderAdapter(t *testin
 	_, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("front").Codec(goav.VP8())).
 		And(goav.RTP(recipeAPIRTPReader{}).Name("screen").Codec(goav.VP8())).
 		Video().
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -2670,7 +2672,7 @@ func TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput(t *testing.T) 
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Audio().
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -2705,7 +2707,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Audio().
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -2729,7 +2731,7 @@ func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing
 		UseRuntime(goav.New(goav.WithStdCodecs())).
 		Audio().
 		Resample(16_000, goav.Mono).
-		To(goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -3070,10 +3072,10 @@ func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
 	}
 }
 
-func TestTranscodeRecipeRejectsFrameSinkOutput(t *testing.T) {
+func TestTranscodeRecipeRejectsSinkEndpointOutput(t *testing.T) {
 	_, err := transcodeJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").VP9(600_000).
-		To(goav.Target("preview", goav.FrameSink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.Target("preview", goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		})))).
 		Build(context.Background())

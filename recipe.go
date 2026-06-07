@@ -699,7 +699,7 @@ func (s InputSpec) selector(media av.MediaType) av.StreamSelector {
 }
 
 // EndpointSpec describes a concrete destination endpoint such as a file writer,
-// URI, or frame sink.
+// URI, or sink endpoint.
 type EndpointSpec struct {
 	output         format.Output
 	sink           pipeline.Sink
@@ -740,8 +740,8 @@ func URIOutput(uri string) EndpointSpec {
 	}
 }
 
-// FrameSink creates a decoded-frame or packet sink endpoint.
-func FrameSink(sink pipeline.Sink) EndpointSpec {
+// SinkEndpoint creates a decoded-frame or packet sink endpoint.
+func SinkEndpoint(sink pipeline.Sink) EndpointSpec {
 	name := ""
 	if sink != nil {
 		name = sink.Name()
@@ -821,7 +821,7 @@ func (s EndpointSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    s.err.Error(),
 			Suggestions: []string{
-				"pass a non-nil sink to goav.FrameSink(...)",
+				"pass a non-nil sink to goav.SinkEndpoint(...)",
 				"use goav.FileOutput(...) or goav.URIOutput(...) for muxed output",
 			},
 			Cause: s.err,
@@ -838,7 +838,7 @@ func (s EndpointSpec) validate(operation string, fallback string) error {
 			Reason:    "empty endpoint spec",
 			Suggestions: []string{
 				"use goav.FileOutput(name, writer) for muxed output",
-				"use goav.FrameSink(sink) for decoded frames",
+				"use goav.SinkEndpoint(sink) for decoded frames",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -1328,6 +1328,10 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 	if stream == nil {
 		return StreamIntent{}
 	}
+	afterPacketOperation := OpEncode
+	if stream.encode.Copy {
+		afterPacketOperation = OpCopy
+	}
 	return StreamIntent{
 		Name: stream.name,
 		Select: StreamSelect{
@@ -1341,7 +1345,7 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 		Decode:      stream.decode,
 		Operations:  jobStreamOperations(stream),
 		Transforms:  stream.transformSpecs(),
-		Taps:        append(streamStepTapIntents(stream.steps, stream.selector.Type), postEncodeTapIntents(stream.postEncodeTaps, stream.selector.Type)...),
+		Taps:        append(streamStepTapIntents(stream.steps, stream.selector.Type), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:      stream.encode,
 		CodecChange: stream.codecChange,
 		Targets:     endpointTargetNames(stream.outputs),
@@ -1378,11 +1382,17 @@ func jobStreamOperations(stream *jobStreamBuild) []StreamOperation {
 		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec)})
 	}
 	operations = append(operations, streamStepOperations(stream.steps, stream.selector.Type)...)
-	if codecIntentSet(stream.encode) {
+	if stream.encode.Copy {
+		operations = append(operations, StreamOperation{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
+	} else if codecIntentSet(stream.encode) {
 		operations = append(operations, StreamOperation{Kind: OpEncode, Component: string(stream.encode.ID), Encode: stream.encode})
 	}
 	for i := range stream.postEncodeTaps {
-		tap := TapIntent{Name: stream.postEncodeTaps[i], MediaKind: stream.selector.Type, Domain: DomainPacket, After: OpEncode}
+		after := OpEncode
+		if stream.encode.Copy {
+			after = OpCopy
+		}
+		tap := TapIntent{Name: stream.postEncodeTaps[i], MediaKind: stream.selector.Type, Domain: DomainPacket, After: after}
 		operations = append(operations, StreamOperation{Kind: OpTap, Component: tap.Name, Tap: tap})
 	}
 	return operations
@@ -1394,7 +1404,9 @@ func streamBuildOperations(stream streamBuild) []StreamOperation {
 		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec)})
 	}
 	operations = append(operations, streamStepOperations(stream.steps, stream.selector.Type)...)
-	if codecIntentSet(stream.encode) {
+	if stream.encode.Copy {
+		operations = append(operations, StreamOperation{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
+	} else if codecIntentSet(stream.encode) {
 		operations = append(operations, StreamOperation{Kind: OpEncode, Component: string(stream.encode.ID), Encode: stream.encode})
 	}
 	return operations
@@ -1452,7 +1464,7 @@ func streamStepTapIntents(steps []jobStreamStep, media av.MediaType) []TapIntent
 	return taps
 }
 
-func postEncodeTapIntents(names []string, media av.MediaType) []TapIntent {
+func postPacketTapIntents(names []string, media av.MediaType, after OperationKind) []TapIntent {
 	if len(names) == 0 {
 		return nil
 	}
@@ -1462,7 +1474,7 @@ func postEncodeTapIntents(names []string, media av.MediaType) []TapIntent {
 			Name:      names[i],
 			MediaKind: media,
 			Domain:    DomainPacket,
-			After:     OpEncode,
+			After:     after,
 		})
 	}
 	return taps
@@ -1528,14 +1540,11 @@ func streamStageMissingError(stream StreamIntent) error {
 }
 
 func validateJobStreamOutputKinds(operation string, stream StreamIntent, outputs []EndpointSpec) error {
-	if outputsContainFrameSink(outputs) && outputsContainMuxTarget(outputs) {
+	if outputsContainSinkEndpoint(outputs) && outputsContainMuxTarget(outputs) {
 		return mixedStreamOutputError(operation, stream)
 	}
 	if stream.Encode.ID == "" && !stream.Encode.Copy && outputsContainMuxTarget(outputs) {
 		return streamEncodeMissingError(operation, stream)
-	}
-	if (stream.Encode.ID != "" || stream.Encode.Copy) && outputsContainFrameSink(outputs) {
-		return encodedStreamFrameSinkError(operation, stream)
 	}
 	return nil
 }
@@ -1545,9 +1554,9 @@ func mixedStreamOutputError(operation string, stream StreamIntent) error {
 		Code:      "output_kind_mixed",
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
-		Reason:    "stream recipes cannot mix frame sinks and muxed outputs",
+		Reason:    "stream recipes cannot mix sink endpoints and muxed outputs",
 		Suggestions: []string{
-			"use .To(goav.FrameSink(...)) for decoded frames",
+			"use .To(goav.SinkEndpoint(...)) for decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
 		},
@@ -1563,23 +1572,8 @@ func streamEncodeMissingError(operation string, stream StreamIntent) error {
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
 		Suggestions: []string{
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...))",
-			"send decoded frames to goav.FrameSink(...)",
+			"send decoded frames to goav.SinkEndpoint(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func encodedStreamFrameSinkError(operation string, stream StreamIntent) error {
-	return &BuildError{
-		Code:      "encoded_sink_unsupported",
-		Operation: operation,
-		Node:      jobStreamIntentName(stream),
-		Reason:    "stream recipes currently send encoded packets to file or URI outputs, not frame sinks",
-		Suggestions: []string{
-			"use .To(goav.FrameSink(...)) for decoded frames",
-			"send encoded output to goav.FileOutput(...) or goav.URIOutput(...)",
-			"use the expert graph API for custom packet sink wiring",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1744,7 +1738,7 @@ func outputsContainMuxTarget(outputs []EndpointSpec) bool {
 	return false
 }
 
-func outputsContainFrameSink(outputs []EndpointSpec) bool {
+func outputsContainSinkEndpoint(outputs []EndpointSpec) bool {
 	for i := range outputs {
 		if outputs[i].sink != nil {
 			return true
@@ -2081,7 +2075,7 @@ func recipeEncodeAdapterError(operation string, stream StreamIntent, registry *c
 		Details:   details,
 		Suggestions: []string{
 			"register a codec adapter that provides a " + string(stream.Encode.ID) + " encoder",
-			"use .To(goav.FrameSink(...)) to receive decoded frames without encoding",
+			"use .To(goav.SinkEndpoint(...)) to receive decoded frames without encoding",
 			"use .Copy().To(output) for packet-preserving output when re-encoding is not needed",
 		},
 		Cause: cause,
@@ -2239,7 +2233,7 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			Node:      node,
 			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode branches currently target opus, vp8, and vp9",
 			Suggestions: []string{
-				"decode the stream with .To(goav.FrameSink(...))",
+				"decode the stream with .To(goav.SinkEndpoint(...))",
 				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode branches",
 				"use the expert builder with an explicit codec.EncodeConfig when testing an experimental encoder",
 			},
@@ -2667,7 +2661,7 @@ func (b *JobStreamBuilder) VP9(bitrate int, options ...codecOption) *JobStreamBu
 func (b *JobStreamBuilder) To(outputs ...EndpointSpec) *Job {
 	stream := b.current()
 	stream.outputs = append(stream.outputs, outputs...)
-	if outputsContainFrameSink(outputs) {
+	if outputsContainSinkEndpoint(outputs) && !codecIntentSet(stream.encode) {
 		stream.decode = true
 	}
 	return b.job
@@ -2928,7 +2922,7 @@ func validateTranscodeAttachments(input InputSpec, namedOutputs []namedTargetSpe
 			return err
 		}
 		if namedOutputs[i].output.sink != nil {
-			return transcodeFrameSinkOutputError(namedOutputs[i].name, namedOutputs[i].output)
+			return transcodeSinkEndpointOutputError(namedOutputs[i].name, namedOutputs[i].output)
 		}
 		name := namedOutputs[i].name
 		if _, ok := seen[name]; ok {
@@ -3075,16 +3069,16 @@ func transcodeEmptyOutputDefinitionLabelError(output EndpointSpec) error {
 	return err
 }
 
-func transcodeFrameSinkOutputError(label string, output EndpointSpec) error {
+func transcodeSinkEndpointOutputError(label string, output EndpointSpec) error {
 	err := &BuildError{
 		Code:      "target_kind_invalid",
 		Operation: transcodeRecipeOperation,
 		Node:      firstNonEmpty(label, output.label("output")),
-		Reason:    "planned branch targets are muxed output groups, not frame sinks",
+		Reason:    "planned branch targets are muxed output groups, not sink endpoints",
 		Suggestions: []string{
 			"use goav.Target(name, goav.FileOutput(...)) or goav.Target(name, goav.URIOutput(...)) for planned mux branches",
-			"use goav.From(input).Audio().Decode().To(goav.FrameSink(sink)) or .Video().Decode().To(...) for decoded frames",
-			"use Task.Attach(ctx, goav.Branch(name).FromTap(tap).To(goav.FrameSink(sink))) for live sink branches",
+			"use goav.From(input).Audio().Decode().To(goav.SinkEndpoint(sink)) or .Video().Decode().To(...) for decoded frames",
+			"use Task.Attach(ctx, goav.Branch(name).FromTap(tap).To(goav.SinkEndpoint(sink))) for live sink branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

@@ -8,10 +8,10 @@ import (
 const (
 	graphSpecOriginMediaPlan = "media_plan"
 
-	mediaBuildKindPacketCopy = "packet_copy"
-	mediaBuildKindFrameSink  = "frame_sink"
-	mediaBuildKindEncode     = "encode"
-	mediaBuildKindBranch     = "branch_composer"
+	mediaBuildKindPacketCopy   = "packet_copy"
+	mediaBuildKindSinkEndpoint = "sink_endpoint"
+	mediaBuildKindEncode       = "encode"
+	mediaBuildKindBranch       = "branch_composer"
 )
 
 func emitMediaPlanGraphSpecPass() recipeCompilePass {
@@ -32,8 +32,8 @@ func mediaPlanGraphSpec(state *recipeCompileState) (pipeline.Spec, string, bool,
 	if spec, ok, err := mediaPlanPacketCopySpec(state); err != nil || ok {
 		return spec, mediaBuildKindPacketCopy, ok, err
 	}
-	if spec, ok, err := mediaPlanFrameSinkSpec(state); err != nil || ok {
-		return spec, mediaBuildKindFrameSink, ok, err
+	if spec, ok, err := mediaPlanSinkEndpointSpec(state); err != nil || ok {
+		return spec, mediaBuildKindSinkEndpoint, ok, err
 	}
 	if spec, ok, err := mediaPlanEncodeSpec(state); err != nil || ok {
 		return spec, mediaBuildKindEncode, ok, err
@@ -45,7 +45,8 @@ func mediaPlanGraphSpec(state *recipeCompileState) (pipeline.Spec, string, bool,
 }
 
 func mediaPlanPacketCopySpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
-	if state == nil || !state.jobPresent || len(state.intent.Streams) != 0 {
+	stream, selectedStream, ok := mediaPlanPacketCopyStream(state)
+	if !ok {
 		return pipeline.Spec{}, false, nil
 	}
 	if len(state.inputAttachments) == 0 || len(state.outputAttachments) == 0 {
@@ -55,27 +56,39 @@ func mediaPlanPacketCopySpec(state *recipeCompileState) (pipeline.Spec, bool, er
 	if !ok || runtime == nil {
 		return pipeline.Spec{}, false, nil
 	}
-	for i := range state.outputAttachments {
-		if state.outputAttachments[i].sink != nil {
-			return pipeline.Spec{}, false, nil
-		}
-	}
 
 	spec := pipeline.Spec{Name: "goav", Realtime: runtime.realtime}
-	nodes := make(map[string]plannedNode, len(state.inputAttachments)+len(state.outputAttachments))
+	nodes := make(map[string]plannedNode, len(state.inputAttachments)+len(state.outputAttachments)+1)
 	sourceRefs, ok, err := mediaPlanPacketCopySources(&spec, nodes, state.inputAttachments)
 	if err != nil || !ok {
 		return pipeline.Spec{}, ok, err
 	}
-	stageRefs, err := mediaPlanPacketCopyOutputs(&spec, nodes, state.outputAttachments)
+	upstreamRefs := sourceRefs
+	if selectedStream {
+		selector := streamIntentSelector(stream)
+		selectName := selectNodeName(selector)
+		selectRef := pipeline.NodeRef(selectName)
+		if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef, selectNodeDetail(selector)); err != nil {
+			return pipeline.Spec{}, false, err
+		}
+		for i := range sourceRefs {
+			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
+				From:   sourceRefs[i],
+				To:     selectRef,
+				Policy: pipeline.RouteAll,
+			})
+		}
+		upstreamRefs = []pipeline.NodeRef{selectRef}
+	}
+	targetRefs, err := mediaPlanPacketCopyTargets(&spec, nodes, state.outputAttachments)
 	if err != nil {
 		return pipeline.Spec{}, false, err
 	}
-	for i := range sourceRefs {
-		for j := range stageRefs {
+	for i := range upstreamRefs {
+		for j := range targetRefs {
 			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-				From:   sourceRefs[i],
-				To:     stageRefs[j],
+				From:   upstreamRefs[i],
+				To:     targetRefs[j],
 				Policy: pipeline.RouteAll,
 			})
 		}
@@ -83,33 +96,55 @@ func mediaPlanPacketCopySpec(state *recipeCompileState) (pipeline.Spec, bool, er
 	return spec, true, nil
 }
 
-func mediaPlanFrameSinkSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
+func mediaPlanPacketCopyStream(state *recipeCompileState) (StreamIntent, bool, bool) {
+	if state == nil || !state.jobPresent {
+		return StreamIntent{}, false, false
+	}
+	switch len(state.intent.Streams) {
+	case 0:
+		return StreamIntent{}, false, true
+	case 1:
+		stream := state.intent.Streams[0]
+		if stream.Encode.Copy && !stream.Decode && stream.Encode.ID == "" && !stream.Encode.Auto && len(state.streamSteps) == 0 {
+			return stream, true, true
+		}
+	}
+	return StreamIntent{}, false, false
+}
+
+func mediaPlanSinkEndpointSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
 	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
 		return pipeline.Spec{}, false, nil
 	}
 	builder, ok := state.builder.(*builder)
-	if !ok || !builderCanBuildFrameSink(builder) {
+	if !ok || !builderCanBuildSinkEndpoint(builder) {
 		return pipeline.Spec{}, false, nil
 	}
 	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
 	switch {
-	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0:
+	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0 && len(builder.encodes) == 0:
 		spec, err := builder.planDecodeToSink(spec)
 		return spec, err == nil, err
-	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0:
+	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0 && len(builder.encodes) == 0:
 		spec, err := builder.planRTPDecodeToSink(spec)
+		return spec, err == nil, err
+	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0 && len(builder.encodes) == 1:
+		spec, err := builder.planDecodeEncodeToSink(spec)
+		return spec, err == nil, err
+	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0 && len(builder.encodes) == 1:
+		spec, err := builder.planRTPDecodeEncodeToSink(spec)
 		return spec, err == nil, err
 	default:
 		return pipeline.Spec{}, false, nil
 	}
 }
 
-func builderCanBuildFrameSink(builder *builder) bool {
+func builderCanBuildSinkEndpoint(builder *builder) bool {
 	return builder != nil &&
 		len(builder.decodes) == 1 &&
 		len(builder.sinks) == 1 &&
 		len(builder.outputs) == 0 &&
-		len(builder.encodes) == 0 &&
+		len(builder.encodes) <= 1 &&
 		len(builder.transcodes) == 0 &&
 		len(builder.sources) == 0 &&
 		len(builder.stages) == 0
@@ -207,9 +242,18 @@ func mediaPlanPacketCopySources(spec *pipeline.Spec, nodes map[string]plannedNod
 	return refs, true, nil
 }
 
-func mediaPlanPacketCopyOutputs(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []EndpointSpec) ([]pipeline.NodeRef, error) {
+func mediaPlanPacketCopyTargets(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []EndpointSpec) ([]pipeline.NodeRef, error) {
 	refs := make([]pipeline.NodeRef, 0, len(outputs))
 	for i := range outputs {
+		if outputs[i].sink != nil {
+			name := firstNonEmpty(outputs[i].sink.Name(), outputs[i].label("sink"))
+			ref := pipeline.NodeRef(name)
+			if err := addPlannedNode(nodes, spec, name, pipeline.NodeSink, ref, describedNodeDetail(outputs[i].sink)); err != nil {
+				return nil, err
+			}
+			refs = append(refs, ref)
+			continue
+		}
 		output := outputs[i].output
 		name := muxNodeName(output, i)
 		ref := pipeline.NodeRef(name)

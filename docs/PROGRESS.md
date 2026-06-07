@@ -317,7 +317,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `FileOutput(name, writer)`. Done.
 97. Add stream-local recipe transforms: `Audio().Resample(...)` and
     `Video().Resize(...)` lower through the existing filter registry before
-    encode or frame sinks, and Opus recipe defaults no longer override
+    encode or sink endpoints, and Opus recipe defaults no longer override
     transformed audio geometry unless the user sets codec parameters. Done.
 98. Add stream-mismatch diagnostics for filter and encode requests, plus
     missing encode-target diagnostics that preserve `ErrUnsupportedBuild`.
@@ -339,7 +339,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 103. Tighten RTP recipe codec intent so built-in receive wiring is limited to
     Opus, VP8, VP9, H264, and AV1, while custom payload handling stays in the
     advanced runtime layer. Done.
-104. Add recipe output validation so nil frame sinks, empty endpoint specs, and
+104. Add recipe output validation so nil sink endpoints, empty endpoint specs, and
     file outputs without writers fail before graph compilation. Done.
 105. Add recipe RTP reader validation so nil packet readers fail before source
     construction while codec-intent diagnostics still cover valid readers.
@@ -377,7 +377,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     chains use stream-local `.To(...)` instead of mixed generic job outputs.
     Done.
 121. Add stream-recipe output-kind validation so one selected stream chain
-    cannot mix decoded frame sinks with muxed file/URI outputs. Done.
+    cannot mix decoded sink endpoints with muxed file/URI outputs. Done.
 122. Carry explicit recipe output formats into ordinary record/stream builders,
     and reject writer-only file outputs that provide no name, URI, MIME type, or
     format signal. Done.
@@ -405,8 +405,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     depacketizer wiring.
     Done.
 130. Earlier experiment: make a top-level `Decode(input, output)` helper use
-    `FrameSink(...)` endpoint specs. Superseded before release by
-    `From(input).Stream()/Audio()/Video().Decode().To(FrameSink(...))`. Done.
+    `SinkEndpoint(...)` endpoint specs. Superseded before release by
+    `From(input).Stream()/Audio()/Video().Decode().To(SinkEndpoint(...))`. Done.
 131. Earlier experiment: prune transcode branch-local direct outputs so branches
     route through labels and outputs are defined separately. Superseded before
     release by typed `Target` values carried directly by branches.
@@ -419,13 +419,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Superseded before release by typed `Target` values and branch-owned
     destinations.
     Done.
-134. Earlier experiment: let stream-local frame sinks and frame-processing steps
+134. Earlier experiment: let stream-local sink endpoints and frame-processing steps
     imply decode. Superseded by the clearer explicit `.Decode()` composition
     style used by `From(...).Audio()/Video().Decode()...`. Done.
 135. Earlier experiment: remove branch `.Decode()` because branch work decoded
     by definition. Superseded by explicit tap/branch composition where the
     upstream stream names its decoded outlet. Done.
-136. Earlier experiment: remove ordinary stream `.Decode()` because frame sinks
+136. Earlier experiment: remove ordinary stream `.Decode()` because sink endpoints
     and transforms implied decode. Superseded by the current explicit
     `.Decode()` public story. Done.
 137. Align use-case RTP/WebRTC and generic recipe examples with the beginner
@@ -450,7 +450,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Done.
 142. Remove top-level `Input` and `Output` aliases so low-level container
     structs stay in `format`, while recipes keep `FileInput`, `URI`, `RTP`,
-    `WebRTCTrack`, `FileOutput`, `URIOutput`, and `FrameSink` as the front door.
+    `WebRTCTrack`, `FileOutput`, `URIOutput`, and `SinkEndpoint` as the front door.
     Done.
 143. Remove top-level `ProbeRequest` and `ProbeResult` aliases so format
     probing details stay in `format`, while `Runtime.Probe` remains available
@@ -458,7 +458,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Done.
 144. Remove top-level `Source`, `Stage`, and `Sink` aliases so graph-kernel
     primitives live in `pipeline`, while recipe helpers still expose
-    `FrameSink`, `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc`.
+    `SinkEndpoint`, `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc`.
     Done.
 145. Hide the internal branch-plan compiler method so users stay on
     composition recipes and diagnostics speak in recipe terms instead of
@@ -553,13 +553,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 169. Emit the planned `pipeline.Spec` during recipe compiler resolution and let
     recipe `Describe` return that stored spec, while `Build` uses the same
     resolved migration compiler for the runnable graph. Done.
-170. Reject frame sinks on packet-preserving `Record` and generic
-    `From(input).To(...)` recipes during intent validation, with guidance to use
-    `Decode` or stream-scoped `Audio()`/`Video()` chains for decoded frames.
-    Done.
-171. Reject `FrameSink` as a planned branch mux target because planned branch
-    targets are muxed output groups; keep decoded frame sinks on
-    stream-scoped `From(...).Audio()/Video().Decode().To(FrameSink(...))`
+170. Earlier experiment: reject sink endpoints on packet-preserving `Record` and
+    generic `From(input).To(...)` recipes during intent validation. Superseded
+    before release by packet-domain `SinkEndpoint` support for `.Copy()` and
+    stream-scoped packet sinks. Done.
+171. Reject `SinkEndpoint` as a planned branch mux target because planned branch
+    targets are muxed output groups; keep decoded sink endpoints on
+    stream-scoped `From(...).Audio()/Video().Decode().To(SinkEndpoint(...))`
     recipes. Done.
 172. Preserve `ErrUnsupportedBuild` through more recipe `BuildError`
     diagnostics for unsupported shapes such as multiple file inputs, selected
@@ -575,7 +575,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     resolve the same `pipeline.Spec` for default record and fanout recipes.
     Done.
 176. Extend recipe Describe/Build equivalence coverage to stream-scoped decoded
-    frame sinks and transcode branches with muxed outputs, using test adapters
+    sink endpoints and transcode branches with muxed outputs, using test adapters
     so the public workflow contract stays true beyond packet-preserving recipes.
     Done.
 177. Extend recipe Describe/Build equivalence coverage to realtime receive:
@@ -586,7 +586,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     delivery totals, last-event state, and no buffered drops without touching
     pipeline internals. Done.
 179. Extend public recipe task observability proof to stream-scoped decode:
-    `From(input).Audio(StreamIndex(0)).To(FrameSink(...))` now proves
+    `From(input).Audio(StreamIndex(0)).To(SinkEndpoint(...))` now proves
     `Task.Stats()` reports decoded frame totals, stream-added and EOS event
     counts, delivery totals, last-event state, and no drops. Done.
 180. Detach recipe compiler state from raw recipe builder pointers: compile
@@ -639,10 +639,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `.Do(...)` stages and mismatched transform attachments now fail in a
     dedicated compiler pass before the stream lowerer mutates the runtime
     builder. Done.
-191. Validate ordinary stream output kinds before lowering: mixed frame/mux
-    outputs, mux outputs without an encoder, and encoded packets routed to
-    frame sinks now fail in a dedicated compiler pass before runtime builder
-    mutation. Done.
+191. Validate ordinary stream output kinds before lowering: mixed sink/mux
+    outputs and mux outputs without an encoder now fail in a dedicated compiler
+    pass before runtime builder mutation. Encoded packet sink endpoints were
+    later promoted to a supported packet-domain endpoint. Done.
 192. Validate ordinary stream runtime capabilities before lowering: custom
     recipe runtimes that lack live codec-change or transform support now fail
     in a dedicated compiler pass before inputs, streams, or outputs mutate the
@@ -820,9 +820,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     attachments into the resolved media-plan build path, construct the same
     demux/RTP source, mux stages, routes, and task graph directly, and skip
     migration compiler selection for both `Describe` and `Build`. Done.
-228. Move decoded frame-sink recipes off the migration compiler list:
-    `From(input).Audio()/Video().Decode().To(FrameSink(...))` for file/protocol
-    and RTP/WebRTC inputs now emits and builds through the media-plan frame-sink
+228. Move decoded sink-endpoint recipes off the migration compiler list:
+    `From(input).Audio()/Video().Decode().To(SinkEndpoint(...))` for file/protocol
+    and RTP/WebRTC inputs now emits and builds through the media-plan sink-endpoint
     path, preserving ordered custom stages before the sink while skipping
     migration compiler selection. Done.
 229. Move stream encode-to-output recipes off the migration compiler list:
@@ -849,7 +849,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Branches(goav.Branch(name)...)` now groups encoded alternatives from one
     selected stream so complex multi-output examples stay readable without
     repeating the selected stream. README and use-case docs name custom stages,
-    custom frame sinks, adapter hooks, and late runtime branch sinks as one
+    custom sink endpoints, adapter hooks, and late runtime branch sinks as one
     optional composition surface. Generic `Codec` specs now pass recipe encode
     validation and fail at adapter capability/preflight when no encoder exists.
     Custom filter adapters and late muxed outputs were intentionally tracked as
@@ -894,19 +894,19 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     diagnostic without treating it as a missing adapter. Done.
 238. Clean the composition vocabulary around branches and targets:
     public planned splits use `Branch`/`Branches`, logical destinations use
-    `Target`, endpoints remain `FileOutput`, `URIOutput`, and `FrameSink`, and
+    `Target`, endpoints remain `FileOutput`, `URIOutput`, and `SinkEndpoint`, and
     flows are reusable operation sequences without `.To(...)`. `Task.Attach`
     now consumes the same `BranchSpec` shape for runtime sink attachment from
     named taps, and the old public `Output`/`Outputs` recipe binding surface is
     removed. Done.
 239. Let runtime branches publish downstream taps:
-    `Task.Attach(ctx, goav.Branch(...).FromTap(...).Do(stage).Tap(name).To(FrameSink(...)))`
+    `Task.Attach(ctx, goav.Branch(...).FromTap(...).Do(stage).Tap(name).To(SinkEndpoint(...)))`
     now exposes the branch tap through `Task.Taps()`, preserves the anchor caps
     where known, lets later runtime branches attach from that new tap, rejects
     duplicate runtime tap names, and detaches dependent runtime branch subtrees
     when the parent attachment is removed. Done.
 240. Add runtime frame transforms from taps:
-    `Task.Attach(ctx, goav.Branch(name).FromTap(tap).Resize(...).Tap(...).To(FrameSink(...)))`
+    `Task.Attach(ctx, goav.Branch(name).FromTap(tap).Resize(...).Tap(...).To(SinkEndpoint(...)))`
     and the audio `Resample(...)` equivalent now materialize through the same
     filter stage path used by planned branches, require frame-domain taps,
     carry transformed caps onto nested runtime taps, and keep the branch grammar
@@ -926,6 +926,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Runtime attach validates copy/encode domains before graph mutation, keeps
     H264/AV1 recipe encode guarded as work in progress, and supports endpoint
     detach through the same attachment subtree lifecycle as sink branches. Done.
+243. Make sink endpoints domain-honest:
+    `SinkEndpoint` replaces the old decoded-only public sink naming and now
+    works as a frame sink before encode, an encoded packet sink after
+    `.Opus(...)`/`.VP8(...)`/`.VP9(...)`, and a packet sink after `.Copy()`.
+    Stream-level `Copy()` now lowers to selected packet fanout instead of
+    forcing decoder preflight, direct encode-to-sink reuses the encoder stage
+    path, and planned/built graph equivalence plus runtime packet delivery are
+    covered by tests. Done.
 
 ## First Vertical Slice
 
@@ -979,7 +987,7 @@ Required proof:
   jobs from low-level `format.Input` and `format.Output` values when registered
   format adapters can probe, demux, and mux the selected boundaries.
 - The recipe/runtime path can plan and compile selected-stream decode jobs from
-  stream-scoped `.To(goav.FrameSink(...))` recipes when format probing
+  stream-scoped `.To(goav.SinkEndpoint(...))` recipes when format probing
   resolves one matching stream and the codec registry has a decoder factory. The
   graph includes an explicit stream-select stage so unrelated packets do not
   reach the decoder, and optional filter stages can run before the sink.
@@ -990,7 +998,7 @@ Required proof:
   inputs, aggregated stream lists for muxers, multiple mux outputs, lifecycle
   closure, graph specs, and event visibility.
 - The recipe/runtime path can plan and compile selected-stream live decode jobs
-  from stream-scoped RTP/WebRTC `.To(goav.FrameSink(...))` recipes,
+  from stream-scoped RTP/WebRTC `.To(goav.SinkEndpoint(...))` recipes,
   including repeated RTP/WebRTC inputs, graph specs, decoder lifecycle closure,
   and filtering of unrelated packets and stream-scoped EOS before they reach the
   decoder.

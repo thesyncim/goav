@@ -24,16 +24,16 @@ func (r recipeResolved) buildMediaPlanPacketCopyTask(ctx context.Context) (Task,
 	return newTask(graph, builder.runtime), nil
 }
 
-func (r recipeResolved) buildMediaPlanFrameSinkTask(ctx context.Context) (Task, error) {
+func (r recipeResolved) buildMediaPlanSinkEndpointTask(ctx context.Context) (Task, error) {
 	builder, ok := r.builder.(*builder)
-	if !ok || !builderCanBuildFrameSink(builder) {
+	if !ok || !builderCanBuildSinkEndpoint(builder) {
 		return nil, recipeGraphUnsupportedError("build job", r.intent)
 	}
 	graph, err := builder.newGraph(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := r.compileMediaPlanFrameSink(ctx, builder, graph); err != nil {
+	if err := r.compileMediaPlanSinkEndpoint(ctx, builder, graph); err != nil {
 		graph.Close()
 		return nil, err
 	}
@@ -90,12 +90,16 @@ func (r recipeResolved) compileMediaPlanEncode(ctx context.Context, builder *bui
 	}
 }
 
-func (r recipeResolved) compileMediaPlanFrameSink(ctx context.Context, builder *builder, graph pipeline.Graph) error {
+func (r recipeResolved) compileMediaPlanSinkEndpoint(ctx context.Context, builder *builder, graph pipeline.Graph) error {
 	switch {
-	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0:
+	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0 && len(builder.encodes) == 0:
 		return builder.compileDecodeToSink(ctx, graph)
-	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0:
+	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0 && len(builder.encodes) == 0:
 		return builder.compileRTPDecodeToSink(ctx, graph)
+	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0 && len(builder.encodes) == 1:
+		return builder.compileDecodeEncodeToSink(ctx, graph)
+	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0 && len(builder.encodes) == 1:
+		return builder.compileRTPDecodeEncodeToSink(ctx, graph)
 	default:
 		return recipeGraphUnsupportedError("build job", r.intent)
 	}
@@ -121,7 +125,7 @@ func (r recipeResolved) compileMediaPlanFileCopy(ctx context.Context, builder *b
 		demux.source.Close()
 		return err
 	}
-	return r.compileMediaPlanMuxOutputs(ctx, builder, graph, []pipeline.NodeRef{sourceRef}, demux.streams)
+	return r.compileMediaPlanPacketCopyTargets(ctx, builder, graph, []pipeline.NodeRef{sourceRef}, demux.streams)
 }
 
 func (r recipeResolved) compileMediaPlanRTPCopy(ctx context.Context, builder *builder, graph pipeline.Graph) error {
@@ -140,19 +144,53 @@ func (r recipeResolved) compileMediaPlanRTPCopy(ctx context.Context, builder *bu
 		sourceRefs = append(sourceRefs, sourceRef)
 		streams = append(streams, receiver.streams...)
 	}
-	return r.compileMediaPlanMuxOutputs(ctx, builder, graph, sourceRefs, streams)
+	return r.compileMediaPlanPacketCopyTargets(ctx, builder, graph, sourceRefs, streams)
 }
 
-func (r recipeResolved) compileMediaPlanMuxOutputs(
+func (r recipeResolved) compileMediaPlanPacketCopyTargets(
 	ctx context.Context,
 	builder *builder,
 	graph pipeline.Graph,
 	sourceRefs []pipeline.NodeRef,
 	streams []av.Stream,
 ) error {
+	targetRefs := sourceRefs
+	targetStreams := streams
+	if stream, ok := r.selectedPacketCopyStream(); ok {
+		selector := streamIntentSelector(stream)
+		selected, err := selectDecodeStream(streams, selector)
+		if err != nil {
+			return err
+		}
+		selectStage := newStreamSelectStage(selectNodeName(selector), selected, selector, selectNodeDetail(selector))
+		selectRef, err := graph.AddStage(selectStage, builder.runtime.buffer)
+		if err != nil {
+			selectStage.Close()
+			return err
+		}
+		for i := range sourceRefs {
+			if err := connectRefs(graph, sourceRefs[i], selectRef); err != nil {
+				return err
+			}
+		}
+		targetRefs = []pipeline.NodeRef{selectRef}
+		targetStreams = []av.Stream{selected}
+	}
 	for i := range r.outputAttachments {
 		output := r.outputAttachments[i]
-		stage, err := builder.openMuxStageWithFormat(ctx, output.output, i, streams, endpointSpecOpenFormat(output), endpointSpecGraphFormat(output))
+		if output.sink != nil {
+			sinkRef, err := graph.AddSink(output.sink, builder.runtime.buffer)
+			if err != nil {
+				return err
+			}
+			for j := range targetRefs {
+				if err := connectRefs(graph, targetRefs[j], sinkRef); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		stage, err := builder.openMuxStageWithFormat(ctx, output.output, i, targetStreams, endpointSpecOpenFormat(output), endpointSpecGraphFormat(output))
 		if err != nil {
 			return err
 		}
@@ -161,11 +199,22 @@ func (r recipeResolved) compileMediaPlanMuxOutputs(
 			stage.Close()
 			return err
 		}
-		for j := range sourceRefs {
-			if err := connectRefs(graph, sourceRefs[j], stageRef); err != nil {
+		for j := range targetRefs {
+			if err := connectRefs(graph, targetRefs[j], stageRef); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func (r recipeResolved) selectedPacketCopyStream() (StreamIntent, bool) {
+	if len(r.intent.Streams) != 1 {
+		return StreamIntent{}, false
+	}
+	stream := r.intent.Streams[0]
+	if !stream.Encode.Copy || stream.Decode || stream.Encode.ID != "" || stream.Encode.Auto {
+		return StreamIntent{}, false
+	}
+	return stream, true
 }

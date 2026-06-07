@@ -142,7 +142,7 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	attachment, err := task.Attach(ctx, Branch("screenshots").From("source").Do(stage).To(FrameSink(late)))
+	attachment, err := task.Attach(ctx, Branch("screenshots").From("source").Do(stage).To(SinkEndpoint(late)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,11 +217,11 @@ func TestTaskDetachClosesRuntimeBranches(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	left, err := task.Attach(ctx, Branch("left").From("source").Do(leftStage).To(FrameSink(leftSink)))
+	left, err := task.Attach(ctx, Branch("left").From("source").Do(leftStage).To(SinkEndpoint(leftSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	right, err := task.Attach(ctx, Branch("right").From("source").Do(rightStage).To(FrameSink(rightSink)))
+	right, err := task.Attach(ctx, Branch("right").From("source").Do(rightStage).To(SinkEndpoint(rightSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestTaskCloseStopsRuntimeAttachments(t *testing.T) {
 	}
 	stage := &runtimeTestStage{name: "stage"}
 	sink := &runtimeTestSink{name: "sink"}
-	attachment, err := task.Attach(context.Background(), Branch("close").From("source").Do(stage).To(FrameSink(sink)))
+	attachment, err := task.Attach(context.Background(), Branch("close").From("source").Do(stage).To(SinkEndpoint(sink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 			From("source").
 			Do(parentStage).
 			Tap("video.sampled").
-			To(FrameSink(parentSink)),
+			To(SinkEndpoint(parentSink)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +317,7 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 		t.Fatalf("tap = %+v, ok=%v, want sampler/sample", tap, ok)
 	}
 
-	child, err := task.Attach(ctx, Branch("screenshots").FromTap("video.sampled").To(FrameSink(childSink)))
+	child, err := task.Attach(ctx, Branch("screenshots").FromTap("video.sampled").To(SinkEndpoint(childSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
 			From("source").
 			Do(&runtimeTestStage{name: "stage"}).
 			Tap("sampled").
-			To(FrameSink(&runtimeTestSink{name: "first"})),
+			To(SinkEndpoint(&runtimeTestSink{name: "first"})),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -371,7 +371,7 @@ func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
 			From("source").
 			Do(&runtimeTestStage{name: "stage"}).
 			Tap("sampled").
-			To(FrameSink(&runtimeTestSink{name: "second"})),
+			To(SinkEndpoint(&runtimeTestSink{name: "second"})),
 	)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_tap_duplicate" {
@@ -426,7 +426,7 @@ func TestTaskAttachRuntimeResizeBranchRunsFromFrameTap(t *testing.T) {
 	attachment, err := mediaTask.Attach(ctx, Branch("small").
 		FromTap("video.frames").
 		Resize(320, 180).
-		To(FrameSink(resized)))
+		To(SinkEndpoint(resized)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = task.Attach(context.Background(), Branch("late").From("missing").To(FrameSink(&runtimeTestSink{name: "late"})))
+	_, err = task.Attach(context.Background(), Branch("late").From("missing").To(SinkEndpoint(&runtimeTestSink{name: "late"})))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_anchor_missing" || !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("err = %v, want runtime_branch_anchor_missing wrapping ErrUnknownNode", err)
@@ -482,7 +482,7 @@ func TestTaskAttachRejectsRunningBufferedGraph(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	_, err = task.Attach(ctx, Branch("late").From("source").To(FrameSink(&runtimeTestSink{name: "late"})))
+	_, err = task.Attach(ctx, Branch("late").From("source").To(SinkEndpoint(&runtimeTestSink{name: "late"})))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_graph_error" || !errors.Is(err, pipeline.ErrDynamicGraphUnsupported) {
 		t.Fatalf("err = %v, want runtime_branch_graph_error wrapping ErrDynamicGraphUnsupported", err)
@@ -494,11 +494,11 @@ func TestTaskAttachRejectsRunningBufferedGraph(t *testing.T) {
 }
 
 func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
-	audio := Branch("levels").FromTap("audio.decoded").To(FrameSink(&runtimeTestSink{name: "levels"}))
+	audio := Branch("levels").FromTap("audio.decoded").To(SinkEndpoint(&runtimeTestSink{name: "levels"}))
 	if audio.tap != "audio.decoded" || audio.from != "" {
 		t.Fatalf("audio anchor tap=%q from=%q, want tap only", audio.tap, audio.from)
 	}
-	expert := Branch("expert").From("decode-audio").To(FrameSink(&runtimeTestSink{name: "expert"}))
+	expert := Branch("expert").From("decode-audio").To(SinkEndpoint(&runtimeTestSink{name: "expert"}))
 	if expert.from != "decode-audio" || expert.tap != "" {
 		t.Fatalf("expert anchor tap=%q from=%q, want node only", expert.tap, expert.from)
 	}
