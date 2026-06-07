@@ -1360,6 +1360,17 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestFlowDecodeAppliesToStreamRecipeIntent` pins the public intent shape,
     while `TestStreamRecipeFlowDecodeSinkRuns` proves Describe, Build, Run,
     tap metadata, and cleanup for direct stream flow decode. Done.
+300. Carry operation-boundary metadata through public taps:
+    `TapIntent`, planned `planTap`, runtime `TapInfo`, and `TapReport` now
+    preserve the operation boundary a tap follows. Decode, transform, custom
+    stage, encode, copy, and select taps stay self-describing for planned and
+    runtime branch attachment.
+    `TestFlowAppliesToTranscodeBranch`,
+    `TestStreamRecipeFlowDecodeSinkRuns`,
+    `TestBranchCompositionTaskExposesAndAttachesAfterResizeTap`,
+    `TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps`, and
+    `TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap` pin the boundary
+    metadata. Done.
 
 ## First Vertical Slice
 

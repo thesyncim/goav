@@ -1911,6 +1911,16 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 	if !tapIntentNamesContain(intent.Streams[0].Taps, "preview.frames") {
 		t.Fatalf("taps: %+v, want preview.frames", intent.Streams[0].Taps)
 	}
+	var previewTap goav.TapIntent
+	for _, tap := range intent.Streams[0].Taps {
+		if tap.Name == "preview.frames" {
+			previewTap = tap
+			break
+		}
+	}
+	if previewTap.Name == "" || previewTap.After != goav.OpTransform {
+		t.Fatalf("taps: %+v, want preview.frames after transform", intent.Streams[0].Taps)
+	}
 	operations := intent.Streams[0].Operations
 	if len(operations) != 5 ||
 		operations[0].Kind != goav.OpDecode ||

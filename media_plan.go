@@ -42,6 +42,7 @@ type planTap struct {
 	Node      pipeline.NodeRef
 	Domain    MediaDomain
 	MediaKind av.MediaType
+	After     OperationKind
 	Caps      StreamCaps
 	Shared    bool
 }
@@ -71,6 +72,7 @@ type planOperation struct {
 	Kind      OperationKind
 	Component string
 	Detail    string
+	After     OperationKind
 	Caps      StreamCaps
 }
 
@@ -464,6 +466,7 @@ func planTapOperation(tap TapIntent) planOperation {
 		Kind:      OpTap,
 		Component: firstNonEmpty(tap.Name, "tap"),
 		Detail:    "named media outlet",
+		After:     tap.After,
 	}
 }
 
@@ -518,6 +521,7 @@ func planTaps(branches []planBranch) []planTap {
 				Node:      pipeline.NodeRef(currentNode),
 				Domain:    tapCaps.Domain,
 				MediaKind: tapCaps.MediaKind,
+				After:     operation.After,
 				Caps:      tapCaps,
 				Shared:    true,
 			})

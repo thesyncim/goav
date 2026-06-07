@@ -19,6 +19,7 @@ type TapReport struct {
 	Name      string
 	MediaKind av.MediaType
 	Domain    MediaDomain
+	After     OperationKind
 	Caps      StreamCaps
 	Node      pipeline.NodeRef
 }
@@ -30,6 +31,7 @@ func tapReports(taps []TapInfo) []TapReport {
 			Name:      taps[i].Name,
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,
+			After:     taps[i].After,
 			Caps:      taps[i].Caps,
 			Node:      taps[i].Node,
 		})
@@ -48,6 +50,7 @@ func inferSpecTaps(spec pipeline.Spec) []TapInfo {
 				Name:      string(media) + ".decoded",
 				MediaKind: media,
 				Domain:    DomainFrame,
+				After:     OpDecode,
 				Caps:      StreamCaps{Domain: DomainFrame, MediaKind: media, StreamID: av.StreamID(media)},
 				Node:      pipeline.NodeRef(node.Name),
 			})
@@ -57,6 +60,7 @@ func inferSpecTaps(spec pipeline.Spec) []TapInfo {
 				Name:      string(media) + ".packets",
 				MediaKind: media,
 				Domain:    DomainPacket,
+				After:     OpSelect,
 				Caps:      StreamCaps{Domain: DomainPacket, MediaKind: media, StreamID: av.StreamID(media)},
 				Node:      pipeline.NodeRef(node.Name),
 			})

@@ -54,6 +54,7 @@ type TapInfo struct {
 	Name      string
 	MediaKind av.MediaType
 	Domain    MediaDomain
+	After     OperationKind
 	Caps      StreamCaps
 	Node      pipeline.NodeRef
 }

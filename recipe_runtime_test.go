@@ -1404,6 +1404,7 @@ func TestStreamRecipeFlowDecodeSinkRuns(t *testing.T) {
 	if !ok ||
 		decodedTap.Domain != DomainFrame ||
 		decodedTap.MediaKind != av.MediaAudio ||
+		decodedTap.After != OpDecode ||
 		decodedTap.Caps.Codec != av.CodecOpus ||
 		decodedTap.Caps.SampleRate != 48000 ||
 		decodedTap.Caps.Channels != Stereo ||
@@ -1821,6 +1822,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	if resizeTap.Name == "" ||
 		resizeTap.Domain != DomainFrame ||
 		resizeTap.MediaKind != av.MediaVideo ||
+		resizeTap.After != OpTransform ||
 		resizeTap.Caps.Width != 1280 ||
 		resizeTap.Caps.Height != 720 ||
 		resizeTap.Caps.PixelFormat != av.PixelFormatYUV420P ||
@@ -1851,6 +1853,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	if resizedTap.Name == "" ||
 		resizedTap.Domain != DomainFrame ||
 		resizedTap.MediaKind != av.MediaVideo ||
+		resizedTap.After != OpTransform ||
 		resizedTap.Caps.Width != 320 ||
 		resizedTap.Caps.Height != 180 ||
 		resizedTap.Node != "screenshots/resize-screenshots" {
@@ -1909,10 +1912,10 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 			encodedTap = tap
 		}
 	}
-	if customTap.Name == "" || customTap.Domain != DomainFrame || customTap.MediaKind != av.MediaAudio || customTap.Node != "meter" {
+	if customTap.Name == "" || customTap.Domain != DomainFrame || customTap.MediaKind != av.MediaAudio || customTap.After != OpStage || customTap.Node != "meter" {
 		t.Fatalf("custom tap = %+v, want frame audio tap on meter", customTap)
 	}
-	if encodedTap.Name == "" || encodedTap.Domain != DomainPacket || encodedTap.MediaKind != av.MediaAudio || encodedTap.Node != "encode-audio" {
+	if encodedTap.Name == "" || encodedTap.Domain != DomainPacket || encodedTap.MediaKind != av.MediaAudio || encodedTap.After != OpEncode || encodedTap.Node != "encode-audio" {
 		t.Fatalf("encoded tap = %+v, want packet audio tap on encode-audio", encodedTap)
 	}
 
@@ -2736,6 +2739,7 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 	if !ok ||
 		decodedTap.Domain != DomainFrame ||
 		decodedTap.MediaKind != av.MediaAudio ||
+		decodedTap.After != OpDecode ||
 		decodedTap.Node != "preview/decode-preview" {
 		t.Fatalf("decoded tap = %+v ok=%v, want frame tap on flow decoder", decodedTap, ok)
 	}

@@ -39,6 +39,7 @@ type runtimeBranchStep struct {
 	decode    bool
 	transform TransformSpec
 	tap       string
+	after     OperationKind
 	caps      StreamCaps
 	owned     bool
 }
@@ -135,15 +136,18 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	if spec.decode {
 		branch.steps = append(branch.steps, runtimeBranchStep{decode: true})
 	}
+	after := initialStepAfter(spec.decode)
 	for i := range spec.steps {
 		step := spec.steps[i]
 		switch {
 		case step.stage != nil:
 			branch.steps = append(branch.steps, runtimeBranchStep{stage: step.stage})
+			after = OpStage
 		case step.transform.Resize != nil || step.transform.Resample != nil:
 			branch.steps = append(branch.steps, runtimeBranchStep{transform: cloneTransformSpec(step.transform)})
+			after = OpTransform
 		case step.tap != "":
-			branch.steps = append(branch.steps, runtimeBranchStep{tap: step.tap})
+			branch.steps = append(branch.steps, runtimeBranchStep{tap: step.tap, after: after})
 		}
 	}
 	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
@@ -286,7 +290,7 @@ func (t *task) prepareRuntimeBranchDestination(ctx context.Context, branch *runt
 			closeRuntimeBranchOwnedStages(*branch)
 			return runtimeBranchCopyDomainError(branch.name, currentCaps)
 		}
-		appendRuntimeBranchPostEncodeTaps(branch, caps)
+		appendRuntimeBranchPostEncodeTaps(branch, caps, OpCopy)
 	} else if codecIntentSet(branch.encode) {
 		encodedStream, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentCaps)
 		if err != nil {
@@ -295,7 +299,7 @@ func (t *task) prepareRuntimeBranchDestination(ctx context.Context, branch *runt
 		}
 		stream = encodedStream
 		caps = streamPacketCapsFromRuntimeBranchStream(encodedStream, currentCaps)
-		appendRuntimeBranchPostEncodeTaps(branch, caps)
+		appendRuntimeBranchPostEncodeTaps(branch, caps, OpEncode)
 	} else if hasMuxEndpoint {
 		closeRuntimeBranchOwnedStages(*branch)
 		return runtimeBranchEncodeMissingError(branch.name)
@@ -462,14 +466,15 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 	return encodedStream, nil
 }
 
-func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, caps StreamCaps) {
+func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, caps StreamCaps, after OperationKind) {
 	if branch == nil || len(branch.postEncodeTaps) == 0 {
 		return
 	}
 	for i := range branch.postEncodeTaps {
 		branch.steps = append(branch.steps, runtimeBranchStep{
-			tap:  branch.postEncodeTaps[i],
-			caps: caps,
+			tap:   branch.postEncodeTaps[i],
+			after: after,
+			caps:  caps,
 		})
 	}
 	branch.postEncodeTaps = nil
@@ -485,7 +490,7 @@ func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]
 	for i := range branch.steps {
 		step := branch.steps[i]
 		if step.tap != "" {
-			taps = append(taps, runtimeBranchTapInfo(step.tap, previous, step.caps))
+			taps = append(taps, runtimeBranchTapInfo(step.tap, previous, step.caps, step.after))
 			continue
 		}
 		if step.stage == nil {
@@ -1106,7 +1111,7 @@ func streamPacketCapsFromRuntimeBranchStream(stream av.Stream, previous StreamCa
 	return caps
 }
 
-func runtimeBranchTapInfo(name string, node pipeline.NodeRef, caps StreamCaps) TapInfo {
+func runtimeBranchTapInfo(name string, node pipeline.NodeRef, caps StreamCaps, after OperationKind) TapInfo {
 	domain := caps.Domain
 	if domain == "" {
 		domain = DomainPacket
@@ -1122,6 +1127,7 @@ func runtimeBranchTapInfo(name string, node pipeline.NodeRef, caps StreamCaps) T
 		Name:      name,
 		MediaKind: media,
 		Domain:    domain,
+		After:     after,
 		Caps:      caps,
 		Node:      node,
 	}
