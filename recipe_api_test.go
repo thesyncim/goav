@@ -1824,7 +1824,7 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"Intent graph: inputs, selected media, chain operations, targets, policies",
 		"graph-plan lowerers",
 		"Chain transforms such as",
-		"Simple high-level API | recipes, chains",
+		"Simple high-level API | `From`, chains",
 		"surface is small: `From`, chains",
 		"`Target`, `Destination`, and `Chain` composition",
 		"direct `File`/`URIOut`/`Sink` destinations",
@@ -1871,11 +1871,85 @@ func TestReadmeFlowExampleUsesDistinctBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(body)
+	if strings.Contains(text, "Apply(voice).\n    Apply(voice)") {
+		t.Fatal("README should not show repeated direct flow application when branches are the intended split")
+	}
 	if got := strings.Count(text, `goav.Branch("voice").Apply(voice).To(voiceTarget)`); got != 1 {
 		t.Fatalf("README voice flow branch count = %d, want 1", got)
 	}
 	if got := strings.Count(text, `goav.Branch("archive").Apply(archive).To(archiveTarget)`); got != 1 {
 		t.Fatalf("README archive flow branch count = %d, want 1", got)
+	}
+}
+
+func TestDocsExplainFlowVersusBranchRule(t *testing.T) {
+	for _, file := range []string{"README.md", "docs/USE_CASES.md"} {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.Join(strings.Fields(string(body)), " ")
+		if !strings.Contains(text, "Use a direct chain when one reusable flow feeds one target") ||
+			!strings.Contains(text, "media point needs several downstream chains") {
+			t.Fatalf("%s should explain when to use a direct flow chain versus branches", file)
+		}
+	}
+}
+
+func TestDocsKeepGoAVNativeGoal(t *testing.T) {
+	var body strings.Builder
+	for _, file := range []string{"docs/PROGRESS.md", "docs/ROADMAP.md", "docs/ARCHITECTURE.md"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	text := strings.Join(strings.Fields(body.String()), " ")
+	for _, required := range []string{
+		"Input -> Chain -> Tap -> Branch -> Target/Destination -> Task",
+		"MediaShape",
+		"BranchBuffer",
+		"Observe",
+		"Watch",
+		"Snapshot",
+		"custom source",
+		"BranchSpec -> BranchPlan -> GraphPlan",
+		"BranchSpec -> BranchPlan -> GraphPatch",
+		"A flow is reusable operations",
+		"planned and runtime branches must share shape/target/buffer/lifecycle validation",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("goal docs should include %q", required)
+		}
+	}
+}
+
+func TestFrontDoorDocsAvoidGStreamerVocabulary(t *testing.T) {
+	var body strings.Builder
+	for _, file := range []string{"README.md", "docs/USE_CASES.md"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	text := body.String()
+	for _, forbidden := range []string{
+		"Element",
+		"Pad",
+		"Bin",
+		"Bus",
+		"Pipeline State",
+		"Flow.To(",
+		"To(\"",
+		"Record(",
+		"Transcode(",
+		"Runtime.Graph",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("front-door docs should not teach %q", forbidden)
+		}
 	}
 }
 
