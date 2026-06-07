@@ -4101,6 +4101,138 @@ func TestBranchCompositionSharesParentOperationBeforeBranches(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionCanSplitFromEarlierTap(t *testing.T) {
+	web := goav.Target("web", goav.FileOutput("web.webm", io.Discard))
+	thumbnail := goav.Target("thumbnail", goav.SinkEndpoint(goav.SinkFunc("thumbnail", func(context.Context, goav.Message) error {
+		return nil
+	})))
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		Tap("video.decoded").
+		Resize(1280, 720).
+		Tap("video.720p.frames").
+		Branches(
+			goav.Branch("raw-preview").
+				FromTap("video.decoded").
+				Resize(320, 180).
+				To(thumbnail),
+			goav.Branch("web").
+				FromTap("video.720p.frames").
+				VP9(2_000_000).
+				To(web),
+		)
+
+	intent := job.Intent()
+	if len(intent.Streams) != 2 {
+		t.Fatalf("intent streams = %+v, want 2", intent.Streams)
+	}
+	if intent.Streams[0].FromTap != "video.decoded" ||
+		len(intent.Streams[0].Transforms) != 1 ||
+		intent.Streams[0].Transforms[0].Resize.Width != 320 {
+		t.Fatalf("raw branch intent = %+v, want branch from decoded tap with only thumbnail resize", intent.Streams[0])
+	}
+	if intent.Streams[1].FromTap != "video.720p.frames" ||
+		len(intent.Streams[1].Transforms) != 1 ||
+		intent.Streams[1].Transforms[0].Resize.Width != 1280 {
+		t.Fatalf("web branch intent = %+v, want branch from 720p tap with shared resize", intent.Streams[1])
+	}
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	for _, want := range []string{
+		"decode-video -> resize-raw-preview",
+		"decode-video -> resize-video",
+		"resize-video -> encode-web",
+		"resize-raw-preview -> thumbnail",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "resize-video -> resize-raw-preview") ||
+		strings.Contains(text, "decode-video -> encode-web") {
+		t.Fatalf("branches ignored explicit FromTap anchors:\n%s", text)
+	}
+}
+
+func TestBranchCompositionRejectsMissingPlannedTap(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		Resize(1280, 720).
+		Branches(
+			goav.Branch("preview").
+				FromTap("video.missing").
+				Resize(320, 180).
+				To(goav.Target("preview", goav.SinkEndpoint(goav.SinkFunc("preview", func(context.Context, goav.Message) error {
+					return nil
+				})))),
+		).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_tap_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_tap_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), `Tap("video.missing")`) ||
+		!strings.Contains(err.Error(), "current stream point") {
+		t.Fatalf("err = %v, want planned tap guidance", err)
+	}
+}
+
+func TestBranchCompositionRejectsGraphNodeSource(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			goav.Branch("preview").
+				From("decode-video").
+				Resize(320, 180).
+				To(goav.Target("preview", goav.SinkEndpoint(goav.SinkFunc("preview", func(context.Context, goav.Message) error {
+					return nil
+				})))),
+		).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_source_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_source_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "graph node names") ||
+		!strings.Contains(err.Error(), "FromTap") {
+		t.Fatalf("err = %v, want planned branch source guidance", err)
+	}
+}
+
+func TestBranchCompositionRejectsStreamEncodeBeforeBranches(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		VP9(2_000_000).
+		Tap("video.encoded").
+		Branches(
+			goav.Branch("packets").
+				To(goav.Target("packets", goav.SinkEndpoint(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
+					return nil
+				})))),
+		).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_branch_source_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_branch_source_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "stream encoders are terminal") ||
+		!strings.Contains(err.Error(), "encoder: vp9") ||
+		!strings.Contains(err.Error(), "Task.Attach") {
+		t.Fatalf("err = %v, want planned parent encode guidance", err)
+	}
+}
+
 func TestBranchCompositionSharesCurrentPointWithoutExplicitTap(t *testing.T) {
 	web := goav.Target("web", goav.FileOutput("web.webm", io.Discard))
 	thumbnail := goav.Target("thumbnail", goav.SinkEndpoint(goav.SinkFunc("thumbnail", func(context.Context, goav.Message) error {
@@ -4209,6 +4341,13 @@ func TestBranchCompositionAllowsPacketCopyBranches(t *testing.T) {
 			goav.Branch("archive").To(archive),
 			goav.Branch("packets").To(packets),
 		)
+
+	intent := job.Intent()
+	if len(intent.Streams) != 2 ||
+		intent.Streams[0].FromTap != "video.packets" ||
+		intent.Streams[1].FromTap != "video.packets" {
+		t.Fatalf("intent streams = %+v, want packet branches from video.packets", intent.Streams)
+	}
 
 	spec, err := job.Describe()
 	if err != nil {

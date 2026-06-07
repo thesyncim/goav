@@ -1395,6 +1395,20 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestTaskAttachRejectsDuplicateRuntimeBranchTargetsBeforeMutation` pins the
     diagnostic, zero resource opens, unchanged graph spec, and unchanged tap
     list. Done.
+304. Make planned branch tap anchors honest:
+    `Branches(...)` now honors `Branch(name).FromTap(name)` against the parent
+    stream instead of silently treating every branch as current-point work.
+    Branches can start from implicit decoded/packet taps or declared taps after
+    decode, resize/resample, or custom stages; omitted `FromTap` still means the
+    current stream point. Planned branches reject graph-node `.From(...)` and
+    missing taps with actionable diagnostics, and stream-level encoders before
+    `Branches(...)` are terminal for planned composition while post-encode taps
+    remain the runtime `Task.Attach(...FromTap(...))` control-plane shape.
+    `TestBranchCompositionCanSplitFromEarlierTap`,
+    `TestBranchCompositionRejectsMissingPlannedTap`,
+    `TestBranchCompositionRejectsGraphNodeSource`,
+    `TestBranchCompositionRejectsStreamEncodeBeforeBranches`, and the
+    packet-copy branch intent assertion pin the behavior. Done.
 
 ## First Vertical Slice
 

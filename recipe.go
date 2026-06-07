@@ -3021,6 +3021,12 @@ func lastStreamTap(stream *jobStreamBuild) string {
 	if stream == nil {
 		return ""
 	}
+	if len(stream.postEncodeTaps) != 0 {
+		return stream.postEncodeTaps[len(stream.postEncodeTaps)-1]
+	}
+	if stream.encode.Copy && len(stream.steps) == 0 && stream.selector.Type != "" {
+		return defaultPacketTapName(stream.selector.Type, 0)
+	}
 	for i := len(stream.steps) - 1; i >= 0; i-- {
 		if stream.steps[i].tap != "" {
 			return stream.steps[i].tap

@@ -369,6 +369,10 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 		job.setErr(branchCopyParentOperationError(jobStreamName(stream)))
 		return job
 	}
+	if codecIntentSet(stream.encode) && !stream.encode.Copy {
+		job.setErr(branchEncodeParentOperationError(jobStreamName(stream), stream.encode))
+		return job
+	}
 
 	for i := range branches {
 		if err := validateBranchSpec(stream.selector.Type, parentPacket, i, branches[i]); err != nil {
@@ -384,14 +388,15 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			encode = Copy()
 		}
 		decode := !parentPacket || branches[i].decode
-		sharedSteps := cloneJobStreamSteps(stream.steps)
-		if parentPacket {
-			sharedSteps = nil
+		sharedSteps, fromTap, err := plannedBranchAnchor(stream, branches[i], parentPacket)
+		if err != nil {
+			job.setErr(err)
+			return job
 		}
 		job.branchStreams = append(job.branchStreams, streamBuild{
 			name:        branches[i].name,
 			selector:    stream.selector,
-			fromTap:     lastStreamTap(stream),
+			fromTap:     fromTap,
 			decode:      decode,
 			sharedSteps: sharedSteps,
 			steps:       cloneJobStreamSteps(branches[i].steps),
@@ -399,7 +404,7 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 				append([]string(nil), stream.postEncodeTaps...),
 				branches[i].postEncodeTaps...,
 			),
-			transforms: appendTransformSpecs(stream.transformSpecs(), branches[i].transforms),
+			transforms: appendTransformSpecs(transformSpecsFromJobSteps(sharedSteps), branches[i].transforms),
 			encode:     encode,
 			labels:     append([]string(nil), branches[i].labels...),
 		})
@@ -410,6 +415,9 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spec BranchSpec) error {
 	if spec.err != nil {
 		return spec.err
+	}
+	if spec.from != "" {
+		return plannedBranchNodeSourceError(spec.name, spec.from)
 	}
 	if err := validateFlowMedia("build branches", firstNonEmpty(spec.name, "branch"), selected, streamFlowSpec{name: spec.name, media: spec.media}); err != nil {
 		return err
@@ -467,6 +475,78 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	return nil
 }
 
+func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]jobStreamStep, string, error) {
+	if spec.tap == "" {
+		if parentPacket {
+			return nil, lastStreamTap(stream), nil
+		}
+		return cloneJobStreamSteps(stream.steps), lastStreamTap(stream), nil
+	}
+	if stream == nil {
+		return nil, "", plannedBranchTapMissingError("", spec.name, spec.tap)
+	}
+	if parentPacket {
+		if tapIsPacketAnchor(stream, spec.tap) {
+			return nil, spec.tap, nil
+		}
+		return nil, "", plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.tap)
+	}
+	if stream.decode && spec.tap == defaultDecodedTapName(stream.selector.Type) {
+		return nil, spec.tap, nil
+	}
+	if steps, ok := jobStreamStepsThroughTap(stream.steps, spec.tap); ok {
+		return steps, spec.tap, nil
+	}
+	if tapIsPostEncodeAnchor(stream, spec.tap) {
+		return nil, "", plannedBranchPostEncodeTapError(spec.name, spec.tap)
+	}
+	return nil, "", plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.tap)
+}
+
+func tapIsPacketAnchor(stream *jobStreamBuild, tap string) bool {
+	if tap == "" || stream == nil {
+		return false
+	}
+	if tap == defaultPacketTapName(stream.selector.Type, 0) {
+		return true
+	}
+	return tapIsPostEncodeAnchor(stream, tap)
+}
+
+func tapIsPostEncodeAnchor(stream *jobStreamBuild, tap string) bool {
+	if tap == "" || stream == nil {
+		return false
+	}
+	for i := range stream.postEncodeTaps {
+		if stream.postEncodeTaps[i] == tap {
+			return true
+		}
+	}
+	return false
+}
+
+func jobStreamStepsThroughTap(steps []jobStreamStep, tap string) ([]jobStreamStep, bool) {
+	for i := range steps {
+		if steps[i].tap == tap {
+			return cloneJobStreamSteps(steps[:i+1]), true
+		}
+	}
+	return nil, false
+}
+
+func transformSpecsFromJobSteps(steps []jobStreamStep) []TransformSpec {
+	if len(steps) == 0 {
+		return nil
+	}
+	transforms := make([]TransformSpec, 0, len(steps))
+	for i := range steps {
+		if steps[i].transform.Resize != nil || steps[i].transform.Resample != nil {
+			transforms = append(transforms, cloneTransformSpec(steps[i].transform))
+		}
+	}
+	return transforms
+}
+
 func branchCopyParentOperationError(node string) error {
 	return &BuildError{
 		Code:      "copy_branch_source_invalid",
@@ -477,6 +557,79 @@ func branchCopyParentOperationError(node string) error {
 			"call .Copy().Branches(...) before frame operations when the branches should preserve packets",
 			"use .Decode().Branches(...) when branches need resize, resample, custom frame stages, or encode",
 			"attach runtime packet-copy branches from a packet Tap when the branch should start later",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func branchEncodeParentOperationError(node string, encode CodecSpec) error {
+	return &BuildError{
+		Code:      "encode_branch_source_invalid",
+		Operation: "build branches",
+		Node:      node,
+		Reason:    "stream encoders are terminal for planned branches",
+		Details: []string{
+			"encoder: " + codecIntentName(encode),
+		},
+		Suggestions: []string{
+			"move .Branches(...) before the stream encoder",
+			"put .Opus(...), .VP8(...), or .VP9(...) on each goav.Branch(...) that writes a target",
+			"attach post-encode packet branches at runtime with Task.Attach(ctx, goav.Branch(name).FromTap(name)...)",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func plannedBranchNodeSourceError(name string, source string) error {
+	return &BuildError{
+		Code:      "branch_source_invalid",
+		Operation: "build branches",
+		Node:      firstNonEmpty(name, "branch"),
+		Reason:    "planned branches do not anchor from graph node names",
+		Details: []string{
+			"source: " + source,
+		},
+		Suggestions: []string{
+			"use .FromTap(name) to branch from a stable stream tap",
+			"omit .FromTap(...) to branch from the current stream point",
+			"use Task.Attach(ctx, goav.Branch(name).From(node)...) for expert runtime graph attachment",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func plannedBranchTapMissingError(stream string, branch string, tap string) error {
+	return &BuildError{
+		Code:      "branch_tap_missing",
+		Operation: "build branches",
+		Node:      firstNonEmpty(branch, "branch"),
+		Reason:    "branch tap is not declared on the parent stream",
+		Details: []string{
+			"stream: " + firstNonEmpty(stream, "stream"),
+			"tap: " + tap,
+		},
+		Suggestions: []string{
+			"add .Tap(\"" + tap + "\") before .Branches(...) on the selected stream",
+			"use .FromTap(\"audio.decoded\") or .FromTap(\"video.decoded\") after .Decode() when branching from decoded frames",
+			"omit .FromTap(...) to branch from the current stream point",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func plannedBranchPostEncodeTapError(branch string, tap string) error {
+	return &BuildError{
+		Code:      "branch_tap_domain_unsupported",
+		Operation: "build branches",
+		Node:      firstNonEmpty(branch, "branch"),
+		Reason:    "post-encode taps are runtime attachment anchors for planned branches",
+		Details: []string{
+			"tap: " + tap,
+		},
+		Suggestions: []string{
+			"attach this branch at runtime with Task.Attach(ctx, goav.Branch(name).FromTap(\"" + tap + "\")...)",
+			"move .Branches(...) before the encoder when the split should be planned",
+			"use .Copy().Branches(...) for packet-preserving planned branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

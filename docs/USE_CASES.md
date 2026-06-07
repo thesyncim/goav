@@ -120,6 +120,35 @@ err := goav.From(input).
 
 Containers shown outside IVF/Annex B require matching adapters.
 
+Branches normally start from the current stream point. When one branch needs an
+earlier operation boundary, name that boundary with `Tap` and anchor the branch
+with `FromTap`:
+
+```go
+thumbs := goav.Target("thumbs",
+    goav.SinkEndpoint(goav.SinkFunc("thumbs", collectThumbnail)),
+)
+web := goav.Target("web", goav.FileOutput("web.ivf", webFile))
+
+err := goav.From(input).
+    Video().
+    Decode().
+    Tap("video.decoded").
+    Resize(1280, 720).
+    Tap("video.720p.frames").
+    Branches(
+        goav.Branch("thumb").
+            FromTap("video.decoded").
+            Resize(320, 180).
+            To(thumbs),
+        goav.Branch("web").
+            FromTap("video.720p.frames").
+            VP9(2_000_000).
+            To(web),
+    ).
+    Run(ctx)
+```
+
 ## Custom Components
 
 Custom work should be optional and local. A stage can live inside a normal

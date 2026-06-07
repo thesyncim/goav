@@ -112,6 +112,35 @@ return goav.From(input).
     Run(ctx)
 ```
 
+Omit `FromTap` when every branch starts from the current stream point. Use
+`FromTap` when one branch should start from an earlier stable tap while another
+continues from a later operation:
+
+```go
+thumbnail := goav.Target("thumbnail",
+    goav.SinkEndpoint(goav.SinkFunc("thumbnail", saveFrame)),
+)
+web := goav.Target("web", goav.FileOutput("web.ivf", webFile))
+
+return goav.From(input).
+    Video().
+    Decode().
+    Tap("video.decoded").
+    Resize(1280, 720).
+    Tap("video.720p.frames").
+    Branches(
+        goav.Branch("thumbnail").
+            FromTap("video.decoded").
+            Resize(320, 180).
+            To(thumbnail),
+        goav.Branch("web").
+            FromTap("video.720p.frames").
+            VP9(2_000_000).
+            To(web),
+    ).
+    Run(ctx)
+```
+
 Several branches can share one target when the container supports that group:
 
 ```go
