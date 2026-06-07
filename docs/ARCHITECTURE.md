@@ -90,7 +90,8 @@ media-plan report copy:
 graph plan. The graph plan also carries an ordered operation sequence derived
 from branch operations and target groups. Packet-copy, direct stream
 decode/filter/encode, and grouped branch-compose builds now consume that
-sequence for pre-mutation validation and target binding. Grouped branch-compose
+sequence for pre-mutation validation, target binding, and target node
+construction. Grouped branch-compose
 input lowering also consumes graph-plan select/decode node refs, so described
 and built graphs stay equivalent even when operation refs are changed by later
 planning passes. Shared branch-compose transform/stage lowering consumes the
@@ -99,8 +100,8 @@ share the same planned step refs. Private branch transform/stage and encoder
 lowering now consume branch-local operation refs too. Branch-compose mux/sink
 target construction and branch-to-target routing now consume target operation
 records, including planned target node refs. The next architectural pressure is
-to make direct chains lower as implicit branches and converge runtime attach on
-the same patchable planner model.
+to make the rest of direct chain operation lowering share the branch operation
+model and converge runtime attach on the same patchable planner model.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and

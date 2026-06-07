@@ -1859,6 +1859,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     names for older advanced compiler paths. Tests mutate planned mux and sink
     target nodes and prove the built graph still equals the described graph.
     Done.
+357. Lower direct stream targets from graph-plan refs:
+    packet-copy, decoded-frame sink, and encoded mux/sink direct stream lowerers
+    now validate target operation nodes and name runtime mux/sink target nodes
+    from graph-plan refs. Tests mutate planned target refs for packet-copy,
+    decoded-frame, and encoded direct chains and prove the built graph still
+    equals the described graph.
+    Done.
 
 ## First Vertical Slice
 
@@ -2069,10 +2076,11 @@ Required proof:
 
 ## Next Slices
 
-1. Make direct chains implicit branches. Packet copy, decode-to-sink,
-   transform/encode-to-target, planned branch composition, and mixed
-   audio/video target groups should all lower through the same branch planner
-   instead of workflow-shape graph modes.
+1. Make direct chains implicit branches. Direct packet-copy, decode-to-sink, and
+   encode-to-target target nodes now consume graph-plan target refs; the next
+   step is to make direct select/decode/filter/encode operation nodes and
+   branch-composition operation nodes share one branch planner instead of
+   workflow-shape graph modes.
 2. Add `GraphPatch` for runtime attach. `Task.Attach` should plan branch specs
    from existing typed taps, validate caps and targets before mutation, reuse
    upstream nodes, allocate only downstream branch nodes, and share mux/sink
@@ -2115,12 +2123,13 @@ Required proof:
    regression tests for each planner slice.
 13. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: make direct chains lower as implicit branches and keep
-runtime attach converging toward the same patchable planner model. Packet-copy,
-direct frame-stream, and grouped branch-compose builds now consume graph-plan
-operation records for validation, select/decode input lowering, shared/private
-step lowering, encode lowering, target node construction, and branch-to-target
-routing. The public recipe surface is small: `From`, chains,
+Current pressure point: make the rest of direct chain operation lowering share
+the branch operation model and keep runtime attach converging toward the same
+patchable planner model. Packet-copy, direct frame-stream, and grouped
+branch-compose builds now consume graph-plan operation records for validation,
+target node construction, and target routing; grouped branch-compose also
+consumes select/decode input refs, shared/private step refs, and encode refs.
+The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`,
 `File`, `URIOut`, `Writer`, `Object`, `Sink`, `Flow`, `Codec`, and runtime
 `Attach`. Flows expand

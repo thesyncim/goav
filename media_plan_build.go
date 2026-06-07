@@ -549,11 +549,8 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeTargets(plan graphPlan)
 }
 
 func validateBranchComposeTargetOperation(operation graphPlanTargetOperation, target branchComposeTargetRoute) error {
-	if operation.Node == "" {
-		return graphPlanInvalidError("branch composition target operation has no node", []string{
-			"target=" + operation.Name,
-			"kind=" + string(operation.Kind),
-		})
+	if err := validateGraphPlanTargetOperationNode("branch composition", operation); err != nil {
+		return err
 	}
 	if target.sink != nil {
 		if operation.Kind != OpSink {
@@ -765,6 +762,9 @@ func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(plan graphPlan)
 	}
 	for i := range targets {
 		target := targets[i]
+		if err := validateGraphPlanTargetOperationNode("packet-copy", target); err != nil {
+			return graphPlanOperation{}, false, nil, err
+		}
 		outputIndex, ok := graphPlanOutputIndex(plan.outputs, target.Name)
 		if !ok || outputIndex < 0 || outputIndex >= len(p.outputs) {
 			return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy target operation is not bound to an output", []string{
@@ -806,7 +806,7 @@ func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
 		target := targets[i]
 		output := p.outputs[target.OutputIndex]
 		if output.sink != nil {
-			sinkRef, err := graph.AddSink(output.sink, p.runtime.buffer)
+			sinkRef, err := graph.AddSink(namedSinkForGraphPlanTarget(target, output.sink), p.runtime.buffer)
 			if err != nil {
 				return err
 			}
@@ -821,7 +821,7 @@ func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
 		if err != nil {
 			return err
 		}
-		stageRef, err := graph.AddStage(stage, p.runtime.buffer)
+		stageRef, err := graph.AddStage(namedStageForGraphPlanTarget(target, stage), p.runtime.buffer)
 		if err != nil {
 			stage.Close()
 			return err
@@ -849,6 +849,30 @@ type graphPlanTargetOperation struct {
 	Node        pipeline.NodeRef
 	Kind        OperationKind
 	OutputIndex int
+}
+
+func validateGraphPlanTargetOperationNode(scope string, target graphPlanTargetOperation) error {
+	if target.Node == "" {
+		return graphPlanInvalidError(scope+" target operation has no node", []string{
+			"target=" + target.Name,
+			"kind=" + string(target.Kind),
+		})
+	}
+	return nil
+}
+
+func namedSinkForGraphPlanTarget(target graphPlanTargetOperation, sink pipeline.Sink) pipeline.Sink {
+	if target.Node == "" {
+		return sink
+	}
+	return namedSink{name: target.Node.String(), sink: sink}
+}
+
+func namedStageForGraphPlanTarget(target graphPlanTargetOperation, stage pipeline.Stage) pipeline.Stage {
+	if target.Node == "" {
+		return stage
+	}
+	return namedStage{name: target.Node.String(), stage: stage}
 }
 
 func graphPlanTargetOperations(operations []graphPlanOperation) []graphPlanTargetOperation {
@@ -946,6 +970,9 @@ func (p mediaPlanStreamGraph) prepareFrameStreamTargets(plan graphPlan) ([]graph
 	}
 	for i := range targets {
 		target := targets[i]
+		if err := validateGraphPlanTargetOperationNode("frame stream", target); err != nil {
+			return nil, err
+		}
 		outputIndex, ok := graphPlanOutputIndex(plan.outputs, target.Name)
 		if !ok || outputIndex < 0 || outputIndex >= len(p.outputs) {
 			return nil, graphPlanInvalidError("frame stream target operation is not bound to an output", []string{
@@ -1071,7 +1098,8 @@ func (p mediaPlanStreamGraph) compileSinkDestination(ctx context.Context, graph 
 			"targets=" + strconv.Itoa(len(lowering.targets)),
 		})
 	}
-	sinkRef, err := graph.AddSink(p.outputs[0].sink, p.runtime.buffer)
+	target := lowering.targets[0]
+	sinkRef, err := graph.AddSink(namedSinkForGraphPlanTarget(target, p.outputs[0].sink), p.runtime.buffer)
 	if err != nil {
 		return err
 	}
@@ -1124,7 +1152,7 @@ func (p mediaPlanStreamGraph) lowerEncodeTargets(
 		target := targets[i]
 		output := p.outputs[target.OutputIndex]
 		if output.sink != nil {
-			sinkRef, err := graph.AddSink(output.sink, p.runtime.buffer)
+			sinkRef, err := graph.AddSink(namedSinkForGraphPlanTarget(target, output.sink), p.runtime.buffer)
 			if err != nil {
 				return err
 			}
@@ -1137,7 +1165,7 @@ func (p mediaPlanStreamGraph) lowerEncodeTargets(
 		if err != nil {
 			return err
 		}
-		muxRef, err := graph.AddStage(muxStage, p.runtime.buffer)
+		muxRef, err := graph.AddStage(namedStageForGraphPlanTarget(target, muxStage), p.runtime.buffer)
 		if err != nil {
 			muxStage.Close()
 			return err
