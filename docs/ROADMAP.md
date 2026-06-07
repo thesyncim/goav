@@ -157,11 +157,11 @@ make the implementation match the composable planner promise.
   resolved-attachment `Build` slices are active for record, direct streams, and
   branch composition; deeper direct graph construction remains planned.
 - Reusable `AudioFlow`/`VideoFlow` values that apply to stream chains,
-  branches, and non-encoding runtime attachments. Build-time file/protocol and
-  RTP/WebRTC branch slices are active; runtime stage/sink attachments are active
-  for direct task graphs and bounded buffered task graphs, with packet-copy late
-  recording targets, Opus encoded late recording from frame taps, and
-  dependent late branches after runtime resize taps covered; deeper buffered
-  lifecycle stress proof remains planned.
+  branches, and runtime attachments. Build-time file/protocol and RTP/WebRTC
+  branch slices are active; runtime stage/sink attachments are active for direct
+  task graphs and bounded buffered task graphs, with packet-copy late recording
+  targets, Opus encoded late recording from frame taps, flow-applied Opus
+  encode-to-target branches, and dependent late branches after runtime resize
+  taps covered; deeper buffered lifecycle stress proof remains planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

@@ -791,6 +791,104 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 	}
 }
 
+func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	codecs := withTestCodecs(
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
+	)
+	frame := av.Frame{
+		StreamID: "audio",
+		Type:     av.MediaAudio,
+	}
+	source := &runtimeBranchWaitingSource{
+		name:   "source",
+		ready:  make(chan struct{}),
+		resume: make(chan struct{}),
+		msg:    pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	base := &runtimeTestSink{name: "base"}
+	graph := New(formats, codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:     DomainFrame,
+			MediaKind:  av.MediaAudio,
+			StreamID:   "audio",
+			Codec:      av.CodecOpus,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- builtTask.Run(ctx)
+	}()
+	select {
+	case <-source.ready:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	meter := &runtimeTestStage{name: "meter"}
+	archive := AudioFlow("archive").Do(meter).OpusMusic()
+	attachment, err := builtTask.Attach(ctx, Branch("archive").
+		FromTap("audio.frames").
+		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
+		Apply(archive).
+		To(Target("archive", FileOutput("archive.ogg", io.Discard))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachmentText := specText(attachment.Spec())
+	if !strings.Contains(attachmentText, "archive/meter -> archive/encode-archive") ||
+		!strings.Contains(attachmentText, "archive/encode-archive -> archive/archive.ogg") {
+		t.Fatalf("attachment spec:\n%s", attachmentText)
+	}
+	close(source.resume)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 1 || meter.count != 1 || encoder.encodes != 1 {
+		t.Fatalf("base=%d meter=%d encodes=%d", base.count, meter.count, encoder.encodes)
+	}
+	if encoderFactory.config.Stream.ID != "archive" ||
+		encoderFactory.config.Parameters.ID != av.CodecOpus ||
+		encoderFactory.config.Parameters.Channels != Stereo ||
+		encoderFactory.config.Bitrate != 128_000 {
+		t.Fatalf("encode config: %+v", encoderFactory.config)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 ||
+		muxers.muxers[0].lastStream != "archive" ||
+		!streamIDsEqual(muxers.muxers[0].openedStreams, []av.StreamID{"archive"}) {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := builtTask.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	if !meter.closed || !encoder.closed || !muxers.muxers[0].closed {
+		t.Fatalf("closed meter=%v encoder=%v muxer=%v", meter.closed, encoder.closed, muxers.muxers[0].closed)
+	}
+}
+
 func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
 	audio := Branch("levels").FromTap("audio.decoded").To(SinkEndpoint(&runtimeTestSink{name: "levels"}))
 	if audio.tap != "audio.decoded" || audio.from != "" {
