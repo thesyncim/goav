@@ -255,13 +255,15 @@ func streamIntentFromBranchComposeBranch(branch branchComposeBranch) StreamInten
 
 func codecSpecFromEncodeConfig(config codec.EncodeConfig) CodecSpec {
 	spec := CodecSpec{
-		ID:         config.Parameters.ID,
-		Type:       config.Parameters.Type,
-		Parameters: config.Parameters,
-		Bitrate:    config.Bitrate,
-		Config:     config.Config,
-		Opaque:     cloneAnyMap(config.Opaque),
-		Controls:   append([]any(nil), config.Controls...),
+		ID:               config.Parameters.ID,
+		Type:             config.Parameters.Type,
+		Parameters:       config.Parameters,
+		Bitrate:          config.Bitrate,
+		Framerate:        config.Framerate,
+		KeyframeInterval: config.KeyframeInterval,
+		Config:           config.Config,
+		Opaque:           cloneAnyMap(config.Opaque),
+		Controls:         append([]any(nil), config.Controls...),
 	}
 	if spec.ID == "" {
 		spec.ID = config.Stream.Codec.ID

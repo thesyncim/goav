@@ -85,9 +85,11 @@ The implementation target is explicit:
 - branch buffering, detach policy, destination commit/abort/close, branch drops,
   lifecycle state, and safe media ownership are first-class planner/executor
   responsibilities;
-- codec-specific config, named params, typed controls, bitrate, quality, profile,
-  speed/deadline, framerate/FPS, resolution, pixel/sample formats, and adapter
-  knobs are owned by shape/codec contracts instead of scattered one-off verbs.
+- codec-specific config, named params, typed controls, bitrate, FPS, keyframe
+  interval, profile/level, quality, speed/deadline, resolution, pixel/sample
+  formats, and adapter knobs are owned by shape/codec contracts instead of
+  scattered one-off verbs. `.Encode(codec)` is the only fluent encode step;
+  tuning values live in codec options, not on stream or branch builders.
 
 The attached direction is now part of the goal. The required convergence points
 are:
@@ -146,7 +148,7 @@ are:
 | `webrtcav` | single `NewSession` PeerConnection entry, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit factory registry with descriptor capability metadata for pixel formats, sample formats, and resize modes, event-preserving frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | internal migration `Plan` contract, branch-to-output selection model, mixed audio/video output grouping, resize/resample branch insertion through filter factories | retire as a special runtime path in favor of generic `MediaPlan` branches |
-| runtime | composition-first `From(input)` recipe front door with packet-preserving `Copy().To(...)`, explicit chain `.Decode()`, audio/video chains, typed `Branch`, typed `Tap`, `Destination`, and `Chain` composition, `Branches(...)` planned splits from one selected stream, canonical `Flow(name).Audio()/Video()` operation sequences applied to chains, planned branches, and runtime branches, chain-local `Resize`/`Resample` transforms, ordered branch operation intent with custom stage, transform, tap, and encode steps, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, direct `File`/`URIOut`/`Sink` destinations, custom `Writer` destinations with `TargetInfo`, stable destination handles for shared mux/sink groups, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, built-in and generic `Codec` specs, standard `Default()` adapter bundle, function stage/sink adapters, probe-only `Runtime` interface plus explicit `goav.Expert(runtime).Graph()` advanced builder quarantined outside the README front door, runtime-owned codec/format/filter registries extended by adapter hooks, custom codec registration through `WithDecoder` and `WithEncoder`, private recipe intent compiler state with validation, `MediaPlan` branch IR and `Explain(ctx)` branch/decision/tap reports with probed/live stream shape, shared-operation markers, and operation output shapes, recipe-owned branch-compose plan for declared branches, advanced `transcode.Plan` boundary adaptation, graph-plan recognition required for normal recipe build/describe, planned `pipeline.Spec` emission for `Job`, decoder state-provider hook, RTP decode-bound hints for high-level receive, executable graph-plan boundary for normal recipe build/describe, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages and high-level custom sinks for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for H264/AV1 work-in-progress while generic custom codecs flow to adapter validation, grouped audio/video branch compiler with ordered custom stage and transform branches plus shared mux targets, descriptor-backed codec/filter/container capability reporting with config-specific decode, transform, and encode validation, buffered multi-output proof, live RTP/WebRTC branch compiler, direct and bounded-buffered runtime `Task.Attach` branch attachments from typed taps with custom stages, resize/resample plus decode/encode descriptor preflight, nested frame and packet taps, dependent branches after runtime resize taps, post-encode packet taps feeding dependent packet-copy branches, flow-applied Opus encode-to-target branches, Opus/VP8/VP9 late encode-to-target, packet-copy late target and recording branches, Opus encoded late recording from frame taps, `Attachment.Close(ctx)`/`Task.Detach(ctx, h)`, `Task.Snapshot()` with task stats, stable taps, and active runtime branch states, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | finish generic branch lowering behind the branch composer and deepen capability planning |
+| runtime | composition-first `From(input)` recipe front door with packet-preserving `Copy().To(...)`, explicit chain `.Decode()`, audio/video chains, typed `Branch`, typed `Tap`, `Destination`, and `Chain` composition, `Branches(...)` planned splits from one selected stream, canonical `Flow(name).Audio()/Video()` operation sequences applied to chains, planned branches, and runtime branches, chain-local `Resize`/`Resample` transforms, ordered branch operation intent with custom stage, transform, tap, and encode steps, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, direct `File`/`URIOut`/`Sink` destinations, custom `Writer` destinations with `DestinationInfo`, stable destination handles for shared mux/sink groups, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, built-in and generic `Codec` specs, standard `Default()` adapter bundle, function stage/sink adapters, probe-only `Runtime` interface plus explicit `goav.Expert(runtime).Graph()` advanced builder quarantined outside the README front door, runtime-owned codec/format/filter registries extended by adapter hooks, custom codec registration through `WithDecoder` and `WithEncoder`, private recipe intent compiler state with validation, `MediaPlan` branch IR and `Explain(ctx)` branch/decision/tap reports with probed/live stream shape, shared-operation markers, and operation output shapes, recipe-owned branch-compose plan for declared branches, advanced `transcode.Plan` boundary adaptation, graph-plan recognition required for normal recipe build/describe, planned `pipeline.Spec` emission for `Job`, decoder state-provider hook, RTP decode-bound hints for high-level receive, executable graph-plan boundary for normal recipe build/describe, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages and high-level custom sinks for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for H264/AV1 work-in-progress while generic custom codecs flow to adapter validation, grouped audio/video branch compiler with ordered custom stage and transform branches plus shared mux targets, descriptor-backed codec/filter/container capability reporting with config-specific decode, transform, and encode validation, buffered multi-output proof, live RTP/WebRTC branch compiler, direct and bounded-buffered runtime `Task.Attach` branch attachments from typed taps with custom stages, resize/resample plus decode/encode descriptor preflight, nested frame and packet taps, dependent branches after runtime resize taps, post-encode packet taps feeding dependent packet-copy branches, flow-applied Opus encode-to-target branches, Opus/VP8/VP9 late encode-to-target, packet-copy late target and recording branches, Opus encoded late recording from frame taps, `Attachment.Close(ctx)`/`Task.Detach(ctx, h)`, `Task.Snapshot()` with task stats, stable taps, and active runtime branch states, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | finish generic branch lowering behind the branch composer and deepen capability planning |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder and encoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active by default with caller-owned I420/packet-buffer guards; `goav1` AV1 decoder active by default with caller-owned decoder state, runtime state provisioning from RTP decode bounds, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420/I422/I444 frame mapping with yuv420p/yuv422p/yuv444p accepted as aliases, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
@@ -600,9 +602,10 @@ are:
     `Audio(goav.StreamIndex(0))` and branch selection stay fluent without
     making stream option types part of the beginner surface.
     Done.
-153. Demote the `CodecOption` marker type to package-private plumbing so codec
-    recipes keep `Opus(goav.Bitrate(...))`, `VP8(...)`, and `VP9(...)` without
-    advertising another option type as public API.
+153. Earlier experiment: demote the `CodecOption` marker type to package-private
+    plumbing. Superseded before release because custom/external composition
+    needs to mirror codec option forwarding without positional bitrate helpers;
+    `CodecOption` is now the single public codec tuning option type.
     Done.
 154. Demote the `ResizeOption` and `AudioOption` marker types to
     package-private plumbing so transform recipes stay on `.Resize(...)` and
@@ -1026,28 +1029,28 @@ are:
     while flow operations after encode fail with the existing terminal-encoder
     diagnostic. Duplicate branch tap bookkeeping was removed so branch intent
     derives taps from ordered operations. Done.
-242. Add runtime target branches from taps:
-    `Task.Attach(ctx, goav.Branch(name).FromTap(tap).Opus(...).To(goav.Target(...)))`
-    now opens a late encoder and mux target from frame-domain taps, while
-    `.Copy().To(goav.Target(...))` records packet-domain taps without decoding.
+242. Add runtime destination branches from taps:
+    `Task.Attach(ctx, goav.Branch(name).From(tap).Encode(goav.Opus(...)).To(goav.File(...)))`
+    now opens a late encoder and mux destination from frame-domain taps, while
+    `.Copy().To(goav.File(...))` records packet-domain taps without decoding.
 	Runtime attach validates copy/encode domains before graph mutation, keeps
-	H264/AV1 recipe encode guarded as work in progress, and supports target
+	H264/AV1 recipe encode guarded as work in progress, and supports destination
 	detach through the same attachment subtree lifecycle as sink branches. Done.
-243. Make sink targets domain-honest:
+243. Make sink destinations domain-honest:
     `Sink` works as a frame sink before encode, an encoded packet sink after
-    `.Opus(...)`/`.VP8(...)`/`.VP9(...)`, and a packet sink after `.Copy()`.
+    `.Encode(...)`, and a packet sink after `.Copy()`.
     Stream-level `Copy()` now lowers to selected packet fanout instead of
     forcing decoder preflight, direct encode-to-sink reuses the encoder stage
     path, and planned/built graph equivalence plus runtime packet delivery are
     covered by tests. Done.
-244. Support sink targets as planned branch destinations:
-	`Branches(goav.Branch(name).To(goav.Target(name, Sink(...))))`
+244. Support sink destinations as planned branch destinations:
+	`Branches(goav.Branch(name).To(goav.Sink(...)))`
 	now stays in frame domain when no encoder is declared, can attach after
 	ordered branch operations such as `Resize(...)`, and sends encoded packets to
 	the same sink destination shape after Opus/VP8/VP9 encode. Mux destinations still
 	require explicit encode, planned branch `.Copy()` remains rejected because
 	planned branches begin after decode, and the low-level transcode plan now
-	carries either a mux target or a sink target per target. Done.
+	carries either a mux destination or a sink destination per destination. Done.
 245. Keep recipe branch composition off the internal transcode request list:
     the transcode/branch intent pass still produces the shared resolved plan,
     but recipe lowering no longer calls `builder.Transcode(plan)`. Media-plan
@@ -1056,14 +1059,14 @@ are:
     builder path remains available for low-level tests and migration work. Done.
 246. Give declared branch composition its own internal plan:
 	recipes now compile into a private branch-compose plan with branches,
-	ordered steps, typed targets, sink targets, and resolved mux-open formats.
+	ordered steps, typed destinations, sink destinations, and resolved mux-open formats.
 	The advanced `Transcode(plan)` path remains available but adapts into that
     branch-compose plan at the boundary. Recipe compile state no longer stores a
     `transcode.Plan`, and branch-composer describe/build consume the new plan
     directly. Done.
 247. Rename branch-composer runtime helpers around the new plan:
-    prepared routes, target routes, selector/stream groups, ordered
-    media-transform stages, branch step validation, and target diagnostics now
+    prepared routes, destination routes, selector/stream groups, ordered
+    media-transform stages, branch step validation, and destination diagnostics now
     use branch/media vocabulary internally. The explicit advanced
     `Transcode(plan)` compiler wrappers remain as boundary adapters, but graph
     planning/build helpers consume branch-compose routes and targets. Done.
@@ -1089,9 +1092,9 @@ are:
     stream jobs are removed. Done.
 251. Move direct stream media-plan specs/builds onto resolved graph plans:
 	direct selected-stream decode/encode recipes now create a small resolved
-	single-stream graph plan from intent plus concrete input, target ref, stage,
+	single-stream graph plan from intent plus concrete input, destination, stage,
 	transform, tap, and codec attachments. `Describe` and `Build` for those
-    recipes call parameterized decode/filter/encode/source/target helpers
+    recipes call parameterized decode/filter/encode/source/destination helpers
     instead of first populating a runtime builder and matching its internal
     fields. Existing expert builder compilers reuse the same helpers so planned
     graph equivalence stays covered while the recipe path moves closer to
@@ -1120,15 +1123,15 @@ are:
     Pipeline and runtime tests prove a late buffered sink branch receives future
     messages from a running graph. Done.
 255. Prove buffered late packet-copy recording:
-    `Task.Attach(ctx, goav.Branch(...).FromTap(...).Copy().To(goav.Target(...)))`
+    `Task.Attach(ctx, goav.Branch(...).From(goav.PacketTap(...)).Copy().To(goav.File(...)))`
     now has runtime coverage on a running bounded buffered graph. The test
-    pauses before a packet, attaches an Ogg file target from the packet tap,
+    pauses before a packet, attaches an Ogg file destination from the packet tap,
     resumes, verifies the late mux receives the future packet, then detaches and
     closes the runtime mux stage. Done.
 256. Prove buffered late Opus encode recording:
-    `Task.Attach(ctx, goav.Branch(...).FromTap(...).Opus(...).To(goav.Target(...)))`
+    `Task.Attach(ctx, goav.Branch(...).From(goav.FrameTap(...)).Encode(goav.Opus(...)).To(goav.File(...)))`
     now has runtime coverage on a running bounded buffered graph. The test
-    pauses before a frame, attaches an Ogg recording target from the frame tap,
+    pauses before a frame, attaches an Ogg recording destination from the frame tap,
     applies a branch-local bounded packet-copy policy for the encoder-to-mux
     queue, resumes, verifies the late encoder and mux receive future media, then
     detaches and closes both runtime-owned stages. Done.
@@ -1139,29 +1142,30 @@ are:
     verifies both parent and child sinks receive the future resized frame path,
     transformed shape are exposed through `Task.Taps()`, and detaching the parent
     closes the dependent child branch and runtime-owned resize stage. Done.
-258. Prove buffered runtime flows can encode to targets:
-    `Task.Attach(ctx, goav.Branch(...).Apply(goav.Flow(...).Do(...).OpusMusic()).To(goav.Target(...)))`
+258. Prove buffered runtime flows can encode to destinations:
+    `Task.Attach(ctx, goav.Branch(...).Apply(flow).To(goav.File(...)))`,
+    where the flow encodes tuned Opus through `goav.Opus(...)`,
     now has runtime coverage on a running bounded buffered graph. The test
     proves that `Flow` remains a reusable operation sequence, not a destination:
-    the branch owns the target, the flow expands to a custom stage plus terminal
-    Opus encode, the late mux target receives the future packet, and detaching
+    the branch owns the destination, the flow expands to a custom stage plus terminal
+    Opus encode, the late mux destination receives the future packet, and detaching
     closes the flow-owned stage, encoder, and mux stage. Done.
 259. Make post-encode branch taps real packet taps:
-    branch-level `.Tap(...)` calls after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`,
-    or `.Copy()` now become packet-domain taps in planned branch intent and in
+    branch-level `.Tap(...)` calls after `.Encode(...)` or `.Copy()` now become
+    packet-domain taps in planned branch intent and in
     runtime attachment. A planned-branch test verifies the operation order and
     `After: OpEncode` tap metadata; branch-composition build coverage verifies
-    the built task exposes codec-bearing packet shape so a later recording target
+    the built task exposes codec-bearing packet shape so a later recording destination
     can attach from the planned encoded tap; bounded-buffered runtime tests
     attach parent branches that publish encoded or copied packet taps, then
     attach child packet-copy recording branches from those taps before future
     media arrives. Done.
-260. Prove direct stream copy taps can become runtime mux targets:
+260. Prove direct stream copy taps can become runtime mux destinations:
     `From(RTP(...).Codec(Opus())).Audio().Copy().Tap("audio.copied")`
     now exposes a packet-domain, codec-bearing tap on the selected stream, and
-    a later `Task.Attach(ctx, goav.Branch(...).FromTap(...).Copy().To(goav.Target(...)))`
+    a later `Task.Attach(ctx, goav.Branch(...).From(goav.PacketTap(...)).Copy().To(goav.File(...)))`
     recording branch receives future RTP packets through the same typed
-    `Branch`/`Target` grammar as planned composition. Done.
+    `Branch`/`Destination` grammar as planned composition. Done.
 261. Share planned branch operation prefixes before tapped split points:
     `Video().Decode().Resize(...).Tap(...).Branches(...)` now lowers the resize
     as one shared branch-composer node feeding downstream encode, thumbnail, or
@@ -1181,43 +1185,43 @@ are:
     planned branch composition now has coverage for custom `.Do(stage)` current
     points and an audio `Resample(...)` current point. The audio proof runs the
     graph and verifies one shared resample feeds both an Opus mux branch and a
-    raw sink branch, preserving the same `Branch`/`Target` grammar across
+    raw sink branch, preserving the same `Branch`/`Destination` grammar across
     custom stages, audio transforms, and video transforms. Done.
-264. Keep generic codec composition and resolved targets orthogonal:
-    pre-lowered branch-composer plans now refresh concrete input/target
+264. Keep generic codec composition and resolved destinations orthogonal:
+    pre-lowered branch-composer plans now refresh concrete input/destination
     attachments after adapter probing while preserving their shared operation
-    prefixes, so `Describe`, `Explain`, and `Build` see the same resolved target
+    prefixes, so `Describe`, `Explain`, and `Build` see the same resolved destination
     formats. Custom `goav.Codec(...)` encode specs are now covered through
-    direct stream encode, planned `Branch(...).Encode(...).To(Target(...))`, and
+    direct stream encode, planned `Branch(...).Encode(...).To(destination)`, and
     runtime `Task.Attach(ctx, Branch(...).FromTap(...).Encode(...))` mux
     branches without adding a built-in-only pathway. Done.
-265. Let runtime branches fan out to multiple typed targets:
-    `Task.Attach(ctx, goav.Branch(...).FromTap(...).Opus(...).To(archive, monitor))`
-    now encodes once, keeps terminal targets separate from the operation chain,
+265. Let runtime branches fan out to multiple typed destinations:
+    `Task.Attach(ctx, goav.Branch(...).From(goav.FrameTap(...)).Encode(goav.Opus(...)).To(archive, monitor))`
+    now encodes once, keeps terminal destinations separate from the operation chain,
     and connects the running branch to multiple mux/sink destinations under one
-    attachment. Runtime branches now match planned branch `.To(target, ...)`
-    grammar for target fanout while preserving detach and nested tap ownership.
+    attachment. Runtime branches now match planned branch `.To(destination, ...)`
+    grammar for destination fanout while preserving detach and nested tap ownership.
     Done.
-266. Prove planned raw sink target fanout:
+266. Prove planned raw sink destination fanout:
     a single decoded planned branch can now be tested as
-    `Branch("frames").To(Target("analysis", Sink(...)), Target("preview", Sink(...)))`,
-	with no encoder inserted and both sink targets receiving the same decoded
+    `Branch("frames").To(Sink(...), Sink(...))`,
+	with no encoder inserted and both sink destinations receiving the same decoded
 	frame. This keeps planned and runtime branch fanout aligned across mux and
-    sink targets. Done.
-267. Keep mux diagnostics in the Branch/Target vocabulary:
-    recipe preflight now reports missing target muxers as
+    sink destinations. Done.
+267. Keep mux diagnostics in the Branch/Destination vocabulary:
+    recipe preflight now reports missing destination muxers as
     `target_muxer_missing` and constrained mux groups as
     `target_mux_incompatible`, including `destination=...` details for the branches
     feeding the mux group. The expert graph builder still reports
     `output_muxer_missing` at the low-level `format.Output` boundary, keeping
-    public recipe diagnostics aligned with `Target` without blurring runtime
+    public recipe diagnostics aligned with `Destination` without blurring runtime
     internals. Done.
-268. Remove explicit target-registration sugar from the public Job API:
+268. Remove explicit destination-registration sugar from the public Job API:
 	branch composition now relies on typed destinations collected from
-	`Branch(...).To(Target(...))` and direct target-ref `.To(...)` calls; the
+	`Branch(...).To(destination)` and direct destination `.To(...)` calls; the
     exported `Job.Targets(...)` registration escape hatch was removed. The API
     guard now rejects `Targets` alongside `Path`, `Paths`, `Output`, and
-    `Outputs`, keeping the normal grammar to one way to attach a target. Done.
+    `Outputs`, keeping the normal grammar to one way to attach a destination. Done.
 269. Prove runtime observer branches are ordinary branches:
     a late branch can now be tested as
     `Branch("analysis").From(FrameTap("audio.decoded")).Do(FrameFunc(...)).Tap("audio.observed").To(Sink(...))`,
@@ -1229,12 +1233,12 @@ are:
 270. Guard README flow examples against branch duplication:
     the README now has test coverage that the reusable flow example contains
     exactly one `voice` branch and one `archive` branch, keeping the public docs
-    aligned with the one-branch-name/one-target grammar. Done.
-271. Allow direct packet-domain fanout to mux and sink targets:
+    aligned with the one-branch-name/one-destination grammar. Done.
+271. Allow direct packet-domain fanout to mux and sink destinations:
 	stream recipes now permit `.Copy().To(file, Sink(...))` and
-	`.Opus(...).To(file, Sink(...))` because both destinations receive
+	`.Encode(goav.Opus(...)).To(file, Sink(...))` because both destinations receive
 	encoded packets. The media-plan encode path now plans and builds sink
-	targets beside mux targets after one encoder, while decoded frame-domain
+	destinations beside mux destinations after one encoder, while decoded frame-domain
 	sink+mux mixes still fail with the existing guidance. Runtime tests prove
     both packet-copy and Opus-encode fanout write the mux and packet sink from
     the same upstream packet path. Done.
@@ -1831,11 +1835,11 @@ are:
     `Target(name, Target(...))` fails early with an actionable build error.
     Done.
 341. Promote custom destinations as the extension surface:
-    `Destination`, `DestinationContract`, `TargetInfo`, `DestinationWriter`,
+    `Destination`, `DestinationContract`, `DestinationInfo`, `DestinationWriter`,
     `Writer`, `WriteCloser`, `Format`, and `MIME` make byte/object destinations
     implementable outside package `goav`. `File`, `URIOut`, `Sink`, `Writer`,
     and `Target` now feed `.To(...)` through the public `Destination` model,
-    custom writers receive resolved target info before mux open, transactional
+    custom writers receive resolved destination info before mux open, transactional
     writers commit on successful run or detach and abort on build, runtime, or
     attach rollback failure, and README now teaches custom destinations instead
     of the explicit graph composer.
@@ -1917,7 +1921,7 @@ are:
 351. Prove runtime attach to custom writer destinations:
     runtime `Task.Attach` now has a positive acceptance test for attaching a
     packet branch from a typed tap to `Target(name, Writer(...))`. The test
-    verifies destination open happens during attach with `TargetInfo` carrying
+    verifies destination open happens during attach with `DestinationInfo` carrying
     name, format, MIME type, and streams, then confirms muxed bytes reach the
     writer and successful task close commits and closes exactly once without an
     abort.
@@ -1955,7 +1959,7 @@ are:
     `Object(name, open, opts...)` now exposes object-store upload style
     destinations as the same first-class `Destination` model as `File`, `URIOut`,
     `Sink`, and `Writer`. `Metadata(...)` destination options flow into
-    `TargetInfo`, and tests prove object destinations open with resolved format,
+    `DestinationInfo`, and tests prove object destinations open with resolved format,
     MIME, streams, metadata, write through the muxer, commit on success, abort on
     failure through the existing transactional writer path, and close once.
     Done.
@@ -2505,10 +2509,11 @@ byte writers, object uploads, URI-backed outputs, sink groups, and shared mux
 groups without graph-node plumbing. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into
 branch intent instead of a parallel graph language, and
-codec-specific config stays on `CodecSpec` through `Config`, `Param`, and
-`Control` instead of growing per-codec public APIs. Opus, VP8, and VP9 are the
-full encode/decode verticals; H264 and AV1 recipe encode remains guarded until
-the adapters are complete.
+codec-specific config stays on `CodecSpec` through `Bitrate`, `FPS`,
+`KeyframeInterval`, `Profile`, `Level`, `Config`, `Param`, and `Control`
+instead of growing per-codec public APIs. Opus, VP8, and VP9 are the full
+encode/decode verticals; H264 and AV1 recipe encode remains guarded until the
+adapters are complete.
 `Task.Attach` remains the late branch control plane for running graphs, now with
 a private runtime graph-patch boundary that owns anchors, planned taps, applied
 nodes, routes, and published taps during prepare/apply/rollback,
@@ -2591,6 +2596,14 @@ shape validation, explanations, and media plans no longer describe that record
 as stream-only. The next cleanup remains deleting the projection bridge around
 `chainStep`, `branchComposePlan`, and `runtimeBranch` so `OperationSpec` feeds
 the planner directly.
+Codec tuning is also part of the active simplification: there is one public
+address for bitrate, FPS, keyframe cadence, profile/level, typed configs, named
+params, and controls, and that address is the codec option list passed to
+`Opus`, `VP8`, `VP9`, `H264`, `AV1`, or generic `Codec`. Chain, branch, and
+flow builders expose `.Encode(codec)` as the only encode operation, keeping the
+main builder from accumulating one-off tuning methods. `OpusVoice` and
+`OpusMusic` are removed before release for the same reason; voice/music choices
+are ordinary `Opus(Bitrate(...), Channels(...))` codec values.
 
 ## Validation Gates
 

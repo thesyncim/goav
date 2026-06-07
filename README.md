@@ -56,8 +56,9 @@ return goav.From(goav.WebRTCTrack(track)).
     Run(ctx)
 ```
 
-`Sink` receives frames at decoded points and packets after `.Copy()` or an
-encoder such as `.Opus(...)`, `.VP8(...)`, or `.VP9(...)`. Packet streams can
+`Sink` receives frames at decoded points and packets after `.Copy()` or
+`.Encode(goav.Opus(...))`, `.Encode(goav.VP8(...))`, or
+`.Encode(goav.VP9(...))`. Packet streams can
 fan out to file destinations and packet sinks from the same encoded or copied
 chain.
 
@@ -68,7 +69,7 @@ return goav.From(input).
     Video().
     Decode().
     Resize(1280, 720).
-    VP9(2_000_000).
+    Encode(goav.VP9(goav.Bitrate(2_000_000))).
     To(goav.File("preview.ivf", preview)).
     Run(ctx)
 ```
@@ -102,13 +103,13 @@ return goav.From(input).
     Branches(
         goav.Branch("archive").
             Resize(1920, 1080).
-            VP9(4_000_000).
+            Encode(goav.VP9(goav.Bitrate(4_000_000))).
             To(archive),
         goav.Branch("preview").
             Resize(640, 360).
             Do(frameMeter).
             Tap(previewFrames).
-            VP8(600_000).
+            Encode(goav.VP8(goav.Bitrate(600_000))).
             To(preview),
     ).
     Run(ctx)
@@ -138,7 +139,7 @@ return goav.From(input).
             To(thumbnail),
         goav.Branch("web").
             From(frames720p).
-            VP9(2_000_000).
+            Encode(goav.VP9(goav.Bitrate(2_000_000))).
             To(web),
     ).
     Run(ctx)
@@ -156,7 +157,7 @@ return goav.From(goav.FileInput("source.webm", in)).
     Branches(
         goav.Branch("v720").
             Resize(1280, 720).
-            VP9(2_000_000).
+            Encode(goav.VP9(goav.Bitrate(2_000_000))).
             To(web),
     ).
     Audio().
@@ -164,7 +165,7 @@ return goav.From(goav.FileInput("source.webm", in)).
     Branches(
         goav.Branch("a96").
             Resample(48_000, goav.Stereo).
-            Opus(96_000).
+            Encode(goav.Opus(goav.Bitrate(96_000))).
             To(web),
     ).
     Run(ctx)
@@ -197,7 +198,7 @@ return goav.From(input).
     Branches(
         goav.Branch("archive").
             Buffer(goav.Blocking(128)).
-            VP9(4_000_000).
+            Encode(goav.VP9(goav.Bitrate(4_000_000))).
             To(archive),
         goav.Branch("preview").
             Buffer(goav.DropOldest(3)).
@@ -222,14 +223,23 @@ operations. A branch owns the destination.
 ```go
 voiceFrames := goav.FrameTap("audio.voice.frames")
 
+voiceCodec := goav.Opus(
+    goav.Bitrate(32_000),
+    goav.Channels(goav.Mono),
+)
+archiveCodec := goav.Opus(
+    goav.Bitrate(128_000),
+    goav.Channels(goav.Stereo),
+)
+
 voice := goav.Flow("voice").Audio().
     Resample(16_000, goav.Mono).
     Tap(voiceFrames).
-    OpusVoice()
+    Encode(voiceCodec)
 
 archive := goav.Flow("archive").Audio().
     Resample(48_000, goav.Stereo).
-    OpusMusic()
+    Encode(archiveCodec)
 
 voiceOut := goav.File("voice.ogg", voiceFile)
 archiveOut := goav.File("archive.ogg", archiveFile)
@@ -286,7 +296,7 @@ task, err := goav.From(input).
         goav.Branch("720p").
             Resize(1280, 720).
             Tap(frames720p).
-            VP9(2_000_000).
+            Encode(goav.VP9(goav.Bitrate(2_000_000))).
             To(web),
     ).
     Build(ctx)
@@ -318,7 +328,7 @@ recording := goav.File("recording.ogg", file)
 record, err := task.Attach(ctx,
     goav.Branch("record-audio").
         From(audioDecoded).
-        Opus(96_000).
+        Encode(goav.Opus(goav.Bitrate(96_000))).
         To(recording),
 )
 if err != nil {
@@ -428,7 +438,7 @@ reports the branch-owned diagnostic view; `Task.Snapshot()` returns one
 point-in-time view of graph stats, stable taps, and active runtime branches.
 Runtime branches can share one typed sink or mux destination value inside an atomic
 attach group.
-Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
+Taps declared after `.Encode(...)` or `.Copy()` are
 packet-domain taps.
 
 ## Debug And Diagnostics
@@ -592,7 +602,7 @@ provider; the returned destination value is still the stable routing handle.
 
 ```go
 s3 := goav.Object("s3://bucket/call.ivf",
-    func(ctx context.Context, info goav.TargetInfo) (goav.TransactionalDestinationWriter, error) {
+    func(ctx context.Context, info goav.DestinationInfo) (goav.TransactionalDestinationWriter, error) {
         return uploader.Create(ctx, info.Name,
             uploader.ContentType(info.MIMEType),
             uploader.Metadata(info.Metadata),
@@ -640,6 +650,9 @@ profiles, deadlines, adapter configs, params, and controls:
 ```go
 vp9 := goav.VP9(
     goav.Bitrate(2_000_000),
+    goav.FPS(30),
+    goav.KeyframeInterval(60),
+    goav.Profile("0"),
     goav.Config(myVP9EncoderConfig),
     goav.Param("deadline", "realtime"),
     goav.Control(myVP9Control),

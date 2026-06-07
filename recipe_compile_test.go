@@ -364,7 +364,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	voice := Flow("voice").Audio().
 		Resample(16_000, Mono).
 		Tap(FrameTap("audio.voice.frames")).
-		OpusVoice().
+		Encode(Opus(Bitrate(32_000), Channels(Mono))).
 		Tap(PacketTap("audio.voice.packets"))
 
 	flowSpec, err := chainSpecFrom(voice)
@@ -418,7 +418,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 	voice := Flow("voice").Audio().
 		Resample(16_000, Mono).
-		OpusVoice()
+		Encode(Opus(Bitrate(32_000), Channels(Mono)))
 
 	job := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -448,7 +448,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	decodeFlow := Flow("voice").Audio().
 		Decode().
 		Resample(16_000, Mono).
-		Opus(64_000)
+		Encode(Opus(Bitrate(64_000)))
 
 	decodeJob := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -520,7 +520,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 				To(thumbnail),
 			Branch("web").
 				From(FrameTap("video.720p.frames")).
-				VP9(2_000_000).
+				Encode(VP9(Bitrate(2_000_000))).
 				To(web),
 		)
 	if job.err != nil {
@@ -1189,7 +1189,7 @@ func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedTargets(t *testing.T)
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Opus(96_000).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(context.Background(), job)
 	if err != nil {
@@ -2935,7 +2935,7 @@ func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "muxed target") || !strings.Contains(err.Error(), "Sink") {
+	if !strings.Contains(err.Error(), "muxed destination") || !strings.Contains(err.Error(), "Sink") {
 		t.Fatalf("err = %v, want mux and sink guidance", err)
 	}
 }
@@ -3059,7 +3059,7 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 		Branches(
 			Branch("360p").
 				Resize(640, 360).
-				VP9(600_000).
+				Encode(VP9(Bitrate(600_000))).
 				To(web),
 		)
 
@@ -3321,7 +3321,7 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 		Branches(
 			Branch("360p").
 				Resize(640, 360).
-				VP9(600_000).
+				Encode(VP9(Bitrate(600_000))).
 				To(web),
 		)
 
@@ -3362,8 +3362,8 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	}).Name("audio").Codec(Opus())).
 		Audio().
 		Branches(
-			Branch("voice").Apply(Flow("voice").Audio().OpusVoice()).To(voice),
-			Branch("archive").Apply(Flow("archive").Audio().OpusMusic()).To(archive),
+			Branch("voice").Apply(Flow("voice").Audio().Encode(Opus(Bitrate(32_000), Channels(Mono)))).To(voice),
+			Branch("archive").Apply(Flow("archive").Audio().Encode(Opus(Bitrate(128_000), Channels(Stereo)))).To(archive),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -3405,7 +3405,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 		Audio().
 		Decode().
 		Tap(FrameTap("audio.decoded")).
-		Branches(Branch("main").Opus(96_000).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3437,7 +3437,7 @@ func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
 		Resize(1280, 720).
 		Tap(FrameTap("video.720p.frames")).
 		Branches(
-			Branch("web").VP9(2_000_000).To(web),
+			Branch("web").Encode(VP9(Bitrate(2_000_000))).To(web),
 			Branch("thumb").Resize(320, 180).To(thumbnail),
 		)
 
@@ -3476,7 +3476,7 @@ func TestBranchComposeLowererUsesPlanInputOperationNodes(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Opus(96_000).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3525,7 +3525,7 @@ func TestBranchComposeLowererUsesPlanSharedStepOperationNodes(t *testing.T) {
 		Audio().
 		Decode().
 		Resample(48_000, Stereo).
-		Branches(Branch("main").Opus(96_000).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3574,7 +3574,7 @@ func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testi
 		Decode().
 		Branches(Branch("main").
 			Resample(16_000, Mono).
-			Opus(96_000).
+			Encode(Opus(Bitrate(96_000))).
 			To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -3623,7 +3623,7 @@ func TestBranchComposeLowererUsesPlanDestinationOperationNodes(t *testing.T) {
 		Audio().
 		Decode().
 		Branches(
-			Branch("archive").Opus(96_000).To(archive),
+			Branch("archive").Encode(Opus(Bitrate(96_000))).To(archive),
 			Branch("frames").To(frames),
 		)
 
@@ -3737,8 +3737,8 @@ func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T)
 		Video().
 		Decode().
 		Branches(
-			Branch("720p").Resize(1280, 720).VP9(2_000_000).To(web),
-			Branch("360p").Resize(640, 360).VP8(600_000).To(mobile),
+			Branch("720p").Resize(1280, 720).Encode(VP9(Bitrate(2_000_000))).To(web),
+			Branch("360p").Resize(640, 360).Encode(VP8(Bitrate(600_000))).To(mobile),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -3764,7 +3764,7 @@ func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) 
 		Video().
 		Decode().
 		Branches(
-			Branch("720p").Resize(1280, 720).VP9(2_000_000).To(web),
+			Branch("720p").Resize(1280, 720).Encode(VP9(Bitrate(2_000_000))).To(web),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -3790,7 +3790,7 @@ func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testi
 		Video().
 		Decode().
 		Branches(
-			Branch("720p").Resize(1280, 720).VP9(2_000_000).To(web),
+			Branch("720p").Resize(1280, 720).Encode(VP9(Bitrate(2_000_000))).To(web),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -4487,7 +4487,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 		Audio().
 		Decode().
 		Do(&runtimeTestStage{name: "meter"}).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -4531,7 +4531,7 @@ func TestStreamGraphLowererUsesPlanEncodedDestinationOperationNodes(t *testing.T
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(
 			destinationHandle(fileDestination("archive.ogg", io.Discard)),
 			Sink(&runtimeTestSink{name: "packets"}),
@@ -4578,7 +4578,7 @@ func TestStreamGraphLowererUsesPlanEncodeOperationNode(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -4607,7 +4607,7 @@ func TestEncodedFrameStreamLowererRequiresEncodeOperationBeforeSources(t *testin
 	job := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Decode().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipe(job)
@@ -4646,7 +4646,7 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 		Decode().
 		Tap(FrameTap("audio.decoded")).
 		Do(&runtimeTestStage{name: "meter"}).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -4697,7 +4697,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(Sink(&runtimeTestSink{name: "packets"}))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -4741,7 +4741,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(
 			destinationHandle(fileDestination("archive.ogg", io.Discard)),
 			Sink(&runtimeTestSink{name: "packets"}),
@@ -4787,7 +4787,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 	job := From(RTP(receiver).Name("audio").Codec(Opus())).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)

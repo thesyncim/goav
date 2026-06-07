@@ -25,7 +25,7 @@ type Destination struct {
 type DestinationProvider interface {
 	Name() string
 	Contract() DestinationContract
-	Open(context.Context, TargetInfo) (DestinationWriter, error)
+	Open(context.Context, DestinationInfo) (DestinationWriter, error)
 }
 
 // DestinationWriter is the byte writer returned by custom byte destinations.
@@ -51,7 +51,9 @@ type DestinationContract struct {
 	MIMETypes  []string
 }
 
-type TargetInfo struct {
+// DestinationInfo describes the resolved output context passed to custom
+// destination open functions.
+type DestinationInfo struct {
 	Name     string
 	Format   av.FormatID
 	MIMEType string
@@ -62,9 +64,9 @@ type TargetInfo struct {
 
 type DestinationOption func(*destinationSpec)
 
-type WriterOpenFunc func(context.Context, TargetInfo) (io.WriteCloser, error)
+type WriterOpenFunc func(context.Context, DestinationInfo) (io.WriteCloser, error)
 
-type ObjectOpenFunc func(context.Context, TargetInfo) (TransactionalDestinationWriter, error)
+type ObjectOpenFunc func(context.Context, DestinationInfo) (TransactionalDestinationWriter, error)
 
 type destinationBinding struct {
 	dest      destinationSpec
@@ -214,7 +216,7 @@ func (b *branchBuilder) Buffer(buffer BranchBuffer) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Decode(options ...codecOption) *branchBuilder {
+func (b *branchBuilder) Decode(options ...CodecOption) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -396,18 +398,6 @@ func (b *branchBuilder) Encode(codec CodecSpec) *branchBuilder {
 
 func (b *branchBuilder) Copy() *branchBuilder {
 	return b.Encode(Copy())
-}
-
-func (b *branchBuilder) Opus(bitrate int, options ...codecOption) *branchBuilder {
-	return b.Encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *branchBuilder) VP8(bitrate int, options ...codecOption) *branchBuilder {
-	return b.Encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *branchBuilder) VP9(bitrate int, options ...codecOption) *branchBuilder {
-	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
 func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
@@ -739,7 +729,7 @@ func branchEncodeParentOperationError(node string, encode CodecSpec) error {
 		},
 		Suggestions: []string{
 			"move .Branches(...) before the stream encoder",
-			"put .Opus(...), .VP8(...), or .VP9(...) on each goav.Branch(...) that writes a target",
+			"put .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) on each goav.Branch(...) that writes a destination",
 			"attach post-encode packet branches at runtime with Task.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -853,7 +843,7 @@ func branchDecodeCopyError(node string) error {
 		Suggestions: []string{
 			"use .Copy() for packet-preserving branches",
 			"use .Decode().To(goav.Sink(...)) for decoded frames",
-			"use .Decode().Encode(codec).To(target) for re-encoded packets",
+			"use .Decode().Encode(codec).To(destination) for re-encoded packets",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -869,8 +859,8 @@ func branchPacketEncodeUnsupportedError(stream StreamIntent, encode CodecSpec) e
 			"encoder: " + codecIntentName(encode),
 		},
 		Suggestions: []string{
-			"use .Decode().Branches(goav.Branch(name).Opus(...).To(target)) for encoded variants",
-			"use .Copy().Branches(goav.Branch(name).To(target)) for packet-preserving variants",
+			"use .Decode().Branches(goav.Branch(name).Encode(goav.Opus(...)).To(destination)) for encoded variants",
+			"use .Copy().Branches(goav.Branch(name).To(destination)) for packet-preserving variants",
 			"attach a runtime branch from a frame Tap when late encoding is needed",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -931,7 +921,7 @@ func branchMissingError(node string) error {
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
 		Suggestions: []string{
-			"pass branches with goav.Branch(name).VP9(...).To(goav.File(name, writer))",
+			"pass branches with goav.Branch(name).Encode(goav.VP9(...)).To(goav.File(name, writer))",
 			"reuse the same destination value from multiple branches when they should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,

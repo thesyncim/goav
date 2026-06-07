@@ -89,7 +89,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 	if output.Writer != nil || destination.custom == nil {
 		return output, nil, nil
 	}
-	info := TargetInfo{
+	info := DestinationInfo{
 		Name:     firstNonEmpty(destination.name, output.Name, output.URI),
 		Format:   formatID,
 		MIMEType: output.MIMEType,

@@ -159,20 +159,22 @@ func Default() Runtime {
 	return New(WithDefaults())
 }
 
-type codecOption func(*CodecSpec)
+type CodecOption func(*CodecSpec)
 
 type CodecSpec struct {
-	ID            av.CodecID
-	Type          av.MediaType
-	Parameters    av.CodecParameters
-	Bitrate       int
-	Config        any
-	Opaque        map[string]any
-	Controls      []any
-	Copy          bool
-	Auto          bool
-	sampleRateSet bool
-	channelsSet   bool
+	ID               av.CodecID
+	Type             av.MediaType
+	Parameters       av.CodecParameters
+	Bitrate          int
+	Framerate        av.Duration
+	KeyframeInterval int
+	Config           any
+	Opaque           map[string]any
+	Controls         []any
+	Copy             bool
+	Auto             bool
+	sampleRateSet    bool
+	channelsSet      bool
 }
 
 func Auto() CodecSpec {
@@ -183,14 +185,14 @@ func Copy() CodecSpec {
 	return CodecSpec{Copy: true}
 }
 
-func Codec(id av.CodecID, media av.MediaType, options ...codecOption) CodecSpec {
+func Codec(id av.CodecID, media av.MediaType, options ...CodecOption) CodecSpec {
 	return codecSpec(id, media, av.CodecParameters{
 		ID:   id,
 		Type: media,
 	}, options...)
 }
 
-func Opus(options ...codecOption) CodecSpec {
+func Opus(options ...CodecOption) CodecSpec {
 	return codecSpec(av.CodecOpus, av.MediaAudio, av.CodecParameters{
 		ID:            av.CodecOpus,
 		Type:          av.MediaAudio,
@@ -201,15 +203,7 @@ func Opus(options ...codecOption) CodecSpec {
 	}, options...)
 }
 
-func OpusVoice() CodecSpec {
-	return Opus(Bitrate(32_000), Channels(Mono))
-}
-
-func OpusMusic() CodecSpec {
-	return Opus(Bitrate(128_000), Channels(Stereo))
-}
-
-func VP8(options ...codecOption) CodecSpec {
+func VP8(options ...CodecOption) CodecSpec {
 	return codecSpec(av.CodecVP8, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecVP8,
 		Type:      av.MediaVideo,
@@ -217,7 +211,7 @@ func VP8(options ...codecOption) CodecSpec {
 	}, options...)
 }
 
-func VP9(options ...codecOption) CodecSpec {
+func VP9(options ...CodecOption) CodecSpec {
 	return codecSpec(av.CodecVP9, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecVP9,
 		Type:      av.MediaVideo,
@@ -225,7 +219,7 @@ func VP9(options ...codecOption) CodecSpec {
 	}, options...)
 }
 
-func H264(options ...codecOption) CodecSpec {
+func H264(options ...CodecOption) CodecSpec {
 	return codecSpec(av.CodecH264, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecH264,
 		Type:      av.MediaVideo,
@@ -233,7 +227,7 @@ func H264(options ...codecOption) CodecSpec {
 	}, options...)
 }
 
-func AV1(options ...codecOption) CodecSpec {
+func AV1(options ...CodecOption) CodecSpec {
 	return codecSpec(av.CodecAV1, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecAV1,
 		Type:      av.MediaVideo,
@@ -241,13 +235,48 @@ func AV1(options ...codecOption) CodecSpec {
 	}, options...)
 }
 
-func Bitrate(bitsPerSecond int) codecOption {
+func Bitrate(bitsPerSecond int) CodecOption {
 	return func(spec *CodecSpec) {
 		spec.Bitrate = bitsPerSecond
 	}
 }
 
-func Channels(channels int) codecOption {
+func FPS(num int, den ...int) CodecOption {
+	return func(spec *CodecSpec) {
+		rateDen := 1
+		if len(den) != 0 {
+			rateDen = den[0]
+		}
+		if num <= 0 || rateDen <= 0 {
+			spec.Framerate = av.Duration{Value: -1}
+			return
+		}
+		spec.Framerate = av.Duration{
+			Value: int64(rateDen),
+			Base:  av.TimeBase{Num: 1, Den: int64(num)},
+		}
+	}
+}
+
+func KeyframeInterval(frames int) CodecOption {
+	return func(spec *CodecSpec) {
+		spec.KeyframeInterval = frames
+	}
+}
+
+func Profile(profile string) CodecOption {
+	return func(spec *CodecSpec) {
+		spec.Parameters.Profile = profile
+	}
+}
+
+func Level(level string) CodecOption {
+	return func(spec *CodecSpec) {
+		spec.Parameters.Level = level
+	}
+}
+
+func Channels(channels int) CodecOption {
 	return func(spec *CodecSpec) {
 		spec.Parameters.Channels = channels
 		spec.channelsSet = true
@@ -260,7 +289,7 @@ func Channels(channels int) codecOption {
 	}
 }
 
-func SampleRate(sampleRate int) codecOption {
+func SampleRate(sampleRate int) CodecOption {
 	return func(spec *CodecSpec) {
 		spec.Parameters.SampleRate = sampleRate
 		spec.Parameters.ClockRate = uint32(sampleRate)
@@ -268,13 +297,13 @@ func SampleRate(sampleRate int) codecOption {
 	}
 }
 
-func ClockRate(clockRate uint32) codecOption {
+func ClockRate(clockRate uint32) CodecOption {
 	return func(spec *CodecSpec) {
 		spec.Parameters.ClockRate = clockRate
 	}
 }
 
-func Parameters(parameters av.CodecParameters) codecOption {
+func Parameters(parameters av.CodecParameters) CodecOption {
 	return func(spec *CodecSpec) {
 		spec.Parameters = parameters
 		if spec.ID == "" && parameters.ID != "" {
@@ -293,14 +322,14 @@ func Parameters(parameters av.CodecParameters) codecOption {
 }
 
 // Config attaches one adapter-specific typed codec configuration value.
-func Config(config any) codecOption {
+func Config(config any) CodecOption {
 	return func(spec *CodecSpec) {
 		spec.Config = config
 	}
 }
 
 // Param attaches a named adapter-specific codec parameter.
-func Param(name string, value any) codecOption {
+func Param(name string, value any) CodecOption {
 	return func(spec *CodecSpec) {
 		if name == "" {
 			return
@@ -313,7 +342,7 @@ func Param(name string, value any) codecOption {
 }
 
 // Control attaches an adapter-specific codec control value.
-func Control(control any) codecOption {
+func Control(control any) CodecOption {
 	return func(spec *CodecSpec) {
 		if control != nil {
 			spec.Controls = append(spec.Controls, control)
@@ -321,7 +350,7 @@ func Control(control any) codecOption {
 	}
 }
 
-func codecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, options ...codecOption) CodecSpec {
+func codecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, options ...CodecOption) CodecSpec {
 	spec := CodecSpec{ID: id, Type: media, Parameters: params}
 	for i := range options {
 		if options[i] != nil {
@@ -337,7 +366,7 @@ func codecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, opt
 	return spec
 }
 
-func codecSpecFromOptions(options ...codecOption) CodecSpec {
+func codecSpecFromOptions(options ...CodecOption) CodecSpec {
 	var spec CodecSpec
 	for i := range options {
 		if options[i] != nil {
@@ -382,6 +411,12 @@ func mergeDecodeCodecSpec(base CodecSpec, override CodecSpec) CodecSpec {
 	base.Parameters = mergeCodecParameters(base.Parameters, override.Parameters)
 	if override.Bitrate != 0 {
 		base.Bitrate = override.Bitrate
+	}
+	if override.Framerate != (av.Duration{}) {
+		base.Framerate = override.Framerate
+	}
+	if override.KeyframeInterval != 0 {
+		base.KeyframeInterval = override.KeyframeInterval
 	}
 	if override.Config != nil {
 		base.Config = override.Config
@@ -945,7 +980,7 @@ func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destina
 }
 
 func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) Destination {
-	return Writer(name, func(context.Context, TargetInfo) (io.WriteCloser, error) {
+	return Writer(name, func(context.Context, DestinationInfo) (io.WriteCloser, error) {
 		if writer == nil {
 			return nil, ErrNilWriter
 		}
@@ -954,7 +989,7 @@ func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) 
 }
 
 func Object(name string, open ObjectOpenFunc, opts ...DestinationOption) Destination {
-	return Writer(name, func(ctx context.Context, info TargetInfo) (io.WriteCloser, error) {
+	return Writer(name, func(ctx context.Context, info DestinationInfo) (io.WriteCloser, error) {
 		if open == nil {
 			return nil, ErrNilWriter
 		}
@@ -978,7 +1013,7 @@ func (d writerDestination) Contract() DestinationContract {
 	return contract
 }
 
-func (d writerDestination) Open(ctx context.Context, info TargetInfo) (DestinationWriter, error) {
+func (d writerDestination) Open(ctx context.Context, info DestinationInfo) (DestinationWriter, error) {
 	if d.open == nil {
 		return nil, ErrNilWriter
 	}
@@ -1083,14 +1118,14 @@ func (s destinationSpec) Contract() DestinationContract {
 	return contract
 }
 
-func (s destinationSpec) Open(ctx context.Context, info TargetInfo) (DestinationWriter, error) {
+func (s destinationSpec) Open(ctx context.Context, info DestinationInfo) (DestinationWriter, error) {
 	if s.custom != nil {
 		return s.custom.Open(ctx, info)
 	}
 	if s.output.Writer != nil {
 		return nopDestinationWriter{Writer: s.output.Writer}, nil
 	}
-	return nil, destinationInvalidError("open destination", firstNonEmpty(info.Name, s.name, "target"), "destination does not provide a writer")
+	return nil, destinationInvalidError("open destination", firstNonEmpty(info.Name, s.name, "destination"), "destination does not provide a writer")
 }
 
 func (s destinationSpec) validate(operation string, fallback string) error {
@@ -2089,7 +2124,7 @@ func mixedStreamOutputError(operation string, stream StreamIntent) error {
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
 		Suggestions: []string{
 			"use .To(goav.Sink(...)) for decoded frames",
-			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.File(...)) for encoded output",
+			"call .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) before .To(goav.File(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -2107,7 +2142,7 @@ func streamEncodeMissingError(operation string, stream StreamIntent) error {
 			"actual_shape=" + FrameShape(stream.Select.Type).String(),
 		},
 		Suggestions: []string{
-			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.File(...))",
+			"call .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) before .To(goav.File(...))",
 			"send decoded frames to goav.Sink(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
 		},
@@ -3087,7 +3122,7 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 			"encoder: " + codecIntentName(encode),
 		},
 		Suggestions: []string{
-			"place .Do(...), .Resize(...), or .Resample(...) before .Opus(...), .VP8(...), or .VP9(...)",
+			"place .Do(...), .Resize(...), or .Resample(...) before .Encode(...)",
 			"call .To(...) after the encoder to attach outputs",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3138,11 +3173,13 @@ func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
 		}
 	}
 	return codec.EncodeConfig{
-		Parameters: parameters,
-		Bitrate:    spec.Bitrate,
-		Config:     spec.Config,
-		Opaque:     cloneAnyMap(spec.Opaque),
-		Controls:   append([]any(nil), spec.Controls...),
+		Parameters:       parameters,
+		Bitrate:          spec.Bitrate,
+		Framerate:        spec.Framerate,
+		KeyframeInterval: spec.KeyframeInterval,
+		Config:           spec.Config,
+		Opaque:           cloneAnyMap(spec.Opaque),
+		Controls:         append([]any(nil), spec.Controls...),
 	}
 }
 
@@ -3170,7 +3207,7 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			Node:      node,
 			Reason:    "automatic codec selection is not implemented for stream recipes yet",
 			Suggestions: []string{
-				"choose an explicit recipe encoder such as .Opus(...), .VP8(...), or .VP9(...)",
+				"choose an explicit recipe encoder with .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...))",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -3189,10 +3226,10 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			Code:      "encode_work_in_progress",
 			Operation: operation,
 			Node:      node,
-			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode branches currently target opus, vp8, and vp9",
+			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode branches currently support opus, vp8, and vp9",
 			Suggestions: []string{
 				"decode the stream with .To(goav.Sink(...))",
-				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode branches",
+				"use .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) for recipe encode branches",
 				"use the expert builder with an explicit codec.EncodeConfig when testing an experimental encoder",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -3214,8 +3251,38 @@ func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) e
 				fmt.Sprintf("bitrate=%d", spec.Bitrate),
 			},
 			Suggestions: []string{
-				"pass a positive bitrate to .Opus(...), .VP8(...), or .VP9(...)",
+				"pass a positive value to goav.Bitrate(...)",
 				"omit goav.Bitrate(...) when the encoder should choose its default",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	case spec.Framerate.Value < 0 || spec.Framerate.Base.Num < 0 || spec.Framerate.Base.Den < 0:
+		return &BuildError{
+			Code:      "encode_parameter_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    "encode FPS must be positive",
+			Details: []string{
+				fmt.Sprintf("fps_duration=%d/%d/%d", spec.Framerate.Value, spec.Framerate.Base.Num, spec.Framerate.Base.Den),
+			},
+			Suggestions: []string{
+				"pass a positive value to goav.FPS(...)",
+				"omit goav.FPS(...) when the encoder should infer frame cadence",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	case spec.KeyframeInterval < 0:
+		return &BuildError{
+			Code:      "encode_parameter_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    "encode keyframe interval must be non-negative",
+			Details: []string{
+				fmt.Sprintf("keyframe_interval=%d", spec.KeyframeInterval),
+			},
+			Suggestions: []string{
+				"pass a positive value to goav.KeyframeInterval(...)",
+				"omit goav.KeyframeInterval(...) when the encoder should choose its default cadence",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -3525,7 +3592,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) Decode(options ...codecOption) *jobStreamBuilder {
+func (b *jobStreamBuilder) Decode(options ...CodecOption) *jobStreamBuilder {
 	stream := b.current()
 	stream.decode = true
 	stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, codecSpecFromOptions(options...))
@@ -3673,18 +3740,6 @@ func (b *jobStreamBuilder) OnCodecChange(policy CodecChangePolicy) *jobStreamBui
 	stream := b.current()
 	stream.codecChange = policy
 	return b
-}
-
-func (b *jobStreamBuilder) Opus(bitrate int, options ...codecOption) *jobStreamBuilder {
-	return b.Encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *jobStreamBuilder) VP8(bitrate int, options ...codecOption) *jobStreamBuilder {
-	return b.Encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *jobStreamBuilder) VP9(bitrate int, options ...codecOption) *jobStreamBuilder {
-	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
 func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
@@ -4173,8 +4228,8 @@ func branchStreamMissingError() error {
 		Operation: branchCompositionOperation,
 		Reason:    "no audio or video branches are configured",
 		Suggestions: []string{
-			"add a video branch such as .Video(\"720p\").Resize(...).VP9(...).To(...)",
-			"add an audio branch such as .Audio(\"main\").Resample(...).Opus(...).To(...)",
+			"add a video branch such as .Video(\"720p\").Resize(...).Encode(goav.VP9(...)).To(...)",
+			"add an audio branch such as .Audio(\"main\").Resample(...).Encode(goav.Opus(...)).To(...)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -4185,13 +4240,13 @@ func branchEncodeMissingError(stream StreamIntent) error {
 		Code:      "encode_missing",
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
-		Reason:    "branch needs an encoder before writing to a muxed target",
+		Reason:    "branch needs an encoder before writing to a muxed destination",
 		Details: []string{
 			"expected_shape=" + Shape(ShapeDomain(DomainPacket), ShapeMedia(stream.Select.Type)).String(),
 			"actual_shape=" + FrameShape(stream.Select.Type).String(),
 		},
 		Suggestions: []string{
-			"call .Opus(...), .VP8(...), or .VP9(...) before .To(...)",
+			"call .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) before .To(...)",
 			"route raw frames to goav.Sink(...) when the branch should stay decoded",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -4335,7 +4390,7 @@ func branchIntentNameMissingError(index int, stream StreamIntent) error {
 		Suggestions: []string{
 			"call .Video(\"720p\") for video branches",
 			"call .Audio(\"main\") for audio branches",
-			"use branch names as handles for graph inspection and target planning",
+			"use branch names as handles for graph inspection and destination planning",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

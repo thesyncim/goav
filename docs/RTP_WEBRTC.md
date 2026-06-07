@@ -147,14 +147,14 @@ callers that intentionally keep raw AV1 RTP aggregation payload bytes can use
 the tagged concrete decoder's `DecodeRTPPayloadInto` method.
 
 The same selected live stream can continue into an encoder and one or more mux
-outputs when the target codec is explicit:
+outputs when the output codec is explicit:
 
 ```go
 err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
     Decode().
     Do(resample).
-    Opus(96_000).
+    Encode(goav.Opus(goav.Bitrate(96_000))).
     To(
         goav.File("archive.ogg", archive),
         goav.File("preview.ogg", preview),

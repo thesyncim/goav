@@ -118,6 +118,9 @@ type EncodeConfig struct {
 	LowLatency bool
 	Bitrate    int
 	Framerate  av.Duration
+	// KeyframeInterval requests a keyframe cadence in encoded frames. Zero lets
+	// the encoder choose its default cadence.
+	KeyframeInterval int
 	// Config carries one adapter-specific typed config value. Adapter packages
 	// must document the concrete type before reading it.
 	Config any
