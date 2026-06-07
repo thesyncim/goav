@@ -2201,6 +2201,26 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			return VideoConfig{}, err
 		}
 		switch child.ID {
+		case idFlagInterlaced:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.FlagInterlaced, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.FlagInterlacedSet = true
+		case idFieldOrder:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.FieldOrder, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.FieldOrderSet = true
 		case idStereoMode:
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
@@ -2302,6 +2322,16 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 			if err != nil {
 				return VideoConfig{}, err
 			}
+		case idAspectRatioType:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.AspectRatioType, err = intFromUint(value)
+			if err != nil {
+				return VideoConfig{}, err
+			}
+			video.AspectRatioTypeSet = true
 		case idColour:
 			colour, err := d.parseColour(master.Reader(), child)
 			if err != nil {

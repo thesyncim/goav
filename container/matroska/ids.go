@@ -64,6 +64,8 @@ const (
 	idTrackTranslateCodec  ebml.ID = 0x66bf
 	idTrackTranslateEdit   ebml.ID = 0x66fc
 	idVideo                ebml.ID = 0xe0
+	idFlagInterlaced       ebml.ID = 0x9a
+	idFieldOrder           ebml.ID = 0x9d
 	idStereoMode           ebml.ID = 0x53b8
 	idAlphaMode            ebml.ID = 0x53c0
 	idPixelWidth           ebml.ID = 0xb0
@@ -75,6 +77,7 @@ const (
 	idDisplayWidth         ebml.ID = 0x54b0
 	idDisplayHeight        ebml.ID = 0x54ba
 	idDisplayUnit          ebml.ID = 0x54b2
+	idAspectRatioType      ebml.ID = 0x54b3
 	idColour               ebml.ID = 0x55b0
 	idMatrixCoefficients   ebml.ID = 0x55b1
 	idBitsPerChannel       ebml.ID = 0x55b2

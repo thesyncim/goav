@@ -32,21 +32,27 @@ type AudioConfig struct {
 }
 
 type VideoConfig struct {
-	Width           int
-	Height          int
-	StereoMode      int
-	StereoModeSet   bool
-	AlphaMode       int
-	AlphaModeSet    bool
-	PixelCropBottom int
-	PixelCropTop    int
-	PixelCropLeft   int
-	PixelCropRight  int
-	DisplayWidth    int
-	DisplayHeight   int
-	DisplayUnit     int
-	Colour          VideoColourConfig
-	Projection      VideoProjectionConfig
+	Width              int
+	Height             int
+	FlagInterlaced     int
+	FlagInterlacedSet  bool
+	FieldOrder         int
+	FieldOrderSet      bool
+	StereoMode         int
+	StereoModeSet      bool
+	AlphaMode          int
+	AlphaModeSet       bool
+	PixelCropBottom    int
+	PixelCropTop       int
+	PixelCropLeft      int
+	PixelCropRight     int
+	DisplayWidth       int
+	DisplayHeight      int
+	DisplayUnit        int
+	AspectRatioType    int
+	AspectRatioTypeSet bool
+	Colour             VideoColourConfig
+	Projection         VideoProjectionConfig
 }
 
 type VideoColourConfig struct {

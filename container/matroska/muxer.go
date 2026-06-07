@@ -2543,6 +2543,12 @@ func writeOptionalBoolFlag(w *ebml.Writer, id ebml.ID, value bool, set bool) err
 func writeVideo(w *ebml.Writer, video VideoConfig) error {
 	var payload bytes.Buffer
 	vw := ebml.NewWriter(&payload)
+	if err := writeOptionalUInt(vw, idFlagInterlaced, video.FlagInterlaced, video.FlagInterlacedSet); err != nil {
+		return err
+	}
+	if err := writeOptionalUInt(vw, idFieldOrder, video.FieldOrder, video.FieldOrderSet); err != nil {
+		return err
+	}
 	if video.StereoModeSet {
 		if err := vw.WriteUInt(idStereoMode, uint64(video.StereoMode)); err != nil {
 			return err
@@ -2593,6 +2599,9 @@ func writeVideo(w *ebml.Writer, video VideoConfig) error {
 		if err := vw.WriteUInt(idDisplayUnit, uint64(video.DisplayUnit)); err != nil {
 			return err
 		}
+	}
+	if err := writeOptionalUInt(vw, idAspectRatioType, video.AspectRatioType, video.AspectRatioTypeSet); err != nil {
+		return err
 	}
 	if videoColourHasMetadata(video.Colour) {
 		if err := writeColour(vw, video.Colour); err != nil {
@@ -2842,11 +2851,12 @@ func validateTrack(track Track) error {
 		}
 	case TrackVideo:
 		if track.Video.Width < 0 || track.Video.Height < 0 ||
+			track.Video.FlagInterlaced < 0 || track.Video.FieldOrder < 0 ||
 			track.Video.StereoMode < 0 || track.Video.AlphaMode < 0 ||
 			track.Video.PixelCropBottom < 0 || track.Video.PixelCropTop < 0 ||
 			track.Video.PixelCropLeft < 0 || track.Video.PixelCropRight < 0 ||
 			track.Video.DisplayWidth < 0 || track.Video.DisplayHeight < 0 ||
-			track.Video.DisplayUnit < 0 {
+			track.Video.DisplayUnit < 0 || track.Video.AspectRatioType < 0 {
 			return ErrInvalidTrack
 		}
 		if err := validateVideoColour(track.Video.Colour); err != nil {

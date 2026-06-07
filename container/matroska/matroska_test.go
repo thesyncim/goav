@@ -415,15 +415,21 @@ func TestMuxerDemuxerPreservesVideoDisplayMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantVideo := VideoConfig{
-		Width:           1920,
-		Height:          1080,
-		PixelCropBottom: 2,
-		PixelCropTop:    4,
-		PixelCropLeft:   6,
-		PixelCropRight:  8,
-		DisplayWidth:    16,
-		DisplayHeight:   9,
-		DisplayUnit:     3,
+		Width:              1920,
+		Height:             1080,
+		FlagInterlaced:     1,
+		FlagInterlacedSet:  true,
+		FieldOrder:         1,
+		FieldOrderSet:      true,
+		PixelCropBottom:    2,
+		PixelCropTop:       4,
+		PixelCropLeft:      6,
+		PixelCropRight:     8,
+		DisplayWidth:       16,
+		DisplayHeight:      9,
+		DisplayUnit:        3,
+		AspectRatioType:    1,
+		AspectRatioTypeSet: true,
 	}
 	trackID, err := muxer.AddTrack(Track{
 		Type:  TrackVideo,
@@ -2646,6 +2652,22 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			},
 		},
 		{
+			name: "video interlaced flag",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 16, Height: 16, FlagInterlaced: -1, FlagInterlacedSet: true},
+			},
+		},
+		{
+			name: "video field order",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 16, Height: 16, FieldOrder: -1, FieldOrderSet: true},
+			},
+		},
+		{
 			name: "video stereo mode",
 			track: Track{
 				Type:  TrackVideo,
@@ -2683,6 +2705,14 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 				Type:  TrackVideo,
 				Codec: CodecVP8,
 				Video: VideoConfig{Width: 16, Height: 16, DisplayUnit: -1},
+			},
+		},
+		{
+			name: "video aspect ratio type",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 16, Height: 16, AspectRatioType: -1, AspectRatioTypeSet: true},
 			},
 		},
 		{
@@ -4021,6 +4051,30 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			t.Fatalf("err = %v, want ErrInvalidData", err)
 		}
 	})
+	t.Run("video interlaced flag overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoElements(writer,
+				videoUIntElement{idPixelWidth, 16},
+				videoUIntElement{idPixelHeight, 16},
+				videoUIntElement{idFlagInterlaced, maxIntValue + 1},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video field order overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoElements(writer,
+				videoUIntElement{idPixelWidth, 16},
+				videoUIntElement{idPixelHeight, 16},
+				videoUIntElement{idFieldOrder, maxIntValue + 1},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
 	t.Run("video alpha mode overflow", func(t *testing.T) {
 		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
 			return writeTracksWithVideoElements(writer,
@@ -4051,6 +4105,18 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 				videoUIntElement{idPixelWidth, 16},
 				videoUIntElement{idPixelHeight, 16},
 				videoUIntElement{idDisplayWidth, 0},
+			)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("video aspect ratio type overflow", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithVideoElements(writer,
+				videoUIntElement{idPixelWidth, 16},
+				videoUIntElement{idPixelHeight, 16},
+				videoUIntElement{idAspectRatioType, maxIntValue + 1},
 			)
 		})
 		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
