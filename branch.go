@@ -189,7 +189,7 @@ type BranchSpec struct {
 	transforms     []TransformSpec
 	encode         CodecSpec
 	targets        []targetSpec
-	labels         []string
+	targetNames    []string
 
 	from      string
 	tap       string
@@ -475,7 +475,7 @@ func (b *branchBuilder) snapshot() BranchSpec {
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
 	spec.targets = cloneTargetSpecs(spec.targets)
-	spec.labels = append([]string(nil), spec.labels...)
+	spec.targetNames = append([]string(nil), spec.targetNames...)
 	return spec
 }
 
@@ -497,17 +497,17 @@ func appendDestination(spec *BranchSpec, destination destinationBinding, index i
 		}
 		target.dest = target.dest.withName(firstNonEmpty(target.dest.name, target.name))
 		spec.targets = append(spec.targets, target)
-		spec.labels = append(spec.labels, target.name)
+		spec.targetNames = append(spec.targetNames, target.name)
 		return nil
 	case destination.hasDirect:
 		destination := destination.dest
-		name := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
-		target := newTargetSpec(name, destination)
+		targetName := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
+		target := newTargetSpec(targetName, destination)
 		if target.err != nil {
 			return target.err
 		}
 		spec.targets = append(spec.targets, target)
-		spec.labels = append(spec.labels, target.name)
+		spec.targetNames = append(spec.targetNames, target.name)
 		return nil
 	default:
 		return branchDestinationInvalidError(spec.name, "unsupported branch destination")
@@ -571,9 +571,9 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 				append([]string(nil), stream.postEncodeTaps...),
 				branches[i].postEncodeTaps...,
 			),
-			transforms: appendTransformSpecs(transformSpecsFromChainSteps(sharedSteps), branches[i].transforms),
-			encode:     encode,
-			labels:     append([]string(nil), branches[i].labels...),
+			transforms:  appendTransformSpecs(transformSpecsFromChainSteps(sharedSteps), branches[i].transforms),
+			encode:      encode,
+			targetNames: append([]string(nil), branches[i].targetNames...),
 		})
 	}
 	return job
@@ -592,7 +592,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	if spec.name == "" {
 		return branchIntentNameMissingError(index, StreamIntent{Select: StreamSelect{Type: selected}})
 	}
-	if len(spec.labels) == 0 {
+	if len(spec.targetNames) == 0 {
 		return branchIntentTargetMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
 	}
 	stream := StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
@@ -627,20 +627,20 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	if !codecIntentSet(effectiveEncode) && !branchTargetsAllSinkDestinations(spec.targets) {
 		return branchEncodeMissingError(stream)
 	}
-	seen := make(map[string]int, len(spec.labels))
-	for i, label := range spec.labels {
-		if label == "" {
-			return transcodeEmptyOutputLabelError(streamBuild{name: spec.name, selector: av.StreamSelector{Type: selected}}, i)
+	seen := make(map[string]int, len(spec.targetNames))
+	for i, targetName := range spec.targetNames {
+		if targetName == "" {
+			return branchTargetNameEmptyError(streamBuild{name: spec.name, selector: av.StreamSelector{Type: selected}}, i)
 		}
-		if firstIndex, ok := seen[label]; ok {
+		if firstIndex, ok := seen[targetName]; ok {
 			return duplicateBranchDestinationError(
-				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Targets: spec.labels},
-				label,
+				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Targets: spec.targetNames},
+				targetName,
 				firstIndex,
 				i,
 			)
 		}
-		seen[label] = i
+		seen[targetName] = i
 	}
 	return nil
 }

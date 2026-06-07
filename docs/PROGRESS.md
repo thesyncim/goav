@@ -1799,6 +1799,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     target operations failing as `graph_plan_invalid` before adapter/source
     work can mask planner defects.
     Done.
+350. Remove label wording from normal branch target plumbing:
+    `BranchSpec` and branch `streamBuild` now carry `targetNames` instead of
+    internal `labels`, and normal branch duplicate/missing-target diagnostics
+    talk about typed target names. This keeps the front-door composition model
+    centered on `Target` values and direct `Destination` values instead of
+    leaking historical string-label routing into new planner work.
+    Done.
 
 ## First Vertical Slice
 
