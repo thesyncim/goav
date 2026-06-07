@@ -94,6 +94,10 @@ Current milestone:
   is written.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with
   WebM demuxers requiring the `webm` EBML document type.
+- Block-scope AES-CTR content encryption/decryption for SimpleBlock,
+  BlockGroup, laced blocks, and WebM profile output; encrypted laced reads
+  keep the source lace buffer retry-safe when caller packet capacity is too
+  small.
 - Matroska attachment mux/demux for `AttachedFile` entries, including
   filename, media type, description, UID, binary data, defensive cloning, and
   SeekHead entries in seekable output.
@@ -268,5 +272,5 @@ Committed benchmarks cover:
   --summary`, and `mkvmerge` copy/remux on the same input files.
 
 Future benchmarks should add large-file scan speed on real WebRTC recordings,
-encrypted laced-block cases, and comparisons against other Go EBML/Matroska
-libraries on the same corpus.
+subsample encrypted laced-block cases, and comparisons against other Go
+EBML/Matroska libraries on the same corpus.

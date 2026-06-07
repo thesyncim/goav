@@ -2466,10 +2466,8 @@ func (m *Muxer) prepareLacedBlockPayload(frames [][]byte, track Track, sizes []i
 	if len(sizes) != len(frames) {
 		return nil, ErrInvalidData
 	}
-	if encoding, err := blockContentEncoding(track); err != nil {
+	if _, err := blockContentEncoding(track); err != nil {
 		return nil, err
-	} else if encoding.encryptionSet {
-		return nil, ErrUnsupportedContentEncoding
 	}
 	m.lacePayload = m.lacePayload[:0]
 	for i := range frames {

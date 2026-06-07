@@ -2861,8 +2861,13 @@ func TestMuxerRejectsAESCTRContentEncryptionWithoutKey(t *testing.T) {
 	}
 }
 
-func TestMuxerRejectsAESCTRContentEncryptionLacing(t *testing.T) {
+func TestMuxerDemuxerAppliesAESCTRContentEncryptionToLacedFrames(t *testing.T) {
 	keyID := aesCTRContentEncryptionKeyID()
+	frames := [][]byte{
+		encryptedTestPayload("first laced"),
+		encryptedTestPayload("second laced"),
+		encryptedTestPayload("third laced"),
+	}
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{
 		ContentEncryptionKeys:      aesCTRContentEncryptionKeys(keyID),
@@ -2881,18 +2886,63 @@ func TestMuxerRejectsAESCTRContentEncryptionLacing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = muxer.WriteLacedPacket(LacedPacket{
-		TrackID:  trackID,
-		TimeNS:   0,
-		Keyframe: true,
-		Lacing:   LacingXiph,
-		Frames: [][]byte{
-			encryptedTestPayload("first laced"),
-			encryptedTestPayload("second laced"),
-		},
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:         trackID,
+		TimeNS:          0,
+		FrameDurationNS: 20_000_000,
+		Keyframe:        true,
+		Lacing:          LacingEBML,
+		Frames:          frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	encoded := buffer.Bytes()
+	for i := range frames {
+		if bytes.Contains(encoded, frames[i]) {
+			t.Fatalf("file still contains unencrypted laced frame %d", i)
+		}
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(encoded), DemuxerOptions{
+		ContentEncryptionKeys: aesCTRContentEncryptionKeys(keyID),
 	})
-	if !errors.Is(err, ErrUnsupportedContentEncoding) {
-		t.Fatalf("err = %v, want ErrUnsupportedContentEncoding", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	maxFrameSize := 0
+	for i := range frames {
+		if len(frames[i]) > maxFrameSize {
+			maxFrameSize = len(frames[i])
+		}
+	}
+	packet := Packet{Data: make([]byte, 0, maxFrameSize)}
+	for i := range frames {
+		if i == 1 {
+			packet.Data = make([]byte, 0, len(frames[i])-1)
+			if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrPayloadTooSmall) {
+				t.Fatalf("small buffer err = %v, want ErrPayloadTooSmall", err)
+			}
+			packet.Data = make([]byte, 0, maxFrameSize)
+		}
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatalf("read frame %d: %v", i, err)
+		}
+		if packet.TrackID != trackID || packet.TimeNS != int64(i)*20_000_000 ||
+			packet.DurationNS != 20_000_000 || !packet.Keyframe ||
+			!bytes.Equal(packet.Data, frames[i]) {
+			t.Fatalf("frame %d packet=%+v data=%q", i, packet, packet.Data)
+		}
+	}
+
+	missingKeyDemuxer, err := NewDemuxer(bytes.NewReader(encoded), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := missingKeyDemuxer.ReadPacket(&packet); !errors.Is(err, ErrUnsupportedContentEncoding) {
+		t.Fatalf("missing key err = %v, want ErrUnsupportedContentEncoding", err)
 	}
 }
 

@@ -3673,10 +3673,6 @@ func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timecode in
 			d.clearLace()
 			return err
 		}
-		if encoding.encryptionSet {
-			d.clearLace()
-			return ErrUnsupportedContentEncoding
-		}
 		d.laceContent = encoding
 	}
 	d.laceTimeNS = timecode * d.timecodeScaleNS
@@ -3800,28 +3796,15 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 	}
 	frame := d.laceFrames[d.laceFrameIndex]
 	frameData := d.laceBuffer[frame.offset : frame.offset+frame.size]
-	if d.laceContent.compression == blockContentTransformZlib ||
+	if d.laceContent.encryptionSet ||
+		d.laceContent.compression == blockContentTransformZlib ||
 		d.laceContent.compression == blockContentTransformBzlib ||
 		d.laceContent.compression == blockContentTransformLZO1X {
-		var decoded []byte
-		var err error
-		switch d.laceContent.compression {
-		case blockContentTransformZlib:
-			decoded, err = zlibDecompressInto(dst.Data[:0], frameData)
-		case blockContentTransformBzlib:
-			decoded, err = bzip2DecompressInto(dst.Data[:0], frameData)
-		case blockContentTransformLZO1X:
-			decoded, err = lzoDecompressInto(dst.Data[:0], frameData)
+		track, ok := d.track(d.laceTrackID)
+		if !ok {
+			return ErrUnknownTrack
 		}
-		if err != nil {
-			return err
-		}
-		decoded, err = prependContentEncodingHeader(decoded, d.laceContent.headerSettings)
-		if err != nil {
-			return err
-		}
-		dst.Data = decoded
-		if err := d.finishLacedCodecPayload(dst); err != nil {
+		if err := d.decodeLacedContentEncodedBlockFrame(track, frameData, d.laceContent, dst); err != nil {
 			return err
 		}
 	} else {
@@ -3871,6 +3854,18 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 		d.clearLace()
 	}
 	return nil
+}
+
+func (d *Demuxer) decodeLacedContentEncodedBlockFrame(track Track, frame []byte, encoding blockContentEncodingInfo, dst *Packet) error {
+	payload := frame
+	if encoding.encryptionSet {
+		if cap(d.contentBuffer) < len(frame) {
+			d.contentBuffer = make([]byte, len(frame))
+		}
+		payload = d.contentBuffer[:len(frame)]
+		copy(payload, frame)
+	}
+	return d.decodeContentEncodedBlockFrame(track, payload, encoding, dst)
 }
 
 func (d *Demuxer) applyLaceGroupMetadata(dst *Packet) {

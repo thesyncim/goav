@@ -278,6 +278,83 @@ func TestMuxerDemuxerAppliesPartitionedAESCTRContentEncryption(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerAppliesAESCTRContentEncryptionToLacedFrames(t *testing.T) {
+	keyID := []byte("webm-aes-laced-key")
+	key := []byte{
+		0x40, 0x41, 0x42, 0x43,
+		0x44, 0x45, 0x46, 0x47,
+		0x48, 0x49, 0x4a, 0x4b,
+		0x4c, 0x4d, 0x4e, 0x4f,
+	}
+	keys := []ContentEncryptionKey{{KeyID: keyID, Key: key}}
+	initialIV := []byte{0x30, 0x52, 0x74, 0x96, 0xb8, 0xda, 0xfc, 0x1e}
+	frames := [][]byte{
+		[]byte("encrypted webm vp8 laced frame one encrypted webm vp8 laced frame one"),
+		[]byte("encrypted webm vp8 laced frame two encrypted webm vp8 laced frame two"),
+	}
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{
+		ContentEncryptionKeys:      keys,
+		ContentEncryptionInitialIV: initialIV,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackVideo,
+		Codec:             CodecVP8,
+		DefaultDurationNS: 20_000_000,
+		ContentEncodings: []ContentEncoding{{
+			Type:          ContentEncodingTypeEncryption,
+			EncryptionSet: true,
+			Encryption: ContentEncryption{
+				Algorithm:      ContentEncAlgoAES,
+				KeyID:          keyID,
+				AESSettingsSet: true,
+				AESSettings:    ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCTR},
+			},
+		}},
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames:   frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	encoded := buffer.Bytes()
+	for i := range frames {
+		if bytes.Contains(encoded, frames[i]) {
+			t.Fatalf("file still contains unencrypted laced frame %d", i)
+		}
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(encoded), DemuxerOptions{ContentEncryptionKeys: keys})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, len(frames[0]))}
+	for i := range frames {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatalf("read frame %d: %v", i, err)
+		}
+		if packet.TrackID != trackID || packet.TimeNS != int64(i)*20_000_000 ||
+			packet.DurationNS != 20_000_000 || !packet.Keyframe ||
+			!bytes.Equal(packet.Data, frames[i]) {
+			t.Fatalf("frame %d packet=%+v data=%q", i, packet, packet.Data)
+		}
+	}
+}
+
 func TestMuxerDemuxerPreservesAudioOutputSampleRate(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
