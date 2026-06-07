@@ -61,6 +61,8 @@ type Demuxer struct {
 	uintScratch       [8]byte
 	contentBuffer     []byte
 	contentPartitions []uint32
+	pendingHeader     ebml.Header
+	pendingHeaderSet  bool
 }
 
 type laceFrame struct {
@@ -125,6 +127,8 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.clusterUnknown = false
 	d.clusterEnd = 0
 	d.clusterTimecode = 0
+	d.pendingHeader = ebml.Header{}
+	d.pendingHeaderSet = false
 	d.clearLace()
 	return d.readPreamble()
 }
@@ -193,6 +197,8 @@ func (d *Demuxer) seekToCuePosition(position CueTrackPosition) error {
 		int64(position.ClusterPosition) > math.MaxInt64-d.segmentData {
 		return ErrInvalidData
 	}
+	d.pendingHeader = ebml.Header{}
+	d.pendingHeaderSet = false
 	offset := d.segmentData + int64(position.ClusterPosition)
 	if _, err := d.seeker.Seek(offset, io.SeekStart); err != nil {
 		return err
@@ -210,6 +216,10 @@ func (d *Demuxer) seekToCuePosition(position CueTrackPosition) error {
 	}
 	if position.RelativePositionSet {
 		if err := d.seekToCueRelativePosition(header, position.RelativePosition); err != nil {
+			return err
+		}
+	} else if position.BlockNumberSet {
+		if err := d.seekToCueBlockNumber(header, position.BlockNumber); err != nil {
 			return err
 		}
 	}
@@ -384,6 +394,52 @@ func (d *Demuxer) seekToCueRelativePosition(cluster ebml.Header, relativePositio
 		return ErrInvalidData
 	}
 	return nil
+}
+
+func (d *Demuxer) seekToCueBlockNumber(cluster ebml.Header, blockNumber uint64) error {
+	if blockNumber == 0 {
+		return ErrInvalidData
+	}
+	blockIndex := uint64(0)
+	for {
+		if !cluster.Size.Unknown && d.reader.Offset() >= cluster.DataOffset+int64(cluster.Size.Value) {
+			return ErrInvalidData
+		}
+		header, err := d.reader.ReadHeader()
+		if err != nil {
+			if isEOF(err) {
+				return ErrInvalidData
+			}
+			return err
+		}
+		switch header.ID {
+		case idTimestamp:
+			value, err := readUIntPayloadScratch(d.reader, header.Size.Value, &d.uintScratch)
+			if err != nil {
+				return err
+			}
+			if value > uint64(math.MaxInt64) {
+				return ErrInvalidData
+			}
+			d.clusterTimecode = int64(value)
+		case idSimpleBlock, idBlockGroup:
+			blockIndex++
+			if blockIndex == blockNumber {
+				d.pendingHeader = header
+				d.pendingHeaderSet = true
+				return nil
+			}
+			if err := skipElement(d.reader, header); err != nil {
+				return err
+			}
+		case idCluster:
+			return ErrInvalidData
+		default:
+			if err := skipElement(d.reader, header); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func (d *Demuxer) Tracks() []Track {
@@ -668,7 +724,7 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 		if d.inCluster && !d.clusterUnknown && d.reader.Offset() >= d.clusterEnd {
 			d.inCluster = false
 		}
-		header, err := d.reader.ReadHeader()
+		header, err := d.nextPacketHeader()
 		if err != nil {
 			return err
 		}
@@ -747,6 +803,16 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 			}
 		}
 	}
+}
+
+func (d *Demuxer) nextPacketHeader() (ebml.Header, error) {
+	if d.pendingHeaderSet {
+		header := d.pendingHeader
+		d.pendingHeader = ebml.Header{}
+		d.pendingHeaderSet = false
+		return header, nil
+	}
+	return d.reader.ReadHeader()
 }
 
 func (d *Demuxer) readPreamble() error {

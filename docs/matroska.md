@@ -62,7 +62,8 @@ Current milestone:
   audio packets and keyframe video packets; callers may force keyframe-only,
   all-packet dense indexing, or disable cues explicitly with `CuePolicy`.
 - Cue-based `SeekToTime` for seekable demuxers, using `CueRelativePosition`
-  when present to position directly on the cued block.
+  when present and falling back to `CueBlockNumber` when relative positions are
+  absent.
 - Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
   a requested timestamp.
 - Track-specific cue-assisted `SeekToTrackTime` and `ReadTrackPacketAtTime`
@@ -174,8 +175,10 @@ Attachments, Chapters, Tags, and Cues when present. The muxer updates duration
 and cue state only after the packet bytes are written successfully.
 `SeekToTime` uses those Cues to jump to the nearest preceding cue. When that cue
 has `CueRelativePosition`, the demuxer parses preceding Cluster metadata and
-positions the next read directly on the cued block. A successful seek clears
-pending laced-frame state before reading from the target cluster.
+positions the next read directly on the cued block. If a cue omits
+`CueRelativePosition` but has `CueBlockNumber`, the demuxer scans the Cluster to
+that block number and hands that block to the next read. A successful seek
+clears pending laced-frame state before reading from the target cluster.
 `ReadPacketAtTime` combines that cue seek with packet reads and returns the
 first packet at or after the requested timestamp. The caller-provided packet
 buffer must be large enough for skipped packets and the returned packet.
