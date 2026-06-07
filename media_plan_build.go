@@ -2,7 +2,9 @@ package goav
 
 import (
 	"context"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -631,6 +633,28 @@ func graphPlanOperationsByBranch(operations []graphPlanOperation) map[string][]g
 	return out
 }
 
+func graphPlanSingleBranchOperations(operations []graphPlanOperation, scope string) ([]graphPlanOperation, string, error) {
+	byBranch := graphPlanOperationsByBranch(operations)
+	if len(byBranch) == 0 {
+		return nil, "", graphPlanInvalidError(scope+" graph plan has no branch operations", nil)
+	}
+	if len(byBranch) != 1 {
+		branches := make([]string, 0, len(byBranch))
+		for branch := range byBranch {
+			branches = append(branches, branch)
+		}
+		sort.Strings(branches)
+		return nil, "", graphPlanInvalidError(scope+" graph plan must have exactly one branch operation set", []string{
+			"branches=" + strconv.Itoa(len(byBranch)),
+			"branch_names=" + strings.Join(branches, ","),
+		})
+	}
+	for branch, branchOperations := range byBranch {
+		return branchOperations, branch, nil
+	}
+	return nil, "", graphPlanInvalidError(scope+" graph plan has no branch operations", nil)
+}
+
 func graphPlanBranchOperationsContain(operations []graphPlanOperation, kind OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
@@ -745,7 +769,15 @@ func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, plan graphPla
 }
 
 func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(plan graphPlan) (graphPlanOperation, bool, []graphPlanTargetOperation, error) {
-	selectOperation, hasSelect := graphPlanFirstOperation(plan.operations, OpSelect)
+	operations := plan.operations
+	if p.selectedStream {
+		branchOperations, _, err := graphPlanSingleBranchOperations(plan.operations, "selected packet-copy")
+		if err != nil {
+			return graphPlanOperation{}, false, nil, err
+		}
+		operations = branchOperations
+	}
+	selectOperation, hasSelect := graphPlanFirstOperation(operations, OpSelect)
 	switch {
 	case p.selectedStream && !hasSelect:
 		return graphPlanOperation{}, false, nil, graphPlanInvalidError("selected packet-copy graph plan has no select operation", []string{
@@ -756,7 +788,7 @@ func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(plan graphPlan)
 			"node=" + selectOperation.Node.String(),
 		})
 	}
-	targets := graphPlanTargetOperations(plan.operations)
+	targets := graphPlanTargetOperations(operations)
 	if len(targets) == 0 {
 		return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy graph plan has no target operations", nil)
 	}
@@ -919,36 +951,45 @@ type graphPlanFrameStreamLowering struct {
 }
 
 func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan) (graphPlanFrameStreamLowering, error) {
-	selectOperation, ok := graphPlanFirstOperation(plan.operations, OpSelect)
+	operations, branchName, err := graphPlanSingleBranchOperations(plan.operations, "frame stream")
+	if err != nil {
+		return graphPlanFrameStreamLowering{}, err
+	}
+	selectOperation, ok := graphPlanFirstOperation(operations, OpSelect)
 	if !ok {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan has no select operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+			"branch=" + branchName,
 		})
 	}
 	if selectOperation.Node == "" {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan select operation has no node", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+			"branch=" + branchName,
 		})
 	}
-	decodeOperation, ok := graphPlanFirstOperation(plan.operations, OpDecode)
+	decodeOperation, ok := graphPlanFirstOperation(operations, OpDecode)
 	if !ok {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan has no decode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+			"branch=" + branchName,
 		})
 	}
 	if decodeOperation.Node == "" {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan decode operation has no node", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+			"branch=" + branchName,
 		})
 	}
-	filterNodes, err := p.validateFrameStreamFilterOperations(plan.operations)
+	filterNodes, err := p.validateFrameStreamFilterOperations(operations)
 	if err != nil {
 		return graphPlanFrameStreamLowering{}, err
 	}
-	encodeOperation, hasEncode := graphPlanFirstOperation(plan.operations, OpEncode)
+	encodeOperation, hasEncode := graphPlanFirstOperation(operations, OpEncode)
 	if p.encode != nil && !hasEncode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("encoded frame stream graph plan has no encode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+			"branch=" + branchName,
 		})
 	}
 	var encodeNode pipeline.NodeRef
@@ -956,6 +997,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan
 		if encodeOperation.Node == "" {
 			return graphPlanFrameStreamLowering{}, graphPlanInvalidError("encoded frame stream graph plan encode operation has no node", []string{
 				"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+				"branch=" + branchName,
 			})
 		}
 		encodeNode = encodeOperation.Node
@@ -963,9 +1005,10 @@ func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan
 	if p.encode == nil && hasEncode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("decoded frame stream graph plan has an unexpected encode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+			"branch=" + branchName,
 		})
 	}
-	targets, err := p.prepareFrameStreamTargets(plan)
+	targets, err := p.prepareFrameStreamTargets(operations, plan.outputs)
 	if err != nil {
 		return graphPlanFrameStreamLowering{}, err
 	}
@@ -1002,8 +1045,8 @@ func (p mediaPlanStreamGraph) validateFrameStreamFilterOperations(operations []g
 	return nodes, nil
 }
 
-func (p mediaPlanStreamGraph) prepareFrameStreamTargets(plan graphPlan) ([]graphPlanTargetOperation, error) {
-	targets := graphPlanTargetOperations(plan.operations)
+func (p mediaPlanStreamGraph) prepareFrameStreamTargets(operations []graphPlanOperation, outputs []planOutput) ([]graphPlanTargetOperation, error) {
+	targets := graphPlanTargetOperations(operations)
 	if len(targets) == 0 {
 		return nil, graphPlanInvalidError("frame stream graph plan has no target operations", nil)
 	}
@@ -1018,7 +1061,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamTargets(plan graphPlan) ([]graph
 		if err := validateGraphPlanTargetOperationNode("frame stream", target); err != nil {
 			return nil, err
 		}
-		outputIndex, ok := graphPlanOutputIndex(plan.outputs, target.Name)
+		outputIndex, ok := graphPlanOutputIndex(outputs, target.Name)
 		if !ok || outputIndex < 0 || outputIndex >= len(p.outputs) {
 			return nil, graphPlanInvalidError("frame stream target operation is not bound to an output", []string{
 				"target=" + target.Name,

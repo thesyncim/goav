@@ -1874,6 +1874,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     the planned encode node ref. Tests mutate planned select, decode, resample,
     and encode refs and prove the built graph still equals the described graph.
     Done.
+359. Scope selected direct lowering to one branch operation set:
+    selected packet-copy and direct frame-stream graph-plan lowerers now isolate
+    exactly one branch operation set before reading select, decode, filter,
+    encode, and target refs. Whole-input packet copy still supports multiple
+    input branches, but selected direct chains can no longer accidentally lower
+    against unrelated branch operations in the same plan. Tests inject a second
+    planned branch into selected packet-copy and decoded frame-stream plans and
+    prove graph-plan validation rejects them before source opening.
+    Done.
 
 ## First Vertical Slice
 
@@ -2085,9 +2094,10 @@ Required proof:
 ## Next Slices
 
 1. Make direct chains implicit branches. Direct packet-copy, decode-to-sink, and
-   encode-to-target operation and target nodes now consume graph-plan refs; the
-   next step is to make direct chains and branch composition share one branch
-   planner instead of workflow-shape graph modes.
+   encode-to-target operation and target nodes now consume graph-plan refs and
+   selected direct chains are branch-scoped during lowering. The next step is to
+   make direct chains and branch composition share one branch planner instead of
+   workflow-shape graph modes.
 2. Add `GraphPatch` for runtime attach. `Task.Attach` should plan branch specs
    from existing typed taps, validate caps and targets before mutation, reuse
    upstream nodes, allocate only downstream branch nodes, and share mux/sink
@@ -2135,9 +2145,10 @@ keep runtime attach converging toward the same patchable planner model.
 Packet-copy, direct frame-stream, and grouped branch-compose builds now consume
 graph-plan operation records for validation, operation node construction,
 target node construction, and target routing; direct frame-stream builds consume
-select/decode/filter/encode refs, and grouped branch-compose consumes
-select/decode input refs, shared/private step refs, encode refs, and target
-refs. The public recipe surface is small: `From`, chains,
+one branch operation set plus select/decode/filter/encode refs, selected
+packet-copy also validates one branch operation set, and grouped branch-compose
+consumes select/decode input refs, shared/private step refs, encode refs, and
+target refs. The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`, `File`, `URIOut`, `Writer`, `Object`,
 `Sink`, `Flow`, `Codec`, and runtime `Attach`. `Destination` remains the
 externally implementable extension surface for custom byte writers, object

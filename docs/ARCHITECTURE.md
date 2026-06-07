@@ -91,7 +91,10 @@ graph plan. The graph plan also carries an ordered operation sequence derived
 from branch operations and target groups. Packet-copy, direct stream
 decode/filter/encode, and grouped branch-compose builds now consume that
 sequence for pre-mutation validation, target binding, and target node
-construction. Grouped branch-compose
+construction. Selected packet-copy and direct frame-stream lowering first
+isolate one branch operation set before reading select/decode/filter/encode and
+target refs; whole-input packet copy can still preserve multiple input
+branches. Grouped branch-compose
 input lowering also consumes graph-plan select/decode node refs, so described
 and built graphs stay equivalent even when operation refs are changed by later
 planning passes. Shared branch-compose transform/stage lowering consumes the
