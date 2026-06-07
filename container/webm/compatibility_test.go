@@ -178,6 +178,18 @@ func TestExternalMKVMergeWebMPacketRoundTrip(t *testing.T) {
 	assertLocalWebMPacketPayloads(t, "mkvmerge local", readLocalWebMPacketPayloads(t, remuxed), wantPayloads)
 }
 
+func TestExternalFFmpegWebMPacketRoundTrip(t *testing.T) {
+	ffmpeg := requireTool(t, "ffmpeg")
+	ffprobe := requireTool(t, "ffprobe")
+	file, _ := writePacketOracleWebM(t)
+	wantPayloads := readLocalWebMPacketPayloads(t, file)
+	remuxed := filepath.Join(t.TempDir(), "ffmpeg-packet-oracle.webm")
+	runExternalOrSkip(t, ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", file, "-map", "0", "-c", "copy", remuxed)
+
+	assertExternalWebMCodecPackets(t, "ffmpeg ffprobe", probeExternalWebMCodecPackets(t, ffprobe, remuxed), externalWebMCodecPacketsForPayloads(t, wantPayloads))
+	assertLocalWebMPacketPayloads(t, "ffmpeg local", readLocalWebMPacketPayloads(t, remuxed), wantPayloads)
+}
+
 func TestExternalMKVToolNixCompat(t *testing.T) {
 	file := writeCompatibilityWebM(t)
 	if tool, ok := lookupTool("mkvalidator"); ok {

@@ -9691,6 +9691,58 @@ func TestDemuxerReadsLacedSimpleBlocks(t *testing.T) {
 	}
 }
 
+func TestDemuxerReadsSpecLacingFlags(t *testing.T) {
+	const (
+		specLacingXiph  = 0x02
+		specLacingFixed = 0x04
+		specLacingEBML  = 0x06
+	)
+	tests := []struct {
+		name   string
+		lacing byte
+		frames [][]byte
+	}{
+		{
+			name:   "xiph",
+			lacing: specLacingXiph,
+			frames: [][]byte{{1, 2}, {3, 4, 5}, {6}},
+		},
+		{
+			name:   "fixed",
+			lacing: specLacingFixed,
+			frames: [][]byte{{1, 2}, {3, 4}, {5, 6}},
+		},
+		{
+			name:   "ebml",
+			lacing: specLacingEBML,
+			frames: [][]byte{{1, 2}, {3, 4, 5}, {6}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeSpecLacedMatroskaData(t, tt.lacing, tt.frames, 20_000_000)
+			demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := Packet{Data: make([]byte, 0, 8)}
+			for i := range tt.frames {
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatalf("read frame %d: %v", i, err)
+				}
+				if packet.TrackID != 1 || packet.TimeNS != int64(i)*20_000_000 ||
+					packet.DurationNS != 20_000_000 || !packet.Keyframe ||
+					!bytes.Equal(packet.Data, tt.frames[i]) {
+					t.Fatalf("frame %d packet=%+v data=%v want data=%v", i, packet, packet.Data, tt.frames[i])
+				}
+			}
+			if err := demuxer.ReadPacket(&packet); !errors.Is(err, io.EOF) {
+				t.Fatalf("err = %v, want EOF", err)
+			}
+		})
+	}
+}
+
 func TestMuxerWritesLacedSimpleBlocks(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -9767,6 +9819,86 @@ func TestMuxerWritesLacedSimpleBlocks(t *testing.T) {
 			}
 			if err := demuxer.ReadPacket(&packet); !errors.Is(err, io.EOF) {
 				t.Fatalf("err = %v, want EOF", err)
+			}
+		})
+	}
+}
+
+func TestMuxerWritesSpecLacingFlags(t *testing.T) {
+	const (
+		specLacingXiph  = 0x02
+		specLacingFixed = 0x04
+		specLacingEBML  = 0x06
+		specLacingMask  = 0x06
+	)
+	tests := []struct {
+		name     string
+		lacing   LacingMode
+		frames   [][]byte
+		wantFlag byte
+	}{
+		{
+			name:     "xiph",
+			lacing:   LacingXiph,
+			frames:   [][]byte{{1}, {2, 3}, {4, 5, 6}},
+			wantFlag: specLacingXiph,
+		},
+		{
+			name:     "fixed",
+			lacing:   LacingFixed,
+			frames:   [][]byte{{1, 2}, {3, 4}, {5, 6}},
+			wantFlag: specLacingFixed,
+		},
+		{
+			name:     "ebml",
+			lacing:   LacingEBML,
+			frames:   [][]byte{{1, 2, 3}, {4}, {5, 6}},
+			wantFlag: specLacingEBML,
+		},
+		{
+			name:     "auto fixed",
+			lacing:   LacingAuto,
+			frames:   [][]byte{{1, 2}, {3, 4}, {5, 6}},
+			wantFlag: specLacingFixed,
+		},
+		{
+			name:     "auto ebml",
+			lacing:   LacingAuto,
+			frames:   [][]byte{{1}, {2, 3}, {4, 5, 6}},
+			wantFlag: specLacingEBML,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := &memoryWriteSeeker{}
+			muxer, err := NewMuxer(ws, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			trackID, err := muxer.AddTrack(Track{
+				Type:              TrackAudio,
+				Codec:             CodecOpus,
+				DefaultDurationNS: 20_000_000,
+				Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.WriteLacedPacket(LacedPacket{
+				TrackID:  trackID,
+				TimeNS:   40_000_000,
+				Keyframe: true,
+				Lacing:   tt.lacing,
+				Frames:   tt.frames,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			got := firstBlockFlags(t, ws.bytes, idSimpleBlock) & specLacingMask
+			if got != tt.wantFlag {
+				t.Fatalf("lacing flag = 0x%02x, want 0x%02x", got, tt.wantFlag)
 			}
 		})
 	}
@@ -14197,6 +14329,101 @@ func makeLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, defaultD
 	return buffer.Bytes()
 }
 
+func makeSpecLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, defaultDurationNS int64) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: defaultDurationNS,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.writeHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeSpecLacedSimpleBlock(muxer.ebml, trackID, lacing, frames); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func writeSpecLacedSimpleBlock(writer *ebml.Writer, trackID uint32, lacing byte, frames [][]byte) error {
+	const (
+		specSimpleBlockKeyframe = 0x80
+		specLacingMask          = 0x06
+		specLacingXiph          = 0x02
+		specLacingFixed         = 0x04
+		specLacingEBML          = 0x06
+	)
+	var payload bytes.Buffer
+	var scratch [ebml.MaxSizeWidth]byte
+	n, err := ebml.EncodeUnsignedVINT(scratch[:], uint64(trackID))
+	if err != nil {
+		return err
+	}
+	payload.Write(scratch[:n])
+	var blockHeader [3]byte
+	blockHeader[2] = specSimpleBlockKeyframe | lacing
+	payload.Write(blockHeader[:])
+	if len(frames) < 2 || len(frames) > 256 {
+		return ErrInvalidData
+	}
+	payload.WriteByte(byte(len(frames) - 1))
+	switch lacing & specLacingMask {
+	case specLacingXiph:
+		for i := 0; i < len(frames)-1; i++ {
+			size := len(frames[i])
+			for size >= 255 {
+				payload.WriteByte(255)
+				size -= 255
+			}
+			payload.WriteByte(byte(size))
+		}
+	case specLacingFixed:
+		size := len(frames[0])
+		for i := range frames {
+			if len(frames[i]) != size {
+				return ErrInvalidData
+			}
+		}
+	case specLacingEBML:
+		n, err := ebml.EncodeUnsignedVINT(scratch[:], uint64(len(frames[0])))
+		if err != nil {
+			return err
+		}
+		payload.Write(scratch[:n])
+		previous := len(frames[0])
+		for i := 1; i < len(frames)-1; i++ {
+			delta := len(frames[i]) - previous
+			n, err := encodeSignedLaceVINT(scratch[:], int64(delta))
+			if err != nil {
+				return err
+			}
+			payload.Write(scratch[:n])
+			previous = len(frames[i])
+		}
+	default:
+		return ErrUnsupportedLacing
+	}
+	for i := range frames {
+		payload.Write(frames[i])
+	}
+	return writer.WriteElement(idSimpleBlock, payload.Bytes())
+}
+
 func makeLacedBlockGroupMatroskaData(tb testing.TB, lacing byte, frames [][]byte) []byte {
 	tb.Helper()
 	var buffer bytes.Buffer
@@ -16860,6 +17087,86 @@ func readInfoDuration(tb testing.TB, payload []byte) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+func firstBlockFlags(tb testing.TB, data []byte, id ebml.ID) byte {
+	tb.Helper()
+	flags, ok := firstBlockFlagsInPayload(tb, data, id)
+	if !ok {
+		tb.Fatalf("missing block 0x%x", uint64(id))
+	}
+	return flags
+}
+
+func firstBlockFlagsInPayload(tb testing.TB, payload []byte, id ebml.ID) (byte, bool) {
+	tb.Helper()
+	reader := ebml.NewReader(bytes.NewReader(payload), ebml.ReaderOptions{})
+	for reader.Offset() < int64(len(payload)) {
+		header, err := reader.ReadHeader()
+		if err != nil {
+			tb.Fatal(err)
+		}
+		if header.ID == id {
+			if header.Size.Unknown || header.Size.Value > uint64(len(payload)) {
+				tb.Fatalf("invalid block size %+v", header.Size)
+			}
+			blockPayload := make([]byte, int(header.Size.Value))
+			if err := reader.ReadFull(blockPayload); err != nil {
+				tb.Fatal(err)
+			}
+			return rawBlockFlags(tb, blockPayload), true
+		}
+		if header.Size.Unknown {
+			if isBlockSearchMaster(header.ID) {
+				flags, ok := firstBlockFlagsInPayload(tb, payload[reader.Offset():], id)
+				if ok {
+					return flags, true
+				}
+			}
+			return 0, false
+		}
+		if header.Size.Value > uint64(len(payload)) {
+			tb.Fatalf("invalid element size %+v", header.Size)
+		}
+		if isBlockSearchMaster(header.ID) {
+			childPayload := make([]byte, int(header.Size.Value))
+			if err := reader.ReadFull(childPayload); err != nil {
+				tb.Fatal(err)
+			}
+			flags, ok := firstBlockFlagsInPayload(tb, childPayload, id)
+			if ok {
+				return flags, true
+			}
+			continue
+		}
+		if err := reader.Skip(header.Size.Value); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	return 0, false
+}
+
+func isBlockSearchMaster(id ebml.ID) bool {
+	switch id {
+	case idSegment, idCluster, idBlockGroup:
+		return true
+	default:
+		return false
+	}
+}
+
+func rawBlockFlags(tb testing.TB, payload []byte) byte {
+	tb.Helper()
+	reader := bytes.NewReader(payload)
+	var scratch [ebml.MaxSizeWidth]byte
+	if _, _, err := ebml.ReadUnsignedVINT(reader, &scratch); err != nil {
+		tb.Fatal(err)
+	}
+	var header [3]byte
+	if _, err := io.ReadFull(reader, header[:]); err != nil {
+		tb.Fatal(err)
+	}
+	return header[2]
 }
 
 func readFirstDiscardPadding(tb testing.TB, data []byte) (int64, bool) {

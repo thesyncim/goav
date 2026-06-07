@@ -239,6 +239,18 @@ func TestExternalMKVMergeMatroskaPacketRoundTrip(t *testing.T) {
 	assertLocalMatroskaPacketPayloads(t, "mkvmerge local", readLocalMatroskaPacketPayloads(t, remuxed), wantPayloads)
 }
 
+func TestExternalFFmpegMatroskaPacketRoundTrip(t *testing.T) {
+	ffmpeg := requireExternalTool(t, "ffmpeg")
+	ffprobe := requireExternalTool(t, "ffprobe")
+	file, _ := writePacketOracleMatroska(t)
+	wantPayloads := readLocalMatroskaPacketPayloads(t, file)
+	remuxed := filepath.Join(t.TempDir(), "ffmpeg-packet-oracle.mkv")
+	runExternalToolOrSkip(t, ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", file, "-map", "0", "-c", "copy", remuxed)
+
+	assertExternalMatroskaCodecPackets(t, "ffmpeg ffprobe", probeExternalMatroskaCodecPackets(t, ffprobe, remuxed), externalMatroskaCodecPacketsForPayloads(t, wantPayloads))
+	assertLocalMatroskaPacketPayloads(t, "ffmpeg local", readLocalMatroskaPacketPayloads(t, remuxed), wantPayloads)
+}
+
 func writeFFmpegAV1OpusMatroskaRecording(t testing.TB) string {
 	t.Helper()
 	tool := requireExternalTool(t, "ffmpeg")
