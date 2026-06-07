@@ -230,6 +230,24 @@ err := goav.From(frames).
     Run(ctx)
 ```
 
+Event-only custom sources use `EventShape` and route straight to sinks.
+
+```go
+events := goav.Source("diagnostics",
+    goav.EventShape(),
+    func(ctx context.Context, push goav.SourcePush) error {
+        if err := push.Event(goav.Event{Type: av.EventStats}); err != nil {
+            return err
+        }
+        return push.EOS()
+    },
+)
+
+err := goav.From(events).
+    To(goav.Sink(stats)).
+    Run(ctx)
+```
+
 ## Reuse
 
 When operations repeat, extract a flow. A flow is only a reusable ordered

@@ -413,6 +413,72 @@ func TestCustomFrameSourceRunsThroughRecipeWithoutDecode(t *testing.T) {
 	}
 }
 
+func TestCustomEventSourceRunsThroughRecipeToSink(t *testing.T) {
+	ctx := context.Background()
+	input := Source("diagnostics",
+		EventShape(),
+		func(_ context.Context, push SourcePush) error {
+			if err := push.Event(av.Event{Type: av.EventStats}); err != nil {
+				return err
+			}
+			return push.EOS()
+		},
+	)
+	var events []av.Event
+	job := From(input).To(Sink(SinkFunc("events", func(_ context.Context, msg Message) error {
+		if msg.Kind == pipeline.MessageEvent && msg.Event != nil {
+			events = append(events, *msg.Event)
+		}
+		return nil
+	})))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "custom source") ||
+		!strings.Contains(text, "domain=event") ||
+		!strings.Contains(text, "diagnostics -> events") ||
+		strings.Contains(text, "packet-copy") ||
+		strings.Contains(text, "select-") {
+		t.Fatalf("spec:\n%s", text)
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 ||
+		events[0].Type != av.EventStats ||
+		events[0].StreamID != "diagnostics" ||
+		events[1].Type != av.EventEndOfStream ||
+		events[1].StreamID != "diagnostics" {
+		t.Fatalf("events=%+v, want stats and EOS from diagnostics", events)
+	}
+}
+
+func TestCustomEventSourceRejectsMuxDestination(t *testing.T) {
+	input := Source("diagnostics",
+		EventShape(),
+		func(context.Context, SourcePush) error {
+			return nil
+		},
+	)
+
+	_, err := From(input).To(File("events.ivf", io.Discard, Format(av.FormatIVF))).Describe()
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) ||
+		buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "event source destination must be a sink") {
+		t.Fatalf("err = %v, want event source sink-only diagnostic", err)
+	}
+}
+
 func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

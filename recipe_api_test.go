@@ -1843,9 +1843,11 @@ func TestReadmeShowsCustomSources(t *testing.T) {
 	for _, required := range []string{
 		"goav.Source(",
 		"goav.PacketShape(",
+		"goav.EventShape(",
 		"goav.SourcePush",
 		"push.Packet(",
 		"push.Frame(",
+		"push.Event(",
 		"push.EOS()",
 	} {
 		if !strings.Contains(text, required) {

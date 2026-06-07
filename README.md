@@ -640,6 +640,24 @@ return goav.From(frames).
 Packet and frame-domain custom sources participate in the same stream, branch,
 destination, explain, and runtime graph path as built-in inputs.
 
+Event-only sources route directly to sinks.
+
+```go
+events := goav.Source("diagnostics",
+    goav.EventShape(),
+    func(ctx context.Context, push goav.SourcePush) error {
+        if err := push.Event(goav.Event{Type: av.EventStats}); err != nil {
+            return err
+        }
+        return push.EOS()
+    },
+)
+
+return goav.From(events).
+    To(goav.Sink(stats)).
+    Run(ctx)
+```
+
 ## Custom Destinations
 
 Write muxed bytes anywhere that can provide an `io.WriteCloser` with

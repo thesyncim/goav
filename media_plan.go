@@ -175,7 +175,7 @@ func planOutputs(outputs []DestinationIntent, formats map[string]av.FormatID) []
 
 func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch, []planDecision) {
 	if len(state.intent.Streams) == 0 {
-		return planCopyBranches(state.intent, outputs)
+		return planCopyBranches(state, outputs)
 	}
 	branches := make([]planBranch, 0, len(state.intent.Streams))
 	decisions := make([]planDecision, 0, len(state.intent.Streams))
@@ -357,7 +357,8 @@ func planSelectedStream(state *recipeCompileState, stream StreamIntent) (av.Stre
 	return av.Stream{}, false
 }
 
-func planCopyBranches(intent Intent, outputs []planOutput) ([]planBranch, []planDecision) {
+func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch, []planDecision) {
+	intent := state.intent
 	branches := make([]planBranch, 0, len(intent.Inputs))
 	decisions := make([]planDecision, 0, len(intent.Inputs))
 	outputNames := planOutputNames(outputs)
@@ -365,12 +366,36 @@ func planCopyBranches(intent Intent, outputs []planOutput) ([]planBranch, []plan
 		input := intent.Inputs[i]
 		name := firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i))
 		shape := mediaShapeFromInputIntent(input, DomainPacket)
-		operations := planInputOperations(input)
-		operations = append(operations, planOperation{
-			Kind:      OpCopy,
-			Component: "packet-copy",
-			Detail:    "preserve encoded packets",
-		})
+		if i < len(state.inputAttachments) {
+			if sourceShape, ok := customSourceShape(state.inputAttachments[i]); ok {
+				shape = mergeMediaShape(shape, sourceShape)
+			}
+		}
+		operations := planInputOperationsForShape(input, shape)
+		decision := planDecision{
+			Code:    "packet_copy",
+			Branch:  name,
+			Message: "no decode, transform, or encode requested; packets are copied to outputs",
+		}
+		if shape.Domain == DomainEvent {
+			operations = append(operations, planOperation{
+				Kind:      OpShape,
+				Component: "shape",
+				Detail:    "event source",
+				Shape:     shape,
+			})
+			decision = planDecision{
+				Code:    "event_source",
+				Branch:  name,
+				Message: "source produces events for sink destinations",
+			}
+		} else {
+			operations = append(operations, planOperation{
+				Kind:      OpCopy,
+				Component: "packet-copy",
+				Detail:    "preserve encoded packets",
+			})
+		}
 		operations = planOperationsWithShape(name, shape, operations)
 		branches = append(branches, planBranch{
 			Name:       firstNonEmpty(name, fmt.Sprintf("copy-%d", i)),
@@ -379,11 +404,7 @@ func planCopyBranches(intent Intent, outputs []planOutput) ([]planBranch, []plan
 			Operations: operations,
 			Outputs:    append([]string(nil), outputNames...),
 		})
-		decisions = append(decisions, planDecision{
-			Code:    "packet_copy",
-			Branch:  name,
-			Message: "no decode, transform, or encode requested; packets are copied to outputs",
-		})
+		decisions = append(decisions, decision)
 	}
 	return branches, decisions
 }

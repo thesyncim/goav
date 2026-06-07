@@ -176,6 +176,9 @@ func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 		branches, outputs := p.selectedPacketCopyBranchComposeRoutes()
 		return planBranchComposeRoutes(spec, nodes, sourceRefs, branches, outputs)
 	}
+	if mediaPlanInputsContainDomain(p.inputs, DomainEvent) && outputsContainMuxTarget(p.outputs) {
+		return pipeline.Spec{}, graphPlanInvalidError("event source destination must be a sink", nil)
+	}
 	upstreamRefs := sourceRefs
 	targetRefs, err := mediaPlanPacketCopyTargets(&spec, nodes, p.outputs)
 	if err != nil {
@@ -191,6 +194,15 @@ func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 		}
 	}
 	return spec, nil
+}
+
+func mediaPlanInputsContainDomain(inputs []InputSpec, domain MediaDomain) bool {
+	for i := range inputs {
+		if shape, ok := customSourceShape(inputs[i]); ok && shape.Domain == domain {
+			return true
+		}
+	}
+	return false
 }
 
 func (p mediaPlanStreamGraph) selectedPacketCopyBranchComposeRoutes() ([]branchComposeRoute, []branchComposeTargetRoute) {
@@ -905,6 +917,11 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 			target.Matches = matches
 		}
 		output := p.outputs[outputIndex]
+		if !p.selectedStream && packetCopyTargetMatchesDomain(plan.branches, target.Matches, DomainEvent) && output.sink == nil {
+			return nil, graphPlanInvalidError("event source destination must be a sink", []string{
+				"destination=" + target.Name,
+			})
+		}
 		if output.sink != nil {
 			if target.Kind != OpSink {
 				return nil, graphPlanInvalidError("packet-copy destination operation kind does not match sink destination", []string{
@@ -924,6 +941,18 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 		targets[i] = target
 	}
 	return targets, nil
+}
+
+func packetCopyTargetMatchesDomain(branches []planBranch, matches []int, domain MediaDomain) bool {
+	for _, index := range matches {
+		if index < 0 || index >= len(branches) {
+			continue
+		}
+		if branches[index].Shape.Domain == domain {
+			return true
+		}
+	}
+	return false
 }
 
 func (p mediaPlanStreamGraph) validatePacketCopyOperationRecords(plan graphPlan, operations []graphPlanOperation) error {
@@ -946,6 +975,9 @@ func (p mediaPlanStreamGraph) validatePacketCopyOperationRecords(plan graphPlan,
 			return graphPlanInvalidError("packet-copy graph plan has no operations for branch", []string{
 				"branch=" + branch.Name,
 			})
+		}
+		if branch.Shape.Domain == DomainEvent {
+			continue
 		}
 		if !graphPlanBranchOperationsContain(branchOperations, OpCopy) {
 			return graphPlanInvalidError("packet-copy graph plan has no copy operation for branch", []string{

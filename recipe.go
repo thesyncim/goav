@@ -643,24 +643,25 @@ func (s InputSpec) validateCustomSource() error {
 		}
 	}
 	shape := normalizeCustomSourceShape(node, s.source.shape)
-	if shape.Domain != DomainPacket && shape.Domain != DomainFrame {
+	if shape.Domain != DomainPacket && shape.Domain != DomainFrame && shape.Domain != DomainEvent {
 		return &BuildError{
 			Code:      "source_shape_unsupported",
 			Operation: "build input",
 			Node:      node,
-			Reason:    "custom recipe sources currently produce packet-domain or frame-domain media",
+			Reason:    "custom recipe sources currently produce packet-domain, frame-domain, or event-domain media",
 			Details: []string{
 				"actual_shape=" + shape.String(),
 			},
 			Suggestions: []string{
 				"declare the source with goav.PacketShape(media, codec, ...)",
 				"declare raw generated media with goav.FrameShape(media, ...)",
+				"declare diagnostic or lifecycle sources with goav.EventShape(...)",
 				"use goav.Sink(...) after decode or transform when observing frame-domain media",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if shape.MediaKind == "" {
+	if shape.Domain != DomainEvent && shape.MediaKind == "" {
 		return &BuildError{
 			Code:      "source_shape_invalid",
 			Operation: "build input",
