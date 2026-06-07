@@ -1590,6 +1590,44 @@ func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
 	}
 }
 
+func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
+	var body strings.Builder
+	for _, file := range []string{
+		"docs/ARCHITECTURE.md",
+		"docs/ROADMAP.md",
+	} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	text := body.String()
+	for _, forbidden := range []string{
+		"Recipes: From, stream chains",
+		"Intent graph: inputs, streams, transforms",
+		"media-plan build kind",
+		"media-plan build kinds",
+		"Stream recipe transforms",
+		"stream chains, not as",
+		"apply to stream chains",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("architecture docs keep stale composition vocabulary %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"Recipes: From, chains, taps, branches, targets",
+		"Intent graph: inputs, selected media, chain operations, targets, policies",
+		"media-plan executables",
+		"Chain transforms such as",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("architecture docs should keep current composition vocabulary %q", required)
+		}
+	}
+}
+
 func TestReadmeFlowExampleUsesDistinctBranches(t *testing.T) {
 	body, err := os.ReadFile("README.md")
 	if err != nil {

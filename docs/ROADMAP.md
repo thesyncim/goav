@@ -41,7 +41,7 @@ make the implementation match the composable planner promise.
    compiling from pre-lowered builder state; they now describe/build through a
    resolved single-stream graph plan and shared parameterized graph helpers. The
    remaining work is deeper direct graph construction and capability planning
-   behind the remaining media-plan build kinds.
+   behind media-plan executables.
 4. Add a capability model for streams, codecs, filters, and containers so the
    planner can explain copy/decode/encode choices, missing adapters, transform
    incompatibilities, and mux-output conflicts before runtime execution. Codec
@@ -63,7 +63,7 @@ make the implementation match the composable planner promise.
 7. Treat adapter coverage as product surface after the planner can absorb it.
    WebM and Ogg remain the next high-value containers because they unlock
    expected RTP/WebRTC record and muxed audio/video examples.
-8. Generalize flows as reusable operation sequences over stream chains, not as a
+8. Generalize flows as reusable operation sequences over chains, not as a
    second graph DSL. Branches own targets through `.To(goav.Target(...))`;
    runtime `Task.Attach(ctx, goav.Branch(...))` remains the late control-plane
    branch for running direct graphs.
@@ -169,7 +169,7 @@ make the implementation match the composable planner promise.
   branches, and transcode recipes. `Explain(ctx)`, media-plan `Describe`, and
   resolved-attachment `Build` slices are active for record, direct streams, and
   branch composition; deeper direct graph construction remains planned.
-- Reusable `Flow(name).Audio()/Video()` values that apply to stream chains,
+- Reusable `Flow(name).Audio()/Video()` values that apply to chains,
   branches, and runtime attachments. Build-time file/protocol and RTP/WebRTC
   branch slices are active; runtime stage/sink attachments are active for direct
   task graphs and bounded buffered task graphs, with packet-copy late recording

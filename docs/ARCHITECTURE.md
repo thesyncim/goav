@@ -17,9 +17,9 @@ and keyframe recovery are represented as events instead of hidden side effects.
 ```text
 Application
   |
-Recipes: From, stream chains, taps, branches, targets
+Recipes: From, chains, taps, branches, targets
   |
-Intent graph: inputs, streams, transforms, targets, policies
+Intent graph: inputs, selected media, chain operations, targets, policies
   |
 MediaPlan planner passes
   |
@@ -88,7 +88,7 @@ The handle-based graph builder remains available as the advanced layer through
 handles such as `source.Stream("audio")` and `decode.Out()` to node inputs.
 The internal builder is no longer a method on the public `Runtime` interface or
 an exported top-level type. Described graphs and execution graphs must stay
-equivalent for every media-plan build kind. The graph layer stays available for
+equivalent for every media-plan executable. The graph layer stays available for
 inspection and custom stages. Recipe `Explain(ctx)` returns structured
 workflow-report data, branch operations, planner decisions, and the same
 `pipeline.Spec`; optional diagram or prose rendering lives outside runtime
@@ -185,7 +185,7 @@ encoder is opened.
 Recipe helpers also expose `PacketFunc`, `FrameFunc`, `EventFunc`, and
 `SinkFunc` so small custom processing hooks can participate in the graph without
 implementing full source/stage/sink types.
-Stream recipe transforms such as `Audio().Resample(...)` and
+Chain transforms such as `Audio().Resample(...)` and
 `Video().Resize(...)` lower through the same filter registry as transcode
 branches, so common processing does not require manually building filter stages.
 

@@ -1618,6 +1618,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `isChain`, package comments list inputs/chains/taps/branches/targets/tasks,
     and guard coverage rejects the old reusable-flow implementation names.
     Done.
+327. Keep architecture docs on the smaller grammar:
+    architecture and roadmap wording now describe recipes as `From` plus
+    chains, taps, branches, and targets, and call the resolved runtime boundary
+    media-plan executables instead of media-plan build kinds. Documentation
+    guard coverage rejects stale phrases that would re-teach stream-chain or
+    build-kind concepts as public design language.
+    Done.
 
 ## First Vertical Slice
 
