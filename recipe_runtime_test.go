@@ -1315,6 +1315,13 @@ func TestStreamRecipeCopyTapCanAttachRuntimeSink(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer attachment.Close(ctx)
+	runtimeAttachment, ok := attachment.(*runtimeAttachment)
+	if !ok {
+		t.Fatalf("attachment = %T, want runtimeAttachment", attachment)
+	}
+	if got, want := workPatchOperationKindsForBranch(runtimeAttachment.work.Operations, "late"), []OperationKind{OpCopy, OpSink}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("runtime copy work operations = %+v, want %+v", got, want)
+	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -3866,6 +3873,13 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 		To(File("voice.ogg", io.Discard, Format(av.FormatOgg))))
 	if err != nil {
 		t.Fatal(err)
+	}
+	runtimeAttachment, ok := attachment.(*runtimeAttachment)
+	if !ok {
+		t.Fatalf("attachment = %T, want runtimeAttachment", attachment)
+	}
+	if got, want := workPatchOperationKindsForBranch(runtimeAttachment.work.Operations, "voice"), []OperationKind{OpDecode, OpTransform, OpEncode, OpTap, OpMux}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("runtime encode work operations = %+v, want %+v", got, want)
 	}
 	attachmentText := specText(attachment.Spec())
 	for _, want := range []string{

@@ -906,7 +906,7 @@ func runtimeBranchShapeOperationSpecs(branch runtimeBranch) []OperationSpec {
 	operations := cloneOperationSpecs(branch.operations)
 	if branch.encode.Copy && !operationSpecsContainKind(operations, OpCopy) {
 		operations = append(operations, OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(branch.encode)})
-	} else if codecIntentSet(branch.encode) && !operationSpecsContainKind(operations, OpEncode) {
+	} else if codecIntentSet(branch.encode) && !branch.encode.Copy && !operationSpecsContainKind(operations, OpEncode) {
 		operations = append(operations, OperationSpec{Kind: OpEncode, Component: string(branch.encode.ID), Encode: cloneCodecSpec(branch.encode)})
 	}
 	return operations

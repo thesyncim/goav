@@ -48,10 +48,11 @@ func workPatchBranchFromRuntimeBranch(branch runtimeBranch, index int, nodeNames
 	previous := pipeline.NodeRef(branch.from)
 	stageIndex := 0
 	operationIndex := 0
-	operationIDs := make([]string, 0, len(branch.steps)+len(branch.terminals))
-	operations := make([]workOperation, 0, len(branch.steps)+len(branch.terminals))
+	workSteps := runtimeBranchWorkSteps(branch)
+	operationIDs := make([]string, 0, len(workSteps)+len(branch.terminals))
+	operations := make([]workOperation, 0, len(workSteps)+len(branch.terminals))
 	taps := make([]workTap, 0, runtimeBranchTapCount(branch))
-	edges := make([]workEdge, 0, len(branch.steps)+len(branch.terminals))
+	edges := make([]workEdge, 0, len(workSteps)+len(branch.terminals))
 
 	appendOperation := func(operation workOperation) {
 		operation.ID = workOperationIDForKind(name, operationIndex, operation.Kind)
@@ -61,43 +62,43 @@ func workPatchBranchFromRuntimeBranch(branch runtimeBranch, index int, nodeNames
 		operationIndex++
 	}
 
-	for i := range branch.steps {
-		step := branch.steps[i]
-		kind := runtimeBranchStepWorkKind(step)
+	for i := range workSteps {
+		step := workSteps[i]
+		kind := runtimeBranchWorkStepKind(step)
 		shapeIn := currentShape
-		shapeOut := firstNonEmptyShape(step.shape, currentShape)
-		if step.tap != "" {
+		shapeOut := runtimeBranchWorkStepShapeOut(step, currentShape)
+		if tapName := runtimeBranchWorkStepTapName(step); tapName != "" {
 			appendOperation(workOperation{
-				Name:      step.tap,
+				Name:      tapName,
 				Kind:      OpTap,
 				Node:      previous,
-				Component: step.tap,
-				Detail:    "tap",
+				Component: runtimeBranchWorkStepComponent(step),
+				Detail:    runtimeBranchWorkStepDetail(step),
 				ShapeIn:   shapeIn,
 				ShapeOut:  shapeOut,
 			})
 			taps = append(taps, workTap{
-				Name:      step.tap,
+				Name:      tapName,
 				Node:      previous,
 				Domain:    shapeOut.Domain,
 				MediaKind: shapeOut.MediaKind,
-				After:     step.after,
+				After:     runtimeBranchWorkStepTapAfter(step),
 				Shape:     shapeOut,
 			})
 			currentShape = shapeOut
 			continue
 		}
 		node := pipeline.NodeRef("")
-		if step.stage != nil {
+		if step.hasStep && step.step.stage != nil {
 			node = runtimeBranchStepNode(nodeNames, stageIndex)
 			stageIndex++
 		}
 		appendOperation(workOperation{
-			Name:      runtimeBranchStepWorkName(step, node, operationIndex),
+			Name:      runtimeBranchWorkStepName(step, node, operationIndex),
 			Kind:      kind,
 			Node:      node,
-			Component: runtimeBranchStepWorkComponent(step),
-			Detail:    runtimeBranchStepWorkDetail(step),
+			Component: runtimeBranchWorkStepComponent(step),
+			Detail:    runtimeBranchWorkStepDetail(step),
 			ShapeIn:   shapeIn,
 			ShapeOut:  shapeOut,
 		})
@@ -160,6 +161,175 @@ func workPatchBranchFromRuntimeBranch(branch runtimeBranch, index int, nodeNames
 		Operations:   operationIDs,
 		Destinations: runtimeBranchDestinationNames(branch),
 	}, operations, taps, destinations, edges
+}
+
+type runtimeBranchWorkStep struct {
+	operation OperationSpec
+	step      runtimeBranchStep
+	hasStep   bool
+}
+
+func runtimeBranchWorkSteps(branch runtimeBranch) []runtimeBranchWorkStep {
+	operations := runtimeBranchShapeOperationSpecs(branch)
+	if len(operations) == 0 && len(branch.steps) == 0 {
+		return nil
+	}
+	out := make([]runtimeBranchWorkStep, 0, len(operations)+len(branch.steps))
+	stepIndex := 0
+	for i := range operations {
+		operation := operations[i]
+		if operation.Kind == "" {
+			continue
+		}
+		work := runtimeBranchWorkStep{operation: operation}
+		if runtimeBranchOperationNeedsPreparedStep(operation) &&
+			stepIndex < len(branch.steps) &&
+			runtimeBranchStepMatchesOperation(branch.steps[stepIndex], operation) {
+			work.step = branch.steps[stepIndex]
+			work.hasStep = true
+			stepIndex++
+		}
+		out = append(out, work)
+	}
+	for ; stepIndex < len(branch.steps); stepIndex++ {
+		out = append(out, runtimeBranchWorkStep{step: branch.steps[stepIndex], hasStep: true})
+	}
+	return out
+}
+
+func runtimeBranchOperationNeedsPreparedStep(operation OperationSpec) bool {
+	switch operation.Kind {
+	case OpCopy:
+		return false
+	case OpDecode, OpShape, OpTransform, OpStage, OpEncode, OpTap:
+		return true
+	default:
+		return false
+	}
+}
+
+func runtimeBranchStepMatchesOperation(step runtimeBranchStep, operation OperationSpec) bool {
+	switch operation.Kind {
+	case OpDecode:
+		return step.kind == OpDecode || step.decode
+	case OpShape:
+		return step.kind == OpShape || !mediaShapeEmpty(step.shapeUpdate)
+	case OpTransform:
+		return step.kind == OpTransform || runtimeBranchStepHasTransform(step)
+	case OpStage:
+		return step.kind == OpStage || (step.kind == "" && step.stage != nil)
+	case OpEncode:
+		return step.kind == OpEncode
+	case OpTap:
+		if step.kind != OpTap && step.tap == "" {
+			return false
+		}
+		return operation.Tap.Name == "" || step.tap == operation.Tap.Name
+	default:
+		return false
+	}
+}
+
+func runtimeBranchWorkStepKind(work runtimeBranchWorkStep) OperationKind {
+	if work.operation.Kind != "" {
+		return work.operation.Kind
+	}
+	if work.hasStep {
+		return runtimeBranchStepWorkKind(work.step)
+	}
+	return OpStage
+}
+
+func runtimeBranchWorkStepName(work runtimeBranchWorkStep, node pipeline.NodeRef, index int) string {
+	if node != "" {
+		return node.String()
+	}
+	if tapName := runtimeBranchWorkStepTapName(work); tapName != "" {
+		return tapName
+	}
+	component := runtimeBranchWorkStepComponent(work)
+	if component != "" {
+		return component
+	}
+	if work.operation.Kind != "" {
+		return string(work.operation.Kind)
+	}
+	if work.hasStep {
+		return runtimeBranchStepWorkName(work.step, node, index)
+	}
+	return "operation"
+}
+
+func runtimeBranchWorkStepComponent(work runtimeBranchWorkStep) string {
+	if work.operation.Kind != "" {
+		component := firstNonEmpty(operationSpecComponent(work.operation), work.operation.Component)
+		if component != "" {
+			return component
+		}
+	}
+	if work.hasStep {
+		return runtimeBranchStepWorkComponent(work.step)
+	}
+	return ""
+}
+
+func runtimeBranchWorkStepDetail(work runtimeBranchWorkStep) string {
+	switch runtimeBranchWorkStepKind(work) {
+	case OpDecode:
+		return "decode"
+	case OpTransform:
+		return "transform"
+	case OpShape:
+		return "shape"
+	case OpTap:
+		return "tap"
+	case OpEncode:
+		return "encode"
+	case OpCopy:
+		return "copy"
+	case OpStage:
+		return "stage"
+	default:
+		if detail := operationSpecDetail(work.operation); detail != "" {
+			return detail
+		}
+		if work.hasStep {
+			return runtimeBranchStepWorkDetail(work.step)
+		}
+		return "operation"
+	}
+}
+
+func runtimeBranchWorkStepShapeOut(work runtimeBranchWorkStep, current MediaShape) MediaShape {
+	if work.hasStep {
+		if shape := firstNonEmptyShape(work.step.shape, current); !mediaShapeEmpty(shape) {
+			return shape
+		}
+	}
+	if work.operation.Kind != "" {
+		return operationSpecOutputShape(current, work.operation)
+	}
+	return current
+}
+
+func runtimeBranchWorkStepTapName(work runtimeBranchWorkStep) string {
+	if work.operation.Kind == OpTap {
+		return firstNonEmpty(work.operation.Tap.Name, work.operation.Component)
+	}
+	if work.hasStep {
+		return work.step.tap
+	}
+	return ""
+}
+
+func runtimeBranchWorkStepTapAfter(work runtimeBranchWorkStep) OperationKind {
+	if work.operation.Kind == OpTap && work.operation.Tap.After != "" {
+		return work.operation.Tap.After
+	}
+	if work.hasStep {
+		return work.step.after
+	}
+	return ""
 }
 
 func runtimeBranchStepNode(nodeNames []string, index int) pipeline.NodeRef {

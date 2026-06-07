@@ -2625,6 +2625,11 @@ Runtime attach now starts from the same canonical sequence too:
 uses those operations directly, and mutable `runtimeBranchStep` values are
 derived only as preparation/execution state for opened decoders, filters,
 encoders, taps, and rollback.
+`WorkPatch` now reports runtime branch work by walking the canonical
+`OperationSpec` list and pairing each operation with its prepared runtime step
+only when a node or prepared shape exists. Packet copy is therefore visible as
+a real operation even though it has no stage, and mutable steps are no longer
+the reporting source of truth.
 
 ## Validation Gates
 
