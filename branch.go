@@ -130,7 +130,6 @@ type BranchSpec struct {
 	decode           bool
 	decodeCodec      CodecSpec
 	operations       []OperationSpec
-	steps            []chainStep
 	postEncodeTaps   []string
 	transforms       []TransformSpec
 	encode           CodecSpec
@@ -228,7 +227,7 @@ func (b *branchBuilder) Decode(options ...CodecOption) *branchBuilder {
 		b.setErr(duplicateBranchDecodeError(firstNonEmpty(b.spec.name, "branch")))
 		return b
 	}
-	if len(b.spec.steps) != 0 {
+	if branchOperationSpecsContainStep(b.spec.operations) {
 		b.setErr(branchDecodeOrderError(firstNonEmpty(b.spec.name, "branch")))
 		return b
 	}
@@ -265,18 +264,17 @@ func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 			b.setErr(duplicateBranchDecodeError(firstNonEmpty(b.spec.name, "branch")))
 			return b
 		}
-		if len(b.spec.steps) != 0 {
+		if branchOperationSpecsContainStep(b.spec.operations) {
 			b.setErr(branchDecodeOrderError(firstNonEmpty(b.spec.name, "branch")))
 			return b
 		}
 		b.spec.decode = true
 		b.spec.decodeCodec = mergeDecodeCodecSpec(b.spec.decodeCodec, spec.decodeCodec)
 	}
-	b.spec.steps = append(b.spec.steps, specSteps...)
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpecs(spec.transforms)...)
 	b.spec.operations = append(b.spec.operations, cloneOperationSpecs(spec.operations)...)
 	if codecIntentSet(spec.encode) {
-		if spec.encode.Copy && (b.spec.decode || len(b.spec.steps) != 0) {
+		if spec.encode.Copy && (b.spec.decode || branchOperationSpecsContainStep(b.spec.operations)) {
 			b.setErr(flowCopyDomainError("build branch", firstNonEmpty(spec.name, b.spec.name, "flow")))
 			return b
 		}
@@ -299,7 +297,6 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 			b.setErr(streamStageMissingError(StreamIntent{Name: firstNonEmpty(b.spec.name, "branch")}))
 			return b
 		}
-		b.spec.steps = append(b.spec.steps, chainStep{stage: stages[i]})
 		b.spec.operations = append(b.spec.operations, operationSpecForStage(stages[i]))
 	}
 	return b
@@ -313,7 +310,6 @@ func (b *branchBuilder) Shape(shape MediaShape) *branchBuilder {
 		b.setErr(chainStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "shape", b.spec.encode))
 		return b
 	}
-	b.spec.steps = append(b.spec.steps, chainStep{shape: shape})
 	b.spec.operations = append(b.spec.operations, operationSpecForShape(shape))
 	return b
 }
@@ -327,7 +323,6 @@ func (b *branchBuilder) Resize(width int, height int, options ...resizeOption) *
 		return b
 	}
 	transform := Resize(width, height, options...)
-	b.spec.steps = append(b.spec.steps, chainStep{transform: transform})
 	b.spec.transforms = append(b.spec.transforms, transform)
 	b.spec.operations = append(b.spec.operations, operationSpecForTransform(transform))
 	return b
@@ -342,7 +337,6 @@ func (b *branchBuilder) Resample(sampleRate int, channels int, options ...audioO
 		return b
 	}
 	transform := Resample(sampleRate, channels, options...)
-	b.spec.steps = append(b.spec.steps, chainStep{transform: transform})
 	b.spec.transforms = append(b.spec.transforms, transform)
 	b.spec.operations = append(b.spec.operations, operationSpecForTransform(transform))
 	return b
@@ -375,7 +369,6 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, OpEncode)))
 		return b
 	}
-	b.spec.steps = append(b.spec.steps, chainStep{tap: tap.name, tapDomain: tap.domain})
 	b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, initialStepAfter(b.spec.decode))))
 	return b
 }
@@ -430,7 +423,6 @@ func (b *branchBuilder) snapshot() BranchSpec {
 	spec.decodeCodec = cloneCodecSpec(spec.decodeCodec)
 	spec.encode = cloneCodecSpec(spec.encode)
 	spec.operations = cloneOperationSpecs(spec.operations)
-	spec.steps = cloneChainSteps(spec.steps)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
 	spec.destinations = cloneDestinationRefs(spec.destinations)
@@ -510,6 +502,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 		sharedOps := plannedBranchSharedOperationSpecs(stream, branches[i], parentPacket)
 		privateOps := plannedBranchPrivateOperationSpecs(stream, branches[i], parentPacket)
 		operations := append(cloneOperationSpecs(sharedOps), cloneOperationSpecs(privateOps)...)
+		branchSteps := branchSpecChainSteps(branches[i])
 		job.branchStreams = append(job.branchStreams, streamBuild{
 			name:           branches[i].name,
 			selector:       stream.selector,
@@ -521,7 +514,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			sharedOps:      sharedOps,
 			privateOps:     privateOps,
 			sharedSteps:    sharedSteps,
-			steps:          cloneChainSteps(branches[i].steps),
+			steps:          branchSteps,
 			postEncodeTaps: append(
 				append([]string(nil), stream.postEncodeTaps...),
 				branches[i].postEncodeTaps...,
@@ -605,8 +598,9 @@ func validateBranchStepTapDomains(spec BranchSpec, parentPacket bool) error {
 	if parentPacket && !spec.decode {
 		domain = DomainPacket
 	}
-	for i := range spec.steps {
-		step := spec.steps[i]
+	steps := branchSpecChainSteps(spec)
+	for i := range steps {
+		step := steps[i]
 		if step.tap == "" {
 			continue
 		}
@@ -615,6 +609,61 @@ func validateBranchStepTapDomains(spec BranchSpec, parentPacket bool) error {
 		}
 	}
 	return nil
+}
+
+func branchSpecChainSteps(spec BranchSpec) []chainStep {
+	return branchChainStepsFromOperationSpecs(spec.operations)
+}
+
+func branchOperationSpecsContainStep(operations []OperationSpec) bool {
+	for i := range operations {
+		switch operations[i].Kind {
+		case OpStage, OpShape, OpTransform:
+			return true
+		case OpTap:
+			if !operationSpecTapIsTerminalPacket(operations[i]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func branchChainStepsFromOperationSpecs(operations []OperationSpec) []chainStep {
+	if len(operations) == 0 {
+		return nil
+	}
+	steps := make([]chainStep, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		switch operation.Kind {
+		case OpStage:
+			if operation.Stage != nil {
+				steps = append(steps, chainStep{stage: operation.Stage})
+			}
+		case OpShape:
+			if !mediaShapeEmpty(operation.Shape) {
+				steps = append(steps, chainStep{shape: operation.Shape})
+			}
+		case OpTransform:
+			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
+				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
+			}
+		case OpTap:
+			if operation.Tap.Name != "" && !operationSpecTapIsTerminalPacket(operation) {
+				steps = append(steps, chainStep{tap: operation.Tap.Name, tapDomain: operation.Tap.Domain})
+			}
+		}
+	}
+	return steps
+}
+
+func operationSpecTapIsTerminalPacket(operation OperationSpec) bool {
+	if operation.Kind != OpTap {
+		return false
+	}
+	return operation.Tap.Domain == DomainPacket &&
+		(operation.Tap.After == OpEncode || operation.Tap.After == OpCopy)
 }
 
 func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]chainStep, TapRef, error) {

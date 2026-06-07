@@ -271,7 +271,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		label:     spec.label,
 		buffer:    spec.buffer,
 	}
-	branch.steps = runtimeBranchStepsFromChain(spec.decode, spec.decodeCodec, spec.steps)
+	branch.steps = runtimeBranchStepsFromChain(spec.decode, spec.decodeCodec, branchSpecChainSteps(spec))
 	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	if len(spec.destinations) == 0 {
 		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")

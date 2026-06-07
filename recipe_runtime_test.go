@@ -3021,7 +3021,7 @@ func TestTaskAttachRejectsRuntimeTransformDescriptorConfigBeforeMutation(t *test
 		To(Sink(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
 		})))
-	branch.steps[0].transform.Resample.SampleFormat = av.SampleFormatF32
+	branch.operations[0].Transform.Resample.SampleFormat = av.SampleFormatF32
 	branch.transforms[0].Resample.SampleFormat = av.SampleFormatF32
 
 	_, err = task.Attach(ctx, branch)

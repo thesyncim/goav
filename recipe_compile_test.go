@@ -353,6 +353,8 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 		"func operationSpecForTransform",
 		"func operationSpecForTap",
 		"func ensureJobStreamDecodeOperation",
+		"func branchSpecChainSteps",
+		"func branchChainStepsFromOperationSpecs",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("operation chains should keep shared chain vocabulary %q", required)
@@ -360,7 +362,7 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	}
 }
 
-func TestReusableAndRecipeChainsStoreOperationSpecsOnly(t *testing.T) {
+func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 	flowBody, err := os.ReadFile("flow.go")
 	if err != nil {
 		t.Fatal(err)
@@ -384,6 +386,23 @@ func TestReusableAndRecipeChainsStoreOperationSpecsOnly(t *testing.T) {
 	}
 	if strings.Contains(text[start:start+end], "steps          []chainStep") {
 		t.Fatal("jobStreamBuild should store OperationSpec, not a parallel chainStep slice")
+	}
+
+	branchBody, err := os.ReadFile("branch.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	branchText := string(branchBody)
+	branchStart := strings.Index(branchText, "type BranchSpec struct")
+	if branchStart < 0 {
+		t.Fatal("could not locate BranchSpec boundary")
+	}
+	branchEnd := strings.Index(branchText[branchStart:], "type branchBuilder struct")
+	if branchEnd < 0 {
+		t.Fatal("could not locate BranchSpec boundary")
+	}
+	if strings.Contains(branchText[branchStart:branchStart+branchEnd], "steps") {
+		t.Fatal("BranchSpec should store OperationSpec, not a parallel step slice")
 	}
 }
 

@@ -2610,6 +2610,12 @@ branch/runtime lowerer boundary, which keeps this pass scoped while making the
 next deletion obvious: branch composition and runtime attach should consume the
 same operation sequence directly instead of projecting back through a parallel
 step list.
+Planned and runtime branch specs now follow the same rule: `BranchSpec` stores
+ordered work only as `OperationSpec`, and the temporary `chainStep` view is
+derived while the older branch-compose and runtime attach lowerers still need
+it. The remaining bridge is now inside lowerer-owned `streamBuild`,
+`branchComposePlan`, and `runtimeBranch` execution state rather than the public
+composition structs.
 
 ## Validation Gates
 
