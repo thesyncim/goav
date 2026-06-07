@@ -2487,12 +2487,12 @@ list so shape validation, destination compatibility, runtime attach, and branch
 buffers move into the single `WorkPlan`/`WorkPatch` planner.
 Packet-copy, direct frame-stream, and grouped branch-compose builds now consume
 graph-plan operation records for validation, operation node construction,
-target node construction, and target routing; direct frame-stream builds consume
+destination node construction, and destination routing; direct frame-stream builds consume
 one branch operation set plus select/decode/filter/encode refs, direct
 frame-stream specs and runtime builds use branch route helpers, selected
 packet-copy specs and runtime builds consume one branch route plus planned
-select/target refs through the same helpers, and grouped branch-compose consumes
-select/decode input refs, shared/private step refs, encode refs, and target
+select/destination refs through the same helpers, and grouped branch-compose consumes
+select/decode input refs, shared/private step refs, encode refs, and destination
 refs. Whole-input packet copy still preserves multi-input fanout while it waits
 for the broader branch/patch planner shape, but its lowerer now validates
 planned copy operations, consistent duplicate destination operations, and target
@@ -2548,7 +2548,7 @@ normal path validates runtime support, emits a graph plan, and builds from that
 graph plan. The next shape is stricter: every normal expression lowers to
 `GraphPlan`, and every late branch lowers to the runtime graph-patch boundary. Direct chains are
 implicit branches, runtime attach is downstream patch application from typed
-taps, planned and runtime branches must share shape/target/buffer/lifecycle
+taps, planned and runtime branches must share shape/destination/buffer/lifecycle
 validation, and no normal composition path should dispatch by copy/sink/encode/
 branch workflow shape.
 The expert graph builder is not the target user-facing composer; it remains the
@@ -2560,14 +2560,18 @@ Destination configuration is deliberately singular: pass `Format`, `MIME`, and
 `Metadata` options to `File`, `URIOut`, `Writer`, `WriteCloser`, or `Object`;
 do not grow destination method-chain sugar back onto the front door.
 `MediaPlan` currently expresses record, stream decode, encode, and branch
-composition as input refs, stream selectors, ordered operations, target refs,
-taps, and planner decisions. `Describe`, `Build`, and `Explain(ctx)` now require
-a supported graph-plan shape for normal recipes. The next implementation work is
-to introduce the explicit `MediaShape`/`BranchPlan`/`GraphPatch` layer, move
-branch-compose and runtime-attach shapes out of parallel lowerer wrappers,
-broaden descriptor-backed target/container capability data as WebM/Ogg arrive,
-and keep broadening runtime attachment stress around generic lifecycle
-boundaries without weakening the direct graph branch grammar.
+composition as input refs, stream selectors, ordered operations, destination
+refs, taps, and planner decisions. `GraphPlan` now carries a derived internal
+`workPlan` with inputs, streams, operations, taps, branches, destinations,
+edges, decisions, and diagnostics. That is the new executable convergence
+boundary: `Describe`, `Build`, `Explain(ctx)`, and later `Attach` must move
+toward the same planned work instead of parallel workflow compilers. The next
+implementation work is to make `workPlan` the lowerer input, introduce
+`WorkPatch` for runtime attach from typed taps, delete `branchComposePlan` and
+`runtimeBranch` as separate models, broaden descriptor-backed
+destination/container capability data as WebM/Ogg arrive, and keep broadening
+runtime attachment stress around generic lifecycle boundaries without weakening
+the direct branch grammar.
 
 ## Validation Gates
 

@@ -74,7 +74,7 @@ func TestGraphPlanUsesSharedBuildLifecycle(t *testing.T) {
 		t.Fatal("recipeResolved should carry graphPlan as the executable boundary")
 	}
 	graphPlanType := reflect.TypeOf(graphPlan{})
-	for _, name := range []string{"nodes", "edges", "operations", "inputs", "streams", "taps", "branches", "outputs", "decisions", "diagnostics", "lowerer"} {
+	for _, name := range []string{"nodes", "edges", "operations", "work", "inputs", "streams", "taps", "branches", "outputs", "decisions", "diagnostics", "lowerer"} {
 		if _, ok := graphPlanType.FieldByName(name); !ok {
 			t.Fatalf("graphPlan should carry %s as cold-path plan metadata", name)
 		}
@@ -108,6 +108,109 @@ func TestGraphPlanBuildValidatesOperationsBeforeLowerer(t *testing.T) {
 	}
 	if lowerer.called {
 		t.Fatal("graph-plan lowerer was called after invalid ordered operations")
+	}
+}
+
+func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
+	runtime := New().(*runtime)
+	plan := mediaPlan{
+		Name: "work-plan-test",
+		Inputs: []planInput{{
+			Name:     "input.ivf",
+			Protocol: av.ProtocolFile,
+			Codec:    av.CodecVP8,
+		}},
+		Streams: []planStream{{
+			Name: "video",
+			Select: StreamSelect{
+				Type:  av.MediaVideo,
+				Codec: av.CodecVP8,
+			},
+		}},
+		Taps: []planTap{{
+			Name:      "video.decoded",
+			Node:      "decode",
+			Domain:    DomainFrame,
+			MediaKind: av.MediaVideo,
+			After:     OpDecode,
+			Shape:     FrameShape(av.MediaVideo, ShapeVideo(640, 360, "i420")),
+		}},
+		Branches: []planBranch{{
+			Name:  "preview",
+			Input: "input.ivf",
+			Stream: StreamSelect{
+				Type:  av.MediaVideo,
+				Codec: av.CodecVP8,
+			},
+			Shape: PacketShape(av.MediaVideo, av.CodecVP8),
+			Operations: []planOperation{{
+				Kind:      OpDecode,
+				Component: string(av.CodecVP8),
+				Shape:     FrameShape(av.MediaVideo, ShapeVideo(640, 360, "i420")),
+			}, {
+				Kind:  OpTap,
+				After: OpDecode,
+				Shape: FrameShape(av.MediaVideo, ShapeVideo(640, 360, "i420")),
+			}},
+			Outputs: []string{"frames"},
+		}},
+		Outputs: []planOutput{{
+			Name:       "frames",
+			Operation:  OpSink,
+			Component:  "sink",
+			BranchRefs: []string{"preview"},
+		}},
+	}
+	spec := pipeline.Spec{
+		Name: "work-plan-test",
+		Nodes: []pipeline.NodeSpec{{
+			Name: "decode",
+			Kind: pipeline.NodeStage,
+		}, {
+			Name: "frames",
+			Kind: pipeline.NodeSink,
+		}},
+		Edges: []pipeline.EdgeSpec{{
+			From:   "decode",
+			To:     "frames",
+			Policy: pipeline.RouteAll,
+		}},
+	}
+	graph := newGraphPlan(runtime, spec, plan, &graphPlanTestLowerer{runtime: runtime})
+
+	work := graph.workPlan()
+	if work.Name != "work-plan-test" {
+		t.Fatalf("work plan name = %q, want work-plan-test", work.Name)
+	}
+	if len(work.Inputs) != 1 || work.Inputs[0].Name != "input.ivf" {
+		t.Fatalf("work inputs = %+v, want input.ivf", work.Inputs)
+	}
+	if len(work.Branches) != 1 || work.Branches[0].Name != "preview" {
+		t.Fatalf("work branches = %+v, want preview branch", work.Branches)
+	}
+	if got, want := workPlanOperationKindsForBranch(work.Operations, "preview"), []OperationKind{OpDecode, OpTap, OpSink}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("work operations = %+v, want %+v", got, want)
+	}
+	if len(work.Destinations) != 1 || work.Destinations[0].Name != "frames" || len(work.Destinations[0].Branches) != 1 {
+		t.Fatalf("work destinations = %+v, want frames destination bound to preview", work.Destinations)
+	}
+	if len(work.Edges) != 1 || work.Edges[0].Branch != "preview" {
+		t.Fatalf("work edges = %+v, want preview edge", work.Edges)
+	}
+
+	work.Branches[0].Operations[0] = "mutated"
+	work.Operations[0].Destinations = append(work.Operations[0].Destinations, "mutated")
+	work.Destinations[0].Branches[0] = "mutated"
+
+	next := graph.workPlan()
+	if next.Branches[0].Operations[0] == "mutated" {
+		t.Fatal("graphPlan.workPlan() exposed branch operation slice")
+	}
+	if len(next.Operations[0].Destinations) != 0 {
+		t.Fatal("graphPlan.workPlan() exposed operation destination slice")
+	}
+	if next.Destinations[0].Branches[0] == "mutated" {
+		t.Fatal("graphPlan.workPlan() exposed destination branch slice")
 	}
 }
 
@@ -543,6 +646,21 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	if got, want := graphPlanOperationKindsForBranch(graphOperations, "web"), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpTap, OpEncode, OpMux}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("web graph operations = %+v, want %+v", got, want)
 	}
+	work := workPlanFromMediaPlan(pipeline.Spec{}, media, graphOperations)
+	if got, want := workPlanOperationKindsForBranch(work.Operations, "raw-preview"), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpSink}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("raw work operations = %+v, want %+v", got, want)
+	}
+	if got, want := workPlanOperationKindsForBranch(work.Operations, "web"), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpTap, OpEncode, OpMux}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("web work operations = %+v, want %+v", got, want)
+	}
+	if len(work.Destinations) != 2 {
+		t.Fatalf("work destinations = %d, want 2", len(work.Destinations))
+	}
+	for i := range work.Branches {
+		if len(work.Branches[i].Operations) == 0 {
+			t.Fatalf("work branch %q has no operation IDs", work.Branches[i].Name)
+		}
+	}
 }
 
 func streamOperationKindsForTest(operations []StreamOperation) []OperationKind {
@@ -562,6 +680,16 @@ func planOperationKindsForTest(operations []planOperation) []OperationKind {
 }
 
 func graphPlanOperationKindsForBranch(operations []graphPlanOperation, branch string) []OperationKind {
+	out := make([]OperationKind, 0)
+	for i := range operations {
+		if operations[i].Branch == branch {
+			out = append(out, operations[i].Kind)
+		}
+	}
+	return out
+}
+
+func workPlanOperationKindsForBranch(operations []workOperation, branch string) []OperationKind {
 	out := make([]OperationKind, 0)
 	for i := range operations {
 		if operations[i].Branch == branch {

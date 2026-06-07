@@ -26,6 +26,7 @@ type graphPlan struct {
 	nodes       []pipeline.NodeSpec
 	edges       []pipeline.EdgeSpec
 	operations  []graphPlanOperation
+	work        workPlan
 	inputs      []planInput
 	streams     []planStream
 	taps        []planTap
@@ -98,14 +99,20 @@ func (p graphPlan) operationPlan() []graphPlanOperation {
 	return cloneGraphPlanOperations(p.operations)
 }
 
+func (p graphPlan) workPlan() workPlan {
+	return cloneWorkPlan(p.work)
+}
+
 func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, lowerer graphPlanLowerer) graphPlan {
+	operations := graphPlanOperationsFromMediaPlan(spec, plan)
 	return graphPlan{
 		runtime:     runtime,
 		name:        firstNonEmpty(spec.Name, plan.Name, "goav"),
 		realtime:    spec.Realtime,
 		nodes:       append([]pipeline.NodeSpec(nil), spec.Nodes...),
 		edges:       append([]pipeline.EdgeSpec(nil), spec.Edges...),
-		operations:  graphPlanOperationsFromMediaPlan(spec, plan),
+		operations:  operations,
+		work:        workPlanFromMediaPlan(spec, plan, operations),
 		inputs:      clonePlanInputs(plan.Inputs),
 		streams:     clonePlanStreams(plan.Streams),
 		taps:        clonePlanTaps(plan.Taps),
@@ -296,8 +303,8 @@ func graphPlanInvalidError(reason string, details []string) error {
 		Reason:    reason,
 		Details:   append([]string(nil), details...),
 		Suggestions: []string{
-			"compile recipes through goav.From(...), chains, branches, and targets",
-			"keep graph-plan nodes, edges, operations, and targets in sync",
+			"compile recipes through goav.From(...), chains, branches, and destinations",
+			"keep graph-plan nodes, edges, operations, and destinations in sync",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

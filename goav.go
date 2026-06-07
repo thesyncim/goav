@@ -1,5 +1,5 @@
 // Package goav exposes the top-level runtime contracts for composing media
-// inputs, chains, taps, branches, targets, and tasks.
+// inputs, chains, taps, branches, destinations, and tasks.
 package goav
 
 import (
