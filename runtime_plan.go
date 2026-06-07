@@ -120,7 +120,7 @@ func missingRuntimeCompilerError() error {
 		Operation: "build runtime graph",
 		Reason:    "no runtime compiler was selected",
 		Suggestions: []string{
-			"build through goav.From(input) or Runtime.Graph()",
+			"build through goav.From(input) or goav.Expert(runtime).Graph()",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

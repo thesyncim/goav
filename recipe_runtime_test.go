@@ -2806,7 +2806,7 @@ func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 		name:    "source",
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
-	graph := New(formats).Graph()
+	graph := Expert(New(formats)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	builtTask, err := graph.Build(ctx)
@@ -2866,7 +2866,7 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchTargetsBeforeMutation(t *testing
 		name:    "source",
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
-	graph := New(formats, codecs).Graph()
+	graph := Expert(New(formats, codecs)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	builtTask, err := graph.Build(ctx)
@@ -2936,7 +2936,7 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 		name:    "source",
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
-	graph := New(formats).Graph()
+	graph := Expert(New(formats)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	builtTask, err := graph.Build(ctx)
@@ -2977,7 +2977,7 @@ func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
 		name:    "source",
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
-	graph := New(formats).Graph()
+	graph := Expert(New(formats)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	builtTask, err := graph.Build(ctx)
@@ -3053,7 +3053,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := New(codecs).Graph()
+	graph := Expert(New(codecs)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -3129,7 +3129,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := New(formats, codecs).Graph()
+	graph := Expert(New(formats, codecs)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -3200,7 +3200,7 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := New(codecs).Graph()
+	graph := Expert(New(codecs)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -3288,7 +3288,7 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := New(codecs).Graph()
+	graph := Expert(New(codecs)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -3371,7 +3371,7 @@ func TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := New().Graph()
+	graph := Expert(New()).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -3453,7 +3453,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := New(formats, codecs, filters).Graph()
+	graph := Expert(New(formats, codecs, filters)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -3575,7 +3575,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := New(formats, codecs).Graph()
+	graph := Expert(New(formats, codecs)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -3693,7 +3693,7 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToTargets(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := New(formats, codecs).Graph()
+	graph := Expert(New(formats, codecs)).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)

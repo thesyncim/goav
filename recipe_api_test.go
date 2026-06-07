@@ -129,10 +129,6 @@ func (recipeAPIRuntimeWithoutBuilder) Probe(context.Context, format.ProbeRequest
 	return format.ProbeResult{}, nil
 }
 
-func (recipeAPIRuntimeWithoutBuilder) Graph() goav.GraphBuilder {
-	return goav.Default().Graph()
-}
-
 func (recipeAPIRTPReader) Streams(context.Context) ([]goav.Stream, error) {
 	return []goav.Stream{{ID: "audio", Type: "audio"}}, nil
 }
@@ -485,11 +481,27 @@ func (b *testTranscodeBranchBuilder) current() *testTranscodeBranch {
 
 func TestRuntimeInterfaceKeepsLegacyBuilderOutOfFrontDoor(t *testing.T) {
 	runtimeType := reflect.TypeOf((*goav.Runtime)(nil)).Elem()
-	if _, ok := runtimeType.MethodByName("New"); ok {
-		t.Fatal("Runtime exposes legacy New builder; use Runtime.Graph for expert graph wiring")
+	if runtimeType.NumMethod() != 1 {
+		t.Fatalf("Runtime methods = %d, want only Probe", runtimeType.NumMethod())
 	}
-	if _, ok := runtimeType.MethodByName("Graph"); !ok {
-		t.Fatal("Runtime should expose Graph as the expert graph entry point")
+	if _, ok := runtimeType.MethodByName("New"); ok {
+		t.Fatal("Runtime exposes legacy New builder; use Expert(runtime).Graph for expert graph wiring")
+	}
+	if _, ok := runtimeType.MethodByName("Graph"); ok {
+		t.Fatal("Runtime exposes Graph; use Expert(runtime).Graph for expert graph wiring")
+	}
+	if reflect.TypeOf(goav.Expert).Kind() != reflect.Func {
+		t.Fatal("goav.Expert should expose the expert graph entry point")
+	}
+}
+
+func TestExpertGraphRequiresStandardRuntime(t *testing.T) {
+	graph := goav.Expert(recipeAPIRuntimeWithoutBuilder{}).Graph()
+	if _, err := graph.Describe(); !errors.Is(err, goav.ErrExpertRuntimeRequired) {
+		t.Fatalf("Describe err = %v, want ErrExpertRuntimeRequired", err)
+	}
+	if _, err := graph.Build(context.Background()); !errors.Is(err, goav.ErrExpertRuntimeRequired) {
+		t.Fatalf("Build err = %v, want ErrExpertRuntimeRequired", err)
 	}
 }
 
@@ -1460,7 +1472,7 @@ func TestBranchesIsTheOnlyPublicPlannedSplitVerb(t *testing.T) {
 }
 
 func TestRuntimeBranchTapAnchorIsPublicAPI(t *testing.T) {
-	graph := goav.Default().Graph()
+	graph := goav.Expert(goav.Default()).Graph()
 	source := graph.Source("source", recipeAPISource{name: "source"})
 	decode := graph.Stage("decode-audio", goav.PacketFunc("decode-audio", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
 		return emit.Packet(packet)
@@ -1584,6 +1596,7 @@ func TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor(t *testing.T) {
 		"RTPBuffer",
 		"MaxTimestampGap",
 		"Runtime.Graph",
+		"Expert(",
 		"GraphBuilder",
 		"graph.Source",
 		"graph.Connect",
@@ -1843,7 +1856,7 @@ func TestBranchFromUsesTypedSources(t *testing.T) {
 	}
 
 	_ = goav.Branch("tap").From(goav.FrameTap("audio.decoded"))
-	graph := goav.Default().Graph()
+	graph := goav.Expert(goav.Default()).Graph()
 	node := graph.Source("source", recipeAPISource{name: "source"})
 	_ = goav.Branch("node").From(node)
 	_ = goav.Branch("stream").From(node.Stream("audio"))
@@ -4871,7 +4884,7 @@ func TestBranchCompositionRejectsMissingPlannedTap(t *testing.T) {
 }
 
 func TestBranchCompositionRejectsGraphNodeSource(t *testing.T) {
-	graphNode := goav.Default().Graph().Stage("decode-video", goav.PacketFunc("decode-video", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
+	graphNode := goav.Expert(goav.Default()).Graph().Stage("decode-video", goav.PacketFunc("decode-video", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
 		return emit.Packet(packet)
 	}))
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).

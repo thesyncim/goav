@@ -163,7 +163,8 @@ contract:
 ## Manual Graph Patterns
 
 These patterns are the component shapes recipes should compile toward. They
-are also the shapes advanced users can wire manually with `Runtime.Graph()`.
+are also the shapes advanced users can wire manually with
+`goav.Expert(runtime).Graph()`.
 The direct component tests capture `pipeline.Spec` before execution and compare
 it after `Run`, so the graph users inspect is the graph that actually ran.
 

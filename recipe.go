@@ -1843,7 +1843,7 @@ func recipeRuntimeUnsupportedError(operation string) error {
 		Suggestions: []string{
 			"use goav.Default() for the standard recipe runtime",
 			"use goav.New(...) when customizing adapters",
-			"use runtime.Graph() for explicit graph wiring with a custom runtime",
+			"use goav.Expert(runtime).Graph() for explicit graph wiring with a goav runtime",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

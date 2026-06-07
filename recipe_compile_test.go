@@ -22,10 +22,6 @@ func (stubRuntime) Probe(context.Context, format.ProbeRequest) (format.ProbeResu
 	return format.ProbeResult{}, nil
 }
 
-func (stubRuntime) Graph() GraphBuilder {
-	return Default().Graph()
-}
-
 func requireMediaGraph[T any](t *testing.T, resolved recipeResolved) {
 	t.Helper()
 	if _, ok := resolved.mediaGraph.(T); !ok {
@@ -1724,7 +1720,7 @@ func TestRecipeRuntimePassRejectsCustomRuntime(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want runtime_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	for _, want := range []string{"recipe compilation requires a goav runtime", "goav.Default", "goav.New", "runtime.Graph"} {
+	for _, want := range []string{"recipe compilation requires a goav runtime", "goav.Default", "goav.New", "goav.Expert"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}

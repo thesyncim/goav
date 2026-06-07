@@ -83,14 +83,15 @@ remaining media-plan helpers toward direct graph construction where it reduces
 duplication while keeping the flow `Intent -> MediaPlan -> pipeline.Spec ->
 pipeline.Graph`.
 
-The handle-based graph builder remains available as the advanced layer through
-`Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed
-handles such as `source.Stream("audio")` and `decode.Out()` to node inputs.
-The internal builder is no longer a method on the public `Runtime` interface or
-an exported top-level type. Described graphs and execution graphs must stay
-equivalent for every media-plan executable. The graph layer stays available for
-inspection and custom stages. Recipe `Explain(ctx)` returns structured
-workflow-report data, branch operations, planner decisions, and the same
+The handle-based graph builder remains available only as the explicit advanced
+layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and
+sinks once, then connects typed handles such as `source.Stream("audio")` and
+`decode.Out()` to node inputs. The graph builder is no longer on the public
+`Runtime` interface or an exported top-level constructor. Described graphs and
+execution graphs must stay equivalent for every media-plan executable. The graph
+layer stays available for inspection and custom stages. Recipe `Explain(ctx)`
+returns structured workflow-report data, branch operations, planner decisions,
+and the same
 `pipeline.Spec`; optional diagram or prose rendering lives outside runtime
 composition. Branch operation reports mark shared upstream work, so the planner
 can explain when branches reuse decode, transform, stage, or tap boundaries
@@ -114,7 +115,7 @@ task. Taps declared after encode or copy operations are packet-domain outlets.
 H264 and AV1 recipe encoding remain work in progress. Detaching a parent runtime
 branch also removes dependent runtime branches anchored from that parent's taps.
 Expert graph attachments can still start from the `GraphNode` or `GraphOutlet`
-handles returned by `Runtime.Graph()`. This is for late analysis,
+handles returned by `goav.Expert(runtime).Graph()`. This is for late analysis,
 meters, screenshot collectors, and late recording branches that should observe
 future messages without rebuilding the task. Buffered runtime attachment owns
 queue and worker lifecycle for late nodes; packet-copy recording targets are

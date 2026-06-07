@@ -2,10 +2,34 @@ package goav
 
 import (
 	"context"
+	"errors"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
+
+// ErrExpertRuntimeRequired reports attempts to use expert graph wiring with a
+// runtime that was not created by goav.New or goav.Default.
+var ErrExpertRuntimeRequired = errors.New("goav: expert graph requires goav runtime")
+
+// ExpertTools exposes advanced APIs that are intentionally kept off Runtime.
+type ExpertTools struct {
+	runtime Runtime
+}
+
+// Expert returns the explicit advanced entry point for manual graph wiring.
+func Expert(runtime Runtime) ExpertTools {
+	return ExpertTools{runtime: runtime}
+}
+
+// Graph creates a handle-based graph builder for advanced/manual compositions.
+func (e ExpertTools) Graph() GraphBuilder {
+	standard, ok := e.runtime.(*runtime)
+	if !ok || standard == nil {
+		return &graphBuilder{err: ErrExpertRuntimeRequired}
+	}
+	return &graphBuilder{builder: standard.New()}
+}
 
 type GraphNode struct {
 	name string

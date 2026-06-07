@@ -125,10 +125,6 @@ func (r *runtime) New() builderAPI {
 	return &builder{runtime: r}
 }
 
-func (r *runtime) Graph() GraphBuilder {
-	return &graphBuilder{builder: r.New()}
-}
-
 type builder struct {
 	runtime         *runtime
 	inputs          []format.Input

@@ -1851,7 +1851,7 @@ func runtimeBranchAnchorMissingError(node string) error {
 		Reason:    "branch source node does not exist in the running task graph",
 		Suggestions: []string{
 			"call task.Taps() and use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for stable media outlets",
-			"keep the GraphNode returned by Runtime.Graph().Source/Stage/Sink for expert graph attachments",
+			"keep the GraphNode returned by goav.Expert(runtime).Graph().Source/Stage/Sink for expert graph attachments",
 			"attach from a stable decoded-frame tap when the branch needs raw frames",
 		},
 		Cause: pipeline.ErrUnknownNode,
