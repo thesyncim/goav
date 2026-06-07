@@ -39,6 +39,7 @@ type runtimeBranch struct {
 
 type runtimeBranchStep struct {
 	stage       pipeline.Stage
+	kind        OperationKind
 	decode      bool
 	codec       CodecSpec
 	transform   TransformSpec
@@ -104,6 +105,7 @@ type runtimeGraphPatch struct {
 	taps        []TapInfo
 	anchorTaps  []string
 	anchorNodes []string
+	work        workPatch
 }
 
 func (p *runtimeGraphPatch) addAnchor(branch runtimeBranch) {
@@ -123,6 +125,10 @@ func (p *runtimeGraphPatch) addApplied(nodes []pipeline.NodeRef, routes []pipeli
 
 func (p *runtimeGraphPatch) addPlannedTaps(taps []TapInfo) {
 	p.taps = append(p.taps, taps...)
+}
+
+func (p *runtimeGraphPatch) setWork(work workPatch) {
+	p.work = cloneWorkPatch(work)
 }
 
 func (p *runtimeGraphPatch) resetPlannedTaps() {
@@ -147,6 +153,7 @@ func (p runtimeGraphPatch) attachment(owner *task, name string) *runtimeAttachme
 		nodes:       append([]pipeline.NodeRef(nil), p.nodes...),
 		routes:      append([]pipeline.Route(nil), p.routes...),
 		taps:        append([]TapInfo(nil), p.taps...),
+		work:        cloneWorkPatch(p.work),
 	}
 }
 
@@ -224,6 +231,8 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 	if err := group.prepareSharedMuxStages(ctx, t.runtime); err != nil {
 		return rollback(err)
 	}
+	name := runtimeAttachmentName(branches)
+	patch.setWork(workPatchFromRuntimeBranches(name, branches, nodeNamesByBranch, group))
 	patch.resetPlannedTaps()
 	for i := range branches {
 		branch := &branches[i]
@@ -241,7 +250,6 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		return rollback(err)
 	}
 	patch.addApplied(sharedRefs, sharedRoutes, nil)
-	name := runtimeAttachmentName(branches)
 	attachment := patch.attachment(t, name)
 	t.trackAttachmentLocked(attachment)
 	t.addAttachmentTapsLocked(patch.taps)
@@ -291,7 +299,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 func runtimeBranchStepsFromChain(decode bool, decodeCodec CodecSpec, steps []chainStep) []runtimeBranchStep {
 	out := make([]runtimeBranchStep, 0, len(steps)+1)
 	if decode {
-		out = append(out, runtimeBranchStep{decode: true, codec: cloneCodecSpec(decodeCodec)})
+		out = append(out, runtimeBranchStep{kind: OpDecode, decode: true, codec: cloneCodecSpec(decodeCodec)})
 	}
 	after := initialStepAfter(decode)
 	for i := range steps {
@@ -308,13 +316,13 @@ func runtimeBranchStepsFromChain(decode bool, decodeCodec CodecSpec, steps []cha
 func runtimeBranchStepFromChainStep(step chainStep, after OperationKind) (runtimeBranchStep, OperationKind, bool) {
 	switch {
 	case step.stage != nil:
-		return runtimeBranchStep{stage: step.stage}, OpStage, true
+		return runtimeBranchStep{kind: OpStage, stage: step.stage}, OpStage, true
 	case !mediaShapeEmpty(step.shape):
-		return runtimeBranchStep{shapeUpdate: step.shape}, OpShape, true
+		return runtimeBranchStep{kind: OpShape, shapeUpdate: step.shape}, OpShape, true
 	case step.transform.Resize != nil || step.transform.Resample != nil:
-		return runtimeBranchStep{transform: cloneTransformSpec(step.transform)}, OpTransform, true
+		return runtimeBranchStep{kind: OpTransform, transform: cloneTransformSpec(step.transform)}, OpTransform, true
 	case step.tap != "":
-		return runtimeBranchStep{tap: step.tap, tapDomain: step.tapDomain, after: after}, after, true
+		return runtimeBranchStep{kind: OpTap, tap: step.tap, tapDomain: step.tapDomain, after: after}, after, true
 	default:
 		return runtimeBranchStep{}, after, false
 	}
@@ -1051,6 +1059,7 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 	}
 	branch.steps = append(branch.steps, runtimeBranchStep{
 		stage: stage,
+		kind:  OpEncode,
 		shape: streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape),
 		owned: true,
 	})
@@ -1064,6 +1073,7 @@ func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, shape MediaShape, 
 	for i := range branch.postEncodeTaps {
 		branch.steps = append(branch.steps, runtimeBranchStep{
 			tap:       branch.postEncodeTaps[i],
+			kind:      OpTap,
 			tapDomain: DomainPacket,
 			after:     after,
 			shape:     shape,
@@ -1342,6 +1352,7 @@ type runtimeAttachment struct {
 	nodes       []pipeline.NodeRef
 	routes      []pipeline.Route
 	taps        []TapInfo
+	work        workPatch
 	stopMu      sync.Mutex
 	stopped     bool
 }

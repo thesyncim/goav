@@ -155,6 +155,29 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	if attachment.Name() != "screenshots" {
 		t.Fatalf("attachment name = %q", attachment.Name())
 	}
+	runtimeAttachment, ok := attachment.(*runtimeAttachment)
+	if !ok {
+		t.Fatalf("attachment = %T, want runtimeAttachment", attachment)
+	}
+	work := runtimeAttachment.work
+	if work.Name != "screenshots" {
+		t.Fatalf("work patch name = %q, want screenshots", work.Name)
+	}
+	if got, want := workPatchOperationKindsForBranch(work.Operations, "screenshots"), []OperationKind{OpStage, OpSink}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("work patch operations = %+v, want %+v", got, want)
+	}
+	if len(work.Branches) != 1 || work.Branches[0].Name != "screenshots" || len(work.Branches[0].Operations) != 2 {
+		t.Fatalf("work patch branches = %+v, want screenshots with stage and sink operation ids", work.Branches)
+	}
+	if len(work.Destinations) != 1 || work.Destinations[0].Name != "out" || !reflect.DeepEqual(work.Destinations[0].Branches, []string{"screenshots"}) {
+		t.Fatalf("work patch destinations = %+v, want out bound to screenshots", work.Destinations)
+	}
+	if len(work.Edges) != 2 ||
+		work.Edges[0].From != "source" ||
+		work.Edges[0].To != "screenshots/sample" ||
+		work.Edges[1].To != "screenshots/out" {
+		t.Fatalf("work patch edges = %+v, want source -> stage -> sink", work.Edges)
+	}
 	close(source.resume[0])
 	select {
 	case <-source.emitted[1]:
@@ -405,24 +428,42 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 }
 
 func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
-	body, err := os.ReadFile("runtime_attach.go")
-	if err != nil {
-		t.Fatal(err)
+	var body strings.Builder
+	for _, file := range []string{"runtime_attach.go", "work_patch.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
 	}
-	text := string(body)
+	text := body.String()
 	for _, required := range []string{
 		"type runtimeGraphPatch struct",
 		"func (p *runtimeGraphPatch) addAnchor",
 		"func (p *runtimeGraphPatch) addApplied",
+		"func (p *runtimeGraphPatch) setWork",
 		"func (p runtimeGraphPatch) rollback",
 		"func (p runtimeGraphPatch) attachment",
+		"type workPatch struct",
+		"workPatchFromRuntimeBranches",
 		"patch.resetPlannedTaps()",
+		"patch.setWork(",
 		"patch.attachment(t, name)",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("runtime attach should lower through runtimeGraphPatch; missing %q", required)
 		}
 	}
+}
+
+func workPatchOperationKindsForBranch(operations []workOperation, branch string) []OperationKind {
+	out := make([]OperationKind, 0)
+	for i := range operations {
+		if operations[i].Branch == branch {
+			out = append(out, operations[i].Kind)
+		}
+	}
+	return out
 }
 
 func TestRuntimeAttachUsesSharedMuxTargetPreparation(t *testing.T) {

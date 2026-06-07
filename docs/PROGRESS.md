@@ -2563,15 +2563,17 @@ do not grow destination method-chain sugar back onto the front door.
 composition as input refs, stream selectors, ordered operations, destination
 refs, taps, and planner decisions. `GraphPlan` now carries a derived internal
 `workPlan` with inputs, streams, operations, taps, branches, destinations,
-edges, decisions, and diagnostics. That is the new executable convergence
-boundary: `Describe`, `Build`, `Explain(ctx)`, and later `Attach` must move
-toward the same planned work instead of parallel workflow compilers. The next
-implementation work is to make `workPlan` the lowerer input, introduce
-`WorkPatch` for runtime attach from typed taps, delete `branchComposePlan` and
-`runtimeBranch` as separate models, broaden descriptor-backed
-destination/container capability data as WebM/Ogg arrive, and keep broadening
-runtime attachment stress around generic lifecycle boundaries without weakening
-the direct branch grammar.
+edges, decisions, and diagnostics. Runtime attach now also emits an internal
+`workPatch` from prepared branch specs before graph mutation, carrying branch
+operations, typed taps, destination groups, planned edges, and rollback
+metadata on the resulting attachment. These are the new executable convergence
+boundaries: `Describe`, `Build`, `Explain(ctx)`, and `Attach` must move toward
+the same planned work instead of parallel workflow compilers. The next
+implementation work is to make `workPlan`/`workPatch` the actual lowerer input,
+delete `branchComposePlan` and `runtimeBranch` as separate models, broaden
+descriptor-backed destination/container capability data as WebM/Ogg arrive, and
+keep broadening runtime attachment stress around generic lifecycle boundaries
+without weakening the direct branch grammar.
 
 ## Validation Gates
 
