@@ -273,6 +273,13 @@ func TestExternalMKVExtractMatroskaMetadata(t *testing.T) {
 	assertMKVExtractMatroskaMetadata(t, mkvextract, file)
 }
 
+func TestExternalMKVExtractMatroskaAttachments(t *testing.T) {
+	mkvmerge := requireExternalTool(t, "mkvmerge")
+	mkvextract := requireExternalTool(t, "mkvextract")
+	file, want := writeAttachmentOracleMatroska(t)
+	assertMKVExtractMatroskaAttachments(t, mkvmerge, mkvextract, file, want)
+}
+
 func writeFFmpegAV1OpusMatroskaRecording(t testing.TB) string {
 	t.Helper()
 	tool := requireExternalTool(t, "ffmpeg")
@@ -482,6 +489,12 @@ type externalMatroskaCodecPacket struct {
 	Size  int
 }
 
+type externalMatroskaAttachment struct {
+	Filename string
+	MIMEType string
+	Data     []byte
+}
+
 func writePacketOracleMatroska(t testing.TB) (string, []externalMatroskaPacket) {
 	t.Helper()
 	file := filepath.Join(t.TempDir(), "packet-oracle.mkv")
@@ -680,6 +693,76 @@ func writeMetadataOracleMatroska(t testing.TB) string {
 		t.Fatal(err)
 	}
 	return file
+}
+
+func writeAttachmentOracleMatroska(t testing.TB) (string, []externalMatroskaAttachment) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "attachment-oracle.mkv")
+	want := []externalMatroskaAttachment{
+		{
+			Filename: "cover.png",
+			MIMEType: "image/png",
+			Data:     []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a},
+		},
+		{
+			Filename: "notes.txt",
+			MIMEType: "text/plain",
+			Data:     []byte("Matroska attachment extraction oracle\n"),
+		},
+	}
+	output, err := os.Create(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxer, err := NewMuxer(output, MuxerOptions{
+		Attachments: []Attachment{
+			{
+				UID:         11,
+				Filename:    want[0].Filename,
+				MIMEType:    want[0].MIMEType,
+				Description: "cover art",
+				Data:        want[0].Data,
+			},
+			{
+				UID:         12,
+				Filename:    want[1].Filename,
+				MIMEType:    want[1].MIMEType,
+				Description: "plain text notes",
+				Data:        want[1].Data,
+			},
+		},
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     0,
+		DurationNS: 20_000_000,
+		Keyframe:   true,
+		Data:       []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return file, want
 }
 
 func probeExternalMatroskaPackets(t testing.TB, tool string, file string) []externalMatroskaPacket {
@@ -1015,6 +1098,59 @@ func assertFileContainsAll(t testing.TB, name string, file string, values []stri
 			t.Fatalf("%s output missing %q:\n%s", name, value, text)
 		}
 	}
+}
+
+func assertMKVExtractMatroskaAttachments(t testing.TB, mkvmerge string, mkvextract string, file string, want []externalMatroskaAttachment) {
+	t.Helper()
+	identified := identifyMatroskaAttachments(t, mkvmerge, file)
+	if len(identified) != len(want) {
+		t.Fatalf("mkvmerge attachments = %d, want %d: %+v", len(identified), len(want), identified)
+	}
+	wantByName := make(map[string]externalMatroskaAttachment, len(want))
+	for i := range want {
+		wantByName[want[i].Filename] = want[i]
+	}
+	outDir := t.TempDir()
+	for i := range identified {
+		wantAttachment, ok := wantByName[identified[i].Filename]
+		if !ok {
+			t.Fatalf("mkvmerge reported unexpected attachment %+v", identified[i])
+		}
+		if identified[i].MIMEType != wantAttachment.MIMEType {
+			t.Fatalf("mkvmerge attachment %s mime = %q, want %q", identified[i].Filename, identified[i].MIMEType, wantAttachment.MIMEType)
+		}
+		if identified[i].Size != len(wantAttachment.Data) {
+			t.Fatalf("mkvmerge attachment %s size = %d, want %d", identified[i].Filename, identified[i].Size, len(wantAttachment.Data))
+		}
+		path := filepath.Join(outDir, identified[i].Filename)
+		runExternalTool(t, mkvextract, file, "attachments", fmt.Sprintf("%d:%s", identified[i].ID, path))
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, wantAttachment.Data) {
+			t.Fatalf("mkvextract attachment %s data = %x, want %x", identified[i].Filename, got, wantAttachment.Data)
+		}
+	}
+}
+
+func identifyMatroskaAttachments(t testing.TB, tool string, file string) []identifiedMatroskaAttachment {
+	t.Helper()
+	output := runExternalTool(t, tool, "-J", file)
+	var decoded struct {
+		Attachments []identifiedMatroskaAttachment `json:"attachments"`
+	}
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode mkvmerge attachments: %v\n%s", err, output)
+	}
+	return decoded.Attachments
+}
+
+type identifiedMatroskaAttachment struct {
+	ID       int    `json:"id"`
+	Filename string `json:"file_name"`
+	MIMEType string `json:"content_type"`
+	Size     int    `json:"size"`
 }
 
 func expectedMatroskaExtractedTrackPayloads(t testing.TB, payloads []localMatroskaPacketPayload) map[int][][][]byte {
