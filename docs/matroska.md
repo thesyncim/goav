@@ -270,7 +270,10 @@ Committed benchmarks cover:
   Matroska H.264+Opus and WebM VP9+Opus plus AV1+Opus Go demux/remux runs are
   compared against `ffprobe -show_packets`, `ffmpeg -c copy`, `mkvinfo
   --summary`, and `mkvmerge` copy/remux on the same input files.
+- External Go-library comparison benchmarks on the same Matroska
+  WebRTC-shaped corpus, comparing complete packet scans against
+  `github.com/luispater/matroska-go`.
 
 Future benchmarks should add large-file scan speed on real WebRTC recordings,
-subsample encrypted laced-block cases, and comparisons against other Go
-EBML/Matroska libraries on the same corpus.
+subsample encrypted laced-block cases, and additional Go EBML/Matroska
+libraries on the same corpus.

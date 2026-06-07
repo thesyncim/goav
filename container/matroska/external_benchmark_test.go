@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	luispater "github.com/luispater/matroska-go"
 )
 
 var externalBenchmarkDemuxerOptions = DemuxerOptions{MaxLacePayload: 64 << 10}
@@ -84,6 +86,32 @@ func BenchmarkExternalMatroskaRecordingRemux(b *testing.B) {
 	})
 }
 
+func BenchmarkExternalMatroskaGoLibraryWebRTCCorpusScan(b *testing.B) {
+	payloads := benchmarkWebRTCPayloads()
+	data := makeBenchmarkWebRTCCorpusMatroskaData(b, benchmarkWebRTCCorpusCycles, payloads)
+	b.Run("goav-demux", func(b *testing.B) {
+		packet := Packet{Data: make([]byte, 0, 1<<20)}
+		b.ReportAllocs()
+		b.SetBytes(int64(len(data)))
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if packets := scanMatroskaRecordingBytes(b, data, &packet); packets == 0 {
+				b.Fatal("no packets scanned")
+			}
+		}
+	})
+	b.Run("luispater-matroska-go-demux", func(b *testing.B) {
+		b.ReportAllocs()
+		b.SetBytes(int64(len(data)))
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if packets := scanLuispaterMatroskaRecordingBytes(b, data); packets == 0 {
+				b.Fatal("no packets scanned")
+			}
+		}
+	})
+}
+
 func scanMatroskaRecordingBytes(tb testing.TB, data []byte, packet *Packet) int {
 	tb.Helper()
 	demuxer, err := NewDemuxer(bytes.NewReader(data), externalBenchmarkDemuxerOptions)
@@ -98,6 +126,29 @@ func scanMatroskaRecordingBytes(tb testing.TB, data []byte, packet *Packet) int 
 		}
 		if err != nil {
 			tb.Fatal(err)
+		}
+		packets++
+	}
+}
+
+func scanLuispaterMatroskaRecordingBytes(tb testing.TB, data []byte) int {
+	tb.Helper()
+	demuxer, err := luispater.NewDemuxer(bytes.NewReader(data))
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer demuxer.Close()
+	packets := 0
+	for {
+		packet, err := demuxer.ReadPacket()
+		if errors.Is(err, io.EOF) {
+			return packets
+		}
+		if err != nil {
+			tb.Fatal(err)
+		}
+		if packet == nil || len(packet.Data) == 0 {
+			tb.Fatal("empty packet")
 		}
 		packets++
 	}

@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	git.quad4.io/Go-Libs/bzip2 v1.1.0
+	github.com/luispater/matroska-go v1.2.4
 	github.com/pion/interceptor v0.1.45
 	github.com/pion/rtcp v1.2.16
 	github.com/pion/rtp v1.10.2
