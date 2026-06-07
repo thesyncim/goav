@@ -927,7 +927,7 @@ func (j *Job) setErr(err error) {
 	}
 }
 
-func (j *Job) To(destinations ...TargetOrEndpoint) *Job {
+func (j *Job) To(destinations ...Destination) *Job {
 	if len(j.branchStreams) != 0 {
 		j.setErr(branchOutputScopeError("branches"))
 		return j
@@ -938,7 +938,7 @@ func (j *Job) To(destinations ...TargetOrEndpoint) *Job {
 			j.setErr(jobDestinationInvalidError("job", "job destination is nil"))
 			return j
 		}
-		output, name, err := endpointFromTargetOrEndpoint("build job", "job", destination.targetOrEndpoint(), i)
+		output, name, err := endpointFromDestination("build job", "job", destination.destination(), i)
 		if err != nil {
 			j.setErr(err)
 			return j
@@ -3101,7 +3101,7 @@ func (b *JobStreamBuilder) VP9(bitrate int, options ...codecOption) *JobStreamBu
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *JobStreamBuilder) To(destinations ...TargetOrEndpoint) *Job {
+func (b *JobStreamBuilder) To(destinations ...Destination) *Job {
 	stream := b.current()
 	outputs := make([]EndpointSpec, 0, len(destinations))
 	for i := range destinations {
@@ -3110,7 +3110,7 @@ func (b *JobStreamBuilder) To(destinations ...TargetOrEndpoint) *Job {
 			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream destination is nil"))
 			return b.job
 		}
-		output, name, err := endpointFromTargetOrEndpoint("build stream", jobStreamName(stream), destination.targetOrEndpoint(), i)
+		output, name, err := endpointFromDestination("build stream", jobStreamName(stream), destination.destination(), i)
 		if err != nil {
 			b.job.setErr(err)
 			return b.job
@@ -3125,7 +3125,7 @@ func (b *JobStreamBuilder) To(destinations ...TargetOrEndpoint) *Job {
 	return b.job
 }
 
-func endpointFromTargetOrEndpoint(operation string, node string, destination targetOrEndpointDestination, index int) (EndpointSpec, string, error) {
+func endpointFromDestination(operation string, node string, destination destinationBinding, index int) (EndpointSpec, string, error) {
 	switch {
 	case destination.hasTarget:
 		target := cloneTargetSpec(destination.target)

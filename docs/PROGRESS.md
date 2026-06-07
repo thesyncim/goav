@@ -1465,6 +1465,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     runtime branch can publish a packet tap that another runtime branch attaches
     from.
     Done.
+310. Rename the sealed `To(...)` argument:
+    the public variadic type formerly named as a target-or-endpoint union is now
+    `Destination`, while the concrete user concepts remain `Target` values and
+    endpoint constructors. Internal helper names use destination bindings too,
+    so the old disjunctive vocabulary does not remain in compiler plumbing.
+    `TestToAcceptsDestinationSlices` proves dynamic destination slices still
+    work, and `TestPackageKeepsLegacyHelpersOutOfFrontDoor` rejects the old
+    exported type name.
+    Done.
 
 ## First Vertical Slice
 

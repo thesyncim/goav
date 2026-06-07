@@ -289,7 +289,7 @@ func operationReportByKind(operations []goav.OperationReport, kind goav.Operatio
 }
 
 func recordJob(input goav.InputSpec, outputs ...goav.EndpointSpec) *goav.Job {
-	destinations := make([]goav.TargetOrEndpoint, 0, len(outputs))
+	destinations := make([]goav.Destination, 0, len(outputs))
 	for i := range outputs {
 		destinations = append(destinations, outputs[i])
 	}
@@ -375,7 +375,7 @@ func (j *testBranchJob) materialize() *goav.Job {
 		if branch.encode.ID != "" {
 			builder = builder.Encode(branch.encode)
 		}
-		destinations := make([]goav.TargetOrEndpoint, 0, len(branch.targets))
+		destinations := make([]goav.Destination, 0, len(branch.targets))
 		for i := range branch.targets {
 			destinations = append(destinations, branch.targets[i])
 		}
@@ -1332,33 +1332,34 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Paths":                  true,
 	}
 	legacyTypes := map[string]bool{
-		"Builder":         true,
-		"Input":           true,
-		"Output":          true,
-		"OutputIntent":    true,
-		"OutputReport":    true,
-		"OutputSpec":      true,
-		"Path":            true,
-		"PathSpec":        true,
-		"PathBuilder":     true,
-		"AudioOption":     true,
-		"RecordOption":    true,
-		"ProbeRequest":    true,
-		"ProbeResult":     true,
-		"ResizeOption":    true,
-		"Source":          true,
-		"Stage":           true,
-		"Sink":            true,
-		"Metadata":        true,
-		"CodecParameters": true,
-		"CodecOption":     true,
-		"JobOption":       true,
-		"RTPOption":       true,
-		"RTPInputOption":  true,
-		"StreamBuilder":   true,
-		"StreamOption":    true,
-		"TrackOption":     true,
-		"TranscodeJob":    true,
+		"Builder":          true,
+		"Input":            true,
+		"Output":           true,
+		"OutputIntent":     true,
+		"OutputReport":     true,
+		"OutputSpec":       true,
+		"Path":             true,
+		"PathSpec":         true,
+		"PathBuilder":      true,
+		"AudioOption":      true,
+		"RecordOption":     true,
+		"ProbeRequest":     true,
+		"ProbeResult":      true,
+		"ResizeOption":     true,
+		"Source":           true,
+		"Stage":            true,
+		"Sink":             true,
+		"Metadata":         true,
+		"CodecParameters":  true,
+		"CodecOption":      true,
+		"JobOption":        true,
+		"RTPOption":        true,
+		"RTPInputOption":   true,
+		"StreamBuilder":    true,
+		"StreamOption":     true,
+		"TrackOption":      true,
+		"TranscodeJob":     true,
+		"TargetOrEndpoint": true,
 	}
 	for filename, file := range pkg.Files {
 		for _, decl := range file.Decls {
@@ -1859,6 +1860,29 @@ func TestStreamRecipeCanWriteToTypedTarget(t *testing.T) {
 	text := specText(spec)
 	if !strings.Contains(text, "encode-audio -> voice.ogg") {
 		t.Fatalf("spec:\n%s", text)
+	}
+}
+
+func TestToAcceptsDestinationSlices(t *testing.T) {
+	destinations := []goav.Destination{
+		goav.Target("archive", goav.FileOutput("archive.ogg", io.Discard)),
+		goav.SinkEndpoint(goav.SinkFunc("stats", func(context.Context, goav.Message) error {
+			return nil
+		})),
+	}
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Opus(96_000).
+		To(destinations...)
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 ||
+		!equalStrings(intent.Streams[0].Targets, []string{"archive", "stats"}) ||
+		len(intent.Targets) != 2 ||
+		intent.Targets[0].Name != "archive" ||
+		intent.Targets[1].Name != "stats" {
+		t.Fatalf("intent: %+v", intent)
 	}
 }
 

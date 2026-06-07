@@ -10,13 +10,13 @@ import (
 
 var targetSpecSeq atomic.Uint64
 
-// TargetOrEndpoint is accepted by To. Use Target for named mux/sink groups, or
-// pass an endpoint such as FileOutput, URIOutput, or SinkEndpoint directly.
-type TargetOrEndpoint interface {
-	targetOrEndpoint() targetOrEndpointDestination
+// Destination is accepted by To. Use Target for named mux/sink groups, or pass
+// an endpoint such as FileOutput, URIOutput, or SinkEndpoint directly.
+type Destination interface {
+	destination() destinationBinding
 }
 
-type targetOrEndpointDestination struct {
+type destinationBinding struct {
 	target      TargetSpec
 	endpoint    EndpointSpec
 	hasTarget   bool
@@ -44,12 +44,12 @@ func Target(name string, endpoint EndpointSpec) TargetSpec {
 	}
 }
 
-func (t TargetSpec) targetOrEndpoint() targetOrEndpointDestination {
-	return targetOrEndpointDestination{target: t, hasTarget: true}
+func (t TargetSpec) destination() destinationBinding {
+	return destinationBinding{target: t, hasTarget: true}
 }
 
-func (s EndpointSpec) targetOrEndpoint() targetOrEndpointDestination {
-	return targetOrEndpointDestination{endpoint: s, hasEndpoint: true}
+func (s EndpointSpec) destination() destinationBinding {
+	return destinationBinding{endpoint: s, hasEndpoint: true}
 }
 
 type BranchSpec struct {
@@ -289,7 +289,7 @@ func (b *BranchBuilder) VP9(bitrate int, options ...codecOption) *BranchBuilder 
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *BranchBuilder) To(destinations ...TargetOrEndpoint) BranchSpec {
+func (b *BranchBuilder) To(destinations ...Destination) BranchSpec {
 	if b == nil {
 		return BranchSpec{err: nilBranchError()}
 	}
@@ -301,10 +301,10 @@ func (b *BranchBuilder) To(destinations ...TargetOrEndpoint) BranchSpec {
 	for i := range destinations {
 		destination := destinations[i]
 		if destination == nil {
-			spec.err = targetOrEndpointInvalidError(spec.name, "branch destination is nil")
+			spec.err = branchDestinationInvalidError(spec.name, "branch destination is nil")
 			return spec
 		}
-		if err := appendTargetOrEndpoint(&spec, destination.targetOrEndpoint(), i); err != nil {
+		if err := appendDestination(&spec, destination.destination(), i); err != nil {
 			spec.err = err
 			return spec
 		}
@@ -328,7 +328,7 @@ func (b *BranchBuilder) setErr(err error) {
 	}
 }
 
-func appendTargetOrEndpoint(spec *BranchSpec, destination targetOrEndpointDestination, index int) error {
+func appendDestination(spec *BranchSpec, destination destinationBinding, index int) error {
 	switch {
 	case destination.hasTarget:
 		target := cloneTargetSpec(destination.target)
@@ -353,7 +353,7 @@ func appendTargetOrEndpoint(spec *BranchSpec, destination targetOrEndpointDestin
 		spec.labels = append(spec.labels, target.name)
 		return nil
 	default:
-		return targetOrEndpointInvalidError(spec.name, "unsupported branch destination")
+		return branchDestinationInvalidError(spec.name, "unsupported branch destination")
 	}
 }
 
@@ -807,7 +807,7 @@ func branchTargetMissingError(name string) error {
 	}
 }
 
-func targetOrEndpointInvalidError(name string, reason string) error {
+func branchDestinationInvalidError(name string, reason string) error {
 	return destinationInvalidError("build branch", firstNonEmpty(name, "branch"), reason)
 }
 
