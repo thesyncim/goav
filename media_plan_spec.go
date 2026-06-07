@@ -183,7 +183,7 @@ func builderCanBuildEncodeOutput(builder *builder) bool {
 }
 
 func mediaPlanBranchComposerSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
-	if state == nil || !state.transcodePresent {
+	if state == nil || !state.branchCompositionPresent {
 		return pipeline.Spec{}, false, nil
 	}
 	builder, ok := state.builder.(*builder)
@@ -192,7 +192,7 @@ func mediaPlanBranchComposerSpec(state *recipeCompileState) (pipeline.Spec, bool
 	}
 	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
 	switch {
-	case state.transcodeInputAttachment.rtp == nil:
+	case state.branchInputAttachment.rtp == nil:
 		spec, err := builder.planBranchComposePlan(spec, state.plan)
 		return spec, err == nil, err
 	case len(builder.rtpInputs) > 0:

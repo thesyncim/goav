@@ -346,17 +346,17 @@ func validateBranchSpec(selected av.MediaType, index int, spec BranchSpec) error
 		return err
 	}
 	if spec.name == "" {
-		return transcodeIntentBranchNameMissingError(index, StreamIntent{Select: StreamSelect{Type: selected}})
+		return branchIntentNameMissingError(index, StreamIntent{Select: StreamSelect{Type: selected}})
 	}
 	if len(spec.labels) == 0 {
-		return transcodeBranchTargetMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
+		return branchIntentTargetMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
 	}
 	stream := StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
 	if spec.encode.Copy {
-		return transcodeBranchCopyUnsupportedError(stream)
+		return branchCopyUnsupportedError(stream)
 	}
 	if !codecIntentSet(spec.encode) && !branchTargetsAllSinkEndpoints(spec.targets) {
-		return transcodeEncodeMissingError(stream)
+		return branchEncodeMissingError(stream)
 	}
 	seen := make(map[string]int, len(spec.labels))
 	for i, label := range spec.labels {
@@ -364,7 +364,7 @@ func validateBranchSpec(selected av.MediaType, index int, spec BranchSpec) error
 			return transcodeEmptyOutputLabelError(streamBuild{name: spec.name, selector: av.StreamSelector{Type: selected}}, i)
 		}
 		if firstIndex, ok := seen[label]; ok {
-			return transcodeDuplicateBranchTargetError(
+			return duplicateBranchTargetRefError(
 				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Targets: spec.labels},
 				label,
 				firstIndex,

@@ -10,21 +10,21 @@ import (
 )
 
 type recipeResolved struct {
-	intent                   Intent
-	runtime                  Runtime
-	builder                  builderAPI
-	spec                     pipeline.Spec
-	specReady                bool
-	specOrigin               string
-	mediaBuildKind           string
-	inputAttachments         []InputSpec
-	outputAttachments        []EndpointSpec
-	inputProbes              []format.ProbeResult
-	transcodeInputProbe      format.ProbeResult
-	transcodeInputProbeReady bool
-	outputFormats            map[string]av.FormatID
-	mediaPlan                mediaPlan
-	plan                     branchComposePlan
+	intent                Intent
+	runtime               Runtime
+	builder               builderAPI
+	spec                  pipeline.Spec
+	specReady             bool
+	specOrigin            string
+	mediaBuildKind        string
+	inputAttachments      []InputSpec
+	outputAttachments     []EndpointSpec
+	inputProbes           []format.ProbeResult
+	branchInputProbe      format.ProbeResult
+	branchInputProbeReady bool
+	outputFormats         map[string]av.FormatID
+	mediaPlan             mediaPlan
+	plan                  branchComposePlan
 }
 
 type recipeCompileState struct {
@@ -33,9 +33,9 @@ type recipeCompileState struct {
 	runtime   Runtime
 	options   recipeCompileOptions
 
-	jobPresent       bool
-	transcodePresent bool
-	recipeErr        error
+	jobPresent               bool
+	branchCompositionPresent bool
+	recipeErr                error
 
 	inputAttachments  []InputSpec
 	jobOutputCount    int
@@ -43,11 +43,11 @@ type recipeCompileState struct {
 	outputAttachments []EndpointSpec
 	inputProbes       []format.ProbeResult
 
-	transcodeInputAttachment   InputSpec
-	transcodeTargetAttachments []namedTargetSpec
-	transcodeInputProbe        format.ProbeResult
-	transcodeInputProbeReady   bool
-	transcodeBranchSplit       bool
+	branchInputAttachment   InputSpec
+	branchTargetAttachments []namedTargetSpec
+	branchInputProbe        format.ProbeResult
+	branchInputProbeReady   bool
+	branchCompositionSplit  bool
 
 	plan branchComposePlan
 
@@ -85,12 +85,12 @@ func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 		}
 		formats[s.outputAttachments[i].label(fmt.Sprintf("output-%d", i))] = formatID
 	}
-	for i := range s.transcodeTargetAttachments {
-		formatID := endpointSpecFormat(s.transcodeTargetAttachments[i].output)
+	for i := range s.branchTargetAttachments {
+		formatID := endpointSpecFormat(s.branchTargetAttachments[i].output)
 		if formatID == "" {
 			continue
 		}
-		label := firstNonEmpty(s.transcodeTargetAttachments[i].name, s.transcodeTargetAttachments[i].output.label(fmt.Sprintf("output-%d", i)))
+		label := firstNonEmpty(s.branchTargetAttachments[i].name, s.branchTargetAttachments[i].output.label(fmt.Sprintf("output-%d", i)))
 		formats[label] = formatID
 	}
 	if len(formats) == 0 {
@@ -157,21 +157,21 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		}
 	}
 	return recipeResolved{
-		intent:                   state.intent,
-		runtime:                  state.runtime,
-		builder:                  state.builder,
-		spec:                     state.spec,
-		specReady:                state.specReady,
-		specOrigin:               state.specOrigin,
-		mediaBuildKind:           state.mediaBuildKind,
-		inputAttachments:         append([]InputSpec(nil), state.inputAttachments...),
-		outputAttachments:        append([]EndpointSpec(nil), state.outputAttachments...),
-		inputProbes:              append([]format.ProbeResult(nil), state.inputProbes...),
-		transcodeInputProbe:      state.transcodeInputProbe,
-		transcodeInputProbeReady: state.transcodeInputProbeReady,
-		outputFormats:            state.outputFormatMap(),
-		mediaPlan:                buildMediaPlan(&state),
-		plan:                     state.plan,
+		intent:                state.intent,
+		runtime:               state.runtime,
+		builder:               state.builder,
+		spec:                  state.spec,
+		specReady:             state.specReady,
+		specOrigin:            state.specOrigin,
+		mediaBuildKind:        state.mediaBuildKind,
+		inputAttachments:      append([]InputSpec(nil), state.inputAttachments...),
+		outputAttachments:     append([]EndpointSpec(nil), state.outputAttachments...),
+		inputProbes:           append([]format.ProbeResult(nil), state.inputProbes...),
+		branchInputProbe:      state.branchInputProbe,
+		branchInputProbeReady: state.branchInputProbeReady,
+		outputFormats:         state.outputFormatMap(),
+		mediaPlan:             buildMediaPlan(&state),
+		plan:                  state.plan,
 	}, nil
 }
 
@@ -307,7 +307,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 }
 
 func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
-	branchJob := &transcodeJob{
+	branchJob := &branchCompositionJob{
 		runtime:         job.runtime,
 		name:            job.name,
 		streams:         append([]streamBuild(nil), job.branchStreams...),
@@ -320,36 +320,36 @@ func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (
 	} else if branchJob.err == nil {
 		branchJob.err = branchInputCountError("branches", len(job.inputs))
 	}
-	return compileTranscodeRecipeWithOptions(branchJob, options)
+	return compileBranchCompositionRecipeWithOptions(branchJob, options)
 }
 
-func compileTranscodeRecipeWithOptions(job *transcodeJob, options recipeCompileOptions) (recipeResolved, error) {
+func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, options recipeCompileOptions) (recipeResolved, error) {
 	state := recipeCompileState{
-		operation: transcodeRecipeOperation,
+		operation: branchCompositionOperation,
 		options:   options,
 	}
 	if job != nil {
-		state.transcodePresent = true
+		state.branchCompositionPresent = true
 		state.intent = job.Intent()
 		state.runtime = job.runtime
 		state.recipeErr = job.err
-		state.transcodeInputAttachment = job.input
-		state.transcodeTargetAttachments = append([]namedTargetSpec(nil), job.outputs...)
-		state.transcodeBranchSplit = job.fromBranchSplit
+		state.branchInputAttachment = job.input
+		state.branchTargetAttachments = append([]namedTargetSpec(nil), job.outputs...)
+		state.branchCompositionSplit = job.fromBranchSplit
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
-		validateTranscodeRecipePass(),
-		validateTranscodeIntentShapePass(),
+		validateBranchCompositionRecipePass(),
+		validateBranchCompositionIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
-		validateTranscodeAttachmentsPass(),
-		validateTranscodeOutputBindingsPass(),
-		validateTranscodeBranchTargetKindsPass(),
-		validateTranscodeOutputFormatAdaptersPass(),
-		validateTranscodeEncodeAdaptersPass(),
-		validateTranscodeTransformAdaptersPass(),
-		validateTranscodeInputFormatAdaptersPass(),
-		validateTranscodeKnownInputStreamSelectionPass(),
-		validateTranscodeKnownInputDecodeAdaptersPass(),
+		validateBranchCompositionAttachmentsPass(),
+		validateBranchTargetBindingsPass(),
+		validateBranchTargetKindsPass(),
+		validateBranchTargetFormatAdaptersPass(),
+		validateBranchEncodeAdaptersPass(),
+		validateBranchTransformAdaptersPass(),
+		validateBranchInputFormatAdaptersPass(),
+		validateKnownBranchInputStreamSelectionPass(),
+		validateKnownBranchInputDecodeAdaptersPass(),
 		planBranchCompositionIntentPass(),
 		openRecipeRuntimeBuilderPass(),
 		lowerBranchCompositionInputPass(),
@@ -675,9 +675,9 @@ func validateJobStreamOutputKindsPass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeRecipePass() recipeCompilePass {
+func validateBranchCompositionRecipePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode recipe", fn: func(state *recipeCompileState) error {
-		if !state.transcodePresent {
+		if !state.branchCompositionPresent {
 			return &BuildError{
 				Code:      "job_invalid",
 				Operation: state.operation,
@@ -695,28 +695,28 @@ func validateTranscodeRecipePass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeIntentShapePass() recipeCompilePass {
+func validateBranchCompositionIntentShapePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode intent shape", fn: func(state *recipeCompileState) error {
-		return validateTranscodeIntentShape(state.operation, state.intent)
+		return validateBranchCompositionIntentShape(state.operation, state.intent)
 	}}
 }
 
-func validateTranscodeAttachmentsPass() recipeCompilePass {
+func validateBranchCompositionAttachmentsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode attachments", fn: func(state *recipeCompileState) error {
-		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeTargetAttachments, state.transcodeBranchSplit)
+		return validateBranchCompositionAttachments(state.branchInputAttachment, state.branchTargetAttachments, state.branchCompositionSplit)
 	}}
 }
 
-func validateTranscodeOutputFormatAdaptersPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode output format adapters", fn: func(state *recipeCompileState) error {
+func validateBranchTargetFormatAdaptersPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate branch target format adapters", fn: func(state *recipeCompileState) error {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs := make([]EndpointSpec, 0, len(state.transcodeTargetAttachments))
-		for i := range state.transcodeTargetAttachments {
-			output := state.transcodeTargetAttachments[i].output.Name(firstNonEmpty(
-				state.transcodeTargetAttachments[i].output.name,
-				state.transcodeTargetAttachments[i].name,
+		outputs := make([]EndpointSpec, 0, len(state.branchTargetAttachments))
+		for i := range state.branchTargetAttachments {
+			output := state.branchTargetAttachments[i].output.Name(firstNonEmpty(
+				state.branchTargetAttachments[i].output.name,
+				state.branchTargetAttachments[i].name,
 			))
 			outputs = append(outputs, output)
 		}
@@ -724,31 +724,31 @@ func validateTranscodeOutputFormatAdaptersPass() recipeCompilePass {
 		if err != nil {
 			return err
 		}
-		for i := range state.transcodeTargetAttachments {
-			state.transcodeTargetAttachments[i].output = resolved[i]
+		for i := range state.branchTargetAttachments {
+			state.branchTargetAttachments[i].output = resolved[i]
 		}
 		return nil
 	}}
 }
 
-func validateTranscodeInputFormatAdaptersPass() recipeCompilePass {
+func validateBranchInputFormatAdaptersPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode input format adapters", fn: func(state *recipeCompileState) error {
 		if !state.options.preflightInputAdapters {
 			return nil
 		}
-		probes, err := validateInputFormatAdapters(state.options.Context(), state.runtime, []InputSpec{state.transcodeInputAttachment})
+		probes, err := validateInputFormatAdapters(state.options.Context(), state.runtime, []InputSpec{state.branchInputAttachment})
 		if err != nil {
 			return err
 		}
 		if len(probes) != 0 {
-			state.transcodeInputProbe = probes[0]
-			state.transcodeInputProbeReady = true
+			state.branchInputProbe = probes[0]
+			state.branchInputProbeReady = true
 		}
 		return nil
 	}}
 }
 
-func validateTranscodeEncodeAdaptersPass() recipeCompilePass {
+func validateBranchEncodeAdaptersPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode encode adapters", fn: func(state *recipeCompileState) error {
 		if !state.options.preflightEncodeAdapters {
 			return nil
@@ -757,7 +757,7 @@ func validateTranscodeEncodeAdaptersPass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeTransformAdaptersPass() recipeCompilePass {
+func validateBranchTransformAdaptersPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode transform adapters", fn: func(state *recipeCompileState) error {
 		if !state.options.preflightTransformAdapters {
 			return nil
@@ -766,15 +766,15 @@ func validateTranscodeTransformAdaptersPass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeOutputBindingsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode output bindings", fn: func(state *recipeCompileState) error {
-		return validateTranscodeOutputBindings(state.intent, state.transcodeTargetAttachments)
+func validateBranchTargetBindingsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate branch target bindings", fn: func(state *recipeCompileState) error {
+		return validateBranchTargetBindings(state.intent, state.branchTargetAttachments)
 	}}
 }
 
-func validateTranscodeBranchTargetKindsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode branch target kinds", fn: func(state *recipeCompileState) error {
-		return validateTranscodeBranchTargetKinds(state.intent, state.transcodeTargetAttachments)
+func validateBranchTargetKindsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate branch target kinds", fn: func(state *recipeCompileState) error {
+		return validateBranchTargetKinds(state.intent, state.branchTargetAttachments)
 	}}
 }
 
@@ -788,12 +788,12 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 			if len(state.intent.Targets) != len(state.outputAttachments) {
 				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Targets), len(state.outputAttachments))
 			}
-		case state.transcodePresent:
+		case state.branchCompositionPresent:
 			if len(state.intent.Inputs) != 1 {
 				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), 1)
 			}
-			if len(state.intent.Targets) != len(state.transcodeTargetAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Targets), len(state.transcodeTargetAttachments))
+			if len(state.intent.Targets) != len(state.branchTargetAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Targets), len(state.branchTargetAttachments))
 			}
 		}
 		return nil
@@ -859,13 +859,13 @@ func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeKnownInputStreamSelectionPass() recipeCompilePass {
+func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode known input stream selection", fn: func(state *recipeCompileState) error {
-		if !state.transcodeInputProbeReady || len(state.transcodeInputProbe.Streams) == 0 {
+		if !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
 		for i := range state.intent.Streams {
-			if err := validateKnownProbeStreamSelection(state.transcodeInputProbe, state.intent.Streams[i]); err != nil {
+			if err := validateKnownProbeStreamSelection(state.branchInputProbe, state.intent.Streams[i]); err != nil {
 				return err
 			}
 		}
@@ -873,12 +873,12 @@ func validateTranscodeKnownInputStreamSelectionPass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeKnownInputDecodeAdaptersPass() recipeCompilePass {
+func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode known input decode adapters", fn: func(state *recipeCompileState) error {
-		if !state.options.preflightDecodeAdapters || !state.transcodeInputProbeReady || len(state.transcodeInputProbe.Streams) == 0 {
+		if !state.options.preflightDecodeAdapters || !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
-		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, []format.ProbeResult{state.transcodeInputProbe}, state.intent.Streams)
+		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, []format.ProbeResult{state.branchInputProbe}, state.intent.Streams)
 	}}
 }
 
@@ -959,7 +959,7 @@ func lowerJobOutputsPass() recipeCompilePass {
 
 func planBranchCompositionIntentPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "plan branch composition intent", fn: func(state *recipeCompileState) error {
-		plan, err := planBranchCompositionRecipe(state.intent, state.transcodeInputAttachment, state.transcodeTargetAttachments)
+		plan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchTargetAttachments)
 		if err != nil {
 			return err
 		}
@@ -970,8 +970,8 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 
 func lowerBranchCompositionInputPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "lower branch composition input", fn: func(state *recipeCompileState) error {
-		if state.transcodeBranchSplit && state.transcodeInputAttachment.rtp != nil {
-			state.builder = state.transcodeInputAttachment.apply(state.builder)
+		if state.branchCompositionSplit && state.branchInputAttachment.rtp != nil {
+			state.builder = state.branchInputAttachment.apply(state.builder)
 		}
 		return nil
 	}}

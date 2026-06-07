@@ -159,7 +159,7 @@ type decodeRequest struct {
 type filterRequest struct {
 	selector  av.StreamSelector
 	stage     pipeline.Stage
-	transform *transcodeTransform
+	transform *mediaTransform
 }
 
 type rtpOption func(*rtpInput)
@@ -251,7 +251,7 @@ func (b *builder) Filter(selector av.StreamSelector, stage pipeline.Stage) build
 	return b
 }
 
-func (b *builder) transform(selector av.StreamSelector, transform transcodeTransform) builderAPI {
+func (b *builder) transform(selector av.StreamSelector, transform mediaTransform) builderAPI {
 	b.filters = append(b.filters, filterRequest{selector: selector, transform: &transform})
 	return b
 }

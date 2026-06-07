@@ -296,7 +296,7 @@ func filterRequestPlanNode(request filterRequest) (string, string, error) {
 		return request.stage.Name(), describedNodeDetail(request.stage), nil
 	}
 	if request.transform != nil {
-		return request.transform.name, transcodeTransformDetail(*request.transform), nil
+		return request.transform.name, mediaTransformDetail(*request.transform), nil
 	}
 	return "", "", ErrNilStage
 }
@@ -306,7 +306,7 @@ func (b *builder) newFilterRequestStage(ctx context.Context, request filterReque
 		return request.stage, stream, nil
 	}
 	if request.transform != nil {
-		stage, outputStream, err := b.newTranscodeFilterStage(ctx, *request.transform, stream, realtime)
+		stage, outputStream, err := b.newMediaTransformStage(ctx, *request.transform, stream, realtime)
 		if err != nil {
 			return nil, av.Stream{}, err
 		}

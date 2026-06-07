@@ -198,9 +198,9 @@ func explainInputs(resolved recipeResolved) []InputReport {
 }
 
 func (r recipeResolved) inputProbe(index int) (format.ProbeResult, bool) {
-	if r.transcodeInputProbeReady {
+	if r.branchInputProbeReady {
 		if index == 0 {
-			return r.transcodeInputProbe, true
+			return r.branchInputProbe, true
 		}
 		return format.ProbeResult{}, false
 	}
@@ -558,8 +558,8 @@ func reportDecodeCodec(resolved recipeResolved, stream StreamIntent) (av.CodecID
 	if codecID, ok := liveDecodeCodec(resolved.intent.Inputs, stream); ok {
 		return codecID, true
 	}
-	if resolved.transcodeInputProbeReady {
-		return knownProbeDecodeCodec([]format.ProbeResult{resolved.transcodeInputProbe}, stream)
+	if resolved.branchInputProbeReady {
+		return knownProbeDecodeCodec([]format.ProbeResult{resolved.branchInputProbe}, stream)
 	}
 	return knownProbeDecodeCodec(resolved.inputProbes, stream)
 }

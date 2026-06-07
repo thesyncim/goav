@@ -56,9 +56,11 @@ decode, resize, resample, custom stages, and taps. `Job.Explain(ctx)` reports th
 `MediaPlan` branch operations, taps, and decisions. Declared branch composition
 now carries a private branch-compose plan owned by the recipe compiler; the
 advanced `transcode.Plan` path adapts into that internal shape at its boundary
-instead of being the recipe IR. The next architectural pressure is to rename and
-shrink the remaining builder-shaped graph helpers behind branch composition and
-the other media-plan build kinds until graph construction is directly
+instead of being the recipe IR. Runtime branch-composer graph helpers now operate
+on branch-compose routes, target routes, selector/stream groups, and media
+transforms. The next architectural pressure is to shrink the remaining
+builder-shaped lowering behind branch composition and the other media-plan build
+kinds until graph construction is directly
 `Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph`.
 
 The handle-based graph builder remains available as the advanced layer through

@@ -192,7 +192,7 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch) 
 				closeRuntimeBranchOwnedStages(*branch)
 				return err
 			}
-			stage, outputStream, err := (&builder{runtime: t.runtime}).newTranscodeFilterStage(ctx, transform, currentStream, t.runtime.realtime)
+			stage, outputStream, err := (&builder{runtime: t.runtime}).newMediaTransformStage(ctx, transform, currentStream, t.runtime.realtime)
 			if err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
 				return runtimeBranchTransformError(transform.name, err)
@@ -721,10 +721,10 @@ func (t *task) validateRuntimeBranchTapsLocked(branch runtimeBranch) error {
 	return nil
 }
 
-func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformSpec, index int) (transcodeTransform, error) {
+func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformSpec, index int) (mediaTransform, error) {
 	base := firstNonEmpty(branchName, "branch")
 	if err := validateTransformSpec("attach runtime branch", base, spec); err != nil {
-		return transcodeTransform{}, err
+		return mediaTransform{}, err
 	}
 	suffix := ""
 	if index > 0 {
@@ -732,7 +732,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 	}
 	switch {
 	case spec.Resize != nil && spec.Resample != nil:
-		return transcodeTransform{}, &BuildError{
+		return mediaTransform{}, &BuildError{
 			Code:      "transform_invalid",
 			Operation: "attach runtime branch",
 			Node:      base,
@@ -741,26 +741,26 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 		}
 	case spec.Resize != nil:
 		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
-			return transcodeTransform{}, runtimeBranchTransformMediaError(base, "resize", "video")
+			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resize", "video")
 		}
 		resize := *spec.Resize
-		return transcodeTransform{
+		return mediaTransform{
 			name:    "resize-" + base + suffix,
 			factory: transformFactoryName(spec),
 			video:   &resize,
 		}, nil
 	case spec.Resample != nil:
 		if stream.Type != av.MediaAudio && stream.Codec.Type != av.MediaAudio {
-			return transcodeTransform{}, runtimeBranchTransformMediaError(base, "resample", "audio")
+			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resample", "audio")
 		}
 		resample := *spec.Resample
-		return transcodeTransform{
+		return mediaTransform{
 			name:    "resample-" + base + suffix,
 			factory: transformFactoryName(spec),
 			audio:   &resample,
 		}, nil
 	default:
-		return transcodeTransform{}, &BuildError{
+		return mediaTransform{}, &BuildError{
 			Code:      "transform_invalid",
 			Operation: "attach runtime branch",
 			Node:      base,

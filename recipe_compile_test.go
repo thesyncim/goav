@@ -48,10 +48,10 @@ func (b noCapabilityBuilder) Build(context.Context) (Task, error) { return nil, 
 func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 	stateType := reflect.TypeOf(recipeCompileState{})
 	forbidden := map[reflect.Type]string{
-		reflect.TypeOf((*Job)(nil)):            "*Job",
-		reflect.TypeOf((*transcodeJob)(nil)):   "*transcodeJob",
-		reflect.TypeOf((*jobStreamBuild)(nil)): "*jobStreamBuild",
-		reflect.TypeOf([]streamBuild(nil)):     "[]streamBuild",
+		reflect.TypeOf((*Job)(nil)):                  "*Job",
+		reflect.TypeOf((*branchCompositionJob)(nil)): "*branchCompositionJob",
+		reflect.TypeOf((*jobStreamBuild)(nil)):       "*jobStreamBuild",
+		reflect.TypeOf([]streamBuild(nil)):           "[]streamBuild",
 	}
 	for i := 0; i < stateType.NumField(); i++ {
 		field := stateType.Field(i)
@@ -59,7 +59,7 @@ func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 			t.Fatalf("recipeCompileState field %s carries %s; compiler passes should use captured intent attachments", field.Name, name)
 		}
 		switch field.Name {
-		case "inputs", "outputs", "jobOutputs", "streamOutputs", "transcodeInput", "transcodeOutputs":
+		case "inputs", "outputs", "jobOutputs", "streamOutputs":
 			t.Fatalf("recipeCompileState field %s uses builder-shaped attachment naming", field.Name)
 		}
 	}
@@ -93,13 +93,13 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 			want: "targets",
 		},
 		{
-			name: "transcode outputs",
+			name: "branch targets",
 			state: recipeCompileState{
-				operation:                  transcodeRecipeOperation,
-				transcodePresent:           true,
-				intent:                     Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Targets: []TargetIntent{{Name: "web.ivf"}}},
-				transcodeInputAttachment:   FileInput("input.ivf", strings.NewReader("")),
-				transcodeTargetAttachments: nil,
+				operation:                branchCompositionOperation,
+				branchCompositionPresent: true,
+				intent:                   Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Targets: []TargetIntent{{Name: "web.ivf"}}},
+				branchInputAttachment:    FileInput("input.ivf", strings.NewReader("")),
+				branchTargetAttachments:  nil,
 			},
 			want: "targets",
 		},
@@ -270,12 +270,12 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 		},
 		{
 			name: "transcode probed format",
-			pass: validateTranscodeOutputFormatAdaptersPass(),
+			pass: validateBranchTargetFormatAdaptersPass(),
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
 				runtime:   Default(),
-				transcodeTargetAttachments: []namedTargetSpec{{
+				branchTargetAttachments: []namedTargetSpec{{
 					name:   "web",
 					output: FileOutput("web.webm", io.Discard),
 				}},
@@ -331,26 +331,26 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 		},
 		{
 			name: "transcode probed output format",
-			pass: validateTranscodeOutputFormatAdaptersPass(),
+			pass: validateBranchTargetFormatAdaptersPass(),
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
 				runtime: New(withTestFormats(
 					testFormatProber(remuxTestProber{}),
 					testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 				)),
-				transcodeTargetAttachments: []namedTargetSpec{{
+				branchTargetAttachments: []namedTargetSpec{{
 					name:   "web",
 					output: FileOutput("web.ogg", io.Discard),
 				}},
 			},
 			validate: func(t *testing.T, state recipeCompileState) {
 				t.Helper()
-				if len(state.transcodeTargetAttachments) != 1 ||
-					state.transcodeTargetAttachments[0].output.format != "" ||
-					state.transcodeTargetAttachments[0].output.resolvedFormat != av.FormatOgg ||
-					state.transcodeTargetAttachments[0].output.output.Name != "web.ogg" {
-					t.Fatalf("transcode output attachments = %+v, want resolved Ogg format", state.transcodeTargetAttachments)
+				if len(state.branchTargetAttachments) != 1 ||
+					state.branchTargetAttachments[0].output.format != "" ||
+					state.branchTargetAttachments[0].output.resolvedFormat != av.FormatOgg ||
+					state.branchTargetAttachments[0].output.output.Name != "web.ogg" {
+					t.Fatalf("branch target attachments = %+v, want resolved Ogg format", state.branchTargetAttachments)
 				}
 			},
 		},
@@ -435,7 +435,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 
 func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 	state := recipeCompileState{
-		operation: transcodeRecipeOperation,
+		operation: branchCompositionOperation,
 		options:   recipeCompileOptions{preflightOutputAdapters: true},
 		runtime: New(withTestFormats(
 			testFormatProber(remuxTestProber{}),
@@ -451,15 +451,15 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 			}},
 			Targets: []TargetIntent{{Name: "archive"}},
 		},
-		transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
-		transcodeTargetAttachments: []namedTargetSpec{{
+		branchInputAttachment: FileInput("input.ivf", strings.NewReader("")),
+		branchTargetAttachments: []namedTargetSpec{{
 			name:   "archive",
 			output: FileOutput("archive.ogg", io.Discard),
 		}},
 	}
 
-	if err := validateTranscodeOutputFormatAdaptersPass().Apply(&state); err != nil {
-		t.Fatalf("validateTranscodeOutputFormatAdaptersPass() error = %v", err)
+	if err := validateBranchTargetFormatAdaptersPass().Apply(&state); err != nil {
+		t.Fatalf("validateBranchTargetFormatAdaptersPass() error = %v", err)
 	}
 	if err := planBranchCompositionIntentPass().Apply(&state); err != nil {
 		t.Fatalf("planBranchCompositionIntentPass() error = %v", err)
@@ -495,12 +495,12 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 		},
 		{
 			name: "transcode probed format",
-			pass: validateTranscodeInputFormatAdaptersPass(),
+			pass: validateBranchInputFormatAdaptersPass(),
 			state: recipeCompileState{
-				operation:                transcodeRecipeOperation,
-				options:                  recipeCompileOptions{preflightInputAdapters: true},
-				runtime:                  Default(),
-				transcodeInputAttachment: FileInput("input.webm", strings.NewReader("")),
+				operation:             branchCompositionOperation,
+				options:               recipeCompileOptions{preflightInputAdapters: true},
+				runtime:               Default(),
+				branchInputAttachment: FileInput("input.webm", strings.NewReader("")),
 			},
 			code: "input_demuxer_missing",
 			want: []string{`format "matroska"`, "no demuxer is registered", "WithFormatAdapter"},
@@ -920,9 +920,9 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 		},
 		{
 			name: "transcode probed decoder",
-			pass: validateTranscodeKnownInputDecodeAdaptersPass(),
+			pass: validateKnownBranchInputDecodeAdaptersPass(),
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightDecodeAdapters: true},
 				runtime:   New(),
 				intent: Intent{Streams: []StreamIntent{{
@@ -931,8 +931,8 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 					Encode:  VP9(Bitrate(600_000)),
 					Targets: []string{"web"},
 				}}},
-				transcodeInputProbeReady: true,
-				transcodeInputProbe: format.ProbeResult{
+				branchInputProbeReady: true,
+				branchInputProbe: format.ProbeResult{
 					Format: av.FormatMatroska,
 					Streams: []av.Stream{{
 						Index: 0,
@@ -1030,9 +1030,9 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 		},
 		{
 			name: "transcode descriptor-only encoder",
-			pass: validateTranscodeEncodeAdaptersPass(),
+			pass: validateBranchEncodeAdaptersPass(),
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightEncodeAdapters: true},
 				runtime:   descriptorRuntime,
 				intent: Intent{Streams: []StreamIntent{{
@@ -1085,9 +1085,9 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 		},
 		{
 			name: "transcode missing resize filter",
-			pass: validateTranscodeTransformAdaptersPass(),
+			pass: validateBranchTransformAdaptersPass(),
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightTransformAdapters: true},
 				runtime:   New(),
 				intent: Intent{Streams: []StreamIntent{{
@@ -1406,7 +1406,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 		{
 			name: "input missing",
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				intent: Intent{
 					Streams: []StreamIntent{{
 						Name:    "360p",
@@ -1422,7 +1422,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 		{
 			name: "stream missing",
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				intent: Intent{
 					Inputs: []InputIntent{{Name: "input.ivf"}},
 				},
@@ -1433,7 +1433,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 		{
 			name: "branch name missing",
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				intent: Intent{
 					Inputs: []InputIntent{{Name: "input.ivf"}},
 					Streams: []StreamIntent{{
@@ -1444,12 +1444,12 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 				},
 			},
 			code: "stream_name_missing",
-			want: "transcode branches need stable names",
+			want: "branches need stable names",
 		},
 		{
 			name: "copy unsupported",
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				intent: Intent{
 					Inputs: []InputIntent{{Name: "input.ivf"}},
 					Streams: []StreamIntent{{
@@ -1466,7 +1466,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 		{
 			name: "auto unresolved",
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				intent: Intent{
 					Inputs: []InputIntent{{Name: "input.ivf"}},
 					Streams: []StreamIntent{{
@@ -1483,7 +1483,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 		{
 			name: "duplicate branch target",
 			state: recipeCompileState{
-				operation: transcodeRecipeOperation,
+				operation: branchCompositionOperation,
 				intent: Intent{
 					Inputs: []InputIntent{{Name: "input.ivf"}},
 					Streams: []StreamIntent{{
@@ -1498,7 +1498,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 			want: "more than once",
 		},
 	}
-	pass := validateTranscodeIntentShapePass()
+	pass := validateBranchCompositionIntentShapePass()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pass.Apply(&tt.state)
@@ -1523,8 +1523,8 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 		{
 			name: "rtp input",
 			state: recipeCompileState{
-				transcodeInputAttachment: RTP(&runtimeRTPReceiver{}).Name("video").Codec(VP8()),
-				transcodeTargetAttachments: []namedTargetSpec{{
+				branchInputAttachment: RTP(&runtimeRTPReceiver{}).Name("video").Codec(VP8()),
+				branchTargetAttachments: []namedTargetSpec{{
 					name:   "web",
 					output: FileOutput("web.ivf", io.Discard),
 				}},
@@ -1535,8 +1535,8 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 		{
 			name: "duplicate targets",
 			state: recipeCompileState{
-				transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
-				transcodeTargetAttachments: []namedTargetSpec{
+				branchInputAttachment: FileInput("input.ivf", strings.NewReader("")),
+				branchTargetAttachments: []namedTargetSpec{
 					{name: "web", output: FileOutput("web.ivf", io.Discard)},
 					{name: "web", output: FileOutput("preview.ivf", io.Discard)},
 				},
@@ -1545,7 +1545,7 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 			want: "defined more than once",
 		},
 	}
-	pass := validateTranscodeAttachmentsPass()
+	pass := validateBranchCompositionAttachmentsPass()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pass.Apply(&tt.state)
@@ -1562,7 +1562,7 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 
 func TestTranscodeBranchTargetKindsPassAllowsRawSinkBranches(t *testing.T) {
 	state := recipeCompileState{
-		operation: transcodeRecipeOperation,
+		operation: branchCompositionOperation,
 		intent: Intent{
 			Inputs: []InputIntent{{Name: "input.ivf"}},
 			Streams: []StreamIntent{{
@@ -1571,20 +1571,20 @@ func TestTranscodeBranchTargetKindsPassAllowsRawSinkBranches(t *testing.T) {
 				Targets: []string{"frames"},
 			}},
 		},
-		transcodeTargetAttachments: []namedTargetSpec{{
+		branchTargetAttachments: []namedTargetSpec{{
 			name:   "frames",
 			output: SinkEndpoint(SinkFunc("frames", func(context.Context, Message) error { return nil })),
 		}},
 	}
 
-	if err := validateTranscodeBranchTargetKindsPass().Apply(&state); err != nil {
-		t.Fatalf("validateTranscodeBranchTargetKindsPass() error = %v", err)
+	if err := validateBranchTargetKindsPass().Apply(&state); err != nil {
+		t.Fatalf("validateBranchTargetKindsPass() error = %v", err)
 	}
 }
 
 func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
 	state := recipeCompileState{
-		operation: transcodeRecipeOperation,
+		operation: branchCompositionOperation,
 		intent: Intent{
 			Inputs: []InputIntent{{Name: "input.ivf"}},
 			Streams: []StreamIntent{{
@@ -1593,13 +1593,13 @@ func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
 				Targets: []string{"web"},
 			}},
 		},
-		transcodeTargetAttachments: []namedTargetSpec{{
+		branchTargetAttachments: []namedTargetSpec{{
 			name:   "web",
 			output: FileOutput("web.ivf", io.Discard),
 		}},
 	}
 
-	err := validateTranscodeBranchTargetKindsPass().Apply(&state)
+	err := validateBranchTargetKindsPass().Apply(&state)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
@@ -1611,7 +1611,7 @@ func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
 
 func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 	state := recipeCompileState{
-		operation: transcodeRecipeOperation,
+		operation: branchCompositionOperation,
 		intent: Intent{
 			Inputs: []InputIntent{{Name: "input.ivf"}},
 			Streams: []StreamIntent{{
@@ -1622,13 +1622,13 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 			}},
 			Targets: []TargetIntent{{Name: "web.ivf"}},
 		},
-		transcodeTargetAttachments: []namedTargetSpec{{
+		branchTargetAttachments: []namedTargetSpec{{
 			name:   "web",
 			output: FileOutput("web.ivf", io.Discard),
 		}},
 	}
 
-	err := validateTranscodeOutputBindingsPass().Apply(&state)
+	err := validateBranchTargetBindingsPass().Apply(&state)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_missing" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_missing wrapping ErrUnsupportedBuild", err)
@@ -1655,21 +1655,21 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 		},
 	}
 	state := recipeCompileState{
-		operation: transcodeRecipeOperation,
+		operation: branchCompositionOperation,
 		intent: Intent{Streams: []StreamIntent{{
 			Name:    "720p",
 			Select:  StreamSelect{Type: av.MediaVideo},
 			Encode:  VP9(Bitrate(2_000_000)),
 			Targets: []string{"web"},
 		}}},
-		transcodeInputProbeReady: true,
-		transcodeInputProbe: format.ProbeResult{
+		branchInputProbeReady: true,
+		branchInputProbe: format.ProbeResult{
 			Format:  av.FormatMatroska,
 			Streams: streams,
 		},
 	}
 
-	err := validateTranscodeKnownInputStreamSelectionPass().Apply(&state)
+	err := validateKnownBranchInputStreamSelectionPass().Apply(&state)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)

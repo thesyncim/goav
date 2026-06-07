@@ -41,11 +41,11 @@ func stateMuxCompatibilityIssues(state *recipeCompileState) []muxCompatibilityIs
 		return nil
 	}
 	plan := buildMediaPlan(state)
-	return muxCompatibilityIssues(plan, state.intent, state.inputProbes, state.transcodeInputProbe, state.transcodeInputProbeReady)
+	return muxCompatibilityIssues(plan, state.intent, state.inputProbes, state.branchInputProbe, state.branchInputProbeReady)
 }
 
 func resolvedMuxCompatibilityIssues(resolved recipeResolved) []muxCompatibilityIssue {
-	return muxCompatibilityIssues(resolved.mediaPlan, resolved.intent, resolved.inputProbes, resolved.transcodeInputProbe, resolved.transcodeInputProbeReady)
+	return muxCompatibilityIssues(resolved.mediaPlan, resolved.intent, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady)
 }
 
 func muxCompatibilityIssues(

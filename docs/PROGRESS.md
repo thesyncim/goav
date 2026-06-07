@@ -955,6 +955,18 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     branch-compose plan at the boundary. Recipe compile state no longer stores a
     `transcode.Plan`, and branch-composer describe/build consume the new plan
     directly. Done.
+247. Rename branch-composer runtime helpers around the new plan:
+    prepared routes, target routes, selector/stream groups, ordered
+    media-transform stages, branch step validation, and target diagnostics now
+    use branch/media vocabulary internally. The explicit advanced
+    `Transcode(plan)` compiler wrappers remain as boundary adapters, but graph
+    planning/build helpers consume branch-compose routes and targets. Done.
+248. Rename branch-composition recipe compiler state:
+    recipe compilation now uses branch-composition job, branch input attachment,
+    branch target attachment, branch probe, branch target validation, and branch
+    transform validation names. `Explain(ctx)`, media-plan recognition, mux
+    compatibility checks, and tests use the renamed state while the advanced
+    `Transcode(plan)` boundary remains isolated. Done.
 
 ## First Vertical Slice
 
@@ -1169,11 +1181,11 @@ Required proof:
 2. Move the remaining media-plan build kinds toward direct
    `MediaPlan -> pipeline.Spec -> pipeline.Graph` construction and shrink
    internal builder lowering behind those build kinds.
-3. Replace the remaining special transcode-named graph helpers behind branch
-   composition with generic branch lowering: selected stream, ordered operation
+3. Continue toward direct branch lowering: selected stream, ordered operation
    chain, target refs, mux/sink groups, and shared upstream decode where
    branches select the same input stream. Recipes already use a private
-   branch-compose plan; the advanced `Transcode(plan)` path adapts into it.
+   branch-compose plan and branch-named compile state; the advanced
+   `Transcode(plan)` path adapts into it at the boundary.
 4. Add first-class capability data for stream, codec, transform, and container
    planning so missing adapters and incompatible mux/transform chains fail
    before runtime execution with useful suggestions.
@@ -1196,9 +1208,8 @@ Required proof:
    regression tests for each planner slice.
 10. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: finish direct media-plan graph construction, rename the
-remaining branch-composer helpers away from transcode-shaped internals, and
-deepen capability planning around the ordered operation model. The public recipe
+Current pressure point: finish direct media-plan graph construction and deepen
+capability planning around the ordered operation model. The public recipe
 surface is small: `From`, stream builders, `Tap`, `Branch`, `Branches`,
 `Target`, endpoint constructors, `Flow`, `Codec`, and runtime `Attach`. Flows
 expand ordered stage/tap/transform/encode operations into branch intent instead

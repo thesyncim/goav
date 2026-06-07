@@ -732,10 +732,10 @@ func TestRuntimeBuilderTranscodeRequiresMatchingOutputSelection(t *testing.T) {
 
 	_, err := newTestBuilder(t).Transcode(plan).Describe()
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_output_unmatched" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transcode_output_unmatched wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_target_unmatched" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_target_unmatched wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "output selects no transcode branches") ||
+	if !strings.Contains(err.Error(), "target selects no branches") ||
 		!strings.Contains(err.Error(), "requested: missing") ||
 		!strings.Contains(err.Error(), "branch name") {
 		t.Fatalf("err = %v, want unmatched output guidance", err)
@@ -773,8 +773,8 @@ func TestRuntimeBuilderTranscodeReportsEmptyPlanParts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := newTestBuilder(t).Transcode(tt.plan).Describe()
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "transcode_plan_empty" || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want transcode_plan_empty wrapping ErrUnsupportedBuild", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != "branch_compose_plan_empty" || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want branch_compose_plan_empty wrapping ErrUnsupportedBuild", err)
 			}
 			if !strings.Contains(err.Error(), tt.want) ||
 				!strings.Contains(err.Error(), "goav.From") {
@@ -796,8 +796,8 @@ func TestRuntimeBuilderTranscodeReportsDuplicateBranchNames(t *testing.T) {
 
 	_, err := newTestBuilder(t).Transcode(plan).Describe()
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_branch_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transcode_branch_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "audio-main") ||
 		!strings.Contains(err.Error(), "duplicate index: 1") ||
@@ -823,11 +823,11 @@ func TestRuntimeBuilderTranscodeReportsInvalidStep(t *testing.T) {
 
 	_, err := newTestBuilder(t).Transcode(plan).Describe()
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_transform_chain_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transcode_transform_chain_unsupported wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_operation_chain_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_operation_chain_unsupported wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "exactly one stage or transform") ||
-		!strings.Contains(err.Error(), "one operation per transcode.Step") {
+		!strings.Contains(err.Error(), "one operation per branch step") {
 		t.Fatalf("err = %v, want invalid step guidance", err)
 	}
 }
@@ -857,8 +857,8 @@ func TestRuntimeBuilderTranscodeReportsTransformMediaMismatch(t *testing.T) {
 
 	_, err := newTestBuilder(t, formats, codecs).Transcode(plan).Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_transform_media_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transcode_transform_media_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_transform_media_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_transform_media_mismatch wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "resample applies to audio streams") ||
 		!strings.Contains(err.Error(), "stream id: video") ||
