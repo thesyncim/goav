@@ -71,8 +71,10 @@ Current milestone:
 - Seekable packet-at-time reads build a one-time block-position packet index
   when Cues are absent or sparse, so `ReadPacketAtTime` and
   `ReadTrackPacketAtTime` can jump directly to uncued SimpleBlock and
-  BlockGroup entries, including indexed laced frames. `SeekToTime` and
-  `SeekToTrackTime` use the same packet index when Cues are absent or unusable.
+  BlockGroup entries, including indexed laced frames. Track-specific reads use
+  per-track subindexes so multi-track recordings avoid scanning unrelated
+  packets after the index is built. `SeekToTime` and `SeekToTrackTime` use the
+  same packet index when Cues are absent or unusable.
 - Direct cue-backed `ReadCuedPacketAtTime` and `ReadCuedTrackPacketAtTime`
   extraction for cues at or after a requested timestamp. Exact block cues jump
   directly to `CueRelativePosition` or `CueBlockNumber`; cluster-only cues scan
@@ -221,10 +223,12 @@ clears pending laced-frame state before reading from the target cluster.
 When Cues are absent, sparse, before the target packet, or missing for a
 specific track, seekable packet-at-time reads build a packet index from
 Segment-relative Cluster positions, block positions, Cluster timecodes, track
-numbers, and laced-frame numbers. The fallback seeks directly to the indexed
-SimpleBlock or BlockGroup and lets the normal demux path decode the packet, so
-codec conversion, content encoding, BlockGroup metadata, and laced-frame
-duration handling stay shared with sequential reads.
+numbers, and laced-frame numbers. The demuxer also builds per-track subindexes
+over that sorted packet index, so `ReadTrackPacketAtTime` and cue-free
+`SeekToTrackTime` can binary-search only the requested track. The fallback seeks
+directly to the indexed SimpleBlock or BlockGroup and lets the normal demux path
+decode the packet, so codec conversion, content encoding, BlockGroup metadata,
+and laced-frame duration handling stay shared with sequential reads.
 `ReadPacketAtTime` combines that cue seek with packet reads and returns the
 first packet at or after the requested timestamp. The caller-provided packet
 buffer must be large enough for skipped packets and the returned packet.
@@ -282,9 +286,9 @@ The steady-state packet paths avoid allocations:
 - Header and track metadata may allocate before packet writing starts.
 - The demuxer reuses embedded `io.LimitedReader` and fixed scratch buffers for
   block parsing.
-- Cue-free seekable reads build the packet/block index once, then use binary
-  search and normal caller-owned packet buffers with 0 steady-state
-  allocations.
+- Cue-free and sparse-cue seekable reads build the packet/block index once,
+  including per-track subindexes, then use binary search and normal
+  caller-owned packet buffers with 0 steady-state allocations.
 - H.264 AVC-to-Annex B demux conversion expands length-prefixed samples into
   caller-owned packet buffers without heap allocation.
 - `ReadPacket` writes frame bytes into caller-owned `Packet.Data` capacity.
@@ -360,8 +364,9 @@ Committed benchmarks cover:
 - Matroska WebRTC-codec corpus mux/demux throughput and allocations across
   Opus, AV1, H.264, VP9, and VP8.
 - Seekable Matroska WebRTC-codec corpus mux/demux throughput, allocation
-  behavior, cue-assisted `ReadPacketAtTime`, direct `ReadCuedPacketAtTime`,
-  and large Cue table seek scalability.
+  behavior, cue-assisted `ReadPacketAtTime`, track-specific
+  `ReadTrackPacketAtTime`, direct `ReadCuedPacketAtTime`, and large Cue table
+  seek scalability.
 - WebM-profile corpus mux/demux throughput and allocations across VP8, VP9,
   AV1, and Opus.
 - External head-to-head recording benchmarks on FFmpeg-authored corpora:

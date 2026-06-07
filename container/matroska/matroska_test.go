@@ -8206,6 +8206,8 @@ func TestDemuxerReadTrackPacketAtTimeUsesClusterIndexWithoutTrackCues(t *testing
 	if !demuxer.packetIndexBuilt {
 		t.Fatal("packet index was not built for cue-free track seek")
 	}
+	requirePacketTrackIndex(t, demuxer, audioID, []int64{0, 20_000_000, 40_000_000})
+	requirePacketTrackIndex(t, demuxer, videoID, []int64{0, 20_000_000, 40_000_000})
 	if err := demuxer.ReadPacket(&got); err != nil {
 		t.Fatal(err)
 	}
@@ -8277,6 +8279,8 @@ func TestDemuxerReadTrackPacketAtTimeUsesPacketIndexWithSparseTrackCues(t *testi
 	if !demuxer.packetIndexBuilt {
 		t.Fatal("packet index was not built for sparse track cue read")
 	}
+	requirePacketTrackIndex(t, demuxer, audioID, []int64{0, 20_000_000, 40_000_000})
+	requirePacketTrackIndex(t, demuxer, videoID, []int64{0, 20_000_000, 40_000_000})
 	if got.TrackID != videoID || got.TimeNS != 20_000_000 || !bytes.Equal(got.Data, []byte{0xb1}) {
 		t.Fatalf("video packet at sparse-track-cue time = %+v data=%v, want video at 20000000", got, got.Data)
 	}
@@ -8837,6 +8841,74 @@ func TestDemuxerReadPacketAtTimeFindsLacedFrameWithoutCues(t *testing.T) {
 	}
 	if got.TimeNS != 20_000_000 || got.DurationNS != 20_000_000 || !bytes.Equal(got.Data, frames[1]) {
 		t.Fatalf("packet at time without cues = %+v data=%v, want second laced frame", got, got.Data)
+	}
+}
+
+func TestDemuxerReadTrackPacketAtTimeFindsLacedFrameWithoutCues(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{CuePolicy: CuePolicyNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	videoID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := [][]byte{{1}, {2}, {3}}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  videoID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0xb0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  audioID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames:   frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  videoID,
+		TimeNS:   40_000_000,
+		Keyframe: true,
+		Data:     []byte{0xb1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadTrackPacketAtTime(audioID, 20_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	requirePacketTrackIndex(t, demuxer, audioID, []int64{0, 20_000_000, 40_000_000})
+	requirePacketTrackIndex(t, demuxer, videoID, []int64{0, 40_000_000})
+	if got.TrackID != audioID || got.TimeNS != 20_000_000 || got.DurationNS != 20_000_000 || !bytes.Equal(got.Data, frames[1]) {
+		t.Fatalf("track packet at time without cues = %+v data=%v, want second laced audio frame", got, got.Data)
 	}
 }
 
@@ -11118,6 +11190,22 @@ func BenchmarkReadPacketAtTimeNoCuesLargeWebRTCCorpus(b *testing.B) {
 	benchmarkReadPacketAtTimeNoCuesWebRTCCorpus(b, benchmarkWebRTCLargeCueCorpusCycles)
 }
 
+func BenchmarkReadTrackPacketAtTimeWebRTCCorpus(b *testing.B) {
+	benchmarkReadTrackPacketAtTimeWebRTCCorpus(b, benchmarkWebRTCCorpusCycles, false)
+}
+
+func BenchmarkReadTrackPacketAtTimeLargeWebRTCCorpus(b *testing.B) {
+	benchmarkReadTrackPacketAtTimeWebRTCCorpus(b, benchmarkWebRTCLargeCueCorpusCycles, false)
+}
+
+func BenchmarkReadTrackPacketAtTimeNoCuesWebRTCCorpus(b *testing.B) {
+	benchmarkReadTrackPacketAtTimeWebRTCCorpus(b, benchmarkWebRTCCorpusCycles, true)
+}
+
+func BenchmarkReadTrackPacketAtTimeNoCuesLargeWebRTCCorpus(b *testing.B) {
+	benchmarkReadTrackPacketAtTimeWebRTCCorpus(b, benchmarkWebRTCLargeCueCorpusCycles, true)
+}
+
 func BenchmarkReadCuedPacketAtTimeWebRTCCorpus(b *testing.B) {
 	benchmarkReadCuedPacketAtTimeWebRTCCorpus(b, benchmarkWebRTCCorpusCycles)
 }
@@ -11178,6 +11266,36 @@ func benchmarkReadPacketAtTimeNoCuesWebRTCCorpus(b *testing.B, cycles int) {
 	for i := 0; i < b.N; i++ {
 		targetNS := int64(i%cycles) * benchmarkWebRTCCorpusFrameDurationNS
 		if err := demuxer.ReadPacketAtTime(targetNS, &packet); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchmarkReadTrackPacketAtTimeWebRTCCorpus(b *testing.B, cycles int, noCues bool) {
+	payloads := benchmarkWebRTCPayloads()
+	data := makeBenchmarkWebRTCCorpusSeekableMatroskaData(b, cycles, payloads)
+	if noCues {
+		data = makeBenchmarkWebRTCCorpusNoCueMatroskaData(b, cycles, payloads)
+	}
+	var reader bytes.Reader
+	reader.Reset(data)
+	demuxer, err := NewDemuxer(&reader, DemuxerOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	trackID := benchmarkTrackIDForCodec(b, demuxer, CodecVP8)
+	if err := demuxer.SeekToTrackTime(trackID, 0); err != nil {
+		b.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, payloads.maxPayload)}
+	if err := demuxer.ReadTrackPacketAtTime(trackID, 0, &packet); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		targetNS := int64(i%cycles) * benchmarkWebRTCCorpusFrameDurationNS
+		if err := demuxer.ReadTrackPacketAtTime(trackID, targetNS, &packet); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -11279,6 +11397,17 @@ func repeatedBenchmarkPayload(size int, seed byte) []byte {
 		payload[i] = seed + byte(i)
 	}
 	return payload
+}
+
+func benchmarkTrackIDForCodec(tb testing.TB, demuxer *Demuxer, codec Codec) uint32 {
+	tb.Helper()
+	for i := range demuxer.tracks {
+		if demuxer.tracks[i].Codec == codec {
+			return demuxer.tracks[i].ID
+		}
+	}
+	tb.Fatalf("benchmark track with codec %v not found", codec)
+	return 0
 }
 
 func addBenchmarkWebRTCTracks(tb testing.TB, muxer *Muxer) benchmarkWebRTCTracks {
@@ -11660,6 +11789,26 @@ func equalCueReferences(left []CueReference, right []CueReference) bool {
 		}
 	}
 	return true
+}
+
+func requirePacketTrackIndex(t *testing.T, demuxer *Demuxer, trackID uint32, times []int64) {
+	t.Helper()
+	entries, ok := demuxer.packetIndexEntriesForTrack(trackID)
+	if !ok {
+		t.Fatalf("packet track index for track %d was not built", trackID)
+	}
+	if len(entries) != len(times) {
+		t.Fatalf("packet track index for track %d has %d entries, want %d", trackID, len(entries), len(times))
+	}
+	for i, entryIndex := range entries {
+		if entryIndex < 0 || entryIndex >= len(demuxer.packetIndex) {
+			t.Fatalf("packet track index %d for track %d points outside packet index: %d", i, trackID, entryIndex)
+		}
+		entry := demuxer.packetIndex[entryIndex]
+		if entry.TrackID != trackID || entry.TimeNS != times[i] {
+			t.Fatalf("packet track index %d for track %d = %+v, want time %d", i, trackID, entry, times[i])
+		}
+	}
 }
 
 func expectedOpusHead(channels int, sampleRate int) []byte {

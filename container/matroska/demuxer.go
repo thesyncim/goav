@@ -43,6 +43,7 @@ type Demuxer struct {
 	clusterIndex          []clusterIndexEntry
 	clusterIndexBuilt     bool
 	packetIndex           []packetIndexEntry
+	packetTrackIndex      []packetTrackIndex
 	packetIndexBuilt      bool
 	inSegment             bool
 	inCluster             bool
@@ -95,14 +96,21 @@ type clusterIndexEntry struct {
 type packetIndexEntry struct {
 	TimeNS          int64
 	TrackID         uint32
+	TrackIndex      int
 	ClusterPosition uint64
 	BlockPosition   uint64
 	ClusterTimecode int64
 	FrameIndex      int
 }
 
+type packetTrackIndex struct {
+	TrackID uint32
+	Entries []int
+}
+
 type indexedBlockInfo struct {
 	TrackID         uint32
+	TrackIndex      int
 	TimeNS          int64
 	FrameCount      int
 	FrameDurationNS int64
@@ -172,6 +180,7 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.clusterIndex = d.clusterIndex[:0]
 	d.clusterIndexBuilt = false
 	d.packetIndex = d.packetIndex[:0]
+	d.packetTrackIndex = d.packetTrackIndex[:0]
 	d.packetIndexBuilt = false
 	d.inSegment = false
 	d.inCluster = false
@@ -780,35 +789,43 @@ func (d *Demuxer) trackPacketAtOrBeforeTime(trackID uint32, timeNS int64) (packe
 	if err := d.ensurePacketIndex(); err != nil {
 		return packetIndexEntry{}, err
 	}
-	index := sort.Search(len(d.packetIndex), func(i int) bool {
-		return d.packetIndex[i].TimeNS > timeNS
+	entries, ok := d.packetIndexEntriesForTrack(trackID)
+	if !ok || len(entries) == 0 {
+		return packetIndexEntry{}, ErrInvalidData
+	}
+	index := sort.Search(len(entries), func(i int) bool {
+		return d.packetIndex[entries[i]].TimeNS > timeNS
 	})
-	for i := index - 1; i >= 0; i-- {
-		if d.packetIndex[i].TrackID == trackID {
-			return d.packetIndex[i], nil
-		}
+	if index == 0 {
+		return d.packetIndex[entries[0]], nil
 	}
-	for i := index; i < len(d.packetIndex); i++ {
-		if d.packetIndex[i].TrackID == trackID {
-			return d.packetIndex[i], nil
-		}
-	}
-	return packetIndexEntry{}, ErrInvalidData
+	return d.packetIndex[entries[index-1]], nil
 }
 
 func (d *Demuxer) trackPacketAtOrAfterTime(trackID uint32, timeNS int64) (packetIndexEntry, error) {
 	if err := d.ensurePacketIndex(); err != nil {
 		return packetIndexEntry{}, err
 	}
-	index := sort.Search(len(d.packetIndex), func(i int) bool {
-		return d.packetIndex[i].TimeNS >= timeNS
+	entries, ok := d.packetIndexEntriesForTrack(trackID)
+	if !ok || len(entries) == 0 {
+		return packetIndexEntry{}, ErrInvalidData
+	}
+	index := sort.Search(len(entries), func(i int) bool {
+		return d.packetIndex[entries[i]].TimeNS >= timeNS
 	})
-	for i := index; i < len(d.packetIndex); i++ {
-		if d.packetIndex[i].TrackID == trackID {
-			return d.packetIndex[i], nil
+	if index == len(entries) {
+		return packetIndexEntry{}, ErrInvalidData
+	}
+	return d.packetIndex[entries[index]], nil
+}
+
+func (d *Demuxer) packetIndexEntriesForTrack(trackID uint32) ([]int, bool) {
+	for i := range d.packetTrackIndex {
+		if d.packetTrackIndex[i].TrackID == trackID {
+			return d.packetTrackIndex[i].Entries, true
 		}
 	}
-	return packetIndexEntry{}, ErrInvalidData
+	return nil, false
 }
 
 func (d *Demuxer) seekToPacketIndexEntry(entry packetIndexEntry) error {
@@ -910,6 +927,9 @@ func (d *Demuxer) ensurePacketIndex() error {
 		}
 		return d.packetIndex[i].TimeNS < d.packetIndex[j].TimeNS
 	})
+	if err := d.buildPacketTrackIndex(); err != nil {
+		return err
+	}
 	if buildClusters {
 		d.clusterIndexBuilt = true
 		if len(d.clusterIndex) != 0 {
@@ -921,6 +941,39 @@ func (d *Demuxer) ensurePacketIndex() error {
 			})
 		}
 	}
+	return nil
+}
+
+func (d *Demuxer) buildPacketTrackIndex() error {
+	if cap(d.packetTrackIndex) < len(d.tracks) {
+		d.packetTrackIndex = make([]packetTrackIndex, len(d.tracks))
+	} else {
+		d.packetTrackIndex = d.packetTrackIndex[:len(d.tracks)]
+	}
+	for i := range d.packetTrackIndex {
+		d.packetTrackIndex[i].TrackID = d.tracks[i].ID
+		d.packetTrackIndex[i].Entries = d.packetTrackIndex[i].Entries[:0]
+	}
+	for i := range d.packetIndex {
+		entry := d.packetIndex[i]
+		if entry.TrackIndex < 0 || entry.TrackIndex >= len(d.packetTrackIndex) ||
+			d.packetTrackIndex[entry.TrackIndex].TrackID != entry.TrackID {
+			return ErrInvalidData
+		}
+		d.packetTrackIndex[entry.TrackIndex].Entries = append(d.packetTrackIndex[entry.TrackIndex].Entries, i)
+	}
+	kept := 0
+	for i := range d.packetTrackIndex {
+		if len(d.packetTrackIndex[i].Entries) == 0 {
+			continue
+		}
+		d.packetTrackIndex[kept] = d.packetTrackIndex[i]
+		kept++
+	}
+	for i := kept; i < len(d.packetTrackIndex); i++ {
+		d.packetTrackIndex[i] = packetTrackIndex{}
+	}
+	d.packetTrackIndex = d.packetTrackIndex[:kept]
 	return nil
 }
 
@@ -1099,10 +1152,11 @@ func (d *Demuxer) readIndexedBlock(reader *ebml.Reader, header ebml.Header, clus
 	if err != nil {
 		return indexedBlockInfo{}, err
 	}
-	track, ok := d.track(trackNumber)
+	trackIndex, ok := d.trackIndex(trackNumber)
 	if !ok {
 		return indexedBlockInfo{}, ErrUnknownTrack
 	}
+	track := d.tracks[trackIndex]
 	if _, err := io.ReadFull(&limit, d.blockHeader[:]); err != nil {
 		return indexedBlockInfo{}, err
 	}
@@ -1118,6 +1172,7 @@ func (d *Demuxer) readIndexedBlock(reader *ebml.Reader, header ebml.Header, clus
 	}
 	info := indexedBlockInfo{
 		TrackID:    trackNumber,
+		TrackIndex: trackIndex,
 		TimeNS:     timecode * d.timecodeScaleNS,
 		FrameCount: 1,
 	}
@@ -1226,6 +1281,7 @@ func (d *Demuxer) appendPacketIndexEntries(clusterPosition uint64, blockPosition
 		d.packetIndex = append(d.packetIndex, packetIndexEntry{
 			TimeNS:          timeNS,
 			TrackID:         info.TrackID,
+			TrackIndex:      info.TrackIndex,
 			ClusterPosition: clusterPosition,
 			BlockPosition:   blockPosition,
 			ClusterTimecode: clusterTimecode,
@@ -5514,26 +5570,33 @@ func (d *Demuxer) clearLace() {
 }
 
 func (d *Demuxer) defaultDurationNS(trackID uint32) int64 {
-	for i := range d.tracks {
-		if d.tracks[i].ID == trackID {
-			return d.tracks[i].DefaultDurationNS
-		}
+	index, ok := d.trackIndex(trackID)
+	if !ok {
+		return 0
 	}
-	return 0
+	return d.tracks[index].DefaultDurationNS
 }
 
 func (d *Demuxer) hasTrack(id uint32) bool {
-	_, ok := d.track(id)
+	_, ok := d.trackIndex(id)
 	return ok
 }
 
 func (d *Demuxer) track(id uint32) (Track, bool) {
+	index, ok := d.trackIndex(id)
+	if !ok {
+		return Track{}, false
+	}
+	return d.tracks[index], true
+}
+
+func (d *Demuxer) trackIndex(id uint32) (int, bool) {
 	for i := range d.tracks {
 		if d.tracks[i].ID == id {
-			return d.tracks[i], true
+			return i, true
 		}
 	}
-	return Track{}, false
+	return 0, false
 }
 
 func (d *Demuxer) upsertTrack(track Track) {
