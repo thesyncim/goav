@@ -22,19 +22,13 @@ type branchComposeBranch struct {
 	Selector    av.StreamSelector
 	Decode      bool
 	Copy        bool
-	SharedSteps []branchComposeStep
-	Steps       []branchComposeStep
+	SharedSteps []chainStep
+	Steps       []chainStep
 	Resize      *filter.ResizeConfig
 	Resample    *filter.ResampleConfig
 	Encode      codec.EncodeConfig
 	Labels      []string
 	Metadata    av.Metadata
-}
-
-type branchComposeStep struct {
-	Stage    pipeline.Stage
-	Resize   *filter.ResizeConfig
-	Resample *filter.ResampleConfig
 }
 
 type branchComposeTarget struct {
@@ -68,7 +62,7 @@ func branchComposePlanFromTranscode(plan transcode.Plan) branchComposePlan {
 			Selector: branch.Selector,
 			Decode:   branch.Decode,
 			Copy:     false,
-			Steps:    branchComposeStepsFromTranscode(branch.Steps),
+			Steps:    branchChainStepsFromTranscode(branch.Steps),
 			Resize:   branch.Resize,
 			Resample: branch.Resample,
 			Encode:   branch.Encode,
@@ -98,16 +92,19 @@ func branchComposePlanFromTranscode(plan transcode.Plan) branchComposePlan {
 	}
 }
 
-func branchComposeStepsFromTranscode(steps []transcode.Step) []branchComposeStep {
+func branchChainStepsFromTranscode(steps []transcode.Step) []chainStep {
 	if len(steps) == 0 {
 		return nil
 	}
-	out := make([]branchComposeStep, 0, len(steps))
+	out := make([]chainStep, 0, len(steps))
 	for i := range steps {
-		out = append(out, branchComposeStep{
-			Stage:    steps[i].Stage,
+		transform := cloneTransformSpec(TransformSpec{
 			Resize:   steps[i].Resize,
 			Resample: steps[i].Resample,
+		})
+		out = append(out, chainStep{
+			stage:     steps[i].Stage,
+			transform: transform,
 		})
 	}
 	return out

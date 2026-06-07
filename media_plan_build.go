@@ -227,7 +227,7 @@ func (p mediaPlanBranchComposeGraph) spec() (pipeline.Spec, error) {
 }
 
 func (p mediaPlanBranchComposeGraph) nodeCapacity() int {
-	return 1 + 3 + len(p.branches) + branchComposeStepCount(p.branches) + len(p.targets)
+	return 1 + 3 + len(p.branches) + branchChainStepCount(p.branches) + len(p.targets)
 }
 
 func (p mediaPlanBranchComposeGraph) compile(ctx context.Context, graph pipeline.Graph) error {

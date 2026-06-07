@@ -1592,8 +1592,16 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     same internal `chainStep` representation for ordered stage, transform, and
     tap operations. Runtime branch attach lowers `BranchSpec` through
     `runtimeBranchStepsFromChain`, planned branch composition lowers through
-    `branchComposeStepsFromChainSteps`, and guard coverage rejects the old
+    branch chain-step helpers, and guard coverage rejects the old
     job-stream step vocabulary from production chain internals.
+    Done.
+324. Remove the branch-compose step mirror:
+    branch composition no longer owns a second stage/resize/resample step
+    record beside `chainStep`. Advanced transcode boundary steps, stream-chain
+    branches, ordered stream operations, shared decode anchors, and branch
+    route lowering all carry `chainStep` directly, with tap-only steps filtered
+    at the branch-composition boundary. Guard coverage now rejects
+    the deleted mirror type from production chain internals.
     Done.
 
 ## First Vertical Slice

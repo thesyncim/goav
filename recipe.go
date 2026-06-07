@@ -3283,9 +3283,9 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		stream := streams[i]
 		branchName := stream.Name
 		selector := streamIntentSelector(stream)
-		sharedSteps, branchSteps := branchComposeStepsForStream(stream)
+		sharedSteps, branchSteps := branchChainStepsForStream(stream)
 		if i < len(branchBuilds) {
-			sharedSteps, branchSteps = branchComposeStepsForStreamBuild(branchBuilds[i])
+			sharedSteps, branchSteps = branchChainStepsForStreamBuild(branchBuilds[i])
 		}
 		branch := branchComposeBranch{
 			Name:        branchName,
@@ -3337,27 +3337,27 @@ func branchComposePlanReady(plan branchComposePlan) bool {
 	return len(plan.Branches) != 0 || len(plan.Targets) != 0
 }
 
-func branchComposeStepsForStreamBuild(stream streamBuild) ([]branchComposeStep, []branchComposeStep) {
-	return branchComposeStepsFromChainSteps(stream.sharedSteps), branchComposeStepsFromChainSteps(stream.steps)
+func branchChainStepsForStreamBuild(stream streamBuild) ([]chainStep, []chainStep) {
+	return branchChainStepsFromChain(stream.sharedSteps), branchChainStepsFromChain(stream.steps)
 }
 
-func branchComposeStepsForStream(stream StreamIntent) ([]branchComposeStep, []branchComposeStep) {
+func branchChainStepsForStream(stream StreamIntent) ([]chainStep, []chainStep) {
 	if len(stream.Operations) != 0 {
-		return branchComposeStepsFromOperations(stream.Operations, stream.From.Name())
+		return branchChainStepsFromOperations(stream.Operations, stream.From.Name())
 	}
 	if len(stream.Transforms) == 0 {
 		return nil, nil
 	}
-	return nil, branchComposeStepsFromChainSteps(chainStepsFromTransforms(stream.Transforms))
+	return nil, chainStepsFromTransforms(stream.Transforms)
 }
 
-func branchComposeStepsFromOperations(operations []StreamOperation, anchorTap string) ([]branchComposeStep, []branchComposeStep) {
+func branchChainStepsFromOperations(operations []StreamOperation, anchorTap string) ([]chainStep, []chainStep) {
 	if len(operations) == 0 {
 		return nil, nil
 	}
-	steps := make([]branchComposeStep, 0, len(operations))
-	shared := make([]branchComposeStep, 0)
-	branch := make([]branchComposeStep, 0)
+	steps := make([]chainStep, 0, len(operations))
+	shared := make([]chainStep, 0)
+	branch := make([]chainStep, 0)
 	split := anchorTap == ""
 	foundSplit := anchorTap == ""
 	for i := range operations {
@@ -3367,23 +3367,21 @@ func branchComposeStepsFromOperations(operations []StreamOperation, anchorTap st
 			foundSplit = true
 			continue
 		}
-		var step branchComposeStep
+		var step chainStep
 		hasStep := false
 		switch operation.Kind {
 		case OpStage:
 			if operation.Stage != nil {
-				step = branchComposeStep{Stage: operation.Stage}
+				step = chainStep{stage: operation.Stage}
 				hasStep = true
 			}
 		case OpTransform:
 			switch {
 			case operation.Transform.Resize != nil:
-				resize := *operation.Transform.Resize
-				step = branchComposeStep{Resize: &resize}
+				step = chainStep{transform: cloneTransformSpec(operation.Transform)}
 				hasStep = true
 			case operation.Transform.Resample != nil:
-				resample := *operation.Transform.Resample
-				step = branchComposeStep{Resample: &resample}
+				step = chainStep{transform: cloneTransformSpec(operation.Transform)}
 				hasStep = true
 			}
 		}
@@ -3403,22 +3401,18 @@ func branchComposeStepsFromOperations(operations []StreamOperation, anchorTap st
 	return shared, branch
 }
 
-func branchComposeStepsFromChainSteps(steps []chainStep) []branchComposeStep {
+func branchChainStepsFromChain(steps []chainStep) []chainStep {
 	if len(steps) == 0 {
 		return nil
 	}
-	out := make([]branchComposeStep, 0, len(steps))
+	out := make([]chainStep, 0, len(steps))
 	for i := range steps {
 		step := steps[i]
 		switch {
 		case step.stage != nil:
-			out = append(out, branchComposeStep{Stage: step.stage})
-		case step.transform.Resize != nil:
-			resize := *step.transform.Resize
-			out = append(out, branchComposeStep{Resize: &resize})
-		case step.transform.Resample != nil:
-			resample := *step.transform.Resample
-			out = append(out, branchComposeStep{Resample: &resample})
+			out = append(out, chainStep{stage: step.stage})
+		case step.transform.Resize != nil || step.transform.Resample != nil:
+			out = append(out, chainStep{transform: cloneTransformSpec(step.transform)})
 		}
 	}
 	return out
