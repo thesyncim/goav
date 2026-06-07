@@ -77,12 +77,16 @@ func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
 }
 
 func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
+	if err := validateContentEncryptionOptions(opts.ContentEncryptionKeys, nil); err != nil {
+		return err
+	}
 	d.reader = ebml.NewReader(r, ebml.ReaderOptions{MaxElementSize: opts.MaxElementSize})
 	d.seeker, _ = r.(io.ReadSeeker)
 	if d.groupReader == nil {
 		d.groupReader = ebml.NewReader(&d.groupLimit, ebml.ReaderOptions{MaxElementSize: opts.MaxElementSize})
 	}
 	d.options = opts
+	d.options.ContentEncryptionKeys = cloneContentEncryptionKeys(d.options.ContentEncryptionKeys)
 	if d.options.MaxLaceFrames <= 0 {
 		d.options.MaxLaceFrames = defaultMaxLaceFrames
 	}
@@ -3218,7 +3222,7 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 		if err != nil {
 			return err
 		}
-		if encoding.compression == blockContentTransformNone {
+		if encoding.compression == blockContentTransformNone && !encoding.encryptionSet {
 			var headerStrip []byte
 			if encoding.headerSet {
 				headerStrip = encoding.headerSettings
@@ -3231,21 +3235,8 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 			if err != nil {
 				return err
 			}
-			switch encoding.compression {
-			case blockContentTransformZlib:
-				if err := d.decodeZlibBlockFrame(track, frame, encoding.headerSettings, dst); err != nil {
-					return err
-				}
-			case blockContentTransformBzlib:
-				if err := d.decodeBzlibBlockFrame(track, frame, encoding.headerSettings, dst); err != nil {
-					return err
-				}
-			case blockContentTransformLZO1X:
-				if err := d.decodeLZOBlockFrame(track, frame, encoding.headerSettings, dst); err != nil {
-					return err
-				}
-			default:
-				return ErrUnsupportedContentEncoding
+			if err := d.decodeContentEncodedBlockFrame(track, frame, encoding, dst); err != nil {
+				return err
 			}
 		}
 	} else if err := d.readPlainBlockFrame(track, frameSize, nil, dst); err != nil {
@@ -3293,38 +3284,37 @@ func (d *Demuxer) readBlockFrameScratch(frameSize int) ([]byte, error) {
 	return frame, nil
 }
 
-func (d *Demuxer) decodeZlibBlockFrame(track Track, frame []byte, headerStrip []byte, dst *Packet) error {
-	decoded, err := zlibDecompressInto(dst.Data[:0], frame)
-	if err != nil {
-		return err
+func (d *Demuxer) decodeContentEncodedBlockFrame(track Track, frame []byte, encoding blockContentEncodingInfo, dst *Packet) error {
+	payload := frame
+	var err error
+	if encoding.encryptionSet {
+		payload, err = d.decryptBlockPayload(encoding, payload)
+		if err != nil {
+			return err
+		}
 	}
-	decoded, err = prependContentEncodingHeader(decoded, headerStrip)
-	if err != nil {
-		return err
-	}
-	dst.Data = decoded
-	return d.finishTrackCodecPayload(track, dst)
-}
 
-func (d *Demuxer) decodeBzlibBlockFrame(track Track, frame []byte, headerStrip []byte, dst *Packet) error {
-	decoded, err := bzip2DecompressInto(dst.Data[:0], frame)
+	var decoded []byte
+	switch encoding.compression {
+	case blockContentTransformNone:
+		if cap(dst.Data) < len(payload) {
+			return ErrPayloadTooSmall
+		}
+		decoded = dst.Data[:len(payload)]
+		copy(decoded, payload)
+	case blockContentTransformZlib:
+		decoded, err = zlibDecompressInto(dst.Data[:0], payload)
+	case blockContentTransformBzlib:
+		decoded, err = bzip2DecompressInto(dst.Data[:0], payload)
+	case blockContentTransformLZO1X:
+		decoded, err = lzoDecompressInto(dst.Data[:0], payload)
+	default:
+		return ErrUnsupportedContentEncoding
+	}
 	if err != nil {
 		return err
 	}
-	decoded, err = prependContentEncodingHeader(decoded, headerStrip)
-	if err != nil {
-		return err
-	}
-	dst.Data = decoded
-	return d.finishTrackCodecPayload(track, dst)
-}
-
-func (d *Demuxer) decodeLZOBlockFrame(track Track, frame []byte, headerStrip []byte, dst *Packet) error {
-	decoded, err := lzoDecompressInto(dst.Data[:0], frame)
-	if err != nil {
-		return err
-	}
-	decoded, err = prependContentEncodingHeader(decoded, headerStrip)
+	decoded, err = prependContentEncodingHeader(decoded, encoding.headerSettings)
 	if err != nil {
 		return err
 	}
@@ -3587,6 +3577,10 @@ func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timecode in
 		if err != nil {
 			d.clearLace()
 			return err
+		}
+		if encoding.encryptionSet {
+			d.clearLace()
+			return ErrUnsupportedContentEncoding
 		}
 		d.laceContent = encoding
 	}

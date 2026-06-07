@@ -210,6 +210,11 @@ type ContentEncAESSettings struct {
 	CipherMode uint64
 }
 
+type ContentEncryptionKey struct {
+	KeyID []byte
+	Key   []byte
+}
+
 const (
 	ContentEncodingScopeBlock   uint64 = 1
 	ContentEncodingScopePrivate uint64 = 2
@@ -423,25 +428,28 @@ func (p *Packet) Reset() {
 }
 
 type MuxerOptions struct {
-	DocType              string
-	DocTypeVersion       uint64
-	DocTypeReadVersion   uint64
-	MuxingApp            string
-	WritingApp           string
-	Info                 SegmentInfo
-	Attachments          []Attachment
-	Chapters             []ChapterEdition
-	Tags                 []Tag
-	TimecodeScaleNS      int64
-	ClusterMaxDurationNS int64
-	Streaming            bool
-	CueCapacity          int
+	DocType                    string
+	DocTypeVersion             uint64
+	DocTypeReadVersion         uint64
+	MuxingApp                  string
+	WritingApp                 string
+	Info                       SegmentInfo
+	Attachments                []Attachment
+	Chapters                   []ChapterEdition
+	Tags                       []Tag
+	TimecodeScaleNS            int64
+	ClusterMaxDurationNS       int64
+	Streaming                  bool
+	CueCapacity                int
+	ContentEncryptionKeys      []ContentEncryptionKey
+	ContentEncryptionInitialIV []byte
 }
 
 type DemuxerOptions struct {
-	MaxElementSize uint64
-	MaxLaceFrames  int
-	MaxLacePayload int
+	MaxElementSize        uint64
+	MaxLaceFrames         int
+	MaxLacePayload        int
+	ContentEncryptionKeys []ContentEncryptionKey
 }
 
 const (

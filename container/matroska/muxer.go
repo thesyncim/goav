@@ -13,41 +13,44 @@ import (
 )
 
 type Muxer struct {
-	writer          io.Writer
-	ebml            *ebml.Writer
-	options         MuxerOptions
-	tracks          []Track
-	cues            []CuePoint
-	headerWritten   bool
-	clusterOpen     bool
-	seekable        bool
-	segmentData     int64
-	seekHeadOffset  int64
-	seekHeadReserve int
-	infoPosition    uint64
-	tracksPosition  uint64
-	attachPosition  uint64
-	chapterPosition uint64
-	tagsPosition    uint64
-	cuesPosition    uint64
-	clusterPosition uint64
-	clusterBlock    uint64
-	segmentPatch    ebml.SizePatch
-	segmentSized    bool
-	clusterPatch    ebml.SizePatch
-	clusterSized    bool
-	durationOffset  int64
-	durationPatch   bool
-	maxTimeNS       int64
-	clusterTimecode int64
-	closed          bool
-	scratch         [codecPrivateScratchSize]byte
-	blockScratch    [16]byte
-	blockPayload    bytes.Buffer
-	codecPayload    bytes.Buffer
-	lacePayload     []byte
-	zlibWriter      *zlib.Writer
-	bzip2Writer     *bzip2.Writer
+	writer                 io.Writer
+	ebml                   *ebml.Writer
+	options                MuxerOptions
+	tracks                 []Track
+	cues                   []CuePoint
+	headerWritten          bool
+	clusterOpen            bool
+	seekable               bool
+	segmentData            int64
+	seekHeadOffset         int64
+	seekHeadReserve        int
+	infoPosition           uint64
+	tracksPosition         uint64
+	attachPosition         uint64
+	chapterPosition        uint64
+	tagsPosition           uint64
+	cuesPosition           uint64
+	clusterPosition        uint64
+	clusterBlock           uint64
+	segmentPatch           ebml.SizePatch
+	segmentSized           bool
+	clusterPatch           ebml.SizePatch
+	clusterSized           bool
+	durationOffset         int64
+	durationPatch          bool
+	maxTimeNS              int64
+	clusterTimecode        int64
+	closed                 bool
+	scratch                [codecPrivateScratchSize]byte
+	blockScratch           [16]byte
+	blockPayload           bytes.Buffer
+	codecPayload           bytes.Buffer
+	encryptionPayload      bytes.Buffer
+	lacePayload            []byte
+	zlibWriter             *zlib.Writer
+	bzip2Writer            *bzip2.Writer
+	contentEncryptionIV    [contentEncryptionIVSize]byte
+	contentEncryptionIVSet bool
 }
 
 func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
@@ -55,6 +58,9 @@ func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
 		return nil, ErrNilWriter
 	}
 	opts = normalizeMuxerOptions(opts)
+	if err := validateContentEncryptionOptions(opts.ContentEncryptionKeys, opts.ContentEncryptionInitialIV); err != nil {
+		return nil, err
+	}
 	if err := validateSegmentInfo(opts.Info); err != nil {
 		return nil, err
 	}
@@ -86,6 +92,10 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.options.Attachments = cloneAttachments(m.options.Attachments)
 	m.options.Chapters = cloneChapters(m.options.Chapters)
 	m.options.Tags = cloneTags(m.options.Tags)
+	m.options.ContentEncryptionKeys = cloneContentEncryptionKeys(m.options.ContentEncryptionKeys)
+	if m.options.ContentEncryptionInitialIV != nil {
+		m.options.ContentEncryptionInitialIV = append([]byte(nil), m.options.ContentEncryptionInitialIV...)
+	}
 	m.tracks = m.tracks[:0]
 	m.cues = m.cues[:0]
 	m.headerWritten = false
@@ -113,7 +123,10 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.closed = false
 	m.blockPayload.Reset()
 	m.codecPayload.Reset()
+	m.encryptionPayload.Reset()
 	m.lacePayload = m.lacePayload[:0]
+	m.contentEncryptionIV = [contentEncryptionIVSize]byte{}
+	m.contentEncryptionIVSet = false
 	if m.seekable && !m.options.Streaming {
 		capacity := m.options.CueCapacity
 		if capacity <= 0 {
@@ -2085,7 +2098,7 @@ func blockPayloadsNeedSizing(track Track) bool {
 		return false
 	}
 	encoding, err := blockContentEncoding(track)
-	return err != nil || encoding.headerSet || encoding.compression != blockContentTransformNone
+	return err != nil || encoding.headerSet || encoding.compression != blockContentTransformNone || encoding.encryptionSet
 }
 
 func blockPayloadNeedsBuffering(track Track) bool {
@@ -2093,7 +2106,7 @@ func blockPayloadNeedsBuffering(track Track) bool {
 		return false
 	}
 	encoding, err := blockContentEncoding(track)
-	return err != nil || encoding.compression != blockContentTransformNone
+	return err != nil || encoding.compression != blockContentTransformNone || encoding.encryptionSet
 }
 
 func blockPayloadSize(track Track, data []byte) (int, error) {
@@ -2110,6 +2123,9 @@ func blockPayloadSize(track Track, data []byte) (int, error) {
 		}
 		switch encoding.compression {
 		case blockContentTransformNone:
+			if encoding.encryptionSet {
+				return 0, ErrInvalidData
+			}
 		case blockContentTransformZlib:
 			return 0, ErrInvalidData
 		case blockContentTransformBzlib:
@@ -2147,16 +2163,22 @@ func (m *Muxer) muxedBlockPayload(track Track, data []byte) ([]byte, error) {
 	}
 	switch encoding.compression {
 	case blockContentTransformNone:
-		return payload, nil
 	case blockContentTransformZlib:
-		return m.zlibCompressBlockPayload(payload)
+		payload, err = m.zlibCompressBlockPayload(payload)
 	case blockContentTransformBzlib:
-		return m.bzip2CompressBlockPayload(payload)
+		payload, err = m.bzip2CompressBlockPayload(payload)
 	case blockContentTransformLZO1X:
-		return m.lzoCompressBlockPayload(payload)
+		payload, err = m.lzoCompressBlockPayload(payload)
 	default:
 		return nil, ErrUnsupportedContentEncoding
 	}
+	if err != nil {
+		return nil, err
+	}
+	if encoding.encryptionSet {
+		return m.encryptBlockPayload(encoding, payload)
+	}
+	return payload, nil
 }
 
 func (m *Muxer) codecMuxedBlockPayload(track Track, data []byte) ([]byte, error) {
@@ -2220,6 +2242,11 @@ func (m *Muxer) lzoCompressBlockPayload(data []byte) ([]byte, error) {
 func (m *Muxer) prepareLacedBlockPayload(frames [][]byte, track Track, sizes []int) ([]byte, error) {
 	if len(sizes) != len(frames) {
 		return nil, ErrInvalidData
+	}
+	if encoding, err := blockContentEncoding(track); err != nil {
+		return nil, err
+	} else if encoding.encryptionSet {
+		return nil, ErrUnsupportedContentEncoding
 	}
 	m.lacePayload = m.lacePayload[:0]
 	for i := range frames {
@@ -3303,6 +3330,9 @@ type blockContentEncodingInfo struct {
 	headerSet        bool
 	compression      blockContentTransform
 	compressionOrder uint64
+	encryption       ContentEncryption
+	encryptionOrder  uint64
+	encryptionSet    bool
 }
 
 func blockContentEncoding(track Track) (blockContentEncodingInfo, error) {
@@ -3312,49 +3342,76 @@ func blockContentEncoding(track Track) (blockContentEncodingInfo, error) {
 		if contentEncodingScope(encoding.Scope)&ContentEncodingScopeBlock == 0 {
 			continue
 		}
-		if encoding.Type != ContentEncodingTypeCompression || !encoding.CompressionSet {
-			return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
-		}
-		switch encoding.Compression.Algorithm {
-		case ContentCompAlgoHeaderStripping:
-			if out.headerSet {
+		switch encoding.Type {
+		case ContentEncodingTypeCompression:
+			if !encoding.CompressionSet {
 				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 			}
-			out.headerSet = true
-			out.headerOrder = encoding.Order
-			out.headerSettings = encoding.Compression.Settings
-		case ContentCompAlgoZlib:
-			if len(encoding.Compression.Settings) != 0 {
+			switch encoding.Compression.Algorithm {
+			case ContentCompAlgoHeaderStripping:
+				if out.headerSet {
+					return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+				}
+				out.headerSet = true
+				out.headerOrder = encoding.Order
+				out.headerSettings = encoding.Compression.Settings
+			case ContentCompAlgoZlib:
+				if len(encoding.Compression.Settings) != 0 {
+					return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+				}
+				if out.compression != blockContentTransformNone {
+					return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+				}
+				out.compression = blockContentTransformZlib
+				out.compressionOrder = encoding.Order
+			case ContentCompAlgoBzlib:
+				if len(encoding.Compression.Settings) != 0 {
+					return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+				}
+				if out.compression != blockContentTransformNone {
+					return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+				}
+				out.compression = blockContentTransformBzlib
+				out.compressionOrder = encoding.Order
+			case ContentCompAlgoLZO1X:
+				if len(encoding.Compression.Settings) != 0 {
+					return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+				}
+				if out.compression != blockContentTransformNone {
+					return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+				}
+				out.compression = blockContentTransformLZO1X
+				out.compressionOrder = encoding.Order
+			default:
 				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 			}
-			if out.compression != blockContentTransformNone {
+		case ContentEncodingTypeEncryption:
+			if !encoding.EncryptionSet {
 				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 			}
-			out.compression = blockContentTransformZlib
-			out.compressionOrder = encoding.Order
-		case ContentCompAlgoBzlib:
-			if len(encoding.Compression.Settings) != 0 {
+			if encoding.Encryption.Algorithm == ContentEncAlgoNotEncrypted {
+				continue
+			}
+			if out.encryptionSet ||
+				encoding.Encryption.Algorithm != ContentEncAlgoAES ||
+				!encoding.Encryption.AESSettingsSet ||
+				encoding.Encryption.AESSettings.CipherMode != ContentEncAESCipherModeCTR {
 				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 			}
-			if out.compression != blockContentTransformNone {
-				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
-			}
-			out.compression = blockContentTransformBzlib
-			out.compressionOrder = encoding.Order
-		case ContentCompAlgoLZO1X:
-			if len(encoding.Compression.Settings) != 0 {
-				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
-			}
-			if out.compression != blockContentTransformNone {
-				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
-			}
-			out.compression = blockContentTransformLZO1X
-			out.compressionOrder = encoding.Order
+			out.encryption = encoding.Encryption
+			out.encryptionOrder = encoding.Order
+			out.encryptionSet = true
 		default:
 			return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 		}
 	}
 	if out.headerSet && out.compression != blockContentTransformNone && out.headerOrder >= out.compressionOrder {
+		return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+	}
+	if out.headerSet && out.encryptionSet && out.headerOrder >= out.encryptionOrder {
+		return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+	}
+	if out.compression != blockContentTransformNone && out.encryptionSet && out.compressionOrder >= out.encryptionOrder {
 		return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 	}
 	if out.headerSet && track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {

@@ -2385,6 +2385,342 @@ func TestMuxerDemuxerAppliesBzlibContentEncodingToWebRTCCodecs(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerAppliesAESCTRContentEncryption(t *testing.T) {
+	tests := []struct {
+		name  string
+		write func(*Muxer, uint32, []byte) error
+		read  func(*Demuxer, []byte)
+	}{
+		{
+			name: "simple block",
+			write: func(muxer *Muxer, trackID uint32, data []byte) error {
+				return muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: data})
+			},
+			read: func(demuxer *Demuxer, want []byte) {
+				packet := Packet{Data: make([]byte, 0, len(want))}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(packet.Data, want) {
+					t.Fatalf("packet data = %q, want %q", packet.Data, want)
+				}
+			},
+		},
+		{
+			name: "block group",
+			write: func(muxer *Muxer, trackID uint32, data []byte) error {
+				return muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, DurationNS: 20_000_000, Keyframe: true, Data: data})
+			},
+			read: func(demuxer *Demuxer, want []byte) {
+				packet := Packet{Data: make([]byte, 0, len(want))}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if packet.DurationNS != 20_000_000 || !bytes.Equal(packet.Data, want) {
+					t.Fatalf("packet = %+v data=%q, want data=%q duration 20000000", packet, packet.Data, want)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keyID := aesCTRContentEncryptionKeyID()
+			initialIV := aesCTRContentEncryptionInitialIV()
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{
+				ContentEncryptionKeys:      aesCTRContentEncryptionKeys(keyID),
+				ContentEncryptionInitialIV: initialIV,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := encryptedTestPayload(tt.name)
+			trackID, err := muxer.AddTrack(Track{
+				Type:              TrackVideo,
+				Codec:             CodecVP8,
+				DefaultDurationNS: 20_000_000,
+				ContentEncodings:  aesCTRContentEncryptionTrackEncodings(keyID),
+				Video:             VideoConfig{Width: 640, Height: 360},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tt.write(muxer, trackID, want); err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(buffer.Bytes(), want) {
+				t.Fatalf("file still contains unencrypted frame %q", want)
+			}
+			if !bytes.Contains(buffer.Bytes(), append([]byte{contentEncryptionSignalEncrypted}, initialIV...)) {
+				t.Fatalf("file does not contain initial encrypted-frame signal and IV")
+			}
+
+			demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{
+				ContentEncryptionKeys: aesCTRContentEncryptionKeys(keyID),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tt.read(demuxer, want)
+
+			missingKeyDemuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := Packet{Data: make([]byte, 0, len(want))}
+			if err := missingKeyDemuxer.ReadPacket(&packet); !errors.Is(err, ErrUnsupportedContentEncoding) {
+				t.Fatalf("missing key err = %v, want ErrUnsupportedContentEncoding", err)
+			}
+		})
+	}
+}
+
+func TestMuxerDemuxerAppliesAESCTRContentEncryptionToWebRTCCodecs(t *testing.T) {
+	tests := []struct {
+		name  string
+		track Track
+		data  []byte
+	}{
+		{
+			name:  "opus",
+			track: Track{Type: TrackAudio, Codec: CodecOpus, Audio: AudioConfig{SampleRate: 48000, Channels: 2}},
+			data:  encryptedTestPayload("opus"),
+		},
+		{
+			name:  "av1",
+			track: Track{Type: TrackVideo, Codec: CodecAV1, CodecPrivate: av1CodecConfig(), Video: VideoConfig{Width: 640, Height: 360}},
+			data:  encryptedTestPayload("av1"),
+		},
+		{
+			name:  "h264",
+			track: Track{Type: TrackVideo, Codec: CodecH264, CodecPrivate: h264AVCDecoderConfigWithLengthSize(2), Video: VideoConfig{Width: 640, Height: 360}},
+			data:  h264AnnexBAccessUnit(),
+		},
+		{
+			name:  "vp9",
+			track: Track{Type: TrackVideo, Codec: CodecVP9, Video: VideoConfig{Width: 640, Height: 360}},
+			data:  encryptedTestPayload("vp9"),
+		},
+		{
+			name:  "vp8",
+			track: Track{Type: TrackVideo, Codec: CodecVP8, Video: VideoConfig{Width: 640, Height: 360}},
+			data:  encryptedTestPayload("vp8"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keyID := aesCTRContentEncryptionKeyID()
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{
+				ContentEncryptionKeys:      aesCTRContentEncryptionKeys(keyID),
+				ContentEncryptionInitialIV: aesCTRContentEncryptionInitialIV(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			track := tt.track
+			track.ContentEncodings = aesCTRContentEncryptionTrackEncodings(keyID)
+			trackID, err := muxer.AddTrack(track)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: tt.data}); err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(buffer.Bytes(), tt.data) {
+				t.Fatalf("file still contains unencrypted %s payload", tt.name)
+			}
+			if tt.name == "h264" && bytes.Contains(buffer.Bytes(), h264AVCSampleWithLengthSize2()) {
+				t.Fatalf("file still contains unencrypted h264 avc sample")
+			}
+
+			demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{
+				ContentEncryptionKeys: aesCTRContentEncryptionKeys(keyID),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := Packet{Data: make([]byte, 0, len(tt.data))}
+			if err := demuxer.ReadPacket(&packet); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(packet.Data, tt.data) {
+				t.Fatalf("packet data = %v, want %v", packet.Data, tt.data)
+			}
+		})
+	}
+}
+
+func TestMuxerDemuxerAppliesChainedCompressionAndAESCTRContentEncryption(t *testing.T) {
+	settings := []byte("HS:")
+	tests := []struct {
+		name      string
+		algorithm uint64
+	}{
+		{name: "zlib", algorithm: ContentCompAlgoZlib},
+		{name: "bzlib", algorithm: ContentCompAlgoBzlib},
+		{name: "lzo", algorithm: ContentCompAlgoLZO1X},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keyID := aesCTRContentEncryptionKeyID()
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{
+				ContentEncryptionKeys:      aesCTRContentEncryptionKeys(keyID),
+				ContentEncryptionInitialIV: aesCTRContentEncryptionInitialIV(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			trackID, err := muxer.AddTrack(Track{
+				Type:              TrackVideo,
+				Codec:             CodecVP8,
+				DefaultDurationNS: 20_000_000,
+				ContentEncodings:  chainedHeaderCompressionAESCTRContentEncodings(settings, tt.algorithm, keyID),
+				Video:             VideoConfig{Width: 640, Height: 360},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := withContentEncodingHeader(settings, chainedContentPayload("encrypted "+tt.name))
+			if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: want}); err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(buffer.Bytes(), want) || bytes.Contains(buffer.Bytes(), want[len(settings):]) {
+				t.Fatalf("file still contains unencoded frame payload")
+			}
+
+			demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{
+				ContentEncryptionKeys: aesCTRContentEncryptionKeys(keyID),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := Packet{Data: make([]byte, 0, len(want))}
+			if err := demuxer.ReadPacket(&packet); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(packet.Data, want) {
+				t.Fatalf("packet data = %q, want %q", packet.Data, want)
+			}
+		})
+	}
+}
+
+func TestMuxerRejectsAESCTRContentEncryptionWithoutKey(t *testing.T) {
+	keyID := aesCTRContentEncryptionKeyID()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{
+		ContentEncryptionInitialIV: aesCTRContentEncryptionInitialIV(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:             TrackVideo,
+		Codec:            CodecVP8,
+		ContentEncodings: aesCTRContentEncryptionTrackEncodings(keyID),
+		Video:            VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: encryptedTestPayload("missing key")}); !errors.Is(err, ErrUnsupportedContentEncoding) {
+		t.Fatalf("err = %v, want ErrUnsupportedContentEncoding", err)
+	}
+}
+
+func TestMuxerRejectsAESCTRContentEncryptionLacing(t *testing.T) {
+	keyID := aesCTRContentEncryptionKeyID()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{
+		ContentEncryptionKeys:      aesCTRContentEncryptionKeys(keyID),
+		ContentEncryptionInitialIV: aesCTRContentEncryptionInitialIV(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackVideo,
+		Codec:             CodecVP8,
+		DefaultDurationNS: 20_000_000,
+		ContentEncodings:  aesCTRContentEncryptionTrackEncodings(keyID),
+		Video:             VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames: [][]byte{
+			encryptedTestPayload("first laced"),
+			encryptedTestPayload("second laced"),
+		},
+	})
+	if !errors.Is(err, ErrUnsupportedContentEncoding) {
+		t.Fatalf("err = %v, want ErrUnsupportedContentEncoding", err)
+	}
+}
+
+func TestDemuxerReadsUnencryptedFrameInEncryptedTrack(t *testing.T) {
+	keyID := aesCTRContentEncryptionKeyID()
+	want := encryptedTestPayload("clear signal")
+	frame := append([]byte{0}, want...)
+	data := makeContentEncodedBlockMatroskaData(t, aesCTRContentEncryptionContentEncodings(t, keyID), frame)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, len(want))}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(packet.Data, want) {
+		t.Fatalf("packet data = %q, want %q", packet.Data, want)
+	}
+}
+
+func TestDemuxerRejectsUnsupportedAESCTRContentEncryptionSignal(t *testing.T) {
+	keyID := aesCTRContentEncryptionKeyID()
+	tests := []struct {
+		name   string
+		signal byte
+	}{
+		{name: "partitioned", signal: contentEncryptionSignalEncrypted | contentEncryptionSignalPartitioned},
+		{name: "extension", signal: contentEncryptionSignalExtension},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			frame := []byte{tt.signal}
+			frame = append(frame, aesCTRContentEncryptionInitialIV()...)
+			frame = append(frame, encryptedTestPayload(tt.name)...)
+			data := makeContentEncodedBlockMatroskaData(t, aesCTRContentEncryptionContentEncodings(t, keyID), frame)
+			demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{
+				ContentEncryptionKeys: aesCTRContentEncryptionKeys(keyID),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := Packet{Data: make([]byte, 0, 64)}
+			if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrUnsupportedContentEncoding) {
+				t.Fatalf("err = %v, want ErrUnsupportedContentEncoding", err)
+			}
+		})
+	}
+}
+
 func TestMuxerDemuxerAppliesZlibContentEncodingToH264(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -2490,14 +2826,14 @@ func TestMuxerRejectsUnsupportedBlockContentEncoding(t *testing.T) {
 			wantError: ErrUnsupportedContentEncoding,
 		},
 		{
-			name: "block encryption",
+			name: "cbc block encryption",
 			encodings: []ContentEncoding{{
 				Type:          ContentEncodingTypeEncryption,
 				EncryptionSet: true,
 				Encryption: ContentEncryption{
 					Algorithm:      ContentEncAlgoAES,
 					AESSettingsSet: true,
-					AESSettings:    ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCTR},
+					AESSettings:    ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCBC},
 				},
 			}},
 			wantError: ErrUnsupportedContentEncoding,
@@ -3020,6 +3356,91 @@ func bzlibCompressedPayload(t testing.TB, label string) []byte {
 		t.Fatal(err)
 	}
 	return out
+}
+
+func aesCTRContentEncryptionKeyID() []byte {
+	return []byte("aes-ctr-key")
+}
+
+func aesCTRContentEncryptionKeys(keyID []byte) []ContentEncryptionKey {
+	return []ContentEncryptionKey{{
+		KeyID: append([]byte(nil), keyID...),
+		Key: []byte{
+			0x10, 0x11, 0x12, 0x13,
+			0x14, 0x15, 0x16, 0x17,
+			0x18, 0x19, 0x1a, 0x1b,
+			0x1c, 0x1d, 0x1e, 0x1f,
+		},
+	}}
+}
+
+func aesCTRContentEncryptionInitialIV() []byte {
+	return []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef}
+}
+
+func aesCTRContentEncryptionTrackEncodings(keyID []byte) []ContentEncoding {
+	return []ContentEncoding{{
+		Type:          ContentEncodingTypeEncryption,
+		EncryptionSet: true,
+		Encryption: ContentEncryption{
+			Algorithm:      ContentEncAlgoAES,
+			KeyID:          append([]byte(nil), keyID...),
+			AESSettingsSet: true,
+			AESSettings:    ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCTR},
+		},
+	}}
+}
+
+func chainedHeaderCompressionAESCTRContentEncodings(header []byte, algorithm uint64, keyID []byte) []ContentEncoding {
+	return []ContentEncoding{
+		{
+			Order:          0,
+			Type:           ContentEncodingTypeCompression,
+			CompressionSet: true,
+			Compression: ContentCompression{
+				Algorithm: ContentCompAlgoHeaderStripping,
+				Settings:  header,
+			},
+		},
+		{
+			Order:          1,
+			Type:           ContentEncodingTypeCompression,
+			CompressionSet: true,
+			Compression:    ContentCompression{Algorithm: algorithm},
+		},
+		{
+			Order:         2,
+			Type:          ContentEncodingTypeEncryption,
+			EncryptionSet: true,
+			Encryption: ContentEncryption{
+				Algorithm:      ContentEncAlgoAES,
+				KeyID:          append([]byte(nil), keyID...),
+				AESSettingsSet: true,
+				AESSettings:    ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCTR},
+			},
+		},
+	}
+}
+
+func aesCTRContentEncryptionContentEncodings(t testing.TB, keyID []byte) []byte {
+	t.Helper()
+	return contentEncodingsPayload(t,
+		contentEncodingPayload(t, func(w *ebml.Writer) error {
+			if err := w.WriteUInt(idContentEncodingType, ContentEncodingTypeEncryption); err != nil {
+				return err
+			}
+			return w.WriteElement(idContentEncryption, contentEncryptionPayload(t, ContentEncAlgoAES, keyID, ContentEncAESCipherModeCTR))
+		}),
+	)
+}
+
+func encryptedTestPayload(label string) []byte {
+	prefix := []byte("aes ctr content encryption test payload: " + label + ":")
+	payload := make([]byte, 0, len(prefix)*12)
+	for i := 0; i < 12; i++ {
+		payload = append(payload, prefix...)
+	}
+	return payload
 }
 
 func TestMuxerDemuxerPreservesDecodedFieldDuration(t *testing.T) {

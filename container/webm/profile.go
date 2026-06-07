@@ -30,6 +30,7 @@ type ContentEncoding = matroska.ContentEncoding
 type ContentCompression = matroska.ContentCompression
 type ContentEncryption = matroska.ContentEncryption
 type ContentEncAESSettings = matroska.ContentEncAESSettings
+type ContentEncryptionKey = matroska.ContentEncryptionKey
 type SegmentInfo = matroska.SegmentInfo
 type Track = matroska.Track
 type Packet = matroska.Packet
@@ -76,27 +77,31 @@ const (
 )
 
 type MuxerOptions struct {
-	MuxingApp            string
-	WritingApp           string
-	Info                 SegmentInfo
-	TimecodeScaleNS      int64
-	ClusterMaxDurationNS int64
-	Streaming            bool
+	MuxingApp                  string
+	WritingApp                 string
+	Info                       SegmentInfo
+	TimecodeScaleNS            int64
+	ClusterMaxDurationNS       int64
+	Streaming                  bool
+	ContentEncryptionKeys      []ContentEncryptionKey
+	ContentEncryptionInitialIV []byte
 }
 
 type DemuxerOptions = matroska.DemuxerOptions
 
 func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 	return matroska.MuxerOptions{
-		DocType:              "webm",
-		DocTypeVersion:       4,
-		DocTypeReadVersion:   2,
-		MuxingApp:            opts.MuxingApp,
-		WritingApp:           opts.WritingApp,
-		Info:                 opts.Info,
-		TimecodeScaleNS:      opts.TimecodeScaleNS,
-		ClusterMaxDurationNS: opts.ClusterMaxDurationNS,
-		Streaming:            opts.Streaming,
+		DocType:                    "webm",
+		DocTypeVersion:             4,
+		DocTypeReadVersion:         2,
+		MuxingApp:                  opts.MuxingApp,
+		WritingApp:                 opts.WritingApp,
+		Info:                       opts.Info,
+		TimecodeScaleNS:            opts.TimecodeScaleNS,
+		ClusterMaxDurationNS:       opts.ClusterMaxDurationNS,
+		Streaming:                  opts.Streaming,
+		ContentEncryptionKeys:      opts.ContentEncryptionKeys,
+		ContentEncryptionInitialIV: opts.ContentEncryptionInitialIV,
 	}
 }
 

@@ -137,6 +137,66 @@ func TestMuxerDemuxerPreservesSegmentInfoMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerAppliesAESCTRContentEncryption(t *testing.T) {
+	keyID := []byte("webm-aes-key")
+	key := []byte{
+		0x20, 0x21, 0x22, 0x23,
+		0x24, 0x25, 0x26, 0x27,
+		0x28, 0x29, 0x2a, 0x2b,
+		0x2c, 0x2d, 0x2e, 0x2f,
+	}
+	keys := []ContentEncryptionKey{{KeyID: keyID, Key: key}}
+	initialIV := []byte{0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe}
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{
+		ContentEncryptionKeys:      keys,
+		ContentEncryptionInitialIV: initialIV,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		ContentEncodings: []ContentEncoding{{
+			Type:          ContentEncodingTypeEncryption,
+			EncryptionSet: true,
+			Encryption: ContentEncryption{
+				Algorithm:      ContentEncAlgoAES,
+				KeyID:          keyID,
+				AESSettingsSet: true,
+				AESSettings:    ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCTR},
+			},
+		}},
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte("encrypted webm vp8 packet payload encrypted webm vp8 packet payload")
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: want}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(buffer.Bytes(), want) {
+		t.Fatalf("file still contains unencrypted frame %q", want)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{ContentEncryptionKeys: keys})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, len(want))}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(packet.Data, want) {
+		t.Fatalf("packet data = %q, want %q", packet.Data, want)
+	}
+}
+
 func TestMuxerDemuxerPreservesAudioOutputSampleRate(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
