@@ -345,9 +345,12 @@ The steady-state packet paths avoid allocations:
 - Packet-carried unknown Cluster children are transferred only when the
   associated packet is successfully returned; retryable laced-frame reads keep
   them pending, while skipped non-laced frames drop them with the skipped block.
+- WebM per-track time-order state is slice-backed and checked without
+  steady-state heap allocation on packet write/read paths.
 - Format adapters keep stream-to-track mappings in slices built during `Open`.
 
-Unit tests assert 0 alloc/op for steady-state `WritePacket` and `ReadPacket`.
+Unit tests assert 0 alloc/op for steady-state `WritePacket`, `WriteLacedPacket`,
+and `ReadPacket` paths.
 
 ## Correctness Oracles
 

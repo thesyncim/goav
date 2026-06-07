@@ -107,8 +107,18 @@ type MuxerOptions struct {
 type DemuxerOptions = matroska.DemuxerOptions
 
 type packetTimeState struct {
+	trackID    uint32
 	lastTimeNS int64
 	set        bool
+}
+
+func findPacketTimeState(states []packetTimeState, trackID uint32) (int, bool) {
+	for i := range states {
+		if states[i].trackID == trackID {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {

@@ -8,7 +8,7 @@ import (
 
 type Muxer struct {
 	inner      *matroska.Muxer
-	trackTimes map[uint32]packetTimeState
+	trackTimes []packetTimeState
 }
 
 func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
@@ -27,10 +27,7 @@ func (m *Muxer) AddTrack(track Track) (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	if m.trackTimes == nil {
-		m.trackTimes = make(map[uint32]packetTimeState)
-	}
-	m.trackTimes[trackID] = packetTimeState{}
+	m.trackTimes = append(m.trackTimes, packetTimeState{trackID: trackID})
 	return trackID, nil
 }
 
@@ -64,16 +61,22 @@ func (m *Muxer) Close() error {
 }
 
 func (m *Muxer) validatePacketTime(trackID uint32, timeNS int64) error {
-	state, ok := m.trackTimes[trackID]
-	if ok && state.set && timeNS < state.lastTimeNS {
+	index, ok := findPacketTimeState(m.trackTimes, trackID)
+	if !ok {
+		return nil
+	}
+	state := m.trackTimes[index]
+	if state.set && timeNS < state.lastTimeNS {
 		return ErrNonMonotonicWebMTimecode
 	}
 	return nil
 }
 
 func (m *Muxer) markPacketTime(trackID uint32, timeNS int64) {
-	if m.trackTimes == nil {
-		m.trackTimes = make(map[uint32]packetTimeState)
+	index, ok := findPacketTimeState(m.trackTimes, trackID)
+	if !ok {
+		return
 	}
-	m.trackTimes[trackID] = packetTimeState{lastTimeNS: timeNS, set: true}
+	m.trackTimes[index].lastTimeNS = timeNS
+	m.trackTimes[index].set = true
 }

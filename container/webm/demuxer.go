@@ -8,7 +8,7 @@ import (
 
 type Demuxer struct {
 	inner      *matroska.Demuxer
-	trackTimes map[uint32]packetTimeState
+	trackTimes []packetTimeState
 }
 
 func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
@@ -19,12 +19,13 @@ func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
 	if demuxer.DocType() != "webm" {
 		return nil, ErrUnsupportedWebMDocType
 	}
-	trackTimes := make(map[uint32]packetTimeState)
-	for _, track := range demuxer.Tracks() {
+	tracks := demuxer.Tracks()
+	trackTimes := make([]packetTimeState, 0, len(tracks))
+	for _, track := range tracks {
 		if err := validateTrack(track); err != nil {
 			return nil, err
 		}
-		trackTimes[track.ID] = packetTimeState{}
+		trackTimes = append(trackTimes, packetTimeState{trackID: track.ID})
 	}
 	return &Demuxer{inner: demuxer, trackTimes: trackTimes}, nil
 }
@@ -141,19 +142,22 @@ func (d *Demuxer) ReadTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packe
 }
 
 func (d *Demuxer) validatePacketTime(trackID uint32, timeNS int64) error {
-	state, ok := d.trackTimes[trackID]
-	if ok && state.set && timeNS < state.lastTimeNS {
+	index, ok := findPacketTimeState(d.trackTimes, trackID)
+	if !ok {
+		return nil
+	}
+	state := d.trackTimes[index]
+	if state.set && timeNS < state.lastTimeNS {
 		return ErrNonMonotonicWebMTimecode
 	}
-	if d.trackTimes == nil {
-		d.trackTimes = make(map[uint32]packetTimeState)
-	}
-	d.trackTimes[trackID] = packetTimeState{lastTimeNS: timeNS, set: true}
+	d.trackTimes[index].lastTimeNS = timeNS
+	d.trackTimes[index].set = true
 	return nil
 }
 
 func (d *Demuxer) resetPacketTime() {
-	for trackID := range d.trackTimes {
-		d.trackTimes[trackID] = packetTimeState{}
+	for i := range d.trackTimes {
+		d.trackTimes[i].lastTimeNS = 0
+		d.trackTimes[i].set = false
 	}
 }

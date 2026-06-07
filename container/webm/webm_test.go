@@ -2032,6 +2032,93 @@ func TestFormatMuxerRejectsNegativeDuration(t *testing.T) {
 	}
 }
 
+func TestWritePacketAllocs(t *testing.T) {
+	muxer, err := NewMuxer(io.Discard, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}
+	if err := muxer.WritePacket(packet); err != nil {
+		t.Fatal(err)
+	}
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		if err := muxer.WritePacket(packet); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("allocs = %f, want 0", allocs)
+	}
+}
+
+func TestWriteLacedPacketAllocs(t *testing.T) {
+	muxer, err := NewMuxer(io.Discard, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames:   [][]byte{{0xf8, 0xff, 0xfe}, {0xf8, 0xff, 0xfe}},
+	}
+	if err := muxer.WriteLacedPacket(packet); err != nil {
+		t.Fatal(err)
+	}
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		if err := muxer.WriteLacedPacket(packet); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("allocs = %f, want 0", allocs)
+	}
+}
+
+func TestReadPacketAllocs(t *testing.T) {
+	payloads := benchmarkWebMPayloads()
+	data := makeBenchmarkWebMCorpusData(t, 300, payloads)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, payloads.maxPayload)}
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("allocs = %f, want 0", allocs)
+	}
+}
+
 func BenchmarkWriteWebMCorpus(b *testing.B) {
 	muxer, err := NewMuxer(io.Discard, MuxerOptions{})
 	if err != nil {
