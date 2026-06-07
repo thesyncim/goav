@@ -20,7 +20,6 @@ type recipeResolved struct {
 	graphPlan             graphPlan
 	inputAttachments      []InputSpec
 	outputAttachments     []destinationSpec
-	chainAttachments      []chainStepAttachment
 	inputProbes           []format.ProbeResult
 	branchInputAttachment InputSpec
 	branchInputProbe      format.ProbeResult
@@ -41,7 +40,6 @@ type recipeCompileState struct {
 
 	inputAttachments       []InputSpec
 	jobOutputCount         int
-	chainSteps             []chainStepAttachment
 	outputAttachments      []destinationSpec
 	outputDestinationNames []string
 	inputProbes            []format.ProbeResult
@@ -155,7 +153,6 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		graphPlan:             state.graphPlan,
 		inputAttachments:      append([]InputSpec(nil), state.inputAttachments...),
 		outputAttachments:     append([]destinationSpec(nil), state.outputAttachments...),
-		chainAttachments:      append([]chainStepAttachment(nil), state.chainSteps...),
 		inputProbes:           append([]format.ProbeResult(nil), state.inputProbes...),
 		branchInputAttachment: state.branchInputAttachment,
 		branchInputProbe:      state.branchInputProbe,
@@ -286,14 +283,12 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		state.jobOutputCount = len(job.outputs)
 		state.outputAttachments = jobAllOutputs(job.outputs, jobStreamOutputs(job.stream))
 		state.outputDestinationNames = job.allOutputNames()
-		state.chainSteps = chainStepAttachments(job.stream)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateJobRecipePass(),
 		validateJobIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
 		validateJobAttachmentsPass(),
-		validateJobStreamAttachmentsPass(),
 		validateJobOutputBindingsPass(),
 		validateJobStreamOutputKindsPass(),
 		validatePacketJobOutputsPass(),
@@ -421,7 +416,7 @@ func validateJobIntentShape(operation string, intent Intent, jobOutputCount int)
 	if !hasStream {
 		return nil
 	}
-	return validateJobStreamIntentShape(operation, stream, nil)
+	return validateJobStreamIntentShape(operation, stream)
 }
 
 func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCount int, stream StreamIntent, hasStream bool) error {
@@ -486,10 +481,10 @@ func jobIntentTooManyStreamsError(operation string, streams []StreamIntent) erro
 	return err
 }
 
-func validateJobStreamIntentShape(operation string, stream StreamIntent, steps []chainStepAttachment) error {
+func validateJobStreamIntentShape(operation string, stream StreamIntent) error {
 	selector := streamIntentSelector(stream)
 	node := jobStreamIntentName(stream)
-	if !streamIntentHasOperation(stream, steps) {
+	if !streamIntentHasOperation(stream) {
 		return operationSpecMissingError(operation, node)
 	}
 	if err := validateRecipeStreamSelector(operation, node, selector); err != nil {
@@ -624,59 +619,6 @@ func validateJobTransformAdaptersPass() recipeCompilePass {
 		}
 		return validateRecipeTransformAdapters(state.operation, state.runtime, state.intent.Streams)
 	}}
-}
-
-func validateJobStreamAttachmentsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate job stream attachments", fn: func(state *recipeCompileState) error {
-		stream, ok := jobIntentStream(state.intent)
-		if !ok {
-			return nil
-		}
-		return validateJobStreamAttachments(state.operation, stream, state.chainSteps)
-	}}
-}
-
-func validateJobStreamAttachments(operation string, stream StreamIntent, steps []chainStepAttachment) error {
-	transforms := streamIntentTransformSpecs(stream)
-	for i := range steps {
-		step := steps[i]
-		if step.stage != nil {
-			continue
-		}
-		if !mediaShapeEmpty(step.shape) {
-			continue
-		}
-		if step.hasTransform {
-			if step.transformIndex >= 0 && step.transformIndex < len(transforms) {
-				continue
-			}
-			return jobStreamTransformAttachmentMismatchError(operation, stream, step, len(transforms))
-		}
-		if step.tap != "" {
-			continue
-		}
-		return streamStageMissingError(stream)
-	}
-	return nil
-}
-
-func jobStreamTransformAttachmentMismatchError(operation string, stream StreamIntent, step chainStepAttachment, transformCount int) error {
-	return &BuildError{
-		Code:      "recipe_attachment_mismatch",
-		Operation: operation,
-		Node:      jobStreamIntentName(stream),
-		Reason:    "stream transform attachment does not match intent transforms",
-		Details: []string{
-			fmt.Sprintf("step index: %d", step.stepIndex),
-			fmt.Sprintf("transform index: %d", step.transformIndex),
-			fmt.Sprintf("stream transforms: %d", transformCount),
-		},
-		Suggestions: []string{
-			"build stream recipes through goav.From(...).Audio() or goav.From(...).Video()",
-			"keep custom compiler passes aligned with ordered OperationSpec transforms and captured stream attachments",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
 }
 
 func validateJobOutputBindingsPass() recipeCompilePass {

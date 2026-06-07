@@ -370,10 +370,10 @@ func mediaPlanPacketCopyStream(state *recipeCompileState) (StreamIntent, bool, b
 	if state == nil {
 		return StreamIntent{}, false, false
 	}
-	return mediaPlanPacketCopyIntentStream(state.jobPresent, state.intent, state.chainSteps)
+	return mediaPlanPacketCopyIntentStream(state.jobPresent, state.intent)
 }
 
-func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, chainSteps []chainStepAttachment) (StreamIntent, bool, bool) {
+func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent) (StreamIntent, bool, bool) {
 	if !jobPresent {
 		return StreamIntent{}, false, false
 	}
@@ -382,11 +382,38 @@ func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, chainSteps 
 		return StreamIntent{}, false, true
 	case 1:
 		stream := intent.Streams[0]
-		if stream.Encode.Copy && !stream.Decode && stream.Encode.ID == "" && !stream.Encode.Auto && len(chainSteps) == 0 {
+		if streamIntentPacketCopyOnly(stream) {
 			return stream, true, true
 		}
 	}
 	return StreamIntent{}, false, false
+}
+
+func streamIntentPacketCopyOnly(stream StreamIntent) bool {
+	if !stream.Encode.Copy || stream.Decode || stream.Encode.ID != "" || stream.Encode.Auto {
+		return false
+	}
+	if len(stream.Operations) == 0 {
+		return true
+	}
+	hasCopy := false
+	for i := range stream.Operations {
+		op := stream.Operations[i]
+		switch op.Kind {
+		case OpCopy:
+			if !op.Encode.Copy {
+				return false
+			}
+			hasCopy = true
+		case OpTap:
+			if op.Tap.Domain != DomainPacket || op.Tap.After != OpCopy {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return hasCopy
 }
 
 func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {

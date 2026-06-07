@@ -260,13 +260,13 @@ func KeyframeInterval(frames int) CodecOption {
 
 func Profile(profile string) CodecOption {
 	return func(spec *CodecSpec) {
-		spec.Parameters.Profile = profile
+		spec.Settings.Profile = profile
 	}
 }
 
 func Level(level string) CodecOption {
 	return func(spec *CodecSpec) {
-		spec.Parameters.Level = level
+		spec.Settings.Level = level
 	}
 }
 
@@ -409,6 +409,12 @@ func mergeCodecSettings(base codec.CodecSettings, override codec.CodecSettings) 
 	}
 	if override.KeyframeInterval != 0 {
 		base.KeyframeInterval = override.KeyframeInterval
+	}
+	if override.Profile != "" {
+		base.Profile = override.Profile
+	}
+	if override.Level != "" {
+		base.Level = override.Level
 	}
 	if override.Config != nil {
 		base.Config = override.Config
@@ -1415,15 +1421,6 @@ func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
 	stream.operations = append([]OperationSpec{operation}, stream.operations...)
 }
 
-type chainStepAttachment struct {
-	stage          pipeline.Stage
-	shape          MediaShape
-	hasTransform   bool
-	transformIndex int
-	tap            string
-	stepIndex      int
-}
-
 func From(input InputSpec) *Job {
 	job := newJob("from")
 	job.inputs = append(job.inputs, input)
@@ -2118,41 +2115,6 @@ func jobStreamOutputNames(stream *jobStreamBuild) []string {
 	return append([]string(nil), stream.outputNames...)
 }
 
-func chainStepAttachments(stream *jobStreamBuild) []chainStepAttachment {
-	steps := jobStreamChainSteps(stream)
-	if len(steps) == 0 {
-		return nil
-	}
-	attachments := make([]chainStepAttachment, 0, len(steps))
-	transformIndex := 0
-	for i := range steps {
-		step := steps[i]
-		if step.stage != nil {
-			attachments = append(attachments, chainStepAttachment{stage: step.stage, stepIndex: i})
-			continue
-		}
-		if !mediaShapeEmpty(step.shape) {
-			attachments = append(attachments, chainStepAttachment{shape: step.shape, stepIndex: i})
-			continue
-		}
-		if step.transform.Resize != nil || step.transform.Resample != nil {
-			attachments = append(attachments, chainStepAttachment{
-				hasTransform:   true,
-				transformIndex: transformIndex,
-				stepIndex:      i,
-			})
-			transformIndex++
-			continue
-		}
-		if step.tap != "" {
-			attachments = append(attachments, chainStepAttachment{tap: step.tap, stepIndex: i})
-			continue
-		}
-		attachments = append(attachments, chainStepAttachment{stepIndex: i})
-	}
-	return attachments
-}
-
 func streamStageMissingError(stream StreamIntent) error {
 	return &BuildError{
 		Code:      "stage_missing",
@@ -2260,8 +2222,8 @@ func (s *jobStreamBuild) hasOperation() bool {
 	return s.decode || operationSpecsContainChainStep(s.operations) || s.encode.ID != "" || s.encode.Auto || s.encode.Copy
 }
 
-func streamIntentHasOperation(stream StreamIntent, steps []chainStepAttachment) bool {
-	return stream.Decode || len(stream.Operations) != 0 || len(steps) != 0 || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy
+func streamIntentHasOperation(stream StreamIntent) bool {
+	return stream.Decode || len(stream.Operations) != 0 || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy
 }
 
 func jobStreamChainSteps(stream *jobStreamBuild) []chainStep {

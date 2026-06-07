@@ -2023,6 +2023,8 @@ func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
 		"Bitrate",
 		"Framerate",
 		"KeyframeInterval",
+		"Profile",
+		"Level",
 		"Config",
 		"Opaque",
 		"Controls",
@@ -2046,6 +2048,8 @@ func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
 			"Bitrate",
 			"Framerate",
 			"KeyframeInterval",
+			"Profile",
+			"Level",
 			"Config",
 			"Opaque",
 			"Controls",
@@ -2054,6 +2058,11 @@ func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
 				t.Fatalf("%s config should not duplicate codec setting field %s", tt.name, field)
 			}
 		}
+	}
+	spec := goav.VP9(goav.Profile("0"), goav.Level("3.1"))
+	if spec.Parameters.Profile != "" || spec.Parameters.Level != "" ||
+		spec.Settings.Profile != "0" || spec.Settings.Level != "3.1" {
+		t.Fatalf("profile/level should be codec settings, got parameters=%+v settings=%+v", spec.Parameters, spec.Settings)
 	}
 }
 

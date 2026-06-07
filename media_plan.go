@@ -196,11 +196,7 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 		}
 		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
 		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
-		steps := state.chainSteps
-		if len(state.intent.Streams) > 1 {
-			steps = nil
-		}
-		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, steps, shape)
+		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, shape)
 		operations = planOperationsWithShape(branchName, shape, operations)
 		branches = append(branches, planBranch{
 			Name:       branchName,
@@ -236,7 +232,7 @@ func planBranchesFromBranchComposePlan(state *recipeCompileState, outputs []plan
 		}
 		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
 		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
-		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, nil, shape)
+		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, shape)
 		operations = planOperationsWithShape(branchName, shape, operations)
 		branches = append(branches, planBranch{
 			Name:       branchName,
@@ -404,7 +400,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 	return branches, decisions
 }
 
-func planOperationSpecs(inputs []InputIntent, stream StreamIntent, branchName string, steps []chainStepAttachment, initial MediaShape) ([]planOperation, []planDecision) {
+func planOperationSpecs(inputs []InputIntent, stream StreamIntent, branchName string, initial MediaShape) ([]planOperation, []planDecision) {
 	operations := planInputOperationsForShape(firstInput(inputs), initial)
 	operations = append(operations, planOperation{
 		Kind:      OpSelect,
@@ -418,7 +414,7 @@ func planOperationSpecs(inputs []InputIntent, stream StreamIntent, branchName st
 	}
 	var decisions []planDecision
 	if initial.Domain == DomainFrame {
-		operations = append(operations, planProcessingOperations(stream, steps)...)
+		operations = append(operations, planProcessingOperations(stream)...)
 		if stream.Encode.ID != "" {
 			operations = append(operations, planOperation{
 				Kind:      OpEncode,
@@ -464,7 +460,7 @@ func planOperationSpecs(inputs []InputIntent, stream StreamIntent, branchName st
 			Message: "stream can remain packet encoded",
 		})
 	}
-	operations = append(operations, planProcessingOperations(stream, steps)...)
+	operations = append(operations, planProcessingOperations(stream)...)
 	if stream.Encode.ID != "" {
 		operations = append(operations, planOperation{
 			Kind:      OpEncode,
@@ -604,54 +600,17 @@ func planInputOperationsForShape(input InputIntent, shape MediaShape) []planOper
 	}
 }
 
-func planProcessingOperations(stream StreamIntent, steps []chainStepAttachment) []planOperation {
+func planProcessingOperations(stream StreamIntent) []planOperation {
 	transforms := streamIntentTransformSpecs(stream)
-	if len(steps) == 0 {
-		operations := make([]planOperation, 0, len(transforms)+len(stream.Taps))
-		for i := range transforms {
-			operations = append(operations, planTransformOperation(transforms[i]))
-		}
-		for i := range stream.Taps {
-			if stream.Taps[i].After != "" {
-				continue
-			}
-			operations = append(operations, planTapOperation(stream.Taps[i]))
-		}
-		return operations
+	operations := make([]planOperation, 0, len(transforms)+len(stream.Taps))
+	for i := range transforms {
+		operations = append(operations, planTransformOperation(transforms[i]))
 	}
-	operations := make([]planOperation, 0, len(steps))
-	tapIndex := 0
-	for i := range steps {
-		step := steps[i]
-		if step.stage != nil {
-			operations = append(operations, planOperation{
-				Kind:      OpStage,
-				Component: step.stage.Name(),
-				Detail:    "custom stage",
-			})
+	for i := range stream.Taps {
+		if stream.Taps[i].After != "" {
 			continue
 		}
-		if !mediaShapeEmpty(step.shape) {
-			operations = append(operations, planOperation{
-				Kind:      OpShape,
-				Component: "shape",
-				Detail:    "media shape annotation",
-				Shape:     step.shape,
-			})
-			continue
-		}
-		if step.hasTransform && step.transformIndex >= 0 && step.transformIndex < len(transforms) {
-			operations = append(operations, planTransformOperation(transforms[step.transformIndex]))
-			continue
-		}
-		if step.tap != "" {
-			tap := TapIntent{Name: step.tap}
-			if tapIndex >= 0 && tapIndex < len(stream.Taps) {
-				tap = stream.Taps[tapIndex]
-			}
-			operations = append(operations, planTapOperation(tap))
-			tapIndex++
-		}
+		operations = append(operations, planTapOperation(stream.Taps[i]))
 	}
 	return operations
 }

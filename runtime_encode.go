@@ -498,6 +498,7 @@ func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) 
 	}
 	parameters := mergeCodecParameters(baseParameters, config.Stream.Codec)
 	parameters = mergeCodecParameters(parameters, config.Parameters)
+	parameters = applyCodecSettingsToParameters(parameters, config.Settings)
 	parameters.ID = targetCodec
 	if parameters.Type == "" {
 		parameters.Type = stream.Type
@@ -583,6 +584,16 @@ func mergeEncodeStream(base av.Stream, override av.Stream) av.Stream {
 		out.Metadata = override.Metadata
 	}
 	return out
+}
+
+func applyCodecSettingsToParameters(parameters av.CodecParameters, settings codec.CodecSettings) av.CodecParameters {
+	if settings.Profile != "" {
+		parameters.Profile = settings.Profile
+	}
+	if settings.Level != "" {
+		parameters.Level = settings.Level
+	}
+	return parameters
 }
 
 func mergeCodecParameters(base av.CodecParameters, override av.CodecParameters) av.CodecParameters {

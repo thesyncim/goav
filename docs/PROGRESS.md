@@ -2614,15 +2614,23 @@ and controls: `codec.CodecSettings`, carried by `CodecSpec.Settings`,
 address remains the codec option list passed to `Opus`, `VP8`, `VP9`, `H264`,
 `AV1`, or generic `Codec`. Chain, branch, and flow builders expose
 `.Encode(codec)` as the only encode operation, keeping the main builder from
-accumulating one-off tuning methods. `OpusVoice` and `OpusMusic` are removed
-before release for the same reason; voice/music choices are ordinary
-`Opus(Bitrate(...), Channels(...))` codec values.
+accumulating one-off tuning methods. `Profile` and `Level` now write to
+`CodecSpec.Settings` with bitrate, FPS, keyframe cadence, typed configs, named
+params, and controls; encoder setup derives stream metadata from those settings
+instead of treating profile/level as a separate authoring surface. `OpusVoice`
+and `OpusMusic` are removed before release for the same reason; voice/music
+choices are ordinary `Opus(Bitrate(...), Channels(...))` codec values.
 Reusable flows and ordinary chains now store their ordered work
 only as `OperationSpec`. Legacy `chainStep` is derived at the remaining
 branch/runtime lowerer boundary, which keeps this pass scoped while making the
 next deletion obvious: branch composition and runtime attach should consume the
 same operation sequence directly instead of projecting back through a parallel
 step list.
+The resolved `chainStepAttachment`/`chainAttachments` bridge is gone. Recipe
+compile state, media planning, packet-copy detection, and direct stream graph
+description now read ordered `OperationSpec` records directly; packet-copy
+streams accept only copy plus packet taps after copy, so runtime attach from
+packet taps stays supported without a second operation model.
 Planned and runtime branch specs now follow the same rule: `BranchSpec` stores
 ordered work only as `OperationSpec`, and the temporary `chainStep` view is
 derived while the older branch-compose and runtime attach lowerers still need

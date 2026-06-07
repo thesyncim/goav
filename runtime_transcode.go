@@ -950,6 +950,8 @@ func codecSpecHasDecodeIntent(spec CodecSpec) bool {
 		spec.Settings.Bitrate != 0 ||
 		spec.Settings.Framerate != (av.Duration{}) ||
 		spec.Settings.KeyframeInterval != 0 ||
+		spec.Settings.Profile != "" ||
+		spec.Settings.Level != "" ||
 		spec.Settings.Config != nil ||
 		len(spec.Settings.Opaque) != 0 ||
 		len(spec.Settings.Controls) != 0

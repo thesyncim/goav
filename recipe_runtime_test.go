@@ -4522,7 +4522,9 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		encoderFactory.config.Stream.Codec.Level != "1" ||
 		encoderFactory.config.Settings.Bitrate != 128_000 ||
 		encoderFactory.config.Settings.Framerate != (av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 50}}) ||
-		encoderFactory.config.Settings.KeyframeInterval != 100 {
+		encoderFactory.config.Settings.KeyframeInterval != 100 ||
+		encoderFactory.config.Settings.Profile != "low-delay" ||
+		encoderFactory.config.Settings.Level != "1" {
 		t.Fatalf("branch custom encode config: %+v", encoderFactory.config)
 	}
 	if !reflect.DeepEqual(encoderFactory.config.Settings.Config, encodeConfig) ||

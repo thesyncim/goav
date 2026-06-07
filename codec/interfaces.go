@@ -103,6 +103,14 @@ type CodecSettings struct {
 	// KeyframeInterval requests a keyframe cadence in encoded frames. Zero lets
 	// the encoder choose its default cadence.
 	KeyframeInterval int
+	// Profile requests an encoder profile. Empty lets the encoder choose its
+	// default or preserve the selected input profile when copying compatible
+	// stream metadata.
+	Profile string
+	// Level requests an encoder level. Empty lets the encoder choose its default
+	// or preserve the selected input level when copying compatible stream
+	// metadata.
+	Level string
 	// Config carries one adapter-specific typed config value. Adapter packages
 	// must document the concrete type before reading it.
 	Config any

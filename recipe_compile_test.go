@@ -2654,73 +2654,25 @@ func TestRequireGraphPlanSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
 	}
 }
 
-func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
-	tests := []struct {
-		name  string
-		state recipeCompileState
-		code  string
-		cause error
-		want  []string
-	}{
-		{
-			name: "nil custom stage",
-			state: recipeCompileState{
-				operation: "build job",
-				intent: Intent{
-					Inputs: []InputIntent{{Name: "input.ogg"}},
-					Streams: []StreamIntent{{
-						Name:         "audio",
-						Decode:       true,
-						Destinations: []string{"frames"},
-					}},
-					Destinations: []DestinationIntent{{Name: "frames"}},
-				},
-				chainSteps: []chainStepAttachment{{stepIndex: 0}},
-			},
-			code:  "stage_missing",
-			cause: ErrNilStage,
-			want:  []string{".Do(stage)", "goav.FrameFunc"},
-		},
-		{
-			name: "transform attachment mismatch",
-			state: recipeCompileState{
-				operation: "build job",
-				intent: Intent{
-					Inputs: []InputIntent{{Name: "input.ogg"}},
-					Streams: []StreamIntent{{
-						Name:         "audio",
-						Select:       StreamSelect{Type: av.MediaAudio},
-						Decode:       true,
-						Operations:   []OperationSpec{operationSpecForTransform(Resample(48_000, Stereo))},
-						Destinations: []string{"frames"},
-					}},
-					Destinations: []DestinationIntent{{Name: "frames"}},
-				},
-				chainSteps: []chainStepAttachment{{
-					hasTransform:   true,
-					transformIndex: 1,
-					stepIndex:      0,
-				}},
-			},
-			code:  "recipe_attachment_mismatch",
-			cause: ErrUnsupportedBuild,
-			want:  []string{"transform attachment", "transform index: 1", "stream transforms: 1", "OperationSpec transforms"},
-		},
+func TestRecipeCompilerDoesNotCarryChainStepAttachments(t *testing.T) {
+	var body strings.Builder
+	for _, file := range []string{"recipe.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
 	}
-	pass := validateJobStreamAttachmentsPass()
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := pass.Apply(&tt.state)
-			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, tt.cause) {
-				t.Fatalf("err = %v, want %s wrapping %v", err, tt.code, tt.cause)
-			}
-			for _, want := range tt.want {
-				if !strings.Contains(err.Error(), want) {
-					t.Fatalf("err = %v, want %q", err, want)
-				}
-			}
-		})
+	text := body.String()
+	for _, forbidden := range []string{
+		"chainStepAttachment",
+		"chainAttachments",
+		"validateJobStreamAttachments",
+		"jobStreamTransformAttachmentMismatchError",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("recipe compiler should derive operation work from OperationSpec, not %q", forbidden)
+		}
 	}
 }
 
@@ -4787,8 +4739,10 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	if !specHasNode(spec, "meter") || !specHasNode(spec, "encode-audio") || !specHasNode(spec, "archive.ogg") {
 		t.Fatalf("spec = %+v, want stage, encoder, and target from resolved attachments", spec)
 	}
-	if len(resolved.chainAttachments) == 0 {
-		t.Fatalf("resolved stream attachments are empty; taps and custom stages should be carried on the resolved recipe")
+	kinds := operationSpecKindsForTest(stream.Operations)
+	want := []OperationKind{OpDecode, OpTap, OpStage, OpEncode}
+	if !reflect.DeepEqual(kinds, want) {
+		t.Fatalf("resolved stream operations = %+v, want %+v", kinds, want)
 	}
 }
 
