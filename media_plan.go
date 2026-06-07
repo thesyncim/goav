@@ -624,35 +624,7 @@ func normalizePlanBranchCaps(caps StreamCaps, stream StreamIntent, input InputIn
 }
 
 func streamCapsFromPlanStream(stream av.Stream, domain MediaDomain) StreamCaps {
-	caps := StreamCaps{Domain: domain}
-	if stream.Type != "" {
-		caps.MediaKind = stream.Type
-	}
-	if stream.ID != "" {
-		caps.StreamID = stream.ID
-	}
-	if stream.Codec.ID != "" {
-		caps.Codec = stream.Codec.ID
-	}
-	if stream.Codec.Width != 0 {
-		caps.Width = stream.Codec.Width
-	}
-	if stream.Codec.Height != 0 {
-		caps.Height = stream.Codec.Height
-	}
-	if stream.Codec.PixelFormat != "" {
-		caps.PixelFormat = stream.Codec.PixelFormat
-	}
-	if stream.Codec.SampleRate != 0 {
-		caps.SampleRate = stream.Codec.SampleRate
-	}
-	if stream.Codec.Channels != 0 {
-		caps.Channels = stream.Codec.Channels
-	}
-	if stream.Codec.SampleFormat != "" {
-		caps.SampleFormat = stream.Codec.SampleFormat
-	}
-	return caps
+	return MediaShapeFromStream(stream, domain)
 }
 
 func streamCapsFromInputIntent(input InputIntent, domain MediaDomain) StreamCaps {
@@ -671,28 +643,11 @@ func streamCapsFromInputIntent(input InputIntent, domain MediaDomain) StreamCaps
 }
 
 func streamCapsFromCodecParameters(parameters av.CodecParameters) StreamCaps {
-	return StreamCaps{
-		MediaKind:    parameters.Type,
-		Codec:        parameters.ID,
-		Width:        parameters.Width,
-		Height:       parameters.Height,
-		PixelFormat:  parameters.PixelFormat,
-		SampleRate:   parameters.SampleRate,
-		Channels:     parameters.Channels,
-		SampleFormat: parameters.SampleFormat,
-	}
+	return MediaShapeFromCodecParameters(parameters)
 }
 
 func streamCapsFromCodecSpec(spec CodecSpec, domain MediaDomain) StreamCaps {
-	caps := streamCapsFromCodecParameters(spec.Parameters)
-	caps.Domain = domain
-	if caps.MediaKind == "" {
-		caps.MediaKind = firstNonEmptyMedia(spec.Type, codecMedia(spec.ID))
-	}
-	if caps.Codec == "" {
-		caps.Codec = spec.ID
-	}
-	return caps
+	return MediaShapeFromCodecSpec(spec, domain)
 }
 
 func streamCapsFromTransform(transform TransformSpec) StreamCaps {
@@ -718,41 +673,7 @@ func streamCapsFromTransform(transform TransformSpec) StreamCaps {
 }
 
 func mergeStreamCaps(base StreamCaps, next StreamCaps) StreamCaps {
-	if next.Domain != "" {
-		base.Domain = next.Domain
-	}
-	if next.MediaKind != "" {
-		base.MediaKind = next.MediaKind
-	}
-	if next.StreamID != "" {
-		base.StreamID = next.StreamID
-	}
-	if next.Codec != "" {
-		base.Codec = next.Codec
-	}
-	if next.Format != "" {
-		base.Format = next.Format
-	}
-	if next.Width != 0 {
-		base.Width = next.Width
-	}
-	if next.Height != 0 {
-		base.Height = next.Height
-	}
-	if next.PixelFormat != "" {
-		base.PixelFormat = next.PixelFormat
-	}
-	if next.SampleRate != 0 {
-		base.SampleRate = next.SampleRate
-	}
-	if next.Channels != 0 {
-		base.Channels = next.Channels
-	}
-	if next.SampleFormat != "" {
-		base.SampleFormat = next.SampleFormat
-	}
-	base.Realtime = base.Realtime || next.Realtime
-	return base
+	return mergeMediaShape(base, next)
 }
 
 func streamCapsEmpty(caps StreamCaps) bool {
@@ -764,6 +685,7 @@ func streamCapsEmpty(caps StreamCaps) bool {
 		caps.Width == 0 &&
 		caps.Height == 0 &&
 		caps.PixelFormat == "" &&
+		caps.Framerate == (Rational{}) &&
 		caps.SampleRate == 0 &&
 		caps.Channels == 0 &&
 		caps.SampleFormat == "" &&

@@ -2001,6 +2001,15 @@ The missing product layer is now explicit:
     branch stream-group selection directly and preserves all streams for
     single-source remux into a mux target.
     Done.
+369. Start formal media shape contracts:
+    `MediaShape`, `ShapeSet`, `ShapeContract`, shape constructors, compatibility
+    checks, and operation/flow shape reporting are public. `StreamCaps` remains
+    a migration alias so existing planner state keeps compiling while new code
+    uses the `Shape` vocabulary. Plan reports and tap reports now expose
+    `Shape` beside legacy `Caps`, reusable flows report input/output shapes and
+    declared taps, and compile diagnostics for transform-media mismatches plus
+    decoded-frame-to-byte-output failures include expected and actual shapes.
+    Done.
 
 ## First Vertical Slice
 
@@ -2201,7 +2210,7 @@ Required proof:
 | Simple high-level API | `From`, chains, typed taps, branches, targets, destinations, flows, runtime attach, structured `Explain(ctx)`, executable graph-plan boundary, and custom codec hooks | first slices active |
 | Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts for advanced embedding and adapter work, not the normal composer | active |
 | Full Opus/VP8/VP9 codec verticals | Opus, VP8, and VP9 are the first full encode/decode recipe targets; H264 and AV1 stay receive/decode-first until encode is equally solid | active |
-| Formal media shapes | `MediaShape`/shape-contract planning replaces ad hoc public caps language; every operation declares inferred input/output shape | planned |
+| Formal media shapes | `MediaShape`/shape-contract planning replaces ad hoc public caps language; operation and flow contracts now expose inferred input/output shape, with full branch/target validation next | active |
 | Branch flow control | branch-local buffers, drop accounting, backpressure, and safe packet/frame ownership are public branch policy, not graph plumbing | planned |
 | Observation/control | `Observe`, `Watch`, `Snapshot`, branch states, target states, and scoped stats expose diagnostics without graph handles | planned |
 | One grammar, one engine | normal workflows lower from `input -> chain -> tap -> branch -> target` into `GraphPlan -> pipeline.Graph -> Task`; runtime attach lowers the same branch plan into `GraphPatch`; `GraphPatch` is the runtime attach form | planned |
@@ -2273,9 +2282,10 @@ Required proof:
 13. Add allocation, event, lifecycle, graph-equivalence, shape, observer,
     buffer, detach, and no-dispatch regression tests for each planner slice.
 
-Current pressure point: formalize branch planning around media shape contracts,
-collapse direct chains into that branch planner model, and keep runtime attach
-converging toward the same patchable planner model.
+Current pressure point: carry `MediaShape` through branch planning, target
+compatibility, runtime attach, and branch buffers so shape validation moves from
+the first public contract slice into the single `BranchPlan`/`GraphPatch`
+planner.
 Packet-copy, direct frame-stream, and grouped branch-compose builds now consume
 graph-plan operation records for validation, operation node construction,
 target node construction, and target routing; direct frame-stream builds consume

@@ -71,6 +71,7 @@ type BranchReport struct {
 	Name       string
 	Input      string
 	Stream     StreamSelect
+	Shape      MediaShape
 	Caps       StreamCaps
 	Operations []OperationReport
 	Targets    []string
@@ -80,6 +81,7 @@ type OperationReport struct {
 	Kind      OperationKind
 	Component string
 	Detail    string
+	Shape     MediaShape
 	Caps      StreamCaps
 	Shared    bool
 }
@@ -175,6 +177,7 @@ func explainTaps(taps []planTap) []TapReport {
 			Name:      taps[i].Name,
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,
+			Shape:     taps[i].Caps,
 			Caps:      taps[i].Caps,
 			Node:      taps[i].Node,
 		})
@@ -256,6 +259,7 @@ func explainStreamOperations(operations []StreamOperation) []OperationReport {
 			Kind:      operations[i].Kind,
 			Component: operations[i].Component,
 			Detail:    streamOperationDetail(operations[i]),
+			Shape:     streamOperationCaps(operations[i]),
 			Caps:      streamOperationCaps(operations[i]),
 			Shared:    operations[i].Shared,
 		})
@@ -299,6 +303,7 @@ func explainBranches(branches []planBranch) []BranchReport {
 			Name:       branch.Name,
 			Input:      branch.Input,
 			Stream:     branch.Stream,
+			Shape:      branch.Caps,
 			Caps:       branch.Caps,
 			Operations: explainOperations(branch.Operations),
 			Targets:    append([]string(nil), branch.Outputs...),
@@ -315,6 +320,7 @@ func explainOperations(operations []planOperation) []OperationReport {
 			Kind:      operation.Kind,
 			Component: operation.Component,
 			Detail:    operation.Detail,
+			Shape:     operation.Caps,
 			Caps:      operation.Caps,
 			Shared:    operation.Shared,
 		})
