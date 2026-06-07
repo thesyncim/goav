@@ -461,13 +461,13 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 	if err := validateTranscodeOutputFormatAdaptersPass().Apply(&state); err != nil {
 		t.Fatalf("validateTranscodeOutputFormatAdaptersPass() error = %v", err)
 	}
-	if err := planTranscodeIntentPass().Apply(&state); err != nil {
-		t.Fatalf("planTranscodeIntentPass() error = %v", err)
+	if err := planBranchCompositionIntentPass().Apply(&state); err != nil {
+		t.Fatalf("planBranchCompositionIntentPass() error = %v", err)
 	}
-	if len(state.plan.Outputs) != 1 ||
-		state.plan.Outputs[0].Format != "" ||
-		state.plan.Outputs[0].OpenFormat() != av.FormatOgg {
-		t.Fatalf("plan outputs = %+v, want resolved Ogg open format without graph detail format", state.plan.Outputs)
+	if len(state.plan.Targets) != 1 ||
+		state.plan.Targets[0].Format != "" ||
+		state.plan.Targets[0].OpenFormat() != av.FormatOgg {
+		t.Fatalf("plan targets = %+v, want resolved Ogg open format without graph detail format", state.plan.Targets)
 	}
 }
 

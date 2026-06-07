@@ -13,7 +13,6 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
-	transcodepkg "github.com/thesyncim/goav/transcode"
 )
 
 const (
@@ -2744,20 +2743,20 @@ func (j *transcodeJob) Intent() Intent {
 	return intent
 }
 
-func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedTargetSpec) (transcodepkg.Plan, error) {
+func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []namedTargetSpec) (branchComposePlan, error) {
 	streams := intent.Streams
 	outputs, outputOrder := transcodeTargetAttachmentSet(namedOutputs)
 
-	branches := make([]transcodepkg.Branch, 0, len(streams))
+	branches := make([]branchComposeBranch, 0, len(streams))
 	outputBranches := make(map[string][]string, len(outputs))
 	if len(streams) == 0 {
-		return transcodepkg.Plan{}, transcodeStreamMissingError()
+		return branchComposePlan{}, transcodeStreamMissingError()
 	}
 	for i := range streams {
 		stream := streams[i]
 		branchName := stream.Name
 		selector := streamIntentSelector(stream)
-		branch := transcodepkg.Branch{
+		branch := branchComposeBranch{
 			Name:     branchName,
 			Selector: selector,
 			Decode:   true,
@@ -2772,16 +2771,16 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedTar
 			outputBranches[label] = append(outputBranches[label], branchName)
 		}
 		if err := validateTranscodeBranchTransforms(stream); err != nil {
-			return transcodepkg.Plan{}, err
+			return branchComposePlan{}, err
 		}
 		branches = append(branches, branch)
 	}
 
-	planOutputs := make([]transcodepkg.Output, 0, len(outputOrder))
+	planTargets := make([]branchComposeTarget, 0, len(outputOrder))
 	for i := range outputOrder {
 		name := outputOrder[i]
 		output := outputs[name]
-		planOutput := transcodepkg.Output{
+		planTarget := branchComposeTarget{
 			Name:     name,
 			Target:   output.output,
 			Sink:     output.sink,
@@ -2789,19 +2788,19 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedTar
 			Branches: append([]string(nil), outputBranches[name]...),
 		}
 		if output.resolvedFormat != "" {
-			planOutput = transcodepkg.ResolveOutputFormat(planOutput, output.resolvedFormat)
+			planTarget = resolveBranchComposeTargetFormat(planTarget, output.resolvedFormat)
 		}
-		planOutputs = append(planOutputs, planOutput)
+		planTargets = append(planTargets, planTarget)
 	}
-	return transcodepkg.Plan{
+	return branchComposePlan{
 		Name:     "transcode",
 		Input:    input.input,
 		Branches: branches,
-		Outputs:  planOutputs,
+		Targets:  planTargets,
 	}, nil
 }
 
-func transcodeBranchSteps(stream StreamIntent) []transcodepkg.Step {
+func transcodeBranchSteps(stream StreamIntent) []branchComposeStep {
 	if len(stream.Operations) != 0 {
 		return transcodeStepsFromOperations(stream.Operations)
 	}
@@ -2811,48 +2810,48 @@ func transcodeBranchSteps(stream StreamIntent) []transcodepkg.Step {
 	return transcodeStepsFromJobSteps(streamStepsFromTransforms(stream.Transforms))
 }
 
-func transcodeStepsFromOperations(operations []StreamOperation) []transcodepkg.Step {
+func transcodeStepsFromOperations(operations []StreamOperation) []branchComposeStep {
 	if len(operations) == 0 {
 		return nil
 	}
-	out := make([]transcodepkg.Step, 0, len(operations))
+	out := make([]branchComposeStep, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
 		switch operation.Kind {
 		case OpStage:
 			if operation.Stage != nil {
-				out = append(out, transcodepkg.Step{Stage: operation.Stage})
+				out = append(out, branchComposeStep{Stage: operation.Stage})
 			}
 		case OpTransform:
 			switch {
 			case operation.Transform.Resize != nil:
 				resize := *operation.Transform.Resize
-				out = append(out, transcodepkg.Step{Resize: &resize})
+				out = append(out, branchComposeStep{Resize: &resize})
 			case operation.Transform.Resample != nil:
 				resample := *operation.Transform.Resample
-				out = append(out, transcodepkg.Step{Resample: &resample})
+				out = append(out, branchComposeStep{Resample: &resample})
 			}
 		}
 	}
 	return out
 }
 
-func transcodeStepsFromJobSteps(steps []jobStreamStep) []transcodepkg.Step {
+func transcodeStepsFromJobSteps(steps []jobStreamStep) []branchComposeStep {
 	if len(steps) == 0 {
 		return nil
 	}
-	out := make([]transcodepkg.Step, 0, len(steps))
+	out := make([]branchComposeStep, 0, len(steps))
 	for i := range steps {
 		step := steps[i]
 		switch {
 		case step.stage != nil:
-			out = append(out, transcodepkg.Step{Stage: step.stage})
+			out = append(out, branchComposeStep{Stage: step.stage})
 		case step.transform.Resize != nil:
 			resize := *step.transform.Resize
-			out = append(out, transcodepkg.Step{Resize: &resize})
+			out = append(out, branchComposeStep{Resize: &resize})
 		case step.transform.Resample != nil:
 			resample := *step.transform.Resample
-			out = append(out, transcodepkg.Step{Resample: &resample})
+			out = append(out, branchComposeStep{Resample: &resample})
 		}
 	}
 	return out

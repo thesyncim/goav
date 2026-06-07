@@ -74,9 +74,9 @@ func (r recipeResolved) buildMediaPlanBranchComposerTask(ctx context.Context) (T
 
 func (r recipeResolved) compileMediaPlanBranchComposer(ctx context.Context, builder *builder, graph pipeline.Graph) error {
 	if len(builder.rtpInputs) != 0 {
-		return builder.compileRTPTranscodePlan(ctx, graph, r.plan)
+		return builder.compileRTPBranchComposePlan(ctx, graph, r.plan)
 	}
-	return builder.compileTranscodePlan(ctx, graph, r.plan)
+	return builder.compileBranchComposePlan(ctx, graph, r.plan)
 }
 
 func (r recipeResolved) compileMediaPlanEncode(ctx context.Context, builder *builder, graph pipeline.Graph) error {

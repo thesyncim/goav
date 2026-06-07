@@ -18,7 +18,7 @@ type rtpTranscodeGraphCompiler struct{}
 
 type transcodeBranch struct {
 	name    string
-	branch  transcode.Branch
+	branch  branchComposeBranch
 	steps   []transcodeTransform
 	request encodeRequest
 }
@@ -32,7 +32,7 @@ type transcodeTransform struct {
 }
 
 type transcodeOutputBranch struct {
-	output  transcode.Output
+	output  branchComposeTarget
 	target  format.Output
 	sink    pipeline.Sink
 	matches []int
@@ -92,11 +92,15 @@ func (rtpTranscodeGraphCompiler) build(ctx context.Context, b *builder) (Task, e
 }
 
 func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
-	return b.planTranscodePlan(spec, b.transcodes[0])
+	return b.planBranchComposePlan(spec, branchComposePlanFromTranscode(b.transcodes[0]))
 }
 
 func (b *builder) planTranscodePlan(spec pipeline.Spec, plan transcode.Plan) (pipeline.Spec, error) {
-	branches, outputs, err := prepareTranscodePlan(plan)
+	return b.planBranchComposePlan(spec, branchComposePlanFromTranscode(plan))
+}
+
+func (b *builder) planBranchComposePlan(spec pipeline.Spec, plan branchComposePlan) (pipeline.Spec, error) {
+	branches, outputs, err := prepareBranchComposePlan(plan)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
@@ -112,11 +116,15 @@ func (b *builder) planTranscodePlan(spec pipeline.Spec, plan transcode.Plan) (pi
 }
 
 func (b *builder) planRTPTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
-	return b.planRTPTranscodePlan(spec, b.transcodes[0])
+	return b.planRTPBranchComposePlan(spec, branchComposePlanFromTranscode(b.transcodes[0]))
 }
 
 func (b *builder) planRTPTranscodePlan(spec pipeline.Spec, plan transcode.Plan) (pipeline.Spec, error) {
-	branches, outputs, err := prepareTranscodePlan(plan)
+	return b.planRTPBranchComposePlan(spec, branchComposePlanFromTranscode(plan))
+}
+
+func (b *builder) planRTPBranchComposePlan(spec pipeline.Spec, plan branchComposePlan) (pipeline.Spec, error) {
+	branches, outputs, err := prepareBranchComposePlan(plan)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
@@ -279,11 +287,15 @@ func (b *builder) buildRTPTranscode(ctx context.Context) (Task, error) {
 }
 
 func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) error {
-	return b.compileTranscodePlan(ctx, graph, b.transcodes[0])
+	return b.compileBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(b.transcodes[0]))
 }
 
 func (b *builder) compileTranscodePlan(ctx context.Context, graph pipeline.Graph, plan transcode.Plan) error {
-	branches, outputs, err := prepareTranscodePlan(plan)
+	return b.compileBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(plan))
+}
+
+func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.Graph, plan branchComposePlan) error {
+	branches, outputs, err := prepareBranchComposePlan(plan)
 	if err != nil {
 		return err
 	}
@@ -320,11 +332,15 @@ func (b *builder) compileTranscodePlan(ctx context.Context, graph pipeline.Graph
 }
 
 func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
-	return b.compileRTPTranscodePlan(ctx, graph, b.transcodes[0])
+	return b.compileRTPBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(b.transcodes[0]))
 }
 
 func (b *builder) compileRTPTranscodePlan(ctx context.Context, graph pipeline.Graph, plan transcode.Plan) error {
-	branches, outputs, err := prepareTranscodePlan(plan)
+	return b.compileRTPBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(plan))
+}
+
+func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipeline.Graph, plan branchComposePlan) error {
+	branches, outputs, err := prepareBranchComposePlan(plan)
 	if err != nil {
 		return err
 	}
@@ -499,18 +515,18 @@ func (b *builder) newTranscodeFilterStage(ctx context.Context, transform transco
 	return stage, outputStream, nil
 }
 
-func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOutputBranch, error) {
+func prepareBranchComposePlan(plan branchComposePlan) ([]transcodeBranch, []transcodeOutputBranch, error) {
 	if len(plan.Branches) == 0 {
 		return nil, nil, transcodePlanEmptyError("branches")
 	}
-	if len(plan.Outputs) == 0 {
-		return nil, nil, transcodePlanEmptyError("outputs")
+	if len(plan.Targets) == 0 {
+		return nil, nil, transcodePlanEmptyError("targets")
 	}
-	branches, err := transcodeBranches(plan)
+	branches, err := branchComposeBranches(plan)
 	if err != nil {
 		return nil, nil, err
 	}
-	outputs, err := transcodeOutputs(plan, branches)
+	outputs, err := branchComposeTargets(plan, branches)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -519,8 +535,8 @@ func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOu
 
 func transcodePlanEmptyError(kind string) error {
 	suggestions := []string{
-		"add at least one transcode.Branch with a selector and encoder",
-		"add at least one transcode.Output with a target output",
+		"add at least one branch with a selector and encoder",
+		"add at least one target endpoint",
 		"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for the recipe API",
 	}
 	reason := "transcode plan has no " + kind
@@ -593,12 +609,12 @@ func transcodeStreamKey(stream av.Stream) string {
 	}, "\x00")
 }
 
-func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
+func branchComposeBranches(plan branchComposePlan) ([]transcodeBranch, error) {
 	branches := make([]transcodeBranch, len(plan.Branches))
 	names := make(map[string]struct{}, len(plan.Branches))
 	for i := range plan.Branches {
 		branch := plan.Branches[i]
-		name := runtimeTranscodeBranchName(branch, i, len(plan.Branches))
+		name := runtimeBranchComposeBranchName(branch, i, len(plan.Branches))
 		if _, ok := names[name]; ok {
 			return nil, runtimeTranscodeDuplicateBranchError(name, i)
 		}
@@ -646,14 +662,14 @@ func runtimeTranscodeDuplicateBranchError(name string, index int) error {
 			"duplicate index: " + strconv.Itoa(index),
 		},
 		Suggestions: []string{
-			"give each transcode.Branch a stable unique Name",
+			"give each branch a stable unique name",
 			"use distinct branch names when multiple branches share one selected stream",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeSteps(name string, branch transcode.Branch) ([]transcodeTransform, error) {
+func transcodeSteps(name string, branch branchComposeBranch) ([]transcodeTransform, error) {
 	if len(branch.Steps) == 0 {
 		return transcodeStepsFromLegacyFields(name, branch)
 	}
@@ -672,7 +688,7 @@ func transcodeSteps(name string, branch transcode.Branch) ([]transcodeTransform,
 	return steps, nil
 }
 
-func transcodeStepsFromLegacyFields(name string, branch transcode.Branch) ([]transcodeTransform, error) {
+func transcodeStepsFromLegacyFields(name string, branch branchComposeBranch) ([]transcodeTransform, error) {
 	if branch.Resize != nil && branch.Resample != nil {
 		return nil, advancedTranscodeStepError(name, "transcode branch cannot combine resize and resample in one step")
 	}
@@ -694,7 +710,7 @@ func transcodeStepsFromLegacyFields(name string, branch transcode.Branch) ([]tra
 	}
 }
 
-func transcodeStep(branchName string, transformIndex int, step transcode.Step) (transcodeTransform, error) {
+func transcodeStep(branchName string, transformIndex int, step branchComposeStep) (transcodeTransform, error) {
 	set := 0
 	if step.Stage != nil {
 		set++
@@ -810,16 +826,16 @@ func advancedTranscodeTransformMediaError(transform transcodeTransform, stream a
 		Suggestions: []string{
 			"use resize on video branches",
 			"use resample on audio branches",
-			"check the transcode.Branch selector for this branch",
+			"check the branch selector",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transcodeOutputBranch, error) {
-	outputs := make([]transcodeOutputBranch, len(plan.Outputs))
-	for i := range plan.Outputs {
-		output := plan.Outputs[i]
+func branchComposeTargets(plan branchComposePlan, branches []transcodeBranch) ([]transcodeOutputBranch, error) {
+	outputs := make([]transcodeOutputBranch, len(plan.Targets))
+	for i := range plan.Targets {
+		output := plan.Targets[i]
 		if output.Sink != nil && transcodeOutputHasMuxTarget(output) {
 			return nil, transcodeOutputEndpointInvalidError(output, "output cannot configure both a sink and a mux target")
 		}
@@ -845,7 +861,7 @@ func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transc
 	return outputs, nil
 }
 
-func transcodeOutputHasMuxTarget(output transcode.Output) bool {
+func transcodeOutputHasMuxTarget(output branchComposeTarget) bool {
 	return output.Target.Name != "" ||
 		output.Target.URI != "" ||
 		output.Target.Protocol != "" ||
@@ -855,7 +871,7 @@ func transcodeOutputHasMuxTarget(output transcode.Output) bool {
 		output.OpenFormat() != ""
 }
 
-func transcodeOutputUnmatchedError(output transcode.Output, target format.Output) error {
+func transcodeOutputUnmatchedError(output branchComposeTarget, target format.Output) error {
 	node := firstNonEmpty(output.Name, target.Name, target.URI, "output")
 	details := make([]string, 0, 1)
 	if len(output.Branches) != 0 {
@@ -868,7 +884,7 @@ func transcodeOutputUnmatchedError(output transcode.Output, target format.Output
 		Reason:    "output selects no transcode branches",
 		Details:   details,
 		Suggestions: []string{
-			"reference a branch name from transcode.Branch.Name",
+			"reference a branch name",
 			"reference a label listed on the branch",
 			"leave Branches empty when the output should receive every branch",
 		},
@@ -876,21 +892,21 @@ func transcodeOutputUnmatchedError(output transcode.Output, target format.Output
 	}
 }
 
-func transcodeOutputEndpointInvalidError(output transcode.Output, reason string) error {
+func transcodeOutputEndpointInvalidError(output branchComposeTarget, reason string) error {
 	return &BuildError{
 		Code:      "transcode_output_invalid",
 		Operation: "build transcode",
 		Node:      transcodeOutputNodeName(output, "output"),
 		Reason:    reason,
 		Suggestions: []string{
-			"use transcode.Output{Sink: sink} for frame or packet sink endpoints",
-			"use transcode.Output{Target: output, Format: format} for muxed file or URI endpoints",
+			"use goav.Target(name, goav.SinkEndpoint(sink)) for frame or packet sink endpoints",
+			"use goav.Target(name, goav.FileOutput(...)) or goav.URIOutput(...) for muxed endpoints",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeOutputEncodeMissingError(output transcode.Output, target format.Output, branch transcodeBranch) error {
+func transcodeOutputEncodeMissingError(output branchComposeTarget, target format.Output, branch transcodeBranch) error {
 	return &BuildError{
 		Code:      "encode_missing",
 		Operation: "build transcode",
@@ -900,14 +916,14 @@ func transcodeOutputEncodeMissingError(output transcode.Output, target format.Ou
 			"target: " + firstNonEmpty(output.Name, target.Name, target.URI, "output"),
 		},
 		Suggestions: []string{
-			"set transcode.Branch.Encode before routing the branch to a mux target",
-			"route raw decoded branches to transcode.Output{Sink: sink}",
+			"encode the branch before routing it to a mux target",
+			"route raw decoded branches to goav.Target(name, goav.SinkEndpoint(sink))",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeOutputNodeName(output transcode.Output, fallback string) string {
+func transcodeOutputNodeName(output branchComposeTarget, fallback string) string {
 	name := firstNonEmpty(output.Name, output.Target.Name, output.Target.URI)
 	if name != "" {
 		return name
@@ -931,11 +947,11 @@ func transcodeOutputSinkNodeName(output transcodeOutputBranch, index int) string
 	return "sink-" + strconv.Itoa(index)
 }
 
-func transcodeOutputOpenFormat(output transcode.Output) av.FormatID {
+func transcodeOutputOpenFormat(output branchComposeTarget) av.FormatID {
 	return output.OpenFormat()
 }
 
-func runtimeTranscodeBranchName(branch transcode.Branch, index int, total int) string {
+func runtimeBranchComposeBranchName(branch branchComposeBranch, index int, total int) string {
 	if branch.Name != "" {
 		return branch.Name
 	}
@@ -945,7 +961,7 @@ func runtimeTranscodeBranchName(branch transcode.Branch, index int, total int) s
 	return "branch-" + strconv.Itoa(index+1)
 }
 
-func transcodeOutputTarget(plan transcode.Plan, output transcode.Output) format.Output {
+func transcodeOutputTarget(plan branchComposePlan, output branchComposeTarget) format.Output {
 	target := output.Target
 	if target.Name == "" {
 		target.Name = output.Name
@@ -961,7 +977,7 @@ func transcodeOutputTarget(plan transcode.Plan, output transcode.Output) format.
 	return target
 }
 
-func transcodeOutputMatches(output transcode.Output, branches []transcodeBranch) []int {
+func transcodeOutputMatches(output branchComposeTarget, branches []transcodeBranch) []int {
 	if len(output.Branches) == 0 {
 		matches := make([]int, len(branches))
 		for i := range branches {
@@ -979,7 +995,7 @@ func transcodeOutputMatches(output transcode.Output, branches []transcodeBranch)
 	return matches
 }
 
-func transcodeOutputSelectsBranch(output transcode.Output, branch transcodeBranch) bool {
+func transcodeOutputSelectsBranch(output branchComposeTarget, branch transcodeBranch) bool {
 	for i := range output.Branches {
 		name := output.Branches[i]
 		if name == branch.name || name == branch.branch.Name {

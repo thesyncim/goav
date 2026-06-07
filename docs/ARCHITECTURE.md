@@ -54,10 +54,11 @@ lowering, and planned-spec emission. Branches carry ordered stage, transform, ta
 and encode operations and can start after earlier stream operations such as
 decode, resize, resample, custom stages, and taps. `Job.Explain(ctx)` reports the
 `MediaPlan` branch operations, taps, and decisions. Declared branch composition
-now keeps its resolved plan outside the internal builder request list and passes
-that plan directly into graph planning/build helpers. The next architectural
-pressure is to shrink the remaining builder-shaped lowering behind the other
-media-plan build kinds until graph construction is directly
+now carries a private branch-compose plan owned by the recipe compiler; the
+advanced `transcode.Plan` path adapts into that internal shape at its boundary
+instead of being the recipe IR. The next architectural pressure is to rename and
+shrink the remaining builder-shaped graph helpers behind branch composition and
+the other media-plan build kinds until graph construction is directly
 `Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph`.
 
 The handle-based graph builder remains available as the advanced layer through

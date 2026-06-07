@@ -193,10 +193,10 @@ func mediaPlanBranchComposerSpec(state *recipeCompileState) (pipeline.Spec, bool
 	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
 	switch {
 	case state.transcodeInputAttachment.rtp == nil:
-		spec, err := builder.planTranscodePlan(spec, state.plan)
+		spec, err := builder.planBranchComposePlan(spec, state.plan)
 		return spec, err == nil, err
 	case len(builder.rtpInputs) > 0:
-		spec, err := builder.planRTPTranscodePlan(spec, state.plan)
+		spec, err := builder.planRTPBranchComposePlan(spec, state.plan)
 		return spec, err == nil, err
 	default:
 		return pipeline.Spec{}, false, nil

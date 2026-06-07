@@ -38,7 +38,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | single `NewSession` PeerConnection entry, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit factory registry, event-preserving frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | internal migration `Plan` contract, branch-to-output selection model, mixed audio/video output grouping, resize/resample branch insertion through filter factories | retire as a special runtime path in favor of generic `MediaPlan` branches |
-| runtime | composition-first `From(input)` recipe front door with packet-preserving `Copy().To(...)`, explicit stream `.Decode()`, stream-scoped audio/video builders, typed `Branch`, `Target`, endpoint, and `Flow` composition, `Branches(...)` planned splits from one selected stream, reusable `AudioFlow`/`VideoFlow` operation sequences applied to stream chains or branches, stream-local `Resize`/`Resample` transforms, ordered branch operation intent with custom stage, transform, tap, and encode steps, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, built-in and generic `Codec` specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, custom codec registration through `WithDecoder` and `WithEncoder`, private recipe intent compiler state with validation, `MediaPlan` branch IR and `Explain(ctx)` branch/decision/tap reports, media-plan graph recognition required for normal recipe build/describe, planned `pipeline.Spec` emission for `Job`, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for current media-plan build kinds, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages and high-level custom sinks for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for H264/AV1 work-in-progress while generic custom codecs flow to adapter validation, grouped audio/video branch compiler with ordered custom stage and transform branches plus shared mux targets, buffered multi-output proof, live RTP/WebRTC branch compiler, direct-graph runtime `Task.Attach` branch attachments from named taps with custom stages, resize/resample, nested taps, Opus/VP8/VP9 late encode-to-endpoint, packet-copy late endpoint branches, `Attachment.Close(ctx)`/`Task.Detach(ctx, h)`, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | complete direct media-plan graph construction for remaining composer/transcode branches and deepen capability planning |
+| runtime | composition-first `From(input)` recipe front door with packet-preserving `Copy().To(...)`, explicit stream `.Decode()`, stream-scoped audio/video builders, typed `Branch`, `Target`, endpoint, and `Flow` composition, `Branches(...)` planned splits from one selected stream, reusable `AudioFlow`/`VideoFlow` operation sequences applied to stream chains or branches, stream-local `Resize`/`Resample` transforms, ordered branch operation intent with custom stage, transform, tap, and encode steps, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `FileOutput` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, built-in and generic `Codec` specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, custom codec registration through `WithDecoder` and `WithEncoder`, private recipe intent compiler state with validation, `MediaPlan` branch IR and `Explain(ctx)` branch/decision/tap reports, recipe-owned branch-compose plan for declared branches, advanced `transcode.Plan` boundary adaptation, media-plan graph recognition required for normal recipe build/describe, planned `pipeline.Spec` emission for `Job`, decoder state-provider hook, RTP decode-bound hints for high-level receive, private route planning for current media-plan build kinds, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages and high-level custom sinks for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for H264/AV1 work-in-progress while generic custom codecs flow to adapter validation, grouped audio/video branch compiler with ordered custom stage and transform branches plus shared mux targets, buffered multi-output proof, live RTP/WebRTC branch compiler, direct-graph runtime `Task.Attach` branch attachments from named taps with custom stages, resize/resample, nested taps, Opus/VP8/VP9 late encode-to-endpoint, packet-copy late endpoint branches, `Attachment.Close(ctx)`/`Task.Detach(ctx, h)`, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | finish generic branch lowering behind the branch composer and deepen capability planning |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder active; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning from RTP decode bounds, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420/I422/I444 frame mapping with yuv420p/yuv422p/yuv444p accepted as aliases, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
@@ -948,6 +948,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     branch describe/build now pass the resolved plan directly into shared graph
     planning and compile helpers, while the advanced internal `Transcode(plan)`
     builder path remains available for low-level tests and migration work. Done.
+246. Give declared branch composition its own internal plan:
+    recipes now compile into a private branch-compose plan with branches,
+    ordered steps, typed targets, sink endpoints, and resolved mux-open formats.
+    The advanced `Transcode(plan)` path remains available but adapts into that
+    branch-compose plan at the boundary. Recipe compile state no longer stores a
+    `transcode.Plan`, and branch-composer describe/build consume the new plan
+    directly. Done.
 
 ## First Vertical Slice
 
@@ -1162,11 +1169,11 @@ Required proof:
 2. Move the remaining media-plan build kinds toward direct
    `MediaPlan -> pipeline.Spec -> pipeline.Graph` construction and shrink
    internal builder lowering behind those build kinds.
-3. Replace the remaining special transcode-shaped graph helpers behind branch
+3. Replace the remaining special transcode-named graph helpers behind branch
    composition with generic branch lowering: selected stream, ordered operation
-   chain, output refs, mux/sink groups, and shared upstream decode where
-   branches select the same input stream. Recipe lowering already keeps the
-   resolved plan off `builder.Transcode(plan)`.
+   chain, target refs, mux/sink groups, and shared upstream decode where
+   branches select the same input stream. Recipes already use a private
+   branch-compose plan; the advanced `Transcode(plan)` path adapts into it.
 4. Add first-class capability data for stream, codec, transform, and container
    planning so missing adapters and incompatible mux/transform chains fail
    before runtime execution with useful suggestions.
@@ -1189,8 +1196,9 @@ Required proof:
    regression tests for each planner slice.
 10. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: finish direct media-plan graph construction and deepen
-capability planning around the ordered operation model. The public recipe
+Current pressure point: finish direct media-plan graph construction, rename the
+remaining branch-composer helpers away from transcode-shaped internals, and
+deepen capability planning around the ordered operation model. The public recipe
 surface is small: `From`, stream builders, `Tap`, `Branch`, `Branches`,
 `Target`, endpoint constructors, `Flow`, `Codec`, and runtime `Attach`. Flows
 expand ordered stage/tap/transform/encode operations into branch intent instead
@@ -1199,9 +1207,9 @@ of a parallel graph language, and
 including custom-stage, resize/resample, late Opus/VP8/VP9 encode-to-endpoint,
 packet-copy endpoint, and sink branches that can publish nested runtime taps for
 later attachments.
-`MediaPlan` expresses record, stream decode, encode, branch composition, and
-transcode as input refs, stream selectors, ordered operations, target refs,
-taps, and planner decisions. `Describe`, `Build`, and
+`MediaPlan` expresses record, stream decode, encode, and branch composition as
+input refs, stream selectors, ordered operations, target refs, taps, and planner
+decisions. `Describe`, `Build`, and
 `Explain(ctx)` now require a supported media-plan shape for normal recipes. The
 next implementation work is to broaden the same first-class requirement model
 to custom filter capability details, richer endpoint/container compatibility as

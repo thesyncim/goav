@@ -26,10 +26,11 @@ make the implementation match the composable planner promise.
    runtime mutation and deeper capability metadata remain next slices.
 3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
    for `From`, packet copy, stream decode, branch composition, and reusable flows
-   onto direct media-plan graph construction. Branch composition now carries its
-   resolved plan directly instead of lowering through `builder.Transcode(plan)`;
-   the remaining work is to remove the builder-shaped graph helpers behind the
-   other media-plan build kinds.
+   onto direct media-plan graph construction. Branch composition now carries a
+   recipe-owned branch-compose plan; the advanced `transcode.Plan` path adapts
+   into that plan instead of being the recipe IR. The remaining work is to
+   remove or rename the builder-shaped graph helpers behind branch composition
+   and the other media-plan build kinds.
 4. Add a capability model for streams, codecs, filters, and containers so the
    planner can explain copy/decode/encode choices, missing adapters, transform
    incompatibilities, and mux-output conflicts before runtime execution.

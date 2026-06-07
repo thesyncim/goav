@@ -766,7 +766,7 @@ func TestRuntimeBuilderTranscodeReportsEmptyPlanParts(t *testing.T) {
 					Encode:   pcmEncodeConfig(),
 				}},
 			},
-			want: "no outputs",
+			want: "no targets",
 		},
 	}
 	for _, tt := range tests {
@@ -801,7 +801,7 @@ func TestRuntimeBuilderTranscodeReportsDuplicateBranchNames(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "audio-main") ||
 		!strings.Contains(err.Error(), "duplicate index: 1") ||
-		!strings.Contains(err.Error(), "unique Name") {
+		!strings.Contains(err.Error(), "unique name") {
 		t.Fatalf("err = %v, want duplicate branch guidance", err)
 	}
 }
@@ -862,7 +862,7 @@ func TestRuntimeBuilderTranscodeReportsTransformMediaMismatch(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "resample applies to audio streams") ||
 		!strings.Contains(err.Error(), "stream id: video") ||
-		!strings.Contains(err.Error(), "transcode.Branch selector") {
+		!strings.Contains(err.Error(), "branch selector") {
 		t.Fatalf("err = %v, want transform media guidance", err)
 	}
 	if !demuxer.closed {

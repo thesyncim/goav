@@ -7,7 +7,6 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
-	transcodepkg "github.com/thesyncim/goav/transcode"
 )
 
 type recipeResolved struct {
@@ -25,7 +24,7 @@ type recipeResolved struct {
 	transcodeInputProbeReady bool
 	outputFormats            map[string]av.FormatID
 	mediaPlan                mediaPlan
-	plan                     transcodepkg.Plan
+	plan                     branchComposePlan
 }
 
 type recipeCompileState struct {
@@ -50,7 +49,7 @@ type recipeCompileState struct {
 	transcodeInputProbeReady   bool
 	transcodeBranchSplit       bool
 
-	plan transcodepkg.Plan
+	plan branchComposePlan
 
 	builder        builderAPI
 	spec           pipeline.Spec
@@ -351,9 +350,9 @@ func compileTranscodeRecipeWithOptions(job *transcodeJob, options recipeCompileO
 		validateTranscodeInputFormatAdaptersPass(),
 		validateTranscodeKnownInputStreamSelectionPass(),
 		validateTranscodeKnownInputDecodeAdaptersPass(),
-		planTranscodeIntentPass(),
+		planBranchCompositionIntentPass(),
 		openRecipeRuntimeBuilderPass(),
-		lowerTranscodePlanPass(),
+		lowerBranchCompositionInputPass(),
 		emitMediaPlanGraphSpecPass(),
 		validateMuxCompatibilityPass(),
 		requireMediaPlanGraphSpecPass(),
@@ -958,9 +957,9 @@ func lowerJobOutputsPass() recipeCompilePass {
 	}}
 }
 
-func planTranscodeIntentPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "plan transcode intent", fn: func(state *recipeCompileState) error {
-		plan, err := planTranscodeRecipe(state.intent, state.transcodeInputAttachment, state.transcodeTargetAttachments)
+func planBranchCompositionIntentPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "plan branch composition intent", fn: func(state *recipeCompileState) error {
+		plan, err := planBranchCompositionRecipe(state.intent, state.transcodeInputAttachment, state.transcodeTargetAttachments)
 		if err != nil {
 			return err
 		}
@@ -969,8 +968,8 @@ func planTranscodeIntentPass() recipeCompilePass {
 	}}
 }
 
-func lowerTranscodePlanPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "lower transcode plan", fn: func(state *recipeCompileState) error {
+func lowerBranchCompositionInputPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "lower branch composition input", fn: func(state *recipeCompileState) error {
 		if state.transcodeBranchSplit && state.transcodeInputAttachment.rtp != nil {
 			state.builder = state.transcodeInputAttachment.apply(state.builder)
 		}
