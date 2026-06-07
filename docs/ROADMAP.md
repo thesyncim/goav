@@ -12,10 +12,11 @@ make the implementation match the composable planner promise.
    `input -> chain -> tap -> branch -> target` lowers into
    `GraphPlan -> pipeline.Graph -> Task`. `GraphPlan` now owns planned
    nodes, edges, ordered operations, taps, branches, targets, decisions, and
-   diagnostics as cold-path metadata; the remaining work is to make runtime
-   build lower from that ordered sequence instead of workflow-specific
-   graph-plan lowerers. The expert graph builder remains an escape hatch and
-   runtime substrate, not the normal user-facing way to express workflows.
+   diagnostics as cold-path metadata; packet-copy build consumes that sequence
+   for select and target lowering, and the remaining work is to move
+   decode/filter/encode plus branch composition onto the same ordered lowering.
+   The expert graph builder remains an escape hatch and runtime substrate, not
+   the normal user-facing way to express workflows.
 2. Treat direct chains as implicit branches. These should be equivalent plan
    shapes except for branch names:
    `From(input).Audio().Decode().To(Sink(...))` and

@@ -1771,6 +1771,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     before a lowerer can mutate the runtime graph. Tests pin invalid ordered
     operations failing with `graph_plan_invalid` before lowerer mutation.
     Done.
+347. Lower packet-copy build from graph-plan operations:
+    packet-preserving copy now prepares runtime select and target lowering from
+    `graphPlan.operations`. Missing selected-stream `OpSelect`, unexpected
+    select operations, missing target operations, unbound target refs, and
+    sink/mux target-kind mismatches fail as graph-plan errors before source
+    opening or runtime graph mutation. The stream lowerer still owns concrete
+    source and destination adapters while packet-copy sequencing comes from the
+    plan.
+    Done.
 
 ## First Vertical Slice
 
@@ -1981,11 +1990,10 @@ Required proof:
 
 ## Next Slices
 
-1. Replace the remaining workflow-specific graph-plan lowerers with runtime
-   build lowering from `graphPlan` ordered operations. The plan already owns the
-   cold-path nodes, edges, operations, taps, branches, targets, decisions, and
-   diagnostics; the next step is to make build use that sequence directly
-   instead of dispatching to stream/branch lowerer wrappers.
+1. Move direct decode/filter/encode and branch-compose build onto
+   `graphPlan` ordered operations. Packet-copy now consumes the sequence for
+   select and target lowering; the next step is to make frame-domain stream
+   operations and grouped branches do the same.
 2. Make direct chains implicit branches. Packet copy, decode-to-sink,
    transform/encode-to-target, planned branch composition, and mixed
    audio/video target groups should all lower through the same branch planner
@@ -2032,9 +2040,10 @@ Required proof:
    regression tests for each planner slice.
 14. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: make runtime build lower from `graphPlan` ordered
-operations instead of graph-plan lowerer wrappers and deepen capability
-planning around that ordered operation model. The public recipe surface is small: `From`, chains,
+Current pressure point: move the remaining graph-plan lowerers for
+decode/filter/encode and branch-compose runtime build onto `graphPlan` ordered
+operations and deepen capability planning around that ordered operation model.
+The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`,
 `File`, `URIOut`, `Sink`, `Flow`, `Codec`, and runtime `Attach`. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into
@@ -2089,8 +2098,8 @@ avoid dispatching through recipe abstractions.
 composition as input refs, stream selectors, ordered operations, target refs,
 taps, and planner decisions. `Describe`, `Build`, and `Explain(ctx)` now require
 a supported graph-plan shape for normal recipes. The next implementation work is
-to move stream and branch shapes out of the graph-plan lowerer wrappers and
-into that single executable IR, add `GraphPatch` for runtime attach, broaden
+to move frame-domain stream and branch shapes out of the graph-plan lowerer
+wrappers and into that single executable IR, add `GraphPatch` for runtime attach, broaden
 descriptor-backed target/container capability data as WebM/Ogg arrive, and keep
 broadening runtime attachment stress around generic lifecycle boundaries without
 weakening the direct graph branch grammar.

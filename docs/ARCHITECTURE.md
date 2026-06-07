@@ -73,20 +73,22 @@ on branch-compose routes, target routes, selector/stream groups, and media
 transforms. Branch-composition inputs and resolved targets are carried by the
 resolved recipe into the graph plan; `Describe` and `Build` use that graph plan
 directly and only borrow runtime services for adapter-backed sources,
-filters, encoders, and muxers. Packet-preserving copy/fanout recipes use the
-same resolved graph-plan pattern for concrete inputs, destinations, and optional
-selected streams. Direct selected-stream decode/encode recipes also keep their
-inputs, destinations, ordered stream attachments, codec-change policy, custom
-stages, transforms, and taps on the resolved recipe until graph-plan emission.
+filters, encoders, and muxers. Packet-preserving copy/fanout recipes now lower
+their optional select operation and target operations from the graph plan's
+ordered operation sequence while still borrowing concrete input and destination
+openers from the stream lowerer. Direct selected-stream decode/encode recipes
+also keep their inputs, destinations, ordered stream attachments,
+codec-change policy, custom stages, transforms, and taps on the resolved recipe
+until graph-plan emission.
 Those direct stream recipes now build and describe through a resolved
 single-stream graph plan and shared parameterized
 source/decode/filter/encode/target helpers instead of a pre-populated runtime
 builder. `recipeResolved` no longer carries a parallel media-plan report copy:
 `Explain`, mux diagnostics, and task tap installation read cloned views from the
 graph plan. The graph plan also carries an ordered operation sequence derived
-from branch operations and target groups, so the next architectural pressure is
-to make runtime build lower from that sequence instead of the remaining
-workflow-specific graph-plan lowerers.
+from branch operations and target groups, and packet-copy build now consumes
+that sequence for select and target lowering. The next architectural pressure is
+to move decode/filter/encode and branch-compose build onto the same sequence.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and
