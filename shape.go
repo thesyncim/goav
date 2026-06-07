@@ -103,14 +103,6 @@ func ShapeAudio(sampleRate int, channels int, sampleFormat string) ShapeOption {
 	}
 }
 
-func ShapeFramerate(num int, den int) ShapeOption {
-	return func(shape *MediaShape) {
-		if shape != nil {
-			shape.Framerate = Rational{Num: num, Den: den}
-		}
-	}
-}
-
 func ShapeRealtime(realtime bool) ShapeOption {
 	return func(shape *MediaShape) {
 		if shape != nil {
@@ -165,9 +157,6 @@ func (shape MediaShape) CompatibleWith(expected MediaShape) bool {
 	if expected.PixelFormat != "" && shape.PixelFormat != expected.PixelFormat {
 		return false
 	}
-	if expected.Framerate != (Rational{}) && shape.Framerate != expected.Framerate {
-		return false
-	}
 	if expected.SampleRate != 0 && shape.SampleRate != expected.SampleRate {
 		return false
 	}
@@ -205,9 +194,6 @@ func (shape MediaShape) String() string {
 	}
 	if shape.PixelFormat != "" {
 		parts = append(parts, "pixel_format="+shape.PixelFormat)
-	}
-	if shape.Framerate != (Rational{}) {
-		parts = append(parts, fmt.Sprintf("framerate=%d/%d", shape.Framerate.Num, shape.Framerate.Den))
 	}
 	if shape.SampleRate != 0 {
 		parts = append(parts, fmt.Sprintf("sample_rate=%d", shape.SampleRate))
@@ -376,9 +362,6 @@ func mergeMediaShape(base MediaShape, next MediaShape) MediaShape {
 	}
 	if next.PixelFormat != "" {
 		base.PixelFormat = next.PixelFormat
-	}
-	if next.Framerate != (Rational{}) {
-		base.Framerate = next.Framerate
 	}
 	if next.SampleRate != 0 {
 		base.SampleRate = next.SampleRate

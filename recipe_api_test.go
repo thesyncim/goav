@@ -931,8 +931,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 		Branches(
 			goav.Branch("preview").
 				Resize(1280, 720).
-				Shape(goav.Shape(goav.ShapeFramerate(30, 1))).
-				Encode(goav.VP9(goav.Bitrate(2_000_000))).
+				Encode(goav.VP9(goav.Bitrate(2_000_000), goav.FPS(30))).
 				Tap(goav.PacketTap("video.encoded")).
 				To(web),
 		).
@@ -964,19 +963,6 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 		resize.Shape.PixelFormat != av.PixelFormatYUV420P {
 		t.Fatalf("resize shape=%+v, want frame VP8 1280x720 shape", resize.Shape)
 	}
-	shape, ok := operationReportByKind(branch.Operations, goav.OpShape)
-	if !ok {
-		t.Fatalf("operations=%+v, want shape operation", branch.Operations)
-	}
-	if shape.Shape.Domain != goav.DomainFrame ||
-		shape.Shape.MediaKind != av.MediaVideo ||
-		shape.Shape.Codec != av.CodecVP8 ||
-		shape.Shape.Width != 1280 ||
-		shape.Shape.Height != 720 ||
-		shape.Shape.PixelFormat != av.PixelFormatYUV420P ||
-		shape.Shape.Framerate != (goav.Rational{Num: 30, Den: 1}) {
-		t.Fatalf("shape operation=%+v, want frame VP8 1280x720@30 shape", shape.Shape)
-	}
 	encode, ok := operationReportByKind(branch.Operations, goav.OpEncode)
 	if !ok {
 		t.Fatalf("operations=%+v, want encode operation", branch.Operations)
@@ -987,9 +973,8 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 		encode.Shape.Codec != av.CodecVP9 ||
 		encode.Shape.Width != 1280 ||
 		encode.Shape.Height != 720 ||
-		encode.Shape.PixelFormat != av.PixelFormatYUV420P ||
-		encode.Shape.Framerate != (goav.Rational{Num: 30, Den: 1}) {
-		t.Fatalf("encode shape=%+v, want packet VP9 1280x720@30 shape", encode.Shape)
+		encode.Shape.PixelFormat != av.PixelFormatYUV420P {
+		t.Fatalf("encode shape=%+v, want packet VP9 1280x720 shape", encode.Shape)
 	}
 	tap, ok := tapReportByName(report.Taps, "video.encoded")
 	if !ok {
@@ -1894,11 +1879,21 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"goav.Param(",
 		"goav.Control(",
 		"Opus, VP8, and VP9 are the full encode/decode recipe verticals",
+		"behavior stays on the `CodecSpec`",
 		"public grammar stays Input, Stream, Operation, Tap, Branch, Destination, Flow,",
 		"workflows should be expressible through declarative recipes",
 	} {
 		if !strings.Contains(readmeText, required) {
 			t.Fatalf("README should keep codec/declarative goal text %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"ShapeFramerate",
+		"framerate from shape",
+		"framerate/FPS",
+	} {
+		if strings.Contains(readmeText, forbidden) {
+			t.Fatalf("README should not reintroduce shape-side encode tuning %q", forbidden)
 		}
 	}
 
@@ -1955,6 +1950,15 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	} {
 		if !strings.Contains(progressText, required) {
 			t.Fatalf("progress should keep graph-plan goal text %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"ShapeFramerate",
+		"framerate from shape",
+		"framerate/FPS",
+	} {
+		if strings.Contains(progressText, forbidden) {
+			t.Fatalf("progress should not reintroduce shape-side encode tuning %q", forbidden)
 		}
 	}
 }

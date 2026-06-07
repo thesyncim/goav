@@ -882,7 +882,6 @@ func mediaShapeEmpty(shape MediaShape) bool {
 		shape.Width == 0 &&
 		shape.Height == 0 &&
 		shape.PixelFormat == "" &&
-		shape.Framerate == (Rational{}) &&
 		shape.SampleRate == 0 &&
 		shape.Channels == 0 &&
 		shape.SampleFormat == "" &&

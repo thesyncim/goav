@@ -1098,7 +1098,6 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 		return av.Stream{}, recipeEncodeAdapterError("attach runtime branch", stream, t.runtime.codecs, err)
 	}
 	request := runtimeBranchEncodeRequest(*branch, currentStream)
-	request.config = encodeConfigWithMediaShape(request.config, currentShape)
 	config, encodedStream, err := prepareEncodeConfig(currentStream, request, t.runtime.realtime)
 	if err != nil {
 		return av.Stream{}, err

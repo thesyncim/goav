@@ -570,7 +570,6 @@ func compileBranchComposeRoutes(
 
 		if branchComposeRouteNeedsEncode(branches[i]) {
 			request := branches[i].request
-			request.config = encodeConfigWithMediaShape(request.config, planned.encodeShape)
 			config, encodedStream, err := prepareEncodeConfig(branchStream, request, realtime)
 			if err != nil {
 				return err

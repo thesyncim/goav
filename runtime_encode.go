@@ -525,24 +525,6 @@ func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) 
 	return config, stream, nil
 }
 
-func encodeConfigWithMediaShape(config codec.EncodeConfig, shape MediaShape) codec.EncodeConfig {
-	if config.Framerate == (av.Duration{}) {
-		config.Framerate = frameDurationFromMediaShape(shape)
-	}
-	return config
-}
-
-func frameDurationFromMediaShape(shape MediaShape) av.Duration {
-	rate := shape.Framerate
-	if rate.Num <= 0 || rate.Den <= 0 {
-		return av.Duration{}
-	}
-	return av.Duration{
-		Value: int64(rate.Den),
-		Base:  av.TimeBase{Num: 1, Den: int64(rate.Num)},
-	}
-}
-
 func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 	return streamRequestMismatchError(
 		"encode_stream_mismatch",

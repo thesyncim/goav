@@ -86,10 +86,11 @@ The implementation target is explicit:
 - branch buffering, detach policy, destination commit/abort/close, branch drops,
   lifecycle state, and safe media ownership are first-class planner/executor
   responsibilities;
-- codec-specific config, named params, typed controls, bitrate, FPS, keyframe
-  interval, profile/level, quality, speed/deadline, resolution, pixel/sample
-  formats, and adapter knobs are owned by shape/codec contracts instead of
-  scattered one-off verbs. `.Encode(codec)` is the only fluent encode step;
+- shape owns structural compatibility facts such as domain, media kind, codec,
+  format, resolution, pixel/sample formats, sample rate, channels, stream
+  identity, and realtime intent; codec specs own bitrate, FPS, keyframe
+  interval, profile/level, quality, speed/deadline, typed configs, named params,
+  controls, and adapter knobs. `.Encode(codec)` is the only fluent encode step;
   tuning values live in codec options, not on stream or branch builders.
 
 The attached direction is now part of the goal. The required convergence points
@@ -2103,13 +2104,13 @@ are:
 371. Add media shape annotations:
     `Shape(MediaShape)` is now an ordered operation on stream chains, branches,
     audio/video flows, and runtime attachments. It updates the current media
-    shape without creating a graph node, so structural facts such as
-    framerate/FPS can be attached after decode, resize/resample, custom stages,
-    or runtime taps without adding one-off branch verbs. Planned reports show
-    the shape operation, post-encode taps inherit the annotated shape, and
-    compile-time VP8/VP9 encode config receives framerate from shape when the
-    codec spec does not override it. The WebRTC runtime ladder demo now uses
-    `Branch` vocabulary end to end.
+    shape without creating a graph node, so structural compatibility facts can
+    be attached after decode, resize/resample, custom stages, or runtime taps
+    without adding one-off branch verbs. Encoder tuning is deliberately not part
+    of shape: bitrate, FPS, keyframe cadence, profile/level, configs, params,
+    and controls live only on `CodecSpec`. Planned reports show the shape
+    operation and post-encode taps inherit the resulting structural shape. The
+    WebRTC runtime ladder demo now uses `Branch` vocabulary end to end.
     Done.
 372. Enforce ordered operation shape contracts:
     Normal jobs and branch-composition jobs now run a compiler pass that walks

@@ -35,11 +35,6 @@ const (
 	DomainEvent  MediaDomain = "event"
 )
 
-type Rational struct {
-	Num int
-	Den int
-}
-
 type MediaShape struct {
 	Domain       MediaDomain
 	MediaKind    av.MediaType
@@ -49,7 +44,6 @@ type MediaShape struct {
 	Width        int
 	Height       int
 	PixelFormat  string
-	Framerate    Rational
 	SampleRate   int
 	Channels     int
 	SampleFormat string

@@ -2052,7 +2052,7 @@ func TestBranchCompositionCurrentPointDescribeMatchesBuiltGraph(t *testing.T) {
 	}
 }
 
-func TestBranchCompositionShapeAnnotationSetsEncodeFramerate(t *testing.T) {
+func TestBranchCompositionEncodeFPSOptionSetsEncodeFramerate(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{videoVP8TranscodeTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -2079,8 +2079,7 @@ func TestBranchCompositionShapeAnnotationSetsEncodeFramerate(t *testing.T) {
 		Branches(
 			Branch("web").
 				Resize(1280, 720).
-				Shape(Shape(ShapeFramerate(30, 1))).
-				Encode(VP9(Bitrate(2_000_000))).
+				Encode(VP9(Bitrate(2_000_000), FPS(30))).
 				To(File("web.ivf", io.Discard, Format(av.FormatIVF))),
 		)
 
