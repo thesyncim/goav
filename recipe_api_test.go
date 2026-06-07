@@ -558,7 +558,10 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 	if len(report.Branches) != 2 {
 		t.Fatalf("branches=%+v", report.Branches)
 	}
-	if len(report.Targets) != 1 || report.Targets[0].Name != "web" || !equalStrings(report.Targets[0].Branches, []string{"v", "a"}) {
+	if len(report.Targets) != 1 ||
+		report.Targets[0].Name != "web" ||
+		report.Targets[0].Format != av.FormatOgg ||
+		!equalStrings(report.Targets[0].Branches, []string{"v", "a"}) {
 		t.Fatalf("targets=%+v", report.Targets)
 	}
 	want := []goav.OperationKind{goav.OpDemux, goav.OpSelect, goav.OpDecode, goav.OpTap, goav.OpTransform, goav.OpEncode}
@@ -584,7 +587,7 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 	}
 }
 
-func TestExplainRequirementsFollowOrderedPathOperations(t *testing.T) {
+func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
 	rt := goav.New(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
