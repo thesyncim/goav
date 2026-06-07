@@ -17,13 +17,15 @@ make the implementation match the composable planner promise.
    where possible. Branches must be orthogonal at operation boundaries: after
    decode, after resize/resample, after custom stages, after taps, and later
    after sink/output attachment where runtime support makes sense. Custom stage
-   and transform steps are active, reusable flows carry ordered stage, tap,
-   transform, terminal encode, and sink endpoint steps. Planned branches can now
+   and transform steps are active, reusable flows carry optional first decode,
+   ordered stage, tap, transform, terminal encode, and sink endpoint steps.
+   Planned branches can now
    end in frame-domain sink endpoints after decode/resize/resample/custom stages
    or in packet-domain sink endpoints after Opus/VP8/VP9 encode. Runtime
    branches can apply flows from frame taps, publish nested taps, encode
-   Opus/VP8/VP9 into endpoints, and copy packet taps into endpoints. Buffered
-   runtime mutation and deeper capability metadata remain next slices.
+   Opus/VP8/VP9 into endpoints, copy packet taps into endpoints, and decode
+   packet taps into new frame-domain work. Buffered runtime mutation and deeper
+   capability metadata remain next slices.
 3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
    for `From`, packet copy, stream decode, branch composition, and reusable flows
    onto direct media-plan graph construction. Branch composition now carries a

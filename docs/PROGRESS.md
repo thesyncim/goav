@@ -1345,6 +1345,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestFlowDecodeMustBeFirstOperation`, and
     `TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap` pin the contract.
     Done.
+298. Preserve flow media kind on branch application:
+    `Branch.Apply(flow)` now carries the flow's audio/video kind into
+    `BranchSpec`, so branch validation reports `flow_media_mismatch` directly
+    when an `AudioFlow` is applied to a video branch or a branch mixes
+    incompatible flow kinds. `TestFlowBranchMediaMismatchIsActionable` and
+    `TestBranchRejectsConflictingFlowMedia` pin the diagnostics. Done.
 
 ## First Vertical Slice
 
@@ -1590,8 +1596,8 @@ Current pressure point: finish direct media-plan graph construction and deepen
 capability planning around the ordered operation model. The public recipe
 surface is small: `From`, stream builders, `Tap`, `Branch`, `Branches`,
 `Target`, endpoint constructors, `Flow`, `Codec`, and runtime `Attach`. Flows
-expand ordered stage/tap/transform/encode operations into branch intent instead
-of a parallel graph language, and
+expand optional first decode plus ordered stage/tap/transform/encode operations
+into branch intent instead of a parallel graph language, and
 `Task.Attach` remains the late branch control plane for running graphs,
 including custom-stage, resize/resample, branch-local node stats, dependent
 branches after runtime resize and resample taps, post-encode packet taps

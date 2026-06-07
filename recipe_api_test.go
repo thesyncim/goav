@@ -2141,6 +2141,49 @@ func TestFlowMediaMismatchIsActionable(t *testing.T) {
 	}
 }
 
+func TestFlowBranchMediaMismatchIsActionable(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Branches(
+			goav.Branch("voice").
+				Apply(goav.AudioFlow("voice").OpusVoice()).
+				To(goav.Target("voice", goav.FileOutput("voice.webm", io.Discard))),
+		).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want flow_media_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "audio flow cannot be applied to video stream") ||
+		!strings.Contains(err.Error(), "AudioFlow") ||
+		!strings.Contains(err.Error(), "VideoFlow") {
+		t.Fatalf("err = %v, want branch flow media guidance", err)
+	}
+}
+
+func TestBranchRejectsConflictingFlowMedia(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Audio().
+		Branches(
+			goav.Branch("mixed").
+				Apply(goav.AudioFlow("voice").Resample(16_000, goav.Mono)).
+				Apply(goav.VideoFlow("preview").Resize(640, 360)).
+				To(goav.Target("mixed", goav.FileOutput("mixed.webm", io.Discard))),
+		).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want flow_media_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "video flow cannot be applied to audio stream") ||
+		!strings.Contains(err.Error(), "AudioFlow") ||
+		!strings.Contains(err.Error(), "VideoFlow") {
+		t.Fatalf("err = %v, want conflicting flow media guidance", err)
+	}
+}
+
 func TestFlowBranchSnapshotsBuilderState(t *testing.T) {
 	flow := goav.AudioFlow("voice").
 		Resample(16_000, goav.Mono).

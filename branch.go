@@ -150,6 +150,14 @@ func (b *BranchBuilder) Apply(flow Flow) *BranchBuilder {
 		b.setErr(streamStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "flow", b.spec.encode))
 		return b
 	}
+	if spec.media != "" {
+		if b.spec.media == "" {
+			b.spec.media = spec.media
+		} else if err := validateFlowMedia("build branch", firstNonEmpty(b.spec.name, "branch"), b.spec.media, spec); err != nil {
+			b.setErr(err)
+			return b
+		}
+	}
 	if spec.decode {
 		if b.spec.decode {
 			b.setErr(duplicateBranchDecodeError(firstNonEmpty(b.spec.name, "branch")))
