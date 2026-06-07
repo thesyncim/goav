@@ -650,6 +650,11 @@ return goav.From(input).
     Run(ctx)
 ```
 
+`Shape(...)` annotates the current media point; it is not an escape hatch around
+operation contracts. The compiler still checks each step in order, so an encoder
+must consume frames, `Copy()` must consume packets, and resize/resample must
+consume matching decoded media.
+
 Adapters decide which concrete config and control types they understand; the
 public grammar stays Input, Chain, Tap, Branch, Target, and Task.
 The reusable component catalog and allocation proof map live in
@@ -663,7 +668,8 @@ Implemented now:
 - Packet-preserving `Copy().To(...)`.
 - Stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode.
 - `Shape(...)` annotations for structural media facts such as framerate/FPS
-  without adding one-off branch verbs.
+  without adding one-off branch verbs, with operation-by-operation shape
+  validation.
 - Packet-domain fanout from `.Copy()` or an encoder to both files and packet
   sinks.
 - Planned packet-copy branches with `.Copy().Branches(...)`, sharing one stream

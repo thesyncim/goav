@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
@@ -303,6 +304,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobTransformAdaptersPass(),
 		validateJobInputFormatAdaptersPass(),
 		validateJobKnownInputStreamSelectionPass(),
+		validateRecipeOperationShapesPass(),
 		validateJobKnownInputDecodeAdaptersPass(),
 		validateRecipeRuntimePass(),
 		emitGraphPlanSpecPass(),
@@ -355,6 +357,7 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		validateBranchTransformAdaptersPass(),
 		validateBranchInputFormatAdaptersPass(),
 		validateKnownBranchInputStreamSelectionPass(),
+		validateRecipeOperationShapesPass(),
 		validateKnownBranchInputDecodeAdaptersPass(),
 		planBranchCompositionIntentPass(),
 		validateRecipeRuntimePass(),
@@ -636,6 +639,9 @@ func validateJobStreamAttachments(operation string, stream StreamIntent, steps [
 		if step.stage != nil {
 			continue
 		}
+		if !mediaShapeEmpty(step.shape) {
+			continue
+		}
 		if step.hasTransform {
 			if step.transformIndex >= 0 && step.transformIndex < len(stream.Transforms) {
 				continue
@@ -913,6 +919,142 @@ func validateKnownProbeStreamSelection(probe format.ProbeResult, stream StreamIn
 	}
 	_, err := selectDecodeStream(probe.Streams, streamIntentSelector(stream))
 	return err
+}
+
+func validateRecipeOperationShapesPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate recipe operation shapes", fn: func(state *recipeCompileState) error {
+		for i := range state.intent.Streams {
+			stream := state.intent.Streams[i]
+			shape := recipeInitialStreamShape(state, stream)
+			if err := validateStreamOperationShapes(state.operation, stream, shape); err != nil {
+				return err
+			}
+		}
+		return nil
+	}}
+}
+
+func recipeInitialStreamShape(state *recipeCompileState, stream StreamIntent) MediaShape {
+	var shape MediaShape
+	if selected, ok := planSelectedStream(state, stream); ok {
+		shape = MediaShapeFromStream(selected, DomainPacket)
+	}
+	if state != nil {
+		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
+	} else {
+		shape = normalizePlanBranchShape(shape, stream, InputIntent{})
+	}
+	return shape
+}
+
+func validateStreamOperationShapes(operation string, stream StreamIntent, initial MediaShape) error {
+	shape := normalizeTapShape(initial)
+	if shape.MediaKind == "" {
+		shape.MediaKind = stream.Select.Type
+	}
+	if shape.Codec == "" {
+		shape.Codec = stream.Select.Codec
+	}
+	node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
+	for i := range stream.Operations {
+		next := stream.Operations[i]
+		if next.Kind == OpTap || next.Kind == OpShape {
+			shape = streamOperationOutputShape(shape, next)
+			continue
+		}
+		expected := next.InputShapes()
+		if len(expected) != 0 && !expected.Accepts(shape) {
+			return operationShapeMismatchError(operation, node, i, next, expected, shape)
+		}
+		shape = streamOperationOutputShape(shape, next)
+	}
+	return nil
+}
+
+func streamOperationOutputShape(input MediaShape, operation StreamOperation) MediaShape {
+	out := operation.OutputShapes(input)
+	if len(out) == 0 {
+		return input
+	}
+	return out[0]
+}
+
+func operationShapeMismatchError(operation string, node string, index int, step StreamOperation, expected ShapeSet, actual MediaShape) error {
+	component := firstNonEmpty(step.Component, streamOperationComponent(step), string(step.Kind), "operation")
+	return &BuildError{
+		Code:      "operation_shape_mismatch",
+		Operation: operation,
+		Node:      node,
+		Reason:    component + " cannot consume the current media shape",
+		Details: []string{
+			fmt.Sprintf("operation_index=%d", index),
+			"operation=" + string(step.Kind),
+			"expected_shape=" + shapeSetString(expected),
+			"actual_shape=" + actual.String(),
+		},
+		Suggestions: operationShapeMismatchSuggestions(step),
+		Cause:       ErrUnsupportedBuild,
+	}
+}
+
+func streamOperationComponent(operation StreamOperation) string {
+	switch operation.Kind {
+	case OpDecode:
+		return firstNonEmpty(string(operation.Decode.ID), operation.Component, "decode")
+	case OpTransform:
+		return firstNonEmpty(transformFactoryName(operation.Transform), "transform")
+	case OpEncode:
+		return firstNonEmpty(string(operation.Encode.ID), operation.Component, "encode")
+	case OpCopy:
+		return "packet-copy"
+	default:
+		return operation.Component
+	}
+}
+
+func shapeSetString(shapes ShapeSet) string {
+	if len(shapes) == 0 {
+		return "any"
+	}
+	parts := make([]string, 0, len(shapes))
+	for i := range shapes {
+		parts = append(parts, shapes[i].String())
+	}
+	return strings.Join(parts, " | ")
+}
+
+func operationShapeMismatchSuggestions(operation StreamOperation) []string {
+	switch operation.Kind {
+	case OpDecode:
+		return []string{
+			"decode only consumes packet-domain media",
+			"remove duplicate .Decode() calls after a frame tap",
+			"start from goav.PacketTap(name) when a runtime branch should decode",
+		}
+	case OpTransform:
+		return []string{
+			"call .Decode() before frame transforms when starting from packets",
+			"use .Video().Resize(...) for video frames",
+			"use .Audio().Resample(...) for audio frames",
+		}
+	case OpEncode:
+		return []string{
+			"call .Decode() before encoding when starting from packets",
+			"keep .Shape(...) annotations in the frame domain before encoders",
+			"use .Copy() instead of an encoder for packet-preserving fanout",
+		}
+	case OpCopy:
+		return []string{
+			"copy only consumes packet-domain media",
+			"move .Copy() before decode or start from goav.PacketTap(name)",
+			"use a sink target when the branch should remain decoded",
+		}
+	default:
+		return []string{
+			"inspect Explain(ctx) to see operation shapes",
+			"keep structural facts in goav.Shape(...) and codec behavior in CodecSpec options",
+		}
+	}
 }
 
 func planBranchCompositionIntentPass() recipeCompilePass {

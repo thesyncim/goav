@@ -2034,6 +2034,17 @@ The missing product layer is now explicit:
     codec spec does not override it. The WebRTC runtime ladder demo now uses
     `Branch` vocabulary end to end.
     Done.
+372. Enforce ordered operation shape contracts:
+    Normal jobs and branch-composition jobs now run a compiler pass that walks
+    each stream's ordered operations from the selected packet stream shape.
+    Decode, resize/resample, encode, and copy consume declared `ShapeSet`
+    contracts; `Shape(...)` annotations update the current shape but cannot make
+    a later operation consume the wrong domain or media kind. Diagnostics report
+    operation index, expected shape, actual shape, and targeted suggestions.
+    Decode shape contracts now require packet domain/media/codec identity
+    without treating preset sample-rate or channel defaults as proof required
+    from packet inputs.
+    Done.
 
 ## First Vertical Slice
 
@@ -2234,7 +2245,7 @@ Required proof:
 | Simple high-level API | `From`, chains, typed taps, branches, targets, destinations, flows, runtime attach, structured `Explain(ctx)`, executable graph-plan boundary, and custom codec hooks | first slices active |
 | Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts for advanced embedding and adapter work, not the normal composer | active |
 | Full Opus/VP8/VP9 codec verticals | Opus, VP8, and VP9 are the first full encode/decode recipe targets; H264 and AV1 stay receive/decode-first until encode is equally solid | active |
-| Formal media shapes | `MediaShape`/shape-contract planning owns structural media attributes; operation and flow contracts now expose inferred input/output shape, with full branch/target validation next | active |
+| Formal media shapes | `MediaShape`/shape-contract planning owns structural media attributes; operation and flow contracts now expose inferred input/output shape, and ordered job/branch operation validation is active, with full target validation next | active |
 | Branch flow control | branch-local `BranchBuffer` policy is public branch API; drop accounting, branch stats, and safe packet/frame ownership remain active work | active |
 | Observation/control | `Observe`, `Watch`, `Snapshot`, branch states, target states, and scoped stats expose diagnostics without graph handles | planned |
 | One grammar, one engine | normal workflows lower from `input -> chain -> tap -> branch -> target` into `GraphPlan -> pipeline.Graph -> Task`; runtime attach lowers the same branch plan into `GraphPatch`; `GraphPatch` is the runtime attach form | planned |

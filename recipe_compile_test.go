@@ -1897,6 +1897,125 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 	}
 }
 
+func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
+	tests := []struct {
+		name   string
+		stream StreamIntent
+		code   string
+		want   []string
+	}{
+		{
+			name: "encode after packet annotation",
+			stream: StreamIntent{
+				Name:   "video",
+				Select: StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
+				Operations: []StreamOperation{
+					{Kind: OpDecode, Decode: VP8()},
+					{Kind: OpShape, Component: "shape", Shape: Shape(ShapeDomain(DomainPacket), ShapeMedia(av.MediaVideo))},
+					{Kind: OpEncode, Component: string(av.CodecVP9), Encode: VP9(Bitrate(2_000_000))},
+				},
+				Targets: []string{"web"},
+			},
+			code: "operation_shape_mismatch",
+			want: []string{
+				"vp9 cannot consume the current media shape",
+				"operation_index=2",
+				"expected_shape=domain=frame media=video",
+				"actual_shape=domain=packet media=video",
+				"keep .Shape(...) annotations in the frame domain before encoders",
+			},
+		},
+		{
+			name: "resize after audio annotation",
+			stream: StreamIntent{
+				Name:   "video",
+				Select: StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
+				Operations: []StreamOperation{
+					{Kind: OpDecode, Decode: VP8()},
+					{Kind: OpShape, Component: "shape", Shape: Shape(ShapeMedia(av.MediaAudio))},
+					{Kind: OpTransform, Component: filter.FactoryResize, Transform: Resize(640, 360)},
+				},
+				Targets: []string{"frames"},
+			},
+			code: "operation_shape_mismatch",
+			want: []string{
+				"resize cannot consume the current media shape",
+				"operation_index=2",
+				"expected_shape=domain=frame media=video",
+				"actual_shape=domain=frame media=audio",
+				"use .Video().Resize(...) for video frames",
+			},
+		},
+		{
+			name: "copy after decode",
+			stream: StreamIntent{
+				Name:   "audio",
+				Select: StreamSelect{Type: av.MediaAudio, Codec: av.CodecOpus},
+				Operations: []StreamOperation{
+					{Kind: OpDecode, Decode: Opus()},
+					{Kind: OpCopy, Component: "packet-copy", Encode: Copy()},
+				},
+				Targets: []string{"packets"},
+			},
+			code: "operation_shape_mismatch",
+			want: []string{
+				"packet-copy cannot consume the current media shape",
+				"operation_index=1",
+				"expected_shape=domain=packet",
+				"actual_shape=domain=frame media=audio",
+				"move .Copy() before decode",
+			},
+		},
+	}
+	pass := validateRecipeOperationShapesPass()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := recipeCompileState{
+				operation: "build job",
+				intent: Intent{
+					Inputs:  []InputIntent{{Name: "input"}},
+					Streams: []StreamIntent{tt.stream},
+					Targets: []TargetIntent{{Name: "web"}, {Name: "frames"}, {Name: "packets"}},
+				},
+			}
+			err := pass.Apply(&state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestRecipeOperationShapePassAllowsCustomStageShapeDeclaration(t *testing.T) {
+	state := recipeCompileState{
+		operation: "build job",
+		intent: Intent{
+			Inputs: []InputIntent{{Name: "input"}},
+			Streams: []StreamIntent{{
+				Name:   "visualized",
+				Select: StreamSelect{Type: av.MediaAudio, Codec: av.CodecOpus},
+				Operations: []StreamOperation{
+					{Kind: OpDecode, Decode: Opus()},
+					{Kind: OpStage, Component: "visualizer", Stage: &runtimeTestStage{name: "visualizer"}},
+					{Kind: OpShape, Component: "shape", Shape: FrameShape(av.MediaVideo, ShapeVideo(640, 360, av.PixelFormatYUV420P))},
+					{Kind: OpEncode, Component: string(av.CodecVP9), Encode: VP9(Bitrate(600_000))},
+				},
+				Targets: []string{"web"},
+			}},
+			Targets: []TargetIntent{{Name: "web"}},
+		},
+	}
+	if err := validateRecipeOperationShapesPass().Apply(&state); err != nil {
+		t.Fatalf("validateRecipeOperationShapesPass() error = %v", err)
+	}
+}
+
 func TestRecipeRuntimePassRejectsCustomRuntime(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",

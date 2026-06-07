@@ -322,11 +322,9 @@ func (spec TransformSpec) OutputShapes(input MediaShape) ShapeSet {
 func (operation StreamOperation) InputShapes() ShapeSet {
 	switch operation.Kind {
 	case OpDecode:
-		shape := MediaShapeFromCodecSpec(operation.Decode, DomainPacket)
-		if shape.Domain == "" {
-			shape.Domain = DomainPacket
-		}
-		return ShapeSet{shape}
+		codecID := firstNonEmptyCodec(operation.Decode.ID, av.CodecID(operation.Component))
+		media := firstNonEmptyMedia(operation.Decode.Type, operation.Decode.Parameters.Type, codecMedia(codecID))
+		return ShapeSet{PacketShape(media, codecID)}
 	case OpShape:
 		return nil
 	case OpTransform:

@@ -985,6 +985,31 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 	}
 }
 
+func TestShapeAnnotationCannotBreakOperationContract(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
+		UseRuntime(goav.Default()).
+		Video().
+		Decode().
+		Shape(goav.Shape(goav.ShapeDomain(goav.DomainPacket), goav.ShapeMedia(av.MediaVideo))).
+		VP9(2_000_000).
+		To(goav.File("preview.ivf", io.Discard)).
+		Describe()
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
+		t.Fatalf("err = %v, want operation_shape_mismatch", err)
+	}
+	for _, want := range []string{
+		"vp9 cannot consume the current media shape",
+		"expected_shape=domain=frame media=video",
+		"actual_shape=domain=packet media=video",
+		"keep .Shape(...) annotations in the frame domain before encoders",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+}
+
 func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
 	rt := goav.New(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
