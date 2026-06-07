@@ -168,8 +168,9 @@ err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Run(ctx)
 ```
 
-The same flow shape can be applied to a runtime branch attached from a frame
-tap. The flow still owns only operations; the branch owns its target.
+The same flow shape can be applied to a direct stream chain or to a runtime
+branch attached from a tap. The flow still owns only operations; the stream or
+branch owns its target.
 
 ```go
 archiveHandle, err := task.Attach(ctx,

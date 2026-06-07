@@ -1353,6 +1353,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestBranchRejectsConflictingFlowMedia` pin planned diagnostics, while
     `TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation` proves runtime
     attach rejects the same mismatch before graph mutation. Done.
+299. Prove flow-owned decode on direct stream chains:
+    `Audio().Apply(AudioFlow(name).Decode()...)` now has explicit intent and
+    runtime coverage, completing the stream, planned branch, and runtime branch
+    triangle for reusable decode-owning flows.
+    `TestFlowDecodeAppliesToStreamRecipeIntent` pins the public intent shape,
+    while `TestStreamRecipeFlowDecodeSinkRuns` proves Describe, Build, Run,
+    tap metadata, and cleanup for direct stream flow decode. Done.
 
 ## First Vertical Slice
 

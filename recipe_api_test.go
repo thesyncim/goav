@@ -2240,6 +2240,44 @@ func TestFlowDecodeAppliesToPacketBranchIntent(t *testing.T) {
 	}
 }
 
+func TestFlowDecodeAppliesToStreamRecipeIntent(t *testing.T) {
+	flow := goav.AudioFlow("preview").
+		Decode().
+		Tap("audio.flow.decoded")
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(flow).
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		})))
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || len(intent.Targets) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	stream := intent.Streams[0]
+	if stream.Name != "audio" ||
+		!stream.Decode ||
+		stream.Encode.ID != "" ||
+		len(stream.Transforms) != 0 ||
+		len(stream.Targets) != 1 ||
+		stream.Targets[0] != "frames" {
+		t.Fatalf("stream intent: %+v", stream)
+	}
+	want := []goav.OperationKind{goav.OpDecode, goav.OpTap}
+	if !equalOperationKinds(streamOperationKinds(stream.Operations), want) {
+		t.Fatalf("operations=%+v, want %+v", stream.Operations, want)
+	}
+	if len(stream.Taps) != 1 ||
+		stream.Taps[0].Name != "audio.flow.decoded" ||
+		stream.Taps[0].Domain != goav.DomainFrame ||
+		stream.Taps[0].MediaKind != av.MediaAudio ||
+		stream.Taps[0].After != goav.OpDecode {
+		t.Fatalf("taps: %+v", stream.Taps)
+	}
+}
+
 func TestFlowDecodeRejectsAfterStreamDecode(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().

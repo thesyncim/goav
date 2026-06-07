@@ -1354,6 +1354,76 @@ func TestBranchCompositionPacketBranchDecodeSinkRuns(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeFlowDecodeSinkRuns(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	decoder := &decodeTestDecoder{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+	)
+	sink := &runtimeTestSink{name: "frames"}
+	flow := AudioFlow("preview").
+		Decode().
+		Tap("audio.flow.decoded")
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
+		Audio().
+		Apply(flow).
+		To(SinkEndpoint(sink))
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(planned)
+	if strings.Contains(text, "encode-preview") ||
+		!strings.Contains(text, "input.ogg -> select-audio") ||
+		!strings.Contains(text, "select-audio -> decode-audio") ||
+		!strings.Contains(text, "decode-audio -> frames") {
+		t.Fatalf("planned:\n%s", text)
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
+	}
+	decodedTap, ok := findTap(task.Taps(), "audio.flow.decoded")
+	if !ok ||
+		decodedTap.Domain != DomainFrame ||
+		decodedTap.MediaKind != av.MediaAudio ||
+		decodedTap.Caps.Codec != av.CodecOpus ||
+		decodedTap.Caps.SampleRate != 48000 ||
+		decodedTap.Caps.Channels != Stereo ||
+		decodedTap.Node != "decode-audio" {
+		t.Fatalf("decoded tap = %+v ok=%v, want frame Opus tap on stream decoder", decodedTap, ok)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || sink.frames != 1 || sink.lastFrame.StreamID != "audio" || sink.lastPacket != nil {
+		t.Fatalf("decodes=%d frames=%d frame=%+v packet=%v", decoder.decodes, sink.frames, sink.lastFrame, sink.lastPacket)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !decoder.closed || !sink.closed {
+		t.Fatalf("closed demux=%v decoder=%v sink=%v", demuxer.closed, decoder.closed, sink.closed)
+	}
+}
+
 func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}

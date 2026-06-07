@@ -162,7 +162,7 @@ work in progress.
 A flow is reusable ordered work: custom stages, taps, transforms, and an
 optional terminal encoder. A branch owns the target.
 When the reusable work should own the packet-to-frame boundary, start the flow
-with `.Decode()` and apply it from a packet branch or packet tap.
+with `.Decode()` and apply it from a stream chain, packet branch, or packet tap.
 
 ```go
 voice := goav.AudioFlow("voice").
