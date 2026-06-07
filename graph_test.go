@@ -1244,6 +1244,90 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 	}
 }
 
+func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.T) {
+	ctx := context.Background()
+	resampler := &transcodeTestFilter{}
+	resampleFactory := &transcodeTestFilterFactory{filter: resampler}
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	muxers := &remuxTestMuxerFactory{}
+	rt := New(
+		withTestFilters(testFilterFactory(filter.Descriptor{
+			Name:   filter.FactoryResample,
+			Input:  av.MediaAudio,
+			Output: av.MediaAudio,
+		}, resampleFactory)),
+		withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory)),
+		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
+	)
+	graph := rt.Graph()
+	graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Stage("archive/archive.ogg", &runtimeTestStage{name: "existing-target"})
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer builtTask.Close()
+	mediaTask := builtTask.(*task)
+	mediaTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:       DomainFrame,
+			MediaKind:    av.MediaAudio,
+			StreamID:     "audio",
+			Codec:        av.CodecOpus,
+			SampleRate:   48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatS16,
+		},
+		Node: "source",
+	}}
+	before := builtTask.Describe()
+
+	_, err = builtTask.Attach(ctx, Branch("archive").
+		FromTap("audio.frames").
+		Resample(16_000, Mono).
+		Opus(96_000).
+		To(Target("archive", FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg))))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) ||
+		buildErr.Code != "runtime_branch_node_duplicate" ||
+		buildErr.Node != "archive/archive.ogg" ||
+		!errors.Is(err, pipeline.ErrNodeExists) {
+		t.Fatalf("err = %v, want duplicate terminal node error", err)
+	}
+	if resampleFactory.config.Audio == nil ||
+		resampleFactory.config.Audio.SampleRate != 16_000 ||
+		resampleFactory.config.Audio.Channels != Mono {
+		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before duplicate-node rejection", resampleFactory.config.Audio)
+	}
+	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Bitrate != 96_000 {
+		t.Fatalf("runtime encode config = %+v, want Opus 96k before duplicate-node rejection", encoderFactory.config)
+	}
+	if len(muxers.muxers) != 1 || !muxers.muxers[0].opened {
+		t.Fatalf("muxers = %+v, want one opened Ogg muxer before duplicate-node rejection", muxers.muxers)
+	}
+	if !resampler.closed {
+		t.Fatal("runtime filter was not closed after duplicate-node rejection")
+	}
+	if !encoder.closed {
+		t.Fatal("runtime encoder was not closed after duplicate-node rejection")
+	}
+	if !muxers.muxers[0].closed {
+		t.Fatal("runtime muxer was not closed after duplicate-node rejection")
+	}
+	if after := builtTask.Describe(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("graph mutated after duplicate-node attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
+	}
+	for _, tap := range builtTask.Taps() {
+		if strings.Contains(tap.Node.String(), "archive") {
+			t.Fatalf("runtime branch tap registered after duplicate-node rejection: %+v", tap)
+		}
+	}
+}
+
 func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	graph := New().Graph()
 	graph.Source("source", &runtimeTestSource{name: "source"})

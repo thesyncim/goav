@@ -1300,6 +1300,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     runtime branch can prepare a resample filter, Opus encoder, and Ogg mux
     target, then fail on the closed graph without leaking any prepared
     component, branch node, edge, or tap. Done.
+293. Prove duplicate runtime node-name cleanup after component preparation:
+    `TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists` now
+    prepares a late branch from an audio frame tap through resample, Opus
+    encode, and an Ogg target, then rejects it because the computed terminal
+    node already exists in the task graph. The opened filter, encoder, and
+    muxer are closed, no branch node, edge, or tap is added, and the duplicate
+    error stays actionable as `runtime_branch_node_duplicate`. Done.
 
 ## First Vertical Slice
 
@@ -1561,7 +1568,8 @@ encode-to-endpoint, packet-copy endpoint, packet-copy recording, Opus encoded
 late recording, and sink branches that can publish nested runtime taps for later
 attachments. Direct and buffered graphs now reject dynamic node additions after
 close so runtime attach fails before mutating a closed graph while still closing
-prepared branch components.
+prepared branch components, and duplicate runtime node-name validation closes
+already-prepared branch components before returning.
 `MediaPlan` expresses record, stream decode, encode, and branch composition as
 input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and
