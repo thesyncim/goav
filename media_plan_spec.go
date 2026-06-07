@@ -23,6 +23,7 @@ type graphPlan struct {
 	realtime    bool
 	nodes       []pipeline.NodeSpec
 	edges       []pipeline.EdgeSpec
+	operations  []graphPlanOperation
 	inputs      []planInput
 	streams     []planStream
 	taps        []planTap
@@ -31,6 +32,17 @@ type graphPlan struct {
 	decisions   []planDecision
 	diagnostics []PlanDiagnostic
 	executable  mediaPlanExecutable
+}
+
+type graphPlanOperation struct {
+	Branch    string
+	Node      pipeline.NodeRef
+	Kind      OperationKind
+	Component string
+	Detail    string
+	Caps      StreamCaps
+	Targets   []string
+	Shared    bool
 }
 
 func (p graphPlan) ready() bool {
@@ -73,6 +85,10 @@ func (p graphPlan) mediaPlan() mediaPlan {
 	}
 }
 
+func (p graphPlan) operationPlan() []graphPlanOperation {
+	return cloneGraphPlanOperations(p.operations)
+}
+
 func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, executable mediaPlanExecutable) graphPlan {
 	return graphPlan{
 		runtime:     runtime,
@@ -80,6 +96,7 @@ func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, executab
 		realtime:    spec.Realtime,
 		nodes:       append([]pipeline.NodeSpec(nil), spec.Nodes...),
 		edges:       append([]pipeline.EdgeSpec(nil), spec.Edges...),
+		operations:  graphPlanOperationsFromMediaPlan(plan),
 		inputs:      clonePlanInputs(plan.Inputs),
 		streams:     clonePlanStreams(plan.Streams),
 		taps:        clonePlanTaps(plan.Taps),
@@ -89,6 +106,65 @@ func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, executab
 		diagnostics: clonePlanDiagnostics(plan.Diagnostics),
 		executable:  executable,
 	}
+}
+
+func graphPlanOperationsFromMediaPlan(plan mediaPlan) []graphPlanOperation {
+	if len(plan.Branches) == 0 {
+		return nil
+	}
+	outputs := planOutputsByName(plan.Outputs)
+	var operations []graphPlanOperation
+	for i := range plan.Branches {
+		branch := plan.Branches[i]
+		for j := range branch.Operations {
+			operation := branch.Operations[j]
+			operations = append(operations, graphPlanOperation{
+				Branch:    branch.Name,
+				Node:      pipeline.NodeRef(planOperationNodeName(branch.Name, operation, j)),
+				Kind:      operation.Kind,
+				Component: operation.Component,
+				Detail:    operation.Detail,
+				Caps:      operation.Caps,
+				Shared:    operation.Shared,
+			})
+		}
+		for _, target := range branch.Outputs {
+			output := outputs[target]
+			operations = append(operations, graphPlanOperation{
+				Branch:    branch.Name,
+				Node:      pipeline.NodeRef(firstNonEmpty(output.Name, target)),
+				Kind:      output.Operation,
+				Component: output.Component,
+				Detail:    "target",
+				Targets:   []string{target},
+			})
+		}
+	}
+	return operations
+}
+
+func planOutputsByName(outputs []planOutput) map[string]planOutput {
+	out := make(map[string]planOutput, len(outputs))
+	for i := range outputs {
+		if outputs[i].Name == "" {
+			continue
+		}
+		out[outputs[i].Name] = outputs[i]
+	}
+	return out
+}
+
+func cloneGraphPlanOperations(operations []graphPlanOperation) []graphPlanOperation {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := make([]graphPlanOperation, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		operation.Targets = append([]string(nil), operation.Targets...)
+		out = append(out, operation)
+	}
+	return out
 }
 
 func emitGraphPlanSpecPass() recipeCompilePass {

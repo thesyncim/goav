@@ -1755,6 +1755,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     from the graph plan, so the remaining transition executable is only the
     runtime lowering bridge.
     Done.
+345. Add ordered graph-plan operations:
+    `graphPlan` now carries a cloned operation sequence derived from branch
+    operations and target groups. The sequence includes source boundary,
+    select, decode, tap, transform, encode, mux, and sink/write target
+    operations with branch, node, caps, sharing, and target refs, giving the
+    next build-lowering slice a concrete plan to execute instead of matching
+    workflow-specific compiler shapes.
+    Done.
 
 ## First Vertical Slice
 
@@ -1965,11 +1973,11 @@ Required proof:
 
 ## Next Slices
 
-1. Replace the remaining workflow-specific transition executables with one
-   ordered operation lowering inside `GraphPlan`. The plan already owns the
-   cold-path nodes, edges, taps, branches, targets, decisions, and diagnostics;
-   the next step is to make build use those ordered operations directly instead
-   of dispatching to stream/branch executable wrappers.
+1. Replace the remaining workflow-specific transition executables with runtime
+   build lowering from `graphPlan` ordered operations. The plan already owns the
+   cold-path nodes, edges, operations, taps, branches, targets, decisions, and
+   diagnostics; the next step is to make build use that sequence directly
+   instead of dispatching to stream/branch executable wrappers.
 2. Make direct chains implicit branches. Packet copy, decode-to-sink,
    transform/encode-to-target, planned branch composition, and mixed
    audio/video target groups should all lower through the same branch planner
@@ -2016,9 +2024,9 @@ Required proof:
    regression tests for each planner slice.
 14. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: replace the remaining graph-plan transition executable
-wrappers with one ordered operation lowering and deepen capability planning
-around that ordered operation model. The public recipe surface is small: `From`, chains,
+Current pressure point: make runtime build lower from `graphPlan` ordered
+operations instead of transition executable wrappers and deepen capability
+planning around that ordered operation model. The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`,
 `File`, `URIOut`, `Sink`, `Flow`, `Codec`, and runtime `Attach`. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into

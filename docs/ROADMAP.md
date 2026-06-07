@@ -11,11 +11,11 @@ make the implementation match the composable planner promise.
 1. Make the declarative grammar the only normal composer:
    `input -> chain -> tap -> branch -> target` lowers into
    `GraphPlan -> pipeline.Graph -> Task`. `GraphPlan` now owns planned
-   nodes, edges, taps, branches, targets, decisions, and diagnostics as
-   cold-path metadata; the remaining work is to replace workflow-specific
-   transition executables with one ordered operation lowering. The expert graph
-   builder remains an escape hatch and runtime substrate, not the normal
-   user-facing way to express workflows.
+   nodes, edges, ordered operations, taps, branches, targets, decisions, and
+   diagnostics as cold-path metadata; the remaining work is to make runtime
+   build lower from that ordered sequence instead of workflow-specific
+   transition executables. The expert graph builder remains an escape hatch and
+   runtime substrate, not the normal user-facing way to express workflows.
 2. Treat direct chains as implicit branches. These should be equivalent plan
    shapes except for branch names:
    `From(input).Audio().Decode().To(Sink(...))` and

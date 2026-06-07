@@ -56,7 +56,7 @@ func TestGraphPlanUsesSharedBuildLifecycle(t *testing.T) {
 		t.Fatal("recipeResolved should carry graphPlan as the executable boundary")
 	}
 	graphPlanType := reflect.TypeOf(graphPlan{})
-	for _, name := range []string{"nodes", "edges", "inputs", "streams", "taps", "branches", "outputs", "decisions", "diagnostics", "executable"} {
+	for _, name := range []string{"nodes", "edges", "operations", "inputs", "streams", "taps", "branches", "outputs", "decisions", "diagnostics", "executable"} {
 		if _, ok := graphPlanType.FieldByName(name); !ok {
 			t.Fatalf("graphPlan should carry %s as cold-path plan metadata", name)
 		}
@@ -2289,6 +2289,17 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 	if len(plan.Outputs) != 1 || plan.Outputs[0].Name != "web" || !reflect.DeepEqual(plan.Outputs[0].BranchRefs, []string{"360p"}) {
 		t.Fatalf("graphPlan media plan outputs = %+v, want web owned by 360p", plan.Outputs)
 	}
+	operations := resolved.graphPlan.operationPlan()
+	for _, want := range []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpEncode, OpMux} {
+		if !graphPlanOperationKindPresent(operations, want) {
+			t.Fatalf("graphPlan operations = %+v, want %s", operations, want)
+		}
+	}
+	if !graphPlanOperationNodePresent(operations, pipeline.NodeRef("resize-360p")) ||
+		!graphPlanOperationNodePresent(operations, pipeline.NodeRef("encode-360p")) ||
+		!graphPlanOperationTargetPresent(operations, "web") {
+		t.Fatalf("graphPlan operations = %+v, want resize, encode, and web target operations", operations)
+	}
 	report, err := newPlanReport("build job", resolved)
 	if err != nil {
 		t.Fatalf("newPlanReport() error = %v", err)
@@ -2315,6 +2326,8 @@ func TestGraphPlanViewsAreImmutable(t *testing.T) {
 	plan := resolved.graphPlan.mediaPlan()
 	plan.Branches[0].Operations[0].Component = "mutated"
 	plan.Outputs[0].BranchRefs[0] = "mutated"
+	operations := resolved.graphPlan.operationPlan()
+	operations[len(operations)-1].Targets[0] = "mutated"
 
 	nextSpec := resolved.graphPlan.spec()
 	if nextSpec.Nodes[0].Name == "mutated" {
@@ -2327,6 +2340,39 @@ func TestGraphPlanViewsAreImmutable(t *testing.T) {
 	if nextPlan.Outputs[0].BranchRefs[0] == "mutated" {
 		t.Fatal("graphPlan.mediaPlan() returned aliased output branch refs")
 	}
+	nextOperations := resolved.graphPlan.operationPlan()
+	if nextOperations[len(nextOperations)-1].Targets[0] == "mutated" {
+		t.Fatal("graphPlan.operationPlan() returned aliased target refs")
+	}
+}
+
+func graphPlanOperationKindPresent(operations []graphPlanOperation, kind OperationKind) bool {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func graphPlanOperationNodePresent(operations []graphPlanOperation, node pipeline.NodeRef) bool {
+	for i := range operations {
+		if operations[i].Node == node {
+			return true
+		}
+	}
+	return false
+}
+
+func graphPlanOperationTargetPresent(operations []graphPlanOperation, target string) bool {
+	for i := range operations {
+		for _, next := range operations[i].Targets {
+			if next == target {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
