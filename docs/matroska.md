@@ -39,7 +39,9 @@ demuxer, err := matroska.NewDemuxer(r, matroska.DemuxerOptions{})
 tracks := demuxer.Tracks()
 packet := matroska.Packet{Data: make([]byte, 0, maxFrame)}
 err = demuxer.ReadPacket(&packet)
+err = demuxer.ReadCuedPacketAtTime(1_000_000_000, &packet)
 err = demuxer.ReadPacketAtTime(1_000_000_000, &packet)
+err = demuxer.ReadCuedTrackPacketAtTime(trackID, 1_000_000_000, &packet)
 err = demuxer.ReadTrackPacketAtTime(trackID, 1_000_000_000, &packet)
 ```
 
@@ -66,6 +68,9 @@ Current milestone:
   absent.
 - Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
   a requested timestamp.
+- Direct cue-backed `ReadCuedPacketAtTime` and `ReadCuedTrackPacketAtTime`
+  extraction for exact block cues at or after a requested timestamp, without
+  scanning uncued packets between cues.
 - Track-specific cue-assisted `SeekToTrackTime` and `ReadTrackPacketAtTime`
   for multi-track recordings with per-track cue positions.
 - BlockGroup reading and writing for single-frame and laced blocks with
@@ -126,7 +131,8 @@ Current milestone:
 
 These are intentionally not in the first milestone:
 
-- Frame-exact random access without reading forward from a cue.
+- Frame-exact random access for uncued packets or cue points that do not have
+  exact `CueRelativePosition` or `CueBlockNumber` entries.
 - Unknown-element preservation.
 - Full codec-private generation and parsers for every codec family.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
@@ -188,6 +194,11 @@ buffer must be large enough for skipped packets and the returned packet.
 `SeekToTrackTime` and `ReadTrackPacketAtTime` use CueTrackPositions to choose
 the nearest cue for a specific track, then read forward until that track reaches
 the requested timestamp.
+`ReadCuedPacketAtTime` and `ReadCuedTrackPacketAtTime` choose the first direct
+block cue at or after the requested timestamp, seek to its `CueRelativePosition`
+or `CueBlockNumber`, and read that cued packet without scanning intervening
+uncued packets. They return `ErrInvalidData` when no exact block cue is
+available.
 
 ## Codec Mapping
 
@@ -295,8 +306,8 @@ Committed benchmarks cover:
 - Matroska WebRTC-codec corpus mux/demux throughput and allocations across
   Opus, AV1, H.264, VP9, and VP8.
 - Seekable Matroska WebRTC-codec corpus mux/demux throughput, allocation
-  behavior, cue-assisted `ReadPacketAtTime`, and large Cue table seek
-  scalability.
+  behavior, cue-assisted `ReadPacketAtTime`, direct `ReadCuedPacketAtTime`,
+  and large Cue table seek scalability.
 - WebM-profile corpus mux/demux throughput and allocations across VP8, VP9,
   AV1, and Opus.
 - External head-to-head recording benchmarks on FFmpeg-authored corpora:

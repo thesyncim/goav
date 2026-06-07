@@ -66,10 +66,25 @@ func (d *Demuxer) SeekToTrackTime(trackID uint32, timeNS int64) error {
 	return d.inner.SeekToTrackTime(trackID, timeNS)
 }
 
+// ReadCuedPacketAtTime seeks directly to the first exact block cue at or after
+// timeNS and reads that cued packet. It does not scan uncued packets between
+// cues; use ReadPacketAtTime when uncued packets should be considered too.
+func (d *Demuxer) ReadCuedPacketAtTime(timeNS int64, dst *Packet) error {
+	return d.inner.ReadCuedPacketAtTime(timeNS, dst)
+}
+
 // ReadPacketAtTime seeks to the nearest preceding cue and reads forward until
 // it finds the first packet at or after timeNS.
 func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
 	return d.inner.ReadPacketAtTime(timeNS, dst)
+}
+
+// ReadCuedTrackPacketAtTime seeks directly to the first exact block cue for
+// trackID at or after timeNS and reads that cued packet. It does not scan
+// uncued packets between cues; use ReadTrackPacketAtTime when uncued packets
+// should be considered too.
+func (d *Demuxer) ReadCuedTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packet) error {
+	return d.inner.ReadCuedTrackPacketAtTime(trackID, timeNS, dst)
 }
 
 // ReadTrackPacketAtTime seeks to the nearest preceding cue for trackID and

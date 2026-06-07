@@ -141,6 +141,60 @@ func TestMuxerDemuxerPreservesSegmentInfoMetadata(t *testing.T) {
 	}
 }
 
+func TestDemuxerReadCuedPacketAtTime(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "cued-*.webm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	muxer, err := NewMuxer(file, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}},
+		{TrackID: trackID, TimeNS: 20_000_000, Data: []byte{0x11, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}},
+		{TrackID: trackID, TimeNS: 40_000_000, Keyframe: true, Data: []byte{0x12, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(file, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 16)}
+	if err := demuxer.ReadCuedPacketAtTime(10_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != packets[2].TimeNS || !bytes.Equal(got.Data, packets[2].Data) {
+		t.Fatalf("cued packet = %+v data=%v, want %+v data=%v", got, got.Data, packets[2], packets[2].Data)
+	}
+	if err := demuxer.ReadCuedTrackPacketAtTime(trackID, 10_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != trackID || got.TimeNS != packets[2].TimeNS || !bytes.Equal(got.Data, packets[2].Data) {
+		t.Fatalf("cued track packet = %+v data=%v, want track %d packet %+v data=%v", got, got.Data, trackID, packets[2], packets[2].Data)
+	}
+}
+
 func TestMuxerDemuxerAppliesAESCTRContentEncryption(t *testing.T) {
 	keyID := []byte("webm-aes-key")
 	key := []byte{
