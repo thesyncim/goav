@@ -3217,33 +3217,31 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 		if err != nil {
 			return err
 		}
-		switch encoding.transform {
-		case blockContentTransformNone:
-			if err := d.readPlainBlockFrame(track, frameSize, nil, dst); err != nil {
+		if encoding.compression == blockContentTransformNone {
+			var headerStrip []byte
+			if encoding.headerSet {
+				headerStrip = encoding.headerSettings
+			}
+			if err := d.readPlainBlockFrame(track, frameSize, headerStrip, dst); err != nil {
 				return err
 			}
-		case blockContentTransformHeaderStripping:
-			if err := d.readPlainBlockFrame(track, frameSize, encoding.settings, dst); err != nil {
-				return err
-			}
-		case blockContentTransformZlib:
+		} else {
 			frame, err := d.readBlockFrameScratch(frameSize)
 			if err != nil {
 				return err
 			}
-			if err := d.decodeZlibBlockFrame(track, frame, dst); err != nil {
-				return err
+			switch encoding.compression {
+			case blockContentTransformZlib:
+				if err := d.decodeZlibBlockFrame(track, frame, encoding.headerSettings, dst); err != nil {
+					return err
+				}
+			case blockContentTransformBzlib:
+				if err := d.decodeBzlibBlockFrame(track, frame, encoding.headerSettings, dst); err != nil {
+					return err
+				}
+			default:
+				return ErrUnsupportedContentEncoding
 			}
-		case blockContentTransformBzlib:
-			frame, err := d.readBlockFrameScratch(frameSize)
-			if err != nil {
-				return err
-			}
-			if err := d.decodeBzlibBlockFrame(track, frame, dst); err != nil {
-				return err
-			}
-		default:
-			return ErrUnsupportedContentEncoding
 		}
 	} else if err := d.readPlainBlockFrame(track, frameSize, nil, dst); err != nil {
 		return err
@@ -3290,8 +3288,12 @@ func (d *Demuxer) readBlockFrameScratch(frameSize int) ([]byte, error) {
 	return frame, nil
 }
 
-func (d *Demuxer) decodeZlibBlockFrame(track Track, frame []byte, dst *Packet) error {
+func (d *Demuxer) decodeZlibBlockFrame(track Track, frame []byte, headerStrip []byte, dst *Packet) error {
 	decoded, err := zlibDecompressInto(dst.Data[:0], frame)
+	if err != nil {
+		return err
+	}
+	decoded, err = prependContentEncodingHeader(decoded, headerStrip)
 	if err != nil {
 		return err
 	}
@@ -3299,13 +3301,32 @@ func (d *Demuxer) decodeZlibBlockFrame(track Track, frame []byte, dst *Packet) e
 	return d.finishTrackCodecPayload(track, dst)
 }
 
-func (d *Demuxer) decodeBzlibBlockFrame(track Track, frame []byte, dst *Packet) error {
+func (d *Demuxer) decodeBzlibBlockFrame(track Track, frame []byte, headerStrip []byte, dst *Packet) error {
 	decoded, err := bzip2DecompressInto(dst.Data[:0], frame)
+	if err != nil {
+		return err
+	}
+	decoded, err = prependContentEncodingHeader(decoded, headerStrip)
 	if err != nil {
 		return err
 	}
 	dst.Data = decoded
 	return d.finishTrackCodecPayload(track, dst)
+}
+
+func prependContentEncodingHeader(data []byte, header []byte) ([]byte, error) {
+	if len(header) == 0 {
+		return data, nil
+	}
+	oldLen := len(data)
+	outSize := oldLen + len(header)
+	if cap(data) < outSize {
+		return nil, ErrPayloadTooSmall
+	}
+	data = data[:outSize]
+	copy(data[len(header):], data[:oldLen])
+	copy(data, header)
+	return data, nil
 }
 
 func (d *Demuxer) finishTrackCodecPayload(track Track, dst *Packet) error {
@@ -3658,14 +3679,18 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 	}
 	frame := d.laceFrames[d.laceFrameIndex]
 	frameData := d.laceBuffer[frame.offset : frame.offset+frame.size]
-	if d.laceContent.transform == blockContentTransformZlib || d.laceContent.transform == blockContentTransformBzlib {
+	if d.laceContent.compression == blockContentTransformZlib || d.laceContent.compression == blockContentTransformBzlib {
 		var decoded []byte
 		var err error
-		if d.laceContent.transform == blockContentTransformZlib {
+		if d.laceContent.compression == blockContentTransformZlib {
 			decoded, err = zlibDecompressInto(dst.Data[:0], frameData)
 		} else {
 			decoded, err = bzip2DecompressInto(dst.Data[:0], frameData)
 		}
+		if err != nil {
+			return err
+		}
+		decoded, err = prependContentEncodingHeader(decoded, d.laceContent.headerSettings)
 		if err != nil {
 			return err
 		}
@@ -3674,9 +3699,9 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 			return err
 		}
 	} else {
-		headerStrip := d.laceContent.settings
-		if d.laceContent.transform != blockContentTransformHeaderStripping {
-			headerStrip = nil
+		var headerStrip []byte
+		if d.laceContent.headerSet {
+			headerStrip = d.laceContent.headerSettings
 		}
 		outSize := frame.size + len(headerStrip)
 		if d.laceH264Length != 0 {

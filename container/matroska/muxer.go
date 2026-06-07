@@ -2082,7 +2082,7 @@ func blockPayloadsNeedSizing(track Track) bool {
 		return false
 	}
 	encoding, err := blockContentEncoding(track)
-	return err != nil || encoding.transform != blockContentTransformNone
+	return err != nil || encoding.headerSet || encoding.compression != blockContentTransformNone
 }
 
 func blockPayloadNeedsBuffering(track Track) bool {
@@ -2090,7 +2090,7 @@ func blockPayloadNeedsBuffering(track Track) bool {
 		return false
 	}
 	encoding, err := blockContentEncoding(track)
-	return err != nil || encoding.transform == blockContentTransformZlib
+	return err != nil || encoding.compression != blockContentTransformNone
 }
 
 func blockPayloadSize(track Track, data []byte) (int, error) {
@@ -2099,16 +2099,19 @@ func blockPayloadSize(track Track, data []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		switch encoding.transform {
-		case blockContentTransformNone:
-		case blockContentTransformHeaderStripping:
-			if !bytes.HasPrefix(data, encoding.settings) {
+		if encoding.headerSet {
+			if !bytes.HasPrefix(data, encoding.headerSettings) {
 				return 0, ErrInvalidData
 			}
-			data = data[len(encoding.settings):]
+			data = data[len(encoding.headerSettings):]
+		}
+		switch encoding.compression {
+		case blockContentTransformNone:
 		case blockContentTransformZlib:
 			return 0, ErrInvalidData
 		case blockContentTransformBzlib:
+			return 0, ErrUnsupportedContentEncoding
+		default:
 			return 0, ErrUnsupportedContentEncoding
 		}
 	}
@@ -2127,19 +2130,20 @@ func (m *Muxer) muxedBlockPayload(track Track, data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch encoding.transform {
-	case blockContentTransformNone:
-		return m.codecMuxedBlockPayload(track, data)
-	case blockContentTransformHeaderStripping:
-		if !bytes.HasPrefix(data, encoding.settings) {
+	if encoding.headerSet {
+		if !bytes.HasPrefix(data, encoding.headerSettings) {
 			return nil, ErrInvalidData
 		}
-		return m.codecMuxedBlockPayload(track, data[len(encoding.settings):])
+		data = data[len(encoding.headerSettings):]
+	}
+	payload, err := m.codecMuxedBlockPayload(track, data)
+	if err != nil {
+		return nil, err
+	}
+	switch encoding.compression {
+	case blockContentTransformNone:
+		return payload, nil
 	case blockContentTransformZlib:
-		payload, err := m.codecMuxedBlockPayload(track, data)
-		if err != nil {
-			return nil, err
-		}
 		return m.zlibCompressBlockPayload(payload)
 	default:
 		return nil, ErrUnsupportedContentEncoding
@@ -3245,7 +3249,7 @@ func validateWritableBlockContentEncodings(track Track) error {
 	if err != nil {
 		return err
 	}
-	if encoding.transform == blockContentTransformBzlib {
+	if encoding.compression == blockContentTransformBzlib {
 		return ErrUnsupportedContentEncoding
 	}
 	return nil
@@ -3255,14 +3259,16 @@ type blockContentTransform uint8
 
 const (
 	blockContentTransformNone blockContentTransform = iota
-	blockContentTransformHeaderStripping
 	blockContentTransformZlib
 	blockContentTransformBzlib
 )
 
 type blockContentEncodingInfo struct {
-	transform blockContentTransform
-	settings  []byte
+	headerSettings   []byte
+	headerOrder      uint64
+	headerSet        bool
+	compression      blockContentTransform
+	compressionOrder uint64
 }
 
 func blockContentEncoding(track Track) (blockContentEncodingInfo, error) {
@@ -3272,31 +3278,43 @@ func blockContentEncoding(track Track) (blockContentEncodingInfo, error) {
 		if contentEncodingScope(encoding.Scope)&ContentEncodingScopeBlock == 0 {
 			continue
 		}
-		if out.transform != blockContentTransformNone {
-			return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
-		}
 		if encoding.Type != ContentEncodingTypeCompression || !encoding.CompressionSet {
 			return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 		}
 		switch encoding.Compression.Algorithm {
 		case ContentCompAlgoHeaderStripping:
-			out.transform = blockContentTransformHeaderStripping
-			out.settings = encoding.Compression.Settings
+			if out.headerSet {
+				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+			}
+			out.headerSet = true
+			out.headerOrder = encoding.Order
+			out.headerSettings = encoding.Compression.Settings
 		case ContentCompAlgoZlib:
 			if len(encoding.Compression.Settings) != 0 {
 				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 			}
-			out.transform = blockContentTransformZlib
+			if out.compression != blockContentTransformNone {
+				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+			}
+			out.compression = blockContentTransformZlib
+			out.compressionOrder = encoding.Order
 		case ContentCompAlgoBzlib:
 			if len(encoding.Compression.Settings) != 0 {
 				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 			}
-			out.transform = blockContentTransformBzlib
+			if out.compression != blockContentTransformNone {
+				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+			}
+			out.compression = blockContentTransformBzlib
+			out.compressionOrder = encoding.Order
 		default:
 			return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 		}
 	}
-	if out.transform == blockContentTransformHeaderStripping && track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+	if out.headerSet && out.compression != blockContentTransformNone && out.headerOrder >= out.compressionOrder {
+		return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+	}
+	if out.headerSet && track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
 		return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 	}
 	return out, nil
@@ -3307,10 +3325,10 @@ func blockHeaderStripping(track Track) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if encoding.transform != blockContentTransformHeaderStripping {
+	if !encoding.headerSet {
 		return nil, false, nil
 	}
-	return encoding.settings, true, nil
+	return encoding.headerSettings, true, nil
 }
 
 func validateContentEncoding(encoding ContentEncoding) error {
