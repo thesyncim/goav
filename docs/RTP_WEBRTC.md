@@ -78,7 +78,7 @@ answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
 err := goav.From(goav.WebRTCTrack(remote.Track)).
     Copy().
-    To(goav.FileOutput("recording.ivf", file)).
+    To(goav.File("recording.ivf", file)).
     Run(ctx)
 ```
 
@@ -91,7 +91,7 @@ audio, err := tracks.Accept(ctx)
 video, err := tracks.Accept(ctx)
 err := goav.From(goav.RTP(audio.Reader)).
     And(goav.RTP(video.Reader)).
-    To(goav.FileOutput("recording.webm", file)).
+    To(goav.File("recording.webm", file)).
     Run(ctx)
 ```
 
@@ -105,7 +105,7 @@ The recipe layer can also accept raw RTP packet readers directly:
 ```go
 err := goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
     Copy().
-    To(goav.FileOutput("recording.ivf", file)).
+    To(goav.File("recording.ivf", file)).
     Run(ctx)
 ```
 
@@ -156,8 +156,8 @@ err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Do(resample).
     Opus(96_000).
     To(
-        goav.FileOutput("archive.ogg", archive),
-        goav.FileOutput("preview.ogg", preview),
+        goav.File("archive.ogg", archive),
+        goav.File("preview.ogg", preview),
     ).
     Run(ctx)
 ```

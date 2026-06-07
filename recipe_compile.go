@@ -20,7 +20,7 @@ type recipeResolved struct {
 	mediaGraph            mediaPlanExecutable
 	inputAttachments      []InputSpec
 	outputAttachments     []destinationSpec
-	streamAttachments     []jobStreamStepAttachment
+	chainAttachments      []chainStepAttachment
 	inputProbes           []format.ProbeResult
 	branchInputAttachment InputSpec
 	branchInputProbe      format.ProbeResult
@@ -42,7 +42,7 @@ type recipeCompileState struct {
 
 	inputAttachments  []InputSpec
 	jobOutputCount    int
-	streamSteps       []jobStreamStepAttachment
+	chainSteps        []chainStepAttachment
 	outputAttachments []destinationSpec
 	outputTargetNames []string
 	inputProbes       []format.ProbeResult
@@ -171,7 +171,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		mediaGraph:            state.mediaGraph,
 		inputAttachments:      append([]InputSpec(nil), state.inputAttachments...),
 		outputAttachments:     append([]destinationSpec(nil), state.outputAttachments...),
-		streamAttachments:     append([]jobStreamStepAttachment(nil), state.streamSteps...),
+		chainAttachments:      append([]chainStepAttachment(nil), state.chainSteps...),
 		inputProbes:           append([]format.ProbeResult(nil), state.inputProbes...),
 		branchInputAttachment: state.branchInputAttachment,
 		branchInputProbe:      state.branchInputProbe,
@@ -216,7 +216,7 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 	if r.mediaGraph == nil {
 		return nil, recipeGraphUnsupportedError("build recipe", r.intent)
 	}
-	task, err := r.mediaGraph.build(ctx)
+	task, err := buildMediaPlanTask(ctx, r.mediaGraph)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +296,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		state.jobOutputCount = len(job.outputs)
 		state.outputAttachments = jobAllOutputs(job.outputs, jobStreamOutputs(job.stream))
 		state.outputTargetNames = job.allOutputNames()
-		state.streamSteps = jobStreamStepAttachments(job.stream)
+		state.chainSteps = chainStepAttachments(job.stream)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateJobRecipePass(),
@@ -484,7 +484,7 @@ func jobIntentTooManyStreamsError(operation string, streams []StreamIntent) erro
 	return err
 }
 
-func validateJobStreamIntentShape(operation string, stream StreamIntent, steps []jobStreamStepAttachment) error {
+func validateJobStreamIntentShape(operation string, stream StreamIntent, steps []chainStepAttachment) error {
 	selector := streamIntentSelector(stream)
 	node := jobStreamIntentName(stream)
 	if !streamIntentHasOperation(stream, steps) {
@@ -629,11 +629,11 @@ func validateJobStreamAttachmentsPass() recipeCompilePass {
 		if !ok {
 			return nil
 		}
-		return validateJobStreamAttachments(state.operation, stream, state.streamSteps)
+		return validateJobStreamAttachments(state.operation, stream, state.chainSteps)
 	}}
 }
 
-func validateJobStreamAttachments(operation string, stream StreamIntent, steps []jobStreamStepAttachment) error {
+func validateJobStreamAttachments(operation string, stream StreamIntent, steps []chainStepAttachment) error {
 	for i := range steps {
 		step := steps[i]
 		if step.stage != nil {
@@ -653,7 +653,7 @@ func validateJobStreamAttachments(operation string, stream StreamIntent, steps [
 	return nil
 }
 
-func jobStreamTransformAttachmentMismatchError(operation string, stream StreamIntent, step jobStreamStepAttachment, transformCount int) error {
+func jobStreamTransformAttachmentMismatchError(operation string, stream StreamIntent, step chainStepAttachment, transformCount int) error {
 	return &BuildError{
 		Code:      "recipe_attachment_mismatch",
 		Operation: operation,

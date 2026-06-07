@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -50,6 +51,133 @@ func requireMediaGraph[T any](t *testing.T, resolved recipeResolved) {
 	if _, ok := resolved.mediaGraph.(T); !ok {
 		var want T
 		t.Fatalf("media graph = %T, want %T", resolved.mediaGraph, want)
+	}
+}
+
+func TestMediaPlanExecutableUsesSharedBuildLifecycle(t *testing.T) {
+	executable := reflect.TypeOf((*mediaPlanExecutable)(nil)).Elem()
+	if _, ok := executable.MethodByName("build"); ok {
+		t.Fatal("mediaPlanExecutable should not expose per-plan build; use the shared media-plan executor")
+	}
+	for _, name := range []string{"spec", "runtimeRef", "compile"} {
+		if _, ok := executable.MethodByName(name); !ok {
+			t.Fatalf("mediaPlanExecutable is missing %s", name)
+		}
+	}
+}
+
+func TestMediaPlanStreamGraphOwnsPacketCopyAndDirectStreams(t *testing.T) {
+	if reflect.TypeOf((*mediaPlanStreamGraph)(nil)).Elem().Name() != "mediaPlanStreamGraph" {
+		t.Fatal("mediaPlanStreamGraph should remain the common stream executable")
+	}
+	var body strings.Builder
+	for _, file := range []string{"media_plan_build.go", "media_plan_spec.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	for _, forbidden := range []string{
+		"mediaPlanPacketCopyGraph",
+		"mediaPlanSingleStreamGraph",
+		"mediaPlanPacketCopySources",
+		"func (p mediaPlanBranchComposeGraph) specSources",
+		"func (p mediaPlanBranchComposeGraph) compileSources",
+	} {
+		if strings.Contains(body.String(), forbidden) || strings.Contains(body.String(), "type "+forbidden) {
+			t.Fatalf("%s should not be a separate stream media-plan path", forbidden)
+		}
+	}
+	if !strings.Contains(body.String(), "compileMediaPlanSources") {
+		t.Fatal("media plan graphs should share source compilation")
+	}
+}
+
+func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
+	var body strings.Builder
+	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "runtime_transcode.go", "branch_compose_plan.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	text := body.String()
+	for _, forbidden := range []string{
+		"jobStreamStep",
+		"streamStepOperations",
+		"streamStepTapIntents",
+		"jobStepTapDomain",
+		"streamStepsFromTransforms",
+		"cloneJobStreamSteps",
+		"appendBranchSteps",
+		"transformSpecsFromJobSteps",
+		"branchComposeStep",
+		"branchComposeStepsFromJobSteps",
+		"streamFlowSpec",
+		"flowBuilder",
+		"flowSnapshotter",
+		"flowSpecFrom",
+		"validateFlowMedia",
+		"flowTransformStepName",
+		"isFlow",
+		"newAudioFlow",
+		"newVideoFlow",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("operation chains should not use old chain implementation vocabulary %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"type chainStep struct",
+		"func chainStepOperations",
+		"func branchChainStepsFromOperations",
+		"func branchChainStepsFromChain",
+		"func branchChainStepsFromTranscode",
+		"func runtimeBranchStepsFromChain",
+		"type chainSpec struct",
+		"type chainBuilder struct",
+		"func chainSpecFrom",
+		"func validateChainMedia",
+		"func cloneChainSteps",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("operation chains should keep shared chain vocabulary %q", required)
+		}
+	}
+}
+
+func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {
+	var body strings.Builder
+	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "runtime_compile.go", "runtime_plan.go", "runtime_transcode.go", "recipe_compile.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	text := body.String()
+	for _, forbidden := range []string{
+		"Record, From, Decode, or Transcode",
+		"target endpoint",
+		"sink endpoints",
+		"muxed endpoints",
+		"goav.FileOutput",
+		"goav.URIOutput",
+		"SinkEndpoint",
+		".FromTap(",
+		"goav.FromTap(",
+		".TapName(",
+		"goav.TapName(",
+		"goav.AudioFlow(",
+		"goav.VideoFlow(",
+		"branchComposeTargetHasMuxEndpoint",
+		"branchComposeTargetEndpointInvalidError",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("production diagnostics keep old public vocabulary %q", forbidden)
+		}
 	}
 }
 
@@ -431,7 +559,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuild() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanPacketCopyGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	if len(resolved.outputAttachments) != 1 {
 		t.Fatalf("resolved output attachments = %d, want 1", len(resolved.outputAttachments))
 	}
@@ -1705,7 +1833,7 @@ func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 					}},
 					Targets: []TargetIntent{{Name: "frames"}},
 				},
-				streamSteps: []jobStreamStepAttachment{{stepIndex: 0}},
+				chainSteps: []chainStepAttachment{{stepIndex: 0}},
 			},
 			code:  "stage_missing",
 			cause: ErrNilStage,
@@ -1726,7 +1854,7 @@ func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 					}},
 					Targets: []TargetIntent{{Name: "frames"}},
 				},
-				streamSteps: []jobStreamStepAttachment{{
+				chainSteps: []chainStepAttachment{{
 					hasTransform:   true,
 					transformIndex: 1,
 					stepIndex:      0,
@@ -2152,7 +2280,7 @@ func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
 	if resolved.specOrigin != graphSpecOriginMediaPlan {
 		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginMediaPlan)
 	}
-	requireMediaGraph[mediaPlanPacketCopyGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	if resolved.intent.Name != "from" {
 		t.Fatalf("intent name = %q, want from", resolved.intent.Name)
 	}
@@ -2395,7 +2523,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanPacketCopyGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2431,7 +2559,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSinkDestinationExecutable](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2467,7 +2595,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSinkDestinationExecutable](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	task, err := resolved.Build(ctx)
 	if err != nil {
 		t.Fatalf("resolved.Build() error = %v", err)
@@ -2493,7 +2621,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSinkDestinationExecutable](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2527,7 +2655,7 @@ func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testin
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanPacketCopyGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2568,7 +2696,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanEncodeExecutable](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2617,9 +2745,9 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	if !ok {
 		t.Fatalf("resolved intent streams = %+v, want one stream", resolved.intent.Streams)
 	}
-	plan, ok, err := newMediaPlanSingleStreamGraph(resolved.runtime, resolved.inputAttachments, resolved.outputAttachments, stream)
+	plan, ok, err := newMediaPlanDecodeStreamGraph(resolved.runtime, resolved.inputAttachments, resolved.outputAttachments, stream)
 	if err != nil || !ok {
-		t.Fatalf("newMediaPlanSingleStreamGraph ok=%v err=%v", ok, err)
+		t.Fatalf("newMediaPlanDecodeStreamGraph ok=%v err=%v", ok, err)
 	}
 	spec, err := plan.encodeOutputSpec()
 	if err != nil {
@@ -2635,7 +2763,7 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	if !specHasNode(spec, "meter") || !specHasNode(spec, "encode-audio") || !specHasNode(spec, "archive.ogg") {
 		t.Fatalf("spec = %+v, want stage, encoder, and target from resolved attachments", spec)
 	}
-	if len(resolved.streamAttachments) == 0 {
+	if len(resolved.chainAttachments) == 0 {
 		t.Fatalf("resolved stream attachments are empty; taps and custom stages should be carried on the resolved recipe")
 	}
 }
@@ -2664,7 +2792,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSinkDestinationExecutable](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2711,7 +2839,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanEncodeExecutable](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2754,7 +2882,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanEncodeExecutable](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)

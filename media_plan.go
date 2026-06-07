@@ -74,6 +74,7 @@ type planOperation struct {
 	Detail    string
 	After     OperationKind
 	Caps      StreamCaps
+	Shared    bool
 }
 
 type planOutput struct {
@@ -168,7 +169,7 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 		}
 		caps = normalizePlanBranchCaps(caps, stream, firstInput(state.intent.Inputs))
 		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
-		steps := state.streamSteps
+		steps := state.chainSteps
 		if len(state.intent.Streams) > 1 {
 			steps = nil
 		}
@@ -257,7 +258,7 @@ func planCopyBranches(intent Intent, outputs []planOutput) ([]planBranch, []plan
 	return branches, decisions
 }
 
-func planStreamOperations(inputs []InputIntent, stream StreamIntent, branchName string, steps []jobStreamStepAttachment) ([]planOperation, []planDecision) {
+func planStreamOperations(inputs []InputIntent, stream StreamIntent, branchName string, steps []chainStepAttachment) ([]planOperation, []planDecision) {
 	operations := planInputOperations(firstInput(inputs))
 	operations = append(operations, planOperation{
 		Kind:      OpSelect,
@@ -344,38 +345,47 @@ func planStreamIntentOperations(stream StreamIntent, branchName string) ([]planO
 func planOperationFromStreamOperation(operation StreamOperation) planOperation {
 	switch operation.Kind {
 	case OpTransform:
-		return planTransformOperation(operation.Transform)
+		plan := planTransformOperation(operation.Transform)
+		plan.Shared = operation.Shared
+		return plan
 	case OpTap:
-		return planTapOperation(operation.Tap)
+		plan := planTapOperation(operation.Tap)
+		plan.Shared = operation.Shared
+		return plan
 	case OpEncode:
 		return planOperation{
 			Kind:      OpEncode,
 			Component: string(operation.Encode.ID),
 			Detail:    "frames to packets",
 			Caps:      streamCapsFromCodecSpec(operation.Encode, DomainPacket),
+			Shared:    operation.Shared,
 		}
 	case OpDecode:
 		return planOperation{
 			Kind:      OpDecode,
 			Component: operation.Component,
 			Detail:    "packets to frames",
+			Shared:    operation.Shared,
 		}
 	case OpStage:
 		return planOperation{
 			Kind:      OpStage,
 			Component: operation.Component,
 			Detail:    "custom stage",
+			Shared:    operation.Shared,
 		}
 	case OpCopy:
 		return planOperation{
 			Kind:      OpCopy,
 			Component: firstNonEmpty(operation.Component, "packet-copy"),
 			Detail:    "no frame operation requested",
+			Shared:    operation.Shared,
 		}
 	default:
 		return planOperation{
 			Kind:      operation.Kind,
 			Component: operation.Component,
+			Shared:    operation.Shared,
 		}
 	}
 }
@@ -409,7 +419,7 @@ func planInputOperations(input InputIntent) []planOperation {
 	}
 }
 
-func planProcessingOperations(stream StreamIntent, steps []jobStreamStepAttachment) []planOperation {
+func planProcessingOperations(stream StreamIntent, steps []chainStepAttachment) []planOperation {
 	if len(steps) == 0 {
 		operations := make([]planOperation, 0, len(stream.Transforms)+len(stream.Taps))
 		for i := range stream.Transforms {

@@ -17,9 +17,9 @@ and keyframe recovery are represented as events instead of hidden side effects.
 ```text
 Application
   |
-Recipes: From, stream chains, taps, branches, targets
+Recipes: From, chains, taps, branches, targets
   |
-Intent graph: inputs, streams, transforms, targets, policies
+Intent graph: inputs, selected media, chain operations, targets, policies
   |
 MediaPlan planner passes
   |
@@ -88,12 +88,14 @@ The handle-based graph builder remains available as the advanced layer through
 handles such as `source.Stream("audio")` and `decode.Out()` to node inputs.
 The internal builder is no longer a method on the public `Runtime` interface or
 an exported top-level type. Described graphs and execution graphs must stay
-equivalent for every media-plan build kind. The graph layer stays available for
+equivalent for every media-plan executable. The graph layer stays available for
 inspection and custom stages. Recipe `Explain(ctx)` returns structured
 workflow-report data, branch operations, planner decisions, and the same
 `pipeline.Spec`; optional diagram or prose rendering lives outside runtime
-composition. A route carries all media by default, or matches one stream or
-event type.
+composition. Branch operation reports mark shared upstream work, so the planner
+can explain when branches reuse decode, transform, stage, or tap boundaries
+before diverging into private downstream chains. A route carries all media by
+default, or matches one stream or event type.
 
 `Task.Attach` is the first runtime control-plane operation. It attaches a named
 downstream branch to a built graph and returns an attachment handle with
@@ -185,7 +187,7 @@ encoder is opened.
 Recipe helpers also expose `PacketFunc`, `FrameFunc`, `EventFunc`, and
 `SinkFunc` so small custom processing hooks can participate in the graph without
 implementing full source/stage/sink types.
-Stream recipe transforms such as `Audio().Resample(...)` and
+Chain transforms such as `Audio().Resample(...)` and
 `Video().Resize(...)` lower through the same filter registry as transcode
 branches, so common processing does not require manually building filter stages.
 
@@ -291,7 +293,7 @@ messages, keeps upstream events visible by default, flushes before EOS, and uses
 packet-loss events to trigger audio PLC paths such as Opus concealment. The
 runtime builder asks decoder factories for optional adapter-owned state before
 opening stages, so heavyweight backends can stay hidden behind the same fluent
-stream-scoped decode recipe. The encoder stage turns frame messages into
+chain decode recipe. The encoder stage turns frame messages into
 packet messages, observes upstream events for encoder state, flushes delayed
 packets before EOS, and consumes input events after the graph observes them.
 

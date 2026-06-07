@@ -234,23 +234,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		label:     spec.label,
 		buffer:    spec.buffer,
 	}
-	if spec.decode {
-		branch.steps = append(branch.steps, runtimeBranchStep{decode: true})
-	}
-	after := initialStepAfter(spec.decode)
-	for i := range spec.steps {
-		step := spec.steps[i]
-		switch {
-		case step.stage != nil:
-			branch.steps = append(branch.steps, runtimeBranchStep{stage: step.stage})
-			after = OpStage
-		case step.transform.Resize != nil || step.transform.Resample != nil:
-			branch.steps = append(branch.steps, runtimeBranchStep{transform: cloneTransformSpec(step.transform)})
-			after = OpTransform
-		case step.tap != "":
-			branch.steps = append(branch.steps, runtimeBranchStep{tap: step.tap, tapDomain: step.tapDomain, after: after})
-		}
-	}
+	branch.steps = runtimeBranchStepsFromChain(spec.decode, spec.steps)
 	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	if len(spec.targets) == 0 {
 		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.Target(name, destination))")
@@ -273,6 +257,36 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		})
 	}
 	return branch, nil
+}
+
+func runtimeBranchStepsFromChain(decode bool, steps []chainStep) []runtimeBranchStep {
+	out := make([]runtimeBranchStep, 0, len(steps)+1)
+	if decode {
+		out = append(out, runtimeBranchStep{decode: true})
+	}
+	after := initialStepAfter(decode)
+	for i := range steps {
+		step, nextAfter, ok := runtimeBranchStepFromChainStep(steps[i], after)
+		if !ok {
+			continue
+		}
+		out = append(out, step)
+		after = nextAfter
+	}
+	return out
+}
+
+func runtimeBranchStepFromChainStep(step chainStep, after OperationKind) (runtimeBranchStep, OperationKind, bool) {
+	switch {
+	case step.stage != nil:
+		return runtimeBranchStep{stage: step.stage}, OpStage, true
+	case step.transform.Resize != nil || step.transform.Resample != nil:
+		return runtimeBranchStep{transform: cloneTransformSpec(step.transform)}, OpTransform, true
+	case step.tap != "":
+		return runtimeBranchStep{tap: step.tap, tapDomain: step.tapDomain, after: after}, after, true
+	default:
+		return runtimeBranchStep{}, after, false
+	}
 }
 
 func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchGroupTargets, error) {
@@ -441,11 +455,11 @@ func (g *runtimeAttachGroup) reserveSharedMux(spec pipeline.Spec, branch runtime
 
 func (g *runtimeAttachGroup) addSharedMuxRoute(key string, route pipeline.Route) error {
 	if g == nil || !g.isSharedMux(key) {
-		return runtimeBranchInvalidError("shared mux target is not registered", "reuse one goav.Target(name, goav.FileOutput(...)) value inside one Task.Attach call")
+		return runtimeBranchInvalidError("shared mux target is not registered", "reuse one goav.Target(name, goav.File(...)) value inside one Task.Attach call")
 	}
 	target := g.sharedMuxes[key]
 	if target == nil {
-		return runtimeBranchInvalidError("shared mux target is not reserved", "reuse one goav.Target(name, goav.FileOutput(...)) value inside one Task.Attach call")
+		return runtimeBranchInvalidError("shared mux target is not reserved", "reuse one goav.Target(name, goav.File(...)) value inside one Task.Attach call")
 	}
 	route.To = []string{target.name}
 	target.routes = append(target.routes, route)
@@ -632,7 +646,7 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 	}
 	currentCaps := runtimeBranchAnchorCaps(branch.anchor)
 	if branch.media != "" && currentCaps.MediaKind != "" {
-		if err := validateFlowMedia("attach runtime branch", firstNonEmpty(branch.name, "branch"), currentCaps.MediaKind, streamFlowSpec{name: branch.name, media: branch.media}); err != nil {
+		if err := validateChainMedia("attach runtime branch", firstNonEmpty(branch.name, "branch"), currentCaps.MediaKind, chainSpec{name: branch.name, media: branch.media}); err != nil {
 			return err
 		}
 	}
@@ -721,7 +735,7 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 		return nil
 	}
 	if len(branch.destinations) == 0 {
-		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.FileOutput(name, writer))")
+		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
 	stream := currentStream
 	caps := currentCaps
@@ -1385,7 +1399,7 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 		return runtimeBranchInvalidError("branch source is empty", "call .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(node) with an expert graph node")
 	}
 	if len(branch.destinations) == 0 {
-		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.FileOutput(name, writer))")
+		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
 	if err := validateRuntimeBranchTargets(branch); err != nil {
 		return err

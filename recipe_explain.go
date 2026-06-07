@@ -81,6 +81,7 @@ type OperationReport struct {
 	Component string
 	Detail    string
 	Caps      StreamCaps
+	Shared    bool
 }
 
 type Decision struct {
@@ -254,6 +255,7 @@ func explainStreamOperations(operations []StreamOperation) []OperationReport {
 			Component: operations[i].Component,
 			Detail:    streamOperationDetail(operations[i]),
 			Caps:      streamOperationCaps(operations[i]),
+			Shared:    operations[i].Shared,
 		})
 	}
 	return reports
@@ -312,6 +314,7 @@ func explainOperations(operations []planOperation) []OperationReport {
 			Component: operation.Component,
 			Detail:    operation.Detail,
 			Caps:      operation.Caps,
+			Shared:    operation.Shared,
 		})
 	}
 	return reports

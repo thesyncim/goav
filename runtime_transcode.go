@@ -112,7 +112,7 @@ func (b *builder) planBranchComposePlan(spec pipeline.Spec, plan branchComposePl
 		return pipeline.Spec{}, err
 	}
 
-	nodes := make(map[string]plannedNode, 3+len(branches)+branchComposeStepCount(branches)+len(outputs))
+	nodes := make(map[string]plannedNode, 3+len(branches)+branchChainStepCount(branches)+len(outputs))
 	sourceName := demuxNodeName(plan.Input)
 	sourceRef := pipeline.NodeRef(sourceName)
 	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(plan.Input)); err != nil {
@@ -136,7 +136,7 @@ func (b *builder) planRTPBranchComposePlan(spec pipeline.Spec, plan branchCompos
 		return pipeline.Spec{}, err
 	}
 
-	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3+len(branches)+branchComposeStepCount(branches)+len(outputs))
+	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3+len(branches)+branchChainStepCount(branches)+len(outputs))
 	sourceRefs := make([]pipeline.NodeRef, len(b.rtpInputs))
 	for i := range b.rtpInputs {
 		sourceName := rtpNodeName(b.rtpInputs[i], i)
@@ -218,8 +218,8 @@ func planBranchComposeRoutes(
 	}
 
 	branchOutputRefs := make([]pipeline.NodeRef, len(branches))
-	branchNodeOrder := make([]pipeline.NodeRef, 0, len(branches)+branchComposeStepCount(branches))
-	outgoing := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(branches)*2+branchComposeStepCount(branches))
+	branchNodeOrder := make([]pipeline.NodeRef, 0, len(branches)+branchChainStepCount(branches))
+	outgoing := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(branches)*2+branchChainStepCount(branches))
 	for i := range branches {
 		branchRef := branchInputs[i]
 		for j := range branches[i].steps {
@@ -640,7 +640,7 @@ func prepareBranchComposePlan(plan branchComposePlan) ([]branchComposeRoute, []b
 func branchComposePlanEmptyError(kind string) error {
 	suggestions := []string{
 		"add at least one branch with a selector and encoder",
-		"add at least one target endpoint",
+		"add at least one target destination",
 		"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for the recipe API",
 	}
 	reason := "branch composition has no " + kind
@@ -805,12 +805,12 @@ func branchComposeDuplicateBranchError(name string, index int) error {
 
 func branchComposeRouteSteps(name string, branch branchComposeBranch) ([]mediaTransform, error) {
 	if len(branch.Steps) == 0 {
-		return branchComposeStepsFromLegacyFields(name, branch)
+		return branchComposeInlineTransforms(name, branch)
 	}
 	return branchComposeRouteStepsForName(name, branch.Steps)
 }
 
-func branchComposeRouteStepsForName(name string, steps []branchComposeStep) ([]mediaTransform, error) {
+func branchComposeRouteStepsForName(name string, steps []chainStep) ([]mediaTransform, error) {
 	out := make([]mediaTransform, 0, len(steps))
 	transformIndex := 0
 	for i := range steps {
@@ -818,7 +818,7 @@ func branchComposeRouteStepsForName(name string, steps []branchComposeStep) ([]m
 		if err != nil {
 			return nil, err
 		}
-		if steps[i].Stage == nil {
+		if steps[i].stage == nil {
 			transformIndex++
 		}
 		out = append(out, step)
@@ -826,9 +826,9 @@ func branchComposeRouteStepsForName(name string, steps []branchComposeStep) ([]m
 	return out, nil
 }
 
-func branchComposeStepsFromLegacyFields(name string, branch branchComposeBranch) ([]mediaTransform, error) {
+func branchComposeInlineTransforms(name string, branch branchComposeBranch) ([]mediaTransform, error) {
 	if branch.Resize != nil && branch.Resample != nil {
-		return nil, branchComposeStepError(name, "branch cannot combine resize and resample in one step")
+		return nil, branchChainStepError(name, "branch cannot combine resize and resample in one step")
 	}
 	switch {
 	case branch.Resize != nil:
@@ -848,46 +848,46 @@ func branchComposeStepsFromLegacyFields(name string, branch branchComposeBranch)
 	}
 }
 
-func branchComposeRouteStep(branchName string, transformIndex int, step branchComposeStep) (mediaTransform, error) {
+func branchComposeRouteStep(branchName string, transformIndex int, step chainStep) (mediaTransform, error) {
 	set := 0
-	if step.Stage != nil {
+	if step.stage != nil {
 		set++
 	}
-	if step.Resize != nil {
+	if step.transform.Resize != nil {
 		set++
 	}
-	if step.Resample != nil {
+	if step.transform.Resample != nil {
 		set++
 	}
 	if set != 1 {
-		return mediaTransform{}, branchComposeStepError(branchName, "branch step must contain exactly one stage or transform")
+		return mediaTransform{}, branchChainStepError(branchName, "branch step must contain exactly one stage or transform")
 	}
 	suffix := ""
 	if transformIndex > 0 {
 		suffix = "-" + strconv.Itoa(transformIndex+1)
 	}
 	switch {
-	case step.Stage != nil:
+	case step.stage != nil:
 		return mediaTransform{
-			name:  step.Stage.Name(),
-			stage: step.Stage,
+			name:  step.stage.Name(),
+			stage: step.stage,
 		}, nil
-	case step.Resize != nil:
+	case step.transform.Resize != nil:
 		return mediaTransform{
 			name:    "resize-" + branchName + suffix,
 			factory: filter.FactoryResize,
-			video:   step.Resize,
+			video:   step.transform.Resize,
 		}, nil
 	default:
 		return mediaTransform{
 			name:    "resample-" + branchName + suffix,
 			factory: filter.FactoryResample,
-			audio:   step.Resample,
+			audio:   step.transform.Resample,
 		}, nil
 	}
 }
 
-func branchComposeStepError(name string, reason string) error {
+func branchChainStepError(name string, reason string) error {
 	return &BuildError{
 		Code:      "branch_operation_chain_unsupported",
 		Operation: "build branch composition",
@@ -902,7 +902,7 @@ func branchComposeStepError(name string, reason string) error {
 	}
 }
 
-func branchComposeStepCount(branches []branchComposeRoute) int {
+func branchChainStepCount(branches []branchComposeRoute) int {
 	count := 0
 	for i := range branches {
 		count += len(branches[i].sharedSteps) + len(branches[i].steps)
@@ -1045,8 +1045,8 @@ func branchComposeTargets(plan branchComposePlan, branches []branchComposeRoute)
 	outputs := make([]branchComposeTargetRoute, len(plan.Targets))
 	for i := range plan.Targets {
 		output := plan.Targets[i]
-		if output.Sink != nil && branchComposeTargetHasMuxEndpoint(output) {
-			return nil, branchComposeTargetEndpointInvalidError(output, "output cannot configure both a sink and a mux target")
+		if output.Sink != nil && branchComposeTargetHasMuxDestination(output) {
+			return nil, branchComposeTargetDestinationInvalidError(output, "target cannot configure both a sink and a mux destination")
 		}
 		target := branchComposeFormatTarget(plan, output)
 		matches := branchComposeTargetMatches(output, branches)
@@ -1070,7 +1070,7 @@ func branchComposeTargets(plan branchComposePlan, branches []branchComposeRoute)
 	return outputs, nil
 }
 
-func branchComposeTargetHasMuxEndpoint(output branchComposeTarget) bool {
+func branchComposeTargetHasMuxDestination(output branchComposeTarget) bool {
 	return output.Target.Name != "" ||
 		output.Target.URI != "" ||
 		output.Target.Protocol != "" ||
@@ -1101,15 +1101,15 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, target format
 	}
 }
 
-func branchComposeTargetEndpointInvalidError(output branchComposeTarget, reason string) error {
+func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reason string) error {
 	return &BuildError{
 		Code:      "branch_target_invalid",
 		Operation: "build branch composition",
 		Node:      branchComposeTargetNodeName(output, "output"),
 		Reason:    reason,
 		Suggestions: []string{
-			"use goav.Target(name, goav.Sink(sink)) for frame or packet sink endpoints",
-			"use goav.Target(name, goav.FileOutput(...)) or goav.URIOutput(...) for muxed endpoints",
+			"use goav.Target(name, goav.Sink(sink)) for frame or packet sink targets",
+			"use goav.Target(name, goav.File(...)) or goav.Target(name, goav.URIOut(...)) for muxed destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

@@ -13,7 +13,8 @@ const (
 
 type mediaPlanExecutable interface {
 	spec() (pipeline.Spec, error)
-	build(context.Context) (Task, error)
+	runtimeRef() *runtime
+	compile(context.Context, pipeline.Graph) error
 }
 
 func emitMediaPlanGraphSpecPass() recipeCompilePass {
@@ -35,13 +36,7 @@ func emitMediaPlanGraphSpecPass() recipeCompilePass {
 }
 
 func mediaPlanGraph(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
-	if graph, ok, err := mediaPlanPacketCopyExecutable(state); err != nil || ok {
-		return graph, ok, err
-	}
-	if graph, ok, err := mediaPlanSinkDestinationExecutableForState(state); err != nil || ok {
-		return graph, ok, err
-	}
-	if graph, ok, err := mediaPlanEncodeExecutableForState(state); err != nil || ok {
+	if graph, ok, err := mediaPlanStreamExecutableForState(state); err != nil || ok {
 		return graph, ok, err
 	}
 	if graph, ok, err := mediaPlanBranchComposerExecutable(state); err != nil || ok {
@@ -50,12 +45,19 @@ func mediaPlanGraph(state *recipeCompileState) (mediaPlanExecutable, bool, error
 	return nil, false, nil
 }
 
-func mediaPlanPacketCopyExecutable(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
+func mediaPlanStreamExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
+	if graph, ok, err := mediaPlanPacketCopyStreamExecutableForState(state); err != nil || ok {
+		return graph, ok, err
+	}
+	return mediaPlanDecodeStreamExecutableForState(state)
+}
+
+func mediaPlanPacketCopyStreamExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
 	stream, selectedStream, ok := mediaPlanPacketCopyStream(state)
 	if !ok {
 		return nil, false, nil
 	}
-	plan, ok, err := newMediaPlanPacketCopyGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream, selectedStream)
+	plan, ok, err := newMediaPlanPacketCopyStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream, selectedStream)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -66,10 +68,10 @@ func mediaPlanPacketCopyStream(state *recipeCompileState) (StreamIntent, bool, b
 	if state == nil {
 		return StreamIntent{}, false, false
 	}
-	return mediaPlanPacketCopyIntentStream(state.jobPresent, state.intent, state.streamSteps)
+	return mediaPlanPacketCopyIntentStream(state.jobPresent, state.intent, state.chainSteps)
 }
 
-func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, streamSteps []jobStreamStepAttachment) (StreamIntent, bool, bool) {
+func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, chainSteps []chainStepAttachment) (StreamIntent, bool, bool) {
 	if !jobPresent {
 		return StreamIntent{}, false, false
 	}
@@ -78,26 +80,30 @@ func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, streamSteps
 		return StreamIntent{}, false, true
 	case 1:
 		stream := intent.Streams[0]
-		if stream.Encode.Copy && !stream.Decode && stream.Encode.ID == "" && !stream.Encode.Auto && len(streamSteps) == 0 {
+		if stream.Encode.Copy && !stream.Decode && stream.Encode.ID == "" && !stream.Encode.Auto && len(chainSteps) == 0 {
 			return stream, true, true
 		}
 	}
 	return StreamIntent{}, false, false
 }
 
-func mediaPlanSinkDestinationExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
+func mediaPlanDecodeStreamExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
 	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
 		return nil, false, nil
 	}
 	stream := state.intent.Streams[0]
-	if !mediaPlanSinkDestinationShape(stream, state.outputAttachments) {
+	if !mediaPlanDecodeStreamShape(stream, state.outputAttachments) {
 		return nil, false, nil
 	}
-	plan, ok, err := newMediaPlanSingleStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
+	plan, ok, err := newMediaPlanDecodeStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
-	return mediaPlanSinkDestinationExecutable{mediaPlanSingleStreamGraph: plan}, true, nil
+	return plan, true, nil
+}
+
+func mediaPlanDecodeStreamShape(stream StreamIntent, outputs []destinationSpec) bool {
+	return mediaPlanSinkDestinationShape(stream, outputs) || mediaPlanEncodeShape(stream, outputs)
 }
 
 func mediaPlanSinkDestinationShape(stream StreamIntent, outputs []destinationSpec) bool {
@@ -106,21 +112,6 @@ func mediaPlanSinkDestinationShape(stream StreamIntent, outputs []destinationSpe
 		stream.Decode &&
 		len(stream.Targets) == 1 &&
 		!stream.Encode.Copy
-}
-
-func mediaPlanEncodeExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
-	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
-		return nil, false, nil
-	}
-	stream := state.intent.Streams[0]
-	if !mediaPlanEncodeShape(stream, state.outputAttachments) {
-		return nil, false, nil
-	}
-	plan, ok, err := newMediaPlanSingleStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
-	if err != nil || !ok {
-		return nil, ok, err
-	}
-	return mediaPlanEncodeExecutable{mediaPlanSingleStreamGraph: plan}, true, nil
 }
 
 func mediaPlanEncodeShape(stream StreamIntent, outputs []destinationSpec) bool {
@@ -141,7 +132,7 @@ func mediaPlanBranchComposerExecutable(state *recipeCompileState) (mediaPlanExec
 	return plan, true, nil
 }
 
-func mediaPlanPacketCopySources(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {
+func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {
 	if len(inputs) == 1 && inputs[0].rtp == nil {
 		input := inputs[0].formatInput()
 		name := demuxNodeName(input)

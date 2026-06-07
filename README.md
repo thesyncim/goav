@@ -27,7 +27,7 @@ Packet-preserving RTP/WebRTC record:
 ```go
 return goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
     Copy().
-    To(goav.FileOutput("recording.ivf", file)).
+    To(goav.File("recording.ivf", file)).
     Run(ctx)
 ```
 
@@ -37,8 +37,8 @@ Packet-preserving file fanout:
 return goav.From(goav.FileInput("input.ivf", in)).
     Copy().
     To(
-        goav.FileOutput("archive.ivf", archive),
-        goav.FileOutput("preview.ivf", preview),
+        goav.File("archive.ivf", archive),
+        goav.File("preview.ivf", preview),
     ).
     Run(ctx)
 ```
@@ -68,7 +68,7 @@ return goav.From(input).
     Decode().
     Resize(1280, 720).
     VP9(2_000_000).
-    To(goav.FileOutput("preview.ivf", preview)).
+    To(goav.File("preview.ivf", preview)).
     Run(ctx)
 ```
 
@@ -90,8 +90,8 @@ target can be a mux group or a sink group.
 decoded := goav.FrameTap("video.decoded")
 previewFrames := goav.FrameTap("video.preview.frames")
 
-archive := goav.Target("archive", goav.FileOutput("archive.ivf", archiveFile))
-preview := goav.Target("preview", goav.FileOutput("preview.ivf", previewFile))
+archive := goav.Target("archive", goav.File("archive.ivf", archiveFile))
+preview := goav.Target("preview", goav.File("preview.ivf", previewFile))
 
 return goav.From(input).
     Video().
@@ -123,7 +123,7 @@ frames720p := goav.FrameTap("video.720p.frames")
 thumbnail := goav.Target("thumbnail",
     goav.Sink(goav.SinkFunc("thumbnail", saveFrame)),
 )
-web := goav.Target("web", goav.FileOutput("web.ivf", webFile))
+web := goav.Target("web", goav.File("web.ivf", webFile))
 
 return goav.From(input).
     Video().
@@ -147,7 +147,7 @@ return goav.From(input).
 Several branches can share one target when the container supports that group:
 
 ```go
-web := goav.Target("web", goav.FileOutput("web.webm", webFile))
+web := goav.Target("web", goav.File("web.webm", webFile))
 
 return goav.From(goav.FileInput("source.webm", in)).
     Video().
@@ -209,8 +209,8 @@ archive := goav.Flow("archive").Audio().
     Resample(48_000, goav.Stereo).
     OpusMusic()
 
-voiceTarget := goav.Target("voice", goav.FileOutput("voice.ogg", voiceFile))
-archiveTarget := goav.Target("archive", goav.FileOutput("archive.ogg", archiveFile))
+voiceTarget := goav.Target("voice", goav.File("voice.ogg", voiceFile))
+archiveTarget := goav.Target("archive", goav.File("archive.ogg", archiveFile))
 
 return goav.From(goav.WebRTCTrack(audio)).
     Audio().
@@ -254,7 +254,7 @@ or resample, after a custom stage, or after encode.
 frames720p := goav.FrameTap("video.720p.frames")
 screenshotFrames := goav.FrameTap("video.screenshot.frames")
 
-web := goav.Target("web", goav.FileOutput("web.ivf", webFile))
+web := goav.Target("web", goav.File("web.ivf", webFile))
 
 task, err := goav.From(input).
     Video().
@@ -290,7 +290,7 @@ Frame taps can also grow a late encoded destination:
 
 ```go
 audioDecoded := goav.FrameTap("audio.decoded")
-recording := goav.Target("recording", goav.FileOutput("recording.ogg", file))
+recording := goav.Target("recording", goav.File("recording.ogg", file))
 
 record, err := task.Attach(ctx,
     goav.Branch("record-audio").
@@ -349,7 +349,7 @@ encoded packet branches should feed one late recording destination.
 audioEncoded := goav.PacketTap("audio.encoded")
 videoEncoded := goav.PacketTap("video.encoded")
 recording := goav.Target("recording",
-    goav.FileOutput("recording.webm", file),
+    goav.File("recording.webm", file),
 )
 
 group, err := task.Attach(ctx,
@@ -367,7 +367,7 @@ record, err := task.Attach(ctx,
     goav.Branch("record-packets").
         From(audioEncoded).
         Copy().
-        To(goav.Target("recording", goav.FileOutput("recording.ogg", file))),
+        To(goav.Target("recording", goav.File("recording.ogg", file))),
 )
 if err != nil {
     return err
@@ -415,7 +415,9 @@ packet-domain taps.
 
 `Explain(ctx)` reports the workflow: inputs, branches, targets, taps, stream
 caps, operation output caps, adapter requirements with capability details,
-warnings, and the planned graph.
+warnings, and the planned graph. Operation reports mark shared upstream work, so
+branch splits after decode, resize, resample, custom stages, or taps are visible
+without reading the graph directly.
 
 ```go
 report, err := job.Explain(ctx)
