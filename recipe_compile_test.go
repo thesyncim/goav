@@ -341,7 +341,6 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 		"func chainStepOperations",
 		"func branchChainStepsFromOperationSpecsAroundTap",
 		"func chainStepsFromOperationSpecs",
-		"func branchChainStepsFromChain",
 		"func branchChainStepsFromTranscode",
 		"func runtimeBranchStepsFromChain",
 		"type chainSpec struct",
@@ -386,6 +385,24 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 	}
 	if strings.Contains(text[start:start+end], "steps          []chainStep") {
 		t.Fatal("jobStreamBuild should store OperationSpec, not a parallel chainStep slice")
+	}
+	streamStart := strings.Index(text, "type streamBuild struct")
+	if streamStart < 0 {
+		t.Fatal("could not locate streamBuild boundary")
+	}
+	streamEnd := strings.Index(text[streamStart:], "func StreamID")
+	if streamEnd < 0 {
+		t.Fatal("could not locate streamBuild boundary")
+	}
+	streamBlock := text[streamStart : streamStart+streamEnd]
+	for _, forbidden := range []string{
+		"operationSplit",
+		"sharedSteps",
+		"steps            []chainStep",
+	} {
+		if strings.Contains(streamBlock, forbidden) {
+			t.Fatalf("streamBuild should store OperationSpec split metadata, not %q", forbidden)
+		}
 	}
 
 	branchBody, err := os.ReadFile("branch.go")
@@ -476,9 +493,6 @@ func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 		t.Fatalf("branch streams = %d, want 1", len(job.branchStreams))
 	}
 	stream := job.branchStreams[0]
-	if !stream.operationSplit {
-		t.Fatal("planned branch should carry split operation metadata")
-	}
 	if len(stream.sharedOps) != 0 {
 		t.Fatalf("shared operations = %+v, want none before implicit decode", stream.sharedOps)
 	}
@@ -603,12 +617,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web operations = %+v, want anchor tap video.720p.frames", webOps)
 	}
 
-	operationOnlyStreams := append([]streamBuild(nil), job.branchStreams...)
-	for i := range operationOnlyStreams {
-		operationOnlyStreams[i].sharedSteps = nil
-		operationOnlyStreams[i].steps = nil
-	}
-	plan, err := planBranchCompositionRecipe(job.Intent(), job.inputs[0], job.branchDestinations, operationOnlyStreams)
+	plan, err := planBranchCompositionRecipe(job.Intent(), job.inputs[0], job.branchDestinations, job.branchStreams)
 	if err != nil {
 		t.Fatal(err)
 	}

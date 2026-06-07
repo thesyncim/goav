@@ -1745,6 +1745,7 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 		afterPacketOperation = OpCopy
 	}
 	afterStepOperation := initialStepAfter(stream.decode)
+	steps := branchChainStepsFromOperationSpecs(streamBuildOperationSpecs(stream))
 	return StreamIntent{
 		Name: stream.name,
 		Select: StreamSelect{
@@ -1760,7 +1761,7 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
 		Operations:   streamBuildOperationSpecs(stream),
 		Transforms:   cloneTransformSpecs(stream.transforms),
-		Taps:         append(chainStepTapIntents(streamChainSteps(stream), stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
+		Taps:         append(chainStepTapIntents(steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:       cloneCodecSpec(stream.encode),
 		Destinations: append([]string(nil), stream.destinationNames...),
 	}
@@ -1796,11 +1797,13 @@ func jobOperationSpecs(stream *jobStreamBuild) []OperationSpec {
 }
 
 func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
-	if stream.operationSplit {
+	if len(stream.sharedOps) != 0 || len(stream.privateOps) != 0 {
 		return streamBuildSplitOperationSpecs(stream)
 	}
-	steps := streamChainSteps(stream)
-	operations := make([]OperationSpec, 0, len(steps)+2+len(stream.postEncodeTaps))
+	if len(stream.operations) != 0 {
+		return cloneOperationSpecs(stream.operations)
+	}
+	operations := make([]OperationSpec, 0, 2+len(stream.postEncodeTaps))
 	if stream.decode {
 		operations = append(operations, OperationSpec{
 			Kind:      OpDecode,
@@ -1809,8 +1812,6 @@ func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
 			Shared:    stream.from.Domain() == DomainFrame,
 		})
 	}
-	operations = append(operations, chainStepOperations(steps, stream.selector.Type, initialStepAfter(stream.decode))...)
-	markSharedOperationSpecs(operations, stream)
 	if stream.encode.Copy {
 		operations = append(operations, OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
 	} else if codecIntentSet(stream.encode) {
@@ -1843,20 +1844,6 @@ func streamBuildSplitOperationSpecs(stream streamBuild) []OperationSpec {
 		operations = append(operations, operationSpecForEncode(stream.encode))
 	}
 	return operations
-}
-
-func markSharedOperationSpecs(operations []OperationSpec, stream streamBuild) {
-	if len(stream.sharedSteps) == 0 {
-		return
-	}
-	sharedOps := chainStepOperations(stream.sharedSteps, stream.selector.Type, initialStepAfter(stream.decode))
-	start := 0
-	if stream.decode {
-		start = 1
-	}
-	for i := 0; i < len(sharedOps) && start+i < len(operations); i++ {
-		operations[start+i].Shared = true
-	}
 }
 
 func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) []OperationSpec {
@@ -1944,10 +1931,6 @@ func operationSpecsThroughTap(operations []OperationSpec, tap string) ([]Operati
 		}
 	}
 	return nil, false
-}
-
-func streamChainSteps(stream streamBuild) []chainStep {
-	return appendChainSteps(stream.sharedSteps, stream.steps)
 }
 
 func chainStepOperations(steps []chainStep, media av.MediaType, after OperationKind) []OperationSpec {
@@ -2260,13 +2243,6 @@ func cloneChainSteps(steps []chainStep) []chainStep {
 		step.transform = cloneTransformSpec(step.transform)
 		out = append(out, step)
 	}
-	return out
-}
-
-func appendChainSteps(prefix []chainStep, branch []chainStep) []chainStep {
-	out := make([]chainStep, 0, len(prefix)+len(branch))
-	out = append(out, cloneChainSteps(prefix)...)
-	out = append(out, cloneChainSteps(branch)...)
 	return out
 }
 
@@ -3533,11 +3509,8 @@ type streamBuild struct {
 	decode           bool
 	decodeCodec      CodecSpec
 	operations       []OperationSpec
-	operationSplit   bool
 	sharedOps        []OperationSpec
 	privateOps       []OperationSpec
-	sharedSteps      []chainStep
-	steps            []chainStep
 	postEncodeTaps   []string
 	transforms       []TransformSpec
 	encode           CodecSpec
@@ -3960,10 +3933,10 @@ func branchComposePlanReady(plan branchComposePlan) bool {
 }
 
 func branchChainStepsForStreamBuild(stream streamBuild) ([]chainStep, []chainStep) {
-	if stream.operationSplit {
+	if len(stream.sharedOps) != 0 || len(stream.privateOps) != 0 {
 		return chainStepsFromOperationSpecs(stream.sharedOps), chainStepsFromOperationSpecs(stream.privateOps)
 	}
-	return branchChainStepsFromChain(stream.sharedSteps), branchChainStepsFromChain(stream.steps)
+	return branchChainStepsFromOperationSpecsAroundTap(streamBuildOperationSpecs(stream), stream.from.Name())
 }
 
 func branchChainStepsForStream(stream StreamIntent) ([]chainStep, []chainStep) {
@@ -4100,25 +4073,6 @@ func chainStepsFromChainOperations(operations []OperationSpec) []chainStep {
 		}
 	}
 	return steps
-}
-
-func branchChainStepsFromChain(steps []chainStep) []chainStep {
-	if len(steps) == 0 {
-		return nil
-	}
-	out := make([]chainStep, 0, len(steps))
-	for i := range steps {
-		step := steps[i]
-		switch {
-		case step.stage != nil:
-			out = append(out, chainStep{stage: step.stage})
-		case !mediaShapeEmpty(step.shape):
-			out = append(out, chainStep{shape: step.shape})
-		case step.transform.Resize != nil || step.transform.Resample != nil:
-			out = append(out, chainStep{transform: cloneTransformSpec(step.transform)})
-		}
-	}
-	return out
 }
 
 func validateBranchCompositionIntentShape(operation string, intent Intent) error {
