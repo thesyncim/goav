@@ -164,6 +164,11 @@ Current milestone:
   length contracts, missing or unsupported DocType values, duplicate EBML
   header singleton fields, and Seek entries without both SeekID and
   SeekPosition.
+- Demuxers enforce top-level Segment occurrence limits for SeekHead, Info,
+  Tracks, Cues, Attachments, and Chapters. Seekable readers also resolve
+  required Info/Tracks masters through a pre-Cluster SeekHead when those
+  masters are stored after the first Cluster, then skip the same physical
+  elements during the later linear packet scan.
 - Mux and demux validation rejects negative or overflowing track timing,
   audio, and video metadata before it can wrap into EBML unsigned integers or
   public `int` fields.
@@ -221,8 +226,11 @@ Seekable mode also writes Cues using Segment-relative Cluster positions plus
 default, audio packets and keyframe video packets are indexed. `CuePolicy`
 allows callers to keep keyframe-only indexing, force all-packet dense indexing,
 or disable cues. The muxer also writes a SeekHead that points to Info, Tracks,
-Attachments, Chapters, Tags, and Cues when present. The muxer updates duration
-and cue state only after the packet bytes are written successfully.
+Attachments, Chapters, Tags, and Cues when present. The demuxer can use a
+pre-Cluster SeekHead to load required Info and Tracks metadata before reading
+the first Cluster even when those masters are physically stored later in the
+Segment. The muxer updates duration and cue state only after the packet bytes
+are written successfully.
 `SeekToTime` uses those Cues to jump to the nearest preceding cue. When that cue
 has `CueRelativePosition`, the demuxer parses preceding Cluster metadata and
 positions the next read directly on the cued block. If a cue omits

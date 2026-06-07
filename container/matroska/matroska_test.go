@@ -9766,6 +9766,114 @@ func TestDemuxerKeepsZeroSeekPosition(t *testing.T) {
 	assertSeekEntry(t, entries, idInfo, 0)
 }
 
+func TestDemuxerRejectsDuplicateTopLevelSegmentMetadata(t *testing.T) {
+	tests := []struct {
+		name          string
+		writeMetadata func(*ebml.Writer) error
+	}{
+		{
+			name: "third seekhead",
+			writeMetadata: func(w *ebml.Writer) error {
+				for i := 0; i < 3; i++ {
+					if err := w.WriteElement(idSeekHead, nil); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+		},
+		{
+			name: "duplicate info",
+			writeMetadata: func(w *ebml.Writer) error {
+				return writeInfoWithElements(w, nil)
+			},
+		},
+		{
+			name: "duplicate tracks",
+			writeMetadata: func(w *ebml.Writer) error {
+				return writeTracksWithVideoDimensions(w, 16, 16)
+			},
+		},
+		{
+			name: "duplicate cues",
+			writeMetadata: func(w *ebml.Writer) error {
+				if err := writeCuesWithTrackNumber(w, 1); err != nil {
+					return err
+				}
+				return writeCuesWithTrackNumber(w, 1)
+			},
+		},
+		{
+			name: "duplicate attachments",
+			writeMetadata: func(w *ebml.Writer) error {
+				if err := writeAttachmentsElement(w, Attachment{
+					UID:      1,
+					Filename: "one.txt",
+					MIMEType: "text/plain",
+					Data:     []byte("one"),
+				}); err != nil {
+					return err
+				}
+				return writeAttachmentsElement(w, Attachment{
+					UID:      2,
+					Filename: "two.txt",
+					MIMEType: "text/plain",
+					Data:     []byte("two"),
+				})
+			},
+		},
+		{
+			name: "duplicate chapters",
+			writeMetadata: func(w *ebml.Writer) error {
+				if err := writeChaptersElement(w,
+					ChapterEdition{UID: 1, Chapters: []Chapter{metadataValidationChapter(1, 0)}},
+				); err != nil {
+					return err
+				}
+				return writeChaptersElement(w,
+					ChapterEdition{UID: 2, Chapters: []Chapter{metadataValidationChapter(2, 1)}},
+				)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeTopLevelMetadataMatroskaData(t, tt.writeMetadata)
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestDemuxerLoadsRequiredMetadataFromSeekHeadBeforeFirstCluster(t *testing.T) {
+	data := makeDeferredRequiredMetadataMatroskaData(t, true)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tracks := demuxer.Tracks(); len(tracks) != 1 || tracks[0].Codec != CodecVP8 {
+		t.Fatalf("tracks = %+v, want deferred VP8 track", tracks)
+	}
+	packet := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TrackID != 1 || packet.TimeNS != 0 || !bytes.Equal(packet.Data, []byte{0x77}) {
+		t.Fatalf("packet = %+v data=%x", packet, packet.Data)
+	}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
+func TestDemuxerRejectsClusterBeforeRequiredMetadataWithoutSeekHead(t *testing.T) {
+	data := makeDeferredRequiredMetadataMatroskaData(t, false)
+	if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
+	}
+}
+
 func TestDemuxerRejectsBlockForUnknownTrack(t *testing.T) {
 	data := makeBlockTrackNumberMatroskaData(t, 2)
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
@@ -13672,6 +13780,85 @@ func makeSeekHeadMetadataMatroskaData(tb testing.TB, writeSeekHead func(*ebml.Wr
 		}
 		return writer.WriteElement(idSeekHead, payload.Bytes())
 	})
+}
+
+func makeDeferredRequiredMetadataMatroskaData(tb testing.TB, withSeekHead bool) []byte {
+	tb.Helper()
+	infoElement := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+		return writeInfoWithElements(w, nil)
+	})
+	tracksElement := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+		return writeTracksWithVideoDimensions(w, 16, 16)
+	})
+	clusterElement := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+		var payload bytes.Buffer
+		cw := ebml.NewWriter(&payload)
+		if err := cw.WriteUInt(idTimestamp, 0); err != nil {
+			return err
+		}
+		if err := writeSimpleBlockWithTrackNumber(cw, 1, []byte{0x77}); err != nil {
+			return err
+		}
+		return w.WriteElement(idCluster, payload.Bytes())
+	})
+	var seekHeadElement []byte
+	if withSeekHead {
+		seekHeadElement = seekHeadElementForDeferredMetadata(tb, len(clusterElement), len(infoElement))
+	}
+
+	var buffer bytes.Buffer
+	writer := ebml.NewWriter(&buffer)
+	if err := writeEBMLHeaderFixture(writer, defaultEBMLHeaderFixture()); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
+		tb.Fatal(err)
+	}
+	for _, element := range [][]byte{seekHeadElement, clusterElement, infoElement, tracksElement} {
+		if len(element) == 0 {
+			continue
+		}
+		if _, err := writer.Write(element); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	return buffer.Bytes()
+}
+
+func segmentChildElementBytes(tb testing.TB, writeElement func(*ebml.Writer) error) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	writer := ebml.NewWriter(&buffer)
+	if err := writeElement(writer); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func seekHeadElementForDeferredMetadata(tb testing.TB, clusterElementSize int, infoElementSize int) []byte {
+	tb.Helper()
+	var seekHead []byte
+	for attempt := 0; attempt < 8; attempt++ {
+		infoPosition := uint64(len(seekHead) + clusterElementSize)
+		tracksPosition := infoPosition + uint64(infoElementSize)
+		next := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
+			var payload bytes.Buffer
+			sw := ebml.NewWriter(&payload)
+			if err := writeSeekEntry(sw, idInfo, infoPosition); err != nil {
+				return err
+			}
+			if err := writeSeekEntry(sw, idTracks, tracksPosition); err != nil {
+				return err
+			}
+			return w.WriteElement(idSeekHead, payload.Bytes())
+		})
+		if len(next) == len(seekHead) {
+			return next
+		}
+		seekHead = next
+	}
+	tb.Fatal("SeekHead element size did not converge")
+	return nil
 }
 
 func writeSeekIDElement(w *ebml.Writer, id ebml.ID) error {

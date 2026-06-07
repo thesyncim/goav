@@ -40,11 +40,17 @@ type Demuxer struct {
 	cuesSeen              bool
 	cuesSorted            bool
 	seekEntries           []SeekEntry
+	preloadedTopLevel     []preloadedTopLevelElement
 	clusterIndex          []clusterIndexEntry
 	clusterIndexBuilt     bool
 	packetIndex           []packetIndexEntry
 	packetTrackIndex      []packetTrackIndex
 	packetIndexBuilt      bool
+	seekHeadCount         int
+	infoSeen              bool
+	tracksSeen            bool
+	attachmentsSeen       bool
+	chaptersSeen          bool
 	inSegment             bool
 	inCluster             bool
 	clusterUnknown        bool
@@ -106,6 +112,11 @@ type packetIndexEntry struct {
 type packetTrackIndex struct {
 	TrackID uint32
 	Entries []int
+}
+
+type preloadedTopLevelElement struct {
+	ID     ebml.ID
+	Offset int64
 }
 
 type indexedBlockInfo struct {
@@ -177,11 +188,17 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.cuesSeen = false
 	d.cuesSorted = true
 	d.seekEntries = d.seekEntries[:0]
+	d.preloadedTopLevel = d.preloadedTopLevel[:0]
 	d.clusterIndex = d.clusterIndex[:0]
 	d.clusterIndexBuilt = false
 	d.packetIndex = d.packetIndex[:0]
 	d.packetTrackIndex = d.packetTrackIndex[:0]
 	d.packetIndexBuilt = false
+	d.seekHeadCount = 0
+	d.infoSeen = false
+	d.tracksSeen = false
+	d.attachmentsSeen = false
+	d.chaptersSeen = false
 	d.inSegment = false
 	d.inCluster = false
 	d.clusterUnknown = false
@@ -2015,27 +2032,23 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 		}
 		switch header.ID {
 		case idSeekHead:
-			if err := d.parseSeekHead(header); err != nil {
-				return err
-			}
-		case idCluster:
-			if err := d.enterCluster(header); err != nil {
+			if err := d.parseSegmentSeekHead(header); err != nil {
 				return err
 			}
 		case idInfo:
-			if err := d.parseInfo(header); err != nil {
+			if err := d.parseSegmentInfo(header); err != nil {
 				return err
 			}
 		case idTracks:
-			if err := d.parseTracks(header); err != nil {
+			if err := d.parseSegmentTracks(header); err != nil {
 				return err
 			}
 		case idAttachments:
-			if err := d.parseAttachments(header); err != nil {
+			if err := d.parseSegmentAttachments(header); err != nil {
 				return err
 			}
 		case idChapters:
-			if err := d.parseChapters(header); err != nil {
+			if err := d.parseSegmentChapters(header); err != nil {
 				return err
 			}
 		case idTags:
@@ -2043,7 +2056,11 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 				return err
 			}
 		case idCues:
-			if err := d.parseCues(header); err != nil {
+			if err := d.parseSegmentCues(header); err != nil {
+				return err
+			}
+		case idCluster:
+			if err := d.enterCluster(header); err != nil {
 				return err
 			}
 		case idVoid, idCRC32:
@@ -2172,30 +2189,10 @@ func (d *Demuxer) readPreamble() error {
 }
 
 func (d *Demuxer) loadCuesFromSeekHead() error {
-	var cuesPosition uint64
-	var cuesPositionSet bool
-	for i := range d.seekEntries {
-		if d.seekEntries[i].ID == uint64(idCues) {
-			cuesPosition = d.seekEntries[i].Position
-			cuesPositionSet = true
-			break
-		}
-	}
-	if !cuesPositionSet {
+	if d.cuesSeen {
 		return ErrInvalidData
 	}
-	if _, err := d.seeker.Seek(d.segmentData+int64(cuesPosition), io.SeekStart); err != nil {
-		return err
-	}
-	d.reader.Reset(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
-	header, err := d.reader.ReadHeader()
-	if err != nil {
-		return err
-	}
-	if header.ID != idCues {
-		return ErrInvalidData
-	}
-	return d.parseCues(header)
+	return d.loadTopLevelElementFromSeekHead(idCues)
 }
 
 func (d *Demuxer) readSegmentHeaders() error {
@@ -2206,23 +2203,23 @@ func (d *Demuxer) readSegmentHeaders() error {
 		}
 		switch header.ID {
 		case idSeekHead:
-			if err := d.parseSeekHead(header); err != nil {
+			if err := d.parseSegmentSeekHead(header); err != nil {
 				return err
 			}
 		case idInfo:
-			if err := d.parseInfo(header); err != nil {
+			if err := d.parseSegmentInfo(header); err != nil {
 				return err
 			}
 		case idTracks:
-			if err := d.parseTracks(header); err != nil {
+			if err := d.parseSegmentTracks(header); err != nil {
 				return err
 			}
 		case idAttachments:
-			if err := d.parseAttachments(header); err != nil {
+			if err := d.parseSegmentAttachments(header); err != nil {
 				return err
 			}
 		case idChapters:
-			if err := d.parseChapters(header); err != nil {
+			if err := d.parseSegmentChapters(header); err != nil {
 				return err
 			}
 		case idTags:
@@ -2230,10 +2227,13 @@ func (d *Demuxer) readSegmentHeaders() error {
 				return err
 			}
 		case idCues:
-			if err := d.parseCues(header); err != nil {
+			if err := d.parseSegmentCues(header); err != nil {
 				return err
 			}
 		case idCluster:
+			if err := d.ensureRequiredSegmentHeaders(header); err != nil {
+				return err
+			}
 			return d.enterCluster(header)
 		case idVoid, idCRC32:
 			if err := skipElement(d.reader, header); err != nil {
@@ -2244,6 +2244,157 @@ func (d *Demuxer) readSegmentHeaders() error {
 				return err
 			}
 		}
+	}
+}
+
+func (d *Demuxer) parseSegmentSeekHead(header ebml.Header) error {
+	if d.shouldSkipPreloadedTopLevelElement(header) {
+		return skipElement(d.reader, header)
+	}
+	if d.seekHeadCount >= 2 {
+		return ErrInvalidData
+	}
+	d.seekHeadCount++
+	return d.parseSeekHead(header)
+}
+
+func (d *Demuxer) parseSegmentInfo(header ebml.Header) error {
+	if d.shouldSkipPreloadedTopLevelElement(header) {
+		return skipElement(d.reader, header)
+	}
+	if d.infoSeen {
+		return ErrInvalidData
+	}
+	d.infoSeen = true
+	return d.parseInfo(header)
+}
+
+func (d *Demuxer) parseSegmentTracks(header ebml.Header) error {
+	if d.shouldSkipPreloadedTopLevelElement(header) {
+		return skipElement(d.reader, header)
+	}
+	if d.tracksSeen {
+		return ErrInvalidData
+	}
+	d.tracksSeen = true
+	return d.parseTracks(header)
+}
+
+func (d *Demuxer) parseSegmentAttachments(header ebml.Header) error {
+	if d.shouldSkipPreloadedTopLevelElement(header) {
+		return skipElement(d.reader, header)
+	}
+	if d.attachmentsSeen {
+		return ErrInvalidData
+	}
+	d.attachmentsSeen = true
+	return d.parseAttachments(header)
+}
+
+func (d *Demuxer) parseSegmentChapters(header ebml.Header) error {
+	if d.shouldSkipPreloadedTopLevelElement(header) {
+		return skipElement(d.reader, header)
+	}
+	if d.chaptersSeen {
+		return ErrInvalidData
+	}
+	d.chaptersSeen = true
+	return d.parseChapters(header)
+}
+
+func (d *Demuxer) parseSegmentCues(header ebml.Header) error {
+	if d.shouldSkipPreloadedTopLevelElement(header) {
+		return skipElement(d.reader, header)
+	}
+	if d.cuesSeen {
+		return ErrInvalidData
+	}
+	d.cuesSeen = true
+	return d.parseCues(header)
+}
+
+func (d *Demuxer) shouldSkipPreloadedTopLevelElement(header ebml.Header) bool {
+	for i := range d.preloadedTopLevel {
+		if d.preloadedTopLevel[i].ID == header.ID && d.preloadedTopLevel[i].Offset == header.Offset {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Demuxer) ensureRequiredSegmentHeaders(cluster ebml.Header) error {
+	if d.infoSeen && d.tracksSeen {
+		return nil
+	}
+	if d.seeker == nil {
+		return ErrInvalidData
+	}
+	if !d.infoSeen {
+		if err := d.loadTopLevelElementFromSeekHead(idInfo); err != nil {
+			return err
+		}
+	}
+	if !d.tracksSeen {
+		if err := d.loadTopLevelElementFromSeekHead(idTracks); err != nil {
+			return err
+		}
+	}
+	if _, err := d.seeker.Seek(cluster.DataOffset, io.SeekStart); err != nil {
+		return err
+	}
+	d.reader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, cluster.DataOffset)
+	return nil
+}
+
+func (d *Demuxer) loadTopLevelElementFromSeekHead(id ebml.ID) error {
+	position, ok := d.seekHeadPosition(id)
+	if !ok {
+		return ErrInvalidData
+	}
+	if position > uint64(math.MaxInt64) || int64(position) > math.MaxInt64-d.segmentData {
+		return ErrInvalidData
+	}
+	offset := d.segmentData + int64(position)
+	if _, err := d.seeker.Seek(offset, io.SeekStart); err != nil {
+		return err
+	}
+	d.reader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, offset)
+	header, err := d.reader.ReadHeader()
+	if err != nil {
+		return err
+	}
+	if header.ID != id {
+		return ErrInvalidData
+	}
+	if err := d.parseLoadedTopLevelElement(header); err != nil {
+		return err
+	}
+	d.preloadedTopLevel = append(d.preloadedTopLevel, preloadedTopLevelElement{
+		ID:     id,
+		Offset: header.Offset,
+	})
+	return nil
+}
+
+func (d *Demuxer) seekHeadPosition(id ebml.ID) (uint64, bool) {
+	for i := range d.seekEntries {
+		if d.seekEntries[i].ID == uint64(id) {
+			return d.seekEntries[i].Position, true
+		}
+	}
+	return 0, false
+}
+
+func (d *Demuxer) parseLoadedTopLevelElement(header ebml.Header) error {
+	switch header.ID {
+	case idInfo:
+		return d.parseSegmentInfo(header)
+	case idTracks:
+		return d.parseSegmentTracks(header)
+	case idCues:
+		return d.parseSegmentCues(header)
+	default:
+		return ErrInvalidData
 	}
 }
 
@@ -2738,7 +2889,6 @@ func (d *Demuxer) parseTracks(header ebml.Header) error {
 }
 
 func (d *Demuxer) parseCues(header ebml.Header) error {
-	d.cuesSeen = true
 	if header.Size.Unknown {
 		return ErrInvalidData
 	}
