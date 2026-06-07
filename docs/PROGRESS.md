@@ -2045,6 +2045,15 @@ The missing product layer is now explicit:
     without treating preset sample-rate or channel defaults as proof required
     from packet inputs.
     Done.
+373. Validate terminal target shapes and runtime attach shapes:
+    Planned recipes now compute each stream's final ordered-operation shape and
+    reject file, URI, writer, object, and mux targets unless the terminal media
+    is packet-domain. Sink targets remain the raw observation endpoint for frame
+    or packet shapes. Runtime `Task.Attach` now runs the same ordered operation
+    shape validation before allocating branch decoders, filters, encoders, muxers,
+    or sinks, and runtime byte targets use the same packet-domain terminal rule.
+    Rejected runtime branches keep the graph unmodified.
+    Done.
 
 ## First Vertical Slice
 

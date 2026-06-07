@@ -699,6 +699,9 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 			return err
 		}
 	}
+	if err := validateRuntimeBranchShapeContract(*branch, currentShape); err != nil {
+		return err
+	}
 	currentStream := streamFromRuntimeBranchShape(branch.name, currentShape)
 	transformIndex := 0
 	for i := range branch.steps {
@@ -780,6 +783,78 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 		return err
 	}
 	return nil
+}
+
+func validateRuntimeBranchShapeContract(branch runtimeBranch, initial MediaShape) error {
+	stream := StreamIntent{
+		Name: branch.name,
+		Select: StreamSelect{
+			Type:  firstNonEmptyMedia(branch.media, initial.MediaKind),
+			Codec: initial.Codec,
+		},
+		Operations: runtimeBranchShapeOperations(branch),
+	}
+	if err := validateStreamOperationShapes("attach runtime branch", stream, initial); err != nil {
+		return err
+	}
+	shape := runtimeBranchFinalShape(branch, initial)
+	for i := range branch.destinations {
+		destination := branch.destinations[i]
+		if destination.sink != nil {
+			continue
+		}
+		if !destinationSpecHasOutput(destination.dest) {
+			continue
+		}
+		if shape.Domain == DomainPacket {
+			continue
+		}
+		target := firstNonEmpty(destination.name, destination.dest.label(fmt.Sprintf("target%d", i+1)))
+		return targetShapeMismatchError("attach runtime branch", branch.name, target, destination.dest, shape)
+	}
+	return nil
+}
+
+func runtimeBranchShapeOperations(branch runtimeBranch) []StreamOperation {
+	operations := make([]StreamOperation, 0, len(branch.steps)+1)
+	for i := range branch.steps {
+		step := branch.steps[i]
+		switch {
+		case step.decode:
+			operations = append(operations, StreamOperation{Kind: OpDecode, Decode: cloneCodecSpec(step.codec)})
+		case step.stage != nil:
+			operations = append(operations, StreamOperation{Kind: OpStage, Component: step.stage.Name(), Stage: step.stage})
+		case !mediaShapeEmpty(step.shapeUpdate):
+			operations = append(operations, StreamOperation{Kind: OpShape, Component: "shape", Shape: step.shapeUpdate})
+		case runtimeBranchStepHasTransform(step):
+			operations = append(operations, StreamOperation{Kind: OpTransform, Component: transformFactoryName(step.transform), Transform: cloneTransformSpec(step.transform)})
+		case step.tap != "":
+			operations = append(operations, StreamOperation{
+				Kind:      OpTap,
+				Component: step.tap,
+				Tap: TapIntent{
+					Name:      step.tap,
+					Domain:    step.tapDomain,
+					MediaKind: branch.media,
+					After:     step.after,
+				},
+			})
+		}
+	}
+	if branch.encode.Copy {
+		operations = append(operations, StreamOperation{Kind: OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(branch.encode)})
+	} else if codecIntentSet(branch.encode) {
+		operations = append(operations, StreamOperation{Kind: OpEncode, Component: string(branch.encode.ID), Encode: cloneCodecSpec(branch.encode)})
+	}
+	return operations
+}
+
+func runtimeBranchFinalShape(branch runtimeBranch, initial MediaShape) MediaShape {
+	shape := normalizeTapShape(initial)
+	for _, operation := range runtimeBranchShapeOperations(branch) {
+		shape = streamOperationOutputShape(shape, operation)
+	}
+	return shape
 }
 
 func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentShape MediaShape, group *runtimeAttachGroup) error {

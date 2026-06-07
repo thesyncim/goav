@@ -653,7 +653,8 @@ return goav.From(input).
 `Shape(...)` annotates the current media point; it is not an escape hatch around
 operation contracts. The compiler still checks each step in order, so an encoder
 must consume frames, `Copy()` must consume packets, and resize/resample must
-consume matching decoded media.
+consume matching decoded media. File, URI, writer, and object targets consume
+packet-domain media; use `goav.Sink(...)` when a branch should end as frames.
 
 Adapters decide which concrete config and control types they understand; the
 public grammar stays Input, Chain, Tap, Branch, Target, and Task.

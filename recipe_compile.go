@@ -305,6 +305,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobInputFormatAdaptersPass(),
 		validateJobKnownInputStreamSelectionPass(),
 		validateRecipeOperationShapesPass(),
+		validateRecipeTargetShapesPass(),
 		validateJobKnownInputDecodeAdaptersPass(),
 		validateRecipeRuntimePass(),
 		emitGraphPlanSpecPass(),
@@ -358,6 +359,7 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		validateBranchInputFormatAdaptersPass(),
 		validateKnownBranchInputStreamSelectionPass(),
 		validateRecipeOperationShapesPass(),
+		validateRecipeTargetShapesPass(),
 		validateKnownBranchInputDecodeAdaptersPass(),
 		planBranchCompositionIntentPass(),
 		validateRecipeRuntimePass(),
@@ -934,6 +936,44 @@ func validateRecipeOperationShapesPass() recipeCompilePass {
 	}}
 }
 
+func validateRecipeTargetShapesPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate recipe target shapes", fn: func(state *recipeCompileState) error {
+		outputs := state.recipeTargetDestinationSet()
+		if len(outputs) == 0 {
+			return nil
+		}
+		for i := range state.intent.Streams {
+			stream := state.intent.Streams[i]
+			shape := recipeFinalStreamShape(state, stream)
+			node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
+			for _, label := range stream.Targets {
+				destination, ok := outputs[label]
+				if !ok {
+					continue
+				}
+				if err := validateRecipeTargetShape(state.operation, node, label, destination, shape); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}}
+}
+
+func (s *recipeCompileState) recipeTargetDestinationSet() map[string]destinationSpec {
+	if s == nil {
+		return nil
+	}
+	if s.branchCompositionPresent {
+		return branchTargetDestinationSet(s.branchTargetAttachments)
+	}
+	outputs := make(map[string]destinationSpec, len(s.outputAttachments))
+	for i := range s.outputAttachments {
+		outputs[jobOutputTargetName(s.outputAttachments, s.outputTargetNames, i)] = s.outputAttachments[i]
+	}
+	return outputs
+}
+
 func recipeInitialStreamShape(state *recipeCompileState, stream StreamIntent) MediaShape {
 	var shape MediaShape
 	if selected, ok := planSelectedStream(state, stream); ok {
@@ -945,6 +985,55 @@ func recipeInitialStreamShape(state *recipeCompileState, stream StreamIntent) Me
 		shape = normalizePlanBranchShape(shape, stream, InputIntent{})
 	}
 	return shape
+}
+
+func recipeFinalStreamShape(state *recipeCompileState, stream StreamIntent) MediaShape {
+	shape := recipeInitialStreamShape(state, stream)
+	shape = normalizeTapShape(shape)
+	if shape.MediaKind == "" {
+		shape.MediaKind = stream.Select.Type
+	}
+	if shape.Codec == "" {
+		shape.Codec = stream.Select.Codec
+	}
+	for i := range stream.Operations {
+		shape = streamOperationOutputShape(shape, stream.Operations[i])
+	}
+	return shape
+}
+
+func validateRecipeTargetShape(operation string, node string, target string, destination destinationSpec, shape MediaShape) error {
+	if destination.sink != nil {
+		return nil
+	}
+	if !destinationSpecHasOutput(destination) {
+		return nil
+	}
+	if shape.Domain == DomainPacket {
+		return nil
+	}
+	return targetShapeMismatchError(operation, node, target, destination, shape)
+}
+
+func targetShapeMismatchError(operation string, node string, target string, destination destinationSpec, shape MediaShape) error {
+	label := firstNonEmpty(target, destination.label("target"))
+	return &BuildError{
+		Code:      "target_shape_mismatch",
+		Operation: operation,
+		Node:      firstNonEmpty(node, label, "target"),
+		Reason:    "byte or mux target requires packet-domain media",
+		Details: []string{
+			"target=" + label,
+			"expected_shape=" + Shape(ShapeDomain(DomainPacket), ShapeMedia(shape.MediaKind)).String(),
+			"actual_shape=" + shape.String(),
+		},
+		Suggestions: []string{
+			"call .Opus(...), .VP8(...), or .VP9(...) before writing to file, URI, writer, or object targets",
+			"use .Copy() from a packet-domain stream point for packet-preserving output",
+			"send frame-domain media to goav.Sink(...) instead of a byte destination",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func validateStreamOperationShapes(operation string, stream StreamIntent, initial MediaShape) error {

@@ -2662,6 +2662,53 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 	}
 }
 
+func TestRuntimeAttachShapeAnnotationCannotBreakOperationContract(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Tap(FrameTap("audio.frames")).
+		To(Sink(SinkFunc("frames", func(context.Context, Message) error {
+			return nil
+		})))
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	_, err = task.Attach(ctx, Branch("bad").
+		From(FrameTap("audio.frames")).
+		Shape(Shape(ShapeDomain(DomainPacket), ShapeMedia(av.MediaAudio))).
+		Opus(96_000).
+		To(File("bad.ogg", io.Discard)))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want operation_shape_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	for _, want := range []string{
+		"opus cannot consume the current media shape",
+		"expected_shape=domain=frame media=audio",
+		"actual_shape=domain=packet media=audio",
+		"keep .Shape(...) annotations in the frame domain before encoders",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+}
+
 func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
@@ -3163,8 +3210,18 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 		From(FrameTap("audio.frames")).
 		To(Target("archive", File("archive.ogg", io.Discard))))
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_encode_missing" {
-		t.Fatalf("err = %v, want runtime_branch_encode_missing", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_shape_mismatch" {
+		t.Fatalf("err = %v, want target_shape_mismatch", err)
+	}
+	for _, want := range []string{
+		"byte or mux target requires packet-domain media",
+		"target=archive",
+		"actual_shape=domain=frame media=audio",
+		"goav.Sink",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
 	}
 	if strings.Contains(specText(builtTask.Describe()), "archive/") {
 		t.Fatalf("graph mutated after rejected attach:\n%s", specText(builtTask.Describe()))

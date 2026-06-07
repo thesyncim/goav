@@ -2016,6 +2016,65 @@ func TestRecipeOperationShapePassAllowsCustomStageShapeDeclaration(t *testing.T)
 	}
 }
 
+func TestRecipeTargetShapePassRejectsFrameShapeForMuxTarget(t *testing.T) {
+	state := recipeCompileState{
+		operation: "build job",
+		intent: Intent{
+			Inputs: []InputIntent{{Name: "input"}},
+			Streams: []StreamIntent{{
+				Name:   "preview",
+				Select: StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
+				Operations: []StreamOperation{
+					{Kind: OpDecode, Decode: VP8()},
+					{Kind: OpStage, Component: "inspect", Stage: &runtimeTestStage{name: "inspect"}},
+				},
+				Targets: []string{"archive.ivf"},
+			}},
+			Targets: []TargetIntent{{Name: "archive.ivf"}},
+		},
+		outputAttachments: []destinationSpec{fileDestination("archive.ivf", io.Discard)},
+	}
+
+	err := validateRecipeTargetShapesPass().Apply(&state)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want target_shape_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	for _, want := range []string{
+		"byte or mux target requires packet-domain media",
+		"target=archive.ivf",
+		"expected_shape=domain=packet media=video",
+		"actual_shape=domain=frame media=video",
+		"goav.Sink",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+}
+
+func TestRecipeTargetShapePassAllowsFrameShapeForSinkTarget(t *testing.T) {
+	state := recipeCompileState{
+		operation: "build job",
+		intent: Intent{
+			Inputs: []InputIntent{{Name: "input"}},
+			Streams: []StreamIntent{{
+				Name:   "preview",
+				Select: StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
+				Operations: []StreamOperation{
+					{Kind: OpDecode, Decode: VP8()},
+				},
+				Targets: []string{"frames"},
+			}},
+			Targets: []TargetIntent{{Name: "frames"}},
+		},
+		outputAttachments: []destinationSpec{sinkDestination(SinkFunc("frames", func(context.Context, Message) error { return nil }))},
+	}
+	if err := validateRecipeTargetShapesPass().Apply(&state); err != nil {
+		t.Fatalf("validateRecipeTargetShapesPass() error = %v", err)
+	}
+}
+
 func TestRecipeRuntimePassRejectsCustomRuntime(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
