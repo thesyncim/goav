@@ -2473,6 +2473,80 @@ func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRejectsDuplicateRuntimeBranchTargetsBeforeMutation(t *testing.T) {
+	ctx := context.Background()
+	muxers := &remuxTestMuxerFactory{}
+	encoderFactory := &encodeTestEncoderFactory{}
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	codecs := withTestCodecs(
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
+	)
+	frame := av.Frame{StreamID: "audio", Type: av.MediaAudio}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	graph := New(formats, codecs).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:     DomainFrame,
+			MediaKind:  av.MediaAudio,
+			StreamID:   "audio",
+			Codec:      av.CodecOpus,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+	before := builtTask.Describe()
+	tapsBefore := builtTask.Taps()
+
+	archive := Target("archive", FileOutput("archive.ogg", io.Discard))
+	_, err = builtTask.Attach(ctx, Branch("fanout").
+		FromTap("audio.frames").
+		Opus(96_000).
+		To(archive, archive))
+
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) ||
+		buildErr.Code != "target_duplicate" ||
+		buildErr.Operation != "attach runtime branch" ||
+		!errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime target_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), `branch routes to target "archive" more than once`) ||
+		!strings.Contains(err.Error(), "second target index: 1") ||
+		!strings.Contains(err.Error(), "list each target once") {
+		t.Fatalf("err = %v, want duplicate runtime target guidance", err)
+	}
+	if len(encoderFactory.configs) != 0 {
+		t.Fatalf("encoder opened before duplicate target validation: %+v", encoderFactory.configs)
+	}
+	if len(muxers.muxers) != 0 {
+		t.Fatalf("muxer opened before duplicate target validation: %+v", muxers.muxers)
+	}
+	if after := builtTask.Describe(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("graph mutated after duplicate target attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
+	}
+	if !reflect.DeepEqual(tapsBefore, builtTask.Taps()) {
+		t.Fatalf("taps mutated after duplicate target attach: before=%+v after=%+v", tapsBefore, builtTask.Taps())
+	}
+}
+
 func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}

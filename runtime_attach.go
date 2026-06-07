@@ -851,6 +851,21 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 	if len(branch.destinations) == 0 {
 		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.SinkEndpoint(sink)) or .To(goav.FileOutput(name, writer))")
 	}
+	if err := validateRuntimeBranchTargets(branch); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateRuntimeBranchTargets(branch runtimeBranch) error {
+	seen := make(map[string]int, len(branch.destinations))
+	for i := range branch.destinations {
+		name := firstNonEmpty(branch.destinations[i].name, branch.destinations[i].endpoint.label(fmt.Sprintf("target%d", i+1)))
+		if firstIndex, ok := seen[name]; ok {
+			return duplicateRuntimeBranchTargetRefError(branch.name, name, firstIndex, i)
+		}
+		seen[name] = i
+	}
 	return nil
 }
 
@@ -1258,6 +1273,25 @@ func runtimeBranchNodeDuplicateError(node string) error {
 			"use distinct stage and sink names inside repeated runtime branches",
 		},
 		Cause: pipeline.ErrNodeExists,
+	}
+}
+
+func duplicateRuntimeBranchTargetRefError(branch string, label string, firstIndex int, secondIndex int) error {
+	return &BuildError{
+		Code:      "target_duplicate",
+		Operation: "attach runtime branch",
+		Node:      firstNonEmpty(branch, "branch"),
+		Reason:    fmt.Sprintf("branch routes to target %q more than once", label),
+		Details: []string{
+			fmt.Sprintf("first target index: %d", firstIndex),
+			fmt.Sprintf("second target index: %d", secondIndex),
+		},
+		Suggestions: []string{
+			"list each target once in .To(...)",
+			"route one runtime branch to multiple targets with distinct values such as .To(archive, monitor)",
+			"reuse typed target values across separate Branch(...) attachments when they should share a logical target",
+		},
+		Cause: ErrUnsupportedBuild,
 	}
 }
 

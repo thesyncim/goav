@@ -1388,6 +1388,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestRecordRecipeCanWriteToTypedTarget` and
     `TestRecordRecipeCopyToTypedTargetRuns` pin intent, graph descriptions,
     build equivalence, mux execution, and cleanup. Done.
+303. Validate duplicate runtime branch targets before graph mutation:
+    `Task.Attach(ctx, goav.Branch(...).To(target, target))` now fails with the
+    same `Branch`/`Target` vocabulary used by planned branches, before opening
+    encoders, opening muxers, registering taps, or changing graph edges.
+    `TestTaskAttachRejectsDuplicateRuntimeBranchTargetsBeforeMutation` pins the
+    diagnostic, zero resource opens, unchanged graph spec, and unchanged tap
+    list. Done.
 
 ## First Vertical Slice
 
