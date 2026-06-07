@@ -701,8 +701,8 @@ type destinationSpec struct {
 	err            error
 }
 
-// FileOutput creates a writer-backed file destination.
-func FileOutput(name string, writer io.Writer) Destination {
+// File creates a writer-backed file destination.
+func File(name string, writer io.Writer) Destination {
 	return fileDestination(name, writer)
 }
 
@@ -717,8 +717,8 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 	}
 }
 
-// URIOutput creates a URI destination opened by a registered format adapter.
-func URIOutput(uri string) Destination {
+// URIOut creates a URI destination opened by a registered format adapter.
+func URIOut(uri string) Destination {
 	return uriDestination(uri)
 }
 
@@ -797,7 +797,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Reason:    s.err.Error(),
 			Suggestions: []string{
 				"pass a non-nil sink to goav.Sink(...)",
-				"use goav.FileOutput(...) or goav.URIOutput(...) for muxed output",
+				"use goav.File(...) or goav.URIOut(...) for muxed output",
 			},
 			Cause: s.err,
 		}
@@ -812,7 +812,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    "empty destination spec",
 			Suggestions: []string{
-				"use goav.FileOutput(name, writer) for muxed output",
+				"use goav.File(name, writer) for muxed output",
 				"use goav.Sink(sink) for decoded frames or packets",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -825,8 +825,8 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    "file output has no writer",
 			Suggestions: []string{
-				"pass a non-nil io.Writer to goav.FileOutput(name, writer)",
-				"use goav.URIOutput(uri) when the output is opened by an adapter",
+				"pass a non-nil io.Writer to goav.File(name, writer)",
+				"use goav.URIOut(uri) when the output is opened by an adapter",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -838,7 +838,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    "writer-backed file output has no name, URI, MIME type, or explicit format",
 			Suggestions: []string{
-				"give goav.FileOutput(name, writer) a name with a container extension",
+				"give goav.File(name, writer) a name with a container extension",
 				"call .Format(...) with a registered container when the writer has no filename",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -851,8 +851,8 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    "output has no URI, writer, or sink",
 			Suggestions: []string{
-				"use goav.FileOutput(name, writer) for writer-backed output",
-				"use goav.URIOutput(uri) for URI-backed output",
+				"use goav.File(name, writer) for writer-backed output",
+				"use goav.URIOut(uri) for URI-backed output",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -1584,7 +1584,7 @@ func mixedStreamOutputError(operation string, stream StreamIntent) error {
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
 		Suggestions: []string{
 			"use .To(goav.Sink(...)) for decoded frames",
-			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...)) for encoded output",
+			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.File(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -1598,7 +1598,7 @@ func streamEncodeMissingError(operation string, stream StreamIntent) error {
 		Node:      jobStreamIntentName(stream),
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
 		Suggestions: []string{
-			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...))",
+			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.File(...))",
 			"send decoded frames to goav.Sink(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
 		},
@@ -3640,7 +3640,7 @@ func branchIntentTargetMissingError(stream StreamIntent) error {
 		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
 		Reason:    "branch has no target",
 		Suggestions: []string{
-			"finish the branch with .To(goav.Target(\"web\", goav.FileOutput(...)))",
+			"finish the branch with .To(goav.Target(\"web\", goav.File(...)))",
 			"reuse the same target value from multiple branches when they should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3684,7 +3684,7 @@ func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 			fmt.Sprintf("target index: %d", index),
 		},
 		Suggestions: []string{
-			"call .To(goav.Target(\"web\", goav.FileOutput(...))) with a non-empty target name",
+			"call .To(goav.Target(\"web\", goav.File(...))) with a non-empty target name",
 			"pass a destination directly when a separate target name is not needed",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3698,8 +3698,8 @@ func transcodeEmptyOutputDefinitionLabelError(output destinationSpec) error {
 		Node:      output.label("output"),
 		Reason:    "target name is empty",
 		Suggestions: []string{
-			"call goav.Target(\"web\", goav.FileOutput(...)) with a stable target name",
-			"pass goav.FileOutput(...) directly to .To(...) when a separate target name is not needed",
+			"call goav.Target(\"web\", goav.File(...)) with a stable target name",
+			"pass goav.File(...) directly to .To(...) when a separate target name is not needed",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

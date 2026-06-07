@@ -36,7 +36,7 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 				Type: av.MediaVideo,
 			},
 		}),
-	).Copy().To(FileOutput("recording.ivf", io.Discard))
+	).Copy().To(File("recording.ivf", io.Discard))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -81,7 +81,7 @@ func TestWebRTCTrackRecipeRejectsUnknownCodecMetadata(t *testing.T) {
 				Type: av.MediaAudio,
 			},
 		}),
-	).Copy().To(FileOutput("recording.ogg", io.Discard)).Build(context.Background())
+	).Copy().To(File("recording.ogg", io.Discard)).Build(context.Background())
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "webrtc_codec_unknown" || !errors.Is(err, ErrUnsupportedBuild) {
@@ -124,7 +124,7 @@ func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
 				Type: av.MediaVideo,
 			},
 		})).
-		To(FileOutput("recording.webm", io.Discard))
+		To(File("recording.webm", io.Discard))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -183,7 +183,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 
 	task, err := From(
 		RTP(receiver).Name("audio").Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
-	).Copy().To(FileOutput("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
+	).Copy().To(File("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestRecordRecipeCopyToTypedTargetRuns(t *testing.T) {
 	))
 	job := From(
 		RTP(receiver).Name("audio").Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
-	).Copy().To(Target("recording", FileOutput("recording.ogg", io.Discard).Format(av.FormatOgg))).UseRuntime(runtime)
+	).Copy().To(Target("recording", File("recording.ogg", io.Discard).Format(av.FormatOgg))).UseRuntime(runtime)
 
 	intent := job.Intent()
 	if len(intent.Targets) != 1 || intent.Targets[0].Name != "recording" {
@@ -310,7 +310,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 
 	task, err := From(
 		RTP(receiver).Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
-	).Copy().To(FileOutput("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
+	).Copy().To(File("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	var out bytes.Buffer
 	job := From(
 		RTP(receiver).Name("video").Codec(VP8()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
-	).Copy().To(FileOutput("recording.ivf", &out))
+	).Copy().To(File("recording.ivf", &out))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -407,7 +407,7 @@ func TestRecordRecipeInputMIMEDrivesFormatProbe(t *testing.T) {
 	))
 	job := From(
 		FileInput("", strings.NewReader("")).MIME("audio/ogg"),
-	).Copy().To(FileOutput("recording.ogg", io.Discard)).UseRuntime(runtime)
+	).Copy().To(File("recording.ogg", io.Discard)).UseRuntime(runtime)
 	intent := job.Intent()
 	if len(intent.Inputs) != 1 || intent.Inputs[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
@@ -440,7 +440,7 @@ func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
 	))
 	job := From(
 		FileInput("input.ogg", strings.NewReader("")),
-	).Copy().To(FileOutput("", io.Discard).MIME("audio/ogg")).UseRuntime(runtime)
+	).Copy().To(File("", io.Discard).MIME("audio/ogg")).UseRuntime(runtime)
 	intent := job.Intent()
 	if len(intent.Targets) != 1 || intent.Targets[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
@@ -536,7 +536,7 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 		RTP(audioReceiver).Name("audio").Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
 	).UseRuntime(runtime).
 		And(RTP(videoReceiver).Name("video").Codec(VP8()).RTPBuffer(RTPBufferLimits{MaxPackets: 2})).
-		To(FileOutput("recording.ogg", io.Discard)).
+		To(File("recording.ogg", io.Discard)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -722,7 +722,7 @@ func TestStreamRecipeEncodeFansOutToMuxAndSinkDestinations(t *testing.T) {
 		Audio().
 		Opus(96_000).
 		To(
-			FileOutput("archive.ogg", io.Discard),
+			File("archive.ogg", io.Discard),
 			Sink(sink),
 		).
 		Build(ctx)
@@ -771,7 +771,7 @@ func TestStreamRecipeEncodeToTypedTargetRuns(t *testing.T) {
 		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
 		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder}),
 	)
-	target := Target("archive", FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg))
+	target := Target("archive", File("archive.ogg", io.Discard).Format(av.FormatOgg))
 	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
 		Audio().
 		Opus(96_000).
@@ -884,7 +884,7 @@ func TestStreamRecipeCopyFansOutToMuxAndSinkDestinations(t *testing.T) {
 		Audio().
 		Copy().
 		To(
-			FileOutput("archive.ogg", io.Discard),
+			File("archive.ogg", io.Discard),
 			Sink(sink),
 		).
 		Build(ctx)
@@ -993,7 +993,7 @@ func TestBranchCompositionCopyBranchesFanOutPackets(t *testing.T) {
 		Copy().
 		Tap(PacketTap("audio.packets")).
 		Branches(
-			Branch("archive").To(Target("archive", FileOutput("archive.ogg", io.Discard))),
+			Branch("archive").To(Target("archive", File("archive.ogg", io.Discard))),
 			Branch("packets").To(Target("packets", Sink(sink))),
 		).
 		Build(ctx)
@@ -1094,7 +1094,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxTarget(t *testing.T) {
 		Audio().
 		Copy().
 		Tap(PacketTap("audio.copied")).
-		To(FileOutput("archive.ogg", io.Discard)).
+		To(File("archive.ogg", io.Discard)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -1120,7 +1120,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxTarget(t *testing.T) {
 	recording, err := task.Attach(ctx, Branch("record").
 		From(PacketTap("audio.copied")).
 		Copy().
-		To(Target("record", FileOutput("recording.ogg", io.Discard))))
+		To(Target("record", File("recording.ogg", io.Discard))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1199,7 +1199,7 @@ func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 		Audio().
 		Do(meter).
 		Opus(96_000).
-		To(FileOutput("archive.ogg", io.Discard)).
+		To(File("archive.ogg", io.Discard)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -1242,7 +1242,7 @@ func TestBranchCompositionRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 		Audio().
 		Decode().
 		Tap(FrameTap("audio.decoded")).
-		Branches(Branch("main").Opus(96_000).To(Target("archive", FileOutput("archive.ogg", io.Discard))))
+		Branches(Branch("main").Opus(96_000).To(Target("archive", File("archive.ogg", io.Discard))))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -1287,7 +1287,7 @@ func TestBranchCompositionSharedParentOperationDescribeMatchesBuiltGraph(t *test
 		Branches(
 			Branch("web").
 				VP9(2_000_000).
-				To(Target("web", FileOutput("web.ivf", io.Discard).Format(av.FormatIVF))),
+				To(Target("web", File("web.ivf", io.Discard).Format(av.FormatIVF))),
 			Branch("thumb").
 				Resize(320, 180).
 				To(Target("thumbnail", Sink(&runtimeTestSink{name: "thumbnail"}))),
@@ -1345,7 +1345,7 @@ func TestBranchCompositionCurrentPointDescribeMatchesBuiltGraph(t *testing.T) {
 		Branches(
 			Branch("web").
 				VP9(2_000_000).
-				To(Target("web", FileOutput("web.ivf", io.Discard).Format(av.FormatIVF))),
+				To(Target("web", File("web.ivf", io.Discard).Format(av.FormatIVF))),
 			Branch("thumb").
 				Resize(320, 180).
 				To(Target("thumbnail", Sink(&runtimeTestSink{name: "thumbnail"}))),
@@ -1412,7 +1412,7 @@ func TestBranchCompositionSharedResampleCurrentPointRuns(t *testing.T) {
 		Branches(
 			Branch("voice").
 				Opus(64_000).
-				To(Target("voice", FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg))),
+				To(Target("voice", File("voice.ogg", io.Discard).Format(av.FormatOgg))),
 			Branch("levels").
 				To(Target("levels", Sink(levels))),
 		)
@@ -1673,7 +1673,7 @@ func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) 
 				Decode().
 				Resample(16_000, Mono).
 				Opus(64_000).
-				To(Target("voice", FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg))),
+				To(Target("voice", File("voice.ogg", io.Discard).Format(av.FormatOgg))),
 		)
 
 	planned, err := job.Describe()
@@ -1932,7 +1932,7 @@ func TestBranchCompositionTaskAttachesAfterEncodeTap(t *testing.T) {
 			Branch("archive").
 				Opus(96_000).
 				Tap(PacketTap("audio.encoded")).
-				To(Target("archive", FileOutput("archive.ogg", io.Discard))),
+				To(Target("archive", File("archive.ogg", io.Discard))),
 		)
 
 	task, err := job.Build(ctx)
@@ -1960,7 +1960,7 @@ func TestBranchCompositionTaskAttachesAfterEncodeTap(t *testing.T) {
 	recording, err := task.Attach(ctx, Branch("record").
 		From(PacketTap("audio.encoded")).
 		Copy().
-		To(Target("record", FileOutput("recording.ogg", io.Discard))))
+		To(Target("record", File("recording.ogg", io.Discard))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2014,7 +2014,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 				Resize(1280, 720).
 				Tap(FrameTap("video.720p.frames")).
 				VP9(2_000_000).
-				To(Target("web", FileOutput("web.ogg", io.Discard))),
+				To(Target("web", File("web.ogg", io.Discard))),
 		)
 
 	task, err := job.Build(ctx)
@@ -2106,7 +2106,7 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 		Tap(FrameTap("audio.after-meter")).
 		Opus(96_000).
 		Tap(PacketTap("audio.encoded")).
-		To(FileOutput("archive.ogg", io.Discard))
+		To(File("archive.ogg", io.Discard))
 
 	task, err := job.Build(ctx)
 	if err != nil {
@@ -2407,7 +2407,7 @@ func TestStreamRecipeTaskAttachesRuntimeEncodeMuxBranch(t *testing.T) {
 	attachment, err := task.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.decoded")).
 		Opus(96_000).
-		To(Target("archive", FileOutput("archive.ogg", io.Discard))))
+		To(Target("archive", File("archive.ogg", io.Discard))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2471,7 +2471,7 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 	_, err = task.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.decoded")).
 		Opus(96_000).
-		To(Target("archive", FileOutput("archive.audioonly", io.Discard).Format(audioOnly))))
+		To(Target("archive", File("archive.audioonly", io.Discard).Format(audioOnly))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "target_mux_incompatible" ||
@@ -2527,7 +2527,7 @@ func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 	attachment, err := builtTask.Attach(ctx, Branch("record").
 		From(PacketTap("audio.packets")).
 		Copy().
-		To(Target("record", FileOutput("recording.ogg", io.Discard))))
+		To(Target("record", File("recording.ogg", io.Discard))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2586,7 +2586,7 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchTargetsBeforeMutation(t *testing
 	before := builtTask.Describe()
 	tapsBefore := builtTask.Taps()
 
-	archive := Target("archive", FileOutput("archive.ogg", io.Discard))
+	archive := Target("archive", File("archive.ogg", io.Discard))
 	_, err = builtTask.Attach(ctx, Branch("fanout").
 		From(FrameTap("audio.frames")).
 		Opus(96_000).
@@ -2649,7 +2649,7 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 
 	_, err = builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
-		To(Target("archive", FileOutput("archive.ogg", io.Discard))))
+		To(Target("archive", File("archive.ogg", io.Discard))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_encode_missing" {
 		t.Fatalf("err = %v, want runtime_branch_encode_missing", err)
@@ -2851,7 +2851,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 	attachment, err := builtTask.Attach(ctx, Branch("record").
 		From(FrameTap("audio.frames")).
 		Encode(Codec(customPCM, av.MediaAudio, SampleRate(16_000), Channels(Mono))).
-		To(Target("record", FileOutput("recording.ogg", io.Discard))))
+		To(Target("record", File("recording.ogg", io.Discard))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3178,7 +3178,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 		Resample(16_000, Mono).
 		Opus(64_000).
 		Tap(PacketTap("audio.voice.packets")).
-		To(Target("voice", FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg))))
+		To(Target("voice", File("voice.ogg", io.Discard).Format(av.FormatOgg))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3301,7 +3301,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 	attachment, err := builtTask.Attach(ctx, Branch("record").
 		From(FrameTap("audio.frames")).
 		Apply(flow).
-		To(Target("record", FileOutput("recording.ogg", io.Discard))))
+		To(Target("record", File("recording.ogg", io.Discard))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3411,8 +3411,8 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToTargets(t *testing.T) {
 	}}
 	defer builtTask.Close()
 
-	archive := Target("archive", FileOutput("archive.ogg", io.Discard))
-	monitor := Target("monitor", FileOutput("monitor.ogg", io.Discard))
+	archive := Target("archive", File("archive.ogg", io.Discard))
+	monitor := Target("monitor", File("monitor.ogg", io.Discard))
 	attachment, err := builtTask.Attach(ctx, Branch("fanout").
 		From(FrameTap("audio.frames")).
 		Opus(96_000).
@@ -3497,7 +3497,7 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 		Audio().
 		Resample(16_000, Mono).
 		Encode(encoded).
-		To(FileOutput("preview.ogg", io.Discard)).
+		To(File("preview.ogg", io.Discard)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -3562,7 +3562,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		WithStdFilters(),
 	)
 	encoded := Codec(customPCM, av.MediaAudio, SampleRate(16_000), Channels(Mono))
-	archive := Target("archive", FileOutput("archive.ogg", io.Discard))
+	archive := Target("archive", File("archive.ogg", io.Discard))
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(runtime).
 		Audio().

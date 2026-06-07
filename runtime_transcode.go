@@ -1109,7 +1109,7 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 		Reason:    reason,
 		Suggestions: []string{
 			"use goav.Target(name, goav.Sink(sink)) for frame or packet sink targets",
-			"use goav.Target(name, goav.FileOutput(...)) or goav.Target(name, goav.URIOutput(...)) for muxed destinations",
+			"use goav.Target(name, goav.File(...)) or goav.Target(name, goav.URIOut(...)) for muxed destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

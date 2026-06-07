@@ -11,7 +11,7 @@ import (
 var targetSpecSeq atomic.Uint64
 
 // Destination is accepted by To. Use Target for named mux/sink groups, or pass
-// FileOutput, URIOutput, or Sink directly for one-off destinations.
+// File, URIOut, or Sink directly for one-off destinations.
 type Destination interface {
 	// Name overrides the destination name used for diagnostics and graph nodes.
 	Name(string) Destination
@@ -885,7 +885,7 @@ func branchTargetMissingError(name string) error {
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "branch has no target",
 		Suggestions: []string{
-			"finish the branch with .To(goav.Target(\"web\", goav.FileOutput(...)))",
+			"finish the branch with .To(goav.Target(\"web\", goav.File(...)))",
 			"pass a file, URI, or sink destination directly when no shared target is needed",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -912,7 +912,7 @@ func destinationInvalidError(operation string, node string, reason string) error
 		Reason:    reason,
 		Suggestions: []string{
 			"use goav.Target(name, destination) for named mux/sink groups",
-			"use goav.FileOutput(...), goav.URIOutput(...), or goav.Sink(...) for one-off destinations",
+			"use goav.File(...), goav.URIOut(...), or goav.Sink(...) for one-off destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -925,8 +925,8 @@ func targetNameMissingError(dest destinationSpec) error {
 		Node:      dest.label("target"),
 		Reason:    "target name is empty",
 		Suggestions: []string{
-			"call goav.Target(\"web\", goav.FileOutput(...)) with a stable target name",
-			"pass goav.FileOutput(...) directly to .To(...) when a separate target name is not needed",
+			"call goav.Target(\"web\", goav.File(...)) with a stable target name",
+			"pass goav.File(...) directly to .To(...) when a separate target name is not needed",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

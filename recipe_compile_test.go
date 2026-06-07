@@ -163,6 +163,8 @@ func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {
 		"target endpoint",
 		"sink endpoints",
 		"muxed endpoints",
+		"goav.FileOutput",
+		"goav.URIOutput",
 		"SinkEndpoint",
 		".FromTap(",
 		"goav.FromTap(",

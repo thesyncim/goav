@@ -455,11 +455,11 @@ func (g *runtimeAttachGroup) reserveSharedMux(spec pipeline.Spec, branch runtime
 
 func (g *runtimeAttachGroup) addSharedMuxRoute(key string, route pipeline.Route) error {
 	if g == nil || !g.isSharedMux(key) {
-		return runtimeBranchInvalidError("shared mux target is not registered", "reuse one goav.Target(name, goav.FileOutput(...)) value inside one Task.Attach call")
+		return runtimeBranchInvalidError("shared mux target is not registered", "reuse one goav.Target(name, goav.File(...)) value inside one Task.Attach call")
 	}
 	target := g.sharedMuxes[key]
 	if target == nil {
-		return runtimeBranchInvalidError("shared mux target is not reserved", "reuse one goav.Target(name, goav.FileOutput(...)) value inside one Task.Attach call")
+		return runtimeBranchInvalidError("shared mux target is not reserved", "reuse one goav.Target(name, goav.File(...)) value inside one Task.Attach call")
 	}
 	route.To = []string{target.name}
 	target.routes = append(target.routes, route)
@@ -735,7 +735,7 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 		return nil
 	}
 	if len(branch.destinations) == 0 {
-		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.FileOutput(name, writer))")
+		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
 	stream := currentStream
 	caps := currentCaps
@@ -1399,7 +1399,7 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 		return runtimeBranchInvalidError("branch source is empty", "call .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(node) with an expert graph node")
 	}
 	if len(branch.destinations) == 0 {
-		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.FileOutput(name, writer))")
+		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
 	if err := validateRuntimeBranchTargets(branch); err != nil {
 		return err
