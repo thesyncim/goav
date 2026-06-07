@@ -69,7 +69,9 @@ Current milestone:
 - Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
   a requested timestamp.
 - Direct cue-backed `ReadCuedPacketAtTime` and `ReadCuedTrackPacketAtTime`
-  extraction for exact block cues at or after a requested timestamp, without
+  extraction for cues at or after a requested timestamp. Exact block cues jump
+  directly to `CueRelativePosition` or `CueBlockNumber`; cluster-only cues scan
+  within the referenced Cluster until the cue's track/time is reached, without
   scanning uncued packets between cues.
 - Track-specific cue-assisted `SeekToTrackTime` and `ReadTrackPacketAtTime`
   for multi-track recordings with per-track cue positions.
@@ -147,8 +149,7 @@ Current milestone:
 
 These are intentionally not in the first milestone:
 
-- Frame-exact random access for uncued packets or cue points that do not have
-  exact `CueRelativePosition` or `CueBlockNumber` entries.
+- Frame-exact random access for packets that are not represented by Cues.
 - Full codec-private generation and parsers for every codec family.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
 
@@ -209,11 +210,13 @@ buffer must be large enough for skipped packets and the returned packet.
 `SeekToTrackTime` and `ReadTrackPacketAtTime` use CueTrackPositions to choose
 the nearest cue for a specific track, then read forward until that track reaches
 the requested timestamp.
-`ReadCuedPacketAtTime` and `ReadCuedTrackPacketAtTime` choose the first direct
-block cue at or after the requested timestamp, seek to its `CueRelativePosition`
-or `CueBlockNumber`, and read that cued packet without scanning intervening
-uncued packets. They return `ErrInvalidData` when no exact block cue is
-available.
+`ReadCuedPacketAtTime` and `ReadCuedTrackPacketAtTime` choose the first cue at
+or after the requested timestamp and read that cued packet without scanning
+intervening uncued packets. If the cue has `CueRelativePosition` or
+`CueBlockNumber`, the demuxer jumps directly to the block. If the cue only has
+a Cluster position, the demuxer scans within that referenced Cluster until the
+cue's track/time is reached. They return `ErrInvalidData` when no matching cued
+packet can be resolved from the cue.
 
 ## Codec Mapping
 

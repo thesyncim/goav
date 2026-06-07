@@ -325,9 +325,11 @@ func cuePositionForTrack(cue CuePoint, trackID uint32) (CueTrackPosition, bool) 
 	return CueTrackPosition{}, false
 }
 
-// ReadCuedPacketAtTime seeks directly to the first exact block cue at or after
-// timeNS and reads that cued packet. It does not scan uncued packets between
-// cues; use ReadPacketAtTime when uncued packets should be considered too.
+// ReadCuedPacketAtTime seeks to the first cue at or after timeNS and reads the
+// cued packet. Exact block cues jump to the block; cluster-only cues scan
+// within the referenced Cluster until the cue's track/time is reached. It does
+// not scan uncued packets between cues; use ReadPacketAtTime when uncued packets
+// should be considered too.
 func (d *Demuxer) ReadCuedPacketAtTime(timeNS int64, dst *Packet) error {
 	if d == nil || d.reader == nil {
 		return ErrNilReader
@@ -344,11 +346,11 @@ func (d *Demuxer) ReadCuedPacketAtTime(timeNS int64, dst *Packet) error {
 	if err := d.ensureCues(); err != nil {
 		return err
 	}
-	position, ok := d.directCueAtOrAfterTime(timeNS)
+	cue, position, ok := d.cueAtOrAfterTime(timeNS)
 	if !ok {
 		return ErrInvalidData
 	}
-	return d.readDirectCuedPacket(position, 0, timeNS, dst)
+	return d.readCuedPacket(cue, position, 0, timeNS, dst)
 }
 
 // ReadPacketAtTime seeks to the nearest preceding cue and reads forward until
@@ -373,10 +375,11 @@ func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
 	}
 }
 
-// ReadCuedTrackPacketAtTime seeks directly to the first exact block cue for
-// trackID at or after timeNS and reads that cued packet. It does not scan
-// uncued packets between cues; use ReadTrackPacketAtTime when uncued packets
-// should be considered too.
+// ReadCuedTrackPacketAtTime seeks to the first cue for trackID at or after
+// timeNS and reads that cued packet. Exact block cues jump to the block;
+// cluster-only cues scan within the referenced Cluster until the cue's
+// track/time is reached. It does not scan uncued packets between cues; use
+// ReadTrackPacketAtTime when uncued packets should be considered too.
 func (d *Demuxer) ReadCuedTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packet) error {
 	if d == nil || d.reader == nil {
 		return ErrNilReader
@@ -396,11 +399,11 @@ func (d *Demuxer) ReadCuedTrackPacketAtTime(trackID uint32, timeNS int64, dst *P
 	if err := d.ensureCues(); err != nil {
 		return err
 	}
-	position, ok := d.directCueForTrackAtOrAfterTime(trackID, timeNS)
+	cue, position, ok := d.cueForTrackAtOrAfterTime(trackID, timeNS)
 	if !ok {
 		return ErrInvalidData
 	}
-	return d.readDirectCuedPacket(position, trackID, timeNS, dst)
+	return d.readCuedPacket(cue, position, trackID, timeNS, dst)
 }
 
 // ReadTrackPacketAtTime seeks to the nearest preceding cue for trackID and
@@ -425,33 +428,69 @@ func (d *Demuxer) ReadTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packe
 	}
 }
 
-func (d *Demuxer) readDirectCuedPacket(position CueTrackPosition, trackID uint32, timeNS int64, dst *Packet) error {
+func (d *Demuxer) readCuedPacket(cue CuePoint, position CueTrackPosition, trackID uint32, timeNS int64, dst *Packet) error {
+	if cue.TimeNS < timeNS {
+		return ErrInvalidData
+	}
+	targetTrackID := position.TrackID
+	if trackID != 0 {
+		targetTrackID = trackID
+	}
+	if targetTrackID == 0 {
+		return ErrInvalidData
+	}
+	if !cuePositionIsDirect(position) {
+		return d.scanCuedPacket(cue, position, targetTrackID, timeNS, dst)
+	}
 	if err := d.seekToCuePosition(position); err != nil {
 		return err
 	}
 	if err := d.ReadPacket(dst); err != nil {
 		return err
 	}
-	if dst.TimeNS < timeNS {
+	if dst.TimeNS < timeNS || dst.TimeNS < cue.TimeNS {
 		return ErrInvalidData
 	}
-	if trackID != 0 && dst.TrackID != trackID {
+	if dst.TrackID != targetTrackID {
 		return ErrInvalidData
 	}
 	return nil
 }
 
-func (d *Demuxer) directCueAtOrAfterTime(timeNS int64) (CueTrackPosition, bool) {
+func (d *Demuxer) scanCuedPacket(cue CuePoint, position CueTrackPosition, trackID uint32, timeNS int64, dst *Packet) error {
+	if err := d.seekToCuePosition(position); err != nil {
+		return err
+	}
+	for {
+		if err := d.ReadPacket(dst); err != nil {
+			if isEOF(err) {
+				return ErrInvalidData
+			}
+			return err
+		}
+		if dst.TrackID == trackID && dst.TimeNS >= cue.TimeNS {
+			if dst.TimeNS < timeNS {
+				return ErrInvalidData
+			}
+			return nil
+		}
+		if !d.clusterUnknown && d.reader.Offset() >= d.clusterEnd && d.laceFrameIndex >= d.laceFrameCount {
+			return ErrInvalidData
+		}
+	}
+}
+
+func (d *Demuxer) cueAtOrAfterTime(timeNS int64) (CuePoint, CueTrackPosition, bool) {
 	if d.cuesSorted {
 		index := sort.Search(len(d.cues), func(i int) bool {
 			return d.cues[i].TimeNS >= timeNS
 		})
 		for i := index; i < len(d.cues); i++ {
-			if position, ok := directCuePosition(d.cues[i]); ok {
-				return position, true
+			if position, ok := firstCueTrackPosition(d.cues[i]); ok {
+				return d.cues[i], position, true
 			}
 		}
-		return CueTrackPosition{}, false
+		return CuePoint{}, CueTrackPosition{}, false
 	}
 	var best CuePoint
 	var bestPosition CueTrackPosition
@@ -460,7 +499,7 @@ func (d *Demuxer) directCueAtOrAfterTime(timeNS int64) (CueTrackPosition, bool) 
 		if d.cues[i].TimeNS < timeNS {
 			continue
 		}
-		position, ok := directCuePosition(d.cues[i])
+		position, ok := firstCueTrackPosition(d.cues[i])
 		if !ok {
 			continue
 		}
@@ -470,20 +509,20 @@ func (d *Demuxer) directCueAtOrAfterTime(timeNS int64) (CueTrackPosition, bool) 
 			found = true
 		}
 	}
-	return bestPosition, found
+	return best, bestPosition, found
 }
 
-func (d *Demuxer) directCueForTrackAtOrAfterTime(trackID uint32, timeNS int64) (CueTrackPosition, bool) {
+func (d *Demuxer) cueForTrackAtOrAfterTime(trackID uint32, timeNS int64) (CuePoint, CueTrackPosition, bool) {
 	if d.cuesSorted {
 		index := sort.Search(len(d.cues), func(i int) bool {
 			return d.cues[i].TimeNS >= timeNS
 		})
 		for i := index; i < len(d.cues); i++ {
-			if position, ok := directCuePositionForTrack(d.cues[i], trackID); ok {
-				return position, true
+			if position, ok := cuePositionForTrack(d.cues[i], trackID); ok {
+				return d.cues[i], position, true
 			}
 		}
-		return CueTrackPosition{}, false
+		return CuePoint{}, CueTrackPosition{}, false
 	}
 	var best CuePoint
 	var bestPosition CueTrackPosition
@@ -492,7 +531,7 @@ func (d *Demuxer) directCueForTrackAtOrAfterTime(trackID uint32, timeNS int64) (
 		if d.cues[i].TimeNS < timeNS {
 			continue
 		}
-		position, ok := directCuePositionForTrack(d.cues[i], trackID)
+		position, ok := cuePositionForTrack(d.cues[i], trackID)
 		if !ok {
 			continue
 		}
@@ -502,31 +541,14 @@ func (d *Demuxer) directCueForTrackAtOrAfterTime(trackID uint32, timeNS int64) (
 			found = true
 		}
 	}
-	return bestPosition, found
+	return best, bestPosition, found
 }
 
-func directCuePosition(cue CuePoint) (CueTrackPosition, bool) {
+func firstCueTrackPosition(cue CuePoint) (CueTrackPosition, bool) {
 	if len(cue.Positions) == 0 {
-		position := cueTrackPositionFromLegacy(cue)
-		if cuePositionIsDirect(position) {
-			return position, true
-		}
-		return CueTrackPosition{}, false
+		return cueTrackPositionFromLegacy(cue), true
 	}
-	for i := range cue.Positions {
-		if cuePositionIsDirect(cue.Positions[i]) {
-			return cue.Positions[i], true
-		}
-	}
-	return CueTrackPosition{}, false
-}
-
-func directCuePositionForTrack(cue CuePoint, trackID uint32) (CueTrackPosition, bool) {
-	position, ok := cuePositionForTrack(cue, trackID)
-	if !ok || !cuePositionIsDirect(position) {
-		return CueTrackPosition{}, false
-	}
-	return position, true
+	return cue.Positions[0], true
 }
 
 func cuePositionIsDirect(position CueTrackPosition) bool {
