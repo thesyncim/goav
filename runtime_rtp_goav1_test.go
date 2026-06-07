@@ -128,7 +128,7 @@ func testRuntimeBuilderRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 		}},
 		events: make(chan av.Event),
 	}
-	sink := &runtimeAV1FrameSink{name: "frames"}
+	sink := &runtimeAV1SinkEndpoint{name: "frames"}
 
 	task, err := newTestBuilder(t, WithCodecAdapter(goav1adapter.Register)).
 		RTP(receiver,
@@ -334,7 +334,7 @@ type runtimeAV1SwitchReceiver struct {
 	closed        bool
 }
 
-type runtimeAV1FrameSink struct {
+type runtimeAV1SinkEndpoint struct {
 	name           string
 	frames         int
 	lastVideo      av.VideoFrame
@@ -343,11 +343,11 @@ type runtimeAV1FrameSink struct {
 	closed         bool
 }
 
-func (s *runtimeAV1FrameSink) Name() string {
+func (s *runtimeAV1SinkEndpoint) Name() string {
 	return s.name
 }
 
-func (s *runtimeAV1FrameSink) Handle(_ context.Context, msg *pipeline.Message) error {
+func (s *runtimeAV1SinkEndpoint) Handle(_ context.Context, msg *pipeline.Message) error {
 	if msg == nil || msg.Kind != pipeline.MessageFrame || msg.Frame == nil {
 		return nil
 	}
@@ -366,7 +366,7 @@ func (s *runtimeAV1FrameSink) Handle(_ context.Context, msg *pipeline.Message) e
 	return nil
 }
 
-func (s *runtimeAV1FrameSink) Close() error {
+func (s *runtimeAV1SinkEndpoint) Close() error {
 	s.closed = true
 	return nil
 }

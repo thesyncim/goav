@@ -8,16 +8,26 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
-	transcodepkg "github.com/thesyncim/goav/transcode"
 )
 
 type recipeResolved struct {
-	intent    Intent
-	builder   builderAPI
-	migration *builder
-	compiler  builderCompiler
-	spec      pipeline.Spec
-	specReady bool
+	intent                Intent
+	runtime               Runtime
+	builder               builderAPI
+	spec                  pipeline.Spec
+	specReady             bool
+	specOrigin            string
+	mediaBuildKind        string
+	inputAttachments      []InputSpec
+	outputAttachments     []EndpointSpec
+	streamAttachments     []jobStreamStepAttachment
+	inputProbes           []format.ProbeResult
+	branchInputAttachment InputSpec
+	branchInputProbe      format.ProbeResult
+	branchInputProbeReady bool
+	outputFormats         map[string]av.FormatID
+	mediaPlan             mediaPlan
+	plan                  branchComposePlan
 }
 
 type recipeCompileState struct {
@@ -26,37 +36,79 @@ type recipeCompileState struct {
 	runtime   Runtime
 	options   recipeCompileOptions
 
-	jobPresent       bool
-	transcodePresent bool
-	recipeErr        error
+	jobPresent               bool
+	branchCompositionPresent bool
+	recipeErr                error
 
 	inputAttachments  []InputSpec
 	jobOutputCount    int
 	streamSteps       []jobStreamStepAttachment
-	outputAttachments []OutputSpec
+	outputAttachments []EndpointSpec
+	outputTargetNames []string
 	inputProbes       []format.ProbeResult
 
-	transcodeInputAttachment   InputSpec
-	transcodeOutputAttachments []namedOutputSpec
-	transcodeInputProbe        format.ProbeResult
-	transcodeInputProbeReady   bool
+	branchInputAttachment   InputSpec
+	branchTargetAttachments []namedTargetSpec
+	branchInputProbe        format.ProbeResult
+	branchInputProbeReady   bool
+	branchCompositionSplit  bool
 
-	plan transcodepkg.Plan
+	plan    branchComposePlan
+	planErr error
 
-	builder   builderAPI
-	migration *builder
-	compiler  builderCompiler
-	spec      pipeline.Spec
-	specReady bool
+	builder        builderAPI
+	spec           pipeline.Spec
+	specReady      bool
+	specOrigin     string
+	mediaBuildKind string
 }
 
 type recipeCompileOptions struct {
+	ctx                        context.Context
 	preflightInputAdapters     bool
 	preflightOutputAdapters    bool
 	preflightDecodeAdapters    bool
 	preflightEncodeAdapters    bool
 	preflightTransformAdapters bool
 	preflightLiveStreams       bool
+	preflightMuxCompatibility  bool
+}
+
+func (o recipeCompileOptions) Context() context.Context {
+	if o.ctx != nil {
+		return o.ctx
+	}
+	return context.Background()
+}
+
+func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
+	formats := make(map[string]av.FormatID)
+	for i := range s.outputAttachments {
+		formatID := endpointSpecFormat(s.outputAttachments[i])
+		if formatID == "" {
+			continue
+		}
+		formats[jobOutputTargetName(s.outputAttachments, s.outputTargetNames, i)] = formatID
+	}
+	for i := range s.branchTargetAttachments {
+		formatID := endpointSpecFormat(s.branchTargetAttachments[i].output)
+		if formatID == "" {
+			continue
+		}
+		label := firstNonEmpty(s.branchTargetAttachments[i].name, s.branchTargetAttachments[i].output.label(fmt.Sprintf("output-%d", i)))
+		formats[label] = formatID
+	}
+	if len(formats) == 0 {
+		return nil
+	}
+	return formats
+}
+
+func endpointSpecFormat(output EndpointSpec) av.FormatID {
+	if output.resolvedFormat != "" {
+		return output.resolvedFormat
+	}
+	return output.format
 }
 
 type recipeCompilePass interface {
@@ -93,7 +145,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 			}
 		}
 		if err := pass.Apply(&state); err != nil {
-			return recipeResolved{}, err
+			return recipeResolved{}, compilerPassError(state.operation, pass.Name(), err)
 		}
 	}
 	if state.builder == nil {
@@ -110,13 +162,47 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		}
 	}
 	return recipeResolved{
-		intent:    state.intent,
-		builder:   state.builder,
-		migration: state.migration,
-		compiler:  state.compiler,
-		spec:      state.spec,
-		specReady: state.specReady,
+		intent:                state.intent,
+		runtime:               state.runtime,
+		builder:               state.builder,
+		spec:                  state.spec,
+		specReady:             state.specReady,
+		specOrigin:            state.specOrigin,
+		mediaBuildKind:        state.mediaBuildKind,
+		inputAttachments:      append([]InputSpec(nil), state.inputAttachments...),
+		outputAttachments:     append([]EndpointSpec(nil), state.outputAttachments...),
+		streamAttachments:     append([]jobStreamStepAttachment(nil), state.streamSteps...),
+		inputProbes:           append([]format.ProbeResult(nil), state.inputProbes...),
+		branchInputAttachment: state.branchInputAttachment,
+		branchInputProbe:      state.branchInputProbe,
+		branchInputProbeReady: state.branchInputProbeReady,
+		outputFormats:         state.outputFormatMap(),
+		mediaPlan:             buildMediaPlan(&state),
+		plan:                  state.plan,
 	}, nil
+}
+
+func compilerPassError(operation string, pass string, err error) error {
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr == nil {
+		return err
+	}
+	if buildErr.Code != "" || buildErr.Reason != "" || len(buildErr.Details) != 0 || len(buildErr.Suggestions) != 0 {
+		return err
+	}
+	return &BuildError{
+		Code:      "compiler_pass_failed",
+		Operation: firstNonEmpty(buildErr.Operation, operation),
+		Reason:    "recipe compiler pass failed without a diagnostic",
+		Details: []string{
+			"pass=" + pass,
+		},
+		Suggestions: []string{
+			"run Explain(ctx) to inspect the partial plan",
+			"report the pass name with the recipe shape",
+		},
+		Cause: err,
+	}
 }
 
 func (r recipeResolved) Describe() (pipeline.Spec, error) {
@@ -127,10 +213,61 @@ func (r recipeResolved) Describe() (pipeline.Spec, error) {
 }
 
 func (r recipeResolved) Build(ctx context.Context) (Task, error) {
-	if r.compiler != nil && r.migration != nil {
-		return r.compiler.build(ctx, r.migration)
+	var (
+		task Task
+		err  error
+	)
+	switch r.mediaBuildKind {
+	case mediaBuildKindPacketCopy:
+		task, err = r.buildMediaPlanPacketCopyTask(ctx)
+	case mediaBuildKindSinkEndpoint:
+		task, err = r.buildMediaPlanSinkEndpointTask(ctx)
+	case mediaBuildKindEncode:
+		task, err = r.buildMediaPlanEncodeTask(ctx)
+	case mediaBuildKindBranch:
+		task, err = r.buildMediaPlanBranchComposerTask(ctx)
+	default:
+		err = recipeGraphUnsupportedError("build recipe", r.intent)
 	}
-	return r.builder.Build(ctx)
+	if err != nil {
+		return nil, err
+	}
+	installTaskTaps(task, r.mediaPlan.Taps)
+	return task, nil
+}
+
+func installTaskTaps(mediaTask Task, taps []planTap) {
+	if len(taps) == 0 {
+		return
+	}
+	runtimeTask, ok := mediaTask.(*task)
+	if !ok || runtimeTask == nil {
+		return
+	}
+	runtimeTask.taps = tapInfosFromPlan(taps)
+}
+
+func tapInfosFromPlan(taps []planTap) []TapInfo {
+	out := make([]TapInfo, 0, len(taps))
+	seen := make(map[string]struct{}, len(taps))
+	for i := range taps {
+		if taps[i].Name == "" {
+			continue
+		}
+		if _, ok := seen[taps[i].Name]; ok {
+			continue
+		}
+		seen[taps[i].Name] = struct{}{}
+		out = append(out, TapInfo{
+			Name:      taps[i].Name,
+			MediaKind: taps[i].MediaKind,
+			Domain:    taps[i].Domain,
+			After:     taps[i].After,
+			Caps:      taps[i].Caps,
+			Node:      taps[i].Node,
+		})
+	}
+	return out
 }
 
 func compileJobRecipe(job *Job) (recipeResolved, error) {
@@ -138,17 +275,26 @@ func compileJobRecipe(job *Job) (recipeResolved, error) {
 }
 
 func compileJobRecipeForBuild(job *Job) (recipeResolved, error) {
+	return compileJobRecipeForBuildContext(context.Background(), job)
+}
+
+func compileJobRecipeForBuildContext(ctx context.Context, job *Job) (recipeResolved, error) {
 	return compileJobRecipeWithOptions(job, recipeCompileOptions{
+		ctx:                        ctx,
 		preflightInputAdapters:     true,
 		preflightOutputAdapters:    true,
 		preflightDecodeAdapters:    true,
 		preflightEncodeAdapters:    true,
 		preflightTransformAdapters: true,
 		preflightLiveStreams:       true,
+		preflightMuxCompatibility:  true,
 	})
 }
 
 func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
+	if job != nil && len(job.branchStreams) != 0 {
+		return compileJobBranchRecipeWithOptions(job, options)
+	}
 	state := recipeCompileState{
 		operation: "build job",
 		options:   options,
@@ -161,6 +307,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		state.inputAttachments = append([]InputSpec(nil), job.inputs...)
 		state.jobOutputCount = len(job.outputs)
 		state.outputAttachments = jobAllOutputs(job.outputs, jobStreamOutputs(job.stream))
+		state.outputTargetNames = job.allOutputNames()
 		state.streamSteps = jobStreamStepAttachments(job.stream)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
@@ -182,58 +329,62 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobKnownInputDecodeAdaptersPass(),
 		openRecipeRuntimeBuilderPass(),
 		validateJobStreamRuntimeCapabilitiesPass(),
-		lowerJobInputsPass(),
-		lowerJobStreamPass(),
-		lowerJobOutputsPass(),
-		selectMigrationGraphCompilerPass(),
-		emitMigrationGraphSpecPass(),
+		emitMediaPlanGraphSpecPass(),
+		validateMuxCompatibilityPass(),
+		requireMediaPlanGraphSpecPass(),
 	}}.Compile(state)
 }
 
-func compileTranscodeRecipe(job *TranscodeJob) (recipeResolved, error) {
-	return compileTranscodeRecipeWithOptions(job, recipeCompileOptions{})
+func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
+	branchJob := &branchCompositionJob{
+		runtime:         job.runtime,
+		name:            job.name,
+		streams:         append([]streamBuild(nil), job.branchStreams...),
+		outputs:         append([]namedTargetSpec(nil), job.branchTargets...),
+		err:             job.err,
+		fromBranchSplit: true,
+	}
+	if len(job.inputs) == 1 {
+		branchJob.input = job.inputs[0]
+	} else if branchJob.err == nil {
+		branchJob.err = branchInputCountError("branches", len(job.inputs))
+	}
+	return compileBranchCompositionRecipeWithOptions(branchJob, options)
 }
 
-func compileTranscodeRecipeForBuild(job *TranscodeJob) (recipeResolved, error) {
-	return compileTranscodeRecipeWithOptions(job, recipeCompileOptions{
-		preflightInputAdapters:     true,
-		preflightOutputAdapters:    true,
-		preflightDecodeAdapters:    true,
-		preflightEncodeAdapters:    true,
-		preflightTransformAdapters: true,
-	})
-}
-
-func compileTranscodeRecipeWithOptions(job *TranscodeJob, options recipeCompileOptions) (recipeResolved, error) {
+func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, options recipeCompileOptions) (recipeResolved, error) {
 	state := recipeCompileState{
-		operation: transcodeRecipeOperation,
+		operation: branchCompositionOperation,
 		options:   options,
 	}
 	if job != nil {
-		state.transcodePresent = true
+		state.branchCompositionPresent = true
 		state.intent = job.Intent()
 		state.runtime = job.runtime
 		state.recipeErr = job.err
-		state.transcodeInputAttachment = job.input
-		state.transcodeOutputAttachments = append([]namedOutputSpec(nil), job.outputs...)
+		state.branchInputAttachment = job.input
+		state.branchTargetAttachments = append([]namedTargetSpec(nil), job.outputs...)
+		state.branchCompositionSplit = job.fromBranchSplit
+		state.plan, state.planErr = job.Plan()
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
-		validateTranscodeRecipePass(),
-		validateTranscodeIntentShapePass(),
+		validateBranchCompositionRecipePass(),
+		validateBranchCompositionIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
-		validateTranscodeAttachmentsPass(),
-		validateTranscodeOutputBindingsPass(),
-		validateTranscodeOutputFormatAdaptersPass(),
-		validateTranscodeEncodeAdaptersPass(),
-		validateTranscodeTransformAdaptersPass(),
-		validateTranscodeInputFormatAdaptersPass(),
-		validateTranscodeKnownInputStreamSelectionPass(),
-		validateTranscodeKnownInputDecodeAdaptersPass(),
-		planTranscodeIntentPass(),
+		validateBranchCompositionAttachmentsPass(),
+		validateBranchTargetBindingsPass(),
+		validateBranchTargetKindsPass(),
+		validateBranchTargetFormatAdaptersPass(),
+		validateBranchEncodeAdaptersPass(),
+		validateBranchTransformAdaptersPass(),
+		validateBranchInputFormatAdaptersPass(),
+		validateKnownBranchInputStreamSelectionPass(),
+		validateKnownBranchInputDecodeAdaptersPass(),
+		planBranchCompositionIntentPass(),
 		openRecipeRuntimeBuilderPass(),
-		lowerTranscodePlanPass(),
-		selectMigrationGraphCompilerPass(),
-		emitMigrationGraphSpecPass(),
+		emitMediaPlanGraphSpecPass(),
+		validateMuxCompatibilityPass(),
+		requireMediaPlanGraphSpecPass(),
 	}}.Compile(state)
 }
 
@@ -271,7 +422,7 @@ func validateJobIntentShape(operation string, intent Intent, jobOutputCount int)
 	if len(intent.Streams) > 1 {
 		return jobIntentTooManyStreamsError(operation, intent.Streams)
 	}
-	if len(intent.Outputs) == 0 {
+	if len(intent.Targets) == 0 {
 		return &BuildError{Code: "output_missing", Operation: operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
 	}
 	if err := validateJobIntentOutputScope(operation, intent, jobOutputCount, stream, hasStream); err != nil {
@@ -287,7 +438,7 @@ func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCoun
 	if !hasStream {
 		return nil
 	}
-	if jobOutputCount == 0 && len(intent.Outputs) == len(stream.RouteTo) {
+	if jobOutputCount == 0 && len(intent.Targets) == len(stream.Targets) {
 		return nil
 	}
 	return jobOutputScopeMixedError(operation, stream)
@@ -301,14 +452,14 @@ func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
 		Reason:    "stream recipes use stream-local outputs",
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
-			"use goav.Record(input, output) or goav.From(input).To(output...) for packet-preserving record/remux",
-			"use goav.Transcode(input) when one input needs separate record, preview, or ladder branches",
+			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
+			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func jobOutputReferenceMissingError(operation string, stream StreamIntent, label string) error {
+func jobTargetReferenceMissingError(operation string, stream StreamIntent, label string) error {
 	return &BuildError{
 		Code:      "output_missing",
 		Operation: operation,
@@ -316,8 +467,8 @@ func jobOutputReferenceMissingError(operation string, stream StreamIntent, label
 		Reason:    "stream route output " + label + " is not attached",
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
-			"use goav.Record(input, output...) or goav.From(input).To(output...) for packet-preserving record/remux",
-			"use goav.Transcode(input) when a stream branch needs named output labels",
+			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
+			"finish each branch with a typed target such as .To(goav.Target(\"web\", output))",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -330,7 +481,7 @@ func jobIntentTooManyStreamsError(operation string, streams []StreamIntent) erro
 		Reason:    "ordinary stream recipes select one audio or video stream",
 		Suggestions: []string{
 			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
-			"use goav.Transcode(input) for multiple audio or video branches",
+			"use goav.From(input).Video().Decode().Branches(...) for multiple branches from one stream",
 			"use the expert graph API for custom multi-stream routing",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -412,9 +563,9 @@ func streamOperationMissingError(operation string, node string) error {
 		Node:      node,
 		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
 		Suggestions: []string{
-			"call .To(goav.FrameSink(...)) to receive decoded frames",
+			"call .To(goav.SinkEndpoint(...)) to receive decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before writing to a file output",
-			"use goav.Record(input, output) for packet-preserving record or remux",
+			"use .Copy().To(output) for packet-preserving record or remux",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -425,7 +576,7 @@ func validateJobAttachmentsPass() recipeCompilePass {
 		if err := validateJobInputs(state.inputAttachments); err != nil {
 			return err
 		}
-		return validateOutputSpecs(state.operation, state.outputAttachments)
+		return validateEndpointSpecs(state.operation, state.outputAttachments, state.outputTargetNames...)
 	}}
 }
 
@@ -434,7 +585,7 @@ func validateJobOutputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs, err := validateOutputFormatAdapters(context.Background(), state.runtime, state.outputAttachments)
+		outputs, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, state.outputAttachments, state.outputTargetNames...)
 		if err != nil {
 			return err
 		}
@@ -448,7 +599,7 @@ func validateJobInputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightInputAdapters {
 			return nil
 		}
-		probes, err := validateInputFormatAdapters(context.Background(), state.runtime, state.inputAttachments)
+		probes, err := validateInputFormatAdapters(state.options.Context(), state.runtime, state.inputAttachments)
 		if err != nil {
 			return err
 		}
@@ -506,6 +657,9 @@ func validateJobStreamAttachments(operation string, stream StreamIntent, steps [
 			}
 			return jobStreamTransformAttachmentMismatchError(operation, stream, step, len(stream.Transforms))
 		}
+		if step.tap != "" {
+			continue
+		}
 		return streamStageMissingError(stream)
 	}
 	return nil
@@ -536,7 +690,7 @@ func validateJobOutputBindingsPass() recipeCompilePass {
 		if !ok {
 			return nil
 		}
-		return validateJobOutputBindings(state.operation, stream, state.outputAttachments)
+		return validateJobOutputBindings(state.operation, stream, state.outputAttachments, state.outputTargetNames)
 	}}
 }
 
@@ -550,9 +704,9 @@ func validateJobStreamOutputKindsPass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeRecipePass() recipeCompilePass {
+func validateBranchCompositionRecipePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode recipe", fn: func(state *recipeCompileState) error {
-		if !state.transcodePresent {
+		if !state.branchCompositionPresent {
 			return &BuildError{
 				Code:      "job_invalid",
 				Operation: state.operation,
@@ -570,60 +724,62 @@ func validateTranscodeRecipePass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeIntentShapePass() recipeCompilePass {
+func validateBranchCompositionIntentShapePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode intent shape", fn: func(state *recipeCompileState) error {
-		return validateTranscodeIntentShape(state.operation, state.intent)
+		return validateBranchCompositionIntentShape(state.operation, state.intent)
 	}}
 }
 
-func validateTranscodeAttachmentsPass() recipeCompilePass {
+func validateBranchCompositionAttachmentsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode attachments", fn: func(state *recipeCompileState) error {
-		return validateTranscodeAttachments(state.transcodeInputAttachment, state.transcodeOutputAttachments)
+		return validateBranchCompositionAttachments(state.branchInputAttachment, state.branchTargetAttachments, state.branchCompositionSplit)
 	}}
 }
 
-func validateTranscodeOutputFormatAdaptersPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode output format adapters", fn: func(state *recipeCompileState) error {
+func validateBranchTargetFormatAdaptersPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate branch target format adapters", fn: func(state *recipeCompileState) error {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs := make([]OutputSpec, 0, len(state.transcodeOutputAttachments))
-		for i := range state.transcodeOutputAttachments {
-			output := state.transcodeOutputAttachments[i].output.Name(firstNonEmpty(
-				state.transcodeOutputAttachments[i].output.name,
-				state.transcodeOutputAttachments[i].name,
+		outputs := make([]EndpointSpec, 0, len(state.branchTargetAttachments))
+		targetNames := make([]string, 0, len(state.branchTargetAttachments))
+		for i := range state.branchTargetAttachments {
+			output := state.branchTargetAttachments[i].output.Name(firstNonEmpty(
+				state.branchTargetAttachments[i].output.name,
+				state.branchTargetAttachments[i].name,
 			))
 			outputs = append(outputs, output)
+			targetNames = append(targetNames, state.branchTargetAttachments[i].name)
 		}
-		resolved, err := validateOutputFormatAdapters(context.Background(), state.runtime, outputs)
+		resolved, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, outputs, targetNames...)
 		if err != nil {
 			return err
 		}
-		for i := range state.transcodeOutputAttachments {
-			state.transcodeOutputAttachments[i].output = resolved[i]
+		for i := range state.branchTargetAttachments {
+			state.branchTargetAttachments[i].output = resolved[i]
 		}
 		return nil
 	}}
 }
 
-func validateTranscodeInputFormatAdaptersPass() recipeCompilePass {
+func validateBranchInputFormatAdaptersPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode input format adapters", fn: func(state *recipeCompileState) error {
 		if !state.options.preflightInputAdapters {
 			return nil
 		}
-		probes, err := validateInputFormatAdapters(context.Background(), state.runtime, []InputSpec{state.transcodeInputAttachment})
+		probes, err := validateInputFormatAdapters(state.options.Context(), state.runtime, []InputSpec{state.branchInputAttachment})
 		if err != nil {
 			return err
 		}
 		if len(probes) != 0 {
-			state.transcodeInputProbe = probes[0]
-			state.transcodeInputProbeReady = true
+			state.branchInputProbe = probes[0]
+			state.branchInputProbeReady = true
 		}
 		return nil
 	}}
 }
 
-func validateTranscodeEncodeAdaptersPass() recipeCompilePass {
+func validateBranchEncodeAdaptersPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode encode adapters", fn: func(state *recipeCompileState) error {
 		if !state.options.preflightEncodeAdapters {
 			return nil
@@ -632,7 +788,7 @@ func validateTranscodeEncodeAdaptersPass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeTransformAdaptersPass() recipeCompilePass {
+func validateBranchTransformAdaptersPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode transform adapters", fn: func(state *recipeCompileState) error {
 		if !state.options.preflightTransformAdapters {
 			return nil
@@ -641,9 +797,15 @@ func validateTranscodeTransformAdaptersPass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeOutputBindingsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode output bindings", fn: func(state *recipeCompileState) error {
-		return validateTranscodeOutputBindings(state.intent, state.transcodeOutputAttachments)
+func validateBranchTargetBindingsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate branch target bindings", fn: func(state *recipeCompileState) error {
+		return validateBranchTargetBindings(state.intent, state.branchTargetAttachments)
+	}}
+}
+
+func validateBranchTargetKindsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate branch target kinds", fn: func(state *recipeCompileState) error {
+		return validateBranchTargetKinds(state.intent, state.branchTargetAttachments)
 	}}
 }
 
@@ -654,15 +816,15 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 			if len(state.intent.Inputs) != len(state.inputAttachments) {
 				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), len(state.inputAttachments))
 			}
-			if len(state.intent.Outputs) != len(state.outputAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "outputs", len(state.intent.Outputs), len(state.outputAttachments))
+			if len(state.intent.Targets) != len(state.outputAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Targets), len(state.outputAttachments))
 			}
-		case state.transcodePresent:
+		case state.branchCompositionPresent:
 			if len(state.intent.Inputs) != 1 {
 				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), 1)
 			}
-			if len(state.intent.Outputs) != len(state.transcodeOutputAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "outputs", len(state.intent.Outputs), len(state.transcodeOutputAttachments))
+			if len(state.intent.Targets) != len(state.branchTargetAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Targets), len(state.branchTargetAttachments))
 			}
 		}
 		return nil
@@ -679,7 +841,7 @@ func recipeAttachmentMismatchError(operation string, kind string, intentCount in
 			fmt.Sprintf("attached %s: %d", kind, attachmentCount),
 		},
 		Suggestions: []string{
-			"build recipes through goav.Record, goav.From, goav.Decode, or goav.Transcode",
+			"build recipes through goav.From(input)",
 			"keep custom compiler passes aligned with the public Intent and captured attachments",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -688,26 +850,6 @@ func recipeAttachmentMismatchError(operation string, kind string, intentCount in
 
 func validatePacketJobOutputsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate packet job outputs", fn: func(state *recipeCompileState) error {
-		if !state.jobPresent || jobIntentHasStream(state.intent) {
-			return nil
-		}
-		for i := range state.outputAttachments {
-			if state.outputAttachments[i].sink == nil {
-				continue
-			}
-			return &BuildError{
-				Code:      "output_kind_invalid",
-				Operation: state.operation,
-				Node:      state.outputAttachments[i].label(fmt.Sprintf("output-%d", i)),
-				Reason:    "packet-preserving recipes write to muxed outputs, not frame sinks",
-				Suggestions: []string{
-					"use goav.Decode(input, goav.FrameSink(sink)) for decoded frames when the input has one obvious stream",
-					"use goav.From(input).Audio().To(goav.FrameSink(sink)) or .Video().To(...) when stream selection matters",
-					"use goav.FileOutput(...) or goav.URIOutput(...) with goav.Record(...) for packet-preserving output",
-				},
-				Cause: ErrUnsupportedBuild,
-			}
-		}
 		return nil
 	}}
 }
@@ -748,13 +890,13 @@ func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeKnownInputStreamSelectionPass() recipeCompilePass {
+func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode known input stream selection", fn: func(state *recipeCompileState) error {
-		if !state.transcodeInputProbeReady || len(state.transcodeInputProbe.Streams) == 0 {
+		if !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
 		for i := range state.intent.Streams {
-			if err := validateKnownProbeStreamSelection(state.transcodeInputProbe, state.intent.Streams[i]); err != nil {
+			if err := validateKnownProbeStreamSelection(state.branchInputProbe, state.intent.Streams[i]); err != nil {
 				return err
 			}
 		}
@@ -762,12 +904,12 @@ func validateTranscodeKnownInputStreamSelectionPass() recipeCompilePass {
 	}}
 }
 
-func validateTranscodeKnownInputDecodeAdaptersPass() recipeCompilePass {
+func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode known input decode adapters", fn: func(state *recipeCompileState) error {
-		if !state.options.preflightDecodeAdapters || !state.transcodeInputProbeReady || len(state.transcodeInputProbe.Streams) == 0 {
+		if !state.options.preflightDecodeAdapters || !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
-		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, []format.ProbeResult{state.transcodeInputProbe}, state.intent.Streams)
+		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, []format.ProbeResult{state.branchInputProbe}, state.intent.Streams)
 	}}
 }
 
@@ -809,76 +951,25 @@ func validateJobStreamRuntimeCapabilitiesPass() recipeCompilePass {
 	}}
 }
 
-func lowerJobInputsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "lower job inputs", fn: func(state *recipeCompileState) error {
-		for i := range state.inputAttachments {
-			state.builder = state.inputAttachments[i].apply(state.builder)
+func planBranchCompositionIntentPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "plan branch composition intent", fn: func(state *recipeCompileState) error {
+		if state.planErr != nil {
+			return state.planErr
 		}
-		return nil
-	}}
-}
-
-func lowerJobStreamPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "lower job stream", fn: func(state *recipeCompileState) error {
-		stream, ok := jobIntentStream(state.intent)
-		if !ok {
-			return nil
-		}
-		builder, err := applyJobStream(state.builder, state.outputAttachments, stream, state.streamSteps)
-		if err != nil {
-			return err
-		}
-		state.builder = builder
-		return nil
-	}}
-}
-
-func lowerJobOutputsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "lower job outputs", fn: func(state *recipeCompileState) error {
-		for i := range state.outputAttachments {
-			builder, err := state.outputAttachments[i].apply(state.builder)
+		if branchComposePlanReady(state.plan) {
+			fresh, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchTargetAttachments, nil)
 			if err != nil {
 				return err
 			}
-			state.builder = builder
+			state.plan.Input = fresh.Input
+			state.plan.Targets = fresh.Targets
+			return nil
 		}
-		return nil
-	}}
-}
-
-func planTranscodeIntentPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "plan transcode intent", fn: func(state *recipeCompileState) error {
-		plan, err := planTranscodeRecipe(state.intent, state.transcodeInputAttachment, state.transcodeOutputAttachments)
+		plan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchTargetAttachments, nil)
 		if err != nil {
 			return err
 		}
 		state.plan = plan
-		return nil
-	}}
-}
-
-func lowerTranscodePlanPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "lower transcode plan", fn: func(state *recipeCompileState) error {
-		state.builder = state.builder.Transcode(state.plan)
-		return nil
-	}}
-}
-
-func selectMigrationGraphCompilerPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "select migration graph compiler", fn: func(state *recipeCompileState) error {
-		builder, ok := state.builder.(*builder)
-		if !ok {
-			return nil
-		}
-		compiler, err := builder.selectCompiler()
-		if err != nil {
-			if errors.Is(err, ErrUnsupportedBuild) {
-				return recipeGraphUnsupportedError(state.operation, state.intent)
-			}
-			return err
-		}
-		state.migration = builder
-		state.compiler = compiler
 		return nil
 	}}
 }
@@ -888,33 +979,27 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		fmt.Sprintf("recipe: %s", firstNonEmpty(intent.Name, "unnamed")),
 		fmt.Sprintf("inputs: %d", len(intent.Inputs)),
 		fmt.Sprintf("streams: %d", len(intent.Streams)),
-		fmt.Sprintf("outputs: %d", len(intent.Outputs)),
+		fmt.Sprintf("targets: %d", len(intent.Targets)),
 	}
 	return &BuildError{
 		Code:      "recipe_graph_unsupported",
 		Operation: operation,
-		Reason:    "recipe intent did not match any standard graph compiler",
+		Reason:    "recipe intent did not match a supported media-plan graph",
 		Details:   details,
 		Suggestions: []string{
-			"use goav.Record(input, output...) for packet-preserving record or remux",
-			"use goav.From(input).Audio().To(goav.FrameSink(...)) or .Video().To(...) for decoded frames",
-			"use goav.Transcode(input) when one input needs named branches or shared outputs",
+			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
+			"use goav.From(input).Audio().To(goav.SinkEndpoint(...)) or .Video().To(...) for decoded frames",
+			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func emitMigrationGraphSpecPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "emit migration graph spec", fn: func(state *recipeCompileState) error {
-		if state.migration == nil || state.compiler == nil {
+func requireMediaPlanGraphSpecPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "require media plan graph spec", fn: func(state *recipeCompileState) error {
+		if state.specReady && state.specOrigin == graphSpecOriginMediaPlan && state.mediaBuildKind != "" {
 			return nil
 		}
-		spec, err := state.migration.describeWithCompiler(state.compiler)
-		if err != nil {
-			return err
-		}
-		state.spec = spec
-		state.specReady = true
-		return nil
+		return recipeGraphUnsupportedError(state.operation, state.intent)
 	}}
 }

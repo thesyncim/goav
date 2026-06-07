@@ -7,15 +7,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pion/rtp"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/transcode"
 )
 
-func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
+func TestRuntimeBuilderTranscodeBranchesFeedMuxOutputs(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{
 		streams: streams,
@@ -38,7 +40,7 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{
+		Branches: []transcode.Branch{
 			{
 				Name:     "audio-main",
 				Selector: testSelectAudio(),
@@ -54,14 +56,14 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 		},
 		Outputs: []transcode.Output{
 			{
-				Name:       "archive.ogg",
-				Format:     av.FormatOgg,
-				Renditions: []string{"archive"},
+				Name:     "archive.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"archive"},
 			},
 			{
-				Name:       "preview.ogg",
-				Format:     av.FormatOgg,
-				Renditions: []string{"audio-low"},
+				Name:     "preview.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"audio-low"},
 			},
 		},
 	}
@@ -125,6 +127,67 @@ func TestRuntimeBuilderTranscodeBranchesRenditionsToOutputs(t *testing.T) {
 	}
 }
 
+func TestRuntimeBuilderTranscodeRunsBranchStageStep(t *testing.T) {
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &decodeTestDecoder{}
+	stage := &runtimeTestStage{name: "meter"}
+	encoderFactory := &encodeTestEncoderFactory{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
+	)
+	plan := transcode.Plan{
+		Input: format.Input{Name: "input.ogg"},
+		Branches: []transcode.Branch{{
+			Name:     "audio-main",
+			Selector: testSelectAudio(),
+			Steps:    []transcode.Step{{Stage: stage}},
+			Encode:   pcmEncodeConfig(),
+			Labels:   []string{"archive"},
+		}},
+		Outputs: []transcode.Output{{Name: "archive.ogg", Format: av.FormatOgg}},
+	}
+
+	builder := newTestBuilder(t, formats, codecs).Transcode(plan)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(specText(planned), "decode-audio -> meter") ||
+		!strings.Contains(specText(planned), "meter -> encode-audio-main") {
+		t.Fatalf("planned:\n%s", specText(planned))
+	}
+	task, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if stage.count == 0 {
+		t.Fatal("custom branch stage did not receive frames")
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !stage.closed {
+		t.Fatal("custom branch stage was not closed")
+	}
+}
+
 func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream(), videoVP8TranscodeTestStream()}
 	demuxer := &decodeTestDemuxer{
@@ -158,7 +221,7 @@ func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T)
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.webm"},
-		Renditions: []transcode.Rendition{
+		Branches: []transcode.Branch{
 			{
 				Name:     "a96",
 				Selector: testSelectAudio(),
@@ -173,9 +236,9 @@ func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T)
 			},
 		},
 		Outputs: []transcode.Output{{
-			Name:       "web.ogg",
-			Format:     av.FormatOgg,
-			Renditions: []string{"web"},
+			Name:     "web.ogg",
+			Format:   av.FormatOgg,
+			Branches: []string{"web"},
 		}},
 	}
 
@@ -227,6 +290,118 @@ func TestRuntimeBuilderTranscodeComposesAudioAndVideoIntoOneOutput(t *testing.T)
 	}
 	if !demuxer.closed || !audioDecoder.closed || !videoDecoder.closed || !muxer.closed {
 		t.Fatalf("closed demux=%v audio=%v video=%v mux=%v", demuxer.closed, audioDecoder.closed, videoDecoder.closed, muxer.closed)
+	}
+}
+
+func TestRuntimeBuilderRTPTranscodeBranchesDecodedStreamToOutputs(t *testing.T) {
+	ctx := context.Background()
+	stream := audioOpusTestStream()
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    2,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &decodeTestDecoder{}
+	encoderFactory := &encodeTestEncoderFactory{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, encoderFactory),
+	)
+	plan := transcode.Plan{
+		Branches: []transcode.Branch{
+			{
+				Name:     "voice",
+				Selector: testSelectAudio(),
+				Encode:   pcmEncodeConfig(),
+				Labels:   []string{"archive"},
+			},
+			{
+				Name:     "preview",
+				Selector: testSelectAudio(),
+				Encode:   pcmEncodeConfig(),
+				Labels:   []string{"archive", "preview"},
+			},
+		},
+		Outputs: []transcode.Output{
+			{
+				Name:     "archive.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"archive"},
+			},
+			{
+				Name:     "preview.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"preview"},
+			},
+		},
+	}
+
+	builder := newTestBuilder(t, formats, codecs).
+		RTP(receiver,
+			withRTPName("live-audio"),
+			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+		).
+		Transcode(plan)
+	planned, err := builder.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(planned)
+	if !strings.Contains(text, "live-audio -> select-audio") ||
+		!strings.Contains(text, "decode-audio -> encode-voice") ||
+		!strings.Contains(text, "decode-audio -> encode-preview") ||
+		!strings.Contains(text, "encode-voice -> archive.ogg") ||
+		!strings.Contains(text, "encode-preview -> preview.ogg") {
+		t.Fatalf("planned:\n%s", text)
+	}
+
+	task, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || decoder.flushes != 1 {
+		t.Fatalf("decodes=%d flushes=%d", decoder.decodes, decoder.flushes)
+	}
+	if len(encoderFactory.encoders) != 2 || encoderFactory.encoders[0].encodes != 1 || encoderFactory.encoders[1].encodes != 1 {
+		t.Fatalf("encoders=%d first=%+v second=%+v", len(encoderFactory.encoders), encoderAt(encoderFactory.encoders, 0), encoderAt(encoderFactory.encoders, 1))
+	}
+	if len(muxers.muxers) != 2 {
+		t.Fatalf("muxers=%d, want 2", len(muxers.muxers))
+	}
+	archive := muxers.muxers[0]
+	preview := muxers.muxers[1]
+	if !archive.opened || archive.writes != 2 || !streamIDsEqual(archive.writtenStreams, []av.StreamID{"voice", "preview"}) {
+		t.Fatalf("archive opened=%v writes=%d written=%+v", archive.opened, archive.writes, archive.writtenStreams)
+	}
+	if !preview.opened || preview.writes != 1 || !streamIDsEqual(preview.writtenStreams, []av.StreamID{"preview"}) {
+		t.Fatalf("preview opened=%v writes=%d written=%+v", preview.opened, preview.writes, preview.writtenStreams)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !receiver.closed || !decoder.closed || !archive.closed || !preview.closed {
+		t.Fatalf("closed receiver=%v decoder=%v archive=%v preview=%v", receiver.closed, decoder.closed, archive.closed, preview.closed)
 	}
 }
 
@@ -327,7 +502,7 @@ func TestRuntimeBuilderTranscodeAppliesResampleBranch(t *testing.T) {
 	}, filterFactory))
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{
+		Branches: []transcode.Branch{
 			{
 				Name:     "audio-main",
 				Selector: testSelectAudio(),
@@ -426,7 +601,7 @@ func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (builderAPI, 
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{
+		Branches: []transcode.Branch{
 			{
 				Name:     "audio-main",
 				Selector: testSelectAudio(),
@@ -442,14 +617,14 @@ func newBufferedTranscodeCopyFixture(policy pipeline.BufferPolicy) (builderAPI, 
 		},
 		Outputs: []transcode.Output{
 			{
-				Name:       "archive.ogg",
-				Format:     av.FormatOgg,
-				Renditions: []string{"archive"},
+				Name:     "archive.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"archive"},
 			},
 			{
-				Name:       "preview.ogg",
-				Format:     av.FormatOgg,
-				Renditions: []string{"audio-low"},
+				Name:     "preview.ogg",
+				Format:   av.FormatOgg,
+				Branches: []string{"audio-low"},
 			},
 		},
 	}
@@ -518,7 +693,7 @@ func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{{
+		Branches: []transcode.Branch{{
 			Name:     "audio-low",
 			Selector: testSelectAudio(),
 			Resample: &filter.ResampleConfig{
@@ -544,23 +719,23 @@ func TestRuntimeBuilderTranscodeRequiresTransformFactory(t *testing.T) {
 func TestRuntimeBuilderTranscodeRequiresMatchingOutputSelection(t *testing.T) {
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{{
+		Branches: []transcode.Branch{{
 			Name:     "audio-main",
 			Selector: testSelectAudio(),
 			Encode:   pcmEncodeConfig(),
 		}},
 		Outputs: []transcode.Output{{
-			Name:       "preview.ogg",
-			Renditions: []string{"missing"},
+			Name:     "preview.ogg",
+			Branches: []string{"missing"},
 		}},
 	}
 
 	_, err := newTestBuilder(t).Transcode(plan).Describe()
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_output_unmatched" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transcode_output_unmatched wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_target_unmatched" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_target_unmatched wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "output selects no transcode branches") ||
+	if !strings.Contains(err.Error(), "target selects no branches") ||
 		!strings.Contains(err.Error(), "requested: missing") ||
 		!strings.Contains(err.Error(), "branch name") {
 		t.Fatalf("err = %v, want unmatched output guidance", err)
@@ -574,45 +749,45 @@ func TestRuntimeBuilderTranscodeReportsEmptyPlanParts(t *testing.T) {
 		want string
 	}{
 		{
-			name: "renditions",
+			name: "branches",
 			plan: transcode.Plan{
 				Input:   format.Input{Name: "input.ogg"},
 				Outputs: []transcode.Output{{Name: "preview.ogg"}},
 			},
-			want: "no renditions",
+			want: "no branches",
 		},
 		{
 			name: "outputs",
 			plan: transcode.Plan{
 				Input: format.Input{Name: "input.ogg"},
-				Renditions: []transcode.Rendition{{
+				Branches: []transcode.Branch{{
 					Name:     "audio-main",
 					Selector: testSelectAudio(),
 					Encode:   pcmEncodeConfig(),
 				}},
 			},
-			want: "no outputs",
+			want: "no targets",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := newTestBuilder(t).Transcode(tt.plan).Describe()
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "transcode_plan_empty" || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want transcode_plan_empty wrapping ErrUnsupportedBuild", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != "branch_compose_plan_empty" || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want branch_compose_plan_empty wrapping ErrUnsupportedBuild", err)
 			}
 			if !strings.Contains(err.Error(), tt.want) ||
-				!strings.Contains(err.Error(), "goav.Transcode") {
+				!strings.Contains(err.Error(), "goav.From") {
 				t.Fatalf("err = %v, want empty plan guidance", err)
 			}
 		})
 	}
 }
 
-func TestRuntimeBuilderTranscodeReportsDuplicateRenditionNames(t *testing.T) {
+func TestRuntimeBuilderTranscodeReportsDuplicateBranchNames(t *testing.T) {
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{
+		Branches: []transcode.Branch{
 			{Name: "audio-main", Selector: testSelectAudio(), Encode: pcmEncodeConfig()},
 			{Name: "audio-main", Selector: testSelectAudio(), Encode: pcmEncodeConfig()},
 		},
@@ -621,37 +796,39 @@ func TestRuntimeBuilderTranscodeReportsDuplicateRenditionNames(t *testing.T) {
 
 	_, err := newTestBuilder(t).Transcode(plan).Describe()
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_rendition_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transcode_rendition_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "audio-main") ||
 		!strings.Contains(err.Error(), "duplicate index: 1") ||
-		!strings.Contains(err.Error(), "unique Name") {
-		t.Fatalf("err = %v, want duplicate rendition guidance", err)
+		!strings.Contains(err.Error(), "unique name") {
+		t.Fatalf("err = %v, want duplicate branch guidance", err)
 	}
 }
 
-func TestRuntimeBuilderTranscodeReportsMixedTransformChain(t *testing.T) {
+func TestRuntimeBuilderTranscodeReportsInvalidStep(t *testing.T) {
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{{
+		Branches: []transcode.Branch{{
 			Name:     "mixed",
 			Selector: testSelectAudio(),
-			Resize:   &filter.ResizeConfig{Width: 320, Height: 180},
-			Resample: &filter.ResampleConfig{SampleRate: 16000, Channels: 1},
-			Encode:   pcmEncodeConfig(),
+			Steps: []transcode.Step{{
+				Resize:   &filter.ResizeConfig{Width: 320, Height: 180},
+				Resample: &filter.ResampleConfig{SampleRate: 16000, Channels: 1},
+			}},
+			Encode: pcmEncodeConfig(),
 		}},
 		Outputs: []transcode.Output{{Name: "preview.ogg"}},
 	}
 
 	_, err := newTestBuilder(t).Transcode(plan).Describe()
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_transform_chain_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transcode_transform_chain_unsupported wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_operation_chain_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_operation_chain_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "cannot combine resize and resample") ||
-		!strings.Contains(err.Error(), "Video(...)/Audio(...)") {
-		t.Fatalf("err = %v, want transform chain guidance", err)
+	if !strings.Contains(err.Error(), "exactly one stage or transform") ||
+		!strings.Contains(err.Error(), "one operation per branch step") {
+		t.Fatalf("err = %v, want invalid step guidance", err)
 	}
 }
 
@@ -667,23 +844,25 @@ func TestRuntimeBuilderTranscodeReportsTransformMediaMismatch(t *testing.T) {
 	)
 	plan := transcode.Plan{
 		Input: format.Input{Name: "input.ogg"},
-		Renditions: []transcode.Rendition{{
+		Branches: []transcode.Branch{{
 			Name:     "video-as-audio",
 			Selector: testSelectVideo(),
-			Resample: &filter.ResampleConfig{SampleRate: 16000, Channels: 1},
-			Encode:   vp8EncodeConfig(),
+			Steps: []transcode.Step{{
+				Resample: &filter.ResampleConfig{SampleRate: 16000, Channels: 1},
+			}},
+			Encode: vp8EncodeConfig(),
 		}},
 		Outputs: []transcode.Output{{Name: "preview.ogg"}},
 	}
 
 	_, err := newTestBuilder(t, formats, codecs).Transcode(plan).Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transcode_transform_media_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transcode_transform_media_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_transform_media_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_transform_media_mismatch wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "resample applies to audio streams") ||
 		!strings.Contains(err.Error(), "stream id: video") ||
-		!strings.Contains(err.Error(), "transcode.Rendition selector") {
+		!strings.Contains(err.Error(), "branch selector") {
 		t.Fatalf("err = %v, want transform media guidance", err)
 	}
 	if !demuxer.closed {

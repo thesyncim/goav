@@ -27,6 +27,16 @@ func TestRegisterProvidesMuxerAndProber(t *testing.T) {
 	if _, err := registry.MuxerFactory(av.FormatAnnexB); err != nil {
 		t.Fatalf("muxer factory: %v", err)
 	}
+	desc, err := registry.MuxerDescriptor(av.FormatAnnexB)
+	if err != nil {
+		t.Fatalf("muxer descriptor: %v", err)
+	}
+	if desc.Format != av.FormatAnnexB ||
+		desc.MaxStreams != 1 ||
+		len(desc.Codecs) != 1 ||
+		desc.Codecs[0] != av.CodecH264 {
+		t.Fatalf("descriptor = %+v, want Annex B H264 single-stream capabilities", desc)
+	}
 }
 
 func TestProberDetectsStartCode(t *testing.T) {

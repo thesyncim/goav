@@ -48,8 +48,21 @@ func Register(registry *format.SimpleRegistry) {
 		return
 	}
 	registry.RegisterProber(Prober{})
-	registry.RegisterDemuxer(av.FormatIVF, DemuxerFactory{})
-	registry.RegisterMuxer(av.FormatIVF, MuxerFactory{})
+	registry.RegisterDemuxerDescriptor(Descriptor(), DemuxerFactory{})
+	registry.RegisterMuxerDescriptor(Descriptor(), MuxerFactory{})
+}
+
+func Descriptor() format.Descriptor {
+	return format.Descriptor{
+		Format:     av.FormatIVF,
+		Media:      []av.MediaType{av.MediaVideo},
+		Codecs:     []av.CodecID{av.CodecVP8, av.CodecVP9, av.CodecAV1},
+		MinStreams: 1,
+		MaxStreams: 1,
+		Metadata: av.Metadata{
+			"summary": "IVF targets support one VP8, VP9, or AV1 video stream",
+		},
+	}
 }
 
 func (Prober) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {

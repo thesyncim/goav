@@ -43,7 +43,9 @@ func (r *SimpleRegistry) RegisterEncoder(desc Descriptor, factory EncoderFactory
 
 func (r *SimpleRegistry) Descriptors() []Descriptor {
 	out := make([]Descriptor, len(r.descriptors))
-	copy(out, r.descriptors)
+	for i := range r.descriptors {
+		out[i] = cloneDescriptor(r.descriptors[i])
+	}
 	return out
 }
 
@@ -57,7 +59,7 @@ func (r *SimpleRegistry) Find(id av.CodecID, mode Mode) ([]Descriptor, error) {
 		if !desc.Supports(mode) {
 			continue
 		}
-		out = append(out, desc)
+		out = append(out, cloneDescriptor(desc))
 	}
 	if len(out) == 0 {
 		return nil, ErrNotFound
@@ -113,6 +115,7 @@ func (d Descriptor) Supports(mode Mode) bool {
 }
 
 func (r *SimpleRegistry) upsertDescriptor(desc Descriptor) {
+	desc = cloneDescriptor(desc)
 	for i := range r.descriptors {
 		if !sameDescriptorSlot(r.descriptors[i], desc) {
 			continue
@@ -121,6 +124,23 @@ func (r *SimpleRegistry) upsertDescriptor(desc Descriptor) {
 		return
 	}
 	r.descriptors = append(r.descriptors, desc)
+}
+
+func cloneDescriptor(desc Descriptor) Descriptor {
+	cloned := desc
+	cloned.Modes = append([]Mode(nil), desc.Modes...)
+	cloned.Profiles = append([]string(nil), desc.Profiles...)
+	cloned.Capabilities = cloneCapabilities(desc.Capabilities)
+	return cloned
+}
+
+func cloneCapabilities(capabilities Capabilities) Capabilities {
+	return Capabilities{
+		SampleFormats: append([]string(nil), capabilities.SampleFormats...),
+		PixelFormats:  append([]string(nil), capabilities.PixelFormats...),
+		RTPPayloads:   append([]string(nil), capabilities.RTPPayloads...),
+		BuildTags:     append([]string(nil), capabilities.BuildTags...),
+	}
 }
 
 func sameDescriptorSlot(a Descriptor, b Descriptor) bool {

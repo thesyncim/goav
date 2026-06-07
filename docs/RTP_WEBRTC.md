@@ -76,10 +76,10 @@ The session-level shape is:
 session, err := webrtcav.NewSession(ctx, webrtcav.SessionConfig{})
 answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
-err := goav.Record(
-    goav.WebRTCTrack(remote.Track),
-    goav.FileOutput("recording.ivf", file),
-).Run(ctx)
+err := goav.From(goav.WebRTCTrack(remote.Track)).
+    Copy().
+    To(goav.FileOutput("recording.ivf", file)).
+    Run(ctx)
 ```
 
 For multiple tracks, the orchestration boundary is explicit. Writing them to one
@@ -103,10 +103,10 @@ application graph.
 The recipe layer can also accept raw RTP packet readers directly:
 
 ```go
-err := goav.Record(
-    goav.RTP(video).Name("video").Codec(goav.VP8()),
-    goav.FileOutput("recording.ivf", file),
-).Run(ctx)
+err := goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
+    Copy().
+    To(goav.FileOutput("recording.ivf", file)).
+    Run(ctx)
 ```
 
 Each reader can be a raw RTP receiver or a `webrtcav.TrackReader` produced from
@@ -126,7 +126,8 @@ It can also decode a selected live stream directly into frames:
 ```go
 err := goav.From(goav.WebRTCTrack(track)).
     Audio().
-    To(goav.FrameSink(frames)).
+    Decode().
+    To(goav.SinkEndpoint(frames)).
     Run(ctx)
 ```
 
@@ -134,7 +135,7 @@ For repeated RTP/WebRTC inputs, the generated graph feeds all sources into the
 selector before the decoder. Single-stream RTP sources stamp EOS with the stream
 ID so unrelated inputs do not flush the selected decoder.
 Optional filter stages can be inserted on the stream chain before
-`.To(goav.FrameSink(...))` when their selector matches the decoded stream.
+`.To(goav.SinkEndpoint(...))` when their selector matches the decoded stream.
 Decoder factories can optionally provide adapter-specific reusable state for
 this high-level path. `WithRTPDecodeBounds(...)` lets an RTP input seed payload,
 retained-fragment, output-count, and geometry limits into that state provider.
@@ -151,6 +152,7 @@ outputs when the target codec is explicit:
 ```go
 err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
+    Decode().
     Do(resample).
     Opus(96_000).
     To(
@@ -222,7 +224,7 @@ Stream recipes can name the supported live policy explicitly:
 err := goav.From(goav.WebRTCTrack(track)).
     Video().
     OnCodecChange(goav.RealtimeCodecChangePolicy()).
-    To(goav.FrameSink(frames)).
+    To(goav.SinkEndpoint(frames)).
     Run(ctx)
 ```
 

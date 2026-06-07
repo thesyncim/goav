@@ -9,7 +9,7 @@ The loop is intentionally small:
 1. Name the user workflow in one sentence.
 2. Express it with the shortest fluent API that should feel natural.
 3. Describe the explicit graph before adding runtime behavior.
-4. Add one private compiler, adapter, stage, or format boundary.
+4. Add one compiler pass, adapter, stage, or format boundary.
 5. Keep hot-path data caller-owned and preallocated.
 6. Add the narrow allocation, lifecycle, and event tests for that slice.
 7. Remove any abstraction that does not make the next slice simpler.
@@ -45,14 +45,13 @@ The pass chain should stay explicit and boring:
 - emit `pipeline.Spec`
 - build the runnable graph from the same plan
 
-The current fixed graph compilers are migration scaffolding. A new fixed matcher
-is allowed only as a temporary bridge for one proven workflow, and it should
-shrink into an intent pass as soon as the shared compiler can express it.
+Normal recipes must be accepted by the media-plan path before they can describe
+or build. A new workflow should add planner data or a compiler pass, not another
+fixed matcher.
 
 `Describe` and `Build` must use the same resolved plan so the described graph
 and runnable graph stay equivalent. Unsupported combinations should fail early
-with actionable diagnostics that preserve the unsupported-build sentinel where
-compatibility requires it. Do not guess across codec, format, or protocol
+with actionable diagnostics. Do not guess across codec, format, or protocol
 boundaries.
 
 ## Growth Rule
@@ -63,6 +62,7 @@ Prefer one reusable contract over many parallel helpers:
 - One explicit registry per capability family.
 - One intent compiler path for recipe workflows.
 - One adapter package per codec/container integration.
+- One generic `Codec` spec for built-in and custom codec intent.
 - One test fixture per boundary when possible.
 
 Complex workflows should become compositions of existing compiler/stage pieces,

@@ -26,6 +26,9 @@ func TestDescriptor(t *testing.T) {
 	if desc.Name != filter.FactoryResample || desc.Input != av.MediaAudio || desc.Output != av.MediaAudio {
 		t.Fatalf("descriptor = %+v", desc)
 	}
+	if len(desc.SampleFormats) != 1 || desc.SampleFormats[0] != av.SampleFormatS16 {
+		t.Fatalf("sample formats = %+v", desc.SampleFormats)
+	}
 }
 
 func TestFilterDownsamplesAndDownmixesS16(t *testing.T) {

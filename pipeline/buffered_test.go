@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -125,6 +126,25 @@ func TestNewGraphBuildsBufferedExecutionForBufferPolicy(t *testing.T) {
 	}
 }
 
+func TestGraphBufferedRejectsAddAfterClose(t *testing.T) {
+	graph, err := NewGraph(GraphConfig{Name: "buffered", Buffer: BufferPolicy{Capacity: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(&directTestSource{name: "source"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddSource err = %v, want ErrClosed", err)
+	}
+	if _, err := graph.AddStage(&directPassStage{name: "stage"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddStage err = %v, want ErrClosed", err)
+	}
+	if _, err := graph.AddSink(&directTestSink{name: "sink"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddSink err = %v, want ErrClosed", err)
+	}
+}
+
 func TestGraphBufferedPassThroughImmutablePacket(t *testing.T) {
 	source := &bufferedPacketSource{
 		name:    "source",
@@ -151,6 +171,60 @@ func TestGraphBufferedPassThroughImmutablePacket(t *testing.T) {
 	}
 	if len(sink.values) != 1 || sink.values[0] != 7 {
 		t.Fatalf("values = %v", sink.values)
+	}
+}
+
+func TestGraphBufferedAddsSinkWhileRunning(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	afterFirst := make(chan struct{})
+	source := &bufferedPacketSource{
+		name:       "source",
+		packets:    []av.Packet{immutablePacket(1), immutablePacket(2)},
+		afterFirst: afterFirst,
+		done:       make(chan struct{}),
+	}
+	base := &bufferedBlockingSink{name: "base", started: make(chan struct{})}
+	late := &bufferedBlockingSink{name: "late", started: make(chan struct{})}
+
+	graph, err := NewGraph(GraphConfig{Name: "dynamic-buffered", Buffer: BufferPolicy{Capacity: 2, Drop: DropOldest}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(base, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "base")); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- graph.Run(ctx)
+	}()
+	select {
+	case <-base.started:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if _, err := graph.AddSink(late, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "late")); err != nil {
+		t.Fatal(err)
+	}
+	close(afterFirst)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if !equalBytes(base.values, []byte{1, 2}) {
+		t.Fatalf("base values = %v, want [1 2]", base.values)
+	}
+	if !equalBytes(late.values, []byte{2}) {
+		t.Fatalf("late values = %v, want [2]", late.values)
 	}
 }
 
@@ -398,6 +472,13 @@ func TestGraphBufferedDropStats(t *testing.T) {
 	if stats.Messages != 3 || stats.Packets != 3 || stats.Delivered != 2 ||
 		stats.Dropped != 1 || stats.DropReasons[DropOldest] != 1 {
 		t.Fatalf("stats = %+v", stats)
+	}
+	if got := stats.Nodes["source"]; got.OutPackets != 3 || got.InPackets != 0 {
+		t.Fatalf("source stats = %+v", got)
+	}
+	if got := stats.Nodes["sink"]; got.InPackets != 2 || got.OutPackets != 0 ||
+		got.Dropped != 1 || got.DropReasons[DropOldest] != 1 {
+		t.Fatalf("sink stats = %+v", got)
 	}
 }
 

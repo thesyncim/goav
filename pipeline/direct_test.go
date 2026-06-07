@@ -129,6 +129,19 @@ func TestGraphDirectPassThrough(t *testing.T) {
 	if stage.count != 1 || sink.count != 1 || sink.lastPacket != &packet {
 		t.Fatalf("stage=%d sink=%d packet=%p", stage.count, sink.count, sink.lastPacket)
 	}
+	stats := graph.Stats()
+	if stats.Messages != 2 || stats.Packets != 2 || stats.Delivered != 2 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if got := stats.Nodes["source"]; got.OutPackets != 1 || got.InPackets != 0 {
+		t.Fatalf("source stats = %+v", got)
+	}
+	if got := stats.Nodes["stage"]; got.InPackets != 1 || got.OutPackets != 1 {
+		t.Fatalf("stage stats = %+v", got)
+	}
+	if got := stats.Nodes["sink"]; got.InPackets != 1 || got.OutPackets != 0 {
+		t.Fatalf("sink stats = %+v", got)
+	}
 }
 
 func TestGraphDirectSpec(t *testing.T) {
@@ -293,6 +306,25 @@ func TestGraphDirectRejectsBufferedPolicy(t *testing.T) {
 	_, err = graph.AddSource(&directTestSource{name: "source"}, BufferPolicy{Capacity: 1, Drop: DropOldest})
 	if !errors.Is(err, ErrBufferedEdgesUnsupported) {
 		t.Fatalf("err = %v, want ErrBufferedEdgesUnsupported", err)
+	}
+}
+
+func TestGraphDirectRejectsAddAfterClose(t *testing.T) {
+	graph, err := NewGraph(GraphConfig{Name: "direct"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(&directTestSource{name: "source"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddSource err = %v, want ErrClosed", err)
+	}
+	if _, err := graph.AddStage(&directPassStage{name: "stage"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddStage err = %v, want ErrClosed", err)
+	}
+	if _, err := graph.AddSink(&directTestSink{name: "sink"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddSink err = %v, want ErrClosed", err)
 	}
 }
 

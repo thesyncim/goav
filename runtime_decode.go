@@ -58,7 +58,7 @@ func (b *builder) buildDecodeToSink(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph) error {
@@ -87,6 +87,20 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
 	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
 	if err != nil {
+		return nil, err
+	}
+	intent := StreamIntent{
+		Name: decodeNodeName(request.selector),
+		Select: StreamSelect{
+			ID:       request.selector.ID,
+			Index:    request.selector.Index,
+			UseIndex: request.selector.UseIndex,
+			Type:     request.selector.Type,
+			Codec:    request.selector.Codec,
+			Name:     request.selector.Name,
+		},
+	}
+	if err := validateDecodeAdapterDescriptors("build decode stage", intent, b.runtime.codecs, decodeAdapterRequestFromStream(stream, intent)); err != nil {
 		return nil, err
 	}
 	result := decodeResultForStream(stream, bounds)
@@ -141,25 +155,22 @@ func closeDecodeState(state any) {
 }
 
 func (b *builder) planDecodeFramePath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, request decodeRequest) error {
-	previous, err := b.planDecodeFilterPath(nodes, spec, upstream, request)
+	previous, err := planDecodeFilterPath(nodes, spec, upstream, request, b.filters)
 	if err != nil {
 		return err
 	}
 
-	sinkName := b.sinks[0].Name()
-	sinkRef := pipeline.NodeRef(sinkName)
-	if err := addPlannedNode(nodes, spec, sinkName, pipeline.NodeSink, sinkRef); err != nil {
+	if err := planSinkPath(nodes, spec, previous, b.sinks[0]); err != nil {
 		return err
 	}
-	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-		From:   previous,
-		To:     sinkRef,
-		Policy: pipeline.RouteAll,
-	})
 	return nil
 }
 
 func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, request decodeRequest) (pipeline.NodeRef, error) {
+	return planDecodeFilterPath(nodes, spec, upstream, request, b.filters)
+}
+
+func planDecodeFilterPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, request decodeRequest, filters []filterRequest) (pipeline.NodeRef, error) {
 	selector := request.selector
 	selectName := selectNodeName(selector)
 	selectRef := pipeline.NodeRef(selectName)
@@ -187,8 +198,8 @@ func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipel
 	})
 
 	previous := decodeRef
-	for i := range b.filters {
-		name, detail, err := filterRequestPlanNode(b.filters[i])
+	for i := range filters {
+		name, detail, err := filterRequestPlanNode(filters[i])
 		if err != nil {
 			return "", err
 		}
@@ -206,8 +217,25 @@ func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipel
 	return previous, nil
 }
 
+func planSinkPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, sink pipeline.Sink) error {
+	if sink == nil {
+		return ErrNilSink
+	}
+	sinkName := sink.Name()
+	sinkRef := pipeline.NodeRef(sinkName)
+	if err := addPlannedNode(nodes, spec, sinkName, pipeline.NodeSink, sinkRef, describedNodeDetail(sink)); err != nil {
+		return err
+	}
+	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
+		From:   upstream,
+		To:     sinkRef,
+		Policy: pipeline.RouteAll,
+	})
+	return nil
+}
+
 func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, request decodeRequest, stream av.Stream, realtime bool, bounds codec.DecodeBounds) error {
-	previousRef, _, err := b.compileDecodeFilterPath(ctx, graph, upstream, request, stream, realtime, true, bounds)
+	previousRef, _, err := compileDecodeFilterPath(ctx, b.runtime, graph, upstream, request, stream, realtime, true, bounds, b.filters)
 	if err != nil {
 		return err
 	}
@@ -223,19 +251,24 @@ func (b *builder) compileDecodeFramePath(ctx context.Context, graph pipeline.Gra
 }
 
 func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Graph, upstream []pipeline.NodeRef, request decodeRequest, stream av.Stream, realtime bool, dropDecodeEvents bool, bounds codec.DecodeBounds) (pipeline.NodeRef, av.Stream, error) {
+	return compileDecodeFilterPath(ctx, b.runtime, graph, upstream, request, stream, realtime, dropDecodeEvents, bounds, b.filters)
+}
+
+func compileDecodeFilterPath(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream []pipeline.NodeRef, request decodeRequest, stream av.Stream, realtime bool, dropDecodeEvents bool, bounds codec.DecodeBounds, filters []filterRequest) (pipeline.NodeRef, av.Stream, error) {
+	service := &builder{runtime: runtime}
 	selector := request.selector
 	selectStage := newStreamSelectStage(selectNodeName(selector), stream, selector, selectNodeDetail(selector))
-	selectRef, err := graph.AddStage(selectStage, b.runtime.buffer)
+	selectRef, err := graph.AddStage(selectStage, runtime.buffer)
 	if err != nil {
 		selectStage.Close()
 		return "", av.Stream{}, err
 	}
 
-	decodeStage, err := b.newDecodeStage(ctx, request, stream, realtime, dropDecodeEvents, bounds)
+	decodeStage, err := service.newDecodeStage(ctx, request, stream, realtime, dropDecodeEvents, bounds)
 	if err != nil {
 		return "", av.Stream{}, err
 	}
-	previousRef, err := graph.AddStage(decodeStage, b.runtime.buffer)
+	previousRef, err := graph.AddStage(decodeStage, runtime.buffer)
 	if err != nil {
 		decodeStage.Close()
 		return "", av.Stream{}, err
@@ -250,15 +283,15 @@ func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Gr
 	}
 
 	currentStream := stream
-	for i := range b.filters {
-		if !streamMatchesSelector(currentStream, b.filters[i].selector) {
-			return "", av.Stream{}, filterStreamMismatchError(b.filters[i], currentStream)
+	for i := range filters {
+		if !streamMatchesSelector(currentStream, filters[i].selector) {
+			return "", av.Stream{}, filterStreamMismatchError(filters[i], currentStream)
 		}
-		stage, outputStream, err := b.newFilterRequestStage(ctx, b.filters[i], currentStream, realtime)
+		stage, outputStream, err := service.newFilterRequestStage(ctx, filters[i], currentStream, realtime)
 		if err != nil {
 			return "", av.Stream{}, err
 		}
-		stageRef, err := graph.AddStage(stage, b.runtime.buffer)
+		stageRef, err := graph.AddStage(stage, runtime.buffer)
 		if err != nil {
 			stage.Close()
 			return "", av.Stream{}, err
@@ -296,7 +329,7 @@ func filterRequestPlanNode(request filterRequest) (string, string, error) {
 		return request.stage.Name(), describedNodeDetail(request.stage), nil
 	}
 	if request.transform != nil {
-		return request.transform.name, transcodeTransformDetail(*request.transform), nil
+		return request.transform.name, mediaTransformDetail(*request.transform), nil
 	}
 	return "", "", ErrNilStage
 }
@@ -306,7 +339,7 @@ func (b *builder) newFilterRequestStage(ctx context.Context, request filterReque
 		return request.stage, stream, nil
 	}
 	if request.transform != nil {
-		stage, outputStream, err := b.newTranscodeFilterStage(ctx, *request.transform, stream, realtime)
+		stage, outputStream, err := b.newMediaTransformStage(ctx, *request.transform, stream, realtime)
 		if err != nil {
 			return nil, av.Stream{}, err
 		}

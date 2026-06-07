@@ -60,7 +60,7 @@ func (b *builder) planDecodeEncodeToOutput(spec pipeline.Spec) (pipeline.Spec, e
 		return pipeline.Spec{}, err
 	}
 
-	previous, err := b.planDecodeFilterPath(nodes, &spec, []pipeline.NodeRef{sourceRef}, b.decodes[0])
+	previous, err := planDecodeFilterPath(nodes, &spec, []pipeline.NodeRef{sourceRef}, b.decodes[0], b.filters)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
@@ -82,7 +82,7 @@ func (b *builder) planRTPDecodeEncodeToOutput(spec pipeline.Spec) (pipeline.Spec
 		sourceRefs[i] = sourceRef
 	}
 
-	previous, err := b.planDecodeFilterPath(nodes, &spec, sourceRefs, b.decodes[0])
+	previous, err := planDecodeFilterPath(nodes, &spec, sourceRefs, b.decodes[0], b.filters)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
@@ -92,7 +92,60 @@ func (b *builder) planRTPDecodeEncodeToOutput(spec pipeline.Spec) (pipeline.Spec
 	return spec, nil
 }
 
+func (b *builder) planDecodeEncodeToSink(spec pipeline.Spec) (pipeline.Spec, error) {
+	if b.sinks[0] == nil {
+		return pipeline.Spec{}, ErrNilSink
+	}
+	nodes := make(map[string]plannedNode, 4+len(b.filters))
+	sourceName := demuxNodeName(b.inputs[0])
+	sourceRef := pipeline.NodeRef(sourceName)
+	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(b.inputs[0])); err != nil {
+		return pipeline.Spec{}, err
+	}
+	previous, err := planDecodeFilterPath(nodes, &spec, []pipeline.NodeRef{sourceRef}, b.decodes[0], b.filters)
+	if err != nil {
+		return pipeline.Spec{}, err
+	}
+	if err := b.planEncodeSinkPath(nodes, &spec, previous, b.encodes[0]); err != nil {
+		return pipeline.Spec{}, err
+	}
+	return spec, nil
+}
+
+func (b *builder) planRTPDecodeEncodeToSink(spec pipeline.Spec) (pipeline.Spec, error) {
+	if b.sinks[0] == nil {
+		return pipeline.Spec{}, ErrNilSink
+	}
+	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3+len(b.filters))
+	sourceRefs := make([]pipeline.NodeRef, len(b.rtpInputs))
+	for i := range b.rtpInputs {
+		sourceName := rtpNodeName(b.rtpInputs[i], i)
+		sourceRef := pipeline.NodeRef(sourceName)
+		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, rtpInputDetail(b.rtpInputs[i])); err != nil {
+			return pipeline.Spec{}, err
+		}
+		sourceRefs[i] = sourceRef
+	}
+	previous, err := planDecodeFilterPath(nodes, &spec, sourceRefs, b.decodes[0], b.filters)
+	if err != nil {
+		return pipeline.Spec{}, err
+	}
+	if err := b.planEncodeSinkPath(nodes, &spec, previous, b.encodes[0]); err != nil {
+		return pipeline.Spec{}, err
+	}
+	return spec, nil
+}
+
 func (b *builder) planEncodeOutputPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, request encodeRequest) error {
+	outputs := make([]EndpointSpec, 0, len(b.outputs))
+	for i := range b.outputs {
+		output := EndpointSpec{output: b.outputs[i], format: b.outputFormat(i), resolvedFormat: b.outputOpenFormat(i)}
+		outputs = append(outputs, output)
+	}
+	return planEncodeEndpointPath(nodes, spec, upstream, request, outputs)
+}
+
+func planEncodeEndpointPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, request encodeRequest, outputs []EndpointSpec) error {
 	encodeName := encodeNodeName(request)
 	encodeRef := pipeline.NodeRef(encodeName)
 	if err := addPlannedNode(nodes, spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(request)); err != nil {
@@ -103,10 +156,16 @@ func (b *builder) planEncodeOutputPath(nodes map[string]plannedNode, spec *pipel
 		To:     encodeRef,
 		Policy: pipeline.RouteAll,
 	})
-	for i := range b.outputs {
-		outputName := muxNodeName(b.outputs[i], i)
+	for i := range outputs {
+		if outputs[i].sink != nil {
+			if err := planSinkPath(nodes, spec, encodeRef, outputs[i].sink); err != nil {
+				return err
+			}
+			continue
+		}
+		outputName := muxNodeName(outputs[i].output, i)
 		outputRef := pipeline.NodeRef(outputName)
-		if err := addPlannedNode(nodes, spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetailWithFormat(b.outputs[i], b.outputFormat(i))); err != nil {
+		if err := addPlannedNode(nodes, spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetailWithFormat(outputs[i].output, endpointSpecGraphFormat(outputs[i]))); err != nil {
 			return err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
@@ -118,6 +177,24 @@ func (b *builder) planEncodeOutputPath(nodes map[string]plannedNode, spec *pipel
 	return nil
 }
 
+func (b *builder) planEncodeSinkPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, request encodeRequest) error {
+	return planEncodeSinkPath(nodes, spec, upstream, request, b.sinks[0])
+}
+
+func planEncodeSinkPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, request encodeRequest, sink pipeline.Sink) error {
+	encodeName := encodeNodeName(request)
+	encodeRef := pipeline.NodeRef(encodeName)
+	if err := addPlannedNode(nodes, spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(request)); err != nil {
+		return err
+	}
+	spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
+		From:   upstream,
+		To:     encodeRef,
+		Policy: pipeline.RouteAll,
+	})
+	return planSinkPath(nodes, spec, encodeRef, sink)
+}
+
 func (b *builder) buildDecodeEncodeToOutput(ctx context.Context) (Task, error) {
 	graph, err := b.newGraph(ctx)
 	if err != nil {
@@ -127,7 +204,7 @@ func (b *builder) buildDecodeEncodeToOutput(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 func (b *builder) buildRTPDecodeEncodeToOutput(ctx context.Context) (Task, error) {
@@ -139,7 +216,7 @@ func (b *builder) buildRTPDecodeEncodeToOutput(ctx context.Context) (Task, error
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 func (b *builder) compileDecodeEncodeToOutput(ctx context.Context, graph pipeline.Graph) error {
@@ -206,19 +283,109 @@ func (b *builder) compileRTPDecodeEncodeToOutput(ctx context.Context, graph pipe
 	return b.compileEncodeOutputPath(ctx, graph, previousRef, b.encodes[0], encodeConfig, encodedStream)
 }
 
+func (b *builder) compileDecodeEncodeToSink(ctx context.Context, graph pipeline.Graph) error {
+	if b.sinks[0] == nil {
+		return ErrNilSink
+	}
+	demux, err := b.openDemuxSource(ctx, b.inputs[0])
+	if err != nil {
+		return err
+	}
+	sourceRef, err := graph.AddSource(demux.source, b.runtime.buffer)
+	if err != nil {
+		demux.source.Close()
+		return err
+	}
+
+	request := b.decodes[0]
+	stream, err := selectDecodeStream(demux.streams, request.selector)
+	if err != nil {
+		return err
+	}
+	realtime := b.runtime.realtime || b.inputs[0].Realtime
+	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, request, stream, realtime, false, codec.DecodeBounds{})
+	if err != nil {
+		return err
+	}
+	encodeConfig, _, err := prepareEncodeConfig(filteredStream, b.encodes[0], realtime)
+	if err != nil {
+		return err
+	}
+	return b.compileEncodeSinkPath(ctx, graph, previousRef, b.encodes[0], encodeConfig)
+}
+
+func (b *builder) compileRTPDecodeEncodeToSink(ctx context.Context, graph pipeline.Graph) error {
+	if b.sinks[0] == nil {
+		return ErrNilSink
+	}
+	sourceRefs := make([]pipeline.NodeRef, 0, len(b.rtpInputs))
+	streams := make([]av.Stream, 0, len(b.rtpInputs))
+	builds := make([]rtpBuild, 0, len(b.rtpInputs))
+	for i := range b.rtpInputs {
+		receiver, err := b.openRTPSource(ctx, b.rtpInputs[i], i)
+		if err != nil {
+			return err
+		}
+		sourceRef, err := graph.AddSource(receiver.source, b.runtime.buffer)
+		if err != nil {
+			receiver.source.Close()
+			return err
+		}
+		sourceRefs = append(sourceRefs, sourceRef)
+		streams = append(streams, receiver.streams...)
+		builds = append(builds, receiver)
+	}
+
+	request := b.decodes[0]
+	selector := request.selector
+	stream, err := selectDecodeStream(streams, selector)
+	if err != nil {
+		return err
+	}
+	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, sourceRefs, request, stream, b.runtime.realtime, false, rtpDecodeBoundsForStream(stream, builds))
+	if err != nil {
+		return err
+	}
+	encodeConfig, _, err := prepareEncodeConfig(filteredStream, b.encodes[0], b.runtime.realtime)
+	if err != nil {
+		return err
+	}
+	return b.compileEncodeSinkPath(ctx, graph, previousRef, b.encodes[0], encodeConfig)
+}
+
 func (b *builder) compileEncodeOutputPath(ctx context.Context, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream) error {
-	encodeRef, err := b.compileEncodeStage(ctx, graph, upstream, request, config)
+	outputs := make([]EndpointSpec, 0, len(b.outputs))
+	for i := range b.outputs {
+		output := EndpointSpec{output: b.outputs[i], format: b.outputFormat(i), resolvedFormat: b.outputOpenFormat(i)}
+		outputs = append(outputs, output)
+	}
+	return compileEncodeEndpointPath(ctx, b.runtime, graph, upstream, request, config, stream, outputs)
+}
+
+func compileEncodeEndpointPath(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream, outputs []EndpointSpec) error {
+	encodeRef, err := compileEncodeStage(ctx, runtime, graph, upstream, request, config)
 	if err != nil {
 		return err
 	}
 
 	streams := []av.Stream{stream}
-	for i := range b.outputs {
-		muxStage, err := b.openMuxStage(ctx, b.outputs[i], i, streams)
+	service := &builder{runtime: runtime}
+	for i := range outputs {
+		if outputs[i].sink != nil {
+			sinkRef, err := graph.AddSink(outputs[i].sink, runtime.buffer)
+			if err != nil {
+				return err
+			}
+			if err := connectRefs(graph, encodeRef, sinkRef); err != nil {
+				return err
+			}
+			continue
+		}
+		muxStage, err := service.openMuxStageWithFormat(ctx, outputs[i].output, i, streams, endpointSpecOpenFormat(outputs[i]), endpointSpecGraphFormat(outputs[i]))
 		if err != nil {
 			return err
 		}
-		muxRef, err := graph.AddStage(muxStage, b.runtime.buffer)
+		muxRef, err := graph.AddStage(muxStage, runtime.buffer)
 		if err != nil {
 			muxStage.Close()
 			return err
@@ -230,12 +397,35 @@ func (b *builder) compileEncodeOutputPath(ctx context.Context, graph pipeline.Gr
 	return nil
 }
 
+func (b *builder) compileEncodeSinkPath(ctx context.Context, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) error {
+	return compileEncodeSinkPath(ctx, b.runtime, graph, upstream, request, config, b.sinks[0])
+}
+
+func compileEncodeSinkPath(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, sink pipeline.Sink) error {
+	encodeRef, err := compileEncodeStage(ctx, runtime, graph, upstream, request, config)
+	if err != nil {
+		return err
+	}
+	sinkRef, err := graph.AddSink(sink, runtime.buffer)
+	if err != nil {
+		return err
+	}
+	if err := connectRefs(graph, encodeRef, sinkRef); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (b *builder) compileEncodeStage(ctx context.Context, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, error) {
-	stage, err := b.newEncodeStage(ctx, request, config)
+	return compileEncodeStage(ctx, b.runtime, graph, upstream, request, config)
+}
+
+func compileEncodeStage(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, error) {
+	stage, err := (&builder{runtime: runtime}).newEncodeStage(ctx, request, config)
 	if err != nil {
 		return "", err
 	}
-	encodeRef, err := graph.AddStage(stage, b.runtime.buffer)
+	encodeRef, err := graph.AddStage(stage, runtime.buffer)
 	if err != nil {
 		stage.Close()
 		return "", err
@@ -347,7 +537,7 @@ func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 		Suggestions: []string{
 			"use .Opus(...), .VP8(...), or .VP9(...) in recipe encode paths",
 			"set codec.EncodeConfig.Parameters.ID in the expert builder",
-			"use goav.Copy() or Record(...) when no encode step is intended",
+			"use goav.Copy() or .Copy().To(...) when no encode step is intended",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

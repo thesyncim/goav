@@ -31,6 +31,18 @@ func TestRegisterProvidesFactoriesAndProber(t *testing.T) {
 	if _, err := registry.MuxerFactory(av.FormatIVF); err != nil {
 		t.Fatalf("muxer factory: %v", err)
 	}
+	desc, err := registry.MuxerDescriptor(av.FormatIVF)
+	if err != nil {
+		t.Fatalf("muxer descriptor: %v", err)
+	}
+	if desc.Format != av.FormatIVF ||
+		desc.MaxStreams != 1 ||
+		len(desc.Codecs) != 3 ||
+		desc.Codecs[0] != av.CodecVP8 ||
+		desc.Codecs[1] != av.CodecVP9 ||
+		desc.Codecs[2] != av.CodecAV1 {
+		t.Fatalf("descriptor = %+v, want IVF video codec capabilities", desc)
+	}
 }
 
 func TestProberParsesHeaderStreams(t *testing.T) {

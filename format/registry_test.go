@@ -58,3 +58,48 @@ func TestRegistryFactories(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestRegistryDescriptorsAreCloned(t *testing.T) {
+	registry := NewRegistry()
+	desc := Descriptor{
+		Format:     av.FormatOgg,
+		Media:      []av.MediaType{av.MediaAudio, av.MediaVideo},
+		Codecs:     []av.CodecID{av.CodecOpus, av.CodecVP9},
+		MinStreams: 1,
+		MaxStreams: 2,
+		Realtime:   true,
+		Metadata:   av.Metadata{"profile": "web"},
+	}
+	registry.RegisterMuxerDescriptor(desc, testMuxerFactory{})
+
+	desc.Media[0] = av.MediaData
+	desc.Codecs[0] = av.CodecPCM
+	desc.Metadata["profile"] = "mutated"
+
+	got, err := registry.MuxerDescriptor(av.FormatOgg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Format != av.FormatOgg ||
+		got.Media[0] != av.MediaAudio ||
+		got.Codecs[0] != av.CodecOpus ||
+		got.MinStreams != 1 ||
+		got.MaxStreams != 2 ||
+		!got.Realtime ||
+		got.Metadata["profile"] != "web" {
+		t.Fatalf("descriptor = %+v, want cloned original", got)
+	}
+
+	got.Media[0] = av.MediaData
+	got.Codecs[0] = av.CodecPCM
+	got.Metadata["profile"] = "changed"
+	again, err := registry.MuxerDescriptor(av.FormatOgg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Media[0] != av.MediaAudio ||
+		again.Codecs[0] != av.CodecOpus ||
+		again.Metadata["profile"] != "web" {
+		t.Fatalf("descriptor = %+v, want registry-owned copy", again)
+	}
+}

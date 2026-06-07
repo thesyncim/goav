@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -43,6 +44,24 @@ func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
 			register(runtime.codecs)
 		}
 	}
+}
+
+func WithCodecDescriptor(desc CodecDescriptor) Option {
+	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		registry.RegisterDescriptor(desc)
+	})
+}
+
+func WithDecoder(desc CodecDescriptor, factory DecoderFactory) Option {
+	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		registry.RegisterDecoder(desc, factory)
+	})
+}
+
+func WithEncoder(desc CodecDescriptor, factory EncoderFactory) Option {
+	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		registry.RegisterEncoder(desc, factory)
+	})
 }
 
 func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
@@ -140,7 +159,7 @@ type decodeRequest struct {
 type filterRequest struct {
 	selector  av.StreamSelector
 	stage     pipeline.Stage
-	transform *transcodeTransform
+	transform *mediaTransform
 }
 
 type rtpOption func(*rtpInput)
@@ -184,14 +203,6 @@ func (b *builder) Output(output format.Output) builderAPI {
 	return b.outputWithFormats(output, "", "")
 }
 
-func (b *builder) outputWithFormat(output format.Output, formatID av.FormatID) builderAPI {
-	return b.outputWithFormats(output, formatID, formatID)
-}
-
-func (b *builder) resolvedOutputWithFormat(output format.Output, formatID av.FormatID) builderAPI {
-	return b.outputWithFormats(output, formatID, "")
-}
-
 func (b *builder) outputWithFormats(output format.Output, openFormat av.FormatID, detailFormat av.FormatID) builderAPI {
 	b.outputs = append(b.outputs, output)
 	b.outputFmts = append(b.outputFmts, openFormat)
@@ -232,7 +243,7 @@ func (b *builder) Filter(selector av.StreamSelector, stage pipeline.Stage) build
 	return b
 }
 
-func (b *builder) transform(selector av.StreamSelector, transform transcodeTransform) builderAPI {
+func (b *builder) transform(selector av.StreamSelector, transform mediaTransform) builderAPI {
 	b.filters = append(b.filters, filterRequest{selector: selector, transform: &transform})
 	return b
 }
@@ -407,11 +418,28 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 }
 
 type task struct {
-	graph pipeline.Graph
+	graph       pipeline.Graph
+	runtime     *runtime
+	taps        []TapInfo
+	branchTaps  []TapInfo
+	attachMu    sync.Mutex
+	attachments map[*runtimeAttachment]struct{}
+}
+
+func newTask(graph pipeline.Graph, runtime *runtime) *task {
+	return &task{graph: graph, runtime: runtime}
 }
 
 func (t *task) Describe() pipeline.Spec {
 	return t.graph.Spec()
+}
+
+func (t *task) Explain(context.Context) (PlanReport, error) {
+	return PlanReport{
+		Summary: "running media task",
+		Graph:   t.Describe(),
+		Taps:    tapReports(t.Taps()),
+	}, nil
 }
 
 func (t *task) Run(ctx context.Context) error {
@@ -426,6 +454,44 @@ func (t *task) Stats() TaskStats {
 	return t.graph.Stats()
 }
 
+func (t *task) Taps() []TapInfo {
+	t.attachMu.Lock()
+	defer t.attachMu.Unlock()
+	return t.tapsLocked()
+}
+
+func (t *task) Detach(ctx context.Context, attachment Attachment) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if attachment == nil {
+		return nil
+	}
+	if runtimeAttachment, ok := attachment.(*runtimeAttachment); ok {
+		return t.stopAttachment(ctx, runtimeAttachment)
+	}
+	return attachment.Close(ctx)
+}
+
+func (t *task) stopAttachments(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t.attachMu.Lock()
+	defer t.attachMu.Unlock()
+	var first error
+	for attachment := range t.attachments {
+		if err := t.stopAttachmentLocked(ctx, attachment); first == nil && err != nil {
+			first = err
+		}
+	}
+	return first
+}
+
 func (t *task) Close() error {
-	return t.graph.Close()
+	first := t.stopAttachments(context.Background())
+	if err := t.graph.Close(); first == nil && err != nil {
+		first = err
+	}
+	return first
 }

@@ -125,6 +125,49 @@ func (d *decodeTestDemuxer) Close() error {
 	return nil
 }
 
+func TestRuntimeBuilderDecodeRejectsIncompatibleDescriptorBeforeOpeningDecoder(t *testing.T) {
+	custom := av.CodecID("x_audio")
+	streams := []av.Stream{{
+		ID:   "audio",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			ID:           custom,
+			Type:         av.MediaAudio,
+			SampleFormat: av.SampleFormatF32,
+		},
+	}}
+	demuxer := &remuxTestDemuxer{streams: streams}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	decoderFactory := &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}
+	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{
+		ID:   custom,
+		Type: av.MediaAudio,
+		Capabilities: codec.Capabilities{
+			SampleFormats: []string{av.SampleFormatS16},
+		},
+	}, decoderFactory))
+
+	_, err := newTestBuilder(t, formats, codecs).
+		Input(format.Input{Name: "input.ogg"}).
+		Decode(testSelectAudio()).
+		Sink(&runtimeTestSink{name: "frames"}).
+		Build(context.Background())
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) ||
+		buildErr.Code != "decode_adapter_incompatible" ||
+		!strings.Contains(err.Error(), "field=sample_format") ||
+		!strings.Contains(err.Error(), "requested=f32") ||
+		!strings.Contains(err.Error(), "supported=s16") {
+		t.Fatalf("err = %v, want runtime decode descriptor config error", err)
+	}
+	if decoderFactory.config.Stream.ID != "" {
+		t.Fatalf("decoder opened before descriptor preflight: %+v", decoderFactory.config)
+	}
+}
+
 func TestRuntimeBuilderInputDecodeSink(t *testing.T) {
 	streams := []av.Stream{{
 		ID:   "audio",

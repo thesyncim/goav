@@ -17,6 +17,7 @@ var builderCompilers = [...]builderCompiler{
 	emptyGraphCompiler{},
 	explicitGraphCompiler{},
 	remuxGraphCompiler{},
+	rtpTranscodeGraphCompiler{},
 	transcodeGraphCompiler{},
 	decodeEncodeToOutputGraphCompiler{},
 	decodeToSinkGraphCompiler{},
@@ -55,7 +56,7 @@ func unsupportedRuntimeGraphError(b *builder) error {
 		Details:   details,
 		Suggestions: []string{
 			"use Record or From(...).To(...) for packet-preserving record and remux jobs",
-			"use Decode or From(...).Audio()/Video().To(FrameSink(...)) for frame output",
+			"use Decode or From(...).Audio()/Video().To(SinkEndpoint(...)) for frame output",
 			"avoid mixing explicit Source/Stage/Sink graph nodes with high-level runtime builder requests",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -85,7 +86,7 @@ func (emptyGraphCompiler) build(ctx context.Context, b *builder) (Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 type explicitGraphCompiler struct{}
@@ -107,7 +108,7 @@ func (explicitGraphCompiler) build(ctx context.Context, b *builder) (Task, error
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 type remuxGraphCompiler struct{}

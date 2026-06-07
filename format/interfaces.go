@@ -44,6 +44,16 @@ type ProbeResult struct {
 	Metadata av.Metadata
 }
 
+type Descriptor struct {
+	Format     av.FormatID
+	Media      []av.MediaType
+	Codecs     []av.CodecID
+	MinStreams int
+	MaxStreams int
+	Realtime   bool
+	Metadata   av.Metadata
+}
+
 type Prober interface {
 	Probe(context.Context, ProbeRequest) (ProbeResult, error)
 }

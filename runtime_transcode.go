@@ -14,35 +14,45 @@ import (
 )
 
 type transcodeGraphCompiler struct{}
+type rtpTranscodeGraphCompiler struct{}
 
-type transcodeBranch struct {
-	name       string
-	rendition  transcode.Rendition
-	transforms []transcodeTransform
-	request    encodeRequest
+type branchComposeRoute struct {
+	name        string
+	branch      branchComposeBranch
+	copy        bool
+	sharedSteps []mediaTransform
+	steps       []mediaTransform
+	request     encodeRequest
 }
 
-type transcodeTransform struct {
+type mediaTransform struct {
 	name    string
 	factory string
+	stage   pipeline.Stage
 	video   *filter.ResizeConfig
 	audio   *filter.ResampleConfig
 }
 
-type transcodeOutputBranch struct {
-	output  transcode.Output
+type branchComposeTargetRoute struct {
+	output  branchComposeTarget
 	target  format.Output
+	sink    pipeline.Sink
 	matches []int
 }
 
-type transcodeSelectorGroup struct {
+type branchComposeSelectorGroup struct {
 	selector av.StreamSelector
 	branches []int
 }
 
-type transcodeStreamGroup struct {
+type branchComposeStreamGroup struct {
 	selector av.StreamSelector
 	stream   av.Stream
+	branches []int
+}
+
+type branchComposeSharedStepGroup struct {
+	steps    []mediaTransform
 	branches []int
 }
 
@@ -59,32 +69,97 @@ func (transcodeGraphCompiler) match(b *builder) bool {
 		len(b.sinks) == 0
 }
 
+func (rtpTranscodeGraphCompiler) match(b *builder) bool {
+	return len(b.transcodes) == 1 &&
+		len(b.rtpInputs) > 0 &&
+		len(b.inputs) == 0 &&
+		len(b.outputs) == 0 &&
+		len(b.decodes) == 0 &&
+		len(b.encodes) == 0 &&
+		len(b.filters) == 0 &&
+		len(b.sources) == 0 &&
+		len(b.stages) == 0 &&
+		len(b.sinks) == 0
+}
+
 func (transcodeGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
 	return b.planTranscode(spec)
+}
+
+func (rtpTranscodeGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
+	return b.planRTPTranscode(spec)
 }
 
 func (transcodeGraphCompiler) build(ctx context.Context, b *builder) (Task, error) {
 	return b.buildTranscode(ctx)
 }
 
+func (rtpTranscodeGraphCompiler) build(ctx context.Context, b *builder) (Task, error) {
+	return b.buildRTPTranscode(ctx)
+}
+
 func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
-	plan := b.transcodes[0]
-	branches, outputs, err := prepareTranscodePlan(plan)
+	return b.planBranchComposePlan(spec, branchComposePlanFromTranscode(b.transcodes[0]))
+}
+
+func (b *builder) planTranscodePlan(spec pipeline.Spec, plan transcode.Plan) (pipeline.Spec, error) {
+	return b.planBranchComposePlan(spec, branchComposePlanFromTranscode(plan))
+}
+
+func (b *builder) planBranchComposePlan(spec pipeline.Spec, plan branchComposePlan) (pipeline.Spec, error) {
+	branches, outputs, err := prepareBranchComposePlan(plan)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
 
-	nodes := make(map[string]plannedNode, 3+len(branches)+transcodeTransformCount(branches)+len(outputs))
+	nodes := make(map[string]plannedNode, 3+len(branches)+branchComposeStepCount(branches)+len(outputs))
 	sourceName := demuxNodeName(plan.Input)
 	sourceRef := pipeline.NodeRef(sourceName)
 	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(plan.Input)); err != nil {
 		return pipeline.Spec{}, err
 	}
 
-	groups := transcodeSelectorGroups(branches)
+	return planBranchComposeRoutes(spec, nodes, []pipeline.NodeRef{sourceRef}, branches, outputs)
+}
+
+func (b *builder) planRTPTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
+	return b.planRTPBranchComposePlan(spec, branchComposePlanFromTranscode(b.transcodes[0]))
+}
+
+func (b *builder) planRTPTranscodePlan(spec pipeline.Spec, plan transcode.Plan) (pipeline.Spec, error) {
+	return b.planRTPBranchComposePlan(spec, branchComposePlanFromTranscode(plan))
+}
+
+func (b *builder) planRTPBranchComposePlan(spec pipeline.Spec, plan branchComposePlan) (pipeline.Spec, error) {
+	branches, outputs, err := prepareBranchComposePlan(plan)
+	if err != nil {
+		return pipeline.Spec{}, err
+	}
+
+	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3+len(branches)+branchComposeStepCount(branches)+len(outputs))
+	sourceRefs := make([]pipeline.NodeRef, len(b.rtpInputs))
+	for i := range b.rtpInputs {
+		sourceName := rtpNodeName(b.rtpInputs[i], i)
+		sourceRef := pipeline.NodeRef(sourceName)
+		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, rtpInputDetail(b.rtpInputs[i])); err != nil {
+			return pipeline.Spec{}, err
+		}
+		sourceRefs[i] = sourceRef
+	}
+	return planBranchComposeRoutes(spec, nodes, sourceRefs, branches, outputs)
+}
+
+func planBranchComposeRoutes(
+	spec pipeline.Spec,
+	nodes map[string]plannedNode,
+	sourceRefs []pipeline.NodeRef,
+	branches []branchComposeRoute,
+	outputs []branchComposeTargetRoute,
+) (pipeline.Spec, error) {
+	groups := branchComposeSelectorGroups(branches)
 	branchInputs := make([]pipeline.NodeRef, len(branches))
 	groupNodeOrder := make([]pipeline.NodeRef, 0, len(groups))
-	sourceEdges := make([]pipeline.EdgeSpec, 0, len(groups))
+	sourceEdges := make([]pipeline.EdgeSpec, 0, len(groups)*len(sourceRefs))
 	groupEdges := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(groups))
 	for i := range groups {
 		selectName := selectNodeName(groups[i].selector)
@@ -92,70 +167,119 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 		if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef, selectNodeDetail(groups[i].selector)); err != nil {
 			return pipeline.Spec{}, err
 		}
+		for _, sourceRef := range sourceRefs {
+			sourceEdges = append(sourceEdges, pipeline.EdgeSpec{
+				From:   sourceRef,
+				To:     selectRef,
+				Policy: pipeline.RouteAll,
+			})
+		}
+		groupNodeOrder = append(groupNodeOrder, selectRef)
+		decodedBranches := branchComposeDecodedBranchIndices(groups[i].branches, branches)
+		for _, branchIndex := range groups[i].branches {
+			if !branchComposeRouteNeedsDecode(branches[branchIndex]) {
+				branchInputs[branchIndex] = selectRef
+			}
+		}
+		if len(decodedBranches) == 0 {
+			continue
+		}
 		decodeName := decodeNodeName(groups[i].selector)
 		decodeRef := pipeline.NodeRef(decodeName)
 		if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef, decodeNodeDetail(groups[i].selector)); err != nil {
 			return pipeline.Spec{}, err
 		}
-		sourceEdges = append(sourceEdges, pipeline.EdgeSpec{
-			From:   sourceRef,
-			To:     selectRef,
-			Policy: pipeline.RouteAll,
-		})
 		groupEdges[selectRef] = append(groupEdges[selectRef], pipeline.EdgeSpec{
 			From:   selectRef,
 			To:     decodeRef,
 			Policy: pipeline.RouteAll,
 		})
-		groupNodeOrder = append(groupNodeOrder, selectRef, decodeRef)
-		for _, branchIndex := range groups[i].branches {
-			branchInputs[branchIndex] = decodeRef
+		groupNodeOrder = append(groupNodeOrder, decodeRef)
+		for _, prefix := range branchComposeSharedStepGroups(decodedBranches, branches) {
+			branchRef := decodeRef
+			for j := range prefix.steps {
+				stepRef := pipeline.NodeRef(prefix.steps[j].name)
+				if err := addPlannedNode(nodes, &spec, prefix.steps[j].name, pipeline.NodeStage, stepRef, mediaTransformDetail(prefix.steps[j])); err != nil {
+					return pipeline.Spec{}, err
+				}
+				outgoingEdge := pipeline.EdgeSpec{
+					From:   branchRef,
+					To:     stepRef,
+					Policy: pipeline.RouteAll,
+				}
+				groupEdges[branchRef] = append(groupEdges[branchRef], outgoingEdge)
+				branchRef = stepRef
+				groupNodeOrder = append(groupNodeOrder, stepRef)
+			}
+			for _, branchIndex := range prefix.branches {
+				branchInputs[branchIndex] = branchRef
+			}
 		}
 	}
 
-	encodeRefs := make([]pipeline.NodeRef, len(branches))
-	branchNodeOrder := make([]pipeline.NodeRef, 0, len(branches)+transcodeTransformCount(branches))
-	outgoing := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(branches)*2+transcodeTransformCount(branches))
+	branchOutputRefs := make([]pipeline.NodeRef, len(branches))
+	branchNodeOrder := make([]pipeline.NodeRef, 0, len(branches)+branchComposeStepCount(branches))
+	outgoing := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(branches)*2+branchComposeStepCount(branches))
 	for i := range branches {
 		branchRef := branchInputs[i]
-		for j := range branches[i].transforms {
-			transformRef := pipeline.NodeRef(branches[i].transforms[j].name)
-			if err := addPlannedNode(nodes, &spec, branches[i].transforms[j].name, pipeline.NodeStage, transformRef, transcodeTransformDetail(branches[i].transforms[j])); err != nil {
+		for j := range branches[i].steps {
+			stepRef := pipeline.NodeRef(branches[i].steps[j].name)
+			if err := addPlannedNode(nodes, &spec, branches[i].steps[j].name, pipeline.NodeStage, stepRef, mediaTransformDetail(branches[i].steps[j])); err != nil {
 				return pipeline.Spec{}, err
 			}
 			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
 				From:   branchRef,
-				To:     transformRef,
+				To:     stepRef,
 				Policy: pipeline.RouteAll,
 			})
-			branchRef = transformRef
-			branchNodeOrder = append(branchNodeOrder, transformRef)
+			branchRef = stepRef
+			branchNodeOrder = append(branchNodeOrder, stepRef)
 		}
 
-		encodeName := encodeNodeName(branches[i].request)
-		encodeRef := pipeline.NodeRef(encodeName)
-		if err := addPlannedNode(nodes, &spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(branches[i].request)); err != nil {
-			return pipeline.Spec{}, err
+		if branchComposeRouteNeedsEncode(branches[i]) {
+			encodeName := encodeNodeName(branches[i].request)
+			encodeRef := pipeline.NodeRef(encodeName)
+			if err := addPlannedNode(nodes, &spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(branches[i].request)); err != nil {
+				return pipeline.Spec{}, err
+			}
+			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
+				From:   branchRef,
+				To:     encodeRef,
+				Policy: pipeline.RouteAll,
+			})
+			branchRef = encodeRef
+			branchNodeOrder = append(branchNodeOrder, encodeRef)
 		}
-		outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
-			From:   branchRef,
-			To:     encodeRef,
-			Policy: pipeline.RouteAll,
-		})
-		encodeRefs[i] = encodeRef
-		branchNodeOrder = append(branchNodeOrder, encodeRef)
+		branchOutputRefs[i] = branchRef
 	}
 
 	for i := range outputs {
+		if outputs[i].sink != nil {
+			outputName := branchComposeTargetSinkNodeName(outputs[i], i)
+			outputRef := pipeline.NodeRef(outputName)
+			if err := addPlannedNode(nodes, &spec, outputName, pipeline.NodeSink, outputRef, describedNodeDetail(outputs[i].sink)); err != nil {
+				return pipeline.Spec{}, err
+			}
+			for _, branchIndex := range outputs[i].matches {
+				branchRef := branchOutputRefs[branchIndex]
+				outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
+					From:   branchRef,
+					To:     outputRef,
+					Policy: pipeline.RouteAll,
+				})
+			}
+			continue
+		}
+
 		outputName := muxNodeName(outputs[i].target, i)
 		outputRef := pipeline.NodeRef(outputName)
 		if err := addPlannedNode(nodes, &spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetailWithFormat(outputs[i].target, outputs[i].output.Format)); err != nil {
 			return pipeline.Spec{}, err
 		}
 		for _, branchIndex := range outputs[i].matches {
-			encodeRef := encodeRefs[branchIndex]
-			outgoing[encodeRef] = append(outgoing[encodeRef], pipeline.EdgeSpec{
-				From:   encodeRefs[branchIndex],
+			branchRef := branchOutputRefs[branchIndex]
+			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
+				From:   branchRef,
 				To:     outputRef,
 				Policy: pipeline.RouteAll,
 			})
@@ -181,12 +305,31 @@ func (b *builder) buildTranscode(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
+}
+
+func (b *builder) buildRTPTranscode(ctx context.Context) (Task, error) {
+	graph, err := b.newGraph(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.compileRTPTranscode(ctx, graph); err != nil {
+		graph.Close()
+		return nil, err
+	}
+	return newTask(graph, b.runtime), nil
 }
 
 func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) error {
-	plan := b.transcodes[0]
-	branches, outputs, err := prepareTranscodePlan(plan)
+	return b.compileBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(b.transcodes[0]))
+}
+
+func (b *builder) compileTranscodePlan(ctx context.Context, graph pipeline.Graph, plan transcode.Plan) error {
+	return b.compileBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(plan))
+}
+
+func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.Graph, plan branchComposePlan) error {
+	branches, outputs, err := prepareBranchComposePlan(plan)
 	if err != nil {
 		return err
 	}
@@ -202,34 +345,178 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 	}
 
 	realtime := b.runtime.realtime || plan.Input.Realtime
-	groups, err := resolveTranscodeStreamGroups(demux.streams, branches)
+	groups, err := resolveBranchComposeStreamGroups(demux.streams, branches)
 	if err != nil {
 		return err
 	}
-	branchInputs := make([]pipeline.NodeRef, len(branches))
-	branchStreams := make([]av.Stream, len(branches))
-	for i := range groups {
-		previousRef, decodedStream, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, decodeRequest{selector: groups[i].selector}, groups[i].stream, realtime, false, codec.DecodeBounds{})
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, []pipeline.NodeRef{sourceRef}, groups, nil, branches, realtime)
+	if err != nil {
+		return err
+	}
+
+	return compileBranchComposeRoutes(ctx, b.runtime, graph, branches, outputs, branchInputs, branchStreams, realtime)
+}
+
+func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
+	return b.compileRTPBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(b.transcodes[0]))
+}
+
+func (b *builder) compileRTPTranscodePlan(ctx context.Context, graph pipeline.Graph, plan transcode.Plan) error {
+	return b.compileRTPBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(plan))
+}
+
+func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipeline.Graph, plan branchComposePlan) error {
+	branches, outputs, err := prepareBranchComposePlan(plan)
+	if err != nil {
+		return err
+	}
+
+	sourceRefs := make([]pipeline.NodeRef, 0, len(b.rtpInputs))
+	streams := make([]av.Stream, 0, len(b.rtpInputs))
+	builds := make([]rtpBuild, 0, len(b.rtpInputs))
+	for i := range b.rtpInputs {
+		receiver, err := b.openRTPSource(ctx, b.rtpInputs[i], i)
 		if err != nil {
 			return err
 		}
+		sourceRef, err := graph.AddSource(receiver.source, b.runtime.buffer)
+		if err != nil {
+			receiver.source.Close()
+			return err
+		}
+		sourceRefs = append(sourceRefs, sourceRef)
+		streams = append(streams, receiver.streams...)
+		builds = append(builds, receiver)
+	}
+
+	realtime := true
+	groups, err := resolveBranchComposeStreamGroups(streams, branches)
+	if err != nil {
+		return err
+	}
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, sourceRefs, groups, builds, branches, realtime)
+	if err != nil {
+		return err
+	}
+
+	return compileBranchComposeRoutes(ctx, b.runtime, graph, branches, outputs, branchInputs, branchStreams, realtime)
+}
+
+func compileBranchComposeInputs(
+	ctx context.Context,
+	runtime *runtime,
+	graph pipeline.Graph,
+	sourceRefs []pipeline.NodeRef,
+	groups []branchComposeStreamGroup,
+	builds []rtpBuild,
+	branches []branchComposeRoute,
+	realtime bool,
+) ([]pipeline.NodeRef, []av.Stream, error) {
+	service := &builder{runtime: runtime}
+	branchInputs := make([]pipeline.NodeRef, len(branches))
+	branchStreams := make([]av.Stream, len(branches))
+	for i := range groups {
+		selector := groups[i].selector
+		selected := groups[i].stream
+		selectStage := newStreamSelectStage(selectNodeName(selector), selected, selector, selectNodeDetail(selector))
+		selectRef, err := graph.AddStage(selectStage, runtime.buffer)
+		if err != nil {
+			selectStage.Close()
+			return nil, nil, err
+		}
+		for j := range sourceRefs {
+			if err := connectRefs(graph, sourceRefs[j], selectRef); err != nil {
+				return nil, nil, err
+			}
+		}
+		decodedBranches := branchComposeDecodedBranchIndices(groups[i].branches, branches)
 		for _, branchIndex := range groups[i].branches {
-			branchInputs[branchIndex] = previousRef
+			if !branchComposeRouteNeedsDecode(branches[branchIndex]) {
+				branchInputs[branchIndex] = selectRef
+				branchStreams[branchIndex] = selected
+			}
+		}
+		if len(decodedBranches) == 0 {
+			continue
+		}
+		bounds := codec.DecodeBounds{}
+		if len(builds) != 0 {
+			bounds = rtpDecodeBoundsForStream(selected, builds)
+		}
+		decodeStage, err := service.newDecodeStage(ctx, decodeRequest{selector: selector}, selected, realtime, false, bounds)
+		if err != nil {
+			return nil, nil, err
+		}
+		decodeRef, err := graph.AddStage(decodeStage, runtime.buffer)
+		if err != nil {
+			decodeStage.Close()
+			return nil, nil, err
+		}
+		if err := connectRefs(graph, selectRef, decodeRef); err != nil {
+			return nil, nil, err
+		}
+		decodedStream := selected
+		for _, branchIndex := range decodedBranches {
+			branchInputs[branchIndex] = decodeRef
 			branchStreams[branchIndex] = decodedStream
 		}
 	}
+	return branchInputs, branchStreams, nil
+}
 
-	encodeRefs := make([]pipeline.NodeRef, len(branches))
-	encodedStreams := make([]av.Stream, len(branches))
-	for i := range branches {
-		branchRef := branchInputs[i]
-		branchStream := branchStreams[i]
-		for j := range branches[i].transforms {
-			stage, outputStream, err := b.newTranscodeFilterStage(ctx, branches[i].transforms[j], branchStream, realtime)
+func compileBranchComposeRoutes(
+	ctx context.Context,
+	runtime *runtime,
+	graph pipeline.Graph,
+	branches []branchComposeRoute,
+	outputs []branchComposeTargetRoute,
+	branchInputs []pipeline.NodeRef,
+	branchStreams []av.Stream,
+	realtime bool,
+) error {
+	service := &builder{runtime: runtime}
+	branchRefs := append([]pipeline.NodeRef(nil), branchInputs...)
+	branchInputStreams := append([]av.Stream(nil), branchStreams...)
+	for _, prefix := range branchComposeRuntimeSharedStepGroups(branches, branchInputs, branchStreams) {
+		if len(prefix.branches) == 0 {
+			continue
+		}
+		firstBranch := prefix.branches[0]
+		branchRef := branchInputs[firstBranch]
+		branchStream := branchStreams[firstBranch]
+		for j := range prefix.steps {
+			stage, outputStream, err := service.newBranchComposeStepStage(ctx, prefix.steps[j], branchStream, realtime)
 			if err != nil {
 				return err
 			}
-			stageRef, err := graph.AddStage(stage, b.runtime.buffer)
+			stageRef, err := graph.AddStage(stage, runtime.buffer)
+			if err != nil {
+				stage.Close()
+				return err
+			}
+			if err := connectRefs(graph, branchRef, stageRef); err != nil {
+				return err
+			}
+			branchRef = stageRef
+			branchStream = outputStream
+		}
+		for _, branchIndex := range prefix.branches {
+			branchRefs[branchIndex] = branchRef
+			branchInputStreams[branchIndex] = branchStream
+		}
+	}
+
+	branchOutputRefs := make([]pipeline.NodeRef, len(branches))
+	branchOutputStreams := make([]av.Stream, len(branches))
+	for i := range branches {
+		branchRef := branchRefs[i]
+		branchStream := branchInputStreams[i]
+		for j := range branches[i].steps {
+			stage, outputStream, err := service.newBranchComposeStepStage(ctx, branches[i].steps[j], branchStream, realtime)
+			if err != nil {
+				return err
+			}
+			stageRef, err := graph.AddStage(stage, runtime.buffer)
 			if err != nil {
 				stage.Close()
 				return err
@@ -241,34 +528,51 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 			branchStream = outputStream
 		}
 
-		config, encodedStream, err := prepareEncodeConfig(branchStream, branches[i].request, realtime)
-		if err != nil {
-			return err
+		if branchComposeRouteNeedsEncode(branches[i]) {
+			config, encodedStream, err := prepareEncodeConfig(branchStream, branches[i].request, realtime)
+			if err != nil {
+				return err
+			}
+			encodeRef, err := service.compileEncodeStage(ctx, graph, branchRef, branches[i].request, config)
+			if err != nil {
+				return err
+			}
+			branchRef = encodeRef
+			branchStream = encodedStream
 		}
-		encodeRef, err := b.compileEncodeStage(ctx, graph, branchRef, branches[i].request, config)
-		if err != nil {
-			return err
-		}
-		encodeRefs[i] = encodeRef
-		encodedStreams[i] = encodedStream
+		branchOutputRefs[i] = branchRef
+		branchOutputStreams[i] = branchStream
 	}
 
 	for i := range outputs {
+		if outputs[i].sink != nil {
+			sinkRef, err := graph.AddSink(outputs[i].sink, runtime.buffer)
+			if err != nil {
+				return err
+			}
+			for _, branchIndex := range outputs[i].matches {
+				if err := connectRefs(graph, branchOutputRefs[branchIndex], sinkRef); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
 		streams := make([]av.Stream, 0, len(outputs[i].matches))
 		for _, branchIndex := range outputs[i].matches {
-			streams = append(streams, encodedStreams[branchIndex])
+			streams = append(streams, branchOutputStreams[branchIndex])
 		}
-		muxStage, err := b.openMuxStageWithFormat(ctx, outputs[i].target, i, streams, transcodeOutputOpenFormat(outputs[i].output), outputs[i].output.Format)
+		muxStage, err := service.openMuxStageWithFormat(ctx, outputs[i].target, i, streams, branchComposeTargetOpenFormat(outputs[i].output), outputs[i].output.Format)
 		if err != nil {
 			return err
 		}
-		muxRef, err := graph.AddStage(muxStage, b.runtime.buffer)
+		muxRef, err := graph.AddStage(muxStage, runtime.buffer)
 		if err != nil {
 			muxStage.Close()
 			return err
 		}
 		for _, branchIndex := range outputs[i].matches {
-			if err := connectRefs(graph, encodeRefs[branchIndex], muxRef); err != nil {
+			if err := connectRefs(graph, branchOutputRefs[branchIndex], muxRef); err != nil {
 				return err
 			}
 		}
@@ -276,8 +580,15 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 	return nil
 }
 
-func (b *builder) newTranscodeFilterStage(ctx context.Context, transform transcodeTransform, stream av.Stream, realtime bool) (*filter.Stage, av.Stream, error) {
-	outputStream, err := applyTranscodeTransformToStream(stream, transform)
+func (b *builder) newBranchComposeStepStage(ctx context.Context, transform mediaTransform, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
+	if transform.stage != nil {
+		return transform.stage, stream, nil
+	}
+	return b.newMediaTransformStage(ctx, transform, stream, realtime)
+}
+
+func (b *builder) newMediaTransformStage(ctx context.Context, transform mediaTransform, stream av.Stream, realtime bool) (*filter.Stage, av.Stream, error) {
+	outputStream, err := applyMediaTransformToStream(stream, transform)
 	if err != nil {
 		return nil, av.Stream{}, err
 	}
@@ -297,7 +608,7 @@ func (b *builder) newTranscodeFilterStage(ctx context.Context, transform transco
 	}
 	stage, err := filter.NewStage(filter.StageConfig{
 		Name:   transform.name,
-		Detail: transcodeTransformDetail(transform),
+		Detail: mediaTransformDetail(transform),
 		Filter: frameFilter,
 		Result: filterResultForStream(outputStream),
 	})
@@ -308,34 +619,34 @@ func (b *builder) newTranscodeFilterStage(ctx context.Context, transform transco
 	return stage, outputStream, nil
 }
 
-func prepareTranscodePlan(plan transcode.Plan) ([]transcodeBranch, []transcodeOutputBranch, error) {
-	if len(plan.Renditions) == 0 {
-		return nil, nil, transcodePlanEmptyError("renditions")
+func prepareBranchComposePlan(plan branchComposePlan) ([]branchComposeRoute, []branchComposeTargetRoute, error) {
+	if len(plan.Branches) == 0 {
+		return nil, nil, branchComposePlanEmptyError("branches")
 	}
-	if len(plan.Outputs) == 0 {
-		return nil, nil, transcodePlanEmptyError("outputs")
+	if len(plan.Targets) == 0 {
+		return nil, nil, branchComposePlanEmptyError("targets")
 	}
-	branches, err := transcodeBranches(plan)
+	branches, err := branchComposeRoutes(plan)
 	if err != nil {
 		return nil, nil, err
 	}
-	outputs, err := transcodeOutputs(plan, branches)
+	outputs, err := branchComposeTargets(plan, branches)
 	if err != nil {
 		return nil, nil, err
 	}
 	return branches, outputs, nil
 }
 
-func transcodePlanEmptyError(kind string) error {
+func branchComposePlanEmptyError(kind string) error {
 	suggestions := []string{
-		"add at least one transcode.Rendition with a selector and encoder",
-		"add at least one transcode.Output with a target output",
-		"use goav.Transcode(input).Video(...).To(...).Output(...) for the recipe API",
+		"add at least one branch with a selector and encoder",
+		"add at least one target endpoint",
+		"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for the recipe API",
 	}
-	reason := "transcode plan has no " + kind
+	reason := "branch composition has no " + kind
 	return &BuildError{
-		Code:        "transcode_plan_empty",
-		Operation:   "build transcode",
+		Code:        "branch_compose_plan_empty",
+		Operation:   "build branch composition",
 		Node:        kind,
 		Reason:      reason,
 		Suggestions: suggestions,
@@ -343,37 +654,37 @@ func transcodePlanEmptyError(kind string) error {
 	}
 }
 
-func transcodeSelectorGroups(branches []transcodeBranch) []transcodeSelectorGroup {
-	groups := make([]transcodeSelectorGroup, 0, len(branches))
+func branchComposeSelectorGroups(branches []branchComposeRoute) []branchComposeSelectorGroup {
+	groups := make([]branchComposeSelectorGroup, 0, len(branches))
 	index := make(map[string]int, len(branches))
 	for i := range branches {
-		key := transcodeSelectorKey(branches[i].rendition.Selector)
+		key := branchComposeSelectorKey(branches[i].branch.Selector)
 		groupIndex, ok := index[key]
 		if !ok {
 			groupIndex = len(groups)
 			index[key] = groupIndex
-			groups = append(groups, transcodeSelectorGroup{selector: branches[i].rendition.Selector})
+			groups = append(groups, branchComposeSelectorGroup{selector: branches[i].branch.Selector})
 		}
 		groups[groupIndex].branches = append(groups[groupIndex].branches, i)
 	}
 	return groups
 }
 
-func resolveTranscodeStreamGroups(streams []av.Stream, branches []transcodeBranch) ([]transcodeStreamGroup, error) {
-	groups := make([]transcodeStreamGroup, 0, len(branches))
+func resolveBranchComposeStreamGroups(streams []av.Stream, branches []branchComposeRoute) ([]branchComposeStreamGroup, error) {
+	groups := make([]branchComposeStreamGroup, 0, len(branches))
 	index := make(map[string]int, len(branches))
 	for i := range branches {
-		stream, err := selectDecodeStream(streams, branches[i].rendition.Selector)
+		stream, err := selectDecodeStream(streams, branches[i].branch.Selector)
 		if err != nil {
 			return nil, err
 		}
-		key := transcodeStreamKey(stream)
+		key := branchComposeStreamKey(stream)
 		groupIndex, ok := index[key]
 		if !ok {
 			groupIndex = len(groups)
 			index[key] = groupIndex
-			groups = append(groups, transcodeStreamGroup{
-				selector: branches[i].rendition.Selector,
+			groups = append(groups, branchComposeStreamGroup{
+				selector: branches[i].branch.Selector,
 				stream:   stream,
 			})
 		}
@@ -382,7 +693,7 @@ func resolveTranscodeStreamGroups(streams []av.Stream, branches []transcodeBranc
 	return groups, nil
 }
 
-func transcodeSelectorKey(selector av.StreamSelector) string {
+func branchComposeSelectorKey(selector av.StreamSelector) string {
 	return strings.Join([]string{
 		string(selector.ID),
 		strconv.FormatInt(int64(selector.Index), 10),
@@ -393,7 +704,7 @@ func transcodeSelectorKey(selector av.StreamSelector) string {
 	}, "\x00")
 }
 
-func transcodeStreamKey(stream av.Stream) string {
+func branchComposeStreamKey(stream av.Stream) string {
 	return strings.Join([]string{
 		string(stream.ID),
 		strconv.FormatInt(int64(stream.Index), 10),
@@ -402,38 +713,44 @@ func transcodeStreamKey(stream av.Stream) string {
 	}, "\x00")
 }
 
-func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
-	branches := make([]transcodeBranch, len(plan.Renditions))
-	names := make(map[string]struct{}, len(plan.Renditions))
-	for i := range plan.Renditions {
-		rendition := plan.Renditions[i]
-		name := transcodeRenditionName(rendition, i, len(plan.Renditions))
+func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
+	branches := make([]branchComposeRoute, len(plan.Branches))
+	names := make(map[string]struct{}, len(plan.Branches))
+	for i := range plan.Branches {
+		branch := plan.Branches[i]
+		name := runtimeBranchComposeBranchName(branch, i, len(plan.Branches))
 		if _, ok := names[name]; ok {
-			return nil, transcodeDuplicateRenditionError(name, i)
+			return nil, branchComposeDuplicateBranchError(name, i)
 		}
 		names[name] = struct{}{}
-		transforms, err := transcodeTransforms(name, rendition)
+		sharedSteps, err := branchComposeSharedRouteSteps(branch)
+		if err != nil {
+			return nil, err
+		}
+		steps, err := branchComposeRouteSteps(name, branch)
 		if err != nil {
 			return nil, err
 		}
 
-		config := rendition.Encode
+		config := branch.Encode
 		if config.Stream.ID == "" {
 			config.Stream.ID = av.StreamID(name)
 		}
 		if config.Stream.Name == "" {
 			config.Stream.Name = name
 		}
-		if config.Stream.Metadata == nil && rendition.Metadata != nil {
-			config.Stream.Metadata = rendition.Metadata
+		if config.Stream.Metadata == nil && branch.Metadata != nil {
+			config.Stream.Metadata = branch.Metadata
 		}
-		branches[i] = transcodeBranch{
-			name:       name,
-			rendition:  rendition,
-			transforms: transforms,
+		branches[i] = branchComposeRoute{
+			name:        name,
+			branch:      branch,
+			copy:        branch.Copy,
+			sharedSteps: sharedSteps,
+			steps:       steps,
 			request: encodeRequest{
 				name:     name,
-				selector: rendition.Selector,
+				selector: branch.Selector,
 				config:   config,
 			},
 		}
@@ -441,73 +758,235 @@ func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
 	return branches, nil
 }
 
-func transcodeDuplicateRenditionError(name string, index int) error {
+func branchComposeSharedRouteSteps(branch branchComposeBranch) ([]mediaTransform, error) {
+	if len(branch.SharedSteps) == 0 {
+		return nil, nil
+	}
+	return branchComposeRouteStepsForName(branchComposeSharedStepName(branch), branch.SharedSteps)
+}
+
+func branchComposeRouteNeedsEncode(branch branchComposeRoute) bool {
+	return branch.request.config.Parameters.ID != ""
+}
+
+func branchComposeRouteNeedsDecode(branch branchComposeRoute) bool {
+	return !branch.copy
+}
+
+func branchComposeDecodedBranchIndices(indices []int, branches []branchComposeRoute) []int {
+	decoded := make([]int, 0, len(indices))
+	for _, index := range indices {
+		if index < 0 || index >= len(branches) {
+			continue
+		}
+		if branchComposeRouteNeedsDecode(branches[index]) {
+			decoded = append(decoded, index)
+		}
+	}
+	return decoded
+}
+
+func branchComposeDuplicateBranchError(name string, index int) error {
 	return &BuildError{
-		Code:      "transcode_rendition_duplicate",
-		Operation: "build transcode",
+		Code:      "branch_duplicate",
+		Operation: "build branch composition",
 		Node:      name,
-		Reason:    "transcode rendition name is defined more than once",
+		Reason:    "branch name is defined more than once",
 		Details: []string{
 			"duplicate index: " + strconv.Itoa(index),
 		},
 		Suggestions: []string{
-			"give each transcode.Rendition a stable unique Name",
-			"use distinct branch names when multiple renditions share one selected stream",
+			"give each branch a stable unique name",
+			"use distinct branch names when multiple branches share one selected stream",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeTransforms(name string, rendition transcode.Rendition) ([]transcodeTransform, error) {
-	if rendition.Resize != nil && rendition.Resample != nil {
-		return nil, advancedTranscodeTransformChainError(name)
+func branchComposeRouteSteps(name string, branch branchComposeBranch) ([]mediaTransform, error) {
+	if len(branch.Steps) == 0 {
+		return branchComposeStepsFromLegacyFields(name, branch)
 	}
-	if rendition.Resize != nil {
-		return []transcodeTransform{{
+	return branchComposeRouteStepsForName(name, branch.Steps)
+}
+
+func branchComposeRouteStepsForName(name string, steps []branchComposeStep) ([]mediaTransform, error) {
+	out := make([]mediaTransform, 0, len(steps))
+	transformIndex := 0
+	for i := range steps {
+		step, err := branchComposeRouteStep(name, transformIndex, steps[i])
+		if err != nil {
+			return nil, err
+		}
+		if steps[i].Stage == nil {
+			transformIndex++
+		}
+		out = append(out, step)
+	}
+	return out, nil
+}
+
+func branchComposeStepsFromLegacyFields(name string, branch branchComposeBranch) ([]mediaTransform, error) {
+	if branch.Resize != nil && branch.Resample != nil {
+		return nil, branchComposeStepError(name, "branch cannot combine resize and resample in one step")
+	}
+	switch {
+	case branch.Resize != nil:
+		return []mediaTransform{{
 			name:    "resize-" + name,
 			factory: filter.FactoryResize,
-			video:   rendition.Resize,
+			video:   branch.Resize,
 		}}, nil
-	}
-	if rendition.Resample != nil {
-		return []transcodeTransform{{
+	case branch.Resample != nil:
+		return []mediaTransform{{
 			name:    "resample-" + name,
 			factory: filter.FactoryResample,
-			audio:   rendition.Resample,
+			audio:   branch.Resample,
 		}}, nil
+	default:
+		return nil, nil
 	}
-	return nil, nil
 }
 
-func advancedTranscodeTransformChainError(name string) error {
+func branchComposeRouteStep(branchName string, transformIndex int, step branchComposeStep) (mediaTransform, error) {
+	set := 0
+	if step.Stage != nil {
+		set++
+	}
+	if step.Resize != nil {
+		set++
+	}
+	if step.Resample != nil {
+		set++
+	}
+	if set != 1 {
+		return mediaTransform{}, branchComposeStepError(branchName, "branch step must contain exactly one stage or transform")
+	}
+	suffix := ""
+	if transformIndex > 0 {
+		suffix = "-" + strconv.Itoa(transformIndex+1)
+	}
+	switch {
+	case step.Stage != nil:
+		return mediaTransform{
+			name:  step.Stage.Name(),
+			stage: step.Stage,
+		}, nil
+	case step.Resize != nil:
+		return mediaTransform{
+			name:    "resize-" + branchName + suffix,
+			factory: filter.FactoryResize,
+			video:   step.Resize,
+		}, nil
+	default:
+		return mediaTransform{
+			name:    "resample-" + branchName + suffix,
+			factory: filter.FactoryResample,
+			audio:   step.Resample,
+		}, nil
+	}
+}
+
+func branchComposeStepError(name string, reason string) error {
 	return &BuildError{
-		Code:      "transcode_transform_chain_unsupported",
-		Operation: "build transcode",
+		Code:      "branch_operation_chain_unsupported",
+		Operation: "build branch composition",
 		Node:      name,
-		Reason:    "transcode rendition cannot combine resize and resample",
+		Reason:    reason,
 		Suggestions: []string{
-			"use resize on video renditions and resample on audio renditions",
-			"split audio and video work into separate transcode.Rendition values",
-			"use goav.Transcode(input).Video(...)/Audio(...) to keep transforms stream-scoped",
+			"use one operation per branch step",
+			"use resize on video branches and resample on audio branches",
+			"use goav.Branch(name).Do(stage).Resize(...).VP9(...).To(goav.Target(\"web\", output)) for recipe branch steps",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeTransformCount(branches []transcodeBranch) int {
+func branchComposeStepCount(branches []branchComposeRoute) int {
 	count := 0
 	for i := range branches {
-		count += len(branches[i].transforms)
+		count += len(branches[i].sharedSteps) + len(branches[i].steps)
 	}
 	return count
 }
 
-func applyTranscodeTransformToStream(stream av.Stream, transform transcodeTransform) (av.Stream, error) {
+func branchComposeSharedStepName(branch branchComposeBranch) string {
+	return firstNonEmpty(string(branch.Selector.Type), string(branch.Selector.ID), branch.Selector.Name, "stream")
+}
+
+func branchComposeSharedStepGroups(indices []int, branches []branchComposeRoute) []branchComposeSharedStepGroup {
+	groups := make([]branchComposeSharedStepGroup, 0, len(indices))
+	positions := make(map[string]int, len(indices))
+	for _, index := range indices {
+		key := mediaTransformsKey(branches[index].sharedSteps)
+		position, ok := positions[key]
+		if !ok {
+			position = len(groups)
+			positions[key] = position
+			groups = append(groups, branchComposeSharedStepGroup{
+				steps: append([]mediaTransform(nil), branches[index].sharedSteps...),
+			})
+		}
+		groups[position].branches = append(groups[position].branches, index)
+	}
+	return groups
+}
+
+func branchComposeRuntimeSharedStepGroups(branches []branchComposeRoute, inputs []pipeline.NodeRef, streams []av.Stream) []branchComposeSharedStepGroup {
+	groups := make([]branchComposeSharedStepGroup, 0, len(branches))
+	positions := make(map[string]int, len(branches))
+	for i := range branches {
+		key := strings.Join([]string{
+			string(inputs[i]),
+			string(streams[i].ID),
+			string(streams[i].Type),
+			string(streams[i].Codec.ID),
+			mediaTransformsKey(branches[i].sharedSteps),
+		}, "\x00")
+		position, ok := positions[key]
+		if !ok {
+			position = len(groups)
+			positions[key] = position
+			groups = append(groups, branchComposeSharedStepGroup{
+				steps: append([]mediaTransform(nil), branches[i].sharedSteps...),
+			})
+		}
+		groups[position].branches = append(groups[position].branches, i)
+	}
+	return groups
+}
+
+func mediaTransformsKey(steps []mediaTransform) string {
+	if len(steps) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(steps))
+	for i := range steps {
+		keys = append(keys, mediaTransformKey(steps[i]))
+	}
+	return strings.Join(keys, "\x01")
+}
+
+func mediaTransformKey(step mediaTransform) string {
+	parts := []string{step.name, step.factory}
+	if step.stage != nil {
+		parts = append(parts, "stage", step.stage.Name())
+	}
+	if step.video != nil {
+		parts = append(parts, "resize", strconv.Itoa(step.video.Width), strconv.Itoa(step.video.Height), string(step.video.Mode), step.video.PixelFormat)
+	}
+	if step.audio != nil {
+		parts = append(parts, "resample", strconv.Itoa(step.audio.SampleRate), strconv.Itoa(step.audio.Channels), step.audio.ChannelLayout, step.audio.SampleFormat)
+	}
+	return strings.Join(parts, "\x02")
+}
+
+func applyMediaTransformToStream(stream av.Stream, transform mediaTransform) (av.Stream, error) {
 	out := stream
 	switch {
 	case transform.audio != nil:
 		if stream.Type != av.MediaAudio && stream.Codec.Type != av.MediaAudio {
-			return av.Stream{}, advancedTranscodeTransformMediaError(transform, stream, "resample", "audio")
+			return av.Stream{}, mediaTransformMismatchError(transform, stream, "resample", "audio")
 		}
 		out.Type = av.MediaAudio
 		out.Codec.Type = av.MediaAudio
@@ -527,7 +1006,7 @@ func applyTranscodeTransformToStream(stream av.Stream, transform transcodeTransf
 		}
 	case transform.video != nil:
 		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
-			return av.Stream{}, advancedTranscodeTransformMediaError(transform, stream, "resize", "video")
+			return av.Stream{}, mediaTransformMismatchError(transform, stream, "resize", "video")
 		}
 		out.Type = av.MediaVideo
 		out.Codec.Type = av.MediaVideo
@@ -541,81 +1020,157 @@ func applyTranscodeTransformToStream(stream av.Stream, transform transcodeTransf
 	return out, nil
 }
 
-func advancedTranscodeTransformMediaError(transform transcodeTransform, stream av.Stream, operation string, media string) error {
+func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, operation string, media string) error {
 	details := []string{
 		"stream id: " + string(stream.ID),
 		"stream type: " + string(stream.Type),
 		"codec type: " + string(stream.Codec.Type),
 	}
 	return &BuildError{
-		Code:      "transcode_transform_media_mismatch",
-		Operation: "build transcode",
+		Code:      "branch_transform_media_mismatch",
+		Operation: "build branch composition",
 		Node:      transform.name,
 		Reason:    operation + " applies to " + media + " streams",
 		Details:   details,
 		Suggestions: []string{
-			"use resize on video renditions",
-			"use resample on audio renditions",
-			"check the transcode.Rendition selector for this branch",
+			"use resize on video branches",
+			"use resample on audio branches",
+			"check the branch selector",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transcodeOutputBranch, error) {
-	outputs := make([]transcodeOutputBranch, len(plan.Outputs))
-	for i := range plan.Outputs {
-		output := plan.Outputs[i]
-		target := transcodeOutputTarget(plan, output)
-		matches := transcodeOutputMatches(output, branches)
-		if len(matches) == 0 {
-			return nil, transcodeOutputUnmatchedError(output, target)
+func branchComposeTargets(plan branchComposePlan, branches []branchComposeRoute) ([]branchComposeTargetRoute, error) {
+	outputs := make([]branchComposeTargetRoute, len(plan.Targets))
+	for i := range plan.Targets {
+		output := plan.Targets[i]
+		if output.Sink != nil && branchComposeTargetHasMuxEndpoint(output) {
+			return nil, branchComposeTargetEndpointInvalidError(output, "output cannot configure both a sink and a mux target")
 		}
-		outputs[i] = transcodeOutputBranch{
+		target := branchComposeFormatTarget(plan, output)
+		matches := branchComposeTargetMatches(output, branches)
+		if len(matches) == 0 {
+			return nil, branchComposeTargetUnmatchedError(output, target)
+		}
+		if output.Sink == nil {
+			for _, branchIndex := range matches {
+				if !branchComposeRouteNeedsEncode(branches[branchIndex]) && !branches[branchIndex].copy {
+					return nil, branchComposeTargetEncodeMissingError(output, target, branches[branchIndex])
+				}
+			}
+		}
+		outputs[i] = branchComposeTargetRoute{
 			output:  output,
 			target:  target,
+			sink:    output.Sink,
 			matches: matches,
 		}
 	}
 	return outputs, nil
 }
 
-func transcodeOutputUnmatchedError(output transcode.Output, target format.Output) error {
+func branchComposeTargetHasMuxEndpoint(output branchComposeTarget) bool {
+	return output.Target.Name != "" ||
+		output.Target.URI != "" ||
+		output.Target.Protocol != "" ||
+		output.Target.Writer != nil ||
+		output.Target.MIMEType != "" ||
+		output.Format != "" ||
+		output.OpenFormat() != ""
+}
+
+func branchComposeTargetUnmatchedError(output branchComposeTarget, target format.Output) error {
 	node := firstNonEmpty(output.Name, target.Name, target.URI, "output")
 	details := make([]string, 0, 1)
-	if len(output.Renditions) != 0 {
-		details = append(details, "requested: "+strings.Join(output.Renditions, ", "))
+	if len(output.Branches) != 0 {
+		details = append(details, "requested: "+strings.Join(output.Branches, ", "))
 	}
 	return &BuildError{
-		Code:      "transcode_output_unmatched",
-		Operation: "build transcode",
+		Code:      "branch_target_unmatched",
+		Operation: "build branch composition",
 		Node:      node,
-		Reason:    "output selects no transcode branches",
+		Reason:    "target selects no branches",
 		Details:   details,
 		Suggestions: []string{
-			"reference a branch name from transcode.Rendition.Name",
+			"reference a branch name",
 			"reference a label listed on the branch",
-			"leave Renditions empty when the output should receive every branch",
+			"omit explicit branch filters when the target should receive every branch",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeOutputOpenFormat(output transcode.Output) av.FormatID {
+func branchComposeTargetEndpointInvalidError(output branchComposeTarget, reason string) error {
+	return &BuildError{
+		Code:      "branch_target_invalid",
+		Operation: "build branch composition",
+		Node:      branchComposeTargetNodeName(output, "output"),
+		Reason:    reason,
+		Suggestions: []string{
+			"use goav.Target(name, goav.SinkEndpoint(sink)) for frame or packet sink endpoints",
+			"use goav.Target(name, goav.FileOutput(...)) or goav.URIOutput(...) for muxed endpoints",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func branchComposeTargetEncodeMissingError(output branchComposeTarget, target format.Output, branch branchComposeRoute) error {
+	return &BuildError{
+		Code:      "encode_missing",
+		Operation: "build branch composition",
+		Node:      firstNonEmpty(branch.name, branch.branch.Name, branchComposeTargetNodeName(output, "output")),
+		Reason:    "muxed targets require encoded branches",
+		Details: []string{
+			"target: " + firstNonEmpty(output.Name, target.Name, target.URI, "output"),
+		},
+		Suggestions: []string{
+			"encode the branch before routing it to a mux target",
+			"route raw decoded branches to goav.Target(name, goav.SinkEndpoint(sink))",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func branchComposeTargetNodeName(output branchComposeTarget, fallback string) string {
+	name := firstNonEmpty(output.Name, output.Target.Name, output.Target.URI)
+	if name != "" {
+		return name
+	}
+	if output.Sink != nil && output.Sink.Name() != "" {
+		return output.Sink.Name()
+	}
+	return fallback
+}
+
+func branchComposeTargetSinkNodeName(output branchComposeTargetRoute, index int) string {
+	if output.sink != nil && output.sink.Name() != "" {
+		return output.sink.Name()
+	}
+	if output.output.Name != "" {
+		return output.output.Name
+	}
+	if index == 0 {
+		return "sink"
+	}
+	return "sink-" + strconv.Itoa(index)
+}
+
+func branchComposeTargetOpenFormat(output branchComposeTarget) av.FormatID {
 	return output.OpenFormat()
 }
 
-func transcodeRenditionName(rendition transcode.Rendition, index int, total int) string {
-	if rendition.Name != "" {
-		return rendition.Name
+func runtimeBranchComposeBranchName(branch branchComposeBranch, index int, total int) string {
+	if branch.Name != "" {
+		return branch.Name
 	}
 	if total == 1 {
-		return "rendition"
+		return "branch"
 	}
-	return "rendition-" + strconv.Itoa(index+1)
+	return "branch-" + strconv.Itoa(index+1)
 }
 
-func transcodeOutputTarget(plan transcode.Plan, output transcode.Output) format.Output {
+func branchComposeFormatTarget(plan branchComposePlan, output branchComposeTarget) format.Output {
 	target := output.Target
 	if target.Name == "" {
 		target.Name = output.Name
@@ -631,8 +1186,8 @@ func transcodeOutputTarget(plan transcode.Plan, output transcode.Output) format.
 	return target
 }
 
-func transcodeOutputMatches(output transcode.Output, branches []transcodeBranch) []int {
-	if len(output.Renditions) == 0 {
+func branchComposeTargetMatches(output branchComposeTarget, branches []branchComposeRoute) []int {
+	if len(output.Branches) == 0 {
 		matches := make([]int, len(branches))
 		for i := range branches {
 			matches[i] = i
@@ -640,23 +1195,23 @@ func transcodeOutputMatches(output transcode.Output, branches []transcodeBranch)
 		return matches
 	}
 
-	matches := make([]int, 0, len(output.Renditions))
+	matches := make([]int, 0, len(output.Branches))
 	for i := range branches {
-		if transcodeOutputSelectsBranch(output, branches[i]) {
+		if branchComposeTargetSelectsRoute(output, branches[i]) {
 			matches = append(matches, i)
 		}
 	}
 	return matches
 }
 
-func transcodeOutputSelectsBranch(output transcode.Output, branch transcodeBranch) bool {
-	for i := range output.Renditions {
-		name := output.Renditions[i]
-		if name == branch.name || name == branch.rendition.Name {
+func branchComposeTargetSelectsRoute(output branchComposeTarget, branch branchComposeRoute) bool {
+	for i := range output.Branches {
+		name := output.Branches[i]
+		if name == branch.name || name == branch.branch.Name {
 			return true
 		}
-		for j := range branch.rendition.Labels {
-			if name == branch.rendition.Labels[j] {
+		for j := range branch.branch.Labels {
+			if name == branch.branch.Labels[j] {
 				return true
 			}
 		}

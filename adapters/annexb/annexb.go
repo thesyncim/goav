@@ -25,7 +25,20 @@ func Register(registry *format.SimpleRegistry) {
 		return
 	}
 	registry.RegisterProber(Prober{})
-	registry.RegisterMuxer(av.FormatAnnexB, MuxerFactory{})
+	registry.RegisterMuxerDescriptor(Descriptor(), MuxerFactory{})
+}
+
+func Descriptor() format.Descriptor {
+	return format.Descriptor{
+		Format:     av.FormatAnnexB,
+		Media:      []av.MediaType{av.MediaVideo},
+		Codecs:     []av.CodecID{av.CodecH264},
+		MinStreams: 1,
+		MaxStreams: 1,
+		Metadata: av.Metadata{
+			"summary": "Annex B targets support one H264 video stream",
+		},
+	}
 }
 
 func (Prober) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {

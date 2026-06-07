@@ -17,11 +17,11 @@ and keyframe recovery are represented as events instead of hidden side effects.
 ```text
 Application
   |
-Recipes: Record, Decode, Transcode, From/To
+Recipes: From, stream chains, taps, branches, targets
   |
-Intent graph: inputs, streams, transforms, outputs, policies
+Intent graph: inputs, streams, transforms, targets, policies
   |
-Intent compiler passes
+MediaPlan planner passes
   |
 Pipeline graph
   |
@@ -34,34 +34,97 @@ Format, RTP, WebRTC, codec, and filter adapters
 registries, with small adapter registration hooks for optional codec,
 container, and filter integrations. `goav.Default()` registers the standard
 in-repo adapters for the beginner path, while `goav.New(...)` keeps minimal and
-embedded runtimes explicit. Package-level recipes such as `Record(...)`,
-`Decode(...)`, and `Transcode(...)` are now the beginner-facing front door. They
-produce a small intent model. The target architecture is one intent compiler
-that validates, probes, resolves streams, resolves formats/codecs, inserts
-demux or depacketize boundaries, inserts decode/transform/encode/mux stages,
+embedded runtimes explicit. `From(input)` is the beginner-facing front door. It
+produces a small intent model for packet copy, stream decode, transform, encode,
+declared branch composition, and runtime tap naming. The target architecture is
+one media planner that validates, probes, resolves streams, resolves
+formats/codecs, chooses
+packet-copy or decode branches, inserts demux or depacketize boundaries, inserts
+select/decode/transform/stage/tap/encode operations, groups branches by targets,
 assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
-the runnable graph. The current private graph compilers are migration
-scaffolding while each workflow moves onto that shared path. The first active
-slice is a private recipe intent compiler state: `Job` and `TranscodeJob` carry
-their public `Intent` plus concrete readers, writers, sinks, and stages through
-validation, planning, and lowering passes before handing off to the migration
-builder. The same pass chain now also selects the migration graph compiler used
-for `Describe` and `Build`, and emits the pre-build `pipeline.Spec`, so recipe
-graph matching and spec planning are no longer hidden behind the builder entry
-point.
+the runnable graph. `MediaPlan` is the planner IR for that work: declared
+branches, reusable flow branches, decode recipes, and packet-preserving copy/remux
+all become ordinary branch operations over the same model. Recipe compilation
+must recognize a media-plan shape before it can describe or build a normal
+workflow.
+
+The active recipe compiler state carries public `Intent` plus concrete readers,
+writers, sinks, and stages through validation, media-plan creation, planner
+lowering, and planned-spec emission. Branches carry ordered stage, transform, tap,
+and encode operations and can start after earlier stream operations such as
+decode, resize, resample, custom stages, and taps. `Job.Explain(ctx)` reports the
+`MediaPlan` branch operations, each operation's output caps, resolved branch
+stream caps, taps, decisions, and adapter capability details. Planned taps
+inherit stream caps from probe/live metadata and update them through transforms
+and encoders, so runtime branches attached from those taps start with useful
+codec, width/height, sample-rate, channel, and sample/pixel-format context.
+Codec descriptors describe encode/decode media and frame-format constraints,
+filter descriptors describe transform media constraints, and format descriptors
+describe target container media, codec, and stream-count constraints so adapter
+conflicts can fail before planned or runtime graph mutation. Declared branch
+composition now carries a private branch-compose plan owned by the recipe
+compiler; the
+advanced `transcode.Plan` path adapts into that internal shape at its boundary
+instead of being the recipe IR. Runtime branch-composer graph helpers now operate
+on branch-compose routes, target routes, selector/stream groups, and media
+transforms. Branch-composition inputs and resolved targets are carried by the
+resolved recipe into a media-plan branch graph; `Describe` and `Build` use that
+graph plan directly and only borrow runtime services for adapter-backed sources,
+filters, encoders, and muxers. Packet-preserving copy/fanout recipes use the
+same resolved graph-plan pattern for concrete inputs, endpoints, and optional
+selected streams. Direct selected-stream decode/encode recipes also keep their
+inputs, endpoints, ordered stream attachments, codec-change policy, custom
+stages, transforms, and taps on the resolved recipe until the media-plan
+boundary. Those direct stream recipes now build and describe through a resolved
+single-stream graph plan and shared parameterized
+source/decode/filter/encode/target helpers instead of a pre-populated runtime
+builder. The next architectural pressure is to move the
+remaining media-plan helpers toward direct graph construction where it reduces
+duplication while keeping the flow `Intent -> MediaPlan -> pipeline.Spec ->
+pipeline.Graph`.
 
 The handle-based graph builder remains available as the advanced layer through
 `Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed
 handles such as `source.Stream("audio")` and `decode.Out()` to node inputs.
-The legacy builder remains an internal compiler target, but it is no longer a
-method on the public `Runtime` interface or an exported top-level type.
-Described graphs and execution graphs must stay equivalent, whether the current
-slice is still using a fixed compiler or has moved onto intent passes. The graph
-layer stays available for inspection and custom stages; optional diagram or
-workflow-report output lives outside the runtime core. A route carries all media
-by default, or matches one stream or event type.
+The internal builder is no longer a method on the public `Runtime` interface or
+an exported top-level type. Described graphs and execution graphs must stay
+equivalent for every media-plan build kind. The graph layer stays available for
+inspection and custom stages. Recipe `Explain(ctx)` returns structured
+workflow-report data, branch operations, planner decisions, and the same
+`pipeline.Spec`; optional diagram or prose rendering lives outside runtime
+composition. A route carries all media by default, or matches one stream or
+event type.
 
-The current compilers cover:
+`Task.Attach` is the first runtime control-plane operation. It attaches a named
+downstream branch to a built graph and returns an attachment handle with
+`Close(ctx)`. Direct graphs and bounded buffered graphs both support late
+stage/sink branches for future messages. `Task.Detach(ctx, h)` removes one live
+attachment, and `Task.Close()` stops attachments before closing the graph.
+Stable recipe outlets come from `.Tap(name)` and are listed by `Task.Taps()`;
+runtime branches attach with `goav.Branch("name").FromTap(name)`. A late branch
+can run custom `.Do(...)` stages, apply reusable flows, resize or resample from
+frame taps, encode Opus/VP8/VP9 from frame taps into a target endpoint, copy
+packet taps into a target endpoint, decode packet taps into frame-domain work,
+apply flows that own the packet-to-frame boundary, and expose its own
+`.Tap(name)` outlets, so another late branch can attach downstream without
+rebuilding the task. Taps declared after encode or copy operations are
+packet-domain outlets. H264 and AV1 recipe encoding remain work in progress.
+Detaching a parent runtime branch also removes dependent runtime branches
+anchored from that parent's taps.
+Expert graph nodes can still be addressed with `From(node)` and
+`Task.Describe`. This is for late analysis,
+meters, screenshot collectors, and late recording branches that should observe
+future messages without rebuilding the task. Buffered runtime attachment owns
+queue and worker lifecycle for late nodes; packet-copy recording targets are
+covered, Opus encode-to-recording from frame taps is covered with bounded
+packet copy into the late mux target, flow-applied Opus encode-to-target
+branches are covered, flow-owned decode from packet taps is covered,
+post-encode runtime branch taps can feed dependent packet copy branches, and
+bounded buffered graphs can attach a dependent branch after a runtime resize tap
+before future frames arrive. Broader encoded mux capability and teardown stress
+coverage remain active slices.
+
+Current graph execution covers:
 
 - empty graphs for lifecycle tests
 - explicit `Source -> Stage -> Sink` graphs with handle-based connects,
@@ -69,7 +132,7 @@ The current compilers cover:
 - one-input/many-output remux and fanout through
   `format.DemuxSource -> format.MuxStage...` when the format registry can
   probe, demux, and mux the requested boundaries
-- one-input selected-stream decode to a frame sink through
+- one-input selected-stream decode to a sink endpoint through
   `format.DemuxSource -> stream select -> codec.DecoderStage -> optional filter
   stages -> Sink` when the selector resolves to one stream and the codec
   registry has a decoder factory
@@ -81,23 +144,43 @@ The current compilers cover:
   `rtpav.Source -> format.MuxStage...` when recipe codec intent or the
   application provides depacketizers and the format registry can mux the output
   boundaries
-- one or more RTP/WebRTC packet readers to a selected frame sink through
+- one or more RTP/WebRTC packet readers to a selected sink endpoint through
   `rtpav.Source... -> stream select -> codec.DecoderStage -> optional filter
   stages -> Sink` when one stream matches the selector and the codec registry
   has a decoder factory
 - one or more RTP/WebRTC packet readers to selected-stream
   decode/filter/encode outputs through the same decoder, filter, encoder, and
   mux stages used by file or protocol inputs
+- live RTP/WebRTC reusable branches that receive through `rtpav.Source`, share the
+  selected stream decode, then route each flow-derived branch through its own
+  transforms, encoder, and mux output
 - transcode recipes for one input grouped by selected stream: video branches can
   share a video decode, audio branches can share an audio decode, and one output
-  label is a mux group that can receive coordinated encoded audio and video
-  branches. Resize/resample configs insert filter stages through the filter
-  registry, and outputs select branches by rendition name or label.
+  target can be a mux group that receives coordinated encoded audio and video
+  branches or a sink endpoint that receives frames before encode and packets
+  after encode. Resize/resample configs insert filter stages through the filter
+  registry, and targets select branches by branch name.
 
 Resize and resample branch configs fail explicitly at build time when no matching
-filter factory is registered.
+filter factory is registered or when the registered descriptor advertises an
+incompatible media kind, pixel/sample format, or resize mode. Runtime branch
+attachment applies the same descriptor preflight before mutating a running
+graph. Filter registrations retain their descriptors, so `Explain(ctx)` can
+report transform input/output media kind, supported config values,
+realtime/stateless flags, and adapter metadata alongside
+missing/available/incompatible status.
 When output geometry is known, branch filter stages receive preallocated frame
 scratch so concrete resize filters can keep plane ownership with the caller.
+Mux targets also preflight format descriptor media, codec, and stream-count
+constraints for both planned branches and runtime attachments before a muxer is
+opened.
+Decoder inputs preflight codec descriptor media, sample-format, and pixel-format
+constraints for live/probed recipe streams and runtime graph construction before
+a decoder is opened. Unknown stream frame formats remain unconstrained until an
+adapter can inspect real input.
+Encoder targets preflight codec descriptor media, sample-format, and
+pixel-format constraints for planned branches and runtime attachments before an
+encoder is opened.
 
 Recipe helpers also expose `PacketFunc`, `FrameFunc`, `EventFunc`, and
 `SinkFunc` so small custom processing hooks can participate in the graph without
@@ -226,7 +309,7 @@ The filter package follows the codec stage model for frame transforms.
 `filter.Stage` adapts a `filter.FrameFilter` to frame and event messages,
 flushes before EOS, and uses caller-owned result scratch. Runtime transcode
 branches resolve resize and resample configs through the filter registry before
-attaching the stage ahead of each encoder.
+attaching the stage ahead of each encoder or runtime branch sink.
 The first concrete filters are `adapters/resample` for interleaved S16 audio and
 `adapters/resize` for planar 8-bit 4:2:0 video.
 
@@ -257,18 +340,30 @@ That shape supports:
 - codec switch events -> decoder reset
 - packet loss events -> RTCP feedback and keyframe requests
 
-## Multi-output transcoding
+## Multi-output media planning
 
-The `transcode` package keeps the internal plan shape for renditions and output
-selection. The runtime compiler turns that plan into a graph with one
-shared selected decode, multiple encoder branches, and mux outputs that select
-renditions by name or label. Resize and resample branch configs become filter
-stages when matching factories are registered.
+`Transcode` is user-facing syntax, not a runtime engine. It lowers into the
+same `MediaPlan` branch shape as `From(input).Audio()/Video().Branches(...)` and
+flow-derived branches: input ref, stream selector, operation chain, target refs,
+and mux groups. Mixed audio/video outputs are modeled as mux groups receiving
+ordinary encoded branches.
+
+Multiple branches that select the same input stream should share upstream demux,
+selection, and decode nodes unless a future isolation policy asks otherwise.
+When a stream chain declares operations before `.Branches(...)`, the planner
+treats the current stream point as a shared prefix: one resize/resample/stage
+can feed several downstream branches. Naming that point with `.Tap(...)` is
+only required when a stable runtime attachment handle should be exposed through
+`Task.Taps()`. One target can be a mux group that receives coordinated encoded
+branches from different media streams. Resize, resample, and custom stage steps
+become ordinary branch operations; transform steps use matching filter
+factories when registered.
 
 Typical use cases:
 
 - Generic live receive to several outputs.
 - WebRTC receive to recording plus preview plus analysis.
 - One video decode feeding several resize branches.
+- One resized video point feeding several encoded, thumbnail, or analysis branches.
 - One audio decode feeding several resample branches.
 - Per-output codec, bitrate, container, and protocol decisions.

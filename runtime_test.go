@@ -232,6 +232,43 @@ func TestRuntimeWithCodecAdapter(t *testing.T) {
 	}
 }
 
+func TestRuntimeWithCustomCodecHooks(t *testing.T) {
+	desc := CodecDescriptor{
+		ID:    av.CodecID("x_pcm"),
+		Name:  "X PCM",
+		Type:  av.MediaAudio,
+		Modes: []codec.Mode{codec.ModeDecode, codec.ModeEncode},
+	}
+
+	descriptorOnly := runtimeValue(t, New(WithCodecDescriptor(desc)))
+	if _, err := descriptorOnly.codecs.DecoderFactory(desc.ID); !errors.Is(err, codec.ErrUnavailable) {
+		t.Fatalf("descriptor-only decoder err = %v, want codec.ErrUnavailable", err)
+	}
+	if _, err := descriptorOnly.codecs.EncoderFactory(desc.ID); !errors.Is(err, codec.ErrUnavailable) {
+		t.Fatalf("descriptor-only encoder err = %v, want codec.ErrUnavailable", err)
+	}
+
+	decoderFactory := &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}
+	encoderFactory := &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}
+	rt := runtimeValue(t, New(
+		WithDecoder(desc, decoderFactory),
+		WithEncoder(desc, encoderFactory),
+	))
+	if got, err := rt.codecs.DecoderFactory(desc.ID); err != nil || got != decoderFactory {
+		t.Fatalf("decoder factory = %T err=%v, want registered custom factory", got, err)
+	}
+	if got, err := rt.codecs.EncoderFactory(desc.ID); err != nil || got != encoderFactory {
+		t.Fatalf("encoder factory = %T err=%v, want registered custom factory", got, err)
+	}
+
+	spec := Codec(desc.ID, av.MediaAudio, SampleRate(16_000), Channels(Mono), ClockRate(48_000))
+	if spec.ID != desc.ID || spec.Type != av.MediaAudio || spec.Parameters.ID != desc.ID ||
+		spec.Parameters.Type != av.MediaAudio || spec.Parameters.SampleRate != 16_000 ||
+		spec.Parameters.Channels != Mono || spec.Parameters.ClockRate != 48_000 {
+		t.Fatalf("codec spec = %+v, want custom audio codec parameters", spec)
+	}
+}
+
 func TestRuntimeWithFormatAdapter(t *testing.T) {
 	rt := runtimeValue(t, New(WithFormatAdapter(ivfadapter.Register)))
 
@@ -684,7 +721,7 @@ func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "decodes: 1") ||
 		!strings.Contains(err.Error(), "outputs: 1") ||
-		!strings.Contains(err.Error(), "FrameSink") {
+		!strings.Contains(err.Error(), "SinkEndpoint") {
 		t.Fatalf("err = %v, want unsupported shape guidance", err)
 	}
 }

@@ -1,123 +1,316 @@
 # Use Cases
 
-These scenarios keep shaping the interfaces as narrow implementation slices
-land.
+These scenarios keep the public API honest while implementation slices land.
 
-## WebRTC receive
+## WebRTC Receive
 
-Receive one or more Pion `TrackRemote` values, preserve RTP metadata, detect
-loss, emit codec and track lifecycle events, depacketize, decode, and optionally
-record or forward.
+Receive Pion `TrackRemote` values, preserve RTP metadata, surface packet loss
+and codec changes, then record, decode, transform, or attach analysis.
 
-The current receive boundary accepts tracks from a Pion peer connection, keeps
-one long-lived reader per logical stream with `webrtcav.TrackSet`, applies
-same-stream replacement tracks as codec-change events, and routes RTCP feedback
-through the session peer connection.
-
-The recipe front door accepts a Pion track directly and lowers it through the
-same RTP receive graph:
+Packet-preserving receive:
 
 ```go
-err := goav.Record(
-    goav.WebRTCTrack(track),
-    goav.FileOutput("recording.ivf", file),
-).Run(ctx)
-```
-
-Repeated realtime tracks compose through the same front door:
-
-```go
-err := goav.From(goav.WebRTCTrack(audio)).
-    And(goav.WebRTCTrack(video)).
-    To(goav.FileOutput("call.webm", file)).
+err := goav.From(goav.WebRTCTrack(track)).
+    Copy().
+    To(goav.FileOutput("recording.ivf", file)).
     Run(ctx)
 ```
 
-Repeated realtime inputs need distinct names when names are explicit, such as
-`audio` and `video`. A shared recording container such as WebM needs a matching
-muxer adapter registered on the runtime.
+Wrap the endpoint with `goav.Target(name, endpoint)` when the record job needs
+a stable logical target name for diagnostics, explain reports, or later mux
+grouping.
 
-Expected graph:
-
-```text
-WebRTC session
-  -> track set
-  -> RTP receiver
-  -> jitter/loss handling
-  -> depacketizer
-  -> decoder
-  -> frame sinks or encoders
-```
-
-## RTP receive
-
-Receive raw RTP using Pion RTP packet types, resolve payload type mappings,
-surface gaps and discontinuities, emit RTCP feedback, and produce codec packets.
-
-The high-level record/fanout shape accepts one or more packet readers:
+Decoded preview:
 
 ```go
-err := goav.Record(
-    goav.RTP(video).Name("video").Codec(goav.VP8()),
-    goav.FileOutput("recording.ivf", file),
-    goav.FileOutput("preview.ivf", preview),
-).Run(ctx)
+err := goav.From(goav.WebRTCTrack(track)).
+    Video().
+    Decode().
+    To(goav.SinkEndpoint(preview)).
+    Run(ctx)
 ```
 
-For multiple live readers, use `From(first).And(other...)` instead of wiring
-separate graph sources by hand.
+Repeated realtime tracks compose through `From(first).And(other...)`. Shared
+containers such as WebM need a matching muxer adapter registered on the runtime.
 
-The same receive boundary can decode a selected stream when a matching decoder
-factory is registered, and can continue into filters, an explicit target
-encoder, and one or more mux outputs:
+## RTP Receive
+
+Raw RTP uses Pion RTP packet types through `rtpav.PacketReader`. RTP inputs need
+codec intent so the runtime can choose the depacketizer.
+
+```go
+err := goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
+    Copy().
+    To(
+        goav.FileOutput("recording.ivf", file),
+        goav.FileOutput("preview.ivf", preview),
+    ).
+    Run(ctx)
+```
+
+Decode and transform one selected stream:
 
 ```go
 err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
-    To(goav.FrameSink(frames)).
-    Run(ctx)
-```
-
-Audio and video transforms stay stream-local in the recipe:
-
-```go
-err := goav.From(input).
-    Audio().
+    Decode().
     Resample(16_000, goav.Mono).
     Opus(48_000).
     To(goav.FileOutput("preview.ogg", preview)).
     Run(ctx)
 ```
 
-The `From` stream recipe has one selected stream chain. Use `Transcode` for
-multiple audio/video branches from one input. Stream recipes attach outputs on
-the stream chain with `.To(...)`; generic `From(input).To(...)` remains the
-packet-preserving record/remux shape. A stream chain sends decoded frames to
-frame sinks or encoded packets to file/URI outputs, not both. Processing steps
-come before one terminal encoder, and outputs attach after that encoder.
+When a media type matches several streams, the build error lists candidates and
+suggests `StreamID`, `StreamName`, or `StreamIndex(0)`.
 
-When a media type matches several streams, the build error lists the candidates.
-Use the same stream-scoped shape with a narrower selector. `StreamIndex(0)`
-selects the first stream when that is the intended one:
+## Branches
+
+`Tap` names a stable point. `Branches` declares downstream alternatives from
+one selected stream. Each branch is an ordered chain: custom stages, transforms,
+taps, optional encode, then typed targets. Mux targets require encoded packets;
+sink endpoint targets can receive decoded frames before encode or packets after
+copy/encode. This keeps complex work natural without exposing graph wiring.
 
 ```go
+main := goav.Target("main", goav.FileOutput("main.webm", out))
+
 err := goav.From(input).
-    Audio(goav.StreamID("eng")).
-    To(goav.FrameSink(frames)).
+    Video().
+    Decode().
+    Tap("video.decoded").
+    Branches(
+        goav.Branch("720p").
+            Resize(1280, 720).
+            Do(frameMeter).
+            Tap("video.720p.frames").
+            VP9(2_000_000).
+            To(main),
+    ).
+    Audio().
+    Decode().
+    Tap("audio.decoded").
+    Branches(
+        goav.Branch("a96").
+            Resample(48_000, goav.Stereo).
+            Opus(96_000).
+            To(main),
+    ).
     Run(ctx)
 ```
 
-## Generic protocol or file ingest
+One target can be a mux group. Several encoded branches can feed the same
+target. A target can also be a sink endpoint for preview, screenshots, analysis,
+or integration work after any branch operation:
 
-Receive a live protocol input, file input, or custom source; demux container data
-into streams and packets when needed; then feed the same pipeline graph used by
-WebRTC and RTP inputs.
+```go
+thumbs := goav.Target("thumbs",
+    goav.SinkEndpoint(goav.SinkFunc("thumbs", collectThumbnail)),
+)
 
-The simplest supported shape is direct remux/fanout through registered format
-adapters:
+err := goav.From(input).
+    Video().
+    Decode().
+    Branches(
+        goav.Branch("thumb").
+            Resize(320, 180).
+            To(thumbs),
+    ).
+    Run(ctx)
+```
+
+Containers shown outside IVF/Annex B require matching adapters.
+
+Branches normally start from the current stream point. When one branch needs an
+earlier operation boundary, name that boundary with `Tap` and anchor the branch
+with `FromTap`:
+
+```go
+thumbs := goav.Target("thumbs",
+    goav.SinkEndpoint(goav.SinkFunc("thumbs", collectThumbnail)),
+)
+web := goav.Target("web", goav.FileOutput("web.ivf", webFile))
+
+err := goav.From(input).
+    Video().
+    Decode().
+    Tap("video.decoded").
+    Resize(1280, 720).
+    Tap("video.720p.frames").
+    Branches(
+        goav.Branch("thumb").
+            FromTap("video.decoded").
+            Resize(320, 180).
+            To(thumbs),
+        goav.Branch("web").
+            FromTap("video.720p.frames").
+            VP9(2_000_000).
+            To(web),
+    ).
+    Run(ctx)
+```
+
+## Custom Components
+
+Custom work should be optional and local. A stage can live inside a normal
+stream recipe, a sink endpoint can receive frames before encode or packets
+after copy/encode, and a running task can attach a sink from a declared tap.
+Once a stream is in packet domain through `.Copy()` or an encoder, it can fan
+out to both mux endpoints and packet sink endpoints.
+The same packet-domain rule applies to planned branches: `.Copy().Branches(...)`
+can split one selected encoded stream into named mux or sink targets without a
+decoder. A branch can also call `.Decode()` first when that packet-domain split
+needs raw frames for analysis, preview, or a later frame-domain tap.
+
+```go
+meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+    observe(frame)
+    return emit.Frame(frame)
+})
+
+err := goav.From(input).
+    Audio().
+    Decode().
+    Do(meter).
+    To(goav.SinkEndpoint(goav.SinkFunc("levels", collectLevel))).
+    Run(ctx)
+```
+
+Branch-local custom stages and transforms share the ordered operation model.
+Custom filter adapters and late runtime endpoint branches extend that same model
+instead of growing special-case APIs.
+
+## Reusable Flows
+
+Flows are reusable ordered operation sequences: custom stages, taps, transforms,
+an optional first decode, and an optional terminal encoder. Branches own
+targets, so reusable and ad hoc splits use the same API.
+
+```go
+voice := goav.AudioFlow("voice").Resample(16_000, goav.Mono).Tap("audio.voice.frames").OpusVoice()
+archive := goav.AudioFlow("archive").Resample(48_000, goav.Stereo).OpusMusic()
+voiceTarget := goav.Target("voice", goav.FileOutput("voice.ogg", voiceFile))
+archiveTarget := goav.Target("archive", goav.FileOutput("archive.ogg", archiveFile))
+
+err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+    Audio().
+    Apply(voice).
+    To(voiceTarget).
+    Run(ctx)
+
+err = goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+    Audio().
+    Decode().
+    Branches(
+        goav.Branch("voice").Apply(voice).To(voiceTarget),
+        goav.Branch("archive").Apply(archive).To(archiveTarget),
+    ).
+    Run(ctx)
+```
+
+The same flow shape can be applied to a direct stream chain or to a runtime
+branch attached from a tap. The flow still owns only operations; the stream or
+branch owns its target.
+
+```go
+archiveHandle, err := task.Attach(ctx,
+    goav.Branch("archive-live").
+        FromTap("audio.decoded").
+        Apply(archive).
+        To(archiveTarget),
+)
+```
+
+## Runtime Branches
+
+Runtime branches are late control-plane work: analysis, meters, screenshot
+collectors, or temporary sinks that should attach to future messages without
+rebuilding upstream.
+
+```go
+task, err := job.Build(ctx)
+if err != nil {
+    return err
+}
+go func() { _ = task.Run(ctx) }()
+
+levels, err := task.Attach(ctx,
+    goav.Branch("level-meter").
+        FromTap("audio.decoded").
+        To(goav.SinkEndpoint(goav.SinkFunc("levels", collectLevel))),
+)
+if err != nil {
+    return err
+}
+defer levels.Close(ctx)
+```
+
+Late branches can also record future media without rebuilding upstream:
+
+```go
+recording := goav.Target("recording", goav.FileOutput("recording.ogg", file))
+
+recordingHandle, err := task.Attach(ctx,
+    goav.Branch("record-audio").
+        FromTap("audio.decoded").
+        Opus(96_000).
+        To(recording),
+)
+if err != nil {
+    return err
+}
+defer recordingHandle.Close(ctx)
+```
+
+Use `.Copy()` from a packet tap when the branch should stay encoded:
+
+```go
+packets, err := task.Attach(ctx,
+    goav.Branch("packet-recording").
+        FromTap("audio.encoded").
+        Copy().
+        To(goav.Target("recording", goav.FileOutput("recording.ogg", file))),
+)
+if err != nil {
+    return err
+}
+defer packets.Close(ctx)
+```
+
+Use `.Decode()` from a packet tap when the late branch needs frames:
+
+```go
+preview, err := task.Attach(ctx,
+    goav.Branch("preview").
+        FromTap("audio.packets").
+        Decode().
+        Tap("audio.preview.frames").
+        To(goav.SinkEndpoint(frames)),
+)
+if err != nil {
+    return err
+}
+defer preview.Close(ctx)
+```
+
+Use `Task.Taps()` to discover stable outlets. Use `Task.Detach(ctx, h)` when
+the caller wants the task to own detach semantics. Runtime branches can run
+custom stages, resize/resample from frame taps, publish additional taps, encode
+Opus/VP8/VP9 from frame taps, copy packet taps into endpoints, decode packet
+taps into frame branches, and feed later runtime branches from those taps. Taps
+declared after encode or copy are packet taps. Observer branches can end in a
+sink while publishing a nested tap with
+`.Do(goav.FrameFunc(...)).Tap(name).To(goav.SinkEndpoint(...))`. H264 and AV1
+recipe encoding remain work in progress. Detaching a parent runtime branch
+removes dependent late branches anchored from its taps. Direct and bounded
+buffered task graphs both support late stage/sink branches.
+
+## Generic File Or Protocol Ingest
+
+Packet-preserving file fanout:
 
 ```go
 err := goav.From(goav.FileInput("input.ivf", in)).
+    Copy().
     To(
         goav.FileOutput("recording.ivf", recording),
         goav.FileOutput("preview.ivf", preview),
@@ -125,110 +318,20 @@ err := goav.From(goav.FileInput("input.ivf", in)).
     Run(ctx)
 ```
 
-For one input and packet-preserving outputs, `Record(input, output...)` is the
-shorter front door over the same graph shape.
-
-Output names are unique within a recipe, including `FrameSink` sink names.
-Use distinct labels when two outputs should both receive the stream.
-
 When packet formats already match, recording can stay packet-preserving. IVF is
-the first concrete target for single-stream VP8, VP9, and AV1 packet recording;
-Annex B covers packet-preserving H264 recording after RTP depacketization.
-
-Expected graph:
-
-```text
-protocol/file source
-  -> format.DemuxSource / demuxer
-  -> decode
-  -> optional filters
-  -> encode
-  -> output
-```
-
-## Multi-layer transcode
-
-Decode once, then fan out into several video resize branches and audio resample
-branches. Each branch can encode with its own bitrate, codec parameters, and
-output target.
-
-The first recipe compiler lowers the small branch DSL into the shared-decode
-plan used by the runtime graph. Outputs can receive one or more named branches:
-
-```go
-err := goav.Transcode(goav.FileInput("input.webm", in)).
-    Video("720p").Resize(1280, 720).VP9(2_000_000).To("archive").
-    Video("360p").Resize(640, 360).VP9(600_000).To("preview").
-    Audio("a96").Resample(48_000, goav.Stereo).Opus(96_000).To("archive", "preview").
-    Output("archive", goav.FileOutput("archive.webm", archive)).
-    Output("preview", goav.FileOutput("preview.webm", preview)).
-    Run(ctx)
-```
-
-Branch names are required, unique handles; output labels are required, unique
-handles. Each branch lists each output once. Route multiple branches to the
-same output by reusing the output label in `.To(...)`, not by defining the
-output twice. `.Output(label, ...)` defines a muxed `FileOutput` or `URIOutput`
-group; decoded frame sinks stay on `Decode` or stream-scoped `From` recipes.
-Branches decode implicitly before any resize, resample, or encoder step. The
-containers shown here require matching demuxer and muxer adapters.
-
-Resize and resample configs become branch-local filter stages when matching
-filter factories are registered. The first concrete filters cover S16 audio
-resample/channel conversion and I420/YUV420P video resize.
-
-Recipe encode conveniences currently target Opus, VP8, and VP9. H264 and AV1
-remain first-class receive/decode codec specs; recipe encode support for those
-codecs is treated as work in progress until the concrete encoders are ready.
-
-Expected graph:
-
-```text
-input
-  -> demux/depacketize
-  -> decode video
-     -> resize 720p -> encode VP9 -> mux archive
-     -> resize 360p -> encode VP9 -> mux preview
-  -> decode audio
-     -> resample -> encode Opus -> mux archive, mux preview
-```
-
-## Multiple outputs
-
-One receive graph should be able to drive several sinks at once:
-
-- live relay
-- recording
-- thumbnail or preview
-- stats/analysis
-- archival transcode
-
-Explicit application-owned graphs can use typed handles for this shape:
-
-```go
-graph := runtime.Graph()
-src := graph.Source("source", source)
-dec := graph.Stage("decode", decode)
-recordOut := graph.Sink("record", record)
-previewOut := graph.Sink("preview", preview)
-statsOut := graph.Sink("stats", stats)
-
-graph.Connect(src.Out(), dec.In())
-graph.Connect(dec.Out(), recordOut.In(), previewOut.In(), statsOut.In())
-
-task, err := graph.Build(ctx)
-```
+the first concrete target for VP8, VP9, and AV1 packet recording; Annex B covers
+packet-preserving H264 recording after RTP depacketization.
 
 ## Resample
 
-Audio filters should express sample-rate, channel-count, channel-layout, and
-sample-format conversion without tying the API to one implementation.
-The first concrete adapter covers interleaved `s16` PCM with linear
-sample-rate conversion and basic channel conversion.
+Audio filters express sample rate, channel count, channel layout, and sample
+format without binding the API to one implementation. The first concrete adapter
+covers interleaved `s16` PCM with linear sample-rate conversion and basic
+channel conversion.
 
 ## Resize
 
-Video filters should express exact, fit, fill, and passthrough modes so the same
-contract works for ABR ladders, previews, thumbnails, and recording paths.
-The first concrete adapter covers planar 8-bit 4:2:0 frames with
-nearest-neighbor scaling and caller-owned output planes.
+Video filters express exact, fit, fill, and passthrough modes so the same
+contract works for ladders, previews, thumbnails, and recording branches. The first
+concrete adapter covers planar 8-bit 4:2:0 frames with nearest-neighbor scaling
+and caller-owned output planes.

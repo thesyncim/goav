@@ -1,11 +1,12 @@
 // Package goav exposes the top-level runtime contracts for composing media
-// inputs, codecs, pipelines, and outputs.
+// inputs, codecs, streams, branches, targets, and endpoints.
 package goav
 
 import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -14,7 +15,49 @@ type Packet = av.Packet
 type Frame = av.Frame
 type Event = av.Event
 type Stream = av.Stream
+type CodecDescriptor = codec.Descriptor
+type DecodeConfig = codec.DecodeConfig
+type EncodeConfig = codec.EncodeConfig
+type DecodeResult = codec.DecodeResult
+type EncodeResult = codec.EncodeResult
+type Decoder = codec.Decoder
+type Encoder = codec.Encoder
+type DecoderFactory = codec.DecoderFactory
+type EncoderFactory = codec.EncoderFactory
 type TaskStats = pipeline.GraphStats
+type BranchStats = pipeline.GraphStats
+
+type MediaDomain string
+
+const (
+	DomainPacket MediaDomain = "packet"
+	DomainFrame  MediaDomain = "frame"
+	DomainEvent  MediaDomain = "event"
+)
+
+type StreamCaps struct {
+	Domain       MediaDomain
+	MediaKind    av.MediaType
+	StreamID     av.StreamID
+	Codec        av.CodecID
+	Format       av.FormatID
+	Width        int
+	Height       int
+	PixelFormat  string
+	SampleRate   int
+	Channels     int
+	SampleFormat string
+	Realtime     bool
+}
+
+type TapInfo struct {
+	Name      string
+	MediaKind av.MediaType
+	Domain    MediaDomain
+	After     OperationKind
+	Caps      StreamCaps
+	Node      pipeline.NodeRef
+}
 
 // Runtime is the composition root for applications embedding goav.
 type Runtime interface {
@@ -23,7 +66,7 @@ type Runtime interface {
 }
 
 // GraphBuilder is the handle-based expert graph layer. Most applications should
-// start with recipes such as Record, Decode, From, or Transcode.
+// start with From and compose streams, branches, taps, targets, and endpoints.
 type GraphBuilder interface {
 	Source(string, pipeline.Source) GraphNode
 	Stage(string, pipeline.Stage) GraphNode
@@ -33,9 +76,13 @@ type GraphBuilder interface {
 	Build(context.Context) (Task, error)
 }
 
-// Task is a runnable media job such as receive, record, remux, or transcode.
+// Task is a runnable media composition.
 type Task interface {
 	Describe() pipeline.Spec
+	Explain(context.Context) (PlanReport, error)
+	Attach(context.Context, BranchSpec) (Attachment, error)
+	Detach(context.Context, Attachment) error
+	Taps() []TapInfo
 	Run(context.Context) error
 	Events() <-chan av.Event
 	Stats() TaskStats

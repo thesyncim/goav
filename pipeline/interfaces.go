@@ -133,6 +133,8 @@ type Graph interface {
 	AddStage(Stage, BufferPolicy) (NodeRef, error)
 	AddSink(Sink, BufferPolicy) (NodeRef, error)
 	Connect(Route) error
+	Disconnect(Route) error
+	Remove(NodeRef) error
 	Spec() Spec
 	Run(context.Context) error
 	Events() <-chan av.Event
@@ -149,6 +151,22 @@ type GraphStats struct {
 	Dropped          uint64
 	DropReasons      map[DropPolicy]uint64
 	Delivered        uint64
+	LastEvent        av.Event
+	LastEventPresent bool
+	Nodes            map[string]NodeStats
+}
+
+type NodeStats struct {
+	InMessages       uint64
+	InPackets        uint64
+	InFrames         uint64
+	InEvents         uint64
+	OutMessages      uint64
+	OutPackets       uint64
+	OutFrames        uint64
+	OutEvents        uint64
+	Dropped          uint64
+	DropReasons      map[DropPolicy]uint64
 	LastEvent        av.Event
 	LastEventPresent bool
 }

@@ -21,12 +21,15 @@ const (
 )
 
 type Descriptor struct {
-	Name      string
-	Input     av.MediaType
-	Output    av.MediaType
-	Realtime  bool
-	Stateless bool
-	Metadata  av.Metadata
+	Name          string
+	Input         av.MediaType
+	Output        av.MediaType
+	PixelFormats  []string
+	SampleFormats []string
+	ResizeModes   []ResizeMode
+	Realtime      bool
+	Stateless     bool
+	Metadata      av.Metadata
 }
 
 type FrameFilter interface {

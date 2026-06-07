@@ -14,6 +14,12 @@ expert graphs compose those components directly
 There is no separate "components" API layer. Reusable pieces live in the
 domain packages that own their contracts.
 
+Recipe flows such as `AudioFlow` and `VideoFlow` are reusable ordered intent
+fragments, not graph components. They can carry an optional first decode,
+custom stages, taps, transforms, and an optional terminal encoder, then expand
+into the same stream intents that recipes, branch composers, and runtime
+attachments already compile.
+
 ## Status
 
 - stable: public contract is intended to hold through normal iteration.
@@ -21,8 +27,8 @@ domain packages that own their contracts.
 - descriptor-only: visible for discovery, but concrete factory is behind a
   build tag or not ready in the default build.
 - planned: named direction, not a current implementation contract.
-- internal migration scaffold: temporary runtime/compiler code that should keep
-  moving toward shared reusable components.
+- internal scaffold: temporary runtime/compiler code that should keep moving
+  toward shared reusable components.
 
 ## Component Contract
 
@@ -37,6 +43,26 @@ Reusable components should document these points as they mature:
   behavior;
 - direct graph and bounded buffered graph safety;
 - scratch/result objects callers are expected to reuse.
+
+## Allocation Proofs
+
+Hot-path allocation guards live next to the domain packages that own the
+contract:
+
+- `av`: `TestCoreResetAllocs`, `TestTimeBaseHelpersAllocs`
+- `pipeline`: `TestMessageAndScratchResetAllocs`, `TestGraphDirectRunAllocs`,
+  `TestDropControllerDecideAllocs`
+- `rtpav`: `TestSourceStartAllocs`, `TestSequenceDetectorAllocs`,
+  `TestOpusDepacketizerAllocs`, `TestVP8DepacketizerAllocs`,
+  `TestVP9DepacketizerAllocs`, `TestH264DepacketizerAllocs`,
+  `TestAV1DepacketizerAllocs`, `TestJitterRingAllocs`,
+  `TestFeedbackResultAllocs`
+- `codec`: `TestDecoderStageAllocs`, `TestEncoderStageAllocs`
+- `format`: `TestFormatResultResetAllocs`, `TestDemuxSourceAllocs`,
+  `TestMuxStageAllocs`
+- `filter`: `TestStageAllocs`
+- default adapters: `TestDecodePacketLossConcealmentAllocs`,
+  `TestMuxerWriteAllocs`, `TestDemuxerReadIntoAllocs`, `TestFilterAllocs`
 
 ## Core Media
 
@@ -59,8 +85,12 @@ Reusable components should document these points as they mature:
 | `pipeline.Emitter` | stable | emits messages | Lets stages forward packets, frames, and events without changing graph topology. |
 | `pipeline.Route` | stable | graph edge policy | Describes one edge with optional stream or event scoping. |
 | fanout routing | stable | one-to-many edges | One upstream can feed several downstream stages or sinks. |
+| dynamic graph mutation | experimental | runtime node/edge changes | Direct and bounded buffered graphs reject source/stage/sink additions after close with `pipeline.ErrClosed`; runtime branch attach closes any prepared branch components when the graph refuses mutation. |
+| `MediaPlan` | experimental | recipe intent to composable branch IR | Captures inputs, stream selectors, branch operations, branch stream caps, target groups, taps, and decisions before graph construction. Transcode is represented as ordinary branches, not as a runtime mode. |
+| `PlanReport` | experimental | recipe intent to structured explanation | `Job.Explain(ctx)` reports inputs, stream branches, branch operations with output caps, branch/tap stream caps, planner decisions, targets, adapter requirements, filter/container capability details, warnings, and the graph without embedding a text or diagram renderer in core. |
+| runtime attach | experimental | running graph to new branch | `Task.Attach(ctx, goav.Branch(...).FromTap(...))` attaches downstream branches to future messages in direct graphs and bounded buffered graphs; late branches can run custom stages, resize/resample from frame taps, encode Opus/VP8/VP9 from frame taps into file/URI targets, copy packet taps into file/URI targets, decode packet taps into frame branches, apply decode-owning flows from packet taps, inherit planned tap caps from probe/live intent and transform output, expose nested frame or packet taps, report branch-owned node counters through `Attachment.Stats()`, close opened decoders/filters/encoders/muxers/sinks when a later branch validation or graph mutation fails, roll back partially connected branch nodes and edges, and detach as a subtree through `Attachment.Close(ctx)` or `Task.Detach(ctx, h)`, including dependent branches anchored from nested decode, resize/resample, custom-stage, or packet taps while buffered graphs keep running. `Task.Taps()` lists stable recipe and runtime outlets. |
 | `pipeline.BufferPolicy` | experimental | execution policy | Controls direct, buffered, backpressure, and dropping behavior where supported. |
-| graph stats | experimental | counters/events | `Task.Stats()` exposes packet, frame, event, drop, and last-event counters. |
+| graph stats | experimental | counters/events | `Task.Stats()` exposes graph packet, frame, event, drop, last-event, per-node input/output, and per-node drop counters. |
 
 ## RTP
 
@@ -78,8 +108,8 @@ Reusable components should document these points as they mature:
 
 | Component | Status | Accepts/Emits | Contract Notes |
 | --- | --- | --- | --- |
-| `codec.Registry` | stable | descriptors/factories | Discovers reusable decoder and encoder factories. |
-| `codec.Descriptor` | stable | codec metadata | Owns codec identity, media type, modes, realtime status, and capabilities. |
+| `codec.Registry` | stable | descriptors/factories | Discovers reusable decoder and encoder factories and returns cloned descriptor capability metadata for planning. |
+| `codec.Descriptor` | stable | codec metadata | Owns codec identity, media type, modes, realtime status, and sample/pixel/RTP/build-tag capabilities. Decoder and encoder descriptors participate in planned and runtime branch preflight when stream metadata is known. |
 | `codec.DecoderFactory` / `EncoderFactory` | stable | stage factories | Construct concrete codec components from selected stream config. |
 | `codec.DecoderStage` | stable | packets to frames/events | Decodes packets, preserves realtime events, drives loss behavior, and flushes before EOS. |
 | `codec.EncoderStage` | stable | frames to packets/events | Encodes frames, observes control events, preserves lifecycle events, and flushes delayed packets before EOS. |
@@ -90,7 +120,8 @@ Reusable components should document these points as they mature:
 
 | Component | Status | Accepts/Emits | Contract Notes |
 | --- | --- | --- | --- |
-| `format.Registry` | stable | probers/demuxers/muxers | Owns container discovery and factory lookup. |
+| `format.Registry` | stable | probers/demuxers/muxers | Owns container discovery, descriptor metadata, and factory lookup. |
+| `format.Descriptor` | experimental | container capability metadata | Describes container format, accepted media kinds, codecs, stream-count bounds, realtime flags, and adapter metadata for planning and `Explain(ctx)`. |
 | `format.Prober` | stable | input metadata | Detects format and, when possible, stream metadata before open. |
 | `format.Demuxer` / `Muxer` | stable | container I/O | Reusable file/protocol container contracts. |
 | `format.DemuxSource` | stable | container to packets/events | Emits stream-added events, packets, and EOS through the pipeline. |
@@ -103,6 +134,7 @@ Reusable components should document these points as they mature:
 | --- | --- | --- | --- |
 | `filter.Registry` | stable | filter factories | Discovers reusable frame-transform factories. |
 | `filter.FrameFilter` | stable | frames to frames/events | Concrete transform contract for resize, resample, and future filters. |
+| `filter.SimpleRegistry` | stable | filter descriptors/factories | Retains `filter.Descriptor` metadata so planning and `Explain(ctx)` can report transform input/output media kind, supported pixel formats, sample formats, resize modes, realtime/stateless flags, and adapter metadata. |
 | `filter.Stage` | stable | frames/events to frames/events | Adapts frame filters into pipeline stages while preserving events and flushing before EOS. |
 | `filter.Result` | stable | reusable result storage | Caller-owned frame/event slices are reset and reused. |
 
@@ -132,6 +164,8 @@ Reusable components should document these points as they mature:
 
 These patterns are the component shapes recipes should compile toward. They
 are also the shapes advanced users can wire manually with `Runtime.Graph()`.
+The direct component tests capture `pipeline.Spec` before execution and compare
+it after `Run`, so the graph users inspect is the graph that actually ran.
 
 ### RTP Opus Decode
 
@@ -144,6 +178,9 @@ rtpav.Source
 
 Use this for realtime audio analyzers, bots, monitors, and receive pipelines
 that need direct ownership of loss, codec-change, EOS, and feedback behavior.
+`TestComponentRTPOpusDecodeGraph` covers this shape with a Pion RTP packet
+reader boundary, `rtpav.Source`, the Opus depacketizer, a concrete Opus
+decoder, and caller-owned frame buffers.
 
 ### File Remux Fanout
 
@@ -170,6 +207,10 @@ Function helpers are for small reusable hooks. Implement `pipeline.Stage`
 directly when the component needs explicit lifecycle, scratch reuse, or
 backpressure-specific behavior.
 
+`TestComponentCodecStageFlushesOnEOS` and
+`TestComponentMuxStageEmitsWriteEvents` cover codec and format stages as
+directly wired graph components.
+
 ### WebRTC Receive
 
 ```text
@@ -181,6 +222,8 @@ webrtcav.TrackReader or webrtcav.TrackSet
 
 This keeps Pion types at the WebRTC/RTP boundary while the rest of the graph
 uses `av`, `pipeline`, `codec`, `format`, and `filter` contracts.
+`TestComponentWebRTCTrackSetFeedsRTPSource` covers TrackSet replacement,
+long-lived reader reuse, and direct graph receive through `rtpav.Source`.
 
 ## Custom Stage Checklist
 

@@ -11,8 +11,9 @@ integrations belong under `adapters/...`.
 
 - Implement `codec.DecoderFactory`, `codec.EncoderFactory`,
   `format.DemuxerFactory`, `format.MuxerFactory`, or `filter.Factory`.
-- Register with an explicit registry instance; blank-import registration can be
-  added later as optional convenience.
+- Application-local codec factories can be registered with `goav.WithDecoder`
+  and `goav.WithEncoder`. Adapter packages should still expose an explicit
+  `Register(*codec.SimpleRegistry)` hook for runtime bundles.
 - Allocate only during construction or `Open`.
 - Hot-path methods must use caller-owned result structs and preallocated output
   buffers.
@@ -33,6 +34,11 @@ integrations belong under `adapters/...`.
 - Decoder factories may implement `codec.DecodeStateFactory` so high-level
   runtimes can provision adapter state while low-level callers still pass exact
   `OpaqueState` values explicitly.
+
+For codecs outside the built-in Opus, VP8, VP9, H264, and AV1 specs, use
+`goav.Codec(id, media, ...)` in recipes. The planner treats custom specs the
+same way as built-ins; availability comes from the decoder and encoder
+factories registered on the selected runtime.
 
 ## Current Adapters
 
@@ -178,6 +184,8 @@ interleaved signed 16-bit PCM audio frames.
 Current surface:
 
 - explicit registry registration through `resample.Register`
+- descriptor metadata for planner and `Explain(ctx)` filter requirements,
+  including supported sample formats
 - sample-rate conversion with linear interpolation
 - channel conversion for mono/stereo and simple channel count changes
 - caller-owned output frame and plane buffers
@@ -194,6 +202,8 @@ planar 8-bit 4:2:0 frames with `i420` or `yuv420p` layout.
 Current surface:
 
 - explicit registry registration through `resize.Register`
+- descriptor metadata for planner and `Explain(ctx)` filter requirements,
+  including supported pixel formats and resize modes
 - exact, fit, fill, and passthrough geometry modes
 - deterministic nearest-neighbor scaling
 - caller-owned output frame and plane buffers
@@ -232,6 +242,9 @@ breaking the default build or forcing heavier tagged code paths. When a
 descriptor exists but no factory is registered,
 `DecoderFactory` or `EncoderFactory` returns `codec.ErrUnavailable`, not
 `codec.ErrNotFound`.
+When a factory is registered, descriptor media and sample/pixel format
+capabilities become preflight constraints for known recipe decodes, runtime
+decoder construction, and recipe/runtime branch encodes.
 
 Concrete factories should replace these descriptor-only registrations once each
 codec path has caller-owned output buffers and allocation tests.
