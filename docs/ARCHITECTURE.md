@@ -78,14 +78,14 @@ their optional select operation and target operations from the graph plan's
 ordered operation sequence while still borrowing concrete input and destination
 openers from the stream lowerer. Direct selected-stream decode/encode recipes
 validate their select, decode, transform/stage, encode, and target operations
-from the same sequence before source opening, and encoded stream targets lower
-from graph-plan target refs. Those direct stream recipes still keep concrete
-inputs, destinations, ordered stream attachments, codec-change policy, custom
-stages, transforms, and taps on the resolved recipe until graph-plan emission.
-They build and describe through a resolved single-stream graph plan and shared
-parameterized source/decode/filter/encode/target helpers instead of a
-pre-populated runtime builder. `recipeResolved` no longer carries a parallel
-media-plan report copy:
+from the same sequence before source opening, and select/decode/filter/encode
+nodes plus mux/sink target nodes lower from graph-plan refs. Those direct stream
+recipes still keep concrete inputs, destinations, ordered stream attachments,
+codec-change policy, custom stages, transforms, and taps on the resolved recipe
+until graph-plan emission. They build and describe through a resolved
+single-stream graph plan and shared parameterized
+source/decode/filter/encode/target helpers instead of a pre-populated runtime
+builder. `recipeResolved` no longer carries a parallel media-plan report copy:
 `Explain`, mux diagnostics, and task tap installation read cloned views from the
 graph plan. The graph plan also carries an ordered operation sequence derived
 from branch operations and target groups. Packet-copy, direct stream
@@ -100,8 +100,15 @@ share the same planned step refs. Private branch transform/stage and encoder
 lowering now consume branch-local operation refs too. Branch-compose mux/sink
 target construction and branch-to-target routing now consume target operation
 records, including planned target node refs. The next architectural pressure is
-to make the rest of direct chain operation lowering share the branch operation
-model and converge runtime attach on the same patchable planner model.
+to collapse direct chains into the branch planner shape and converge runtime
+attach on the same patchable planner model.
+
+`Destination` is the public extension surface for byte writers, object-store
+uploads, URI-backed outputs, and sink groups. External packages can implement
+`Destination`, or use `Writer`/`Object`, without implementing graph nodes or
+container adapters. `Target(name, destination)` names a logical mux/sink group;
+the graph plan keeps concrete destination openers cold until stream list,
+format, MIME, metadata, and realtime policy are known.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and

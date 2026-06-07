@@ -911,28 +911,54 @@ func graphPlanOutputIndex(outputs []planOutput, target string) (int, bool) {
 }
 
 type graphPlanFrameStreamLowering struct {
-	targets []graphPlanTargetOperation
+	selectNode  pipeline.NodeRef
+	decodeNode  pipeline.NodeRef
+	filterNodes []pipeline.NodeRef
+	encodeNode  pipeline.NodeRef
+	targets     []graphPlanTargetOperation
 }
 
 func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan) (graphPlanFrameStreamLowering, error) {
-	if _, ok := graphPlanFirstOperation(plan.operations, OpSelect); !ok {
+	selectOperation, ok := graphPlanFirstOperation(plan.operations, OpSelect)
+	if !ok {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan has no select operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 		})
 	}
-	if _, ok := graphPlanFirstOperation(plan.operations, OpDecode); !ok {
+	if selectOperation.Node == "" {
+		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan select operation has no node", []string{
+			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+		})
+	}
+	decodeOperation, ok := graphPlanFirstOperation(plan.operations, OpDecode)
+	if !ok {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan has no decode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 		})
 	}
-	if err := p.validateFrameStreamFilterOperations(plan.operations); err != nil {
+	if decodeOperation.Node == "" {
+		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan decode operation has no node", []string{
+			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+		})
+	}
+	filterNodes, err := p.validateFrameStreamFilterOperations(plan.operations)
+	if err != nil {
 		return graphPlanFrameStreamLowering{}, err
 	}
-	_, hasEncode := graphPlanFirstOperation(plan.operations, OpEncode)
+	encodeOperation, hasEncode := graphPlanFirstOperation(plan.operations, OpEncode)
 	if p.encode != nil && !hasEncode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("encoded frame stream graph plan has no encode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 		})
+	}
+	var encodeNode pipeline.NodeRef
+	if p.encode != nil {
+		if encodeOperation.Node == "" {
+			return graphPlanFrameStreamLowering{}, graphPlanInvalidError("encoded frame stream graph plan encode operation has no node", []string{
+				"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+			})
+		}
+		encodeNode = encodeOperation.Node
 	}
 	if p.encode == nil && hasEncode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("decoded frame stream graph plan has an unexpected encode operation", []string{
@@ -943,18 +969,37 @@ func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan
 	if err != nil {
 		return graphPlanFrameStreamLowering{}, err
 	}
-	return graphPlanFrameStreamLowering{targets: targets}, nil
+	return graphPlanFrameStreamLowering{
+		selectNode:  selectOperation.Node,
+		decodeNode:  decodeOperation.Node,
+		filterNodes: filterNodes,
+		encodeNode:  encodeNode,
+		targets:     targets,
+	}, nil
 }
 
-func (p mediaPlanStreamGraph) validateFrameStreamFilterOperations(operations []graphPlanOperation) error {
+func (p mediaPlanStreamGraph) validateFrameStreamFilterOperations(operations []graphPlanOperation) ([]pipeline.NodeRef, error) {
 	planned := graphPlanOperationCount(operations, OpTransform) + graphPlanOperationCount(operations, OpStage)
 	if planned != len(p.filters) {
-		return graphPlanInvalidError("frame stream graph plan filter operations do not match concrete filters", []string{
+		return nil, graphPlanInvalidError("frame stream graph plan filter operations do not match concrete filters", []string{
 			"planned=" + strconv.Itoa(planned),
 			"filters=" + strconv.Itoa(len(p.filters)),
 		})
 	}
-	return nil
+	nodes := make([]pipeline.NodeRef, 0, planned)
+	for i := range operations {
+		operation := operations[i]
+		if operation.Kind != OpTransform && operation.Kind != OpStage {
+			continue
+		}
+		if operation.Node == "" {
+			return nil, graphPlanInvalidError("frame stream graph plan filter operation has no node", []string{
+				"kind=" + string(operation.Kind),
+			})
+		}
+		nodes = append(nodes, operation.Node)
+	}
+	return nodes, nil
 }
 
 func (p mediaPlanStreamGraph) prepareFrameStreamTargets(plan graphPlan) ([]graphPlanTargetOperation, error) {
@@ -1082,7 +1127,11 @@ func (p mediaPlanStreamGraph) compileSinkDestination(ctx context.Context, graph 
 	if len(rtpBuilds) != 0 {
 		bounds = rtpDecodeBoundsForStream(stream, rtpBuilds)
 	}
-	previousRef, filteredStream, err := compileDecodeFilterPath(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, p.encode == nil, bounds, p.filters)
+	previousRef, filteredStream, err := compileDecodeFilterPathNamed(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, p.encode == nil, bounds, p.filters, graphPlanDecodeFilterNodes{
+		selectNode:  lowering.selectNode,
+		decodeNode:  lowering.decodeNode,
+		filterNodes: lowering.filterNodes,
+	})
 	if err != nil {
 		return err
 	}
@@ -1091,7 +1140,7 @@ func (p mediaPlanStreamGraph) compileSinkDestination(ctx context.Context, graph 
 		if err != nil {
 			return err
 		}
-		return p.lowerEncodeTargets(ctx, &builder{runtime: p.runtime}, graph, previousRef, *p.encode, encodeConfig, filteredStream, lowering.targets)
+		return p.lowerEncodeTargets(ctx, &builder{runtime: p.runtime}, graph, previousRef, *p.encode, encodeConfig, filteredStream, lowering.encodeNode, lowering.targets)
 	}
 	if len(lowering.targets) != 1 || lowering.targets[0].OutputIndex != 0 {
 		return graphPlanInvalidError("decoded frame sink graph plan must have exactly one sink target", []string{
@@ -1122,7 +1171,11 @@ func (p mediaPlanStreamGraph) compileEncodeOutput(ctx context.Context, graph pip
 	if len(rtpBuilds) != 0 {
 		bounds = rtpDecodeBoundsForStream(stream, rtpBuilds)
 	}
-	previousRef, filteredStream, err := compileDecodeFilterPath(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, false, bounds, p.filters)
+	previousRef, filteredStream, err := compileDecodeFilterPathNamed(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, false, bounds, p.filters, graphPlanDecodeFilterNodes{
+		selectNode:  lowering.selectNode,
+		decodeNode:  lowering.decodeNode,
+		filterNodes: lowering.filterNodes,
+	})
 	if err != nil {
 		return err
 	}
@@ -1130,7 +1183,7 @@ func (p mediaPlanStreamGraph) compileEncodeOutput(ctx context.Context, graph pip
 	if err != nil {
 		return err
 	}
-	return p.lowerEncodeTargets(ctx, service, graph, previousRef, *p.encode, encodeConfig, encodedStream, lowering.targets)
+	return p.lowerEncodeTargets(ctx, service, graph, previousRef, *p.encode, encodeConfig, encodedStream, lowering.encodeNode, lowering.targets)
 }
 
 func (p mediaPlanStreamGraph) lowerEncodeTargets(
@@ -1141,9 +1194,10 @@ func (p mediaPlanStreamGraph) lowerEncodeTargets(
 	request encodeRequest,
 	config codec.EncodeConfig,
 	stream av.Stream,
+	encodeNode pipeline.NodeRef,
 	targets []graphPlanTargetOperation,
 ) error {
-	encodeRef, err := compileEncodeStage(ctx, p.runtime, graph, upstream, request, config)
+	encodeRef, err := compileEncodeStageNamed(ctx, p.runtime, graph, encodeNode.String(), upstream, request, config)
 	if err != nil {
 		return err
 	}
