@@ -138,10 +138,89 @@ func validateTrack(track Track) error {
 	default:
 		return ErrUnsupportedWebMCodec
 	}
+	if err := validateCodecPrivate(track); err != nil {
+		return err
+	}
 	if err := validateContentEncodings(track.ContentEncodings); err != nil {
 		return err
 	}
 	return nil
+}
+
+func validateCodecPrivate(track Track) error {
+	switch track.Codec {
+	case CodecVP8:
+		if len(track.CodecPrivate) != 0 {
+			return ErrUnsupportedWebMCodecPrivate
+		}
+	case CodecVP9:
+		if len(track.CodecPrivate) != 0 {
+			return validateVP9CodecPrivate(track.CodecPrivate)
+		}
+	}
+	return nil
+}
+
+const (
+	vp9CodecPrivateFeatureProfile           = 1
+	vp9CodecPrivateFeatureLevel             = 2
+	vp9CodecPrivateFeatureBitDepth          = 3
+	vp9CodecPrivateFeatureChromaSubsampling = 4
+	vp9CodecPrivateFeatureReservedMask      = 0x80
+)
+
+func validateVP9CodecPrivate(private []byte) error {
+	var seen [vp9CodecPrivateFeatureChromaSubsampling + 1]bool
+	for len(private) != 0 {
+		if len(private) < 2 {
+			return ErrUnsupportedWebMCodecPrivate
+		}
+		idByte := private[0]
+		if idByte&vp9CodecPrivateFeatureReservedMask != 0 {
+			return ErrUnsupportedWebMCodecPrivate
+		}
+		id := int(idByte)
+		length := int(private[1])
+		private = private[2:]
+		if id < vp9CodecPrivateFeatureProfile ||
+			id > vp9CodecPrivateFeatureChromaSubsampling ||
+			seen[id] ||
+			length != 1 ||
+			len(private) < length {
+			return ErrUnsupportedWebMCodecPrivate
+		}
+		value := private[0]
+		private = private[length:]
+		seen[id] = true
+		switch id {
+		case vp9CodecPrivateFeatureProfile:
+			if value > 3 {
+				return ErrUnsupportedWebMCodecPrivate
+			}
+		case vp9CodecPrivateFeatureLevel:
+			if !validVP9CodecPrivateLevel(value) {
+				return ErrUnsupportedWebMCodecPrivate
+			}
+		case vp9CodecPrivateFeatureBitDepth:
+			if value != 8 && value != 10 && value != 12 {
+				return ErrUnsupportedWebMCodecPrivate
+			}
+		case vp9CodecPrivateFeatureChromaSubsampling:
+			if value > 3 {
+				return ErrUnsupportedWebMCodecPrivate
+			}
+		}
+	}
+	return nil
+}
+
+func validVP9CodecPrivateLevel(value byte) bool {
+	switch value {
+	case 10, 11, 20, 21, 30, 31, 40, 41, 50, 51, 52, 60, 61, 62:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateContentEncodings(encodings []ContentEncoding) error {

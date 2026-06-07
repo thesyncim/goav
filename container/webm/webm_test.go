@@ -156,10 +156,171 @@ func TestMuxerRejectsUnsupportedContentEncodings(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsUnsupportedCodecPrivate(t *testing.T) {
+	tests := []struct {
+		name    string
+		track   Track
+		wantErr error
+	}{
+		{
+			name: "vp8 codec private",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecVP8,
+				CodecPrivate: []byte{1},
+				Video:        VideoConfig{Width: 16, Height: 16},
+			},
+			wantErr: ErrUnsupportedWebMCodecPrivate,
+		},
+		{
+			name: "vp9 private reserved bit",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecVP9,
+				CodecPrivate: []byte{0x81, 1, 0},
+				Video:        VideoConfig{Width: 16, Height: 16},
+			},
+			wantErr: ErrUnsupportedWebMCodecPrivate,
+		},
+		{
+			name: "vp9 private unknown feature",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecVP9,
+				CodecPrivate: []byte{5, 1, 0},
+				Video:        VideoConfig{Width: 16, Height: 16},
+			},
+			wantErr: ErrUnsupportedWebMCodecPrivate,
+		},
+		{
+			name: "vp9 private truncated feature",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecVP9,
+				CodecPrivate: []byte{1, 2, 0},
+				Video:        VideoConfig{Width: 16, Height: 16},
+			},
+			wantErr: ErrUnsupportedWebMCodecPrivate,
+		},
+		{
+			name: "vp9 private duplicate feature",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecVP9,
+				CodecPrivate: []byte{1, 1, 0, 1, 1, 1},
+				Video:        VideoConfig{Width: 16, Height: 16},
+			},
+			wantErr: ErrUnsupportedWebMCodecPrivate,
+		},
+		{
+			name: "vp9 private invalid profile",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecVP9,
+				CodecPrivate: []byte{1, 1, 4},
+				Video:        VideoConfig{Width: 16, Height: 16},
+			},
+			wantErr: ErrUnsupportedWebMCodecPrivate,
+		},
+		{
+			name: "vp9 private invalid level",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecVP9,
+				CodecPrivate: []byte{2, 1, 22},
+				Video:        VideoConfig{Width: 16, Height: 16},
+			},
+			wantErr: ErrUnsupportedWebMCodecPrivate,
+		},
+		{
+			name: "vp9 private invalid bit depth",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecVP9,
+				CodecPrivate: []byte{3, 1, 9},
+				Video:        VideoConfig{Width: 16, Height: 16},
+			},
+			wantErr: ErrUnsupportedWebMCodecPrivate,
+		},
+		{
+			name: "vp9 private invalid chroma subsampling",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecVP9,
+				CodecPrivate: []byte{4, 1, 4},
+				Video:        VideoConfig{Width: 16, Height: 16},
+			},
+			wantErr: ErrUnsupportedWebMCodecPrivate,
+		},
+		{
+			name: "valid vp9 private",
+			track: Track{
+				Type:         TrackVideo,
+				Codec:        CodecVP9,
+				CodecPrivate: validVP9CodecPrivate(),
+				Video:        VideoConfig{Width: 16, Height: 16},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = muxer.AddTrack(tt.track)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("err = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestDemuxerRejectsUnsupportedContentEncodings(t *testing.T) {
 	data := makeCompressedDocTypeWebMData(t)
 	if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrUnsupportedWebMContentEncoding) {
 		t.Fatalf("err = %v, want ErrUnsupportedWebMContentEncoding", err)
+	}
+}
+
+func TestDemuxerRejectsUnsupportedCodecPrivate(t *testing.T) {
+	tests := []struct {
+		name  string
+		track matroska.Track
+	}{
+		{
+			name: "vp8 codec private",
+			track: matroska.Track{
+				Type:         matroska.TrackVideo,
+				Codec:        matroska.CodecVP8,
+				CodecPrivate: []byte{1},
+				Video:        matroska.VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
+			name: "vp9 invalid codec private",
+			track: matroska.Track{
+				Type:         matroska.TrackVideo,
+				Codec:        matroska.CodecVP9,
+				CodecPrivate: []byte{1, 1, 4},
+				Video:        matroska.VideoConfig{Width: 16, Height: 16},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeDocTypeWebMData(t, tt.track)
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrUnsupportedWebMCodecPrivate) {
+				t.Fatalf("err = %v, want ErrUnsupportedWebMCodecPrivate", err)
+			}
+		})
 	}
 }
 
@@ -1830,14 +1991,18 @@ func validWebMContentEncryption(keyID []byte) ContentEncryption {
 	}
 }
 
+func validVP9CodecPrivate() []byte {
+	return []byte{
+		1, 1, 0,
+		2, 1, 10,
+		3, 1, 8,
+		4, 1, 1,
+	}
+}
+
 func makeCompressedDocTypeWebMData(tb testing.TB) []byte {
 	tb.Helper()
-	var buffer bytes.Buffer
-	muxer, err := matroska.NewMuxer(&buffer, matroska.MuxerOptions{DocType: "webm"})
-	if err != nil {
-		tb.Fatal(err)
-	}
-	trackID, err := muxer.AddTrack(matroska.Track{
+	return makeDocTypeWebMData(tb, matroska.Track{
 		Type:  matroska.TrackVideo,
 		Codec: matroska.CodecVP8,
 		ContentEncodings: []matroska.ContentEncoding{{
@@ -1847,6 +2012,16 @@ func makeCompressedDocTypeWebMData(tb testing.TB) []byte {
 		}},
 		Video: matroska.VideoConfig{Width: 16, Height: 16},
 	})
+}
+
+func makeDocTypeWebMData(tb testing.TB, track matroska.Track) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := matroska.NewMuxer(&buffer, matroska.MuxerOptions{DocType: "webm"})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(track)
 	if err != nil {
 		tb.Fatal(err)
 	}

@@ -124,6 +124,9 @@ Current milestone:
   is written.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with
   WebM demuxers requiring the `webm` EBML document type.
+- WebM profile validation rejects VP8 codec-private data and malformed VP9
+  codec feature private data while accepting valid VP9 profile/level/bit-depth/
+  chroma metadata.
 - WebM profile validation rejects Matroska-only track content compression,
   content signatures, non-AES encryption, AES-CBC, and non-block content
   encoding scopes while preserving WebM block-scope AES-CTR encryption.
@@ -302,7 +305,10 @@ WebM accepts only Opus, VP8, VP9, and AV1. It rejects H.264, H.265, PCM
 variants, repair streams, retransmission streams, FEC streams, non-WebM
 Matroska document types, Matroska-only content compression, content signatures,
 non-AES encryption, AES-CBC, and non-block content encoding scopes. WebM
-content encryption is limited to block-scope AES-CTR.
+content encryption is limited to block-scope AES-CTR. VP8 tracks must not carry
+codec-private data; VP9 codec-private data, when present, must use the WebM
+VP9 codec feature list with supported profile, level, bit-depth, and chroma
+subsampling values.
 
 ## Zero-Allocation Strategy
 
