@@ -1746,7 +1746,7 @@ func TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor(t *testing.T) {
 	}
 }
 
-func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
+func TestReadmeUsesBranchDestinationVocabulary(t *testing.T) {
 	body, err := os.ReadFile("README.md")
 	if err != nil {
 		t.Fatal(err)
@@ -1770,21 +1770,22 @@ func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
 		"SinkEndpoint",
 		"SinkDestination",
 		"TapName(",
+		"goav.Target(",
 	} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("README keeps old branch/target vocabulary %q", forbidden)
+			t.Fatalf("README keeps old branch/destination vocabulary %q", forbidden)
 		}
 	}
 	for _, required := range []string{
 		"goav.Branch(",
 		"Branches(",
-		"goav.Target(",
 		"goav.Writer(",
 		"goav.FrameTap(",
 		"goav.PacketTap(",
 		"goav.Sink(",
 		"goav.File(",
 		"goav.Flow(",
+		"Reuse the same destination value",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("README should show %s in the public composition grammar", required)
@@ -1806,7 +1807,7 @@ func TestReadmeShowsCustomDestinations(t *testing.T) {
 		"goav.Format(",
 		"goav.MIME(",
 		"goav.Metadata(",
-		"Target(name, destination)",
+		"Reuse one destination value",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("README should keep custom destination text %q", required)
@@ -1904,7 +1905,11 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"normal workflows lower from `input -> chain -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`",
 		"runtime attach lowers the same branch model into `WorkPatch`",
 		"direct chains are syntax sugar for an implicit `Branch(\"main\")`",
-		"Destination` is the routing handle",
+		"`Destination` is",
+		"the routing handle: reusing the same `Destination` value",
+		"DestinationProvider` is the extension point",
+		"Direct `.To(...)` chains are only ergonomic syntax",
+		"`branchComposePlan`, `runtimeBranch`, `targetNames`",
 		"normal composition does not import `goav/transcode`",
 	} {
 		if !strings.Contains(progressText, required) {
@@ -1971,6 +1976,7 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"direct `File`/`URIOut`/`Sink` destinations",
 		"custom `Writer` destinations with `TargetInfo`",
 		"stable destination handles for shared mux/sink groups",
+		"stable goav-owned destination handles",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("architecture docs should keep current composition vocabulary %q", required)
@@ -2015,10 +2021,10 @@ func TestReadmeFlowExampleUsesDistinctBranches(t *testing.T) {
 	if strings.Contains(text, "Apply(voice).\n    Apply(voice)") {
 		t.Fatal("README should not show repeated direct flow application when branches are the intended split")
 	}
-	if got := strings.Count(text, `goav.Branch("voice").Apply(voice).To(voiceTarget)`); got != 1 {
+	if got := strings.Count(text, `goav.Branch("voice").Apply(voice).To(voiceOut)`); got != 1 {
 		t.Fatalf("README voice flow branch count = %d, want 1", got)
 	}
-	if got := strings.Count(text, `goav.Branch("archive").Apply(archive).To(archiveTarget)`); got != 1 {
+	if got := strings.Count(text, `goav.Branch("archive").Apply(archive).To(archiveOut)`); got != 1 {
 		t.Fatalf("README archive flow branch count = %d, want 1", got)
 	}
 }
@@ -2030,7 +2036,7 @@ func TestDocsExplainFlowVersusBranchRule(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := strings.Join(strings.Fields(string(body)), " ")
-		if !strings.Contains(text, "Use a direct chain when one reusable flow feeds one target") ||
+		if !strings.Contains(text, "Use a direct chain when one reusable flow feeds one destination") ||
 			!strings.Contains(text, "media point needs several downstream chains") {
 			t.Fatalf("%s should explain when to use a direct flow chain versus branches", file)
 		}
@@ -2513,12 +2519,12 @@ func TestStreamRecipeCanWriteToTypedTarget(t *testing.T) {
 		Audio().
 		Resample(16_000, goav.Mono).
 		OpusVoice()
-	voiceTarget := goav.Target("voice", goav.File("voice.ogg", io.Discard))
+	voiceOut := goav.Target("voice", goav.File("voice.ogg", io.Discard))
 
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Apply(voice).
-		To(voiceTarget)
+		To(voiceOut)
 
 	intent := job.Intent()
 	if len(intent.Streams) != 1 || len(intent.Targets) != 1 {
@@ -2545,7 +2551,7 @@ func TestStreamRecipeCanWriteToTypedTarget(t *testing.T) {
 
 func TestToAcceptsDestinationSlices(t *testing.T) {
 	targets := []goav.Destination{
-		goav.Target("archive", goav.File("archive.ogg", io.Discard)),
+		goav.File("archive.ogg", io.Discard),
 		goav.Sink(goav.SinkFunc("stats", func(context.Context, goav.Message) error {
 			return nil
 		})),
@@ -2558,23 +2564,55 @@ func TestToAcceptsDestinationSlices(t *testing.T) {
 
 	intent := job.Intent()
 	if len(intent.Streams) != 1 ||
-		!equalStrings(intent.Streams[0].Targets, []string{"archive", "stats"}) ||
+		!equalStrings(intent.Streams[0].Targets, []string{"archive.ogg", "stats"}) ||
 		len(intent.Targets) != 2 ||
-		intent.Targets[0].Name != "archive" ||
+		intent.Targets[0].Name != "archive.ogg" ||
 		intent.Targets[1].Name != "stats" {
 		t.Fatalf("intent: %+v", intent)
 	}
 }
 
-func TestTargetBindsDestinations(t *testing.T) {
+func TestSharedDestinationHandleGroupsBranches(t *testing.T) {
+	web := goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF))
+
+	job := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			goav.Branch("v720").VP9(2_000_000).To(web),
+			goav.Branch("v360").Resize(640, 360).VP8(600_000).To(web),
+		)
+
+	intent := job.Intent()
+	if len(intent.Streams) != 2 || len(intent.Targets) != 1 || intent.Targets[0].Name != "web.ivf" {
+		t.Fatalf("intent: %+v", intent)
+	}
+	if !equalStrings(intent.Streams[0].Targets, []string{"web.ivf"}) ||
+		!equalStrings(intent.Streams[1].Targets, []string{"web.ivf"}) {
+		t.Fatalf("streams: %+v", intent.Streams)
+	}
+}
+
+func TestDuplicateDestinationNameRequiresSameHandle(t *testing.T) {
+	left := goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF))
+	right := goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF))
+
+	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			goav.Branch("v720").VP9(2_000_000).To(left),
+			goav.Branch("v360").VP8(600_000).To(right),
+		).
+		Describe()
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" {
+		t.Fatalf("err = %v, want target_duplicate", err)
+	}
+}
+
+func TestDestinationConstructorsReturnDestination(t *testing.T) {
 	destinationType := reflect.TypeOf((*goav.Destination)(nil)).Elem()
-	targetFn := reflect.TypeOf(goav.Target)
-	if targetFn.NumIn() != 2 || targetFn.In(1) != destinationType {
-		t.Fatalf("Target second parameter = %v, want Destination", targetFn.In(1))
-	}
-	if targetFn.NumOut() != 1 || targetFn.Out(0) != destinationType {
-		t.Fatalf("Target return = %v, want Destination", targetFn.Out(0))
-	}
 	for name, fn := range map[string]any{
 		"File":        goav.File,
 		"Object":      goav.Object,
@@ -2742,14 +2780,14 @@ func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 		Audio().
 		Resample(48_000, goav.Stereo).
 		OpusMusic()
-	voiceTarget := goav.Target("voice", goav.File("voice.ogg", io.Discard))
-	archiveTarget := goav.Target("archive", goav.File("archive.ogg", io.Discard))
+	voiceOut := goav.Target("voice", goav.File("voice.ogg", io.Discard))
+	archiveOut := goav.Target("archive", goav.File("archive.ogg", io.Discard))
 
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio(goav.StreamIndex(0)).
 		Branches(
-			goav.Branch("voice").Apply(voice).To(voiceTarget),
-			goav.Branch("archive").Apply(archive).To(archiveTarget),
+			goav.Branch("voice").Apply(voice).To(voiceOut),
+			goav.Branch("archive").Apply(archive).To(archiveOut),
 		)
 
 	if reflect.TypeOf(job) != reflect.TypeOf((*goav.Job)(nil)) {
@@ -3311,11 +3349,11 @@ func TestNilFlowBranchIsActionable(t *testing.T) {
 
 func TestBranchesRejectOuterOutputsAndDuplicateTargets(t *testing.T) {
 	voice := goav.Flow("voice").Audio().OpusVoice()
-	voiceTarget := goav.Target("voice", goav.File("voice.ogg", io.Discard))
+	voiceOut := goav.Target("voice", goav.File("voice.ogg", io.Discard))
 
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio().
-		Branches(goav.Branch("voice").Apply(voice).To(voiceTarget)).
+		Branches(goav.Branch("voice").Apply(voice).To(voiceOut)).
 		To(goav.File("ignored.ogg", io.Discard)).
 		Describe()
 	var buildErr *goav.BuildError
@@ -3325,7 +3363,7 @@ func TestBranchesRejectOuterOutputsAndDuplicateTargets(t *testing.T) {
 
 	_, err = goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio().
-		Branches(goav.Branch("voice").Apply(voice).To(voiceTarget, voiceTarget)).
+		Branches(goav.Branch("voice").Apply(voice).To(voiceOut, voiceOut)).
 		Describe()
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" {
 		t.Fatalf("err = %v, want target_duplicate", err)
@@ -3379,14 +3417,14 @@ func TestFlowRejectsNonTapOperationsAfterEncode(t *testing.T) {
 func TestFlowBranchesDescribeLiveInputBranches(t *testing.T) {
 	voice := goav.Flow("voice").Audio().OpusVoice()
 	archive := goav.Flow("archive").Audio().OpusMusic()
-	voiceTarget := goav.Target("voice", goav.File("voice.ogg", io.Discard))
-	archiveTarget := goav.Target("archive", goav.File("archive.ogg", io.Discard))
+	voiceOut := goav.Target("voice", goav.File("voice.ogg", io.Discard))
+	archiveOut := goav.Target("archive", goav.File("archive.ogg", io.Discard))
 
 	job := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.Opus())).
 		Audio().
 		Branches(
-			goav.Branch("voice").Apply(voice).To(voiceTarget),
-			goav.Branch("archive").Apply(archive).To(archiveTarget),
+			goav.Branch("voice").Apply(voice).To(voiceOut),
+			goav.Branch("archive").Apply(archive).To(archiveOut),
 		)
 
 	spec, err := job.Describe()
@@ -3731,8 +3769,8 @@ func TestStreamRecipeRejectsDuplicateTypedTargets(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), `target "voice" is attached more than once`) {
-		t.Fatalf("err = %v, want duplicate target guidance", err)
+	if !strings.Contains(err.Error(), `destination "voice" is attached more than once`) {
+		t.Fatalf("err = %v, want duplicate destination guidance", err)
 	}
 }
 
@@ -4781,9 +4819,9 @@ func TestBranchRecipeSingleBranchUsesTarget(t *testing.T) {
 	}
 }
 
-func TestBranchRecipeRejectsDuplicateTargets(t *testing.T) {
-	web := goav.Target("web", goav.File("web.webm", io.Discard))
-	web2 := goav.Target("web", goav.File("web2.webm", io.Discard))
+func TestBranchRecipeRejectsDuplicateDestinations(t *testing.T) {
+	web := goav.File("web.webm", io.Discard)
+	web2 := goav.File("web.webm", io.Discard)
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").VP9(2_000_000).To(web).
 		Video("360p").VP9(600_000).To(web2).
@@ -4793,14 +4831,14 @@ func TestBranchRecipeRejectsDuplicateTargets(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), `target "web"`) ||
-		!strings.Contains(err.Error(), "reuse the same goav.Target value") {
-		t.Fatalf("err = %v, want duplicate target guidance", err)
+	if !strings.Contains(err.Error(), `destination "web.webm"`) ||
+		!strings.Contains(err.Error(), "reuse the same destination value") {
+		t.Fatalf("err = %v, want duplicate destination guidance", err)
 	}
 }
 
-func TestBranchRecipeRejectsDuplicateBranchTargets(t *testing.T) {
-	web := goav.Target("web", goav.File("web.webm", io.Discard))
+func TestBranchRecipeRejectsDuplicateBranchDestinations(t *testing.T) {
+	web := goav.File("web.webm", io.Discard)
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").VP9(2_000_000).To(web, web).
 		Build(context.Background())
@@ -4809,10 +4847,10 @@ func TestBranchRecipeRejectsDuplicateBranchTargets(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), `branch routes to target "web" more than once`) ||
-		!strings.Contains(err.Error(), "second target index: 1") ||
-		!strings.Contains(err.Error(), "list each target once") {
-		t.Fatalf("err = %v, want duplicate branch target guidance", err)
+	if !strings.Contains(err.Error(), `branch routes to destination "web.webm" more than once`) ||
+		!strings.Contains(err.Error(), "second destination index: 1") ||
+		!strings.Contains(err.Error(), "list each destination once") {
+		t.Fatalf("err = %v, want duplicate branch destination guidance", err)
 	}
 }
 
@@ -4825,9 +4863,9 @@ func TestBranchRecipeRejectsEmptyTarget(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_invalid wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "target name is empty") ||
-		!strings.Contains(err.Error(), `goav.Target("web"`) {
-		t.Fatalf("err = %v, want empty target guidance", err)
+	if !strings.Contains(err.Error(), "destination name is empty") ||
+		!strings.Contains(err.Error(), `goav.File("web.ivf"`) {
+		t.Fatalf("err = %v, want empty destination guidance", err)
 	}
 }
 
@@ -5434,9 +5472,9 @@ func TestBranchRecipeRequiresBranchTarget(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_missing wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "branch has no target") ||
-		!strings.Contains(err.Error(), "goav.Target") {
-		t.Fatalf("err = %v, want target guidance", err)
+	if !strings.Contains(err.Error(), "branch has no destination") ||
+		!strings.Contains(err.Error(), "goav.File") {
+		t.Fatalf("err = %v, want destination guidance", err)
 	}
 }
 

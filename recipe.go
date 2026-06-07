@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -811,6 +812,7 @@ func (s InputSpec) selector(media av.MediaType) av.StreamSelector {
 
 // destinationSpec describes a concrete file, URI, writer, or sink destination.
 type destinationSpec struct {
+	id             uint64
 	output         format.Output
 	sink           pipeline.Sink
 	custom         Destination
@@ -833,6 +835,7 @@ func File(name string, writer io.Writer, opts ...DestinationOption) Destination 
 
 func fileDestination(name string, writer io.Writer) destinationSpec {
 	return destinationSpec{
+		id: destinationSpecSeq.Add(1),
 		output: format.Output{
 			Name:     name,
 			Protocol: av.ProtocolFile,
@@ -855,6 +858,7 @@ func URIOut(uri string, opts ...DestinationOption) Destination {
 
 func uriDestination(uri string) destinationSpec {
 	return destinationSpec{
+		id: destinationSpecSeq.Add(1),
 		output: format.Output{
 			Name: uri,
 			URI:  uri,
@@ -874,13 +878,14 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 		name = sink.Name()
 	}
 	if sink == nil {
-		return destinationSpec{err: ErrNilSink}
+		return destinationSpec{id: destinationSpecSeq.Add(1), err: ErrNilSink}
 	}
-	return destinationSpec{sink: sink, name: name}
+	return destinationSpec{id: destinationSpecSeq.Add(1), sink: sink, name: name}
 }
 
 func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destination {
 	spec := destinationSpec{
+		id:     destinationSpecSeq.Add(1),
 		custom: writerDestination{name: name, open: open},
 		output: format.Output{
 			Name: name,
@@ -2805,11 +2810,11 @@ func duplicateTargetDestinationError(operation string, name string) error {
 		Code:      "target_duplicate",
 		Operation: operation,
 		Node:      name,
-		Reason:    fmt.Sprintf("target %q is attached more than once", name),
+		Reason:    fmt.Sprintf("destination %q is attached more than once", name),
 		Suggestions: []string{
-			"list each goav.Target value once in .To(...)",
-			"use distinct target names when writing to separate destinations",
-			"reuse one target from multiple branches through .Branches(...) when outputs should be grouped",
+			"list each destination value once in .To(...)",
+			"use distinct destination names when writing to separate destinations",
+			"reuse one destination value from multiple branches through .Branches(...) when outputs should be grouped",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3513,6 +3518,7 @@ func targetIdentity(target namedTargetSpec) string {
 	}
 	return strings.Join([]string{
 		target.name,
+		strconv.FormatUint(target.output.id, 10),
 		output.label(""),
 		sinkName,
 		sinkAddr,
@@ -3916,10 +3922,10 @@ func branchIntentTargetMissingError(stream StreamIntent) error {
 		Code:      "target_missing",
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
-		Reason:    "branch has no target",
+		Reason:    "branch has no destination",
 		Suggestions: []string{
-			"finish the branch with .To(goav.Target(\"web\", goav.File(...)))",
-			"reuse the same target value from multiple branches when they should share one mux group",
+			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
+			"reuse the same destination value from multiple branches when they should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3930,10 +3936,10 @@ func branchTargetReferenceMissingError(stream StreamIntent, label string) error 
 		Code:      "target_missing",
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
-		Reason:    "target " + label + " is referenced but not defined",
+		Reason:    "destination " + label + " is referenced but not defined",
 		Suggestions: []string{
-			"pass a goav.Target(\"" + label + "\", goav.File(...)) value to the branch .To(...) call",
-			"reuse typed target values instead of repeating string destination names",
+			"pass a named goav.File(...), goav.URIOut(...), or goav.Sink(...) destination to the branch .To(...) call",
+			"reuse destination values instead of repeating string destination names",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3957,13 +3963,13 @@ func branchTargetNameEmptyError(stream streamBuild, index int) error {
 		Code:      "target_invalid",
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
-		Reason:    "branch targets must be non-empty",
+		Reason:    "branch destinations must be non-empty",
 		Details: []string{
-			fmt.Sprintf("target index: %d", index),
+			fmt.Sprintf("destination index: %d", index),
 		},
 		Suggestions: []string{
-			"call .To(goav.Target(\"web\", goav.File(...))) with a non-empty target name",
-			"pass goav.File(...), goav.URIOut(...), or goav.Sink(...) directly when a separate target name is not needed",
+			"call .To(goav.File(\"web.ivf\", writer)) with a non-empty destination name",
+			"pass goav.Sink(goav.SinkFunc(name, fn)) for sink destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3974,10 +3980,10 @@ func branchTargetDefinitionNameEmptyError(output destinationSpec) error {
 		Code:      "target_invalid",
 		Operation: branchCompositionOperation,
 		Node:      output.label("output"),
-		Reason:    "target name is empty",
+		Reason:    "destination name is empty",
 		Suggestions: []string{
-			"call goav.Target(\"web\", goav.File(...)) with a stable target name",
-			"pass goav.File(...) directly to .To(...) when a separate target name is not needed",
+			"pass a named destination such as goav.File(\"web.ivf\", writer)",
+			"pass goav.Sink(goav.SinkFunc(name, fn)) for sink destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3992,10 +3998,10 @@ func branchTargetDuplicateError(name string) error {
 		Code:      "target_duplicate",
 		Operation: branchCompositionOperation,
 		Node:      name,
-		Reason:    fmt.Sprintf("target %q is defined more than once with different destinations", name),
+		Reason:    fmt.Sprintf("destination %q is defined more than once with different destination handles", name),
 		Suggestions: []string{
-			"reuse the same goav.Target value when multiple branches should share one mux group",
-			"use distinct target names when branches should write to different destinations",
+			"reuse the same destination value when multiple branches should share one mux group",
+			"use distinct destination names when branches should write to different destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -4054,15 +4060,15 @@ func duplicateBranchDestinationError(stream StreamIntent, target string, firstIn
 		Code:      "target_duplicate",
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
-		Reason:    fmt.Sprintf("branch routes to target %q more than once", target),
+		Reason:    fmt.Sprintf("branch routes to destination %q more than once", target),
 		Details: []string{
-			fmt.Sprintf("first target index: %d", firstIndex),
-			fmt.Sprintf("second target index: %d", secondIndex),
+			fmt.Sprintf("first destination index: %d", firstIndex),
+			fmt.Sprintf("second destination index: %d", secondIndex),
 		},
 		Suggestions: []string{
-			"list each target once in .To(...)",
-			"route one branch to multiple targets with distinct values such as .To(archive, preview)",
-			"reuse typed target values instead of repeating target names",
+			"list each destination once in .To(...)",
+			"route one branch to multiple destinations with distinct values such as .To(archive, preview)",
+			"reuse destination values instead of repeating destination names",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

@@ -266,7 +266,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	branch.steps = runtimeBranchStepsFromChain(spec.decode, spec.decodeCodec, spec.steps)
 	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	if len(spec.targets) == 0 {
-		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.Target(name, destination))")
+		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
 	for i := range spec.targets {
 		target := cloneTargetSpec(spec.targets[i])
@@ -352,16 +352,16 @@ func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchG
 					Code:      "target_duplicate",
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(branch.name, "branch"),
-					Reason:    "runtime branch group reuses one target name",
+					Reason:    "runtime branch group reuses one destination name",
 					Details: []string{
-						"target: " + label,
+						"destination: " + label,
 						"first branch: " + seenBranch[label],
 						"second branch: " + firstNonEmpty(branch.name, fmt.Sprintf("branch-%d", i+1)),
 					},
 					Suggestions: []string{
-						"reuse one goav.Target(name, destination) value when branches should share a runtime target group",
-						"use distinct goav.Target names for independent runtime destinations",
-						"use a sink destination for runtime observer groups or a mux destination for runtime recording groups",
+						"reuse one destination value when branches should share a runtime destination group",
+						"create distinct destination values with distinct names for independent runtime destinations",
+						"use a sink destination for runtime diagnostic groups or a mux destination for runtime recording groups",
 					},
 					Cause: ErrUnsupportedBuild,
 				}
@@ -444,11 +444,11 @@ func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, terminal runt
 
 func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, terminal runtimeBranchTerminal, buffer pipeline.BufferPolicy) (pipeline.NodeRef, bool, error) {
 	if g == nil || !g.isSharedSink(terminal.shareKey) {
-		return "", false, runtimeBranchInvalidError("shared sink target is not registered", "reuse one goav.Target(name, goav.Sink(sink)) value inside one Task.Attach call")
+		return "", false, runtimeBranchInvalidError("shared sink destination is not registered", "reuse one goav.Sink(sink) destination value inside one Task.Attach call")
 	}
 	target := g.sharedSinks[terminal.shareKey]
 	if target == nil {
-		return "", false, runtimeBranchInvalidError("shared sink target is not reserved", "reuse one goav.Target(name, goav.Sink(sink)) value inside one Task.Attach call")
+		return "", false, runtimeBranchInvalidError("shared sink destination is not reserved", "reuse one goav.Sink(sink) destination value inside one Task.Attach call")
 	}
 	if target.ref != "" {
 		return target.ref, false, nil
@@ -486,11 +486,11 @@ func (g *runtimeAttachGroup) reserveSharedMux(spec pipeline.Spec, branch runtime
 
 func (g *runtimeAttachGroup) addSharedMuxRoute(key string, route pipeline.Route) error {
 	if g == nil || !g.isSharedMux(key) {
-		return runtimeBranchInvalidError("shared mux target is not registered", "reuse one goav.Target(name, goav.File(...)) value inside one Task.Attach call")
+		return runtimeBranchInvalidError("shared mux destination is not registered", "reuse one goav.File(name, writer) destination value inside one Task.Attach call")
 	}
 	target := g.sharedMuxes[key]
 	if target == nil {
-		return runtimeBranchInvalidError("shared mux target is not reserved", "reuse one goav.Target(name, goav.File(...)) value inside one Task.Attach call")
+		return runtimeBranchInvalidError("shared mux destination is not reserved", "reuse one goav.File(name, writer) destination value inside one Task.Attach call")
 	}
 	route.To = []string{target.name}
 	target.routes = append(target.routes, route)
@@ -503,7 +503,7 @@ func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *run
 	}
 	if rt == nil {
 		return runtimeBranchInvalidError(
-			"runtime branch mux target groups require the standard runtime",
+			"runtime branch mux destination groups require the standard runtime",
 			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching grouped file or URI branches",
 		)
 	}

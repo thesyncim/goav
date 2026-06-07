@@ -16,9 +16,8 @@ err := goav.From(goav.WebRTCTrack(track)).
     Run(ctx)
 ```
 
-Wrap a file, URI, writer, object upload, or sink with
-`goav.Target(name, destination)` when the job needs a stable logical target name
-for diagnostics, explain reports, or later mux grouping.
+Reuse the same file, URI, writer, object upload, or sink destination value when
+several branches should feed one mux or sink group.
 
 Decoded preview:
 
@@ -67,8 +66,8 @@ suggests `StreamID`, `StreamName`, or `StreamIndex(0)`.
 
 `FrameTap` and `PacketTap` name stable points. `Branches` declares downstream
 alternatives from one selected stream. Each branch is an ordered chain: custom
-stages, transforms, taps, optional encode, then typed targets. Mux targets
-require encoded packets; sink targets can receive decoded frames before encode
+stages, transforms, taps, optional encode, then typed destinations. Mux
+destinations require encoded packets; sink destinations can receive decoded frames before encode
 or packets after copy/encode. This keeps complex work natural without exposing
 graph wiring.
 
@@ -76,7 +75,7 @@ graph wiring.
 videoDecoded := goav.FrameTap("video.decoded")
 videoFrames720p := goav.FrameTap("video.720p.frames")
 audioDecoded := goav.FrameTap("audio.decoded")
-main := goav.Target("main", goav.File("main.webm", out))
+main := goav.File("main.webm", out)
 
 err := goav.From(input).
     Video().
@@ -102,14 +101,12 @@ err := goav.From(input).
     Run(ctx)
 ```
 
-One target can be a mux group. Several encoded branches can feed the same
-target. A target can also be a sink for preview, screenshots, analysis, or
-integration work after any branch operation:
+One destination can be a mux group. Several encoded branches can feed the same
+destination. A destination can also be a sink for preview, screenshots, analysis,
+or integration work after any branch operation:
 
 ```go
-thumbs := goav.Target("thumbs",
-    goav.Sink(goav.SinkFunc("thumbs", collectThumbnail)),
-)
+thumbs := goav.Sink(goav.SinkFunc("thumbs", collectThumbnail))
 
 err := goav.From(input).
     Video().
@@ -131,10 +128,8 @@ branch with `From`:
 ```go
 videoDecoded := goav.FrameTap("video.decoded")
 videoFrames720p := goav.FrameTap("video.720p.frames")
-thumbs := goav.Target("thumbs",
-    goav.Sink(goav.SinkFunc("thumbs", collectThumbnail)),
-)
-web := goav.Target("web", goav.File("web.ivf", webFile))
+thumbs := goav.Sink(goav.SinkFunc("thumbs", collectThumbnail))
+web := goav.File("web.ivf", webFile)
 
 err := goav.From(input).
     Video().
@@ -161,9 +156,9 @@ Custom work should be optional and local. A stage can live inside a normal
 stream recipe, a sink can receive frames before encode or packets after
 copy/encode, and a running task can attach a sink from a declared tap.
 Once a stream is in packet domain through `.Copy()` or an encoder, it can fan
-out to both mux targets and packet sinks.
+out to both mux destinations and packet sinks.
 The same packet-domain rule applies to planned branches: `.Copy().Branches(...)`
-can split one selected encoded stream into named mux or sink targets without a
+can split one selected encoded stream into mux or sink destinations without a
 decoder. A branch can also call `.Decode()` first when that packet-domain split
 needs raw frames for analysis, preview, or a later frame-domain tap.
 
@@ -189,7 +184,7 @@ instead of growing special-case APIs.
 
 When chain operations repeat, extract a flow. A flow is only a reusable ordered
 operation sequence: custom stages, taps, transforms, an optional first decode,
-and an optional terminal encoder. Branches own targets, so reusable and ad hoc
+and an optional terminal encoder. Branches own destinations, so reusable and ad hoc
 splits use the same API.
 
 ```go
@@ -203,13 +198,13 @@ voice := goav.Flow("voice").Audio().
 archive := goav.Flow("archive").Audio().
     Resample(48_000, goav.Stereo).
     OpusMusic()
-voiceTarget := goav.Target("voice", goav.File("voice.ogg", voiceFile))
-archiveTarget := goav.Target("archive", goav.File("archive.ogg", archiveFile))
+voiceOut := goav.File("voice.ogg", voiceFile)
+archiveOut := goav.File("archive.ogg", archiveFile)
 
 err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
     Apply(voice).
-    To(voiceTarget).
+    To(voiceOut).
     Run(ctx)
 
 err = goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
@@ -217,23 +212,24 @@ err = goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Decode().
     Tap(audioDecoded).
     Branches(
-        goav.Branch("voice").Apply(voice).To(voiceTarget),
-        goav.Branch("archive").Apply(archive).To(archiveTarget),
+        goav.Branch("voice").Apply(voice).To(voiceOut),
+        goav.Branch("archive").Apply(archive).To(archiveOut),
     ).
     Run(ctx)
 ```
 
 The same flow shape can be applied to a direct stream chain or to a runtime
 branch attached from a tap. The flow still owns only operations; the stream or
-branch owns its target. Use a direct chain when one reusable flow feeds one
-target. Use branches when the same media point needs several downstream chains.
+branch owns its destination. Use a direct chain when one reusable flow feeds one
+destination. Use branches when the same media point needs several downstream
+chains.
 
 ```go
 archiveHandle, err := task.Attach(ctx,
     goav.Branch("archive-live").
         From(audioDecoded).
         Apply(archive).
-        To(archiveTarget),
+        To(archiveOut),
 )
 ```
 
@@ -283,7 +279,7 @@ Late branches can also record future media without rebuilding upstream:
 
 ```go
 audioDecoded := goav.FrameTap("audio.decoded")
-recording := goav.Target("recording", goav.File("recording.ogg", file))
+recording := goav.File("recording.ogg", file)
 
 recordingHandle, err := task.Attach(ctx,
     goav.Branch("record-audio").
@@ -321,13 +317,11 @@ if err != nil {
 defer group.Close(ctx)
 ```
 
-One grouped runtime sink target value can receive several branch outputs:
+One grouped runtime sink destination value can receive several branch outputs:
 
 ```go
 audioDecoded := goav.FrameTap("audio.decoded")
-metered := goav.Target("metered",
-    goav.Sink(goav.SinkFunc("metered", collectMetered)),
-)
+metered := goav.Sink(goav.SinkFunc("metered", collectMetered))
 
 group, err := task.Attach(ctx,
     goav.Branch("fast").From(audioDecoded).To(metered),
@@ -339,15 +333,13 @@ if err != nil {
 defer group.Close(ctx)
 ```
 
-One grouped runtime mux target value can receive several encoded packet
+One grouped runtime mux destination value can receive several encoded packet
 branches:
 
 ```go
 audioEncoded := goav.PacketTap("audio.encoded")
 videoEncoded := goav.PacketTap("video.encoded")
-recording := goav.Target("recording",
-    goav.File("recording.webm", file),
-)
+recording := goav.File("recording.webm", file)
 
 group, err := task.Attach(ctx,
     goav.Branch("audio").From(audioEncoded).Copy().To(recording),
@@ -368,7 +360,7 @@ packets, err := task.Attach(ctx,
     goav.Branch("packet-recording").
         From(audioEncoded).
         Copy().
-        To(goav.Target("recording", goav.File("recording.ogg", file))),
+        To(goav.File("recording.ogg", file)),
 )
 if err != nil {
     return err
@@ -399,7 +391,7 @@ Use `Task.Taps()` to discover stable outlets. Use `Task.Detach(ctx, h)` when
 the caller wants the task to own detach semantics. Runtime branches can be
 attached one at a time or as one atomic group. They can run custom stages,
 resize/resample from frame taps, publish additional taps, encode Opus/VP8/VP9
-from frame taps, copy packet taps into targets, decode packet taps into frame
+from frame taps, copy packet taps into destinations, decode packet taps into frame
 branches, and feed later runtime branches from those taps. Taps declared after
 encode or copy are packet taps. Observer branches can end in a sink while
 publishing a nested tap with
@@ -407,7 +399,7 @@ publishing a nested tap with
 recipe encoding remain work in progress. Detaching a parent runtime branch
 removes dependent late branches anchored from its taps. Direct and bounded
 buffered task graphs both support late stage/sink branches. Runtime branch
-groups can share one typed sink or mux target value.
+groups can share one typed sink or mux destination value.
 
 ## Debug And Diagnostics
 
@@ -491,7 +483,7 @@ err := goav.From(goav.FileInput("input.ivf", in)).
 ```
 
 When packet formats already match, recording can stay packet-preserving. IVF is
-the first concrete target for VP8, VP9, and AV1 packet recording; Annex B covers
+the first concrete focus for VP8, VP9, and AV1 packet recording; Annex B covers
 packet-preserving H264 recording after RTP depacketization.
 
 ## Resample

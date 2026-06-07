@@ -2517,9 +2517,9 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_missing" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_missing wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "target missing is referenced but not defined") ||
-		!strings.Contains(err.Error(), "typed target values") {
-		t.Fatalf("err = %v, want target binding guidance", err)
+	if !strings.Contains(err.Error(), "destination missing is referenced but not defined") ||
+		!strings.Contains(err.Error(), "destination values") {
+		t.Fatalf("err = %v, want destination binding guidance", err)
 	}
 }
 

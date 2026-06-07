@@ -22,9 +22,13 @@ runtime attach. Public vocabulary stays `Input`, `Chain`, `Tap`, `Branch`,
    destinations, edges, decisions, diagnostics, and lifecycle metadata; the
    executor instantiates the plan instead of dispatching by workflow kind.
 2. Collapse `Target` into `Destination`. `File`, `URIOut`, `Writer`, `Object`,
-   `Sink`, and `Custom` should return stable destination handles. Reusing a
-   destination groups branches into one sink or mux destination. Normal docs and
-   examples should not use `Target(...)`, labels, output refs, or `.To("label")`.
+   `Sink`, and `Custom` return stable goav-owned destination handles. Reusing a
+   handle groups branches into one sink or mux destination; a different handle
+   with the same name is a planning error unless the planner can prove the
+   handles are equivalent. Custom behavior is provided through destination
+   providers, not by making external values own routing identity. Normal docs
+   and examples must not use `Target(...)`, labels, output refs, or
+   `.To("label")`.
 3. Treat direct chains as implicit branches. These should be equivalent plan
    shapes except for branch names:
    `From(input).Audio().Decode().To(Sink(...))` and
@@ -71,18 +75,24 @@ runtime attach. Public vocabulary stays `Input`, `Chain`, `Tap`, `Branch`,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
    choices should be visible to realtime users.
 15. Remove old workflow residue from normal composition: `transcode` imports,
-    branch-compose labels, string output refs, `targetNames`, the separate
-    runtime-branch compilation path, and route-policy leaks should be quarantined
-    or deleted from the normal planner.
+    `branchComposePlan`, branch-compose labels, string output refs,
+    `targetNames`, `runtimeBranch`, workflow-kind compiler switches, and
+    route-policy leaks should be quarantined or deleted from the normal planner.
 16. Add runtime observability through task stats, traces, drop reasons, and
    latency counters. Task stats now include graph and per-node counters, and
    runtime attachments expose branch-owned node stats; traces and latency
    counters remain future slices.
-17. Prepare v0.1 only after README examples compile/run or clearly name their
+17. Add acceptance gates for the public grammar. README front-door examples must
+    not use `Record`, `Transcode`, `Decode(input, ...)`, `Path`, `Output`,
+    `Outputs`, `Target`, `.To("label")`, `Runtime.Graph`, graph handles, or
+    normal-code imports of `pipeline`, `codec`, `filter`, `format`, or `rtpav`.
+    Direct chains and explicit `Branch("main")` forms should describe equivalent
+    planned work.
+18. Prepare v0.1 only after README examples compile/run or clearly name their
     adapter requirements, default and tagged tests pass, core stays cgo-free,
     hot-path allocation guards remain green, and one public RTP/WebRTC record
     branch plus one public file transcode branch work end to end.
-18. Confirm `go 1.26` in `go.mod` is intentional before tagging; it sets the
+19. Confirm `go 1.26` in `go.mod` is intentional before tagging; it sets the
     installation floor for users and CI.
 
 ## Phase 0: API sketch

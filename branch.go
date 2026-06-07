@@ -12,6 +12,7 @@ import (
 )
 
 var targetSpecSeq atomic.Uint64
+var destinationSpecSeq atomic.Uint64
 
 // Destination is a concrete media target such as a file, URI, object writer, or
 // media sink. Applications can implement this interface in their own packages.
@@ -99,6 +100,21 @@ func newTargetSpec(name string, dest destinationSpec) targetSpec {
 	}
 }
 
+func newDirectTargetSpec(name string, dest destinationSpec) targetSpec {
+	if name == "" {
+		return targetSpec{dest: dest, err: targetNameMissingError(dest)}
+	}
+	id := dest.id
+	if id == 0 {
+		id = targetSpecSeq.Add(1)
+	}
+	return targetSpec{
+		name: name,
+		dest: dest.withName(firstNonEmpty(dest.name, name)),
+		id:   id,
+	}
+}
+
 func (t targetSpec) destination() destinationBinding {
 	return destinationBinding{target: t, hasTarget: true}
 }
@@ -142,6 +158,7 @@ func destinationSpecFromDestination(dest Destination) (destinationSpec, error) {
 		name := dest.Name()
 		contract := dest.Contract()
 		spec := destinationSpec{
+			id:     destinationSpecSeq.Add(1),
 			custom: dest,
 			name:   name,
 			output: format.Output{
@@ -516,7 +533,7 @@ func appendDestination(spec *BranchSpec, destination destinationBinding, index i
 	case destination.hasDirect:
 		destination := destination.dest
 		targetName := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
-		target := newTargetSpec(targetName, destination)
+		target := newDirectTargetSpec(targetName, destination)
 		if target.err != nil {
 			return target.err
 		}
@@ -982,8 +999,8 @@ func branchMissingError(node string) error {
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
 		Suggestions: []string{
-			"pass branches with goav.Branch(name).VP9(...).To(goav.Target(name, goav.File(...)))",
-			"reuse the same target value from multiple branches when they should share one mux group",
+			"pass branches with goav.Branch(name).VP9(...).To(goav.File(name, writer))",
+			"reuse the same destination value from multiple branches when they should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1006,10 +1023,10 @@ func branchTargetMissingError(name string) error {
 		Code:      "target_missing",
 		Operation: "build branch",
 		Node:      firstNonEmpty(name, "branch"),
-		Reason:    "branch has no target",
+		Reason:    "branch has no destination",
 		Suggestions: []string{
-			"finish the branch with .To(goav.Target(\"web\", goav.File(...)))",
-			"pass goav.File(...), goav.URIOut(...), or goav.Sink(...) directly when no shared target is needed",
+			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
+			"reuse the same destination value when several branches should share one mux or sink group",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1034,8 +1051,8 @@ func destinationInvalidError(operation string, node string, reason string) error
 		Node:      node,
 		Reason:    reason,
 		Suggestions: []string{
-			"use goav.Target(name, goav.File(...)) for named mux/sink groups",
-			"use goav.File(...), goav.URIOut(...), or goav.Sink(...) for one-off targets",
+			"reuse one goav.File(...), goav.URIOut(...), or goav.Sink(...) value for mux/sink groups",
+			"use distinct destination values for independent outputs",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1046,10 +1063,10 @@ func targetNameMissingError(dest destinationSpec) error {
 		Code:      "target_invalid",
 		Operation: "build target",
 		Node:      dest.label("target"),
-		Reason:    "target name is empty",
+		Reason:    "destination name is empty",
 		Suggestions: []string{
-			"call goav.Target(\"web\", goav.File(...)) with a stable target name",
-			"pass goav.File(...) directly to .To(...) when a separate target name is not needed",
+			"pass a named destination such as goav.File(\"web.ivf\", writer)",
+			"pass goav.Sink(goav.SinkFunc(name, fn)) for sink destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

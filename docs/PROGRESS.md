@@ -52,8 +52,11 @@ From(input) -> Chain -> operations -> Tap -> Branch -> Destination -> Task
 The public nouns are `Input`, `Chain`, `Tap`, `Branch`, `Destination`, `Flow`,
 and `Task`. Remove or demote beginner-facing `Target`, `Record`, `Transcode`,
 decode helpers, `Path`, `Output`/`Outputs`, `To("label")`, `Flow.To(...)`,
-compatibility shims, and graph handles as the normal composer. `Destination` is the routing handle: reusing the same `Destination` value groups branches into
-one sink or mux destination.
+compatibility shims, and graph handles as the normal composer. `Destination` is
+the routing handle: reusing the same `Destination` value groups branches into
+one sink or mux destination. External destination behavior belongs behind
+providers and constructors; goav owns destination identity so shared groups are
+reliable.
 
 The implementation target is explicit:
 
@@ -64,7 +67,8 @@ The implementation target is explicit:
   transform, stage, encode, or tap;
 - `Destination` is the target: file, URI, writer, object, frame sink, packet
   sink, event sink, and shared mux/sink group are all destination values with
-  stable identity;
+  stable identity; external implementations use a provider contract instead of
+  becoming routing identities themselves;
 - one planner lowers normalized composition into a `WorkPlan` for initial build
   and a `WorkPatch` for runtime attach;
 - `Explain`, `Build`, `Attach`, and `Snapshot` read the same planned work;
@@ -84,6 +88,50 @@ The implementation target is explicit:
 - codec-specific config, named params, typed controls, bitrate, quality, profile,
   speed/deadline, framerate/FPS, resolution, pixel/sample formats, and adapter
   knobs are owned by shape/codec contracts instead of scattered one-off verbs.
+
+The attached direction is now part of the goal. The required convergence points
+are:
+
+- `File`, `URIOut`, `Writer`, `Object`, `Sink`, and `Custom` return stable
+  destination handles; same handle means shared group, different handle with the
+  same name means a planning error unless the planner can prove equivalence.
+- `DestinationProvider` is the extension point for custom byte/object/sink
+  behavior. `Destination` itself is the goav-owned handle and is not a public
+  graph node, route label, or adapter registry key.
+- Direct `.To(...)` chains are only ergonomic syntax. Internally they lower to
+  the same branch model as `Branches(Branch("main").To(...))`.
+- `BranchSpec`, chain state, runtime attached branches, and `FlowSpec` converge
+  on one ordered operation list. Parallel fields such as `decode`, `steps`,
+  `transforms`, `encode`, post-encode taps, labels, and target-name lists are
+  migration debt until they disappear.
+- Initial build emits `WorkPlan`; runtime attach emits `WorkPatch` from the same
+  planner against existing typed taps. Attach validates destinations and opens
+  them before graph mutation, then rolls back cleanly on failure.
+- `branchComposePlan`, `runtimeBranch`, `targetNames`, string output refs,
+  transcode imports in normal composition, and workflow-kind compiler switches
+  are explicit removal targets, not extension points.
+- `Runtime.Graph`, graph handles, source/stage/sink node wiring, and route APIs
+  belong only in internal or expert-only packages. Normal advanced work is done
+  with custom sources, `Do`, `Sink`, `Writer`, `Object`, `Flow`, `Branch`, and
+  `Task.Attach`.
+- `Flow` stays boring: reusable operations plus media kind, shape contract,
+  taps, and explanation. It has no destination, branch source, route name,
+  runtime state, or lifecycle policy.
+- `Shape` validates every input, operation, flow, tap, branch, sink, byte
+  destination, shared destination, codec, transform, and custom source with
+  expected-vs-actual diagnostics.
+- Observation and live diagnostics remain branch work from typed taps:
+  `Branch(...).From(tap).Do(...).To(Sink(...))`. Add a separate observation API
+  only if branch composition cannot express a real use case.
+- `Snapshot` remains the inspection surface alongside `Events` and stats; do
+  not add bus/caps/pad/bin vocabulary.
+- `Source(name, shape, func(ctx, push) error, ...)` is the missing symmetric
+  primitive for custom packet/frame/event/EOS input.
+- `From(inputs...)` must support multi-input audio/video composition without
+  graph handles, with explicit stream selectors and ambiguity diagnostics.
+- Acceptance gates must forbid normal README examples from using `Record`,
+  `Transcode`, `Decode(input, ...)`, `Path`, `Output`, `Outputs`, `Target`,
+  `.To("label")`, `Runtime.Graph`, or graph handles.
 
 ## Package Status
 
@@ -2083,6 +2131,15 @@ The implementation target is explicit:
     name, lifecycle string, tap/node anchors, branch-owned nodes, nested taps,
     scoped spec, and scoped stats, so live diagnostics can inspect a running task
     without graph handles or manual attachment bookkeeping.
+    Done.
+375. Start collapsing targets into destination handles:
+    Built-in `File`, `URIOut`, `Writer`, `Object`, `WriteCloser`, and `Sink`
+    destinations now carry stable internal identity. Planned branches and runtime
+    attach can share one mux or sink group by reusing the same destination value
+    directly, while two different destination handles with the same name fail
+    during planning. README and use-case examples now teach shared destinations
+    without `Target(...)`, and user-facing duplicate/missing destination
+    diagnostics point at destination values.
     Done.
 
 ## First Vertical Slice
