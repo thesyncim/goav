@@ -1706,6 +1706,73 @@ func TestMuxerDemuxerSupportsWebRTCCodecs(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerSupportsTextUTF8Subtitles(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackSubtitle,
+		Codec:             CodecTextUTF8,
+		Name:              "English captions",
+		Language:          "eng",
+		LanguageBCP47:     "en-US",
+		FlagDefault:       false,
+		FlagDefaultSet:    true,
+		FlagForced:        false,
+		FlagForcedSet:     true,
+		DefaultDurationNS: 2_000_000_000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantText := []byte("Hello from a UTF-8 subtitle.")
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     1_000_000_000,
+		DurationNS: 2_000_000_000,
+		Keyframe:   true,
+		Data:       wantText,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Type != TrackSubtitle ||
+		tracks[0].Codec != CodecTextUTF8 ||
+		tracks[0].Name != "English captions" ||
+		tracks[0].Language != "eng" ||
+		tracks[0].LanguageBCP47 != "en-US" ||
+		len(tracks[0].CodecPrivate) != 0 {
+		t.Fatalf("track = %+v", tracks[0])
+	}
+	got := Packet{Data: make([]byte, 0, 64)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != trackID ||
+		got.TimeNS != 1_000_000_000 ||
+		got.DurationNS != 2_000_000_000 ||
+		!got.Keyframe ||
+		!bytes.Equal(got.Data, wantText) {
+		t.Fatalf("packet = %+v data=%q", got, got.Data)
+	}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
 func TestMuxerDemuxerPreservesMSACMG711CodecPrivate(t *testing.T) {
 	tests := []struct {
 		name  string

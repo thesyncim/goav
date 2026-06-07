@@ -41,6 +41,17 @@ func TestExternalMKVMergeIdentifiesMatroskaWebRTCTracks(t *testing.T) {
 	assertMatroskaIdentifiedTracks(t, got, want)
 }
 
+func TestExternalMKVMergeIdentifiesMatroskaTextSubtitle(t *testing.T) {
+	tool := requireExternalTool(t, "mkvmerge")
+	file, _ := writeTextSubtitleMatroska(t)
+	got := identifyMatroskaTracks(t, tool, file)
+	want := []expectedMatroskaIdentifiedTrack{{
+		Type:    "subtitles",
+		CodecID: "S_TEXT/UTF8",
+	}}
+	assertMatroskaIdentifiedTracks(t, got, want)
+}
+
 func TestExternalFFProbeRecognizesGeneratedMatroskaCodecPrivate(t *testing.T) {
 	tool := requireExternalTool(t, "ffprobe")
 	tests := []struct {
@@ -300,6 +311,13 @@ func TestExternalMKVExtractMatroskaAttachments(t *testing.T) {
 	mkvextract := requireExternalTool(t, "mkvextract")
 	file, want := writeAttachmentOracleMatroska(t)
 	assertMKVExtractMatroskaAttachments(t, mkvmerge, mkvextract, file, want)
+}
+
+func TestExternalMKVExtractMatroskaTextSubtitle(t *testing.T) {
+	mkvmerge := requireExternalTool(t, "mkvmerge")
+	mkvextract := requireExternalTool(t, "mkvextract")
+	file, text := writeTextSubtitleMatroska(t)
+	assertMKVExtractMatroskaTextSubtitle(t, mkvmerge, mkvextract, file, text)
 }
 
 func writeFFmpegAV1OpusMatroskaRecording(t testing.TB) string {
@@ -849,6 +867,50 @@ func writeCueOracleMatroska(t testing.TB) (string, map[int][]externalMatroskaCue
 	}
 }
 
+func writeTextSubtitleMatroska(t testing.TB) (string, string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "text-subtitle.mkv")
+	output, err := os.Create(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxer, err := NewMuxer(output, MuxerOptions{})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:          TrackSubtitle,
+		Codec:         CodecTextUTF8,
+		Name:          "English captions",
+		Language:      "eng",
+		LanguageBCP47: "en-US",
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	text := "Hello from a UTF-8 subtitle."
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     1_000_000_000,
+		DurationNS: 2_000_000_000,
+		Keyframe:   true,
+		Data:       []byte(text),
+	}); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return file, text
+}
+
 func probeExternalMatroskaPackets(t testing.TB, tool string, file string) []externalMatroskaPacket {
 	t.Helper()
 	output := runExternalTool(t, tool, "-v", "quiet", "-show_entries", "packet=stream_index,pts_time,duration_time,flags,size", "-of", "json", file)
@@ -1349,6 +1411,21 @@ func assertMKVExtractMatroskaAttachments(t testing.TB, mkvmerge string, mkvextra
 	}
 }
 
+func assertMKVExtractMatroskaTextSubtitle(t testing.TB, mkvmerge string, mkvextract string, file string, text string) {
+	t.Helper()
+	trackID := requireMatroskaIdentifiedTrackID(t, identifyMatroskaTracks(t, mkvmerge, file), expectedMatroskaIdentifiedTrack{
+		Type:    "subtitles",
+		CodecID: "S_TEXT/UTF8",
+	})
+	out := filepath.Join(t.TempDir(), "subtitle.srt")
+	runExternalTool(t, mkvextract, file, "tracks", fmt.Sprintf("%d:%s", trackID, out))
+	assertFileContainsAll(t, "mkvextract subtitle", out, []string{
+		"1",
+		"00:00:01,000 --> 00:00:03,000",
+		text,
+	})
+}
+
 func identifyMatroskaAttachments(t testing.TB, tool string, file string) []identifiedMatroskaAttachment {
 	t.Helper()
 	output := runExternalTool(t, tool, "-J", file)
@@ -1389,6 +1466,7 @@ func matroskaJSONPayload(output string) string {
 }
 
 type identifiedMatroskaTrack struct {
+	ID         int    `json:"id"`
 	Type       string `json:"type"`
 	Properties struct {
 		CodecID                string  `json:"codec_id"`
@@ -1428,6 +1506,17 @@ func assertMatroskaIdentifiedTracks(t testing.TB, got []identifiedMatroskaTrack,
 			t.Fatalf("mkvmerge missing track %+v in %+v", want[i], got)
 		}
 	}
+}
+
+func requireMatroskaIdentifiedTrackID(t testing.TB, got []identifiedMatroskaTrack, want expectedMatroskaIdentifiedTrack) int {
+	t.Helper()
+	for i := range got {
+		if matroskaIdentifiedTrackMatches(got[i], want) {
+			return got[i].ID
+		}
+	}
+	t.Fatalf("mkvmerge missing track %+v in %+v", want, got)
+	return 0
 }
 
 func matroskaIdentifiedTrackMatches(got identifiedMatroskaTrack, want expectedMatroskaIdentifiedTrack) bool {

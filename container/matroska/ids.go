@@ -219,8 +219,9 @@ const (
 )
 
 const (
-	matroskaTrackVideo = 1
-	matroskaTrackAudio = 2
+	matroskaTrackVideo    = 1
+	matroskaTrackAudio    = 2
+	matroskaTrackSubtitle = 17
 
 	simpleBlockKeyframe    = 0x80
 	simpleBlockInvisible   = 0x08

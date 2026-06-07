@@ -4141,6 +4141,8 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				track.Type = TrackAudio
 			case matroskaTrackVideo:
 				track.Type = TrackVideo
+			case matroskaTrackSubtitle:
+				track.Type = TrackSubtitle
 			default:
 				track.Type = TrackUnknown
 			}

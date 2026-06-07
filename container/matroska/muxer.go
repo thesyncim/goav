@@ -3560,6 +3560,10 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 		if err := tw.WriteUInt(idTrackType, matroskaTrackAudio); err != nil {
 			return err
 		}
+	case TrackSubtitle:
+		if err := tw.WriteUInt(idTrackType, matroskaTrackSubtitle); err != nil {
+			return err
+		}
 	default:
 		return ErrInvalidTrack
 	}
@@ -4159,7 +4163,7 @@ func writeAudio(w *ebml.Writer, audio AudioConfig) error {
 }
 
 func validateTrack(track Track) error {
-	if track.Type != TrackAudio && track.Type != TrackVideo {
+	if track.Type != TrackAudio && track.Type != TrackVideo && track.Type != TrackSubtitle {
 		return ErrInvalidTrack
 	}
 	if track.DefaultDurationNS < 0 || track.DefaultDecodedFieldDurationNS < 0 || track.CodecDelayNS < 0 || track.SeekPreRollNS < 0 {
@@ -4259,6 +4263,10 @@ func validateTrack(track Track) error {
 			}
 		case CodecVP8, CodecVP9:
 		default:
+			return ErrInvalidTrack
+		}
+	case TrackSubtitle:
+		if track.Codec != CodecTextUTF8 || len(track.CodecPrivate) != 0 {
 			return ErrInvalidTrack
 		}
 	}

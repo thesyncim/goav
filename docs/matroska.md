@@ -94,8 +94,9 @@ Current milestone:
   dependency information is not available.
 - Xiph, fixed-size, and EBML laced block muxing and demuxing with bounded
   scratch buffers.
-- Matroska mux/demux for Opus, PCMU, PCMA, VP8, VP9, AV1, H.264, and H.265
-  track declarations, with WebM enforcing Opus, VP8, VP9, and AV1 only.
+- Matroska mux/demux for Opus, PCMU, PCMA, VP8, VP9, AV1, H.264, H.265, and
+  S_TEXT/UTF8 subtitle track declarations, with WebM enforcing Opus, VP8, VP9,
+  and AV1 only.
 - The WebRTC codec surface exposed by `av` is covered by Matroska:
   Opus, AV1, H.264, VP9, and VP8. WebM covers the valid WebM subset:
   Opus, AV1, VP9, and VP8.
@@ -327,6 +328,8 @@ Current mappings:
   record. Public packets use Annex B access units; stored samples use HEVC
   length-prefixed NAL units when the length size is known from codec-private
   data.
+- UTF-8 text subtitles: `S_TEXT/UTF8` with subtitle packets carrying the text
+  payload and packet timestamps/durations carrying the cue timing.
 
 When several tracks need generated codec-private data, the muxer defers header
 emission until each required track has supplied a seed packet. Accepted
@@ -394,9 +397,10 @@ Compatibility tools are optional in CI and run when installed:
 - `mkvmerge`
 
 Current external checks cover WebM VP8/VP9/AV1/Opus files, Matroska files
-carrying the WebRTC codec set, and Matroska H.264/AV1 files whose
-codec-private data is generated from the first packet. Internal generated-path
-checks also cover H.265 HEVC private-data generation and packet conversion.
+carrying the WebRTC codec set, Matroska S_TEXT/UTF8 subtitle extraction, and
+Matroska H.264/AV1 files whose codec-private data is generated from the first
+packet. Internal generated-path checks also cover H.265 HEVC private-data
+generation and packet conversion.
 The external checks also generate small
 FFmpeg-authored Matroska/WebM files, read them through the Go demuxers, remux
 the first packet through the Go muxers, and verify the remuxed output with

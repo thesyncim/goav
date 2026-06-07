@@ -31,13 +31,14 @@ const (
 )
 
 const (
-	codecIDOpus = "A_OPUS"
-	codecIDMS   = "A_MS/ACM"
-	codecIDVP8  = "V_VP8"
-	codecIDVP9  = "V_VP9"
-	codecIDAV1  = "V_AV1"
-	codecIDH264 = "V_MPEG4/ISO/AVC"
-	codecIDH265 = "V_MPEGH/ISO/HEVC"
+	codecIDOpus     = "A_OPUS"
+	codecIDMS       = "A_MS/ACM"
+	codecIDVP8      = "V_VP8"
+	codecIDVP9      = "V_VP9"
+	codecIDAV1      = "V_AV1"
+	codecIDH264     = "V_MPEG4/ISO/AVC"
+	codecIDH265     = "V_MPEGH/ISO/HEVC"
+	codecIDTextUTF8 = "S_TEXT/UTF8"
 )
 
 func matroskaCodecID(codec Codec) (string, error) {
@@ -56,6 +57,8 @@ func matroskaCodecID(codec Codec) (string, error) {
 		return codecIDH264, nil
 	case CodecH265:
 		return codecIDH265, nil
+	case CodecTextUTF8:
+		return codecIDTextUTF8, nil
 	default:
 		return "", ErrUnsupportedCodec
 	}
@@ -75,6 +78,8 @@ func codecFromMatroskaID(id string, private []byte) Codec {
 		return CodecH264
 	case codecIDH265:
 		return CodecH265
+	case codecIDTextUTF8:
+		return CodecTextUTF8
 	case codecIDMS:
 		if len(private) >= 2 {
 			return codecFromMSACMTag(binary.LittleEndian.Uint16(private[:2]))
@@ -108,6 +113,8 @@ func codecFromAV(id av.CodecID) Codec {
 		return CodecH264
 	case av.CodecPCM:
 		return CodecUnknown
+	case av.CodecTextUTF8:
+		return CodecTextUTF8
 	default:
 		return CodecUnknown
 	}
@@ -127,6 +134,8 @@ func codecToAV(codec Codec) av.CodecID {
 		return av.CodecH264
 	case CodecPCMU, CodecPCMA:
 		return av.CodecPCM
+	case CodecTextUTF8:
+		return av.CodecTextUTF8
 	default:
 		return av.CodecUnknown
 	}

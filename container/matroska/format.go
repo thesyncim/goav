@@ -289,12 +289,16 @@ func trackFromAVStream(stream av.Stream, fallbackID uint32) (Track, error) {
 		track.Type = TrackAudio
 	case av.MediaVideo:
 		track.Type = TrackVideo
+	case av.MediaSubtitle:
+		track.Type = TrackSubtitle
 	default:
 		switch stream.Codec.Type {
 		case av.MediaAudio:
 			track.Type = TrackAudio
 		case av.MediaVideo:
 			track.Type = TrackVideo
+		case av.MediaSubtitle:
+			track.Type = TrackSubtitle
 		default:
 			return Track{}, ErrInvalidTrack
 		}
@@ -317,6 +321,8 @@ func streamFromTrack(track Track, index int) av.Stream {
 		streamType = av.MediaAudio
 	case TrackVideo:
 		streamType = av.MediaVideo
+	case TrackSubtitle:
+		streamType = av.MediaSubtitle
 	}
 	stream := av.Stream{
 		ID:       av.StreamID(strconv.FormatUint(uint64(track.ID), 10)),

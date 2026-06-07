@@ -14,6 +14,7 @@ const (
 	CodecAV1
 	CodecH264
 	CodecH265
+	CodecTextUTF8
 )
 
 type TrackType int
@@ -22,6 +23,7 @@ const (
 	TrackUnknown TrackType = iota
 	TrackAudio
 	TrackVideo
+	TrackSubtitle
 )
 
 type AudioConfig struct {
