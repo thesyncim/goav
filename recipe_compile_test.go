@@ -2155,6 +2155,59 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	}
 }
 
+func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: &decodeTestDemuxer{streams: streams}}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		Do(&runtimeTestStage{name: "meter"}).
+		Opus(96_000).
+		To(FileOutput("archive.ogg", io.Discard))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	stream, ok := resolved.singleStreamIntent()
+	if !ok {
+		t.Fatalf("resolved intent streams = %+v, want one stream", resolved.intent.Streams)
+	}
+	builder, ok, err := mediaPlanSingleStreamBuilder(resolved.runtime, resolved.inputAttachments, resolved.outputAttachments, stream)
+	if err != nil || !ok {
+		t.Fatalf("mediaPlanSingleStreamBuilder ok=%v err=%v", ok, err)
+	}
+	spec, err := builder.planDecodeEncodeToOutput(pipeline.Spec{Name: "goav", Realtime: runtimeValue(t, runtime).realtime})
+	if err != nil {
+		t.Fatalf("planDecodeEncodeToOutput() error = %v", err)
+	}
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	if !reflect.DeepEqual(spec, planned) {
+		t.Fatalf("attachment-built spec = %+v, resolved spec = %+v", spec, planned)
+	}
+	if !specHasNode(spec, "meter") || !specHasNode(spec, "encode-audio") || !specHasNode(spec, "archive.ogg") {
+		t.Fatalf("spec = %+v, want stage, encoder, and target from resolved attachments", spec)
+	}
+	if len(resolved.streamAttachments) == 0 {
+		t.Fatalf("resolved stream attachments are empty; taps and custom stages should be carried on the resolved recipe")
+	}
+}
+
 func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkEndpoint(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}

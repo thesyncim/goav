@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -25,8 +26,15 @@ func (r recipeResolved) buildMediaPlanPacketCopyTask(ctx context.Context) (Task,
 }
 
 func (r recipeResolved) buildMediaPlanSinkEndpointTask(ctx context.Context) (Task, error) {
-	builder, ok := r.builder.(*builder)
-	if !ok || !builderCanBuildSinkEndpoint(builder) {
+	stream, ok := r.singleStreamIntent()
+	if !ok || !mediaPlanSinkEndpointShape(stream, r.outputAttachments) {
+		return nil, recipeGraphUnsupportedError("build job", r.intent)
+	}
+	builder, ok, err := mediaPlanSingleStreamBuilder(r.runtime, r.inputAttachments, r.outputAttachments, stream)
+	if err != nil || !ok {
+		if err != nil {
+			return nil, err
+		}
 		return nil, recipeGraphUnsupportedError("build job", r.intent)
 	}
 	graph, err := builder.newGraph(ctx)
@@ -41,8 +49,15 @@ func (r recipeResolved) buildMediaPlanSinkEndpointTask(ctx context.Context) (Tas
 }
 
 func (r recipeResolved) buildMediaPlanEncodeTask(ctx context.Context) (Task, error) {
-	builder, ok := r.builder.(*builder)
-	if !ok || !builderCanBuildEncodeOutput(builder) {
+	stream, ok := r.singleStreamIntent()
+	if !ok || !mediaPlanEncodeShape(stream, r.outputAttachments) {
+		return nil, recipeGraphUnsupportedError("build job", r.intent)
+	}
+	builder, ok, err := mediaPlanSingleStreamBuilder(r.runtime, r.inputAttachments, r.outputAttachments, stream)
+	if err != nil || !ok {
+		if err != nil {
+			return nil, err
+		}
 		return nil, recipeGraphUnsupportedError("build job", r.intent)
 	}
 	graph, err := builder.newGraph(ctx)
@@ -86,6 +101,112 @@ func branchComposePlanBuilder(runtime *runtime, input InputSpec) *builder {
 		builder.rtpInputs = []rtpInput{input.rtpBuildInput()}
 	}
 	return builder
+}
+
+func (r recipeResolved) singleStreamIntent() (StreamIntent, bool) {
+	if len(r.intent.Streams) != 1 {
+		return StreamIntent{}, false
+	}
+	return r.intent.Streams[0], true
+}
+
+func mediaPlanSingleStreamBuilder(rt Runtime, inputs []InputSpec, outputs []EndpointSpec, stream StreamIntent) (*builder, bool, error) {
+	runtime, ok := rt.(*runtime)
+	if !ok || runtime == nil {
+		return nil, false, nil
+	}
+	builder := &builder{runtime: runtime}
+	if ok := mediaPlanAttachStreamInputs(builder, inputs); !ok {
+		return nil, false, nil
+	}
+	selector := streamIntentSelector(stream)
+	builder.decodes = []decodeRequest{{
+		selector:    selector,
+		codecChange: stream.CodecChange,
+	}}
+	filters, err := mediaPlanStreamFilters(stream)
+	if err != nil {
+		return nil, false, err
+	}
+	builder.filters = filters
+	if codecIntentSet(stream.Encode) && !stream.Encode.Copy {
+		builder.encodes = []encodeRequest{{
+			selector: selector,
+			config:   encodeConfigFromSpec(stream.Encode),
+		}}
+	}
+	mediaPlanAttachStreamOutputs(builder, outputs)
+	return builder, true, nil
+}
+
+func mediaPlanAttachStreamInputs(builder *builder, inputs []InputSpec) bool {
+	if len(inputs) == 1 && inputs[0].rtp == nil {
+		builder.inputs = []format.Input{inputs[0].formatInput()}
+		return true
+	}
+	if !allRTPInputSpecs(inputs) {
+		return false
+	}
+	builder.rtpInputs = make([]rtpInput, 0, len(inputs))
+	for i := range inputs {
+		builder.rtpInputs = append(builder.rtpInputs, inputs[i].rtpBuildInput())
+	}
+	return true
+}
+
+func mediaPlanAttachStreamOutputs(builder *builder, outputs []EndpointSpec) {
+	for i := range outputs {
+		output := outputs[i]
+		if output.sink != nil {
+			builder.sinks = append(builder.sinks, output.sink)
+			continue
+		}
+		builder.outputWithFormats(output.output, endpointSpecOpenFormat(output), endpointSpecGraphFormat(output))
+	}
+}
+
+func mediaPlanStreamFilters(stream StreamIntent) ([]filterRequest, error) {
+	selector := streamIntentSelector(stream)
+	if len(stream.Operations) == 0 {
+		return mediaPlanStreamTransformFilters(stream, selector)
+	}
+	filters := make([]filterRequest, 0, len(stream.Operations))
+	frameStepIndex := 0
+	for i := range stream.Operations {
+		operation := stream.Operations[i]
+		switch operation.Kind {
+		case OpStage:
+			if operation.Stage == nil {
+				return nil, streamStageMissingError(stream)
+			}
+			filters = append(filters, filterRequest{selector: selector, stage: operation.Stage})
+			frameStepIndex++
+		case OpTransform:
+			transform, err := streamTransform(stream.Name, selector, operation.Transform, frameStepIndex)
+			if err != nil {
+				return nil, err
+			}
+			filters = append(filters, filterRequest{selector: selector, transform: &transform})
+			frameStepIndex++
+		case OpTap:
+			if operation.Tap.After == "" {
+				frameStepIndex++
+			}
+		}
+	}
+	return filters, nil
+}
+
+func mediaPlanStreamTransformFilters(stream StreamIntent, selector av.StreamSelector) ([]filterRequest, error) {
+	filters := make([]filterRequest, 0, len(stream.Transforms))
+	for i := range stream.Transforms {
+		transform, err := streamTransform(stream.Name, selector, stream.Transforms[i], i)
+		if err != nil {
+			return nil, err
+		}
+		filters = append(filters, filterRequest{selector: selector, transform: &transform})
+	}
+	return filters, nil
 }
 
 func (r recipeResolved) compileMediaPlanEncode(ctx context.Context, builder *builder, graph pipeline.Graph) error {

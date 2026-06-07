@@ -203,14 +203,6 @@ func (b *builder) Output(output format.Output) builderAPI {
 	return b.outputWithFormats(output, "", "")
 }
 
-func (b *builder) outputWithFormat(output format.Output, formatID av.FormatID) builderAPI {
-	return b.outputWithFormats(output, formatID, formatID)
-}
-
-func (b *builder) resolvedOutputWithFormat(output format.Output, formatID av.FormatID) builderAPI {
-	return b.outputWithFormats(output, formatID, "")
-}
-
 func (b *builder) outputWithFormats(output format.Output, openFormat av.FormatID, detailFormat av.FormatID) builderAPI {
 	b.outputs = append(b.outputs, output)
 	b.outputFmts = append(b.outputFmts, openFormat)

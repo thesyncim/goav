@@ -19,6 +19,7 @@ type recipeResolved struct {
 	mediaBuildKind        string
 	inputAttachments      []InputSpec
 	outputAttachments     []EndpointSpec
+	streamAttachments     []jobStreamStepAttachment
 	inputProbes           []format.ProbeResult
 	branchInputAttachment InputSpec
 	branchInputProbe      format.ProbeResult
@@ -167,6 +168,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		mediaBuildKind:        state.mediaBuildKind,
 		inputAttachments:      append([]InputSpec(nil), state.inputAttachments...),
 		outputAttachments:     append([]EndpointSpec(nil), state.outputAttachments...),
+		streamAttachments:     append([]jobStreamStepAttachment(nil), state.streamSteps...),
 		inputProbes:           append([]format.ProbeResult(nil), state.inputProbes...),
 		branchInputAttachment: state.branchInputAttachment,
 		branchInputProbe:      state.branchInputProbe,
@@ -299,9 +301,6 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobKnownInputDecodeAdaptersPass(),
 		openRecipeRuntimeBuilderPass(),
 		validateJobStreamRuntimeCapabilitiesPass(),
-		lowerJobInputsPass(),
-		lowerJobStreamPass(),
-		lowerJobOutputsPass(),
 		emitMediaPlanGraphSpecPass(),
 		validateMuxCompatibilityPass(),
 		requireMediaPlanGraphSpecPass(),
@@ -918,43 +917,6 @@ func validateJobStreamRuntimeCapabilitiesPass() recipeCompilePass {
 			return nil
 		}
 		return validateJobStreamRuntimeCapabilities(state.operation, state.builder, stream)
-	}}
-}
-
-func lowerJobInputsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "lower job inputs", fn: func(state *recipeCompileState) error {
-		for i := range state.inputAttachments {
-			state.builder = state.inputAttachments[i].apply(state.builder)
-		}
-		return nil
-	}}
-}
-
-func lowerJobStreamPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "lower job stream", fn: func(state *recipeCompileState) error {
-		stream, ok := jobIntentStream(state.intent)
-		if !ok {
-			return nil
-		}
-		builder, err := applyJobStream(state.builder, state.outputAttachments, stream, state.streamSteps)
-		if err != nil {
-			return err
-		}
-		state.builder = builder
-		return nil
-	}}
-}
-
-func lowerJobOutputsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "lower job outputs", fn: func(state *recipeCompileState) error {
-		for i := range state.outputAttachments {
-			builder, err := state.outputAttachments[i].apply(state.builder)
-			if err != nil {
-				return err
-			}
-			state.builder = builder
-		}
-		return nil
 	}}
 }
 

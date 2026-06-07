@@ -116,9 +116,13 @@ func mediaPlanSinkEndpointSpec(state *recipeCompileState) (pipeline.Spec, bool, 
 	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
 		return pipeline.Spec{}, false, nil
 	}
-	builder, ok := state.builder.(*builder)
-	if !ok || !builderCanBuildSinkEndpoint(builder) {
+	stream := state.intent.Streams[0]
+	if !mediaPlanSinkEndpointShape(stream, state.outputAttachments) {
 		return pipeline.Spec{}, false, nil
+	}
+	builder, ok, err := mediaPlanSingleStreamBuilder(state.runtime, state.inputAttachments, state.outputAttachments, stream)
+	if err != nil || !ok {
+		return pipeline.Spec{}, ok, err
 	}
 	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
 	switch {
@@ -139,24 +143,25 @@ func mediaPlanSinkEndpointSpec(state *recipeCompileState) (pipeline.Spec, bool, 
 	}
 }
 
-func builderCanBuildSinkEndpoint(builder *builder) bool {
-	return builder != nil &&
-		len(builder.decodes) == 1 &&
-		len(builder.sinks) == 1 &&
-		len(builder.outputs) == 0 &&
-		len(builder.encodes) <= 1 &&
-		len(builder.transcodes) == 0 &&
-		len(builder.sources) == 0 &&
-		len(builder.stages) == 0
+func mediaPlanSinkEndpointShape(stream StreamIntent, outputs []EndpointSpec) bool {
+	return len(outputs) == 1 &&
+		outputs[0].sink != nil &&
+		stream.Decode &&
+		len(stream.Targets) == 1 &&
+		!stream.Encode.Copy
 }
 
 func mediaPlanEncodeSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
 	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
 		return pipeline.Spec{}, false, nil
 	}
-	builder, ok := state.builder.(*builder)
-	if !ok || !builderCanBuildEncodeOutput(builder) {
+	stream := state.intent.Streams[0]
+	if !mediaPlanEncodeShape(stream, state.outputAttachments) {
 		return pipeline.Spec{}, false, nil
+	}
+	builder, ok, err := mediaPlanSingleStreamBuilder(state.runtime, state.inputAttachments, state.outputAttachments, stream)
+	if err != nil || !ok {
+		return pipeline.Spec{}, ok, err
 	}
 	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
 	switch {
@@ -171,15 +176,16 @@ func mediaPlanEncodeSpec(state *recipeCompileState) (pipeline.Spec, bool, error)
 	}
 }
 
-func builderCanBuildEncodeOutput(builder *builder) bool {
-	return builder != nil &&
-		len(builder.decodes) == 1 &&
-		len(builder.encodes) == 1 &&
-		len(builder.outputs) > 0 &&
-		len(builder.sinks) == 0 &&
-		len(builder.transcodes) == 0 &&
-		len(builder.sources) == 0 &&
-		len(builder.stages) == 0
+func mediaPlanEncodeShape(stream StreamIntent, outputs []EndpointSpec) bool {
+	if !stream.Decode || !codecIntentSet(stream.Encode) || stream.Encode.Copy || len(outputs) == 0 {
+		return false
+	}
+	for i := range outputs {
+		if outputs[i].sink != nil {
+			return false
+		}
+	}
+	return len(stream.Targets) == len(outputs)
 }
 
 func mediaPlanBranchComposerSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {

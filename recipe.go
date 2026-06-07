@@ -419,13 +419,6 @@ func (s InputSpec) MaxTimestampGap(gap av.Duration) InputSpec {
 	return s
 }
 
-func (s InputSpec) apply(builder builderAPI) builderAPI {
-	if s.rtp == nil {
-		return builder.Input(s.formatInput())
-	}
-	return builder.RTP(s.rtp.receiver, s.rtpOptions()...)
-}
-
 func (s InputSpec) formatInput() format.Input {
 	input := s.input
 	input.Realtime = input.Realtime || s.realtime
@@ -708,14 +701,6 @@ type EndpointSpec struct {
 	err            error
 }
 
-type formattedOutputBuilder interface {
-	outputWithFormat(format.Output, av.FormatID) builderAPI
-}
-
-type resolvedFormattedOutputBuilder interface {
-	resolvedOutputWithFormat(format.Output, av.FormatID) builderAPI
-}
-
 // FileOutput creates a writer-backed file endpoint.
 func FileOutput(name string, writer io.Writer) EndpointSpec {
 	return EndpointSpec{
@@ -776,42 +761,6 @@ func (s EndpointSpec) Format(format av.FormatID) EndpointSpec {
 func (s EndpointSpec) withResolvedFormat(format av.FormatID) EndpointSpec {
 	s.resolvedFormat = format
 	return s
-}
-
-func (s EndpointSpec) apply(builder builderAPI) (builderAPI, error) {
-	if s.sink != nil {
-		return builder.Sink(s.sink), nil
-	}
-	switch {
-	case s.format != "":
-		formatted, ok := builder.(formattedOutputBuilder)
-		if !ok {
-			return nil, outputFormatUnsupportedError("build job", s)
-		}
-		return formatted.outputWithFormat(s.output, s.format), nil
-	case s.resolvedFormat != "":
-		formatted, ok := builder.(resolvedFormattedOutputBuilder)
-		if !ok {
-			return nil, outputFormatUnsupportedError("build job", s)
-		}
-		return formatted.resolvedOutputWithFormat(s.output, s.resolvedFormat), nil
-	default:
-		return builder.Output(s.output), nil
-	}
-}
-
-func outputFormatUnsupportedError(operation string, output EndpointSpec) error {
-	return &BuildError{
-		Code:      "output_format_unsupported",
-		Operation: operation,
-		Node:      output.label("output"),
-		Reason:    "runtime builder cannot receive a concrete output format",
-		Suggestions: []string{
-			"use goav.Default() or goav.New(...) for recipe output formats",
-			"use a named output whose extension can be probed by the runtime",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
 }
 
 func (s EndpointSpec) validate(operation string, fallback string) error {
@@ -1243,69 +1192,6 @@ func jobAllOutputs(outputs []EndpointSpec, streamOutputs []EndpointSpec) []Endpo
 	all = append(all, outputs...)
 	all = append(all, streamOutputs...)
 	return all
-}
-
-func (j *Job) applyStream(builder builderAPI, stream *jobStreamBuild) (builderAPI, error) {
-	intent, ok := jobStreamIntentIfPresent(stream)
-	if !ok {
-		return builder, nil
-	}
-	return applyJobStream(builder, j.allOutputs(), intent, jobStreamStepAttachments(stream))
-}
-
-func applyJobStream(builder builderAPI, outputs []EndpointSpec, stream StreamIntent, steps []jobStreamStepAttachment) (builderAPI, error) {
-	selector := streamIntentSelector(stream)
-	node := jobStreamIntentName(stream)
-	if err := validateJobStreamIntentShape("build stream", stream, steps); err != nil {
-		return nil, err
-	}
-	if err := validateJobStreamOutputKinds("build stream", stream, outputs); err != nil {
-		return nil, err
-	}
-	if err := validateJobStreamRuntimeCapabilities("build stream", builder, stream); err != nil {
-		return nil, err
-	}
-	if stream.Decode || len(steps) != 0 || stream.Encode.ID != "" {
-		if codecChangePolicySet(stream.CodecChange) {
-			internal, ok := builder.(interface {
-				decodeWithPolicy(av.StreamSelector, CodecChangePolicy) builderAPI
-			})
-			if !ok {
-				return nil, streamCodecChangeRuntimeUnsupportedError("build stream", node)
-			}
-			builder = internal.decodeWithPolicy(selector, stream.CodecChange)
-		} else {
-			builder = builder.Decode(selector)
-		}
-	}
-	for i := range steps {
-		step := steps[i]
-		if step.stage != nil {
-			builder = builder.Filter(selector, step.stage)
-			continue
-		}
-		if step.tap != "" {
-			continue
-		}
-		if !step.hasTransform || step.transformIndex < 0 || step.transformIndex >= len(stream.Transforms) {
-			return nil, streamStageMissingError(stream)
-		}
-		transform, err := streamTransform(stream.Name, selector, stream.Transforms[step.transformIndex], step.stepIndex)
-		if err != nil {
-			return nil, err
-		}
-		internal, ok := builder.(interface {
-			transform(av.StreamSelector, mediaTransform) builderAPI
-		})
-		if !ok {
-			return nil, streamTransformRuntimeUnsupportedError("build stream", node)
-		}
-		builder = internal.transform(selector, transform)
-	}
-	if stream.Encode.ID != "" {
-		builder = builder.Encode(selector, encodeConfigFromSpec(stream.Encode))
-	}
-	return builder, nil
 }
 
 func jobStreamIntentIfPresent(stream *jobStreamBuild) (StreamIntent, bool) {

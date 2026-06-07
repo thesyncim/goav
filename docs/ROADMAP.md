@@ -30,8 +30,11 @@ make the implementation match the composable planner promise.
    recipe-owned branch-compose plan; the advanced `transcode.Plan` path adapts
    into that plan instead of being the recipe IR. Runtime branch-composer helpers
    now use branch/media naming, and branch inputs stay on the resolved plan until
-   describe/build. The remaining work is to remove builder-shaped lowering behind
-   the other media-plan build kinds.
+   describe/build. Direct stream decode/encode recipes now keep resolved inputs,
+   endpoints, ordered stream attachments, codec-change policy, custom stages,
+   transforms, and taps until the media-plan boundary instead of compiling from
+   pre-lowered builder state. The remaining work is deeper direct graph
+   construction and capability planning behind those media-plan build kinds.
 4. Add a capability model for streams, codecs, filters, and containers so the
    planner can explain copy/decode/encode choices, missing adapters, transform
    incompatibilities, and mux-output conflicts before runtime execution.
@@ -146,8 +149,9 @@ make the implementation match the composable planner promise.
 - Fluent receive/decode/filter/encode/output recipes for selected streams.
   First file/protocol and RTP/WebRTC planner slices are active.
 - `MediaPlan` as the shared branch-operation IR for record, decode, reusable
-  branches, and transcode recipes. First `Explain(ctx)` report slice is active;
-  direct `Describe`/`Build` lowering remains planned.
+  branches, and transcode recipes. `Explain(ctx)`, media-plan `Describe`, and
+  resolved-attachment `Build` slices are active for record, direct streams, and
+  branch composition; deeper direct graph construction remains planned.
 - Reusable `AudioFlow`/`VideoFlow` values that apply to stream chains,
   branches, and non-encoding runtime attachments. Build-time file/protocol and
   RTP/WebRTC branch slices are active; runtime stage/sink attachments are active

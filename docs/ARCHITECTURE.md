@@ -59,9 +59,12 @@ advanced `transcode.Plan` path adapts into that internal shape at its boundary
 instead of being the recipe IR. Runtime branch-composer graph helpers now operate
 on branch-compose routes, target routes, selector/stream groups, and media
 transforms. Branch-composition inputs are carried by the resolved recipe and are
-turned into a minimal graph builder only at describe/build time. The next
-architectural pressure is to shrink the remaining builder-shaped lowering behind
-the other media-plan build kinds until graph construction is directly
+turned into a minimal graph builder only at describe/build time. Direct
+selected-stream decode/encode recipes also keep their inputs, endpoints, ordered
+stream attachments, codec-change policy, custom stages, transforms, and taps on
+the resolved recipe until the media-plan boundary. The next architectural
+pressure is to move those boundary helpers toward direct graph construction
+where it reduces duplication while keeping the flow
 `Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph`.
 
 The handle-based graph builder remains available as the advanced layer through
