@@ -8,6 +8,7 @@ import (
 	"math"
 
 	"github.com/thesyncim/goav/container/ebml"
+	"github.com/woozymasta/lzo"
 )
 
 type Muxer struct {
@@ -2111,6 +2112,8 @@ func blockPayloadSize(track Track, data []byte) (int, error) {
 			return 0, ErrInvalidData
 		case blockContentTransformBzlib:
 			return 0, ErrUnsupportedContentEncoding
+		case blockContentTransformLZO1X:
+			return 0, ErrInvalidData
 		default:
 			return 0, ErrUnsupportedContentEncoding
 		}
@@ -2145,6 +2148,8 @@ func (m *Muxer) muxedBlockPayload(track Track, data []byte) ([]byte, error) {
 		return payload, nil
 	case blockContentTransformZlib:
 		return m.zlibCompressBlockPayload(payload)
+	case blockContentTransformLZO1X:
+		return m.lzoCompressBlockPayload(payload)
 	default:
 		return nil, ErrUnsupportedContentEncoding
 	}
@@ -2176,6 +2181,10 @@ func (m *Muxer) zlibCompressBlockPayload(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return m.blockPayload.Bytes(), nil
+}
+
+func (m *Muxer) lzoCompressBlockPayload(data []byte) ([]byte, error) {
+	return lzo.Compress(data, nil)
 }
 
 func (m *Muxer) prepareLacedBlockPayload(frames [][]byte, track Track, sizes []int) ([]byte, error) {
@@ -3261,6 +3270,7 @@ const (
 	blockContentTransformNone blockContentTransform = iota
 	blockContentTransformZlib
 	blockContentTransformBzlib
+	blockContentTransformLZO1X
 )
 
 type blockContentEncodingInfo struct {
@@ -3306,6 +3316,15 @@ func blockContentEncoding(track Track) (blockContentEncodingInfo, error) {
 				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 			}
 			out.compression = blockContentTransformBzlib
+			out.compressionOrder = encoding.Order
+		case ContentCompAlgoLZO1X:
+			if len(encoding.Compression.Settings) != 0 {
+				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+			}
+			if out.compression != blockContentTransformNone {
+				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+			}
+			out.compression = blockContentTransformLZO1X
 			out.compressionOrder = encoding.Order
 		default:
 			return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding

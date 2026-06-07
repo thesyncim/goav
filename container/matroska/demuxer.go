@@ -12,6 +12,7 @@ import (
 	"math"
 
 	"github.com/thesyncim/goav/container/ebml"
+	"github.com/woozymasta/lzo"
 )
 
 type Demuxer struct {
@@ -3239,6 +3240,10 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 				if err := d.decodeBzlibBlockFrame(track, frame, encoding.headerSettings, dst); err != nil {
 					return err
 				}
+			case blockContentTransformLZO1X:
+				if err := d.decodeLZOBlockFrame(track, frame, encoding.headerSettings, dst); err != nil {
+					return err
+				}
 			default:
 				return ErrUnsupportedContentEncoding
 			}
@@ -3314,6 +3319,19 @@ func (d *Demuxer) decodeBzlibBlockFrame(track Track, frame []byte, headerStrip [
 	return d.finishTrackCodecPayload(track, dst)
 }
 
+func (d *Demuxer) decodeLZOBlockFrame(track Track, frame []byte, headerStrip []byte, dst *Packet) error {
+	decoded, err := lzoDecompressInto(dst.Data[:0], frame)
+	if err != nil {
+		return err
+	}
+	decoded, err = prependContentEncodingHeader(decoded, headerStrip)
+	if err != nil {
+		return err
+	}
+	dst.Data = decoded
+	return d.finishTrackCodecPayload(track, dst)
+}
+
 func prependContentEncodingHeader(data []byte, header []byte) ([]byte, error) {
 	if len(header) == 0 {
 		return data, nil
@@ -3363,6 +3381,20 @@ func zlibDecompressInto(dst []byte, compressed []byte) ([]byte, error) {
 
 func bzip2DecompressInto(dst []byte, compressed []byte) ([]byte, error) {
 	return readCompressedInto(dst, bzip2.NewReader(bytes.NewReader(compressed)), nil)
+}
+
+func lzoDecompressInto(dst []byte, compressed []byte) ([]byte, error) {
+	out, read, err := lzo.DecompressNInto(compressed, dst[:cap(dst)])
+	if err != nil {
+		if errors.Is(err, lzo.ErrOutputOverrun) {
+			return nil, ErrPayloadTooSmall
+		}
+		return nil, ErrInvalidData
+	}
+	if read != len(compressed) {
+		return nil, ErrInvalidData
+	}
+	return out, nil
 }
 
 func readCompressedInto(dst []byte, reader io.Reader, close func() error) ([]byte, error) {
@@ -3679,13 +3711,18 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 	}
 	frame := d.laceFrames[d.laceFrameIndex]
 	frameData := d.laceBuffer[frame.offset : frame.offset+frame.size]
-	if d.laceContent.compression == blockContentTransformZlib || d.laceContent.compression == blockContentTransformBzlib {
+	if d.laceContent.compression == blockContentTransformZlib ||
+		d.laceContent.compression == blockContentTransformBzlib ||
+		d.laceContent.compression == blockContentTransformLZO1X {
 		var decoded []byte
 		var err error
-		if d.laceContent.compression == blockContentTransformZlib {
+		switch d.laceContent.compression {
+		case blockContentTransformZlib:
 			decoded, err = zlibDecompressInto(dst.Data[:0], frameData)
-		} else {
+		case blockContentTransformBzlib:
 			decoded, err = bzip2DecompressInto(dst.Data[:0], frameData)
+		case blockContentTransformLZO1X:
+			decoded, err = lzoDecompressInto(dst.Data[:0], frameData)
 		}
 		if err != nil {
 			return err

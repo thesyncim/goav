@@ -50,6 +50,8 @@ github.com/thesyncim/govpx v0.0.0-20260606015758-d64581a69a6f h1:8hGWqYvaZ8xtugR
 github.com/thesyncim/govpx v0.0.0-20260606015758-d64581a69a6f/go.mod h1:NtVLM5omlmx4IstMc/Rx+YsHQ4sAVq3VQ25wnMl43L4=
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
+github.com/woozymasta/lzo v0.2.0 h1:orHEnGtWxCcFIw0ZGJuA70lUO9KSo+nTtiWO7eS4jyE=
+github.com/woozymasta/lzo v0.2.0/go.mod h1:atslvdCReG3PCslm/INvW6VmGp+GnHABHYG4ANDasvg=
 golang.org/x/crypto v0.48.0 h1:/VRzVqiRSggnhY7gNRxPauEQ5Drw9haKdM0jqfcCFts=
 golang.org/x/crypto v0.48.0/go.mod h1:r0kV5h3qnFPlQnBSrULhlsRfryS2pmewsg+XfMgkVos=
 golang.org/x/net v0.50.0 h1:ucWh9eiCGyDR3vtzso0WMQinm2Dnt8cFMuQa9K33J60=
