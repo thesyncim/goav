@@ -24,6 +24,13 @@ func (t TapRef) Domain() MediaDomain {
 	return t.domain
 }
 
+func tapWithDomain(tap TapRef, domain MediaDomain) TapRef {
+	if tap.domain == "" {
+		tap.domain = domain
+	}
+	return tap
+}
+
 func validateTapDomain(operation string, node string, tap TapRef, actual MediaDomain) error {
 	if tap.domain == "" || actual == "" || tap.domain == actual {
 		return nil

@@ -36,64 +36,64 @@ type flowSnapshotter interface {
 	flowSpec() streamFlowSpec
 }
 
-type FlowBuilder struct {
+type flowRoot struct {
 	name string
 }
 
 // Flow starts a reusable operation sequence.
-func Flow(name string) *FlowBuilder {
-	return &FlowBuilder{name: name}
+func Flow(name string) *flowRoot {
+	return &flowRoot{name: name}
 }
 
-func (b *FlowBuilder) Audio() *AudioFlowBuilder {
+func (b *flowRoot) Audio() *audioChain {
 	if b == nil {
 		return newAudioFlow("")
 	}
 	return newAudioFlow(b.name)
 }
 
-func (b *FlowBuilder) Video() *VideoFlowBuilder {
+func (b *flowRoot) Video() *videoChain {
 	if b == nil {
 		return newVideoFlow("")
 	}
 	return newVideoFlow(b.name)
 }
 
-func newAudioFlow(name string) *AudioFlowBuilder {
-	return &AudioFlowBuilder{flowBuilder{spec: streamFlowSpec{name: name, media: av.MediaAudio}}}
+func newAudioFlow(name string) *audioChain {
+	return &audioChain{flowBuilder{spec: streamFlowSpec{name: name, media: av.MediaAudio}}}
 }
 
-func newVideoFlow(name string) *VideoFlowBuilder {
-	return &VideoFlowBuilder{flowBuilder{spec: streamFlowSpec{name: name, media: av.MediaVideo}}}
+func newVideoFlow(name string) *videoChain {
+	return &videoChain{flowBuilder{spec: streamFlowSpec{name: name, media: av.MediaVideo}}}
 }
 
-type AudioFlowBuilder struct {
+type audioChain struct {
 	flowBuilder
 }
 
-type VideoFlowBuilder struct {
+type videoChain struct {
 	flowBuilder
 }
 
-func (b *AudioFlowBuilder) Name() string {
+func (b *audioChain) Name() string {
 	if b == nil {
 		return ""
 	}
 	return b.flowBuilder.name()
 }
 
-func (b *VideoFlowBuilder) Name() string {
+func (b *videoChain) Name() string {
 	if b == nil {
 		return ""
 	}
 	return b.flowBuilder.name()
 }
 
-func (b *AudioFlowBuilder) isFlow() {}
+func (b *audioChain) isFlow() {}
 
-func (b *VideoFlowBuilder) isFlow() {}
+func (b *videoChain) isFlow() {}
 
-func (b *AudioFlowBuilder) Decode() *AudioFlowBuilder {
+func (b *audioChain) Decode() *audioChain {
 	if b == nil {
 		return b
 	}
@@ -101,7 +101,7 @@ func (b *AudioFlowBuilder) Decode() *AudioFlowBuilder {
 	return b
 }
 
-func (b *AudioFlowBuilder) Resample(sampleRate int, channels int, options ...audioOption) *AudioFlowBuilder {
+func (b *audioChain) Resample(sampleRate int, channels int, options ...audioOption) *audioChain {
 	if b == nil {
 		return b
 	}
@@ -109,7 +109,7 @@ func (b *AudioFlowBuilder) Resample(sampleRate int, channels int, options ...aud
 	return b
 }
 
-func (b *AudioFlowBuilder) Do(stage pipeline.Stage) *AudioFlowBuilder {
+func (b *audioChain) Do(stage pipeline.Stage) *audioChain {
 	if b == nil {
 		return b
 	}
@@ -117,7 +117,7 @@ func (b *AudioFlowBuilder) Do(stage pipeline.Stage) *AudioFlowBuilder {
 	return b
 }
 
-func (b *AudioFlowBuilder) Tap(tap TapRef) *AudioFlowBuilder {
+func (b *audioChain) Tap(tap TapRef) *audioChain {
 	if b == nil {
 		return b
 	}
@@ -125,7 +125,7 @@ func (b *AudioFlowBuilder) Tap(tap TapRef) *AudioFlowBuilder {
 	return b
 }
 
-func (b *AudioFlowBuilder) Encode(codec CodecSpec) *AudioFlowBuilder {
+func (b *audioChain) Encode(codec CodecSpec) *audioChain {
 	if b == nil {
 		return b
 	}
@@ -133,30 +133,30 @@ func (b *AudioFlowBuilder) Encode(codec CodecSpec) *AudioFlowBuilder {
 	return b
 }
 
-func (b *AudioFlowBuilder) Copy() *AudioFlowBuilder {
+func (b *audioChain) Copy() *audioChain {
 	return b.Encode(Copy())
 }
 
-func (b *AudioFlowBuilder) Opus(bitrate int, options ...codecOption) *AudioFlowBuilder {
+func (b *audioChain) Opus(bitrate int, options ...codecOption) *audioChain {
 	return b.Encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *AudioFlowBuilder) OpusVoice() *AudioFlowBuilder {
+func (b *audioChain) OpusVoice() *audioChain {
 	return b.Encode(OpusVoice())
 }
 
-func (b *AudioFlowBuilder) OpusMusic() *AudioFlowBuilder {
+func (b *audioChain) OpusMusic() *audioChain {
 	return b.Encode(OpusMusic())
 }
 
-func (b *AudioFlowBuilder) flowSpec() streamFlowSpec {
+func (b *audioChain) flowSpec() streamFlowSpec {
 	if b == nil {
 		return streamFlowSpec{err: nilFlowError()}
 	}
 	return b.flowBuilder.snapshot()
 }
 
-func (b *VideoFlowBuilder) Decode() *VideoFlowBuilder {
+func (b *videoChain) Decode() *videoChain {
 	if b == nil {
 		return b
 	}
@@ -164,7 +164,7 @@ func (b *VideoFlowBuilder) Decode() *VideoFlowBuilder {
 	return b
 }
 
-func (b *VideoFlowBuilder) Resize(width int, height int, options ...resizeOption) *VideoFlowBuilder {
+func (b *videoChain) Resize(width int, height int, options ...resizeOption) *videoChain {
 	if b == nil {
 		return b
 	}
@@ -172,7 +172,7 @@ func (b *VideoFlowBuilder) Resize(width int, height int, options ...resizeOption
 	return b
 }
 
-func (b *VideoFlowBuilder) Do(stage pipeline.Stage) *VideoFlowBuilder {
+func (b *videoChain) Do(stage pipeline.Stage) *videoChain {
 	if b == nil {
 		return b
 	}
@@ -180,7 +180,7 @@ func (b *VideoFlowBuilder) Do(stage pipeline.Stage) *VideoFlowBuilder {
 	return b
 }
 
-func (b *VideoFlowBuilder) Tap(tap TapRef) *VideoFlowBuilder {
+func (b *videoChain) Tap(tap TapRef) *videoChain {
 	if b == nil {
 		return b
 	}
@@ -188,7 +188,7 @@ func (b *VideoFlowBuilder) Tap(tap TapRef) *VideoFlowBuilder {
 	return b
 }
 
-func (b *VideoFlowBuilder) Encode(codec CodecSpec) *VideoFlowBuilder {
+func (b *videoChain) Encode(codec CodecSpec) *videoChain {
 	if b == nil {
 		return b
 	}
@@ -196,19 +196,19 @@ func (b *VideoFlowBuilder) Encode(codec CodecSpec) *VideoFlowBuilder {
 	return b
 }
 
-func (b *VideoFlowBuilder) Copy() *VideoFlowBuilder {
+func (b *videoChain) Copy() *videoChain {
 	return b.Encode(Copy())
 }
 
-func (b *VideoFlowBuilder) VP8(bitrate int, options ...codecOption) *VideoFlowBuilder {
+func (b *videoChain) VP8(bitrate int, options ...codecOption) *videoChain {
 	return b.Encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *VideoFlowBuilder) VP9(bitrate int, options ...codecOption) *VideoFlowBuilder {
+func (b *videoChain) VP9(bitrate int, options ...codecOption) *videoChain {
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *VideoFlowBuilder) flowSpec() streamFlowSpec {
+func (b *videoChain) flowSpec() streamFlowSpec {
 	if b == nil {
 		return streamFlowSpec{err: nilFlowError()}
 	}

@@ -19,7 +19,7 @@ type recipeResolved struct {
 	specOrigin            string
 	mediaGraph            mediaPlanExecutable
 	inputAttachments      []InputSpec
-	outputAttachments     []DestinationSpec
+	outputAttachments     []destinationSpec
 	streamAttachments     []jobStreamStepAttachment
 	inputProbes           []format.ProbeResult
 	branchInputAttachment InputSpec
@@ -43,7 +43,7 @@ type recipeCompileState struct {
 	inputAttachments  []InputSpec
 	jobOutputCount    int
 	streamSteps       []jobStreamStepAttachment
-	outputAttachments []DestinationSpec
+	outputAttachments []destinationSpec
 	outputTargetNames []string
 	inputProbes       []format.ProbeResult
 
@@ -84,14 +84,14 @@ func (o recipeCompileOptions) Context() context.Context {
 func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 	formats := make(map[string]av.FormatID)
 	for i := range s.outputAttachments {
-		formatID := endpointSpecFormat(s.outputAttachments[i])
+		formatID := destinationSpecFormat(s.outputAttachments[i])
 		if formatID == "" {
 			continue
 		}
 		formats[jobOutputTargetName(s.outputAttachments, s.outputTargetNames, i)] = formatID
 	}
 	for i := range s.branchTargetAttachments {
-		formatID := endpointSpecFormat(s.branchTargetAttachments[i].output)
+		formatID := destinationSpecFormat(s.branchTargetAttachments[i].output)
 		if formatID == "" {
 			continue
 		}
@@ -104,7 +104,7 @@ func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 	return formats
 }
 
-func endpointSpecFormat(output DestinationSpec) av.FormatID {
+func destinationSpecFormat(output destinationSpec) av.FormatID {
 	if output.resolvedFormat != "" {
 		return output.resolvedFormat
 	}
@@ -170,7 +170,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		specOrigin:            state.specOrigin,
 		mediaGraph:            state.mediaGraph,
 		inputAttachments:      append([]InputSpec(nil), state.inputAttachments...),
-		outputAttachments:     append([]DestinationSpec(nil), state.outputAttachments...),
+		outputAttachments:     append([]destinationSpec(nil), state.outputAttachments...),
 		streamAttachments:     append([]jobStreamStepAttachment(nil), state.streamSteps...),
 		inputProbes:           append([]format.ProbeResult(nil), state.inputProbes...),
 		branchInputAttachment: state.branchInputAttachment,
@@ -564,7 +564,7 @@ func validateJobAttachmentsPass() recipeCompilePass {
 		if err := validateJobInputs(state.inputAttachments); err != nil {
 			return err
 		}
-		return validateEndpointSpecs(state.operation, state.outputAttachments, state.outputTargetNames...)
+		return validateDestinationSpecs(state.operation, state.outputAttachments, state.outputTargetNames...)
 	}}
 }
 
@@ -729,10 +729,10 @@ func validateBranchTargetFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs := make([]DestinationSpec, 0, len(state.branchTargetAttachments))
+		outputs := make([]destinationSpec, 0, len(state.branchTargetAttachments))
 		targetNames := make([]string, 0, len(state.branchTargetAttachments))
 		for i := range state.branchTargetAttachments {
-			output := state.branchTargetAttachments[i].output.Name(firstNonEmpty(
+			output := state.branchTargetAttachments[i].output.withName(firstNonEmpty(
 				state.branchTargetAttachments[i].output.name,
 				state.branchTargetAttachments[i].name,
 			))

@@ -18,7 +18,7 @@ func (r recipeResolved) singleStreamIntent() (StreamIntent, bool) {
 type mediaPlanSingleStreamGraph struct {
 	runtime *runtime
 	inputs  []InputSpec
-	outputs []DestinationSpec
+	outputs []destinationSpec
 	stream  StreamIntent
 	decode  decodeRequest
 	filters []filterRequest
@@ -36,7 +36,7 @@ type mediaPlanEncodeExecutable struct {
 type mediaPlanPacketCopyGraph struct {
 	runtime        *runtime
 	inputs         []InputSpec
-	outputs        []DestinationSpec
+	outputs        []destinationSpec
 	stream         StreamIntent
 	selectedStream bool
 }
@@ -105,7 +105,7 @@ func (p mediaPlanBranchComposeGraph) build(ctx context.Context) (Task, error) {
 	return newTask(graph, p.runtime), nil
 }
 
-func newMediaPlanSingleStreamGraph(rt Runtime, inputs []InputSpec, outputs []DestinationSpec, stream StreamIntent) (mediaPlanSingleStreamGraph, bool, error) {
+func newMediaPlanSingleStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream StreamIntent) (mediaPlanSingleStreamGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
 		return mediaPlanSingleStreamGraph{}, false, nil
@@ -117,7 +117,7 @@ func newMediaPlanSingleStreamGraph(rt Runtime, inputs []InputSpec, outputs []Des
 	plan := mediaPlanSingleStreamGraph{
 		runtime: runtime,
 		inputs:  append([]InputSpec(nil), inputs...),
-		outputs: append([]DestinationSpec(nil), outputs...),
+		outputs: append([]destinationSpec(nil), outputs...),
 		stream:  stream,
 		decode: decodeRequest{
 			selector:    selector,
@@ -146,7 +146,7 @@ func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
 	return allRTPInputSpecs(inputs)
 }
 
-func newMediaPlanPacketCopyGraph(rt Runtime, inputs []InputSpec, outputs []DestinationSpec, stream StreamIntent, selectedStream bool) (mediaPlanPacketCopyGraph, bool, error) {
+func newMediaPlanPacketCopyGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream StreamIntent, selectedStream bool) (mediaPlanPacketCopyGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
 		return mediaPlanPacketCopyGraph{}, false, nil
@@ -157,7 +157,7 @@ func newMediaPlanPacketCopyGraph(rt Runtime, inputs []InputSpec, outputs []Desti
 	return mediaPlanPacketCopyGraph{
 		runtime:        runtime,
 		inputs:         append([]InputSpec(nil), inputs...),
-		outputs:        append([]DestinationSpec(nil), outputs...),
+		outputs:        append([]destinationSpec(nil), outputs...),
 		stream:         stream,
 		selectedStream: selectedStream,
 	}, true, nil
@@ -400,7 +400,7 @@ func (p mediaPlanPacketCopyGraph) compileTargets(
 			}
 			continue
 		}
-		stage, err := service.openMuxStageWithFormat(ctx, output.output, i, targetStreams, endpointSpecOpenFormat(output), endpointSpecGraphFormat(output))
+		stage, err := service.openMuxStageWithFormat(ctx, output.output, i, targetStreams, destinationOpenFormat(output), destinationGraphFormat(output))
 		if err != nil {
 			return err
 		}
@@ -455,7 +455,7 @@ func (p mediaPlanSingleStreamGraph) encodeOutputSpec() (pipeline.Spec, error) {
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
-	if err := planEncodeEndpointPath(nodes, &spec, previous, *p.encode, p.outputs); err != nil {
+	if err := planEncodeDestinationPath(nodes, &spec, previous, *p.encode, p.outputs); err != nil {
 		return pipeline.Spec{}, err
 	}
 	return spec, nil
@@ -529,7 +529,7 @@ func (p mediaPlanSingleStreamGraph) compileEncodeOutput(ctx context.Context, gra
 	if err != nil {
 		return err
 	}
-	return compileEncodeEndpointPath(ctx, p.runtime, graph, previousRef, *p.encode, encodeConfig, encodedStream, p.outputs)
+	return compileEncodeDestinationPath(ctx, p.runtime, graph, previousRef, *p.encode, encodeConfig, encodedStream, p.outputs)
 }
 
 func (p mediaPlanSingleStreamGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {

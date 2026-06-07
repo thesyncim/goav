@@ -288,15 +288,11 @@ func operationReportByKind(operations []goav.OperationReport, kind goav.Operatio
 	return goav.OperationReport{}, false
 }
 
-func recordJob(input goav.InputSpec, outputs ...goav.DestinationSpec) *goav.Job {
-	destinations := make([]goav.Destination, 0, len(outputs))
-	for i := range outputs {
-		destinations = append(destinations, outputs[i])
-	}
-	return goav.From(input).Copy().To(destinations...)
+func recordJob(input goav.InputSpec, outputs ...goav.Destination) *goav.Job {
+	return goav.From(input).Copy().To(outputs...)
 }
 
-func decodeJob(input goav.InputSpec, output goav.DestinationSpec) *goav.Job {
+func decodeJob(input goav.InputSpec, output goav.Destination) *goav.Job {
 	return goav.From(input).Stream().Decode().To(output)
 }
 
@@ -306,13 +302,17 @@ type testBranchJob struct {
 	branches []testTranscodeBranch
 }
 
+type testBranchStream interface {
+	Branches(...goav.BranchSpec) *goav.Job
+}
+
 type testTranscodeBranch struct {
 	name       string
 	media      av.MediaType
 	flows      []goav.Chain
 	transforms []goav.TransformSpec
 	encode     goav.CodecSpec
-	targets    []goav.TargetSpec
+	targets    []goav.Destination
 }
 
 type testTranscodeBranchBuilder struct {
@@ -349,7 +349,7 @@ func (j *testBranchJob) materialize() *goav.Job {
 	}
 	for i := range j.branches {
 		branch := j.branches[i]
-		var stream *goav.JobStreamBuilder
+		var stream testBranchStream
 		switch branch.media {
 		case av.MediaAudio:
 			stream = job.Audio().Decode().Tap(goav.FrameTap("audio.decoded"))
@@ -436,8 +436,8 @@ func (b *testTranscodeBranchBuilder) Encode(codec goav.CodecSpec) *testTranscode
 	return b
 }
 
-func (b *testTranscodeBranchBuilder) To(targets ...goav.TargetSpec) *testBranchJob {
-	b.current().targets = append([]goav.TargetSpec(nil), targets...)
+func (b *testTranscodeBranchBuilder) To(targets ...goav.Destination) *testBranchJob {
+	b.current().targets = append([]goav.Destination(nil), targets...)
 	return b.job
 }
 
@@ -1336,7 +1336,13 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 	}
 	legacyTypes := map[string]bool{
 		"Builder":          true,
+		"BranchBuilder":    true,
+		"JobStreamBuilder": true,
+		"FlowBuilder":      true,
+		"AudioFlowBuilder": true,
+		"VideoFlowBuilder": true,
 		"Input":            true,
+		"DestinationSpec":  true,
 		"Output":           true,
 		"OutputIntent":     true,
 		"OutputReport":     true,
@@ -1360,6 +1366,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"RTPInputOption":   true,
 		"StreamBuilder":    true,
 		"StreamOption":     true,
+		"TargetSpec":       true,
 		"TrackOption":      true,
 		"TranscodeJob":     true,
 		"TargetOrEndpoint": true,
@@ -1396,18 +1403,18 @@ func TestInputSpecKeepsManualDepacketizersOutOfRecipeFrontDoor(t *testing.T) {
 }
 
 func TestBranchesIsTheOnlyPublicPlannedSplitVerb(t *testing.T) {
-	streamType := reflect.TypeOf((*goav.JobStreamBuilder)(nil))
+	streamType := reflect.TypeOf(goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).Audio())
 	if _, ok := streamType.MethodByName("Branches"); !ok {
-		t.Fatal("JobStreamBuilder should expose Branches for planned stream splits")
+		t.Fatal("stream chain should expose Branches for planned stream splits")
 	}
 	if _, ok := streamType.MethodByName("Fork"); ok {
-		t.Fatal("JobStreamBuilder should not expose Fork; Branches is the public planned split verb")
+		t.Fatal("stream chain should not expose Fork; Branches is the public planned split verb")
 	}
 	if _, ok := streamType.MethodByName("Tee"); ok {
-		t.Fatal("JobStreamBuilder should not expose Tee; flows apply to branches")
+		t.Fatal("stream chain should not expose Tee; flows apply to branches")
 	}
 	if _, ok := streamType.MethodByName("Branch"); ok {
-		t.Fatal("JobStreamBuilder should not expose build-time Branch; use Branches")
+		t.Fatal("stream chain should not expose build-time Branch; use Branches")
 	}
 }
 
@@ -1713,6 +1720,41 @@ func TestRootAPIUsesFromCompositionInsteadOfWorkflowHelpers(t *testing.T) {
 			case "Record", "Decode", "Transcode":
 				t.Fatalf("goav.%s remains public in %s; compose with goav.From instead", fn.Name.Name, filename)
 			}
+		}
+	}
+}
+
+func TestStreamIntentUsesTypedTapAnchor(t *testing.T) {
+	stream := reflect.TypeOf(goav.StreamIntent{})
+	if _, ok := stream.FieldByName("FromTap"); ok {
+		t.Fatal("StreamIntent exposes FromTap; use typed TapRef field From")
+	}
+	field, ok := stream.FieldByName("From")
+	if !ok {
+		t.Fatal("StreamIntent should expose typed tap anchor field From")
+	}
+	if field.Type != reflect.TypeOf(goav.TapRef{}) {
+		t.Fatalf("StreamIntent.From type = %s, want goav.TapRef", field.Type)
+	}
+}
+
+func TestHighLevelCompositionInternalsUseDestinationVocabulary(t *testing.T) {
+	files := []string{
+		"branch.go",
+		"recipe.go",
+		"recipe_compile.go",
+		"media_plan_spec.go",
+		"media_plan_build.go",
+		"runtime_attach.go",
+		"runtime_encode.go",
+	}
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(strings.ToLower(string(body)), "endpoint") {
+			t.Fatalf("%s uses endpoint vocabulary; use destination naming in high-level composition code", file)
 		}
 	}
 }
@@ -2214,18 +2256,19 @@ func TestBranchesGroupSelectedStreams(t *testing.T) {
 		t.Fatalf("intent: %+v", intent)
 	}
 	tests := []struct {
-		name    string
-		fromTap string
-		codec   av.CodecID
-		outputs []string
+		name       string
+		from       string
+		fromDomain goav.MediaDomain
+		codec      av.CodecID
+		outputs    []string
 	}{
-		{name: "v1080", fromTap: "video.decoded", codec: av.CodecVP9, outputs: []string{"watch"}},
-		{name: "v360", fromTap: "video.decoded", codec: av.CodecVP8, outputs: []string{"mobile"}},
-		{name: "a96", fromTap: "audio.decoded", codec: av.CodecOpus, outputs: []string{"watch", "mobile"}},
+		{name: "v1080", from: "video.decoded", fromDomain: goav.DomainFrame, codec: av.CodecVP9, outputs: []string{"watch"}},
+		{name: "v360", from: "video.decoded", fromDomain: goav.DomainFrame, codec: av.CodecVP8, outputs: []string{"mobile"}},
+		{name: "a96", from: "audio.decoded", fromDomain: goav.DomainFrame, codec: av.CodecOpus, outputs: []string{"watch", "mobile"}},
 	}
 	for i := range tests {
 		stream := intent.Streams[i]
-		if stream.Name != tests[i].name || stream.FromTap != tests[i].fromTap ||
+		if stream.Name != tests[i].name || stream.From.Name() != tests[i].from || stream.From.Domain() != tests[i].fromDomain ||
 			stream.Encode.ID != tests[i].codec || !equalStrings(stream.Targets, tests[i].outputs) {
 			t.Fatalf("stream[%d]=%+v, want %+v", i, stream, tests[i])
 		}
@@ -2632,7 +2675,7 @@ func TestFlowCopyRequiresPacketDomain(t *testing.T) {
 }
 
 func TestNilFlowIsActionable(t *testing.T) {
-	var flow *goav.AudioFlowBuilder
+	var flow goav.Chain
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Apply(flow).
@@ -2646,7 +2689,7 @@ func TestNilFlowIsActionable(t *testing.T) {
 }
 
 func TestNilFlowBranchIsActionable(t *testing.T) {
-	var flow *goav.AudioFlowBuilder
+	var flow goav.Chain
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Branches(goav.Branch("voice").Apply(flow).To(goav.Target("voice", goav.FileOutput("voice.ogg", io.Discard)))).
@@ -2932,18 +2975,20 @@ func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsEmptyDestinationSpec(t *testing.T) {
+func TestRecordRecipeRejectsNilDestination(t *testing.T) {
+	var destination goav.Destination
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		goav.DestinationSpec{},
+		destination,
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want target_invalid wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "empty destination spec") ||
-		!strings.Contains(err.Error(), "goav.FileOutput") {
-		t.Fatalf("err = %v, want output constructor guidance", err)
+	if !strings.Contains(err.Error(), "destination is nil") ||
+		!strings.Contains(err.Error(), "goav.FileOutput") ||
+		!strings.Contains(err.Error(), "goav.Sink") {
+		t.Fatalf("err = %v, want destination constructor guidance", err)
 	}
 }
 
@@ -2974,10 +3019,10 @@ func TestRecordRecipeRejectsUnnamedFileOutputWithoutFormat(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsFormatOnlyDestinationSpec(t *testing.T) {
+func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
-		goav.DestinationSpec{}.Format(av.FormatIVF),
+		goav.URIOutput("").Format(av.FormatIVF),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -4365,12 +4410,14 @@ func TestBranchCompositionCanSplitFromEarlierTap(t *testing.T) {
 	if len(intent.Streams) != 2 {
 		t.Fatalf("intent streams = %+v, want 2", intent.Streams)
 	}
-	if intent.Streams[0].FromTap != "video.decoded" ||
+	if intent.Streams[0].From.Name() != "video.decoded" ||
+		intent.Streams[0].From.Domain() != goav.DomainFrame ||
 		len(intent.Streams[0].Transforms) != 1 ||
 		intent.Streams[0].Transforms[0].Resize.Width != 320 {
 		t.Fatalf("raw branch intent = %+v, want branch from decoded tap with only thumbnail resize", intent.Streams[0])
 	}
-	if intent.Streams[1].FromTap != "video.720p.frames" ||
+	if intent.Streams[1].From.Name() != "video.720p.frames" ||
+		intent.Streams[1].From.Domain() != goav.DomainFrame ||
 		len(intent.Streams[1].Transforms) != 1 ||
 		intent.Streams[1].Transforms[0].Resize.Width != 1280 {
 		t.Fatalf("web branch intent = %+v, want branch from 720p tap with shared resize", intent.Streams[1])
@@ -4393,7 +4440,7 @@ func TestBranchCompositionCanSplitFromEarlierTap(t *testing.T) {
 	}
 	if strings.Contains(text, "resize-video -> resize-raw-preview") ||
 		strings.Contains(text, "decode-video -> encode-web") {
-		t.Fatalf("branches ignored explicit FromTap anchors:\n%s", text)
+		t.Fatalf("branches ignored explicit typed tap anchors:\n%s", text)
 	}
 }
 
@@ -4490,7 +4537,7 @@ func TestBranchCompositionSharesCurrentPointWithoutExplicitTap(t *testing.T) {
 		)
 
 	intent := job.Intent()
-	if len(intent.Streams) != 2 || intent.Streams[0].FromTap != "" || intent.Streams[1].FromTap != "" {
+	if len(intent.Streams) != 2 || intent.Streams[0].From.Name() != "" || intent.Streams[1].From.Name() != "" {
 		t.Fatalf("intent streams = %+v, want unnamed current-point branch split", intent.Streams)
 	}
 	spec, err := job.Describe()
@@ -4582,8 +4629,10 @@ func TestBranchCompositionAllowsPacketCopyBranches(t *testing.T) {
 
 	intent := job.Intent()
 	if len(intent.Streams) != 2 ||
-		intent.Streams[0].FromTap != "video.packets" ||
-		intent.Streams[1].FromTap != "video.packets" {
+		intent.Streams[0].From.Name() != "video.packets" ||
+		intent.Streams[0].From.Domain() != goav.DomainPacket ||
+		intent.Streams[1].From.Name() != "video.packets" ||
+		intent.Streams[1].From.Domain() != goav.DomainPacket {
 		t.Fatalf("intent streams = %+v, want packet branches from video.packets", intent.Streams)
 	}
 

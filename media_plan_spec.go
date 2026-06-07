@@ -100,7 +100,7 @@ func mediaPlanSinkDestinationExecutableForState(state *recipeCompileState) (medi
 	return mediaPlanSinkDestinationExecutable{mediaPlanSingleStreamGraph: plan}, true, nil
 }
 
-func mediaPlanSinkDestinationShape(stream StreamIntent, outputs []DestinationSpec) bool {
+func mediaPlanSinkDestinationShape(stream StreamIntent, outputs []destinationSpec) bool {
 	return len(outputs) == 1 &&
 		outputs[0].sink != nil &&
 		stream.Decode &&
@@ -123,7 +123,7 @@ func mediaPlanEncodeExecutableForState(state *recipeCompileState) (mediaPlanExec
 	return mediaPlanEncodeExecutable{mediaPlanSingleStreamGraph: plan}, true, nil
 }
 
-func mediaPlanEncodeShape(stream StreamIntent, outputs []DestinationSpec) bool {
+func mediaPlanEncodeShape(stream StreamIntent, outputs []destinationSpec) bool {
 	if !stream.Decode || !codecIntentSet(stream.Encode) || stream.Encode.Copy || len(outputs) == 0 {
 		return false
 	}
@@ -167,7 +167,7 @@ func mediaPlanPacketCopySources(spec *pipeline.Spec, nodes map[string]plannedNod
 	return refs, true, nil
 }
 
-func mediaPlanPacketCopyTargets(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []DestinationSpec) ([]pipeline.NodeRef, error) {
+func mediaPlanPacketCopyTargets(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []destinationSpec) ([]pipeline.NodeRef, error) {
 	refs := make([]pipeline.NodeRef, 0, len(outputs))
 	for i := range outputs {
 		if outputs[i].sink != nil {
@@ -182,7 +182,7 @@ func mediaPlanPacketCopyTargets(spec *pipeline.Spec, nodes map[string]plannedNod
 		output := outputs[i].output
 		name := muxNodeName(output, i)
 		ref := pipeline.NodeRef(name)
-		detail := outputNodeDetailWithFormat(output, endpointSpecGraphFormat(outputs[i]))
+		detail := outputNodeDetailWithFormat(output, destinationGraphFormat(outputs[i]))
 		if err := addPlannedNode(nodes, spec, name, pipeline.NodeStage, ref, detail); err != nil {
 			return nil, err
 		}
@@ -203,10 +203,10 @@ func allRTPInputSpecs(inputs []InputSpec) bool {
 	return true
 }
 
-func endpointSpecGraphFormat(output DestinationSpec) av.FormatID {
+func destinationGraphFormat(output destinationSpec) av.FormatID {
 	return output.format
 }
 
-func endpointSpecOpenFormat(output DestinationSpec) av.FormatID {
-	return endpointSpecFormat(output)
+func destinationOpenFormat(output destinationSpec) av.FormatID {
+	return destinationSpecFormat(output)
 }
