@@ -82,10 +82,12 @@ from the same sequence before source opening, and select/decode/filter/encode
 nodes plus mux/sink target nodes lower from graph-plan refs. Those direct stream
 recipes still keep concrete inputs, destinations, ordered stream attachments,
 codec-change policy, custom stages, transforms, and taps on the resolved recipe
-until graph-plan emission. They build and describe through a resolved
-single-stream graph plan and shared parameterized
+until graph-plan emission. They describe through a resolved single-stream graph
+plan using the branch route planner, and build through shared parameterized
 source/decode/filter/encode/target helpers instead of a pre-populated runtime
-builder. `recipeResolved` no longer carries a parallel media-plan report copy:
+builder. Branch route planning carries codec-change policy into planned decoder
+details and runtime branch-compose decoder construction. `recipeResolved` no
+longer carries a parallel media-plan report copy:
 `Explain`, mux diagnostics, and task tap installation read cloned views from the
 graph plan. The graph plan also carries an ordered operation sequence derived
 from branch operations and target groups. Packet-copy, direct stream

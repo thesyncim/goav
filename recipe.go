@@ -3541,6 +3541,7 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 			SharedSteps:  sharedSteps,
 			Steps:        branchSteps,
 			DecodeConfig: cloneCodecSpec(stream.DecodeCodec),
+			CodecChange:  stream.CodecChange,
 			Encode:       encodeConfigFromSpec(stream.Encode),
 			Labels:       append([]string(nil), stream.Targets...),
 		}

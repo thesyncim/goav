@@ -22,6 +22,7 @@ type branchComposeRoute struct {
 	branch      branchComposeBranch
 	copy        bool
 	decode      CodecSpec
+	codecChange CodecChangePolicy
 	sharedSteps []mediaTransform
 	steps       []mediaTransform
 	request     encodeRequest
@@ -187,9 +188,18 @@ func planBranchComposeRoutes(
 		if len(decodedBranches) == 0 {
 			continue
 		}
+		decodeConfig, err := branchComposeGroupDecodeConfig(decodedBranches, branches)
+		if err != nil {
+			return pipeline.Spec{}, err
+		}
+		codecChange, err := branchComposeGroupCodecChangePolicy(decodedBranches, branches)
+		if err != nil {
+			return pipeline.Spec{}, err
+		}
 		decodeName := decodeNodeName(groups[i].selector)
 		decodeRef := pipeline.NodeRef(decodeName)
-		if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef, decodeNodeDetail(groups[i].selector)); err != nil {
+		decodeDetail := decodeRequestDetail(decodeRequest{selector: groups[i].selector, config: decodeConfig, codecChange: codecChange})
+		if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef, decodeDetail); err != nil {
 			return pipeline.Spec{}, err
 		}
 		groupEdges[selectRef] = append(groupEdges[selectRef], pipeline.EdgeSpec{
@@ -453,8 +463,12 @@ func compileBranchComposeInputs(
 		if err != nil {
 			return nil, nil, err
 		}
+		codecChange, err := branchComposeGroupCodecChangePolicy(decodedBranches, branches)
+		if err != nil {
+			return nil, nil, err
+		}
 		decodeName := firstNonEmpty(planned.decodeNode.String(), decodeNodeName(selector))
-		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig}, selected, realtime, false, bounds)
+		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig, codecChange: codecChange}, selected, realtime, false, bounds)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -812,6 +826,7 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 			branch:      branch,
 			copy:        branch.Copy,
 			decode:      cloneCodecSpec(branch.DecodeConfig),
+			codecChange: branch.CodecChange,
 			sharedSteps: sharedSteps,
 			steps:       steps,
 			request: encodeRequest{
@@ -877,6 +892,31 @@ func branchComposeGroupDecodeConfig(indices []int, branches []branchComposeRoute
 	return config, nil
 }
 
+func branchComposeGroupCodecChangePolicy(indices []int, branches []branchComposeRoute) (CodecChangePolicy, error) {
+	var policy CodecChangePolicy
+	var owner string
+	havePolicy := false
+	for _, index := range indices {
+		if index < 0 || index >= len(branches) {
+			continue
+		}
+		candidate := branches[index].codecChange
+		if !codecChangePolicySet(candidate) {
+			continue
+		}
+		if !havePolicy {
+			policy = candidate
+			owner = branches[index].name
+			havePolicy = true
+			continue
+		}
+		if policy != candidate {
+			return CodecChangePolicy{}, branchComposeCodecChangeConflictError(owner, branches[index].name)
+		}
+	}
+	return policy, nil
+}
+
 func codecSpecHasDecodeIntent(spec CodecSpec) bool {
 	return spec.ID != "" ||
 		spec.Type != "" ||
@@ -901,6 +941,24 @@ func branchComposeDecodeConfigConflictError(first string, second string) error {
 			"move shared decode config to the stream chain with .Decode(...)",
 			"use the same decode config for branches that share a decoder",
 		},
+	}
+}
+
+func branchComposeCodecChangeConflictError(first string, second string) error {
+	return &BuildError{
+		Code:      "decode_policy_conflict",
+		Operation: "build branch composition",
+		Node:      second,
+		Reason:    "branches that share one decoder declared different codec-change policies",
+		Details: []string{
+			"first branch: " + first,
+			"conflicting branch: " + second,
+		},
+		Suggestions: []string{
+			"use the same codec-change policy for branches that share a decoder",
+			"split branches by stream selector when policies must differ",
+		},
+		Cause: ErrUnsupportedBuild,
 	}
 }
 
