@@ -243,6 +243,7 @@ func cloneTrack(track Track) Track {
 		track.TrackOverlays = append([]uint64(nil), track.TrackOverlays...)
 	}
 	track.TrackTranslates = cloneTrackTranslates(track.TrackTranslates)
+	track.ContentEncodings = cloneContentEncodings(track.ContentEncodings)
 	return track
 }
 
@@ -272,6 +273,29 @@ func cloneTrackTranslates(translates []TrackTranslate) []TrackTranslate {
 		}
 		if len(translates[i].EditionUIDs) != 0 {
 			out[i].EditionUIDs = append([]uint64(nil), translates[i].EditionUIDs...)
+		}
+	}
+	return out
+}
+
+func cloneContentEncodings(encodings []ContentEncoding) []ContentEncoding {
+	if len(encodings) == 0 {
+		return nil
+	}
+	out := make([]ContentEncoding, len(encodings))
+	for i := range encodings {
+		out[i] = encodings[i]
+		if encodings[i].Compression.Settings != nil {
+			out[i].Compression.Settings = append([]byte(nil), encodings[i].Compression.Settings...)
+		}
+		if encodings[i].Encryption.KeyID != nil {
+			out[i].Encryption.KeyID = append([]byte(nil), encodings[i].Encryption.KeyID...)
+		}
+		if encodings[i].Encryption.Signature != nil {
+			out[i].Encryption.Signature = append([]byte(nil), encodings[i].Encryption.Signature...)
+		}
+		if encodings[i].Encryption.SignatureKeyID != nil {
+			out[i].Encryption.SignatureKeyID = append([]byte(nil), encodings[i].Encryption.SignatureKeyID...)
 		}
 	}
 	return out
@@ -2024,6 +2048,12 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 			track.TrackTranslates = append(track.TrackTranslates, translate)
+		case idContentEncodings:
+			encodings, err := d.parseContentEncodings(master.Reader(), child)
+			if err != nil {
+				return Track{}, err
+			}
+			track.ContentEncodings = encodings
 		case idCodecPrivate:
 			value, err := readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
@@ -2080,6 +2110,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 	}
 	if err := validateTrackBlockAdditionMetadata(track); err != nil {
 		return Track{}, err
+	}
+	if err := validateContentEncodings(track.ContentEncodings); err != nil {
+		return Track{}, ErrInvalidData
 	}
 	return track, nil
 }
@@ -2184,6 +2217,245 @@ func (d *Demuxer) parseBlockAdditionMapping(parent io.Reader, header ebml.Header
 		return BlockAdditionMapping{}, ErrInvalidData
 	}
 	return mapping, nil
+}
+
+func (d *Demuxer) parseContentEncodings(parent io.Reader, header ebml.Header) ([]ContentEncoding, error) {
+	if header.Size.Unknown {
+		return nil, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return nil, err
+	}
+	var encodings []ContentEncoding
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return nil, err
+		}
+		switch child.ID {
+		case idContentEncoding:
+			encoding, err := d.parseContentEncoding(master.Reader(), child)
+			if err != nil {
+				return nil, err
+			}
+			encodings = append(encodings, encoding)
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return nil, err
+	}
+	if len(encodings) == 0 {
+		return nil, ErrInvalidData
+	}
+	if err := validateContentEncodings(encodings); err != nil {
+		return nil, ErrInvalidData
+	}
+	return encodings, nil
+}
+
+func (d *Demuxer) parseContentEncoding(parent io.Reader, header ebml.Header) (ContentEncoding, error) {
+	if header.Size.Unknown {
+		return ContentEncoding{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return ContentEncoding{}, err
+	}
+	encoding := ContentEncoding{Scope: ContentEncodingScopeBlock}
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return ContentEncoding{}, err
+		}
+		switch child.ID {
+		case idContentEncodingOrd:
+			encoding.Order, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentEncoding{}, err
+			}
+		case idContentEncodingScope:
+			encoding.Scope, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentEncoding{}, err
+			}
+		case idContentEncodingType:
+			encoding.Type, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentEncoding{}, err
+			}
+		case idContentCompression:
+			if encoding.CompressionSet {
+				return ContentEncoding{}, ErrInvalidData
+			}
+			encoding.Compression, err = d.parseContentCompression(master.Reader(), child)
+			if err != nil {
+				return ContentEncoding{}, err
+			}
+			encoding.CompressionSet = true
+		case idContentEncryption:
+			if encoding.EncryptionSet {
+				return ContentEncoding{}, ErrInvalidData
+			}
+			encoding.Encryption, err = d.parseContentEncryption(master.Reader(), child)
+			if err != nil {
+				return ContentEncoding{}, err
+			}
+			encoding.EncryptionSet = true
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return ContentEncoding{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return ContentEncoding{}, err
+	}
+	return encoding, nil
+}
+
+func (d *Demuxer) parseContentCompression(parent io.Reader, header ebml.Header) (ContentCompression, error) {
+	if header.Size.Unknown {
+		return ContentCompression{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return ContentCompression{}, err
+	}
+	var compression ContentCompression
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return ContentCompression{}, err
+		}
+		switch child.ID {
+		case idContentCompAlgo:
+			compression.Algorithm, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentCompression{}, err
+			}
+		case idContentCompSettings:
+			compression.Settings, err = readBinaryPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentCompression{}, err
+			}
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return ContentCompression{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return ContentCompression{}, err
+	}
+	return compression, nil
+}
+
+func (d *Demuxer) parseContentEncryption(parent io.Reader, header ebml.Header) (ContentEncryption, error) {
+	if header.Size.Unknown {
+		return ContentEncryption{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return ContentEncryption{}, err
+	}
+	var encryption ContentEncryption
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return ContentEncryption{}, err
+		}
+		switch child.ID {
+		case idContentEncAlgo:
+			encryption.Algorithm, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentEncryption{}, err
+			}
+		case idContentEncKeyID:
+			encryption.KeyID, err = readBinaryPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentEncryption{}, err
+			}
+		case idContentEncAES:
+			if encryption.AESSettingsSet {
+				return ContentEncryption{}, ErrInvalidData
+			}
+			encryption.AESSettings, err = d.parseContentEncAESSettings(master.Reader(), child)
+			if err != nil {
+				return ContentEncryption{}, err
+			}
+			encryption.AESSettingsSet = true
+		case idContentSignature:
+			encryption.Signature, err = readBinaryPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentEncryption{}, err
+			}
+		case idContentSigKeyID:
+			encryption.SignatureKeyID, err = readBinaryPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentEncryption{}, err
+			}
+		case idContentSigAlgo:
+			encryption.SignatureAlgorithm, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentEncryption{}, err
+			}
+		case idContentSigHashAlgo:
+			encryption.SignatureHashAlgorithm, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentEncryption{}, err
+			}
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return ContentEncryption{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return ContentEncryption{}, err
+	}
+	return encryption, nil
+}
+
+func (d *Demuxer) parseContentEncAESSettings(parent io.Reader, header ebml.Header) (ContentEncAESSettings, error) {
+	if header.Size.Unknown {
+		return ContentEncAESSettings{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return ContentEncAESSettings{}, err
+	}
+	var settings ContentEncAESSettings
+	cipherSeen := false
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return ContentEncAESSettings{}, err
+		}
+		switch child.ID {
+		case idContentEncAESCipher:
+			settings.CipherMode, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ContentEncAESSettings{}, err
+			}
+			cipherSeen = true
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return ContentEncAESSettings{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return ContentEncAESSettings{}, err
+	}
+	if !cipherSeen {
+		return ContentEncAESSettings{}, ErrInvalidData
+	}
+	return settings, nil
 }
 
 func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig, error) {

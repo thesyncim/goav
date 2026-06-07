@@ -2447,6 +2447,11 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 			return err
 		}
 	}
+	if len(track.ContentEncodings) != 0 {
+		if err := writeContentEncodings(tw, track.ContentEncodings); err != nil {
+			return err
+		}
+	}
 	if len(private) != 0 {
 		if err := writeBinary(tw, idCodecPrivate, private); err != nil {
 			return err
@@ -2505,6 +2510,109 @@ func writeBlockAdditionMapping(w *ebml.Writer, mapping BlockAdditionMapping) err
 		}
 	}
 	return w.WriteElement(idBlockAdditionMapping, payload.Bytes())
+}
+
+func writeContentEncodings(w *ebml.Writer, encodings []ContentEncoding) error {
+	if err := validateContentEncodings(encodings); err != nil {
+		return err
+	}
+	var payload bytes.Buffer
+	cw := ebml.NewWriter(&payload)
+	for i := range encodings {
+		if err := writeContentEncoding(cw, encodings[i]); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idContentEncodings, payload.Bytes())
+}
+
+func writeContentEncoding(w *ebml.Writer, encoding ContentEncoding) error {
+	var payload bytes.Buffer
+	cw := ebml.NewWriter(&payload)
+	if err := cw.WriteUInt(idContentEncodingOrd, encoding.Order); err != nil {
+		return err
+	}
+	if err := cw.WriteUInt(idContentEncodingScope, contentEncodingScope(encoding.Scope)); err != nil {
+		return err
+	}
+	if err := cw.WriteUInt(idContentEncodingType, encoding.Type); err != nil {
+		return err
+	}
+	switch encoding.Type {
+	case ContentEncodingTypeCompression:
+		if err := writeContentCompression(cw, encoding.Compression); err != nil {
+			return err
+		}
+	case ContentEncodingTypeEncryption:
+		if err := writeContentEncryption(cw, encoding.Encryption); err != nil {
+			return err
+		}
+	default:
+		return ErrInvalidTrack
+	}
+	return w.WriteElement(idContentEncoding, payload.Bytes())
+}
+
+func writeContentCompression(w *ebml.Writer, compression ContentCompression) error {
+	var payload bytes.Buffer
+	cw := ebml.NewWriter(&payload)
+	if err := cw.WriteUInt(idContentCompAlgo, compression.Algorithm); err != nil {
+		return err
+	}
+	if compression.Settings != nil {
+		if err := writeBinary(cw, idContentCompSettings, compression.Settings); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idContentCompression, payload.Bytes())
+}
+
+func writeContentEncryption(w *ebml.Writer, encryption ContentEncryption) error {
+	var payload bytes.Buffer
+	ew := ebml.NewWriter(&payload)
+	if err := ew.WriteUInt(idContentEncAlgo, encryption.Algorithm); err != nil {
+		return err
+	}
+	if encryption.KeyID != nil {
+		if err := writeBinary(ew, idContentEncKeyID, encryption.KeyID); err != nil {
+			return err
+		}
+	}
+	if encryption.AESSettingsSet {
+		if err := writeContentEncAESSettings(ew, encryption.AESSettings); err != nil {
+			return err
+		}
+	}
+	if encryption.Signature != nil {
+		if err := writeBinary(ew, idContentSignature, encryption.Signature); err != nil {
+			return err
+		}
+	}
+	if encryption.SignatureKeyID != nil {
+		if err := writeBinary(ew, idContentSigKeyID, encryption.SignatureKeyID); err != nil {
+			return err
+		}
+	}
+	if encryption.SignatureAlgorithm != 0 {
+		if err := ew.WriteUInt(idContentSigAlgo, encryption.SignatureAlgorithm); err != nil {
+			return err
+		}
+	}
+	if encryption.SignatureHashAlgorithm != 0 {
+		if err := ew.WriteUInt(idContentSigHashAlgo, encryption.SignatureHashAlgorithm); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idContentEncryption, payload.Bytes())
+}
+
+func writeContentEncAESSettings(w *ebml.Writer, settings ContentEncAESSettings) error {
+	var payload bytes.Buffer
+	aw := ebml.NewWriter(&payload)
+	if err := aw.WriteUInt(idContentEncAESCipher, settings.CipherMode); err != nil {
+		return err
+	}
+	return w.WriteElement(idContentEncAES, payload.Bytes())
 }
 
 func trackCodecTiming(track Track, private []byte) (int64, int64, error) {
@@ -2828,6 +2936,9 @@ func validateTrack(track Track) error {
 			return err
 		}
 	}
+	if err := validateContentEncodings(track.ContentEncodings); err != nil {
+		return err
+	}
 	maxMappingID, err := maxBlockAdditionMappingID(track.BlockAdditionMappings)
 	if err != nil || maxMappingID > track.MaxBlockAdditionID {
 		return ErrInvalidTrack
@@ -2893,6 +3004,79 @@ func validateTrack(track Track) error {
 func validateTrackTranslate(translate TrackTranslate) error {
 	if translate.TrackID == nil {
 		return ErrInvalidTrack
+	}
+	return nil
+}
+
+func validateContentEncodings(encodings []ContentEncoding) error {
+	if len(encodings) == 0 {
+		return nil
+	}
+	orders := make(map[uint64]struct{}, len(encodings))
+	for i := range encodings {
+		order := encodings[i].Order
+		if _, ok := orders[order]; ok {
+			return ErrInvalidTrack
+		}
+		orders[order] = struct{}{}
+		if err := validateContentEncoding(encodings[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateContentEncoding(encoding ContentEncoding) error {
+	scope := contentEncodingScope(encoding.Scope)
+	if scope&^contentEncodingScopeAll() != 0 {
+		return ErrInvalidTrack
+	}
+	switch encoding.Type {
+	case ContentEncodingTypeCompression:
+		if !encoding.CompressionSet || encoding.EncryptionSet {
+			return ErrInvalidTrack
+		}
+		return validateContentCompression(encoding.Compression)
+	case ContentEncodingTypeEncryption:
+		if !encoding.EncryptionSet || encoding.CompressionSet {
+			return ErrInvalidTrack
+		}
+		return validateContentEncryption(encoding.Encryption)
+	default:
+		return ErrInvalidTrack
+	}
+}
+
+func contentEncodingScope(scope uint64) uint64 {
+	if scope == 0 {
+		return ContentEncodingScopeBlock
+	}
+	return scope
+}
+
+func contentEncodingScopeAll() uint64 {
+	return ContentEncodingScopeBlock | ContentEncodingScopePrivate | ContentEncodingScopeNext
+}
+
+func validateContentCompression(compression ContentCompression) error {
+	if compression.Algorithm > ContentCompAlgoHeaderStripping {
+		return ErrInvalidTrack
+	}
+	return nil
+}
+
+func validateContentEncryption(encryption ContentEncryption) error {
+	if encryption.Algorithm > ContentEncAlgoAES ||
+		encryption.SignatureAlgorithm > ContentSigAlgoRSA ||
+		encryption.SignatureHashAlgorithm > ContentSigHashAlgoMD5 {
+		return ErrInvalidTrack
+	}
+	if encryption.AESSettingsSet {
+		if encryption.Algorithm != ContentEncAlgoAES ||
+			(encryption.AESSettings.CipherMode != ContentEncAESCipherModeCTR &&
+				encryption.AESSettings.CipherMode != ContentEncAESCipherModeCBC) {
+			return ErrInvalidTrack
+		}
 	}
 	return nil
 }

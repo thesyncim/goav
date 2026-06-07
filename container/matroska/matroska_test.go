@@ -1076,6 +1076,89 @@ func TestMuxerDemuxerPreservesTrackEntryMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesContentEncodings(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEncodings := []ContentEncoding{
+		{
+			Order:          1,
+			Scope:          ContentEncodingScopePrivate,
+			Type:           ContentEncodingTypeCompression,
+			CompressionSet: true,
+			Compression: ContentCompression{
+				Algorithm: ContentCompAlgoHeaderStripping,
+				Settings:  []byte{0x00, 0x00, 0x01},
+			},
+		},
+		{
+			Order:         0,
+			Scope:         ContentEncodingScopeBlock | ContentEncodingScopeNext,
+			Type:          ContentEncodingTypeEncryption,
+			EncryptionSet: true,
+			Encryption: ContentEncryption{
+				Algorithm:      ContentEncAlgoAES,
+				KeyID:          []byte{0x10, 0x20},
+				AESSettingsSet: true,
+				AESSettings: ContentEncAESSettings{
+					CipherMode: ContentEncAESCipherModeCTR,
+				},
+				Signature:              []byte{0xaa, 0xbb},
+				SignatureKeyID:         []byte{0x30, 0x40},
+				SignatureAlgorithm:     ContentSigAlgoRSA,
+				SignatureHashAlgorithm: ContentSigHashAlgoSHA1,
+			},
+		},
+	}
+	track := Track{
+		Type:             TrackVideo,
+		Codec:            CodecVP8,
+		ContentEncodings: cloneContentEncodings(wantEncodings),
+		Video:            VideoConfig{Width: 640, Height: 360},
+	}
+	trackID, err := muxer.AddTrack(track)
+	if err != nil {
+		t.Fatal(err)
+	}
+	track.ContentEncodings[0].Compression.Settings[0] = 0xff
+	track.ContentEncodings[1].Encryption.KeyID[0] = 0xff
+	track.ContentEncodings[1].Encryption.Signature[0] = 0xff
+	track.ContentEncodings[1].Encryption.SignatureKeyID[0] = 0xff
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if !reflect.DeepEqual(tracks[0].ContentEncodings, wantEncodings) {
+		t.Fatalf("encodings = %+v, want %+v", tracks[0].ContentEncodings, wantEncodings)
+	}
+	tracks[0].ContentEncodings[0].Compression.Settings[0] = 0xee
+	tracks[0].ContentEncodings[1].Encryption.KeyID[0] = 0xee
+	tracks[0].ContentEncodings[1].Encryption.Signature[0] = 0xee
+	tracks[0].ContentEncodings[1].Encryption.SignatureKeyID[0] = 0xee
+	fresh := demuxer.Tracks()
+	if !reflect.DeepEqual(fresh[0].ContentEncodings, wantEncodings) {
+		t.Fatalf("content encoding alias was not protected: %+v", fresh[0].ContentEncodings)
+	}
+}
+
 func TestMuxerDemuxerPreservesDecodedFieldDuration(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -2649,6 +2732,94 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 				Type:  TrackVideo,
 				Codec: CodecVP8,
 				Video: VideoConfig{Width: -1, Height: 16},
+			},
+		},
+		{
+			name: "duplicate content encoding order",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				ContentEncodings: []ContentEncoding{
+					{
+						Order:          0,
+						Type:           ContentEncodingTypeCompression,
+						CompressionSet: true,
+						Compression:    ContentCompression{Algorithm: ContentCompAlgoZlib},
+					},
+					{
+						Order:          0,
+						Type:           ContentEncodingTypeCompression,
+						CompressionSet: true,
+						Compression:    ContentCompression{Algorithm: ContentCompAlgoHeaderStripping},
+					},
+				},
+				Video: VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
+			name: "content encoding scope",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				ContentEncodings: []ContentEncoding{{
+					Scope:          8,
+					Type:           ContentEncodingTypeCompression,
+					CompressionSet: true,
+					Compression:    ContentCompression{Algorithm: ContentCompAlgoZlib},
+				}},
+				Video: VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
+			name: "content encoding compression missing",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				ContentEncodings: []ContentEncoding{{
+					Type: ContentEncodingTypeCompression,
+				}},
+				Video: VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
+			name: "content encoding encryption missing",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				ContentEncodings: []ContentEncoding{{
+					Type: ContentEncodingTypeEncryption,
+				}},
+				Video: VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
+			name: "content compression algorithm",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				ContentEncodings: []ContentEncoding{{
+					Type:           ContentEncodingTypeCompression,
+					CompressionSet: true,
+					Compression:    ContentCompression{Algorithm: ContentCompAlgoHeaderStripping + 1},
+				}},
+				Video: VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
+			name: "content encryption aes cipher",
+			track: Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				ContentEncodings: []ContentEncoding{{
+					Type:          ContentEncodingTypeEncryption,
+					EncryptionSet: true,
+					Encryption: ContentEncryption{
+						Algorithm:      ContentEncAlgoAES,
+						AESSettingsSet: true,
+						AESSettings:    ContentEncAESSettings{CipherMode: 3},
+					},
+				}},
+				Video: VideoConfig{Width: 16, Height: 16},
 			},
 		},
 		{
@@ -4328,6 +4499,146 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 					return err
 				}
 				return ew.WriteElement(idBlockAdditionMapping, blockAdditionMappingPayload(t, 2, true, 1, nil))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("empty content encodings", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idContentEncodings, nil)
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("duplicate content encoding order", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+					contentEncodingPayload(t, func(w *ebml.Writer) error {
+						if err := w.WriteUInt(idContentEncodingOrd, 1); err != nil {
+							return err
+						}
+						return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoZlib, nil))
+					}),
+					contentEncodingPayload(t, func(w *ebml.Writer) error {
+						if err := w.WriteUInt(idContentEncodingOrd, 1); err != nil {
+							return err
+						}
+						return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoHeaderStripping, []byte{0}))
+					}),
+				))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("content encoding invalid type", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+					contentEncodingPayload(t, func(w *ebml.Writer) error {
+						return w.WriteUInt(idContentEncodingType, 2)
+					}),
+				))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("content encoding invalid scope", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+					contentEncodingPayload(t, func(w *ebml.Writer) error {
+						if err := w.WriteUInt(idContentEncodingScope, 8); err != nil {
+							return err
+						}
+						return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoZlib, nil))
+					}),
+				))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("content compression missing", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+					contentEncodingPayload(t, func(w *ebml.Writer) error {
+						return w.WriteUInt(idContentEncodingType, ContentEncodingTypeCompression)
+					}),
+				))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("content encryption missing", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+					contentEncodingPayload(t, func(w *ebml.Writer) error {
+						return w.WriteUInt(idContentEncodingType, ContentEncodingTypeEncryption)
+					}),
+				))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("content compression invalid algorithm", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+					contentEncodingPayload(t, func(w *ebml.Writer) error {
+						return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoHeaderStripping+1, nil))
+					}),
+				))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("content aes settings missing cipher", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+					contentEncodingPayload(t, func(w *ebml.Writer) error {
+						if err := w.WriteUInt(idContentEncodingType, ContentEncodingTypeEncryption); err != nil {
+							return err
+						}
+						return w.WriteElement(idContentEncryption, contentEncryptionPayload(t, ContentEncAlgoAES, nil, contentAESCipherUnset))
+					}),
+				))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("content aes settings invalid cipher", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idContentEncodings, contentEncodingsPayload(t,
+					contentEncodingPayload(t, func(w *ebml.Writer) error {
+						if err := w.WriteUInt(idContentEncodingType, ContentEncodingTypeEncryption); err != nil {
+							return err
+						}
+						return w.WriteElement(idContentEncryption, contentEncryptionPayload(t, ContentEncAlgoAES, nil, 3))
+					}),
+				))
 			})
 		})
 		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
@@ -6581,6 +6892,76 @@ func trackTranslatePayload(t testing.TB, writeID bool, writeCodec bool) []byte {
 	}
 	if writeCodec {
 		if err := tw.WriteUInt(idTrackTranslateCodec, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return payload.Bytes()
+}
+
+func contentEncodingsPayload(t testing.TB, encodings ...[]byte) []byte {
+	t.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	for i := range encodings {
+		if err := writer.WriteElement(idContentEncoding, encodings[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return payload.Bytes()
+}
+
+func contentEncodingPayload(t testing.TB, write func(*ebml.Writer) error) []byte {
+	t.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if write != nil {
+		if err := write(writer); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return payload.Bytes()
+}
+
+func contentCompressionPayload(t testing.TB, algorithm uint64, settings []byte) []byte {
+	t.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writer.WriteUInt(idContentCompAlgo, algorithm); err != nil {
+		t.Fatal(err)
+	}
+	if settings != nil {
+		if err := writeBinary(writer, idContentCompSettings, settings); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return payload.Bytes()
+}
+
+const contentAESCipherUnset = ^uint64(0)
+
+func contentEncryptionPayload(t testing.TB, algorithm uint64, keyID []byte, cipherMode uint64) []byte {
+	t.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writer.WriteUInt(idContentEncAlgo, algorithm); err != nil {
+		t.Fatal(err)
+	}
+	if keyID != nil {
+		if err := writeBinary(writer, idContentEncKeyID, keyID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if cipherMode != contentAESCipherUnset {
+		var aesPayload bytes.Buffer
+		aesWriter := ebml.NewWriter(&aesPayload)
+		if err := aesWriter.WriteUInt(idContentEncAESCipher, cipherMode); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.WriteElement(idContentEncAES, aesPayload.Bytes()); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if err := writer.WriteElement(idContentEncAES, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

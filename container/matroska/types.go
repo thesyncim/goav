@@ -160,6 +160,7 @@ type Track struct {
 	BlockAdditionMappings         []BlockAdditionMapping
 	TrackOverlays                 []uint64
 	TrackTranslates               []TrackTranslate
+	ContentEncodings              []ContentEncoding
 	Audio                         AudioConfig
 	Video                         VideoConfig
 
@@ -178,6 +179,67 @@ type TrackTranslate struct {
 	Codec       uint64
 	EditionUIDs []uint64
 }
+
+type ContentEncoding struct {
+	Order          uint64
+	Scope          uint64
+	Type           uint64
+	Compression    ContentCompression
+	CompressionSet bool
+	Encryption     ContentEncryption
+	EncryptionSet  bool
+}
+
+type ContentCompression struct {
+	Algorithm uint64
+	Settings  []byte
+}
+
+type ContentEncryption struct {
+	Algorithm              uint64
+	KeyID                  []byte
+	AESSettings            ContentEncAESSettings
+	AESSettingsSet         bool
+	Signature              []byte
+	SignatureKeyID         []byte
+	SignatureAlgorithm     uint64
+	SignatureHashAlgorithm uint64
+}
+
+type ContentEncAESSettings struct {
+	CipherMode uint64
+}
+
+const (
+	ContentEncodingScopeBlock   uint64 = 1
+	ContentEncodingScopePrivate uint64 = 2
+	ContentEncodingScopeNext    uint64 = 4
+
+	ContentEncodingTypeCompression uint64 = 0
+	ContentEncodingTypeEncryption  uint64 = 1
+
+	ContentCompAlgoZlib            uint64 = 0
+	ContentCompAlgoBzlib           uint64 = 1
+	ContentCompAlgoLZO1X           uint64 = 2
+	ContentCompAlgoHeaderStripping uint64 = 3
+
+	ContentEncAlgoNotEncrypted uint64 = 0
+	ContentEncAlgoDES          uint64 = 1
+	ContentEncAlgoTripleDES    uint64 = 2
+	ContentEncAlgoTwofish      uint64 = 3
+	ContentEncAlgoBlowfish     uint64 = 4
+	ContentEncAlgoAES          uint64 = 5
+
+	ContentEncAESCipherModeCTR uint64 = 1
+	ContentEncAESCipherModeCBC uint64 = 2
+
+	ContentSigAlgoNotSigned uint64 = 0
+	ContentSigAlgoRSA       uint64 = 1
+
+	ContentSigHashAlgoNotSigned uint64 = 0
+	ContentSigHashAlgoSHA1      uint64 = 1
+	ContentSigHashAlgoMD5       uint64 = 2
+)
 
 type Packet struct {
 	TrackID              uint32

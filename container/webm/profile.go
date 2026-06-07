@@ -26,6 +26,10 @@ type VideoConfig = matroska.VideoConfig
 type VideoColourConfig = matroska.VideoColourConfig
 type VideoMasteringMetadataConfig = matroska.VideoMasteringMetadataConfig
 type VideoProjectionConfig = matroska.VideoProjectionConfig
+type ContentEncoding = matroska.ContentEncoding
+type ContentCompression = matroska.ContentCompression
+type ContentEncryption = matroska.ContentEncryption
+type ContentEncAESSettings = matroska.ContentEncAESSettings
 type SegmentInfo = matroska.SegmentInfo
 type Track = matroska.Track
 type Packet = matroska.Packet
@@ -38,6 +42,37 @@ const (
 	LacingXiph  = matroska.LacingXiph
 	LacingEBML  = matroska.LacingEBML
 	LacingFixed = matroska.LacingFixed
+)
+
+const (
+	ContentEncodingScopeBlock   = matroska.ContentEncodingScopeBlock
+	ContentEncodingScopePrivate = matroska.ContentEncodingScopePrivate
+	ContentEncodingScopeNext    = matroska.ContentEncodingScopeNext
+
+	ContentEncodingTypeCompression = matroska.ContentEncodingTypeCompression
+	ContentEncodingTypeEncryption  = matroska.ContentEncodingTypeEncryption
+
+	ContentCompAlgoZlib            = matroska.ContentCompAlgoZlib
+	ContentCompAlgoBzlib           = matroska.ContentCompAlgoBzlib
+	ContentCompAlgoLZO1X           = matroska.ContentCompAlgoLZO1X
+	ContentCompAlgoHeaderStripping = matroska.ContentCompAlgoHeaderStripping
+
+	ContentEncAlgoNotEncrypted = matroska.ContentEncAlgoNotEncrypted
+	ContentEncAlgoDES          = matroska.ContentEncAlgoDES
+	ContentEncAlgoTripleDES    = matroska.ContentEncAlgoTripleDES
+	ContentEncAlgoTwofish      = matroska.ContentEncAlgoTwofish
+	ContentEncAlgoBlowfish     = matroska.ContentEncAlgoBlowfish
+	ContentEncAlgoAES          = matroska.ContentEncAlgoAES
+
+	ContentEncAESCipherModeCTR = matroska.ContentEncAESCipherModeCTR
+	ContentEncAESCipherModeCBC = matroska.ContentEncAESCipherModeCBC
+
+	ContentSigAlgoNotSigned = matroska.ContentSigAlgoNotSigned
+	ContentSigAlgoRSA       = matroska.ContentSigAlgoRSA
+
+	ContentSigHashAlgoNotSigned = matroska.ContentSigHashAlgoNotSigned
+	ContentSigHashAlgoSHA1      = matroska.ContentSigHashAlgoSHA1
+	ContentSigHashAlgoMD5       = matroska.ContentSigHashAlgoMD5
 )
 
 type MuxerOptions struct {
