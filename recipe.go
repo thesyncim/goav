@@ -2963,8 +2963,9 @@ func (b *JobStreamBuilder) Apply(flow Flow) *JobStreamBuilder {
 		stream.steps = append(stream.steps, cloneJobStreamSteps(spec.steps)...)
 	}
 	if codecIntentSet(spec.encode) {
-		return b.Encode(spec.encode)
+		b.Encode(spec.encode)
 	}
+	stream.postEncodeTaps = append(stream.postEncodeTaps, spec.postEncodeTaps...)
 	return b
 }
 

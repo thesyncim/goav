@@ -3222,7 +3222,9 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 	}}
 	defer builtTask.Close()
 
-	flow := AudioFlow("voice").Encode(Codec(customPCM, av.MediaAudio, SampleRate(16_000), Channels(Mono)))
+	flow := AudioFlow("voice").
+		Encode(Codec(customPCM, av.MediaAudio, SampleRate(16_000), Channels(Mono))).
+		Tap("audio.voice.packets")
 	attachment, err := builtTask.Attach(ctx, Branch("record").
 		FromTap("audio.frames").
 		Apply(flow).
@@ -3233,11 +3235,35 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 	if !strings.Contains(specText(attachment.Spec()), "record/encode-record -> record/recording.ogg") {
 		t.Fatalf("attachment spec:\n%s", specText(attachment.Spec()))
 	}
+	packetTap, ok := findTap(builtTask.Taps(), "audio.voice.packets")
+	if !ok ||
+		packetTap.Domain != DomainPacket ||
+		packetTap.MediaKind != av.MediaAudio ||
+		packetTap.After != OpEncode ||
+		packetTap.Node != "record/encode-record" ||
+		packetTap.Caps.Codec != customPCM ||
+		packetTap.Caps.SampleRate != 16_000 ||
+		packetTap.Caps.Channels != Mono {
+		t.Fatalf("packet tap = %+v ok=%v, want custom PCM packet tap on flow encoder", packetTap, ok)
+	}
+	packetMessages := 0
+	packetAttachment, err := builtTask.Attach(ctx, Branch("packets").
+		FromTap("audio.voice.packets").
+		To(SinkEndpoint(SinkFunc("packets", func(_ context.Context, msg Message) error {
+			if msg.Kind != pipeline.MessagePacket {
+				return errors.New("packet tap delivered non-packet message")
+			}
+			packetMessages++
+			return nil
+		}))))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := builtTask.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if base.count != 1 || encoder.encodes != 1 {
-		t.Fatalf("base=%d encodes=%d", base.count, encoder.encodes)
+	if base.count != 1 || encoder.encodes != 1 || packetMessages != 1 {
+		t.Fatalf("base=%d encodes=%d packetMessages=%d", base.count, encoder.encodes, packetMessages)
 	}
 	if encoderFactory.config.Parameters.ID != customPCM ||
 		encoderFactory.config.Stream.Codec.ID != customPCM ||
@@ -3250,6 +3276,9 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 		muxers.muxers[0].lastStream != "record" ||
 		!streamIDsEqual(muxers.muxers[0].openedStreams, []av.StreamID{"record"}) {
 		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := builtTask.Detach(ctx, packetAttachment); err != nil {
+		t.Fatal(err)
 	}
 	if err := builtTask.Detach(ctx, attachment); err != nil {
 		t.Fatal(err)

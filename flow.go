@@ -17,13 +17,14 @@ type Flow interface {
 }
 
 type streamFlowSpec struct {
-	name       string
-	media      av.MediaType
-	decode     bool
-	steps      []jobStreamStep
-	transforms []TransformSpec
-	encode     CodecSpec
-	err        error
+	name           string
+	media          av.MediaType
+	decode         bool
+	steps          []jobStreamStep
+	postEncodeTaps []string
+	transforms     []TransformSpec
+	encode         CodecSpec
+	err            error
 }
 
 type flowBuilder struct {
@@ -242,10 +243,6 @@ func (b *flowBuilder) tap(name string) {
 	if b == nil {
 		return
 	}
-	if codecIntentSet(b.spec.encode) {
-		b.setErr(streamStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "tap", b.spec.encode))
-		return
-	}
 	if name == "" {
 		b.setErr(&BuildError{
 			Code:      "tap_invalid",
@@ -258,6 +255,10 @@ func (b *flowBuilder) tap(name string) {
 			},
 			Cause: ErrUnsupportedBuild,
 		})
+		return
+	}
+	if codecIntentSet(b.spec.encode) {
+		b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, name)
 		return
 	}
 	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: name})
@@ -280,6 +281,7 @@ func (b *flowBuilder) snapshot() streamFlowSpec {
 	}
 	spec := b.spec
 	spec.steps = cloneJobStreamSteps(spec.steps)
+	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
 	return spec
 }

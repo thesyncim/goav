@@ -1895,6 +1895,38 @@ func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
 	}
 }
 
+func TestFlowTapAfterEncodeIsPacketTap(t *testing.T) {
+	voice := goav.AudioFlow("voice").
+		OpusVoice().
+		Tap("audio.voice.packets")
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(voice).
+		To(goav.FileOutput("voice.ogg", io.Discard))
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	operations := intent.Streams[0].Operations
+	if len(operations) != 3 ||
+		operations[0].Kind != goav.OpDecode ||
+		operations[1].Kind != goav.OpEncode ||
+		operations[2].Kind != goav.OpTap ||
+		operations[2].Tap.Name != "audio.voice.packets" ||
+		operations[2].Tap.Domain != goav.DomainPacket ||
+		operations[2].Tap.After != goav.OpEncode {
+		t.Fatalf("operations: %+v", operations)
+	}
+	if len(intent.Streams[0].Taps) != 1 ||
+		intent.Streams[0].Taps[0].Name != "audio.voice.packets" ||
+		intent.Streams[0].Taps[0].Domain != goav.DomainPacket ||
+		intent.Streams[0].Taps[0].After != goav.OpEncode {
+		t.Fatalf("taps: %+v", intent.Streams[0].Taps)
+	}
+}
+
 func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 	voice := goav.AudioFlow("voice").
 		Resample(16_000, goav.Mono).
@@ -2438,7 +2470,7 @@ func TestBranchesRejectOuterOutputsAndDuplicateTargets(t *testing.T) {
 	}
 }
 
-func TestFlowRejectsOperationsAfterEncode(t *testing.T) {
+func TestFlowRejectsNonTapOperationsAfterEncode(t *testing.T) {
 	tests := []struct {
 		name string
 		flow goav.Flow
@@ -2459,13 +2491,6 @@ func TestFlowRejectsOperationsAfterEncode(t *testing.T) {
 					return nil
 				})),
 			want: "custom stage",
-		},
-		{
-			name: "tap",
-			flow: goav.AudioFlow("voice").
-				OpusVoice().
-				Tap("audio.after-encode"),
-			want: "tap",
 		},
 	}
 	for _, tt := range tests {

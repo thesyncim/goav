@@ -1455,6 +1455,16 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     advanced graph escape hatch remains handle-based. `TestRuntimeBuilderUsesMuxVerbNotOutput`
     pins the private builder contract.
     Done.
+309. Let flows publish post-encode packet taps:
+    `AudioFlow` and `VideoFlow` now carry taps declared after an encoder as
+    packet-domain attach points, matching stream and branch tap semantics
+    instead of making flows a weaker operation language. Flow-applied taps flow
+    through direct stream chains, planned branches, and runtime branches.
+    `TestFlowTapAfterEncodeIsPacketTap` pins the intent shape, and
+    `TestTaskAttachRuntimeFlowCustomEncodeMuxBranch` proves a live flow-encoded
+    runtime branch can publish a packet tap that another runtime branch attaches
+    from.
+    Done.
 
 ## First Vertical Slice
 
