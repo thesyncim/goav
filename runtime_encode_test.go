@@ -167,6 +167,36 @@ func TestRuntimeBuilderInputDecodeFilterEncodeOutputs(t *testing.T) {
 	}
 }
 
+func TestEncodePacketBufferSizeScalesWithVideoFrame(t *testing.T) {
+	audio := encodePacketBufferSize(av.Stream{
+		Type:  av.MediaAudio,
+		Codec: av.CodecParameters{Type: av.MediaAudio},
+	})
+	if audio != 4096 {
+		t.Fatalf("audio buffer = %d, want 4096", audio)
+	}
+
+	fallbackVideo := encodePacketBufferSize(av.Stream{
+		Type:  av.MediaVideo,
+		Codec: av.CodecParameters{Type: av.MediaVideo},
+	})
+	if fallbackVideo < 4*1024*1024 {
+		t.Fatalf("fallback video buffer = %d, want at least 4 MiB", fallbackVideo)
+	}
+
+	video := encodePacketBufferSize(av.Stream{
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			Type:   av.MediaVideo,
+			Width:  960,
+			Height: 540,
+		},
+	})
+	if video < 960*540*3 {
+		t.Fatalf("video buffer = %d, want sized for frame dimensions", video)
+	}
+}
+
 func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
 	ctx := context.Background()
 	stream := audioOpusTestStream()

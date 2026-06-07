@@ -74,11 +74,13 @@ func (d *VP9Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.
 		d.dropUntilSync = true
 		return d.appendKeyframeRequest(out, "vp9 packet loss")
 	}
+	requestedKeyframe := false
 	if pkt.LossBefore || pkt.Discontinuous {
 		d.dropUntilSync = true
 		if err := d.appendKeyframeRequest(out, "vp9 discontinuity"); err != nil {
 			return err
 		}
+		requestedKeyframe = true
 	}
 	if pkt.Corrupt && d.dropDamagedVideo {
 		d.dropUntilSync = true
@@ -90,6 +92,9 @@ func (d *VP9Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.
 		return mapGovpxError(err)
 	}
 	if d.dropUntilSync && !streamInfo.KeyFrame {
+		if requestedKeyframe {
+			return nil
+		}
 		return d.appendKeyframeRequest(out, "vp9 waiting for keyframe")
 	}
 	if streamInfo.KeyFrame {

@@ -12,7 +12,7 @@ func main() {
 	addr := flag.String("addr", ":8080", "HTTP listen address")
 	flag.Parse()
 
-	app := newServer(goav.Default())
+	app := newServer(goav.New(goav.WithDefaults(), goav.WithEventCapacity(1024)))
 	mux := http.NewServeMux()
 	app.routes(mux)
 

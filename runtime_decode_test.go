@@ -474,19 +474,38 @@ func TestRuntimeBuilderDecodeRequiresUnambiguousStream(t *testing.T) {
 	}
 }
 
-func TestDecodeResultForVideoPreallocatesPlaneSlots(t *testing.T) {
+func TestDecodeResultForVideoPreallocatesPlaneBacking(t *testing.T) {
 	result := decodeResultForStream(av.Stream{
 		ID:   "video",
 		Type: av.MediaVideo,
 		Codec: av.CodecParameters{
-			ID:   av.CodecH264,
-			Type: av.MediaVideo,
+			ID:     av.CodecH264,
+			Type:   av.MediaVideo,
+			Width:  640,
+			Height: 360,
 		},
 	}, codec.DecodeBounds{})
 	frames := result.Frames[:cap(result.Frames)]
 	if len(frames) != 1 || cap(frames[0].Planes) < 3 {
 		t.Fatalf("frames=%d plane cap=%d", len(frames), cap(frames[0].Planes))
 	}
+	assertVideoDecodePlaneCaps(t, frames[0], 640, 360)
+}
+
+func TestDecodeResultForVideoUsesDefaultBackingWhenGeometryIsUnknown(t *testing.T) {
+	result := decodeResultForStream(av.Stream{
+		ID:   "video",
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			ID:   av.CodecVP8,
+			Type: av.MediaVideo,
+		},
+	}, codec.DecodeBounds{})
+	frames := result.Frames[:cap(result.Frames)]
+	if len(frames) != 1 {
+		t.Fatalf("frames=%d, want 1", len(frames))
+	}
+	assertVideoDecodePlaneCaps(t, frames[0], defaultVideoDecodeWidth, defaultVideoDecodeHeight)
 }
 
 func TestDecodeResultForVideoUsesBoundsCapacity(t *testing.T) {
@@ -501,6 +520,8 @@ func TestDecodeResultForVideoUsesBoundsCapacity(t *testing.T) {
 		MaxFramesPerInput:   2,
 		MaxEventsPerInput:   3,
 		MaxRequestsPerInput: 4,
+		MaxWidth:            1280,
+		MaxHeight:           720,
 	})
 	frames := result.Frames[:cap(result.Frames)]
 	if len(frames) != 2 ||
@@ -510,6 +531,25 @@ func TestDecodeResultForVideoUsesBoundsCapacity(t *testing.T) {
 		cap(result.Requests) != 4 {
 		t.Fatalf("result caps frames=%d planes=%d/%d events=%d requests=%d",
 			len(frames), cap(frames[0].Planes), cap(frames[1].Planes), cap(result.Events), cap(result.Requests))
+	}
+	assertVideoDecodePlaneCaps(t, frames[0], 1280, 720)
+	assertVideoDecodePlaneCaps(t, frames[1], 1280, 720)
+}
+
+func assertVideoDecodePlaneCaps(t *testing.T, frame av.Frame, width int, height int) {
+	t.Helper()
+	if len(frame.Planes) != 3 {
+		t.Fatalf("planes = %d, want 3", len(frame.Planes))
+	}
+	chromaWidth := (width + 1) / 2
+	chromaHeight := (height + 1) / 2
+	if cap(frame.Planes[0].Buffer.Bytes) != width*height ||
+		cap(frame.Planes[1].Buffer.Bytes) != chromaWidth*chromaHeight ||
+		cap(frame.Planes[2].Buffer.Bytes) != chromaWidth*chromaHeight {
+		t.Fatalf("plane caps = %d %d %d",
+			cap(frame.Planes[0].Buffer.Bytes),
+			cap(frame.Planes[1].Buffer.Bytes),
+			cap(frame.Planes[2].Buffer.Bytes))
 	}
 }
 

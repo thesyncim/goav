@@ -65,9 +65,10 @@ func unsupportedRuntimeGraphError(b *builder) error {
 
 func (b *builder) newGraph(_ context.Context) (pipeline.Graph, error) {
 	return pipeline.NewGraph(pipeline.GraphConfig{
-		Name:     "goav",
-		Realtime: b.runtime.realtime,
-		Buffer:   b.runtime.buffer,
+		Name:          "goav",
+		Realtime:      b.runtime.realtime,
+		Buffer:        b.runtime.buffer,
+		EventCapacity: b.runtime.eventCapacity,
 	})
 }
 

@@ -147,6 +147,32 @@ func TestVP9InterFrameBeforeKeyframeRequestsKeyframe(t *testing.T) {
 	}
 }
 
+func TestVP9PacketLossInterFrameRequestsOneKeyframe(t *testing.T) {
+	ctx := context.Background()
+	decoder, err := NewVP9DecoderFactory().NewDecoder(ctx, codec.DecodeConfig{
+		Stream: vp9TestStream(),
+		Resilience: codec.ResiliencePolicy{
+			RequestKeyframes: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, inter := encodedVP9KeyAndInterFrames(t)
+	result := vp9DecodeResult(1, 64, 64)
+	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: inter}, LossBefore: true}
+
+	if err := decoder.DecodeInto(ctx, &packet, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 0 {
+		t.Fatalf("frames = %d, want 0", len(result.Frames))
+	}
+	if len(result.Requests) != 1 || result.Requests[0].Type != codec.ControlRequestKeyframe {
+		t.Fatalf("requests = %+v", result.Requests)
+	}
+}
+
 func TestVP9CodecChangedUpdatesStreamIdentity(t *testing.T) {
 	ctx := context.Background()
 	decoder, err := NewVP9DecoderFactory().NewDecoder(ctx, codec.DecodeConfig{Stream: vp9TestStream()})

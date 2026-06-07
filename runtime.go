@@ -87,6 +87,12 @@ func WithBufferPolicy(policy pipeline.BufferPolicy) Option {
 	}
 }
 
+func WithEventCapacity(capacity int) Option {
+	return func(runtime *runtime) {
+		runtime.eventCapacity = capacity
+	}
+}
+
 func WithRealtime(realtime bool) Option {
 	return func(runtime *runtime) {
 		runtime.realtime = realtime
@@ -94,11 +100,12 @@ func WithRealtime(realtime bool) Option {
 }
 
 type runtime struct {
-	codecs   *codec.SimpleRegistry
-	filters  *filter.SimpleRegistry
-	formats  *format.SimpleRegistry
-	buffer   pipeline.BufferPolicy
-	realtime bool
+	codecs        *codec.SimpleRegistry
+	filters       *filter.SimpleRegistry
+	formats       *format.SimpleRegistry
+	buffer        pipeline.BufferPolicy
+	realtime      bool
+	eventCapacity int
 }
 
 type builderAPI interface {

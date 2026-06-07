@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
 )
@@ -61,7 +62,7 @@ func (s *session) startVideoTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := goav.From(goav.WebRTCTrack(track)).
+	task, err := goav.From(goav.WebRTCTrack(track).Feedback(peerFeedback{s.pc})).
 		UseRuntime(s.runtime).
 		Video().
 		Decode().
@@ -100,7 +101,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := goav.From(goav.WebRTCTrack(track)).
+	task, err := goav.From(goav.WebRTCTrack(track).Feedback(peerFeedback{s.pc})).
 		UseRuntime(s.runtime).
 		Audio().
 		Decode().
@@ -133,11 +134,39 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 
 func (s *session) runTask(kind string, task goav.Task) {
 	s.record("info", "task", kind+" task running", kind, "", nil)
+	go s.drainTaskEvents(task)
 	if err := task.Run(s.ctx); err != nil && !errors.Is(err, context.Canceled) {
 		s.setError(kind + ": " + err.Error())
 		return
 	}
 	s.record("info", "task", kind+" task stopped", kind, "", nil)
+}
+
+func (s *session) drainTaskEvents(task goav.Task) {
+	for {
+		select {
+		case _, ok := <-task.Events():
+			if !ok {
+				return
+			}
+		case <-s.ctx.Done():
+			return
+		}
+	}
+}
+
+type peerFeedback struct {
+	pc *webrtc.PeerConnection
+}
+
+func (f peerFeedback) WriteRTCP(ctx context.Context, packets []rtcp.Packet) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if f.pc == nil || len(packets) == 0 {
+		return nil
+	}
+	return f.pc.WriteRTCP(packets)
 }
 
 func (s *session) State() stateResponse {
