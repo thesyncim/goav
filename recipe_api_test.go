@@ -925,6 +925,36 @@ func TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor(t *testing.T) {
 	}
 }
 
+func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, forbidden := range []string{
+		"goav.Path(",
+		".Paths(",
+		"goav.Output(",
+		".Outputs(",
+		".To(\"",
+		"PathSpec",
+		"PathBuilder",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("README keeps old branch/target vocabulary %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"goav.Branch(",
+		"Branches(",
+		"goav.Target(",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("README should show %s in the public composition grammar", required)
+		}
+	}
+}
+
 func TestReadmeThirtySecondExamplesUseDefaultFormats(t *testing.T) {
 	body, err := os.ReadFile("README.md")
 	if err != nil {

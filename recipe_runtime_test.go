@@ -667,6 +667,94 @@ func TestStreamRecipeCopyTapCanAttachRuntimeSink(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeCopyTapCanAttachRuntimeMuxTarget(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    Stereo,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	muxers := &remuxTestMuxerFactory{}
+	runtime := New(withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	))
+
+	task, err := From(RTP(receiver).Name("audio").Codec(Opus())).
+		UseRuntime(runtime).
+		Audio().
+		Copy().
+		Tap("audio.copied").
+		To(FileOutput("archive.ogg", io.Discard)).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	var copiedTap TapInfo
+	for _, tap := range task.Taps() {
+		if tap.Name == "audio.copied" {
+			copiedTap = tap
+			break
+		}
+	}
+	if copiedTap.Name == "" ||
+		copiedTap.Domain != DomainPacket ||
+		copiedTap.MediaKind != av.MediaAudio ||
+		copiedTap.Caps.Codec != av.CodecOpus ||
+		copiedTap.Caps.StreamID != "audio" ||
+		copiedTap.Node != "select-audio" {
+		t.Fatalf("copied tap = %+v, want packet Opus audio tap on select-audio", copiedTap)
+	}
+
+	recording, err := task.Attach(ctx, Branch("record").
+		FromTap("audio.copied").
+		Copy().
+		To(Target("record", FileOutput("recording.ogg", io.Discard))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(muxers.muxers) != 2 ||
+		muxers.muxers[0].writes != 1 ||
+		muxers.muxers[1].writes != 1 ||
+		muxers.muxers[0].lastStream != "audio" ||
+		muxers.muxers[1].lastStream != "audio" {
+		t.Fatalf("muxers=%d first=%+v second=%+v", len(muxers.muxers), muxers.muxers[0], muxers.muxers[1])
+	}
+	if err := task.Detach(ctx, recording); err != nil {
+		t.Fatal(err)
+	}
+	if !muxers.muxers[1].closed {
+		t.Fatal("late recording muxer was not closed by detach")
+	}
+}
+
 func TestStreamRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}

@@ -1049,6 +1049,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     attach parent branches that publish encoded or copied packet taps, then
     attach child packet-copy recording branches from those taps before future
     media arrives. Done.
+260. Prove direct stream copy taps can become runtime mux targets:
+    `From(RTP(...).Codec(Opus())).Audio().Copy().Tap("audio.copied")`
+    now exposes a packet-domain, codec-bearing tap on the selected stream, and
+    a later `Task.Attach(ctx, goav.Branch(...).FromTap(...).Copy().To(goav.Target(...)))`
+    recording branch receives future RTP packets through the same typed
+    `Branch`/`Target` grammar as planned composition. Done.
 
 ## First Vertical Slice
 

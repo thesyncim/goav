@@ -432,6 +432,11 @@ func planTaps(branches []planBranch) []planTap {
 		for j := range branch.Operations {
 			operation := branch.Operations[j]
 			switch operation.Kind {
+			case OpDepacketize:
+				if codecID := knownPlanCodec(operation.Component); codecID != "" {
+					currentCodec = codecID
+					media = firstNonEmptyMedia(media, codecMedia(codecID))
+				}
 			case OpDecode, OpTransform, OpStage:
 				currentDomain = DomainFrame
 			case OpCopy:
@@ -465,6 +470,14 @@ func planTaps(branches []planBranch) []planTap {
 		}
 	}
 	return taps
+}
+
+func knownPlanCodec(component string) av.CodecID {
+	codecID := av.CodecID(component)
+	if codecMedia(codecID) == "" {
+		return ""
+	}
+	return codecID
 }
 
 func planOperationNodeName(branch string, operation planOperation, index int) string {
