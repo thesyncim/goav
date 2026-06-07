@@ -3072,22 +3072,57 @@ func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
 	}
 }
 
-func TestTranscodeRecipeRejectsSinkEndpointOutput(t *testing.T) {
-	_, err := transcodeJob(goav.FileInput("input.webm", strings.NewReader(""))).
-		Video("360p").VP9(600_000).
-		To(goav.Target("preview", goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
-			return nil
-		})))).
-		Build(context.Background())
+func TestBranchCompositionAcceptsSinkEndpointTarget(t *testing.T) {
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			goav.Branch("preview").
+				To(goav.Target("preview", goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+					return nil
+				})))),
+		)
 
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_kind_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want target_kind_invalid wrapping ErrUnsupportedBuild", err)
+	intent := job.Intent()
+	if len(intent.Streams) != 1 ||
+		intent.Streams[0].Name != "preview" ||
+		intent.Streams[0].Encode.ID != "" ||
+		!equalStrings(intent.Streams[0].Targets, []string{"preview"}) {
+		t.Fatalf("intent: %+v", intent)
 	}
-	if !strings.Contains(err.Error(), "planned branch targets are muxed output groups") ||
-		!strings.Contains(err.Error(), "goav.FileOutput") ||
-		!strings.Contains(err.Error(), "Task.Attach") {
-		t.Fatalf("err = %v, want transcode target guidance", err)
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "decode-video -> frames") ||
+		strings.Contains(text, "encode-preview") {
+		t.Fatalf("spec:\n%s", text)
+	}
+}
+
+func TestBranchCompositionAcceptsSinkEndpointAfterResize(t *testing.T) {
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			goav.Branch("thumb").
+				Resize(320, 180).
+				To(goav.Target("thumbnail", goav.SinkEndpoint(goav.SinkFunc("thumbnail", func(context.Context, goav.Message) error {
+					return nil
+				})))),
+		)
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "decode-video -> resize-thumb") ||
+		!strings.Contains(text, "resize-thumb -> thumbnail") ||
+		strings.Contains(text, "encode-thumb") {
+		t.Fatalf("spec:\n%s", text)
 	}
 }
 

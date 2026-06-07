@@ -557,10 +557,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     generic `From(input).To(...)` recipes during intent validation. Superseded
     before release by packet-domain `SinkEndpoint` support for `.Copy()` and
     stream-scoped packet sinks. Done.
-171. Reject `SinkEndpoint` as a planned branch mux target because planned branch
-    targets are muxed output groups; keep decoded sink endpoints on
-    stream-scoped `From(...).Audio()/Video().Decode().To(SinkEndpoint(...))`
-    recipes. Done.
+171. Earlier experiment: reject `SinkEndpoint` as a planned branch target because
+    planned branch targets were treated as mux-only groups. Superseded before
+    release by domain-honest branch targets where sink endpoints can receive raw
+    frames or encoded packets. Done.
 172. Preserve `ErrUnsupportedBuild` through more recipe `BuildError`
     diagnostics for unsupported shapes such as multiple file inputs, selected
     streams with no operation, missing encoders for mux outputs, and RTP inputs
@@ -934,6 +934,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     forcing decoder preflight, direct encode-to-sink reuses the encoder stage
     path, and planned/built graph equivalence plus runtime packet delivery are
     covered by tests. Done.
+244. Support sink endpoints as planned branch targets:
+    `Branches(goav.Branch(name).To(goav.Target(name, SinkEndpoint(...))))`
+    now stays in frame domain when no encoder is declared, can attach after
+    ordered branch operations such as `Resize(...)`, and sends encoded packets to
+    the same sink endpoint shape after Opus/VP8/VP9 encode. Mux targets still
+    require explicit encode, planned branch `.Copy()` remains rejected because
+    planned branches begin after decode, and the low-level transcode plan now
+    carries either a mux endpoint or a sink endpoint per target. Done.
 
 ## First Vertical Slice
 

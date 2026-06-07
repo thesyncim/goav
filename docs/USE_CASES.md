@@ -63,8 +63,9 @@ suggests `StreamID`, `StreamName`, or `StreamIndex(0)`.
 
 `Tap` names a stable point. `Branches` declares downstream alternatives from
 one selected stream. Each branch is an ordered chain: custom stages, transforms,
-taps, encode, then typed targets. This keeps complex work natural without
-exposing graph wiring.
+taps, optional encode, then typed targets. Mux targets require encoded packets;
+sink endpoint targets can receive decoded frames before encode or packets after
+copy/encode. This keeps complex work natural without exposing graph wiring.
 
 ```go
 main := goav.Target("main", goav.FileOutput("main.webm", out))
@@ -94,7 +95,26 @@ err := goav.From(input).
 ```
 
 One target can be a mux group. Several encoded branches can feed the same
-target. Containers shown outside IVF/Annex B require matching adapters.
+target. A target can also be a sink endpoint for preview, screenshots, analysis,
+or integration work after any branch operation:
+
+```go
+thumbs := goav.Target("thumbs",
+    goav.SinkEndpoint(goav.SinkFunc("thumbs", collectThumbnail)),
+)
+
+err := goav.From(input).
+    Video().
+    Decode().
+    Branches(
+        goav.Branch("thumb").
+            Resize(320, 180).
+            To(thumbs),
+    ).
+    Run(ctx)
+```
+
+Containers shown outside IVF/Annex B require matching adapters.
 
 ## Custom Components
 

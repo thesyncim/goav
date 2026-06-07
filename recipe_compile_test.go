@@ -1447,7 +1447,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 			want: "transcode branches need stable names",
 		},
 		{
-			name: "encode missing",
+			name: "copy unsupported",
 			state: recipeCompileState{
 				operation: transcodeRecipeOperation,
 				intent: Intent{
@@ -1455,12 +1455,13 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []StreamIntent{{
 						Name:    "360p",
 						Select:  StreamSelect{Type: av.MediaVideo},
+						Encode:  Copy(),
 						Targets: []string{"web"},
 					}},
 				},
 			},
-			code: "encode_missing",
-			want: "stream has no codec target",
+			code: "copy_unsupported",
+			want: "cannot copy packets",
 		},
 		{
 			name: "auto unresolved",
@@ -1532,18 +1533,6 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 			want: "RTP transcode recipes",
 		},
 		{
-			name: "sink endpoint target",
-			state: recipeCompileState{
-				transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
-				transcodeTargetAttachments: []namedTargetSpec{{
-					name:   "frames",
-					output: SinkEndpoint(SinkFunc("frames", func(context.Context, Message) error { return nil })),
-				}},
-			},
-			code: "target_kind_invalid",
-			want: "planned branch targets are muxed output groups",
-		},
-		{
 			name: "duplicate targets",
 			state: recipeCompileState{
 				transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
@@ -1568,6 +1557,55 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestTranscodeBranchTargetKindsPassAllowsRawSinkBranches(t *testing.T) {
+	state := recipeCompileState{
+		operation: transcodeRecipeOperation,
+		intent: Intent{
+			Inputs: []InputIntent{{Name: "input.ivf"}},
+			Streams: []StreamIntent{{
+				Name:    "preview",
+				Select:  StreamSelect{Type: av.MediaVideo},
+				Targets: []string{"frames"},
+			}},
+		},
+		transcodeTargetAttachments: []namedTargetSpec{{
+			name:   "frames",
+			output: SinkEndpoint(SinkFunc("frames", func(context.Context, Message) error { return nil })),
+		}},
+	}
+
+	if err := validateTranscodeBranchTargetKindsPass().Apply(&state); err != nil {
+		t.Fatalf("validateTranscodeBranchTargetKindsPass() error = %v", err)
+	}
+}
+
+func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
+	state := recipeCompileState{
+		operation: transcodeRecipeOperation,
+		intent: Intent{
+			Inputs: []InputIntent{{Name: "input.ivf"}},
+			Streams: []StreamIntent{{
+				Name:    "preview",
+				Select:  StreamSelect{Type: av.MediaVideo},
+				Targets: []string{"web"},
+			}},
+		},
+		transcodeTargetAttachments: []namedTargetSpec{{
+			name:   "web",
+			output: FileOutput("web.ivf", io.Discard),
+		}},
+	}
+
+	err := validateTranscodeBranchTargetKindsPass().Apply(&state)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "muxed target") || !strings.Contains(err.Error(), "SinkEndpoint") {
+		t.Fatalf("err = %v, want mux and sink guidance", err)
 	}
 }
 

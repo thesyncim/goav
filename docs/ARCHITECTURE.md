@@ -118,9 +118,10 @@ Current graph execution covers:
   transforms, encoder, and mux output
 - transcode recipes for one input grouped by selected stream: video branches can
   share a video decode, audio branches can share an audio decode, and one output
-  label is a mux group that can receive coordinated encoded audio and video
-  branches. Resize/resample configs insert filter stages through the filter
-  registry, and outputs select branches by branch name.
+  target can be a mux group that receives coordinated encoded audio and video
+  branches or a sink endpoint that receives frames before encode and packets
+  after encode. Resize/resample configs insert filter stages through the filter
+  registry, and targets select branches by branch name.
 
 Resize and resample branch configs fail explicitly at build time when no matching
 filter factory is registered.

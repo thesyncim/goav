@@ -344,6 +344,7 @@ func compileTranscodeRecipeWithOptions(job *transcodeJob, options recipeCompileO
 		validateRecipeAttachmentConsistencyPass(),
 		validateTranscodeAttachmentsPass(),
 		validateTranscodeOutputBindingsPass(),
+		validateTranscodeBranchTargetKindsPass(),
 		validateTranscodeOutputFormatAdaptersPass(),
 		validateTranscodeEncodeAdaptersPass(),
 		validateTranscodeTransformAdaptersPass(),
@@ -769,6 +770,12 @@ func validateTranscodeTransformAdaptersPass() recipeCompilePass {
 func validateTranscodeOutputBindingsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode output bindings", fn: func(state *recipeCompileState) error {
 		return validateTranscodeOutputBindings(state.intent, state.transcodeTargetAttachments)
+	}}
+}
+
+func validateTranscodeBranchTargetKindsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate transcode branch target kinds", fn: func(state *recipeCompileState) error {
+		return validateTranscodeBranchTargetKinds(state.intent, state.transcodeTargetAttachments)
 	}}
 }
 

@@ -17,7 +17,7 @@ from the same few concepts.
 - `Operation`: decode, resize, resample, custom stage, encode, or copy.
 - `Tap`: a stable typed attach point.
 - `Branch`: a downstream chain from a stream point or tap.
-- `Target`: a named destination group, such as a mux group.
+- `Target`: a named destination group, such as a mux or sink group.
 - `Endpoint`: the actual file, URI, writer, or sink.
 - `Flow`: a reusable operation sequence, not a destination.
 - `Task`: a running graph with attach/detach, events, stats, and taps.
@@ -80,8 +80,9 @@ adapters are registered by the application or an adapter bundle.
 
 ### Branches And Targets
 
-Use branches when one selected stream should become multiple encoded targets.
-Targets are typed values, so normal recipes do not route by string labels.
+Use branches when one selected stream should become multiple downstream targets.
+Targets are typed values, so normal recipes do not route by string labels. A
+target can be a mux group or a sink endpoint.
 
 ```go
 archive := goav.Target("archive", goav.FileOutput("archive.ivf", archiveFile))
@@ -127,6 +128,25 @@ return goav.From(goav.FileInput("source.webm", in)).
             Resample(48_000, goav.Stereo).
             Opus(96_000).
             To(web),
+    ).
+    Run(ctx)
+```
+
+Branches do not have to encode when the target is a sink endpoint. This is the
+same operation chain, just ending in frame domain:
+
+```go
+thumbnail := goav.Target("thumbnail",
+    goav.SinkEndpoint(goav.SinkFunc("thumbnail", saveFrame)),
+)
+
+return goav.From(input).
+    Video().
+    Decode().
+    Branches(
+        goav.Branch("thumbnail").
+            Resize(320, 180).
+            To(thumbnail),
     ).
     Run(ctx)
 ```

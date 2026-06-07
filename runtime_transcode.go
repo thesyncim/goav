@@ -34,6 +34,7 @@ type transcodeTransform struct {
 type transcodeOutputBranch struct {
 	output  transcode.Output
 	target  format.Output
+	sink    pipeline.Sink
 	matches []int
 }
 
@@ -167,7 +168,7 @@ func (b *builder) planTranscodeBranches(
 		}
 	}
 
-	encodeRefs := make([]pipeline.NodeRef, len(branches))
+	branchOutputRefs := make([]pipeline.NodeRef, len(branches))
 	branchNodeOrder := make([]pipeline.NodeRef, 0, len(branches)+transcodeStepCount(branches))
 	outgoing := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(branches)*2+transcodeStepCount(branches))
 	for i := range branches {
@@ -186,30 +187,50 @@ func (b *builder) planTranscodeBranches(
 			branchNodeOrder = append(branchNodeOrder, stepRef)
 		}
 
-		encodeName := encodeNodeName(branches[i].request)
-		encodeRef := pipeline.NodeRef(encodeName)
-		if err := addPlannedNode(nodes, &spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(branches[i].request)); err != nil {
-			return pipeline.Spec{}, err
+		if transcodeBranchNeedsEncode(branches[i]) {
+			encodeName := encodeNodeName(branches[i].request)
+			encodeRef := pipeline.NodeRef(encodeName)
+			if err := addPlannedNode(nodes, &spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(branches[i].request)); err != nil {
+				return pipeline.Spec{}, err
+			}
+			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
+				From:   branchRef,
+				To:     encodeRef,
+				Policy: pipeline.RouteAll,
+			})
+			branchRef = encodeRef
+			branchNodeOrder = append(branchNodeOrder, encodeRef)
 		}
-		outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
-			From:   branchRef,
-			To:     encodeRef,
-			Policy: pipeline.RouteAll,
-		})
-		encodeRefs[i] = encodeRef
-		branchNodeOrder = append(branchNodeOrder, encodeRef)
+		branchOutputRefs[i] = branchRef
 	}
 
 	for i := range outputs {
+		if outputs[i].sink != nil {
+			outputName := transcodeOutputSinkNodeName(outputs[i], i)
+			outputRef := pipeline.NodeRef(outputName)
+			if err := addPlannedNode(nodes, &spec, outputName, pipeline.NodeSink, outputRef, describedNodeDetail(outputs[i].sink)); err != nil {
+				return pipeline.Spec{}, err
+			}
+			for _, branchIndex := range outputs[i].matches {
+				branchRef := branchOutputRefs[branchIndex]
+				outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
+					From:   branchRef,
+					To:     outputRef,
+					Policy: pipeline.RouteAll,
+				})
+			}
+			continue
+		}
+
 		outputName := muxNodeName(outputs[i].target, i)
 		outputRef := pipeline.NodeRef(outputName)
 		if err := addPlannedNode(nodes, &spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetailWithFormat(outputs[i].target, outputs[i].output.Format)); err != nil {
 			return pipeline.Spec{}, err
 		}
 		for _, branchIndex := range outputs[i].matches {
-			encodeRef := encodeRefs[branchIndex]
-			outgoing[encodeRef] = append(outgoing[encodeRef], pipeline.EdgeSpec{
-				From:   encodeRef,
+			branchRef := branchOutputRefs[branchIndex]
+			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
+				From:   branchRef,
 				To:     outputRef,
 				Policy: pipeline.RouteAll,
 			})
@@ -351,8 +372,8 @@ func (b *builder) compileTranscodeBranches(
 	branchStreams []av.Stream,
 	realtime bool,
 ) error {
-	encodeRefs := make([]pipeline.NodeRef, len(branches))
-	encodedStreams := make([]av.Stream, len(branches))
+	branchOutputRefs := make([]pipeline.NodeRef, len(branches))
+	branchOutputStreams := make([]av.Stream, len(branches))
 	for i := range branches {
 		branchRef := branchInputs[i]
 		branchStream := branchStreams[i]
@@ -373,22 +394,39 @@ func (b *builder) compileTranscodeBranches(
 			branchStream = outputStream
 		}
 
-		config, encodedStream, err := prepareEncodeConfig(branchStream, branches[i].request, realtime)
-		if err != nil {
-			return err
+		if transcodeBranchNeedsEncode(branches[i]) {
+			config, encodedStream, err := prepareEncodeConfig(branchStream, branches[i].request, realtime)
+			if err != nil {
+				return err
+			}
+			encodeRef, err := b.compileEncodeStage(ctx, graph, branchRef, branches[i].request, config)
+			if err != nil {
+				return err
+			}
+			branchRef = encodeRef
+			branchStream = encodedStream
 		}
-		encodeRef, err := b.compileEncodeStage(ctx, graph, branchRef, branches[i].request, config)
-		if err != nil {
-			return err
-		}
-		encodeRefs[i] = encodeRef
-		encodedStreams[i] = encodedStream
+		branchOutputRefs[i] = branchRef
+		branchOutputStreams[i] = branchStream
 	}
 
 	for i := range outputs {
+		if outputs[i].sink != nil {
+			sinkRef, err := graph.AddSink(outputs[i].sink, b.runtime.buffer)
+			if err != nil {
+				return err
+			}
+			for _, branchIndex := range outputs[i].matches {
+				if err := connectRefs(graph, branchOutputRefs[branchIndex], sinkRef); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
 		streams := make([]av.Stream, 0, len(outputs[i].matches))
 		for _, branchIndex := range outputs[i].matches {
-			streams = append(streams, encodedStreams[branchIndex])
+			streams = append(streams, branchOutputStreams[branchIndex])
 		}
 		muxStage, err := b.openMuxStageWithFormat(ctx, outputs[i].target, i, streams, transcodeOutputOpenFormat(outputs[i].output), outputs[i].output.Format)
 		if err != nil {
@@ -400,7 +438,7 @@ func (b *builder) compileTranscodeBranches(
 			return err
 		}
 		for _, branchIndex := range outputs[i].matches {
-			if err := connectRefs(graph, encodeRefs[branchIndex], muxRef); err != nil {
+			if err := connectRefs(graph, branchOutputRefs[branchIndex], muxRef); err != nil {
 				return err
 			}
 		}
@@ -578,6 +616,10 @@ func transcodeBranches(plan transcode.Plan) ([]transcodeBranch, error) {
 		}
 	}
 	return branches, nil
+}
+
+func transcodeBranchNeedsEncode(branch transcodeBranch) bool {
+	return branch.request.config.Parameters.ID != ""
 }
 
 func runtimeTranscodeDuplicateBranchError(name string, index int) error {
@@ -764,18 +806,39 @@ func transcodeOutputs(plan transcode.Plan, branches []transcodeBranch) ([]transc
 	outputs := make([]transcodeOutputBranch, len(plan.Outputs))
 	for i := range plan.Outputs {
 		output := plan.Outputs[i]
+		if output.Sink != nil && transcodeOutputHasMuxTarget(output) {
+			return nil, transcodeOutputEndpointInvalidError(output, "output cannot configure both a sink and a mux target")
+		}
 		target := transcodeOutputTarget(plan, output)
 		matches := transcodeOutputMatches(output, branches)
 		if len(matches) == 0 {
 			return nil, transcodeOutputUnmatchedError(output, target)
 		}
+		if output.Sink == nil {
+			for _, branchIndex := range matches {
+				if !transcodeBranchNeedsEncode(branches[branchIndex]) {
+					return nil, transcodeOutputEncodeMissingError(output, target, branches[branchIndex])
+				}
+			}
+		}
 		outputs[i] = transcodeOutputBranch{
 			output:  output,
 			target:  target,
+			sink:    output.Sink,
 			matches: matches,
 		}
 	}
 	return outputs, nil
+}
+
+func transcodeOutputHasMuxTarget(output transcode.Output) bool {
+	return output.Target.Name != "" ||
+		output.Target.URI != "" ||
+		output.Target.Protocol != "" ||
+		output.Target.Writer != nil ||
+		output.Target.MIMEType != "" ||
+		output.Format != "" ||
+		output.OpenFormat() != ""
 }
 
 func transcodeOutputUnmatchedError(output transcode.Output, target format.Output) error {
@@ -797,6 +860,61 @@ func transcodeOutputUnmatchedError(output transcode.Output, target format.Output
 		},
 		Cause: ErrUnsupportedBuild,
 	}
+}
+
+func transcodeOutputEndpointInvalidError(output transcode.Output, reason string) error {
+	return &BuildError{
+		Code:      "transcode_output_invalid",
+		Operation: "build transcode",
+		Node:      transcodeOutputNodeName(output, "output"),
+		Reason:    reason,
+		Suggestions: []string{
+			"use transcode.Output{Sink: sink} for frame or packet sink endpoints",
+			"use transcode.Output{Target: output, Format: format} for muxed file or URI endpoints",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeOutputEncodeMissingError(output transcode.Output, target format.Output, branch transcodeBranch) error {
+	return &BuildError{
+		Code:      "encode_missing",
+		Operation: "build transcode",
+		Node:      firstNonEmpty(branch.name, branch.branch.Name, transcodeOutputNodeName(output, "output")),
+		Reason:    "muxed transcode outputs require encoded branches",
+		Details: []string{
+			"target: " + firstNonEmpty(output.Name, target.Name, target.URI, "output"),
+		},
+		Suggestions: []string{
+			"set transcode.Branch.Encode before routing the branch to a mux target",
+			"route raw decoded branches to transcode.Output{Sink: sink}",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeOutputNodeName(output transcode.Output, fallback string) string {
+	name := firstNonEmpty(output.Name, output.Target.Name, output.Target.URI)
+	if name != "" {
+		return name
+	}
+	if output.Sink != nil && output.Sink.Name() != "" {
+		return output.Sink.Name()
+	}
+	return fallback
+}
+
+func transcodeOutputSinkNodeName(output transcodeOutputBranch, index int) string {
+	if output.sink != nil && output.sink.Name() != "" {
+		return output.sink.Name()
+	}
+	if output.output.Name != "" {
+		return output.output.Name
+	}
+	if index == 0 {
+		return "sink"
+	}
+	return "sink-" + strconv.Itoa(index)
 }
 
 func transcodeOutputOpenFormat(output transcode.Output) av.FormatID {

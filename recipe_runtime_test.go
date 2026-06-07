@@ -784,6 +784,169 @@ func TestBranchCompositionRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionFrameSinkEndpointRuns(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	decoder := &decodeTestDecoder{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+	)
+	sink := &runtimeTestSink{name: "frames"}
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Branches(Branch("frames").To(Target("frames", SinkEndpoint(sink))))
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(specText(planned), "encode-frames") ||
+		!strings.Contains(specText(planned), "decode-audio -> frames") {
+		t.Fatalf("planned:\n%s", specText(planned))
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || sink.frames != 1 || sink.lastFrame.StreamID != "audio" || sink.lastPacket != nil {
+		t.Fatalf("decodes=%d frames=%d frame=%+v packet=%v", decoder.decodes, sink.frames, sink.lastFrame, sink.lastPacket)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !decoder.closed || !sink.closed {
+		t.Fatalf("closed demux=%v decoder=%v sink=%v", demuxer.closed, decoder.closed, sink.closed)
+	}
+}
+
+func TestBranchCompositionResizeSinkEndpointRuns(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{videoVP8TranscodeTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "video",
+			Payload:  av.Buffer{Bytes: []byte{4, 5, 6}},
+		}},
+	}
+	resizeFactory := &transcodeTestFilterFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResize,
+		Input:  av.MediaVideo,
+		Output: av.MediaVideo,
+	}, resizeFactory))
+	decoder := &decodeTestDecoder{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: decoder}),
+	)
+	sink := &runtimeTestSink{name: "thumbnail"}
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs, filters)).
+		Video().
+		Decode().
+		Branches(
+			Branch("thumb").
+				Resize(320, 180).
+				To(Target("thumbnail", SinkEndpoint(sink))),
+		)
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(specText(planned), "decode-video -> resize-thumb") ||
+		!strings.Contains(specText(planned), "resize-thumb -> thumbnail") ||
+		strings.Contains(specText(planned), "encode-thumb") {
+		t.Fatalf("planned:\n%s", specText(planned))
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || resizeFactory.filter.frames != 1 || sink.frames != 1 {
+		t.Fatalf("decodes=%d resized=%d frames=%d", decoder.decodes, resizeFactory.filter.frames, sink.frames)
+	}
+	if resizeFactory.config.Video == nil || resizeFactory.config.Video.Width != 320 || resizeFactory.config.Video.Height != 180 {
+		t.Fatalf("resize config = %+v", resizeFactory.config.Video)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !decoder.closed || !resizeFactory.filter.closed || !sink.closed {
+		t.Fatalf("closed demux=%v decoder=%v filter=%v sink=%v", demuxer.closed, decoder.closed, resizeFactory.filter.closed, sink.closed)
+	}
+}
+
+func TestBranchCompositionEncodeSinkEndpointRuns(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	decoder := &decodeTestDecoder{}
+	encoder := &encodeTestEncoder{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder}),
+	)
+	sink := &runtimeTestSink{name: "packets"}
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Branches(Branch("packets").Opus(96_000).To(Target("packets", SinkEndpoint(sink))))
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || encoder.encodes != 1 || sink.lastPacket == nil || sink.frames != 0 {
+		t.Fatalf("decodes=%d encodes=%d packet=%v frames=%d", decoder.decodes, encoder.encodes, sink.lastPacket, sink.frames)
+	}
+	if len(sink.lastPacketValue.Payload.Bytes) != 1 || sink.lastPacketValue.Payload.Bytes[0] != 7 {
+		t.Fatalf("packet payload=%v", sink.lastPacketValue.Payload.Bytes)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !decoder.closed || !encoder.closed || !sink.closed {
+		t.Fatalf("closed demux=%v decoder=%v encoder=%v sink=%v", demuxer.closed, decoder.closed, encoder.closed, sink.closed)
+	}
+}
+
 func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{videoVP8TranscodeTestStream()}

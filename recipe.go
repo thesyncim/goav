@@ -752,10 +752,13 @@ func SinkEndpoint(sink pipeline.Sink) EndpointSpec {
 	return EndpointSpec{sink: sink, name: name}
 }
 
-// Name overrides the endpoint name used for diagnostics and graph nodes.
+// Name overrides the endpoint name used for diagnostics and mux graph nodes.
+// Sink graph nodes use the wrapped sink's Name.
 func (s EndpointSpec) Name(name string) EndpointSpec {
 	s.name = name
-	s.output.Name = name
+	if s.sink == nil {
+		s.output.Name = name
+	}
 	return s
 }
 
@@ -2696,9 +2699,17 @@ type namedTargetSpec struct {
 
 func targetIdentity(target namedTargetSpec) string {
 	output := target.output
+	sinkName := ""
+	sinkAddr := ""
+	if output.sink != nil {
+		sinkName = output.sink.Name()
+		sinkAddr = fmt.Sprintf("%p", output.sink)
+	}
 	return strings.Join([]string{
 		target.name,
 		output.label(""),
+		sinkName,
+		sinkAddr,
 		output.output.Name,
 		output.output.URI,
 		string(output.output.Protocol),
@@ -2773,6 +2784,7 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedTar
 		planOutput := transcodepkg.Output{
 			Name:     name,
 			Target:   output.output,
+			Sink:     output.sink,
 			Format:   output.format,
 			Branches: append([]string(nil), outputBranches[name]...),
 		}
@@ -2895,11 +2907,13 @@ func validateTranscodeBranchIntentShape(stream StreamIntent, index int) error {
 	if err := validateRecipeStreamSelector(transcodeRecipeOperation, transcodeIntentBranchName(stream), selector); err != nil {
 		return err
 	}
-	if !codecIntentSet(stream.Encode) {
-		return transcodeEncodeMissingError(stream)
-	}
-	if err := validateRecipeEncode(stream.Encode, transcodeRecipeOperation, stream.Name); err != nil {
-		return err
+	if codecIntentSet(stream.Encode) {
+		if stream.Encode.Copy {
+			return transcodeBranchCopyUnsupportedError(stream)
+		}
+		if err := validateRecipeEncode(stream.Encode, transcodeRecipeOperation, stream.Name); err != nil {
+			return err
+		}
 	}
 	if len(stream.Targets) == 0 {
 		return transcodeBranchTargetMissingError(stream)
@@ -2921,14 +2935,36 @@ func validateTranscodeAttachments(input InputSpec, namedOutputs []namedTargetSpe
 		if err := namedOutputs[i].output.validate(transcodeRecipeOperation, fmt.Sprintf("output-%d", i)); err != nil {
 			return err
 		}
-		if namedOutputs[i].output.sink != nil {
-			return transcodeSinkEndpointOutputError(namedOutputs[i].name, namedOutputs[i].output)
-		}
 		name := namedOutputs[i].name
 		if _, ok := seen[name]; ok {
 			return transcodeDuplicateTargetError(name)
 		}
 		seen[name] = struct{}{}
+	}
+	return nil
+}
+
+func validateTranscodeBranchTargetKinds(intent Intent, namedOutputs []namedTargetSpec) error {
+	outputs := transcodeTargetEndpointSet(namedOutputs)
+	for i := range intent.Streams {
+		stream := intent.Streams[i]
+		if stream.Encode.Copy {
+			return transcodeBranchCopyUnsupportedError(stream)
+		}
+		hasMuxTarget := false
+		for _, label := range stream.Targets {
+			output, ok := outputs[label]
+			if !ok {
+				continue
+			}
+			if output.sink == nil {
+				hasMuxTarget = true
+				break
+			}
+		}
+		if hasMuxTarget && !codecIntentSet(stream.Encode) {
+			return transcodeEncodeMissingError(stream)
+		}
 	}
 	return nil
 }
@@ -2945,6 +2981,14 @@ func validateTranscodeOutputBindings(intent Intent, namedOutputs []namedTargetSp
 		}
 	}
 	return nil
+}
+
+func transcodeTargetEndpointSet(namedOutputs []namedTargetSpec) map[string]EndpointSpec {
+	outputs := make(map[string]EndpointSpec, len(namedOutputs))
+	for i := range namedOutputs {
+		outputs[namedOutputs[i].name] = namedOutputs[i].output
+	}
+	return outputs
 }
 
 func transcodeTargetAttachmentSet(namedOutputs []namedTargetSpec) (map[string]EndpointSpec, []string) {
@@ -2984,9 +3028,25 @@ func transcodeEncodeMissingError(stream StreamIntent) error {
 		Code:      "encode_missing",
 		Operation: transcodeRecipeOperation,
 		Node:      stream.Name,
-		Reason:    "stream has no codec target",
+		Reason:    "branch needs an encoder before writing to a muxed target",
 		Suggestions: []string{
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(...)",
+			"route raw frames to goav.SinkEndpoint(...) when the branch should stay decoded",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transcodeBranchCopyUnsupportedError(stream StreamIntent) error {
+	return &BuildError{
+		Code:      "copy_unsupported",
+		Operation: transcodeRecipeOperation,
+		Node:      transcodeIntentBranchName(stream),
+		Reason:    "planned branches start from decoded frame domain and cannot copy packets",
+		Suggestions: []string{
+			"use goav.From(input).Copy().To(output) for packet-preserving output",
+			"attach a runtime branch from a packet tap and call .Copy() when packet-domain fanout is needed",
+			"omit .Copy() when the branch should deliver decoded frames to goav.SinkEndpoint(...)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3065,25 +3125,6 @@ func transcodeEmptyOutputDefinitionLabelError(output EndpointSpec) error {
 	}
 	if output.name != "" {
 		err.Details = append(err.Details, "output name: "+output.name)
-	}
-	return err
-}
-
-func transcodeSinkEndpointOutputError(label string, output EndpointSpec) error {
-	err := &BuildError{
-		Code:      "target_kind_invalid",
-		Operation: transcodeRecipeOperation,
-		Node:      firstNonEmpty(label, output.label("output")),
-		Reason:    "planned branch targets are muxed output groups, not sink endpoints",
-		Suggestions: []string{
-			"use goav.Target(name, goav.FileOutput(...)) or goav.Target(name, goav.URIOutput(...)) for planned mux branches",
-			"use goav.From(input).Audio().Decode().To(goav.SinkEndpoint(sink)) or .Video().Decode().To(...) for decoded frames",
-			"use Task.Attach(ctx, goav.Branch(name).FromTap(tap).To(goav.SinkEndpoint(sink))) for live sink branches",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-	if output.sink != nil && output.sink.Name() != "" {
-		err.Details = append(err.Details, "sink: "+output.sink.Name())
 	}
 	return err
 }

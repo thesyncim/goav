@@ -37,6 +37,7 @@ type Step struct {
 type Output struct {
 	Name           string
 	Target         format.Output
+	Sink           pipeline.Sink
 	Format         av.FormatID
 	Branches       []string
 	Metadata       av.Metadata

@@ -348,11 +348,15 @@ func validateBranchSpec(selected av.MediaType, index int, spec BranchSpec) error
 	if spec.name == "" {
 		return transcodeIntentBranchNameMissingError(index, StreamIntent{Select: StreamSelect{Type: selected}})
 	}
-	if !codecIntentSet(spec.encode) {
-		return transcodeEncodeMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
-	}
 	if len(spec.labels) == 0 {
 		return transcodeBranchTargetMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
+	}
+	stream := StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
+	if spec.encode.Copy {
+		return transcodeBranchCopyUnsupportedError(stream)
+	}
+	if !codecIntentSet(spec.encode) && !branchTargetsAllSinkEndpoints(spec.targets) {
+		return transcodeEncodeMissingError(stream)
 	}
 	seen := make(map[string]int, len(spec.labels))
 	for i, label := range spec.labels {
@@ -370,6 +374,18 @@ func validateBranchSpec(selected av.MediaType, index int, spec BranchSpec) error
 		seen[label] = i
 	}
 	return nil
+}
+
+func branchTargetsAllSinkEndpoints(targets []TargetSpec) bool {
+	if len(targets) == 0 {
+		return false
+	}
+	for i := range targets {
+		if targets[i].endpoint.sink == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneTargetSpecs(targets []TargetSpec) []TargetSpec {
