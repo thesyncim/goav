@@ -1315,6 +1315,19 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Flow as reusable operations rather than a destination and proves custom
     codecs compose through the same runtime Branch/Target grammar as built-ins.
     Done.
+295. Add decode as a first-class branch operation:
+    `Branch(...).Decode()` now lets packet-domain planned branches and runtime
+    branches cross into frame-domain processing without a new workflow concept.
+    `TestBranchCompositionPacketBranchDecodeSinkRuns` proves
+    `Audio().Copy().Branches(Branch(...).Decode().To(SinkEndpoint(...)))`
+    describes, builds, and runs as select/decode/sink with graph equivalence.
+    `TestTaskAttachRuntimeDecodeBranchFromPacketTap` proves a live packet tap
+    can attach a branch-owned decoder, publish a decoded frame tap, feed a
+    dependent branch from that tap, and detach the whole subtree cleanly.
+    `TestBranchCompositionRejectsDecodeAfterBranchOperation` and
+    `TestBranchCompositionRejectsDecodeThenCopy` pin the public operation order.
+    `TestBranchCompositionRejectsDecodeFromFrameBranchPoint` keeps decode as the
+    packet-to-frame boundary instead of compatibility sugar. Done.
 
 ## First Vertical Slice
 
@@ -1581,6 +1594,9 @@ already-prepared branch components before returning.
 Runtime attachments also now prove flow-applied custom `Codec(...)` encode
 branches to typed targets, matching the same operation grammar used by planned
 branches and direct stream chains.
+`Branch.Decode()` is active for packet-domain planned branches and runtime
+packet taps, so packet-copy fanout and late receive tasks can branch into raw
+frame processing without rebuilding the task.
 `MediaPlan` expresses record, stream decode, encode, and branch composition as
 input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and

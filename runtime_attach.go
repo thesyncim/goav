@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -34,6 +35,7 @@ type runtimeBranch struct {
 
 type runtimeBranchStep struct {
 	stage     pipeline.Stage
+	decode    bool
 	transform TransformSpec
 	tap       string
 	caps      StreamCaps
@@ -128,6 +130,9 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		label:  spec.label,
 		buffer: spec.buffer,
 	}
+	if spec.decode {
+		branch.steps = append(branch.steps, runtimeBranchStep{decode: true})
+	}
 	for i := range spec.steps {
 		step := spec.steps[i]
 		switch {
@@ -188,6 +193,17 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch) 
 	for i := range branch.steps {
 		step := &branch.steps[i]
 		switch {
+		case step.decode:
+			decodedStage, err := t.prepareRuntimeBranchDecode(ctx, branch.name, currentStream, currentCaps)
+			if err != nil {
+				closeRuntimeBranchOwnedStages(*branch)
+				return err
+			}
+			step.stage = decodedStage
+			step.decode = false
+			step.owned = true
+			currentCaps.Domain = DomainFrame
+			step.caps = currentCaps
 		case step.stage != nil:
 			step.caps = currentCaps
 		case runtimeBranchStepHasTransform(*step):
@@ -328,6 +344,39 @@ func (t *task) prepareRuntimeBranchDestination(ctx context.Context, branch *runt
 		})
 	}
 	return nil
+}
+
+func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentCaps StreamCaps) (pipeline.Stage, error) {
+	if t.runtime == nil {
+		return nil, runtimeBranchInvalidError(
+			"runtime branch decoding requires the standard runtime",
+			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching decode branches",
+		)
+	}
+	if currentCaps.Domain != DomainPacket {
+		return nil, runtimeBranchDecodeDomainError(branchName, currentCaps)
+	}
+	if currentStream.Codec.ID == "" {
+		return nil, runtimeBranchDecodeCodecMissingError(branchName, currentCaps)
+	}
+	request := runtimeBranchDecodeRequest(branchName, currentStream)
+	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
+		stream := StreamIntent{Name: branchName, Decode: true}
+		return nil, recipeDecodeAdapterError("attach runtime branch", stream, currentStream.Codec.ID, t.runtime.codecs, err)
+	}
+	stream := StreamIntent{
+		Name:   branchName,
+		Select: streamSelectFromAV(request.selector),
+		Decode: true,
+	}
+	if err := validateDecodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, decodeAdapterRequestFromStream(currentStream, stream)); err != nil {
+		return nil, err
+	}
+	stage, err := (&builder{runtime: t.runtime}).newDecodeStage(ctx, request, currentStream, t.runtime.realtime, true, codec.DecodeBounds{})
+	if err != nil {
+		return nil, err
+	}
+	return stage, nil
 }
 
 func (t *task) runtimeBranchMuxFormat(ctx context.Context, endpoint EndpointSpec, index int) (av.FormatID, error) {
@@ -998,6 +1047,19 @@ func runtimeBranchEncodeRequest(branch runtimeBranch, stream av.Stream) encodeRe
 	}
 }
 
+func runtimeBranchDecodeRequest(branchName string, stream av.Stream) decodeRequest {
+	selector := av.StreamSelector{
+		Name:  firstNonEmpty(branchName, stream.Name),
+		Type:  stream.Type,
+		ID:    stream.ID,
+		Codec: stream.Codec.ID,
+	}
+	if selector.Type == "" {
+		selector.Type = stream.Codec.Type
+	}
+	return decodeRequest{selector: selector}
+}
+
 func streamCapsFromRuntimeBranchStream(stream av.Stream, previous StreamCaps) StreamCaps {
 	caps := previous
 	caps.Domain = DomainFrame
@@ -1259,6 +1321,38 @@ func runtimeBranchEncodeDomainError(branch string, caps StreamCaps) error {
 			"attach from a tap declared after Decode, Resize, Resample, or a frame-stage .Do(...)",
 			"use .Copy() from a packet tap when no re-encode is intended",
 			"call task.Taps() and choose a tap with domain=frame",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func runtimeBranchDecodeDomainError(branch string, caps StreamCaps) error {
+	return &BuildError{
+		Code:      "runtime_branch_decode_domain_mismatch",
+		Operation: "attach runtime branch",
+		Node:      firstNonEmpty(branch, "branch"),
+		Reason:    "runtime branch decoding requires a packet tap",
+		Details:   runtimeBranchCapsDetails(caps),
+		Suggestions: []string{
+			"attach from a tap declared after Copy, packet receive, or Encode",
+			"omit .Decode() when attaching from a frame tap",
+			"call task.Taps() and choose a tap with domain=packet",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func runtimeBranchDecodeCodecMissingError(branch string, caps StreamCaps) error {
+	return &BuildError{
+		Code:      "runtime_branch_decode_codec_missing",
+		Operation: "attach runtime branch",
+		Node:      firstNonEmpty(branch, "branch"),
+		Reason:    "runtime branch decode needs packet codec metadata",
+		Details:   runtimeBranchCapsDetails(caps),
+		Suggestions: []string{
+			"attach from a recipe tap with codec caps",
+			"declare the RTP/WebRTC/File input codec before building the task",
+			"call task.Taps() and choose a packet tap that reports codec=...",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

@@ -3986,6 +3986,77 @@ func TestBranchCompositionAllowsPacketCopyBranches(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionRejectsDecodeAfterBranchOperation(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Copy().
+		Branches(
+			goav.Branch("bad").
+				Resize(320, 180).
+				Decode().
+				To(goav.Target("frames", goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+					return nil
+				})))),
+		).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_order_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_decode_order_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "decode must be the first branch operation") ||
+		!strings.Contains(err.Error(), ".Decode().Resample") {
+		t.Fatalf("err = %v, want decode order guidance", err)
+	}
+}
+
+func TestBranchCompositionRejectsDecodeThenCopy(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Copy().
+		Branches(
+			goav.Branch("bad").
+				Decode().
+				Copy().
+				To(goav.Target("frames", goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+					return nil
+				})))),
+		).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_copy_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_decode_copy_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "cannot decode packets and then copy") ||
+		!strings.Contains(err.Error(), ".Copy() for packet-preserving branches") {
+		t.Fatalf("err = %v, want decode/copy guidance", err)
+	}
+}
+
+func TestBranchCompositionRejectsDecodeFromFrameBranchPoint(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			goav.Branch("bad").
+				Decode().
+				To(goav.Target("frames", goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+					return nil
+				})))),
+		).
+		Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_domain_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_decode_domain_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "requires a packet-domain stream point") ||
+		!strings.Contains(err.Error(), "already starts after stream decode") {
+		t.Fatalf("err = %v, want decode domain guidance", err)
+	}
+}
+
 func TestBranchRecipeRequiresBranch(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Build(context.Background())

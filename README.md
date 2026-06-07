@@ -268,12 +268,28 @@ if err != nil {
 defer record.Close(ctx)
 ```
 
+Packet taps can also become late decoded frame branches:
+
+```go
+preview, err := task.Attach(ctx,
+    goav.Branch("preview").
+        FromTap("audio.packets").
+        Decode().
+        Tap("audio.decoded.preview").
+        To(goav.SinkEndpoint(frames)),
+)
+if err != nil {
+    return err
+}
+defer preview.Close(ctx)
+```
+
 `Task.Taps()` lists available attach points. `Attach` adds a downstream sink
 or endpoint branch to a running direct task graph without rebuilding upstream.
 Late branches can apply flows, run custom `.Do(...)` stages, resize/resample
-from frame taps, encode Opus/VP8/VP9 from frame taps, copy from packet taps, and
-write to one or more typed targets before exposing their own `.Tap(name)`
-outlets for later attachments. Observer branches can use
+from frame taps, encode Opus/VP8/VP9 from frame taps, copy or decode from
+packet taps, and write to one or more typed targets before exposing their own
+`.Tap(name)` outlets for later attachments. Observer branches can use
 `.Do(goav.FrameFunc(...)).Tap(name).To(goav.SinkEndpoint(...))` to both inspect
 frames and publish a downstream attach point. H264 and AV1 recipe encoding
 remain work in progress. Detaching a parent attachment also removes dependent

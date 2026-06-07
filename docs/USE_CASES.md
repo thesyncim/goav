@@ -125,7 +125,8 @@ Once a stream is in packet domain through `.Copy()` or an encoder, it can fan
 out to both mux endpoints and packet sink endpoints.
 The same packet-domain rule applies to planned branches: `.Copy().Branches(...)`
 can split one selected encoded stream into named mux or sink targets without a
-decoder.
+decoder. A branch can also call `.Decode()` first when that packet-domain split
+needs raw frames for analysis, preview, or a later frame-domain tap.
 
 ```go
 meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
@@ -235,12 +236,29 @@ if err != nil {
 defer packets.Close(ctx)
 ```
 
+Use `.Decode()` from a packet tap when the late branch needs frames:
+
+```go
+preview, err := task.Attach(ctx,
+    goav.Branch("preview").
+        FromTap("audio.packets").
+        Decode().
+        Tap("audio.preview.frames").
+        To(goav.SinkEndpoint(frames)),
+)
+if err != nil {
+    return err
+}
+defer preview.Close(ctx)
+```
+
 Use `Task.Taps()` to discover stable outlets. Use `Task.Detach(ctx, h)` when
 the caller wants the task to own detach semantics. Runtime branches can run
 custom stages, resize/resample from frame taps, publish additional taps, encode
-Opus/VP8/VP9 from frame taps, copy packet taps into endpoints, and feed later
-runtime branches from those taps. Taps declared after encode or copy are packet
-taps. Observer branches can end in a sink while publishing a nested tap with
+Opus/VP8/VP9 from frame taps, copy packet taps into endpoints, decode packet
+taps into frame branches, and feed later runtime branches from those taps. Taps
+declared after encode or copy are packet taps. Observer branches can end in a
+sink while publishing a nested tap with
 `.Do(goav.FrameFunc(...)).Tap(name).To(goav.SinkEndpoint(...))`. H264 and AV1
 recipe encoding remain work in progress. Detaching a parent runtime branch
 removes dependent late branches anchored from its taps. Direct and bounded
