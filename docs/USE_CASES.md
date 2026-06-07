@@ -282,6 +282,23 @@ if err != nil {
 defer group.Close(ctx)
 ```
 
+One grouped runtime sink target value can receive several branch outputs:
+
+```go
+metered := goav.Target("metered",
+    goav.SinkEndpoint(goav.SinkFunc("metered", collectMetered)),
+)
+
+group, err := task.Attach(ctx,
+    goav.Branch("fast").FromTap("audio.decoded").To(metered),
+    goav.Branch("slow").FromTap("audio.decoded").To(metered),
+)
+if err != nil {
+    return err
+}
+defer group.Close(ctx)
+```
+
 Use `.Copy()` from a packet tap when the branch should stay encoded:
 
 ```go
@@ -324,7 +341,9 @@ publishing a nested tap with
 `.Do(goav.FrameFunc(...)).Tap(name).To(goav.SinkEndpoint(...))`. H264 and AV1
 recipe encoding remain work in progress. Detaching a parent runtime branch
 removes dependent late branches anchored from its taps. Direct and bounded
-buffered task graphs both support late stage/sink branches.
+buffered task graphs both support late stage/sink branches. Runtime branch
+groups can share one sink target value; mux target groups are still expressed as
+planned `Branches(...)` compositions.
 
 ## Generic File Or Protocol Ingest
 

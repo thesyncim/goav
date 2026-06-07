@@ -317,6 +317,20 @@ if err != nil {
 defer group.Close(ctx)
 ```
 
+Reuse the same sink `Target` value inside a grouped attach when several branches
+should feed one runtime observer:
+
+```go
+samples := goav.Target("samples",
+    goav.SinkEndpoint(goav.SinkFunc("samples", collectSample)),
+)
+
+group, err := task.Attach(ctx,
+    goav.Branch("left").FromTap("video.720p.frames").To(samples),
+    goav.Branch("right").FromTap("video.720p.frames").To(samples),
+)
+```
+
 Packet taps can be copied into a late endpoint:
 
 ```go
@@ -360,7 +374,8 @@ remain work in progress. A grouped attach rolls back the whole group if any
 branch cannot be prepared or connected. Detaching a parent attachment also
 removes dependent late branches anchored from its taps. `Attachment.Stats()`
 reports only the branch-owned node counters; `Task.Stats()` reports the whole
-graph.
+graph. Runtime grouped mux targets remain planned-composition work; grouped
+runtime branches can share one sink target value.
 Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
 packet-domain taps.
 

@@ -425,7 +425,7 @@ func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
 	}
 }
 
-func TestTaskAttachRuntimeBranchGroupRejectsDuplicateTargets(t *testing.T) {
+func TestTaskAttachRuntimeBranchGroupSharesSinkTarget(t *testing.T) {
 	ctx := context.Background()
 	graph := New().Graph()
 	src := graph.Source("source", &runtimeTestSource{name: "source"})
@@ -435,7 +435,98 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	target := Target("shared", SinkEndpoint(&runtimeTestSink{name: "shared"}))
+	sharedCount := 0
+	shared := SinkFunc("shared", func(context.Context, Message) error {
+		sharedCount++
+		return nil
+	})
+	target := Target("shared", SinkEndpoint(shared))
+
+	attachment, err := task.Attach(ctx,
+		Branch("left").From("source").To(target),
+		Branch("right").From("source").To(target),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := attachment.Spec()
+	sharedNodes := 0
+	for i := range spec.Nodes {
+		if spec.Nodes[i].Name == "shared" {
+			sharedNodes++
+		}
+		if strings.Contains(spec.Nodes[i].Name, "left/") || strings.Contains(spec.Nodes[i].Name, "right/") {
+			t.Fatalf("shared target created branch-owned sink node: %+v", spec.Nodes[i])
+		}
+	}
+	if sharedNodes != 1 {
+		t.Fatalf("shared sink nodes = %d, want 1 in %+v", sharedNodes, spec.Nodes)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if sharedCount != 2 {
+		t.Fatalf("shared sink count = %d, want one message per branch", sharedCount)
+	}
+	stats := attachment.Stats()
+	if len(stats.Nodes) != 1 || stats.Nodes["shared"].InMessages != 2 || stats.Delivered != 2 {
+		t.Fatalf("shared target stats = %+v", stats)
+	}
+	if err := task.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "shared") || strings.Contains(text, "left/") || strings.Contains(text, "right/") {
+		t.Fatalf("spec retained shared target after detach:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkTargetNames(t *testing.T) {
+	ctx := context.Background()
+	graph := New().Graph()
+	src := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	left := Target("shared", SinkEndpoint(SinkFunc("left", func(context.Context, Message) error {
+		return nil
+	})))
+	right := Target("shared", SinkEndpoint(SinkFunc("right", func(context.Context, Message) error {
+		return nil
+	})))
+
+	_, err = task.Attach(ctx,
+		Branch("left").From("source").To(left),
+		Branch("right").From("source").To(right),
+	)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "reuse one goav.Target") {
+		t.Fatalf("err = %v, want shared target value guidance", err)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "left/") || strings.Contains(text, "right/") || strings.Contains(text, "shared") {
+		t.Fatalf("spec mutated after duplicate target rejection:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxTargets(t *testing.T) {
+	ctx := context.Background()
+	graph := New().Graph()
+	src := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	target := Target("shared", FileOutput("shared.ivf", io.Discard))
 
 	_, err = task.Attach(ctx,
 		Branch("left").From("source").To(target),
@@ -446,6 +537,7 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateTargets(t *testing.T) {
 		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "runtime branch group reuses one target name") ||
+		!strings.Contains(err.Error(), "runtime sink group") ||
 		!strings.Contains(err.Error(), "planned Branches") {
 		t.Fatalf("err = %v, want grouped target guidance", err)
 	}

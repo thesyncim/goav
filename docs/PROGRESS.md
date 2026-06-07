@@ -150,9 +150,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     graph: unsafe encoder-owned packet payloads fail without copy bounds and
     reach every mux output with copied bytes when `CopyPacketBytes` is set.
     Done.
-47. Prove `WithBufferPolicy(...).RTP(...).Output(...)` on a live receive
-    record/fanout graph: unsafe depacketizer-owned packet payloads fail without
-    copy bounds and reach every mux output with copied bytes when
+47. Prove live RTP receive record/fanout under `WithBufferPolicy(...)`: unsafe
+    depacketizer-owned packet payloads fail without copy bounds and reach every
+    mux target with copied bytes when
     `CopyPacketBytes` is set. Done.
 48. Collapse the runnable graph edge surface to the `Route` model by removing
     secondary graph methods while preserving stream/event routing.
@@ -1412,16 +1412,29 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 305. Attach runtime branch groups without adding a second concept:
     `Task.Attach(ctx, Branch(...), Branch(...))` now treats several runtime
     branches as one atomic attachment. Later branches in the same call can
-    anchor from taps published by earlier branches, grouped duplicate target
-    names fail before graph mutation, and any later prepare/connect failure
-    rolls the whole group back. `Attachment.Spec()`, `Attachment.Stats()`,
+    anchor from taps published by earlier branches, duplicate mux target names
+    fail before graph mutation, and any later prepare/connect failure rolls the
+    whole group back. `Attachment.Spec()`, `Attachment.Stats()`,
     `Attachment.Close(ctx)`, and `Task.Detach(ctx, h)` operate over the grouped
     branch-owned nodes and taps, while parent-detach cleanup tracks every anchor
     used by a grouped attachment.
     `TestTaskAttachRuntimeBranchGroup`,
     `TestTaskAttachRuntimeBranchGroupCanUsePendingTap`,
     `TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`, and
-    `TestTaskAttachRuntimeBranchGroupRejectsDuplicateTargets` pin the behavior.
+    `TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxTargets` pin the behavior.
+    Done.
+306. Share runtime sink targets inside branch groups:
+    grouped runtime branches can now reuse the same
+    `goav.Target(name, goav.SinkEndpoint(sink))` value and attach one shared sink
+    node with multiple incoming branch routes. Different target values with the
+    same name still fail before graph mutation, so sharing is explicit instead
+    of stringly inferred. This makes `Target` mean sink group for runtime attach
+    as well as planned composition, while file/URI mux target sharing remains
+    guarded for planned `Branches(...)` until live mux groups are implemented.
+    `TestTaskAttachRuntimeBranchGroupSharesSinkTarget` pins the shared node,
+    delivery, stats, and detach cleanup, and
+    `TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkTargetNames` pins the
+    duplicate-name diagnostic.
     Done.
 
 ## First Vertical Slice

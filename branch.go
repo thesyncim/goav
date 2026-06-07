@@ -2,10 +2,13 @@ package goav
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
+
+var targetSpecSeq atomic.Uint64
 
 // TargetOrEndpoint is accepted by To. Use Target for named mux/sink groups, or
 // pass an endpoint such as FileOutput, URIOutput, or SinkEndpoint directly.
@@ -25,6 +28,7 @@ type targetOrEndpointDestination struct {
 type TargetSpec struct {
 	name     string
 	endpoint EndpointSpec
+	id       uint64
 	err      error
 }
 
@@ -33,7 +37,11 @@ func Target(name string, endpoint EndpointSpec) TargetSpec {
 	if name == "" {
 		return TargetSpec{endpoint: endpoint, err: targetNameMissingError(endpoint)}
 	}
-	return TargetSpec{name: name, endpoint: endpoint.Name(firstNonEmpty(endpoint.name, name))}
+	return TargetSpec{
+		name:     name,
+		endpoint: endpoint.Name(firstNonEmpty(endpoint.name, name)),
+		id:       targetSpecSeq.Add(1),
+	}
 }
 
 func (t TargetSpec) targetOrEndpoint() targetOrEndpointDestination {

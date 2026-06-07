@@ -49,13 +49,32 @@ type runtimeBranchEndpoint struct {
 	name     string
 	endpoint EndpointSpec
 	sink     pipeline.Sink
+	shareKey string
 }
 
 type runtimeBranchTerminal struct {
-	stage pipeline.Stage
-	sink  pipeline.Sink
-	caps  StreamCaps
-	owned bool
+	name     string
+	shareKey string
+	stage    pipeline.Stage
+	sink     pipeline.Sink
+	caps     StreamCaps
+	owned    bool
+}
+
+type runtimeBranchGroupTargets struct {
+	sharedSinkKeys map[string]struct{}
+}
+
+type runtimeAttachGroup struct {
+	targets     runtimeBranchGroupTargets
+	reserved    map[string]struct{}
+	sharedSinks map[string]*runtimeSharedSinkTarget
+}
+
+type runtimeSharedSinkTarget struct {
+	name string
+	sink pipeline.Sink
+	ref  pipeline.NodeRef
 }
 
 // Attachment is a live runtime branch attached to a task.
@@ -85,11 +104,13 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		}
 		branches[i] = branch
 	}
-	if err := validateRuntimeBranchGroupTargets(branches); err != nil {
+	targets, err := validateRuntimeBranchGroupTargets(branches)
+	if err != nil {
 		return nil, err
 	}
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
+	group := newRuntimeAttachGroup(targets)
 
 	var (
 		refs        []pipeline.NodeRef
@@ -125,11 +146,11 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		if err := t.validateRuntimeBranchTapsLocked(*branch, taps); err != nil {
 			return rollback(branch, err)
 		}
-		nodeNames, err := runtimeBranchNodeNames(*branch, graphSpec)
+		nodeNames, err := runtimeBranchNodeNames(*branch, graphSpec, group)
 		if err != nil {
 			return rollback(branch, err)
 		}
-		branchRefs, branchRoutes, branchTaps, err := t.attachRuntimeBranch(*branch, nodeNames)
+		branchRefs, branchRoutes, branchTaps, err := t.attachRuntimeBranch(*branch, nodeNames, group)
 		if err != nil {
 			refs = append(refs, branchRefs...)
 			return rollback(branch, err)
@@ -205,13 +226,16 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 			name:     name,
 			endpoint: endpoint,
 			sink:     endpoint.sink,
+			shareKey: runtimeBranchSharedSinkKey(target, endpoint),
 		})
 	}
 	return branch, nil
 }
 
-func validateRuntimeBranchGroupTargets(branches []runtimeBranch) error {
-	seen := make(map[string]string)
+func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchGroupTargets, error) {
+	var targets runtimeBranchGroupTargets
+	seen := make(map[string]runtimeBranchEndpoint)
+	seenBranch := make(map[string]string)
 	for i := range branches {
 		branch := branches[i]
 		for j := range branch.destinations {
@@ -220,28 +244,107 @@ func validateRuntimeBranchGroupTargets(branches []runtimeBranch) error {
 				continue
 			}
 			if first, ok := seen[label]; ok {
-				return &BuildError{
+				if first.shareKey != "" && first.shareKey == branch.destinations[j].shareKey {
+					if targets.sharedSinkKeys == nil {
+						targets.sharedSinkKeys = make(map[string]struct{})
+					}
+					targets.sharedSinkKeys[first.shareKey] = struct{}{}
+					continue
+				}
+				return targets, &BuildError{
 					Code:      "target_duplicate",
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(branch.name, "branch"),
 					Reason:    "runtime branch group reuses one target name",
 					Details: []string{
 						"target: " + label,
-						"first branch: " + first,
+						"first branch: " + seenBranch[label],
 						"second branch: " + firstNonEmpty(branch.name, fmt.Sprintf("branch-%d", i+1)),
 					},
 					Suggestions: []string{
+						"reuse one goav.Target(name, goav.SinkEndpoint(sink)) value when branches should share a runtime sink group",
 						"use distinct goav.Target names for independent runtime endpoints",
-						"attach one branch with multiple endpoints when the same encoded stream should fan out",
 						"keep mux grouping in planned Branches(...) until runtime mux groups are supported",
 					},
 					Cause: ErrUnsupportedBuild,
 				}
 			}
-			seen[label] = firstNonEmpty(branch.name, fmt.Sprintf("branch-%d", i+1))
+			seen[label] = branch.destinations[j]
+			seenBranch[label] = firstNonEmpty(branch.name, fmt.Sprintf("branch-%d", i+1))
 		}
 	}
+	return targets, nil
+}
+
+func runtimeBranchSharedSinkKey(target TargetSpec, endpoint EndpointSpec) string {
+	if target.id == 0 || endpoint.sink == nil || endpointSpecHasOutput(endpoint) {
+		return ""
+	}
+	return strconv.FormatUint(target.id, 10)
+}
+
+func newRuntimeAttachGroup(targets runtimeBranchGroupTargets) *runtimeAttachGroup {
+	return &runtimeAttachGroup{
+		targets:     targets,
+		reserved:    make(map[string]struct{}),
+		sharedSinks: make(map[string]*runtimeSharedSinkTarget),
+	}
+}
+
+func (g *runtimeAttachGroup) isSharedSink(key string) bool {
+	if g == nil || key == "" || len(g.targets.sharedSinkKeys) == 0 {
+		return false
+	}
+	_, ok := g.targets.sharedSinkKeys[key]
+	return ok
+}
+
+func (g *runtimeAttachGroup) reserveNode(spec pipeline.Spec, name string) error {
+	if g == nil {
+		return validateRuntimeBranchNodeName(spec, make(map[string]struct{}), name)
+	}
+	if _, ok := g.reserved[name]; ok {
+		return runtimeBranchNodeDuplicateError(name)
+	}
+	if specHasNode(spec, name) {
+		return runtimeBranchNodeDuplicateError(name)
+	}
+	g.reserved[name] = struct{}{}
 	return nil
+}
+
+func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, terminal runtimeBranchTerminal) error {
+	if g == nil || !g.isSharedSink(terminal.shareKey) {
+		return nil
+	}
+	if _, ok := g.sharedSinks[terminal.shareKey]; ok {
+		return nil
+	}
+	name := firstNonEmpty(terminal.name, terminal.sink.Name(), "sink")
+	if err := g.reserveNode(spec, name); err != nil {
+		return err
+	}
+	g.sharedSinks[terminal.shareKey] = &runtimeSharedSinkTarget{name: name, sink: terminal.sink}
+	return nil
+}
+
+func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, terminal runtimeBranchTerminal, buffer pipeline.BufferPolicy) (pipeline.NodeRef, bool, error) {
+	if g == nil || !g.isSharedSink(terminal.shareKey) {
+		return "", false, runtimeBranchInvalidError("shared sink target is not registered", "reuse one goav.Target(name, goav.SinkEndpoint(sink)) value inside one Task.Attach call")
+	}
+	target := g.sharedSinks[terminal.shareKey]
+	if target == nil {
+		return "", false, runtimeBranchInvalidError("shared sink target is not reserved", "reuse one goav.Target(name, goav.SinkEndpoint(sink)) value inside one Task.Attach call")
+	}
+	if target.ref != "" {
+		return target.ref, false, nil
+	}
+	ref, err := graph.AddSink(namedSink{name: target.name, sink: target.sink}, buffer)
+	if err != nil {
+		return "", false, runtimeBranchGraphError("add sink", target.name, err)
+	}
+	target.ref = ref
+	return ref, true, nil
 }
 
 func runtimeAttachmentName(branches []runtimeBranch) string {
@@ -417,7 +520,13 @@ func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtim
 	}
 	if !hasMuxEndpoint {
 		for i := range branch.destinations {
-			branch.terminals = append(branch.terminals, runtimeBranchTerminal{sink: branch.destinations[i].sink, caps: caps})
+			destination := branch.destinations[i]
+			branch.terminals = append(branch.terminals, runtimeBranchTerminal{
+				name:     destination.name,
+				shareKey: destination.shareKey,
+				sink:     destination.sink,
+				caps:     caps,
+			})
 		}
 		return nil
 	}
@@ -435,7 +544,12 @@ func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtim
 	for i := range branch.destinations {
 		destination := branch.destinations[i]
 		if destination.sink != nil {
-			branch.terminals = append(branch.terminals, runtimeBranchTerminal{sink: destination.sink, caps: caps})
+			branch.terminals = append(branch.terminals, runtimeBranchTerminal{
+				name:     destination.name,
+				shareKey: destination.shareKey,
+				sink:     destination.sink,
+				caps:     caps,
+			})
 			continue
 		}
 		formatID, err := t.runtimeBranchMuxFormat(ctx, destination.endpoint, i)
@@ -460,6 +574,7 @@ func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtim
 			return err
 		}
 		branch.terminals = append(branch.terminals, runtimeBranchTerminal{
+			name:  destination.name,
 			stage: muxStage,
 			caps:  caps,
 			owned: true,
@@ -591,7 +706,7 @@ func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, caps StreamCaps, a
 	branch.postEncodeTaps = nil
 }
 
-func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]pipeline.NodeRef, []pipeline.Route, []TapInfo, error) {
+func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string, group *runtimeAttachGroup) ([]pipeline.NodeRef, []pipeline.Route, []TapInfo, error) {
 	refs := make([]pipeline.NodeRef, 0, len(nodeNames))
 	routes := make([]pipeline.Route, 0, len(nodeNames))
 	taps := make([]TapInfo, 0, runtimeBranchTapCount(branch))
@@ -630,9 +745,31 @@ func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]
 		stageIndex++
 	}
 
+	terminalNameIndex := 0
 	for i := range branch.terminals {
 		terminal := branch.terminals[i]
-		nodeName := nodeNames[stageIndex+i]
+		if group != nil && group.isSharedSink(terminal.shareKey) {
+			ref, added, err := group.sharedSinkRef(t.graph, terminal, branch.buffer)
+			if err != nil {
+				return refs, routes, taps, err
+			}
+			if added {
+				refs = append(refs, ref)
+			}
+			var route pipeline.Route
+			if !connectedFromAnchor {
+				route = runtimeBranchRoute(pipeline.NodeRef(branch.from), ref, branch)
+			} else {
+				route = routeBetween(previous, ref)
+			}
+			if err := t.graph.Connect(route); err != nil {
+				return refs, routes, taps, runtimeBranchGraphError("connect branch target", ref.String(), err)
+			}
+			routes = append(routes, route)
+			continue
+		}
+		nodeName := nodeNames[stageIndex+terminalNameIndex]
+		terminalNameIndex++
 		var (
 			ref pipeline.NodeRef
 			err error
@@ -1020,7 +1157,7 @@ func endpointSpecHasOutput(endpoint EndpointSpec) bool {
 		endpoint.resolvedFormat != ""
 }
 
-func runtimeBranchNodeNames(branch runtimeBranch, spec pipeline.Spec) ([]string, error) {
+func runtimeBranchNodeNames(branch runtimeBranch, spec pipeline.Spec, group *runtimeAttachGroup) ([]string, error) {
 	capacity := runtimeBranchStageCount(branch) + len(branch.terminals)
 	names := make([]string, 0, capacity)
 	seen := make(map[string]struct{}, capacity)
@@ -1033,13 +1170,30 @@ func runtimeBranchNodeNames(branch runtimeBranch, spec pipeline.Spec) ([]string,
 		if err := validateRuntimeBranchNodeName(spec, seen, name); err != nil {
 			return nil, err
 		}
+		if group != nil {
+			if err := group.reserveNode(spec, name); err != nil {
+				return nil, err
+			}
+		}
 		names = append(names, name)
 		stageIndex++
 	}
 	for i := range branch.terminals {
-		name := runtimeBranchNodeName(branch.name, runtimeBranchTerminalName(branch.terminals[i]), fmt.Sprintf("target%d", i+1))
+		terminal := branch.terminals[i]
+		if group != nil && group.isSharedSink(terminal.shareKey) {
+			if err := group.reserveSharedSink(spec, terminal); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		name := runtimeBranchNodeName(branch.name, runtimeBranchTerminalName(terminal), fmt.Sprintf("target%d", i+1))
 		if err := validateRuntimeBranchNodeName(spec, seen, name); err != nil {
 			return nil, err
+		}
+		if group != nil {
+			if err := group.reserveNode(spec, name); err != nil {
+				return nil, err
+			}
 		}
 		names = append(names, name)
 	}
