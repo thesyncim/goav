@@ -1189,3 +1189,178 @@ func TestFormatMuxerRejectsNegativeDuration(t *testing.T) {
 		t.Fatalf("err = %v, want matroska.ErrInvalidData", err)
 	}
 }
+
+func BenchmarkWriteWebMCorpus(b *testing.B) {
+	muxer, err := NewMuxer(io.Discard, MuxerOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	tracks := addBenchmarkWebMTracks(b, muxer)
+	payloads := benchmarkWebMPayloads()
+	writeBenchmarkWebMCorpus(b, muxer, tracks, payloads, 0)
+	b.ReportAllocs()
+	b.SetBytes(payloads.totalBytes)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		writeBenchmarkWebMCorpus(b, muxer, tracks, payloads, i+1)
+	}
+}
+
+func BenchmarkReadWebMCorpus(b *testing.B) {
+	payloads := benchmarkWebMPayloads()
+	data := makeBenchmarkWebMCorpusData(b, benchmarkWebMCorpusCycles, payloads)
+	var reader bytes.Reader
+	reader.Reset(data)
+	demuxer, err := NewDemuxer(&reader, DemuxerOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, payloads.maxPayload)}
+	cyclesRead := 0
+	b.ReportAllocs()
+	b.SetBytes(payloads.totalBytes)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if cyclesRead == benchmarkWebMCorpusCycles {
+			reader.Reset(data)
+			demuxer, err = NewDemuxer(&reader, DemuxerOptions{})
+			if err != nil {
+				b.Fatal(err)
+			}
+			cyclesRead = 0
+		}
+		for frame := 0; frame < benchmarkWebMTrackCount; frame++ {
+			if err := demuxer.ReadPacket(&packet); err != nil {
+				b.Fatal(err)
+			}
+		}
+		cyclesRead++
+	}
+}
+
+const benchmarkWebMTrackCount = 4
+const benchmarkWebMCorpusCycles = 4096
+
+type benchmarkWebMTracks struct {
+	vp8  uint32
+	vp9  uint32
+	av1  uint32
+	opus uint32
+}
+
+type benchmarkWebMPayloadSet struct {
+	vp8        []byte
+	vp9        []byte
+	av1        []byte
+	opus       []byte
+	totalBytes int64
+	maxPayload int
+}
+
+func benchmarkWebMPayloads() benchmarkWebMPayloadSet {
+	payloads := benchmarkWebMPayloadSet{
+		vp8:  repeatedWebMBenchmarkPayload(1200, 0x10),
+		vp9:  repeatedWebMBenchmarkPayload(1200, 0x83),
+		av1:  webmAV1SequenceHeaderOBU(),
+		opus: []byte{0xf8, 0xff, 0xfe},
+	}
+	payloads.vp8[3] = 0x9d
+	payloads.vp8[4] = 0x01
+	payloads.vp8[5] = 0x2a
+	for _, payload := range [][]byte{payloads.vp8, payloads.vp9, payloads.av1, payloads.opus} {
+		payloads.totalBytes += int64(len(payload))
+		if len(payload) > payloads.maxPayload {
+			payloads.maxPayload = len(payload)
+		}
+	}
+	return payloads
+}
+
+func repeatedWebMBenchmarkPayload(size int, seed byte) []byte {
+	payload := make([]byte, size)
+	for i := range payload {
+		payload[i] = seed + byte(i)
+	}
+	return payload
+}
+
+func addBenchmarkWebMTracks(tb testing.TB, muxer *Muxer) benchmarkWebMTracks {
+	tb.Helper()
+	var tracks benchmarkWebMTracks
+	var err error
+	tracks.vp8, err = muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tracks.vp9, err = muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP9,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tracks.av1, err = muxer.AddTrack(Track{
+		Type:         TrackVideo,
+		Codec:        CodecAV1,
+		CodecPrivate: webmAV1CodecConfig(),
+		Video:        VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tracks.opus, err = muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return tracks
+}
+
+func writeBenchmarkWebMCorpus(tb testing.TB, muxer *Muxer, tracks benchmarkWebMTracks, payloads benchmarkWebMPayloadSet, cycle int) {
+	tb.Helper()
+	timeNS := int64(cycle) * 20_000_000
+	packets := []Packet{
+		{TrackID: tracks.vp8, TimeNS: timeNS, DurationNS: 20_000_000, Keyframe: true, Data: payloads.vp8},
+		{TrackID: tracks.vp9, TimeNS: timeNS, DurationNS: 20_000_000, Keyframe: true, Data: payloads.vp9},
+		{TrackID: tracks.av1, TimeNS: timeNS, DurationNS: 20_000_000, Keyframe: true, Data: payloads.av1},
+		{TrackID: tracks.opus, TimeNS: timeNS, DurationNS: 20_000_000, Keyframe: true, Data: payloads.opus},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			tb.Fatalf("write corpus packet %d: %v", i, err)
+		}
+	}
+}
+
+func makeBenchmarkWebMCorpusData(tb testing.TB, cycles int, payloads benchmarkWebMPayloadSet) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	buffer.Grow(benchmarkWebMCorpusCapacity(cycles, payloads))
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tracks := addBenchmarkWebMTracks(tb, muxer)
+	for i := 0; i < cycles; i++ {
+		writeBenchmarkWebMCorpus(tb, muxer, tracks, payloads, i)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func benchmarkWebMCorpusCapacity(cycles int, payloads benchmarkWebMPayloadSet) int {
+	payloadBytes := payloads.totalBytes * int64(cycles)
+	metadataBytes := int64(cycles*benchmarkWebMTrackCount*128 + 64*1024)
+	return int(payloadBytes + metadataBytes)
+}

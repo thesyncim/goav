@@ -242,7 +242,14 @@ Committed benchmarks cover:
 - SimpleBlock write throughput and allocations.
 - Laced SimpleBlock write throughput and allocations.
 - SimpleBlock read throughput and allocations.
+- Matroska WebRTC-codec corpus mux/demux throughput and allocations across
+  Opus, AV1, H.264, VP9, and VP8.
+- Seekable Matroska WebRTC-codec corpus mux/demux throughput, allocation
+  behavior, cue-assisted `ReadPacketAtTime`, and large Cue table seek
+  scalability.
+- WebM-profile corpus mux/demux throughput and allocations across VP8, VP9,
+  AV1, and Opus.
 
-Future benchmarks should add large-file scan speed, mux/demux bytes per second
-on real WebRTC recordings, more lacing variants, and comparisons against
-`ffmpeg`, `mkvmerge`, and other Go EBML/Matroska libraries on the same corpus.
+Future benchmarks should add large-file scan speed on real WebRTC recordings,
+more lacing variants, and comparisons against `ffmpeg`, `mkvmerge`, and other
+Go EBML/Matroska libraries on the same corpus.

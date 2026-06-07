@@ -6076,6 +6076,38 @@ func TestDemuxerPreservesCueTrackPositionMetadata(t *testing.T) {
 	}
 }
 
+func TestDemuxerCueForTime(t *testing.T) {
+	sorted := Demuxer{
+		cuesSorted: true,
+		cues: []CuePoint{
+			{TimeNS: 10_000_000, TrackID: 1},
+			{TimeNS: 20_000_000, TrackID: 1},
+			{TimeNS: 40_000_000, TrackID: 1},
+		},
+	}
+	if got := sorted.cueForTime(5_000_000); got.TimeNS != 10_000_000 {
+		t.Fatalf("early sorted cue time = %d, want 10000000", got.TimeNS)
+	}
+	if got := sorted.cueForTime(30_000_000); got.TimeNS != 20_000_000 {
+		t.Fatalf("middle sorted cue time = %d, want 20000000", got.TimeNS)
+	}
+	if got := sorted.cueForTime(40_000_000); got.TimeNS != 40_000_000 {
+		t.Fatalf("exact sorted cue time = %d, want 40000000", got.TimeNS)
+	}
+
+	unsorted := Demuxer{
+		cuesSorted: false,
+		cues: []CuePoint{
+			{TimeNS: 20_000_000, TrackID: 1},
+			{TimeNS: 10_000_000, TrackID: 1},
+			{TimeNS: 40_000_000, TrackID: 1},
+		},
+	}
+	if got := unsorted.cueForTime(30_000_000); got.TimeNS != 10_000_000 {
+		t.Fatalf("unsorted fallback cue time = %d, want 10000000", got.TimeNS)
+	}
+}
+
 func TestMuxerFailedPacketDoesNotAdvanceCuesOrDuration(t *testing.T) {
 	ws := &failToggleWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{})
@@ -8137,6 +8169,286 @@ func BenchmarkReadXiphLacedSimpleBlock(b *testing.B) {
 		if err := demuxer.ReadPacket(&packet); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func BenchmarkWriteWebRTCCorpus(b *testing.B) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	tracks := addBenchmarkWebRTCTracks(b, muxer)
+	payloads := benchmarkWebRTCPayloads()
+	writeBenchmarkWebRTCCorpus(b, muxer, tracks, payloads, 0)
+	b.ReportAllocs()
+	b.SetBytes(payloads.totalBytes)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		writeBenchmarkWebRTCCorpus(b, muxer, tracks, payloads, i+1)
+	}
+}
+
+func BenchmarkReadWebRTCCorpus(b *testing.B) {
+	payloads := benchmarkWebRTCPayloads()
+	data := makeBenchmarkWebRTCCorpusMatroskaData(b, benchmarkWebRTCCorpusCycles, payloads)
+	var reader bytes.Reader
+	reader.Reset(data)
+	demuxer, err := NewDemuxer(&reader, DemuxerOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, payloads.maxPayload)}
+	cyclesRead := 0
+	b.ReportAllocs()
+	b.SetBytes(payloads.totalBytes)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if cyclesRead == benchmarkWebRTCCorpusCycles {
+			reader.Reset(data)
+			if err := demuxer.init(&reader, DemuxerOptions{}); err != nil {
+				b.Fatal(err)
+			}
+			cyclesRead = 0
+		}
+		for frame := 0; frame < benchmarkWebRTCTrackCount; frame++ {
+			if err := demuxer.ReadPacket(&packet); err != nil {
+				b.Fatal(err)
+			}
+		}
+		cyclesRead++
+	}
+}
+
+func BenchmarkWriteSeekableWebRTCCorpus(b *testing.B) {
+	payloads := benchmarkWebRTCPayloads()
+	data := makeBenchmarkWebRTCCorpusSeekableMatroskaData(b, benchmarkWebRTCCorpusCycles, payloads)
+	var writer memoryWriteSeeker
+	var muxer Muxer
+	b.ReportAllocs()
+	b.SetBytes(payloads.totalBytes * int64(benchmarkWebRTCCorpusCycles))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if cap(writer.bytes) < len(data) {
+			writer.bytes = make([]byte, 0, len(data))
+		} else {
+			writer.bytes = writer.bytes[:0]
+		}
+		writer.pos = 0
+		writeBenchmarkWebRTCCorpusFile(b, &muxer, &writer, benchmarkWebRTCCorpusCycles, payloads)
+	}
+}
+
+func BenchmarkReadSeekableWebRTCCorpus(b *testing.B) {
+	payloads := benchmarkWebRTCPayloads()
+	data := makeBenchmarkWebRTCCorpusSeekableMatroskaData(b, benchmarkWebRTCCorpusCycles, payloads)
+	var reader bytes.Reader
+	reader.Reset(data)
+	demuxer, err := NewDemuxer(&reader, DemuxerOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, payloads.maxPayload)}
+	cyclesRead := 0
+	b.ReportAllocs()
+	b.SetBytes(payloads.totalBytes)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if cyclesRead == benchmarkWebRTCCorpusCycles {
+			reader.Reset(data)
+			if err := demuxer.init(&reader, DemuxerOptions{}); err != nil {
+				b.Fatal(err)
+			}
+			cyclesRead = 0
+		}
+		for frame := 0; frame < benchmarkWebRTCTrackCount; frame++ {
+			if err := demuxer.ReadPacket(&packet); err != nil {
+				b.Fatal(err)
+			}
+		}
+		cyclesRead++
+	}
+}
+
+func BenchmarkReadPacketAtTimeWebRTCCorpus(b *testing.B) {
+	benchmarkReadPacketAtTimeWebRTCCorpus(b, benchmarkWebRTCCorpusCycles)
+}
+
+func BenchmarkReadPacketAtTimeLargeWebRTCCorpus(b *testing.B) {
+	benchmarkReadPacketAtTimeWebRTCCorpus(b, benchmarkWebRTCLargeCueCorpusCycles)
+}
+
+func benchmarkReadPacketAtTimeWebRTCCorpus(b *testing.B, cycles int) {
+	payloads := benchmarkWebRTCPayloads()
+	data := makeBenchmarkWebRTCCorpusSeekableMatroskaData(b, cycles, payloads)
+	var reader bytes.Reader
+	reader.Reset(data)
+	demuxer, err := NewDemuxer(&reader, DemuxerOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); err != nil {
+		b.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, payloads.maxPayload)}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		targetNS := int64(i%cycles) * benchmarkWebRTCCorpusFrameDurationNS
+		if err := demuxer.ReadPacketAtTime(targetNS, &packet); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+const benchmarkWebRTCTrackCount = 5
+const benchmarkWebRTCCorpusCycles = 256
+const benchmarkWebRTCLargeCueCorpusCycles = 4096
+const benchmarkWebRTCCorpusFrameDurationNS = 20_000_000
+const benchmarkWebRTCCorpusClusterDurationNS = 1_000_000_000
+
+type benchmarkWebRTCTracks struct {
+	opus uint32
+	av1  uint32
+	h264 uint32
+	vp9  uint32
+	vp8  uint32
+}
+
+type benchmarkWebRTCPayloadSet struct {
+	opus       []byte
+	av1        []byte
+	h264       []byte
+	vp9        []byte
+	vp8        []byte
+	totalBytes int64
+	maxPayload int
+}
+
+func benchmarkWebRTCPayloads() benchmarkWebRTCPayloadSet {
+	payloads := benchmarkWebRTCPayloadSet{
+		opus: []byte{0xf8, 0xff, 0xfe},
+		av1:  av1SequenceHeaderOBU(),
+		h264: h264AnnexBAccessUnit(),
+		vp9:  repeatedBenchmarkPayload(1200, 0x83),
+		vp8:  repeatedBenchmarkPayload(1200, 0x10),
+	}
+	payloads.vp8[3] = 0x9d
+	payloads.vp8[4] = 0x01
+	payloads.vp8[5] = 0x2a
+	for _, payload := range [][]byte{payloads.opus, payloads.av1, payloads.h264, payloads.vp9, payloads.vp8} {
+		payloads.totalBytes += int64(len(payload))
+		if len(payload) > payloads.maxPayload {
+			payloads.maxPayload = len(payload)
+		}
+	}
+	return payloads
+}
+
+func repeatedBenchmarkPayload(size int, seed byte) []byte {
+	payload := make([]byte, size)
+	for i := range payload {
+		payload[i] = seed + byte(i)
+	}
+	return payload
+}
+
+func addBenchmarkWebRTCTracks(tb testing.TB, muxer *Muxer) benchmarkWebRTCTracks {
+	tb.Helper()
+	var tracks benchmarkWebRTCTracks
+	var err error
+	tracks.opus, err = muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: benchmarkWebRTCCorpusFrameDurationNS,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tracks.av1, err = muxer.AddTrack(Track{
+		Type:         TrackVideo,
+		Codec:        CodecAV1,
+		CodecPrivate: av1CodecConfig(),
+		Video:        VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tracks.h264, err = muxer.AddTrack(Track{
+		Type:         TrackVideo,
+		Codec:        CodecH264,
+		CodecPrivate: h264AVCDecoderConfigWithLengthSize(2),
+		Video:        VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tracks.vp9, err = muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP9,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tracks.vp8, err = muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return tracks
+}
+
+func writeBenchmarkWebRTCCorpus(tb testing.TB, muxer *Muxer, tracks benchmarkWebRTCTracks, payloads benchmarkWebRTCPayloadSet, cycle int) {
+	tb.Helper()
+	timeNS := int64(cycle) * benchmarkWebRTCCorpusFrameDurationNS
+	packets := []Packet{
+		{TrackID: tracks.opus, TimeNS: timeNS, DurationNS: benchmarkWebRTCCorpusFrameDurationNS, Keyframe: true, Data: payloads.opus},
+		{TrackID: tracks.av1, TimeNS: timeNS, DurationNS: benchmarkWebRTCCorpusFrameDurationNS, Keyframe: true, Data: payloads.av1},
+		{TrackID: tracks.h264, TimeNS: timeNS, DurationNS: benchmarkWebRTCCorpusFrameDurationNS, Keyframe: true, Data: payloads.h264},
+		{TrackID: tracks.vp9, TimeNS: timeNS, DurationNS: benchmarkWebRTCCorpusFrameDurationNS, Keyframe: true, Data: payloads.vp9},
+		{TrackID: tracks.vp8, TimeNS: timeNS, DurationNS: benchmarkWebRTCCorpusFrameDurationNS, Keyframe: true, Data: payloads.vp8},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			tb.Fatalf("write corpus packet %d: %v", i, err)
+		}
+	}
+}
+
+func makeBenchmarkWebRTCCorpusMatroskaData(tb testing.TB, cycles int, payloads benchmarkWebRTCPayloadSet) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	buffer.Grow(benchmarkWebRTCCorpusCapacity(cycles, payloads))
+	writeBenchmarkWebRTCCorpusFile(tb, &Muxer{}, &buffer, cycles, payloads)
+	return buffer.Bytes()
+}
+
+func makeBenchmarkWebRTCCorpusSeekableMatroskaData(tb testing.TB, cycles int, payloads benchmarkWebRTCPayloadSet) []byte {
+	tb.Helper()
+	writer := memoryWriteSeeker{bytes: make([]byte, 0, benchmarkWebRTCCorpusCapacity(cycles, payloads))}
+	writeBenchmarkWebRTCCorpusFile(tb, &Muxer{}, &writer, cycles, payloads)
+	return writer.bytes
+}
+
+func benchmarkWebRTCCorpusCapacity(cycles int, payloads benchmarkWebRTCPayloadSet) int {
+	payloadBytes := payloads.totalBytes * int64(cycles)
+	metadataBytes := int64(cycles*benchmarkWebRTCTrackCount*256 + 256*1024)
+	return int(payloadBytes + metadataBytes)
+}
+
+func writeBenchmarkWebRTCCorpusFile(tb testing.TB, muxer *Muxer, writer io.Writer, cycles int, payloads benchmarkWebRTCPayloadSet) {
+	tb.Helper()
+	muxer.init(writer, MuxerOptions{ClusterMaxDurationNS: benchmarkWebRTCCorpusClusterDurationNS})
+	tracks := addBenchmarkWebRTCTracks(tb, muxer)
+	for i := 0; i < cycles; i++ {
+		writeBenchmarkWebRTCCorpus(tb, muxer, tracks, payloads, i)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
 	}
 }
 
@@ -10303,9 +10615,20 @@ type memoryWriteSeeker struct {
 func (m *memoryWriteSeeker) Write(p []byte) (int, error) {
 	end := m.pos + int64(len(p))
 	if end > int64(len(m.bytes)) {
-		next := make([]byte, end)
-		copy(next, m.bytes)
-		m.bytes = next
+		oldLen := len(m.bytes)
+		endLen := int(end)
+		if endLen <= cap(m.bytes) {
+			m.bytes = m.bytes[:endLen]
+			clear(m.bytes[oldLen:])
+		} else {
+			nextCap := cap(m.bytes) * 2
+			if nextCap < endLen {
+				nextCap = endLen
+			}
+			next := make([]byte, endLen, nextCap)
+			copy(next, m.bytes)
+			m.bytes = next
+		}
 	}
 	copy(m.bytes[m.pos:end], p)
 	m.pos = end

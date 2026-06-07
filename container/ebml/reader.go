@@ -9,10 +9,11 @@ type ReaderOptions struct {
 }
 
 type Reader struct {
-	r       io.Reader
-	offset  int64
-	options ReaderOptions
-	scratch [MaxSizeWidth]byte
+	r           io.Reader
+	offset      int64
+	options     ReaderOptions
+	scratch     [MaxSizeWidth]byte
+	skipScratch [4096]byte
 }
 
 type Header struct {
@@ -80,8 +81,18 @@ func (r *Reader) Skip(size uint64) error {
 	if size > uint64(^uint(0)>>1) {
 		return ErrElementTooLarge
 	}
-	_, err := io.CopyN(io.Discard, r, int64(size))
-	return err
+	remaining := size
+	for remaining > 0 {
+		n := len(r.skipScratch)
+		if remaining < uint64(n) {
+			n = int(remaining)
+		}
+		if err := r.ReadFull(r.skipScratch[:n]); err != nil {
+			return err
+		}
+		remaining -= uint64(n)
+	}
+	return nil
 }
 
 func (r *Reader) Limited(size uint64) *io.LimitedReader {

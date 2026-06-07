@@ -10,6 +10,7 @@ import (
 	"hash/crc32"
 	"io"
 	"math"
+	"sort"
 
 	"github.com/thesyncim/goav/container/ebml"
 	"github.com/woozymasta/lzo"
@@ -28,6 +29,7 @@ type Demuxer struct {
 	chapters          []ChapterEdition
 	tags              []Tag
 	cues              []CuePoint
+	cuesSorted        bool
 	seekEntries       []SeekEntry
 	inSegment         bool
 	inCluster         bool
@@ -111,6 +113,7 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.chapters = d.chapters[:0]
 	d.tags = d.tags[:0]
 	d.cues = d.cues[:0]
+	d.cuesSorted = true
 	d.seekEntries = d.seekEntries[:0]
 	d.inSegment = false
 	d.inCluster = false
@@ -139,13 +142,7 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 	if len(d.cues) == 0 {
 		return ErrInvalidData
 	}
-	cue := d.cues[0]
-	for i := range d.cues {
-		if d.cues[i].TimeNS > timeNS {
-			break
-		}
-		cue = d.cues[i]
-	}
+	cue := d.cueForTime(timeNS)
 	offset := d.segmentData + int64(cue.ClusterPosition)
 	if _, err := d.seeker.Seek(offset, io.SeekStart); err != nil {
 		return err
@@ -168,6 +165,26 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 	}
 	d.clearLace()
 	return nil
+}
+
+func (d *Demuxer) cueForTime(timeNS int64) CuePoint {
+	if d.cuesSorted {
+		index := sort.Search(len(d.cues), func(i int) bool {
+			return d.cues[i].TimeNS > timeNS
+		})
+		if index == 0 {
+			return d.cues[0]
+		}
+		return d.cues[index-1]
+	}
+	cue := d.cues[0]
+	for i := range d.cues {
+		if d.cues[i].TimeNS > timeNS {
+			break
+		}
+		cue = d.cues[i]
+	}
+	return cue
 }
 
 // ReadPacketAtTime seeks to the nearest preceding cue and reads forward until
@@ -1083,6 +1100,9 @@ func (d *Demuxer) parseCues(header ebml.Header) error {
 				return err
 			}
 			if cue.TrackID != 0 {
+				if len(d.cues) != 0 && cue.TimeNS < d.cues[len(d.cues)-1].TimeNS {
+					d.cuesSorted = false
+				}
 				d.cues = append(d.cues, cue)
 			}
 		default:
