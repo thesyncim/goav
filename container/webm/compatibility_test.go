@@ -2,6 +2,7 @@ package webm
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -156,6 +157,15 @@ func TestExternalReadsAndRemuxesFFmpegWebMRecordings(t *testing.T) {
 	}
 }
 
+func TestExternalFFProbeWebMPacketOracle(t *testing.T) {
+	tool := requireTool(t, "ffprobe")
+	file, want := writePacketOracleWebM(t)
+	probe := probeExternalWebMPackets(t, tool, file)
+	local := readLocalWebMPacketOracle(t, file)
+	assertExternalWebMPackets(t, "ffprobe", probe, want)
+	assertExternalWebMPackets(t, "local", local, want)
+}
+
 func TestExternalMKVToolNixCompat(t *testing.T) {
 	file := writeCompatibilityWebM(t)
 	if tool, ok := lookupTool("mkvalidator"); ok {
@@ -172,6 +182,214 @@ func TestExternalMKVToolNixCompat(t *testing.T) {
 		out := filepath.Join(t.TempDir(), "remux.webm")
 		runExternal(t, tool, "-o", out, file)
 	}
+}
+
+type externalWebMPacket struct {
+	StreamIndex int
+	TimeNS      int64
+	DurationNS  int64
+	Keyframe    bool
+	Size        int
+}
+
+func writePacketOracleWebM(t testing.TB) (string, []externalWebMPacket) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "packet-oracle.webm")
+	output, err := os.Create(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxer, err := NewMuxer(output, MuxerOptions{})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	type oracleTrack struct {
+		id      uint32
+		stream  int
+		track   Track
+		payload []byte
+	}
+	tracks := []oracleTrack{
+		{
+			stream:  0,
+			track:   Track{Type: TrackVideo, Codec: CodecVP8, Video: VideoConfig{Width: 16, Height: 16}},
+			payload: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+		},
+		{
+			stream:  1,
+			track:   Track{Type: TrackVideo, Codec: CodecVP9, Video: VideoConfig{Width: 16, Height: 16}},
+			payload: []byte{0x83, 0x49, 0x83},
+		},
+		{
+			stream:  2,
+			track:   Track{Type: TrackVideo, Codec: CodecAV1, Video: VideoConfig{Width: 16, Height: 16}, CodecPrivate: webmAV1CodecConfig()},
+			payload: webmAV1SequenceHeaderOBU(),
+		},
+		{
+			stream:  3,
+			track:   Track{Type: TrackAudio, Codec: CodecOpus, Audio: AudioConfig{SampleRate: 48000, Channels: 2}},
+			payload: []byte{0xf8, 0xff, 0xfe},
+		},
+	}
+	for i := range tracks {
+		tracks[i].id, err = muxer.AddTrack(tracks[i].track)
+		if err != nil {
+			_ = output.Close()
+			t.Fatal(err)
+		}
+	}
+	want := make([]externalWebMPacket, 0, len(tracks)*2)
+	for cycle := 0; cycle < 2; cycle++ {
+		timeNS := int64(cycle) * 20_000_000
+		for i := range tracks {
+			keyframe := true
+			if err := muxer.WritePacket(Packet{
+				TrackID:    tracks[i].id,
+				TimeNS:     timeNS,
+				DurationNS: 20_000_000,
+				Keyframe:   keyframe,
+				Data:       tracks[i].payload,
+			}); err != nil {
+				_ = output.Close()
+				t.Fatalf("write packet stream %d cycle %d: %v", tracks[i].stream, cycle, err)
+			}
+			want = append(want, externalWebMPacket{
+				StreamIndex: tracks[i].stream,
+				TimeNS:      timeNS,
+				DurationNS:  20_000_000,
+				Keyframe:    keyframe,
+				Size:        len(tracks[i].payload),
+			})
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return file, want
+}
+
+func probeExternalWebMPackets(t testing.TB, tool string, file string) []externalWebMPacket {
+	t.Helper()
+	output := runExternal(t, tool, "-v", "quiet", "-show_entries", "packet=stream_index,pts_time,duration_time,flags,size", "-of", "json", file)
+	var decoded struct {
+		Packets []struct {
+			StreamIndex  int    `json:"stream_index"`
+			PTSTime      string `json:"pts_time"`
+			DurationTime string `json:"duration_time"`
+			Flags        string `json:"flags"`
+			Size         string `json:"size"`
+		} `json:"packets"`
+	}
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode ffprobe packets: %v\n%s", err, output)
+	}
+	packets := make([]externalWebMPacket, 0, len(decoded.Packets))
+	for i := range decoded.Packets {
+		timeNS, err := parseExternalWebMSecondsNS(decoded.Packets[i].PTSTime)
+		if err != nil {
+			t.Fatalf("packet %d pts_time %q: %v", i, decoded.Packets[i].PTSTime, err)
+		}
+		durationNS, err := parseExternalWebMSecondsNS(decoded.Packets[i].DurationTime)
+		if err != nil {
+			t.Fatalf("packet %d duration_time %q: %v", i, decoded.Packets[i].DurationTime, err)
+		}
+		size, err := strconv.Atoi(decoded.Packets[i].Size)
+		if err != nil {
+			t.Fatalf("packet %d size %q: %v", i, decoded.Packets[i].Size, err)
+		}
+		packets = append(packets, externalWebMPacket{
+			StreamIndex: decoded.Packets[i].StreamIndex,
+			TimeNS:      timeNS,
+			DurationNS:  durationNS,
+			Keyframe:    strings.Contains(decoded.Packets[i].Flags, "K"),
+			Size:        size,
+		})
+	}
+	return packets
+}
+
+func readLocalWebMPacketOracle(t testing.TB, file string) []externalWebMPacket {
+	t.Helper()
+	input, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	demuxer, err := NewDemuxer(input, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	streams := make(map[uint32]int, len(tracks))
+	for i := range tracks {
+		streams[tracks[i].ID] = i
+	}
+	var packets []externalWebMPacket
+	packet := Packet{Data: make([]byte, 0, 1<<20)}
+	for {
+		err := demuxer.ReadPacket(&packet)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream, ok := streams[packet.TrackID]
+		if !ok {
+			t.Fatalf("packet references unknown track %d", packet.TrackID)
+		}
+		packets = append(packets, externalWebMPacket{
+			StreamIndex: stream,
+			TimeNS:      packet.TimeNS,
+			DurationNS:  packet.DurationNS,
+			Keyframe:    packet.Keyframe,
+			Size:        len(packet.Data),
+		})
+	}
+	return packets
+}
+
+func assertExternalWebMPackets(t testing.TB, name string, got []externalWebMPacket, want []externalWebMPacket) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s packets = %d, want %d: %+v", name, len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("%s packet %d = %+v, want %+v", name, i, got[i], want[i])
+		}
+	}
+}
+
+func parseExternalWebMSecondsNS(value string) (int64, error) {
+	if value == "" || value == "N/A" {
+		return 0, nil
+	}
+	parts := strings.SplitN(value, ".", 2)
+	seconds, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	var nanos int64
+	if len(parts) == 2 {
+		frac := parts[1]
+		if len(frac) > 9 {
+			frac = frac[:9]
+		}
+		for len(frac) < 9 {
+			frac += "0"
+		}
+		nanos, err = strconv.ParseInt(frac, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return seconds*1_000_000_000 + nanos, nil
 }
 
 func writeSeekableCompatibilityWebM(t *testing.T) string {

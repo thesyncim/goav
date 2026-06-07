@@ -2,11 +2,13 @@ package matroska
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -216,6 +218,15 @@ func TestExternalReadsAndRemuxesFFmpegMatroskaRecordings(t *testing.T) {
 	}
 }
 
+func TestExternalFFProbeMatroskaPacketOracle(t *testing.T) {
+	tool := requireExternalTool(t, "ffprobe")
+	file, want := writePacketOracleMatroska(t)
+	probe := probeExternalMatroskaPackets(t, tool, file)
+	local := readLocalMatroskaPacketOracle(t, file)
+	assertExternalMatroskaPackets(t, "ffprobe", probe, want)
+	assertExternalMatroskaPackets(t, "local", local, want)
+}
+
 func writeFFmpegAV1OpusMatroskaRecording(t testing.TB) string {
 	t.Helper()
 	tool := requireExternalTool(t, "ffmpeg")
@@ -404,6 +415,244 @@ func writeCompatibilityMatroska(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return file
+}
+
+type externalMatroskaPacket struct {
+	StreamIndex int
+	TimeNS      int64
+	DurationNS  int64
+	Keyframe    bool
+	Size        int
+}
+
+func writePacketOracleMatroska(t testing.TB) (string, []externalMatroskaPacket) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "packet-oracle.mkv")
+	output, err := os.Create(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxer, err := NewMuxer(output, MuxerOptions{})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	type oracleTrack struct {
+		id      uint32
+		stream  int
+		track   Track
+		payload []byte
+		size    func(testing.TB, []byte) int
+	}
+	rawSize := func(tb testing.TB, data []byte) int {
+		tb.Helper()
+		return len(data)
+	}
+	h264Size := func(tb testing.TB, data []byte) int {
+		tb.Helper()
+		size, err := h264AnnexBToAVCSize(data, 4)
+		if err != nil {
+			tb.Fatal(err)
+		}
+		return size
+	}
+	tracks := []oracleTrack{
+		{
+			stream:  0,
+			track:   Track{Type: TrackAudio, Codec: CodecOpus, Audio: AudioConfig{SampleRate: 48000, Channels: 2}},
+			payload: []byte{0xf8, 0xff, 0xfe},
+			size:    rawSize,
+		},
+		{
+			stream:  1,
+			track:   Track{Type: TrackVideo, Codec: CodecAV1, Video: VideoConfig{Width: 16, Height: 16}, CodecPrivate: av1CodecConfig()},
+			payload: av1SequenceHeaderOBU(),
+			size:    rawSize,
+		},
+		{
+			stream:  2,
+			track:   Track{Type: TrackVideo, Codec: CodecH264, Video: VideoConfig{Width: 16, Height: 16}, CodecPrivate: h264AVCDecoderConfig()},
+			payload: h264AnnexBAccessUnit(),
+			size:    h264Size,
+		},
+		{
+			stream:  3,
+			track:   Track{Type: TrackVideo, Codec: CodecVP9, Video: VideoConfig{Width: 16, Height: 16}},
+			payload: []byte{0x83, 0x49, 0x83},
+			size:    rawSize,
+		},
+		{
+			stream:  4,
+			track:   Track{Type: TrackVideo, Codec: CodecVP8, Video: VideoConfig{Width: 16, Height: 16}},
+			payload: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+			size:    rawSize,
+		},
+	}
+	for i := range tracks {
+		tracks[i].id, err = muxer.AddTrack(tracks[i].track)
+		if err != nil {
+			_ = output.Close()
+			t.Fatal(err)
+		}
+	}
+	want := make([]externalMatroskaPacket, 0, len(tracks)*2)
+	for cycle := 0; cycle < 2; cycle++ {
+		timeNS := int64(cycle) * 20_000_000
+		for i := range tracks {
+			keyframe := true
+			if err := muxer.WritePacket(Packet{
+				TrackID:    tracks[i].id,
+				TimeNS:     timeNS,
+				DurationNS: 20_000_000,
+				Keyframe:   keyframe,
+				Data:       tracks[i].payload,
+			}); err != nil {
+				_ = output.Close()
+				t.Fatalf("write packet stream %d cycle %d: %v", tracks[i].stream, cycle, err)
+			}
+			want = append(want, externalMatroskaPacket{
+				StreamIndex: tracks[i].stream,
+				TimeNS:      timeNS,
+				DurationNS:  20_000_000,
+				Keyframe:    keyframe,
+				Size:        tracks[i].size(t, tracks[i].payload),
+			})
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return file, want
+}
+
+func probeExternalMatroskaPackets(t testing.TB, tool string, file string) []externalMatroskaPacket {
+	t.Helper()
+	output := runExternalTool(t, tool, "-v", "quiet", "-show_entries", "packet=stream_index,pts_time,duration_time,flags,size", "-of", "json", file)
+	var decoded struct {
+		Packets []struct {
+			StreamIndex  int    `json:"stream_index"`
+			PTSTime      string `json:"pts_time"`
+			DurationTime string `json:"duration_time"`
+			Flags        string `json:"flags"`
+			Size         string `json:"size"`
+		} `json:"packets"`
+	}
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode ffprobe packets: %v\n%s", err, output)
+	}
+	packets := make([]externalMatroskaPacket, 0, len(decoded.Packets))
+	for i := range decoded.Packets {
+		timeNS, err := parseExternalMatroskaSecondsNS(decoded.Packets[i].PTSTime)
+		if err != nil {
+			t.Fatalf("packet %d pts_time %q: %v", i, decoded.Packets[i].PTSTime, err)
+		}
+		durationNS, err := parseExternalMatroskaSecondsNS(decoded.Packets[i].DurationTime)
+		if err != nil {
+			t.Fatalf("packet %d duration_time %q: %v", i, decoded.Packets[i].DurationTime, err)
+		}
+		size, err := strconv.Atoi(decoded.Packets[i].Size)
+		if err != nil {
+			t.Fatalf("packet %d size %q: %v", i, decoded.Packets[i].Size, err)
+		}
+		packets = append(packets, externalMatroskaPacket{
+			StreamIndex: decoded.Packets[i].StreamIndex,
+			TimeNS:      timeNS,
+			DurationNS:  durationNS,
+			Keyframe:    strings.Contains(decoded.Packets[i].Flags, "K"),
+			Size:        size,
+		})
+	}
+	return packets
+}
+
+func readLocalMatroskaPacketOracle(t testing.TB, file string) []externalMatroskaPacket {
+	t.Helper()
+	input, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	demuxer, err := NewDemuxer(input, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	streams := make(map[uint32]int, len(tracks))
+	for i := range tracks {
+		streams[tracks[i].ID] = i
+	}
+	var packets []externalMatroskaPacket
+	packet := Packet{Data: make([]byte, 0, 1<<20)}
+	for {
+		err := demuxer.ReadPacket(&packet)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream, ok := streams[packet.TrackID]
+		if !ok {
+			t.Fatalf("packet references unknown track %d", packet.TrackID)
+		}
+		size := len(packet.Data)
+		if tracks[stream].Codec == CodecH264 {
+			size, err = h264AnnexBToAVCSize(packet.Data, 4)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		packets = append(packets, externalMatroskaPacket{
+			StreamIndex: stream,
+			TimeNS:      packet.TimeNS,
+			DurationNS:  packet.DurationNS,
+			Keyframe:    packet.Keyframe,
+			Size:        size,
+		})
+	}
+	return packets
+}
+
+func assertExternalMatroskaPackets(t testing.TB, name string, got []externalMatroskaPacket, want []externalMatroskaPacket) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s packets = %d, want %d: %+v", name, len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("%s packet %d = %+v, want %+v", name, i, got[i], want[i])
+		}
+	}
+}
+
+func parseExternalMatroskaSecondsNS(value string) (int64, error) {
+	if value == "" || value == "N/A" {
+		return 0, nil
+	}
+	parts := strings.SplitN(value, ".", 2)
+	seconds, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	var nanos int64
+	if len(parts) == 2 {
+		frac := parts[1]
+		if len(frac) > 9 {
+			frac = frac[:9]
+		}
+		for len(frac) < 9 {
+			frac += "0"
+		}
+		nanos, err = strconv.ParseInt(frac, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return seconds*1_000_000_000 + nanos, nil
 }
 
 func writeGeneratedG711Matroska(t *testing.T, codec Codec, data []byte) string {
