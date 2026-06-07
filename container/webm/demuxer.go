@@ -7,7 +7,8 @@ import (
 )
 
 type Demuxer struct {
-	inner *matroska.Demuxer
+	inner      *matroska.Demuxer
+	trackTimes map[uint32]packetTimeState
 }
 
 func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
@@ -18,12 +19,14 @@ func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
 	if demuxer.DocType() != "webm" {
 		return nil, ErrUnsupportedWebMDocType
 	}
+	trackTimes := make(map[uint32]packetTimeState)
 	for _, track := range demuxer.Tracks() {
 		if err := validateTrack(track); err != nil {
 			return nil, err
 		}
+		trackTimes[track.ID] = packetTimeState{}
 	}
-	return &Demuxer{inner: demuxer}, nil
+	return &Demuxer{inner: demuxer, trackTimes: trackTimes}, nil
 }
 
 func (d *Demuxer) Tracks() []Track {
@@ -69,15 +72,26 @@ func (d *Demuxer) UnknownTracksElements() []UnknownElement {
 }
 
 func (d *Demuxer) ReadPacket(dst *Packet) error {
-	return d.inner.ReadPacket(dst)
+	if err := d.inner.ReadPacket(dst); err != nil {
+		return err
+	}
+	return d.validatePacketTime(dst.TrackID, dst.TimeNS)
 }
 
 func (d *Demuxer) SeekToTime(timeNS int64) error {
-	return d.inner.SeekToTime(timeNS)
+	if err := d.inner.SeekToTime(timeNS); err != nil {
+		return err
+	}
+	d.resetPacketTime()
+	return nil
 }
 
 func (d *Demuxer) SeekToTrackTime(trackID uint32, timeNS int64) error {
-	return d.inner.SeekToTrackTime(trackID, timeNS)
+	if err := d.inner.SeekToTrackTime(trackID, timeNS); err != nil {
+		return err
+	}
+	d.resetPacketTime()
+	return nil
 }
 
 // ReadCuedPacketAtTime seeks to the first cue at or after timeNS and reads the
@@ -86,13 +100,21 @@ func (d *Demuxer) SeekToTrackTime(trackID uint32, timeNS int64) error {
 // not scan uncued packets between cues; use ReadPacketAtTime when uncued packets
 // should be considered too.
 func (d *Demuxer) ReadCuedPacketAtTime(timeNS int64, dst *Packet) error {
-	return d.inner.ReadCuedPacketAtTime(timeNS, dst)
+	d.resetPacketTime()
+	if err := d.inner.ReadCuedPacketAtTime(timeNS, dst); err != nil {
+		return err
+	}
+	return d.validatePacketTime(dst.TrackID, dst.TimeNS)
 }
 
 // ReadPacketAtTime seeks to the nearest preceding cue and reads forward until
 // it finds the first packet at or after timeNS.
 func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
-	return d.inner.ReadPacketAtTime(timeNS, dst)
+	d.resetPacketTime()
+	if err := d.inner.ReadPacketAtTime(timeNS, dst); err != nil {
+		return err
+	}
+	return d.validatePacketTime(dst.TrackID, dst.TimeNS)
 }
 
 // ReadCuedTrackPacketAtTime seeks to the first cue for trackID at or after
@@ -101,11 +123,37 @@ func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
 // track/time is reached. It does not scan uncued packets between cues; use
 // ReadTrackPacketAtTime when uncued packets should be considered too.
 func (d *Demuxer) ReadCuedTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packet) error {
-	return d.inner.ReadCuedTrackPacketAtTime(trackID, timeNS, dst)
+	d.resetPacketTime()
+	if err := d.inner.ReadCuedTrackPacketAtTime(trackID, timeNS, dst); err != nil {
+		return err
+	}
+	return d.validatePacketTime(dst.TrackID, dst.TimeNS)
 }
 
 // ReadTrackPacketAtTime seeks to the nearest preceding cue for trackID and
 // reads forward until it finds the first packet for trackID at or after timeNS.
 func (d *Demuxer) ReadTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packet) error {
-	return d.inner.ReadTrackPacketAtTime(trackID, timeNS, dst)
+	d.resetPacketTime()
+	if err := d.inner.ReadTrackPacketAtTime(trackID, timeNS, dst); err != nil {
+		return err
+	}
+	return d.validatePacketTime(dst.TrackID, dst.TimeNS)
+}
+
+func (d *Demuxer) validatePacketTime(trackID uint32, timeNS int64) error {
+	state, ok := d.trackTimes[trackID]
+	if ok && state.set && timeNS < state.lastTimeNS {
+		return ErrNonMonotonicWebMTimecode
+	}
+	if d.trackTimes == nil {
+		d.trackTimes = make(map[uint32]packetTimeState)
+	}
+	d.trackTimes[trackID] = packetTimeState{lastTimeNS: timeNS, set: true}
+	return nil
+}
+
+func (d *Demuxer) resetPacketTime() {
+	for trackID := range d.trackTimes {
+		d.trackTimes[trackID] = packetTimeState{}
+	}
 }

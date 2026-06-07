@@ -134,6 +134,8 @@ Current milestone:
   encoding scopes while preserving WebM block-scope AES-CTR encryption.
 - WebM profile validation rejects non-pixel video display units while keeping
   Matroska display-unit metadata available in the Matroska package.
+- WebM muxers and sequential demuxer reads reject decreasing per-track absolute
+  block timecodes while preserving cross-track audio/video interleaving.
 - Block-scope AES-CTR content encryption/decryption for SimpleBlock,
   BlockGroup, laced blocks, and WebM profile output; encrypted laced reads
   keep the source lace buffer retry-safe when caller packet capacity is too
@@ -313,7 +315,10 @@ non-AES encryption, AES-CBC, and non-block content encoding scopes. WebM
 content encryption is limited to block-scope AES-CTR. VP8 tracks must not carry
 codec-private data; VP9 codec-private data, when present, must use the WebM
 VP9 codec feature list with supported profile, level, bit-depth, and chroma
-subsampling values. WebM video display units must remain pixel units.
+subsampling values. WebM video display units must remain pixel units. WebM
+packet writes and sequential packet reads reject decreasing per-track absolute
+block timecodes; equal timestamps and lower timestamps on other tracks remain
+valid so audio/video blocks can be interleaved naturally.
 
 ## Zero-Allocation Strategy
 

@@ -106,6 +106,11 @@ type MuxerOptions struct {
 
 type DemuxerOptions = matroska.DemuxerOptions
 
+type packetTimeState struct {
+	lastTimeNS int64
+	set        bool
+}
+
 func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 	cuePolicy := opts.CuePolicy
 	if cuePolicy == CuePolicyDefault {

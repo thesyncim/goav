@@ -302,6 +302,100 @@ func TestMuxerRejectsUnsupportedTrackMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsNonMonotonicTimecodes(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   20_000_000,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   10_000_000,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); !errors.Is(err, ErrNonMonotonicWebMTimecode) {
+		t.Fatalf("err = %v, want ErrNonMonotonicWebMTimecode", err)
+	}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:         trackID,
+		TimeNS:          10_000_000,
+		FrameDurationNS: 10_000_000,
+		Keyframe:        true,
+		Lacing:          LacingXiph,
+		Frames: [][]byte{
+			{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+			{0x11, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+		},
+	}); !errors.Is(err, ErrNonMonotonicWebMTimecode) {
+		t.Fatalf("laced err = %v, want ErrNonMonotonicWebMTimecode", err)
+	}
+}
+
+func TestMuxerAllowsCrossTrackInterleavedTimecodes(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	videoID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  videoID,
+		TimeNS:   40_000_000,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:    audioID,
+		TimeNS:     20_000_000,
+		DurationNS: 20_000_000,
+		Data:       []byte{0xf8, 0xff, 0xfe},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  videoID,
+		TimeNS:   30_000_000,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); !errors.Is(err, ErrNonMonotonicWebMTimecode) {
+		t.Fatalf("err = %v, want ErrNonMonotonicWebMTimecode", err)
+	}
+}
+
 func TestDemuxerRejectsUnsupportedContentEncodings(t *testing.T) {
 	data := makeCompressedDocTypeWebMData(t)
 	if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrUnsupportedWebMContentEncoding) {
@@ -355,6 +449,39 @@ func TestDemuxerRejectsUnsupportedTrackMetadata(t *testing.T) {
 	})
 	if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrUnsupportedWebMTrackMetadata) {
 		t.Fatalf("err = %v, want ErrUnsupportedWebMTrackMetadata", err)
+	}
+}
+
+func TestDemuxerRejectsNonMonotonicTimecodes(t *testing.T) {
+	data := makeDocTypeWebMPacketsData(t,
+		matroska.Track{
+			Type:  matroska.TrackVideo,
+			Codec: matroska.CodecVP8,
+			Video: matroska.VideoConfig{Width: 16, Height: 16},
+		},
+		[]matroska.Packet{
+			{
+				TimeNS:   20_000_000,
+				Keyframe: true,
+				Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+			},
+			{
+				TimeNS:   10_000_000,
+				Keyframe: true,
+				Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+			},
+		},
+	)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 16)}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrNonMonotonicWebMTimecode) {
+		t.Fatalf("err = %v, want ErrNonMonotonicWebMTimecode", err)
 	}
 }
 
@@ -2114,6 +2241,15 @@ func makeCompressedDocTypeWebMData(tb testing.TB) []byte {
 
 func makeDocTypeWebMData(tb testing.TB, track matroska.Track) []byte {
 	tb.Helper()
+	return makeDocTypeWebMPacketsData(tb, track, []matroska.Packet{{
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}})
+}
+
+func makeDocTypeWebMPacketsData(tb testing.TB, track matroska.Track, packets []matroska.Packet) []byte {
+	tb.Helper()
 	var buffer bytes.Buffer
 	muxer, err := matroska.NewMuxer(&buffer, matroska.MuxerOptions{DocType: "webm"})
 	if err != nil {
@@ -2123,13 +2259,14 @@ func makeDocTypeWebMData(tb testing.TB, track matroska.Track) []byte {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	if err := muxer.WritePacket(matroska.Packet{
-		TrackID:  trackID,
-		TimeNS:   0,
-		Keyframe: true,
-		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
-	}); err != nil {
-		tb.Fatal(err)
+	for i := range packets {
+		packet := packets[i]
+		if packet.TrackID == 0 {
+			packet.TrackID = trackID
+		}
+		if err := muxer.WritePacket(packet); err != nil {
+			tb.Fatalf("write packet %d: %v", i, err)
+		}
 	}
 	if err := muxer.Close(); err != nil {
 		tb.Fatal(err)
