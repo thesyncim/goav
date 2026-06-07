@@ -369,6 +369,8 @@ Implemented now:
 - Stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode.
 - Packet-domain fanout from `.Copy()` or an encoder to both mux endpoints and
   `SinkEndpoint` packet observers.
+- Planned packet-copy branches with `.Copy().Branches(...)`, sharing one stream
+  selector without creating decoders.
 - Typed `Branch`, `Target`, endpoint, and `Flow` composition.
 - Runtime branch attachment from named taps with flows, custom stages,
   resize/resample from frame taps, late Opus/VP8/VP9 encode endpoints, packet

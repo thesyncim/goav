@@ -767,6 +767,83 @@ func TestStreamRecipeCopyFansOutToMuxAndSinkEndpoints(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionCopyBranchesFanOutPackets(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &remuxTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	sink := &runtimeTestSink{name: "packets"}
+	task, err := From(FileInput("input.ogg", nil)).UseRuntime(New(formats)).
+		Audio().
+		Copy().
+		Tap("audio.packets").
+		Branches(
+			Branch("archive").To(Target("archive", FileOutput("archive.ogg", io.Discard))),
+			Branch("packets").To(Target("packets", SinkEndpoint(sink))),
+		).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := task.Describe()
+	text := specText(spec)
+	for _, want := range []string{
+		"input.ogg -> select-audio",
+		"select-audio -> archive.ogg",
+		"select-audio -> packets",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "decode-audio") || strings.Contains(text, "encode-archive") {
+		t.Fatalf("packet copy branches should not decode or encode:\n%s", text)
+	}
+
+	var packetTap TapInfo
+	for _, tap := range task.Taps() {
+		if tap.Name == "audio.packets" {
+			packetTap = tap
+			break
+		}
+	}
+	if packetTap.Name == "" ||
+		packetTap.Domain != DomainPacket ||
+		packetTap.MediaKind != av.MediaAudio ||
+		packetTap.Caps.Codec != av.CodecOpus ||
+		packetTap.Node != "select-audio" {
+		t.Fatalf("packet tap = %+v, want Opus packet tap on select-audio", packetTap)
+	}
+
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || sink.lastPacket == nil || sink.frames != 0 {
+		t.Fatalf("muxers=%d writes=%d packet=%v frames=%d", len(muxers.muxers), firstMuxWrites(muxers), sink.lastPacket, sink.frames)
+	}
+	if muxers.muxers[0].lastStream != "audio" || sink.lastPacketValue.StreamID != "audio" {
+		t.Fatalf("mux stream=%q sink stream=%q, want audio", muxers.muxers[0].lastStream, sink.lastPacketValue.StreamID)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !muxers.muxers[0].closed || !sink.closed {
+		t.Fatalf("closed demux=%v mux=%v sink=%v", demuxer.closed, muxers.muxers[0].closed, sink.closed)
+	}
+}
+
+func firstMuxWrites(factory *remuxTestMuxerFactory) int {
+	if factory == nil || len(factory.muxers) == 0 || factory.muxers[0] == nil {
+		return 0
+	}
+	return factory.muxers[0].writes
+}
+
 func TestStreamRecipeCopyTapCanAttachRuntimeMuxTarget(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

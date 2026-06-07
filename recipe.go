@@ -2675,7 +2675,8 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		branch := branchComposeBranch{
 			Name:        branchName,
 			Selector:    selector,
-			Decode:      true,
+			Decode:      stream.Decode,
+			Copy:        stream.Encode.Copy,
 			SharedSteps: sharedSteps,
 			Steps:       branchSteps,
 			Encode: codec.EncodeConfig{
@@ -2858,8 +2859,11 @@ func validateBranchIntentShape(stream StreamIntent, index int) error {
 		return err
 	}
 	if codecIntentSet(stream.Encode) {
-		if stream.Encode.Copy {
+		if stream.Encode.Copy && stream.Decode {
 			return branchCopyUnsupportedError(stream)
+		}
+		if stream.Encode.Copy && (len(stream.Transforms) != 0 || streamHasTransformOperation(stream.Operations)) {
+			return branchPacketTransformUnsupportedError(stream)
 		}
 		if err := validateRecipeEncode(stream.Encode, branchCompositionOperation, stream.Name); err != nil {
 			return err
@@ -2898,9 +2902,6 @@ func validateBranchTargetKinds(intent Intent, namedOutputs []namedTargetSpec) er
 	outputs := branchTargetEndpointSet(namedOutputs)
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
-		if stream.Encode.Copy {
-			return branchCopyUnsupportedError(stream)
-		}
 		hasMuxTarget := false
 		for _, label := range stream.Targets {
 			output, ok := outputs[label]
@@ -2992,9 +2993,9 @@ func branchCopyUnsupportedError(stream StreamIntent) error {
 		Code:      "copy_unsupported",
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
-		Reason:    "planned branches start from decoded frame domain and cannot copy packets",
+		Reason:    "copy branches require a packet-domain stream point",
 		Suggestions: []string{
-			"use goav.From(input).Copy().To(output) for packet-preserving output",
+			"use goav.From(input).Copy().Branches(...) for packet-preserving planned branches",
 			"attach a runtime branch from a packet tap and call .Copy() when packet-domain fanout is needed",
 			"omit .Copy() when the branch should deliver decoded frames to goav.SinkEndpoint(...)",
 		},
@@ -3198,6 +3199,15 @@ func validateBranchTransforms(stream StreamIntent) error {
 		}
 	}
 	return nil
+}
+
+func streamHasTransformOperation(operations []StreamOperation) bool {
+	for i := range operations {
+		if operations[i].Kind == OpTransform {
+			return true
+		}
+	}
+	return false
 }
 
 func branchTransformMediaError(stream StreamIntent, transform string, media string) error {

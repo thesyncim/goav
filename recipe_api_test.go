@@ -3368,6 +3368,39 @@ func TestBranchCompositionSharesCustomStageCurrentPoint(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionAllowsPacketCopyBranches(t *testing.T) {
+	archive := goav.Target("archive", goav.FileOutput("archive.ivf", io.Discard))
+	packets := goav.Target("packets", goav.SinkEndpoint(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
+		return nil
+	})))
+	job := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Copy().
+		Tap("video.packets").
+		Branches(
+			goav.Branch("archive").To(archive),
+			goav.Branch("packets").To(packets),
+		)
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	for _, want := range []string{
+		"input.ivf -> select-video",
+		"select-video -> archive.ivf",
+		"select-video -> packets",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "decode-video") || strings.Contains(text, "encode-archive") {
+		t.Fatalf("packet copy branches should not decode or encode:\n%s", text)
+	}
+}
+
 func TestBranchRecipeRequiresBranch(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Build(context.Background())

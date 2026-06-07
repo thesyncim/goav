@@ -19,6 +19,7 @@ type rtpTranscodeGraphCompiler struct{}
 type branchComposeRoute struct {
 	name        string
 	branch      branchComposeBranch
+	copy        bool
 	sharedSteps []mediaTransform
 	steps       []mediaTransform
 	request     encodeRequest
@@ -166,11 +167,6 @@ func planBranchComposeRoutes(
 		if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef, selectNodeDetail(groups[i].selector)); err != nil {
 			return pipeline.Spec{}, err
 		}
-		decodeName := decodeNodeName(groups[i].selector)
-		decodeRef := pipeline.NodeRef(decodeName)
-		if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef, decodeNodeDetail(groups[i].selector)); err != nil {
-			return pipeline.Spec{}, err
-		}
 		for _, sourceRef := range sourceRefs {
 			sourceEdges = append(sourceEdges, pipeline.EdgeSpec{
 				From:   sourceRef,
@@ -178,13 +174,28 @@ func planBranchComposeRoutes(
 				Policy: pipeline.RouteAll,
 			})
 		}
+		groupNodeOrder = append(groupNodeOrder, selectRef)
+		decodedBranches := branchComposeDecodedBranchIndices(groups[i].branches, branches)
+		for _, branchIndex := range groups[i].branches {
+			if !branchComposeRouteNeedsDecode(branches[branchIndex]) {
+				branchInputs[branchIndex] = selectRef
+			}
+		}
+		if len(decodedBranches) == 0 {
+			continue
+		}
+		decodeName := decodeNodeName(groups[i].selector)
+		decodeRef := pipeline.NodeRef(decodeName)
+		if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef, decodeNodeDetail(groups[i].selector)); err != nil {
+			return pipeline.Spec{}, err
+		}
 		groupEdges[selectRef] = append(groupEdges[selectRef], pipeline.EdgeSpec{
 			From:   selectRef,
 			To:     decodeRef,
 			Policy: pipeline.RouteAll,
 		})
-		groupNodeOrder = append(groupNodeOrder, selectRef, decodeRef)
-		for _, prefix := range branchComposeSharedStepGroups(groups[i].branches, branches) {
+		groupNodeOrder = append(groupNodeOrder, decodeRef)
+		for _, prefix := range branchComposeSharedStepGroups(decodedBranches, branches) {
 			branchRef := decodeRef
 			for j := range prefix.steps {
 				stepRef := pipeline.NodeRef(prefix.steps[j].name)
@@ -338,17 +349,9 @@ func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.G
 	if err != nil {
 		return err
 	}
-	branchInputs := make([]pipeline.NodeRef, len(branches))
-	branchStreams := make([]av.Stream, len(branches))
-	for i := range groups {
-		previousRef, decodedStream, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, decodeRequest{selector: groups[i].selector}, groups[i].stream, realtime, false, codec.DecodeBounds{})
-		if err != nil {
-			return err
-		}
-		for _, branchIndex := range groups[i].branches {
-			branchInputs[branchIndex] = previousRef
-			branchStreams[branchIndex] = decodedStream
-		}
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, []pipeline.NodeRef{sourceRef}, groups, nil, branches, realtime)
+	if err != nil {
+		return err
 	}
 
 	return compileBranchComposeRoutes(ctx, b.runtime, graph, branches, outputs, branchInputs, branchStreams, realtime)
@@ -391,29 +394,74 @@ func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipelin
 	if err != nil {
 		return err
 	}
-	branchInputs := make([]pipeline.NodeRef, len(branches))
-	branchStreams := make([]av.Stream, len(branches))
-	for i := range groups {
-		previousRef, decodedStream, err := b.compileDecodeFilterPath(
-			ctx,
-			graph,
-			sourceRefs,
-			decodeRequest{selector: groups[i].selector},
-			groups[i].stream,
-			realtime,
-			false,
-			rtpDecodeBoundsForStream(groups[i].stream, builds),
-		)
-		if err != nil {
-			return err
-		}
-		for _, branchIndex := range groups[i].branches {
-			branchInputs[branchIndex] = previousRef
-			branchStreams[branchIndex] = decodedStream
-		}
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, sourceRefs, groups, builds, branches, realtime)
+	if err != nil {
+		return err
 	}
 
 	return compileBranchComposeRoutes(ctx, b.runtime, graph, branches, outputs, branchInputs, branchStreams, realtime)
+}
+
+func compileBranchComposeInputs(
+	ctx context.Context,
+	runtime *runtime,
+	graph pipeline.Graph,
+	sourceRefs []pipeline.NodeRef,
+	groups []branchComposeStreamGroup,
+	builds []rtpBuild,
+	branches []branchComposeRoute,
+	realtime bool,
+) ([]pipeline.NodeRef, []av.Stream, error) {
+	service := &builder{runtime: runtime}
+	branchInputs := make([]pipeline.NodeRef, len(branches))
+	branchStreams := make([]av.Stream, len(branches))
+	for i := range groups {
+		selector := groups[i].selector
+		selected := groups[i].stream
+		selectStage := newStreamSelectStage(selectNodeName(selector), selected, selector, selectNodeDetail(selector))
+		selectRef, err := graph.AddStage(selectStage, runtime.buffer)
+		if err != nil {
+			selectStage.Close()
+			return nil, nil, err
+		}
+		for j := range sourceRefs {
+			if err := connectRefs(graph, sourceRefs[j], selectRef); err != nil {
+				return nil, nil, err
+			}
+		}
+		decodedBranches := branchComposeDecodedBranchIndices(groups[i].branches, branches)
+		for _, branchIndex := range groups[i].branches {
+			if !branchComposeRouteNeedsDecode(branches[branchIndex]) {
+				branchInputs[branchIndex] = selectRef
+				branchStreams[branchIndex] = selected
+			}
+		}
+		if len(decodedBranches) == 0 {
+			continue
+		}
+		bounds := codec.DecodeBounds{}
+		if len(builds) != 0 {
+			bounds = rtpDecodeBoundsForStream(selected, builds)
+		}
+		decodeStage, err := service.newDecodeStage(ctx, decodeRequest{selector: selector}, selected, realtime, false, bounds)
+		if err != nil {
+			return nil, nil, err
+		}
+		decodeRef, err := graph.AddStage(decodeStage, runtime.buffer)
+		if err != nil {
+			decodeStage.Close()
+			return nil, nil, err
+		}
+		if err := connectRefs(graph, selectRef, decodeRef); err != nil {
+			return nil, nil, err
+		}
+		decodedStream := selected
+		for _, branchIndex := range decodedBranches {
+			branchInputs[branchIndex] = decodeRef
+			branchStreams[branchIndex] = decodedStream
+		}
+	}
+	return branchInputs, branchStreams, nil
 }
 
 func compileBranchComposeRoutes(
@@ -697,6 +745,7 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 		branches[i] = branchComposeRoute{
 			name:        name,
 			branch:      branch,
+			copy:        branch.Copy,
 			sharedSteps: sharedSteps,
 			steps:       steps,
 			request: encodeRequest{
@@ -718,6 +767,23 @@ func branchComposeSharedRouteSteps(branch branchComposeBranch) ([]mediaTransform
 
 func branchComposeRouteNeedsEncode(branch branchComposeRoute) bool {
 	return branch.request.config.Parameters.ID != ""
+}
+
+func branchComposeRouteNeedsDecode(branch branchComposeRoute) bool {
+	return !branch.copy
+}
+
+func branchComposeDecodedBranchIndices(indices []int, branches []branchComposeRoute) []int {
+	decoded := make([]int, 0, len(indices))
+	for _, index := range indices {
+		if index < 0 || index >= len(branches) {
+			continue
+		}
+		if branchComposeRouteNeedsDecode(branches[index]) {
+			decoded = append(decoded, index)
+		}
+	}
+	return decoded
 }
 
 func branchComposeDuplicateBranchError(name string, index int) error {
@@ -989,7 +1055,7 @@ func branchComposeTargets(plan branchComposePlan, branches []branchComposeRoute)
 		}
 		if output.Sink == nil {
 			for _, branchIndex := range matches {
-				if !branchComposeRouteNeedsEncode(branches[branchIndex]) {
+				if !branchComposeRouteNeedsEncode(branches[branchIndex]) && !branches[branchIndex].copy {
 					return nil, branchComposeTargetEncodeMissingError(output, target, branches[branchIndex])
 				}
 			}

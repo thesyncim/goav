@@ -304,32 +304,9 @@ func (p mediaPlanBranchComposeGraph) compile(ctx context.Context, graph pipeline
 	if err != nil {
 		return err
 	}
-	branchInputs := make([]pipeline.NodeRef, len(p.branches))
-	branchStreams := make([]av.Stream, len(p.branches))
-	for i := range groups {
-		bounds := codec.DecodeBounds{}
-		if len(builds) != 0 {
-			bounds = rtpDecodeBoundsForStream(groups[i].stream, builds)
-		}
-		previousRef, decodedStream, err := compileDecodeFilterPath(
-			ctx,
-			p.runtime,
-			graph,
-			sourceRefs,
-			decodeRequest{selector: groups[i].selector},
-			groups[i].stream,
-			realtime,
-			false,
-			bounds,
-			nil,
-		)
-		if err != nil {
-			return err
-		}
-		for _, branchIndex := range groups[i].branches {
-			branchInputs[branchIndex] = previousRef
-			branchStreams[branchIndex] = decodedStream
-		}
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sourceRefs, groups, builds, p.branches, realtime)
+	if err != nil {
+		return err
 	}
 	return compileBranchComposeRoutes(ctx, p.runtime, graph, p.branches, p.targets, branchInputs, branchStreams, realtime)
 }

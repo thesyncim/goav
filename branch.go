@@ -321,8 +321,14 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 		return job
 	}
 
+	parentPacket := stream.encode.Copy && !stream.decode && len(stream.steps) == 0
+	if stream.encode.Copy && !parentPacket {
+		job.setErr(branchCopyParentOperationError(jobStreamName(stream)))
+		return job
+	}
+
 	for i := range branches {
-		if err := validateBranchSpec(stream.selector.Type, i, branches[i]); err != nil {
+		if err := validateBranchSpec(stream.selector.Type, parentPacket, i, branches[i]); err != nil {
 			job.setErr(err)
 			return job
 		}
@@ -330,26 +336,35 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			job.setErr(err)
 			return job
 		}
+		encode := branches[i].encode
+		if parentPacket && !codecIntentSet(encode) {
+			encode = Copy()
+		}
+		decode := !parentPacket
+		sharedSteps := cloneJobStreamSteps(stream.steps)
+		if parentPacket {
+			sharedSteps = nil
+		}
 		job.branchStreams = append(job.branchStreams, streamBuild{
 			name:        branches[i].name,
 			selector:    stream.selector,
 			fromTap:     lastStreamTap(stream),
-			decode:      true,
-			sharedSteps: cloneJobStreamSteps(stream.steps),
+			decode:      decode,
+			sharedSteps: sharedSteps,
 			steps:       cloneJobStreamSteps(branches[i].steps),
 			postEncodeTaps: append(
 				append([]string(nil), stream.postEncodeTaps...),
 				branches[i].postEncodeTaps...,
 			),
 			transforms: appendTransformSpecs(stream.transformSpecs(), branches[i].transforms),
-			encode:     branches[i].encode,
+			encode:     encode,
 			labels:     append([]string(nil), branches[i].labels...),
 		})
 	}
 	return job
 }
 
-func validateBranchSpec(selected av.MediaType, index int, spec BranchSpec) error {
+func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spec BranchSpec) error {
 	if spec.err != nil {
 		return spec.err
 	}
@@ -364,9 +379,25 @@ func validateBranchSpec(selected av.MediaType, index int, spec BranchSpec) error
 	}
 	stream := StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
 	if spec.encode.Copy {
-		return branchCopyUnsupportedError(stream)
+		if !parentPacket {
+			return branchCopyUnsupportedError(stream)
+		}
+	} else if parentPacket && codecIntentSet(spec.encode) {
+		return branchPacketEncodeUnsupportedError(stream, spec.encode)
 	}
-	if !codecIntentSet(spec.encode) && !branchTargetsAllSinkEndpoints(spec.targets) {
+	if parentPacket {
+		for i := range spec.transforms {
+			if err := validateTransformSpec("build branches", spec.name, spec.transforms[i]); err != nil {
+				return err
+			}
+			return branchPacketTransformUnsupportedError(stream)
+		}
+	}
+	effectiveEncode := spec.encode
+	if parentPacket && !codecIntentSet(effectiveEncode) {
+		effectiveEncode = Copy()
+	}
+	if !codecIntentSet(effectiveEncode) && !branchTargetsAllSinkEndpoints(spec.targets) {
 		return branchEncodeMissingError(stream)
 	}
 	seen := make(map[string]int, len(spec.labels))
@@ -385,6 +416,54 @@ func validateBranchSpec(selected av.MediaType, index int, spec BranchSpec) error
 		seen[label] = i
 	}
 	return nil
+}
+
+func branchCopyParentOperationError(node string) error {
+	return &BuildError{
+		Code:      "copy_branch_source_invalid",
+		Operation: "build branches",
+		Node:      node,
+		Reason:    "packet-copy branches must start from a packet-domain stream point",
+		Suggestions: []string{
+			"call .Copy().Branches(...) before frame operations when the branches should preserve packets",
+			"use .Decode().Branches(...) when branches need resize, resample, custom frame stages, or encode",
+			"attach runtime packet-copy branches from a packet Tap when the branch should start later",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func branchPacketEncodeUnsupportedError(stream StreamIntent, encode CodecSpec) error {
+	return &BuildError{
+		Code:      "packet_branch_encode_unsupported",
+		Operation: "build branches",
+		Node:      branchIntentName(stream),
+		Reason:    "packet-domain planned branches cannot encode without decoding first",
+		Details: []string{
+			"encoder: " + codecIntentName(encode),
+		},
+		Suggestions: []string{
+			"use .Decode().Branches(goav.Branch(name).Opus(...).To(target)) for encoded variants",
+			"use .Copy().Branches(goav.Branch(name).To(target)) for packet-preserving variants",
+			"attach a runtime branch from a frame Tap when late encoding is needed",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func branchPacketTransformUnsupportedError(stream StreamIntent) error {
+	return &BuildError{
+		Code:      "packet_branch_transform_unsupported",
+		Operation: "build branches",
+		Node:      branchIntentName(stream),
+		Reason:    "packet-domain planned branches cannot resize or resample without decoding first",
+		Suggestions: []string{
+			"use .Decode().Branches(...) when branch variants need frame transforms",
+			"use .Copy().Branches(...) only for packet-preserving branches",
+			"attach a runtime branch from a frame Tap when late transforms are needed",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func branchTargetsAllSinkEndpoints(targets []TargetSpec) bool {

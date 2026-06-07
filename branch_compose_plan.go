@@ -21,6 +21,7 @@ type branchComposeBranch struct {
 	Name        string
 	Selector    av.StreamSelector
 	Decode      bool
+	Copy        bool
 	SharedSteps []branchComposeStep
 	Steps       []branchComposeStep
 	Resize      *filter.ResizeConfig
@@ -66,6 +67,7 @@ func branchComposePlanFromTranscode(plan transcode.Plan) branchComposePlan {
 			Name:     branch.Name,
 			Selector: branch.Selector,
 			Decode:   branch.Decode,
+			Copy:     false,
 			Steps:    branchComposeStepsFromTranscode(branch.Steps),
 			Resize:   branch.Resize,
 			Resample: branch.Resample,

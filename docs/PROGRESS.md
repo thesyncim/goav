@@ -1131,6 +1131,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     sink+mux mixes still fail with the existing guidance. Runtime tests prove
     both packet-copy and Opus-encode fanout write the mux and packet sink from
     the same upstream packet path. Done.
+272. Allow planned packet-copy branches:
+    `.Copy().Branches(...)` now lowers as packet-domain branch composition
+    instead of forcing the shared branch composer through decode. The planner
+    selects the stream once, routes copy branches directly from that selector,
+    opens mux targets with the original stream metadata, reports packet taps on
+    the selector node, and still rejects frame transforms or encoding on packet
+    branches. Runtime tests prove mux and sink targets receive packets without
+    any decoder adapter. Done.
 
 ## First Vertical Slice
 

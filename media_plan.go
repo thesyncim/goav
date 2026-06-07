@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -156,6 +157,9 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 	decisions := make([]planDecision, 0, len(state.intent.Streams))
 	for i := range state.intent.Streams {
 		stream := state.intent.Streams[i]
+		if selected, ok := planSelectedStream(state, stream); ok {
+			stream.Select = streamSelectFromStream(selected)
+		}
 		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
 		steps := state.streamSteps
 		if len(state.intent.Streams) > 1 {
@@ -172,6 +176,38 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 		decisions = append(decisions, branchDecisions...)
 	}
 	return branches, decisions
+}
+
+func streamSelectFromStream(stream av.Stream) StreamSelect {
+	return StreamSelect{
+		ID:    stream.ID,
+		Index: stream.Index,
+		Type:  stream.Type,
+		Codec: stream.Codec.ID,
+		Name:  stream.Name,
+	}
+}
+
+func planSelectedStream(state *recipeCompileState, stream StreamIntent) (av.Stream, bool) {
+	if state == nil {
+		return av.Stream{}, false
+	}
+	probes := state.inputProbes
+	if state.branchInputProbeReady {
+		probes = []format.ProbeResult{state.branchInputProbe}
+	}
+	selector := streamIntentSelector(stream)
+	for i := range probes {
+		if len(probes[i].Streams) == 0 {
+			continue
+		}
+		selected, err := selectDecodeStream(probes[i].Streams, selector)
+		if err != nil {
+			continue
+		}
+		return selected, true
+	}
+	return av.Stream{}, false
 }
 
 func planCopyBranches(intent Intent, outputs []planOutput) ([]planBranch, []planDecision) {
@@ -491,7 +527,7 @@ func planOperationNodeName(branch string, operation planOperation, index int) st
 	case OpEncode:
 		return "encode-" + branch
 	case OpSelect:
-		return "select-" + branch
+		return "select-" + firstNonEmpty(operation.Component, branch)
 	case OpDepacketize, OpDemux:
 		return branch
 	default:

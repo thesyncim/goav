@@ -1501,7 +1501,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 			want: "branches need stable names",
 		},
 		{
-			name: "copy unsupported",
+			name: "copy after decode unsupported",
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				intent: Intent{
@@ -1509,13 +1509,14 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []StreamIntent{{
 						Name:    "360p",
 						Select:  StreamSelect{Type: av.MediaVideo},
+						Decode:  true,
 						Encode:  Copy(),
 						Targets: []string{"web"},
 					}},
 				},
 			},
 			code: "copy_unsupported",
-			want: "cannot copy packets",
+			want: "packet-domain stream point",
 		},
 		{
 			name: "auto unresolved",
@@ -1611,6 +1612,32 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestTranscodeBranchTargetKindsPassAllowsCopyMuxBranches(t *testing.T) {
+	state := recipeCompileState{
+		operation: branchCompositionOperation,
+		intent: Intent{
+			Inputs: []InputIntent{{Name: "input.ivf"}},
+			Streams: []StreamIntent{{
+				Name:    "archive",
+				Select:  StreamSelect{Type: av.MediaVideo},
+				Encode:  Copy(),
+				Targets: []string{"web"},
+			}},
+		},
+		branchTargetAttachments: []namedTargetSpec{{
+			name:   "web",
+			output: FileOutput("web.ivf", io.Discard),
+		}},
+	}
+
+	if err := validateBranchCompositionIntentShapePass().Apply(&state); err != nil {
+		t.Fatalf("validateBranchCompositionIntentShapePass() error = %v", err)
+	}
+	if err := validateBranchTargetKindsPass().Apply(&state); err != nil {
+		t.Fatalf("validateBranchTargetKindsPass() error = %v", err)
 	}
 }
 
