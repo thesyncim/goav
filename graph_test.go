@@ -425,6 +425,38 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 	}
 }
 
+func TestRuntimeAttachUsesSharedMuxTargetPreparation(t *testing.T) {
+	body, err := os.ReadFile("runtime_attach.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"func runtimeMuxTargetFormat",
+		"func runtimeMuxCompatibilityIssue",
+		"func prepareRuntimeBranchMuxTerminal",
+		"func runtimeBranchSinkTerminal",
+		"func runtimeBranchSharedMuxTerminal",
+		"runtimeMuxTargetFormat(ctx, rt, target.dest, i)",
+		"runtimeMuxCompatibilityIssue(target.name",
+		"prepareRuntimeBranchMuxTerminal(ctx, t.runtime",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("runtime attach target prep should share mux helpers; missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"func runtimeSharedMuxFormat",
+		"func (t *task) runtimeBranchMuxFormat",
+		"func runtimeSharedMuxCompatibilityIssue",
+		"func runtimeBranchMuxCompatibilityIssue",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("runtime attach should not keep split mux format helper %q", forbidden)
+		}
+	}
+}
+
 func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
 	ctx := context.Background()
 	graph := newRuntimeRollbackGraph()
