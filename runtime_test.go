@@ -35,6 +35,31 @@ func (s *runtimeTestSource) Close() error {
 	return nil
 }
 
+type runtimeEventBurstSource struct {
+	name   string
+	count  int
+	closed bool
+}
+
+func (s *runtimeEventBurstSource) Name() string {
+	return s.name
+}
+
+func (s *runtimeEventBurstSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	for i := 0; i < s.count; i++ {
+		event := av.Event{Type: av.EventStats}
+		if err := emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *runtimeEventBurstSource) Close() error {
+	s.closed = true
+	return nil
+}
+
 type runtimeTestStage struct {
 	name   string
 	count  int
@@ -389,6 +414,28 @@ func TestRuntimeBuilderExplicitGraphWithBufferPolicy(t *testing.T) {
 	}
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRuntimeBuilderExplicitGraphWithEventCapacity(t *testing.T) {
+	source := &runtimeEventBurstSource{name: "events", count: 2}
+	task, err := newTestBuilder(t, WithEventCapacity(2)).
+		Source(source).
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := drainTaskEvents(task); len(got) != 2 {
+		t.Fatalf("events = %+v, want 2", got)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !source.closed {
+		t.Fatal("source not closed")
 	}
 }
 
