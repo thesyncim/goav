@@ -869,7 +869,7 @@ func (m *Muxer) writeInfo() error {
 	if err := m.writeInfoFields(w, false); err != nil {
 		return err
 	}
-	return m.ebml.WriteElement(idInfo, payload.Bytes())
+	return m.writeMasterElement(idInfo, payload.Bytes())
 }
 
 func (m *Muxer) writeSeekableInfo() error {
@@ -1434,7 +1434,7 @@ func (m *Muxer) writeTracks() error {
 	if err := writeUnknownElements(w, m.options.UnknownTracksElements); err != nil {
 		return err
 	}
-	return m.ebml.WriteElement(idTracks, payload.Bytes())
+	return m.writeMasterElement(idTracks, payload.Bytes())
 }
 
 func (m *Muxer) writeAttachments() error {
@@ -1448,7 +1448,7 @@ func (m *Muxer) writeAttachments() error {
 	if err := writeUnknownElements(w, m.options.UnknownAttachmentsElements); err != nil {
 		return err
 	}
-	return m.ebml.WriteElement(idAttachments, payload.Bytes())
+	return m.writeMasterElement(idAttachments, payload.Bytes())
 }
 
 func (m *Muxer) writeChapters() error {
@@ -1462,7 +1462,7 @@ func (m *Muxer) writeChapters() error {
 	if err := writeUnknownElements(w, m.options.UnknownChaptersElements); err != nil {
 		return err
 	}
-	return m.ebml.WriteElement(idChapters, payload.Bytes())
+	return m.writeMasterElement(idChapters, payload.Bytes())
 }
 
 func writeEditionEntry(w *ebml.Writer, edition ChapterEdition) error {
@@ -1592,11 +1592,38 @@ func (m *Muxer) writeTags() error {
 	if err := writeUnknownElements(w, m.options.UnknownTagsElements); err != nil {
 		return err
 	}
-	return m.ebml.WriteElement(idTags, payload.Bytes())
+	return m.writeMasterElement(idTags, payload.Bytes())
 }
 
 func (m *Muxer) writeUnknownSegmentElements() error {
 	return writeUnknownElements(m.ebml, m.options.UnknownSegmentElements)
+}
+
+func (m *Muxer) writeMasterElement(id ebml.ID, payload []byte) error {
+	if !m.options.WriteCRC32 {
+		return m.ebml.WriteElement(id, payload)
+	}
+	return writeElementWithCRC32(m.ebml, id, payload)
+}
+
+func writeElementWithCRC32(w *ebml.Writer, id ebml.ID, payload []byte) error {
+	protected, err := payloadWithCRC32(payload)
+	if err != nil {
+		return err
+	}
+	return w.WriteElement(id, protected)
+}
+
+func payloadWithCRC32(payload []byte) ([]byte, error) {
+	var protected bytes.Buffer
+	w := ebml.NewWriter(&protected)
+	if err := w.WriteCRC32(payload); err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(payload); err != nil {
+		return nil, err
+	}
+	return protected.Bytes(), nil
 }
 
 func writeUnknownElements(w *ebml.Writer, elements []UnknownElement) error {
@@ -1925,7 +1952,7 @@ func (m *Muxer) writeCues() error {
 			return err
 		}
 	}
-	return m.ebml.WriteElement(idCues, payload.Bytes())
+	return m.writeMasterElement(idCues, payload.Bytes())
 }
 
 func (m *Muxer) sortCues() {
@@ -2130,7 +2157,10 @@ func (m *Muxer) buildSeekHeadPayload() ([]byte, error) {
 			return nil, err
 		}
 	}
-	return payload.Bytes(), nil
+	if !m.options.WriteCRC32 {
+		return payload.Bytes(), nil
+	}
+	return payloadWithCRC32(payload.Bytes())
 }
 
 func writeSeekEntry(w *ebml.Writer, id ebml.ID, position uint64) error {

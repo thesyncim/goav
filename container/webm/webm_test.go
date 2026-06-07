@@ -2003,6 +2003,55 @@ func TestMuxerCuePolicyAllPacketsWritesCuesSortedByTime(t *testing.T) {
 	}
 }
 
+func TestMuxerWriteCRC32OptionRoundTrips(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "crc-*.webm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	muxer, err := NewMuxer(file, MuxerOptions{WriteCRC32: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x9d, 0x01, 0x2a},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(file, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TrackID != trackID || packet.TimeNS != 0 || !bytes.Equal(packet.Data, []byte{0x9d, 0x01, 0x2a}) {
+		t.Fatalf("packet = track %d time %d data %v, want crc-protected round trip", packet.TrackID, packet.TimeNS, packet.Data)
+	}
+}
+
 func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

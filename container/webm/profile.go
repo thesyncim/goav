@@ -98,6 +98,7 @@ type MuxerOptions struct {
 	ClusterMaxDurationNS       int64
 	Streaming                  bool
 	CuePolicy                  CuePolicy
+	WriteCRC32                 bool
 	UnknownSegmentElements     []UnknownElement
 	UnknownTracksElements      []UnknownElement
 	ContentEncryptionKeys      []ContentEncryptionKey
@@ -137,6 +138,7 @@ func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 		ClusterMaxDurationNS:       opts.ClusterMaxDurationNS,
 		Streaming:                  opts.Streaming,
 		CuePolicy:                  cuePolicy,
+		WriteCRC32:                 opts.WriteCRC32,
 		UnknownSegmentElements:     opts.UnknownSegmentElements,
 		UnknownTracksElements:      opts.UnknownTracksElements,
 		ContentEncryptionKeys:      opts.ContentEncryptionKeys,

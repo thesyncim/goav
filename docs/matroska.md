@@ -146,6 +146,10 @@ Current milestone:
 - EBML CRC-32 validation for finite metadata masters, including top-level
   SeekHead, Info, Tracks, Cues, Attachments and nested track, video, audio,
   colour, projection, cue, seek, and attachment masters.
+- `MuxerOptions.WriteCRC32` emits CRC-32 as the first child of finalized
+  metadata masters such as SeekHead, Tracks, Attachments, Chapters, Tags, Cues,
+  and non-patched Info. Seekable Info with close-time duration patching remains
+  unprotected so the checksum cannot become stale after patching.
 - Finite unknown Segment-level elements are preserved as raw EBML bytes through
   `UnknownSegmentElements` on muxer options and demuxers, allowing remuxers to
   keep vendor/application Segment metadata the package does not understand.

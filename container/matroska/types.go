@@ -491,6 +491,7 @@ type MuxerOptions struct {
 	Streaming                  bool
 	CueCapacity                int
 	CuePolicy                  CuePolicy
+	WriteCRC32                 bool
 	ContentEncryptionKeys      []ContentEncryptionKey
 	ContentEncryptionInitialIV []byte
 }

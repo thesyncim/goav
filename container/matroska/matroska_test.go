@@ -11825,6 +11825,100 @@ func TestDemuxerValidatesSegmentInfoCRC32(t *testing.T) {
 	})
 }
 
+func TestMuxerWritesMetadataCRC32(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{
+		WriteCRC32: true,
+		Attachments: []Attachment{{
+			UID:      7,
+			Filename: "cover.txt",
+			MIMEType: "text/plain",
+			Data:     []byte("cover"),
+		}},
+		Chapters: []ChapterEdition{{
+			UID:      11,
+			Chapters: []Chapter{metadataValidationChapter(13, 0)},
+		}},
+		Tags: []Tag{{
+			Target: TagTarget{TrackUIDs: []uint64{1}},
+			Simple: []SimpleTag{{
+				Name:      "TITLE",
+				String:    "CRC protected",
+				StringSet: true,
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []ebml.ID{idSeekHead, idTracks, idAttachments, idChapters, idTags, idCues} {
+		assertTopLevelMasterStartsWithCRC32(t, ws.bytes, id)
+	}
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); err != nil {
+		t.Fatal(err)
+	}
+	if len(demuxer.Attachments()) != 1 || len(demuxer.Chapters()) != 1 || len(demuxer.Tags()) != 1 {
+		t.Fatalf("metadata not preserved after crc-protected read")
+	}
+}
+
+func TestStreamingMuxerWritesInfoCRC32(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{
+		WriteCRC32: true,
+		Streaming:  true,
+		Info: SegmentInfo{
+			Title: "stream crc",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	assertTopLevelMasterStartsWithCRC32(t, buffer.Bytes(), idInfo)
+	assertTopLevelMasterStartsWithCRC32(t, buffer.Bytes(), idTracks)
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := demuxer.Info(); got.Title != "stream crc" {
+		t.Fatalf("info title = %q, want stream crc", got.Title)
+	}
+}
+
 func TestDemuxerValidatesTopLevelMetadataCRC32(t *testing.T) {
 	tests := []struct {
 		name string
@@ -16312,6 +16406,72 @@ func collectTopLevelPositions(tb testing.TB, data []byte) map[ebml.ID]uint64 {
 		}
 	}
 	return positions
+}
+
+func assertTopLevelMasterStartsWithCRC32(tb testing.TB, data []byte, id ebml.ID) {
+	tb.Helper()
+	payload := topLevelElementPayload(tb, data, id)
+	reader := ebml.NewReader(bytes.NewReader(payload), ebml.ReaderOptions{})
+	child, err := reader.ReadHeader()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if child.ID != idCRC32 || child.Size.Unknown || child.Size.Value != 4 {
+		tb.Fatalf("top-level 0x%x first child = %+v, want CRC32", uint64(id), child)
+	}
+}
+
+func topLevelElementPayload(tb testing.TB, data []byte, id ebml.ID) []byte {
+	tb.Helper()
+	reader := ebmlReader(tb, data)
+	header, err := reader.ReadHeader()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if header.ID != idEBML {
+		tb.Fatalf("first id = 0x%x, want EBML", uint64(header.ID))
+	}
+	if err := reader.Skip(header.Size.Value); err != nil {
+		tb.Fatal(err)
+	}
+	segment, err := reader.ReadHeader()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if segment.ID != idSegment {
+		tb.Fatalf("segment = %+v, want Segment", segment)
+	}
+	var segmentEnd int64
+	if !segment.Size.Unknown {
+		segmentEnd = segment.DataOffset + int64(segment.Size.Value)
+	}
+	for segment.Size.Unknown || reader.Offset() < segmentEnd {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			if segment.Size.Unknown && errors.Is(err, io.EOF) {
+				break
+			}
+			tb.Fatal(err)
+		}
+		if child.ID == id {
+			if child.Size.Unknown || child.Size.Value > uint64(math.MaxInt) {
+				tb.Fatalf("top-level 0x%x has invalid size %+v", uint64(id), child.Size)
+			}
+			payload := make([]byte, int(child.Size.Value))
+			if err := reader.ReadFull(payload); err != nil {
+				tb.Fatal(err)
+			}
+			return payload
+		}
+		if child.Size.Unknown {
+			tb.Fatalf("unexpected unknown top-level child %+v while looking for 0x%x", child, uint64(id))
+		}
+		if err := reader.Skip(child.Size.Value); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	tb.Fatalf("missing top-level element 0x%x", uint64(id))
+	return nil
 }
 
 func assertSeekEntry(tb testing.TB, entries []SeekEntry, id ebml.ID, position uint64) {
