@@ -191,6 +191,29 @@ return goav.From(input).
     Run(ctx)
 ```
 
+Branch buffers are branch-local. Use blocking when a branch must preserve every
+message, and dropping modes for realtime previews or diagnostics:
+
+```go
+return goav.From(input).
+    Video().
+    Decode().
+    Branches(
+        goav.Branch("archive").
+            Buffer(goav.Blocking(128)).
+            VP9(4_000_000).
+            To(archive),
+        goav.Branch("preview").
+            Buffer(goav.DropOldest(3)).
+            Resize(640, 360).
+            To(preview),
+        goav.Branch("latest").
+            Buffer(goav.Latest()).
+            To(goav.Sink(goav.SinkFunc("latest", inspect))),
+    ).
+    Run(ctx)
+```
+
 Recipe encode conveniences are strongest for Opus, VP8, and VP9. H264 and AV1
 are receive/decode codec specs today; recipe encode support for them is still
 work in progress.
