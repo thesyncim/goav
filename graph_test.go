@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -623,6 +624,95 @@ func TestTaskAttachBranchesWhileBufferedGraphRuns(t *testing.T) {
 	}
 }
 
+func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	packets := []av.Packet{
+		{StreamID: "video", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}},
+		{StreamID: "video", Payload: av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable}},
+		{StreamID: "video", Payload: av.Buffer{Bytes: []byte{3}, Ownership: av.BufferImmutable}},
+	}
+	source := &runtimeBranchStepSource{
+		name: "source",
+		messages: []pipeline.Message{
+			{Kind: pipeline.MessagePacket, Packet: &packets[0]},
+			{Kind: pipeline.MessagePacket, Packet: &packets[1]},
+			{Kind: pipeline.MessagePacket, Packet: &packets[2]},
+		},
+		emitted: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+		resume: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+	}
+	base := newRuntimeObservedSink("base", 3)
+	late := newRuntimeObservedSink("late", 2)
+
+	graph := New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1})).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- task.Run(ctx)
+	}()
+	select {
+	case <-source.emitted[0]:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	attachment, err := task.Attach(ctx,
+		Branch("late").
+			From("source").
+			Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
+			To(SinkEndpoint(late)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(source.resume[0])
+	select {
+	case <-late.received:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := task.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	if !late.closedValue() {
+		t.Fatal("late sink was not closed by detach")
+	}
+	close(source.resume[1])
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if got := base.countValue(); got != 3 {
+		t.Fatalf("base count = %d, want all three packets", got)
+	}
+	if got := late.packetValues(); len(got) != 1 || got[0] != 2 {
+		t.Fatalf("late packet values = %v, want only second packet", got)
+	}
+	branchStats := attachment.Stats()
+	if _, ok := branchStats.Nodes["base"]; ok {
+		t.Fatalf("branch stats leaked base node: %+v", branchStats.Nodes)
+	}
+	if got := branchStats.Nodes["late/late"]; got.InPackets != 1 || got.OutPackets != 0 || got.Dropped != 0 {
+		t.Fatalf("late branch stats = %+v", got)
+	}
+	if branchStats.Delivered != 1 || branchStats.Dropped != 0 {
+		t.Fatalf("branch stats = %+v", branchStats)
+	}
+}
+
 func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -1127,6 +1217,65 @@ func findTap(taps []TapInfo, name string) (TapInfo, bool) {
 		}
 	}
 	return TapInfo{}, false
+}
+
+type runtimeObservedSink struct {
+	name     string
+	received chan struct{}
+	mu       sync.Mutex
+	count    int
+	packets  []byte
+	closed   bool
+}
+
+func newRuntimeObservedSink(name string, capacity int) *runtimeObservedSink {
+	if capacity < 1 {
+		capacity = 1
+	}
+	return &runtimeObservedSink{name: name, received: make(chan struct{}, capacity)}
+}
+
+func (s *runtimeObservedSink) Name() string {
+	return s.name
+}
+
+func (s *runtimeObservedSink) Handle(_ context.Context, msg *pipeline.Message) error {
+	s.mu.Lock()
+	s.count++
+	if msg != nil && msg.Packet != nil && len(msg.Packet.Payload.Bytes) != 0 {
+		s.packets = append(s.packets, msg.Packet.Payload.Bytes[0])
+	}
+	s.mu.Unlock()
+	select {
+	case s.received <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (s *runtimeObservedSink) Close() error {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *runtimeObservedSink) countValue() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.count
+}
+
+func (s *runtimeObservedSink) packetValues() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]byte(nil), s.packets...)
+}
+
+func (s *runtimeObservedSink) closedValue() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
 }
 
 type runtimeBranchStepSource struct {

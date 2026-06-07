@@ -1147,6 +1147,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     or observer branch can be measured without confusing it with upstream
     traffic. Direct, buffered, and runtime attachment tests pin the behavior.
     Done.
+274. Prove buffered detach stops future branch media:
+    a bounded-buffered runtime branch now has regression coverage for attach,
+    one future packet delivery, detach while the source is paused, and a later
+    packet that continues to the base graph without reaching the detached
+    branch. The same test verifies the attachment keeps branch-local node stats
+    after detach and does not leak base graph counters. Done.
 
 ## First Vertical Slice
 
@@ -1412,8 +1418,8 @@ composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
 broaden the same first-class requirement model to custom filter capability
 details, richer endpoint/container compatibility as WebM/Ogg arrive, and
-deeper buffered runtime attachment lifecycle and stress proof without weakening
-the direct graph branch grammar.
+broader buffered runtime attachment stress proof without weakening the direct
+graph branch grammar.
 
 ## Validation Gates
 
