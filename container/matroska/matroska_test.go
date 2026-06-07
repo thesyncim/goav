@@ -50,6 +50,8 @@ func TestMuxerDemuxerPreservesSegmentInfoMetadata(t *testing.T) {
 		PrevFilename:    "camera-prev.mkv",
 		NextUUID:        []byte{0x30, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f},
 		NextFilename:    "camera-next.mkv",
+		DurationNS:      123_000_000,
+		DurationSet:     true,
 		Title:           "camera main",
 		DateUTC:         created.UTC(),
 		DateUTCSet:      true,
@@ -68,6 +70,8 @@ func TestMuxerDemuxerPreservesSegmentInfoMetadata(t *testing.T) {
 			PrevFilename:    wantInfo.PrevFilename,
 			NextUUID:        append([]byte(nil), wantInfo.NextUUID...),
 			NextFilename:    wantInfo.NextFilename,
+			DurationNS:      wantInfo.DurationNS,
+			DurationSet:     wantInfo.DurationSet,
 			Title:           wantInfo.Title,
 			DateUTC:         created,
 			DateUTCSet:      true,
@@ -110,6 +114,22 @@ func TestMuxerDemuxerPreservesSegmentInfoMetadata(t *testing.T) {
 	fresh := demuxer.Info()
 	if !bytes.Equal(fresh.SegmentUUID, wantInfo.SegmentUUID) {
 		t.Fatalf("segment uuid alias was not protected: %x", fresh.SegmentUUID)
+	}
+}
+
+func TestDemuxerReadsSegmentInfoDurationWithLateTimestampScale(t *testing.T) {
+	data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+		return writeInfoWithElements(writer, func(w *ebml.Writer) error {
+			return w.WriteFloat64(idDuration, 12.5)
+		})
+	})
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := demuxer.Info()
+	if !info.DurationSet || info.DurationNS != 12_500_000 {
+		t.Fatalf("duration = %d set=%v, want 12500000 true", info.DurationNS, info.DurationSet)
 	}
 }
 
@@ -5627,6 +5647,13 @@ func TestMuxerRejectsInvalidSegmentInfoMetadata(t *testing.T) {
 				DateUTCSet: true,
 			},
 		},
+		{
+			name: "negative duration",
+			info: SegmentInfo{
+				DurationNS:  -1,
+				DurationSet: true,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -5841,6 +5868,14 @@ func TestSeekableMuxerPatchesSegmentClusterAndDuration(t *testing.T) {
 	}
 	if !sawPatchedDuration {
 		t.Fatalf("did not find patched duration")
+	}
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := demuxer.Info()
+	if !info.DurationSet || info.DurationNS != 60_000_000 {
+		t.Fatalf("info duration = %d set=%v, want 60000000 true", info.DurationNS, info.DurationSet)
 	}
 }
 
@@ -7395,6 +7430,36 @@ func TestDemuxerRejectsInvalidSegmentInfoMetadata(t *testing.T) {
 				}
 				_, err := w.Write([]byte{0, 0, 0, 0})
 				return err
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("negative duration", func(t *testing.T) {
+		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeInfoWithElements(writer, func(w *ebml.Writer) error {
+				return w.WriteFloat64(idDuration, -1)
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("non finite duration", func(t *testing.T) {
+		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeInfoWithElements(writer, func(w *ebml.Writer) error {
+				return w.WriteFloat64(idDuration, math.Inf(1))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("duration overflow", func(t *testing.T) {
+		data := makeInfoMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeInfoWithElements(writer, func(w *ebml.Writer) error {
+				return w.WriteFloat64(idDuration, float64(math.MaxInt64))
 			})
 		})
 		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {

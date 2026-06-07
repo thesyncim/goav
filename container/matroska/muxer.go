@@ -119,6 +119,9 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.durationOffset = 0
 	m.durationPatch = false
 	m.maxTimeNS = 0
+	if m.options.Info.DurationSet {
+		m.maxTimeNS = m.options.Info.DurationNS
+	}
 	m.clusterTimecode = 0
 	m.closed = false
 	m.blockPayload.Reset()
@@ -665,6 +668,10 @@ func (m *Muxer) writeInfoFields(w *ebml.Writer, includeDuration bool) error {
 			return err
 		}
 		m.durationPatch = true
+	} else if info.DurationSet {
+		if err := w.WriteFloat64(idDuration, float64(info.DurationNS)/float64(m.options.TimecodeScaleNS)); err != nil {
+			return err
+		}
 	}
 	if info.DateUTCSet {
 		if err := writeDate(w, idDateUTC, info.DateUTC); err != nil {
@@ -708,6 +715,9 @@ func validateSegmentInfo(info SegmentInfo) error {
 		if _, err := ebmlDateNanos(info.DateUTC); err != nil {
 			return err
 		}
+	}
+	if info.DurationSet && info.DurationNS < 0 {
+		return ErrInvalidData
 	}
 	return nil
 }

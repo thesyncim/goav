@@ -806,17 +806,26 @@ func (d *Demuxer) parseInfo(header ebml.Header) error {
 	if err != nil {
 		return err
 	}
+	durationTicks := float64(0)
+	durationSet := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
 			return err
 		}
-		if err := d.parseInfoChild(master.Reader(), child); err != nil {
+		if err := d.parseInfoChild(master.Reader(), child, &durationTicks, &durationSet); err != nil {
 			return err
 		}
 	}
 	if err := master.Validate(); err != nil {
 		return err
+	}
+	if durationSet {
+		d.info.DurationNS, err = scaleSegmentDurationTicks(durationTicks, d.timecodeScaleNS)
+		if err != nil {
+			return err
+		}
+		d.info.DurationSet = true
 	}
 	return validateSegmentInfo(d.info)
 }
@@ -910,7 +919,7 @@ func (r crc32HashReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header) error {
+func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header, durationTicks *float64, durationSet *bool) error {
 	switch child.ID {
 	case idSegmentUUID:
 		value, err := readBinaryPayload(reader, child.Size.Value)
@@ -957,6 +966,13 @@ func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header) error {
 			return ErrInvalidData
 		}
 		d.timecodeScaleNS = int64(value)
+	case idDuration:
+		value, err := readSegmentDurationTicksPayload(reader, child.Size.Value)
+		if err != nil {
+			return err
+		}
+		*durationTicks = value
+		*durationSet = true
 	case idDateUTC:
 		value, err := readDatePayload(reader, child.Size.Value)
 		if err != nil {
@@ -988,6 +1004,32 @@ func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header) error {
 		}
 	}
 	return nil
+}
+
+func readSegmentDurationTicksPayload(r io.Reader, size uint64) (float64, error) {
+	value, err := readFloatPayload(r, size)
+	if err != nil {
+		return 0, err
+	}
+	if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, ErrInvalidData
+	}
+	return value, nil
+}
+
+func scaleSegmentDurationTicks(value float64, scaleNS int64) (int64, error) {
+	if scaleNS <= 0 || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, ErrInvalidData
+	}
+	duration := value * float64(scaleNS)
+	if math.IsInf(duration, 0) {
+		return 0, ErrInvalidData
+	}
+	rounded := math.Round(duration)
+	if rounded < 0 || rounded >= float64(math.MaxInt64) {
+		return 0, ErrInvalidData
+	}
+	return int64(rounded), nil
 }
 
 func (d *Demuxer) parseTracks(header ebml.Header) error {

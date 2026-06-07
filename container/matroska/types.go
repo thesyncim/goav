@@ -345,6 +345,8 @@ type SegmentInfo struct {
 	PrevFilename    string
 	NextUUID        []byte
 	NextFilename    string
+	DurationNS      int64
+	DurationSet     bool
 	Title           string
 	DateUTC         time.Time
 	DateUTCSet      bool
