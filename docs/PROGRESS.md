@@ -2201,6 +2201,17 @@ are:
     retain copy/tap operations in the plan and that routes still prepare from
     operation records after the bridge step fields are cleared.
     Done.
+381. Emit branch-compose graph-plan operations from the branch-compose plan:
+    `buildMediaPlan` now detects branch-compose plans with operation records
+    and builds plan streams, branches, decisions, taps, and graph-plan
+    operations from `state.plan.Branches[*].Operations` instead of relying on
+    `state.intent.Streams` as the only operation source. Intent-only branch
+    paths still fall back to the existing stream intent planner, and legacy
+    branch-compose plans without operations keep their previous path. Tests
+    clear intent stream operations after the plan is built, then prove the
+    media plan and `graphPlanOperationsFromMediaPlan` still emit decode, taps,
+    shared resize, private encode, and target operations from the plan records.
+    Done.
 
 ## First Vertical Slice
 

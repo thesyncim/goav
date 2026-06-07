@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -100,7 +101,12 @@ func buildMediaPlan(state *recipeCompileState) mediaPlan {
 	plan.Inputs = planInputs(intent.Inputs)
 	plan.Streams = planStreams(intent.Streams)
 	plan.Outputs = planOutputs(intent.Targets, state.outputFormatMap())
-	plan.Branches, plan.Decisions = planBranches(state, plan.Outputs)
+	if state.branchCompositionPresent && branchComposePlanReady(state.plan) && branchComposePlanHasOperations(state.plan) {
+		plan.Streams = planStreamsFromBranchComposePlan(state.plan)
+		plan.Branches, plan.Decisions = planBranchesFromBranchComposePlan(state, plan.Outputs)
+	} else {
+		plan.Branches, plan.Decisions = planBranches(state, plan.Outputs)
+	}
 	plan.Taps = planTaps(plan.Branches)
 	plan.Outputs = planOutputsWithBranches(plan.Outputs, plan.Branches)
 	return plan
@@ -127,6 +133,18 @@ func planStreams(streams []StreamIntent) []planStream {
 		out = append(out, planStream{
 			Name:   firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("stream-%d", i)),
 			Select: stream.Select,
+		})
+	}
+	return out
+}
+
+func planStreamsFromBranchComposePlan(plan branchComposePlan) []planStream {
+	out := make([]planStream, 0, len(plan.Branches))
+	for i := range plan.Branches {
+		branch := plan.Branches[i]
+		out = append(out, planStream{
+			Name:   firstNonEmpty(branch.Name, string(branch.Selector.Type), fmt.Sprintf("stream-%d", i)),
+			Select: streamSelectFromAV(branch.Selector),
 		})
 	}
 	return out
@@ -187,6 +205,95 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 		decisions = append(decisions, branchDecisions...)
 	}
 	return branches, decisions
+}
+
+func planBranchesFromBranchComposePlan(state *recipeCompileState, outputs []planOutput) ([]planBranch, []planDecision) {
+	branches := make([]planBranch, 0, len(state.plan.Branches))
+	decisions := make([]planDecision, 0, len(state.plan.Branches))
+	for i := range state.plan.Branches {
+		composeBranch := state.plan.Branches[i]
+		stream := streamIntentFromBranchComposeBranch(composeBranch)
+		var shape MediaShape
+		if selected, ok := planSelectedStream(state, stream); ok {
+			stream.Select = streamSelectFromStream(selected)
+			shape = mediaShapeFromPlanStream(selected, DomainPacket)
+		}
+		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
+		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
+		operations, branchDecisions := planStreamOperations(state.intent.Inputs, stream, branchName, nil)
+		operations = planOperationsWithShape(branchName, shape, operations)
+		branches = append(branches, planBranch{
+			Name:       branchName,
+			Input:      firstInputName(state.intent.Inputs),
+			Stream:     stream.Select,
+			Shape:      shape,
+			Operations: operations,
+			Outputs:    planBranchTargets(stream.Targets, outputs),
+		})
+		decisions = append(decisions, branchDecisions...)
+	}
+	return branches, decisions
+}
+
+func streamIntentFromBranchComposeBranch(branch branchComposeBranch) StreamIntent {
+	stream := StreamIntent{
+		Name:        branch.Name,
+		Select:      streamSelectFromAV(branch.Selector),
+		Decode:      branch.Decode,
+		DecodeCodec: cloneCodecSpec(branch.DecodeConfig),
+		Operations:  branchComposeBranchOperations(branch),
+		CodecChange: branch.CodecChange,
+		Targets:     append([]string(nil), branch.Labels...),
+	}
+	if branch.Copy {
+		stream.Encode = Copy()
+	} else {
+		stream.Encode = codecSpecFromEncodeConfig(branch.Encode)
+	}
+	return stream
+}
+
+func codecSpecFromEncodeConfig(config codec.EncodeConfig) CodecSpec {
+	spec := CodecSpec{
+		ID:         config.Parameters.ID,
+		Type:       config.Parameters.Type,
+		Parameters: config.Parameters,
+		Bitrate:    config.Bitrate,
+		Config:     config.Config,
+		Opaque:     cloneAnyMap(config.Opaque),
+		Controls:   append([]any(nil), config.Controls...),
+	}
+	if spec.ID == "" {
+		spec.ID = config.Stream.Codec.ID
+	}
+	if spec.Type == "" {
+		spec.Type = firstNonEmptyMedia(config.Parameters.Type, config.Stream.Type, config.Stream.Codec.Type, codecMedia(spec.ID))
+	}
+	if spec.Parameters.ID == "" {
+		spec.Parameters.ID = spec.ID
+	}
+	if spec.Parameters.Type == "" {
+		spec.Parameters.Type = spec.Type
+	}
+	return spec
+}
+
+func branchComposeBranchOperations(branch branchComposeBranch) []StreamOperation {
+	if len(branch.Operations) != 0 {
+		return cloneStreamOperations(branch.Operations)
+	}
+	operations := append(cloneStreamOperations(branch.SharedOperations), cloneStreamOperations(branch.PrivateOperations)...)
+	return operations
+}
+
+func branchComposePlanHasOperations(plan branchComposePlan) bool {
+	for i := range plan.Branches {
+		branch := plan.Branches[i]
+		if len(branchComposeBranchOperations(branch)) != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func streamSelectFromStream(stream av.Stream) StreamSelect {

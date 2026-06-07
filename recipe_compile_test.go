@@ -510,12 +510,63 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		len(routes[1].steps) != 0 {
 		t.Fatalf("web route = %+v, want shared 720p resize from operation fields", routes[1])
 	}
+
+	intentWithoutOperations := job.Intent()
+	for i := range intentWithoutOperations.Streams {
+		intentWithoutOperations.Streams[i].Operations = nil
+		intentWithoutOperations.Streams[i].Transforms = nil
+	}
+	media := buildMediaPlan(&recipeCompileState{
+		operation:                branchCompositionOperation,
+		branchCompositionPresent: true,
+		intent:                   intentWithoutOperations,
+		branchInputAttachment:    job.inputs[0],
+		branchTargetAttachments:  job.branchTargets,
+		plan:                     plan,
+	})
+	if len(media.Branches) != 2 {
+		t.Fatalf("media branches = %d, want 2", len(media.Branches))
+	}
+	if got, want := planOperationKindsForTest(media.Branches[0].Operations), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("raw media operations = %+v, want %+v", got, want)
+	}
+	if got, want := planOperationKindsForTest(media.Branches[1].Operations), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpTap, OpEncode}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("web media operations = %+v, want %+v", got, want)
+	}
+	if !media.Branches[1].Operations[4].Shared || !media.Branches[1].Operations[5].Shared || media.Branches[1].Operations[6].Shared {
+		t.Fatalf("web media operation sharing = %+v, want shared parent transform/tap and private encode", media.Branches[1].Operations)
+	}
+	graphOperations := graphPlanOperationsFromMediaPlan(pipeline.Spec{}, media)
+	if got, want := graphPlanOperationKindsForBranch(graphOperations, "raw-preview"), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpSink}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("raw graph operations = %+v, want %+v", got, want)
+	}
+	if got, want := graphPlanOperationKindsForBranch(graphOperations, "web"), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpTap, OpEncode, OpMux}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("web graph operations = %+v, want %+v", got, want)
+	}
 }
 
 func streamOperationKindsForTest(operations []StreamOperation) []OperationKind {
 	out := make([]OperationKind, 0, len(operations))
 	for i := range operations {
 		out = append(out, operations[i].Kind)
+	}
+	return out
+}
+
+func planOperationKindsForTest(operations []planOperation) []OperationKind {
+	out := make([]OperationKind, 0, len(operations))
+	for i := range operations {
+		out = append(out, operations[i].Kind)
+	}
+	return out
+}
+
+func graphPlanOperationKindsForBranch(operations []graphPlanOperation, branch string) []OperationKind {
+	out := make([]OperationKind, 0)
+	for i := range operations {
+		if operations[i].Branch == branch {
+			out = append(out, operations[i].Kind)
+		}
 	}
 	return out
 }
