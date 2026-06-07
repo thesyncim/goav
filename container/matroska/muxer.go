@@ -492,7 +492,12 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 	if endTime > m.maxTimeNS {
 		m.maxTimeNS = endTime
 	}
-	cuePacket := Packet{TrackID: packet.TrackID, TimeNS: packet.TimeNS, Keyframe: packet.Keyframe}
+	cuePacket := Packet{
+		TrackID:              packet.TrackID,
+		TimeNS:               packet.TimeNS,
+		ReferenceBlockTimeNS: packet.ReferenceBlockTimeNS,
+		Keyframe:             packet.Keyframe,
+	}
 	if endTime > packet.TimeNS {
 		cuePacket.DurationNS = endTime - packet.TimeNS
 	}
@@ -1799,6 +1804,9 @@ func (m *Muxer) addCue(packet Packet, track Track, timecode int64, relativePosit
 		position.DurationNS = packet.DurationNS
 		position.DurationSet = true
 	}
+	if len(packet.ReferenceBlockTimeNS) != 0 {
+		position.References = m.cueReferences(packet)
+	}
 	m.addCuePosition(timecode*m.options.TimecodeScaleNS, position)
 }
 
@@ -1834,6 +1842,53 @@ func cueHasTrackPosition(cue CuePoint, trackID uint32) bool {
 		}
 	}
 	return false
+}
+
+func (m *Muxer) cueReferences(packet Packet) []CueReference {
+	var references []CueReference
+	for i := range packet.ReferenceBlockTimeNS {
+		timeNS, ok := cueReferenceTimeNS(packet.TimeNS, packet.ReferenceBlockTimeNS[i])
+		if !ok {
+			continue
+		}
+		position, ok := m.cuePositionForReference(packet.TrackID, timeNS)
+		if !ok {
+			continue
+		}
+		references = append(references, CueReference{
+			TimeNS:             timeNS,
+			ClusterPosition:    position.ClusterPosition,
+			BlockNumber:        position.BlockNumber,
+			BlockNumberSet:     position.BlockNumberSet,
+			CodecStatePosition: position.CodecStatePosition,
+			CodecStateSet:      position.CodecStateSet,
+		})
+	}
+	return references
+}
+
+func cueReferenceTimeNS(packetTimeNS int64, offsetNS int64) (int64, bool) {
+	if offsetNS > 0 && packetTimeNS > math.MaxInt64-offsetNS {
+		return 0, false
+	}
+	if offsetNS < 0 {
+		if offsetNS == math.MinInt64 || packetTimeNS < -offsetNS {
+			return 0, false
+		}
+	}
+	return packetTimeNS + offsetNS, true
+}
+
+func (m *Muxer) cuePositionForReference(trackID uint32, timeNS int64) (CueTrackPosition, bool) {
+	for i := len(m.cues) - 1; i >= 0; i-- {
+		if m.cues[i].TimeNS != timeNS {
+			continue
+		}
+		if position, ok := cuePositionForTrack(m.cues[i], trackID); ok {
+			return position, true
+		}
+	}
+	return CueTrackPosition{}, false
 }
 
 func (m *Muxer) shouldCuePacket(packet Packet, track Track) bool {

@@ -7881,6 +7881,141 @@ func TestSeekableMuxerWritesCuesSortedByTime(t *testing.T) {
 	}
 }
 
+func TestSeekableMuxerWritesCueReferencesForReferencedPackets(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{
+		ClusterMaxDurationNS: 100_000_000,
+		CuePolicy:            CuePolicyAllPackets,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: trackID, TimeNS: 0, DurationNS: 20_000_000, Keyframe: true, Data: []byte{1}},
+		{TrackID: trackID, TimeNS: 20_000_000, DurationNS: 20_000_000, ReferenceBlockTimeNS: []int64{-20_000_000}, Data: []byte{2}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); err != nil {
+		t.Fatal(err)
+	}
+	cues := demuxer.Cues()
+	if len(cues) != 2 {
+		t.Fatalf("cues = %+v, want keyframe and referenced packet cues", cues)
+	}
+	referenced, err := firstCuePosition(cues[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	position, ok := cuePositionForTrack(cues[1], trackID)
+	if !ok {
+		t.Fatalf("cue missing track position: %+v", cues[1])
+	}
+	if len(position.References) != 1 {
+		t.Fatalf("cue references = %+v, want one reference", position.References)
+	}
+	reference := position.References[0]
+	if reference.TimeNS != packets[0].TimeNS || reference.ClusterPosition != referenced.ClusterPosition ||
+		reference.BlockNumber != referenced.BlockNumber || reference.BlockNumberSet != referenced.BlockNumberSet {
+		t.Fatalf("cue reference = %+v, want time=%d cluster=%d block=%d set=%v", reference, packets[0].TimeNS, referenced.ClusterPosition, referenced.BlockNumber, referenced.BlockNumberSet)
+	}
+	if !equalCueReferences(cues[1].References, position.References) {
+		t.Fatalf("legacy cue references = %+v, want %+v", cues[1].References, position.References)
+	}
+}
+
+func TestSeekableMuxerWritesCueReferencesForReferencedLacedPackets(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{
+		ClusterMaxDurationNS: 100_000_000,
+		CuePolicy:            CuePolicyAllPackets,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackVideo,
+		Codec:             CodecVP8,
+		DefaultDurationNS: 20_000_000,
+		Video:             VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     0,
+		DurationNS: 20_000_000,
+		Keyframe:   true,
+		Data:       []byte{1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:              trackID,
+		TimeNS:               20_000_000,
+		FrameDurationNS:      20_000_000,
+		ReferenceBlockTimeNS: []int64{-20_000_000},
+		Lacing:               LacingXiph,
+		Frames:               [][]byte{{2}, {3}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); err != nil {
+		t.Fatal(err)
+	}
+	cues := demuxer.Cues()
+	if len(cues) != 2 {
+		t.Fatalf("cues = %+v, want keyframe and referenced laced cues", cues)
+	}
+	referenced, err := firstCuePosition(cues[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	position, ok := cuePositionForTrack(cues[1], trackID)
+	if !ok {
+		t.Fatalf("cue missing track position: %+v", cues[1])
+	}
+	if len(position.References) != 1 {
+		t.Fatalf("laced cue references = %+v, want one reference", position.References)
+	}
+	reference := position.References[0]
+	if reference.TimeNS != 0 || reference.ClusterPosition != referenced.ClusterPosition ||
+		reference.BlockNumber != referenced.BlockNumber || reference.BlockNumberSet != referenced.BlockNumberSet {
+		t.Fatalf("laced cue reference = %+v, want time=0 cluster=%d block=%d set=%v", reference, referenced.ClusterPosition, referenced.BlockNumber, referenced.BlockNumberSet)
+	}
+	if !position.DurationSet || position.DurationNS != 40_000_000 {
+		t.Fatalf("laced cue duration = %d set=%v, want 40000000 true", position.DurationNS, position.DurationSet)
+	}
+}
+
 func TestMuxerCuePolicyControlsIndexing(t *testing.T) {
 	tests := []struct {
 		name     string
