@@ -509,11 +509,11 @@ func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *run
 		if target == nil {
 			continue
 		}
-		formatID, err := runtimeSharedMuxFormat(ctx, rt, target.dest, i)
+		formatID, err := runtimeMuxTargetFormat(ctx, rt, target.dest, i)
 		if err != nil {
 			return err
 		}
-		if issue, ok := runtimeSharedMuxCompatibilityIssue(*target, formatID, rt); ok {
+		if issue, ok := runtimeMuxCompatibilityIssue(target.name, formatID, target.branches, target.streams, rt); ok {
 			return muxCompatibilityBuildError("attach runtime branches", issue)
 		}
 		stage, err := service.openMuxDestinationStage(
@@ -586,10 +586,16 @@ func (g *runtimeAttachGroup) failSharedMuxStages() {
 	}
 }
 
-func runtimeSharedMuxFormat(ctx context.Context, rt *runtime, dest destinationSpec, index int) (av.FormatID, error) {
+func runtimeMuxTargetFormat(ctx context.Context, rt *runtime, dest destinationSpec, index int) (av.FormatID, error) {
 	formatID := destinationOpenFormat(dest)
 	if formatID != "" {
 		return formatID, nil
+	}
+	if rt == nil {
+		return "", runtimeBranchInvalidError(
+			"runtime branch mux destinations require the standard runtime",
+			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching file or URI branches",
+		)
 	}
 	result, err := rt.formats.Probe(ctx, outputProbeRequest(dest.output))
 	if err != nil {
@@ -598,27 +604,27 @@ func runtimeSharedMuxFormat(ctx context.Context, rt *runtime, dest destinationSp
 	return result.Format, nil
 }
 
-func runtimeSharedMuxCompatibilityIssue(target runtimeSharedMuxTarget, formatID av.FormatID, rt Runtime) (muxCompatibilityIssue, bool) {
+func runtimeMuxCompatibilityIssue(targetName string, formatID av.FormatID, branches []string, streams []av.Stream, rt Runtime) (muxCompatibilityIssue, bool) {
 	output := planOutput{
-		Name:       target.name,
+		Name:       targetName,
 		Operation:  OpMux,
 		Format:     formatID,
-		BranchRefs: append([]string(nil), target.branches...),
+		BranchRefs: append([]string(nil), branches...),
 	}
-	streams := make([]plannedMuxStream, 0, len(target.streams))
-	for i := range target.streams {
+	plannedStreams := make([]plannedMuxStream, 0, len(streams))
+	for i := range streams {
 		branch := "branch"
-		if i < len(target.branches) && target.branches[i] != "" {
-			branch = target.branches[i]
+		if i < len(branches) && branches[i] != "" {
+			branch = branches[i]
 		}
-		stream := target.streams[i]
-		streams = append(streams, plannedMuxStream{
+		stream := streams[i]
+		plannedStreams = append(plannedStreams, plannedMuxStream{
 			Branch: branch,
 			Codec:  stream.Codec.ID,
 			Media:  firstNonEmptyMedia(stream.Type, stream.Codec.Type, codecMedia(stream.Codec.ID)),
 		})
 	}
-	return checkKnownMuxCompatibility(output, streams, rt)
+	return checkKnownMuxCompatibility(output, plannedStreams, rt)
 }
 
 func runtimeAttachmentName(branches []runtimeBranch) string {
@@ -801,15 +807,7 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 	}
 	if !hasMuxDestination {
 		for i := range branch.destinations {
-			destination := branch.destinations[i]
-			branch.terminals = append(branch.terminals, runtimeBranchTerminal{
-				name:     destination.name,
-				shareKey: destination.shareKey,
-				dest:     destination.dest,
-				stream:   stream,
-				sink:     destination.sink,
-				caps:     caps,
-			})
+			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(branch.destinations[i], stream, caps))
 		}
 		return nil
 	}
@@ -827,57 +825,73 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 	for i := range branch.destinations {
 		destination := branch.destinations[i]
 		if destination.sink != nil {
-			branch.terminals = append(branch.terminals, runtimeBranchTerminal{
-				name:     destination.name,
-				shareKey: destination.shareKey,
-				dest:     destination.dest,
-				stream:   stream,
-				sink:     destination.sink,
-				caps:     caps,
-			})
+			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(destination, stream, caps))
 			continue
 		}
 		if group != nil && group.isSharedMux(destination.shareKey) {
-			branch.terminals = append(branch.terminals, runtimeBranchTerminal{
-				name:     destination.name,
-				shareKey: destination.shareKey,
-				dest:     destination.dest,
-				stream:   stream,
-				caps:     caps,
-			})
+			branch.terminals = append(branch.terminals, runtimeBranchSharedMuxTerminal(destination, stream, caps))
 			continue
 		}
-		formatID, err := t.runtimeBranchMuxFormat(ctx, destination.dest, i)
+		terminal, err := prepareRuntimeBranchMuxTerminal(ctx, t.runtime, *branch, destination, stream, caps, i)
 		if err != nil {
 			closeRuntimeBranchOwnedStages(*branch)
 			return err
 		}
-		if issue, ok := runtimeBranchMuxCompatibilityIssue(*branch, destination, stream, formatID, t.runtime); ok {
-			closeRuntimeBranchOwnedStages(*branch)
-			return muxCompatibilityBuildError("attach runtime branch", issue)
-		}
-		muxStage, err := (&builder{runtime: t.runtime}).openMuxDestinationStage(
-			ctx,
-			destination.dest,
-			i,
-			[]av.Stream{stream},
-			formatID,
-			destinationGraphFormat(destination.dest),
-		)
-		if err != nil {
-			closeRuntimeBranchOwnedStages(*branch)
-			return err
-		}
-		branch.terminals = append(branch.terminals, runtimeBranchTerminal{
-			name:   destination.name,
-			dest:   destination.dest,
-			stream: stream,
-			stage:  muxStage,
-			caps:   caps,
-			owned:  true,
-		})
+		branch.terminals = append(branch.terminals, terminal)
 	}
 	return nil
+}
+
+func runtimeBranchSinkTerminal(destination runtimeBranchDestination, stream av.Stream, caps StreamCaps) runtimeBranchTerminal {
+	return runtimeBranchTerminal{
+		name:     destination.name,
+		shareKey: destination.shareKey,
+		dest:     destination.dest,
+		stream:   stream,
+		sink:     destination.sink,
+		caps:     caps,
+	}
+}
+
+func runtimeBranchSharedMuxTerminal(destination runtimeBranchDestination, stream av.Stream, caps StreamCaps) runtimeBranchTerminal {
+	return runtimeBranchTerminal{
+		name:     destination.name,
+		shareKey: destination.shareKey,
+		dest:     destination.dest,
+		stream:   stream,
+		caps:     caps,
+	}
+}
+
+func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, caps StreamCaps, index int) (runtimeBranchTerminal, error) {
+	formatID, err := runtimeMuxTargetFormat(ctx, rt, destination.dest, index)
+	if err != nil {
+		return runtimeBranchTerminal{}, err
+	}
+	branchName := firstNonEmpty(branch.name, destination.name, "branch")
+	targetName := firstNonEmpty(destination.name, destination.dest.label(branchName))
+	if issue, ok := runtimeMuxCompatibilityIssue(targetName, formatID, []string{branchName}, []av.Stream{stream}, rt); ok {
+		return runtimeBranchTerminal{}, muxCompatibilityBuildError("attach runtime branch", issue)
+	}
+	muxStage, err := (&builder{runtime: rt}).openMuxDestinationStage(
+		ctx,
+		destination.dest,
+		index,
+		[]av.Stream{stream},
+		formatID,
+		destinationGraphFormat(destination.dest),
+	)
+	if err != nil {
+		return runtimeBranchTerminal{}, err
+	}
+	return runtimeBranchTerminal{
+		name:   destination.name,
+		dest:   destination.dest,
+		stream: stream,
+		stage:  muxStage,
+		caps:   caps,
+		owned:  true,
+	}, nil
 }
 
 func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentCaps StreamCaps, spec CodecSpec) (pipeline.Stage, error) {
@@ -911,35 +925,6 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string
 		return nil, err
 	}
 	return stage, nil
-}
-
-func (t *task) runtimeBranchMuxFormat(ctx context.Context, dest destinationSpec, index int) (av.FormatID, error) {
-	formatID := destinationOpenFormat(dest)
-	if formatID != "" {
-		return formatID, nil
-	}
-	result, err := t.runtime.formats.Probe(ctx, outputProbeRequest(dest.output))
-	if err != nil {
-		return "", outputFormatProbeError(dest.output, index, err)
-	}
-	return result.Format, nil
-}
-
-func runtimeBranchMuxCompatibilityIssue(branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, formatID av.FormatID, rt Runtime) (muxCompatibilityIssue, bool) {
-	branchName := firstNonEmpty(branch.name, destination.name, "branch")
-	targetName := firstNonEmpty(destination.name, destination.dest.label(branchName))
-	output := planOutput{
-		Name:       targetName,
-		Operation:  OpMux,
-		Format:     formatID,
-		BranchRefs: []string{branchName},
-	}
-	streamInfo := plannedMuxStream{
-		Branch: branchName,
-		Codec:  stream.Codec.ID,
-		Media:  firstNonEmptyMedia(stream.Type, stream.Codec.Type, codecMedia(stream.Codec.ID)),
-	}
-	return checkKnownMuxCompatibility(output, []plannedMuxStream{streamInfo}, rt)
 }
 
 func runtimeBranchHasMuxDestination(branch runtimeBranch) bool {

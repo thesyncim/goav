@@ -1933,6 +1933,16 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     branches publish a pending tap once internally while still allowing a later
     branch in the same attach call to consume it.
     Done.
+365. Share runtime attach mux target preparation:
+    individual late mux targets and grouped shared mux targets now use one
+    runtime mux-format resolver and one mux compatibility helper, and
+    single-target mux open/preflight lives behind
+    `prepareRuntimeBranchMuxTerminal`. Sink terminals and shared-mux terminals
+    are built by small helpers, so the runtime branch destination loop expresses
+    domain decisions while target preparation stays concentrated behind the
+    patch-era helpers. Guard tests reject split mux format or compatibility
+    helpers from returning.
+    Done.
 
 ## First Vertical Slice
 
@@ -2150,7 +2160,8 @@ Required proof:
    path. The next step is to move whole-input packet-copy and runtime attach
    toward the same branch/patch planner instead of workflow-shape graph modes.
 2. Finish `GraphPatch` for runtime attach. `Task.Attach` now has a private patch
-   boundary; the next step is to move more cap/target validation and shared
+   boundary plus shared runtime mux target format/compatibility/preparation
+   helpers; the next step is to move more cap/target validation and shared
    mux/sink preparation into reusable planner helpers shared with planned
    branches.
 3. Add first-class capability data for stream, codec, transform, and container
@@ -2216,6 +2227,8 @@ the adapters are complete.
 `Task.Attach` remains the late branch control plane for running graphs, now with
 a private runtime graph-patch boundary that owns anchors, planned taps, applied
 nodes, routes, and published taps during prepare/apply/rollback,
+shared mux-format resolution and single mux-terminal preflight are behind
+runtime attach target helpers,
 including custom-stage, resize/resample, branch-local node stats, dependent
 branches after runtime resize and resample taps, post-encode packet taps
 feeding dependent packet-copy branches, live buffered parent detach that removes
