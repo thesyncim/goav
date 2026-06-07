@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 
+	bzip2 "git.quad4.io/Go-Libs/bzip2/pkg/bzip2"
 	"github.com/thesyncim/goav/container/ebml"
 	"github.com/woozymasta/lzo"
 )
@@ -46,6 +47,7 @@ type Muxer struct {
 	codecPayload    bytes.Buffer
 	lacePayload     []byte
 	zlibWriter      *zlib.Writer
+	bzip2Writer     *bzip2.Writer
 }
 
 func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
@@ -2111,7 +2113,7 @@ func blockPayloadSize(track Track, data []byte) (int, error) {
 		case blockContentTransformZlib:
 			return 0, ErrInvalidData
 		case blockContentTransformBzlib:
-			return 0, ErrUnsupportedContentEncoding
+			return 0, ErrInvalidData
 		case blockContentTransformLZO1X:
 			return 0, ErrInvalidData
 		default:
@@ -2148,6 +2150,8 @@ func (m *Muxer) muxedBlockPayload(track Track, data []byte) ([]byte, error) {
 		return payload, nil
 	case blockContentTransformZlib:
 		return m.zlibCompressBlockPayload(payload)
+	case blockContentTransformBzlib:
+		return m.bzip2CompressBlockPayload(payload)
 	case blockContentTransformLZO1X:
 		return m.lzoCompressBlockPayload(payload)
 	default:
@@ -2178,6 +2182,32 @@ func (m *Muxer) zlibCompressBlockPayload(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	if err := m.zlibWriter.Close(); err != nil {
+		return nil, err
+	}
+	return m.blockPayload.Bytes(), nil
+}
+
+func (m *Muxer) bzip2CompressBlockPayload(data []byte) ([]byte, error) {
+	const level = 6
+
+	m.blockPayload.Reset()
+	if m.bzip2Writer == nil {
+		writer, err := bzip2.NewWriter(&m.blockPayload, level)
+		if err != nil {
+			return nil, err
+		}
+		m.bzip2Writer = writer
+	} else if err := m.bzip2Writer.Reset(&m.blockPayload); err != nil {
+		m.bzip2Writer = nil
+		return nil, err
+	}
+	if _, err := m.bzip2Writer.Write(data); err != nil {
+		_ = m.bzip2Writer.Close()
+		m.bzip2Writer = nil
+		return nil, err
+	}
+	if err := m.bzip2Writer.Close(); err != nil {
+		m.bzip2Writer = nil
 		return nil, err
 	}
 	return m.blockPayload.Bytes(), nil
@@ -3254,14 +3284,8 @@ func validateContentEncodings(encodings []ContentEncoding) error {
 }
 
 func validateWritableBlockContentEncodings(track Track) error {
-	encoding, err := blockContentEncoding(track)
-	if err != nil {
-		return err
-	}
-	if encoding.compression == blockContentTransformBzlib {
-		return ErrUnsupportedContentEncoding
-	}
-	return nil
+	_, err := blockContentEncoding(track)
+	return err
 }
 
 type blockContentTransform uint8

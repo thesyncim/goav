@@ -1,3 +1,5 @@
+git.quad4.io/Go-Libs/bzip2 v1.1.0 h1:Qc0k/eQoI2xCWXFFKcEjRdLomJVobiA+b7atEWmvPc4=
+git.quad4.io/Go-Libs/bzip2 v1.1.0/go.mod h1:Nuzi9dxKpjM9VrQkqZ9tOcJMuA/b3n1grqndlmmeZU0=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
