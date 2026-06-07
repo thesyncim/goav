@@ -87,11 +87,12 @@ composition. A route carries all media by default, or matches one stream or
 event type.
 
 `Task.Attach` is the first runtime control-plane operation. It attaches a named
-downstream branch to a built direct graph and returns an attachment handle with
-`Close(ctx)`. `Task.Detach(ctx, h)` removes one live attachment, and
-`Task.Close()` stops attachments before closing the graph. Stable recipe outlets
-come from `.Tap(name)` and are listed by `Task.Taps()`; runtime branches attach
-with `goav.Branch("name").FromTap(name)`. A late branch can run custom
+downstream branch to a built graph and returns an attachment handle with
+`Close(ctx)`. Direct graphs and bounded buffered graphs both support late
+stage/sink branches for future messages. `Task.Detach(ctx, h)` removes one live
+attachment, and `Task.Close()` stops attachments before closing the graph.
+Stable recipe outlets come from `.Tap(name)` and are listed by `Task.Taps()`;
+runtime branches attach with `goav.Branch("name").FromTap(name)`. A late branch can run custom
 `.Do(...)` stages, resize or resample from frame taps, encode Opus/VP8/VP9 from
 frame taps into a target endpoint, copy packet taps into a target endpoint, and
 expose its own `.Tap(name)` outlets, so another late branch can attach
@@ -100,8 +101,9 @@ work in progress. Detaching a parent runtime branch also removes dependent
 runtime branches anchored from that parent's taps. Expert graph nodes can still
 be addressed with `From(node)` and `Task.Describe`. This is for late analysis,
 meters, screenshot collectors, and late recording branches that should observe
-future messages without rebuilding the task. Buffered runtime attachments remain
-a separate slice because they need queue and worker lifecycle management.
+future messages without rebuilding the task. Buffered runtime attachment owns
+queue and worker lifecycle for late nodes; broader mux/recording and teardown
+stress coverage remains an active slice.
 
 Current graph execution covers:
 

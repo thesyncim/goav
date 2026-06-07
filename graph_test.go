@@ -456,7 +456,7 @@ func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	}
 }
 
-func TestTaskAttachRejectsRunningBufferedGraph(t *testing.T) {
+func TestTaskAttachBranchesWhileBufferedGraphRuns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	source := &runtimeBranchWaitingSource{
@@ -465,9 +465,11 @@ func TestTaskAttachRejectsRunningBufferedGraph(t *testing.T) {
 		resume: make(chan struct{}),
 		msg:    pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventStats}},
 	}
+	base := &runtimeTestSink{name: "sink"}
+	late := &runtimeTestSink{name: "late"}
 	graph := New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 1})).Graph()
 	src := graph.Source("source", source)
-	sink := graph.Sink("sink", &runtimeTestSink{name: "sink"})
+	sink := graph.Sink("sink", base)
 	graph.Connect(src.Out(), sink.In())
 	task, err := graph.Build(ctx)
 	if err != nil {
@@ -482,14 +484,22 @@ func TestTaskAttachRejectsRunningBufferedGraph(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	_, err = task.Attach(ctx, Branch("late").From("source").To(SinkEndpoint(&runtimeTestSink{name: "late"})))
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_graph_error" || !errors.Is(err, pipeline.ErrDynamicGraphUnsupported) {
-		t.Fatalf("err = %v, want runtime_branch_graph_error wrapping ErrDynamicGraphUnsupported", err)
+	attachment, err := task.Attach(ctx, Branch("late").From("source").To(SinkEndpoint(late)))
+	if err != nil {
+		t.Fatal(err)
 	}
 	close(source.resume)
 	if err := <-runErr; err != nil {
 		t.Fatal(err)
+	}
+	if base.count != 1 || late.count != 1 {
+		t.Fatalf("base=%d late=%d, want both to receive future event", base.count, late.count)
+	}
+	if err := task.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	if !late.closed {
+		t.Fatal("late sink was not closed by detach")
 	}
 }
 

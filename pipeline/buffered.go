@@ -24,6 +24,7 @@ type bufferedNode struct {
 	routes     []directRoute
 	emitter    bufferedEmitter
 	queueMutex sync.Mutex
+	done       chan struct{}
 }
 
 type bufferedEmitter struct {
@@ -46,17 +47,26 @@ type bufferedMessage struct {
 }
 
 type bufferedRunner struct {
-	config  GraphConfig
-	mu      sync.RWMutex
-	index   map[string]int
-	nodes   []bufferedNode
-	sources []int
-	events  chan av.Event
-	pending sync.WaitGroup
-	statsMu sync.Mutex
-	stats   GraphStats
-	running bool
-	closed  bool
+	config   GraphConfig
+	mu       sync.RWMutex
+	index    map[string]int
+	nodes    []bufferedNode
+	sources  []int
+	events   chan av.Event
+	pending  sync.WaitGroup
+	workers  sync.WaitGroup
+	statsMu  sync.Mutex
+	stats    GraphStats
+	runCtx   context.Context
+	runErrs  chan<- error
+	running  bool
+	draining bool
+	closed   bool
+}
+
+type bufferedSourceRun struct {
+	source  Source
+	emitter bufferedEmitter
 }
 
 func newBufferedRunner(config GraphConfig) (*bufferedRunner, error) {
@@ -102,12 +112,16 @@ func (g *bufferedRunner) AddSource(source Source, policy BufferPolicy) (NodeRef,
 func (g *bufferedRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.running {
+	if g.running && g.draining {
 		return "", ErrDynamicGraphUnsupported
 	}
 	index, err := g.addNode(bufferedNode{name: stage.Name(), kind: nodeStage, stage: stage, policy: g.nodePolicy(policy)})
 	if err != nil {
 		return "", err
+	}
+	if g.running {
+		g.openQueue(&g.nodes[index])
+		g.startWorkerLocked(index)
 	}
 	return NodeRef(g.nodes[index].name), nil
 }
@@ -115,12 +129,16 @@ func (g *bufferedRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, er
 func (g *bufferedRunner) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.running {
+	if g.running && g.draining {
 		return "", ErrDynamicGraphUnsupported
 	}
 	index, err := g.addNode(bufferedNode{name: sink.Name(), kind: nodeSink, sink: sink, policy: g.nodePolicy(policy)})
 	if err != nil {
 		return "", err
+	}
+	if g.running {
+		g.openQueue(&g.nodes[index])
+		g.startWorkerLocked(index)
 	}
 	return NodeRef(g.nodes[index].name), nil
 }
@@ -135,7 +153,7 @@ func (g *bufferedRunner) Connect(route Route) error {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.running {
+	if g.running && g.draining {
 		return ErrDynamicGraphUnsupported
 	}
 	from, ok := g.index[route.From]
@@ -175,7 +193,7 @@ func (g *bufferedRunner) Disconnect(route Route) error {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.running {
+	if g.running && g.draining {
 		return ErrDynamicGraphUnsupported
 	}
 	from, ok := g.index[route.From]
@@ -230,55 +248,56 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 		return err
 	}
 
-	g.openQueues()
+	errs := make(chan error, len(g.nodes)+len(g.sources)+16)
+	g.openQueuesLocked()
 	g.running = true
-	g.mu.Unlock()
-	defer func() {
-		g.mu.Lock()
-		g.running = false
-		g.mu.Unlock()
-	}()
-	errs := make(chan error, len(g.nodes)+len(g.sources)+1)
-	report := func(err error) {
-		if err == nil {
-			return
-		}
-		select {
-		case errs <- err:
-		default:
-		}
-	}
-
-	var workers sync.WaitGroup
+	g.draining = false
+	g.runCtx = ctx
+	g.runErrs = errs
+	g.workers = sync.WaitGroup{}
 	for i := range g.nodes {
 		if !g.nodes[i].active || g.nodes[i].kind == nodeSource {
 			continue
 		}
-		index := i
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			report(g.runNode(ctx, index))
-		}()
+		g.startWorkerLocked(i)
 	}
-
-	var sources sync.WaitGroup
+	sourceRuns := make([]bufferedSourceRun, 0, len(g.sources))
 	for i := range g.sources {
 		index := g.sources[i]
 		if !g.nodes[index].active {
 			continue
 		}
+		sourceRuns = append(sourceRuns, bufferedSourceRun{
+			source:  g.nodes[index].source,
+			emitter: g.nodes[index].emitter,
+		})
+	}
+	g.mu.Unlock()
+
+	var sources sync.WaitGroup
+	for i := range sourceRuns {
+		source := sourceRuns[i].source
+		emitter := sourceRuns[i].emitter
 		sources.Add(1)
 		go func() {
 			defer sources.Done()
-			report(g.nodes[index].source.Start(ctx, &g.nodes[index].emitter))
+			reportBufferedError(errs, source.Start(ctx, &emitter))
 		}()
 	}
 
 	sources.Wait()
 	g.pending.Wait()
-	g.closeQueues()
-	workers.Wait()
+	g.mu.Lock()
+	g.draining = true
+	g.closeQueuesLocked()
+	g.mu.Unlock()
+	g.workers.Wait()
+	g.mu.Lock()
+	g.running = false
+	g.draining = false
+	g.runCtx = nil
+	g.runErrs = nil
+	g.mu.Unlock()
 
 	select {
 	case err := <-errs:
@@ -337,17 +356,28 @@ func (g *bufferedRunner) Close() error {
 		return nil
 	}
 	g.closed = true
+	running := g.running
 	nodes := make([]bufferedNode, 0, len(g.nodes))
+	dones := make([]chan struct{}, 0, len(g.nodes))
 	for i := range g.nodes {
 		node := &g.nodes[i]
 		if !node.active {
 			continue
+		}
+		if running && node.kind != nodeSource && node.queue != nil {
+			close(node.queue)
+			if node.done != nil {
+				dones = append(dones, node.done)
+			}
 		}
 		node.active = false
 		nodes = append(nodes, *node)
 	}
 	g.mu.Unlock()
 
+	for i := range dones {
+		<-dones[i]
+	}
 	var first error
 	for i := range nodes {
 		err := closeBufferedNode(&nodes[i])
@@ -365,7 +395,8 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 		g.mu.Unlock()
 		return ErrClosed
 	}
-	if g.running {
+	running := g.running
+	if running && g.draining {
 		g.mu.Unlock()
 		return ErrDynamicGraphUnsupported
 	}
@@ -407,7 +438,14 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 		g.nodes[i].routes = routes
 	}
 	closeNode := *node
+	if running && node.queue != nil {
+		close(node.queue)
+	}
+	done := node.done
 	g.mu.Unlock()
+	if running && done != nil {
+		<-done
+	}
 	return closeBufferedNode(&closeNode)
 }
 
@@ -435,25 +473,53 @@ func (g *bufferedRunner) nodePolicy(policy BufferPolicy) BufferPolicy {
 	return normalizeBufferedPolicy(policy)
 }
 
-func (g *bufferedRunner) openQueues() {
+func (g *bufferedRunner) openQueuesLocked() {
 	for i := range g.nodes {
 		node := &g.nodes[i]
 		if !node.active || node.kind == nodeSource {
 			continue
 		}
-		slotCount := node.policy.Capacity + 1
-		node.queue = make(chan *bufferedMessage, node.policy.Capacity)
-		node.free = make(chan *bufferedMessage, slotCount)
-		node.slots = make([]bufferedMessage, slotCount)
-		for i := range node.slots {
-			node.slots[i].init(node.policy)
-			node.free <- &node.slots[i]
-		}
-		node.drop = newDropController(node.policy)
+		g.openQueue(node)
 	}
 }
 
-func (g *bufferedRunner) closeQueues() {
+func (g *bufferedRunner) openQueue(node *bufferedNode) {
+	slotCount := node.policy.Capacity + 1
+	node.queue = make(chan *bufferedMessage, node.policy.Capacity)
+	node.free = make(chan *bufferedMessage, slotCount)
+	node.slots = make([]bufferedMessage, slotCount)
+	for i := range node.slots {
+		node.slots[i].init(node.policy)
+		node.free <- &node.slots[i]
+	}
+	node.drop = newDropController(node.policy)
+}
+
+func (g *bufferedRunner) startWorkerLocked(index int) {
+	queue := g.nodes[index].queue
+	done := make(chan struct{})
+	g.nodes[index].done = done
+	ctx := g.runCtx
+	errs := g.runErrs
+	g.workers.Add(1)
+	go func() {
+		defer g.workers.Done()
+		defer close(done)
+		reportBufferedError(errs, g.runNode(ctx, index, queue))
+	}()
+}
+
+func reportBufferedError(errs chan<- error, err error) {
+	if err == nil {
+		return
+	}
+	select {
+	case errs <- err:
+	default:
+	}
+}
+
+func (g *bufferedRunner) closeQueuesLocked() {
 	for i := range g.nodes {
 		node := &g.nodes[i]
 		if !node.active || node.kind == nodeSource || node.queue == nil {
@@ -464,17 +530,28 @@ func (g *bufferedRunner) closeQueues() {
 }
 
 func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error {
-	if g.closed {
-		return ErrClosed
-	}
 	if msg == nil {
 		return ErrNilMessage
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	g.mu.RLock()
+	if g.closed {
+		g.mu.RUnlock()
+		return ErrClosed
+	}
+	if from < 0 || from >= len(g.nodes) {
+		g.mu.RUnlock()
+		return ErrUnknownNode
+	}
+	if !g.nodes[from].active {
+		g.mu.RUnlock()
+		return nil
+	}
 	g.observeMessage(msg)
 	if err := g.publishEvent(msg); err != nil {
+		g.mu.RUnlock()
 		return err
 	}
 
@@ -485,11 +562,17 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 			continue
 		}
 		for j := range route.to {
-			if err := g.enqueue(ctx, route.to[j], msg); err != nil {
+			to := route.to[j]
+			if to < 0 || to >= len(g.nodes) || !g.nodes[to].active {
+				continue
+			}
+			if err := g.enqueue(ctx, to, msg); err != nil {
+				g.mu.RUnlock()
 				return err
 			}
 		}
 	}
+	g.mu.RUnlock()
 	return nil
 }
 
@@ -552,32 +635,66 @@ func enqueueMessage(ctx context.Context, queue chan *bufferedMessage, msg *buffe
 	}
 }
 
-func (g *bufferedRunner) runNode(ctx context.Context, index int) error {
-	node := &g.nodes[index]
+func (g *bufferedRunner) runNode(ctx context.Context, index int, queue <-chan *bufferedMessage) error {
 	var first error
-	for msg := range node.queue {
+	for msg := range queue {
 		if first == nil {
 			if err := g.deliver(ctx, index, &msg.message); err != nil {
 				first = err
 			}
 		}
-		node.releaseSlot(msg)
+		g.releaseSlot(index, msg)
 		g.pending.Done()
 	}
 	return first
 }
 
 func (g *bufferedRunner) deliver(ctx context.Context, to int, msg *Message) error {
+	g.mu.RLock()
+	if g.closed {
+		g.mu.RUnlock()
+		return ErrClosed
+	}
+	if to < 0 || to >= len(g.nodes) {
+		g.mu.RUnlock()
+		return ErrUnknownNode
+	}
+	if !g.nodes[to].active {
+		g.mu.RUnlock()
+		return nil
+	}
+	kind := g.nodes[to].kind
+	stage := g.nodes[to].stage
+	sink := g.nodes[to].sink
+	emitter := g.nodes[to].emitter
+	g.mu.RUnlock()
 	g.observeDelivered()
-	node := &g.nodes[to]
-	switch node.kind {
+	switch kind {
 	case nodeStage:
-		return node.stage.Handle(ctx, msg, &node.emitter)
+		return stage.Handle(ctx, msg, &emitter)
 	case nodeSink:
-		return node.sink.Handle(ctx, msg)
+		return sink.Handle(ctx, msg)
 	default:
 		return ErrInvalidLink
 	}
+}
+
+func (g *bufferedRunner) releaseSlot(index int, slot *bufferedMessage) {
+	if slot == nil {
+		return
+	}
+	g.mu.RLock()
+	var free chan *bufferedMessage
+	if index >= 0 && index < len(g.nodes) {
+		free = g.nodes[index].free
+	}
+	g.mu.RUnlock()
+	if free == nil {
+		slot.Reset()
+		return
+	}
+	slot.Reset()
+	free <- slot
 }
 
 func (g *bufferedRunner) observeMessage(msg *Message) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -151,6 +152,60 @@ func TestGraphBufferedPassThroughImmutablePacket(t *testing.T) {
 	}
 	if len(sink.values) != 1 || sink.values[0] != 7 {
 		t.Fatalf("values = %v", sink.values)
+	}
+}
+
+func TestGraphBufferedAddsSinkWhileRunning(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	afterFirst := make(chan struct{})
+	source := &bufferedPacketSource{
+		name:       "source",
+		packets:    []av.Packet{immutablePacket(1), immutablePacket(2)},
+		afterFirst: afterFirst,
+		done:       make(chan struct{}),
+	}
+	base := &bufferedBlockingSink{name: "base", started: make(chan struct{})}
+	late := &bufferedBlockingSink{name: "late", started: make(chan struct{})}
+
+	graph, err := NewGraph(GraphConfig{Name: "dynamic-buffered", Buffer: BufferPolicy{Capacity: 2, Drop: DropOldest}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(base, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "base")); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- graph.Run(ctx)
+	}()
+	select {
+	case <-base.started:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if _, err := graph.AddSink(late, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "late")); err != nil {
+		t.Fatal(err)
+	}
+	close(afterFirst)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if !equalBytes(base.values, []byte{1, 2}) {
+		t.Fatalf("base values = %v, want [1 2]", base.values)
+	}
+	if !equalBytes(late.values, []byte{2}) {
+		t.Fatalf("late values = %v, want [2]", late.values)
 	}
 }
 
