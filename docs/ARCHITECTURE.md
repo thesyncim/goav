@@ -150,7 +150,9 @@ Current graph execution covers:
   registry, and targets select branches by branch name.
 
 Resize and resample branch configs fail explicitly at build time when no matching
-filter factory is registered.
+filter factory is registered. Filter registrations retain their descriptors, so
+`Explain(ctx)` can report transform input/output media kind, realtime/stateless
+flags, and adapter metadata alongside missing/available status.
 When output geometry is known, branch filter stages receive preallocated frame
 scratch so concrete resize filters can keep plane ownership with the caller.
 

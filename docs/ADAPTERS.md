@@ -184,6 +184,7 @@ interleaved signed 16-bit PCM audio frames.
 Current surface:
 
 - explicit registry registration through `resample.Register`
+- descriptor metadata for planner and `Explain(ctx)` filter requirements
 - sample-rate conversion with linear interpolation
 - channel conversion for mono/stereo and simple channel count changes
 - caller-owned output frame and plane buffers
@@ -200,6 +201,7 @@ planar 8-bit 4:2:0 frames with `i420` or `yuv420p` layout.
 Current surface:
 
 - explicit registry registration through `resize.Register`
+- descriptor metadata for planner and `Explain(ctx)` filter requirements
 - exact, fit, fill, and passthrough geometry modes
 - deterministic nearest-neighbor scaling
 - caller-owned output frame and plane buffers

@@ -623,10 +623,12 @@ func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
 		kind       string
 		name       string
 		requiredBy string
+		input      av.MediaType
+		output     av.MediaType
 	}{
 		{kind: "demuxer", name: string(av.FormatOgg), requiredBy: "input.ogg"},
 		{kind: "decoder", name: string(av.CodecVP8), requiredBy: "v360"},
-		{kind: "filter", name: filter.FactoryResize, requiredBy: "v360"},
+		{kind: "filter", name: filter.FactoryResize, requiredBy: "v360", input: av.MediaVideo, output: av.MediaVideo},
 		{kind: "encoder", name: string(av.CodecVP9), requiredBy: "v360"},
 		{kind: "muxer", name: string(av.FormatOgg), requiredBy: "web"},
 	} {
@@ -634,9 +636,80 @@ func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
 		if !ok || requirement.Status != "available" {
 			t.Fatalf("requirements=%+v, want available %s %s required by %s", report.RequiredAdapters, want.kind, want.name, want.requiredBy)
 		}
+		if want.kind == "filter" &&
+			(requirement.Input != want.input ||
+				requirement.Output != want.output) {
+			t.Fatalf("filter requirement = %+v, want input/output capability details", requirement)
+		}
 	}
 	if len(report.Warnings) != 0 {
 		t.Fatalf("warnings=%+v", report.Warnings)
+	}
+}
+
+func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
+	rt := goav.New(
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
+				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
+			}})
+			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
+		}),
+		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
+		}),
+		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+			registry.RegisterFactory(filter.Descriptor{
+				Name:      filter.FactoryResample,
+				Input:     av.MediaAudio,
+				Output:    av.MediaAudio,
+				Realtime:  true,
+				Stateless: true,
+				Metadata:  av.Metadata{"sample_format": av.SampleFormatS16},
+			}, recipeAPIFilterFactory{})
+		}),
+	)
+
+	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Audio().
+		Decode().
+		Resample(16_000, goav.Mono).
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Explain(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	requirement, ok := adapterRequirementByKindAndOwner(report.RequiredAdapters, "filter", filter.FactoryResample, "audio")
+	if !ok {
+		t.Fatalf("requirements=%+v, want resample filter requirement", report.RequiredAdapters)
+	}
+	if requirement.Status != "available" ||
+		requirement.Input != av.MediaAudio ||
+		requirement.Output != av.MediaAudio ||
+		!requirement.Realtime ||
+		!requirement.Stateless ||
+		requirement.Metadata["sample_format"] != av.SampleFormatS16 {
+		t.Fatalf("filter requirement = %+v", requirement)
+	}
+	requirement.Metadata["sample_format"] = "mutated"
+	report, err = goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Audio().
+		Decode().
+		Resample(16_000, goav.Mono).
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Explain(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	requirement, ok = adapterRequirementByKindAndOwner(report.RequiredAdapters, "filter", filter.FactoryResample, "audio")
+	if !ok || requirement.Metadata["sample_format"] != av.SampleFormatS16 {
+		t.Fatalf("filter requirement metadata was not cloned: %+v", requirement)
 	}
 }
 

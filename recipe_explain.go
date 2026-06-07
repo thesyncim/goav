@@ -100,6 +100,11 @@ type AdapterRequirement struct {
 	Format     av.FormatID
 	Codec      av.CodecID
 	Transform  string
+	Input      av.MediaType
+	Output     av.MediaType
+	Realtime   bool
+	Stateless  bool
+	Metadata   av.Metadata
 	RequiredBy string
 	Status     string
 }
@@ -439,13 +444,7 @@ func appendBranchOperationRequirements(requirements []AdapterRequirement, resolv
 			if name == "" || name == "transform" {
 				continue
 			}
-			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
-				Kind:       "filter",
-				Name:       name,
-				Transform:  name,
-				RequiredBy: requiredBy,
-				Status:     adapterRequirementRuntimeStatus(resolved.runtime, "filter", "", "", name),
-			})
+			requirements = appendAdapterRequirement(requirements, filterAdapterRequirement(resolved.runtime, name, requiredBy))
 		case OpEncode:
 			codecID := operationEncodeCodec(stream, streamOK, operation)
 			if codecID == "" {
@@ -542,6 +541,30 @@ func adapterRequirementRuntimeStatus(rt Runtime, kind string, formatID av.Format
 	default:
 		return "required"
 	}
+}
+
+func filterAdapterRequirement(rt Runtime, name string, requiredBy string) AdapterRequirement {
+	requirement := AdapterRequirement{
+		Kind:       "filter",
+		Name:       name,
+		Transform:  name,
+		RequiredBy: requiredBy,
+		Status:     adapterRequirementRuntimeStatus(rt, "filter", "", "", name),
+	}
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return requirement
+	}
+	desc, err := standard.filters.Descriptor(name)
+	if err != nil {
+		return requirement
+	}
+	requirement.Input = desc.Input
+	requirement.Output = desc.Output
+	requirement.Realtime = desc.Realtime
+	requirement.Stateless = desc.Stateless
+	requirement.Metadata = cloneMetadata(desc.Metadata)
+	return requirement
 }
 
 func codecFactoryStatus(err error) string {
@@ -670,13 +693,9 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 		}, codecID != ""
 	case "transform_adapter_missing":
 		name := details["transform"]
-		return AdapterRequirement{
-			Kind:       "filter",
-			Name:       name,
-			Transform:  name,
-			RequiredBy: requiredBy,
-			Status:     status,
-		}, name != ""
+		requirement := filterAdapterRequirement(nil, name, requiredBy)
+		requirement.Status = status
+		return requirement, name != ""
 	default:
 		if strings.HasSuffix(err.Code, "_format_unknown") {
 			return AdapterRequirement{
@@ -688,6 +707,17 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 		}
 		return AdapterRequirement{}, false
 	}
+}
+
+func cloneMetadata(metadata av.Metadata) av.Metadata {
+	if metadata == nil {
+		return nil
+	}
+	cloned := make(av.Metadata, len(metadata))
+	for key, value := range metadata {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func adapterRequirementStatus(code string) string {

@@ -1153,6 +1153,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     packet that continues to the base graph without reaching the detached
     branch. The same test verifies the attachment keeps branch-local node stats
     after detach and does not leak base graph counters. Done.
+275. Make filter capability metadata first-class in explanations:
+    `filter.SimpleRegistry` now retains `filter.Descriptor` metadata beside the
+    factory, and `PlanReport.RequiredAdapters` includes transform input/output
+    media kind, realtime/stateless flags, and adapter metadata when available.
+    Tests prove descriptor cloning, ordered branch requirements with filter
+    media details, and custom resample metadata in `Explain(ctx)`. Done.
 
 ## First Vertical Slice
 
@@ -1416,10 +1422,10 @@ packet-copy paths use resolved graph plans for concrete inputs and endpoints,
 direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
-broaden the same first-class requirement model to custom filter capability
-details, richer endpoint/container compatibility as WebM/Ogg arrive, and
-broader buffered runtime attachment stress proof without weakening the direct
-graph branch grammar.
+broaden the same first-class requirement model to richer endpoint/container
+compatibility as WebM/Ogg arrive, expand transform compatibility beyond
+descriptor-level details, and keep broadening buffered runtime attachment stress
+proof without weakening the direct graph branch grammar.
 
 ## Validation Gates
 
