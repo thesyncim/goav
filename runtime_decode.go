@@ -126,9 +126,7 @@ func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request 
 			RequestKeyframes: stream.Type == av.MediaVideo,
 		},
 		Bounds:   decodeBoundsForStream(stream, result, bounds),
-		Config:   request.config.Config,
-		Opaque:   cloneAnyMap(request.config.Opaque),
-		Controls: append([]any(nil), request.config.Controls...),
+		Settings: cloneCodecSettings(request.config.Settings),
 	}
 	stateFromFactory := false
 	if stateFactory, ok := factory.(codec.DecodeStateFactory); ok {

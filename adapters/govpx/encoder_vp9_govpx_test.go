@@ -185,9 +185,11 @@ func vp9EncodeConfig() codec.EncodeConfig {
 			Height:      64,
 			PixelFormat: av.PixelFormatI420,
 		},
-		Bitrate:   600,
-		Framerate: av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
-		Realtime:  true,
+		Settings: codec.CodecSettings{
+			Bitrate:   600,
+			Framerate: av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
+		},
+		Realtime: true,
 	}
 }
 

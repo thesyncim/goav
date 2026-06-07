@@ -1886,7 +1886,7 @@ func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 	if decoder.decodes != 1 || decoder.flushes != 1 || meter.count != 3 || encoder.encodes != 1 || encoder.flushes != 1 {
 		t.Fatalf("decodes=%d decoder flushes=%d meter=%d encodes=%d encoder flushes=%d", decoder.decodes, decoder.flushes, meter.count, encoder.encodes, encoder.flushes)
 	}
-	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Bitrate != 96_000 {
+	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Settings.Bitrate != 96_000 {
 		t.Fatalf("encode config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "audio" {
@@ -2090,8 +2090,8 @@ func TestBranchCompositionEncodeFPSOptionSetsEncodeFramerate(t *testing.T) {
 	defer task.Close()
 
 	want := av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 30}}
-	if encoderFactory.config.Framerate != want {
-		t.Fatalf("encoder framerate = %+v, want %+v", encoderFactory.config.Framerate, want)
+	if encoderFactory.config.Settings.Framerate != want {
+		t.Fatalf("encoder framerate = %+v, want %+v", encoderFactory.config.Settings.Framerate, want)
 	}
 	if encoderFactory.config.Stream.Codec.Width != 1280 ||
 		encoderFactory.config.Stream.Codec.Height != 720 ||
@@ -2431,7 +2431,7 @@ func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) 
 	}
 	if encoderFactory.config.Stream.ID != "voice" ||
 		encoderFactory.config.Parameters.ID != av.CodecOpus ||
-		encoderFactory.config.Bitrate != 64_000 {
+		encoderFactory.config.Settings.Bitrate != 64_000 {
 		t.Fatalf("encode config: %+v", encoderFactory.config)
 	}
 	if resampleFactory.config.Audio == nil ||
@@ -3310,7 +3310,7 @@ func TestStreamRecipeTaskAttachesRuntimeEncodeMuxBranch(t *testing.T) {
 	}
 	if encoderFactory.config.Stream.ID != "archive" ||
 		encoderFactory.config.Parameters.ID != av.CodecOpus ||
-		encoderFactory.config.Bitrate != 96_000 {
+		encoderFactory.config.Settings.Bitrate != 96_000 {
 		t.Fatalf("encode config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || !muxers.muxers[0].opened ||
@@ -4128,7 +4128,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 		encoderFactory.config.Stream.Codec.ID != av.CodecOpus ||
 		encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
 		encoderFactory.config.Stream.Codec.Channels != Mono ||
-		encoderFactory.config.Bitrate != 64_000 {
+		encoderFactory.config.Settings.Bitrate != 64_000 {
 		t.Fatalf("encode config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 ||
@@ -4510,9 +4510,9 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 	if decoder.decodes != 1 || encoder.encodes != 1 || encoder.flushes != 1 {
 		t.Fatalf("decodes=%d encodes=%d flushes=%d", decoder.decodes, encoder.encodes, encoder.flushes)
 	}
-	if !reflect.DeepEqual(decoderConfig.Config, decodeConfig) ||
-		decoderConfig.Opaque["concealment"] != "on" ||
-		!reflect.DeepEqual(decoderConfig.Controls, []any{decodeControl}) {
+	if !reflect.DeepEqual(decoderConfig.Settings.Config, decodeConfig) ||
+		decoderConfig.Settings.Opaque["concealment"] != "on" ||
+		!reflect.DeepEqual(decoderConfig.Settings.Controls, []any{decodeControl}) {
 		t.Fatalf("decoder config: %+v", decoderConfig)
 	}
 	if encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
@@ -4521,14 +4521,14 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		encoderFactory.config.Stream.Codec.ID != customPCM ||
 		encoderFactory.config.Stream.Codec.Profile != "low-delay" ||
 		encoderFactory.config.Stream.Codec.Level != "1" ||
-		encoderFactory.config.Bitrate != 128_000 ||
-		encoderFactory.config.Framerate != (av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 50}}) ||
-		encoderFactory.config.KeyframeInterval != 100 {
+		encoderFactory.config.Settings.Bitrate != 128_000 ||
+		encoderFactory.config.Settings.Framerate != (av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 50}}) ||
+		encoderFactory.config.Settings.KeyframeInterval != 100 {
 		t.Fatalf("branch custom encode config: %+v", encoderFactory.config)
 	}
-	if !reflect.DeepEqual(encoderFactory.config.Config, encodeConfig) ||
-		encoderFactory.config.Opaque["speed"] != "fast" ||
-		!reflect.DeepEqual(encoderFactory.config.Controls, []any{encodeControl}) {
+	if !reflect.DeepEqual(encoderFactory.config.Settings.Config, encodeConfig) ||
+		encoderFactory.config.Settings.Opaque["speed"] != "fast" ||
+		!reflect.DeepEqual(encoderFactory.config.Settings.Controls, []any{encodeControl}) {
 		t.Fatalf("encoder config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "main" {

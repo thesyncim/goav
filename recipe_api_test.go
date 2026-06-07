@@ -1919,7 +1919,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"goav.Param(",
 		"goav.Control(",
 		"Opus, VP8, and VP9 are the full encode/decode recipe verticals",
-		"behavior stays on the `CodecSpec`",
+		"behavior stays in `CodecSpec.Settings`, backed by `codec.CodecSettings`",
 		"public grammar stays Input, Stream, Operation, Tap, Branch, Destination, Flow,",
 		"workflows should be expressible through declarative recipes",
 	} {
@@ -1999,6 +1999,50 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	} {
 		if strings.Contains(progressText, forbidden) {
 			t.Fatalf("progress should not reintroduce shape-side encode tuning %q", forbidden)
+		}
+	}
+}
+
+func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
+	codecSpec := reflect.TypeOf(goav.CodecSpec{})
+	settingsType := reflect.TypeOf(codec.CodecSettings{})
+	if field, ok := codecSpec.FieldByName("Settings"); !ok || field.Type != settingsType {
+		t.Fatalf("CodecSpec.Settings = %v %v, want codec.CodecSettings", field.Type, ok)
+	}
+	for _, field := range []string{
+		"Bitrate",
+		"Framerate",
+		"KeyframeInterval",
+		"Config",
+		"Opaque",
+		"Controls",
+	} {
+		if _, ok := codecSpec.FieldByName(field); ok {
+			t.Fatalf("CodecSpec should not duplicate codec setting field %s", field)
+		}
+	}
+
+	for _, tt := range []struct {
+		name string
+		typ  reflect.Type
+	}{
+		{name: "decode", typ: reflect.TypeOf(codec.DecodeConfig{})},
+		{name: "encode", typ: reflect.TypeOf(codec.EncodeConfig{})},
+	} {
+		if field, ok := tt.typ.FieldByName("Settings"); !ok || field.Type != settingsType {
+			t.Fatalf("%s config Settings = %v %v, want codec.CodecSettings", tt.name, field.Type, ok)
+		}
+		for _, field := range []string{
+			"Bitrate",
+			"Framerate",
+			"KeyframeInterval",
+			"Config",
+			"Opaque",
+			"Controls",
+		} {
+			if _, ok := tt.typ.FieldByName(field); ok {
+				t.Fatalf("%s config should not duplicate codec setting field %s", tt.name, field)
+			}
 		}
 	}
 }
@@ -2612,7 +2656,7 @@ func TestAudioChainAppliesToStreamRecipeIntent(t *testing.T) {
 		len(stream.Transforms) != 1 || stream.Transforms[0].Resample == nil ||
 		stream.Transforms[0].Resample.SampleRate != 16_000 ||
 		stream.Transforms[0].Resample.Channels != goav.Mono ||
-		stream.Encode.ID != av.CodecOpus || stream.Encode.Bitrate != 32_000 ||
+		stream.Encode.ID != av.CodecOpus || stream.Encode.Settings.Bitrate != 32_000 ||
 		len(stream.Destinations) != 1 || stream.Destinations[0] != "voice.ogg" {
 		t.Fatalf("stream intent: %+v", stream)
 	}
@@ -2959,7 +3003,7 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 		intent.Streams[0].Transforms[0].Resize.Width != 640 ||
 		intent.Streams[0].Transforms[0].Resize.Height != 360 ||
 		intent.Streams[0].Encode.ID != av.CodecVP9 ||
-		intent.Streams[0].Encode.Bitrate != 600_000 {
+		intent.Streams[0].Encode.Settings.Bitrate != 600_000 {
 		t.Fatalf("intent: %+v", intent)
 	}
 	if !tapIntentNamesContain(intent.Streams[0].Taps, "preview.frames") {
@@ -3296,7 +3340,7 @@ func TestFlowDecodeAppliesToPacketBranchIntent(t *testing.T) {
 		len(stream.Transforms) != 1 ||
 		stream.Transforms[0].Resample.SampleRate != 16_000 ||
 		stream.Encode.ID != av.CodecOpus ||
-		stream.Encode.Bitrate != 64_000 ||
+		stream.Encode.Settings.Bitrate != 64_000 ||
 		len(stream.Destinations) != 1 ||
 		stream.Destinations[0] != "voice" {
 		t.Fatalf("stream intent: %+v", stream)

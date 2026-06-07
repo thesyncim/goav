@@ -254,7 +254,7 @@ func govpxImageFromFrame(frame *av.Frame, width, height int) (govpxlib.Image, er
 }
 
 func encodeFPS(config codec.EncodeConfig) int {
-	if fps := fpsFromDuration(config.Framerate); fps > 0 {
+	if fps := fpsFromDuration(config.Settings.Framerate); fps > 0 {
 		return fps
 	}
 	return 30
@@ -276,18 +276,18 @@ func fpsFromDuration(duration av.Duration) int {
 }
 
 func defaultEncodeDuration(config codec.EncodeConfig) uint64 {
-	if config.Framerate.Value > 0 {
-		return uint64(config.Framerate.Value)
+	if config.Settings.Framerate.Value > 0 {
+		return uint64(config.Settings.Framerate.Value)
 	}
 	return 1
 }
 
 func encodeBitrateKbps(config codec.EncodeConfig, width, height int) int {
-	if config.Bitrate > 0 {
-		if config.Bitrate > 10000 {
-			return (config.Bitrate + 999) / 1000
+	if config.Settings.Bitrate > 0 {
+		if config.Settings.Bitrate > 10000 {
+			return (config.Settings.Bitrate + 999) / 1000
 		}
-		return config.Bitrate
+		return config.Settings.Bitrate
 	}
 	pixels := width * height
 	if pixels <= 0 {

@@ -162,19 +162,14 @@ func Default() Runtime {
 type CodecOption func(*CodecSpec)
 
 type CodecSpec struct {
-	ID               av.CodecID
-	Type             av.MediaType
-	Parameters       av.CodecParameters
-	Bitrate          int
-	Framerate        av.Duration
-	KeyframeInterval int
-	Config           any
-	Opaque           map[string]any
-	Controls         []any
-	Copy             bool
-	Auto             bool
-	sampleRateSet    bool
-	channelsSet      bool
+	ID            av.CodecID
+	Type          av.MediaType
+	Parameters    av.CodecParameters
+	Settings      codec.CodecSettings
+	Copy          bool
+	Auto          bool
+	sampleRateSet bool
+	channelsSet   bool
 }
 
 func Auto() CodecSpec {
@@ -237,7 +232,7 @@ func AV1(options ...CodecOption) CodecSpec {
 
 func Bitrate(bitsPerSecond int) CodecOption {
 	return func(spec *CodecSpec) {
-		spec.Bitrate = bitsPerSecond
+		spec.Settings.Bitrate = bitsPerSecond
 	}
 }
 
@@ -248,10 +243,10 @@ func FPS(num int, den ...int) CodecOption {
 			rateDen = den[0]
 		}
 		if num <= 0 || rateDen <= 0 {
-			spec.Framerate = av.Duration{Value: -1}
+			spec.Settings.Framerate = av.Duration{Value: -1}
 			return
 		}
-		spec.Framerate = av.Duration{
+		spec.Settings.Framerate = av.Duration{
 			Value: int64(rateDen),
 			Base:  av.TimeBase{Num: 1, Den: int64(num)},
 		}
@@ -260,7 +255,7 @@ func FPS(num int, den ...int) CodecOption {
 
 func KeyframeInterval(frames int) CodecOption {
 	return func(spec *CodecSpec) {
-		spec.KeyframeInterval = frames
+		spec.Settings.KeyframeInterval = frames
 	}
 }
 
@@ -324,7 +319,7 @@ func Parameters(parameters av.CodecParameters) CodecOption {
 // Config attaches one adapter-specific typed codec configuration value.
 func Config(config any) CodecOption {
 	return func(spec *CodecSpec) {
-		spec.Config = config
+		spec.Settings.Config = config
 	}
 }
 
@@ -334,10 +329,10 @@ func Param(name string, value any) CodecOption {
 		if name == "" {
 			return
 		}
-		if spec.Opaque == nil {
-			spec.Opaque = make(map[string]any, 1)
+		if spec.Settings.Opaque == nil {
+			spec.Settings.Opaque = make(map[string]any, 1)
 		}
-		spec.Opaque[name] = value
+		spec.Settings.Opaque[name] = value
 	}
 }
 
@@ -345,7 +340,7 @@ func Param(name string, value any) CodecOption {
 func Control(control any) CodecOption {
 	return func(spec *CodecSpec) {
 		if control != nil {
-			spec.Controls = append(spec.Controls, control)
+			spec.Settings.Controls = append(spec.Settings.Controls, control)
 		}
 	}
 }
@@ -385,8 +380,7 @@ func codecSpecFromOptions(options ...CodecOption) CodecSpec {
 func cloneCodecSpec(spec CodecSpec) CodecSpec {
 	spec.Parameters.Attributes = cloneMetadata(spec.Parameters.Attributes)
 	spec.Parameters.ExtraData = cloneBuffer(spec.Parameters.ExtraData)
-	spec.Opaque = cloneAnyMap(spec.Opaque)
-	spec.Controls = append([]any(nil), spec.Controls...)
+	spec.Settings = cloneCodecSettings(spec.Settings)
 	return spec
 }
 
@@ -401,14 +395,13 @@ func cloneAnyMap(values map[string]any) map[string]any {
 	return out
 }
 
-func mergeDecodeCodecSpec(base CodecSpec, override CodecSpec) CodecSpec {
-	if override.ID != "" {
-		base.ID = override.ID
-	}
-	if override.Type != "" {
-		base.Type = override.Type
-	}
-	base.Parameters = mergeCodecParameters(base.Parameters, override.Parameters)
+func cloneCodecSettings(settings codec.CodecSettings) codec.CodecSettings {
+	settings.Opaque = cloneAnyMap(settings.Opaque)
+	settings.Controls = append([]any(nil), settings.Controls...)
+	return settings
+}
+
+func mergeCodecSettings(base codec.CodecSettings, override codec.CodecSettings) codec.CodecSettings {
 	if override.Bitrate != 0 {
 		base.Bitrate = override.Bitrate
 	}
@@ -430,6 +423,18 @@ func mergeDecodeCodecSpec(base CodecSpec, override CodecSpec) CodecSpec {
 		}
 	}
 	base.Controls = append(base.Controls, override.Controls...)
+	return base
+}
+
+func mergeDecodeCodecSpec(base CodecSpec, override CodecSpec) CodecSpec {
+	if override.ID != "" {
+		base.ID = override.ID
+	}
+	if override.Type != "" {
+		base.Type = override.Type
+	}
+	base.Parameters = mergeCodecParameters(base.Parameters, override.Parameters)
+	base.Settings = mergeCodecSettings(base.Settings, override.Settings)
 	base.sampleRateSet = base.sampleRateSet || override.sampleRateSet
 	base.channelsSet = base.channelsSet || override.channelsSet
 	return base
@@ -2528,7 +2533,7 @@ func knownProbeDecodeCodec(probes []format.ProbeResult, stream StreamIntent) (av
 }
 
 func streamNeedsDecode(stream StreamIntent) bool {
-	return stream.Decode || len(stream.Transforms) != 0 || stream.Encode.ID != ""
+	return stream.Decode || len(streamIntentTransformSpecs(stream)) != 0 || stream.Encode.ID != ""
 }
 
 func liveDecodeAdapterRequest(inputs []InputIntent, stream StreamIntent) (codecAdapterRequest, bool) {
@@ -2697,30 +2702,20 @@ func encodeAdapterRequestFromPreparedStream(spec CodecSpec, stream av.Stream) co
 }
 
 func streamIntentSampleFormat(stream StreamIntent) string {
-	for i := len(stream.Transforms) - 1; i >= 0; i-- {
-		if stream.Transforms[i].Resample != nil && stream.Transforms[i].Resample.SampleFormat != "" {
-			return stream.Transforms[i].Resample.SampleFormat
-		}
-	}
-	for i := len(stream.Operations) - 1; i >= 0; i-- {
-		transform := stream.Operations[i].Transform
-		if transform.Resample != nil && transform.Resample.SampleFormat != "" {
-			return transform.Resample.SampleFormat
+	transforms := streamIntentTransformSpecs(stream)
+	for i := len(transforms) - 1; i >= 0; i-- {
+		if transforms[i].Resample != nil && transforms[i].Resample.SampleFormat != "" {
+			return transforms[i].Resample.SampleFormat
 		}
 	}
 	return ""
 }
 
 func streamIntentPixelFormat(stream StreamIntent) string {
-	for i := len(stream.Transforms) - 1; i >= 0; i-- {
-		if stream.Transforms[i].Resize != nil && stream.Transforms[i].Resize.PixelFormat != "" {
-			return stream.Transforms[i].Resize.PixelFormat
-		}
-	}
-	for i := len(stream.Operations) - 1; i >= 0; i-- {
-		transform := stream.Operations[i].Transform
-		if transform.Resize != nil && transform.Resize.PixelFormat != "" {
-			return transform.Resize.PixelFormat
+	transforms := streamIntentTransformSpecs(stream)
+	for i := len(transforms) - 1; i >= 0; i-- {
+		if transforms[i].Resize != nil && transforms[i].Resize.PixelFormat != "" {
+			return transforms[i].Resize.PixelFormat
 		}
 	}
 	return ""
@@ -2902,8 +2897,9 @@ func validateRecipeTransformAdapters(operation string, rt Runtime, streams []Str
 	}
 	for i := range streams {
 		stream := streams[i]
-		for j := range stream.Transforms {
-			name := transformFactoryName(stream.Transforms[j])
+		transforms := streamIntentTransformSpecs(stream)
+		for j := range transforms {
+			name := transformFactoryName(transforms[j])
 			if name == "" {
 				continue
 			}
@@ -2912,7 +2908,7 @@ func validateRecipeTransformAdapters(operation string, rt Runtime, streams []Str
 			}
 			desc, err := standard.filters.Descriptor(name)
 			if err == nil {
-				if err := validateTransformAdapterDescriptor(operation, stream, stream.Transforms[j], name, desc); err != nil {
+				if err := validateTransformAdapterDescriptor(operation, stream, transforms[j], name, desc); err != nil {
 					return err
 				}
 			}
@@ -3238,13 +3234,8 @@ func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
 		}
 	}
 	return codec.EncodeConfig{
-		Parameters:       parameters,
-		Bitrate:          spec.Bitrate,
-		Framerate:        spec.Framerate,
-		KeyframeInterval: spec.KeyframeInterval,
-		Config:           spec.Config,
-		Opaque:           cloneAnyMap(spec.Opaque),
-		Controls:         append([]any(nil), spec.Controls...),
+		Parameters: parameters,
+		Settings:   cloneCodecSettings(spec.Settings),
 	}
 }
 
@@ -3254,8 +3245,7 @@ func cloneEncodeConfig(config codec.EncodeConfig) codec.EncodeConfig {
 	config.Stream.Metadata = cloneMetadata(config.Stream.Metadata)
 	config.Parameters.Attributes = cloneMetadata(config.Parameters.Attributes)
 	config.Parameters.ExtraData = cloneBuffer(config.Parameters.ExtraData)
-	config.Opaque = cloneAnyMap(config.Opaque)
-	config.Controls = append([]any(nil), config.Controls...)
+	config.Settings = cloneCodecSettings(config.Settings)
 	return config
 }
 
@@ -3306,14 +3296,14 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 
 func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) error {
 	switch {
-	case spec.Bitrate < 0:
+	case spec.Settings.Bitrate < 0:
 		return &BuildError{
 			Code:      "encode_parameter_invalid",
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode bitrate must be non-negative",
 			Details: []string{
-				fmt.Sprintf("bitrate=%d", spec.Bitrate),
+				fmt.Sprintf("bitrate=%d", spec.Settings.Bitrate),
 			},
 			Suggestions: []string{
 				"pass a positive value to goav.Bitrate(...)",
@@ -3321,14 +3311,14 @@ func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) e
 			},
 			Cause: ErrUnsupportedBuild,
 		}
-	case spec.Framerate.Value < 0 || spec.Framerate.Base.Num < 0 || spec.Framerate.Base.Den < 0:
+	case spec.Settings.Framerate.Value < 0 || spec.Settings.Framerate.Base.Num < 0 || spec.Settings.Framerate.Base.Den < 0:
 		return &BuildError{
 			Code:      "encode_parameter_invalid",
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode FPS must be positive",
 			Details: []string{
-				fmt.Sprintf("fps_duration=%d/%d/%d", spec.Framerate.Value, spec.Framerate.Base.Num, spec.Framerate.Base.Den),
+				fmt.Sprintf("fps_duration=%d/%d/%d", spec.Settings.Framerate.Value, spec.Settings.Framerate.Base.Num, spec.Settings.Framerate.Base.Den),
 			},
 			Suggestions: []string{
 				"pass a positive value to goav.FPS(...)",
@@ -3336,14 +3326,14 @@ func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) e
 			},
 			Cause: ErrUnsupportedBuild,
 		}
-	case spec.KeyframeInterval < 0:
+	case spec.Settings.KeyframeInterval < 0:
 		return &BuildError{
 			Code:      "encode_parameter_invalid",
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode keyframe interval must be non-negative",
 			Details: []string{
-				fmt.Sprintf("keyframe_interval=%d", spec.KeyframeInterval),
+				fmt.Sprintf("keyframe_interval=%d", spec.Settings.KeyframeInterval),
 			},
 			Suggestions: []string{
 				"pass a positive value to goav.KeyframeInterval(...)",
@@ -4023,8 +4013,8 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		branchName := stream.Name
 		selector := streamIntentSelector(stream)
 		operations := cloneOperationSpecs(stream.Operations)
-		if len(operations) == 0 && len(stream.Transforms) != 0 {
-			operations = operationSpecsFromTransforms(stream.Transforms)
+		if len(operations) == 0 {
+			operations = operationSpecsFromTransforms(streamIntentTransformSpecs(stream))
 		}
 		var sharedOperations []OperationSpec
 		var privateOperations []OperationSpec
@@ -4277,7 +4267,7 @@ func validateBranchIntentShape(stream StreamIntent, index int) error {
 		if stream.Encode.Copy && stream.Decode {
 			return branchCopyUnsupportedError(stream)
 		}
-		if stream.Encode.Copy && (len(stream.Transforms) != 0 || streamHasTransformOperation(stream.Operations)) {
+		if stream.Encode.Copy && len(streamIntentTransformSpecs(stream)) != 0 {
 			return branchPacketTransformUnsupportedError(stream)
 		}
 		if err := validateRecipeEncode(stream.Encode, branchCompositionOperation, stream.Name); err != nil {
@@ -4581,8 +4571,9 @@ func duplicateBranchDestinationError(stream StreamIntent, target string, firstIn
 }
 
 func validateBranchTransforms(stream StreamIntent) error {
-	for i := range stream.Transforms {
-		transform := stream.Transforms[i]
+	transforms := streamIntentTransformSpecs(stream)
+	for i := range transforms {
+		transform := transforms[i]
 		if err := validateTransformSpec(branchCompositionOperation, branchIntentName(stream), transform); err != nil {
 			return err
 		}
@@ -4618,6 +4609,31 @@ func validateBranchTransforms(stream StreamIntent) error {
 		}
 	}
 	return nil
+}
+
+func streamIntentTransformSpecs(stream StreamIntent) []TransformSpec {
+	if len(stream.Operations) != 0 {
+		return transformSpecsFromOperationSpecs(stream.Operations)
+	}
+	return cloneTransformSpecs(stream.Transforms)
+}
+
+func transformSpecsFromOperationSpecs(operations []OperationSpec) []TransformSpec {
+	if len(operations) == 0 {
+		return nil
+	}
+	transforms := make([]TransformSpec, 0)
+	for i := range operations {
+		if operations[i].Kind != OpTransform {
+			continue
+		}
+		transform := cloneTransformSpec(operations[i].Transform)
+		if transform.Resize == nil && transform.Resample == nil {
+			continue
+		}
+		transforms = append(transforms, transform)
+	}
+	return transforms
 }
 
 func streamHasTransformOperation(operations []OperationSpec) bool {

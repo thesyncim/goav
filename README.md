@@ -714,7 +714,8 @@ decoder/encoder allocation or graph mutation. Adapter authoring details live in
 Opus, VP8, and VP9 are the full encode/decode recipe verticals. H264 and AV1
 receive/decode paths are active while recipe encode remains guarded as work in
 progress. `Shape(...)` describes structural media compatibility only; encoder
-behavior stays on the `CodecSpec`. That gives one public home for bitrate, FPS,
+behavior stays in `CodecSpec.Settings`, backed by `codec.CodecSettings`. The
+public way to set it is the codec option list, giving one home for bitrate, FPS,
 keyframe cadence, rate control, quality, profiles, deadlines, adapter configs,
 params, and controls:
 

@@ -52,8 +52,8 @@ func (e *Encoder) Open(ctx context.Context, config codec.EncodeConfig) error {
 	if err != nil {
 		return mapEncodeError(err)
 	}
-	if config.Bitrate > 0 {
-		if err := encoder.SetBitrate(config.Bitrate); err != nil {
+	if config.Settings.Bitrate > 0 {
+		if err := encoder.SetBitrate(config.Settings.Bitrate); err != nil {
 			return mapEncodeError(err)
 		}
 	}

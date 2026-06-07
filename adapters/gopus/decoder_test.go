@@ -273,7 +273,9 @@ func opusEncodeConfig() codec.EncodeConfig {
 			Channels:     1,
 			SampleFormat: av.SampleFormatS16,
 		},
-		Bitrate:  64_000,
+		Settings: codec.CodecSettings{
+			Bitrate: 64_000,
+		},
 		Realtime: true,
 	}
 }

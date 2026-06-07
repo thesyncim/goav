@@ -507,8 +507,9 @@ func validateJobStreamIntentShape(operation string, stream StreamIntent, steps [
 func validateJobStreamTransformIntentShape(operation string, stream StreamIntent) error {
 	selector := streamIntentSelector(stream)
 	node := jobStreamIntentName(stream)
-	for i := range stream.Transforms {
-		transform := stream.Transforms[i]
+	transforms := streamIntentTransformSpecs(stream)
+	for i := range transforms {
+		transform := transforms[i]
 		if err := validateTransformSpec(operation, node, transform); err != nil {
 			return err
 		}
@@ -636,6 +637,7 @@ func validateJobStreamAttachmentsPass() recipeCompilePass {
 }
 
 func validateJobStreamAttachments(operation string, stream StreamIntent, steps []chainStepAttachment) error {
+	transforms := streamIntentTransformSpecs(stream)
 	for i := range steps {
 		step := steps[i]
 		if step.stage != nil {
@@ -645,10 +647,10 @@ func validateJobStreamAttachments(operation string, stream StreamIntent, steps [
 			continue
 		}
 		if step.hasTransform {
-			if step.transformIndex >= 0 && step.transformIndex < len(stream.Transforms) {
+			if step.transformIndex >= 0 && step.transformIndex < len(transforms) {
 				continue
 			}
-			return jobStreamTransformAttachmentMismatchError(operation, stream, step, len(stream.Transforms))
+			return jobStreamTransformAttachmentMismatchError(operation, stream, step, len(transforms))
 		}
 		if step.tap != "" {
 			continue
@@ -667,11 +669,11 @@ func jobStreamTransformAttachmentMismatchError(operation string, stream StreamIn
 		Details: []string{
 			fmt.Sprintf("step index: %d", step.stepIndex),
 			fmt.Sprintf("transform index: %d", step.transformIndex),
-			fmt.Sprintf("intent transforms: %d", transformCount),
+			fmt.Sprintf("stream transforms: %d", transformCount),
 		},
 		Suggestions: []string{
 			"build stream recipes through goav.From(...).Audio() or goav.From(...).Video()",
-			"keep custom compiler passes aligned with Intent.Transforms and captured stream attachments",
+			"keep custom compiler passes aligned with ordered OperationSpec transforms and captured stream attachments",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

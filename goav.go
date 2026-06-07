@@ -16,6 +16,7 @@ type Frame = av.Frame
 type Event = av.Event
 type Stream = av.Stream
 type CodecDescriptor = codec.Descriptor
+type CodecSettings = codec.CodecSettings
 type DecodeConfig = codec.DecodeConfig
 type EncodeConfig = codec.EncodeConfig
 type DecodeResult = codec.DecodeResult

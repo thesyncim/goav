@@ -240,7 +240,7 @@ func explainStreams(streams []StreamIntent) []StreamReport {
 			Select:       stream.Select,
 			Decode:       stream.Decode,
 			Operations:   explainOperationSpecs(stream.Operations),
-			Transforms:   explainTransforms(stream.Transforms),
+			Transforms:   explainTransforms(streamIntentTransformSpecs(stream)),
 			Encode:       stream.Encode,
 			CodecChange:  stream.CodecChange,
 			Destinations: append([]string(nil), stream.Destinations...),

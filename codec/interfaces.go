@@ -93,19 +93,32 @@ func (b DecodeBounds) WithDefaults(defaults DecodeBounds) DecodeBounds {
 	return b
 }
 
+type CodecSettings struct {
+	// Bitrate requests an encoder bitrate in bits per second. Zero lets the
+	// encoder choose its default bitrate.
+	Bitrate int
+	// Framerate requests an encoder frame cadence. Zero lets the encoder infer
+	// cadence from input frames.
+	Framerate av.Duration
+	// KeyframeInterval requests a keyframe cadence in encoded frames. Zero lets
+	// the encoder choose its default cadence.
+	KeyframeInterval int
+	// Config carries one adapter-specific typed config value. Adapter packages
+	// must document the concrete type before reading it.
+	Config any
+	// Opaque carries named adapter-specific codec parameters.
+	Opaque map[string]any
+	// Controls carries adapter-specific control values applied at open.
+	Controls []any
+}
+
 type DecodeConfig struct {
 	Stream     av.Stream
 	Realtime   bool
 	LowLatency bool
 	Resilience ResiliencePolicy
 	Bounds     DecodeBounds
-	// Config carries one adapter-specific typed config value. Adapter packages
-	// must document the concrete type before reading it.
-	Config any
-	// Opaque carries named adapter-specific decode parameters.
-	Opaque map[string]any
-	// Controls carries adapter-specific control values applied at open.
-	Controls []any
+	Settings   CodecSettings
 	// OpaqueState carries adapter-specific, caller-owned state. Adapter
 	// packages must document the concrete type before reading it.
 	OpaqueState any
@@ -116,18 +129,7 @@ type EncodeConfig struct {
 	Parameters av.CodecParameters
 	Realtime   bool
 	LowLatency bool
-	Bitrate    int
-	Framerate  av.Duration
-	// KeyframeInterval requests a keyframe cadence in encoded frames. Zero lets
-	// the encoder choose its default cadence.
-	KeyframeInterval int
-	// Config carries one adapter-specific typed config value. Adapter packages
-	// must document the concrete type before reading it.
-	Config any
-	// Opaque carries named adapter-specific encode parameters.
-	Opaque map[string]any
-	// Controls carries adapter-specific control values applied at open.
-	Controls []any
+	Settings   CodecSettings
 }
 
 type DecodeResult struct {

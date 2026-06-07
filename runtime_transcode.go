@@ -947,10 +947,12 @@ func codecSpecHasDecodeIntent(spec CodecSpec) bool {
 	return spec.ID != "" ||
 		spec.Type != "" ||
 		codecSpecHasParameters(spec) ||
-		spec.Bitrate != 0 ||
-		spec.Config != nil ||
-		len(spec.Opaque) != 0 ||
-		len(spec.Controls) != 0
+		spec.Settings.Bitrate != 0 ||
+		spec.Settings.Framerate != (av.Duration{}) ||
+		spec.Settings.KeyframeInterval != 0 ||
+		spec.Settings.Config != nil ||
+		len(spec.Settings.Opaque) != 0 ||
+		len(spec.Settings.Controls) != 0
 }
 
 func branchComposeDecodeConfigConflictError(first string, second string) error {

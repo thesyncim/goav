@@ -1557,7 +1557,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 		resampleFactory.config.Audio.Channels != Mono {
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before graph rollback", resampleFactory.config.Audio)
 	}
-	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Bitrate != 96_000 {
+	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Settings.Bitrate != 96_000 {
 		t.Fatalf("runtime encode config = %+v, want Opus 96k before graph rollback", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || !muxers.muxers[0].opened {
@@ -1722,7 +1722,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 		resampleFactory.config.Audio.Channels != Mono {
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before closed-graph rejection", resampleFactory.config.Audio)
 	}
-	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Bitrate != 96_000 {
+	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Settings.Bitrate != 96_000 {
 		t.Fatalf("runtime encode config = %+v, want Opus 96k before closed-graph rejection", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || !muxers.muxers[0].opened {
@@ -1806,7 +1806,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 		resampleFactory.config.Audio.Channels != Mono {
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before duplicate-node rejection", resampleFactory.config.Audio)
 	}
-	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Bitrate != 96_000 {
+	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Settings.Bitrate != 96_000 {
 		t.Fatalf("runtime encode config = %+v, want Opus 96k before duplicate-node rejection", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || !muxers.muxers[0].opened {
@@ -2245,7 +2245,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 	}
 	if encoderFactory.config.Stream.ID != "record" ||
 		encoderFactory.config.Parameters.ID != av.CodecOpus ||
-		encoderFactory.config.Bitrate != 96_000 {
+		encoderFactory.config.Settings.Bitrate != 96_000 {
 		t.Fatalf("encode config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 ||
@@ -2346,7 +2346,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 	if encoderFactory.config.Stream.ID != "archive" ||
 		encoderFactory.config.Parameters.ID != av.CodecOpus ||
 		encoderFactory.config.Parameters.Channels != Stereo ||
-		encoderFactory.config.Bitrate != 128_000 {
+		encoderFactory.config.Settings.Bitrate != 128_000 {
 		t.Fatalf("encode config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 ||

@@ -271,15 +271,10 @@ func streamIntentFromBranchComposeBranch(branch branchComposeBranch) StreamInten
 
 func codecSpecFromEncodeConfig(config codec.EncodeConfig) CodecSpec {
 	spec := CodecSpec{
-		ID:               config.Parameters.ID,
-		Type:             config.Parameters.Type,
-		Parameters:       config.Parameters,
-		Bitrate:          config.Bitrate,
-		Framerate:        config.Framerate,
-		KeyframeInterval: config.KeyframeInterval,
-		Config:           config.Config,
-		Opaque:           cloneAnyMap(config.Opaque),
-		Controls:         append([]any(nil), config.Controls...),
+		ID:         config.Parameters.ID,
+		Type:       config.Parameters.Type,
+		Parameters: config.Parameters,
+		Settings:   cloneCodecSettings(config.Settings),
 	}
 	if spec.ID == "" {
 		spec.ID = config.Stream.Codec.ID
@@ -610,10 +605,11 @@ func planInputOperationsForShape(input InputIntent, shape MediaShape) []planOper
 }
 
 func planProcessingOperations(stream StreamIntent, steps []chainStepAttachment) []planOperation {
+	transforms := streamIntentTransformSpecs(stream)
 	if len(steps) == 0 {
-		operations := make([]planOperation, 0, len(stream.Transforms)+len(stream.Taps))
-		for i := range stream.Transforms {
-			operations = append(operations, planTransformOperation(stream.Transforms[i]))
+		operations := make([]planOperation, 0, len(transforms)+len(stream.Taps))
+		for i := range transforms {
+			operations = append(operations, planTransformOperation(transforms[i]))
 		}
 		for i := range stream.Taps {
 			if stream.Taps[i].After != "" {
@@ -644,8 +640,8 @@ func planProcessingOperations(stream StreamIntent, steps []chainStepAttachment) 
 			})
 			continue
 		}
-		if step.hasTransform && step.transformIndex >= 0 && step.transformIndex < len(stream.Transforms) {
-			operations = append(operations, planTransformOperation(stream.Transforms[step.transformIndex]))
+		if step.hasTransform && step.transformIndex >= 0 && step.transformIndex < len(transforms) {
+			operations = append(operations, planTransformOperation(transforms[step.transformIndex]))
 			continue
 		}
 		if step.tap != "" {

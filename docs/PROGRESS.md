@@ -88,10 +88,11 @@ The implementation target is explicit:
   responsibilities;
 - shape owns structural compatibility facts such as domain, media kind, codec,
   format, resolution, pixel/sample formats, sample rate, channels, stream
-  identity, and realtime intent; codec specs own bitrate, FPS, keyframe
-  interval, profile/level, quality, speed/deadline, typed configs, named params,
-  controls, and adapter knobs. `.Encode(codec)` is the only fluent encode step;
-  tuning values live in codec options, not on stream or branch builders.
+  identity, and realtime intent; `CodecSpec.Settings` owns bitrate, FPS,
+  keyframe interval, profile/level, quality, speed/deadline, typed configs,
+  named params, controls, and adapter knobs. `.Encode(codec)` is the only
+  fluent encode step; tuning values live in codec options, not on stream or
+  branch builders.
 
 The attached direction is now part of the goal. The required convergence points
 are:
@@ -1808,11 +1809,12 @@ are:
     adding a separate debug API.
     Done.
 337. Carry codec-specific configs and controls through recipe codecs:
-    `CodecSpec` now carries one typed `Config`, named `Param` values, and typed
-    `Control` values. Stream, branch, flow, branch-composition, and runtime
-    attach paths clone and propagate those values into `codec.DecodeConfig` and
-    `codec.EncodeConfig`, while Opus/VP8/VP9 remain the simple full-codec
-    helpers and generic `Codec(...)` keeps custom adapters orthogonal.
+    `CodecSpec.Settings` now carries one typed `Config`, named `Param` values,
+    and typed `Control` values. Stream, branch, flow, branch-composition, and
+    runtime attach paths clone and propagate those values into
+    `codec.DecodeConfig.Settings` and `codec.EncodeConfig.Settings`, while
+    Opus/VP8/VP9 remain the simple full-codec helpers and generic `Codec(...)`
+    keeps custom adapters orthogonal.
     Runtime coverage proves declarative decode and encode options reach custom
     factories through the branch composer.
     Done.
@@ -2517,11 +2519,11 @@ byte writers, object uploads, URI-backed outputs, sink groups, and shared mux
 groups without graph-node plumbing. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into
 branch intent instead of a parallel graph language, and
-codec-specific config stays on `CodecSpec` through `Bitrate`, `FPS`,
-`KeyframeInterval`, `Profile`, `Level`, `Config`, `Param`, and `Control`
-instead of growing per-codec public APIs. Opus, VP8, and VP9 are the full
-encode/decode verticals; H264 and AV1 recipe encode remains guarded until the
-adapters are complete.
+codec-specific config stays in `CodecSpec.Settings` through the `Bitrate`,
+`FPS`, `KeyframeInterval`, `Profile`, `Level`, `Config`, `Param`, and
+`Control` option constructors instead of growing per-codec public APIs. Opus,
+VP8, and VP9 are the full encode/decode verticals; H264 and AV1 recipe encode
+remains guarded until the adapters are complete.
 `Task.Attach` remains the late branch control plane for running graphs, now with
 a private runtime graph-patch boundary that owns anchors, planned taps, applied
 nodes, routes, and published taps during prepare/apply/rollback,
@@ -2605,14 +2607,16 @@ shape validation, explanations, and media plans no longer describe that record
 as stream-only. The next cleanup remains deleting the projection bridge around
 `chainStep`, `branchComposePlan`, and `runtimeBranch` so `OperationSpec` feeds
 the planner directly.
-Codec tuning is also part of the active simplification: there is one public
-address for bitrate, FPS, keyframe cadence, profile/level, typed configs, named
-params, and controls, and that address is the codec option list passed to
-`Opus`, `VP8`, `VP9`, `H264`, `AV1`, or generic `Codec`. Chain, branch, and
-flow builders expose `.Encode(codec)` as the only encode operation, keeping the
-main builder from accumulating one-off tuning methods. `OpusVoice` and
-`OpusMusic` are removed before release for the same reason; voice/music choices
-are ordinary `Opus(Bitrate(...), Channels(...))` codec values.
+Codec tuning is also part of the active simplification: there is one data owner
+for bitrate, FPS, keyframe cadence, profile/level, typed configs, named params,
+and controls: `codec.CodecSettings`, carried by `CodecSpec.Settings`,
+`codec.DecodeConfig.Settings`, and `codec.EncodeConfig.Settings`. The public
+address remains the codec option list passed to `Opus`, `VP8`, `VP9`, `H264`,
+`AV1`, or generic `Codec`. Chain, branch, and flow builders expose
+`.Encode(codec)` as the only encode operation, keeping the main builder from
+accumulating one-off tuning methods. `OpusVoice` and `OpusMusic` are removed
+before release for the same reason; voice/music choices are ordinary
+`Opus(Bitrate(...), Channels(...))` codec values.
 Reusable flows and ordinary chains now store their ordered work
 only as `OperationSpec`. Legacy `chainStep` is derived at the remaining
 branch/runtime lowerer boundary, which keeps this pass scoped while making the
@@ -2639,6 +2643,10 @@ encoders, taps, and rollback.
 only when a node or prepared shape exists. Packet copy is therefore visible as
 a real operation even though it has no stage, and mutable steps are no longer
 the reporting source of truth.
+Operation-backed transforms now drive validation, explanation, media planning,
+and filter lowering before the legacy `StreamIntent.Transforms` mirror is read.
+`Transforms` remains only a temporary report/migration mirror while the older
+lowerers are deleted.
 
 ## Validation Gates
 

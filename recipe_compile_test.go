@@ -2705,7 +2705,7 @@ func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 			},
 			code:  "recipe_attachment_mismatch",
 			cause: ErrUnsupportedBuild,
-			want:  []string{"transform attachment", "transform index: 1", "intent transforms: 1", "Intent.Transforms"},
+			want:  []string{"transform attachment", "transform index: 1", "stream transforms: 1", "OperationSpec transforms"},
 		},
 	}
 	pass := validateJobStreamAttachmentsPass()
@@ -2789,6 +2789,27 @@ func TestJobIntentShapePassRejectsStreamTransforms(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestMediaPlanTransformFiltersUseOperationSpecs(t *testing.T) {
+	stream := StreamIntent{
+		Name:   "preview",
+		Select: StreamSelect{Type: av.MediaVideo},
+		Operations: []OperationSpec{
+			operationSpecForTransform(Resize(320, 180)),
+		},
+	}
+	filters, err := mediaPlanStreamTransformFilters(stream, av.StreamSelector{Type: av.MediaVideo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filters) != 1 || filters[0].transform == nil || filters[0].transform.video == nil {
+		t.Fatalf("filters = %+v, want one resize filter from OperationSpec", filters)
+	}
+	resize := filters[0].transform.video
+	if resize.Width != 320 || resize.Height != 180 {
+		t.Fatalf("resize = %+v, want operation-backed 320x180", resize)
 	}
 }
 

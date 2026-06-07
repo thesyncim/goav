@@ -1637,9 +1637,10 @@ func mediaPlanStreamFilters(stream StreamIntent) ([]filterRequest, error) {
 }
 
 func mediaPlanStreamTransformFilters(stream StreamIntent, selector av.StreamSelector) ([]filterRequest, error) {
-	filters := make([]filterRequest, 0, len(stream.Transforms))
-	for i := range stream.Transforms {
-		transform, err := streamTransform(stream.Name, selector, stream.Transforms[i], i)
+	transforms := streamIntentTransformSpecs(stream)
+	filters := make([]filterRequest, 0, len(transforms))
+	for i := range transforms {
+		transform, err := streamTransform(stream.Name, selector, transforms[i], i)
 		if err != nil {
 			return nil, err
 		}
