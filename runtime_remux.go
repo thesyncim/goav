@@ -259,6 +259,13 @@ func demuxNodeName(input format.Input) string {
 	return "input"
 }
 
+func customSourceNodeName(input InputSpec) string {
+	if input.source == nil {
+		return firstNonEmpty(input.name, input.input.Name, "source")
+	}
+	return firstNonEmpty(input.name, input.input.Name, string(input.source.shape.StreamID), "source")
+}
+
 func muxNodeName(output format.Output, index int) string {
 	if output.Name != "" {
 		return output.Name

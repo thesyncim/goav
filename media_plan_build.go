@@ -206,7 +206,7 @@ func newMediaPlanBranchComposeGraph(rt Runtime, input InputSpec, plan branchComp
 	if !ok || runtime == nil {
 		return mediaPlanBranchComposeGraph{}, false, nil
 	}
-	if input.rtp == nil && input.formatInput().Reader == nil && input.formatInput().URI == "" && input.formatInput().Name == "" {
+	if input.rtp == nil && input.source == nil && input.formatInput().Reader == nil && input.formatInput().URI == "" && input.formatInput().Name == "" {
 		return mediaPlanBranchComposeGraph{}, false, nil
 	}
 	branches, targets, err := prepareBranchComposePlan(plan)
@@ -1483,6 +1483,23 @@ func compileMediaPlanSources(
 		return mediaPlanCompiledSources{}, recipeGraphUnsupportedError(operation, intent)
 	}
 	service := &builder{runtime: runtime}
+	if len(inputs) == 1 && inputs[0].source != nil {
+		source, streams, err := newCustomSource(inputs[0])
+		if err != nil {
+			return mediaPlanCompiledSources{}, err
+		}
+		sourceRef, err := graph.AddSource(source, runtime.buffer)
+		if err != nil {
+			source.Close()
+			return mediaPlanCompiledSources{}, err
+		}
+		return mediaPlanCompiledSources{
+			refs:         []pipeline.NodeRef{sourceRef},
+			streams:      append([]av.Stream(nil), streams...),
+			streamGroups: [][]av.Stream{append([]av.Stream(nil), streams...)},
+			realtime:     runtime.realtime || inputs[0].source.shape.Realtime,
+		}, nil
+	}
 	if len(inputs) == 1 && inputs[0].rtp == nil {
 		input := inputs[0].formatInput()
 		demux, err := service.openDemuxSource(ctx, input)

@@ -435,6 +435,14 @@ func mediaPlanBranchComposerLowerer(state *recipeCompileState) (graphPlanLowerer
 }
 
 func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {
+	if len(inputs) == 1 && inputs[0].source != nil {
+		name := customSourceNodeName(inputs[0])
+		ref := pipeline.NodeRef(name)
+		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, customSourceDetail(inputs[0])); err != nil {
+			return nil, false, err
+		}
+		return []pipeline.NodeRef{ref}, true, nil
+	}
 	if len(inputs) == 1 && inputs[0].rtp == nil {
 		input := inputs[0].formatInput()
 		name := demuxNodeName(input)

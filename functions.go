@@ -45,6 +45,18 @@ func (e *Emit) Event(event av.Event) error {
 	return e.emitter.Emit(e.ctx, &e.message)
 }
 
+func (e *Emit) EOS(streams ...av.StreamID) error {
+	if len(streams) == 0 {
+		return e.Event(av.Event{Type: av.EventEndOfStream})
+	}
+	for i := range streams {
+		if err := e.Event(av.Event{Type: av.EventEndOfStream, StreamID: streams[i]}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func PacketFunc(name string, fn func(context.Context, *av.Packet, Emit) error) pipeline.Stage {
 	if fn == nil {
 		return nil

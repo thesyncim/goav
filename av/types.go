@@ -50,6 +50,7 @@ const (
 	ProtocolFile    ProtocolID = "file"
 	ProtocolRTP     ProtocolID = "rtp"
 	ProtocolWebRTC  ProtocolID = "webrtc"
+	ProtocolCustom  ProtocolID = "custom"
 )
 
 type StreamID string

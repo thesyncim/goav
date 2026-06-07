@@ -273,6 +273,76 @@ func TestRecordRecipeCopyToTypedTargetRuns(t *testing.T) {
 	}
 }
 
+func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
+	ctx := context.Background()
+	input := Source("generated",
+		PacketShape(av.MediaAudio, av.CodecOpus,
+			ShapeAudio(48_000, Stereo, av.SampleFormatS16),
+		),
+		func(_ context.Context, push SourcePush) error {
+			packet := av.Packet{
+				Payload: av.Buffer{
+					Bytes:     []byte{1},
+					Ownership: av.BufferImmutable,
+				},
+			}
+			if err := push.Packet(&packet); err != nil {
+				return err
+			}
+			return push.EOS()
+		},
+	)
+	var packets int
+	var events int
+	var got av.Packet
+	job := From(input).Audio().Copy().To(Sink(SinkFunc("packets", func(_ context.Context, msg Message) error {
+		switch msg.Kind {
+		case pipeline.MessagePacket:
+			packets++
+			if msg.Packet != nil {
+				got = *msg.Packet
+			}
+		case pipeline.MessageEvent:
+			events++
+		}
+		return nil
+	})))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "custom source") ||
+		!strings.Contains(text, "generated -> select-audio") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	intent := job.Intent()
+	if len(intent.Inputs) != 1 ||
+		intent.Inputs[0].Protocol != av.ProtocolCustom ||
+		intent.Inputs[0].Codec.ID != av.CodecOpus {
+		t.Fatalf("intent: %+v", intent)
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if packets != 1 ||
+		got.StreamID != "generated" ||
+		len(got.Payload.Bytes) != 1 ||
+		got.Payload.Bytes[0] != 1 {
+		t.Fatalf("packets=%d got=%+v, want one generated opus packet", packets, got)
+	}
+	if events != 1 {
+		t.Fatalf("events=%d, want source EOS event", events)
+	}
+}
+
 func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

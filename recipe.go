@@ -484,6 +484,7 @@ func Resample(sampleRate int, channels int, options ...audioOption) TransformSpe
 type InputSpec struct {
 	input    format.Input
 	rtp      *rtpInputSpec
+	source   *sourceInputSpec
 	codec    CodecSpec
 	name     string
 	realtime bool
@@ -608,6 +609,9 @@ func (s InputSpec) validate() error {
 			Cause: s.err,
 		}
 	}
+	if err := s.validateCustomSource(); err != nil {
+		return err
+	}
 	if err := s.validateRTPReceiver(); err != nil {
 		return err
 	}
@@ -620,8 +624,62 @@ func (s InputSpec) validate() error {
 	return s.validateRTPCodec()
 }
 
+func (s InputSpec) validateCustomSource() error {
+	if s.source == nil {
+		return nil
+	}
+	node := firstNonEmpty(s.name, s.input.Name, "source")
+	if s.source.fn == nil {
+		return &BuildError{
+			Code:      "source_callback_missing",
+			Operation: "build input",
+			Node:      node,
+			Reason:    "custom source has no push callback",
+			Suggestions: []string{
+				"pass a non-nil callback to goav.Source(name, shape, fn)",
+				"use goav.FileInput, goav.RTP, or goav.WebRTCTrack for built-in source adapters",
+			},
+			Cause: ErrNilSource,
+		}
+	}
+	shape := normalizeCustomSourceShape(node, s.source.shape)
+	if shape.Domain != DomainPacket {
+		return &BuildError{
+			Code:      "source_shape_unsupported",
+			Operation: "build input",
+			Node:      node,
+			Reason:    "custom recipe sources currently produce packet-domain media",
+			Details: []string{
+				"actual_shape=" + shape.String(),
+			},
+			Suggestions: []string{
+				"declare the source with goav.PacketShape(media, codec, ...)",
+				"use goav.Sink(...) after decode or transform when observing frame-domain media",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if shape.MediaKind == "" {
+		return &BuildError{
+			Code:      "source_shape_invalid",
+			Operation: "build input",
+			Node:      node,
+			Reason:    "custom source shape needs a media kind",
+			Suggestions: []string{
+				"use goav.PacketShape(av.MediaAudio, codec) or goav.PacketShape(av.MediaVideo, codec)",
+				"add goav.ShapeMedia(...) when constructing a custom shape",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	return nil
+}
+
 func (s InputSpec) validatePlainInput() error {
 	if s.rtp != nil {
+		return nil
+	}
+	if s.source != nil {
 		return nil
 	}
 	if s.input.Name != "" || s.input.URI != "" || s.input.Protocol != "" || s.input.MIMEType != "" || s.input.Reader != nil || s.input.ReaderAt != nil {
@@ -635,6 +693,7 @@ func (s InputSpec) validatePlainInput() error {
 		Suggestions: []string{
 			"use goav.FileInput(name, reader) for file-like input",
 			"use goav.URI(uri) for URI-backed input",
+			"use goav.Source(name, shape, fn) for application-pushed packets",
 			"use goav.RTP(reader) or goav.WebRTCTrack(track) for realtime receive",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -826,7 +885,7 @@ func (s InputSpec) intent() InputIntent {
 		Protocol: s.input.Protocol,
 		MIMEType: s.input.MIMEType,
 		Codec:    cloneCodecSpec(s.codec),
-		Realtime: s.input.Realtime || s.rtp != nil,
+		Realtime: s.input.Realtime || s.rtp != nil || (s.source != nil && s.source.shape.Realtime),
 	}
 }
 
@@ -1561,7 +1620,7 @@ func validateJobInputs(inputs []InputSpec) error {
 		return nil
 	}
 	for i := range inputs {
-		if inputs[i].rtp != nil {
+		if inputs[i].rtp != nil || inputs[i].source != nil {
 			continue
 		}
 		return &BuildError{
@@ -2299,6 +2358,10 @@ func validateInputFormatAdapters(ctx context.Context, rt Runtime, inputs []Input
 	probes := make([]format.ProbeResult, len(inputs))
 	for i := range inputs {
 		if inputs[i].rtp != nil {
+			continue
+		}
+		if inputs[i].source != nil {
+			probes[i] = customSourceProbeResult(inputs[i])
 			continue
 		}
 		input := inputs[i].input

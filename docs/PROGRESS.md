@@ -128,8 +128,9 @@ are:
   only if branch composition cannot express a real use case.
 - `Snapshot` remains the inspection surface alongside `Events` and stats; do
   not add bus/caps/pad/bin vocabulary.
-- `Source(name, shape, func(ctx, push) error, ...)` is the missing symmetric
-  primitive for custom packet/frame/event/EOS input.
+- `Source(name, shape, func(ctx, push) error, ...)` is now active for
+  packet-domain custom input; frame/event declared source domains are the next
+  source-symmetry slice.
 - `From(inputs...)` must support multi-input audio/video composition without
   graph handles, with explicit stream selectors and ambiguity diagnostics.
 - Acceptance gates must forbid normal README examples from using `Record`,
@@ -2457,9 +2458,10 @@ Required proof:
    taps, branches, sinks, byte destinations, shared destinations, codecs,
    transforms, and custom sources must participate in expected-vs-actual shape
    diagnostics.
-8. Add custom source symmetry. `Source(name, shape, func(ctx, push) error, ...)`
-   should push packets, frames, events, and EOS through planner-validated shapes
-   and work anywhere `From(input)` accepts an input.
+8. Complete custom source symmetry. The active packet-source foundation uses
+   `Source(name, PacketShape(...), func(ctx, push) error)` and `SourcePush` for
+   packets/events/EOS through normal `From(input)` recipes; next, extend planner
+   validation/lowering to declared frame and event source domains.
 9. Support multi-input composition without graph handles. `From(inputs...)`
    selects streams across inputs, supports input/stream/codec selectors, reports
    ambiguity with candidates, and lets branches from different inputs feed one

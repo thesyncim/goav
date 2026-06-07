@@ -9,8 +9,9 @@ import (
 )
 
 type funcEmitter struct {
-	packets int
-	events  int
+	packets   int
+	events    int
+	lastEvent av.Event
 }
 
 func (e *funcEmitter) Emit(_ context.Context, msg *pipeline.Message) error {
@@ -19,6 +20,9 @@ func (e *funcEmitter) Emit(_ context.Context, msg *pipeline.Message) error {
 		e.packets++
 	case pipeline.MessageEvent:
 		e.events++
+		if msg.Event != nil {
+			e.lastEvent = *msg.Event
+		}
 	}
 	return nil
 }
@@ -94,5 +98,19 @@ func TestEventFuncObservesAndPreservesEvents(t *testing.T) {
 	}
 	if observed != 1 || emitter.events != 1 {
 		t.Fatalf("observed=%d emitted=%d", observed, emitter.events)
+	}
+}
+
+func TestEmitEOSCanEmitStreamEnd(t *testing.T) {
+	emitter := &funcEmitter{}
+	emit := Emit{ctx: context.Background(), emitter: emitter}
+
+	if err := emit.EOS("audio"); err != nil {
+		t.Fatal(err)
+	}
+	if emitter.events != 1 ||
+		emitter.lastEvent.Type != av.EventEndOfStream ||
+		emitter.lastEvent.StreamID != "audio" {
+		t.Fatalf("events=%d last=%+v, want audio EOS", emitter.events, emitter.lastEvent)
 	}
 }

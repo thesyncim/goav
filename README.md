@@ -588,6 +588,34 @@ return goav.From(input).
 Use `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` for metering,
 analysis, preview, stats, and integration points.
 
+Use `Source` when your application already owns packet production and wants to
+enter the same recipe grammar as files, RTP, and WebRTC.
+
+```go
+input := goav.Source("generated",
+    goav.PacketShape(av.MediaAudio, av.CodecOpus,
+        goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+    ),
+    func(ctx context.Context, push goav.SourcePush) error {
+        for packet := range packets {
+            if err := push.Packet(&packet); err != nil {
+                return err
+            }
+        }
+        return push.EOS()
+    },
+)
+
+return goav.From(input).
+    Audio().
+    Copy().
+    To(goav.Sink(packetSink)).
+    Run(ctx)
+```
+
+Packet-domain custom sources are active now. Frame-domain generated sources use
+custom stages or runtime branches until source-side frame planning lands.
+
 ## Custom Destinations
 
 Write muxed bytes anywhere that can provide an `io.WriteCloser` with

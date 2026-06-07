@@ -338,6 +338,33 @@ func TestMediaShapePublicContract(t *testing.T) {
 	}
 }
 
+func TestSourceInputIntentUsesCustomProtocol(t *testing.T) {
+	input := goav.Source("generated",
+		goav.PacketShape(av.MediaAudio, av.CodecOpus,
+			goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+		),
+		func(context.Context, goav.SourcePush) error {
+			return nil
+		},
+	)
+	job := goav.From(input).
+		Audio().
+		Copy().
+		To(goav.Sink(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
+			return nil
+		})))
+
+	intent := job.Intent()
+	if len(intent.Inputs) != 1 ||
+		intent.Inputs[0].Name != "generated" ||
+		intent.Inputs[0].Protocol != av.ProtocolCustom ||
+		intent.Inputs[0].Codec.ID != av.CodecOpus ||
+		intent.Inputs[0].Codec.Parameters.SampleRate != 48_000 ||
+		intent.Inputs[0].Codec.Parameters.Channels != goav.Stereo {
+		t.Fatalf("intent inputs: %+v", intent.Inputs)
+	}
+}
+
 func TestFlowReportsShapeContractAndTaps(t *testing.T) {
 	flow := goav.Flow("voice").Audio().
 		Decode().
@@ -1803,6 +1830,25 @@ func TestReadmeShowsCustomDestinations(t *testing.T) {
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("README should keep custom destination text %q", required)
+		}
+	}
+}
+
+func TestReadmeShowsCustomSources(t *testing.T) {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"goav.Source(",
+		"goav.PacketShape(",
+		"goav.SourcePush",
+		"push.Packet(",
+		"push.EOS()",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("README should keep custom source text %q", required)
 		}
 	}
 }

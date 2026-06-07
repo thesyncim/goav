@@ -57,9 +57,10 @@ runtime attach. Public vocabulary stays `Input`, `Stream`, `Operation`, `Tap`,
 8. Keep observation as branch composition unless proven insufficient. Runtime
    diagnostic work is `Branch(...).From(tap).Do(...).To(Sink(...))`; `Snapshot`
    reports task state, branches, taps, destinations, lifecycle, and scoped stats.
-9. Add custom source symmetry: application code can push packets, frames,
-   events, and EOS from a declared shape just as it can provide custom stages,
-   sinks, writers, and object destinations today.
+9. Complete custom source symmetry: application code can already push packet
+   sources with events/EOS from a declared shape; extend the same planner path
+   to declared frame and event source domains just as custom stages, sinks,
+   writers, and object destinations work today.
 10. Keep custom composition orthogonal: application-local codecs use
    `goav.Codec`, `WithDecoder`, and `WithEncoder`; custom stages, filters,
    sinks, destinations, and sources use the same stream/branch concepts as

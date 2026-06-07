@@ -72,6 +72,26 @@ func rtpInputDetail(input rtpInput) string {
 	return joinSpecDetail(parts...)
 }
 
+func customSourceDetail(input InputSpec) string {
+	parts := []string{"custom source"}
+	if input.source != nil {
+		shape := normalizeCustomSourceShape(input.inputName("source"), input.source.shape)
+		if shape.Domain != "" {
+			parts = append(parts, "domain="+string(shape.Domain))
+		}
+		if shape.MediaKind != "" {
+			parts = append(parts, "media="+string(shape.MediaKind))
+		}
+		if shape.Codec != "" {
+			parts = append(parts, "codec="+string(shape.Codec))
+		}
+		if shape.Realtime {
+			parts = append(parts, "realtime")
+		}
+	}
+	return joinSpecDetail(parts...)
+}
+
 func selectNodeDetail(selector av.StreamSelector) string {
 	return joinSpecDetail("select", selectorDetail(selector))
 }

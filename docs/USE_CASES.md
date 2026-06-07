@@ -180,6 +180,35 @@ Branch-local custom stages and transforms share the ordered operation model.
 Custom filter adapters and late runtime sink branches extend that same model
 instead of growing special-case APIs.
 
+Custom sources are the input-side equivalent for applications that already own
+packet production.
+
+```go
+input := goav.Source("generated",
+    goav.PacketShape(av.MediaAudio, av.CodecOpus,
+        goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+    ),
+    func(ctx context.Context, push goav.SourcePush) error {
+        for packet := range packets {
+            if err := push.Packet(&packet); err != nil {
+                return err
+            }
+        }
+        return push.EOS()
+    },
+)
+
+err := goav.From(input).
+    Audio().
+    Copy().
+    To(goav.Sink(packetSink)).
+    Run(ctx)
+```
+
+Packet-domain custom sources participate in the same stream, branch,
+destination, explain, and runtime graph path as built-in inputs. Frame-domain
+source planning is the next symmetry slice.
+
 ## Reuse
 
 When operations repeat, extract a flow. A flow is only a reusable ordered
