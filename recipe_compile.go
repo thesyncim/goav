@@ -13,7 +13,6 @@ import (
 type recipeResolved struct {
 	intent                Intent
 	runtime               Runtime
-	builder               builderAPI
 	spec                  pipeline.Spec
 	specReady             bool
 	specOrigin            string
@@ -164,7 +163,6 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 	return recipeResolved{
 		intent:                state.intent,
 		runtime:               state.runtime,
-		builder:               state.builder,
 		spec:                  state.spec,
 		specReady:             state.specReady,
 		specOrigin:            state.specOrigin,
@@ -206,10 +204,10 @@ func compilerPassError(operation string, pass string, err error) error {
 }
 
 func (r recipeResolved) Describe() (pipeline.Spec, error) {
-	if r.specReady {
+	if r.specReady && r.specOrigin == graphSpecOriginMediaPlan {
 		return r.spec, nil
 	}
-	return r.builder.Describe()
+	return pipeline.Spec{}, recipeGraphUnsupportedError("describe recipe", r.intent)
 }
 
 func (r recipeResolved) Build(ctx context.Context) (Task, error) {

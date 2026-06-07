@@ -64,6 +64,9 @@ func TestMediaPlanExecutableUsesSharedBuildLifecycle(t *testing.T) {
 			t.Fatalf("mediaPlanExecutable is missing %s", name)
 		}
 	}
+	if _, ok := reflect.TypeOf(recipeResolved{}).FieldByName("builder"); ok {
+		t.Fatal("recipeResolved should not carry the old runtime builder after media-plan recognition")
+	}
 }
 
 func TestMediaPlanStreamGraphOwnsPacketCopyAndDirectStreams(t *testing.T) {
@@ -2271,9 +2274,6 @@ func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	if resolved.builder == nil {
-		t.Fatal("compileJobRecipe() produced nil builder")
-	}
 	if !resolved.specReady {
 		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
 	}
@@ -2394,13 +2394,6 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	builder, ok := resolved.builder.(*builder)
-	if !ok {
-		t.Fatalf("resolved builder type = %T, want *builder", resolved.builder)
-	}
-	if len(builder.transcodes) != 0 {
-		t.Fatalf("builder transcodes = %d, want recipe plan kept off builder", len(builder.transcodes))
-	}
 	if len(resolved.plan.Branches) != 1 || resolved.plan.Branches[0].Name != "360p" {
 		t.Fatalf("resolved plan branches = %+v, want 360p branch", resolved.plan.Branches)
 	}
@@ -2441,13 +2434,6 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	builder, ok := resolved.builder.(*builder)
-	if !ok {
-		t.Fatalf("resolved builder type = %T, want *builder", resolved.builder)
-	}
-	if len(builder.transcodes) != 0 || len(builder.rtpInputs) != 0 {
-		t.Fatalf("builder transcodes=%d rtp=%d, want live branch composer kept off builder", len(builder.transcodes), len(builder.rtpInputs))
 	}
 	if resolved.branchInputAttachment.rtp == nil {
 		t.Fatal("resolved branch input = nil RTP, want live branch composer input carried on resolved plan")

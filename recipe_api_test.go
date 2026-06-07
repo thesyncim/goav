@@ -1638,6 +1638,8 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"VideoFlow",
 		"SinkEndpoint",
 		"FromTap",
+		"`Target`, `Destination`, and `Chain` composition",
+		"`Target`, destination constructors",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("architecture docs keep stale composition vocabulary %q", forbidden)
@@ -1650,6 +1652,8 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"Chain transforms such as",
 		"Simple high-level API | recipes, chains",
 		"surface is small: `From`, chains",
+		"`Target`, and `Chain` composition",
+		"`File`, `URIOut`, and `Sink` destination constructors",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("architecture docs should keep current composition vocabulary %q", required)
