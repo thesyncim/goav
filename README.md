@@ -271,9 +271,11 @@ or endpoint branch to a running direct task graph without rebuilding upstream.
 Late branches can apply flows, run custom `.Do(...)` stages, resize/resample
 from frame taps, encode Opus/VP8/VP9 from frame taps, copy from packet taps, and
 write to one or more typed targets before exposing their own `.Tap(name)`
-outlets for later attachments. H264 and AV1 recipe encoding remain work in
-progress. Detaching a parent attachment also removes dependent late branches
-anchored from its taps.
+outlets for later attachments. Observer branches can use
+`.Do(goav.FrameFunc(...)).Tap(name).To(goav.SinkEndpoint(...))` to both inspect
+frames and publish a downstream attach point. H264 and AV1 recipe encoding
+remain work in progress. Detaching a parent attachment also removes dependent
+late branches anchored from its taps.
 Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
 packet-domain taps.
 

@@ -1111,6 +1111,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     exported `Job.Targets(...)` registration escape hatch was removed. The API
     guard now rejects `Targets` alongside `Path`, `Paths`, `Output`, and
     `Outputs`, keeping the normal grammar to one way to attach a target. Done.
+269. Prove runtime observer branches are ordinary branches:
+    a late branch can now be tested as
+    `Branch("analysis").FromTap("audio.decoded").Do(FrameFunc(...)).Tap("audio.observed").To(SinkEndpoint(...))`,
+    with a dependent runtime branch attaching from `audio.observed`. Running
+    the task proves the base sink, observer sink, and dependent sink all receive
+    the decoded frame, and detaching the parent closes the dependent subtree.
+    This pins sink/observation-boundary branching without adding a new public
+    concept. Done.
 
 ## First Vertical Slice
 

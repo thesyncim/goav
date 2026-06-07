@@ -235,9 +235,11 @@ the caller wants the task to own detach semantics. Runtime branches can run
 custom stages, resize/resample from frame taps, publish additional taps, encode
 Opus/VP8/VP9 from frame taps, copy packet taps into endpoints, and feed later
 runtime branches from those taps. Taps declared after encode or copy are packet
-taps. H264 and AV1 recipe encoding remain work in progress. Detaching a parent
-runtime branch removes dependent late branches anchored from its taps. Direct
-and bounded buffered task graphs both support late stage/sink branches.
+taps. Observer branches can end in a sink while publishing a nested tap with
+`.Do(goav.FrameFunc(...)).Tap(name).To(goav.SinkEndpoint(...))`. H264 and AV1
+recipe encoding remain work in progress. Detaching a parent runtime branch
+removes dependent late branches anchored from its taps. Direct and bounded
+buffered task graphs both support late stage/sink branches.
 
 ## Generic File Or Protocol Ingest
 

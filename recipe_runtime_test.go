@@ -1607,6 +1607,93 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 	}
 }
 
+func TestRuntimeObservationBranchPublishesTapAndDetachesSubtree(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	decoder := &decodeTestDecoder{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+	)
+	base := &runtimeTestSink{name: "base"}
+	task, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		To(SinkEndpoint(base)).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	observed := 0
+	observer := FrameFunc("observer", func(_ context.Context, frame *av.Frame, emit Emit) error {
+		observed++
+		return emit.Frame(frame)
+	})
+	analysis := &runtimeTestSink{name: "analysis"}
+	parent, err := task.Attach(ctx, Branch("analysis").
+		FromTap("audio.decoded").
+		Do(observer).
+		Tap("audio.observed").
+		To(SinkEndpoint(analysis)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentText := specText(parent.Spec())
+	if !strings.Contains(parentText, "analysis/observer -> analysis/analysis") {
+		t.Fatalf("parent attachment spec:\n%s", parentText)
+	}
+
+	var observedTap TapInfo
+	for _, tap := range task.Taps() {
+		if tap.Name == "audio.observed" {
+			observedTap = tap
+			break
+		}
+	}
+	if observedTap.Name == "" ||
+		observedTap.Domain != DomainFrame ||
+		observedTap.MediaKind != av.MediaAudio ||
+		observedTap.Node != "analysis/observer" {
+		t.Fatalf("observed tap = %+v, want frame audio tap on analysis/observer", observedTap)
+	}
+
+	dependent := &runtimeTestSink{name: "dependent"}
+	child, err := task.Attach(ctx, Branch("dependent").
+		FromTap("audio.observed").
+		To(SinkEndpoint(dependent)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.Name() != "dependent" {
+		t.Fatalf("child name = %q, want dependent", child.Name())
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || observed != 1 || base.frames != 1 || analysis.frames != 1 || dependent.frames != 1 {
+		t.Fatalf("decodes=%d observed=%d base=%d analysis=%d dependent=%d", decoder.decodes, observed, base.frames, analysis.frames, dependent.frames)
+	}
+	if err := task.Detach(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+	if !analysis.closed || !dependent.closed {
+		t.Fatalf("closed analysis=%v dependent=%v", analysis.closed, dependent.closed)
+	}
+}
+
 func TestStreamRecipeTaskAttachesRuntimeEncodeMuxBranch(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
