@@ -261,6 +261,7 @@ type Packet struct {
 	Discardable                 bool
 	Data                        []byte
 	ContentEncryptionPartitions []uint32
+	UnknownClusterElements      []UnknownElement
 }
 
 type BlockAddition struct {
@@ -287,19 +288,20 @@ const (
 // Frame timestamps are derived by demuxers from FrameDurationNS when set, or
 // from the track default duration otherwise.
 type LacedPacket struct {
-	TrackID              uint32
-	TimeNS               int64
-	FrameDurationNS      int64
-	ReferenceBlockTimeNS []int64
-	ReferencePriority    uint64
-	DiscardPaddingNS     int64
-	CodecState           []byte
-	BlockAdditions       []BlockAddition
-	Keyframe             bool
-	Invisible            bool
-	Discardable          bool
-	Lacing               LacingMode
-	Frames               [][]byte
+	TrackID                uint32
+	TimeNS                 int64
+	FrameDurationNS        int64
+	ReferenceBlockTimeNS   []int64
+	ReferencePriority      uint64
+	DiscardPaddingNS       int64
+	CodecState             []byte
+	BlockAdditions         []BlockAddition
+	UnknownClusterElements []UnknownElement
+	Keyframe               bool
+	Invisible              bool
+	Discardable            bool
+	Lacing                 LacingMode
+	Frames                 [][]byte
 }
 
 type CuePoint struct {
@@ -458,12 +460,14 @@ func (p *Packet) Reset() {
 	codecState := p.CodecState[:0]
 	additions := p.BlockAdditions[:0]
 	partitions := p.ContentEncryptionPartitions[:0]
+	unknownCluster := p.UnknownClusterElements[:0]
 	*p = Packet{
 		Data:                        data,
 		ReferenceBlockTimeNS:        references,
 		CodecState:                  codecState,
 		BlockAdditions:              additions,
 		ContentEncryptionPartitions: partitions,
+		UnknownClusterElements:      unknownCluster,
 	}
 }
 

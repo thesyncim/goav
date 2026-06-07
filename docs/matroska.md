@@ -127,6 +127,10 @@ Current milestone:
   and `Tags` metadata masters are preserved through dedicated muxer options and
   demuxer accessors, including raw-only optional metadata masters in seekable
   output.
+- Finite unknown Cluster children are preserved in packet order through
+  `Packet.UnknownClusterElements` and `LacedPacket.UnknownClusterElements`.
+  Demuxers attach raw Cluster children to the next returned packet; muxers
+  write them immediately before that packet's block inside the active Cluster.
 - Format registry adapters for `av.Stream` and `av.Packet`.
 - Caller-owned packet data for demuxing.
 - Demux validation rejects on-disk track, cue, and block track numbers that
@@ -145,7 +149,6 @@ These are intentionally not in the first milestone:
 
 - Frame-exact random access for uncued packets or cue points that do not have
   exact `CueRelativePosition` or `CueBlockNumber` entries.
-- Unknown Cluster child preservation.
 - Full codec-private generation and parsers for every codec family.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
 
@@ -255,6 +258,9 @@ The steady-state packet paths avoid allocations:
   When a non-laced frame is too large, the demuxer returns
   `ErrPayloadTooSmall` after skipping that packet so the next read stays
   aligned; pending laced frames can be retried with a larger buffer.
+- Packet-carried unknown Cluster children are transferred only when the
+  associated packet is successfully returned; retryable laced-frame reads keep
+  them pending, while skipped non-laced frames drop them with the skipped block.
 - Format adapters keep stream-to-track mappings in slices built during `Open`.
 
 Unit tests assert 0 alloc/op for steady-state `WritePacket` and `ReadPacket`.

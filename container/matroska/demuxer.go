@@ -17,57 +17,58 @@ import (
 )
 
 type Demuxer struct {
-	reader             *ebml.Reader
-	seeker             io.ReadSeeker
-	options            DemuxerOptions
-	docType            string
-	segmentData        int64
-	timecodeScaleNS    int64
-	info               SegmentInfo
-	tracks             []Track
-	attachments        []Attachment
-	chapters           []ChapterEdition
-	tags               []Tag
-	unknownSegments    []UnknownElement
-	unknownTracks      []UnknownElement
-	unknownAttachments []UnknownElement
-	unknownChapters    []UnknownElement
-	unknownTags        []UnknownElement
-	cues               []CuePoint
-	cuesSorted         bool
-	seekEntries        []SeekEntry
-	inSegment          bool
-	inCluster          bool
-	clusterUnknown     bool
-	clusterEnd         int64
-	clusterTimecode    int64
-	blockLimit         io.LimitedReader
-	groupLimit         io.LimitedReader
-	groupReader        *ebml.Reader
-	blockHeader        [3]byte
-	laceBuffer         []byte
-	laceFrames         []laceFrame
-	laceTrackID        uint32
-	laceH264Length     int
-	laceContent        blockContentEncodingInfo
-	laceTimeNS         int64
-	laceDurationNS     int64
-	laceReferences     []int64
-	lacePriority       uint64
-	laceDiscardPadNS   int64
-	laceCodecState     []byte
-	laceAdditions      []BlockAddition
-	laceFrameCount     int
-	laceFrameIndex     int
-	laceKeyframe       bool
-	laceInvisible      bool
-	laceDiscardable    bool
-	scratch            [ebml.MaxSizeWidth]byte
-	uintScratch        [8]byte
-	contentBuffer      []byte
-	contentPartitions  []uint32
-	pendingHeader      ebml.Header
-	pendingHeaderSet   bool
+	reader                *ebml.Reader
+	seeker                io.ReadSeeker
+	options               DemuxerOptions
+	docType               string
+	segmentData           int64
+	timecodeScaleNS       int64
+	info                  SegmentInfo
+	tracks                []Track
+	attachments           []Attachment
+	chapters              []ChapterEdition
+	tags                  []Tag
+	unknownSegments       []UnknownElement
+	unknownTracks         []UnknownElement
+	unknownAttachments    []UnknownElement
+	unknownChapters       []UnknownElement
+	unknownTags           []UnknownElement
+	pendingClusterUnknown []UnknownElement
+	cues                  []CuePoint
+	cuesSorted            bool
+	seekEntries           []SeekEntry
+	inSegment             bool
+	inCluster             bool
+	clusterUnknown        bool
+	clusterEnd            int64
+	clusterTimecode       int64
+	blockLimit            io.LimitedReader
+	groupLimit            io.LimitedReader
+	groupReader           *ebml.Reader
+	blockHeader           [3]byte
+	laceBuffer            []byte
+	laceFrames            []laceFrame
+	laceTrackID           uint32
+	laceH264Length        int
+	laceContent           blockContentEncodingInfo
+	laceTimeNS            int64
+	laceDurationNS        int64
+	laceReferences        []int64
+	lacePriority          uint64
+	laceDiscardPadNS      int64
+	laceCodecState        []byte
+	laceAdditions         []BlockAddition
+	laceFrameCount        int
+	laceFrameIndex        int
+	laceKeyframe          bool
+	laceInvisible         bool
+	laceDiscardable       bool
+	scratch               [ebml.MaxSizeWidth]byte
+	uintScratch           [8]byte
+	contentBuffer         []byte
+	contentPartitions     []uint32
+	pendingHeader         ebml.Header
+	pendingHeaderSet      bool
 }
 
 type laceFrame struct {
@@ -129,6 +130,7 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.unknownAttachments = d.unknownAttachments[:0]
 	d.unknownChapters = d.unknownChapters[:0]
 	d.unknownTags = d.unknownTags[:0]
+	d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
 	d.cues = d.cues[:0]
 	d.cuesSorted = true
 	d.seekEntries = d.seekEntries[:0]
@@ -959,7 +961,7 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 	}
 	dst.Reset()
 	if d.laceFrameIndex < d.laceFrameCount {
-		return d.nextLacedPacket(dst)
+		return d.readNextLacedPacket(dst)
 	}
 	for {
 		if d.inCluster && !d.clusterUnknown && d.reader.Offset() >= d.clusterEnd {
@@ -987,15 +989,15 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 				}
 				d.clusterTimecode = int64(value)
 			case idSimpleBlock:
-				return d.readSimpleBlock(header, dst)
+				return d.finishClusterPacket(d.readSimpleBlock(header, dst), dst)
 			case idBlockGroup:
-				return d.readBlockGroup(header, dst)
+				return d.finishClusterPacket(d.readBlockGroup(header, dst), dst)
 			case idVoid, idCRC32:
 				if err := skipElement(d.reader, header); err != nil {
 					return err
 				}
 			default:
-				if err := skipElement(d.reader, header); err != nil {
+				if err := d.readUnknownClusterElement(header); err != nil {
 					return err
 				}
 			}
@@ -1056,6 +1058,40 @@ func (d *Demuxer) readUnknownSegmentElement(header ebml.Header) error {
 	}
 	d.unknownSegments = append(d.unknownSegments, element)
 	return nil
+}
+
+func (d *Demuxer) readUnknownClusterElement(header ebml.Header) error {
+	if isStructuralElement(header.ID) {
+		return skipElement(d.reader, header)
+	}
+	if isKnownClusterElement(header.ID) {
+		return ErrInvalidData
+	}
+	element, err := readUnknownElementPayload(d.reader, header)
+	if err != nil {
+		return err
+	}
+	d.pendingClusterUnknown = append(d.pendingClusterUnknown, element)
+	return nil
+}
+
+func (d *Demuxer) finishClusterPacket(err error, dst *Packet) error {
+	if err != nil {
+		if !errors.Is(err, ErrPayloadTooSmall) || d.laceFrameCount == 0 {
+			d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
+		}
+		return err
+	}
+	d.applyPendingClusterUnknownElements(dst)
+	return nil
+}
+
+func (d *Demuxer) applyPendingClusterUnknownElements(dst *Packet) {
+	if len(d.pendingClusterUnknown) == 0 {
+		return
+	}
+	dst.UnknownClusterElements = append(dst.UnknownClusterElements, d.pendingClusterUnknown...)
+	d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
 }
 
 func appendUnknownChildElement(reader *ebml.Reader, header ebml.Header, isKnown func(ebml.ID) bool, elements *[]UnknownElement) error {
@@ -4230,7 +4266,7 @@ func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timecode in
 	d.laceKeyframe = simple && flags&simpleBlockKeyframe != 0
 	d.laceInvisible = flags&simpleBlockInvisible != 0
 	d.laceDiscardable = simple && flags&simpleBlockDiscardable != 0
-	return d.nextLacedPacket(dst)
+	return d.readNextLacedPacket(dst)
 }
 
 func (d *Demuxer) readXiphLaceSizes(frameCount int) error {
@@ -4397,11 +4433,22 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 	dst.Invisible = d.laceInvisible
 	dst.Discardable = d.laceDiscardable
 	d.applyLaceGroupMetadata(dst)
+	if d.laceFrameIndex == 0 {
+		d.applyPendingClusterUnknownElements(dst)
+	}
 	d.laceFrameIndex++
 	if d.laceFrameIndex >= d.laceFrameCount {
 		d.clearLace()
 	}
 	return nil
+}
+
+func (d *Demuxer) readNextLacedPacket(dst *Packet) error {
+	err := d.nextLacedPacket(dst)
+	if err != nil && !errors.Is(err, ErrPayloadTooSmall) && d.laceFrameIndex == 0 {
+		d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
+	}
+	return err
 }
 
 func (d *Demuxer) decodeLacedContentEncodedBlockFrame(track Track, frame []byte, encoding blockContentEncodingInfo, dst *Packet) error {

@@ -298,6 +298,9 @@ func (m *Muxer) WritePacket(packet Packet) error {
 			return ErrInvalidData
 		}
 	}
+	if err := validateUnknownElementsFor(packet.UnknownClusterElements, isKnownClusterElement); err != nil {
+		return ErrInvalidData
+	}
 	if !m.headerWritten {
 		if maxAdditionID > track.MaxBlockAdditionID {
 			track.MaxBlockAdditionID = maxAdditionID
@@ -325,6 +328,9 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	delta := timecode - m.clusterTimecode
 	if delta < math.MinInt16 || delta > math.MaxInt16 {
 		return ErrTimecodeOverflow
+	}
+	if err := writeUnknownElements(m.ebml, packet.UnknownClusterElements); err != nil {
+		return err
 	}
 	relativePosition := m.relativeClusterPosition()
 	blockNumber := m.clusterBlock + 1
@@ -373,6 +379,9 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 		return err
 	}
 	if packet.Discardable && lacedPacketNeedsBlockGroup(packet) {
+		return ErrInvalidData
+	}
+	if err := validateUnknownElementsFor(packet.UnknownClusterElements, isKnownClusterElement); err != nil {
 		return ErrInvalidData
 	}
 	if track.FlagLacingSet && !track.FlagLacing {
@@ -447,6 +456,9 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 	delta := timecode - m.clusterTimecode
 	if delta < math.MinInt16 || delta > math.MaxInt16 {
 		return ErrTimecodeOverflow
+	}
+	if err := writeUnknownElements(m.ebml, packet.UnknownClusterElements); err != nil {
+		return err
 	}
 	relativePosition := m.relativeClusterPosition()
 	blockNumber := m.clusterBlock + 1
@@ -1122,6 +1134,15 @@ func isKnownChaptersElement(id ebml.ID) bool {
 func isKnownTagsElement(id ebml.ID) bool {
 	switch id {
 	case idTag, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownClusterElement(id ebml.ID) bool {
+	switch id {
+	case idTimestamp, idSimpleBlock, idBlockGroup, idVoid, idCRC32:
 		return true
 	default:
 		return false

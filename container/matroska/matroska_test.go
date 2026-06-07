@@ -516,6 +516,198 @@ func TestMuxerDemuxerRemuxesUnknownMasterElements(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerRemuxesUnknownClusterElements(t *testing.T) {
+	clusterUnknown := unknownElementBytes(t, 0x4fe9, []byte{0x21, 0x31})
+	var source bytes.Buffer
+	muxer, err := NewMuxer(&source, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{
+		TrackID:                trackID,
+		TimeNS:                 0,
+		Keyframe:               true,
+		Data:                   []byte{1, 2, 3},
+		UnknownClusterElements: []UnknownElement{{Raw: append([]byte(nil), clusterUnknown...)}},
+	}
+	if err := muxer.WritePacket(packet); err != nil {
+		t.Fatal(err)
+	}
+	packet.UnknownClusterElements[0].Raw[0] = 0
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(source.Bytes(), clusterUnknown) {
+		t.Fatalf("muxed data does not contain raw unknown Cluster child %x", clusterUnknown)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(source.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	assertUnknownElement(t, "packet cluster", got.UnknownClusterElements, 0x4fe9, clusterUnknown)
+	got.UnknownClusterElements[0].Raw[0] = 0
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+
+	demuxer, err = NewDemuxer(bytes.NewReader(source.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var remuxed bytes.Buffer
+	remuxer, err := NewMuxer(&remuxed, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, track := range demuxer.Tracks() {
+		if _, err := remuxer.AddTrack(track); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got = Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if err := remuxer.WritePacket(got); err != nil {
+		t.Fatal(err)
+	}
+	if err := remuxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(remuxed.Bytes(), clusterUnknown) {
+		t.Fatalf("remuxed data does not contain raw unknown Cluster child %x", clusterUnknown)
+	}
+	redemuxer, err := NewDemuxer(bytes.NewReader(remuxed.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = Packet{Data: make([]byte, 0, 8)}
+	if err := redemuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	assertUnknownElement(t, "remuxed packet cluster", got.UnknownClusterElements, 0x4fe9, clusterUnknown)
+}
+
+func TestDemuxerRetriesLacedUnknownClusterElements(t *testing.T) {
+	clusterUnknown := unknownElementBytes(t, 0x4fe8, []byte{0x41, 0x42, 0x43})
+	var source bytes.Buffer
+	muxer, err := NewMuxer(&source, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:                trackID,
+		TimeNS:                 0,
+		Keyframe:               true,
+		Frames:                 [][]byte{{1, 2}, {3, 4}},
+		UnknownClusterElements: []UnknownElement{{Raw: clusterUnknown}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(source.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 1)}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, ErrPayloadTooSmall) {
+		t.Fatalf("err = %v, want ErrPayloadTooSmall", err)
+	}
+	got.Data = make([]byte, 0, 8)
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	assertUnknownElement(t, "first laced packet cluster", got.UnknownClusterElements, 0x4fe8, clusterUnknown)
+	if !bytes.Equal(got.Data, []byte{1, 2}) {
+		t.Fatalf("first laced data = %v", got.Data)
+	}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.UnknownClusterElements) != 0 {
+		t.Fatalf("second laced packet unknown cluster elements = %+v, want none", got.UnknownClusterElements)
+	}
+	if !bytes.Equal(got.Data, []byte{3, 4}) {
+		t.Fatalf("second laced data = %v", got.Data)
+	}
+}
+
+func TestDemuxerDropsUnknownClusterElementsForSkippedBlock(t *testing.T) {
+	clusterUnknown := unknownElementBytes(t, 0x4fe7, []byte{0x51})
+	var source bytes.Buffer
+	muxer, err := NewMuxer(&source, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:                trackID,
+		TimeNS:                 0,
+		Keyframe:               true,
+		Data:                   []byte{1, 2},
+		UnknownClusterElements: []UnknownElement{{Raw: clusterUnknown}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 20_000_000, Keyframe: true, Data: []byte{3}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(source.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 1)}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, ErrPayloadTooSmall) {
+		t.Fatalf("err = %v, want ErrPayloadTooSmall", err)
+	}
+	got.Data = make([]byte, 0, 8)
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != 20_000_000 || !bytes.Equal(got.Data, []byte{3}) {
+		t.Fatalf("packet = %+v data=%v, want second packet", got, got.Data)
+	}
+	if len(got.UnknownClusterElements) != 0 {
+		t.Fatalf("unknown cluster elements = %+v, want none after skipped block", got.UnknownClusterElements)
+	}
+}
+
 func TestMuxerRejectsInvalidUnknownSegmentElements(t *testing.T) {
 	unknownID := ebml.ID(0x4ffd)
 	valid := unknownElementBytes(t, unknownID, []byte{1})
@@ -539,6 +731,48 @@ func TestMuxerRejectsInvalidUnknownSegmentElements(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := NewMuxer(discardWriter{}, MuxerOptions{UnknownSegmentElements: []UnknownElement{tt.element}}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestMuxerRejectsInvalidUnknownClusterElements(t *testing.T) {
+	known := unknownElementBytes(t, idSimpleBlock, []byte{})
+	var unknownSize bytes.Buffer
+	unknownSizeWriter := ebml.NewWriter(&unknownSize)
+	if err := unknownSizeWriter.WriteUnknownHeader(0x4fe6, 1); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name    string
+		element UnknownElement
+	}{
+		{name: "known cluster id", element: UnknownElement{Raw: known}},
+		{name: "unknown size", element: UnknownElement{Raw: unknownSize.Bytes()}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			trackID, err := muxer.AddTrack(Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 16, Height: 16},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = muxer.WritePacket(Packet{
+				TrackID:                trackID,
+				TimeNS:                 0,
+				Keyframe:               true,
+				Data:                   []byte{1},
+				UnknownClusterElements: []UnknownElement{tt.element},
+			})
+			if !errors.Is(err, ErrInvalidData) {
 				t.Fatalf("err = %v, want ErrInvalidData", err)
 			}
 		})

@@ -237,6 +237,7 @@ func TestMuxerDemuxerPreservesNestedUnknownElements(t *testing.T) {
 	infoUnknown := unknownWebMElementBytes(t, 0x4ffb, []byte{0x31, 0x32})
 	trackUnknown := unknownWebMElementBytes(t, 0x4ffa, []byte{0x41, 0x42, 0x43})
 	tracksUnknown := unknownWebMElementBytes(t, 0x4ff9, []byte{0x51})
+	clusterUnknown := unknownWebMElementBytes(t, 0x4ff8, []byte{0x61, 0x62})
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{
 		Info: SegmentInfo{
@@ -258,7 +259,13 @@ func TestMuxerDemuxerPreservesNestedUnknownElements(t *testing.T) {
 		t.Fatal(err)
 	}
 	track.UnknownElements[0].Raw[0] = 0
-	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}}); err != nil {
+	if err := muxer.WritePacket(Packet{
+		TrackID:                trackID,
+		TimeNS:                 0,
+		Keyframe:               true,
+		Data:                   []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+		UnknownClusterElements: []UnknownElement{{Raw: append([]byte(nil), clusterUnknown...)}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := muxer.Close(); err != nil {
@@ -273,6 +280,9 @@ func TestMuxerDemuxerPreservesNestedUnknownElements(t *testing.T) {
 	if !bytes.Contains(buffer.Bytes(), tracksUnknown) {
 		t.Fatalf("muxed data does not contain raw Tracks unknown element %x", tracksUnknown)
 	}
+	if !bytes.Contains(buffer.Bytes(), clusterUnknown) {
+		t.Fatalf("muxed data does not contain raw Cluster unknown element %x", clusterUnknown)
+	}
 	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -284,6 +294,11 @@ func TestMuxerDemuxerPreservesNestedUnknownElements(t *testing.T) {
 	}
 	assertWebMUnknownElement(t, "track", tracks[0].UnknownElements, 0x4ffa, trackUnknown)
 	assertWebMUnknownElement(t, "tracks master", demuxer.UnknownTracksElements(), 0x4ff9, tracksUnknown)
+	packet := Packet{Data: make([]byte, 0, 16)}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	assertWebMUnknownElement(t, "packet cluster", packet.UnknownClusterElements, 0x4ff8, clusterUnknown)
 	tracks[0].UnknownElements[0].Raw[0] = 0
 	assertWebMUnknownElement(t, "fresh track", demuxer.Tracks()[0].UnknownElements, 0x4ffa, trackUnknown)
 	elements := demuxer.UnknownTracksElements()
