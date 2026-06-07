@@ -1612,6 +1612,11 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		}
 		body.Write(fileBody)
 	}
+	progressBody, err := os.ReadFile("docs/PROGRESS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body.WriteString(currentProgressSections(string(progressBody)))
 	text := body.String()
 	for _, forbidden := range []string{
 		"Recipes: From, stream chains",
@@ -1621,6 +1626,13 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"Stream recipe transforms",
 		"stream chains, not as",
 		"apply to stream chains",
+		"Simple high-level API | recipes, stream chains",
+		"surface is small: `From`, stream chains",
+		"direct stream chains",
+		"AudioFlow",
+		"VideoFlow",
+		"SinkEndpoint",
+		"FromTap",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("architecture docs keep stale composition vocabulary %q", forbidden)
@@ -1631,11 +1643,24 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"Intent graph: inputs, selected media, chain operations, targets, policies",
 		"media-plan executables",
 		"Chain transforms such as",
+		"Simple high-level API | recipes, chains",
+		"surface is small: `From`, chains",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("architecture docs should keep current composition vocabulary %q", required)
 		}
 	}
+}
+
+func currentProgressSections(text string) string {
+	var current strings.Builder
+	if before, _, ok := strings.Cut(text, "\n## Implementation Order"); ok {
+		current.WriteString(before)
+	}
+	if _, done, ok := strings.Cut(text, "\n## Done Criteria"); ok {
+		current.WriteString(done)
+	}
+	return current.String()
 }
 
 func TestReadmeFlowExampleUsesDistinctBranches(t *testing.T) {

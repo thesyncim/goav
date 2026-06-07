@@ -147,7 +147,7 @@ make the implementation match the composable planner promise.
   behind `goav_goav1`; recovery can use packet keyframe markers or parsed
   low-overhead sequence/key-frame payloads. The runtime can provision
   conservative decoder state for high-level AV1 receive, and
-  stream-scoped RTP decode recipes have tagged receive, same-stream
+  selected RTP decode chains have tagged receive, same-stream
   codec-change, and replacement-stream codec-change proofs for old-ID and
   replacement-ID event targets. The concrete decoder also has raw RTP payload
   runner integration with retained-fragment and after-loss tests. RTP sources
