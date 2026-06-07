@@ -80,7 +80,7 @@ func (p mediaPlanStreamGraph) lower(ctx context.Context, plan graphPlan, graph p
 	if p.copyPackets {
 		return p.lowerPacketCopy(ctx, plan, graph, service)
 	}
-	lowering, err := p.prepareFrameStreamOperationLowering(plan)
+	lowering, err := p.prepareFrameOperationSpecLowering(plan)
 	if err != nil {
 		return err
 	}
@@ -1142,7 +1142,7 @@ type graphPlanFrameStreamLowering struct {
 	targets     []graphPlanDestinationOperation
 }
 
-func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan) (graphPlanFrameStreamLowering, error) {
+func (p mediaPlanStreamGraph) prepareFrameOperationSpecLowering(plan graphPlan) (graphPlanFrameStreamLowering, error) {
 	operations, branchName, err := graphPlanSingleBranchOperations(plan.operations, "frame stream")
 	if err != nil {
 		return graphPlanFrameStreamLowering{}, err

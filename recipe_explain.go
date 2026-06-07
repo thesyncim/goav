@@ -239,7 +239,7 @@ func explainStreams(streams []StreamIntent) []StreamReport {
 			Name:         stream.Name,
 			Select:       stream.Select,
 			Decode:       stream.Decode,
-			Operations:   explainStreamOperations(stream.Operations),
+			Operations:   explainOperationSpecs(stream.Operations),
 			Transforms:   explainTransforms(stream.Transforms),
 			Encode:       stream.Encode,
 			CodecChange:  stream.CodecChange,
@@ -249,21 +249,21 @@ func explainStreams(streams []StreamIntent) []StreamReport {
 	return reports
 }
 
-func explainStreamOperations(operations []StreamOperation) []OperationReport {
+func explainOperationSpecs(operations []OperationSpec) []OperationReport {
 	reports := make([]OperationReport, 0, len(operations))
 	for i := range operations {
 		reports = append(reports, OperationReport{
 			Kind:      operations[i].Kind,
 			Component: operations[i].Component,
-			Detail:    streamOperationDetail(operations[i]),
-			Shape:     streamOperationShape(operations[i]),
+			Detail:    operationSpecDetail(operations[i]),
+			Shape:     operationSpecShape(operations[i]),
 			Shared:    operations[i].Shared,
 		})
 	}
 	return reports
 }
 
-func streamOperationShape(operation StreamOperation) MediaShape {
+func operationSpecShape(operation OperationSpec) MediaShape {
 	switch operation.Kind {
 	case OpTransform:
 		return mediaShapeFromTransform(operation.Transform)
@@ -276,7 +276,7 @@ func streamOperationShape(operation StreamOperation) MediaShape {
 	}
 }
 
-func streamOperationDetail(operation StreamOperation) string {
+func operationSpecDetail(operation OperationSpec) string {
 	switch operation.Kind {
 	case OpTransform:
 		return firstNonEmpty(transformFactoryName(operation.Transform), "transform frames")
@@ -979,7 +979,7 @@ func cloneIntent(intent Intent) Intent {
 	clone.Inputs = append([]InputIntent(nil), intent.Inputs...)
 	clone.Streams = append([]StreamIntent(nil), intent.Streams...)
 	for i := range clone.Streams {
-		clone.Streams[i].Operations = cloneStreamOperations(intent.Streams[i].Operations)
+		clone.Streams[i].Operations = cloneOperationSpecs(intent.Streams[i].Operations)
 		clone.Streams[i].Transforms = cloneTransformSpecs(intent.Streams[i].Transforms)
 		clone.Streams[i].Taps = cloneTapIntents(intent.Streams[i].Taps)
 		clone.Streams[i].Destinations = append([]string(nil), intent.Streams[i].Destinations...)
@@ -988,11 +988,11 @@ func cloneIntent(intent Intent) Intent {
 	return clone
 }
 
-func cloneStreamOperations(operations []StreamOperation) []StreamOperation {
+func cloneOperationSpecs(operations []OperationSpec) []OperationSpec {
 	if len(operations) == 0 {
 		return nil
 	}
-	out := make([]StreamOperation, 0, len(operations))
+	out := make([]OperationSpec, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
 		operation.Transform = cloneTransformSpec(operation.Transform)

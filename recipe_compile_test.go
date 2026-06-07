@@ -339,8 +339,8 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	for _, required := range []string{
 		"type chainStep struct",
 		"func chainStepOperations",
-		"func branchChainStepsFromOperations",
-		"func branchChainStepsFromOperationList",
+		"func branchChainStepsFromOperationSpecsAroundTap",
+		"func chainStepsFromOperationSpecs",
 		"func branchChainStepsFromChain",
 		"func branchChainStepsFromTranscode",
 		"func runtimeBranchStepsFromChain",
@@ -349,9 +349,9 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 		"func chainSpecFrom",
 		"func validateChainMedia",
 		"func cloneChainSteps",
-		"operations     []StreamOperation",
-		"func streamOperationForTransform",
-		"func streamOperationForTap",
+		"operations     []OperationSpec",
+		"func operationSpecForTransform",
+		"func operationSpecForTap",
 		"func ensureJobStreamDecodeOperation",
 	} {
 		if !strings.Contains(text, required) {
@@ -371,7 +371,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := streamOperationKindsForTest(flowSpec.operations), []OperationKind{OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(flowSpec.operations), []OperationKind{OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("flow operations = %+v, want %+v", got, want)
 	}
 	flowOutputs := voice.OutputShapes(FrameShape(
@@ -400,7 +400,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	if job.stream == nil {
 		t.Fatal("job stream is nil")
 	}
-	if got, want := streamOperationKindsForTest(job.stream.operations), []OperationKind{OpDecode, OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(job.stream.operations), []OperationKind{OpDecode, OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("direct stream stored operations = %+v, want %+v", got, want)
 	}
 
@@ -410,7 +410,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	if branch.err != nil {
 		t.Fatal(branch.err)
 	}
-	if got, want := streamOperationKindsForTest(branch.operations), []OperationKind{OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(branch.operations), []OperationKind{OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("branch stored operations = %+v, want %+v", got, want)
 	}
 }
@@ -436,10 +436,10 @@ func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 	if len(stream.sharedOps) != 0 {
 		t.Fatalf("shared operations = %+v, want none before implicit decode", stream.sharedOps)
 	}
-	if got, want := streamOperationKindsForTest(stream.privateOps), []OperationKind{OpTransform, OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(stream.privateOps), []OperationKind{OpTransform, OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("private operations = %+v, want %+v", got, want)
 	}
-	if got, want := streamOperationKindsForTest(streamBuildOperations(stream)), []OperationKind{OpDecode, OpTransform, OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(stream)), []OperationKind{OpDecode, OpTransform, OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("normalized operations = %+v, want %+v", got, want)
 	}
 }
@@ -460,7 +460,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if len(decodeJob.branchStreams) != 1 {
 		t.Fatalf("decode branch streams = %d, want 1", len(decodeJob.branchStreams))
 	}
-	if got, want := streamOperationKindsForTest(streamBuildOperations(decodeJob.branchStreams[0])), []OperationKind{OpDecode, OpTransform, OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(decodeJob.branchStreams[0])), []OperationKind{OpDecode, OpTransform, OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("decode branch operations = %+v, want %+v", got, want)
 	}
 
@@ -479,10 +479,10 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if len(copyJob.branchStreams) != 1 {
 		t.Fatalf("copy branch streams = %d, want 1", len(copyJob.branchStreams))
 	}
-	if got, want := streamOperationKindsForTest(streamBuildOperations(copyJob.branchStreams[0])), []OperationKind{OpCopy, OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(copyJob.branchStreams[0])), []OperationKind{OpCopy, OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("copy branch operations = %+v, want %+v", got, want)
 	}
-	if tap := streamBuildOperations(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != DomainPacket {
+	if tap := streamBuildOperationSpecs(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != DomainPacket {
 		t.Fatalf("copy branch tap = %+v, want packet branch tap", tap)
 	}
 	copyPlan, err := planBranchCompositionRecipe(copyJob.Intent(), copyJob.inputs[0], copyJob.branchDestinations, copyJob.branchStreams)
@@ -492,7 +492,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if len(copyPlan.Branches) != 1 {
 		t.Fatalf("copy plan branches = %d, want 1", len(copyPlan.Branches))
 	}
-	if got, want := streamOperationKindsForTest(copyPlan.Branches[0].Operations), []OperationKind{OpCopy, OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(copyPlan.Branches[0].Operations), []OperationKind{OpCopy, OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("copy plan operations = %+v, want %+v", got, want)
 	}
 	if len(copyPlan.Branches[0].PrivateOperations) != 2 ||
@@ -530,8 +530,8 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("branch streams = %d, want 2", len(job.branchStreams))
 	}
 
-	rawOps := streamBuildOperations(job.branchStreams[0])
-	if got, want := streamOperationKindsForTest(rawOps), []OperationKind{OpDecode, OpTap, OpTransform}; !reflect.DeepEqual(got, want) {
+	rawOps := streamBuildOperationSpecs(job.branchStreams[0])
+	if got, want := operationSpecKindsForTest(rawOps), []OperationKind{OpDecode, OpTap, OpTransform}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("raw operations = %+v, want %+v", got, want)
 	}
 	if !rawOps[0].Shared || !rawOps[1].Shared || rawOps[2].Shared {
@@ -541,8 +541,8 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("raw operations = %+v, want anchor tap video.decoded", rawOps)
 	}
 
-	webOps := streamBuildOperations(job.branchStreams[1])
-	if got, want := streamOperationKindsForTest(webOps), []OperationKind{OpDecode, OpTap, OpTransform, OpTap, OpEncode}; !reflect.DeepEqual(got, want) {
+	webOps := streamBuildOperationSpecs(job.branchStreams[1])
+	if got, want := operationSpecKindsForTest(webOps), []OperationKind{OpDecode, OpTap, OpTransform, OpTap, OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("web operations = %+v, want %+v", got, want)
 	}
 	for i := 0; i < 4; i++ {
@@ -582,10 +582,10 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web plan branch = %+v, want shared 720p resize from operation split", plan.Branches[1])
 	}
 
-	if got, want := streamOperationKindsForTest(plan.Branches[0].Operations), []OperationKind{OpDecode, OpTap, OpTransform}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(plan.Branches[0].Operations), []OperationKind{OpDecode, OpTap, OpTransform}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("raw plan operations = %+v, want %+v", got, want)
 	}
-	if got, want := streamOperationKindsForTest(plan.Branches[1].Operations), []OperationKind{OpDecode, OpTap, OpTransform, OpTap, OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(plan.Branches[1].Operations), []OperationKind{OpDecode, OpTap, OpTransform, OpTap, OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("web plan operations = %+v, want %+v", got, want)
 	}
 
@@ -663,7 +663,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	}
 }
 
-func streamOperationKindsForTest(operations []StreamOperation) []OperationKind {
+func operationSpecKindsForTest(operations []OperationSpec) []OperationKind {
 	out := make([]OperationKind, 0, len(operations))
 	for i := range operations {
 		out = append(out, operations[i].Kind)
@@ -877,7 +877,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 			want: "stream recipes use stream-local outputs",
 		},
 		{
-			name: "stream operation missing",
+			name: "operation spec missing",
 			state: recipeCompileState{
 				operation: "build job",
 				intent: Intent{
@@ -2356,7 +2356,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 			stream: StreamIntent{
 				Name:   "video",
 				Select: StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
-				Operations: []StreamOperation{
+				Operations: []OperationSpec{
 					{Kind: OpDecode, Decode: VP8()},
 					{Kind: OpShape, Component: "shape", Shape: Shape(ShapeDomain(DomainPacket), ShapeMedia(av.MediaVideo))},
 					{Kind: OpEncode, Component: string(av.CodecVP9), Encode: VP9(Bitrate(2_000_000))},
@@ -2377,7 +2377,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 			stream: StreamIntent{
 				Name:   "video",
 				Select: StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
-				Operations: []StreamOperation{
+				Operations: []OperationSpec{
 					{Kind: OpDecode, Decode: VP8()},
 					{Kind: OpShape, Component: "shape", Shape: Shape(ShapeMedia(av.MediaAudio))},
 					{Kind: OpTransform, Component: filter.FactoryResize, Transform: Resize(640, 360)},
@@ -2398,7 +2398,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 			stream: StreamIntent{
 				Name:   "audio",
 				Select: StreamSelect{Type: av.MediaAudio, Codec: av.CodecOpus},
-				Operations: []StreamOperation{
+				Operations: []OperationSpec{
 					{Kind: OpDecode, Decode: Opus()},
 					{Kind: OpCopy, Component: "packet-copy", Encode: Copy()},
 				},
@@ -2447,7 +2447,7 @@ func TestRecipeOperationShapePassAllowsCustomStageShapeDeclaration(t *testing.T)
 			Streams: []StreamIntent{{
 				Name:   "visualized",
 				Select: StreamSelect{Type: av.MediaAudio, Codec: av.CodecOpus},
-				Operations: []StreamOperation{
+				Operations: []OperationSpec{
 					{Kind: OpDecode, Decode: Opus()},
 					{Kind: OpStage, Component: "visualizer", Stage: &runtimeTestStage{name: "visualizer"}},
 					{Kind: OpShape, Component: "shape", Shape: FrameShape(av.MediaVideo, ShapeVideo(640, 360, av.PixelFormatYUV420P))},
@@ -2471,7 +2471,7 @@ func TestRecipeDestinationShapePassRejectsFrameShapeForMuxDestination(t *testing
 			Streams: []StreamIntent{{
 				Name:   "preview",
 				Select: StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
-				Operations: []StreamOperation{
+				Operations: []OperationSpec{
 					{Kind: OpDecode, Decode: VP8()},
 					{Kind: OpStage, Component: "inspect", Stage: &runtimeTestStage{name: "inspect"}},
 				},
@@ -2508,7 +2508,7 @@ func TestRecipeDestinationShapePassAllowsFrameShapeForSinkDestination(t *testing
 			Streams: []StreamIntent{{
 				Name:   "preview",
 				Select: StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
-				Operations: []StreamOperation{
+				Operations: []OperationSpec{
 					{Kind: OpDecode, Decode: VP8()},
 				},
 				Destinations: []string{"frames"},

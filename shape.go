@@ -319,7 +319,7 @@ func (spec TransformSpec) OutputShapes(input MediaShape) ShapeSet {
 	return ShapeSet{shape}
 }
 
-func (operation StreamOperation) InputShapes() ShapeSet {
+func (operation OperationSpec) InputShapes() ShapeSet {
 	switch operation.Kind {
 	case OpDecode:
 		codecID := firstNonEmptyCodec(operation.Decode.ID, av.CodecID(operation.Component))
@@ -336,7 +336,7 @@ func (operation StreamOperation) InputShapes() ShapeSet {
 	}
 }
 
-func (operation StreamOperation) OutputShapes(input MediaShape) ShapeSet {
+func (operation OperationSpec) OutputShapes(input MediaShape) ShapeSet {
 	switch operation.Kind {
 	case OpDecode:
 		input.Domain = DomainFrame

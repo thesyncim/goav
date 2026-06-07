@@ -244,7 +244,7 @@ func operationKinds(operations []goav.OperationReport) []goav.OperationKind {
 	return kinds
 }
 
-func streamOperationKinds(operations []goav.StreamOperation) []goav.OperationKind {
+func operationSpecKinds(operations []goav.OperationSpec) []goav.OperationKind {
 	kinds := make([]goav.OperationKind, 0, len(operations))
 	for i := range operations {
 		kinds = append(kinds, operations[i].Kind)
@@ -324,7 +324,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("copied shape=%+v, want preserved packet %+v", copied, packet)
 	}
 
-	var operationContract goav.ShapeContract = goav.StreamOperation{Kind: goav.OpTransform, Transform: goav.Resample(16_000, goav.Mono)}
+	var operationContract goav.ShapeContract = goav.OperationSpec{Kind: goav.OpTransform, Transform: goav.Resample(16_000, goav.Mono)}
 	resampled := operationContract.OutputShapes(goav.FrameShape(
 		av.MediaAudio,
 		goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
@@ -3001,7 +3001,7 @@ func TestBranchAfterDecodeCustomStageUsesOrderedOperations(t *testing.T) {
 		t.Fatalf("intent: %+v", intent)
 	}
 	want := []goav.OperationKind{goav.OpDecode, goav.OpTap, goav.OpStage, goav.OpTransform, goav.OpEncode}
-	if !equalOperationKinds(streamOperationKinds(intent.Streams[0].Operations), want) {
+	if !equalOperationKinds(operationSpecKinds(intent.Streams[0].Operations), want) {
 		t.Fatalf("operations=%+v, want %+v", intent.Streams[0].Operations, want)
 	}
 	if intent.Streams[0].Operations[2].Component != "meter" {
@@ -3088,7 +3088,7 @@ func TestBranchCustomStageUsesOrderedOperations(t *testing.T) {
 		t.Fatalf("intent: %+v", intent)
 	}
 	want := []goav.OperationKind{goav.OpDecode, goav.OpTap, goav.OpTransform, goav.OpStage, goav.OpEncode}
-	if !equalOperationKinds(streamOperationKinds(intent.Streams[0].Operations), want) {
+	if !equalOperationKinds(operationSpecKinds(intent.Streams[0].Operations), want) {
 		t.Fatalf("operations=%+v, want %+v", intent.Streams[0].Operations, want)
 	}
 
@@ -3220,7 +3220,7 @@ func TestFlowDecodeAppliesToPacketBranchIntent(t *testing.T) {
 		t.Fatalf("stream intent: %+v", stream)
 	}
 	want := []goav.OperationKind{goav.OpDecode, goav.OpTransform, goav.OpEncode}
-	if !equalOperationKinds(streamOperationKinds(stream.Operations), want) {
+	if !equalOperationKinds(operationSpecKinds(stream.Operations), want) {
 		t.Fatalf("operations=%+v, want %+v", stream.Operations, want)
 	}
 }
@@ -3252,7 +3252,7 @@ func TestFlowDecodeAppliesToStreamRecipeIntent(t *testing.T) {
 		t.Fatalf("stream intent: %+v", stream)
 	}
 	want := []goav.OperationKind{goav.OpDecode, goav.OpTap}
-	if !equalOperationKinds(streamOperationKinds(stream.Operations), want) {
+	if !equalOperationKinds(operationSpecKinds(stream.Operations), want) {
 		t.Fatalf("operations=%+v, want %+v", stream.Operations, want)
 	}
 	if len(stream.Taps) != 1 ||

@@ -490,7 +490,7 @@ func validateJobStreamIntentShape(operation string, stream StreamIntent, steps [
 	selector := streamIntentSelector(stream)
 	node := jobStreamIntentName(stream)
 	if !streamIntentHasOperation(stream, steps) {
-		return streamOperationMissingError(operation, node)
+		return operationSpecMissingError(operation, node)
 	}
 	if err := validateRecipeStreamSelector(operation, node, selector); err != nil {
 		return err
@@ -546,7 +546,7 @@ func validateJobStreamTransformIntentShape(operation string, stream StreamIntent
 	return nil
 }
 
-func streamOperationMissingError(operation string, node string) error {
+func operationSpecMissingError(operation string, node string) error {
 	return &BuildError{
 		Code:      "stream_operation_missing",
 		Operation: operation,
@@ -928,7 +928,7 @@ func validateRecipeOperationShapesPass() recipeCompilePass {
 		for i := range state.intent.Streams {
 			stream := state.intent.Streams[i]
 			shape := recipeInitialStreamShape(state, stream)
-			if err := validateStreamOperationShapes(state.operation, stream, shape); err != nil {
+			if err := validateOperationSpecShapes(state.operation, stream, shape); err != nil {
 				return err
 			}
 		}
@@ -997,7 +997,7 @@ func recipeFinalStreamShape(state *recipeCompileState, stream StreamIntent) Medi
 		shape.Codec = stream.Select.Codec
 	}
 	for i := range stream.Operations {
-		shape = streamOperationOutputShape(shape, stream.Operations[i])
+		shape = operationSpecOutputShape(shape, stream.Operations[i])
 	}
 	return shape
 }
@@ -1036,7 +1036,7 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 	}
 }
 
-func validateStreamOperationShapes(operation string, stream StreamIntent, initial MediaShape) error {
+func validateOperationSpecShapes(operation string, stream StreamIntent, initial MediaShape) error {
 	shape := normalizeTapShape(initial)
 	if shape.MediaKind == "" {
 		shape.MediaKind = stream.Select.Type
@@ -1048,19 +1048,19 @@ func validateStreamOperationShapes(operation string, stream StreamIntent, initia
 	for i := range stream.Operations {
 		next := stream.Operations[i]
 		if next.Kind == OpTap || next.Kind == OpShape {
-			shape = streamOperationOutputShape(shape, next)
+			shape = operationSpecOutputShape(shape, next)
 			continue
 		}
 		expected := next.InputShapes()
 		if len(expected) != 0 && !expected.Accepts(shape) {
 			return operationShapeMismatchError(operation, node, i, next, expected, shape)
 		}
-		shape = streamOperationOutputShape(shape, next)
+		shape = operationSpecOutputShape(shape, next)
 	}
 	return nil
 }
 
-func streamOperationOutputShape(input MediaShape, operation StreamOperation) MediaShape {
+func operationSpecOutputShape(input MediaShape, operation OperationSpec) MediaShape {
 	out := operation.OutputShapes(input)
 	if len(out) == 0 {
 		return input
@@ -1068,8 +1068,8 @@ func streamOperationOutputShape(input MediaShape, operation StreamOperation) Med
 	return out[0]
 }
 
-func operationShapeMismatchError(operation string, node string, index int, step StreamOperation, expected ShapeSet, actual MediaShape) error {
-	component := firstNonEmpty(step.Component, streamOperationComponent(step), string(step.Kind), "operation")
+func operationShapeMismatchError(operation string, node string, index int, step OperationSpec, expected ShapeSet, actual MediaShape) error {
+	component := firstNonEmpty(step.Component, operationSpecComponent(step), string(step.Kind), "operation")
 	return &BuildError{
 		Code:      "operation_shape_mismatch",
 		Operation: operation,
@@ -1086,7 +1086,7 @@ func operationShapeMismatchError(operation string, node string, index int, step 
 	}
 }
 
-func streamOperationComponent(operation StreamOperation) string {
+func operationSpecComponent(operation OperationSpec) string {
 	switch operation.Kind {
 	case OpDecode:
 		return firstNonEmpty(string(operation.Decode.ID), operation.Component, "decode")
@@ -1112,7 +1112,7 @@ func shapeSetString(shapes ShapeSet) string {
 	return strings.Join(parts, " | ")
 }
 
-func operationShapeMismatchSuggestions(operation StreamOperation) []string {
+func operationShapeMismatchSuggestions(operation OperationSpec) []string {
 	switch operation.Kind {
 	case OpDecode:
 		return []string{

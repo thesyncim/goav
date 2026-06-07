@@ -1012,8 +1012,8 @@ func branchComposeRouteSteps(name string, branch branchComposeBranch) ([]mediaTr
 	return branchComposeRouteStepsForName(name, branch.Steps)
 }
 
-func branchComposeRouteOperationStepsForName(name string, operations []StreamOperation) ([]mediaTransform, error) {
-	return branchComposeRouteStepsForName(name, branchChainStepsFromOperationList(operations))
+func branchComposeRouteOperationStepsForName(name string, operations []OperationSpec) ([]mediaTransform, error) {
+	return branchComposeRouteStepsForName(name, chainStepsFromOperationSpecs(operations))
 }
 
 func branchComposeRouteStepsForName(name string, steps []chainStep) ([]mediaTransform, error) {

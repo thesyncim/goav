@@ -56,7 +56,7 @@ diagnostics, plus the work-plan lowerers used to build the runtime graph.
 The active recipe compiler state carries public `Intent` plus concrete readers,
 writers, sinks, and stages through validation, media-plan creation, graph-plan
 emission, and planned-spec emission. Branches carry ordered stage, transform,
-tap, and encode operations and can start after earlier stream operations such as
+tap, and encode operations and can start after earlier operation specs such as
 decode, resize, resample, custom stages, and taps. `Job.Explain(ctx)` reports the
 `MediaPlan` branch operations, each operation's output shape, resolved branch
 stream shape, taps, decisions, and adapter capability details. Planned taps

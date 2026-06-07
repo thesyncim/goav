@@ -192,7 +192,7 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 		if len(state.intent.Streams) > 1 {
 			steps = nil
 		}
-		operations, branchDecisions := planStreamOperations(state.intent.Inputs, stream, branchName, steps)
+		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, steps)
 		operations = planOperationsWithShape(branchName, shape, operations)
 		branches = append(branches, planBranch{
 			Name:       branchName,
@@ -220,7 +220,7 @@ func planBranchesFromBranchComposePlan(state *recipeCompileState, outputs []plan
 		}
 		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
 		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
-		operations, branchDecisions := planStreamOperations(state.intent.Inputs, stream, branchName, nil)
+		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, nil)
 		operations = planOperationsWithShape(branchName, shape, operations)
 		branches = append(branches, planBranch{
 			Name:       branchName,
@@ -241,7 +241,7 @@ func streamIntentFromBranchComposeBranch(branch branchComposeBranch) StreamInten
 		Select:       streamSelectFromAV(branch.Selector),
 		Decode:       branch.Decode,
 		DecodeCodec:  cloneCodecSpec(branch.DecodeConfig),
-		Operations:   branchComposeBranchOperations(branch),
+		Operations:   branchComposeBranchOperationSpecs(branch),
 		CodecChange:  branch.CodecChange,
 		Destinations: append([]string(nil), branch.Labels...),
 	}
@@ -278,18 +278,18 @@ func codecSpecFromEncodeConfig(config codec.EncodeConfig) CodecSpec {
 	return spec
 }
 
-func branchComposeBranchOperations(branch branchComposeBranch) []StreamOperation {
+func branchComposeBranchOperationSpecs(branch branchComposeBranch) []OperationSpec {
 	if len(branch.Operations) != 0 {
-		return cloneStreamOperations(branch.Operations)
+		return cloneOperationSpecs(branch.Operations)
 	}
-	operations := append(cloneStreamOperations(branch.SharedOperations), cloneStreamOperations(branch.PrivateOperations)...)
+	operations := append(cloneOperationSpecs(branch.SharedOperations), cloneOperationSpecs(branch.PrivateOperations)...)
 	return operations
 }
 
 func branchComposePlanHasOperations(plan branchComposePlan) bool {
 	for i := range plan.Branches {
 		branch := plan.Branches[i]
-		if len(branchComposeBranchOperations(branch)) != 0 {
+		if len(branchComposeBranchOperationSpecs(branch)) != 0 {
 			return true
 		}
 	}
@@ -366,7 +366,7 @@ func planCopyBranches(intent Intent, outputs []planOutput) ([]planBranch, []plan
 	return branches, decisions
 }
 
-func planStreamOperations(inputs []InputIntent, stream StreamIntent, branchName string, steps []chainStepAttachment) ([]planOperation, []planDecision) {
+func planOperationSpecs(inputs []InputIntent, stream StreamIntent, branchName string, steps []chainStepAttachment) ([]planOperation, []planDecision) {
 	operations := planInputOperations(firstInput(inputs))
 	operations = append(operations, planOperation{
 		Kind:      OpSelect,
@@ -374,8 +374,8 @@ func planStreamOperations(inputs []InputIntent, stream StreamIntent, branchName 
 		Detail:    "select stream",
 	})
 	if len(stream.Operations) != 0 {
-		streamOperations, decisions := planStreamIntentOperations(stream, branchName)
-		operations = append(operations, streamOperations...)
+		operationSpecs, decisions := planStreamIntentOperations(stream, branchName)
+		operations = append(operations, operationSpecs...)
 		return operations, decisions
 	}
 	var decisions []planDecision
@@ -388,7 +388,7 @@ func planStreamOperations(inputs []InputIntent, stream StreamIntent, branchName 
 		decisions = append(decisions, planDecision{
 			Code:    "decode_required",
 			Branch:  branchName,
-			Message: "stream operations require decoded frames",
+			Message: "operation specs require decoded frames",
 		})
 	} else {
 		operations = append(operations, planOperation{
@@ -425,22 +425,22 @@ func planStreamIntentOperations(stream StreamIntent, branchName string) ([]planO
 	var decisions []planDecision
 	for i := range stream.Operations {
 		operation := stream.Operations[i]
-		operations = append(operations, planOperationFromStreamOperation(operation))
+		operations = append(operations, planOperationFromOperationSpec(operation))
 	}
-	if streamOperationKindPresent(stream.Operations, OpDecode) {
+	if operationSpecKindPresent(stream.Operations, OpDecode) {
 		decisions = append(decisions, planDecision{
 			Code:    "decode_required",
 			Branch:  branchName,
-			Message: "stream operations require decoded frames",
+			Message: "operation specs require decoded frames",
 		})
-	} else if streamOperationKindPresent(stream.Operations, OpCopy) {
+	} else if operationSpecKindPresent(stream.Operations, OpCopy) {
 		decisions = append(decisions, planDecision{
 			Code:    "packet_copy",
 			Branch:  branchName,
 			Message: "stream can remain packet encoded",
 		})
 	}
-	if streamOperationKindPresent(stream.Operations, OpEncode) {
+	if operationSpecKindPresent(stream.Operations, OpEncode) {
 		decisions = append(decisions, planDecision{
 			Code:    "encode_required",
 			Branch:  branchName,
@@ -450,7 +450,7 @@ func planStreamIntentOperations(stream StreamIntent, branchName string) ([]planO
 	return operations, decisions
 }
 
-func planOperationFromStreamOperation(operation StreamOperation) planOperation {
+func planOperationFromOperationSpec(operation OperationSpec) planOperation {
 	switch operation.Kind {
 	case OpTransform:
 		plan := planTransformOperation(operation.Transform)
@@ -506,7 +506,7 @@ func planOperationFromStreamOperation(operation StreamOperation) planOperation {
 	}
 }
 
-func streamOperationKindPresent(operations []StreamOperation, kind OperationKind) bool {
+func operationSpecKindPresent(operations []OperationSpec, kind OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true

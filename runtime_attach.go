@@ -801,9 +801,9 @@ func validateRuntimeBranchShapeContract(branch runtimeBranch, initial MediaShape
 			Type:  firstNonEmptyMedia(branch.media, initial.MediaKind),
 			Codec: initial.Codec,
 		},
-		Operations: runtimeBranchShapeOperations(branch),
+		Operations: runtimeBranchShapeOperationSpecs(branch),
 	}
-	if err := validateStreamOperationShapes("attach runtime branch", stream, initial); err != nil {
+	if err := validateOperationSpecShapes("attach runtime branch", stream, initial); err != nil {
 		return err
 	}
 	shape := runtimeBranchFinalShape(branch, initial)
@@ -824,21 +824,21 @@ func validateRuntimeBranchShapeContract(branch runtimeBranch, initial MediaShape
 	return nil
 }
 
-func runtimeBranchShapeOperations(branch runtimeBranch) []StreamOperation {
-	operations := make([]StreamOperation, 0, len(branch.steps)+1)
+func runtimeBranchShapeOperationSpecs(branch runtimeBranch) []OperationSpec {
+	operations := make([]OperationSpec, 0, len(branch.steps)+1)
 	for i := range branch.steps {
 		step := branch.steps[i]
 		switch {
 		case step.decode:
-			operations = append(operations, StreamOperation{Kind: OpDecode, Decode: cloneCodecSpec(step.codec)})
+			operations = append(operations, OperationSpec{Kind: OpDecode, Decode: cloneCodecSpec(step.codec)})
 		case step.stage != nil:
-			operations = append(operations, StreamOperation{Kind: OpStage, Component: step.stage.Name(), Stage: step.stage})
+			operations = append(operations, OperationSpec{Kind: OpStage, Component: step.stage.Name(), Stage: step.stage})
 		case !mediaShapeEmpty(step.shapeUpdate):
-			operations = append(operations, StreamOperation{Kind: OpShape, Component: "shape", Shape: step.shapeUpdate})
+			operations = append(operations, OperationSpec{Kind: OpShape, Component: "shape", Shape: step.shapeUpdate})
 		case runtimeBranchStepHasTransform(step):
-			operations = append(operations, StreamOperation{Kind: OpTransform, Component: transformFactoryName(step.transform), Transform: cloneTransformSpec(step.transform)})
+			operations = append(operations, OperationSpec{Kind: OpTransform, Component: transformFactoryName(step.transform), Transform: cloneTransformSpec(step.transform)})
 		case step.tap != "":
-			operations = append(operations, StreamOperation{
+			operations = append(operations, OperationSpec{
 				Kind:      OpTap,
 				Component: step.tap,
 				Tap: TapIntent{
@@ -851,17 +851,17 @@ func runtimeBranchShapeOperations(branch runtimeBranch) []StreamOperation {
 		}
 	}
 	if branch.encode.Copy {
-		operations = append(operations, StreamOperation{Kind: OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(branch.encode)})
+		operations = append(operations, OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(branch.encode)})
 	} else if codecIntentSet(branch.encode) {
-		operations = append(operations, StreamOperation{Kind: OpEncode, Component: string(branch.encode.ID), Encode: cloneCodecSpec(branch.encode)})
+		operations = append(operations, OperationSpec{Kind: OpEncode, Component: string(branch.encode.ID), Encode: cloneCodecSpec(branch.encode)})
 	}
 	return operations
 }
 
 func runtimeBranchFinalShape(branch runtimeBranch, initial MediaShape) MediaShape {
 	shape := normalizeTapShape(initial)
-	for _, operation := range runtimeBranchShapeOperations(branch) {
-		shape = streamOperationOutputShape(shape, operation)
+	for _, operation := range runtimeBranchShapeOperationSpecs(branch) {
+		shape = operationSpecOutputShape(shape, operation)
 	}
 	return shape
 }

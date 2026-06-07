@@ -723,7 +723,7 @@ are:
     captured concrete attachments before lowering. Done.
 185. Split ordinary recipe validation into intent shape and concrete attachment
     passes: input/output presence, one selected stream, stream-local output
-    scope, stream operation, selector, encode, and codec-change policy now fail
+    scope, operation spec, selector, encode, and codec-change policy now fail
     from public `Intent` before readers, writers, sinks, and stage attachments
     are validated. Done.
 186. Split transcode recipe validation the same way: one input, branch presence,
@@ -975,7 +975,7 @@ are:
     `AudioFlow`/`VideoFlow` values apply to `BranchSpec`, streams split with
     `.Branches(...)`, and mux groups are typed `Target` values carried by
     branch `.To(...)`.
-    Branch splits preserve upstream stream operations, so branches can begin after
+    Branch splits preserve upstream operation specs, so branches can begin after
     decode, resize/resample, custom stages, and taps; runtime attachment remains
     the late control plane through `Task.Attach` and named taps. Done.
 235. Make `Explain(ctx)` useful when adapter preflight fails:
@@ -1080,7 +1080,7 @@ are:
     branch composition. Done.
 250. Keep direct stream recipes on resolved media-plan attachments:
 	selected stream decode-to-sink, encode-to-sink, and encode-to-output
-	recipes no longer lower inputs, stream operations, or destination refs into the
+	recipes no longer lower inputs, operation specs, or destination refs into the
 	recipe compile builder before media-plan recognition. The resolved recipe
 	carries concrete inputs, destination refs, ordered stream attachments, codec-change
 	policy, custom stages, transforms, and taps; describe/build construct the
@@ -1703,7 +1703,7 @@ are:
 324. Remove the branch-compose step mirror:
     branch composition no longer owns a second stage/resize/resample step
     record beside `chainStep`. Advanced transcode boundary steps, stream-chain
-    branches, ordered stream operations, shared decode anchors, and branch
+    branches, ordered operation specs, shared decode anchors, and branch
     route lowering all carry `chainStep` directly, with tap-only steps filtered
     at the branch-composition boundary. Guard coverage now rejects
     the deleted mirror type from production chain internals.
@@ -1731,7 +1731,7 @@ are:
     build-kind concepts as public design language.
     Done.
 328. Surface shared branch work in Explain reports:
-    `StreamOperation`, `planOperation`, and `OperationReport` now carry a
+    `OperationSpec`, `planOperation`, and `OperationReport` now carry a
     `Shared` flag. Planned branches mark parent decode and shared chain
     operations when they reuse the current chain point or a typed frame tap,
     while branch-private encodes, transforms, and sink work remain unshared.
@@ -1974,7 +1974,7 @@ are:
     decoded-frame, and encoded direct chains and prove the built graph still
     equals the described graph.
     Done.
-358. Lower direct stream operations from graph-plan refs:
+358. Lower direct operation specs from graph-plan refs:
     decoded direct stream lowering now records select, decode, transform/stage,
     and encode operation node refs from the graph plan before source opening.
     Runtime decode/filter helpers accept planned node refs, built-in transforms
@@ -2156,7 +2156,7 @@ are:
 377. Start converging direct chains, branches, and flows on one ordered
     operation list:
     `chainSpec`, `BranchSpec`, direct stream builds, and branch stream builds
-    now carry `[]StreamOperation` as the migration base for the one-operation
+    now carry `[]OperationSpec` as the migration base for the one-operation
     model. Flow shape/tap reporting reads the ordered operation list, fluent
     flow/branch/direct-stream methods append operation records as they mutate
     the bridge fields, and direct stream methods that imply frames now record
@@ -2194,7 +2194,7 @@ are:
     `branchComposeBranch` now carries the flattened operation list plus
     `SharedOperations` and `PrivateOperations` beside the legacy step fields.
     Recipe-created branch plans populate those operation records from
-    `streamBuildOperations`, while intent-only paths split operations by their
+    `streamBuildOperationSpecs`, while intent-only paths split operations by their
     `Shared` flag. Route preparation now prefers operation records when
     creating shared and branch-local transform routes, using the projected step
     fields only as a compatibility fallback. Tests prove packet-copy branches
@@ -2208,7 +2208,7 @@ are:
     `state.intent.Streams` as the only operation source. Intent-only branch
     paths still fall back to the existing stream intent planner, and legacy
     branch-compose plans without operations keep their previous path. Tests
-    clear intent stream operations after the plan is built, then prove the
+    clear intent operation specs after the plan is built, then prove the
     media plan and `graphPlanOperationsFromMediaPlan` still emit decode, taps,
     shared resize, private encode, and target operations from the plan records.
     Done.
@@ -2580,6 +2580,17 @@ work is to make `workPlan`/`workPatch` the actual lowerer input, delete
 descriptor-backed destination/container capability data as WebM/Ogg arrive, and
 keep broadening runtime attachment stress around generic lifecycle boundaries
 without weakening the direct branch grammar.
+The latest direction sharpens the active goal further: normal composition must
+use only `Input`, `Chain`, `Tap`, `Branch`, `Destination`, `Flow`, and `Task`;
+`Branch` is the real unit of work; `Destination` is the routing handle; `Flow`
+is only reusable operations; runtime inspection is attached branch work; and
+`WorkPlan`/`WorkPatch` are the executable boundaries for build and attach.
+Current code now names the shared ordered operation record `OperationSpec`
+instead of `StreamOperation`, so chains, flows, planned branches, runtime branch
+shape validation, explanations, and media plans no longer describe that record
+as stream-only. The next cleanup remains deleting the projection bridge around
+`chainStep`, `branchComposePlan`, and `runtimeBranch` so `OperationSpec` feeds
+the planner directly.
 
 ## Validation Gates
 

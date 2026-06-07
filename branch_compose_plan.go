@@ -22,9 +22,9 @@ type branchComposeBranch struct {
 	Selector          av.StreamSelector
 	Decode            bool
 	Copy              bool
-	Operations        []StreamOperation
-	SharedOperations  []StreamOperation
-	PrivateOperations []StreamOperation
+	Operations        []OperationSpec
+	SharedOperations  []OperationSpec
+	PrivateOperations []OperationSpec
 	SharedSteps       []chainStep
 	Steps             []chainStep
 	Resize            *filter.ResizeConfig
