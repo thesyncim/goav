@@ -999,6 +999,77 @@ func TestMuxerDemuxerPreservesBlockAdditionMapping(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesTrackEntryMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	track := Track{
+		UID:               42,
+		Type:              TrackVideo,
+		Codec:             CodecVP8,
+		MinCache:          2,
+		MinCacheSet:       true,
+		MaxCache:          5,
+		MaxCacheSet:       true,
+		CodecDecodeAll:    false,
+		CodecDecodeAllSet: true,
+		TrackOverlays:     []uint64{101, 202},
+		TrackTranslates: []TrackTranslate{{
+			TrackID:     []byte{0x01, 0x02},
+			Codec:       1,
+			EditionUIDs: []uint64{7, 8},
+		}},
+		Video: VideoConfig{Width: 640, Height: 360},
+	}
+	trackID, err := muxer.AddTrack(track)
+	if err != nil {
+		t.Fatal(err)
+	}
+	track.TrackOverlays[0] = 999
+	track.TrackTranslates[0].TrackID[0] = 0xff
+	track.TrackTranslates[0].EditionUIDs[0] = 99
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	got := tracks[0]
+	wantTranslate := TrackTranslate{TrackID: []byte{0x01, 0x02}, Codec: 1, EditionUIDs: []uint64{7, 8}}
+	if got.MinCache != 2 || !got.MinCacheSet ||
+		got.MaxCache != 5 || !got.MaxCacheSet ||
+		got.CodecDecodeAll || !got.CodecDecodeAllSet ||
+		!reflect.DeepEqual(got.TrackOverlays, []uint64{101, 202}) ||
+		len(got.TrackTranslates) != 1 ||
+		!equalTrackTranslate(got.TrackTranslates[0], wantTranslate) {
+		t.Fatalf("track = %+v, want translate %+v", got, wantTranslate)
+	}
+	tracks[0].TrackOverlays[0] = 303
+	tracks[0].TrackTranslates[0].TrackID[0] = 0xee
+	tracks[0].TrackTranslates[0].EditionUIDs[0] = 77
+	fresh := demuxer.Tracks()
+	if !reflect.DeepEqual(fresh[0].TrackOverlays, []uint64{101, 202}) ||
+		!equalTrackTranslate(fresh[0].TrackTranslates[0], wantTranslate) {
+		t.Fatalf("track metadata alias was not protected: %+v", fresh[0])
+	}
+}
+
 func TestMuxerDemuxerPreservesDecodedFieldDuration(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -2745,6 +2816,24 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			},
 		},
 		{
+			name: "track overlay",
+			track: Track{
+				Type:          TrackVideo,
+				Codec:         CodecVP8,
+				TrackOverlays: []uint64{0},
+				Video:         VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
+			name: "track translate id",
+			track: Track{
+				Type:            TrackVideo,
+				Codec:           CodecVP8,
+				TrackTranslates: []TrackTranslate{{Codec: 1}},
+				Video:           VideoConfig{Width: 16, Height: 16},
+			},
+		},
+		{
 			name: "timebase",
 			track: Track{
 				Type:        TrackAudio,
@@ -4102,6 +4191,34 @@ func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
 			t.Fatalf("err = %v, want ErrInvalidData", err)
 		}
 	})
+	t.Run("zero track overlay", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackMetadata(writer, trackUIntElement{idTrackOverlay, 0})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("track translate missing id", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idTrackTranslate, trackTranslatePayload(t, false, true))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("track translate missing codec", func(t *testing.T) {
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
+				return ew.WriteElement(idTrackTranslate, trackTranslatePayload(t, true, false))
+			})
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
 	t.Run("block addition mapping missing id", func(t *testing.T) {
 		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
 			return writeTracksWithTrackExtra(writer, func(ew *ebml.Writer) error {
@@ -5173,6 +5290,12 @@ func equalBlockAdditionMapping(left BlockAdditionMapping, right BlockAdditionMap
 		left.Name == right.Name &&
 		left.Type == right.Type &&
 		bytes.Equal(left.ExtraData, right.ExtraData)
+}
+
+func equalTrackTranslate(left TrackTranslate, right TrackTranslate) bool {
+	return left.Codec == right.Codec &&
+		bytes.Equal(left.TrackID, right.TrackID) &&
+		reflect.DeepEqual(left.EditionUIDs, right.EditionUIDs)
 }
 
 func equalCuePoint(left CuePoint, right CuePoint) bool {
@@ -6379,6 +6502,23 @@ func writeTracksWithTrackExtra(writer *ebml.Writer, writeExtra func(*ebml.Writer
 		return err
 	}
 	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+func trackTranslatePayload(t testing.TB, writeID bool, writeCodec bool) []byte {
+	t.Helper()
+	var payload bytes.Buffer
+	tw := ebml.NewWriter(&payload)
+	if writeID {
+		if err := writeBinary(tw, idTrackTranslateTrack, []byte{0x01}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if writeCodec {
+		if err := tw.WriteUInt(idTrackTranslateCodec, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return payload.Bytes()
 }
 
 func blockAdditionMappingPayload(t testing.TB, id uint64, writeID bool, typ uint64, extraData []byte) []byte {

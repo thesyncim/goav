@@ -124,6 +124,12 @@ type Track struct {
 	TimebaseDen                   int64
 	DefaultDurationNS             int64
 	DefaultDecodedFieldDurationNS int64
+	MinCache                      uint64
+	MinCacheSet                   bool
+	MaxCache                      uint64
+	MaxCacheSet                   bool
+	CodecDecodeAll                bool
+	CodecDecodeAllSet             bool
 	CodecDelayNS                  int64
 	SeekPreRollNS                 int64
 	FlagEnabled                   bool
@@ -146,6 +152,8 @@ type Track struct {
 	FlagLacingSet                 bool
 	MaxBlockAdditionID            uint64
 	BlockAdditionMappings         []BlockAdditionMapping
+	TrackOverlays                 []uint64
+	TrackTranslates               []TrackTranslate
 	Audio                         AudioConfig
 	Video                         VideoConfig
 
@@ -157,6 +165,12 @@ type BlockAdditionMapping struct {
 	Name      string
 	Type      uint64
 	ExtraData []byte
+}
+
+type TrackTranslate struct {
+	TrackID     []byte
+	Codec       uint64
+	EditionUIDs []uint64
 }
 
 type Packet struct {

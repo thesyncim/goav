@@ -53,8 +53,16 @@ const (
 	idCodecID              ebml.ID = 0x86
 	idCodecName            ebml.ID = 0x258688
 	idCodecPrivate         ebml.ID = 0x63a2
+	idCodecDecodeAll       ebml.ID = 0xaa
 	idCodecDelay           ebml.ID = 0x56aa
 	idSeekPreRoll          ebml.ID = 0x56bb
+	idMinCache             ebml.ID = 0x6de7
+	idMaxCache             ebml.ID = 0x6df8
+	idTrackOverlay         ebml.ID = 0x6fab
+	idTrackTranslate       ebml.ID = 0x6624
+	idTrackTranslateTrack  ebml.ID = 0x66a5
+	idTrackTranslateCodec  ebml.ID = 0x66bf
+	idTrackTranslateEdit   ebml.ID = 0x66fc
 	idVideo                ebml.ID = 0xe0
 	idStereoMode           ebml.ID = 0x53b8
 	idAlphaMode            ebml.ID = 0x53c0

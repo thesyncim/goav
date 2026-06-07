@@ -239,6 +239,10 @@ func cloneTrack(track Track) Track {
 		track.Video.Projection.Private = append([]byte(nil), track.Video.Projection.Private...)
 	}
 	track.BlockAdditionMappings = cloneBlockAdditionMappings(track.BlockAdditionMappings)
+	if len(track.TrackOverlays) != 0 {
+		track.TrackOverlays = append([]uint64(nil), track.TrackOverlays...)
+	}
+	track.TrackTranslates = cloneTrackTranslates(track.TrackTranslates)
 	return track
 }
 
@@ -251,6 +255,23 @@ func cloneBlockAdditionMappings(mappings []BlockAdditionMapping) []BlockAddition
 		out[i] = mappings[i]
 		if mappings[i].ExtraData != nil {
 			out[i].ExtraData = append([]byte(nil), mappings[i].ExtraData...)
+		}
+	}
+	return out
+}
+
+func cloneTrackTranslates(translates []TrackTranslate) []TrackTranslate {
+	if len(translates) == 0 {
+		return nil
+	}
+	out := make([]TrackTranslate, len(translates))
+	for i := range translates {
+		out[i] = translates[i]
+		if translates[i].TrackID != nil {
+			out[i].TrackID = append([]byte(nil), translates[i].TrackID...)
+		}
+		if len(translates[i].EditionUIDs) != 0 {
+			out[i].EditionUIDs = append([]uint64(nil), translates[i].EditionUIDs...)
 		}
 	}
 	return out
@@ -1794,7 +1815,7 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 	if err != nil {
 		return Track{}, err
 	}
-	track := Track{Language: "und", TimebaseNum: 1, TimebaseDen: timeNS, FlagEnabled: true, FlagDefault: true, FlagLacing: true}
+	track := Track{Language: "und", TimebaseNum: 1, TimebaseDen: timeNS, CodecDecodeAll: true, FlagEnabled: true, FlagDefault: true, FlagLacing: true}
 	var codecID string
 	for !master.Done() {
 		child, err := master.ReadHeader()
@@ -1927,6 +1948,18 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 			track.CodecName = value
+		case idMinCache:
+			track.MinCache, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.MinCacheSet = true
+		case idMaxCache:
+			track.MaxCache, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.MaxCacheSet = true
 		case idDefaultDur:
 			value, err := readNonZeroInt64Payload(master.Reader(), child.Size.Value)
 			if err != nil {
@@ -1951,6 +1984,22 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 			track.BlockAdditionMappings = append(track.BlockAdditionMappings, mapping)
+		case idCodecDecodeAll:
+			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.CodecDecodeAll = value
+			track.CodecDecodeAllSet = true
+		case idTrackOverlay:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			if value == 0 {
+				return Track{}, ErrInvalidData
+			}
+			track.TrackOverlays = append(track.TrackOverlays, value)
 		case idCodecDelay:
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
@@ -1969,6 +2018,12 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, ErrInvalidData
 			}
 			track.SeekPreRollNS = int64(value)
+		case idTrackTranslate:
+			translate, err := d.parseTrackTranslate(master.Reader(), child)
+			if err != nil {
+				return Track{}, err
+			}
+			track.TrackTranslates = append(track.TrackTranslates, translate)
 		case idCodecPrivate:
 			value, err := readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
@@ -2027,6 +2082,56 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 		return Track{}, err
 	}
 	return track, nil
+}
+
+func (d *Demuxer) parseTrackTranslate(parent io.Reader, header ebml.Header) (TrackTranslate, error) {
+	if header.Size.Unknown {
+		return TrackTranslate{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return TrackTranslate{}, err
+	}
+	var translate TrackTranslate
+	trackIDSeen := false
+	codecSeen := false
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return TrackTranslate{}, err
+		}
+		switch child.ID {
+		case idTrackTranslateTrack:
+			translate.TrackID, err = readBinaryPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return TrackTranslate{}, err
+			}
+			trackIDSeen = true
+		case idTrackTranslateCodec:
+			translate.Codec, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return TrackTranslate{}, err
+			}
+			codecSeen = true
+		case idTrackTranslateEdit:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return TrackTranslate{}, err
+			}
+			translate.EditionUIDs = append(translate.EditionUIDs, value)
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return TrackTranslate{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return TrackTranslate{}, err
+	}
+	if !trackIDSeen || !codecSeen {
+		return TrackTranslate{}, ErrInvalidData
+	}
+	return translate, nil
 }
 
 func (d *Demuxer) parseBlockAdditionMapping(parent io.Reader, header ebml.Header) (BlockAdditionMapping, error) {

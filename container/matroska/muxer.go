@@ -151,6 +151,9 @@ func normalizeTrackIdentity(track *Track) {
 	if track.UID == 0 {
 		track.UID = uint64(track.ID)
 	}
+	if !track.CodecDecodeAllSet {
+		track.CodecDecodeAll = true
+	}
 	if !track.FlagEnabledSet {
 		track.FlagEnabled = true
 	}
@@ -2381,6 +2384,16 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 			return err
 		}
 	}
+	if track.MinCacheSet || track.MinCache != 0 {
+		if err := tw.WriteUInt(idMinCache, track.MinCache); err != nil {
+			return err
+		}
+	}
+	if track.MaxCacheSet {
+		if err := tw.WriteUInt(idMaxCache, track.MaxCache); err != nil {
+			return err
+		}
+	}
 	if track.DefaultDurationNS > 0 {
 		if err := tw.WriteUInt(idDefaultDur, uint64(track.DefaultDurationNS)); err != nil {
 			return err
@@ -2398,6 +2411,16 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 	}
 	for i := range track.BlockAdditionMappings {
 		if err := writeBlockAdditionMapping(tw, track.BlockAdditionMappings[i]); err != nil {
+			return err
+		}
+	}
+	if track.CodecDecodeAllSet {
+		if err := tw.WriteUInt(idCodecDecodeAll, boolFlagUInt(track.CodecDecodeAll)); err != nil {
+			return err
+		}
+	}
+	for i := range track.TrackOverlays {
+		if err := tw.WriteUInt(idTrackOverlay, track.TrackOverlays[i]); err != nil {
 			return err
 		}
 	}
@@ -2419,6 +2442,11 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 			return err
 		}
 	}
+	for i := range track.TrackTranslates {
+		if err := writeTrackTranslate(tw, track.TrackTranslates[i]); err != nil {
+			return err
+		}
+	}
 	if len(private) != 0 {
 		if err := writeBinary(tw, idCodecPrivate, private); err != nil {
 			return err
@@ -2435,6 +2463,26 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 		}
 	}
 	return w.WriteElement(idTrackEntry, payload.Bytes())
+}
+
+func writeTrackTranslate(w *ebml.Writer, translate TrackTranslate) error {
+	if err := validateTrackTranslate(translate); err != nil {
+		return err
+	}
+	var payload bytes.Buffer
+	tw := ebml.NewWriter(&payload)
+	if err := writeBinary(tw, idTrackTranslateTrack, translate.TrackID); err != nil {
+		return err
+	}
+	if err := tw.WriteUInt(idTrackTranslateCodec, translate.Codec); err != nil {
+		return err
+	}
+	for i := range translate.EditionUIDs {
+		if err := tw.WriteUInt(idTrackTranslateEdit, translate.EditionUIDs[i]); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idTrackTranslate, payload.Bytes())
 }
 
 func writeBlockAdditionMapping(w *ebml.Writer, mapping BlockAdditionMapping) error {
@@ -2761,6 +2809,16 @@ func validateTrack(track Track) error {
 	if track.DefaultDurationNS < 0 || track.DefaultDecodedFieldDurationNS < 0 || track.CodecDelayNS < 0 || track.SeekPreRollNS < 0 {
 		return ErrInvalidTrack
 	}
+	for i := range track.TrackOverlays {
+		if track.TrackOverlays[i] == 0 {
+			return ErrInvalidTrack
+		}
+	}
+	for i := range track.TrackTranslates {
+		if err := validateTrackTranslate(track.TrackTranslates[i]); err != nil {
+			return err
+		}
+	}
 	maxMappingID, err := maxBlockAdditionMappingID(track.BlockAdditionMappings)
 	if err != nil || maxMappingID > track.MaxBlockAdditionID {
 		return ErrInvalidTrack
@@ -2817,6 +2875,13 @@ func validateTrack(track Track) error {
 	}
 	if (track.TimebaseNum == 0) != (track.TimebaseDen == 0) ||
 		track.TimebaseNum < 0 || track.TimebaseDen < 0 {
+		return ErrInvalidTrack
+	}
+	return nil
+}
+
+func validateTrackTranslate(translate TrackTranslate) error {
+	if translate.TrackID == nil {
 		return ErrInvalidTrack
 	}
 	return nil
