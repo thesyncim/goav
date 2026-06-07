@@ -126,6 +126,25 @@ func TestNewGraphBuildsBufferedExecutionForBufferPolicy(t *testing.T) {
 	}
 }
 
+func TestGraphBufferedRejectsAddAfterClose(t *testing.T) {
+	graph, err := NewGraph(GraphConfig{Name: "buffered", Buffer: BufferPolicy{Capacity: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(&directTestSource{name: "source"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddSource err = %v, want ErrClosed", err)
+	}
+	if _, err := graph.AddStage(&directPassStage{name: "stage"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddStage err = %v, want ErrClosed", err)
+	}
+	if _, err := graph.AddSink(&directTestSink{name: "sink"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddSink err = %v, want ErrClosed", err)
+	}
+}
+
 func TestGraphBufferedPassThroughImmutablePacket(t *testing.T) {
 	source := &bufferedPacketSource{
 		name:    "source",

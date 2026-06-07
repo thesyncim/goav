@@ -99,6 +99,9 @@ func normalizeBufferedPolicy(policy BufferPolicy) BufferPolicy {
 func (g *bufferedRunner) AddSource(source Source, policy BufferPolicy) (NodeRef, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.closed {
+		return "", ErrClosed
+	}
 	if g.running {
 		return "", ErrDynamicGraphUnsupported
 	}
@@ -113,6 +116,9 @@ func (g *bufferedRunner) AddSource(source Source, policy BufferPolicy) (NodeRef,
 func (g *bufferedRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.closed {
+		return "", ErrClosed
+	}
 	if g.running && g.draining {
 		return "", ErrDynamicGraphUnsupported
 	}
@@ -130,6 +136,9 @@ func (g *bufferedRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, er
 func (g *bufferedRunner) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.closed {
+		return "", ErrClosed
+	}
 	if g.running && g.draining {
 		return "", ErrDynamicGraphUnsupported
 	}

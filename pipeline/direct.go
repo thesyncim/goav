@@ -99,6 +99,9 @@ func (g *directRunner) AddSource(source Source, policy BufferPolicy) (NodeRef, e
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.closed {
+		return "", ErrClosed
+	}
 	index, err := g.addNode(directNode{name: source.Name(), kind: nodeSource, source: source})
 	if err != nil {
 		return "", err
@@ -113,6 +116,9 @@ func (g *directRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, erro
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.closed {
+		return "", ErrClosed
+	}
 	index, err := g.addNode(directNode{name: stage.Name(), kind: nodeStage, stage: stage})
 	if err != nil {
 		return "", err
@@ -126,6 +132,9 @@ func (g *directRunner) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) 
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.closed {
+		return "", ErrClosed
+	}
 	index, err := g.addNode(directNode{name: sink.Name(), kind: nodeSink, sink: sink})
 	if err != nil {
 		return "", err

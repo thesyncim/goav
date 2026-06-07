@@ -309,6 +309,25 @@ func TestGraphDirectRejectsBufferedPolicy(t *testing.T) {
 	}
 }
 
+func TestGraphDirectRejectsAddAfterClose(t *testing.T) {
+	graph, err := NewGraph(GraphConfig{Name: "direct"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(&directTestSource{name: "source"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddSource err = %v, want ErrClosed", err)
+	}
+	if _, err := graph.AddStage(&directPassStage{name: "stage"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddStage err = %v, want ErrClosed", err)
+	}
+	if _, err := graph.AddSink(&directTestSink{name: "sink"}, BufferPolicy{}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddSink err = %v, want ErrClosed", err)
+	}
+}
+
 func TestGraphDirectEventBackpressure(t *testing.T) {
 	source := &directEventSource{
 		name: "source",

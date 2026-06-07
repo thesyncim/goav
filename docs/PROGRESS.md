@@ -1290,6 +1290,16 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     transform connect succeeds. Runtime attach removes the sink and transform
     nodes in reverse order, drops the partial edge, closes the filter and sink,
     registers no branch taps, and leaves the graph spec unchanged. Done.
+292. Reject dynamic graph additions after close and clean prepared runtime
+    components:
+    direct and buffered graphs now return `pipeline.ErrClosed` from
+    `AddSource`, `AddStage`, and `AddSink` once closed, with
+    `TestGraphDirectRejectsAddAfterClose` and
+    `TestGraphBufferedRejectsAddAfterClose` pinning the low-level invariant.
+    `TestTaskAttachAfterCloseClosesPreparedRuntimeComponents` proves a late
+    runtime branch can prepare a resample filter, Opus encoder, and Ogg mux
+    target, then fail on the closed graph without leaking any prepared
+    component, branch node, edge, or tap. Done.
 
 ## First Vertical Slice
 
@@ -1549,7 +1559,9 @@ mutation failure, sink-endpoint rollback after post-open transform/sink graph
 mutation failure, flow-applied Opus encode-to-target branches, late Opus/VP8/VP9
 encode-to-endpoint, packet-copy endpoint, packet-copy recording, Opus encoded
 late recording, and sink branches that can publish nested runtime taps for later
-attachments.
+attachments. Direct and buffered graphs now reject dynamic node additions after
+close so runtime attach fails before mutating a closed graph while still closing
+prepared branch components.
 `MediaPlan` expresses record, stream decode, encode, and branch composition as
 input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and

@@ -176,7 +176,9 @@ make the implementation match the composable planner promise.
   and post-encode nested tap detach covered; live buffered runtime resize and
   resample subtree detach plus post-open filter cleanup on rejected branches are
   now covered, and graph-mutation rollback after opened runtime filters,
-  encoders, mux terminal stages, and sink endpoints is covered. Deeper generic
+  encoders, mux terminal stages, and sink endpoints is covered. Closed direct
+  and buffered graphs reject dynamic node additions before mutation while
+  runtime attach closes any already-prepared branch components. Deeper generic
   lifecycle stress remains planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.
