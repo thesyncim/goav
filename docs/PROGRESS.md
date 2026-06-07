@@ -967,6 +967,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     transform validation names. `Explain(ctx)`, media-plan recognition, mux
     compatibility checks, and tests use the renamed state while the advanced
     `Transcode(plan)` boundary remains isolated. Done.
+249. Keep branch-composition inputs on the resolved media plan:
+    RTP/WebRTC branch compositions no longer lower their input into the recipe
+    compile builder. The resolved recipe carries the branch input, and
+    describe/build create a minimal branch-compose graph builder from the
+    runtime plus that input at the media-plan boundary. The old empty-builder
+    shape gate for branch composition is gone. Done.
 
 ## First Vertical Slice
 
@@ -1184,8 +1190,8 @@ Required proof:
 3. Continue toward direct branch lowering: selected stream, ordered operation
    chain, target refs, mux/sink groups, and shared upstream decode where
    branches select the same input stream. Recipes already use a private
-   branch-compose plan and branch-named compile state; the advanced
-   `Transcode(plan)` path adapts into it at the boundary.
+   branch-compose plan, branch-named compile state, and resolved branch inputs;
+   the advanced `Transcode(plan)` path adapts into it at the boundary.
 4. Add first-class capability data for stream, codec, transform, and container
    planning so missing adapters and incompatible mux/transform chains fail
    before runtime execution with useful suggestions.

@@ -20,6 +20,7 @@ type recipeResolved struct {
 	inputAttachments      []InputSpec
 	outputAttachments     []EndpointSpec
 	inputProbes           []format.ProbeResult
+	branchInputAttachment InputSpec
 	branchInputProbe      format.ProbeResult
 	branchInputProbeReady bool
 	outputFormats         map[string]av.FormatID
@@ -167,6 +168,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		inputAttachments:      append([]InputSpec(nil), state.inputAttachments...),
 		outputAttachments:     append([]EndpointSpec(nil), state.outputAttachments...),
 		inputProbes:           append([]format.ProbeResult(nil), state.inputProbes...),
+		branchInputAttachment: state.branchInputAttachment,
 		branchInputProbe:      state.branchInputProbe,
 		branchInputProbeReady: state.branchInputProbeReady,
 		outputFormats:         state.outputFormatMap(),
@@ -352,7 +354,6 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		validateKnownBranchInputDecodeAdaptersPass(),
 		planBranchCompositionIntentPass(),
 		openRecipeRuntimeBuilderPass(),
-		lowerBranchCompositionInputPass(),
 		emitMediaPlanGraphSpecPass(),
 		validateMuxCompatibilityPass(),
 		requireMediaPlanGraphSpecPass(),
@@ -964,15 +965,6 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 			return err
 		}
 		state.plan = plan
-		return nil
-	}}
-}
-
-func lowerBranchCompositionInputPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "lower branch composition input", fn: func(state *recipeCompileState) error {
-		if state.branchCompositionSplit && state.branchInputAttachment.rtp != nil {
-			state.builder = state.branchInputAttachment.apply(state.builder)
-		}
 		return nil
 	}}
 }

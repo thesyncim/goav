@@ -1870,8 +1870,11 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	if !ok {
 		t.Fatalf("resolved builder type = %T, want *builder", resolved.builder)
 	}
-	if len(builder.transcodes) != 0 || len(builder.rtpInputs) != 1 {
-		t.Fatalf("builder transcodes=%d rtp=%d, want live branch composer runtime input without builder transcode", len(builder.transcodes), len(builder.rtpInputs))
+	if len(builder.transcodes) != 0 || len(builder.rtpInputs) != 0 {
+		t.Fatalf("builder transcodes=%d rtp=%d, want live branch composer kept off builder", len(builder.transcodes), len(builder.rtpInputs))
+	}
+	if resolved.branchInputAttachment.rtp == nil {
+		t.Fatal("resolved branch input = nil RTP, want live branch composer input carried on resolved plan")
 	}
 	if len(resolved.plan.Branches) != 2 {
 		t.Fatalf("resolved plan branches = %+v, want two live flow branches", resolved.plan.Branches)

@@ -186,10 +186,11 @@ func mediaPlanBranchComposerSpec(state *recipeCompileState) (pipeline.Spec, bool
 	if state == nil || !state.branchCompositionPresent {
 		return pipeline.Spec{}, false, nil
 	}
-	builder, ok := state.builder.(*builder)
-	if !ok || !builderCanBuildBranchComposer(builder) {
+	runtime, ok := state.runtime.(*runtime)
+	if !ok || runtime == nil {
 		return pipeline.Spec{}, false, nil
 	}
+	builder := branchComposePlanBuilder(runtime, state.branchInputAttachment)
 	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
 	switch {
 	case state.branchInputAttachment.rtp == nil:
@@ -201,19 +202,6 @@ func mediaPlanBranchComposerSpec(state *recipeCompileState) (pipeline.Spec, bool
 	default:
 		return pipeline.Spec{}, false, nil
 	}
-}
-
-func builderCanBuildBranchComposer(builder *builder) bool {
-	return builder != nil &&
-		len(builder.transcodes) == 0 &&
-		len(builder.inputs) == 0 &&
-		len(builder.outputs) == 0 &&
-		len(builder.decodes) == 0 &&
-		len(builder.encodes) == 0 &&
-		len(builder.filters) == 0 &&
-		len(builder.sources) == 0 &&
-		len(builder.stages) == 0 &&
-		len(builder.sinks) == 0
 }
 
 func mediaPlanPacketCopySources(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {

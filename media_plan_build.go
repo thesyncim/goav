@@ -57,10 +57,11 @@ func (r recipeResolved) buildMediaPlanEncodeTask(ctx context.Context) (Task, err
 }
 
 func (r recipeResolved) buildMediaPlanBranchComposerTask(ctx context.Context) (Task, error) {
-	builder, ok := r.builder.(*builder)
-	if !ok || !builderCanBuildBranchComposer(builder) {
+	runtime, ok := r.runtime.(*runtime)
+	if !ok || runtime == nil {
 		return nil, recipeGraphUnsupportedError("build branch composition", r.intent)
 	}
+	builder := branchComposePlanBuilder(runtime, r.branchInputAttachment)
 	graph, err := builder.newGraph(ctx)
 	if err != nil {
 		return nil, err
@@ -73,10 +74,18 @@ func (r recipeResolved) buildMediaPlanBranchComposerTask(ctx context.Context) (T
 }
 
 func (r recipeResolved) compileMediaPlanBranchComposer(ctx context.Context, builder *builder, graph pipeline.Graph) error {
-	if len(builder.rtpInputs) != 0 {
+	if r.branchInputAttachment.rtp != nil {
 		return builder.compileRTPBranchComposePlan(ctx, graph, r.plan)
 	}
 	return builder.compileBranchComposePlan(ctx, graph, r.plan)
+}
+
+func branchComposePlanBuilder(runtime *runtime, input InputSpec) *builder {
+	builder := &builder{runtime: runtime}
+	if input.rtp != nil {
+		builder.rtpInputs = []rtpInput{input.rtpBuildInput()}
+	}
+	return builder
 }
 
 func (r recipeResolved) compileMediaPlanEncode(ctx context.Context, builder *builder, graph pipeline.Graph) error {
