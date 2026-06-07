@@ -1269,6 +1269,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     tries to publish a tap name already present on the task. The opened filter
     is closed, no branch nodes or taps are registered, and the graph spec stays
     unchanged. Done.
+289. Prove runtime graph rollback after filter-backed mutation failure:
+    `TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails` now uses a
+    package-local graph that accepts the runtime resample stage, then rejects
+    the first branch connection. Runtime attach removes the partially added
+    stage, closes the opened filter, registers no branch taps, and leaves the
+    graph spec unchanged. Done.
 
 ## First Vertical Slice
 
@@ -1522,7 +1528,8 @@ branches after runtime resize and resample taps, post-encode packet taps
 feeding dependent packet-copy branches, live buffered parent detach that removes
 nested transform frame-tap, custom-stage frame-tap, and post-encode packet-tap
 subtrees before future media reaches them, runtime filter cleanup after
-post-open duplicate-tap rejection,
+post-open duplicate-tap rejection, graph rollback after post-open connect
+failure,
 flow-applied Opus encode-to-target branches, late Opus/VP8/VP9
 encode-to-endpoint, packet-copy endpoint, packet-copy recording, Opus encoded
 late recording, and sink branches that can publish nested runtime taps for later
@@ -1536,8 +1543,8 @@ direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
 broaden descriptor-backed endpoint/container capability data as WebM/Ogg arrive
-and keep broadening runtime attachment stress around graph rollback and generic
-filter lifecycle boundaries without weakening the direct graph branch grammar.
+and keep broadening runtime attachment stress around terminal-stage rollback and
+generic lifecycle boundaries without weakening the direct graph branch grammar.
 
 ## Validation Gates
 

@@ -929,6 +929,75 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 	}
 }
 
+func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
+	ctx := context.Background()
+	resampler := &transcodeTestFilter{}
+	resampleFactory := &transcodeTestFilterFactory{filter: resampler}
+	rt := runtimeValue(t, New(withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResample,
+		Input:  av.MediaAudio,
+		Output: av.MediaAudio,
+	}, resampleFactory))))
+	graph := newRuntimeRollbackGraph()
+	mediaTask := &task{
+		graph:   graph,
+		runtime: rt,
+		taps: []TapInfo{{
+			Name:      "audio.frames",
+			MediaKind: av.MediaAudio,
+			Domain:    DomainFrame,
+			Caps: StreamCaps{
+				Domain:       DomainFrame,
+				MediaKind:    av.MediaAudio,
+				StreamID:     "audio",
+				Codec:        av.CodecOpus,
+				SampleRate:   48000,
+				Channels:     Stereo,
+				SampleFormat: av.SampleFormatS16,
+			},
+			Node: "source",
+		}},
+	}
+	before := mediaTask.Describe()
+
+	_, err := mediaTask.Attach(ctx, Branch("voice").
+		FromTap("audio.frames").
+		Resample(16_000, Mono).
+		Tap("audio.16k").
+		To(SinkEndpoint(SinkFunc("voice", func(context.Context, Message) error {
+			return nil
+		}))))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) ||
+		buildErr.Code != "runtime_branch_graph_error" ||
+		buildErr.Operation != "connect branch" ||
+		!errors.Is(err, errRuntimeRollbackConnect) {
+		t.Fatalf("err = %v, want runtime_branch_graph_error wrapping connect failure", err)
+	}
+	if resampleFactory.config.Audio == nil ||
+		resampleFactory.config.Audio.SampleRate != 16_000 ||
+		resampleFactory.config.Audio.Channels != Mono {
+		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before graph rollback", resampleFactory.config.Audio)
+	}
+	if !resampler.closed {
+		t.Fatal("runtime filter was not closed after graph connect rollback")
+	}
+	if graph.connects != 1 {
+		t.Fatalf("connects = %d, want one failed connect", graph.connects)
+	}
+	if !reflect.DeepEqual(graph.removed, []string{"voice/resample-voice"}) {
+		t.Fatalf("removed = %v, want resample stage rolled back", graph.removed)
+	}
+	if after := mediaTask.Describe(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
+	}
+	for _, tap := range mediaTask.Taps() {
+		if strings.Contains(tap.Node.String(), "voice") || tap.Name == "audio.16k" {
+			t.Fatalf("runtime branch tap registered after graph rollback: %+v", tap)
+		}
+	}
+}
+
 func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	graph := New().Graph()
 	graph.Source("source", &runtimeTestSource{name: "source"})
@@ -1829,6 +1898,93 @@ func findTap(taps []TapInfo, name string) (TapInfo, bool) {
 		}
 	}
 	return TapInfo{}, false
+}
+
+var errRuntimeRollbackConnect = errors.New("runtime rollback connect failure")
+
+type runtimeRollbackGraph struct {
+	spec     pipeline.Spec
+	events   chan av.Event
+	connects int
+	removed  []string
+}
+
+func newRuntimeRollbackGraph() *runtimeRollbackGraph {
+	return &runtimeRollbackGraph{
+		spec: pipeline.Spec{
+			Name: "rollback",
+			Nodes: []pipeline.NodeSpec{{
+				Name: "source",
+				Kind: pipeline.NodeSource,
+			}},
+		},
+		events: make(chan av.Event),
+	}
+}
+
+func (g *runtimeRollbackGraph) AddSource(source pipeline.Source, _ pipeline.BufferPolicy) (pipeline.NodeRef, error) {
+	name := source.Name()
+	g.spec.Nodes = append(g.spec.Nodes, pipeline.NodeSpec{Name: name, Kind: pipeline.NodeSource})
+	return pipeline.NodeRef(name), nil
+}
+
+func (g *runtimeRollbackGraph) AddStage(stage pipeline.Stage, _ pipeline.BufferPolicy) (pipeline.NodeRef, error) {
+	name := stage.Name()
+	g.spec.Nodes = append(g.spec.Nodes, pipeline.NodeSpec{Name: name, Kind: pipeline.NodeStage})
+	return pipeline.NodeRef(name), nil
+}
+
+func (g *runtimeRollbackGraph) AddSink(sink pipeline.Sink, _ pipeline.BufferPolicy) (pipeline.NodeRef, error) {
+	name := sink.Name()
+	g.spec.Nodes = append(g.spec.Nodes, pipeline.NodeSpec{Name: name, Kind: pipeline.NodeSink})
+	return pipeline.NodeRef(name), nil
+}
+
+func (g *runtimeRollbackGraph) Connect(pipeline.Route) error {
+	g.connects++
+	return errRuntimeRollbackConnect
+}
+
+func (g *runtimeRollbackGraph) Disconnect(pipeline.Route) error {
+	return nil
+}
+
+func (g *runtimeRollbackGraph) Remove(ref pipeline.NodeRef) error {
+	name := ref.String()
+	g.removed = append(g.removed, name)
+	nodes := g.spec.Nodes[:0]
+	for i := range g.spec.Nodes {
+		if g.spec.Nodes[i].Name == name {
+			continue
+		}
+		nodes = append(nodes, g.spec.Nodes[i])
+	}
+	g.spec.Nodes = nodes
+	return nil
+}
+
+func (g *runtimeRollbackGraph) Spec() pipeline.Spec {
+	out := g.spec
+	out.Nodes = append([]pipeline.NodeSpec(nil), g.spec.Nodes...)
+	out.Edges = append([]pipeline.EdgeSpec(nil), g.spec.Edges...)
+	return out
+}
+
+func (g *runtimeRollbackGraph) Run(context.Context) error {
+	return nil
+}
+
+func (g *runtimeRollbackGraph) Events() <-chan av.Event {
+	return g.events
+}
+
+func (g *runtimeRollbackGraph) Stats() pipeline.GraphStats {
+	return pipeline.GraphStats{}
+}
+
+func (g *runtimeRollbackGraph) Close() error {
+	close(g.events)
+	return nil
 }
 
 type runtimeObservedSink struct {
