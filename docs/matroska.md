@@ -63,6 +63,8 @@ Current milestone:
   for block-level precision inside clusters. The default writer policy indexes
   audio packets and keyframe video packets; callers may force keyframe-only,
   all-packet dense indexing, or disable cues explicitly with `CuePolicy`.
+  WebM output maps the zero-value default to keyframe-only cues while retaining
+  explicit all-packet dense cue support.
 - Cue-based `SeekToTime` for seekable demuxers, using `CueRelativePosition`
   when present and falling back to `CueBlockNumber` when relative positions are
   absent.
@@ -130,6 +132,8 @@ Current milestone:
 - WebM profile validation rejects Matroska-only track content compression,
   content signatures, non-AES encryption, AES-CBC, and non-block content
   encoding scopes while preserving WebM block-scope AES-CTR encryption.
+- WebM profile validation rejects non-pixel video display units while keeping
+  Matroska display-unit metadata available in the Matroska package.
 - Block-scope AES-CTR content encryption/decryption for SimpleBlock,
   BlockGroup, laced blocks, and WebM profile output; encrypted laced reads
   keep the source lace buffer retry-safe when caller packet capacity is too
@@ -235,10 +239,11 @@ Negative packet durations and packet end times that overflow `int64` are
 rejected before bytes are written.
 Seekable mode also writes Cues using Segment-relative Cluster positions plus
 `CueRelativePosition` offsets to the referenced block inside the Cluster. By
-default, audio packets and keyframe video packets are indexed. `CuePolicy`
-allows callers to keep keyframe-only indexing, force all-packet dense indexing,
-or disable cues. The muxer also writes a SeekHead that points to Info, Tracks,
-Attachments, Chapters, Tags, and Cues when present. The demuxer can use a
+default, Matroska indexes audio packets and keyframe video packets; WebM maps
+the default to keyframe-only cues. `CuePolicy` allows callers to force
+keyframe-only indexing, force all-packet dense indexing, or disable cues. The
+muxer also writes a SeekHead that points to Info, Tracks, Attachments,
+Chapters, Tags, and Cues when present. The demuxer can use a
 pre-Cluster SeekHead to load required Info and Tracks metadata before reading
 the first Cluster even when those masters are physically stored later in the
 Segment. The muxer updates duration and cue state only after the packet bytes
@@ -308,7 +313,7 @@ non-AES encryption, AES-CBC, and non-block content encoding scopes. WebM
 content encryption is limited to block-scope AES-CTR. VP8 tracks must not carry
 codec-private data; VP9 codec-private data, when present, must use the WebM
 VP9 codec feature list with supported profile, level, bit-depth, and chroma
-subsampling values.
+subsampling values. WebM video display units must remain pixel units.
 
 ## Zero-Allocation Strategy
 

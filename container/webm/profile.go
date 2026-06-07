@@ -107,6 +107,10 @@ type MuxerOptions struct {
 type DemuxerOptions = matroska.DemuxerOptions
 
 func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
+	cuePolicy := opts.CuePolicy
+	if cuePolicy == CuePolicyDefault {
+		cuePolicy = CuePolicyKeyframes
+	}
 	return matroska.MuxerOptions{
 		DocType:                    "webm",
 		DocTypeVersion:             4,
@@ -117,7 +121,7 @@ func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 		TimecodeScaleNS:            opts.TimecodeScaleNS,
 		ClusterMaxDurationNS:       opts.ClusterMaxDurationNS,
 		Streaming:                  opts.Streaming,
-		CuePolicy:                  opts.CuePolicy,
+		CuePolicy:                  cuePolicy,
 		UnknownSegmentElements:     opts.UnknownSegmentElements,
 		UnknownTracksElements:      opts.UnknownTracksElements,
 		ContentEncryptionKeys:      opts.ContentEncryptionKeys,
@@ -135,6 +139,9 @@ func validateTrack(track Track) error {
 		if track.Type != matroska.TrackVideo {
 			return ErrUnsupportedWebMCodec
 		}
+		if err := validateVideoMetadata(track.Video); err != nil {
+			return err
+		}
 	default:
 		return ErrUnsupportedWebMCodec
 	}
@@ -143,6 +150,13 @@ func validateTrack(track Track) error {
 	}
 	if err := validateContentEncodings(track.ContentEncodings); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateVideoMetadata(video VideoConfig) error {
+	if video.DisplayUnit != 0 {
+		return ErrUnsupportedWebMTrackMetadata
 	}
 	return nil
 }

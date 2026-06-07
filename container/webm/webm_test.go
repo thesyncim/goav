@@ -283,6 +283,25 @@ func TestMuxerRejectsUnsupportedCodecPrivate(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsUnsupportedTrackMetadata(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{
+			Width:       16,
+			Height:      16,
+			DisplayUnit: 3,
+		},
+	}); !errors.Is(err, ErrUnsupportedWebMTrackMetadata) {
+		t.Fatalf("err = %v, want ErrUnsupportedWebMTrackMetadata", err)
+	}
+}
+
 func TestDemuxerRejectsUnsupportedContentEncodings(t *testing.T) {
 	data := makeCompressedDocTypeWebMData(t)
 	if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrUnsupportedWebMContentEncoding) {
@@ -321,6 +340,21 @@ func TestDemuxerRejectsUnsupportedCodecPrivate(t *testing.T) {
 				t.Fatalf("err = %v, want ErrUnsupportedWebMCodecPrivate", err)
 			}
 		})
+	}
+}
+
+func TestDemuxerRejectsUnsupportedTrackMetadata(t *testing.T) {
+	data := makeDocTypeWebMData(t, matroska.Track{
+		Type:  matroska.TrackVideo,
+		Codec: matroska.CodecVP8,
+		Video: matroska.VideoConfig{
+			Width:       16,
+			Height:      16,
+			DisplayUnit: 3,
+		},
+	})
+	if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrUnsupportedWebMTrackMetadata) {
+		t.Fatalf("err = %v, want ErrUnsupportedWebMTrackMetadata", err)
 	}
 }
 
@@ -827,7 +861,6 @@ func TestMuxerDemuxerPreservesVideoDisplayMetadata(t *testing.T) {
 		PixelCropRight:  8,
 		DisplayWidth:    16,
 		DisplayHeight:   9,
-		DisplayUnit:     3,
 	}
 	trackID, err := muxer.AddTrack(Track{
 		Type:  TrackVideo,
@@ -1566,6 +1599,71 @@ func TestDemuxerReadTrackPacketAtTime(t *testing.T) {
 	}
 	if packet.TrackID != audioID || packet.TimeNS != 40_000_000 || !bytes.Equal(packet.Data, []byte{0xa2}) {
 		t.Fatalf("audio packet at time = %+v data=%v, want audio at 40000000", packet, packet.Data)
+	}
+}
+
+func TestMuxerDefaultCuePolicyUsesVideoKeyframes(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "default-cues-*.webm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	muxer, err := NewMuxer(file, MuxerOptions{ClusterMaxDurationNS: 1_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	videoID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: audioID, TimeNS: 0, DurationNS: 20_000_000, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: videoID, TimeNS: 0, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0x9d, 0x01, 0x2a}},
+		{TrackID: audioID, TimeNS: 20_000_000, DurationNS: 20_000_000, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: videoID, TimeNS: 20_000_000, DurationNS: 20_000_000, Data: []byte{0x00}},
+		{TrackID: audioID, TimeNS: 40_000_000, DurationNS: 20_000_000, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: videoID, TimeNS: 40_000_000, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0x9d, 0x01, 0x2a}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatalf("write packet %d: %v", i, err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(file, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); err != nil {
+		t.Fatal(err)
+	}
+	cues := demuxer.Cues()
+	if len(cues) != 2 {
+		t.Fatalf("cues = %+v, want 2 video keyframe cues", cues)
+	}
+	for i, wantTime := range []int64{0, 40_000_000} {
+		if cues[i].TrackID != videoID || cues[i].TimeNS != wantTime {
+			t.Fatalf("cue %d = %+v, want video track %d at %d", i, cues[i], videoID, wantTime)
+		}
 	}
 }
 
