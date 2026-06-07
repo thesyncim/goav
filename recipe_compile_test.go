@@ -2439,6 +2439,17 @@ func graphPlanOperationsWithoutKind(operations []graphPlanOperation, kind Operat
 	return out
 }
 
+func graphPlanOperationsWithoutBranch(operations []graphPlanOperation, branch string) []graphPlanOperation {
+	out := make([]graphPlanOperation, 0, len(operations))
+	for i := range operations {
+		if operations[i].Branch == branch {
+			continue
+		}
+		out = append(out, operations[i])
+	}
+	return out
+}
+
 func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
@@ -2628,6 +2639,390 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 	}
 }
 
+func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
+	web := Target("web", fileDestination("web.ivf", io.Discard))
+	thumbnail := Target("thumbnail", sinkDestination(SinkFunc("thumbnail", func(context.Context, Message) error {
+		return nil
+	})))
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Resize(1280, 720).
+		Tap(FrameTap("video.720p.frames")).
+		Branches(
+			Branch("web").VP9(2_000_000).To(web),
+			Branch("thumb").Resize(320, 180).To(thumbnail),
+		)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	operations := resolved.graphPlan.operationPlan()
+	for _, want := range []pipeline.NodeRef{"select-video", "decode-video", "resize-video", "encode-web", "resize-thumb"} {
+		if !graphPlanOperationNodePresent(operations, want) {
+			t.Fatalf("graphPlan operations = %+v, want node %s", operations, want)
+		}
+	}
+	for _, duplicate := range []pipeline.NodeRef{"decode-web", "decode-thumb", "resize-web"} {
+		if graphPlanOperationNodePresent(operations, duplicate) {
+			t.Fatalf("graphPlan operations = %+v, want shared node instead of %s", operations, duplicate)
+		}
+	}
+}
+
+func TestBranchComposeLowererUsesPlanInputOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "select-audio", "select-plan-audio")
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "decode-audio", "decode-plan-audio")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "select-plan-audio") || !specHasNode(planned, "decode-plan-audio") {
+		t.Fatalf("planned = %+v, want renamed plan input nodes", planned)
+	}
+}
+
+func TestBranchComposeLowererUsesPlanSharedStepOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+		withTestFilters(testFilterFactory(filter.Descriptor{
+			Name:   filter.FactoryResample,
+			Input:  av.MediaAudio,
+			Output: av.MediaAudio,
+		}, &transcodeTestFilterFactory{})),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Resample(48_000, Stereo).
+		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "resample-audio", "resample-plan-audio")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "resample-plan-audio") {
+		t.Fatalf("planned = %+v, want renamed plan shared step node", planned)
+	}
+}
+
+func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+		withTestFilters(testFilterFactory(filter.Descriptor{
+			Name:   filter.FactoryResample,
+			Input:  av.MediaAudio,
+			Output: av.MediaAudio,
+		}, &transcodeTestFilterFactory{})),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Branches(Branch("main").
+			Resample(16_000, Mono).
+			Opus(96_000).
+			To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "resample-main", "resample-plan-main")
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "encode-main", "encode-plan-main")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "resample-plan-main") || !specHasNode(planned, "encode-plan-main") {
+		t.Fatalf("planned = %+v, want renamed private step and encode nodes", planned)
+	}
+}
+
+func TestBranchComposeLowererUsesPlanTargetOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	archive := Target("archive", fileDestination("archive.ogg", io.Discard))
+	frames := Target("frames", Sink(SinkFunc("frames", func(context.Context, Message) error {
+		return nil
+	})))
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Branches(
+			Branch("archive").Opus(96_000).To(archive),
+			Branch("frames").To(frames),
+		)
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	archiveNode, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, "archive")
+	if !ok {
+		t.Fatalf("graphPlan operations = %+v, want archive target operation", resolved.graphPlan.operations)
+	}
+	framesNode, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, "frames")
+	if !ok {
+		t.Fatalf("graphPlan operations = %+v, want frames target operation", resolved.graphPlan.operations)
+	}
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, archiveNode.String(), "target-plan-archive")
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, framesNode.String(), "target-plan-frames")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "target-plan-archive") || !specHasNode(planned, "target-plan-frames") {
+		t.Fatalf("planned = %+v, want renamed target nodes", planned)
+	}
+}
+
+func graphPlanTargetOperationNode(operations []graphPlanOperation, target string) (pipeline.NodeRef, bool) {
+	for i := range operations {
+		if !graphPlanOperationTargetsRequired(operations[i].Kind) {
+			continue
+		}
+		for _, next := range operations[i].Targets {
+			if next == target {
+				return operations[i].Node, true
+			}
+		}
+	}
+	return "", false
+}
+
+func graphPlanOperationNode(operations []graphPlanOperation, kind OperationKind) (pipeline.NodeRef, bool) {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return operations[i].Node, true
+		}
+	}
+	return "", false
+}
+
+func renameResolvedGraphPlanOperationNode(t *testing.T, resolved recipeResolved, kind OperationKind, name string) recipeResolved {
+	t.Helper()
+	node, ok := graphPlanOperationNode(resolved.graphPlan.operations, kind)
+	if !ok {
+		t.Fatalf("graphPlan operations = %+v, want %s operation", resolved.graphPlan.operations, kind)
+	}
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, node.String(), name)
+	return resolved
+}
+
+func renameResolvedGraphPlanTargetNode(t *testing.T, resolved recipeResolved, target string, name string) recipeResolved {
+	t.Helper()
+	node, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, target)
+	if !ok {
+		t.Fatalf("graphPlan operations = %+v, want target operation %q", resolved.graphPlan.operations, target)
+	}
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, node.String(), name)
+	return resolved
+}
+
+func renameGraphPlanNodeRef(plan graphPlan, oldName string, newName string) graphPlan {
+	oldRef := pipeline.NodeRef(oldName)
+	newRef := pipeline.NodeRef(newName)
+	for i := range plan.nodes {
+		if plan.nodes[i].Name == oldName {
+			plan.nodes[i].Name = newName
+		}
+	}
+	for i := range plan.edges {
+		if plan.edges[i].From == oldRef {
+			plan.edges[i].From = newRef
+		}
+		if plan.edges[i].To == oldRef {
+			plan.edges[i].To = newRef
+		}
+	}
+	for i := range plan.operations {
+		if plan.operations[i].Node == oldRef {
+			plan.operations[i].Node = newRef
+		}
+	}
+	for i := range plan.taps {
+		if plan.taps[i].Node == oldRef {
+			plan.taps[i].Node = newRef
+		}
+	}
+	return plan
+}
+
+func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T) {
+	web := Target("web", fileDestination("web.ivf", io.Discard))
+	mobile := Target("mobile", fileDestination("mobile.ivf", io.Discard))
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			Branch("720p").Resize(1280, 720).VP9(2_000_000).To(web),
+			Branch("360p").Resize(640, 360).VP8(600_000).To(mobile),
+		)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutBranch(resolved.graphPlan.operations, "360p")
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "branch composition graph plan has no operations for branch") {
+		t.Fatalf("err = %v, want missing branch-operation graph-plan error", err)
+	}
+}
+
+func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
+	web := Target("web", fileDestination("web.ivf", io.Discard))
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			Branch("720p").Resize(1280, 720).VP9(2_000_000).To(web),
+		)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpDecode)
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "branch composition graph plan has no decode operation for branch") {
+		t.Fatalf("err = %v, want missing decode-operation graph-plan error", err)
+	}
+}
+
+func TestBranchComposeLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
+	web := Target("web", fileDestination("web.ivf", io.Discard))
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			Branch("720p").Resize(1280, 720).VP9(2_000_000).To(web),
+		)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutTargets(resolved.graphPlan.operations)
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "branch composition graph plan has no target operations") {
+		t.Fatalf("err = %v, want missing target-operation graph-plan error", err)
+	}
+}
+
 func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	job := From(
 		RTP(&runtimeRTPReceiver{
@@ -2659,6 +3054,48 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	built := task.Describe()
 	if len(planned.Nodes) != len(built.Nodes) || len(planned.Edges) != len(built.Edges) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}
+
+func TestStreamGraphLowererUsesPlanPacketCopyTargetOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Copy().
+		To(
+			fileDestination("archive.ogg", io.Discard),
+			Sink(&runtimeTestSink{name: "packets"}),
+		)
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved = renameResolvedGraphPlanTargetNode(t, resolved, "archive.ogg", "target-plan-archive")
+	resolved = renameResolvedGraphPlanTargetNode(t, resolved, "packets", "target-plan-packets")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "target-plan-archive") || !specHasNode(planned, "target-plan-packets") {
+		t.Fatalf("planned = %+v, want renamed packet-copy target nodes", planned)
 	}
 }
 
@@ -2716,6 +3153,92 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	defer task.Close()
 	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}
+
+func TestStreamGraphLowererUsesPlanDecodedSinkTargetOperationNode(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		),
+		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		To(Sink(&runtimeTestSink{name: "frames"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved = renameResolvedGraphPlanTargetNode(t, resolved, "frames", "target-plan-frames")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "target-plan-frames") {
+		t.Fatalf("planned = %+v, want renamed decoded sink target node", planned)
+	}
+}
+
+func TestStreamGraphLowererUsesPlanSelectDecodeFilterOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		),
+		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
+		withTestFilters(testFilterFactory(filter.Descriptor{
+			Name:   filter.FactoryResample,
+			Input:  av.MediaAudio,
+			Output: av.MediaAudio,
+		}, &transcodeTestFilterFactory{})),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Resample(16_000, Mono).
+		To(Sink(&runtimeTestSink{name: "frames"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved = renameResolvedGraphPlanOperationNode(t, resolved, OpSelect, "select-plan-audio")
+	resolved = renameResolvedGraphPlanOperationNode(t, resolved, OpDecode, "decode-plan-audio")
+	resolved = renameResolvedGraphPlanOperationNode(t, resolved, OpTransform, "resample-plan-audio")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "select-plan-audio") ||
+		!specHasNode(planned, "decode-plan-audio") ||
+		!specHasNode(planned, "resample-plan-audio") {
+		t.Fatalf("planned = %+v, want renamed direct select, decode, and filter nodes", planned)
 	}
 }
 
@@ -2935,6 +3458,96 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	}
 	if !specHasNode(built, "meter") || !specHasNode(built, "encode-audio") || !specHasNode(built, "archive.ogg") {
 		t.Fatalf("built spec = %+v, want meter, encode, and mux nodes", built)
+	}
+}
+
+func TestStreamGraphLowererUsesPlanEncodedTargetOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Opus(96_000).
+		To(
+			fileDestination("archive.ogg", io.Discard),
+			Sink(&runtimeTestSink{name: "packets"}),
+		)
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved = renameResolvedGraphPlanTargetNode(t, resolved, "archive.ogg", "target-plan-archive")
+	resolved = renameResolvedGraphPlanTargetNode(t, resolved, "packets", "target-plan-packets")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "target-plan-archive") || !specHasNode(planned, "target-plan-packets") {
+		t.Fatalf("planned = %+v, want renamed encoded target nodes", planned)
+	}
+}
+
+func TestStreamGraphLowererUsesPlanEncodeOperationNode(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Opus(96_000).
+		To(fileDestination("archive.ogg", io.Discard))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved = renameResolvedGraphPlanOperationNode(t, resolved, OpEncode, "encode-plan-audio")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "encode-plan-audio") {
+		t.Fatalf("planned = %+v, want renamed direct encode node", planned)
 	}
 }
 

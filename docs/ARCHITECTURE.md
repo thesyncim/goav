@@ -78,27 +78,44 @@ their optional select operation and target operations from the graph plan's
 ordered operation sequence while still borrowing concrete input and destination
 openers from the stream lowerer. Direct selected-stream decode/encode recipes
 validate their select, decode, transform/stage, encode, and target operations
-from the same sequence before source opening, and encoded stream targets lower
-from graph-plan target refs. Those direct stream recipes still keep concrete
-inputs, destinations, ordered stream attachments, codec-change policy, custom
-stages, transforms, and taps on the resolved recipe until graph-plan emission.
-They build and describe through a resolved single-stream graph plan and shared
-parameterized source/decode/filter/encode/target helpers instead of a
-pre-populated runtime builder. `recipeResolved` no longer carries a parallel
-media-plan report copy:
+from the same sequence before source opening, and select/decode/filter/encode
+nodes plus mux/sink target nodes lower from graph-plan refs. Those direct stream
+recipes still keep concrete inputs, destinations, ordered stream attachments,
+codec-change policy, custom stages, transforms, and taps on the resolved recipe
+until graph-plan emission. They build and describe through a resolved
+single-stream graph plan and shared parameterized
+source/decode/filter/encode/target helpers instead of a pre-populated runtime
+builder. `recipeResolved` no longer carries a parallel media-plan report copy:
 `Explain`, mux diagnostics, and task tap installation read cloned views from the
 graph plan. The graph plan also carries an ordered operation sequence derived
-from branch operations and target groups. Packet-copy and direct stream
-decode/filter/encode builds now consume that sequence for pre-mutation
-validation and target lowering. The next architectural pressure is to move
-branch-compose build onto the same sequence.
+from branch operations and target groups. Packet-copy, direct stream
+decode/filter/encode, and grouped branch-compose builds now consume that
+sequence for pre-mutation validation, target binding, and target node
+construction. Grouped branch-compose
+input lowering also consumes graph-plan select/decode node refs, so described
+and built graphs stay equivalent even when operation refs are changed by later
+planning passes. Shared branch-compose transform/stage lowering consumes the
+same operation refs and validates that branches sharing one selector group also
+share the same planned step refs. Private branch transform/stage and encoder
+lowering now consume branch-local operation refs too. Branch-compose mux/sink
+target construction and branch-to-target routing now consume target operation
+records, including planned target node refs. The next architectural pressure is
+to collapse direct chains into the branch planner shape and converge runtime
+attach on the same patchable planner model.
+
+`Destination` is the public extension surface for byte writers, object-store
+uploads, URI-backed outputs, and sink groups. External packages can implement
+`Destination`, or use `Writer`/`Object`, without implementing graph nodes or
+container adapters. `Target(name, destination)` names a logical mux/sink group;
+the graph plan keeps concrete destination openers cold until stream list,
+format, MIME, metadata, and realtime policy are known.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and
 sinks once, then connects typed handles such as `source.Stream("audio")` and
 `decode.Out()` to node inputs. The graph builder is no longer on the public
 `Runtime` interface or an exported top-level constructor. Described graphs and
-execution graphs must stay equivalent for every graph-plan lowerer. The graph
+execution graphs must stay equivalent across graph-plan lowerers. The graph
 layer stays available for inspection and custom stages. Recipe `Explain(ctx)`
 returns structured workflow-report data, branch operations, planner decisions,
 and the same

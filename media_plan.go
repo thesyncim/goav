@@ -517,7 +517,7 @@ func planTaps(branches []planBranch) []planTap {
 			}
 			if operation.Kind != OpTap {
 				currentCaps = planCapsForOperation(currentCaps, branch, operation)
-				currentNode = planOperationNodeName(branch.Name, operation, j)
+				currentNode = planOperationNodeName(branch, operation, j)
 				continue
 			}
 			name := operation.Component
@@ -787,26 +787,41 @@ func knownPlanCodec(component string) av.CodecID {
 	return codecID
 }
 
-func planOperationNodeName(branch string, operation planOperation, index int) string {
+func planOperationNodeName(branch planBranch, operation planOperation, index int) string {
 	switch operation.Kind {
 	case OpDecode:
-		return "decode-" + branch
+		return "decode-" + planBranchOperationScopeName(branch)
 	case OpTransform:
-		return operation.Component + "-" + branch
+		name := branch.Name
+		if operation.Shared {
+			name = planBranchOperationScopeName(branch)
+		}
+		return operation.Component + "-" + name
 	case OpStage:
 		return operation.Component
 	case OpEncode:
-		return "encode-" + branch
+		return "encode-" + branch.Name
 	case OpSelect:
-		return "select-" + firstNonEmpty(operation.Component, branch)
+		return "select-" + firstNonEmpty(operation.Component, planBranchOperationScopeName(branch))
 	case OpDepacketize, OpDemux:
-		return branch
+		return branch.Name
 	default:
 		if operation.Component != "" {
 			return operation.Component
 		}
-		return fmt.Sprintf("%s-op-%d", branch, index)
+		return fmt.Sprintf("%s-op-%d", branch.Name, index)
 	}
+}
+
+func planBranchOperationScopeName(branch planBranch) string {
+	return firstNonEmpty(
+		string(branch.Stream.Type),
+		string(branch.Stream.ID),
+		branch.Stream.Name,
+		string(branch.Stream.Codec),
+		branch.Name,
+		"stream",
+	)
 }
 
 func planBranchTargets(targetRefs []string, outputs []planOutput) []string {

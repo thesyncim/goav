@@ -237,7 +237,11 @@ func (p mediaPlanBranchComposeGraph) runtimeRef() *runtime {
 	return p.runtime
 }
 
-func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, _ graphPlan, graph pipeline.Graph, service *builder) error {
+func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, plan graphPlan, graph pipeline.Graph, service *builder) error {
+	lowering, err := p.prepareBranchComposeOperationLowering(plan)
+	if err != nil {
+		return err
+	}
 	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, []InputSpec{p.input}, "build branch composition", Intent{Name: p.plan.Name})
 	if err != nil {
 		return err
@@ -246,11 +250,463 @@ func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, _ graphPlan, gra
 	if err != nil {
 		return err
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, p.branches, sources.realtime)
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, p.branches, lowering.inputs, sources.realtime)
 	if err != nil {
 		return err
 	}
-	return compileBranchComposeRoutes(ctx, service, graph, p.branches, p.targets, branchInputs, branchStreams, sources.realtime)
+	return compileBranchComposeRoutes(ctx, service, graph, p.branches, lowering.targets, branchInputs, branchStreams, lowering.sharedSteps, lowering.branches, sources.realtime)
+}
+
+type graphPlanBranchComposeLowering struct {
+	inputs      map[string]graphPlanBranchComposeInputOperation
+	sharedSteps map[string][]pipeline.NodeRef
+	branches    map[string]graphPlanBranchComposeBranchOperation
+	targets     []branchComposeTargetRoute
+}
+
+type graphPlanBranchComposeInputOperation struct {
+	selectNode pipeline.NodeRef
+	decodeNode pipeline.NodeRef
+}
+
+type graphPlanBranchComposeBranchOperation struct {
+	privateSteps []pipeline.NodeRef
+	encodeNode   pipeline.NodeRef
+}
+
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan graphPlan) (graphPlanBranchComposeLowering, error) {
+	branchOperations := graphPlanOperationsByBranch(plan.operations)
+	for i := range p.branches {
+		branch := p.branches[i]
+		operations := branchOperations[branch.name]
+		if len(operations) == 0 {
+			return graphPlanBranchComposeLowering{}, graphPlanInvalidError("branch composition graph plan has no operations for branch", []string{
+				"branch=" + branch.name,
+			})
+		}
+		if err := p.validateBranchComposeBranchOperations(branch, operations); err != nil {
+			return graphPlanBranchComposeLowering{}, err
+		}
+	}
+	inputs, err := p.prepareBranchComposeInputOperations(branchOperations)
+	if err != nil {
+		return graphPlanBranchComposeLowering{}, err
+	}
+	sharedSteps, err := p.prepareBranchComposeSharedStepOperations(branchOperations)
+	if err != nil {
+		return graphPlanBranchComposeLowering{}, err
+	}
+	branches, err := p.prepareBranchComposeBranchOperations(branchOperations)
+	if err != nil {
+		return graphPlanBranchComposeLowering{}, err
+	}
+	targets, err := p.prepareBranchComposeTargets(plan)
+	if err != nil {
+		return graphPlanBranchComposeLowering{}, err
+	}
+	return graphPlanBranchComposeLowering{inputs: inputs, sharedSteps: sharedSteps, branches: branches, targets: targets}, nil
+}
+
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeInputOperations(branchOperations map[string][]graphPlanOperation) (map[string]graphPlanBranchComposeInputOperation, error) {
+	groups := branchComposeSelectorGroups(p.branches)
+	inputs := make(map[string]graphPlanBranchComposeInputOperation, len(groups))
+	for i := range groups {
+		var input graphPlanBranchComposeInputOperation
+		for _, branchIndex := range groups[i].branches {
+			if branchIndex < 0 || branchIndex >= len(p.branches) {
+				continue
+			}
+			branch := p.branches[branchIndex]
+			operations := branchOperations[branch.name]
+			selectOperation, ok := graphPlanBranchOperation(operations, OpSelect)
+			if !ok {
+				return nil, graphPlanInvalidError("branch composition graph plan has no select operation for branch", []string{
+					"branch=" + branch.name,
+				})
+			}
+			if err := assignBranchComposeInputNode(&input.selectNode, selectOperation.Node, branch.name, "select"); err != nil {
+				return nil, err
+			}
+			if !branchComposeRouteNeedsDecode(branch) {
+				continue
+			}
+			decodeOperation, ok := graphPlanBranchOperation(operations, OpDecode)
+			if !ok {
+				return nil, graphPlanInvalidError("branch composition graph plan has no decode operation for branch", []string{
+					"branch=" + branch.name,
+				})
+			}
+			if err := assignBranchComposeInputNode(&input.decodeNode, decodeOperation.Node, branch.name, "decode"); err != nil {
+				return nil, err
+			}
+		}
+		inputs[branchComposeSelectorKey(groups[i].selector)] = input
+	}
+	return inputs, nil
+}
+
+func assignBranchComposeInputNode(target *pipeline.NodeRef, node pipeline.NodeRef, branch string, kind string) error {
+	if node == "" {
+		return graphPlanInvalidError("branch composition graph plan input operation has no node", []string{
+			"branch=" + branch,
+			"kind=" + kind,
+		})
+	}
+	if target == nil {
+		return nil
+	}
+	if *target == "" {
+		*target = node
+		return nil
+	}
+	if *target != node {
+		return graphPlanInvalidError("branch composition graph plan input operation is not shared by selector group", []string{
+			"branch=" + branch,
+			"kind=" + kind,
+			"first=" + target.String(),
+			"next=" + node.String(),
+		})
+	}
+	return nil
+}
+
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeSharedStepOperations(branchOperations map[string][]graphPlanOperation) (map[string][]pipeline.NodeRef, error) {
+	stepsByBranch := make(map[string][]pipeline.NodeRef, len(p.branches))
+	for i := range p.branches {
+		branch := p.branches[i]
+		refs, err := graphPlanBranchStepOperationNodes(branchOperations[branch.name], true, branch.name)
+		if err != nil {
+			return nil, err
+		}
+		stepsByBranch[branch.name] = refs
+	}
+	groups := branchComposeSelectorGroups(p.branches)
+	for i := range groups {
+		decodedBranches := branchComposeDecodedBranchIndices(groups[i].branches, p.branches)
+		for _, prefix := range branchComposeSharedStepGroups(decodedBranches, p.branches) {
+			var firstBranch string
+			var first []pipeline.NodeRef
+			for _, branchIndex := range prefix.branches {
+				if branchIndex < 0 || branchIndex >= len(p.branches) {
+					continue
+				}
+				branch := p.branches[branchIndex]
+				next := stepsByBranch[branch.name]
+				if firstBranch == "" {
+					firstBranch = branch.name
+					first = next
+					continue
+				}
+				if !pipelineNodeRefsEqual(first, next) {
+					return nil, graphPlanInvalidError("branch composition graph plan shared operations are not shared by selector group", []string{
+						"first=" + firstBranch,
+						"next=" + branch.name,
+					})
+				}
+			}
+		}
+	}
+	return stepsByBranch, nil
+}
+
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branchOperations map[string][]graphPlanOperation) (map[string]graphPlanBranchComposeBranchOperation, error) {
+	out := make(map[string]graphPlanBranchComposeBranchOperation, len(p.branches))
+	for i := range p.branches {
+		branch := p.branches[i]
+		operations := branchOperations[branch.name]
+		privateSteps, err := graphPlanBranchStepOperationNodes(operations, false, branch.name)
+		if err != nil {
+			return nil, err
+		}
+		var encodeNode pipeline.NodeRef
+		if branchComposeRouteNeedsEncode(branch) {
+			operation, ok := graphPlanBranchOperation(operations, OpEncode)
+			if !ok {
+				return nil, graphPlanInvalidError("branch composition graph plan has no encode operation for branch", []string{
+					"branch=" + branch.name,
+				})
+			}
+			if operation.Node == "" {
+				return nil, graphPlanInvalidError("branch composition graph plan encode operation has no node", []string{
+					"branch=" + branch.name,
+				})
+			}
+			encodeNode = operation.Node
+		}
+		out[branch.name] = graphPlanBranchComposeBranchOperation{
+			privateSteps: privateSteps,
+			encodeNode:   encodeNode,
+		}
+	}
+	return out, nil
+}
+
+func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branch branchComposeRoute, operations []graphPlanOperation) error {
+	if !graphPlanBranchOperationsContain(operations, OpSelect) {
+		return graphPlanInvalidError("branch composition graph plan has no select operation for branch", []string{
+			"branch=" + branch.name,
+		})
+	}
+	hasDecode := graphPlanBranchOperationsContain(operations, OpDecode)
+	if branchComposeRouteNeedsDecode(branch) && !hasDecode {
+		return graphPlanInvalidError("branch composition graph plan has no decode operation for branch", []string{
+			"branch=" + branch.name,
+		})
+	}
+	if !branchComposeRouteNeedsDecode(branch) && hasDecode {
+		return graphPlanInvalidError("packet branch composition graph plan has an unexpected decode operation", []string{
+			"branch=" + branch.name,
+		})
+	}
+	if !branchComposeRouteNeedsDecode(branch) && !graphPlanBranchOperationsContain(operations, OpCopy) {
+		return graphPlanInvalidError("packet branch composition graph plan has no copy operation for branch", []string{
+			"branch=" + branch.name,
+		})
+	}
+	if err := p.validateBranchComposeStepOperations(branch, operations); err != nil {
+		return err
+	}
+	hasEncode := graphPlanBranchOperationsContain(operations, OpEncode)
+	if branchComposeRouteNeedsEncode(branch) && !hasEncode {
+		return graphPlanInvalidError("branch composition graph plan has no encode operation for branch", []string{
+			"branch=" + branch.name,
+		})
+	}
+	if !branchComposeRouteNeedsEncode(branch) && hasEncode {
+		return graphPlanInvalidError("branch composition graph plan has an unexpected encode operation for branch", []string{
+			"branch=" + branch.name,
+		})
+	}
+	return nil
+}
+
+func graphPlanBranchOperation(operations []graphPlanOperation, kind OperationKind) (graphPlanOperation, bool) {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return operations[i], true
+		}
+	}
+	return graphPlanOperation{}, false
+}
+
+func (p mediaPlanBranchComposeGraph) validateBranchComposeStepOperations(branch branchComposeRoute, operations []graphPlanOperation) error {
+	shared := graphPlanBranchStepOperationCount(operations, true)
+	private := graphPlanBranchStepOperationCount(operations, false)
+	if shared != len(branch.sharedSteps) {
+		return graphPlanInvalidError("branch composition graph plan shared operations do not match branch chain", []string{
+			"branch=" + branch.name,
+			"planned=" + strconv.Itoa(shared),
+			"steps=" + strconv.Itoa(len(branch.sharedSteps)),
+		})
+	}
+	if private != len(branch.steps) {
+		return graphPlanInvalidError("branch composition graph plan operations do not match branch chain", []string{
+			"branch=" + branch.name,
+			"planned=" + strconv.Itoa(private),
+			"steps=" + strconv.Itoa(len(branch.steps)),
+		})
+	}
+	return nil
+}
+
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeTargets(plan graphPlan) ([]branchComposeTargetRoute, error) {
+	operations := graphPlanTargetOperations(plan.operations)
+	if len(operations) == 0 {
+		return nil, graphPlanInvalidError("branch composition graph plan has no target operations", nil)
+	}
+	if len(operations) != len(p.targets) {
+		return nil, graphPlanInvalidError("branch composition graph plan target count does not match targets", []string{
+			"targets=" + strconv.Itoa(len(operations)),
+			"routes=" + strconv.Itoa(len(p.targets)),
+		})
+	}
+	branchesByTarget := graphPlanTargetBranchNames(plan.operations)
+	targets := make([]branchComposeTargetRoute, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		targetIndex := branchComposeTargetRouteIndex(p.targets, operation.Name)
+		if targetIndex < 0 {
+			return nil, graphPlanInvalidError("branch composition target operation is not bound to a target", []string{
+				"target=" + operation.Name,
+				"node=" + operation.Node.String(),
+			})
+		}
+		target := p.targets[targetIndex]
+		if err := validateBranchComposeTargetOperation(operation, target); err != nil {
+			return nil, err
+		}
+		matches, ok := branchComposeTargetOperationMatches(p.branches, branchesByTarget[operation.Name])
+		if !ok || !branchComposeTargetBranchesMatch(target, matches) {
+			return nil, graphPlanInvalidError("branch composition target operation branches do not match target routes", []string{
+				"target=" + operation.Name,
+			})
+		}
+		target.node = operation.Node
+		target.matches = matches
+		targets[i] = target
+	}
+	return targets, nil
+}
+
+func validateBranchComposeTargetOperation(operation graphPlanTargetOperation, target branchComposeTargetRoute) error {
+	if err := validateGraphPlanTargetOperationNode("branch composition", operation); err != nil {
+		return err
+	}
+	if target.sink != nil {
+		if operation.Kind != OpSink {
+			return graphPlanInvalidError("branch composition target operation kind does not match sink target", []string{
+				"target=" + operation.Name,
+				"kind=" + string(operation.Kind),
+			})
+		}
+		return nil
+	}
+	if operation.Kind != OpMux && operation.Kind != OpWrite {
+		return graphPlanInvalidError("branch composition target operation kind does not match byte target", []string{
+			"target=" + operation.Name,
+			"kind=" + string(operation.Kind),
+		})
+	}
+	return nil
+}
+
+func branchComposeTargetRouteIndex(targets []branchComposeTargetRoute, name string) int {
+	for i := range targets {
+		if branchComposeTargetRouteName(targets[i]) == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func branchComposeTargetRouteName(target branchComposeTargetRoute) string {
+	name := firstNonEmpty(target.output.Name, target.target.Name, target.target.URI)
+	if name != "" {
+		return name
+	}
+	if target.sink != nil {
+		return target.sink.Name()
+	}
+	return ""
+}
+
+func branchComposeTargetOperationMatches(branches []branchComposeRoute, actual map[string]struct{}) ([]int, bool) {
+	if len(actual) == 0 {
+		return nil, false
+	}
+	matches := make([]int, 0, len(actual))
+	for i := range branches {
+		if _, ok := actual[branches[i].name]; ok {
+			matches = append(matches, i)
+		}
+	}
+	return matches, len(matches) == len(actual)
+}
+
+func branchComposeTargetBranchesMatch(target branchComposeTargetRoute, matches []int) bool {
+	if len(target.matches) != len(matches) {
+		return false
+	}
+	seen := make(map[int]struct{}, len(target.matches))
+	for _, index := range target.matches {
+		seen[index] = struct{}{}
+	}
+	for _, index := range matches {
+		if _, ok := seen[index]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func graphPlanOperationsByBranch(operations []graphPlanOperation) map[string][]graphPlanOperation {
+	out := make(map[string][]graphPlanOperation)
+	for i := range operations {
+		branch := operations[i].Branch
+		if branch == "" {
+			continue
+		}
+		out[branch] = append(out[branch], operations[i])
+	}
+	return out
+}
+
+func graphPlanBranchOperationsContain(operations []graphPlanOperation, kind OperationKind) bool {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func graphPlanBranchStepOperationCount(operations []graphPlanOperation, shared bool) int {
+	count := 0
+	for i := range operations {
+		operation := operations[i]
+		if operation.Shared != shared {
+			continue
+		}
+		if operation.Kind == OpTransform || operation.Kind == OpStage {
+			count++
+		}
+	}
+	return count
+}
+
+func graphPlanBranchStepOperationNodes(operations []graphPlanOperation, shared bool, branch string) ([]pipeline.NodeRef, error) {
+	refs := make([]pipeline.NodeRef, 0)
+	for i := range operations {
+		operation := operations[i]
+		if operation.Shared != shared {
+			continue
+		}
+		if operation.Kind != OpTransform && operation.Kind != OpStage {
+			continue
+		}
+		if operation.Node == "" {
+			return nil, graphPlanInvalidError("branch composition graph plan step operation has no node", []string{
+				"branch=" + branch,
+				"kind=" + string(operation.Kind),
+			})
+		}
+		refs = append(refs, operation.Node)
+	}
+	return refs, nil
+}
+
+func pipelineNodeRefsEqual(first []pipeline.NodeRef, second []pipeline.NodeRef) bool {
+	if len(first) != len(second) {
+		return false
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func graphPlanTargetBranchNames(operations []graphPlanOperation) map[string]map[string]struct{} {
+	out := make(map[string]map[string]struct{})
+	for i := range operations {
+		operation := operations[i]
+		if !graphPlanOperationTargetsRequired(operation.Kind) {
+			continue
+		}
+		for _, target := range operation.Targets {
+			if target == "" || operation.Branch == "" {
+				continue
+			}
+			branches := out[target]
+			if branches == nil {
+				branches = make(map[string]struct{})
+				out[target] = branches
+			}
+			branches[operation.Branch] = struct{}{}
+		}
+	}
+	return out
 }
 
 func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, plan graphPlan, graph pipeline.Graph, service *builder) error {
@@ -306,6 +762,9 @@ func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(plan graphPlan)
 	}
 	for i := range targets {
 		target := targets[i]
+		if err := validateGraphPlanTargetOperationNode("packet-copy", target); err != nil {
+			return graphPlanOperation{}, false, nil, err
+		}
 		outputIndex, ok := graphPlanOutputIndex(plan.outputs, target.Name)
 		if !ok || outputIndex < 0 || outputIndex >= len(p.outputs) {
 			return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy target operation is not bound to an output", []string{
@@ -347,7 +806,7 @@ func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
 		target := targets[i]
 		output := p.outputs[target.OutputIndex]
 		if output.sink != nil {
-			sinkRef, err := graph.AddSink(output.sink, p.runtime.buffer)
+			sinkRef, err := graph.AddSink(namedSinkForGraphPlanTarget(target, output.sink), p.runtime.buffer)
 			if err != nil {
 				return err
 			}
@@ -362,7 +821,7 @@ func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
 		if err != nil {
 			return err
 		}
-		stageRef, err := graph.AddStage(stage, p.runtime.buffer)
+		stageRef, err := graph.AddStage(namedStageForGraphPlanTarget(target, stage), p.runtime.buffer)
 		if err != nil {
 			stage.Close()
 			return err
@@ -390,6 +849,30 @@ type graphPlanTargetOperation struct {
 	Node        pipeline.NodeRef
 	Kind        OperationKind
 	OutputIndex int
+}
+
+func validateGraphPlanTargetOperationNode(scope string, target graphPlanTargetOperation) error {
+	if target.Node == "" {
+		return graphPlanInvalidError(scope+" target operation has no node", []string{
+			"target=" + target.Name,
+			"kind=" + string(target.Kind),
+		})
+	}
+	return nil
+}
+
+func namedSinkForGraphPlanTarget(target graphPlanTargetOperation, sink pipeline.Sink) pipeline.Sink {
+	if target.Node == "" {
+		return sink
+	}
+	return namedSink{name: target.Node.String(), sink: sink}
+}
+
+func namedStageForGraphPlanTarget(target graphPlanTargetOperation, stage pipeline.Stage) pipeline.Stage {
+	if target.Node == "" {
+		return stage
+	}
+	return namedStage{name: target.Node.String(), stage: stage}
 }
 
 func graphPlanTargetOperations(operations []graphPlanOperation) []graphPlanTargetOperation {
@@ -428,28 +911,54 @@ func graphPlanOutputIndex(outputs []planOutput, target string) (int, bool) {
 }
 
 type graphPlanFrameStreamLowering struct {
-	targets []graphPlanTargetOperation
+	selectNode  pipeline.NodeRef
+	decodeNode  pipeline.NodeRef
+	filterNodes []pipeline.NodeRef
+	encodeNode  pipeline.NodeRef
+	targets     []graphPlanTargetOperation
 }
 
 func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan) (graphPlanFrameStreamLowering, error) {
-	if _, ok := graphPlanFirstOperation(plan.operations, OpSelect); !ok {
+	selectOperation, ok := graphPlanFirstOperation(plan.operations, OpSelect)
+	if !ok {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan has no select operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 		})
 	}
-	if _, ok := graphPlanFirstOperation(plan.operations, OpDecode); !ok {
+	if selectOperation.Node == "" {
+		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan select operation has no node", []string{
+			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+		})
+	}
+	decodeOperation, ok := graphPlanFirstOperation(plan.operations, OpDecode)
+	if !ok {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan has no decode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 		})
 	}
-	if err := p.validateFrameStreamFilterOperations(plan.operations); err != nil {
+	if decodeOperation.Node == "" {
+		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan decode operation has no node", []string{
+			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+		})
+	}
+	filterNodes, err := p.validateFrameStreamFilterOperations(plan.operations)
+	if err != nil {
 		return graphPlanFrameStreamLowering{}, err
 	}
-	_, hasEncode := graphPlanFirstOperation(plan.operations, OpEncode)
+	encodeOperation, hasEncode := graphPlanFirstOperation(plan.operations, OpEncode)
 	if p.encode != nil && !hasEncode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("encoded frame stream graph plan has no encode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 		})
+	}
+	var encodeNode pipeline.NodeRef
+	if p.encode != nil {
+		if encodeOperation.Node == "" {
+			return graphPlanFrameStreamLowering{}, graphPlanInvalidError("encoded frame stream graph plan encode operation has no node", []string{
+				"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+			})
+		}
+		encodeNode = encodeOperation.Node
 	}
 	if p.encode == nil && hasEncode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("decoded frame stream graph plan has an unexpected encode operation", []string{
@@ -460,18 +969,37 @@ func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan
 	if err != nil {
 		return graphPlanFrameStreamLowering{}, err
 	}
-	return graphPlanFrameStreamLowering{targets: targets}, nil
+	return graphPlanFrameStreamLowering{
+		selectNode:  selectOperation.Node,
+		decodeNode:  decodeOperation.Node,
+		filterNodes: filterNodes,
+		encodeNode:  encodeNode,
+		targets:     targets,
+	}, nil
 }
 
-func (p mediaPlanStreamGraph) validateFrameStreamFilterOperations(operations []graphPlanOperation) error {
+func (p mediaPlanStreamGraph) validateFrameStreamFilterOperations(operations []graphPlanOperation) ([]pipeline.NodeRef, error) {
 	planned := graphPlanOperationCount(operations, OpTransform) + graphPlanOperationCount(operations, OpStage)
 	if planned != len(p.filters) {
-		return graphPlanInvalidError("frame stream graph plan filter operations do not match concrete filters", []string{
+		return nil, graphPlanInvalidError("frame stream graph plan filter operations do not match concrete filters", []string{
 			"planned=" + strconv.Itoa(planned),
 			"filters=" + strconv.Itoa(len(p.filters)),
 		})
 	}
-	return nil
+	nodes := make([]pipeline.NodeRef, 0, planned)
+	for i := range operations {
+		operation := operations[i]
+		if operation.Kind != OpTransform && operation.Kind != OpStage {
+			continue
+		}
+		if operation.Node == "" {
+			return nil, graphPlanInvalidError("frame stream graph plan filter operation has no node", []string{
+				"kind=" + string(operation.Kind),
+			})
+		}
+		nodes = append(nodes, operation.Node)
+	}
+	return nodes, nil
 }
 
 func (p mediaPlanStreamGraph) prepareFrameStreamTargets(plan graphPlan) ([]graphPlanTargetOperation, error) {
@@ -487,6 +1015,9 @@ func (p mediaPlanStreamGraph) prepareFrameStreamTargets(plan graphPlan) ([]graph
 	}
 	for i := range targets {
 		target := targets[i]
+		if err := validateGraphPlanTargetOperationNode("frame stream", target); err != nil {
+			return nil, err
+		}
 		outputIndex, ok := graphPlanOutputIndex(plan.outputs, target.Name)
 		if !ok || outputIndex < 0 || outputIndex >= len(p.outputs) {
 			return nil, graphPlanInvalidError("frame stream target operation is not bound to an output", []string{
@@ -596,7 +1127,11 @@ func (p mediaPlanStreamGraph) compileSinkDestination(ctx context.Context, graph 
 	if len(rtpBuilds) != 0 {
 		bounds = rtpDecodeBoundsForStream(stream, rtpBuilds)
 	}
-	previousRef, filteredStream, err := compileDecodeFilterPath(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, p.encode == nil, bounds, p.filters)
+	previousRef, filteredStream, err := compileDecodeFilterPathNamed(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, p.encode == nil, bounds, p.filters, graphPlanDecodeFilterNodes{
+		selectNode:  lowering.selectNode,
+		decodeNode:  lowering.decodeNode,
+		filterNodes: lowering.filterNodes,
+	})
 	if err != nil {
 		return err
 	}
@@ -605,14 +1140,15 @@ func (p mediaPlanStreamGraph) compileSinkDestination(ctx context.Context, graph 
 		if err != nil {
 			return err
 		}
-		return p.lowerEncodeTargets(ctx, &builder{runtime: p.runtime}, graph, previousRef, *p.encode, encodeConfig, filteredStream, lowering.targets)
+		return p.lowerEncodeTargets(ctx, &builder{runtime: p.runtime}, graph, previousRef, *p.encode, encodeConfig, filteredStream, lowering.encodeNode, lowering.targets)
 	}
 	if len(lowering.targets) != 1 || lowering.targets[0].OutputIndex != 0 {
 		return graphPlanInvalidError("decoded frame sink graph plan must have exactly one sink target", []string{
 			"targets=" + strconv.Itoa(len(lowering.targets)),
 		})
 	}
-	sinkRef, err := graph.AddSink(p.outputs[0].sink, p.runtime.buffer)
+	target := lowering.targets[0]
+	sinkRef, err := graph.AddSink(namedSinkForGraphPlanTarget(target, p.outputs[0].sink), p.runtime.buffer)
 	if err != nil {
 		return err
 	}
@@ -635,7 +1171,11 @@ func (p mediaPlanStreamGraph) compileEncodeOutput(ctx context.Context, graph pip
 	if len(rtpBuilds) != 0 {
 		bounds = rtpDecodeBoundsForStream(stream, rtpBuilds)
 	}
-	previousRef, filteredStream, err := compileDecodeFilterPath(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, false, bounds, p.filters)
+	previousRef, filteredStream, err := compileDecodeFilterPathNamed(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, false, bounds, p.filters, graphPlanDecodeFilterNodes{
+		selectNode:  lowering.selectNode,
+		decodeNode:  lowering.decodeNode,
+		filterNodes: lowering.filterNodes,
+	})
 	if err != nil {
 		return err
 	}
@@ -643,7 +1183,7 @@ func (p mediaPlanStreamGraph) compileEncodeOutput(ctx context.Context, graph pip
 	if err != nil {
 		return err
 	}
-	return p.lowerEncodeTargets(ctx, service, graph, previousRef, *p.encode, encodeConfig, encodedStream, lowering.targets)
+	return p.lowerEncodeTargets(ctx, service, graph, previousRef, *p.encode, encodeConfig, encodedStream, lowering.encodeNode, lowering.targets)
 }
 
 func (p mediaPlanStreamGraph) lowerEncodeTargets(
@@ -654,9 +1194,10 @@ func (p mediaPlanStreamGraph) lowerEncodeTargets(
 	request encodeRequest,
 	config codec.EncodeConfig,
 	stream av.Stream,
+	encodeNode pipeline.NodeRef,
 	targets []graphPlanTargetOperation,
 ) error {
-	encodeRef, err := compileEncodeStage(ctx, p.runtime, graph, upstream, request, config)
+	encodeRef, err := compileEncodeStageNamed(ctx, p.runtime, graph, encodeNode.String(), upstream, request, config)
 	if err != nil {
 		return err
 	}
@@ -665,7 +1206,7 @@ func (p mediaPlanStreamGraph) lowerEncodeTargets(
 		target := targets[i]
 		output := p.outputs[target.OutputIndex]
 		if output.sink != nil {
-			sinkRef, err := graph.AddSink(output.sink, p.runtime.buffer)
+			sinkRef, err := graph.AddSink(namedSinkForGraphPlanTarget(target, output.sink), p.runtime.buffer)
 			if err != nil {
 				return err
 			}
@@ -678,7 +1219,7 @@ func (p mediaPlanStreamGraph) lowerEncodeTargets(
 		if err != nil {
 			return err
 		}
-		muxRef, err := graph.AddStage(muxStage, p.runtime.buffer)
+		muxRef, err := graph.AddStage(namedStageForGraphPlanTarget(target, muxStage), p.runtime.buffer)
 		if err != nil {
 			muxStage.Close()
 			return err

@@ -85,12 +85,17 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 }
 
 func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
+	return b.newDecodeStageNamed(ctx, decodeNodeName(request.selector), request, stream, realtime, dropInputEvents, bounds)
+}
+
+func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
 	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
 	if err != nil {
 		return nil, err
 	}
+	name = firstNonEmpty(name, decodeNodeName(request.selector))
 	intent := StreamIntent{
-		Name: decodeNodeName(request.selector),
+		Name: name,
 		Select: StreamSelect{
 			ID:       request.selector.ID,
 			Index:    request.selector.Index,
@@ -137,7 +142,7 @@ func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, str
 		return nil, err
 	}
 	stage, err := codec.NewDecoderStage(codec.DecoderStageConfig{
-		Name:            decodeNodeName(request.selector),
+		Name:            name,
 		Detail:          decodeRequestDetail(request),
 		InputStream:     stream,
 		Decoder:         decoder,
@@ -258,17 +263,35 @@ func (b *builder) compileDecodeFilterPath(ctx context.Context, graph pipeline.Gr
 	return compileDecodeFilterPath(ctx, b.runtime, graph, upstream, request, stream, realtime, dropDecodeEvents, bounds, b.filters)
 }
 
+type graphPlanDecodeFilterNodes struct {
+	selectNode  pipeline.NodeRef
+	decodeNode  pipeline.NodeRef
+	filterNodes []pipeline.NodeRef
+}
+
 func compileDecodeFilterPath(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream []pipeline.NodeRef, request decodeRequest, stream av.Stream, realtime bool, dropDecodeEvents bool, bounds codec.DecodeBounds, filters []filterRequest) (pipeline.NodeRef, av.Stream, error) {
+	return compileDecodeFilterPathNamed(ctx, runtime, graph, upstream, request, stream, realtime, dropDecodeEvents, bounds, filters, graphPlanDecodeFilterNodes{})
+}
+
+func compileDecodeFilterPathNamed(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream []pipeline.NodeRef, request decodeRequest, stream av.Stream, realtime bool, dropDecodeEvents bool, bounds codec.DecodeBounds, filters []filterRequest, nodes graphPlanDecodeFilterNodes) (pipeline.NodeRef, av.Stream, error) {
+	if len(nodes.filterNodes) != 0 && len(nodes.filterNodes) != len(filters) {
+		return "", av.Stream{}, graphPlanInvalidError("decode/filter graph plan filter node count does not match concrete filters", []string{
+			"planned=" + strconv.Itoa(len(nodes.filterNodes)),
+			"filters=" + strconv.Itoa(len(filters)),
+		})
+	}
 	service := &builder{runtime: runtime}
 	selector := request.selector
-	selectStage := newStreamSelectStage(selectNodeName(selector), stream, selector, selectNodeDetail(selector))
+	selectName := firstNonEmpty(nodes.selectNode.String(), selectNodeName(selector))
+	selectStage := newStreamSelectStage(selectName, stream, selector, selectNodeDetail(selector))
 	selectRef, err := graph.AddStage(selectStage, runtime.buffer)
 	if err != nil {
 		selectStage.Close()
 		return "", av.Stream{}, err
 	}
 
-	decodeStage, err := service.newDecodeStage(ctx, request, stream, realtime, dropDecodeEvents, bounds)
+	decodeName := firstNonEmpty(nodes.decodeNode.String(), decodeNodeName(selector))
+	decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, request, stream, realtime, dropDecodeEvents, bounds)
 	if err != nil {
 		return "", av.Stream{}, err
 	}
@@ -291,7 +314,11 @@ func compileDecodeFilterPath(ctx context.Context, runtime *runtime, graph pipeli
 		if !streamMatchesSelector(currentStream, filters[i].selector) {
 			return "", av.Stream{}, filterStreamMismatchError(filters[i], currentStream)
 		}
-		stage, outputStream, err := service.newFilterRequestStage(ctx, filters[i], currentStream, realtime)
+		var filterName string
+		if len(nodes.filterNodes) != 0 {
+			filterName = nodes.filterNodes[i].String()
+		}
+		stage, outputStream, err := service.newFilterRequestStageNamed(ctx, filterName, filters[i], currentStream, realtime)
 		if err != nil {
 			return "", av.Stream{}, err
 		}
@@ -339,11 +366,18 @@ func filterRequestPlanNode(request filterRequest) (string, string, error) {
 }
 
 func (b *builder) newFilterRequestStage(ctx context.Context, request filterRequest, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
+	return b.newFilterRequestStageNamed(ctx, "", request, stream, realtime)
+}
+
+func (b *builder) newFilterRequestStageNamed(ctx context.Context, name string, request filterRequest, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
 	if request.stage != nil {
+		if name != "" && name != request.stage.Name() {
+			return namedStage{name: name, stage: request.stage}, stream, nil
+		}
 		return request.stage, stream, nil
 	}
 	if request.transform != nil {
-		stage, outputStream, err := b.newMediaTransformStage(ctx, *request.transform, stream, realtime)
+		stage, outputStream, err := b.newMediaTransformStageNamed(ctx, name, *request.transform, stream, realtime)
 		if err != nil {
 			return nil, av.Stream{}, err
 		}

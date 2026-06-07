@@ -1536,12 +1536,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Branches(...)` as the single planned split verb.
     Done.
 317. Hide target implementation values:
-    `Target(name, ref)` now returns a target ref instead of exporting concrete
-    implementation values. Shared target name, concrete output binding, and
-    identity are still preserved internally for planned branch composition and
-    runtime attach grouping, but users only pass the target value to `.To(...)`
-    like any other target ref. Guard coverage rejects concrete target
-    implementation types from the front door.
+    `Target(name, destination)` now returns the public `Destination` interface
+    instead of exporting concrete implementation values. Shared target name,
+    concrete destination binding, and identity are still preserved internally for
+    planned branch composition and runtime attach grouping, but users only pass
+    the target value to `.To(...)` like any other destination. Guard coverage
+    rejects concrete target implementation types from the front door.
     Done.
 318. Hide concrete destination specs:
     `File`, `URIOut`, `Sink`, and `Target` now return target refs directly,
@@ -1788,6 +1788,91 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     and target operations failing as `graph_plan_invalid` before adapter/source
     work can mask the planner error.
     Done.
+349. Validate branch composition build from graph-plan operations:
+    grouped branch composition now prepares every branch and typed target from
+    `graphPlan.operations` before source opening. Branches must have select,
+    decode/copy, shared transform/stage, private transform/stage, encode, and
+    target operations that match the concrete branch routes. Target operations
+    must bind to typed targets, match sink versus byte-target kind, and name the
+    same branch set as the target route. Tests pin missing branch, decode, and
+    target operations failing as `graph_plan_invalid` before adapter/source
+    work can mask planner defects.
+    Done.
+350. Remove label wording from normal branch target plumbing:
+    `BranchSpec` and branch `streamBuild` now carry `targetNames` instead of
+    internal `labels`, and normal branch duplicate/missing-target diagnostics
+    talk about typed target names. This keeps the front-door composition model
+    centered on `Target` values and direct `Destination` values instead of
+    leaking historical string-label routing into new planner work.
+    Done.
+351. Prove runtime attach to custom writer destinations:
+    runtime `Task.Attach` now has a positive acceptance test for attaching a
+    packet branch from a typed tap to `Target(name, Writer(...))`. The test
+    verifies destination open happens during attach with `TargetInfo` carrying
+    name, format, MIME type, and streams, then confirms muxed bytes reach the
+    writer and successful task close commits and closes exactly once without an
+    abort.
+    Done.
+352. Lower branch-compose inputs from graph-plan operation refs:
+    branch-compose graph plans now name shared select/decode/transform
+    operations with the same selector-scoped node refs used by the described
+    graph. Build preparation groups select and decode operation refs by
+    selector, validates they are shared consistently, and passes those refs into
+    runtime input lowering. The input lowerer uses the plan refs for select and
+    decode stages while old advanced callers keep fallback naming. Tests mutate
+    planned select/decode refs and prove the built graph still equals the
+    described graph, so branch-compose input lowering is now executing from the
+    ordered operation record instead of recomputing node identity.
+    Done.
+353. Lower branch-compose shared steps from graph-plan operation refs:
+    branch-compose build preparation now collects shared transform/stage refs
+    from ordered operation records, validates that branches sharing one selector
+    group also share the same planned step refs, and passes those refs into
+    route lowering. Runtime shared-step lowering uses the graph-plan node name
+    for filters and wraps custom stages when a planned name is different, while
+    older advanced compiler paths keep fallback names. Tests mutate a planned
+    shared resample node and prove the built graph still equals the described
+    graph.
+    Done.
+354. Lower branch-compose private steps and encoders from graph-plan refs:
+    branch-compose build preparation now records each branch's private
+    transform/stage refs and encode ref from ordered operations. Runtime branch
+    route lowering names private filters/custom stages and encoders from those
+    refs, with fallback names preserved for older advanced compiler paths.
+    Tests mutate planned private resample and encode node refs and prove the
+    built graph still equals the described graph.
+    Done.
+355. Add explicit transactional object destinations:
+    `Object(name, open, opts...)` now exposes object-store upload style
+    destinations as the same first-class `Destination` model as `File`, `URIOut`,
+    `Sink`, and `Writer`. `Metadata(...)` destination options flow into
+    `TargetInfo`, and tests prove object destinations open with resolved format,
+    MIME, streams, metadata, write through the muxer, commit on success, abort on
+    failure through the existing transactional writer path, and close once.
+    Done.
+356. Lower branch-compose targets from graph-plan refs:
+    graph-plan emission now stores concrete mux/sink node refs on target
+    operations instead of logical target labels. Branch-compose target lowering
+    validates target operation nodes, derives branch matches from target operation
+    records, names mux and sink runtime nodes from those refs, and keeps fallback
+    names for older advanced compiler paths. Tests mutate planned mux and sink
+    target nodes and prove the built graph still equals the described graph.
+    Done.
+357. Lower direct stream targets from graph-plan refs:
+    packet-copy, decoded-frame sink, and encoded mux/sink direct stream lowerers
+    now validate target operation nodes and name runtime mux/sink target nodes
+    from graph-plan refs. Tests mutate planned target refs for packet-copy,
+    decoded-frame, and encoded direct chains and prove the built graph still
+    equals the described graph.
+    Done.
+358. Lower direct stream operations from graph-plan refs:
+    decoded direct stream lowering now records select, decode, transform/stage,
+    and encode operation node refs from the graph plan before source opening.
+    Runtime decode/filter helpers accept planned node refs, built-in transforms
+    and custom stages are named from those refs, and direct encode lowering uses
+    the planned encode node ref. Tests mutate planned select, decode, resample,
+    and encode refs and prove the built graph still equals the described graph.
+    Done.
 
 ## First Vertical Slice
 
@@ -1997,61 +2082,64 @@ Required proof:
 
 ## Next Slices
 
-1. Move branch-compose build onto `graphPlan` ordered operations. Packet-copy
-   and direct frame-stream builds now consume the sequence for validation and
-   target lowering; the next step is grouped branch inputs, shared operations,
-   and target groups.
-2. Make direct chains implicit branches. Packet copy, decode-to-sink,
-   transform/encode-to-target, planned branch composition, and mixed
-   audio/video target groups should all lower through the same branch planner
-   instead of workflow-shape graph modes.
-3. Add `GraphPatch` for runtime attach. `Task.Attach` should plan branch specs
+1. Make direct chains implicit branches. Direct packet-copy, decode-to-sink, and
+   encode-to-target operation and target nodes now consume graph-plan refs; the
+   next step is to make direct chains and branch composition share one branch
+   planner instead of workflow-shape graph modes.
+2. Add `GraphPatch` for runtime attach. `Task.Attach` should plan branch specs
    from existing typed taps, validate caps and targets before mutation, reuse
    upstream nodes, allocate only downstream branch nodes, and share mux/sink
    targets with planned branches through the same validation code.
-4. Add first-class capability data for stream, codec, transform, and container
+3. Add first-class capability data for stream, codec, transform, and container
    planning so missing adapters and incompatible mux/transform chains fail
    before runtime execution with useful suggestions.
-5. Keep codec-specific params, configs, and controls orthogonal: built-in Opus,
+4. Keep codec-specific params, configs, and controls orthogonal: built-in Opus,
    VP8, and VP9 helpers plus generic `Codec(...)` specs use `Config`, `Param`,
    and `Control` for adapter-specific decode/encode knobs without creating
    per-codec public APIs.
-6. Keep custom composition orthogonal by proving generic `Codec` specs, custom
+5. Keep custom composition orthogonal by proving generic `Codec` specs, custom
    filter adapters, sinks, and outputs through decode, transform, encode,
    reusable flows, planned branches, and runtime attachments without
    workflow-specific helpers. Branches and runtime attachments must be able to
    anchor after meaningful operation boundaries, including post-decode,
    post-resize/resample, post-custom-stage, and sink/observation boundaries,
    instead of introducing a different concept for each workflow shape.
-7. Prove equivalent plans where possible between declared
+6. Prove equivalent plans where possible between declared
    `From(...).Branches(...)` compositions and branches built from reusable
    flows.
-8. Keep README examples executable with `Default()` or clearly behind explicit
+7. Keep README examples executable with `Default()` or clearly behind explicit
    adapter requirements; WebM/Ogg remain high-value adapter work after the
    planner can compose them naturally.
-9. Keep state-of-art debugging examples in the front-door docs: preflight
+8. Keep state-of-art debugging examples in the front-door docs: preflight
    `Explain(ctx)` diagnostics, live `Task.Events()` drains, typed tap discovery,
    runtime diagnostic branches through `Task.Attach`, and scoped
    `Attachment.Stats()` plus whole-task `Task.Stats()`.
-10. Keep declarative recipes as the normal composer. `goav.Expert(runtime).Graph()` remains
+9. Keep declarative recipes as the normal composer. `goav.Expert(runtime).Graph()` remains
    the expert escape hatch and runtime substrate, but normal use cases should
    become expressible through Input, Chain, Tap, Branch, Target, and Task.
    Adding an operation should require an operation descriptor, capability rules,
    and a component builder, not a new graph type or compile switch.
-11. Preserve zero-allocation/zero-cost hot paths: recipe planning may allocate,
+10. Preserve zero-allocation/zero-cost hot paths: recipe planning may allocate,
    but running packet/frame/event paths must reuse messages, results, buffers,
    and adapter-owned scratch with allocation guards for each new planner slice.
-12. Extend observability from `Task.Stats()` into traces, drop reasons, and
+11. Extend observability from `Task.Stats()` into traces, drop reasons, and
    latency counters for realtime debugging.
-13. Add allocation, event, lifecycle, graph-equivalence, and no-dispatch
+12. Add allocation, event, lifecycle, graph-equivalence, and no-dispatch
    regression tests for each planner slice.
-14. Update this tracker with the new evidence and next pressure point.
+13. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: move the remaining graph-plan lowerers, starting with
-branch-compose build, onto `graphPlan` ordered operations and deepen capability
-planning around that ordered operation model. The public recipe surface is small: `From`, chains,
-`Tap`, `Branch`, `Branches`, `Target`,
-`File`, `URIOut`, `Sink`, `Flow`, `Codec`, and runtime `Attach`. Flows expand
+Current pressure point: collapse direct chains into the branch planner model and
+keep runtime attach converging toward the same patchable planner model.
+Packet-copy, direct frame-stream, and grouped branch-compose builds now consume
+graph-plan operation records for validation, operation node construction,
+target node construction, and target routing; direct frame-stream builds consume
+select/decode/filter/encode refs, and grouped branch-compose consumes
+select/decode input refs, shared/private step refs, encode refs, and target
+refs. The public recipe surface is small: `From`, chains,
+`Tap`, `Branch`, `Branches`, `Target`, `File`, `URIOut`, `Writer`, `Object`,
+`Sink`, `Flow`, `Codec`, and runtime `Attach`. `Destination` remains the
+externally implementable extension surface for custom byte writers, object
+uploads, URI-backed outputs, and sink groups without graph-node plumbing. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into
 branch intent instead of a parallel graph language, and
 codec-specific config stays on `CodecSpec` through `Config`, `Param`, and
