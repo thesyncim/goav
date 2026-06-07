@@ -1241,6 +1241,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     nested tap. Detaching the parent closes both branches, removes the nested
     tap, and prevents later source frames from reaching the detached subtree
     while the base graph keeps running. Done.
+285. Prove live buffered subtree detach from custom-stage taps:
+    `TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages` now runs a
+    bounded buffered task while a late parent branch executes a caller-provided
+    `.Do(...)` stage, publishes a frame-domain tap from that stage, and a
+    dependent child attaches to the nested tap. Detaching the parent closes the
+    custom stage plus both sinks, removes the nested tap, and keeps later source
+    frames out of the detached subtree while the base graph continues. Done.
 
 ## First Vertical Slice
 
@@ -1492,7 +1499,8 @@ of a parallel graph language, and
 including custom-stage, resize/resample, branch-local node stats, dependent
 branches after runtime resize taps, post-encode packet taps feeding dependent
 packet-copy branches, live buffered parent detach that removes nested
-post-encode packet-tap subtrees before future media reaches them,
+custom-stage frame-tap and post-encode packet-tap subtrees before future media
+reaches them,
 flow-applied Opus encode-to-target branches, late Opus/VP8/VP9
 encode-to-endpoint, packet-copy endpoint, packet-copy recording, Opus encoded
 late recording, and sink branches that can publish nested runtime taps for later
@@ -1506,7 +1514,7 @@ direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
 broaden descriptor-backed endpoint/container capability data as WebM/Ogg arrive
-and keep broadening runtime attachment stress around transform/custom-stage
+and keep broadening runtime attachment stress around transform/filter
 boundaries without weakening the direct graph branch grammar.
 
 ## Validation Gates

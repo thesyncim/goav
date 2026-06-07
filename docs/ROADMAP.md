@@ -172,7 +172,8 @@ make the implementation match the composable planner promise.
   task graphs and bounded buffered task graphs, with packet-copy late recording
   targets, Opus encoded late recording from frame taps, flow-applied Opus
   encode-to-target branches, post-encode packet taps, and dependent late
-  branches after runtime resize taps covered; deeper buffered lifecycle stress
-  proof remains planned.
+  branches after runtime resize taps plus live buffered custom-stage and
+  post-encode nested tap detach covered; deeper transform/filter lifecycle
+  stress proof remains planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

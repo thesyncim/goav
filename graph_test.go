@@ -1324,6 +1324,126 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	}
 }
 
+func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	frames := []av.Frame{
+		{StreamID: "audio", Type: av.MediaAudio},
+		{StreamID: "audio", Type: av.MediaAudio},
+		{StreamID: "audio", Type: av.MediaAudio},
+	}
+	source := &runtimeBranchStepSource{
+		name: "source",
+		messages: []pipeline.Message{
+			{Kind: pipeline.MessageFrame, Frame: &frames[0]},
+			{Kind: pipeline.MessageFrame, Frame: &frames[1]},
+			{Kind: pipeline.MessageFrame, Frame: &frames[2]},
+		},
+		emitted: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+		resume: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+	}
+	base := newRuntimeObservedSink("base", 3)
+	analysis := newRuntimeObservedSink("analysis", 1)
+	dependent := newRuntimeObservedSink("dependent", 1)
+	meter := &runtimeTestStage{name: "meter"}
+
+	graph := New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:     DomainFrame,
+			MediaKind:  av.MediaAudio,
+			StreamID:   "audio",
+			Codec:      av.CodecOpus,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- builtTask.Run(ctx)
+	}()
+	select {
+	case <-source.emitted[0]:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	parent, err := builtTask.Attach(ctx, Branch("analysis").
+		FromTap("audio.frames").
+		Buffer(pipeline.BufferPolicy{Capacity: 2}).
+		Do(meter).
+		Tap("audio.metered").
+		To(SinkEndpoint(analysis)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := builtTask.Attach(ctx, Branch("dependent").
+		FromTap("audio.metered").
+		Buffer(pipeline.BufferPolicy{Capacity: 2}).
+		To(SinkEndpoint(dependent)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(source.resume[0])
+	select {
+	case <-analysis.received:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case <-dependent.received:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := builtTask.Detach(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+	if !analysis.closedValue() || !dependent.closedValue() || !meter.closed {
+		t.Fatalf("closed analysis=%v dependent=%v meter=%v", analysis.closedValue(), dependent.closedValue(), meter.closed)
+	}
+	close(source.resume[1])
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if got := base.countValue(); got != 3 {
+		t.Fatalf("base count = %d, want all three frames", got)
+	}
+	if meter.count != 1 {
+		t.Fatalf("meter count = %d, want only the second frame before detach", meter.count)
+	}
+	if got := analysis.countValue(); got != 1 {
+		t.Fatalf("analysis count = %d, want only second metered frame", got)
+	}
+	if got := dependent.countValue(); got != 1 {
+		t.Fatalf("dependent count = %d, want only second metered frame", got)
+	}
+	if _, ok := findTap(builtTask.Taps(), "audio.metered"); ok {
+		t.Fatalf("audio.metered tap still visible after parent detach: %+v", builtTask.Taps())
+	}
+	if err := child.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
 	audio := Branch("levels").FromTap("audio.decoded").To(SinkEndpoint(&runtimeTestSink{name: "levels"}))
 	if audio.tap != "audio.decoded" || audio.from != "" {
