@@ -129,6 +129,7 @@ func TestExternalReadsAndRemuxesFFmpegWebMRecordings(t *testing.T) {
 		probe string
 		write func(testing.TB) string
 	}{
+		{name: "vp8", codec: CodecVP8, probe: "vp8", write: writeFFmpegVP8OpusWebMRecording},
 		{name: "vp9", codec: CodecVP9, probe: "vp9", write: writeFFmpegVP9OpusWebMRecording},
 		{name: "av1", codec: CodecAV1, probe: "av1", write: writeFFmpegAV1OpusWebMRecording},
 	}
@@ -273,6 +274,34 @@ func writeFFmpegOpusWebM(t testing.TB) string {
 		"-loglevel", "error",
 		"-f", "lavfi",
 		"-i", "sine=frequency=1000:sample_rate=48000:duration=0.02",
+		"-c:a", "libopus",
+		"-application", "voip",
+		"-frame_duration", "20",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegVP8OpusWebMRecording(t testing.TB) string {
+	t.Helper()
+	tool := requireTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-vp8-opus-recording.webm")
+	runExternalOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=5:duration=1",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=1",
+		"-map", "0:v:0",
+		"-map", "1:a:0",
+		"-shortest",
+		"-c:v", "libvpx",
+		"-deadline", "realtime",
+		"-cpu-used", "8",
+		"-b:v", "100k",
+		"-g", "5",
 		"-c:a", "libopus",
 		"-application", "voip",
 		"-frame_duration", "20",

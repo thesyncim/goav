@@ -234,9 +234,10 @@ FFmpeg-authored Matroska/WebM files, read them through the Go demuxers, remux
 the first packet through the Go muxers, and verify the remuxed output with
 `ffprobe` for H.264, AV1, VP8, VP9, and Opus where valid for each container.
 The external corpus also includes multi-packet audio/video recordings:
-Matroska H.264+Opus and WebM VP9+Opus plus AV1+Opus are demuxed completely,
-checked for monotonic per-track timestamps, remuxed completely through the Go
-muxers, and validated again with the Go demuxers and `ffprobe`.
+Matroska H.264+Opus, AV1+Opus, VP9+Opus, and VP8+Opus plus WebM VP8+Opus,
+VP9+Opus, and AV1+Opus are demuxed completely, checked for monotonic per-track
+timestamps, remuxed completely through the Go muxers, and validated again with
+the Go demuxers and `ffprobe`.
 
 ## Benchmark Plan
 

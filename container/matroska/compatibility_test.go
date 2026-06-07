@@ -145,25 +145,123 @@ func TestExternalRemuxesFFmpegMatroskaCodecs(t *testing.T) {
 	}
 }
 
-func TestExternalReadsAndRemuxesFFmpegMatroskaRecording(t *testing.T) {
+func TestExternalReadsAndRemuxesFFmpegMatroskaRecordings(t *testing.T) {
 	tool := requireExternalTool(t, "ffprobe")
-	file := writeFFmpegH264OpusMatroskaRecording(t)
-	tracks, stats := readMatroskaRecording(t, file)
-	video := requireMatroskaRecordingTrack(t, tracks, CodecH264, TrackVideo)
-	audio := requireMatroskaRecordingTrack(t, tracks, CodecOpus, TrackAudio)
-	assertMatroskaRecordingStats(t, stats, video.ID, audio.ID)
-
-	remuxed := remuxMatroskaRecording(t, file)
-	output := runExternalTool(t, tool, "-v", "error", "-show_entries", "stream=codec_name", "-of", "default=nw=1", remuxed)
-	for _, codec := range []string{"h264", "opus"} {
-		if !strings.Contains(output, codec) {
-			t.Fatalf("ffprobe output missing %s:\n%s", codec, output)
-		}
+	tests := []struct {
+		name  string
+		codec Codec
+		probe string
+		write func(testing.TB) string
+	}{
+		{name: "h264", codec: CodecH264, probe: "h264", write: writeFFmpegH264OpusMatroskaRecording},
+		{name: "av1", codec: CodecAV1, probe: "av1", write: writeFFmpegAV1OpusMatroskaRecording},
+		{name: "vp9", codec: CodecVP9, probe: "vp9", write: writeFFmpegVP9OpusMatroskaRecording},
+		{name: "vp8", codec: CodecVP8, probe: "vp8", write: writeFFmpegVP8OpusMatroskaRecording},
 	}
-	remuxedTracks, remuxedStats := readMatroskaRecording(t, remuxed)
-	remuxedVideo := requireMatroskaRecordingTrack(t, remuxedTracks, CodecH264, TrackVideo)
-	remuxedAudio := requireMatroskaRecordingTrack(t, remuxedTracks, CodecOpus, TrackAudio)
-	assertMatroskaRecordingStats(t, remuxedStats, remuxedVideo.ID, remuxedAudio.ID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := tt.write(t)
+			tracks, stats := readMatroskaRecording(t, file)
+			video := requireMatroskaRecordingTrack(t, tracks, tt.codec, TrackVideo)
+			audio := requireMatroskaRecordingTrack(t, tracks, CodecOpus, TrackAudio)
+			assertMatroskaRecordingStats(t, stats, video.ID, audio.ID)
+
+			remuxed := remuxMatroskaRecording(t, file)
+			output := runExternalTool(t, tool, "-v", "error", "-show_entries", "stream=codec_name", "-of", "default=nw=1", remuxed)
+			for _, codec := range []string{tt.probe, "opus"} {
+				if !strings.Contains(output, codec) {
+					t.Fatalf("ffprobe output missing %s:\n%s", codec, output)
+				}
+			}
+			remuxedTracks, remuxedStats := readMatroskaRecording(t, remuxed)
+			remuxedVideo := requireMatroskaRecordingTrack(t, remuxedTracks, tt.codec, TrackVideo)
+			remuxedAudio := requireMatroskaRecordingTrack(t, remuxedTracks, CodecOpus, TrackAudio)
+			assertMatroskaRecordingStats(t, remuxedStats, remuxedVideo.ID, remuxedAudio.ID)
+		})
+	}
+}
+
+func writeFFmpegAV1OpusMatroskaRecording(t testing.TB) string {
+	t.Helper()
+	tool := requireExternalTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-av1-opus-recording.mkv")
+	runExternalToolOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=5:duration=1",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=1",
+		"-map", "0:v:0",
+		"-map", "1:a:0",
+		"-shortest",
+		"-c:v", "libsvtav1",
+		"-preset", "13",
+		"-crf", "50",
+		"-g", "5",
+		"-c:a", "libopus",
+		"-application", "voip",
+		"-frame_duration", "20",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegVP9OpusMatroskaRecording(t testing.TB) string {
+	t.Helper()
+	tool := requireExternalTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-vp9-opus-recording.mkv")
+	runExternalToolOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=5:duration=1",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=1",
+		"-map", "0:v:0",
+		"-map", "1:a:0",
+		"-shortest",
+		"-c:v", "libvpx-vp9",
+		"-deadline", "realtime",
+		"-cpu-used", "8",
+		"-b:v", "100k",
+		"-g", "5",
+		"-c:a", "libopus",
+		"-application", "voip",
+		"-frame_duration", "20",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegVP8OpusMatroskaRecording(t testing.TB) string {
+	t.Helper()
+	tool := requireExternalTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-vp8-opus-recording.mkv")
+	runExternalToolOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=5:duration=1",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=1",
+		"-map", "0:v:0",
+		"-map", "1:a:0",
+		"-shortest",
+		"-c:v", "libvpx",
+		"-deadline", "realtime",
+		"-cpu-used", "8",
+		"-b:v", "100k",
+		"-g", "5",
+		"-c:a", "libopus",
+		"-application", "voip",
+		"-frame_duration", "20",
+		file,
+	)
+	return file
 }
 
 func TestExternalMatroskaToolCompat(t *testing.T) {
