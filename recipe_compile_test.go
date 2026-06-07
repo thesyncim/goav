@@ -2722,6 +2722,52 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	}
 }
 
+func TestFrameStreamLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
+	job := From(FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		To(Sink(&runtimeTestSink{name: "frames"}))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpDecode)
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "frame stream graph plan has no decode operation") {
+		t.Fatalf("err = %v, want missing decode-operation graph-plan error", err)
+	}
+}
+
+func TestFrameStreamLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
+	job := From(FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		To(Sink(&runtimeTestSink{name: "frames"}))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutTargets(resolved.graphPlan.operations)
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "frame stream graph plan has no target operations") {
+		t.Fatalf("err = %v, want missing target-operation graph-plan error", err)
+	}
+}
+
 func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
@@ -2892,6 +2938,30 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	}
 	if !specHasNode(built, "meter") || !specHasNode(built, "encode-audio") || !specHasNode(built, "archive.ogg") {
 		t.Fatalf("built spec = %+v, want meter, encode, and mux nodes", built)
+	}
+}
+
+func TestEncodedFrameStreamLowererRequiresEncodeOperationBeforeSources(t *testing.T) {
+	job := From(FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Opus(96_000).
+		To(fileDestination("archive.ogg", io.Discard))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpEncode)
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "encoded frame stream graph plan has no encode operation") {
+		t.Fatalf("err = %v, want missing encode-operation graph-plan error", err)
 	}
 }
 
