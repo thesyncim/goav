@@ -64,6 +64,9 @@ func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
 	if err := validateSegmentInfo(opts.Info); err != nil {
 		return nil, err
 	}
+	if err := validateCuePolicy(opts.CuePolicy); err != nil {
+		return nil, err
+	}
 	attachments, err := normalizeAttachments(opts.Attachments)
 	if err != nil {
 		return nil, err
@@ -293,7 +296,7 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	}
 	m.clusterBlock = blockNumber
 	m.updateMaxTime(packet)
-	m.addCue(packet, timecode, relativePosition, blockNumber)
+	m.addCue(packet, track, timecode, relativePosition, blockNumber)
 	return nil
 }
 
@@ -421,7 +424,11 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 	if endTime > m.maxTimeNS {
 		m.maxTimeNS = endTime
 	}
-	m.addCue(Packet{TrackID: packet.TrackID, TimeNS: packet.TimeNS, Keyframe: packet.Keyframe}, timecode, relativePosition, blockNumber)
+	cuePacket := Packet{TrackID: packet.TrackID, TimeNS: packet.TimeNS, Keyframe: packet.Keyframe}
+	if endTime > packet.TimeNS {
+		cuePacket.DurationNS = endTime - packet.TimeNS
+	}
+	m.addCue(cuePacket, track, timecode, relativePosition, blockNumber)
 	return nil
 }
 
@@ -1266,8 +1273,8 @@ func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16, track Track
 	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
 }
 
-func (m *Muxer) addCue(packet Packet, timecode int64, relativePosition uint64, blockNumber uint64) {
-	if !m.collectsCues() || !packet.Keyframe {
+func (m *Muxer) addCue(packet Packet, track Track, timecode int64, relativePosition uint64, blockNumber uint64) {
+	if !m.shouldCuePacket(packet, track) {
 		return
 	}
 	position := CueTrackPosition{
@@ -1290,8 +1297,24 @@ func (m *Muxer) addCue(packet Packet, timecode int64, relativePosition uint64, b
 	m.cues = append(m.cues, cue)
 }
 
+func (m *Muxer) shouldCuePacket(packet Packet, track Track) bool {
+	if !m.collectsCues() {
+		return false
+	}
+	switch m.options.CuePolicy {
+	case CuePolicyNone:
+		return false
+	case CuePolicyAllPackets:
+		return true
+	case CuePolicyKeyframes:
+		return packet.Keyframe
+	default:
+		return packet.Keyframe || track.Type == TrackAudio
+	}
+}
+
 func (m *Muxer) collectsCues() bool {
-	return !m.options.Streaming && m.seekable
+	return !m.options.Streaming && m.seekable && m.options.CuePolicy != CuePolicyNone
 }
 
 func (m *Muxer) hasCuesToWrite() bool {

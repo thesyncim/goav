@@ -56,8 +56,10 @@ Current milestone:
   `io.Seeker`.
 - Seekable Info Duration patching when packet timestamps/durations are known.
 - SeekHead writing and parsing for seekable files.
-- Cues writing and parsing for keyframe packets in seekable files, including
-  `CueRelativePosition` for block-level precision inside clusters.
+- Cues writing and parsing for seekable files, including `CueRelativePosition`
+  for block-level precision inside clusters. The default writer policy indexes
+  audio packets and keyframe video packets; callers may force keyframe-only,
+  all-packet dense indexing, or disable cues explicitly with `CuePolicy`.
 - Cue-based `SeekToTime` for seekable demuxers, using `CueRelativePosition`
   when present to position directly on the cued block.
 - Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
@@ -117,10 +119,8 @@ Current milestone:
 
 These are intentionally not in the first milestone:
 
-- Dense indexing and frame-exact random access beyond cue-assisted
-  `ReadPacketAtTime`.
-- Chapters, tags, language variants, default/forced flags beyond basic
-  defaults, and unknown-element preservation.
+- Frame-exact random access beyond cue-assisted `ReadPacketAtTime`.
+- Unknown-element preservation.
 - Full codec-private generation and parsers for every codec family.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
 
@@ -162,11 +162,13 @@ emitted frame; the stored BlockDuration is the total laced block duration so
 demuxing returns the same per-frame duration.
 Negative packet durations and packet end times that overflow `int64` are
 rejected before bytes are written.
-Seekable mode also writes Cues for keyframe packets using Segment-relative
-Cluster positions plus `CueRelativePosition` offsets to the referenced block
-inside the Cluster. It also writes a SeekHead that points to Info, Tracks,
-Attachments when present, and Cues. The muxer updates duration and cue state
-only after the packet bytes are written successfully.
+Seekable mode also writes Cues using Segment-relative Cluster positions plus
+`CueRelativePosition` offsets to the referenced block inside the Cluster. By
+default, audio packets and keyframe video packets are indexed. `CuePolicy`
+allows callers to keep keyframe-only indexing, force all-packet dense indexing,
+or disable cues. The muxer also writes a SeekHead that points to Info, Tracks,
+Attachments, Chapters, Tags, and Cues when present. The muxer updates duration
+and cue state only after the packet bytes are written successfully.
 `SeekToTime` uses those Cues to jump to the nearest preceding cue. When that cue
 has `CueRelativePosition`, the demuxer parses preceding Cluster metadata and
 positions the next read directly on the cued block. A successful seek clears
@@ -250,6 +252,24 @@ VP9+Opus, and AV1+Opus are demuxed completely, checked for monotonic per-track
 timestamps, remuxed completely through the Go muxers, and validated again with
 the Go demuxers and `ffprobe`.
 
+Optional field-corpus tests and benchmarks run against real capture files when
+corpus paths are provided:
+
+```sh
+GOAV_MATROSKA_FIELD_CORPUS=/path/to/mkv-or-directory \
+GOAV_WEBM_FIELD_CORPUS=/path/to/webm-or-directory \
+go test ./container/matroska ./container/webm \
+  -run 'TestExternal(Matroska|WebM)FieldCorpus' -count=1 -v
+
+GOAV_MATROSKA_FIELD_CORPUS=/path/to/mkv-or-directory \
+GOAV_WEBM_FIELD_CORPUS=/path/to/webm-or-directory \
+go test ./container/matroska ./container/webm -run '^$' \
+  -bench 'BenchmarkExternal(Matroska|WebM)FieldCorpusScan' -benchtime=1x
+```
+
+`GOAV_FIELD_CORPUS_PACKET_CAP` may be set to a byte count when a capture has
+packets larger than the default 16 MiB caller-owned packet buffer.
+
 ## Benchmark Plan
 
 Committed benchmarks cover:
@@ -273,7 +293,10 @@ Committed benchmarks cover:
 - External Go-library comparison benchmarks on the same Matroska
   WebRTC-shaped corpus, comparing complete packet scans against
   `github.com/luispater/matroska-go`.
+- Optional field-corpus scan benchmarks for Matroska and WebM production
+  captures supplied through `GOAV_MATROSKA_FIELD_CORPUS` and
+  `GOAV_WEBM_FIELD_CORPUS`.
 
-Future benchmarks should add large-file scan speed on real WebRTC recordings,
-subsample encrypted laced-block cases, and additional Go EBML/Matroska
-libraries on the same corpus.
+Future benchmark runs should add committed results from real WebRTC production
+recordings, subsample encrypted laced-block cases, and additional Go
+EBML/Matroska libraries on the same corpus.

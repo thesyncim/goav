@@ -1089,6 +1089,66 @@ func TestDemuxerReadPacketAtTime(t *testing.T) {
 	}
 }
 
+func TestMuxerCuePolicyAndDemuxerCues(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "dense-cues-*.webm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	muxer, err := NewMuxer(file, MuxerOptions{
+		ClusterMaxDurationNS: 1_000_000,
+		CuePolicy:            CuePolicyAllPackets,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: trackID, TimeNS: 0, Data: []byte{1}},
+		{TrackID: trackID, TimeNS: 20_000_000, Data: []byte{2}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(file, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); err != nil {
+		t.Fatal(err)
+	}
+	cues := demuxer.Cues()
+	if len(cues) != len(packets) {
+		t.Fatalf("cues = %+v, want %d", cues, len(packets))
+	}
+	if len(demuxer.SeekEntries()) == 0 {
+		t.Fatalf("missing seek entries")
+	}
+	packet := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacketAtTime(10_000_000, &packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TimeNS != packets[1].TimeNS || !bytes.Equal(packet.Data, packets[1].Data) {
+		t.Fatalf("packet at time = %+v data=%v, want %+v data=%v", packet, packet.Data, packets[1], packets[1].Data)
+	}
+}
+
 func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

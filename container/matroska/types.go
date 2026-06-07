@@ -340,6 +340,20 @@ type CueReference struct {
 	CodecStateSet      bool
 }
 
+// CuePolicy controls which packets are indexed in seekable output.
+type CuePolicy int
+
+const (
+	// CuePolicyDefault indexes audio packets and keyframe video packets.
+	CuePolicyDefault CuePolicy = iota
+	// CuePolicyKeyframes indexes only packets marked as keyframes.
+	CuePolicyKeyframes
+	// CuePolicyAllPackets indexes every written packet or laced block.
+	CuePolicyAllPackets
+	// CuePolicyNone disables cue collection and Cues writing.
+	CuePolicyNone
+)
+
 type SeekEntry struct {
 	ID       uint64
 	Position uint64
@@ -453,6 +467,7 @@ type MuxerOptions struct {
 	ClusterMaxDurationNS       int64
 	Streaming                  bool
 	CueCapacity                int
+	CuePolicy                  CuePolicy
 	ContentEncryptionKeys      []ContentEncryptionKey
 	ContentEncryptionInitialIV []byte
 }
@@ -499,4 +514,13 @@ func normalizeMuxerOptions(opts MuxerOptions) MuxerOptions {
 		opts.ClusterMaxDurationNS = defaultClusterMaxDurationNS
 	}
 	return opts
+}
+
+func validateCuePolicy(policy CuePolicy) error {
+	switch policy {
+	case CuePolicyDefault, CuePolicyKeyframes, CuePolicyAllPackets, CuePolicyNone:
+		return nil
+	default:
+		return ErrInvalidData
+	}
 }

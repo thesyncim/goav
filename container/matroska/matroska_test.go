@@ -6001,6 +6001,130 @@ func TestSeekableMuxerWritesSeekHeadAndCues(t *testing.T) {
 	}
 }
 
+func TestSeekableMuxerCuesAudioPacketsWithoutKeyframe(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 1_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: trackID, TimeNS: 0, DurationNS: 20_000_000, Data: []byte{1}},
+		{TrackID: trackID, TimeNS: 20_000_000, DurationNS: 20_000_000, Data: []byte{2}},
+		{TrackID: trackID, TimeNS: 40_000_000, DurationNS: 20_000_000, Data: []byte{3}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(30_000_000); err != nil {
+		t.Fatal(err)
+	}
+	cues := demuxer.Cues()
+	if len(cues) != len(packets) {
+		t.Fatalf("cues = %+v, want %d audio cues", cues, len(packets))
+	}
+	for i := range cues {
+		if cues[i].TrackID != trackID || cues[i].TimeNS != packets[i].TimeNS || cues[i].DurationNS != packets[i].DurationNS {
+			t.Fatalf("cue %d = %+v, want track=%d time=%d duration=%d", i, cues[i], trackID, packets[i].TimeNS, packets[i].DurationNS)
+		}
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != packets[1].TimeNS || !bytes.Equal(got.Data, packets[1].Data) {
+		t.Fatalf("packet after seek = %+v data=%v, want %+v data=%v", got, got.Data, packets[1], packets[1].Data)
+	}
+	if err := demuxer.ReadPacketAtTime(30_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != packets[2].TimeNS || !bytes.Equal(got.Data, packets[2].Data) {
+		t.Fatalf("packet at time = %+v data=%v, want %+v data=%v", got, got.Data, packets[2], packets[2].Data)
+	}
+}
+
+func TestMuxerCuePolicyControlsIndexing(t *testing.T) {
+	tests := []struct {
+		name     string
+		policy   CuePolicy
+		wantCues int
+	}{
+		{name: "default skips nonkeyframe video", policy: CuePolicyDefault, wantCues: 0},
+		{name: "keyframes skips nonkeyframe video", policy: CuePolicyKeyframes, wantCues: 0},
+		{name: "all packets indexes nonkeyframe video", policy: CuePolicyAllPackets, wantCues: 2},
+		{name: "none disables keyframe cues", policy: CuePolicyNone, wantCues: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := &memoryWriteSeeker{}
+			muxer, err := NewMuxer(ws, MuxerOptions{
+				ClusterMaxDurationNS: 1_000_000,
+				CuePolicy:            tt.policy,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			trackID, err := muxer.AddTrack(Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 16, Height: 16},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, packet := range []Packet{
+				{TrackID: trackID, TimeNS: 0, Keyframe: tt.policy == CuePolicyNone, Data: []byte{1}},
+				{TrackID: trackID, TimeNS: 20_000_000, Keyframe: false, Data: []byte{2}},
+			} {
+				if err := muxer.WritePacket(packet); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := muxer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantCues != 0 {
+				if err := demuxer.SeekToTime(0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cues := demuxer.Cues()
+			if len(cues) != tt.wantCues {
+				t.Fatalf("cues = %+v, want %d", cues, tt.wantCues)
+			}
+		})
+	}
+}
+
+func TestNewMuxerRejectsInvalidCuePolicy(t *testing.T) {
+	if _, err := NewMuxer(discardWriter{}, MuxerOptions{CuePolicy: CuePolicy(99)}); !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
+	}
+}
+
 func TestDemuxerSeekToTimeUsesCueRelativePosition(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 60_000_000})

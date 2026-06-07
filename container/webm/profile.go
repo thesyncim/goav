@@ -35,6 +35,10 @@ type SegmentInfo = matroska.SegmentInfo
 type Track = matroska.Track
 type Packet = matroska.Packet
 type LacedPacket = matroska.LacedPacket
+type CuePoint = matroska.CuePoint
+type CueTrackPosition = matroska.CueTrackPosition
+type CueReference = matroska.CueReference
+type SeekEntry = matroska.SeekEntry
 
 type LacingMode = matroska.LacingMode
 
@@ -43,6 +47,15 @@ const (
 	LacingXiph  = matroska.LacingXiph
 	LacingEBML  = matroska.LacingEBML
 	LacingFixed = matroska.LacingFixed
+)
+
+type CuePolicy = matroska.CuePolicy
+
+const (
+	CuePolicyDefault    = matroska.CuePolicyDefault
+	CuePolicyKeyframes  = matroska.CuePolicyKeyframes
+	CuePolicyAllPackets = matroska.CuePolicyAllPackets
+	CuePolicyNone       = matroska.CuePolicyNone
 )
 
 const (
@@ -83,6 +96,7 @@ type MuxerOptions struct {
 	TimecodeScaleNS            int64
 	ClusterMaxDurationNS       int64
 	Streaming                  bool
+	CuePolicy                  CuePolicy
 	ContentEncryptionKeys      []ContentEncryptionKey
 	ContentEncryptionInitialIV []byte
 }
@@ -100,6 +114,7 @@ func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 		TimecodeScaleNS:            opts.TimecodeScaleNS,
 		ClusterMaxDurationNS:       opts.ClusterMaxDurationNS,
 		Streaming:                  opts.Streaming,
+		CuePolicy:                  opts.CuePolicy,
 		ContentEncryptionKeys:      opts.ContentEncryptionKeys,
 		ContentEncryptionInitialIV: opts.ContentEncryptionInitialIV,
 	}

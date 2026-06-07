@@ -40,6 +40,20 @@ func (d *Demuxer) Info() SegmentInfo {
 	return d.inner.Info()
 }
 
+func (d *Demuxer) Cues() []CuePoint {
+	if d == nil || d.inner == nil {
+		return nil
+	}
+	return d.inner.Cues()
+}
+
+func (d *Demuxer) SeekEntries() []SeekEntry {
+	if d == nil || d.inner == nil {
+		return nil
+	}
+	return d.inner.SeekEntries()
+}
+
 func (d *Demuxer) ReadPacket(dst *Packet) error {
 	return d.inner.ReadPacket(dst)
 }
