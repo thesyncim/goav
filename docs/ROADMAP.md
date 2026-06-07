@@ -46,7 +46,8 @@ make the implementation match the composable planner promise.
    mismatches plus config-specific pixel/sample-format and resize-mode
    mismatches fail during planned and runtime branch preflight. Format
    descriptors now report container media/codecs/stream-count capabilities and
-   descriptor-backed mux target conflicts fail before graph mutation.
+   descriptor-backed mux target conflicts fail before planned or runtime graph
+   mutation.
 5. Keep custom composition orthogonal: application-local codecs use
    `goav.Codec`, `WithDecoder`, and `WithEncoder`; custom stages, filters,
    sinks, and targets use the same stream and runtime-attachment concepts as

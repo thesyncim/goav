@@ -1187,6 +1187,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     requirements preserve the supported values in diagnostics. Registry,
     adapter, compile-pass, explanation, and runtime-attach tests pin the
     behavior. Done.
+279. Preflight runtime mux descriptor compatibility:
+    late `Task.Attach` branches that end in file or URI targets now resolve the
+    target container format and run the same descriptor-backed mux
+    compatibility checks used by planned branches before constructing a muxer or
+    mutating the graph. Descriptor media, codec, and stream-count conflicts
+    return `target_mux_incompatible` with target and branch details. Runtime
+    tests prove an incompatible late Opus-to-custom-container branch opens no
+    muxer and leaves the graph unchanged. Done.
 
 ## First Vertical Slice
 
@@ -1450,10 +1458,9 @@ packet-copy paths use resolved graph plans for concrete inputs and endpoints,
 direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
-broaden descriptor-backed endpoint/container compatibility as WebM/Ogg arrive,
-deepen stream/container capability planning, and keep broadening buffered
-runtime attachment stress proof without weakening the direct graph branch
-grammar.
+broaden descriptor-backed endpoint/container capability data as WebM/Ogg arrive,
+deepen stream-level capability planning, and keep broadening buffered runtime
+attachment stress proof without weakening the direct graph branch grammar.
 
 ## Validation Gates
 

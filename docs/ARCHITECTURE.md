@@ -56,8 +56,9 @@ decode, resize, resample, custom stages, and taps. `Job.Explain(ctx)` reports th
 `MediaPlan` branch operations, taps, decisions, and adapter capability details.
 Filter descriptors describe transform media constraints; format descriptors
 describe target container media, codec, and stream-count constraints so mux
-group conflicts can fail before graph mutation. Declared branch composition now
-carries a private branch-compose plan owned by the recipe compiler; the
+group conflicts can fail before planned or runtime graph mutation. Declared
+branch composition now carries a private branch-compose plan owned by the
+recipe compiler; the
 advanced `transcode.Plan` path adapts into that internal shape at its boundary
 instead of being the recipe IR. Runtime branch-composer graph helpers now operate
 on branch-compose routes, target routes, selector/stream groups, and media
@@ -162,6 +163,9 @@ realtime/stateless flags, and adapter metadata alongside
 missing/available/incompatible status.
 When output geometry is known, branch filter stages receive preallocated frame
 scratch so concrete resize filters can keep plane ownership with the caller.
+Mux targets also preflight format descriptor media, codec, and stream-count
+constraints for both planned branches and runtime attachments before a muxer is
+opened.
 
 Recipe helpers also expose `PacketFunc`, `FrameFunc`, `EventFunc`, and
 `SinkFunc` so small custom processing hooks can participate in the graph without

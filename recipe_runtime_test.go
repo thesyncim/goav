@@ -1993,6 +1993,62 @@ func TestStreamRecipeTaskAttachesRuntimeEncodeMuxBranch(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
+	ctx := context.Background()
+	audioOnly := av.FormatID("audioonly")
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		func(registry *format.SimpleRegistry) {
+			registry.RegisterMuxerDescriptor(format.Descriptor{
+				Format:     audioOnly,
+				Media:      []av.MediaType{av.MediaAudio},
+				Codecs:     []av.CodecID{av.CodecPCM},
+				MaxStreams: 1,
+				Metadata:   av.Metadata{"summary": "audioonly targets accept PCM audio only"},
+			}, muxers)
+		},
+	)
+	encoderFactory := &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
+	)
+	task, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		To(SinkEndpoint(&runtimeTestSink{name: "frames"})).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	before := task.Describe()
+
+	_, err = task.Attach(ctx, Branch("archive").
+		FromTap("audio.decoded").
+		Opus(96_000).
+		To(Target("archive", FileOutput("archive.audioonly", io.Discard).Format(audioOnly))))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) ||
+		buildErr.Code != "target_mux_incompatible" ||
+		!strings.Contains(err.Error(), "audioonly targets accept PCM audio only") ||
+		!strings.Contains(err.Error(), "target=archive") ||
+		!strings.Contains(err.Error(), "branch=archive codec=opus media=audio") {
+		t.Fatalf("err = %v, want descriptor-backed runtime mux incompatibility", err)
+	}
+	if len(muxers.muxers) != 0 {
+		t.Fatalf("muxer opened before runtime mux preflight: %+v", muxers.muxers)
+	}
+	if after := task.Describe(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
+	}
+}
+
 func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}

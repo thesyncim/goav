@@ -300,12 +300,21 @@ func (t *task) prepareRuntimeBranchDestination(ctx context.Context, branch *runt
 			branch.terminals = append(branch.terminals, runtimeBranchTerminal{sink: destination.sink, caps: caps})
 			continue
 		}
+		formatID, err := t.runtimeBranchMuxFormat(ctx, destination.endpoint, i)
+		if err != nil {
+			closeRuntimeBranchOwnedStages(*branch)
+			return err
+		}
+		if issue, ok := runtimeBranchMuxCompatibilityIssue(*branch, destination, stream, formatID, t.runtime); ok {
+			closeRuntimeBranchOwnedStages(*branch)
+			return muxCompatibilityBuildError("attach runtime branch", issue)
+		}
 		muxStage, err := (&builder{runtime: t.runtime}).openMuxStageWithFormat(
 			ctx,
 			destination.endpoint.output,
 			i,
 			[]av.Stream{stream},
-			endpointSpecOpenFormat(destination.endpoint),
+			formatID,
 			endpointSpecGraphFormat(destination.endpoint),
 		)
 		if err != nil {
@@ -319,6 +328,35 @@ func (t *task) prepareRuntimeBranchDestination(ctx context.Context, branch *runt
 		})
 	}
 	return nil
+}
+
+func (t *task) runtimeBranchMuxFormat(ctx context.Context, endpoint EndpointSpec, index int) (av.FormatID, error) {
+	formatID := endpointSpecOpenFormat(endpoint)
+	if formatID != "" {
+		return formatID, nil
+	}
+	result, err := t.runtime.formats.Probe(ctx, outputProbeRequest(endpoint.output))
+	if err != nil {
+		return "", outputFormatProbeError(endpoint.output, index, err)
+	}
+	return result.Format, nil
+}
+
+func runtimeBranchMuxCompatibilityIssue(branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, formatID av.FormatID, rt Runtime) (muxCompatibilityIssue, bool) {
+	branchName := firstNonEmpty(branch.name, destination.name, "branch")
+	targetName := firstNonEmpty(destination.name, destination.endpoint.label(branchName))
+	output := planOutput{
+		Name:       targetName,
+		Operation:  OpMux,
+		Format:     formatID,
+		BranchRefs: []string{branchName},
+	}
+	streamInfo := plannedMuxStream{
+		Branch: branchName,
+		Codec:  stream.Codec.ID,
+		Media:  firstNonEmptyMedia(stream.Type, stream.Codec.Type, codecMedia(stream.Codec.ID)),
+	}
+	return checkKnownMuxCompatibility(output, []plannedMuxStream{streamInfo}, rt)
 }
 
 func runtimeBranchHasMuxEndpoint(branch runtimeBranch) bool {
