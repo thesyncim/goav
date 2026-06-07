@@ -172,6 +172,32 @@ func TestDirectFrameStreamsUseBranchRoutePlanner(t *testing.T) {
 	}
 }
 
+func TestSelectedPacketCopyUsesBranchRoutePlanner(t *testing.T) {
+	body, err := os.ReadFile("media_plan_build.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"selectedPacketCopyBranchComposeRoutes",
+		"compileSelectedPacketCopyBranchCompose",
+		"planBranchComposeRoutes",
+		"compileBranchComposeInputs",
+		"compileBranchComposeRoutes",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("selected packet-copy should use branch route planner; missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"selectStage := newStreamSelectStage",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("selected packet-copy should not use legacy selected-copy helper %q", forbidden)
+		}
+	}
+}
+
 func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	var body strings.Builder
 	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "runtime_transcode.go", "branch_compose_plan.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
@@ -2335,7 +2361,7 @@ func TestCompileJobRecipeCarriesIntentAndGraphPlanBuild(t *testing.T) {
 }
 
 func TestGraphPlanCarriesReportMetadata(t *testing.T) {
-	web := Target("web", fileDestination("web.ivf", io.Discard).Format(av.FormatIVF))
+	web := Target("web", fileDestination("web.ivf", io.Discard).withFormat(av.FormatIVF))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -2390,7 +2416,7 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 func TestGraphPlanViewsAreImmutable(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(fileDestination("recording.ivf", io.Discard).Format(av.FormatIVF))
+	).Copy().To(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2486,7 +2512,7 @@ func graphPlanOperationsWithoutBranch(operations []graphPlanOperation, branch st
 func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(fileDestination("recording.ivf", io.Discard).Format(av.FormatIVF))
+	).Copy().To(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2527,7 +2553,7 @@ func TestGraphPlanSpecPassPlansRTPCopy(t *testing.T) {
 				Type: av.MediaVideo,
 			},
 		}}}).Name("video").Codec(VP8()),
-	).Copy().To(fileDestination("recording.ivf", io.Discard).Format(av.FormatIVF))
+	).Copy().To(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2601,8 +2627,8 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 }
 
 func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) {
-	voice := Target("voice", fileDestination("voice.ogg", io.Discard).Format(av.FormatOgg))
-	archive := Target("archive", fileDestination("archive.ogg", io.Discard).Format(av.FormatOgg))
+	voice := Target("voice", fileDestination("voice.ogg", io.Discard).withFormat(av.FormatOgg))
+	archive := Target("archive", fileDestination("archive.ogg", io.Discard).withFormat(av.FormatOgg))
 	job := From(RTP(&runtimeRTPReceiver{
 		streams: []Stream{audioOpusTestStream()},
 	}).Name("audio").Codec(Opus())).
@@ -3129,6 +3155,43 @@ func TestStreamGraphLowererUsesPlanPacketCopyTargetOperationNodes(t *testing.T) 
 	}
 	if !specHasNode(planned, "target-plan-archive") || !specHasNode(planned, "target-plan-packets") {
 		t.Fatalf("planned = %+v, want renamed packet-copy target nodes", planned)
+	}
+}
+
+func TestSelectedPacketCopyLowererUsesPlanSelectOperationNode(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Copy().
+		To(Sink(&runtimeTestSink{name: "packets"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved = renameResolvedGraphPlanOperationNode(t, resolved, OpSelect, "select-plan-audio")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "select-plan-audio") {
+		t.Fatalf("planned = %+v, want renamed selected packet-copy select node", planned)
 	}
 }
 

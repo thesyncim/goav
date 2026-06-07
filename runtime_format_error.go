@@ -58,7 +58,7 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		Details:   outputFormatDetails(output),
 		Suggestions: []string{
 			"give file outputs a name or MIME type a registered prober can recognize",
-			"call .Format(...) with a registered container when the writer has no filename",
+			"pass goav.Format(...) to goav.File(...) or goav.Writer(...) when the writer has no filename",
 			"register a format adapter with goav.New(goav.WithFormatAdapter(...))",
 		},
 		Cause: cause,
@@ -96,7 +96,7 @@ func targetFormatProbeError(node string, output format.Output, cause error) erro
 		Details:   outputFormatDetails(output),
 		Suggestions: []string{
 			"give file targets a name or MIME type a registered prober can recognize",
-			"call .Format(...) with a registered container when the writer has no filename",
+			"pass goav.Format(...) to the destination constructor when the writer has no filename",
 			"register a format adapter with goav.New(goav.WithFormatAdapter(...))",
 		},
 		Cause: cause,

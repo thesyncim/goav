@@ -160,23 +160,11 @@ func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 	if !ok {
 		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", Intent{Streams: []StreamIntent{p.stream}})
 	}
-	upstreamRefs := sourceRefs
 	if p.selectedStream {
-		selector := streamIntentSelector(p.stream)
-		selectName := selectNodeName(selector)
-		selectRef := pipeline.NodeRef(selectName)
-		if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef, selectNodeDetail(selector)); err != nil {
-			return pipeline.Spec{}, err
-		}
-		for i := range sourceRefs {
-			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-				From:   sourceRefs[i],
-				To:     selectRef,
-				Policy: pipeline.RouteAll,
-			})
-		}
-		upstreamRefs = []pipeline.NodeRef{selectRef}
+		branches, outputs := p.selectedPacketCopyBranchComposeRoutes()
+		return planBranchComposeRoutes(spec, nodes, sourceRefs, branches, outputs)
 	}
+	upstreamRefs := sourceRefs
 	targetRefs, err := mediaPlanPacketCopyTargets(&spec, nodes, p.outputs)
 	if err != nil {
 		return pipeline.Spec{}, err
@@ -191,6 +179,25 @@ func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 		}
 	}
 	return spec, nil
+}
+
+func (p mediaPlanStreamGraph) selectedPacketCopyBranchComposeRoutes() ([]branchComposeRoute, []branchComposeTargetRoute) {
+	selector := streamIntentSelector(p.stream)
+	branchName := firstNonEmpty(p.stream.Name, string(selector.ID), string(selector.Type), "branch")
+	branches := []branchComposeRoute{{
+		name: branchName,
+		branch: branchComposeBranch{
+			Name:     branchName,
+			Selector: selector,
+			Copy:     true,
+		},
+		copy: true,
+		request: encodeRequest{
+			name:     branchName,
+			selector: selector,
+		},
+	}}
+	return branches, mediaPlanBranchComposeTargetRoutes(p.outputs, branchName)
 }
 
 func newMediaPlanBranchComposeGraph(rt Runtime, input InputSpec, plan branchComposePlan) (mediaPlanBranchComposeGraph, bool, error) {
@@ -730,38 +737,56 @@ func graphPlanTargetBranchNames(operations []graphPlanOperation) map[string]map[
 }
 
 func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, plan graphPlan, graph pipeline.Graph, service *builder) error {
-	selectOperation, hasSelect, targets, err := p.preparePacketCopyOperationLowering(plan)
+	selectOperation, _, targets, err := p.preparePacketCopyOperationLowering(plan)
 	if err != nil {
 		return err
+	}
+	if p.selectedStream {
+		return p.compileSelectedPacketCopyBranchCompose(ctx, graph, service, selectOperation, targets)
 	}
 	sourceRefs, streams, _, _, err := p.compileSources(ctx, graph)
 	if err != nil {
 		return err
 	}
 	targetRefs := sourceRefs
-	targetStreams := streams
-	if hasSelect {
-		selector := streamIntentSelector(p.stream)
-		selected, err := selectDecodeStream(streams, selector)
-		if err != nil {
-			return err
-		}
-		selectName := firstNonEmpty(selectOperation.Node.String(), selectNodeName(selector))
-		selectStage := newStreamSelectStage(selectName, selected, selector, selectNodeDetail(selector))
-		selectRef, err := graph.AddStage(selectStage, p.runtime.buffer)
-		if err != nil {
-			selectStage.Close()
-			return err
-		}
-		for i := range sourceRefs {
-			if err := connectRefs(graph, sourceRefs[i], selectRef); err != nil {
-				return err
-			}
-		}
-		targetRefs = []pipeline.NodeRef{selectRef}
-		targetStreams = []av.Stream{selected}
+	return p.lowerPacketCopyTargets(ctx, graph, service, targets, targetRefs, streams)
+}
+
+func (p mediaPlanStreamGraph) compileSelectedPacketCopyBranchCompose(ctx context.Context, graph pipeline.Graph, service *builder, selectOperation graphPlanOperation, targets []graphPlanTargetOperation) error {
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build packet copy", Intent{Streams: []StreamIntent{p.stream}})
+	if err != nil {
+		return err
 	}
-	return p.lowerPacketCopyTargets(ctx, graph, service, targets, targetRefs, targetStreams)
+	branches, outputs := p.selectedPacketCopyBranchComposeRoutes()
+	if len(branches) != 1 {
+		return graphPlanInvalidError("selected packet-copy branch route count must be one", []string{
+			"branches=" + strconv.Itoa(len(branches)),
+		})
+	}
+	for i := range targets {
+		target := targets[i]
+		if target.OutputIndex < 0 || target.OutputIndex >= len(outputs) {
+			return graphPlanInvalidError("selected packet-copy target operation is not bound to a branch route target", []string{
+				"target=" + target.Name,
+				"node=" + target.Node.String(),
+			})
+		}
+		outputs[target.OutputIndex].node = target.Node
+	}
+	groups, err := resolveBranchComposeStreamGroups(sources.streams, branches)
+	if err != nil {
+		return err
+	}
+	inputPlan := map[string]graphPlanBranchComposeInputOperation{
+		branchComposeSelectorKey(streamIntentSelector(p.stream)): {
+			selectNode: selectOperation.Node,
+		},
+	}
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, branches, inputPlan, sources.realtime)
+	if err != nil {
+		return err
+	}
+	return compileBranchComposeRoutes(ctx, service, graph, branches, outputs, branchInputs, branchStreams, nil, nil, sources.realtime)
 }
 
 func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(plan graphPlan) (graphPlanOperation, bool, []graphPlanTargetOperation, error) {
@@ -1152,9 +1177,13 @@ func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeR
 		dropDecodeEvents: p.encode == nil,
 		request:          request,
 	}}
-	outputs := make([]branchComposeTargetRoute, len(p.outputs))
-	for i := range p.outputs {
-		output := p.outputs[i]
+	return branches, mediaPlanBranchComposeTargetRoutes(p.outputs, branchName), nil
+}
+
+func mediaPlanBranchComposeTargetRoutes(outputs []destinationSpec, branchName string) []branchComposeTargetRoute {
+	routes := make([]branchComposeTargetRoute, len(outputs))
+	for i := range outputs {
+		output := outputs[i]
 		target := branchComposeTarget{
 			Name:        output.label("output"),
 			Destination: cloneDestinationSpec(output),
@@ -1166,14 +1195,14 @@ func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeR
 		if output.resolvedFormat != "" {
 			target = resolveBranchComposeTargetFormat(target, output.resolvedFormat)
 		}
-		outputs[i] = branchComposeTargetRoute{
+		routes[i] = branchComposeTargetRoute{
 			output:  target,
 			target:  branchComposeFormatTarget(branchComposePlan{}, target),
 			sink:    output.sink,
 			matches: []int{0},
 		}
 	}
-	return branches, outputs, nil
+	return routes
 }
 
 func (p mediaPlanStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeRef, map[string]plannedNode, error) {

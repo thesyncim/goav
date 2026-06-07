@@ -383,8 +383,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 123. Wrap missing format probe, demuxer, and muxer registry failures with
     actionable build diagnostics that name the input/output and adapter role.
     Done.
-124. Add recipe-level `.MIME(...)` customization for inputs and outputs so
-    unnamed readers and writer-backed outputs can still drive format probing.
+124. Add recipe-level MIME customization for inputs and destination MIME options
+    for outputs so unnamed readers and writer-backed outputs can still drive
+    format probing.
     Done.
 125. Add recipe RTP policy validation so negative buffer limits and invalid
     timestamp-gap durations fail before source construction. Done.
@@ -681,7 +682,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 201. Carry resolved output formats through build lowering: ordinary and
     transcode recipe output preflight now stores inferred mux formats as
     runtime open hints while keeping graph details reserved for explicit
-    `.Format(...)` requests, preserving `Describe`/`Build` equivalence. Done.
+    destination format options, preserving `Describe`/`Build` equivalence. Done.
 202. Reuse build-time input probe stream codecs for decode-adapter checks:
     ordinary and transcode file/protocol recipes now report missing or
     descriptor-only decoders before demuxers are opened whenever the registered
@@ -1544,11 +1545,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     rejects concrete target implementation types from the front door.
     Done.
 318. Hide concrete destination specs:
-    `File`, `URIOut`, `Sink`, and `Target` now return target refs directly,
-    with fluent `.Name`, `.MIME`, and `.Format` methods kept on that interface.
-    The concrete output binding record is package-private, compiler-state tests
-    use private constructors where they need exact records, and guard coverage
-    rejects concrete destination records as exported front-door types.
+    `File`, `URIOut`, `Sink`, and `Target` now return public destination values
+    instead of concrete output binding records. The concrete output binding
+    record is package-private, compiler-state tests use private constructors
+    where they need exact records, and guard coverage rejects concrete
+    destination records as exported front-door types.
     Done.
 319. Unify single-stream media-plan execution:
     decoded frame sinks, encode-to-file/URI destinations, encode-to-sink
@@ -1904,6 +1905,25 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Guard tests pin both spec and runtime planner reuse, and existing
     Describe/Build parity plus graph-plan ref mutation tests stay green.
     Done.
+362. Lower selected packet-copy through branch routes:
+    selected packet-copy specs and runtime builds now convert the resolved
+    selected stream into one branch route, map the graph-plan select ref and
+    target refs into branch-compose inputs/targets, then call the shared
+    branch-compose input and route lowerers. Whole-input packet copy still keeps
+    its multi-input fanout path. Guard tests pin selected packet-copy branch
+    route reuse, and ref-mutation tests prove the selected packet-copy build
+    consumes the planned select node instead of recreating a workflow-specific
+    selector.
+    Done.
+363. Make destination configuration option-only:
+    public destination constructors now all return `Destination` directly.
+    `File`, `URIOut`, `Writer`, `WriteCloser`, and `Object` use the same
+    `Format`, `MIME`, and `Metadata` option path, and the old
+    `ConfigurableDestination` method-chain surface is gone. Tests enforce the
+    constructor return types and keep `ConfigurableDestination` out of the
+    public front door, while docs and diagnostics point users at constructor
+    options instead of `.Format(...)`/`.MIME(...)` destination chaining.
+    Done.
 
 ## First Vertical Slice
 
@@ -2116,9 +2136,10 @@ Required proof:
 1. Make direct chains implicit branches. Direct packet-copy, decode-to-sink, and
    encode-to-target operation and target nodes now consume graph-plan refs and
    selected direct chains are branch-scoped during lowering; direct frame-stream
-   specs and runtime builds now use branch route planning/lowering. The next
-   step is to collapse selected packet-copy and runtime attach toward the same
-   branch/patch planner instead of workflow-shape graph modes.
+   and selected packet-copy specs and runtime builds now use branch route
+   planning/lowering. Destination configuration is also one constructor-option
+   path. The next step is to move whole-input packet-copy and runtime attach
+   toward the same branch/patch planner instead of workflow-shape graph modes.
 2. Add `GraphPatch` for runtime attach. `Task.Attach` should plan branch specs
    from existing typed taps, validate caps and targets before mutation, reuse
    upstream nodes, allocate only downstream branch nodes, and share mux/sink
@@ -2168,9 +2189,11 @@ graph-plan operation records for validation, operation node construction,
 target node construction, and target routing; direct frame-stream builds consume
 one branch operation set plus select/decode/filter/encode refs, direct
 frame-stream specs and runtime builds use branch route helpers, selected
-packet-copy also validates one branch operation set, and grouped branch-compose
-consumes select/decode input refs, shared/private step refs, encode refs, and
-target refs. The public recipe surface is small: `From`, chains,
+packet-copy specs and runtime builds consume one branch route plus planned
+select/target refs through the same helpers, and grouped branch-compose consumes
+select/decode input refs, shared/private step refs, encode refs, and target
+refs. Whole-input packet copy still preserves multi-input fanout while it waits
+for the broader branch/patch planner shape. The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`, `File`, `URIOut`, `Writer`, `Object`,
 `Sink`, `Flow`, `Codec`, and runtime `Attach`. `Destination` remains the
 externally implementable extension surface for custom byte writers, object
@@ -2223,6 +2246,9 @@ advanced escape hatch and runtime substrate while normal use cases move through
 declarative recipes. Flexible composition must still compile into direct
 runtime objects: hot packet/frame/event paths should stay allocation-guarded and
 avoid dispatching through recipe abstractions.
+Destination configuration is deliberately singular: pass `Format`, `MIME`, and
+`Metadata` options to `File`, `URIOut`, `Writer`, `WriteCloser`, or `Object`;
+do not grow destination method-chain sugar back onto the front door.
 `MediaPlan` currently expresses record, stream decode, encode, and branch
 composition as input refs, stream selectors, ordered operations, target refs,
 taps, and planner decisions. `Describe`, `Build`, and `Explain(ctx)` now require
