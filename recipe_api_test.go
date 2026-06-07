@@ -481,8 +481,11 @@ func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 		goav.FileOutput("recording.webm", io.Discard),
 	).Explain(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_muxer_missing" {
-		t.Fatalf("err = %v, want output_muxer_missing", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_muxer_missing" {
+		t.Fatalf("err = %v, want target_muxer_missing", err)
+	}
+	if buildErr.Operation != "open target" {
+		t.Fatalf("operation = %q, want open target", buildErr.Operation)
 	}
 	requirement, ok := adapterRequirementByKind(report.RequiredAdapters, "muxer", string(av.FormatMatroska))
 	if !ok || requirement.Status != "missing" || requirement.Format != av.FormatMatroska {
@@ -491,7 +494,7 @@ func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 	if len(report.Graph.Nodes) == 0 || report.Summary == "" {
 		t.Fatalf("partial report not populated: %+v", report)
 	}
-	if len(report.Warnings) != 1 || report.Warnings[0].Code != "output_muxer_missing" {
+	if len(report.Warnings) != 1 || report.Warnings[0].Code != "target_muxer_missing" {
 		t.Fatalf("warnings=%+v", report.Warnings)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].Kind != "muxer" || report.Missing[0].Status != "missing" {
@@ -680,10 +683,10 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 		).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_mux_incompatible" {
-		t.Fatalf("err = %v, want output_mux_incompatible", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
+		t.Fatalf("err = %v, want target_mux_incompatible", err)
 	}
-	for _, want := range []string{"format=ivf", "branch=v8 codec=vp8 media=video", "branch=v9 codec=vp9 media=video"} {
+	for _, want := range []string{"target=web", "format=ivf", "branch=v8 codec=vp8 media=video", "branch=v9 codec=vp9 media=video"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want detail %q", err, want)
 		}
@@ -720,10 +723,10 @@ func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
 		).
 		Explain(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_mux_incompatible" {
-		t.Fatalf("err = %v, want output_mux_incompatible", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
+		t.Fatalf("err = %v, want target_mux_incompatible", err)
 	}
-	if !hasPlanWarning(report.Warnings, "output_mux_incompatible") {
+	if !hasPlanWarning(report.Warnings, "target_mux_incompatible") {
 		t.Fatalf("warnings=%+v, want mux compatibility warning", report.Warnings)
 	}
 	if len(report.Missing) != 0 {
@@ -757,10 +760,11 @@ func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 		To(goav.FileOutput("out.h264", io.Discard).Format(av.FormatAnnexB)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_mux_incompatible" {
-		t.Fatalf("err = %v, want output_mux_incompatible", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
+		t.Fatalf("err = %v, want target_mux_incompatible", err)
 	}
-	if !strings.Contains(err.Error(), "Annex B outputs support one H264 video stream") ||
+	if !strings.Contains(err.Error(), "Annex B targets support one H264 video stream") ||
+		!strings.Contains(err.Error(), "target=out.h264") ||
 		!strings.Contains(err.Error(), "branch=video codec=vp8 media=video") {
 		t.Fatalf("err = %v, want Annex B codec guidance", err)
 	}
@@ -2003,15 +2007,18 @@ func TestRecordRecipeReportsMissingInputDemuxer(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeReportsMissingOutputMuxer(t *testing.T) {
+func TestRecordRecipeReportsMissingTargetMuxer(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.FileOutput("recording.webm", io.Discard),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_muxer_missing" {
-		t.Fatalf("err = %v, want output_muxer_missing", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_muxer_missing" {
+		t.Fatalf("err = %v, want target_muxer_missing", err)
+	}
+	if buildErr.Operation != "open target" {
+		t.Fatalf("operation = %q, want open target", buildErr.Operation)
 	}
 	if !strings.Contains(err.Error(), `format "matroska"`) ||
 		!strings.Contains(err.Error(), "no muxer is registered") ||
@@ -3139,8 +3146,11 @@ func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_muxer_missing" {
-		t.Fatalf("err = %v, want output_muxer_missing", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_muxer_missing" {
+		t.Fatalf("err = %v, want target_muxer_missing", err)
+	}
+	if buildErr.Node != "archive" {
+		t.Fatalf("node = %q, want archive target", buildErr.Node)
 	}
 	if !strings.Contains(err.Error(), "ogg muxer") {
 		t.Fatalf("err = %v, want Ogg adapter guidance", err)

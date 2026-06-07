@@ -715,14 +715,16 @@ func validateBranchTargetFormatAdaptersPass() recipeCompilePass {
 			return nil
 		}
 		outputs := make([]EndpointSpec, 0, len(state.branchTargetAttachments))
+		targetNames := make([]string, 0, len(state.branchTargetAttachments))
 		for i := range state.branchTargetAttachments {
 			output := state.branchTargetAttachments[i].output.Name(firstNonEmpty(
 				state.branchTargetAttachments[i].output.name,
 				state.branchTargetAttachments[i].name,
 			))
 			outputs = append(outputs, output)
+			targetNames = append(targetNames, state.branchTargetAttachments[i].name)
 		}
-		resolved, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, outputs)
+		resolved, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, outputs, targetNames...)
 		if err != nil {
 			return err
 		}

@@ -287,8 +287,11 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.pass.Apply(&tt.state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "output_muxer_missing" || !errors.Is(err, format.ErrNotFound) {
-				t.Fatalf("err = %v, want output_muxer_missing wrapping format.ErrNotFound", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != "target_muxer_missing" || !errors.Is(err, format.ErrNotFound) {
+				t.Fatalf("err = %v, want target_muxer_missing wrapping format.ErrNotFound", err)
+			}
+			if buildErr.Operation != "open target" {
+				t.Fatalf("operation = %q, want open target", buildErr.Operation)
 			}
 			if !strings.Contains(err.Error(), tt.want) ||
 				!strings.Contains(err.Error(), "no muxer is registered") ||

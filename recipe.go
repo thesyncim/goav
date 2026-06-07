@@ -1691,7 +1691,7 @@ func validateInputFormatAdapters(ctx context.Context, rt Runtime, inputs []Input
 	return probes, nil
 }
 
-func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []EndpointSpec) ([]EndpointSpec, error) {
+func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []EndpointSpec, targetNames ...string) ([]EndpointSpec, error) {
 	resolved := append([]EndpointSpec(nil), outputs...)
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
@@ -1705,16 +1705,23 @@ func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []End
 		if formatID == "" {
 			result, err := standard.formats.Probe(ctx, outputProbeRequest(resolved[i].output))
 			if err != nil {
-				return nil, outputFormatProbeError(resolved[i].output, i, err)
+				return nil, targetFormatProbeError(targetNodeName(resolved[i].output, i, targetNames), resolved[i].output, err)
 			}
 			formatID = result.Format
 			resolved[i] = resolved[i].withResolvedFormat(formatID)
 		}
 		if _, err := standard.formats.MuxerFactory(formatID); err != nil {
-			return nil, outputMuxerMissingError(resolved[i].output, i, formatID, err)
+			return nil, targetMuxerMissingError(targetNodeName(resolved[i].output, i, targetNames), resolved[i].output, formatID, err)
 		}
 	}
 	return resolved, nil
+}
+
+func targetNodeName(output format.Output, index int, targetNames []string) string {
+	if index >= 0 && index < len(targetNames) && targetNames[index] != "" {
+		return targetNames[index]
+	}
+	return muxNodeName(output, index)
 }
 
 func validateRecipeDecodeAdapters(operation string, rt Runtime, intent Intent) error {

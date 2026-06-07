@@ -84,6 +84,44 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 	}
 }
 
+func targetFormatProbeError(node string, output format.Output, cause error) error {
+	if !errors.Is(cause, format.ErrNotFound) {
+		return cause
+	}
+	return &BuildError{
+		Code:      "target_format_unknown",
+		Operation: "open target",
+		Node:      node,
+		Reason:    "target format could not be detected",
+		Details:   outputFormatDetails(output),
+		Suggestions: []string{
+			"give file targets a name or MIME type a registered prober can recognize",
+			"call .Format(...) with a registered container when the writer has no filename",
+			"register a format adapter with goav.New(goav.WithFormatAdapter(...))",
+		},
+		Cause: cause,
+	}
+}
+
+func targetMuxerMissingError(node string, output format.Output, id av.FormatID, cause error) error {
+	if !errors.Is(cause, format.ErrNotFound) {
+		return cause
+	}
+	return &BuildError{
+		Code:      "target_muxer_missing",
+		Operation: "open target",
+		Node:      node,
+		Reason:    "format " + quoteFormat(id) + " was selected for target but no muxer is registered",
+		Details:   append(outputFormatDetails(output), "format="+string(id)),
+		Suggestions: []string{
+			"register a format adapter that provides a " + string(id) + " muxer",
+			"choose a target container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
+			"call .UseRuntime(goav.New(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
+		},
+		Cause: cause,
+	}
+}
+
 func inputFormatDetails(input format.Input) []string {
 	var details []string
 	if input.Name != "" {

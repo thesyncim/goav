@@ -607,7 +607,7 @@ func annotatePlanReportError(report *PlanReport, err error) {
 	})
 	requirement, ok := adapterRequirementFromBuildError(buildErr)
 	if !ok {
-		if buildErr.Code == "output_mux_incompatible" {
+		if buildErr.Code == "target_mux_incompatible" {
 			return
 		}
 		report.Missing = append(report.Missing, Requirement{
@@ -641,7 +641,7 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, formatID != ""
-	case "output_muxer_missing":
+	case "output_muxer_missing", "target_muxer_missing":
 		formatID := av.FormatID(details["format"])
 		return AdapterRequirement{
 			Kind:       "muxer",

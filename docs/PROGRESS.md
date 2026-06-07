@@ -888,7 +888,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     known constrained output formats now participate in recipe preflight.
     IVF mux groups must resolve to exactly one VP8, VP9, or AV1 video branch,
     and Annex B mux groups must resolve to exactly one H264 video branch.
-    `Build` returns `output_mux_incompatible` before opening the muxer when a
+    `Build` returns `target_mux_incompatible` before opening the muxer when a
     mismatch is provable, while `Explain(ctx)` carries the same structured
     diagnostic without treating it as a missing adapter. Done.
 238. Clean the composition vocabulary around branches and targets:
@@ -1097,6 +1097,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     with no encoder inserted and both sink endpoints receiving the same decoded
     frame. This keeps planned and runtime branch fanout aligned across mux and
     sink targets. Done.
+267. Keep mux diagnostics in the Branch/Target vocabulary:
+    recipe preflight now reports missing target muxers as
+    `target_muxer_missing` and constrained mux groups as
+    `target_mux_incompatible`, including `target=...` details for the branches
+    feeding the mux group. The expert graph builder still reports
+    `output_muxer_missing` at the low-level `format.Output` boundary, keeping
+    public recipe diagnostics aligned with `Target` without blurring runtime
+    internals. Done.
 
 ## First Vertical Slice
 
