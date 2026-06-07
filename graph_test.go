@@ -641,7 +641,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxTarget(t *testing.T) {
 			Name:      "audio.packets",
 			MediaKind: av.MediaAudio,
 			Domain:    DomainPacket,
-			Caps: StreamCaps{
+			Shape: MediaShape{
 				Domain:     DomainPacket,
 				MediaKind:  av.MediaAudio,
 				StreamID:   "audio",
@@ -655,7 +655,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxTarget(t *testing.T) {
 			Name:      "video.packets",
 			MediaKind: av.MediaVideo,
 			Domain:    DomainPacket,
-			Caps: StreamCaps{
+			Shape: MediaShape{
 				Domain:    DomainPacket,
 				MediaKind: av.MediaVideo,
 				StreamID:  "video",
@@ -888,7 +888,7 @@ func TestTaskAttachRuntimeResizeBranchRunsFromFrameTap(t *testing.T) {
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:      DomainFrame,
 			MediaKind:   av.MediaVideo,
 			StreamID:    "video",
@@ -955,7 +955,7 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:      DomainFrame,
 			MediaKind:   av.MediaVideo,
 			StreamID:    "video",
@@ -993,8 +993,8 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 	if !ok ||
 		resizedTap.Domain != DomainFrame ||
 		resizedTap.MediaKind != av.MediaVideo ||
-		resizedTap.Caps.Width != 320 ||
-		resizedTap.Caps.Height != 180 ||
+		resizedTap.Shape.Width != 320 ||
+		resizedTap.Shape.Height != 180 ||
 		resizedTap.Node != "thumb/resize-thumb" {
 		t.Fatalf("resized tap = %+v ok=%v, want frame video 320x180 tap on thumb/resize-thumb", resizedTap, ok)
 	}
@@ -1070,7 +1070,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:      DomainFrame,
 			MediaKind:   av.MediaVideo,
 			StreamID:    "video",
@@ -1104,8 +1104,8 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 	if !ok ||
 		resizedTap.Domain != DomainFrame ||
 		resizedTap.MediaKind != av.MediaVideo ||
-		resizedTap.Caps.Width != 320 ||
-		resizedTap.Caps.Height != 180 ||
+		resizedTap.Shape.Width != 320 ||
+		resizedTap.Shape.Height != 180 ||
 		resizedTap.Node != "thumb/resize-thumb" {
 		t.Fatalf("resized tap = %+v ok=%v, want frame video 320x180 tap on thumb/resize-thumb", resizedTap, ok)
 	}
@@ -1205,7 +1205,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:       DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
@@ -1240,9 +1240,9 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 	if !ok ||
 		resampledTap.Domain != DomainFrame ||
 		resampledTap.MediaKind != av.MediaAudio ||
-		resampledTap.Caps.SampleRate != 16_000 ||
-		resampledTap.Caps.Channels != Mono ||
-		resampledTap.Caps.SampleFormat != av.SampleFormatS16 ||
+		resampledTap.Shape.SampleRate != 16_000 ||
+		resampledTap.Shape.Channels != Mono ||
+		resampledTap.Shape.SampleFormat != av.SampleFormatS16 ||
 		resampledTap.Node != "voice/resample-voice" {
 		t.Fatalf("resampled tap = %+v ok=%v, want frame audio 16k mono tap on voice/resample-voice", resampledTap, ok)
 	}
@@ -1323,7 +1323,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:       DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
@@ -1337,7 +1337,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 		Name:      "audio.16k",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:       DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
@@ -1405,7 +1405,7 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 			Name:      "audio.frames",
 			MediaKind: av.MediaAudio,
 			Domain:    DomainFrame,
-			Caps: StreamCaps{
+			Shape: MediaShape{
 				Domain:       DomainFrame,
 				MediaKind:    av.MediaAudio,
 				StreamID:     "audio",
@@ -1482,7 +1482,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 			Name:      "audio.frames",
 			MediaKind: av.MediaAudio,
 			Domain:    DomainFrame,
-			Caps: StreamCaps{
+			Shape: MediaShape{
 				Domain:       DomainFrame,
 				MediaKind:    av.MediaAudio,
 				StreamID:     "audio",
@@ -1564,7 +1564,7 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 			Name:      "audio.frames",
 			MediaKind: av.MediaAudio,
 			Domain:    DomainFrame,
-			Caps: StreamCaps{
+			Shape: MediaShape{
 				Domain:       DomainFrame,
 				MediaKind:    av.MediaAudio,
 				StreamID:     "audio",
@@ -1645,7 +1645,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:       DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
@@ -1732,7 +1732,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:       DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
@@ -1969,7 +1969,7 @@ func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainPacket,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainPacket,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
@@ -2052,7 +2052,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainPacket,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainPacket,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
@@ -2086,7 +2086,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 	if !ok ||
 		copiedTap.Domain != DomainPacket ||
 		copiedTap.MediaKind != av.MediaAudio ||
-		copiedTap.Caps.Codec != av.CodecOpus ||
+		copiedTap.Shape.Codec != av.CodecOpus ||
 		copiedTap.Node != "source" {
 		t.Fatalf("copied tap = %+v ok=%v, want packet Opus tap on source", copiedTap, ok)
 	}
@@ -2157,7 +2157,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainFrame,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
@@ -2256,7 +2256,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainFrame,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
@@ -2355,7 +2355,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainFrame,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
@@ -2389,7 +2389,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 	if !ok ||
 		encodedTap.Domain != DomainPacket ||
 		encodedTap.MediaKind != av.MediaAudio ||
-		encodedTap.Caps.Codec != av.CodecOpus ||
+		encodedTap.Shape.Codec != av.CodecOpus ||
 		encodedTap.Node != "archive/encode-archive" {
 		t.Fatalf("encoded tap = %+v ok=%v, want packet Opus tap on archive/encode-archive", encodedTap, ok)
 	}
@@ -2470,7 +2470,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainFrame,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
@@ -2591,7 +2591,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainFrame,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",

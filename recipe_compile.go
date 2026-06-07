@@ -240,8 +240,7 @@ func tapInfosFromPlan(taps []planTap) []TapInfo {
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,
 			After:     taps[i].After,
-			Shape:     taps[i].Caps,
-			Caps:      taps[i].Caps,
+			Shape:     taps[i].Shape,
 			Node:      taps[i].Node,
 		})
 	}

@@ -1414,7 +1414,7 @@ func TestTaskAttachRuntimeFlowCopyBranchFromPacketTap(t *testing.T) {
 		lateTap.Domain != DomainPacket ||
 		lateTap.MediaKind != av.MediaAudio ||
 		lateTap.After != OpCopy ||
-		lateTap.Caps.Codec != av.CodecOpus ||
+		lateTap.Shape.Codec != av.CodecOpus ||
 		lateTap.Node != "select-audio" {
 		t.Fatalf("late tap = %+v ok=%v, want packet Opus tap on select-audio", lateTap, ok)
 	}
@@ -1488,7 +1488,7 @@ func TestBranchCompositionCopyBranchesFanOutPackets(t *testing.T) {
 	if packetTap.Name == "" ||
 		packetTap.Domain != DomainPacket ||
 		packetTap.MediaKind != av.MediaAudio ||
-		packetTap.Caps.Codec != av.CodecOpus ||
+		packetTap.Shape.Codec != av.CodecOpus ||
 		packetTap.Node != "select-audio" {
 		t.Fatalf("packet tap = %+v, want Opus packet tap on select-audio", packetTap)
 	}
@@ -1574,8 +1574,8 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxTarget(t *testing.T) {
 	if copiedTap.Name == "" ||
 		copiedTap.Domain != DomainPacket ||
 		copiedTap.MediaKind != av.MediaAudio ||
-		copiedTap.Caps.Codec != av.CodecOpus ||
-		copiedTap.Caps.StreamID != "audio" ||
+		copiedTap.Shape.Codec != av.CodecOpus ||
+		copiedTap.Shape.StreamID != "audio" ||
 		copiedTap.Node != "select-audio" {
 		t.Fatalf("copied tap = %+v, want packet Opus audio tap on select-audio", copiedTap)
 	}
@@ -2079,9 +2079,9 @@ func TestStreamRecipeFlowDecodeSinkRuns(t *testing.T) {
 		decodedTap.Domain != DomainFrame ||
 		decodedTap.MediaKind != av.MediaAudio ||
 		decodedTap.After != OpDecode ||
-		decodedTap.Caps.Codec != av.CodecOpus ||
-		decodedTap.Caps.SampleRate != 48000 ||
-		decodedTap.Caps.Channels != Stereo ||
+		decodedTap.Shape.Codec != av.CodecOpus ||
+		decodedTap.Shape.SampleRate != 48000 ||
+		decodedTap.Shape.Channels != Stereo ||
 		decodedTap.Node != "decode-audio" {
 		t.Fatalf("decoded tap = %+v ok=%v, want frame Opus tap on stream decoder", decodedTap, ok)
 	}
@@ -2414,8 +2414,8 @@ func TestBranchCompositionTaskAttachesAfterEncodeTap(t *testing.T) {
 	if encodedTap.Name == "" ||
 		encodedTap.Domain != DomainPacket ||
 		encodedTap.MediaKind != av.MediaAudio ||
-		encodedTap.Caps.Codec != av.CodecOpus ||
-		encodedTap.Caps.StreamID != "archive" ||
+		encodedTap.Shape.Codec != av.CodecOpus ||
+		encodedTap.Shape.StreamID != "archive" ||
 		encodedTap.Node != "encode-archive" {
 		t.Fatalf("encoded tap = %+v, want packet Opus archive tap on encode-archive", encodedTap)
 	}
@@ -2497,9 +2497,9 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 		resizeTap.Domain != DomainFrame ||
 		resizeTap.MediaKind != av.MediaVideo ||
 		resizeTap.After != OpTransform ||
-		resizeTap.Caps.Width != 1280 ||
-		resizeTap.Caps.Height != 720 ||
-		resizeTap.Caps.PixelFormat != av.PixelFormatYUV420P ||
+		resizeTap.Shape.Width != 1280 ||
+		resizeTap.Shape.Height != 720 ||
+		resizeTap.Shape.PixelFormat != av.PixelFormatYUV420P ||
 		resizeTap.Node == "" {
 		t.Fatalf("resize tap = %+v, want frame video 1280x720 tap with graph node", resizeTap)
 	}
@@ -2528,8 +2528,8 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 		resizedTap.Domain != DomainFrame ||
 		resizedTap.MediaKind != av.MediaVideo ||
 		resizedTap.After != OpTransform ||
-		resizedTap.Caps.Width != 320 ||
-		resizedTap.Caps.Height != 180 ||
+		resizedTap.Shape.Width != 320 ||
+		resizedTap.Shape.Height != 180 ||
 		resizedTap.Node != "screenshots/resize-screenshots" {
 		t.Fatalf("resized tap = %+v, want frame video 320x180 tap on screenshots/resize-screenshots", resizedTap)
 	}
@@ -2676,8 +2676,8 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 	if resampledTap.Name == "" ||
 		resampledTap.Domain != DomainFrame ||
 		resampledTap.MediaKind != av.MediaAudio ||
-		resampledTap.Caps.SampleRate != 16_000 ||
-		resampledTap.Caps.Channels != Mono ||
+		resampledTap.Shape.SampleRate != 16_000 ||
+		resampledTap.Shape.Channels != Mono ||
 		resampledTap.Node != "voice/resample-voice" {
 		t.Fatalf("resampled tap = %+v, want frame audio 16k mono tap on voice/resample-voice", resampledTap)
 	}
@@ -2975,7 +2975,7 @@ func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainPacket,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainPacket,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
@@ -3035,7 +3035,7 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchTargetsBeforeMutation(t *testing
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainFrame,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
@@ -3105,7 +3105,7 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps:      StreamCaps{Domain: DomainFrame, MediaKind: av.MediaAudio, StreamID: "audio", Codec: av.CodecOpus},
+		Shape:      MediaShape{Domain: DomainFrame, MediaKind: av.MediaAudio, StreamID: "audio", Codec: av.CodecOpus},
 		Node:      "source",
 	}}
 	defer builtTask.Close()
@@ -3146,7 +3146,7 @@ func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:      DomainFrame,
 			MediaKind:   av.MediaVideo,
 			StreamID:    "video",
@@ -3222,7 +3222,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:       DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
@@ -3298,7 +3298,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:       DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
@@ -3369,7 +3369,7 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainPacket,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainPacket,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
@@ -3394,8 +3394,8 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 	if !ok ||
 		decodedTap.Domain != DomainFrame ||
 		decodedTap.MediaKind != av.MediaAudio ||
-		decodedTap.Caps.Codec != av.CodecOpus ||
-		decodedTap.Caps.SampleRate != 48000 ||
+		decodedTap.Shape.Codec != av.CodecOpus ||
+		decodedTap.Shape.SampleRate != 48000 ||
 		decodedTap.Node != "preview/decode-preview" {
 		t.Fatalf("decoded tap = %+v ok=%v, want frame Opus tap on preview decoder", decodedTap, ok)
 	}
@@ -3457,7 +3457,7 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainPacket,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainPacket,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
@@ -3540,7 +3540,7 @@ func TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation(t *testing.T) {
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:      DomainFrame,
 			MediaKind:   av.MediaVideo,
 			StreamID:    "video",
@@ -3622,7 +3622,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainPacket,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:       DomainPacket,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
@@ -3659,9 +3659,9 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 	if !ok ||
 		packetTap.Domain != DomainPacket ||
 		packetTap.MediaKind != av.MediaAudio ||
-		packetTap.Caps.Codec != av.CodecOpus ||
-		packetTap.Caps.SampleRate != 16_000 ||
-		packetTap.Caps.Channels != Mono ||
+		packetTap.Shape.Codec != av.CodecOpus ||
+		packetTap.Shape.SampleRate != 16_000 ||
+		packetTap.Shape.Channels != Mono ||
 		packetTap.Node != "voice/encode-voice" {
 		t.Fatalf("packet tap = %+v ok=%v, want Opus 16k mono packet tap on voice encoder", packetTap, ok)
 	}
@@ -3744,7 +3744,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:       DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
@@ -3777,9 +3777,9 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 		packetTap.MediaKind != av.MediaAudio ||
 		packetTap.After != OpEncode ||
 		packetTap.Node != "record/encode-record" ||
-		packetTap.Caps.Codec != customPCM ||
-		packetTap.Caps.SampleRate != 16_000 ||
-		packetTap.Caps.Channels != Mono {
+		packetTap.Shape.Codec != customPCM ||
+		packetTap.Shape.SampleRate != 16_000 ||
+		packetTap.Shape.Channels != Mono {
 		t.Fatalf("packet tap = %+v ok=%v, want custom PCM packet tap on flow encoder", packetTap, ok)
 	}
 	packetMessages := 0
@@ -3862,7 +3862,7 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToTargets(t *testing.T) {
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Caps: StreamCaps{
+		Shape: MediaShape{
 			Domain:     DomainFrame,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",

@@ -914,19 +914,19 @@ func Object(name string, open ObjectOpenFunc, opts ...DestinationOption) Destina
 }
 
 type writerDestination struct {
-	name string
-	open WriterOpenFunc
-	caps DestinationCaps
+	name     string
+	open     WriterOpenFunc
+	contract DestinationContract
 }
 
 func (d writerDestination) Name() string {
 	return d.name
 }
 
-func (d writerDestination) Capabilities() DestinationCaps {
-	caps := d.caps
-	caps.ByteStream = true
-	return caps
+func (d writerDestination) Contract() DestinationContract {
+	contract := d.contract
+	contract.ByteStream = true
+	return contract
 }
 
 func (d writerDestination) Open(ctx context.Context, info TargetInfo) (DestinationWriter, error) {
@@ -1002,36 +1002,36 @@ func (s destinationSpec) Name() string {
 	return s.name
 }
 
-func (s destinationSpec) Capabilities() DestinationCaps {
-	caps := DestinationCaps{
+func (s destinationSpec) Contract() DestinationContract {
+	contract := DestinationContract{
 		ByteStream: s.sink == nil,
 		Protocol:   s.output.Protocol,
 		Realtime:   s.output.Realtime,
 	}
 	if s.format != "" {
-		caps.Formats = append(caps.Formats, s.format)
+		contract.Formats = append(contract.Formats, s.format)
 	}
 	if s.resolvedFormat != "" && s.resolvedFormat != s.format {
-		caps.Formats = append(caps.Formats, s.resolvedFormat)
+		contract.Formats = append(contract.Formats, s.resolvedFormat)
 	}
 	if s.output.MIMEType != "" {
-		caps.MIMETypes = append(caps.MIMETypes, s.output.MIMEType)
+		contract.MIMETypes = append(contract.MIMETypes, s.output.MIMEType)
 	}
 	if s.custom != nil {
-		customCaps := s.custom.Capabilities()
-		if caps.Protocol == "" {
-			caps.Protocol = customCaps.Protocol
+		customContract := s.custom.Contract()
+		if contract.Protocol == "" {
+			contract.Protocol = customContract.Protocol
 		}
-		caps.Seekable = customCaps.Seekable
-		caps.Realtime = caps.Realtime || customCaps.Realtime
-		if len(caps.Formats) == 0 {
-			caps.Formats = append(caps.Formats, customCaps.Formats...)
+		contract.Seekable = customContract.Seekable
+		contract.Realtime = contract.Realtime || customContract.Realtime
+		if len(contract.Formats) == 0 {
+			contract.Formats = append(contract.Formats, customContract.Formats...)
 		}
-		if len(caps.MIMETypes) == 0 {
-			caps.MIMETypes = append(caps.MIMETypes, customCaps.MIMETypes...)
+		if len(contract.MIMETypes) == 0 {
+			contract.MIMETypes = append(contract.MIMETypes, customContract.MIMETypes...)
 		}
 	}
-	return caps
+	return contract
 }
 
 func (s destinationSpec) Open(ctx context.Context, info TargetInfo) (DestinationWriter, error) {

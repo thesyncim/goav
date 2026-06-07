@@ -56,8 +56,6 @@ type MediaShape struct {
 	Realtime     bool
 }
 
-type StreamCaps = MediaShape
-
 type ShapeSet []MediaShape
 
 type TapInfo struct {
@@ -66,7 +64,6 @@ type TapInfo struct {
 	Domain    MediaDomain
 	After     OperationKind
 	Shape     MediaShape
-	Caps      StreamCaps
 	Node      pipeline.NodeRef
 }
 

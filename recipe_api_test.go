@@ -103,8 +103,8 @@ func (recipeAPICustomDestination) Name() string {
 	return "custom"
 }
 
-func (recipeAPICustomDestination) Capabilities() goav.DestinationCaps {
-	return goav.DestinationCaps{
+func (recipeAPICustomDestination) Contract() goav.DestinationContract {
+	return goav.DestinationContract{
 		ByteStream: true,
 		Formats:    []av.FormatID{av.FormatIVF},
 		MIMETypes:  []string{"video/ivf"},
@@ -775,7 +775,7 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 	}
 }
 
-func TestExplainReportsBranchCapsFromProbedInput(t *testing.T) {
+func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 	rt := goav.New(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
@@ -813,37 +813,31 @@ func TestExplainReportsBranchCapsFromProbedInput(t *testing.T) {
 	if !ok {
 		t.Fatalf("branches=%+v, want audio", report.Branches)
 	}
-	if branch.Caps.Domain != goav.DomainPacket ||
-		branch.Caps.MediaKind != av.MediaAudio ||
-		branch.Caps.StreamID != "audio" ||
-		branch.Caps.Codec != av.CodecOpus ||
-		branch.Caps.SampleRate != 48000 ||
-		branch.Caps.Channels != goav.Stereo ||
-		branch.Caps.SampleFormat != av.SampleFormatS16 {
-		t.Fatalf("branch caps=%+v, want probed audio packet caps", branch.Caps)
-	}
-	if branch.Shape != branch.Caps {
-		t.Fatalf("branch shape=%+v, want caps %+v", branch.Shape, branch.Caps)
+	if branch.Shape.Domain != goav.DomainPacket ||
+		branch.Shape.MediaKind != av.MediaAudio ||
+		branch.Shape.StreamID != "audio" ||
+		branch.Shape.Codec != av.CodecOpus ||
+		branch.Shape.SampleRate != 48000 ||
+		branch.Shape.Channels != goav.Stereo ||
+		branch.Shape.SampleFormat != av.SampleFormatS16 {
+		t.Fatalf("branch shape=%+v, want probed audio packet shape", branch.Shape)
 	}
 	tap, ok := tapReportByName(report.Taps, "audio.decoded")
 	if !ok {
 		t.Fatalf("taps=%+v, want audio.decoded", report.Taps)
 	}
-	if tap.Caps.Domain != goav.DomainFrame ||
-		tap.Caps.MediaKind != av.MediaAudio ||
-		tap.Caps.StreamID != "audio" ||
-		tap.Caps.Codec != av.CodecOpus ||
-		tap.Caps.SampleRate != 48000 ||
-		tap.Caps.Channels != goav.Stereo ||
-		tap.Caps.SampleFormat != av.SampleFormatS16 {
-		t.Fatalf("tap caps=%+v, want decoded audio frame caps", tap.Caps)
-	}
-	if tap.Shape != tap.Caps {
-		t.Fatalf("tap shape=%+v, want caps %+v", tap.Shape, tap.Caps)
+	if tap.Shape.Domain != goav.DomainFrame ||
+		tap.Shape.MediaKind != av.MediaAudio ||
+		tap.Shape.StreamID != "audio" ||
+		tap.Shape.Codec != av.CodecOpus ||
+		tap.Shape.SampleRate != 48000 ||
+		tap.Shape.Channels != goav.Stereo ||
+		tap.Shape.SampleFormat != av.SampleFormatS16 {
+		t.Fatalf("tap shape=%+v, want decoded audio frame shape", tap.Shape)
 	}
 }
 
-func TestExplainReportsBranchCapsFromLiveCodecIntent(t *testing.T) {
+func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
 	rt := goav.New(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 	}))
@@ -864,36 +858,30 @@ func TestExplainReportsBranchCapsFromLiveCodecIntent(t *testing.T) {
 	if !ok {
 		t.Fatalf("branches=%+v, want audio", report.Branches)
 	}
-	if branch.Caps.Domain != goav.DomainPacket ||
-		branch.Caps.MediaKind != av.MediaAudio ||
-		branch.Caps.StreamID != "audio" ||
-		branch.Caps.Codec != av.CodecOpus ||
-		branch.Caps.SampleRate != 48000 ||
-		branch.Caps.Channels != goav.Stereo ||
-		!branch.Caps.Realtime {
-		t.Fatalf("branch caps=%+v, want live Opus packet caps", branch.Caps)
-	}
-	if branch.Shape != branch.Caps {
-		t.Fatalf("branch shape=%+v, want caps %+v", branch.Shape, branch.Caps)
+	if branch.Shape.Domain != goav.DomainPacket ||
+		branch.Shape.MediaKind != av.MediaAudio ||
+		branch.Shape.StreamID != "audio" ||
+		branch.Shape.Codec != av.CodecOpus ||
+		branch.Shape.SampleRate != 48000 ||
+		branch.Shape.Channels != goav.Stereo ||
+		!branch.Shape.Realtime {
+		t.Fatalf("branch shape=%+v, want live Opus packet shape", branch.Shape)
 	}
 	tap, ok := tapReportByName(report.Taps, "audio.decoded")
 	if !ok {
 		t.Fatalf("taps=%+v, want audio.decoded", report.Taps)
 	}
-	if tap.Caps.Domain != goav.DomainFrame ||
-		tap.Caps.MediaKind != av.MediaAudio ||
-		tap.Caps.Codec != av.CodecOpus ||
-		tap.Caps.SampleRate != 48000 ||
-		tap.Caps.Channels != goav.Stereo ||
-		!tap.Caps.Realtime {
-		t.Fatalf("tap caps=%+v, want live decoded audio frame caps", tap.Caps)
-	}
-	if tap.Shape != tap.Caps {
-		t.Fatalf("tap shape=%+v, want caps %+v", tap.Shape, tap.Caps)
+	if tap.Shape.Domain != goav.DomainFrame ||
+		tap.Shape.MediaKind != av.MediaAudio ||
+		tap.Shape.Codec != av.CodecOpus ||
+		tap.Shape.SampleRate != 48000 ||
+		tap.Shape.Channels != goav.Stereo ||
+		!tap.Shape.Realtime {
+		t.Fatalf("tap shape=%+v, want live decoded audio frame shape", tap.Shape)
 	}
 }
 
-func TestExplainReportsOperationCapsThroughResizeAndEncode(t *testing.T) {
+func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 	rt := goav.New(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
@@ -940,54 +928,42 @@ func TestExplainReportsOperationCapsThroughResizeAndEncode(t *testing.T) {
 	if !ok {
 		t.Fatalf("branches=%+v, want preview", report.Branches)
 	}
-	if branch.Caps.Domain != goav.DomainPacket ||
-		branch.Caps.MediaKind != av.MediaVideo ||
-		branch.Caps.Codec != av.CodecVP8 ||
-		branch.Caps.Width != 1920 ||
-		branch.Caps.Height != 1080 ||
-		branch.Caps.PixelFormat != av.PixelFormatYUV420P {
-		t.Fatalf("branch caps=%+v, want probed VP8 1920x1080 packet caps", branch.Caps)
-	}
-	if branch.Shape != branch.Caps {
-		t.Fatalf("branch shape=%+v, want caps %+v", branch.Shape, branch.Caps)
+	if branch.Shape.Domain != goav.DomainPacket ||
+		branch.Shape.MediaKind != av.MediaVideo ||
+		branch.Shape.Codec != av.CodecVP8 ||
+		branch.Shape.Width != 1920 ||
+		branch.Shape.Height != 1080 ||
+		branch.Shape.PixelFormat != av.PixelFormatYUV420P {
+		t.Fatalf("branch shape=%+v, want probed VP8 1920x1080 packet shape", branch.Shape)
 	}
 	resize, ok := operationReportByKind(branch.Operations, goav.OpTransform)
 	if !ok {
 		t.Fatalf("operations=%+v, want resize operation", branch.Operations)
 	}
-	if resize.Caps.Domain != goav.DomainFrame ||
-		resize.Caps.MediaKind != av.MediaVideo ||
-		resize.Caps.Codec != av.CodecVP8 ||
-		resize.Caps.Width != 1280 ||
-		resize.Caps.Height != 720 ||
-		resize.Caps.PixelFormat != av.PixelFormatYUV420P {
-		t.Fatalf("resize caps=%+v, want frame VP8 1280x720 caps", resize.Caps)
-	}
-	if resize.Shape != resize.Caps {
-		t.Fatalf("resize shape=%+v, want caps %+v", resize.Shape, resize.Caps)
+	if resize.Shape.Domain != goav.DomainFrame ||
+		resize.Shape.MediaKind != av.MediaVideo ||
+		resize.Shape.Codec != av.CodecVP8 ||
+		resize.Shape.Width != 1280 ||
+		resize.Shape.Height != 720 ||
+		resize.Shape.PixelFormat != av.PixelFormatYUV420P {
+		t.Fatalf("resize shape=%+v, want frame VP8 1280x720 shape", resize.Shape)
 	}
 	encode, ok := operationReportByKind(branch.Operations, goav.OpEncode)
 	if !ok {
 		t.Fatalf("operations=%+v, want encode operation", branch.Operations)
 	}
-	if encode.Caps.Domain != goav.DomainPacket ||
-		encode.Caps.MediaKind != av.MediaVideo ||
-		encode.Caps.StreamID != "preview" ||
-		encode.Caps.Codec != av.CodecVP9 ||
-		encode.Caps.Width != 1280 ||
-		encode.Caps.Height != 720 ||
-		encode.Caps.PixelFormat != av.PixelFormatYUV420P {
-		t.Fatalf("encode caps=%+v, want packet VP9 1280x720 caps", encode.Caps)
-	}
-	if encode.Shape != encode.Caps {
-		t.Fatalf("encode shape=%+v, want caps %+v", encode.Shape, encode.Caps)
+	if encode.Shape.Domain != goav.DomainPacket ||
+		encode.Shape.MediaKind != av.MediaVideo ||
+		encode.Shape.StreamID != "preview" ||
+		encode.Shape.Codec != av.CodecVP9 ||
+		encode.Shape.Width != 1280 ||
+		encode.Shape.Height != 720 ||
+		encode.Shape.PixelFormat != av.PixelFormatYUV420P {
+		t.Fatalf("encode shape=%+v, want packet VP9 1280x720 shape", encode.Shape)
 	}
 	tap, ok := tapReportByName(report.Taps, "video.encoded")
 	if !ok {
 		t.Fatalf("taps=%+v, want video.encoded", report.Taps)
-	}
-	if tap.Caps != encode.Caps {
-		t.Fatalf("tap caps=%+v, want encode caps %+v", tap.Caps, encode.Caps)
 	}
 	if tap.Shape != encode.Shape {
 		t.Fatalf("tap shape=%+v, want encode shape %+v", tap.Shape, encode.Shape)
@@ -1539,6 +1515,13 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"TrackOption":             true,
 		"TranscodeJob":            true,
 		"TargetOrEndpoint":        true,
+	}
+	for _, name := range []string{
+		"Destination" + "Cap" + "s",
+		"Stream" + "Cap" + "s",
+		"Cap" + "s",
+	} {
+		legacyTypes[name] = true
 	}
 	for filename, file := range pkg.Files {
 		for _, decl := range file.Decls {

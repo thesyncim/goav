@@ -893,7 +893,7 @@ func TestTranscodeVideoFilterResultPreallocatesI420Planes(t *testing.T) {
 	if cap(frame.Planes[0].Buffer.Bytes) != 640*360 ||
 		cap(frame.Planes[1].Buffer.Bytes) != 640*360/4 ||
 		cap(frame.Planes[2].Buffer.Bytes) != 640*360/4 {
-		t.Fatalf("plane caps = %d %d %d", cap(frame.Planes[0].Buffer.Bytes), cap(frame.Planes[1].Buffer.Bytes), cap(frame.Planes[2].Buffer.Bytes))
+		t.Fatalf("plane capacity = %d %d %d", cap(frame.Planes[0].Buffer.Bytes), cap(frame.Planes[1].Buffer.Bytes), cap(frame.Planes[2].Buffer.Bytes))
 	}
 }
 

@@ -45,7 +45,7 @@ type runtimeBranchStep struct {
 	tap       string
 	tapDomain MediaDomain
 	after     OperationKind
-	caps      StreamCaps
+	shape     MediaShape
 	owned     bool
 }
 
@@ -63,7 +63,7 @@ type runtimeBranchTerminal struct {
 	stream   av.Stream
 	stage    pipeline.Stage
 	sink     pipeline.Sink
-	caps     StreamCaps
+	shape    MediaShape
 	owned    bool
 }
 
@@ -690,19 +690,19 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 	if branch == nil {
 		return nil
 	}
-	currentCaps := runtimeBranchAnchorCaps(branch.anchor)
-	if branch.media != "" && currentCaps.MediaKind != "" {
-		if err := validateChainMedia("attach runtime branch", firstNonEmpty(branch.name, "branch"), currentCaps.MediaKind, chainSpec{name: branch.name, media: branch.media}); err != nil {
+	currentShape := runtimeBranchAnchorShape(branch.anchor)
+	if branch.media != "" && currentShape.MediaKind != "" {
+		if err := validateChainMedia("attach runtime branch", firstNonEmpty(branch.name, "branch"), currentShape.MediaKind, chainSpec{name: branch.name, media: branch.media}); err != nil {
 			return err
 		}
 	}
-	currentStream := streamFromRuntimeBranchCaps(branch.name, currentCaps)
+	currentStream := streamFromRuntimeBranchShape(branch.name, currentShape)
 	transformIndex := 0
 	for i := range branch.steps {
 		step := &branch.steps[i]
 		switch {
 		case step.decode:
-			decodedStage, err := t.prepareRuntimeBranchDecode(ctx, branch.name, currentStream, currentCaps, step.codec)
+			decodedStage, err := t.prepareRuntimeBranchDecode(ctx, branch.name, currentStream, currentShape, step.codec)
 			if err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
 				return err
@@ -710,10 +710,10 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 			step.stage = decodedStage
 			step.decode = false
 			step.owned = true
-			currentCaps.Domain = DomainFrame
-			step.caps = currentCaps
+			currentShape.Domain = DomainFrame
+			step.shape = currentShape
 		case step.stage != nil:
-			step.caps = currentCaps
+			step.shape = currentShape
 		case runtimeBranchStepHasTransform(*step):
 			if t.runtime == nil {
 				closeRuntimeBranchOwnedStages(*branch)
@@ -722,7 +722,7 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 					"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching resize/resample branches",
 				)
 			}
-			if currentCaps.Domain != DomainFrame {
+			if currentShape.Domain != DomainFrame {
 				closeRuntimeBranchOwnedStages(*branch)
 				return runtimeBranchInvalidError(
 					"runtime branch transforms require a frame tap",
@@ -759,24 +759,24 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 			step.transform = TransformSpec{}
 			step.owned = true
 			currentStream = outputStream
-			currentCaps = streamCapsFromRuntimeBranchStream(outputStream, currentCaps)
-			step.caps = currentCaps
+			currentShape = mediaShapeFromRuntimeBranchStream(outputStream, currentShape)
+			step.shape = currentShape
 			transformIndex++
 		case step.tap != "":
-			if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.name, "branch"), TapRef{name: step.tap, domain: step.tapDomain}, currentCaps.Domain); err != nil {
+			if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.name, "branch"), TapRef{name: step.tap, domain: step.tapDomain}, currentShape.Domain); err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
 				return err
 			}
-			step.caps = currentCaps
+			step.shape = currentShape
 		}
 	}
-	if err := t.prepareRuntimeBranchDestinations(ctx, branch, currentStream, currentCaps, group); err != nil {
+	if err := t.prepareRuntimeBranchDestinations(ctx, branch, currentStream, currentShape, group); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentCaps StreamCaps, group *runtimeAttachGroup) error {
+func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentShape MediaShape, group *runtimeAttachGroup) error {
 	if branch == nil {
 		return nil
 	}
@@ -784,30 +784,30 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
 	stream := currentStream
-	caps := currentCaps
+	shape := currentShape
 	hasMuxDestination := runtimeBranchHasMuxDestination(*branch)
 	if branch.encode.Copy {
-		if currentCaps.Domain != DomainPacket {
+		if currentShape.Domain != DomainPacket {
 			closeRuntimeBranchOwnedStages(*branch)
-			return runtimeBranchCopyDomainError(branch.name, currentCaps)
+			return runtimeBranchCopyDomainError(branch.name, currentShape)
 		}
-		appendRuntimeBranchPostEncodeTaps(branch, caps, OpCopy)
+		appendRuntimeBranchPostEncodeTaps(branch, shape, OpCopy)
 	} else if codecIntentSet(branch.encode) {
-		encodedStream, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentCaps)
+		encodedStream, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentShape)
 		if err != nil {
 			closeRuntimeBranchOwnedStages(*branch)
 			return err
 		}
 		stream = encodedStream
-		caps = streamPacketCapsFromRuntimeBranchStream(encodedStream, currentCaps)
-		appendRuntimeBranchPostEncodeTaps(branch, caps, OpEncode)
+		shape = streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape)
+		appendRuntimeBranchPostEncodeTaps(branch, shape, OpEncode)
 	} else if hasMuxDestination {
 		closeRuntimeBranchOwnedStages(*branch)
 		return runtimeBranchEncodeMissingError(branch.name)
 	}
 	if !hasMuxDestination {
 		for i := range branch.destinations {
-			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(branch.destinations[i], stream, caps))
+			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(branch.destinations[i], stream, shape))
 		}
 		return nil
 	}
@@ -820,19 +820,19 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 	}
 	if stream.Codec.ID == "" {
 		closeRuntimeBranchOwnedStages(*branch)
-		return runtimeBranchMuxCodecMissingError(branch.name, caps)
+		return runtimeBranchMuxCodecMissingError(branch.name, shape)
 	}
 	for i := range branch.destinations {
 		destination := branch.destinations[i]
 		if destination.sink != nil {
-			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(destination, stream, caps))
+			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(destination, stream, shape))
 			continue
 		}
 		if group != nil && group.isSharedMux(destination.shareKey) {
-			branch.terminals = append(branch.terminals, runtimeBranchSharedMuxTerminal(destination, stream, caps))
+			branch.terminals = append(branch.terminals, runtimeBranchSharedMuxTerminal(destination, stream, shape))
 			continue
 		}
-		terminal, err := prepareRuntimeBranchMuxTerminal(ctx, t.runtime, *branch, destination, stream, caps, i)
+		terminal, err := prepareRuntimeBranchMuxTerminal(ctx, t.runtime, *branch, destination, stream, shape, i)
 		if err != nil {
 			closeRuntimeBranchOwnedStages(*branch)
 			return err
@@ -842,28 +842,28 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 	return nil
 }
 
-func runtimeBranchSinkTerminal(destination runtimeBranchDestination, stream av.Stream, caps StreamCaps) runtimeBranchTerminal {
+func runtimeBranchSinkTerminal(destination runtimeBranchDestination, stream av.Stream, shape MediaShape) runtimeBranchTerminal {
 	return runtimeBranchTerminal{
 		name:     destination.name,
 		shareKey: destination.shareKey,
 		dest:     destination.dest,
 		stream:   stream,
 		sink:     destination.sink,
-		caps:     caps,
+		shape:    shape,
 	}
 }
 
-func runtimeBranchSharedMuxTerminal(destination runtimeBranchDestination, stream av.Stream, caps StreamCaps) runtimeBranchTerminal {
+func runtimeBranchSharedMuxTerminal(destination runtimeBranchDestination, stream av.Stream, shape MediaShape) runtimeBranchTerminal {
 	return runtimeBranchTerminal{
 		name:     destination.name,
 		shareKey: destination.shareKey,
 		dest:     destination.dest,
 		stream:   stream,
-		caps:     caps,
+		shape:    shape,
 	}
 }
 
-func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, caps StreamCaps, index int) (runtimeBranchTerminal, error) {
+func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, shape MediaShape, index int) (runtimeBranchTerminal, error) {
 	formatID, err := runtimeMuxTargetFormat(ctx, rt, destination.dest, index)
 	if err != nil {
 		return runtimeBranchTerminal{}, err
@@ -889,23 +889,23 @@ func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch ru
 		dest:   destination.dest,
 		stream: stream,
 		stage:  muxStage,
-		caps:   caps,
+		shape:  shape,
 		owned:  true,
 	}, nil
 }
 
-func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentCaps StreamCaps, spec CodecSpec) (pipeline.Stage, error) {
+func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentShape MediaShape, spec CodecSpec) (pipeline.Stage, error) {
 	if t.runtime == nil {
 		return nil, runtimeBranchInvalidError(
 			"runtime branch decoding requires the standard runtime",
 			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching decode branches",
 		)
 	}
-	if currentCaps.Domain != DomainPacket {
-		return nil, runtimeBranchDecodeDomainError(branchName, currentCaps)
+	if currentShape.Domain != DomainPacket {
+		return nil, runtimeBranchDecodeDomainError(branchName, currentShape)
 	}
 	if currentStream.Codec.ID == "" {
-		return nil, runtimeBranchDecodeCodecMissingError(branchName, currentCaps)
+		return nil, runtimeBranchDecodeCodecMissingError(branchName, currentShape)
 	}
 	request := runtimeBranchDecodeRequest(branchName, currentStream, spec)
 	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
@@ -936,15 +936,15 @@ func runtimeBranchHasMuxDestination(branch runtimeBranch) bool {
 	return false
 }
 
-func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentCaps StreamCaps) (av.Stream, error) {
+func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentShape MediaShape) (av.Stream, error) {
 	if t.runtime == nil {
 		return av.Stream{}, runtimeBranchInvalidError(
 			"runtime branch encoding requires the standard runtime",
 			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching encode branches",
 		)
 	}
-	if currentCaps.Domain != DomainFrame {
-		return av.Stream{}, runtimeBranchEncodeDomainError(branch.name, currentCaps)
+	if currentShape.Domain != DomainFrame {
+		return av.Stream{}, runtimeBranchEncodeDomainError(branch.name, currentShape)
 	}
 	if err := validateRecipeEncode(branch.encode, "attach runtime branch", firstNonEmpty(branch.name, "branch")); err != nil {
 		return av.Stream{}, err
@@ -968,13 +968,13 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 	}
 	branch.steps = append(branch.steps, runtimeBranchStep{
 		stage: stage,
-		caps:  streamPacketCapsFromRuntimeBranchStream(encodedStream, currentCaps),
+		shape: streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape),
 		owned: true,
 	})
 	return encodedStream, nil
 }
 
-func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, caps StreamCaps, after OperationKind) {
+func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, shape MediaShape, after OperationKind) {
 	if branch == nil || len(branch.postEncodeTaps) == 0 {
 		return
 	}
@@ -983,7 +983,7 @@ func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, caps StreamCaps, a
 			tap:       branch.postEncodeTaps[i],
 			tapDomain: DomainPacket,
 			after:     after,
-			caps:      caps,
+			shape:     shape,
 		})
 	}
 	branch.postEncodeTaps = nil
@@ -999,7 +999,7 @@ func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string, gro
 	for i := range branch.steps {
 		step := branch.steps[i]
 		if step.tap != "" {
-			taps = append(taps, runtimeBranchTapInfo(step.tap, previous, step.caps, step.after))
+			taps = append(taps, runtimeBranchTapInfo(step.tap, previous, step.shape, step.after))
 			continue
 		}
 		if step.stage == nil {
@@ -1511,7 +1511,7 @@ func runtimeBranchPlannedTaps(branch runtimeBranch, nodeNames []string) []TapInf
 	for i := range branch.steps {
 		step := branch.steps[i]
 		if step.tap != "" {
-			taps = append(taps, runtimeBranchTapInfo(step.tap, previous, step.caps, step.after))
+			taps = append(taps, runtimeBranchTapInfo(step.tap, previous, step.shape, step.after))
 			continue
 		}
 		if step.stage == nil {
@@ -1638,37 +1638,37 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 	}
 }
 
-func runtimeBranchAnchorCaps(anchor TapInfo) StreamCaps {
-	caps := anchor.Caps
-	if caps.Domain == "" {
-		caps.Domain = anchor.Domain
+func runtimeBranchAnchorShape(anchor TapInfo) MediaShape {
+	shape := anchor.Shape
+	if shape.Domain == "" {
+		shape.Domain = anchor.Domain
 	}
-	if caps.MediaKind == "" {
-		caps.MediaKind = anchor.MediaKind
+	if shape.MediaKind == "" {
+		shape.MediaKind = anchor.MediaKind
 	}
-	return caps
+	return shape
 }
 
-func streamFromRuntimeBranchCaps(name string, caps StreamCaps) av.Stream {
+func streamFromRuntimeBranchShape(name string, shape MediaShape) av.Stream {
 	stream := av.Stream{
-		ID:   av.StreamID(firstNonEmpty(string(caps.StreamID), name, "runtime-branch")),
+		ID:   av.StreamID(firstNonEmpty(string(shape.StreamID), name, "runtime-branch")),
 		Name: firstNonEmpty(name, "runtime-branch"),
-		Type: caps.MediaKind,
+		Type: shape.MediaKind,
 		Codec: av.CodecParameters{
-			ID:            caps.Codec,
-			Type:          caps.MediaKind,
-			SampleRate:    caps.SampleRate,
-			Channels:      caps.Channels,
+			ID:            shape.Codec,
+			Type:          shape.MediaKind,
+			SampleRate:    shape.SampleRate,
+			Channels:      shape.Channels,
 			ChannelLayout: "",
-			Width:         caps.Width,
-			Height:        caps.Height,
-			PixelFormat:   caps.PixelFormat,
-			SampleFormat:  caps.SampleFormat,
+			Width:         shape.Width,
+			Height:        shape.Height,
+			PixelFormat:   shape.PixelFormat,
+			SampleFormat:  shape.SampleFormat,
 		},
 	}
-	if caps.SampleRate > 0 {
-		stream.Codec.ClockRate = uint32(caps.SampleRate)
-		stream.TimeBase = av.TimeBase{Num: 1, Den: int64(caps.SampleRate)}
+	if shape.SampleRate > 0 {
+		stream.Codec.ClockRate = uint32(shape.SampleRate)
+		stream.TimeBase = av.TimeBase{Num: 1, Den: int64(shape.SampleRate)}
 	}
 	return stream
 }
@@ -1711,64 +1711,63 @@ func runtimeBranchDecodeRequest(branchName string, stream av.Stream, spec CodecS
 	return decodeRequest{selector: selector, config: cloneCodecSpec(spec)}
 }
 
-func streamCapsFromRuntimeBranchStream(stream av.Stream, previous StreamCaps) StreamCaps {
-	caps := previous
-	caps.Domain = DomainFrame
+func mediaShapeFromRuntimeBranchStream(stream av.Stream, previous MediaShape) MediaShape {
+	shape := previous
+	shape.Domain = DomainFrame
 	if stream.Type != "" {
-		caps.MediaKind = stream.Type
+		shape.MediaKind = stream.Type
 	}
 	if stream.ID != "" {
-		caps.StreamID = stream.ID
+		shape.StreamID = stream.ID
 	}
 	if stream.Codec.ID != "" {
-		caps.Codec = stream.Codec.ID
+		shape.Codec = stream.Codec.ID
 	}
 	if stream.Codec.Width != 0 {
-		caps.Width = stream.Codec.Width
+		shape.Width = stream.Codec.Width
 	}
 	if stream.Codec.Height != 0 {
-		caps.Height = stream.Codec.Height
+		shape.Height = stream.Codec.Height
 	}
 	if stream.Codec.PixelFormat != "" {
-		caps.PixelFormat = stream.Codec.PixelFormat
+		shape.PixelFormat = stream.Codec.PixelFormat
 	}
 	if stream.Codec.SampleRate != 0 {
-		caps.SampleRate = stream.Codec.SampleRate
+		shape.SampleRate = stream.Codec.SampleRate
 	}
 	if stream.Codec.Channels != 0 {
-		caps.Channels = stream.Codec.Channels
+		shape.Channels = stream.Codec.Channels
 	}
 	if stream.Codec.SampleFormat != "" {
-		caps.SampleFormat = stream.Codec.SampleFormat
+		shape.SampleFormat = stream.Codec.SampleFormat
 	}
-	return caps
+	return shape
 }
 
-func streamPacketCapsFromRuntimeBranchStream(stream av.Stream, previous StreamCaps) StreamCaps {
-	caps := streamCapsFromRuntimeBranchStream(stream, previous)
-	caps.Domain = DomainPacket
-	return caps
+func streamPacketShapeFromRuntimeBranchStream(stream av.Stream, previous MediaShape) MediaShape {
+	shape := mediaShapeFromRuntimeBranchStream(stream, previous)
+	shape.Domain = DomainPacket
+	return shape
 }
 
-func runtimeBranchTapInfo(name string, node pipeline.NodeRef, caps StreamCaps, after OperationKind) TapInfo {
-	domain := caps.Domain
+func runtimeBranchTapInfo(name string, node pipeline.NodeRef, shape MediaShape, after OperationKind) TapInfo {
+	domain := shape.Domain
 	if domain == "" {
 		domain = DomainPacket
 	}
-	media := caps.MediaKind
-	if caps.Domain == "" {
-		caps.Domain = domain
+	media := shape.MediaKind
+	if shape.Domain == "" {
+		shape.Domain = domain
 	}
-	if caps.MediaKind == "" {
-		caps.MediaKind = media
+	if shape.MediaKind == "" {
+		shape.MediaKind = media
 	}
 	return TapInfo{
 		Name:      name,
 		MediaKind: media,
 		Domain:    domain,
 		After:     after,
-		Shape:     caps,
-		Caps:      caps,
+		Shape:     shape,
 		Node:      node,
 	}
 }
@@ -1963,7 +1962,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 		Suggestions: []string{
 			"register a matching resize or resample filter adapter",
 			"use goav.Default() or goav.New(goav.WithDefaults()) for standard filters",
-			"attach from a frame tap with media caps that match the requested transform",
+			"attach from a frame tap with media shape that match the requested transform",
 		},
 		Cause: cause,
 	}
@@ -1984,13 +1983,13 @@ func runtimeBranchEncodeMissingError(branch string) error {
 	}
 }
 
-func runtimeBranchEncodeDomainError(branch string, caps StreamCaps) error {
+func runtimeBranchEncodeDomainError(branch string, shape MediaShape) error {
 	return &BuildError{
 		Code:      "runtime_branch_encode_domain_mismatch",
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch encoding requires a frame tap",
-		Details:   runtimeBranchCapsDetails(caps),
+		Details:   runtimeBranchShapeDetails(shape),
 		Suggestions: []string{
 			"attach from a tap declared after Decode, Resize, Resample, or a frame-stage .Do(...)",
 			"use .Copy() from a packet tap when no re-encode is intended",
@@ -2000,13 +1999,13 @@ func runtimeBranchEncodeDomainError(branch string, caps StreamCaps) error {
 	}
 }
 
-func runtimeBranchDecodeDomainError(branch string, caps StreamCaps) error {
+func runtimeBranchDecodeDomainError(branch string, shape MediaShape) error {
 	return &BuildError{
 		Code:      "runtime_branch_decode_domain_mismatch",
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decoding requires a packet tap",
-		Details:   runtimeBranchCapsDetails(caps),
+		Details:   runtimeBranchShapeDetails(shape),
 		Suggestions: []string{
 			"attach from a tap declared after Copy, packet receive, or Encode",
 			"omit .Decode() when attaching from a frame tap",
@@ -2016,15 +2015,15 @@ func runtimeBranchDecodeDomainError(branch string, caps StreamCaps) error {
 	}
 }
 
-func runtimeBranchDecodeCodecMissingError(branch string, caps StreamCaps) error {
+func runtimeBranchDecodeCodecMissingError(branch string, shape MediaShape) error {
 	return &BuildError{
 		Code:      "runtime_branch_decode_codec_missing",
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decode needs packet codec metadata",
-		Details:   runtimeBranchCapsDetails(caps),
+		Details:   runtimeBranchShapeDetails(shape),
 		Suggestions: []string{
-			"attach from a recipe tap with codec caps",
+			"attach from a recipe tap with codec shape",
 			"declare the RTP/WebRTC/File input codec before building the task",
 			"call task.Taps() and choose a packet tap that reports codec=...",
 		},
@@ -2032,13 +2031,13 @@ func runtimeBranchDecodeCodecMissingError(branch string, caps StreamCaps) error 
 	}
 }
 
-func runtimeBranchCopyDomainError(branch string, caps StreamCaps) error {
+func runtimeBranchCopyDomainError(branch string, shape MediaShape) error {
 	return &BuildError{
 		Code:      "runtime_branch_copy_domain_mismatch",
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch packet copy requires a packet tap",
-		Details:   runtimeBranchCapsDetails(caps),
+		Details:   runtimeBranchShapeDetails(shape),
 		Suggestions: []string{
 			"attach from a tap declared after Copy or Encode",
 			"encode frame taps with .Opus(...), .VP8(...), or .VP9(...) before writing a muxed destination",
@@ -2048,15 +2047,15 @@ func runtimeBranchCopyDomainError(branch string, caps StreamCaps) error {
 	}
 }
 
-func runtimeBranchMuxCodecMissingError(branch string, caps StreamCaps) error {
+func runtimeBranchMuxCodecMissingError(branch string, shape MediaShape) error {
 	return &BuildError{
 		Code:      "runtime_branch_mux_codec_missing",
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch mux destination needs codec metadata",
-		Details:   runtimeBranchCapsDetails(caps),
+		Details:   runtimeBranchShapeDetails(shape),
 		Suggestions: []string{
-			"attach from a recipe tap with codec caps",
+			"attach from a recipe tap with codec shape",
 			"set an explicit encoder such as .Opus(...), .VP8(...), or .VP9(...)",
 			"use .To(goav.Sink(...)) when the branch should stay raw",
 		},
@@ -2064,16 +2063,16 @@ func runtimeBranchMuxCodecMissingError(branch string, caps StreamCaps) error {
 	}
 }
 
-func runtimeBranchCapsDetails(caps StreamCaps) []string {
+func runtimeBranchShapeDetails(shape MediaShape) []string {
 	details := []string{
-		"domain=" + string(caps.Domain),
-		"media=" + string(caps.MediaKind),
+		"domain=" + string(shape.Domain),
+		"media=" + string(shape.MediaKind),
 	}
-	if caps.Codec != "" {
-		details = append(details, "codec="+string(caps.Codec))
+	if shape.Codec != "" {
+		details = append(details, "codec="+string(shape.Codec))
 	}
-	if caps.StreamID != "" {
-		details = append(details, "stream="+string(caps.StreamID))
+	if shape.StreamID != "" {
+		details = append(details, "stream="+string(shape.StreamID))
 	}
 	return details
 }

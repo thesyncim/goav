@@ -489,7 +489,7 @@ func TestDecodeResultForVideoPreallocatesPlaneBacking(t *testing.T) {
 	if len(frames) != 1 || cap(frames[0].Planes) < 3 {
 		t.Fatalf("frames=%d plane cap=%d", len(frames), cap(frames[0].Planes))
 	}
-	assertVideoDecodePlaneCaps(t, frames[0], 640, 360)
+	assertVideoDecodePlaneCapacity(t, frames[0], 640, 360)
 }
 
 func TestDecodeResultForVideoUsesDefaultBackingWhenGeometryIsUnknown(t *testing.T) {
@@ -505,7 +505,7 @@ func TestDecodeResultForVideoUsesDefaultBackingWhenGeometryIsUnknown(t *testing.
 	if len(frames) != 1 {
 		t.Fatalf("frames=%d, want 1", len(frames))
 	}
-	assertVideoDecodePlaneCaps(t, frames[0], defaultVideoDecodeWidth, defaultVideoDecodeHeight)
+	assertVideoDecodePlaneCapacity(t, frames[0], defaultVideoDecodeWidth, defaultVideoDecodeHeight)
 }
 
 func TestDecodeResultForVideoUsesBoundsCapacity(t *testing.T) {
@@ -529,14 +529,14 @@ func TestDecodeResultForVideoUsesBoundsCapacity(t *testing.T) {
 		cap(frames[1].Planes) < 3 ||
 		cap(result.Events) != 3 ||
 		cap(result.Requests) != 4 {
-		t.Fatalf("result caps frames=%d planes=%d/%d events=%d requests=%d",
+		t.Fatalf("result shape frames=%d planes=%d/%d events=%d requests=%d",
 			len(frames), cap(frames[0].Planes), cap(frames[1].Planes), cap(result.Events), cap(result.Requests))
 	}
-	assertVideoDecodePlaneCaps(t, frames[0], 1280, 720)
-	assertVideoDecodePlaneCaps(t, frames[1], 1280, 720)
+	assertVideoDecodePlaneCapacity(t, frames[0], 1280, 720)
+	assertVideoDecodePlaneCapacity(t, frames[1], 1280, 720)
 }
 
-func assertVideoDecodePlaneCaps(t *testing.T, frame av.Frame, width int, height int) {
+func assertVideoDecodePlaneCapacity(t *testing.T, frame av.Frame, width int, height int) {
 	t.Helper()
 	if len(frame.Planes) != 3 {
 		t.Fatalf("planes = %d, want 3", len(frame.Planes))
@@ -546,7 +546,7 @@ func assertVideoDecodePlaneCaps(t *testing.T, frame av.Frame, width int, height 
 	if cap(frame.Planes[0].Buffer.Bytes) != width*height ||
 		cap(frame.Planes[1].Buffer.Bytes) != chromaWidth*chromaHeight ||
 		cap(frame.Planes[2].Buffer.Bytes) != chromaWidth*chromaHeight {
-		t.Fatalf("plane caps = %d %d %d",
+		t.Fatalf("plane capacity = %d %d %d",
 			cap(frame.Planes[0].Buffer.Bytes),
 			cap(frame.Planes[1].Buffer.Bytes),
 			cap(frame.Planes[2].Buffer.Bytes))

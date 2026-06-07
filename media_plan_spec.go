@@ -42,7 +42,7 @@ type graphPlanOperation struct {
 	Kind      OperationKind
 	Component string
 	Detail    string
-	Caps      StreamCaps
+	Shape      MediaShape
 	Targets   []string
 	Shared    bool
 }
@@ -134,7 +134,7 @@ func graphPlanOperationsFromMediaPlan(spec pipeline.Spec, plan mediaPlan) []grap
 				Kind:      operation.Kind,
 				Component: operation.Component,
 				Detail:    operation.Detail,
-				Caps:      operation.Caps,
+				Shape:      operation.Shape,
 				Shared:    operation.Shared,
 			})
 		}

@@ -72,7 +72,6 @@ type BranchReport struct {
 	Input      string
 	Stream     StreamSelect
 	Shape      MediaShape
-	Caps       StreamCaps
 	Operations []OperationReport
 	Targets    []string
 }
@@ -82,7 +81,6 @@ type OperationReport struct {
 	Component string
 	Detail    string
 	Shape     MediaShape
-	Caps      StreamCaps
 	Shared    bool
 }
 
@@ -177,8 +175,7 @@ func explainTaps(taps []planTap) []TapReport {
 			Name:      taps[i].Name,
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,
-			Shape:     taps[i].Caps,
-			Caps:      taps[i].Caps,
+			Shape:     taps[i].Shape,
 			Node:      taps[i].Node,
 		})
 	}
@@ -259,22 +256,21 @@ func explainStreamOperations(operations []StreamOperation) []OperationReport {
 			Kind:      operations[i].Kind,
 			Component: operations[i].Component,
 			Detail:    streamOperationDetail(operations[i]),
-			Shape:     streamOperationCaps(operations[i]),
-			Caps:      streamOperationCaps(operations[i]),
+			Shape:     streamOperationShape(operations[i]),
 			Shared:    operations[i].Shared,
 		})
 	}
 	return reports
 }
 
-func streamOperationCaps(operation StreamOperation) StreamCaps {
+func streamOperationShape(operation StreamOperation) MediaShape {
 	switch operation.Kind {
 	case OpTransform:
-		return streamCapsFromTransform(operation.Transform)
+		return mediaShapeFromTransform(operation.Transform)
 	case OpEncode:
-		return streamCapsFromCodecSpec(operation.Encode, DomainPacket)
+		return mediaShapeFromCodecSpec(operation.Encode, DomainPacket)
 	default:
-		return StreamCaps{}
+		return MediaShape{}
 	}
 }
 
@@ -303,8 +299,7 @@ func explainBranches(branches []planBranch) []BranchReport {
 			Name:       branch.Name,
 			Input:      branch.Input,
 			Stream:     branch.Stream,
-			Shape:      branch.Caps,
-			Caps:       branch.Caps,
+			Shape:      branch.Shape,
 			Operations: explainOperations(branch.Operations),
 			Targets:    append([]string(nil), branch.Outputs...),
 		})
@@ -320,8 +315,7 @@ func explainOperations(operations []planOperation) []OperationReport {
 			Kind:      operation.Kind,
 			Component: operation.Component,
 			Detail:    operation.Detail,
-			Shape:     operation.Caps,
-			Caps:      operation.Caps,
+			Shape:     operation.Shape,
 			Shared:    operation.Shared,
 		})
 	}

@@ -46,8 +46,8 @@ els.add.addEventListener("click", () => addRendition().catch(showError));
 els.newKind.addEventListener("change", syncNewCodecOptions);
 
 function initCodecControls() {
-  const caps = RTCRtpSender.getCapabilities?.("video")?.codecs || [];
-  const names = [...new Set(caps.map(c => codecName(c.mimeType)).filter(c => ["vp8", "vp9", "av1"].includes(c)))];
+  const capabilities = RTCRtpSender.getCapabilities?.("video")?.codecs || [];
+  const names = [...new Set(capabilities.map(c => codecName(c.mimeType)).filter(c => ["vp8", "vp9", "av1"].includes(c)))];
   const upload = names.length ? names : ["vp8"];
   els.uploadCodec.innerHTML = upload.map(c => `<option value="${c}">${c}</option>`).join("");
   syncNewCodecOptions();
@@ -507,10 +507,10 @@ function renderEmptyState() {
 
 function preferCodec(transceiver, codec) {
   const kind = codec === "opus" ? "audio" : "video";
-  const caps = RTCRtpSender.getCapabilities(kind);
-  if (!caps?.codecs?.length || !transceiver.setCodecPreferences) return;
-  const preferred = caps.codecs.filter(c => codecName(c.mimeType) === codec);
-  const rest = caps.codecs.filter(c => codecName(c.mimeType) !== codec);
+  const capabilities = RTCRtpSender.getCapabilities(kind);
+  if (!capabilities?.codecs?.length || !transceiver.setCodecPreferences) return;
+  const preferred = capabilities.codecs.filter(c => codecName(c.mimeType) === codec);
+  const rest = capabilities.codecs.filter(c => codecName(c.mimeType) !== codec);
   if (preferred.length) transceiver.setCodecPreferences([...preferred, ...rest]);
 }
 

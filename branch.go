@@ -17,7 +17,7 @@ var targetSpecSeq atomic.Uint64
 // media sink. Applications can implement this interface in their own packages.
 type Destination interface {
 	Name() string
-	Capabilities() DestinationCaps
+	Contract() DestinationContract
 	Open(context.Context, TargetInfo) (DestinationWriter, error)
 }
 
@@ -35,7 +35,7 @@ type TransactionalDestinationWriter interface {
 	Abort(context.Context) error
 }
 
-type DestinationCaps struct {
+type DestinationContract struct {
 	ByteStream bool
 	Seekable   bool
 	Realtime   bool
@@ -107,8 +107,8 @@ func (t targetSpec) Name() string {
 	return t.name
 }
 
-func (t targetSpec) Capabilities() DestinationCaps {
-	return t.dest.Capabilities()
+func (t targetSpec) Contract() DestinationContract {
+	return t.dest.Contract()
 }
 
 func (t targetSpec) Open(ctx context.Context, info TargetInfo) (DestinationWriter, error) {
@@ -140,22 +140,22 @@ func destinationSpecFromDestination(dest Destination) (destinationSpec, error) {
 		return destinationSpec{}, fmt.Errorf("target cannot be used as a direct destination")
 	default:
 		name := dest.Name()
-		caps := dest.Capabilities()
+		contract := dest.Contract()
 		spec := destinationSpec{
 			custom: dest,
 			name:   name,
 			output: format.Output{
 				Name:     name,
 				URI:      name,
-				Protocol: caps.Protocol,
-				Realtime: caps.Realtime,
+				Protocol: contract.Protocol,
+				Realtime: contract.Realtime,
 			},
 		}
-		if len(caps.Formats) != 0 {
-			spec.format = caps.Formats[0]
+		if len(contract.Formats) != 0 {
+			spec.format = contract.Formats[0]
 		}
-		if len(caps.MIMETypes) != 0 {
-			spec.output.MIMEType = caps.MIMETypes[0]
+		if len(contract.MIMETypes) != 0 {
+			spec.output.MIMEType = contract.MIMETypes[0]
 		}
 		return spec, nil
 	}

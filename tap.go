@@ -21,7 +21,6 @@ type TapReport struct {
 	Domain    MediaDomain
 	After     OperationKind
 	Shape     MediaShape
-	Caps      StreamCaps
 	Node      pipeline.NodeRef
 }
 
@@ -33,19 +32,11 @@ func tapReports(taps []TapInfo) []TapReport {
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,
 			After:     taps[i].After,
-			Shape:     tapShape(taps[i].Shape, taps[i].Caps),
-			Caps:      taps[i].Caps,
+			Shape:     taps[i].Shape,
 			Node:      taps[i].Node,
 		})
 	}
 	return reports
-}
-
-func tapShape(shape MediaShape, caps StreamCaps) MediaShape {
-	if streamCapsEmpty(shape) {
-		return caps
-	}
-	return shape
 }
 
 func inferSpecTaps(spec pipeline.Spec) []TapInfo {
@@ -61,7 +52,6 @@ func inferSpecTaps(spec pipeline.Spec) []TapInfo {
 				Domain:    DomainFrame,
 				After:     OpDecode,
 				Shape:     FrameShape(media, ShapeStream(av.StreamID(media))),
-				Caps:      StreamCaps{Domain: DomainFrame, MediaKind: media, StreamID: av.StreamID(media)},
 				Node:      pipeline.NodeRef(node.Name),
 			})
 		case strings.HasPrefix(node.Name, "select-"):
@@ -72,7 +62,6 @@ func inferSpecTaps(spec pipeline.Spec) []TapInfo {
 				Domain:    DomainPacket,
 				After:     OpSelect,
 				Shape:     PacketShape(media, "", ShapeStream(av.StreamID(media))),
-				Caps:      StreamCaps{Domain: DomainPacket, MediaKind: media, StreamID: av.StreamID(media)},
 				Node:      pipeline.NodeRef(node.Name),
 			})
 		}
