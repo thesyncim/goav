@@ -21,7 +21,7 @@ type PlanReport struct {
 	Streams          []StreamReport
 	Taps             []TapReport
 	Branches         []BranchReport
-	Targets          []TargetReport
+	Destinations     []DestinationReport
 	Decisions        []Decision
 	Missing          []Requirement
 	RequiredAdapters []AdapterRequirement
@@ -41,14 +41,14 @@ type InputReport struct {
 }
 
 type StreamReport struct {
-	Name        string
-	Select      StreamSelect
-	Decode      bool
-	Operations  []OperationReport
-	Transforms  []TransformReport
-	Encode      CodecSpec
-	CodecChange CodecChangePolicy
-	Targets     []string
+	Name         string
+	Select       StreamSelect
+	Decode       bool
+	Operations   []OperationReport
+	Transforms   []TransformReport
+	Encode       CodecSpec
+	CodecChange  CodecChangePolicy
+	Destinations []string
 }
 
 type TransformReport struct {
@@ -57,7 +57,7 @@ type TransformReport struct {
 	Resample *filter.ResampleConfig
 }
 
-type TargetReport struct {
+type DestinationReport struct {
 	Name     string
 	URI      string
 	Protocol av.ProtocolID
@@ -68,12 +68,12 @@ type TargetReport struct {
 }
 
 type BranchReport struct {
-	Name       string
-	Input      string
-	Stream     StreamSelect
-	Shape      MediaShape
-	Operations []OperationReport
-	Targets    []string
+	Name         string
+	Input        string
+	Stream       StreamSelect
+	Shape        MediaShape
+	Operations   []OperationReport
+	Destinations []string
 }
 
 type OperationReport struct {
@@ -159,7 +159,7 @@ func newPlanReport(operation string, resolved recipeResolved) (PlanReport, error
 	report.Streams = explainStreams(resolved.intent.Streams)
 	report.Taps = explainTaps(plan.Taps)
 	report.Branches = explainBranches(plan.Branches)
-	report.Targets = explainTargets(resolved.intent.Targets, resolved.outputFormats, plan.Outputs)
+	report.Destinations = explainDestinations(resolved.intent.Destinations, resolved.outputFormats, plan.Outputs)
 	report.Decisions = explainDecisions(plan.Decisions)
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, report)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, plan.Diagnostics...)
@@ -236,14 +236,14 @@ func explainStreams(streams []StreamIntent) []StreamReport {
 	for i := range streams {
 		stream := streams[i]
 		reports = append(reports, StreamReport{
-			Name:        stream.Name,
-			Select:      stream.Select,
-			Decode:      stream.Decode,
-			Operations:  explainStreamOperations(stream.Operations),
-			Transforms:  explainTransforms(stream.Transforms),
-			Encode:      stream.Encode,
-			CodecChange: stream.CodecChange,
-			Targets:     append([]string(nil), stream.Targets...),
+			Name:         stream.Name,
+			Select:       stream.Select,
+			Decode:       stream.Decode,
+			Operations:   explainStreamOperations(stream.Operations),
+			Transforms:   explainTransforms(stream.Transforms),
+			Encode:       stream.Encode,
+			CodecChange:  stream.CodecChange,
+			Destinations: append([]string(nil), stream.Destinations...),
 		})
 	}
 	return reports
@@ -300,12 +300,12 @@ func explainBranches(branches []planBranch) []BranchReport {
 	for i := range branches {
 		branch := branches[i]
 		reports = append(reports, BranchReport{
-			Name:       branch.Name,
-			Input:      branch.Input,
-			Stream:     branch.Stream,
-			Shape:      branch.Shape,
-			Operations: explainOperations(branch.Operations),
-			Targets:    append([]string(nil), branch.Outputs...),
+			Name:         branch.Name,
+			Input:        branch.Input,
+			Stream:       branch.Stream,
+			Shape:        branch.Shape,
+			Operations:   explainOperations(branch.Operations),
+			Destinations: append([]string(nil), branch.Outputs...),
 		})
 	}
 	return reports
@@ -359,28 +359,28 @@ func explainTransforms(transforms []TransformSpec) []TransformReport {
 	return reports
 }
 
-func explainTargets(targets []TargetIntent, outputFormats map[string]av.FormatID, planOutputs []planOutput) []TargetReport {
-	reports := make([]TargetReport, 0, len(targets))
-	branchesByTarget := planOutputBranches(planOutputs)
-	for i := range targets {
-		target := targets[i]
-		name := firstNonEmpty(target.Name, target.URI, fmt.Sprintf("target-%d", i))
-		formatID := target.Format
+func explainDestinations(destinations []DestinationIntent, outputFormats map[string]av.FormatID, planOutputs []planOutput) []DestinationReport {
+	reports := make([]DestinationReport, 0, len(destinations))
+	branchesByDestination := planOutputBranches(planOutputs)
+	for i := range destinations {
+		destination := destinations[i]
+		name := firstNonEmpty(destination.Name, destination.URI, fmt.Sprintf("destination-%d", i))
+		formatID := destination.Format
 		if resolved := outputFormats[name]; resolved != "" {
 			formatID = resolved
 		}
 		kind := "sink"
-		if target.URI != "" || target.Protocol != "" || target.MIMEType != "" || formatID != "" {
+		if destination.URI != "" || destination.Protocol != "" || destination.MIMEType != "" || formatID != "" {
 			kind = "mux"
 		}
-		reports = append(reports, TargetReport{
+		reports = append(reports, DestinationReport{
 			Name:     name,
-			URI:      target.URI,
-			Protocol: target.Protocol,
-			MIMEType: target.MIMEType,
+			URI:      destination.URI,
+			Protocol: destination.Protocol,
+			MIMEType: destination.MIMEType,
 			Format:   formatID,
 			Kind:     kind,
-			Branches: append([]string(nil), branchesByTarget[name]...),
+			Branches: append([]string(nil), branchesByDestination[name]...),
 		})
 	}
 	return reports
@@ -420,8 +420,8 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 			})
 		}
 	}
-	for i := range report.Targets {
-		output := report.Targets[i]
+	for i := range report.Destinations {
+		output := report.Destinations[i]
 		if output.Kind != "mux" || output.Format == "" {
 			continue
 		}
@@ -963,10 +963,10 @@ func explainSummary(report PlanReport) string {
 		input = fmt.Sprintf("%d inputs", len(report.Inputs))
 	}
 	target := "target"
-	if len(report.Targets) == 1 {
-		target = firstNonEmpty(report.Targets[0].Name, report.Targets[0].URI, target)
-	} else if len(report.Targets) > 1 {
-		target = fmt.Sprintf("%d targets", len(report.Targets))
+	if len(report.Destinations) == 1 {
+		target = firstNonEmpty(report.Destinations[0].Name, report.Destinations[0].URI, target)
+	} else if len(report.Destinations) > 1 {
+		target = fmt.Sprintf("%d targets", len(report.Destinations))
 	}
 	if len(report.Streams) == 0 {
 		return fmt.Sprintf("%s %s to %s", name, input, target)
@@ -982,9 +982,9 @@ func cloneIntent(intent Intent) Intent {
 		clone.Streams[i].Operations = cloneStreamOperations(intent.Streams[i].Operations)
 		clone.Streams[i].Transforms = cloneTransformSpecs(intent.Streams[i].Transforms)
 		clone.Streams[i].Taps = cloneTapIntents(intent.Streams[i].Taps)
-		clone.Streams[i].Targets = append([]string(nil), intent.Streams[i].Targets...)
+		clone.Streams[i].Destinations = append([]string(nil), intent.Streams[i].Destinations...)
 	}
-	clone.Targets = append([]TargetIntent(nil), intent.Targets...)
+	clone.Destinations = append([]DestinationIntent(nil), intent.Destinations...)
 	return clone
 }
 

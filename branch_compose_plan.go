@@ -10,11 +10,11 @@ import (
 )
 
 type branchComposePlan struct {
-	Name     string
-	Input    format.Input
-	Branches []branchComposeBranch
-	Targets  []branchComposeTarget
-	Metadata av.Metadata
+	Name         string
+	Input        format.Input
+	Branches     []branchComposeBranch
+	Destinations []branchComposeTarget
+	Metadata     av.Metadata
 }
 
 type branchComposeBranch struct {
@@ -90,11 +90,11 @@ func branchComposePlanFromTranscode(plan transcode.Plan) branchComposePlan {
 		})
 	}
 	return branchComposePlan{
-		Name:     plan.Name,
-		Input:    plan.Input,
-		Branches: branches,
-		Targets:  targets,
-		Metadata: plan.Metadata,
+		Name:         plan.Name,
+		Input:        plan.Input,
+		Branches:     branches,
+		Destinations: targets,
+		Metadata:     plan.Metadata,
 	}
 }
 

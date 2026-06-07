@@ -597,7 +597,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		}
 		if firstIndex, ok := seen[targetName]; ok {
 			return duplicateBranchDestinationError(
-				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Targets: spec.targetNames},
+				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Destinations: spec.targetNames},
 				targetName,
 				firstIndex,
 				i,

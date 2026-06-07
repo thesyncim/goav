@@ -412,7 +412,7 @@ func mediaPlanSinkDestinationShape(stream StreamIntent, outputs []destinationSpe
 	return len(outputs) == 1 &&
 		outputs[0].sink != nil &&
 		stream.Decode &&
-		len(stream.Targets) == 1 &&
+		len(stream.Destinations) == 1 &&
 		!stream.Encode.Copy
 }
 
@@ -420,7 +420,7 @@ func mediaPlanEncodeShape(stream StreamIntent, outputs []destinationSpec) bool {
 	if !stream.Decode || !codecIntentSet(stream.Encode) || stream.Encode.Copy || len(outputs) == 0 {
 		return false
 	}
-	return len(stream.Targets) == len(outputs)
+	return len(stream.Destinations) == len(outputs)
 }
 
 func mediaPlanBranchComposerLowerer(state *recipeCompileState) (graphPlanLowerer, bool, error) {

@@ -412,7 +412,7 @@ func validateJobIntentShape(operation string, intent Intent, jobOutputCount int)
 	if len(intent.Streams) > 1 {
 		return jobIntentTooManyStreamsError(operation, intent.Streams)
 	}
-	if len(intent.Targets) == 0 {
+	if len(intent.Destinations) == 0 {
 		return &BuildError{Code: "output_missing", Operation: operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
 	}
 	if err := validateJobIntentOutputScope(operation, intent, jobOutputCount, stream, hasStream); err != nil {
@@ -428,7 +428,7 @@ func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCoun
 	if !hasStream {
 		return nil
 	}
-	if jobOutputCount == 0 && len(intent.Targets) == len(stream.Targets) {
+	if jobOutputCount == 0 && len(intent.Destinations) == len(stream.Destinations) {
 		return nil
 	}
 	return jobOutputScopeMixedError(operation, stream)
@@ -809,15 +809,15 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 			if len(state.intent.Inputs) != len(state.inputAttachments) {
 				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), len(state.inputAttachments))
 			}
-			if len(state.intent.Targets) != len(state.outputAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Targets), len(state.outputAttachments))
+			if len(state.intent.Destinations) != len(state.outputAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Destinations), len(state.outputAttachments))
 			}
 		case state.branchCompositionPresent:
 			if len(state.intent.Inputs) != 1 {
 				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), 1)
 			}
-			if len(state.intent.Targets) != len(state.branchTargetAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Targets), len(state.branchTargetAttachments))
+			if len(state.intent.Destinations) != len(state.branchTargetAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Destinations), len(state.branchTargetAttachments))
 			}
 		}
 		return nil
@@ -946,7 +946,7 @@ func validateRecipeTargetShapesPass() recipeCompilePass {
 			stream := state.intent.Streams[i]
 			shape := recipeFinalStreamShape(state, stream)
 			node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
-			for _, label := range stream.Targets {
+			for _, label := range stream.Destinations {
 				destination, ok := outputs[label]
 				if !ok {
 					continue
@@ -1157,7 +1157,7 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 				return err
 			}
 			state.plan.Input = fresh.Input
-			state.plan.Targets = fresh.Targets
+			state.plan.Destinations = fresh.Destinations
 			return nil
 		}
 		plan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchTargetAttachments, nil)
@@ -1174,7 +1174,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		fmt.Sprintf("recipe: %s", firstNonEmpty(intent.Name, "unnamed")),
 		fmt.Sprintf("inputs: %d", len(intent.Inputs)),
 		fmt.Sprintf("streams: %d", len(intent.Streams)),
-		fmt.Sprintf("targets: %d", len(intent.Targets)),
+		fmt.Sprintf("targets: %d", len(intent.Destinations)),
 	}
 	return &BuildError{
 		Code:      "recipe_graph_unsupported",

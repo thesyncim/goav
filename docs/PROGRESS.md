@@ -2559,6 +2559,10 @@ avoid dispatching through recipe abstractions.
 Destination configuration is deliberately singular: pass `Format`, `MIME`, and
 `Metadata` options to `File`, `URIOut`, `Writer`, `WriteCloser`, or `Object`;
 do not grow destination method-chain sugar back onto the front door.
+The public intent/report surface now uses `DestinationIntent`,
+`Intent.Destinations`, stream `Destinations`, and `DestinationReport`; exported
+`TargetIntent`, `TargetReport`, and `.Targets` fields are removed instead of
+kept as compatibility aliases.
 `MediaPlan` currently expresses record, stream decode, encode, and branch
 composition as input refs, stream selectors, ordered operations, destination
 refs, taps, and planner decisions. `GraphPlan` now carries a derived internal

@@ -22,11 +22,11 @@ const (
 )
 
 type Intent struct {
-	Name     string
-	Inputs   []InputIntent
-	Streams  []StreamIntent
-	Targets  []TargetIntent
-	Policies PolicyIntent
+	Name         string
+	Inputs       []InputIntent
+	Streams      []StreamIntent
+	Destinations []DestinationIntent
+	Policies     PolicyIntent
 }
 
 type InputIntent struct {
@@ -39,17 +39,17 @@ type InputIntent struct {
 }
 
 type StreamIntent struct {
-	Name        string
-	Select      StreamSelect
-	From        TapRef
-	Decode      bool
-	DecodeCodec CodecSpec
-	Operations  []StreamOperation
-	Transforms  []TransformSpec
-	Taps        []TapIntent
-	Encode      CodecSpec
-	CodecChange CodecChangePolicy
-	Targets     []string
+	Name         string
+	Select       StreamSelect
+	From         TapRef
+	Decode       bool
+	DecodeCodec  CodecSpec
+	Operations   []StreamOperation
+	Transforms   []TransformSpec
+	Taps         []TapIntent
+	Encode       CodecSpec
+	CodecChange  CodecChangePolicy
+	Destinations []string
 }
 
 type StreamOperation struct {
@@ -64,7 +64,7 @@ type StreamOperation struct {
 	Shared    bool
 }
 
-type TargetIntent struct {
+type DestinationIntent struct {
 	Name     string
 	URI      string
 	Protocol av.ProtocolID
@@ -1170,8 +1170,8 @@ func (s destinationSpec) label(fallback string) string {
 	return firstNonEmpty(s.name, s.output.Name, s.output.URI, fallback)
 }
 
-func (s destinationSpec) intent() TargetIntent {
-	return TargetIntent{
+func (s destinationSpec) intent() DestinationIntent {
+	return DestinationIntent{
 		Name:     s.label("output"),
 		URI:      s.output.URI,
 		Protocol: s.output.Protocol,
@@ -1180,7 +1180,7 @@ func (s destinationSpec) intent() TargetIntent {
 	}
 }
 
-func (s destinationSpec) intentWithName(name string) TargetIntent {
+func (s destinationSpec) intentWithName(name string) DestinationIntent {
 	intent := s.intent()
 	intent.Name = firstNonEmpty(name, intent.Name)
 	return intent
@@ -1441,7 +1441,7 @@ func (j *Job) Intent() Intent {
 			intent.Streams = append(intent.Streams, branchStreamIntent(j.branchStreams[i]))
 		}
 		for i := range j.branchTargets {
-			intent.Targets = append(intent.Targets, j.branchTargets[i].output.intentWithName(j.branchTargets[i].name))
+			intent.Destinations = append(intent.Destinations, j.branchTargets[i].output.intentWithName(j.branchTargets[i].name))
 		}
 		return intent
 	} else if j.stream != nil {
@@ -1451,14 +1451,14 @@ func (j *Job) Intent() Intent {
 			if i < len(j.outputNames) {
 				name = j.outputNames[i]
 			}
-			intent.Targets = append(intent.Targets, j.outputs[i].intentWithName(name))
+			intent.Destinations = append(intent.Destinations, j.outputs[i].intentWithName(name))
 		}
 		for i := range j.stream.outputs {
 			name := ""
 			if i < len(j.stream.outputNames) {
 				name = j.stream.outputNames[i]
 			}
-			intent.Targets = append(intent.Targets, j.stream.outputs[i].intentWithName(name))
+			intent.Destinations = append(intent.Destinations, j.stream.outputs[i].intentWithName(name))
 		}
 		return intent
 	}
@@ -1469,7 +1469,7 @@ func (j *Job) Intent() Intent {
 		if i < len(outputNames) {
 			name = outputNames[i]
 		}
-		intent.Targets = append(intent.Targets, outputs[i].intentWithName(name))
+		intent.Destinations = append(intent.Destinations, outputs[i].intentWithName(name))
 	}
 	return intent
 }
@@ -1583,7 +1583,7 @@ func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool
 
 func validateJobOutputBindings(operation string, stream StreamIntent, outputs []destinationSpec, targetNames []string) error {
 	targets := jobOutputTargetSet(outputs, targetNames)
-	for _, target := range stream.Targets {
+	for _, target := range stream.Destinations {
 		if _, ok := targets[target]; ok {
 			continue
 		}
@@ -1679,14 +1679,14 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 			Codec:    stream.selector.Codec,
 			Name:     stream.selector.Name,
 		},
-		Decode:      stream.decode,
-		DecodeCodec: cloneCodecSpec(stream.decodeCodec),
-		Operations:  jobStreamOperations(stream),
-		Transforms:  stream.transformSpecs(),
-		Taps:        append(chainStepTapIntents(stream.steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
-		Encode:      cloneCodecSpec(stream.encode),
-		CodecChange: stream.codecChange,
-		Targets:     destinationTargetNamesWithNames(stream.outputs, stream.outputNames),
+		Decode:       stream.decode,
+		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
+		Operations:   jobStreamOperations(stream),
+		Transforms:   stream.transformSpecs(),
+		Taps:         append(chainStepTapIntents(stream.steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
+		Encode:       cloneCodecSpec(stream.encode),
+		CodecChange:  stream.codecChange,
+		Destinations: destinationTargetNamesWithNames(stream.outputs, stream.outputNames),
 	}
 }
 
@@ -1706,14 +1706,14 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 			Codec:    stream.selector.Codec,
 			Name:     stream.selector.Name,
 		},
-		From:        stream.from,
-		Decode:      stream.decode,
-		DecodeCodec: cloneCodecSpec(stream.decodeCodec),
-		Operations:  streamBuildOperations(stream),
-		Transforms:  cloneTransformSpecs(stream.transforms),
-		Taps:        append(chainStepTapIntents(streamChainSteps(stream), stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
-		Encode:      cloneCodecSpec(stream.encode),
-		Targets:     append([]string(nil), stream.targetNames...),
+		From:         stream.from,
+		Decode:       stream.decode,
+		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
+		Operations:   streamBuildOperations(stream),
+		Transforms:   cloneTransformSpecs(stream.transforms),
+		Taps:         append(chainStepTapIntents(streamChainSteps(stream), stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
+		Encode:       cloneCodecSpec(stream.encode),
+		Destinations: append([]string(nil), stream.targetNames...),
 	}
 }
 
@@ -3791,7 +3791,7 @@ func (j *branchCompositionJob) Intent() Intent {
 		intent.Streams = append(intent.Streams, branchStreamIntent(j.streams[i]))
 	}
 	for i := range j.outputs {
-		intent.Targets = append(intent.Targets, j.outputs[i].output.intentWithName(j.outputs[i].name))
+		intent.Destinations = append(intent.Destinations, j.outputs[i].output.intentWithName(j.outputs[i].name))
 	}
 	return intent
 }
@@ -3842,9 +3842,9 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 			DecodeConfig:      cloneCodecSpec(stream.DecodeCodec),
 			CodecChange:       stream.CodecChange,
 			Encode:            encodeConfigFromSpec(stream.Encode),
-			Labels:            append([]string(nil), stream.Targets...),
+			Labels:            append([]string(nil), stream.Destinations...),
 		}
-		for _, label := range stream.Targets {
+		for _, label := range stream.Destinations {
 			outputBranches[label] = append(outputBranches[label], branchName)
 		}
 		if err := validateBranchTransforms(stream); err != nil {
@@ -3871,15 +3871,15 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		planTargets = append(planTargets, planTarget)
 	}
 	return branchComposePlan{
-		Name:     "branch-composition",
-		Input:    input.input,
-		Branches: branches,
-		Targets:  planTargets,
+		Name:         "branch-composition",
+		Input:        input.input,
+		Branches:     branches,
+		Destinations: planTargets,
 	}, nil
 }
 
 func branchComposePlanReady(plan branchComposePlan) bool {
-	return len(plan.Branches) != 0 || len(plan.Targets) != 0
+	return len(plan.Branches) != 0 || len(plan.Destinations) != 0
 }
 
 func branchChainStepsForStreamBuild(stream streamBuild) ([]chainStep, []chainStep) {
@@ -4075,7 +4075,7 @@ func validateBranchIntentShape(stream StreamIntent, index int) error {
 			return err
 		}
 	}
-	if len(stream.Targets) == 0 {
+	if len(stream.Destinations) == 0 {
 		return branchIntentTargetMissingError(stream)
 	}
 	return validateBranchTargets(stream)
@@ -4109,7 +4109,7 @@ func validateBranchTargetKinds(intent Intent, namedOutputs []namedTargetSpec) er
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
 		hasMuxTarget := false
-		for _, label := range stream.Targets {
+		for _, label := range stream.Destinations {
 			output, ok := outputs[label]
 			if !ok {
 				continue
@@ -4130,7 +4130,7 @@ func validateBranchTargetBindings(intent Intent, namedOutputs []namedTargetSpec)
 	outputs := branchTargetLabelSet(namedOutputs)
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
-		for _, label := range stream.Targets {
+		for _, label := range stream.Destinations {
 			if _, ok := outputs[label]; ok {
 				continue
 			}
@@ -4342,8 +4342,8 @@ func branchIntentNameMissingError(index int, stream StreamIntent) error {
 }
 
 func validateBranchTargets(stream StreamIntent) error {
-	seen := make(map[string]int, len(stream.Targets))
-	for i, target := range stream.Targets {
+	seen := make(map[string]int, len(stream.Destinations))
+	for i, target := range stream.Destinations {
 		if firstIndex, ok := seen[target]; ok {
 			return duplicateBranchDestinationError(stream, target, firstIndex, i)
 		}

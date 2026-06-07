@@ -240,7 +240,7 @@ func TestRecordRecipeCopyToTypedTargetRuns(t *testing.T) {
 	).Copy().To(File("recording.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(runtime)
 
 	intent := job.Intent()
-	if len(intent.Targets) != 1 || intent.Targets[0].Name != "recording.ogg" {
+	if len(intent.Destinations) != 1 || intent.Destinations[0].Name != "recording.ogg" {
 		t.Fatalf("intent: %+v", intent)
 	}
 	planned, err := job.Describe()
@@ -905,7 +905,7 @@ func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
 		FileInput("input.ogg", strings.NewReader("")),
 	).Copy().To(File("", io.Discard, MIME("audio/ogg"))).UseRuntime(runtime)
 	intent := job.Intent()
-	if len(intent.Targets) != 1 || intent.Targets[0].MIMEType != "audio/ogg" {
+	if len(intent.Destinations) != 1 || intent.Destinations[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
 	}
 
@@ -1242,10 +1242,10 @@ func TestStreamRecipeEncodeToTypedTargetRuns(t *testing.T) {
 
 	intent := job.Intent()
 	if len(intent.Streams) != 1 ||
-		len(intent.Streams[0].Targets) != 1 ||
-		intent.Streams[0].Targets[0] != "archive.ogg" ||
-		len(intent.Targets) != 1 ||
-		intent.Targets[0].Name != "archive.ogg" {
+		len(intent.Streams[0].Destinations) != 1 ||
+		intent.Streams[0].Destinations[0] != "archive.ogg" ||
+		len(intent.Destinations) != 1 ||
+		intent.Destinations[0].Name != "archive.ogg" {
 		t.Fatalf("intent: %+v", intent)
 	}
 	planned, err := job.Describe()

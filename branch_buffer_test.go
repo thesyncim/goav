@@ -95,4 +95,3 @@ func TestBranchBufferIsNormalBranchAPI(t *testing.T) {
 		t.Fatalf("Branch.Buffer must not expose pipeline.BufferPolicy")
 	}
 }
-

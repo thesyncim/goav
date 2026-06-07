@@ -706,7 +706,7 @@ func prepareBranchComposePlan(plan branchComposePlan) ([]branchComposeRoute, []b
 	if len(plan.Branches) == 0 {
 		return nil, nil, branchComposePlanEmptyError("branches")
 	}
-	if len(plan.Targets) == 0 {
+	if len(plan.Destinations) == 0 {
 		return nil, nil, branchComposePlanEmptyError("targets")
 	}
 	branches, err := branchComposeRoutes(plan)
@@ -1251,9 +1251,9 @@ func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, ope
 }
 
 func branchComposeTargets(plan branchComposePlan, branches []branchComposeRoute) ([]branchComposeTargetRoute, error) {
-	outputs := make([]branchComposeTargetRoute, len(plan.Targets))
-	for i := range plan.Targets {
-		output := plan.Targets[i]
+	outputs := make([]branchComposeTargetRoute, len(plan.Destinations))
+	for i := range plan.Destinations {
+		output := plan.Destinations[i]
 		if output.Sink != nil && branchComposeTargetHasMuxDestination(output) {
 			return nil, branchComposeTargetDestinationInvalidError(output, "target cannot configure both a sink and a mux destination")
 		}

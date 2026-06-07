@@ -100,7 +100,7 @@ func buildMediaPlan(state *recipeCompileState) mediaPlan {
 	}
 	plan.Inputs = planInputs(intent.Inputs)
 	plan.Streams = planStreams(intent.Streams)
-	plan.Outputs = planOutputs(intent.Targets, state.outputFormatMap())
+	plan.Outputs = planOutputs(intent.Destinations, state.outputFormatMap())
 	if state.branchCompositionPresent && branchComposePlanReady(state.plan) && branchComposePlanHasOperations(state.plan) {
 		plan.Streams = planStreamsFromBranchComposePlan(state.plan)
 		plan.Branches, plan.Decisions = planBranchesFromBranchComposePlan(state, plan.Outputs)
@@ -150,7 +150,7 @@ func planStreamsFromBranchComposePlan(plan branchComposePlan) []planStream {
 	return out
 }
 
-func planOutputs(outputs []TargetIntent, formats map[string]av.FormatID) []planOutput {
+func planOutputs(outputs []DestinationIntent, formats map[string]av.FormatID) []planOutput {
 	out := make([]planOutput, 0, len(outputs))
 	for i := range outputs {
 		output := outputs[i]
@@ -200,7 +200,7 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 			Stream:     stream.Select,
 			Shape:      shape,
 			Operations: operations,
-			Outputs:    planBranchTargets(stream.Targets, outputs),
+			Outputs:    planBranchTargets(stream.Destinations, outputs),
 		})
 		decisions = append(decisions, branchDecisions...)
 	}
@@ -228,7 +228,7 @@ func planBranchesFromBranchComposePlan(state *recipeCompileState, outputs []plan
 			Stream:     stream.Select,
 			Shape:      shape,
 			Operations: operations,
-			Outputs:    planBranchTargets(stream.Targets, outputs),
+			Outputs:    planBranchTargets(stream.Destinations, outputs),
 		})
 		decisions = append(decisions, branchDecisions...)
 	}
@@ -237,13 +237,13 @@ func planBranchesFromBranchComposePlan(state *recipeCompileState, outputs []plan
 
 func streamIntentFromBranchComposeBranch(branch branchComposeBranch) StreamIntent {
 	stream := StreamIntent{
-		Name:        branch.Name,
-		Select:      streamSelectFromAV(branch.Selector),
-		Decode:      branch.Decode,
-		DecodeCodec: cloneCodecSpec(branch.DecodeConfig),
-		Operations:  branchComposeBranchOperations(branch),
-		CodecChange: branch.CodecChange,
-		Targets:     append([]string(nil), branch.Labels...),
+		Name:         branch.Name,
+		Select:       streamSelectFromAV(branch.Selector),
+		Decode:       branch.Decode,
+		DecodeCodec:  cloneCodecSpec(branch.DecodeConfig),
+		Operations:   branchComposeBranchOperations(branch),
+		CodecChange:  branch.CodecChange,
+		Destinations: append([]string(nil), branch.Labels...),
 	}
 	if branch.Copy {
 		stream.Encode = Copy()

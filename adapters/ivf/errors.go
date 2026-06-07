@@ -3,7 +3,7 @@ package ivf
 import "errors"
 
 var (
-	ErrInvalidHeader      = errors.New("ivf: invalid header")
+	ErrInvalidHeader     = errors.New("ivf: invalid header")
 	ErrNilReader         = errors.New("ivf: nil reader")
 	ErrNilWriter         = errors.New("ivf: nil writer")
 	ErrPayloadTooLarge   = errors.New("ivf: payload too large")
