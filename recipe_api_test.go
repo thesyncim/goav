@@ -1758,7 +1758,8 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"Simple high-level API | recipes, chains",
 		"surface is small: `From`, chains",
 		"`Target`, and `Chain` composition",
-		"`File`, `URIOut`, and `Sink` target refs",
+		"direct `File`/`URIOut`/`Sink` target refs",
+		"named `Target` refs for shared mux/sink groups",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("architecture docs should keep current composition vocabulary %q", required)
@@ -2227,6 +2228,31 @@ func TestToAcceptsTargetRefSlices(t *testing.T) {
 		intent.Targets[0].Name != "archive" ||
 		intent.Targets[1].Name != "stats" {
 		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestTargetBindsOnlyDirectTargetRefs(t *testing.T) {
+	targetRefType := reflect.TypeOf((*goav.TargetRef)(nil)).Elem()
+	directTargetType := reflect.TypeOf((*goav.DirectTargetRef)(nil)).Elem()
+	if !directTargetType.Implements(targetRefType) {
+		t.Fatalf("DirectTargetRef should satisfy TargetRef")
+	}
+	targetFn := reflect.TypeOf(goav.Target)
+	if targetFn.NumIn() != 2 || targetFn.In(1) != directTargetType {
+		t.Fatalf("Target second parameter = %v, want DirectTargetRef", targetFn.In(1))
+	}
+	if targetFn.NumOut() != 1 || targetFn.Out(0) != targetRefType {
+		t.Fatalf("Target return = %v, want TargetRef", targetFn.Out(0))
+	}
+	for name, fn := range map[string]any{
+		"File":   goav.File,
+		"URIOut": goav.URIOut,
+		"Sink":   goav.Sink,
+	} {
+		fnType := reflect.TypeOf(fn)
+		if fnType.NumOut() != 1 || fnType.Out(0) != directTargetType {
+			t.Fatalf("%s return = %v, want DirectTargetRef", name, fnType.Out(0))
+		}
 	}
 }
 

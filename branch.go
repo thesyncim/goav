@@ -13,13 +13,20 @@ var targetSpecSeq atomic.Uint64
 // TargetRef is accepted by To. Use Target for named mux/sink groups, or pass
 // File, URIOut, or Sink directly for one-off targets.
 type TargetRef interface {
-	// Name overrides the target name used for diagnostics and graph nodes.
-	Name(string) TargetRef
-	// MIME sets the MIME type used for format detection.
-	MIME(string) TargetRef
-	// Format sets the container format explicitly.
-	Format(av.FormatID) TargetRef
 	destination() destinationBinding
+}
+
+// DirectTargetRef is a concrete file, URI, writer, or sink target before it is
+// optionally wrapped by Target.
+type DirectTargetRef interface {
+	TargetRef
+	// Name overrides the target name used for diagnostics and graph nodes.
+	Name(string) DirectTargetRef
+	// MIME sets the MIME type used for format detection.
+	MIME(string) DirectTargetRef
+	// Format sets the container format explicitly.
+	Format(av.FormatID) DirectTargetRef
+	directTarget() destinationSpec
 }
 
 type destinationBinding struct {
@@ -37,7 +44,7 @@ type targetSpec struct {
 }
 
 // Target binds a stable target name to a concrete target.
-func Target(name string, dest TargetRef) TargetRef {
+func Target(name string, dest DirectTargetRef) TargetRef {
 	if dest == nil {
 		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target ref is nil")}
 	}
@@ -63,24 +70,12 @@ func (t targetSpec) destination() destinationBinding {
 	return destinationBinding{target: t, hasTarget: true}
 }
 
-func (t targetSpec) Name(name string) TargetRef {
-	t.name = name
-	t.dest = t.dest.withName(firstNonEmpty(t.dest.name, name))
-	return t
-}
-
-func (t targetSpec) MIME(mimeType string) TargetRef {
-	t.dest = t.dest.withMIME(mimeType)
-	return t
-}
-
-func (t targetSpec) Format(format av.FormatID) TargetRef {
-	t.dest = t.dest.withFormat(format)
-	return t
-}
-
 func (s destinationSpec) destination() destinationBinding {
 	return destinationBinding{dest: s, hasDirect: true}
+}
+
+func (s destinationSpec) directTarget() destinationSpec {
+	return s
 }
 
 type BranchSpec struct {

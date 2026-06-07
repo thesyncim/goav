@@ -818,8 +818,8 @@ type destinationSpec struct {
 	err            error
 }
 
-// File creates a writer-backed file target.
-func File(name string, writer io.Writer) TargetRef {
+// File creates a writer-backed direct target.
+func File(name string, writer io.Writer) DirectTargetRef {
 	return fileDestination(name, writer)
 }
 
@@ -834,8 +834,8 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 	}
 }
 
-// URIOut creates a URI target opened by a registered format adapter.
-func URIOut(uri string) TargetRef {
+// URIOut creates a direct URI target opened by a registered format adapter.
+func URIOut(uri string) DirectTargetRef {
 	return uriDestination(uri)
 }
 
@@ -849,8 +849,8 @@ func uriDestination(uri string) destinationSpec {
 	}
 }
 
-// Sink creates a sink target for decoded frames or packets.
-func Sink(sink pipeline.Sink) TargetRef {
+// Sink creates a direct sink target for decoded frames or packets.
+func Sink(sink pipeline.Sink) DirectTargetRef {
 	return sinkDestination(sink)
 }
 
@@ -867,7 +867,7 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 
 // Name overrides the target name used for diagnostics and mux graph nodes.
 // Sink graph nodes use the wrapped sink's Name.
-func (s destinationSpec) Name(name string) TargetRef {
+func (s destinationSpec) Name(name string) DirectTargetRef {
 	return s.withName(name)
 }
 
@@ -880,7 +880,7 @@ func (s destinationSpec) withName(name string) destinationSpec {
 }
 
 // MIME sets the target MIME type used for format detection.
-func (s destinationSpec) MIME(mimeType string) TargetRef {
+func (s destinationSpec) MIME(mimeType string) DirectTargetRef {
 	return s.withMIME(mimeType)
 }
 
@@ -890,7 +890,7 @@ func (s destinationSpec) withMIME(mimeType string) destinationSpec {
 }
 
 // Format sets the target container format explicitly.
-func (s destinationSpec) Format(format av.FormatID) TargetRef {
+func (s destinationSpec) Format(format av.FormatID) DirectTargetRef {
 	return s.withFormat(format)
 }
 
