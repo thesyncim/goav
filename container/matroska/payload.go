@@ -144,6 +144,31 @@ func readBinaryPayload(r io.Reader, size uint64) ([]byte, error) {
 	return payload, nil
 }
 
+func readUnknownElementPayload(r *ebml.Reader, header ebml.Header) (UnknownElement, error) {
+	if header.Size.Unknown {
+		return UnknownElement{}, ErrUnsupportedElement
+	}
+	if header.Size.Value > uint64(^uint(0)>>1) ||
+		uint64(header.HeaderSize) > uint64(^uint(0)>>1)-header.Size.Value {
+		return UnknownElement{}, ErrInvalidData
+	}
+	raw := make([]byte, int(uint64(header.HeaderSize)+header.Size.Value))
+	idWidth, err := ebml.EncodeID(raw, header.ID)
+	if err != nil {
+		return UnknownElement{}, err
+	}
+	if idWidth+header.Size.Width != header.HeaderSize {
+		return UnknownElement{}, ErrInvalidData
+	}
+	if _, err := ebml.EncodeSizeVINTWidth(raw[idWidth:], header.Size.Value, header.Size.Width); err != nil {
+		return UnknownElement{}, err
+	}
+	if err := r.ReadFull(raw[header.HeaderSize:]); err != nil {
+		return UnknownElement{}, err
+	}
+	return UnknownElement{ID: uint64(header.ID), Raw: raw}, nil
+}
+
 func readElementIDPayload(r io.Reader, size uint64) (ebml.ID, error) {
 	if size == 0 || size > ebml.MaxIDWidth {
 		return 0, ErrInvalidData

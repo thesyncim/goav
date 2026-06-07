@@ -375,6 +375,11 @@ type SegmentInfo struct {
 	WritingApp      string
 }
 
+type UnknownElement struct {
+	ID  uint64
+	Raw []byte
+}
+
 type Attachment struct {
 	UID         uint64
 	Filename    string
@@ -463,6 +468,7 @@ type MuxerOptions struct {
 	Attachments                []Attachment
 	Chapters                   []ChapterEdition
 	Tags                       []Tag
+	UnknownSegmentElements     []UnknownElement
 	TimecodeScaleNS            int64
 	ClusterMaxDurationNS       int64
 	Streaming                  bool

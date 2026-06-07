@@ -28,6 +28,7 @@ type Demuxer struct {
 	attachments       []Attachment
 	chapters          []ChapterEdition
 	tags              []Tag
+	unknownSegments   []UnknownElement
 	cues              []CuePoint
 	cuesSorted        bool
 	seekEntries       []SeekEntry
@@ -119,6 +120,7 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.attachments = d.attachments[:0]
 	d.chapters = d.chapters[:0]
 	d.tags = d.tags[:0]
+	d.unknownSegments = d.unknownSegments[:0]
 	d.cues = d.cues[:0]
 	d.cuesSorted = true
 	d.seekEntries = d.seekEntries[:0]
@@ -757,6 +759,20 @@ func cloneTags(tags []Tag) []Tag {
 	return out
 }
 
+func cloneUnknownElements(elements []UnknownElement) []UnknownElement {
+	if len(elements) == 0 {
+		return nil
+	}
+	out := make([]UnknownElement, len(elements))
+	for i := range elements {
+		out[i] = elements[i]
+		if elements[i].Raw != nil {
+			out[i].Raw = append([]byte(nil), elements[i].Raw...)
+		}
+	}
+	return out
+}
+
 func cloneCues(cues []CuePoint) []CuePoint {
 	if len(cues) == 0 {
 		return nil
@@ -855,6 +871,13 @@ func (d *Demuxer) Tags() []Tag {
 		return nil
 	}
 	return cloneTags(d.tags)
+}
+
+func (d *Demuxer) UnknownSegmentElements() []UnknownElement {
+	if d == nil || len(d.unknownSegments) == 0 {
+		return nil
+	}
+	return cloneUnknownElements(d.unknownSegments)
 }
 
 func (d *Demuxer) Cues() []CuePoint {
@@ -969,6 +992,18 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 	}
 }
 
+func (d *Demuxer) readUnknownSegmentElement(header ebml.Header) error {
+	element, err := readUnknownElementPayload(d.reader, header)
+	if err != nil {
+		return err
+	}
+	if isKnownSegmentElement(ebml.ID(element.ID)) {
+		return ErrInvalidData
+	}
+	d.unknownSegments = append(d.unknownSegments, element)
+	return nil
+}
+
 func (d *Demuxer) nextPacketHeader() (ebml.Header, error) {
 	if d.pendingHeaderSet {
 		header := d.pendingHeader
@@ -1005,7 +1040,7 @@ func (d *Demuxer) readPreamble() error {
 				return err
 			}
 		default:
-			if err := skipElement(d.reader, header); err != nil {
+			if err := d.readUnknownSegmentElement(header); err != nil {
 				return err
 			}
 		}
@@ -1079,7 +1114,7 @@ func (d *Demuxer) readSegmentHeaders() error {
 				return err
 			}
 		default:
-			if err := skipElement(d.reader, header); err != nil {
+			if err := d.readUnknownSegmentElement(header); err != nil {
 				return err
 			}
 		}

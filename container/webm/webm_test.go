@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/container/ebml"
 	"github.com/thesyncim/goav/container/matroska"
 	"github.com/thesyncim/goav/format"
 )
@@ -192,6 +193,43 @@ func TestDemuxerReadCuedPacketAtTime(t *testing.T) {
 	}
 	if got.TrackID != trackID || got.TimeNS != packets[2].TimeNS || !bytes.Equal(got.Data, packets[2].Data) {
 		t.Fatalf("cued track packet = %+v data=%v, want track %d packet %+v data=%v", got, got.Data, trackID, packets[2], packets[2].Data)
+	}
+}
+
+func TestMuxerDemuxerPreservesUnknownSegmentElements(t *testing.T) {
+	unknownID := ebml.ID(0x4ffc)
+	raw := unknownWebMElementBytes(t, unknownID, []byte{0x44, 0x55})
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{
+		UnknownSegmentElements: []UnknownElement{{Raw: raw}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(buffer.Bytes(), raw) {
+		t.Fatalf("muxed data does not contain raw unknown element %x", raw)
+	}
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	elements := demuxer.UnknownSegmentElements()
+	if len(elements) != 1 || elements[0].ID != uint64(unknownID) || !bytes.Equal(elements[0].Raw, raw) {
+		t.Fatalf("unknown elements = %+v, want id=0x%x raw=%x", elements, uint64(unknownID), raw)
 	}
 }
 
@@ -1620,4 +1658,14 @@ func benchmarkWebMCorpusCapacity(cycles int, payloads benchmarkWebMPayloadSet) i
 	payloadBytes := payloads.totalBytes * int64(cycles)
 	metadataBytes := int64(cycles*benchmarkWebMTrackCount*128 + 64*1024)
 	return int(payloadBytes + metadataBytes)
+}
+
+func unknownWebMElementBytes(tb testing.TB, id ebml.ID, payload []byte) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	writer := ebml.NewWriter(&buffer)
+	if err := writer.WriteElement(id, payload); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
 }

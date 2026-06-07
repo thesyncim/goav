@@ -39,6 +39,7 @@ type CuePoint = matroska.CuePoint
 type CueTrackPosition = matroska.CueTrackPosition
 type CueReference = matroska.CueReference
 type SeekEntry = matroska.SeekEntry
+type UnknownElement = matroska.UnknownElement
 
 type LacingMode = matroska.LacingMode
 
@@ -97,6 +98,7 @@ type MuxerOptions struct {
 	ClusterMaxDurationNS       int64
 	Streaming                  bool
 	CuePolicy                  CuePolicy
+	UnknownSegmentElements     []UnknownElement
 	ContentEncryptionKeys      []ContentEncryptionKey
 	ContentEncryptionInitialIV []byte
 }
@@ -115,6 +117,7 @@ func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 		ClusterMaxDurationNS:       opts.ClusterMaxDurationNS,
 		Streaming:                  opts.Streaming,
 		CuePolicy:                  opts.CuePolicy,
+		UnknownSegmentElements:     opts.UnknownSegmentElements,
 		ContentEncryptionKeys:      opts.ContentEncryptionKeys,
 		ContentEncryptionInitialIV: opts.ContentEncryptionInitialIV,
 	}

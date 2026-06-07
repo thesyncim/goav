@@ -133,6 +133,141 @@ func TestDemuxerReadsSegmentInfoDurationWithLateTimestampScale(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesUnknownSegmentElements(t *testing.T) {
+	unknownID := ebml.ID(0x4fff)
+	raw := unknownElementBytes(t, unknownID, []byte{0xaa, 0xbb, 0xcc})
+	ws := &memoryWriteSeeker{}
+	opts := MuxerOptions{
+		UnknownSegmentElements: []UnknownElement{{Raw: append([]byte(nil), raw...)}},
+	}
+	muxer, err := NewMuxer(ws, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.UnknownSegmentElements[0].Raw[0] = 0
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(ws.bytes, raw) {
+		t.Fatalf("muxed data does not contain raw unknown element %x", raw)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	elements := demuxer.UnknownSegmentElements()
+	if len(elements) != 1 || elements[0].ID != uint64(unknownID) || !bytes.Equal(elements[0].Raw, raw) {
+		t.Fatalf("unknown elements = %+v, want id=0x%x raw=%x", elements, uint64(unknownID), raw)
+	}
+	elements[0].Raw[0] = 0
+	fresh := demuxer.UnknownSegmentElements()
+	if !bytes.Equal(fresh[0].Raw, raw) {
+		t.Fatalf("unknown element alias was not protected: %x", fresh[0].Raw)
+	}
+}
+
+func TestDemuxerRemuxesUnknownSegmentElements(t *testing.T) {
+	unknownID := ebml.ID(0x4ffe)
+	raw := unknownElementBytes(t, unknownID, []byte{0x10, 0x20, 0x30, 0x40})
+	var source bytes.Buffer
+	sourceMuxer, err := NewMuxer(&source, MuxerOptions{UnknownSegmentElements: []UnknownElement{{Raw: raw}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := sourceMuxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}}
+	if err := sourceMuxer.WritePacket(packet); err != nil {
+		t.Fatal(err)
+	}
+	if err := sourceMuxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(source.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var remuxed bytes.Buffer
+	remuxer, err := NewMuxer(&remuxed, MuxerOptions{UnknownSegmentElements: demuxer.UnknownSegmentElements()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, track := range demuxer.Tracks() {
+		if _, err := remuxer.AddTrack(track); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if err := remuxer.WritePacket(got); err != nil {
+		t.Fatal(err)
+	}
+	if err := remuxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(remuxed.Bytes(), raw) {
+		t.Fatalf("remuxed data does not contain raw unknown element %x", raw)
+	}
+	redemuxer, err := NewDemuxer(bytes.NewReader(remuxed.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	elements := redemuxer.UnknownSegmentElements()
+	if len(elements) != 1 || elements[0].ID != uint64(unknownID) || !bytes.Equal(elements[0].Raw, raw) {
+		t.Fatalf("remuxed unknown elements = %+v, want id=0x%x raw=%x", elements, uint64(unknownID), raw)
+	}
+}
+
+func TestMuxerRejectsInvalidUnknownSegmentElements(t *testing.T) {
+	unknownID := ebml.ID(0x4ffd)
+	valid := unknownElementBytes(t, unknownID, []byte{1})
+	known := unknownElementBytes(t, idInfo, []byte{})
+	trailing := append(append([]byte(nil), valid...), 0)
+	var unknownSize bytes.Buffer
+	unknownSizeWriter := ebml.NewWriter(&unknownSize)
+	if err := unknownSizeWriter.WriteUnknownHeader(unknownID, 1); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name    string
+		element UnknownElement
+	}{
+		{name: "empty", element: UnknownElement{}},
+		{name: "known segment id", element: UnknownElement{Raw: known}},
+		{name: "mismatched id", element: UnknownElement{ID: uint64(unknownID) + 1, Raw: valid}},
+		{name: "trailing bytes", element: UnknownElement{Raw: trailing}},
+		{name: "unknown size", element: UnknownElement{Raw: unknownSize.Bytes()}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewMuxer(discardWriter{}, MuxerOptions{UnknownSegmentElements: []UnknownElement{tt.element}}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
 func TestMuxerDemuxerPreservesAttachments(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	opts := MuxerOptions{
@@ -11850,6 +11985,16 @@ func readDiscardPaddingFromBlockGroup(tb testing.TB, payload []byte) (int64, boo
 		}
 	}
 	return 0, false
+}
+
+func unknownElementBytes(tb testing.TB, id ebml.ID, payload []byte) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	writer := ebml.NewWriter(&buffer)
+	if err := writer.WriteElement(id, payload); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
 }
 
 type discardWriter struct{}

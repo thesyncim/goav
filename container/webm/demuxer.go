@@ -54,6 +54,13 @@ func (d *Demuxer) SeekEntries() []SeekEntry {
 	return d.inner.SeekEntries()
 }
 
+func (d *Demuxer) UnknownSegmentElements() []UnknownElement {
+	if d == nil || d.inner == nil {
+		return nil
+	}
+	return d.inner.UnknownSegmentElements()
+}
+
 func (d *Demuxer) ReadPacket(dst *Packet) error {
 	return d.inner.ReadPacket(dst)
 }

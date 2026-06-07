@@ -82,6 +82,11 @@ func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
 		return nil, err
 	}
 	opts.Tags = tags
+	unknownSegments, err := normalizeUnknownElements(opts.UnknownSegmentElements)
+	if err != nil {
+		return nil, err
+	}
+	opts.UnknownSegmentElements = unknownSegments
 	m := &Muxer{}
 	m.init(w, opts)
 	return m, nil
@@ -95,6 +100,7 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.options.Attachments = cloneAttachments(m.options.Attachments)
 	m.options.Chapters = cloneChapters(m.options.Chapters)
 	m.options.Tags = cloneTags(m.options.Tags)
+	m.options.UnknownSegmentElements = cloneUnknownElements(m.options.UnknownSegmentElements)
 	m.options.ContentEncryptionKeys = cloneContentEncryptionKeys(m.options.ContentEncryptionKeys)
 	if m.options.ContentEncryptionInitialIV != nil {
 		m.options.ContentEncryptionInitialIV = append([]byte(nil), m.options.ContentEncryptionInitialIV...)
@@ -571,6 +577,9 @@ func (m *Muxer) writeHeader() error {
 			return err
 		}
 	}
+	if err := m.writeUnknownSegmentElements(); err != nil {
+		return err
+	}
 	m.headerWritten = true
 	return nil
 }
@@ -928,6 +937,54 @@ func normalizeTags(tags []Tag) ([]Tag, error) {
 	return out, nil
 }
 
+func normalizeUnknownElements(elements []UnknownElement) ([]UnknownElement, error) {
+	if len(elements) == 0 {
+		return nil, nil
+	}
+	out := cloneUnknownElements(elements)
+	for i := range out {
+		id, err := validateUnknownElement(out[i])
+		if err != nil {
+			return nil, err
+		}
+		out[i].ID = uint64(id)
+	}
+	return out, nil
+}
+
+func validateUnknownElement(element UnknownElement) (ebml.ID, error) {
+	if len(element.Raw) == 0 {
+		return 0, ErrInvalidData
+	}
+	reader := ebml.NewReader(bytes.NewReader(element.Raw), ebml.ReaderOptions{})
+	header, err := reader.ReadHeader()
+	if err != nil {
+		return 0, err
+	}
+	if header.Size.Unknown {
+		return 0, ErrInvalidData
+	}
+	if element.ID != 0 && element.ID != uint64(header.ID) {
+		return 0, ErrInvalidData
+	}
+	if isKnownSegmentElement(header.ID) {
+		return 0, ErrInvalidData
+	}
+	if header.DataOffset+int64(header.Size.Value) != int64(len(element.Raw)) {
+		return 0, ErrInvalidData
+	}
+	return header.ID, nil
+}
+
+func isKnownSegmentElement(id ebml.ID) bool {
+	switch id {
+	case idSeekHead, idInfo, idTracks, idCluster, idCues, idAttachments, idChapters, idTags, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
 func validateTagTarget(target TagTarget) error {
 	if target.TypeValue > uint64(^uint32(0)) {
 		return ErrInvalidData
@@ -1103,6 +1160,15 @@ func (m *Muxer) writeTags() error {
 		}
 	}
 	return m.ebml.WriteElement(idTags, payload.Bytes())
+}
+
+func (m *Muxer) writeUnknownSegmentElements() error {
+	for i := range m.options.UnknownSegmentElements {
+		if _, err := m.ebml.Write(m.options.UnknownSegmentElements[i].Raw); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func writeTag(w *ebml.Writer, tag Tag) error {

@@ -115,6 +115,9 @@ Current milestone:
 - EBML CRC-32 validation for finite metadata masters, including top-level
   SeekHead, Info, Tracks, Cues, Attachments and nested track, video, audio,
   colour, projection, cue, seek, and attachment masters.
+- Finite unknown Segment-level elements are preserved as raw EBML bytes through
+  `UnknownSegmentElements` on muxer options and demuxers, allowing remuxers to
+  keep vendor/application Segment metadata the package does not understand.
 - Format registry adapters for `av.Stream` and `av.Packet`.
 - Caller-owned packet data for demuxing.
 - Demux validation rejects on-disk track, cue, and block track numbers that
@@ -133,7 +136,8 @@ These are intentionally not in the first milestone:
 
 - Frame-exact random access for uncued packets or cue points that do not have
   exact `CueRelativePosition` or `CueBlockNumber` entries.
-- Unknown-element preservation.
+- Nested unknown-element preservation inside known Matroska masters and unknown
+  Cluster child preservation.
 - Full codec-private generation and parsers for every codec family.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
 
