@@ -1,39 +1,73 @@
 package goav
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
 
 var targetSpecSeq atomic.Uint64
 
-// TargetRef is accepted by To. Use Target for named mux/sink groups, or pass
-// File, URIOut, or Sink directly for one-off targets.
-type TargetRef interface {
-	destination() destinationBinding
+// Destination is a concrete media target such as a file, URI, object writer, or
+// media sink. Applications can implement this interface in their own packages.
+type Destination interface {
+	Name() string
+	Capabilities() DestinationCaps
+	Open(context.Context, TargetInfo) (DestinationWriter, error)
 }
 
-// DirectTargetRef is a concrete file, URI, writer, or sink target before it is
-// optionally wrapped by Target.
-type DirectTargetRef interface {
-	TargetRef
-	// Name overrides the target name used for diagnostics and graph nodes.
-	Name(string) DirectTargetRef
-	// MIME sets the MIME type used for format detection.
-	MIME(string) DirectTargetRef
-	// Format sets the container format explicitly.
-	Format(av.FormatID) DirectTargetRef
-	directTarget() destinationSpec
+// DestinationWriter is the byte writer returned by custom byte destinations.
+type DestinationWriter interface {
+	io.Writer
+	Close() error
 }
+
+// TransactionalDestinationWriter may be returned by destinations that need an
+// explicit upload commit or abort boundary.
+type TransactionalDestinationWriter interface {
+	DestinationWriter
+	Commit(context.Context) error
+	Abort(context.Context) error
+}
+
+type DestinationCaps struct {
+	ByteStream bool
+	Seekable   bool
+	Realtime   bool
+	Protocol   av.ProtocolID
+	Formats    []av.FormatID
+	MIMETypes  []string
+}
+
+type TargetInfo struct {
+	Name     string
+	Format   av.FormatID
+	MIMEType string
+	Streams  []av.Stream
+	Metadata av.Metadata
+	Realtime bool
+}
+
+type DestinationOption func(*destinationSpec)
+
+type WriterOpenFunc func(context.Context, TargetInfo) (io.WriteCloser, error)
 
 type destinationBinding struct {
 	target    targetSpec
 	dest      destinationSpec
 	hasTarget bool
 	hasDirect bool
+}
+
+type ConfigurableDestination interface {
+	Destination
+	MIME(string) ConfigurableDestination
+	Format(av.FormatID) ConfigurableDestination
 }
 
 type targetSpec struct {
@@ -43,16 +77,19 @@ type targetSpec struct {
 	err  error
 }
 
-// Target binds a stable target name to a concrete target.
-func Target(name string, dest DirectTargetRef) TargetRef {
+// Target binds a stable target name to a destination.
+func Target(name string, dest Destination) Destination {
 	if dest == nil {
-		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target ref is nil")}
+		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "destination is nil")}
 	}
-	binding := dest.destination()
-	if !binding.hasDirect {
-		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target ref must be goav.File, goav.URIOut, or goav.Sink")}
+	if _, ok := dest.(targetSpec); ok {
+		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target cannot wrap another goav.Target")}
 	}
-	return newTargetSpec(name, binding.dest)
+	destination, err := destinationSpecFromDestination(dest)
+	if err != nil {
+		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), err.Error())}
+	}
+	return newTargetSpec(name, destination)
 }
 
 func newTargetSpec(name string, dest destinationSpec) targetSpec {
@@ -70,12 +107,76 @@ func (t targetSpec) destination() destinationBinding {
 	return destinationBinding{target: t, hasTarget: true}
 }
 
-func (s destinationSpec) destination() destinationBinding {
-	return destinationBinding{dest: s, hasDirect: true}
+func (t targetSpec) Name() string {
+	return t.name
 }
 
-func (s destinationSpec) directTarget() destinationSpec {
-	return s
+func (t targetSpec) Capabilities() DestinationCaps {
+	return t.dest.Capabilities()
+}
+
+func (t targetSpec) Open(ctx context.Context, info TargetInfo) (DestinationWriter, error) {
+	if info.Name == "" {
+		info.Name = t.name
+	}
+	return t.dest.Open(ctx, info)
+}
+
+func destinationBindingFromDestination(dest Destination) (destinationBinding, error) {
+	if dest == nil {
+		return destinationBinding{}, fmt.Errorf("destination is nil")
+	}
+	if target, ok := dest.(targetSpec); ok {
+		return destinationBinding{target: target, hasTarget: true}, nil
+	}
+	direct, err := destinationSpecFromDestination(dest)
+	if err != nil {
+		return destinationBinding{}, err
+	}
+	return destinationBinding{dest: direct, hasDirect: true}, nil
+}
+
+func destinationSpecFromDestination(dest Destination) (destinationSpec, error) {
+	switch value := dest.(type) {
+	case destinationSpec:
+		return cloneDestinationSpec(value), nil
+	case targetSpec:
+		return destinationSpec{}, fmt.Errorf("target cannot be used as a direct destination")
+	default:
+		name := dest.Name()
+		caps := dest.Capabilities()
+		spec := destinationSpec{
+			custom: dest,
+			name:   name,
+			output: format.Output{
+				Name:     name,
+				URI:      name,
+				Protocol: caps.Protocol,
+				Realtime: caps.Realtime,
+			},
+		}
+		if len(caps.Formats) != 0 {
+			spec.format = caps.Formats[0]
+		}
+		if len(caps.MIMETypes) != 0 {
+			spec.output.MIMEType = caps.MIMETypes[0]
+		}
+		return spec, nil
+	}
+}
+
+func destinationSpecEmpty(dest destinationSpec) bool {
+	return dest.sink == nil &&
+		dest.custom == nil &&
+		dest.output.Name == "" &&
+		dest.output.URI == "" &&
+		dest.output.Protocol == "" &&
+		dest.output.MIMEType == "" &&
+		dest.output.Writer == nil &&
+		dest.format == "" &&
+		dest.resolvedFormat == "" &&
+		dest.name == "" &&
+		dest.err == nil
 }
 
 type BranchSpec struct {
@@ -338,7 +439,7 @@ func (b *branchBuilder) VP9(bitrate int, options ...codecOption) *branchBuilder 
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *branchBuilder) To(targets ...TargetRef) BranchSpec {
+func (b *branchBuilder) To(targets ...Destination) BranchSpec {
 	if b == nil {
 		return BranchSpec{err: nilBranchError()}
 	}
@@ -350,10 +451,15 @@ func (b *branchBuilder) To(targets ...TargetRef) BranchSpec {
 	for i := range targets {
 		target := targets[i]
 		if target == nil {
-			spec.err = branchDestinationInvalidError(spec.name, "branch target ref is nil")
+			spec.err = branchDestinationInvalidError(spec.name, "branch destination is nil")
 			return spec
 		}
-		if err := appendDestination(&spec, target.destination(), i); err != nil {
+		binding, err := destinationBindingFromDestination(target)
+		if err != nil {
+			spec.err = branchDestinationInvalidError(spec.name, err.Error())
+			return spec
+		}
+		if err := appendDestination(&spec, binding, i); err != nil {
 			spec.err = err
 			return spec
 		}
@@ -404,7 +510,7 @@ func appendDestination(spec *BranchSpec, destination destinationBinding, index i
 		spec.labels = append(spec.labels, target.name)
 		return nil
 	default:
-		return branchDestinationInvalidError(spec.name, "unsupported branch target ref")
+		return branchDestinationInvalidError(spec.name, "unsupported branch destination")
 	}
 }
 
@@ -527,7 +633,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 			return transcodeEmptyOutputLabelError(streamBuild{name: spec.name, selector: av.StreamSelector{Type: selected}}, i)
 		}
 		if firstIndex, ok := seen[label]; ok {
-			return duplicateBranchTargetRefError(
+			return duplicateBranchDestinationError(
 				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Targets: spec.labels},
 				label,
 				firstIndex,

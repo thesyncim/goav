@@ -812,14 +812,15 @@ func (s InputSpec) selector(media av.MediaType) av.StreamSelector {
 type destinationSpec struct {
 	output         format.Output
 	sink           pipeline.Sink
+	custom         Destination
 	format         av.FormatID
 	resolvedFormat av.FormatID
 	name           string
 	err            error
 }
 
-// File creates a writer-backed direct target.
-func File(name string, writer io.Writer) DirectTargetRef {
+// File creates a writer-backed destination.
+func File(name string, writer io.Writer) ConfigurableDestination {
 	return fileDestination(name, writer)
 }
 
@@ -834,8 +835,8 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 	}
 }
 
-// URIOut creates a direct URI target opened by a registered format adapter.
-func URIOut(uri string) DirectTargetRef {
+// URIOut creates a URI destination opened by a registered format adapter.
+func URIOut(uri string) ConfigurableDestination {
 	return uriDestination(uri)
 }
 
@@ -849,8 +850,8 @@ func uriDestination(uri string) destinationSpec {
 	}
 }
 
-// Sink creates a direct sink target for decoded frames or packets.
-func Sink(sink pipeline.Sink) DirectTargetRef {
+// Sink creates a media-message destination for decoded frames or packets.
+func Sink(sink pipeline.Sink) Destination {
 	return sinkDestination(sink)
 }
 
@@ -865,10 +866,84 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 	return destinationSpec{sink: sink, name: name}
 }
 
-// Name overrides the target name used for diagnostics and mux graph nodes.
-// Sink graph nodes use the wrapped sink's Name.
-func (s destinationSpec) Name(name string) DirectTargetRef {
-	return s.withName(name)
+func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) ConfigurableDestination {
+	spec := destinationSpec{
+		custom: writerDestination{name: name, open: open},
+		output: format.Output{
+			Name: name,
+			URI:  name,
+		},
+		name: name,
+	}
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i](&spec)
+		}
+	}
+	return spec
+}
+
+func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) ConfigurableDestination {
+	return Writer(name, func(context.Context, TargetInfo) (io.WriteCloser, error) {
+		if writer == nil {
+			return nil, ErrNilWriter
+		}
+		return writer, nil
+	}, opts...)
+}
+
+type writerDestination struct {
+	name string
+	open WriterOpenFunc
+	caps DestinationCaps
+}
+
+func (d writerDestination) Name() string {
+	return d.name
+}
+
+func (d writerDestination) Capabilities() DestinationCaps {
+	caps := d.caps
+	caps.ByteStream = true
+	return caps
+}
+
+func (d writerDestination) Open(ctx context.Context, info TargetInfo) (DestinationWriter, error) {
+	if d.open == nil {
+		return nil, ErrNilWriter
+	}
+	writer, err := d.open(ctx, info)
+	if err != nil {
+		return nil, err
+	}
+	if writer == nil {
+		return nil, ErrNilWriter
+	}
+	return writer, nil
+}
+
+type nopDestinationWriter struct {
+	io.Writer
+}
+
+func (w nopDestinationWriter) Close() error {
+	return nil
+}
+
+func MIME(mimeType string) DestinationOption {
+	return func(spec *destinationSpec) {
+		if spec != nil {
+			*spec = spec.withMIME(mimeType)
+		}
+	}
+}
+
+func Format(format av.FormatID) DestinationOption {
+	return func(spec *destinationSpec) {
+		if spec != nil {
+			*spec = spec.withFormat(format)
+		}
+	}
 }
 
 func (s destinationSpec) withName(name string) destinationSpec {
@@ -880,7 +955,7 @@ func (s destinationSpec) withName(name string) destinationSpec {
 }
 
 // MIME sets the target MIME type used for format detection.
-func (s destinationSpec) MIME(mimeType string) DirectTargetRef {
+func (s destinationSpec) MIME(mimeType string) ConfigurableDestination {
 	return s.withMIME(mimeType)
 }
 
@@ -890,7 +965,7 @@ func (s destinationSpec) withMIME(mimeType string) destinationSpec {
 }
 
 // Format sets the target container format explicitly.
-func (s destinationSpec) Format(format av.FormatID) DirectTargetRef {
+func (s destinationSpec) Format(format av.FormatID) ConfigurableDestination {
 	return s.withFormat(format)
 }
 
@@ -902,6 +977,52 @@ func (s destinationSpec) withFormat(format av.FormatID) destinationSpec {
 func (s destinationSpec) withResolvedFormat(format av.FormatID) destinationSpec {
 	s.resolvedFormat = format
 	return s
+}
+
+func (s destinationSpec) Name() string {
+	return s.name
+}
+
+func (s destinationSpec) Capabilities() DestinationCaps {
+	caps := DestinationCaps{
+		ByteStream: s.sink == nil,
+		Protocol:   s.output.Protocol,
+		Realtime:   s.output.Realtime,
+	}
+	if s.format != "" {
+		caps.Formats = append(caps.Formats, s.format)
+	}
+	if s.resolvedFormat != "" && s.resolvedFormat != s.format {
+		caps.Formats = append(caps.Formats, s.resolvedFormat)
+	}
+	if s.output.MIMEType != "" {
+		caps.MIMETypes = append(caps.MIMETypes, s.output.MIMEType)
+	}
+	if s.custom != nil {
+		customCaps := s.custom.Capabilities()
+		if caps.Protocol == "" {
+			caps.Protocol = customCaps.Protocol
+		}
+		caps.Seekable = customCaps.Seekable
+		caps.Realtime = caps.Realtime || customCaps.Realtime
+		if len(caps.Formats) == 0 {
+			caps.Formats = append(caps.Formats, customCaps.Formats...)
+		}
+		if len(caps.MIMETypes) == 0 {
+			caps.MIMETypes = append(caps.MIMETypes, customCaps.MIMETypes...)
+		}
+	}
+	return caps
+}
+
+func (s destinationSpec) Open(ctx context.Context, info TargetInfo) (DestinationWriter, error) {
+	if s.custom != nil {
+		return s.custom.Open(ctx, info)
+	}
+	if s.output.Writer != nil {
+		return nopDestinationWriter{Writer: s.output.Writer}, nil
+	}
+	return nil, destinationInvalidError("open destination", firstNonEmpty(info.Name, s.name, "target"), "destination does not provide a writer")
 }
 
 func (s destinationSpec) validate(operation string, fallback string) error {
@@ -922,12 +1043,12 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	if s.sink != nil {
 		return nil
 	}
-	if s.output.Name == "" && s.output.URI == "" && s.output.Protocol == "" && s.output.MIMEType == "" && s.output.Writer == nil && s.format == "" {
+	if s.output.Name == "" && s.output.URI == "" && s.output.Protocol == "" && s.output.MIMEType == "" && s.output.Writer == nil && s.custom == nil && s.format == "" {
 		return &BuildError{
 			Code:      "output_invalid",
 			Operation: operation,
 			Node:      node,
-			Reason:    "empty target ref",
+			Reason:    "empty destination",
 			Suggestions: []string{
 				"use goav.File(name, writer) for muxed output",
 				"use goav.Sink(sink) for decoded frames or packets",
@@ -935,7 +1056,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if s.output.Protocol == av.ProtocolFile && s.output.Writer == nil {
+	if s.output.Protocol == av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
 			Code:      "output_writer_missing",
 			Operation: operation,
@@ -961,7 +1082,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil {
+	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
 			Code:      "output_target_missing",
 			Operation: operation,
@@ -1070,7 +1191,7 @@ func (j *Job) setErr(err error) {
 	}
 }
 
-func (j *Job) To(targets ...TargetRef) *Job {
+func (j *Job) To(targets ...Destination) *Job {
 	if len(j.branchStreams) != 0 {
 		j.setErr(branchOutputScopeError("branches"))
 		return j
@@ -1078,10 +1199,15 @@ func (j *Job) To(targets ...TargetRef) *Job {
 	for i := range targets {
 		target := targets[i]
 		if target == nil {
-			j.setErr(jobDestinationInvalidError("job", "job target ref is nil"))
+			j.setErr(jobDestinationInvalidError("job", "job destination is nil"))
 			return j
 		}
-		output, name, err := destinationFromBinding("build job", "job", target.destination(), i)
+		binding, err := destinationBindingFromDestination(target)
+		if err != nil {
+			j.setErr(jobDestinationInvalidError("job", err.Error()))
+			return j
+		}
+		output, name, err := destinationFromBinding("build job", "job", binding, i)
 		if err != nil {
 			j.setErr(err)
 			return j
@@ -2639,7 +2765,7 @@ func duplicateTargetDestinationError(operation string, name string) error {
 		Reason:    fmt.Sprintf("target %q is attached more than once", name),
 		Suggestions: []string{
 			"list each goav.Target value once in .To(...)",
-			"use distinct target names when writing to separate target refs",
+			"use distinct target names when writing to separate destinations",
 			"reuse one target from multiple branches through .Branches(...) when outputs should be grouped",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3245,16 +3371,21 @@ func (b *jobStreamBuilder) VP9(bitrate int, options ...codecOption) *jobStreamBu
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *jobStreamBuilder) To(targets ...TargetRef) *Job {
+func (b *jobStreamBuilder) To(targets ...Destination) *Job {
 	stream := b.current()
 	outputs := make([]destinationSpec, 0, len(targets))
 	for i := range targets {
 		target := targets[i]
 		if target == nil {
-			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream target ref is nil"))
+			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream destination is nil"))
 			return b.job
 		}
-		output, name, err := destinationFromBinding("build stream", jobStreamName(stream), target.destination(), i)
+		binding, err := destinationBindingFromDestination(target)
+		if err != nil {
+			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), err.Error()))
+			return b.job
+		}
+		output, name, err := destinationFromBinding("build stream", jobStreamName(stream), binding, i)
 		if err != nil {
 			b.job.setErr(err)
 			return b.job
@@ -3283,7 +3414,7 @@ func destinationFromBinding(operation string, node string, destination destinati
 	case destination.hasDirect:
 		return cloneDestinationSpec(destination.dest), "", nil
 	default:
-		return destinationSpec{}, "", destinationInvalidError(operation, node, "unsupported target ref")
+		return destinationSpec{}, "", destinationInvalidError(operation, node, "unsupported destination")
 	}
 }
 
@@ -3410,11 +3541,12 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		name := outputOrder[i]
 		output := outputs[name]
 		planTarget := branchComposeTarget{
-			Name:     name,
-			Target:   output.output,
-			Sink:     output.sink,
-			Format:   output.format,
-			Branches: append([]string(nil), outputBranches[name]...),
+			Name:        name,
+			Destination: cloneDestinationSpec(output),
+			Target:      output.output,
+			Sink:        output.sink,
+			Format:      output.format,
+			Branches:    append([]string(nil), outputBranches[name]...),
 		}
 		if output.resolvedFormat != "" {
 			planTarget = resolveBranchComposeTargetFormat(planTarget, output.resolvedFormat)
@@ -3731,7 +3863,7 @@ func branchTargetReferenceMissingError(stream StreamIntent, label string) error 
 		Reason:    "target " + label + " is referenced but not defined",
 		Suggestions: []string{
 			"pass a goav.Target(\"" + label + "\", goav.File(...)) value to the branch .To(...) call",
-			"reuse typed target values instead of repeating string target refs",
+			"reuse typed target values instead of repeating string destination names",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3790,10 +3922,10 @@ func branchTargetDuplicateError(name string) error {
 		Code:      "target_duplicate",
 		Operation: branchCompositionOperation,
 		Node:      name,
-		Reason:    fmt.Sprintf("target %q is defined more than once with different target refs", name),
+		Reason:    fmt.Sprintf("target %q is defined more than once with different destinations", name),
 		Suggestions: []string{
 			"reuse the same goav.Target value when multiple branches should share one mux group",
-			"use distinct target names when branches should write to different target refs",
+			"use distinct target names when branches should write to different destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3840,14 +3972,14 @@ func validateBranchTargets(stream StreamIntent) error {
 	seen := make(map[string]int, len(stream.Targets))
 	for i, label := range stream.Targets {
 		if firstIndex, ok := seen[label]; ok {
-			return duplicateBranchTargetRefError(stream, label, firstIndex, i)
+			return duplicateBranchDestinationError(stream, label, firstIndex, i)
 		}
 		seen[label] = i
 	}
 	return nil
 }
 
-func duplicateBranchTargetRefError(stream StreamIntent, label string, firstIndex int, secondIndex int) error {
+func duplicateBranchDestinationError(stream StreamIntent, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
 		Code:      "target_duplicate",
 		Operation: branchCompositionOperation,

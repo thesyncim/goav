@@ -204,7 +204,7 @@ func (b *builder) buildDecodeEncodeToOutput(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, b.runtime), nil
+	return newTask(graph, b.runtime, b.destinationTxs...), nil
 }
 
 func (b *builder) buildRTPDecodeEncodeToOutput(ctx context.Context) (Task, error) {
@@ -216,7 +216,7 @@ func (b *builder) buildRTPDecodeEncodeToOutput(ctx context.Context) (Task, error
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, b.runtime), nil
+	return newTask(graph, b.runtime, b.destinationTxs...), nil
 }
 
 func (b *builder) compileDecodeEncodeToOutput(ctx context.Context, graph pipeline.Graph) error {
@@ -359,17 +359,17 @@ func (b *builder) compileEncodeOutputPath(ctx context.Context, graph pipeline.Gr
 		output := destinationSpec{output: b.outputs[i], format: b.outputFormat(i), resolvedFormat: b.outputOpenFormat(i)}
 		outputs = append(outputs, output)
 	}
-	return compileEncodeDestinationPath(ctx, b.runtime, graph, upstream, request, config, stream, outputs)
+	return compileEncodeDestinationPath(ctx, b, graph, upstream, request, config, stream, outputs)
 }
 
-func compileEncodeDestinationPath(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream, outputs []destinationSpec) error {
+func compileEncodeDestinationPath(ctx context.Context, service *builder, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream, outputs []destinationSpec) error {
+	runtime := service.runtime
 	encodeRef, err := compileEncodeStage(ctx, runtime, graph, upstream, request, config)
 	if err != nil {
 		return err
 	}
 
 	streams := []av.Stream{stream}
-	service := &builder{runtime: runtime}
 	for i := range outputs {
 		if outputs[i].sink != nil {
 			sinkRef, err := graph.AddSink(outputs[i].sink, runtime.buffer)
@@ -381,7 +381,7 @@ func compileEncodeDestinationPath(ctx context.Context, runtime *runtime, graph p
 			}
 			continue
 		}
-		muxStage, err := service.openMuxStageWithFormat(ctx, outputs[i].output, i, streams, destinationOpenFormat(outputs[i]), destinationGraphFormat(outputs[i]))
+		muxStage, err := service.openMuxDestinationStage(ctx, outputs[i], i, streams, destinationOpenFormat(outputs[i]), destinationGraphFormat(outputs[i]))
 		if err != nil {
 			return err
 		}

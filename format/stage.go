@@ -190,6 +190,12 @@ func (s *MuxStage) Close() error {
 	return s.muxer.Close()
 }
 
+func (s *MuxStage) MarkFailed() {
+	if marker, ok := s.muxer.(interface{ MarkFailed() }); ok {
+		marker.MarkFailed()
+	}
+}
+
 func (s *DemuxSource) initStreamEvents(streams []av.Stream) {
 	if len(streams) == 0 {
 		return

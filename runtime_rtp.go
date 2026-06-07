@@ -132,7 +132,7 @@ func (b *builder) buildRTPRecord(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, b.runtime), nil
+	return newTask(graph, b.runtime, b.destinationTxs...), nil
 }
 
 func (b *builder) compileRTPRecord(ctx context.Context, graph pipeline.Graph) error {

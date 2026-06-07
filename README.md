@@ -545,9 +545,35 @@ return goav.From(input).
 ```
 
 Use `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` for metering,
-analysis, preview, stats, and integration points. Full `pipeline.Source`,
-`pipeline.Stage`, and `pipeline.Sink` components remain available through the
-expert graph API.
+analysis, preview, stats, and integration points.
+
+## Custom Destinations
+
+Write muxed bytes anywhere that can provide an `io.WriteCloser` with
+`Writer(...)`. The destination opens after goav has selected the format and
+streams, so object-store uploaders can see the final target metadata.
+Transactional writers commit after successful runs or detach, abort on build,
+runtime, or attach failure, and close exactly once.
+Normal application workflows should be expressible through declarative recipes.
+
+```go
+s3 := goav.Writer("s3://bucket/call.ivf",
+    func(ctx context.Context, info goav.TargetInfo) (io.WriteCloser, error) {
+        return uploader.Create(ctx, info.Name, info.MIMEType)
+    },
+    goav.Format(av.FormatIVF),
+    goav.MIME("video/ivf"),
+)
+
+return goav.From(input).
+    Video().
+    Copy().
+    To(s3).
+    Run(ctx)
+```
+
+Use `Target(name, destination)` when multiple branches should feed one named
+mux or sink group.
 
 ## Custom Codecs
 
@@ -583,30 +609,6 @@ Adapters decide which concrete config and control types they understand; the
 public grammar stays Input, Chain, Tap, Branch, Target, and Task.
 The reusable component catalog and allocation proof map live in
 [`docs/COMPONENTS.md`](docs/COMPONENTS.md).
-
-## Expert Graph API
-
-`Runtime.Graph()` is the escape hatch for manual wiring. Normal application
-workflows should be expressible through declarative recipes; the graph API is
-for adapter development, advanced embedding, and tests.
-
-```go
-rt := goav.Default()
-
-graph := rt.Graph()
-src := graph.Source("source", source)
-dec := graph.Stage("decode", decode)
-out := graph.Sink("out", sink)
-
-graph.Connect(src.Stream("audio"), dec.In())
-graph.Connect(dec.Out(), out.In())
-
-task, err := graph.Build(ctx)
-```
-
-The expert layer is still valuable for custom realtime systems. It is no longer
-the first thing a normal record, decode, transcode, or analysis workflow has to
-learn.
 
 ## Current Shape
 

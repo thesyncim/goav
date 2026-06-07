@@ -34,6 +34,7 @@ type branchComposeBranch struct {
 
 type branchComposeTarget struct {
 	Name           string
+	Destination    destinationSpec
 	Target         format.Output
 	Sink           pipeline.Sink
 	Format         av.FormatID

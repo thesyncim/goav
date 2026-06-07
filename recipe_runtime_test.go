@@ -273,6 +273,312 @@ func TestRecordRecipeCopyToTypedTargetRuns(t *testing.T) {
 	}
 }
 
+func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    Stereo,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{7, 8, 9},
+		}},
+		events: make(chan av.Event),
+	}
+	state := &writerDestinationState{}
+	muxer := &writerDestinationMuxer{}
+	runtime := New(withTestFormats(
+		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
+	))
+	target := Writer("s3://bucket/call.ogg", func(_ context.Context, info TargetInfo) (io.WriteCloser, error) {
+		state.opens++
+		state.info = info
+		return &writerDestinationWriteCloser{state: state}, nil
+	}, Format(av.FormatOgg), MIME("audio/ogg"))
+
+	task, err := From(
+		RTP(receiver).Name("audio").Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+	).Copy().To(target).UseRuntime(runtime).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.opens != 1 ||
+		state.info.Name != "s3://bucket/call.ogg" ||
+		state.info.Format != av.FormatOgg ||
+		state.info.MIMEType != "audio/ogg" ||
+		len(state.info.Streams) != 1 ||
+		state.info.Streams[0].ID != "audio" {
+		t.Fatalf("target info: opens=%d info=%+v", state.opens, state.info)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(state.bytes.Bytes(), []byte{7, 8, 9}) {
+		t.Fatalf("written bytes = %v", state.bytes.Bytes())
+	}
+	if muxer.writes != 1 {
+		t.Fatalf("muxer writes = %d, want 1", muxer.writes)
+	}
+	if state.closes != 0 {
+		t.Fatalf("writer closed before task close: %d", state.closes)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if state.closes != 1 {
+		t.Fatalf("writer closes = %d, want 1", state.closes)
+	}
+	if state.commits != 1 || state.aborts != 0 {
+		t.Fatalf("commits=%d aborts=%d, want commit only", state.commits, state.aborts)
+	}
+}
+
+func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+	}
+	runErr := errors.New("rtp read failed")
+	receiver := &runtimeRTPErrorReceiver{
+		runtimeRTPReceiver: runtimeRTPReceiver{
+			streams: []av.Stream{stream},
+			payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+				PayloadType: 111,
+				Parameters:  stream.Codec,
+				MIMEType:    rtpav.MIMEOpus,
+				ClockRate:   48000,
+				Channels:    Stereo,
+			}}),
+			packets: []*rtp.Packet{{
+				Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+				Payload: []byte{7, 8, 9},
+			}},
+			events: make(chan av.Event),
+		},
+		err: runErr,
+	}
+	state := &writerDestinationState{}
+	muxer := &writerDestinationMuxer{}
+	runtime := New(withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
+	))
+
+	task, err := From(
+		RTP(receiver).Name("audio").Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+	).Copy().To(Writer(
+		"s3://bucket/call.ogg",
+		func(context.Context, TargetInfo) (io.WriteCloser, error) {
+			state.opens++
+			return &writerDestinationWriteCloser{state: state}, nil
+		},
+		Format(av.FormatOgg),
+		MIME("audio/ogg"),
+	)).UseRuntime(runtime).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = task.Run(ctx)
+	if !errors.Is(err, runErr) {
+		t.Fatalf("run err = %v, want %v", err, runErr)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if state.opens != 1 || state.closes != 1 {
+		t.Fatalf("opens=%d closes=%d, want one open and close", state.opens, state.closes)
+	}
+	if state.commits != 0 || state.aborts != 1 {
+		t.Fatalf("commits=%d aborts=%d, want abort only", state.commits, state.aborts)
+	}
+}
+
+func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    Stereo,
+		}}),
+		events: make(chan av.Event),
+	}
+	state := &writerDestinationState{}
+	muxer := &writerDestinationMuxer{}
+	runtime := New(withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
+	))
+	task, err := From(RTP(receiver).Name("audio").Codec(Opus())).
+		UseRuntime(runtime).
+		Audio().
+		Copy().
+		Tap(PacketTap("audio.packets")).
+		To(Sink(SinkFunc("base", func(context.Context, Message) error { return nil }))).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	writer := Writer(
+		"s3://bucket/late.ogg",
+		func(context.Context, TargetInfo) (io.WriteCloser, error) {
+			state.opens++
+			return &writerDestinationWriteCloser{state: state}, nil
+		},
+		Format(av.FormatOgg),
+		MIME("audio/ogg"),
+	)
+	_, err = task.Attach(ctx,
+		Branch("late").
+			From(PacketTap("audio.packets")).
+			Do(PacketFunc("meter", func(_ context.Context, packet *av.Packet, emit Emit) error {
+				return emit.Packet(packet)
+			})).
+			Copy().
+			To(Target("one", Sink(SinkFunc("one", func(context.Context, Message) error { return nil })))),
+		Branch("late").
+			From(PacketTap("audio.packets")).
+			Do(PacketFunc("meter", func(_ context.Context, packet *av.Packet, emit Emit) error {
+				return emit.Packet(packet)
+			})).
+			Copy().
+			To(Target("two", writer)),
+	)
+	if err == nil {
+		t.Fatal("Attach succeeded, want duplicate node failure")
+	}
+	if !errors.Is(err, pipeline.ErrNodeExists) {
+		t.Fatalf("attach err = %v, want node duplicate", err)
+	}
+	if state.opens != 1 || state.closes != 1 {
+		t.Fatalf("opens=%d closes=%d, want one open and close", state.opens, state.closes)
+	}
+	if state.commits != 0 || state.aborts != 1 {
+		t.Fatalf("commits=%d aborts=%d, want abort only", state.commits, state.aborts)
+	}
+}
+
+type writerDestinationState struct {
+	bytes   bytes.Buffer
+	info    TargetInfo
+	opens   int
+	closes  int
+	commits int
+	aborts  int
+}
+
+type writerDestinationWriteCloser struct {
+	state *writerDestinationState
+}
+
+func (w *writerDestinationWriteCloser) Write(p []byte) (int, error) {
+	return w.state.bytes.Write(p)
+}
+
+func (w *writerDestinationWriteCloser) Close() error {
+	w.state.closes++
+	return nil
+}
+
+func (w *writerDestinationWriteCloser) Commit(context.Context) error {
+	w.state.commits++
+	return nil
+}
+
+func (w *writerDestinationWriteCloser) Abort(context.Context) error {
+	w.state.aborts++
+	return nil
+}
+
+type writerDestinationMuxerFactory struct {
+	muxer *writerDestinationMuxer
+}
+
+func (f writerDestinationMuxerFactory) NewMuxer(context.Context, av.FormatID) (format.Muxer, error) {
+	return f.muxer, nil
+}
+
+type writerDestinationMuxer struct {
+	writer io.Writer
+	writes int
+	closed bool
+}
+
+func (m *writerDestinationMuxer) Format() av.FormatID {
+	return av.FormatOgg
+}
+
+func (m *writerDestinationMuxer) Open(_ context.Context, output format.Output, _ []av.Stream, _ format.OpenOptions) error {
+	m.writer = output.Writer
+	return nil
+}
+
+func (m *writerDestinationMuxer) Write(_ context.Context, packet *av.Packet, _ *format.WriteResult) error {
+	m.writes++
+	_, err := m.writer.Write(packet.Payload.Bytes)
+	return err
+}
+
+func (m *writerDestinationMuxer) Close() error {
+	m.closed = true
+	return nil
+}
+
+type runtimeRTPErrorReceiver struct {
+	runtimeRTPReceiver
+	err error
+}
+
+func (r *runtimeRTPErrorReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
+	if r.index >= len(r.packets) {
+		return nil, r.err
+	}
+	return r.runtimeRTPReceiver.ReadRTP(ctx)
+}
+
 func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

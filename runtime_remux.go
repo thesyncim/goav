@@ -27,7 +27,7 @@ func (b *builder) buildRemux(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, b.runtime), nil
+	return newTask(graph, b.runtime, b.destinationTxs...), nil
 }
 
 func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error {
@@ -62,7 +62,57 @@ func (b *builder) openMuxStage(ctx context.Context, output format.Output, index 
 	return b.openMuxStageWithFormat(ctx, output, index, streams, b.outputOpenFormat(index), b.outputFormat(index))
 }
 
+func (b *builder) openMuxDestinationStage(ctx context.Context, destination destinationSpec, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID) (*format.MuxStage, error) {
+	output, writer, err := b.openDestinationOutput(ctx, destination, streams, formatID)
+	if err != nil {
+		return nil, err
+	}
+	stage, err := b.openMuxStageWithFormatAndWriter(ctx, output, index, streams, formatID, detailFormat, writer)
+	if err != nil {
+		if writer != nil {
+			closeDestinationWriterAfterFailure(writer)
+		}
+		return nil, err
+	}
+	return stage, nil
+}
+
+func (b *builder) openDestinationOutput(ctx context.Context, destination destinationSpec, streams []av.Stream, formatID av.FormatID) (format.Output, DestinationWriter, error) {
+	output := destination.output
+	if formatID == "" {
+		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
+		if err != nil {
+			return output, nil, outputFormatProbeError(output, 0, err)
+		}
+		formatID = outputProbe.Format
+	}
+	if output.Writer != nil || destination.custom == nil {
+		return output, nil, nil
+	}
+	info := TargetInfo{
+		Name:     firstNonEmpty(destination.name, output.Name, output.URI),
+		Format:   formatID,
+		MIMEType: output.MIMEType,
+		Streams:  cloneStreams(streams),
+		Metadata: cloneMetadata(output.Metadata),
+		Realtime: b.runtime.realtime || output.Realtime,
+	}
+	writer, err := destination.custom.Open(ctx, info)
+	if err != nil {
+		return output, nil, err
+	}
+	if writer == nil {
+		return output, nil, ErrNilWriter
+	}
+	output.Writer = writer
+	return output, writer, nil
+}
+
 func (b *builder) openMuxStageWithFormat(ctx context.Context, output format.Output, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID) (*format.MuxStage, error) {
+	return b.openMuxStageWithFormatAndWriter(ctx, output, index, streams, formatID, detailFormat, nil)
+}
+
+func (b *builder) openMuxStageWithFormatAndWriter(ctx context.Context, output format.Output, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID, writer DestinationWriter) (*format.MuxStage, error) {
 	if formatID == "" {
 		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
 		if err != nil {
@@ -85,6 +135,15 @@ func (b *builder) openMuxStageWithFormat(ctx context.Context, output format.Outp
 		muxer.Close()
 		return nil, err
 	}
+	if writer != nil {
+		transaction := &destinationTransaction{requireSuccess: b.requireRunOK}
+		b.destinationTxs = append(b.destinationTxs, transaction)
+		muxer = &destinationWriterMuxer{
+			Muxer:       muxer,
+			writer:      writer,
+			transaction: transaction,
+		}
+	}
 	stage, err := format.NewMuxStage(format.MuxStageConfig{
 		Name:   muxNodeName(output, index),
 		Detail: outputNodeDetailWithFormat(output, detailFormat),
@@ -96,6 +155,83 @@ func (b *builder) openMuxStageWithFormat(ctx context.Context, output format.Outp
 		return nil, err
 	}
 	return stage, nil
+}
+
+type destinationWriterMuxer struct {
+	format.Muxer
+	writer      DestinationWriter
+	transaction *destinationTransaction
+	failed      bool
+}
+
+func (m *destinationWriterMuxer) Write(ctx context.Context, packet *av.Packet, result *format.WriteResult) error {
+	err := m.Muxer.Write(ctx, packet, result)
+	if err != nil {
+		m.MarkFailed()
+	}
+	return err
+}
+
+func (m *destinationWriterMuxer) MarkFailed() {
+	m.failed = true
+	m.transaction.Fail()
+}
+
+func (m *destinationWriterMuxer) Close() error {
+	muxErr := m.Muxer.Close()
+	if muxErr != nil {
+		m.MarkFailed()
+	}
+	transactionErr := error(nil)
+	if transactional, ok := m.writer.(TransactionalDestinationWriter); ok {
+		if m.failed || m.transaction.ShouldAbort() {
+			transactionErr = transactional.Abort(context.Background())
+		} else {
+			transactionErr = transactional.Commit(context.Background())
+		}
+	}
+	writerErr := m.writer.Close()
+	if muxErr != nil {
+		return muxErr
+	}
+	if transactionErr != nil {
+		return transactionErr
+	}
+	return writerErr
+}
+
+func closeDestinationWriterAfterFailure(writer DestinationWriter) {
+	if writer == nil {
+		return
+	}
+	if transactional, ok := writer.(TransactionalDestinationWriter); ok {
+		_ = transactional.Abort(context.Background())
+	}
+	_ = writer.Close()
+}
+
+type pipelineStageFailureMarker interface {
+	MarkFailed()
+}
+
+func markPipelineStageFailed(stage pipeline.Stage) {
+	if marker, ok := stage.(pipelineStageFailureMarker); ok {
+		marker.MarkFailed()
+	}
+}
+
+func cloneStreams(streams []av.Stream) []av.Stream {
+	if len(streams) == 0 {
+		return nil
+	}
+	out := make([]av.Stream, len(streams))
+	copy(out, streams)
+	for i := range out {
+		out[i].Metadata = cloneMetadata(out[i].Metadata)
+		out[i].Codec.Attributes = cloneMetadata(out[i].Codec.Attributes)
+		out[i].Codec.ExtraData = cloneBuffer(out[i].Codec.ExtraData)
+	}
+	return out
 }
 
 func outputProbeRequest(output format.Output) format.ProbeRequest {

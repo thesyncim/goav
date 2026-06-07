@@ -19,6 +19,7 @@ var (
 	ErrNilSource        = errors.New("goav: nil source")
 	ErrNilStage         = errors.New("goav: nil stage")
 	ErrNilSink          = errors.New("goav: nil sink")
+	ErrNilWriter        = errors.New("goav: nil writer")
 )
 
 type Option func(*runtime)
@@ -135,6 +136,8 @@ type builder struct {
 	outputs         []format.Output
 	outputFmts      []av.FormatID
 	outputGraphFmts []av.FormatID
+	destinationTxs  []*destinationTransaction
+	requireRunOK    bool
 	decodes         []decodeRequest
 	encodes         []encodeRequest
 	filters         []filterRequest
@@ -279,6 +282,8 @@ func (b *builder) Build(ctx context.Context) (Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	b.destinationTxs = nil
+	b.requireRunOK = true
 	return compiler.build(ctx, b)
 }
 
@@ -419,16 +424,17 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 }
 
 type task struct {
-	graph       pipeline.Graph
-	runtime     *runtime
-	taps        []TapInfo
-	branchTaps  []TapInfo
-	attachMu    sync.Mutex
-	attachments map[*runtimeAttachment]struct{}
+	graph        pipeline.Graph
+	runtime      *runtime
+	destinations []*destinationTransaction
+	taps         []TapInfo
+	branchTaps   []TapInfo
+	attachMu     sync.Mutex
+	attachments  map[*runtimeAttachment]struct{}
 }
 
-func newTask(graph pipeline.Graph, runtime *runtime) *task {
-	return &task{graph: graph, runtime: runtime}
+func newTask(graph pipeline.Graph, runtime *runtime, destinations ...*destinationTransaction) *task {
+	return &task{graph: graph, runtime: runtime, destinations: destinations}
 }
 
 func (t *task) Describe() pipeline.Spec {
@@ -444,7 +450,9 @@ func (t *task) Explain(context.Context) (PlanReport, error) {
 }
 
 func (t *task) Run(ctx context.Context) error {
-	return t.graph.Run(ctx)
+	err := t.graph.Run(ctx)
+	t.finishDestinations(err == nil)
+	return err
 }
 
 func (t *task) Events() <-chan av.Event {
@@ -495,4 +503,51 @@ func (t *task) Close() error {
 		first = err
 	}
 	return first
+}
+
+func (t *task) finishDestinations(ok bool) {
+	for i := range t.destinations {
+		if t.destinations[i] == nil {
+			continue
+		}
+		if ok {
+			t.destinations[i].Succeed()
+		} else {
+			t.destinations[i].Fail()
+		}
+	}
+}
+
+type destinationTransaction struct {
+	mu             sync.Mutex
+	requireSuccess bool
+	succeeded      bool
+	failed         bool
+}
+
+func (t *destinationTransaction) Succeed() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.succeeded = true
+	t.mu.Unlock()
+}
+
+func (t *destinationTransaction) Fail() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.failed = true
+	t.mu.Unlock()
+}
+
+func (t *destinationTransaction) ShouldAbort() bool {
+	if t == nil {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.failed || (t.requireSuccess && !t.succeeded)
 }

@@ -145,6 +145,7 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		for i := 0; i < preparedBranches; i++ {
 			closeRuntimeBranchOwnedStages(branches[i])
 		}
+		group.failSharedMuxStages()
 		group.closeSharedMuxStages()
 		t.rollbackRuntimeBranch(refs)
 		return nil, err
@@ -490,9 +491,9 @@ func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *run
 		if issue, ok := runtimeSharedMuxCompatibilityIssue(*target, formatID, rt); ok {
 			return muxCompatibilityBuildError("attach runtime branches", issue)
 		}
-		stage, err := service.openMuxStageWithFormat(
+		stage, err := service.openMuxDestinationStage(
 			ctx,
-			target.dest.output,
+			target.dest,
 			i,
 			target.streams,
 			formatID,
@@ -544,6 +545,19 @@ func (g *runtimeAttachGroup) closeSharedMuxStages() {
 		}
 		_ = target.stage.Close()
 		target.stage = nil
+	}
+}
+
+func (g *runtimeAttachGroup) failSharedMuxStages() {
+	if g == nil {
+		return
+	}
+	for _, key := range g.muxOrder {
+		target := g.sharedMuxes[key]
+		if target == nil || target.stage == nil {
+			continue
+		}
+		markPipelineStageFailed(target.stage)
 	}
 }
 
@@ -817,9 +831,9 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 			closeRuntimeBranchOwnedStages(*branch)
 			return muxCompatibilityBuildError("attach runtime branch", issue)
 		}
-		muxStage, err := (&builder{runtime: t.runtime}).openMuxStageWithFormat(
+		muxStage, err := (&builder{runtime: t.runtime}).openMuxDestinationStage(
 			ctx,
-			destination.dest.output,
+			destination.dest,
 			i,
 			[]av.Stream{stream},
 			formatID,
@@ -1751,11 +1765,13 @@ func runtimeBranchTapInfo(name string, node pipeline.NodeRef, caps StreamCaps, a
 func closeRuntimeBranchOwnedStages(branch runtimeBranch) {
 	for i := range branch.steps {
 		if branch.steps[i].owned && branch.steps[i].stage != nil {
+			markPipelineStageFailed(branch.steps[i].stage)
 			_ = branch.steps[i].stage.Close()
 		}
 	}
 	for i := range branch.terminals {
 		if branch.terminals[i].owned && branch.terminals[i].stage != nil {
+			markPipelineStageFailed(branch.terminals[i].stage)
 			_ = branch.terminals[i].stage.Close()
 		}
 	}

@@ -307,7 +307,7 @@ func (b *builder) buildTranscode(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, b.runtime), nil
+	return newTask(graph, b.runtime, b.destinationTxs...), nil
 }
 
 func (b *builder) buildRTPTranscode(ctx context.Context) (Task, error) {
@@ -319,7 +319,7 @@ func (b *builder) buildRTPTranscode(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, b.runtime), nil
+	return newTask(graph, b.runtime, b.destinationTxs...), nil
 }
 
 func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) error {
@@ -356,7 +356,7 @@ func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.G
 		return err
 	}
 
-	return compileBranchComposeRoutes(ctx, b.runtime, graph, branches, outputs, branchInputs, branchStreams, realtime)
+	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, realtime)
 }
 
 func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
@@ -401,7 +401,7 @@ func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipelin
 		return err
 	}
 
-	return compileBranchComposeRoutes(ctx, b.runtime, graph, branches, outputs, branchInputs, branchStreams, realtime)
+	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, realtime)
 }
 
 func compileBranchComposeInputs(
@@ -472,7 +472,7 @@ func compileBranchComposeInputs(
 
 func compileBranchComposeRoutes(
 	ctx context.Context,
-	runtime *runtime,
+	service *builder,
 	graph pipeline.Graph,
 	branches []branchComposeRoute,
 	outputs []branchComposeTargetRoute,
@@ -480,7 +480,7 @@ func compileBranchComposeRoutes(
 	branchStreams []av.Stream,
 	realtime bool,
 ) error {
-	service := &builder{runtime: runtime}
+	runtime := service.runtime
 	branchRefs := append([]pipeline.NodeRef(nil), branchInputs...)
 	branchInputStreams := append([]av.Stream(nil), branchStreams...)
 	for _, prefix := range branchComposeRuntimeSharedStepGroups(branches, branchInputs, branchStreams) {
@@ -568,7 +568,14 @@ func compileBranchComposeRoutes(
 		for _, branchIndex := range outputs[i].matches {
 			streams = append(streams, branchOutputStreams[branchIndex])
 		}
-		muxStage, err := service.openMuxStageWithFormat(ctx, outputs[i].target, i, streams, branchComposeTargetOpenFormat(outputs[i].output), outputs[i].output.Format)
+		destination := outputs[i].output.Destination
+		if destinationSpecEmpty(destination) {
+			destination = destinationSpec{
+				output: outputs[i].target,
+				format: outputs[i].output.Format,
+			}
+		}
+		muxStage, err := service.openMuxDestinationStage(ctx, destination, i, streams, branchComposeTargetOpenFormat(outputs[i].output), outputs[i].output.Format)
 		if err != nil {
 			return err
 		}
@@ -1130,6 +1137,9 @@ func branchComposeTargets(plan branchComposePlan, branches []branchComposeRoute)
 }
 
 func branchComposeTargetHasMuxDestination(output branchComposeTarget) bool {
+	if !destinationSpecEmpty(output.Destination) && output.Destination.sink == nil {
+		return true
+	}
 	return output.Target.Name != "" ||
 		output.Target.URI != "" ||
 		output.Target.Protocol != "" ||
@@ -1231,6 +1241,9 @@ func runtimeBranchComposeBranchName(branch branchComposeBranch, index int, total
 
 func branchComposeFormatTarget(plan branchComposePlan, output branchComposeTarget) format.Output {
 	target := output.Target
+	if !destinationSpecEmpty(output.Destination) {
+		target = output.Destination.output
+	}
 	if target.Name == "" {
 		target.Name = output.Name
 	}

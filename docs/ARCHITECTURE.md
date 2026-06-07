@@ -71,9 +71,9 @@ transforms. Branch-composition inputs and resolved targets are carried by the
 resolved recipe into a media-plan branch graph; `Describe` and `Build` use that
 graph plan directly and only borrow runtime services for adapter-backed sources,
 filters, encoders, and muxers. Packet-preserving copy/fanout recipes use the
-same resolved graph-plan pattern for concrete inputs, target refs, and optional
+same resolved graph-plan pattern for concrete inputs, destinations, and optional
 selected streams. Direct selected-stream decode/encode recipes also keep their
-inputs, target refs, ordered stream attachments, codec-change policy, custom
+inputs, destinations, ordered stream attachments, codec-change policy, custom
 stages, transforms, and taps on the resolved recipe until the media-plan
 boundary. Those direct stream recipes now build and describe through a resolved
 single-stream graph plan and shared parameterized
@@ -346,7 +346,7 @@ That shape supports:
 
 `Transcode` is user-facing syntax, not a runtime engine. It lowers into the
 same `MediaPlan` branch shape as `From(input).Audio()/Video().Branches(...)` and
-flow-derived branches: input ref, stream selector, operation chain, target refs,
+flow-derived branches: input ref, stream selector, operation chain, destinations,
 and mux groups. Mixed audio/video outputs are modeled as mux groups receiving
 ordinary encoded branches.
 

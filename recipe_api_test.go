@@ -97,6 +97,34 @@ func (recipeAPIFilterFactory) NewFilter(context.Context, filter.Config) (filter.
 	return nil, errors.New("filter should not open during explain")
 }
 
+type recipeAPICustomDestination struct{}
+
+func (recipeAPICustomDestination) Name() string {
+	return "custom"
+}
+
+func (recipeAPICustomDestination) Capabilities() goav.DestinationCaps {
+	return goav.DestinationCaps{
+		ByteStream: true,
+		Formats:    []av.FormatID{av.FormatIVF},
+		MIMETypes:  []string{"video/ivf"},
+	}
+}
+
+func (recipeAPICustomDestination) Open(context.Context, goav.TargetInfo) (goav.DestinationWriter, error) {
+	return recipeAPICustomWriter{}, nil
+}
+
+type recipeAPICustomWriter struct{}
+
+func (recipeAPICustomWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (recipeAPICustomWriter) Close() error {
+	return nil
+}
+
 func (recipeAPIRuntimeWithoutBuilder) Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error) {
 	return format.ProbeResult{}, nil
 }
@@ -298,11 +326,11 @@ func countOperationReports(operations []goav.OperationReport, kind goav.Operatio
 	return count
 }
 
-func recordJob(input goav.InputSpec, outputs ...goav.TargetRef) *goav.Job {
+func recordJob(input goav.InputSpec, outputs ...goav.Destination) *goav.Job {
 	return goav.From(input).Copy().To(outputs...)
 }
 
-func decodeJob(input goav.InputSpec, output goav.TargetRef) *goav.Job {
+func decodeJob(input goav.InputSpec, output goav.Destination) *goav.Job {
 	return goav.From(input).Stream().Decode().To(output)
 }
 
@@ -322,7 +350,7 @@ type testTranscodeBranch struct {
 	flows      []goav.Chain
 	transforms []goav.TransformSpec
 	encode     goav.CodecSpec
-	targets    []goav.TargetRef
+	targets    []goav.Destination
 }
 
 type testTranscodeBranchBuilder struct {
@@ -385,7 +413,7 @@ func (j *testBranchJob) materialize() *goav.Job {
 		if branch.encode.ID != "" {
 			builder = builder.Encode(branch.encode)
 		}
-		targets := make([]goav.TargetRef, 0, len(branch.targets))
+		targets := make([]goav.Destination, 0, len(branch.targets))
 		for i := range branch.targets {
 			targets = append(targets, branch.targets[i])
 		}
@@ -446,8 +474,8 @@ func (b *testTranscodeBranchBuilder) Encode(codec goav.CodecSpec) *testTranscode
 	return b
 }
 
-func (b *testTranscodeBranchBuilder) To(targets ...goav.TargetRef) *testBranchJob {
-	b.current().targets = append([]goav.TargetRef(nil), targets...)
+func (b *testTranscodeBranchBuilder) To(targets ...goav.Destination) *testBranchJob {
+	b.current().targets = append([]goav.Destination(nil), targets...)
 	return b.job
 }
 
@@ -1354,7 +1382,6 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"AudioFlowBuilder": true,
 		"VideoFlowBuilder": true,
 		"Input":            true,
-		"Destination":      true,
 		"DestinationSpec":  true,
 		"Output":           true,
 		"OutputIntent":     true,
@@ -1379,6 +1406,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"RTPInputOption":   true,
 		"StreamBuilder":    true,
 		"StreamOption":     true,
+		"TargetRef":        true,
 		"TargetSpec":       true,
 		"TrackOption":      true,
 		"TranscodeJob":     true,
@@ -1555,6 +1583,10 @@ func TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor(t *testing.T) {
 		"UseRuntime",
 		"RTPBuffer",
 		"MaxTimestampGap",
+		"Runtime.Graph",
+		"GraphBuilder",
+		"graph.Source",
+		"graph.Connect",
 	} {
 		if strings.Contains(text, advanced) {
 			t.Fatalf("README exposes %s in the front-door guide", advanced)
@@ -1595,6 +1627,7 @@ func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
 		"goav.Branch(",
 		"Branches(",
 		"goav.Target(",
+		"goav.Writer(",
 		"goav.FrameTap(",
 		"goav.PacketTap(",
 		"goav.Sink(",
@@ -1603,6 +1636,26 @@ func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("README should show %s in the public composition grammar", required)
+		}
+	}
+}
+
+func TestReadmeShowsCustomDestinations(t *testing.T) {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"## Custom Destinations",
+		"goav.Writer(",
+		"goav.TargetInfo",
+		"goav.Format(",
+		"goav.MIME(",
+		"Target(name, destination)",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("README should keep custom destination text %q", required)
 		}
 	}
 }
@@ -1742,9 +1795,9 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"FromTap",
 		"From(node)",
 		"node names from `Task.Describe()`",
-		"`Target`, `TargetRef`, and `Chain` composition",
 		"`Target`, destination constructors",
 		"`File`, `URIOut`, and `Sink` destination constructors",
+		"TargetRef",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("architecture docs keep stale composition vocabulary %q", forbidden)
@@ -1757,8 +1810,9 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"Chain transforms such as",
 		"Simple high-level API | recipes, chains",
 		"surface is small: `From`, chains",
-		"`Target`, and `Chain` composition",
-		"direct `File`/`URIOut`/`Sink` target refs",
+		"`Target`, `Destination`, and `Chain` composition",
+		"direct `File`/`URIOut`/`Sink` destinations",
+		"custom `Writer` destinations with `TargetInfo`",
 		"named `Target` refs for shared mux/sink groups",
 	} {
 		if !strings.Contains(text, required) {
@@ -2208,8 +2262,8 @@ func TestStreamRecipeCanWriteToTypedTarget(t *testing.T) {
 	}
 }
 
-func TestToAcceptsTargetRefSlices(t *testing.T) {
-	targets := []goav.TargetRef{
+func TestToAcceptsDestinationSlices(t *testing.T) {
+	targets := []goav.Destination{
 		goav.Target("archive", goav.File("archive.ogg", io.Discard)),
 		goav.Sink(goav.SinkFunc("stats", func(context.Context, goav.Message) error {
 			return nil
@@ -2231,28 +2285,70 @@ func TestToAcceptsTargetRefSlices(t *testing.T) {
 	}
 }
 
-func TestTargetBindsOnlyDirectTargetRefs(t *testing.T) {
-	targetRefType := reflect.TypeOf((*goav.TargetRef)(nil)).Elem()
-	directTargetType := reflect.TypeOf((*goav.DirectTargetRef)(nil)).Elem()
-	if !directTargetType.Implements(targetRefType) {
-		t.Fatalf("DirectTargetRef should satisfy TargetRef")
+func TestTargetBindsDestinations(t *testing.T) {
+	destinationType := reflect.TypeOf((*goav.Destination)(nil)).Elem()
+	configurableType := reflect.TypeOf((*goav.ConfigurableDestination)(nil)).Elem()
+	if !configurableType.Implements(destinationType) {
+		t.Fatalf("ConfigurableDestination should satisfy Destination")
 	}
 	targetFn := reflect.TypeOf(goav.Target)
-	if targetFn.NumIn() != 2 || targetFn.In(1) != directTargetType {
-		t.Fatalf("Target second parameter = %v, want DirectTargetRef", targetFn.In(1))
+	if targetFn.NumIn() != 2 || targetFn.In(1) != destinationType {
+		t.Fatalf("Target second parameter = %v, want Destination", targetFn.In(1))
 	}
-	if targetFn.NumOut() != 1 || targetFn.Out(0) != targetRefType {
-		t.Fatalf("Target return = %v, want TargetRef", targetFn.Out(0))
+	if targetFn.NumOut() != 1 || targetFn.Out(0) != destinationType {
+		t.Fatalf("Target return = %v, want Destination", targetFn.Out(0))
 	}
 	for name, fn := range map[string]any{
 		"File":   goav.File,
 		"URIOut": goav.URIOut,
-		"Sink":   goav.Sink,
 	} {
 		fnType := reflect.TypeOf(fn)
-		if fnType.NumOut() != 1 || fnType.Out(0) != directTargetType {
-			t.Fatalf("%s return = %v, want DirectTargetRef", name, fnType.Out(0))
+		if fnType.NumOut() != 1 || fnType.Out(0) != configurableType {
+			t.Fatalf("%s return = %v, want ConfigurableDestination", name, fnType.Out(0))
 		}
+	}
+	sinkFn := reflect.TypeOf(goav.Sink)
+	if sinkFn.NumOut() != 1 || sinkFn.Out(0) != destinationType {
+		t.Fatalf("Sink return = %v, want Destination", sinkFn.Out(0))
+	}
+}
+
+func TestExternalCustomDestinationCanBeTargeted(t *testing.T) {
+	dest := recipeAPICustomDestination{}
+	target := goav.Target("custom", dest)
+
+	job := goav.From(goav.RTP(recipeAPIVideoRTPReader{}).Name("video").Codec(goav.VP8())).
+		Video().
+		Copy().
+		To(target)
+
+	intent := job.Intent()
+	if len(intent.Targets) != 1 ||
+		intent.Targets[0].Name != "custom" ||
+		intent.Targets[0].Format != av.FormatIVF ||
+		intent.Targets[0].MIMEType != "video/ivf" {
+		t.Fatalf("intent: %+v", intent)
+	}
+	if len(intent.Streams) != 1 || !equalStrings(intent.Streams[0].Targets, []string{"custom"}) {
+		t.Fatalf("intent streams: %+v", intent.Streams)
+	}
+}
+
+func TestTargetRejectsNestedTarget(t *testing.T) {
+	inner := goav.Target("inner", goav.File("inner.ivf", io.Discard))
+	outer := goav.Target("outer", inner)
+
+	_, err := goav.From(goav.RTP(recipeAPIVideoRTPReader{}).Name("video").Codec(goav.VP8())).
+		Video().
+		Copy().
+		To(outer).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_invalid" {
+		t.Fatalf("err = %v, want target_invalid", err)
+	}
+	if !strings.Contains(err.Error(), "target cannot wrap another goav.Target") {
+		t.Fatalf("err = %v, want nested target guidance", err)
 	}
 }
 
@@ -3207,8 +3303,8 @@ func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsNilTargetRef(t *testing.T) {
-	var target goav.TargetRef
+func TestRecordRecipeRejectsNilDestination(t *testing.T) {
+	var target goav.Destination
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		target,
@@ -3217,10 +3313,10 @@ func TestRecordRecipeRejectsNilTargetRef(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_invalid wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "target ref is nil") ||
+	if !strings.Contains(err.Error(), "destination is nil") ||
 		!strings.Contains(err.Error(), "goav.File") ||
 		!strings.Contains(err.Error(), "goav.Sink") {
-		t.Fatalf("err = %v, want target-ref constructor guidance", err)
+		t.Fatalf("err = %v, want destination constructor guidance", err)
 	}
 }
 
@@ -3251,7 +3347,7 @@ func TestRecordRecipeRejectsUnnamedFileWithoutFormat(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsFormatOnlyTargetRef(t *testing.T) {
+func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
 		goav.URIOut("").Format(av.FormatIVF),
@@ -4489,7 +4585,7 @@ func TestBranchRecipeRejectsMissingBranchName(t *testing.T) {
 	}
 }
 
-func TestBranchRecipeRejectsInvalidTargetRef(t *testing.T) {
+func TestBranchRecipeRejectsInvalidDestination(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").VP9(600_000).
 		To(goav.Target("preview", goav.File("preview.webm", nil))).

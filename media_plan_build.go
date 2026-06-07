@@ -47,15 +47,16 @@ func buildMediaPlanTask(ctx context.Context, plan mediaPlanExecutable) (Task, er
 	if runtime == nil {
 		return nil, recipeGraphUnsupportedError("build recipe", Intent{})
 	}
-	graph, err := (&builder{runtime: runtime}).newGraph(ctx)
+	service := &builder{runtime: runtime, requireRunOK: true}
+	graph, err := service.newGraph(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := plan.compile(ctx, graph); err != nil {
+	if err := plan.compile(ctx, graph, service); err != nil {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, runtime), nil
+	return newTask(graph, runtime, service.destinationTxs...), nil
 }
 
 func (p mediaPlanStreamGraph) spec() (pipeline.Spec, error) {
@@ -72,14 +73,14 @@ func (p mediaPlanStreamGraph) runtimeRef() *runtime {
 	return p.runtime
 }
 
-func (p mediaPlanStreamGraph) compile(ctx context.Context, graph pipeline.Graph) error {
+func (p mediaPlanStreamGraph) compile(ctx context.Context, graph pipeline.Graph, service *builder) error {
 	if p.copyPackets {
-		return p.compilePacketCopy(ctx, graph)
+		return p.compilePacketCopy(ctx, graph, service)
 	}
 	if p.hasSingleSinkDestination() {
 		return p.compileSinkDestination(ctx, graph)
 	}
-	return p.compileEncodeOutput(ctx, graph)
+	return p.compileEncodeOutput(ctx, graph, service)
 }
 
 func (p mediaPlanStreamGraph) hasSingleSinkDestination() bool {
@@ -231,7 +232,7 @@ func (p mediaPlanBranchComposeGraph) nodeCapacity() int {
 	return 1 + 3 + len(p.branches) + branchChainStepCount(p.branches) + len(p.targets)
 }
 
-func (p mediaPlanBranchComposeGraph) compile(ctx context.Context, graph pipeline.Graph) error {
+func (p mediaPlanBranchComposeGraph) compile(ctx context.Context, graph pipeline.Graph, service *builder) error {
 	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, []InputSpec{p.input}, "build branch composition", Intent{Name: p.plan.Name})
 	if err != nil {
 		return err
@@ -244,24 +245,24 @@ func (p mediaPlanBranchComposeGraph) compile(ctx context.Context, graph pipeline
 	if err != nil {
 		return err
 	}
-	return compileBranchComposeRoutes(ctx, p.runtime, graph, p.branches, p.targets, branchInputs, branchStreams, sources.realtime)
+	return compileBranchComposeRoutes(ctx, service, graph, p.branches, p.targets, branchInputs, branchStreams, sources.realtime)
 }
 
-func (p mediaPlanStreamGraph) compilePacketCopy(ctx context.Context, graph pipeline.Graph) error {
+func (p mediaPlanStreamGraph) compilePacketCopy(ctx context.Context, graph pipeline.Graph, service *builder) error {
 	sourceRefs, streams, _, _, err := p.compileSources(ctx, graph)
 	if err != nil {
 		return err
 	}
-	return p.compilePacketCopyTargets(ctx, graph, sourceRefs, streams)
+	return p.compilePacketCopyTargets(ctx, graph, service, sourceRefs, streams)
 }
 
 func (p mediaPlanStreamGraph) compilePacketCopyTargets(
 	ctx context.Context,
 	graph pipeline.Graph,
+	service *builder,
 	sourceRefs []pipeline.NodeRef,
 	streams []av.Stream,
 ) error {
-	service := &builder{runtime: p.runtime}
 	targetRefs := sourceRefs
 	targetStreams := streams
 	if p.selectedStream {
@@ -298,7 +299,7 @@ func (p mediaPlanStreamGraph) compilePacketCopyTargets(
 			}
 			continue
 		}
-		stage, err := service.openMuxStageWithFormat(ctx, output.output, i, targetStreams, destinationOpenFormat(output), destinationGraphFormat(output))
+		stage, err := service.openMuxDestinationStage(ctx, output, i, targetStreams, destinationOpenFormat(output), destinationGraphFormat(output))
 		if err != nil {
 			return err
 		}
@@ -399,7 +400,7 @@ func (p mediaPlanStreamGraph) compileSinkDestination(ctx context.Context, graph 
 	return connectRefs(graph, previousRef, sinkRef)
 }
 
-func (p mediaPlanStreamGraph) compileEncodeOutput(ctx context.Context, graph pipeline.Graph) error {
+func (p mediaPlanStreamGraph) compileEncodeOutput(ctx context.Context, graph pipeline.Graph, service *builder) error {
 	if p.encode == nil {
 		return recipeGraphUnsupportedError("build job", Intent{Streams: []StreamIntent{p.stream}})
 	}
@@ -423,7 +424,7 @@ func (p mediaPlanStreamGraph) compileEncodeOutput(ctx context.Context, graph pip
 	if err != nil {
 		return err
 	}
-	return compileEncodeDestinationPath(ctx, p.runtime, graph, previousRef, *p.encode, encodeConfig, encodedStream, p.outputs)
+	return compileEncodeDestinationPath(ctx, service, graph, previousRef, *p.encode, encodeConfig, encodedStream, p.outputs)
 }
 
 func (p mediaPlanStreamGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {
