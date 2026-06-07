@@ -1663,8 +1663,10 @@ func TestReadmeShowsCustomDestinations(t *testing.T) {
 		"## Custom Destinations",
 		"goav.Writer(",
 		"goav.TargetInfo",
+		"goav.Object(",
 		"goav.Format(",
 		"goav.MIME(",
+		"goav.Metadata(",
 		"Target(name, destination)",
 	} {
 		if !strings.Contains(text, required) {
@@ -2312,8 +2314,11 @@ func TestTargetBindsDestinations(t *testing.T) {
 		t.Fatalf("Target return = %v, want Destination", targetFn.Out(0))
 	}
 	for name, fn := range map[string]any{
-		"File":   goav.File,
-		"URIOut": goav.URIOut,
+		"File":        goav.File,
+		"Object":      goav.Object,
+		"URIOut":      goav.URIOut,
+		"Writer":      goav.Writer,
+		"WriteCloser": goav.WriteCloser,
 	} {
 		fnType := reflect.TypeOf(fn)
 		if fnType.NumOut() != 1 || fnType.Out(0) != configurableType {

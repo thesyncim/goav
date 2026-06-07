@@ -18,6 +18,7 @@ from the same few concepts.
 - `Tap`: a typed attach point created with `FrameTap` or `PacketTap`.
 - `Branch`: a downstream chain from a chain point or tap.
 - `Target`: a named mux or sink group.
+- `Destination`: a file, URI, writer, object upload, or media sink.
 - `Task`: a running graph with attach/detach, events, stats, and taps.
 
 ## 30-Second Examples
@@ -550,19 +551,25 @@ analysis, preview, stats, and integration points.
 ## Custom Destinations
 
 Write muxed bytes anywhere that can provide an `io.WriteCloser` with
-`Writer(...)`. The destination opens after goav has selected the format and
-streams, so object-store uploaders can see the final target metadata.
-Transactional writers commit after successful runs or detach, abort on build,
-runtime, or attach failure, and close exactly once.
+`goav.Writer(...)`. Use `goav.Object(...)` when the writer has explicit commit
+and abort semantics, such as a multipart object-store upload. The destination
+opens after goav has selected the format and streams, so object-store uploaders
+can see the final target metadata. Transactional writers commit after successful
+runs or detach, abort on build, runtime, or attach failure, and close exactly
+once.
 Normal application workflows should be expressible through declarative recipes.
 
 ```go
-s3 := goav.Writer("s3://bucket/call.ivf",
-    func(ctx context.Context, info goav.TargetInfo) (io.WriteCloser, error) {
-        return uploader.Create(ctx, info.Name, info.MIMEType)
+s3 := goav.Object("s3://bucket/call.ivf",
+    func(ctx context.Context, info goav.TargetInfo) (goav.TransactionalDestinationWriter, error) {
+        return uploader.Create(ctx, info.Name,
+            uploader.ContentType(info.MIMEType),
+            uploader.Metadata(info.Metadata),
+        )
     },
     goav.Format(av.FormatIVF),
     goav.MIME("video/ivf"),
+    goav.Metadata(av.Metadata{"kind": "call-recording"}),
 )
 
 return goav.From(input).

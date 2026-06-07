@@ -1537,12 +1537,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Branches(...)` as the single planned split verb.
     Done.
 317. Hide target implementation values:
-    `Target(name, ref)` now returns a target ref instead of exporting concrete
-    implementation values. Shared target name, concrete output binding, and
-    identity are still preserved internally for planned branch composition and
-    runtime attach grouping, but users only pass the target value to `.To(...)`
-    like any other target ref. Guard coverage rejects concrete target
-    implementation types from the front door.
+    `Target(name, destination)` now returns the public `Destination` interface
+    instead of exporting concrete implementation values. Shared target name,
+    concrete destination binding, and identity are still preserved internally for
+    planned branch composition and runtime attach grouping, but users only pass
+    the target value to `.To(...)` like any other destination. Guard coverage
+    rejects concrete target implementation types from the front door.
     Done.
 318. Hide concrete destination specs:
     `File`, `URIOut`, `Sink`, and `Target` now return target refs directly,
@@ -1843,6 +1843,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Tests mutate planned private resample and encode node refs and prove the
     built graph still equals the described graph.
     Done.
+355. Add explicit transactional object destinations:
+    `Object(name, open, opts...)` now exposes object-store upload style
+    destinations as the same first-class `Destination` model as `File`, `URIOut`,
+    `Sink`, and `Writer`. `Metadata(...)` destination options flow into
+    `TargetInfo`, and tests prove object destinations open with resolved format,
+    MIME, streams, metadata, write through the muxer, commit on success, abort on
+    failure through the existing transactional writer path, and close once.
+    Done.
 
 ## First Vertical Slice
 
@@ -2110,7 +2118,8 @@ operation records for mux/sink target construction and branch-to-target
 routing, not only validation, select/decode input lowering, shared/private step
 lowering, encode lowering, and target binding, and deepen capability planning around that ordered operation model. The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`,
-`File`, `URIOut`, `Sink`, `Flow`, `Codec`, and runtime `Attach`. Flows expand
+`File`, `URIOut`, `Writer`, `Object`, `Sink`, `Flow`, `Codec`, and runtime
+`Attach`. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into
 branch intent instead of a parallel graph language, and
 codec-specific config stays on `CodecSpec` through `Config`, `Param`, and

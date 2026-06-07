@@ -57,6 +57,8 @@ type DestinationOption func(*destinationSpec)
 
 type WriterOpenFunc func(context.Context, TargetInfo) (io.WriteCloser, error)
 
+type ObjectOpenFunc func(context.Context, TargetInfo) (TransactionalDestinationWriter, error)
+
 type destinationBinding struct {
 	target    targetSpec
 	dest      destinationSpec
