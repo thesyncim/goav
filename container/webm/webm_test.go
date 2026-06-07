@@ -51,6 +51,9 @@ func TestMuxerEnforcesProfile(t *testing.T) {
 	if _, err := muxer.AddTrack(Track{Type: matroska.TrackSubtitle, Codec: matroska.CodecTextUTF8}); !errors.Is(err, ErrUnsupportedWebMCodec) {
 		t.Fatalf("err = %v, want ErrUnsupportedWebMCodec", err)
 	}
+	if _, err := muxer.AddTrack(Track{Type: TrackAudio, Codec: matroska.CodecFLAC, CodecPrivate: validWebMFLACCodecPrivate()}); !errors.Is(err, ErrUnsupportedWebMCodec) {
+		t.Fatalf("err = %v, want ErrUnsupportedWebMCodec", err)
+	}
 }
 
 func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
@@ -3150,6 +3153,27 @@ func validWebMVorbisCodecPrivate() []byte {
 	private = append(private, comment...)
 	private = append(private, setup...)
 	return private
+}
+
+func validWebMFLACCodecPrivate() []byte {
+	private := make([]byte, 4+4+34)
+	copy(private, "fLaC")
+	private[4] = 0x80
+	private[7] = 34
+	streamInfo := private[8:]
+	binary.BigEndian.PutUint16(streamInfo[0:2], 4096)
+	binary.BigEndian.PutUint16(streamInfo[2:4], 4096)
+	writeWebMFLACStreamInfoAudio(streamInfo, 48000, 2, 16)
+	return private
+}
+
+func writeWebMFLACStreamInfoAudio(streamInfo []byte, sampleRate int, channels int, bitsPerSample int) {
+	channelsMinusOne := channels - 1
+	bitsMinusOne := bitsPerSample - 1
+	streamInfo[10] = byte(sampleRate >> 12)
+	streamInfo[11] = byte(sampleRate >> 4)
+	streamInfo[12] = byte((sampleRate&0x0f)<<4 | (channelsMinusOne&0x07)<<1 | (bitsMinusOne>>4)&0x01)
+	streamInfo[13] = byte(bitsMinusOne << 4)
 }
 
 func makeCompressedDocTypeWebMData(tb testing.TB) []byte {

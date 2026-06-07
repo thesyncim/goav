@@ -33,6 +33,7 @@ const (
 const (
 	codecIDOpus     = "A_OPUS"
 	codecIDVorbis   = "A_VORBIS"
+	codecIDFLAC     = "A_FLAC"
 	codecIDMS       = "A_MS/ACM"
 	codecIDVP8      = "V_VP8"
 	codecIDVP9      = "V_VP9"
@@ -48,6 +49,8 @@ func matroskaCodecID(codec Codec) (string, error) {
 		return codecIDOpus, nil
 	case CodecVorbis:
 		return codecIDVorbis, nil
+	case CodecFLAC:
+		return codecIDFLAC, nil
 	case CodecPCMU, CodecPCMA:
 		return codecIDMS, nil
 	case CodecVP8:
@@ -73,6 +76,8 @@ func codecFromMatroskaID(id string, private []byte) Codec {
 		return CodecOpus
 	case codecIDVorbis:
 		return CodecVorbis
+	case codecIDFLAC:
+		return CodecFLAC
 	case codecIDVP8:
 		return CodecVP8
 	case codecIDVP9:
@@ -110,6 +115,8 @@ func codecFromAV(id av.CodecID) Codec {
 		return CodecOpus
 	case av.CodecVorbis:
 		return CodecVorbis
+	case av.CodecFLAC:
+		return CodecFLAC
 	case av.CodecVP8:
 		return CodecVP8
 	case av.CodecVP9:
@@ -133,6 +140,8 @@ func codecToAV(codec Codec) av.CodecID {
 		return av.CodecOpus
 	case CodecVorbis:
 		return av.CodecVorbis
+	case CodecFLAC:
+		return av.CodecFLAC
 	case CodecVP8:
 		return av.CodecVP8
 	case CodecVP9:
@@ -148,6 +157,46 @@ func codecToAV(codec Codec) av.CodecID {
 	default:
 		return av.CodecUnknown
 	}
+}
+
+type flacCodecPrivate struct {
+	Channels      int
+	SampleRate    int
+	BitsPerSample int
+}
+
+func parseFLACCodecPrivate(private []byte) (flacCodecPrivate, error) {
+	if len(private) < 4+4+34 || string(private[:4]) != "fLaC" {
+		return flacCodecPrivate{}, ErrInvalidData
+	}
+	header := private[4:8]
+	if header[0]&0x7f != 0 {
+		return flacCodecPrivate{}, ErrInvalidData
+	}
+	if metadataBlockLength(header) != 34 {
+		return flacCodecPrivate{}, ErrInvalidData
+	}
+	streamInfo := private[8:42]
+	minBlockSize := binary.BigEndian.Uint16(streamInfo[0:2])
+	maxBlockSize := binary.BigEndian.Uint16(streamInfo[2:4])
+	if minBlockSize == 0 || maxBlockSize == 0 || minBlockSize > maxBlockSize {
+		return flacCodecPrivate{}, ErrInvalidData
+	}
+	sampleRate := int(uint32(streamInfo[10])<<12 | uint32(streamInfo[11])<<4 | uint32(streamInfo[12]>>4))
+	channels := int((streamInfo[12]>>1)&0x07) + 1
+	bitsPerSample := int(((streamInfo[12]&0x01)<<4)|(streamInfo[13]>>4)) + 1
+	if sampleRate == 0 || bitsPerSample == 0 {
+		return flacCodecPrivate{}, ErrInvalidData
+	}
+	return flacCodecPrivate{
+		Channels:      channels,
+		SampleRate:    sampleRate,
+		BitsPerSample: bitsPerSample,
+	}, nil
+}
+
+func metadataBlockLength(header []byte) int {
+	return int(header[1])<<16 | int(header[2])<<8 | int(header[3])
 }
 
 type vorbisCodecPrivate struct {

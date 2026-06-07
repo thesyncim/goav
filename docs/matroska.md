@@ -94,9 +94,9 @@ Current milestone:
   dependency information is not available.
 - Xiph, fixed-size, and EBML laced block muxing and demuxing with bounded
   scratch buffers.
-- Matroska mux/demux for Opus, Vorbis, PCMU, PCMA, VP8, VP9, AV1, H.264,
-  H.265, and S_TEXT/UTF8 subtitle track declarations, with WebM enforcing
-  Opus, Vorbis, VP8, VP9, and AV1 only.
+- Matroska mux/demux for Opus, Vorbis, FLAC, PCMU, PCMA, VP8, VP9, AV1,
+  H.264, H.265, and S_TEXT/UTF8 subtitle track declarations, with WebM
+  enforcing Opus, Vorbis, VP8, VP9, and AV1 only.
 - The WebRTC codec surface exposed by `av` is covered by Matroska:
   Opus, AV1, H.264, VP9, and VP8. WebM covers the valid WebM subset:
   Opus, AV1, VP9, and VP8.
@@ -309,6 +309,9 @@ Current mappings:
 - Vorbis: `A_VORBIS` with parsed three-packet Xiph-laced codec-private data;
   demuxers expose sample rate and channel count from the identification header,
   and muxers require caller-provided codec-private data.
+- FLAC: `A_FLAC` with parsed `fLaC` codec-private metadata. Demuxers expose
+  sample rate, channel count, and bit depth from STREAMINFO; muxers require
+  caller-provided codec-private data.
 - PCMU/PCMA: `A_MS/ACM` with generated and parsed WAVEFORMATEX codec-private
   data for G.711 mu-law and A-law tracks.
 - VP8: `V_VP8`
@@ -342,17 +345,17 @@ after a packet has entered that pending queue is rejected, and `Close` returns
 `ErrInvalidTrack` if a required seed packet never arrives.
 
 WebM accepts only Opus, Vorbis, VP8, VP9, and AV1. It rejects H.264, H.265,
-PCM variants, repair streams, retransmission streams, FEC streams, non-WebM
-Matroska document types, Matroska-only content compression, content signatures,
-non-AES encryption, AES-CBC, and non-block content encoding scopes. WebM
-content encryption is limited to block-scope AES-CTR. VP8 tracks must not carry
-codec-private data; Vorbis tracks must carry Matroska/Xiph-laced private data;
-VP9 codec-private data, when present, must use the WebM VP9 codec feature list
-with supported profile, level, bit-depth, and chroma subsampling values. WebM
-video display units must remain pixel units. WebM packet writes and sequential
-packet reads reject decreasing per-track absolute block timecodes; equal
-timestamps and lower timestamps on other tracks remain valid so audio/video
-blocks can be interleaved naturally.
+FLAC, PCM variants, repair streams, retransmission streams, FEC streams,
+non-WebM Matroska document types, Matroska-only content compression, content
+signatures, non-AES encryption, AES-CBC, and non-block content encoding scopes.
+WebM content encryption is limited to block-scope AES-CTR. VP8 tracks must not
+carry codec-private data; Vorbis tracks must carry Matroska/Xiph-laced private
+data; VP9 codec-private data, when present, must use the WebM VP9 codec feature
+list with supported profile, level, bit-depth, and chroma subsampling values.
+WebM video display units must remain pixel units. WebM packet writes and
+sequential packet reads reject decreasing per-track absolute block timecodes;
+equal timestamps and lower timestamps on other tracks remain valid so
+audio/video blocks can be interleaved naturally.
 
 ## Zero-Allocation Strategy
 
@@ -401,10 +404,10 @@ Compatibility tools are optional in CI and run when installed:
 - `mkvmerge`
 
 Current external checks cover WebM VP8/VP9/AV1/Opus/Vorbis files, Matroska
-files carrying the WebRTC codec set plus Vorbis, Matroska S_TEXT/UTF8 subtitle
-extraction, and Matroska H.264/AV1 files whose codec-private data is generated
-from the first packet. Internal generated-path checks also cover H.265 HEVC
-private-data generation and packet conversion.
+files carrying the WebRTC codec set plus Vorbis and FLAC, Matroska S_TEXT/UTF8
+subtitle extraction, and Matroska H.264/AV1 files whose codec-private data is
+generated from the first packet. Internal generated-path checks also cover
+H.265 HEVC private-data generation and packet conversion.
 The external checks also generate small
 FFmpeg-authored Matroska/WebM files, read them through the Go demuxers, remux
 the first packet through the Go muxers, and verify the remuxed output with

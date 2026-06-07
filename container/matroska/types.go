@@ -8,6 +8,7 @@ const (
 	CodecUnknown Codec = iota
 	CodecOpus
 	CodecVorbis
+	CodecFLAC
 	CodecPCMU
 	CodecPCMA
 	CodecVP8

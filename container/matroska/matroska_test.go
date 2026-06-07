@@ -1925,6 +1925,97 @@ func TestMuxerRejectsInvalidVorbisCodecPrivate(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesFLACCodecPrivate(t *testing.T) {
+	var buffer bytes.Buffer
+	private := validFLACCodecPrivate()
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:         TrackAudio,
+		Codec:        CodecFLAC,
+		Audio:        AudioConfig{SampleRate: 48000, Channels: 2, BitDepth: 16},
+		CodecPrivate: private,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{0xff, 0xf8, 0x69, 0x18}
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     20_000_000,
+		DurationNS: 20_000_000,
+		Keyframe:   true,
+		Data:       want,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Codec != CodecFLAC ||
+		tracks[0].Type != TrackAudio ||
+		tracks[0].Audio.SampleRate != 48000 ||
+		tracks[0].Audio.Channels != 2 ||
+		tracks[0].Audio.BitDepth != 16 ||
+		!bytes.Equal(tracks[0].CodecPrivate, private) {
+		t.Fatalf("track = %+v private=%x", tracks[0], tracks[0].CodecPrivate)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != trackID ||
+		got.TimeNS != 20_000_000 ||
+		got.DurationNS != 20_000_000 ||
+		!bytes.Equal(got.Data, want) {
+		t.Fatalf("packet = %+v data=%x, want track %d data=%x", got, got.Data, trackID, want)
+	}
+}
+
+func TestMuxerRejectsInvalidFLACCodecPrivate(t *testing.T) {
+	tests := []struct {
+		name    string
+		private []byte
+	}{
+		{name: "missing", private: nil},
+		{name: "short", private: []byte("fLaC")},
+		{name: "wrong marker", private: append([]byte("bad!"), validFLACCodecPrivate()[4:]...)},
+		{name: "wrong metadata type", private: flacCodecPrivateWithHeaderByte(4, 1)},
+		{name: "wrong streaminfo length", private: flacCodecPrivateWithHeaderByte(7, 33)},
+		{name: "zero min block size", private: flacCodecPrivateWithStreamInfoBytes(0, 0, 0)},
+		{name: "reversed block sizes", private: flacCodecPrivateWithStreamInfoBytes(0, 0x20, 0x00, 0x10, 0x00)},
+		{name: "zero sample rate", private: flacCodecPrivateWithStreamInfoBytes(10, 0, 0, 0, 0)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := muxer.AddTrack(Track{
+				Type:         TrackAudio,
+				Codec:        CodecFLAC,
+				Audio:        AudioConfig{SampleRate: 48000, Channels: 2, BitDepth: 16},
+				CodecPrivate: tt.private,
+			}); !errors.Is(err, ErrInvalidTrack) {
+				t.Fatalf("err = %v, want ErrInvalidTrack", err)
+			}
+		})
+	}
+}
+
 func TestMuxerDemuxerPreservesTrackUIDAndFlags(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -12723,6 +12814,65 @@ func TestFormatMuxerDemuxerSupportsVorbis(t *testing.T) {
 	}
 }
 
+func TestFormatMuxerDemuxerSupportsFLAC(t *testing.T) {
+	ctx := context.Background()
+	private := validFLACCodecPrivate()
+	stream := av.Stream{
+		ID:       "audio",
+		Index:    0,
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecFLAC,
+			Type:       av.MediaAudio,
+			SampleRate: 48000,
+			Channels:   2,
+			ExtraData:  av.Buffer{Bytes: private},
+		},
+	}
+	var buffer bytes.Buffer
+	muxer := &FormatMuxer{}
+	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Write(ctx, &av.Packet{
+		StreamID: stream.ID,
+		Payload:  av.Buffer{Bytes: []byte{0xff, 0xf8, 0x69, 0x18}},
+		PTS:      av.Timestamp{Value: 960, Base: stream.TimeBase},
+		Duration: av.Duration{Value: 960, Base: stream.TimeBase},
+		Keyframe: true,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &FormatDemuxer{}
+	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	streams := demuxer.Streams()
+	if len(streams) != 1 ||
+		streams[0].Codec.ID != av.CodecFLAC ||
+		streams[0].Codec.SampleRate != 48000 ||
+		streams[0].Codec.Channels != 2 ||
+		!bytes.Equal(streams[0].Codec.ExtraData.Bytes, private) {
+		t.Fatalf("streams = %+v", streams)
+	}
+	result := format.ReadResult{Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, 8)}}}
+	if err := demuxer.ReadInto(ctx, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.PacketReady ||
+		result.Packet.StreamID != "1" ||
+		result.Packet.PTS.Value != 20_000_000 ||
+		result.Packet.Duration.Value != 20_000_000 ||
+		!bytes.Equal(result.Packet.Payload.Bytes, []byte{0xff, 0xf8, 0x69, 0x18}) {
+		t.Fatalf("result = %+v packet=%+v", result, result.Packet)
+	}
+}
+
 func TestFormatDemuxerStreamsReturnsExtraDataCopies(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
@@ -14316,6 +14466,39 @@ func msACMWaveFormatBytes(tag uint16, channels int, sampleRate int, avgBytesPerS
 	binary.LittleEndian.PutUint16(private[16:18], uint16(len(extra)))
 	copy(private[waveFormatExBaseSize:], extra)
 	return private
+}
+
+func validFLACCodecPrivate() []byte {
+	private := make([]byte, 4+4+34)
+	copy(private, "fLaC")
+	private[4] = 0x80
+	private[7] = 34
+	streamInfo := private[8:]
+	binary.BigEndian.PutUint16(streamInfo[0:2], 4096)
+	binary.BigEndian.PutUint16(streamInfo[2:4], 4096)
+	writeFLACStreamInfoAudio(streamInfo, 48000, 2, 16)
+	return private
+}
+
+func flacCodecPrivateWithHeaderByte(offset int, value byte) []byte {
+	private := validFLACCodecPrivate()
+	private[offset] = value
+	return private
+}
+
+func flacCodecPrivateWithStreamInfoBytes(offset int, values ...byte) []byte {
+	private := validFLACCodecPrivate()
+	copy(private[8+offset:], values)
+	return private
+}
+
+func writeFLACStreamInfoAudio(streamInfo []byte, sampleRate int, channels int, bitsPerSample int) {
+	channelsMinusOne := channels - 1
+	bitsMinusOne := bitsPerSample - 1
+	streamInfo[10] = byte(sampleRate >> 12)
+	streamInfo[11] = byte(sampleRate >> 4)
+	streamInfo[12] = byte((sampleRate&0x0f)<<4 | (channelsMinusOne&0x07)<<1 | (bitsMinusOne>>4)&0x01)
+	streamInfo[13] = byte(bitsMinusOne << 4)
 }
 
 func validVorbisCodecPrivate() []byte {
