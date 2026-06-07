@@ -1806,6 +1806,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     centered on `Target` values and direct `Destination` values instead of
     leaking historical string-label routing into new planner work.
     Done.
+351. Prove runtime attach to custom writer destinations:
+    runtime `Task.Attach` now has a positive acceptance test for attaching a
+    packet branch from a typed tap to `Target(name, Writer(...))`. The test
+    verifies destination open happens during attach with `TargetInfo` carrying
+    name, format, MIME type, and streams, then confirms muxed bytes reach the
+    writer and successful task close commits and closes exactly once without an
+    abort.
+    Done.
 
 ## First Vertical Slice
 
