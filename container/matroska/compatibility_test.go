@@ -202,6 +202,7 @@ func TestExternalReadsAndRemuxesFFmpegMatroskaRecordings(t *testing.T) {
 			video := requireMatroskaRecordingTrack(t, tracks, tt.codec, TrackVideo)
 			audio := requireMatroskaRecordingTrack(t, tracks, CodecOpus, TrackAudio)
 			assertMatroskaRecordingStats(t, stats, video.ID, audio.ID)
+			assertMatroskaRecordingMatchesFFProbe(t, "ffmpeg", tracks, stats, probeExternalMatroskaRecordingStats(t, tool, file))
 
 			remuxed := remuxMatroskaRecording(t, file)
 			output := runExternalTool(t, tool, "-v", "error", "-show_entries", "stream=codec_name", "-of", "default=nw=1", remuxed)
@@ -214,6 +215,7 @@ func TestExternalReadsAndRemuxesFFmpegMatroskaRecordings(t *testing.T) {
 			remuxedVideo := requireMatroskaRecordingTrack(t, remuxedTracks, tt.codec, TrackVideo)
 			remuxedAudio := requireMatroskaRecordingTrack(t, remuxedTracks, CodecOpus, TrackAudio)
 			assertMatroskaRecordingStats(t, remuxedStats, remuxedVideo.ID, remuxedAudio.ID)
+			assertMatroskaRecordingMatchesFFProbe(t, "remuxed ffmpeg", remuxedTracks, remuxedStats, probeExternalMatroskaRecordingStats(t, tool, remuxed))
 		})
 	}
 }
@@ -1125,6 +1127,11 @@ type externalMatroskaRecordingStats struct {
 	lastTime  map[uint32]int64
 }
 
+type probedMatroskaRecordingStats struct {
+	packets   int
+	keyframes int
+}
+
 func readMatroskaRecording(t testing.TB, file string) ([]Track, externalMatroskaRecordingStats) {
 	t.Helper()
 	input, err := os.Open(file)
@@ -1168,6 +1175,42 @@ func readMatroskaRecording(t testing.TB, file string) ([]Track, externalMatroska
 	return tracks, stats
 }
 
+func probeExternalMatroskaRecordingStats(t testing.TB, tool string, file string) map[string]probedMatroskaRecordingStats {
+	t.Helper()
+	output := runExternalTool(t, tool, "-v", "quiet", "-show_entries", "packet=stream_index,flags", "-show_entries", "stream=index,codec_name", "-of", "json", file)
+	var decoded struct {
+		Packets []struct {
+			StreamIndex int    `json:"stream_index"`
+			Flags       string `json:"flags"`
+		} `json:"packets"`
+		Streams []struct {
+			Index     int    `json:"index"`
+			CodecName string `json:"codec_name"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode ffprobe recording packets: %v\n%s", err, output)
+	}
+	streams := make(map[int]string, len(decoded.Streams))
+	for i := range decoded.Streams {
+		streams[decoded.Streams[i].Index] = decoded.Streams[i].CodecName
+	}
+	stats := make(map[string]probedMatroskaRecordingStats, len(decoded.Streams))
+	for i := range decoded.Packets {
+		codec, ok := streams[decoded.Packets[i].StreamIndex]
+		if !ok {
+			t.Fatalf("packet %d references unknown stream %d", i, decoded.Packets[i].StreamIndex)
+		}
+		entry := stats[codec]
+		entry.packets++
+		if strings.Contains(decoded.Packets[i].Flags, "K") {
+			entry.keyframes++
+		}
+		stats[codec] = entry
+	}
+	return stats
+}
+
 func requireMatroskaRecordingTrack(t testing.TB, tracks []Track, codec Codec, typ TrackType) Track {
 	t.Helper()
 	for i := range tracks {
@@ -1192,6 +1235,23 @@ func assertMatroskaRecordingStats(t testing.TB, stats externalMatroskaRecordingS
 	}
 	if stats.lastTime[videoID] <= 0 || stats.lastTime[audioID] <= 0 {
 		t.Fatalf("last times = %+v, want positive audio/video timelines", stats.lastTime)
+	}
+}
+
+func assertMatroskaRecordingMatchesFFProbe(t testing.TB, name string, tracks []Track, local externalMatroskaRecordingStats, probe map[string]probedMatroskaRecordingStats) {
+	t.Helper()
+	for i := range tracks {
+		codec := externalMatroskaCodecName(t, tracks[i].Codec)
+		probed, ok := probe[codec]
+		if !ok {
+			t.Fatalf("%s missing ffprobe stats for %s in %+v", name, codec, probe)
+		}
+		if local.packets[tracks[i].ID] != probed.packets {
+			t.Fatalf("%s %s packets = %d, want ffprobe %d", name, codec, local.packets[tracks[i].ID], probed.packets)
+		}
+		if local.keyframes[tracks[i].ID] != probed.keyframes {
+			t.Fatalf("%s %s keyframes = %d, want ffprobe %d", name, codec, local.keyframes[tracks[i].ID], probed.keyframes)
+		}
 	}
 }
 
