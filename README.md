@@ -17,7 +17,8 @@ from the same few concepts.
   custom stages, encode, or copy.
 - `Tap`: a typed attach point created with `FrameTap` or `PacketTap`.
 - `Branch`: a downstream chain from a chain point or tap.
-- `Target`: a named destination group, such as a mux or sink group.
+- `Target`: a named mux or sink group.
+- `Endpoint`: an actual file, URI, writer, sink, or named target.
 - `Task`: a running graph with attach/detach, events, stats, and taps.
 
 ## 30-Second Examples
@@ -43,8 +44,8 @@ return goav.From(goav.FileInput("input.ivf", in)).
     Run(ctx)
 ```
 
-Use `Target` when a destination needs a stable logical name; direct files, URIs,
-and sinks remain the shortest spelling for one-off outputs.
+Use `Target` when an endpoint needs a stable logical name; direct files, URIs,
+and sinks remain the shortest spelling for one-off endpoints.
 
 Decode one WebRTC audio track to frames:
 
@@ -84,7 +85,7 @@ adapters are registered by the application or an adapter bundle.
 
 Use branches when one selected stream should become multiple downstream targets.
 Targets are typed values, so normal recipes do not route by string labels. A
-target can be a mux group or a sink group.
+target can be a mux group or a sink group, and `.To(...)` accepts endpoints.
 
 ```go
 decoded := goav.FrameTap("video.decoded")
@@ -315,7 +316,7 @@ if err != nil {
 return task.Detach(ctx, shots)
 ```
 
-Frame taps can also grow a late encoded destination:
+Frame taps can also grow a late encoded endpoint:
 
 ```go
 audioDecoded := goav.FrameTap("audio.decoded")
@@ -372,7 +373,7 @@ group, err := task.Attach(ctx,
 ```
 
 The same rule works for mux targets: reuse one typed `Target` value when several
-encoded packet branches should feed one late recording destination.
+encoded packet branches should feed one late recording endpoint.
 
 ```go
 audioEncoded := goav.PacketTap("audio.encoded")
@@ -387,7 +388,7 @@ group, err := task.Attach(ctx,
 )
 ```
 
-Packet taps can be copied into a late destination:
+Packet taps can be copied into a late endpoint:
 
 ```go
 audioEncoded := goav.PacketTap("audio.encoded")
@@ -424,7 +425,7 @@ defer preview.Close(ctx)
 ```
 
 `Task.Taps()` lists available attach points. `Attach` adds downstream sink or
-destination branches to a running direct task graph without rebuilding upstream.
+endpoint branches to a running direct task graph without rebuilding upstream.
 Late branches can apply flows, run custom `.Do(...)` stages, resize/resample
 from frame taps, encode Opus/VP8/VP9 from frame taps, copy or decode from
 packet taps, and write to one or more typed targets before exposing their own
@@ -536,10 +537,10 @@ Implemented now:
   sinks.
 - Planned packet-copy branches with `.Copy().Branches(...)`, sharing one stream
   selector without creating decoders.
-- Typed `Tap`, `Branch`, `Target`, and reusable chain composition.
+- Typed `Tap`, `Branch`, `Target`, `Endpoint`, and reusable chain composition.
 - Runtime branch attachment from typed taps with reusable flows, custom stages,
-  resize/resample from frame taps, late Opus/VP8/VP9 encode destinations,
-  packet-copy destinations, nested runtime taps, `Attachment.Close(ctx)`, and
+  resize/resample from frame taps, late Opus/VP8/VP9 encode endpoints,
+  packet-copy endpoints, nested runtime taps, `Attachment.Close(ctx)`, and
   `Task.Detach(ctx, h)`.
 - Custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
   generic `Codec` specs.

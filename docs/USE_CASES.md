@@ -16,8 +16,8 @@ err := goav.From(goav.WebRTCTrack(track)).
     Run(ctx)
 ```
 
-Wrap the destination with `goav.Target(name, destination)` when the record job needs
-a stable logical target name for diagnostics, explain reports, or later mux
+Wrap an endpoint with `goav.Target(name, endpoint)` when the record job needs a
+stable logical target name for diagnostics, explain reports, or later mux
 grouping.
 
 Decoded preview:
@@ -382,7 +382,7 @@ Use `Task.Taps()` to discover stable outlets. Use `Task.Detach(ctx, h)` when
 the caller wants the task to own detach semantics. Runtime branches can be
 attached one at a time or as one atomic group. They can run custom stages,
 resize/resample from frame taps, publish additional taps, encode Opus/VP8/VP9
-from frame taps, copy packet taps into destinations, decode packet taps into frame
+from frame taps, copy packet taps into endpoints, decode packet taps into frame
 branches, and feed later runtime branches from those taps. Taps declared after
 encode or copy are packet taps. Observer branches can end in a sink while
 publishing a nested tap with

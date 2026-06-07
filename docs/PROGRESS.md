@@ -41,7 +41,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 | `webrtcav` | single `NewSession` PeerConnection entry, TrackSet multi-track coordinator, replaceable TrackRemote readers, stream mapping, payload map boundary, track codec-update events, RTCP feedback bridge | live graph composition helpers |
 | `filter` | Into-style resize/resample result contract, explicit factory registry with descriptor capability metadata for pixel formats, sample formats, and resize modes, event-preserving frame-transform pipeline stage | richer concrete filters later |
 | `transcode` | internal migration `Plan` contract, branch-to-output selection model, mixed audio/video output grouping, resize/resample branch insertion through filter factories | retire as a special runtime path in favor of generic `MediaPlan` branches |
-| runtime | composition-first `From(input)` recipe front door with packet-preserving `Copy().To(...)`, explicit chain `.Decode()`, audio/video chains, typed `Branch`, typed `Tap`, `Target`, `Destination`, and `Chain` composition, `Branches(...)` planned splits from one selected stream, canonical `Flow(name).Audio()/Video()` operation sequences applied to chains, planned branches, and runtime branches, chain-local `Resize`/`Resample` transforms, one encode verb `.Encode(codec)` across streams/branches/flows, codec tuning through `CodecOption` values (`Bitrate`, `FPS`, `KeyframeInterval`, `Config`, `Control`, `Param`), ordered branch operation intent with custom stage, transform, tap, and encode steps, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `File` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, built-in and generic `Codec` specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, custom codec registration through `WithDecoder` and `WithEncoder`, private recipe intent compiler state with validation, `MediaPlan` branch IR and `Explain(ctx)` branch/decision/tap reports with probed/live stream caps, shared-operation markers, and operation output caps, recipe-owned branch-compose plan for declared branches, advanced `transcode.Plan` boundary adaptation, media-plan graph recognition required for normal recipe build/describe, planned `pipeline.Spec` emission for `Job`, decoder state-provider hook, RTP decode-bound hints for high-level receive, executable media-plan graph objects for normal recipe build/describe, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages and high-level custom sinks for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for H264/AV1 work-in-progress while generic custom codecs flow to adapter validation, grouped audio/video branch compiler with ordered custom stage and transform branches plus shared mux targets, descriptor-backed codec/filter/container capability reporting with config-specific decode, transform, and encode validation, buffered multi-output proof, live RTP/WebRTC branch compiler, direct and bounded-buffered runtime `Task.Attach` branch attachments from typed taps with custom stages, resize/resample plus decode/encode descriptor preflight, nested frame and packet taps, dependent branches after runtime resize taps, post-encode packet taps feeding dependent packet-copy branches, flow-applied Opus encode-to-target branches, Opus/VP8/VP9 late encode-to-destination, packet-copy late destination and recording branches, Opus encoded late recording from frame taps, `Attachment.Close(ctx)`/`Task.Detach(ctx, h)`, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | finish generic branch lowering behind the branch composer and deepen capability planning |
+| runtime | composition-first `From(input)` recipe front door with packet-preserving `Copy().To(...)`, explicit chain `.Decode()`, audio/video chains, typed `Branch`, typed `Tap`, `Target`, `Endpoint`, and `Chain` composition, `Branches(...)` planned splits from one selected stream, canonical `Flow(name).Audio()/Video()` operation sequences applied to chains, planned branches, and runtime branches, chain-local `Resize`/`Resample` transforms, one encode verb `.Encode(codec)` across streams/branches/flows, codec tuning through `CodecOption` values (`Bitrate`, `FPS`, `KeyframeInterval`, `Config`, `Control`, `Param`), ordered branch operation intent with custom stage, transform, tap, and encode steps, actionable stream-selection and stream-mismatch diagnostics, first-stream `StreamIndex(0)` selection, `FileInput`, single `File` output constructor, `WebRTCTrack`, multi-input realtime `From(input).And(other...)` composition, RTP codec intent, built-in and generic `Codec` specs, standard `Default()` adapter bundle, function stage/sink adapters, handle-based `Runtime.Graph()` advanced builder with `Source/Stage/Sink` handles and `Connect`, runtime-owned codec/format/filter registries extended by adapter hooks, custom codec registration through `WithDecoder` and `WithEncoder`, private recipe intent compiler state with validation, `MediaPlan` branch IR and `Explain(ctx)` branch/decision/tap reports with probed/live stream caps, shared-operation markers, and operation output caps, recipe-owned branch-compose plan for declared branches, advanced `transcode.Plan` boundary adaptation, media-plan graph recognition required for normal recipe build/describe, planned `pipeline.Spec` emission for `Job`, decoder state-provider hook, RTP decode-bound hints for high-level receive, executable media-plan graph objects for normal recipe build/describe, pre-build and task graph descriptions with node details, high-level remux/fanout compiler, type-selected decode graphs that can follow codec-change replacement streams with old-ID or replacement-ID targets and fail explicitly on different-codec live switches, selected-stream decode-to-sink compilers with optional filter stages and high-level custom sinks for file/protocol and RTP/WebRTC receive, selected-stream decode/filter/encode-to-output compilers for file/protocol and RTP/WebRTC receive, recipe encode guardrails for H264/AV1 work-in-progress while generic custom codecs flow to adapter validation, grouped audio/video branch compiler with ordered custom stage and transform branches plus shared mux targets, descriptor-backed codec/filter/container capability reporting with config-specific decode, transform, and encode validation, buffered multi-output proof, live RTP/WebRTC branch compiler, direct and bounded-buffered runtime `Task.Attach` branch attachments from typed taps with custom stages, resize/resample plus decode/encode descriptor preflight, nested frame and packet taps, dependent branches after runtime resize taps, post-encode packet taps feeding dependent packet-copy branches, flow-applied Opus encode-to-target branches, Opus/VP8/VP9 late encode-to-endpoint, packet-copy late endpoint and recording branches, Opus encoded late recording from frame taps, `Attachment.Close(ctx)`/`Task.Detach(ctx, h)`, and multi-RTP/WebRTC packet-reader record/fanout compiler with buffered borrowed-payload proof | finish generic branch lowering behind the branch composer and deepen capability planning |
 | adapters | `ivf` packet demux/mux active; `annexb` H264 packet mux active; `resample` S16 audio filter active; `resize` I420/YUV420P video filter active; `gopus` Opus decoder and encoder active with caller-owned S16 frame/packet-buffer guards plus native `gopus.EncoderConfig` and control passthrough; `goh264` H264 decoder active behind `goav_goh264` with adapter-owned allocation and lifecycle guards; `govpx` VP8/VP9 decoders and encoders active behind `goav_govpx` with caller-owned I420/packet-buffer guards, unified bitrate/FPS/keyframe option mapping, native option structs, and encoder controls; `goav1` descriptor-only by default and active behind `goav_goav1` with caller-owned decoder state, runtime state provisioning from RTP decode bounds, low-overhead AV1 decode, concrete raw RTP payload decode, high-level RTP receive and replacement-stream codec-change proof for old-ID and replacement-ID event targets, borrowed gray8/I420/I422/I444 frame mapping with yuv420p/yuv422p/yuv444p accepted as aliases, runner reuse, keyframe requests, drop-until-sync recovery from packet markers or parsed payloads, allocation guards, and lifecycle proof; default-build optional video adapters report unavailable factories explicitly | richer AV1 RTP/WebRTC recovery and output formats |
 
 ## Implementation Order
@@ -325,8 +325,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 98. Add stream-mismatch diagnostics for filter and encode requests, plus
     missing encode-target diagnostics that preserve `ErrUnsupportedBuild`.
     Done.
-99. Earlier experiment: tighten transcode string destinations so `.To(...)`
-    validates destination names before planning. Superseded before release by
+99. Earlier experiment: tighten transcode string outputs so `.To(...)`
+    validates target names before planning. Superseded before release by
     typed `Target` values carried by branches.
     Done.
 100. Add intent-layer transcode diagnostics for missing branches and branches
@@ -420,7 +420,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Done.
 133. Earlier experiment: reject empty transcode output definition labels.
     Superseded before release by typed `Target` values and branch-owned
-    destinations.
+    endpoints.
     Done.
 134. Earlier experiment: let stream-local sink endpoints and frame-processing steps
     imply decode. Superseded by the clearer explicit `.Decode()` composition
@@ -895,8 +895,8 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     mismatch is provable, while `Explain(ctx)` carries the same structured
     diagnostic without treating it as a missing adapter. Done.
 238. Clean the composition vocabulary around branches and targets:
-    public planned splits use `Branch`/`Branches`, logical destinations use
-    `Target`, endpoints remain `File`, `URIOut`, and `SinkEndpoint`, and
+    public planned splits use `Branch`/`Branches`, logical groups use
+    `Target`, endpoints are `File`, `URIOut`, `Sink`, and `Target`, and
     flows are reusable operation sequences without `.To(...)`. `Task.Attach`
     now consumes the same `BranchSpec` shape for runtime sink attachment from
     named taps, and the old public `Output`/`Outputs` recipe binding surface is
@@ -1090,7 +1090,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 265. Let runtime branches fan out to multiple typed targets:
     `Task.Attach(ctx, goav.Branch(...).FromTap(...).Encode(goav.Opus(goav.Bitrate(...))).To(archive, monitor))`
     now encodes once, keeps terminal targets separate from the operation chain,
-    and connects the running branch to multiple mux/sink destinations under one
+    and connects the running branch to multiple mux/sink endpoints under one
     attachment. Runtime branches now match planned branch `.To(target, ...)`
     grammar for target fanout while preserving detach and nested tap ownership.
     Done.
@@ -1109,7 +1109,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     public recipe diagnostics aligned with `Target` without blurring runtime
     internals. Done.
 268. Remove explicit target-registration sugar from the public Job API:
-    branch composition now relies on typed destinations collected from
+    branch composition now relies on typed endpoints collected from
     `Branch(...).To(Target(...))` and direct endpoint `.To(...)` calls; the
     exported `Job.Targets(...)` registration escape hatch was removed. The API
     guard now rejects `Targets` alongside `Path`, `Paths`, `Output`, and
@@ -1128,7 +1128,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     aligned with the one-branch-name/one-target grammar. Done.
 271. Allow direct packet-domain fanout to mux and sink endpoints:
     stream recipes now permit `.Copy().To(file, Sink(...))` and
-    `.Encode(goav.Opus(goav.Bitrate(...))).To(file, Sink(...))` because both destinations receive
+    `.Encode(goav.Opus(goav.Bitrate(...))).To(file, Sink(...))` because both endpoints receive
     encoded packets. The media-plan encode path now plans and builds sink
     endpoints beside mux endpoints after one encoder, while decoded frame-domain
     sink+mux mixes still fail with the existing guidance. Runtime tests prove
@@ -1374,7 +1374,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps`, and
     `TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap` pin the boundary
     metadata. Done.
-301. Unify direct stream destinations with branch destinations:
+301. Unify direct stream endpoints with branch endpoints:
     stream `.To(...)` now accepts the same typed `Target` or direct endpoint
     values as branch `.To(...)`. Direct stream target names travel beside
     endpoint attachments, so the planner validates logical targets without
@@ -1382,7 +1382,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestStreamRecipeCanWriteToTypedTarget` and
     `TestStreamRecipeEncodeToTypedTargetRuns` pin intent, Describe/Build
     equivalence, mux execution, and cleanup. Done.
-302. Unify packet-preserving job destinations with the same target grammar:
+302. Unify packet-preserving job endpoints with the same target grammar:
     root `From(input).Copy().To(...)` now accepts typed `Target` values or
     direct endpoints, matching stream and branch `.To(...)` without a separate
     registration step. Job-level target names travel beside endpoint
@@ -1469,13 +1469,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     from.
     Done.
 310. Rename the sealed `To(...)` argument:
-    the public variadic type formerly named as a target-or-endpoint union is now
-    `Destination`, while the concrete user concepts remain `Target` values and
-    destination constructors. Internal helper names use destination bindings too,
-    so the old disjunctive vocabulary does not remain in compiler plumbing.
-    `TestToAcceptsDestinationSlices` proves dynamic destination slices still
-    work, and `TestPackageKeepsLegacyHelpersOutOfFrontDoor` rejects the old
-    exported type name.
+    the public variadic type is `Endpoint`, covering concrete `File`, `URIOut`,
+    `Sink`, and named `Target` values. The old disjunctive helper names stay out
+    of the front door, and public examples describe `.To(...)` in endpoint
+    vocabulary.
+    `TestToAcceptsEndpointSlices` proves dynamic endpoint slices still work,
+    and `TestPackageKeepsLegacyHelpersOutOfFrontDoor` rejects stale exported
+    type names.
     Done.
 311. Make packet copy reusable as a flow operation:
     `Flow(name).Audio()` and `Flow(name).Video()` now expose `Copy()` as a
@@ -1492,7 +1492,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `.Tap(ref)` and runtime `.From(ref)`. Runtime attach
     validates typed tap domains against `Task.Taps()` before graph mutation, and
     stream/flow tap declarations reject frame-vs-packet mismatches at build
-    time. `Sink(...)` is the preferred sink destination spelling, and
+    time. `Sink(...)` is the preferred sink endpoint spelling, and
     `Flow(name).Audio()` / `Flow(name).Video()` are the canonical reusable-chain
     constructors. The README first page now teaches Input, Chain, Tap, Branch,
     Target, and Task, and its preferred examples use typed taps, `Sink`, and
@@ -1521,15 +1521,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     API test rejects the old field name from returning. This keeps planned
     branches, runtime attach, and reusable flows on the same typed tap grammar.
     Done.
-315. Collapse high-level implementation naming onto destinations:
-    private target bindings, branch destinations, runtime branch terminal
-    preparation, mux format helpers, and encode-to-destination graph helpers now
-    use destination naming instead of endpoint naming. Internal target records
-    store destinations, direct `.To(...)` bindings are direct destinations,
-    runtime attach prepares branch destinations, and media-plan encode paths
-    plan and compile destination paths. The public `Endpoint` vocabulary remains
-    only in regression guards and historical notes, not in active composition
-    code.
+315. Keep private endpoint lowering out of the public grammar:
+    private target bindings, branch terminal preparation, mux format helpers,
+    and encode graph helpers can use internal destination records where they map
+    onto container outputs, but the public composition grammar remains
+    `Target` plus `Endpoint`.
     Done.
 316. Hide concrete chain builder type names:
     `From(...).Audio()/Video()/Stream()`, `Branch(name)`, and
@@ -1542,28 +1538,28 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Branches(...)` as the single planned split verb.
     Done.
 317. Hide target implementation values:
-    `Target(name, destination)` now returns the public `Destination` interface
+    `Target(name, endpoint)` now returns the public `Endpoint` interface
     instead of exporting a `TargetSpec` value. Shared target name, concrete
-    destination, and identity are still preserved internally for planned branch
+    endpoint, and identity are still preserved internally for planned branch
     composition and runtime attach grouping, but users only pass the target value
-    to `.To(...)` like any other destination. Guard coverage rejects
+    to `.To(...)` like any other endpoint. Guard coverage rejects
     `TargetSpec` as an exported front-door type.
     Done.
-318. Hide concrete destination specs:
+318. Hide concrete endpoint specs:
     `File`, `URIOut`, `Sink`, and `Target` now return the public
-    `Destination` interface directly, with fluent `.Name`, `.MIME`, and
-    `.Format` methods kept on that interface. The concrete destination record
+    `Endpoint` interface directly, with fluent `.Name`, `.MIME`, and
+    `.Format` methods kept on that interface. The concrete endpoint record
     is package-private, compiler-state tests use private constructors where they
     need exact records, and guard coverage rejects `DestinationSpec` as an
     exported front-door type.
     Done.
 319. Unify single-stream media-plan execution:
-    decoded frame sinks, encode-to-file/URI destinations, encode-to-sink
-    destinations, and mixed encoded fanout now all compile through
+    decoded frame sinks, encode-to-file/URI endpoints, encode-to-sink
+    endpoints, and mixed encoded fanout now all compile through
     `mediaPlanSingleStreamGraph` instead of separate sink and encode executable
     wrappers. The media-plan selector has one single-stream branch, tests assert
     that common single-stream recipes share that executable path, and flow
-    diagnostics are covered by the destination-vocabulary guard.
+    diagnostics are covered by the endpoint-vocabulary guard.
     Done.
 320. Share media-plan task execution:
     `recipeResolved.Build` now uses one media-plan executor that opens the
@@ -1610,7 +1606,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     production build diagnostics no longer suggest old recipe families or
     endpoint terminology when the user should choose `From(...)`,
     `Runtime.Graph()`, `Target`, `Sink`, `File`, or `URIOut`.
-    Branch target validation now talks about destinations and targets, and guard
+    Branch target validation now talks about endpoints and targets, and guard
     coverage rejects the stale diagnostic vocabulary from production files.
     Done.
 326. Name reusable fragments as chains internally:
@@ -1644,12 +1640,19 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     slices plus architecture and roadmap docs, while older numbered entries can
     remain as historical evidence.
     Done.
-330. Make file and URI destinations canonical:
-    writer-backed destinations now use `File(name, writer)`, URI-backed
-    destinations use `URIOut(uri)`, and sink destinations continue to use
+330. Make file and URI endpoints canonical:
+    writer-backed endpoints now use `File(name, writer)`, URI-backed
+    endpoints use `URIOut(uri)`, and sink endpoints continue to use
     `Sink(sink)`. README examples, use cases, diagnostics, tests, and guards
     now reject the old `FileOutput`/`URIOutput` spelling from the public
-    surface, keeping destination construction aligned with `Target` and `To`.
+    surface, keeping endpoint construction aligned with `Target` and `To`.
+    Done.
+331. Rename the public `.To(...)` value to `Endpoint`:
+    `File`, `URIOut`, `Sink`, and `Target` now return the sealed public
+    `Endpoint` interface, while `Destination` is rejected as a front-door type.
+    README vocabulary, use-case guidance, runtime attach diagnostics, and
+    regression tests now teach one output-side grammar: a `Target` names a
+    mux/sink group, an `Endpoint` is what `.To(...)` receives.
     Done.
 
 ## First Vertical Slice
@@ -1895,7 +1898,7 @@ Required proof:
 Current pressure point: finish direct media-plan graph construction and deepen
 capability planning around the ordered operation model. The public recipe
 surface is small: `From`, chains, `Tap`, `Branch`, `Branches`,
-`Target`, destination constructors, `Flow`, `Codec`, and runtime `Attach`. Flows
+`Target`, `Endpoint`, `Flow`, `Codec`, and runtime `Attach`. Flows
 expand optional first decode plus ordered stage/tap/transform/encode operations
 into branch intent instead of a parallel graph language, and
 `Task.Attach` remains the late branch control plane for running graphs,
@@ -1906,9 +1909,9 @@ nested transform frame-tap, custom-stage frame-tap, and post-encode packet-tap
 subtrees before future media reaches them, runtime filter cleanup after
 post-open duplicate-tap rejection, graph rollback after post-open connect
 failure, terminal-stage rollback after post-open transform/encode/mux target
-mutation failure, sink-destination rollback after post-open transform/sink graph
+mutation failure, sink-endpoint rollback after post-open transform/sink graph
 mutation failure, flow-applied Opus encode-to-target branches, late Opus/VP8/VP9
-encode-to-destination, packet-copy destination, packet-copy recording, Opus encoded
+encode-to-endpoint, packet-copy endpoint, packet-copy recording, Opus encoded
 late recording, and sink branches that can publish nested runtime taps for later
 attachments. Direct and buffered graphs now reject dynamic node additions after
 close so runtime attach fails before mutating a closed graph while still closing
@@ -1925,11 +1928,11 @@ targets without rebuilding the task.
 input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and
 `Explain(ctx)` now require a supported media-plan shape for normal recipes. The
-packet-copy paths use resolved graph plans for concrete inputs and destinations,
+packet-copy paths use resolved graph plans for concrete inputs and endpoints,
 direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
-broaden descriptor-backed destination/container capability data as WebM/Ogg arrive
+broaden descriptor-backed endpoint/container capability data as WebM/Ogg arrive
 and keep broadening runtime attachment stress around generic lifecycle
 boundaries without weakening the direct graph branch grammar.
 

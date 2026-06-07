@@ -110,7 +110,7 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		return nil, err
 	}
 	if len(specs) == 0 {
-		return nil, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more goav.Branch(name)...To(destination) values")
+		return nil, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more goav.Branch(name)...To(endpoint) values")
 	}
 	branches := make([]runtimeBranch, len(specs))
 	for i := range specs {
@@ -237,7 +237,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	branch.steps = runtimeBranchStepsFromChain(spec.decode, spec.steps)
 	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	if len(spec.targets) == 0 {
-		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.Target(name, destination))")
+		return branch, runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.Target(name, endpoint))")
 	}
 	for i := range spec.targets {
 		target := cloneTargetSpec(spec.targets[i])
@@ -328,9 +328,9 @@ func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchG
 						"second branch: " + firstNonEmpty(branch.name, fmt.Sprintf("branch-%d", i+1)),
 					},
 					Suggestions: []string{
-						"reuse one goav.Target(name, destination) value when branches should share a runtime target group",
-						"use distinct goav.Target names for independent runtime destinations",
-						"use a sink destination for runtime observer groups or a mux destination for runtime recording groups",
+						"reuse one goav.Target(name, endpoint) value when branches should share a runtime target group",
+						"use distinct goav.Target names for independent runtime endpoints",
+						"use a sink endpoint for runtime observer groups or a mux endpoint for runtime recording groups",
 					},
 					Cause: ErrUnsupportedBuild,
 				}
@@ -735,7 +735,7 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 		return nil
 	}
 	if len(branch.destinations) == 0 {
-		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
+		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
 	stream := currentStream
 	caps := currentCaps
@@ -776,7 +776,7 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 	if t.runtime == nil {
 		closeRuntimeBranchOwnedStages(*branch)
 		return runtimeBranchInvalidError(
-			"runtime branch mux destinations require the standard runtime",
+			"runtime branch mux endpoints require the standard runtime",
 			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching file or URI branches",
 		)
 	}
@@ -1399,7 +1399,7 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 		return runtimeBranchInvalidError("branch source is empty", "call .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(node) with an expert graph node")
 	}
 	if len(branch.destinations) == 0 {
-		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
+		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
 	if err := validateRuntimeBranchTargets(branch); err != nil {
 		return err
@@ -2013,7 +2013,7 @@ func runtimeBranchCopyDomainError(branch string, caps StreamCaps) error {
 		Details:   runtimeBranchCapsDetails(caps),
 		Suggestions: []string{
 			"attach from a tap declared after Copy or Encode",
-			"encode frame taps with .Encode(goav.Opus(goav.Bitrate(...))), .Encode(goav.VP8(goav.Bitrate(...))), or .Encode(goav.VP9(goav.Bitrate(...))) before writing a muxed destination",
+			"encode frame taps with .Encode(goav.Opus(goav.Bitrate(...))), .Encode(goav.VP8(goav.Bitrate(...))), or .Encode(goav.VP9(goav.Bitrate(...))) before writing a mux endpoint",
 			"call task.Taps() and choose a tap with domain=packet",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -2025,7 +2025,7 @@ func runtimeBranchMuxCodecMissingError(branch string, caps StreamCaps) error {
 		Code:      "runtime_branch_mux_codec_missing",
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
-		Reason:    "runtime branch mux destination needs codec metadata",
+		Reason:    "runtime branch mux endpoint needs codec metadata",
 		Details:   runtimeBranchCapsDetails(caps),
 		Suggestions: []string{
 			"attach from a recipe tap with codec caps",

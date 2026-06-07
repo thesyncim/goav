@@ -539,7 +539,7 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxTargets(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "runtime branch group reuses one target name") ||
 		!strings.Contains(err.Error(), "runtime target group") ||
-		!strings.Contains(err.Error(), "mux destination") {
+		!strings.Contains(err.Error(), "mux endpoint") {
 		t.Fatalf("err = %v, want grouped target guidance", err)
 	}
 	text := specText(task.Describe())
@@ -1481,7 +1481,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 	}
 }
 
-func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testing.T) {
+func TestTaskAttachRollsBackRuntimeSinkEndpointWhenGraphConnectFails(t *testing.T) {
 	ctx := context.Background()
 	resampler := &transcodeTestFilter{}
 	resampleFactory := &transcodeTestFilterFactory{filter: resampler}
@@ -1531,10 +1531,10 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before graph rollback", resampleFactory.config.Audio)
 	}
 	if !resampler.closed {
-		t.Fatal("runtime filter was not closed after sink destination graph rollback")
+		t.Fatal("runtime filter was not closed after sink endpoint graph rollback")
 	}
 	if !sink.closed {
-		t.Fatal("runtime sink destination was not closed after graph rollback")
+		t.Fatal("runtime sink endpoint was not closed after graph rollback")
 	}
 	if graph.connects != 2 {
 		t.Fatalf("connects = %d, want sink connect failure after one successful branch connect", graph.connects)

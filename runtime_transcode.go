@@ -640,8 +640,8 @@ func prepareBranchComposePlan(plan branchComposePlan) ([]branchComposeRoute, []b
 func branchComposePlanEmptyError(kind string) error {
 	suggestions := []string{
 		"add at least one branch with a selector and encoder",
-		"add at least one target destination",
-		"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(goav.VP9(goav.Bitrate(...))).To(goav.Target(\"web\", output))) for the recipe API",
+		"add at least one target",
+		"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(goav.VP9(goav.Bitrate(...))).To(goav.Target(\"web\", endpoint))) for the recipe API",
 	}
 	reason := "branch composition has no " + kind
 	return &BuildError{
@@ -1046,7 +1046,7 @@ func branchComposeTargets(plan branchComposePlan, branches []branchComposeRoute)
 	for i := range plan.Targets {
 		output := plan.Targets[i]
 		if output.Sink != nil && branchComposeTargetHasMuxDestination(output) {
-			return nil, branchComposeTargetDestinationInvalidError(output, "target cannot configure both a sink and a mux destination")
+			return nil, branchComposeTargetDestinationInvalidError(output, "target cannot configure both a sink and a mux endpoint")
 		}
 		target := branchComposeFormatTarget(plan, output)
 		matches := branchComposeTargetMatches(output, branches)
@@ -1109,7 +1109,7 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 		Reason:    reason,
 		Suggestions: []string{
 			"use goav.Target(name, goav.Sink(sink)) for frame or packet sink targets",
-			"use goav.Target(name, goav.File(...)) or goav.Target(name, goav.URIOut(...)) for muxed destinations",
+			"use goav.Target(name, goav.File(...)) or goav.Target(name, goav.URIOut(...)) for mux outputs",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

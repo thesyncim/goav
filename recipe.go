@@ -745,7 +745,7 @@ func (s InputSpec) selector(media av.MediaType) av.StreamSelector {
 	return selector
 }
 
-// destinationSpec describes a concrete file, URI, writer, or sink destination.
+// destinationSpec describes a concrete file, URI, writer, or sink endpoint.
 type destinationSpec struct {
 	output         format.Output
 	sink           pipeline.Sink
@@ -755,8 +755,8 @@ type destinationSpec struct {
 	err            error
 }
 
-// File creates a writer-backed file destination.
-func File(name string, writer io.Writer) Destination {
+// File creates a writer-backed file endpoint.
+func File(name string, writer io.Writer) Endpoint {
 	return fileDestination(name, writer)
 }
 
@@ -771,8 +771,8 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 	}
 }
 
-// URIOut creates a URI destination opened by a registered format adapter.
-func URIOut(uri string) Destination {
+// URIOut creates a URI endpoint opened by a registered format adapter.
+func URIOut(uri string) Endpoint {
 	return uriDestination(uri)
 }
 
@@ -786,8 +786,8 @@ func uriDestination(uri string) destinationSpec {
 	}
 }
 
-// Sink creates a sink destination for decoded frames or packets.
-func Sink(sink pipeline.Sink) Destination {
+// Sink creates a sink endpoint for decoded frames or packets.
+func Sink(sink pipeline.Sink) Endpoint {
 	return sinkDestination(sink)
 }
 
@@ -802,9 +802,9 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 	return destinationSpec{sink: sink, name: name}
 }
 
-// Name overrides the destination name used for diagnostics and mux graph nodes.
+// Name overrides the endpoint name used for diagnostics and mux graph nodes.
 // Sink graph nodes use the wrapped sink's Name.
-func (s destinationSpec) Name(name string) Destination {
+func (s destinationSpec) Name(name string) Endpoint {
 	return s.withName(name)
 }
 
@@ -816,8 +816,8 @@ func (s destinationSpec) withName(name string) destinationSpec {
 	return s
 }
 
-// MIME sets the destination MIME type used for format detection.
-func (s destinationSpec) MIME(mimeType string) Destination {
+// MIME sets the endpoint MIME type used for format detection.
+func (s destinationSpec) MIME(mimeType string) Endpoint {
 	return s.withMIME(mimeType)
 }
 
@@ -826,8 +826,8 @@ func (s destinationSpec) withMIME(mimeType string) destinationSpec {
 	return s
 }
 
-// Format sets the destination container format explicitly.
-func (s destinationSpec) Format(format av.FormatID) Destination {
+// Format sets the endpoint container format explicitly.
+func (s destinationSpec) Format(format av.FormatID) Endpoint {
 	return s.withFormat(format)
 }
 
@@ -864,7 +864,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Code:      "output_invalid",
 			Operation: operation,
 			Node:      node,
-			Reason:    "empty destination spec",
+			Reason:    "empty endpoint spec",
 			Suggestions: []string{
 				"use goav.File(name, writer) for muxed output",
 				"use goav.Sink(sink) for decoded frames or packets",
@@ -1006,7 +1006,7 @@ func (j *Job) setErr(err error) {
 	}
 }
 
-func (j *Job) To(destinations ...Destination) *Job {
+func (j *Job) To(destinations ...Endpoint) *Job {
 	if len(j.branchStreams) != 0 {
 		j.setErr(branchOutputScopeError("branches"))
 		return j
@@ -1014,7 +1014,7 @@ func (j *Job) To(destinations ...Destination) *Job {
 	for i := range destinations {
 		destination := destinations[i]
 		if destination == nil {
-			j.setErr(jobDestinationInvalidError("job", "job destination is nil"))
+			j.setErr(jobDestinationInvalidError("job", "job endpoint is nil"))
 			return j
 		}
 		output, name, err := destinationFromBinding("build job", "job", destination.destination(), i)
@@ -2637,7 +2637,7 @@ func duplicateTargetDestinationError(operation string, name string) error {
 		Reason:    fmt.Sprintf("target %q is attached more than once", name),
 		Suggestions: []string{
 			"list each goav.Target value once in .To(...)",
-			"use distinct target names when writing to separate destinations",
+			"use distinct target names when writing to separate endpoints",
 			"reuse one target from multiple branches through .Branches(...) when outputs should be grouped",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3244,13 +3244,13 @@ func (b *jobStreamBuilder) OnCodecChange(policy CodecChangePolicy) *jobStreamBui
 	return b
 }
 
-func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
+func (b *jobStreamBuilder) To(destinations ...Endpoint) *Job {
 	stream := b.current()
 	outputs := make([]destinationSpec, 0, len(destinations))
 	for i := range destinations {
 		destination := destinations[i]
 		if destination == nil {
-			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream destination is nil"))
+			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream endpoint is nil"))
 			return b.job
 		}
 		output, name, err := destinationFromBinding("build stream", jobStreamName(stream), destination.destination(), i)
@@ -3282,7 +3282,7 @@ func destinationFromBinding(operation string, node string, destination destinati
 	case destination.hasDirect:
 		return cloneDestinationSpec(destination.dest), "", nil
 	default:
-		return destinationSpec{}, "", destinationInvalidError(operation, node, "unsupported destination")
+		return destinationSpec{}, "", destinationInvalidError(operation, node, "unsupported endpoint")
 	}
 }
 
@@ -3728,7 +3728,7 @@ func branchTargetReferenceMissingError(stream StreamIntent, label string) error 
 		Node:      stream.Name,
 		Reason:    "target " + label + " is referenced but not defined",
 		Suggestions: []string{
-			"pass a goav.Target(\"" + label + "\", destination) value to the branch .To(...) call",
+			"pass a goav.Target(\"" + label + "\", endpoint) value to the branch .To(...) call",
 			"reuse typed target values instead of repeating string target refs",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3759,7 +3759,7 @@ func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 		},
 		Suggestions: []string{
 			"call .To(goav.Target(\"web\", goav.File(...))) with a non-empty target name",
-			"pass a destination directly when a separate target name is not needed",
+			"pass an endpoint directly when a separate target name is not needed",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3788,10 +3788,10 @@ func branchTargetDuplicateError(name string) error {
 		Code:      "target_duplicate",
 		Operation: branchCompositionOperation,
 		Node:      name,
-		Reason:    fmt.Sprintf("target %q is defined more than once with different destinations", name),
+		Reason:    fmt.Sprintf("target %q is defined more than once with different endpoints", name),
 		Suggestions: []string{
 			"reuse the same goav.Target value when multiple branches should share one mux group",
-			"use distinct target names when branches should write to different destinations",
+			"use distinct target names when branches should write to different endpoints",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

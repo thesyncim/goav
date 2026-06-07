@@ -19,12 +19,12 @@ make the implementation match the composable planner promise.
    decode, after resize/resample, after custom stages, after taps, and later
    after sink/output attachment where runtime support makes sense. Custom stage
    and transform steps are active, reusable flows carry optional first decode,
-   ordered stage, tap, transform, terminal encode, and sink destination steps.
+   ordered stage, tap, transform, terminal encode, and sink endpoint steps.
    Planned branches can now
-   end in frame-domain sink destinations after decode/resize/resample/custom stages
-   or in packet-domain sink destinations after Opus/VP8/VP9 encode. Runtime
+   end in frame-domain sink endpoints after decode/resize/resample/custom stages
+   or in packet-domain sink endpoints after Opus/VP8/VP9 encode. Runtime
    branches can apply flows from frame taps, publish nested taps, encode
-   Opus/VP8/VP9 into destinations, copy packet taps into destinations, and decode
+   Opus/VP8/VP9 into endpoints, copy packet taps into endpoints, and decode
    packet taps into new frame-domain work. Buffered runtime mutation and deeper
    capability metadata remain next slices.
 3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
@@ -36,7 +36,7 @@ make the implementation match the composable planner promise.
    the resolved plan until a media-plan branch graph emits specs or builds the
    runtime graph. Packet copy/fanout recipes now do the same through a resolved
    packet-copy graph plan. Direct stream decode/encode recipes now keep resolved
-   inputs, destinations, ordered stream attachments, codec-change policy, custom
+   inputs, endpoints, ordered stream attachments, codec-change policy, custom
    stages, transforms, and taps until the media-plan boundary instead of
    compiling from pre-lowered builder state; they now describe/build through a
    resolved single-stream graph plan and shared parameterized graph helpers. The
@@ -179,7 +179,7 @@ make the implementation match the composable planner promise.
   and post-encode nested tap detach covered; live buffered runtime resize and
   resample subtree detach plus post-open filter cleanup on rejected branches are
   now covered, and graph-mutation rollback after opened runtime filters,
-  encoders, mux terminal stages, and sink destinations is covered. Closed direct
+  encoders, mux terminal stages, and sink endpoints is covered. Closed direct
   and buffered graphs reject dynamic node additions before mutation while
   runtime attach closes any already-prepared branch components. Deeper generic
   lifecycle stress remains planned.

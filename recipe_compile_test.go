@@ -184,10 +184,10 @@ func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {
 func TestRuntimeBuilderUsesMuxVerbNotOutput(t *testing.T) {
 	builder := reflect.TypeOf((*builderAPI)(nil)).Elem()
 	if _, ok := builder.MethodByName("Output"); ok {
-		t.Fatal("private runtime builder should not expose Output; use Mux for mux destinations")
+		t.Fatal("private runtime builder should not expose Output; use Mux for mux outputs")
 	}
 	if _, ok := builder.MethodByName("Mux"); !ok {
-		t.Fatal("private runtime builder should expose Mux for mux destinations")
+		t.Fatal("private runtime builder should expose Mux for mux outputs")
 	}
 }
 
@@ -2539,7 +2539,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	}
 }
 
-func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
+func TestRecipeResolvedBuildUsesMediaPlanFileSinkEndpoint(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -2574,7 +2574,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	}
 }
 
-func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T) {
+func TestRecipeResolvedMediaPlanSinkEndpointPreservesCustomStage(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -2607,7 +2607,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 	}
 }
 
-func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
+func TestRecipeResolvedBuildUsesMediaPlanRTPSinkEndpoint(t *testing.T) {
 	ctx := context.Background()
 	stream := audioOpusTestStream()
 	receiver := &runtimeRTPReceiver{streams: []Stream{stream}}
@@ -2636,7 +2636,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	}
 }
 
-func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testing.T) {
+func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkEndpoint(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -2768,7 +2768,7 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	}
 }
 
-func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T) {
+func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkEndpoint(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -2811,7 +2811,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 	}
 }
 
-func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing.T) {
+func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkEndpoints(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
