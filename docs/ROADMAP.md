@@ -33,8 +33,10 @@ make the implementation match the composable planner promise.
    describe/build. Direct stream decode/encode recipes now keep resolved inputs,
    endpoints, ordered stream attachments, codec-change policy, custom stages,
    transforms, and taps until the media-plan boundary instead of compiling from
-   pre-lowered builder state. The remaining work is deeper direct graph
-   construction and capability planning behind those media-plan build kinds.
+   pre-lowered builder state; they now describe/build through a resolved
+   single-stream graph plan and shared parameterized graph helpers. The
+   remaining work is deeper direct graph construction and capability planning
+   behind the remaining media-plan build kinds.
 4. Add a capability model for streams, codecs, filters, and containers so the
    planner can explain copy/decode/encode choices, missing adapters, transform
    incompatibilities, and mux-output conflicts before runtime execution.

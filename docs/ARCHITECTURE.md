@@ -62,10 +62,13 @@ transforms. Branch-composition inputs are carried by the resolved recipe and are
 turned into a minimal graph builder only at describe/build time. Direct
 selected-stream decode/encode recipes also keep their inputs, endpoints, ordered
 stream attachments, codec-change policy, custom stages, transforms, and taps on
-the resolved recipe until the media-plan boundary. The next architectural
-pressure is to move those boundary helpers toward direct graph construction
-where it reduces duplication while keeping the flow
-`Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph`.
+the resolved recipe until the media-plan boundary. Those direct stream recipes
+now build and describe through a resolved single-stream graph plan and shared
+parameterized source/decode/filter/encode/target helpers instead of a
+pre-populated runtime builder. The next architectural pressure is to move the
+remaining media-plan helpers toward direct graph construction where it reduces
+duplication while keeping the flow `Intent -> MediaPlan -> pipeline.Spec ->
+pipeline.Graph`.
 
 The handle-based graph builder remains available as the advanced layer through
 `Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -30,22 +30,22 @@ func (r recipeResolved) buildMediaPlanSinkEndpointTask(ctx context.Context) (Tas
 	if !ok || !mediaPlanSinkEndpointShape(stream, r.outputAttachments) {
 		return nil, recipeGraphUnsupportedError("build job", r.intent)
 	}
-	builder, ok, err := mediaPlanSingleStreamBuilder(r.runtime, r.inputAttachments, r.outputAttachments, stream)
+	plan, ok, err := newMediaPlanSingleStreamGraph(r.runtime, r.inputAttachments, r.outputAttachments, stream)
 	if err != nil || !ok {
 		if err != nil {
 			return nil, err
 		}
 		return nil, recipeGraphUnsupportedError("build job", r.intent)
 	}
-	graph, err := builder.newGraph(ctx)
+	graph, err := plan.newGraph(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := r.compileMediaPlanSinkEndpoint(ctx, builder, graph); err != nil {
+	if err := plan.compileSinkEndpoint(ctx, graph); err != nil {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, builder.runtime), nil
+	return newTask(graph, plan.runtime), nil
 }
 
 func (r recipeResolved) buildMediaPlanEncodeTask(ctx context.Context) (Task, error) {
@@ -53,22 +53,22 @@ func (r recipeResolved) buildMediaPlanEncodeTask(ctx context.Context) (Task, err
 	if !ok || !mediaPlanEncodeShape(stream, r.outputAttachments) {
 		return nil, recipeGraphUnsupportedError("build job", r.intent)
 	}
-	builder, ok, err := mediaPlanSingleStreamBuilder(r.runtime, r.inputAttachments, r.outputAttachments, stream)
+	plan, ok, err := newMediaPlanSingleStreamGraph(r.runtime, r.inputAttachments, r.outputAttachments, stream)
 	if err != nil || !ok {
 		if err != nil {
 			return nil, err
 		}
 		return nil, recipeGraphUnsupportedError("build job", r.intent)
 	}
-	graph, err := builder.newGraph(ctx)
+	graph, err := plan.newGraph(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := r.compileMediaPlanEncode(ctx, builder, graph); err != nil {
+	if err := plan.compileEncodeOutput(ctx, graph); err != nil {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, builder.runtime), nil
+	return newTask(graph, plan.runtime), nil
 }
 
 func (r recipeResolved) buildMediaPlanBranchComposerTask(ctx context.Context) (Task, error) {
@@ -110,59 +110,206 @@ func (r recipeResolved) singleStreamIntent() (StreamIntent, bool) {
 	return r.intent.Streams[0], true
 }
 
-func mediaPlanSingleStreamBuilder(rt Runtime, inputs []InputSpec, outputs []EndpointSpec, stream StreamIntent) (*builder, bool, error) {
+type mediaPlanSingleStreamGraph struct {
+	runtime *runtime
+	inputs  []InputSpec
+	outputs []EndpointSpec
+	stream  StreamIntent
+	decode  decodeRequest
+	filters []filterRequest
+	encode  *encodeRequest
+}
+
+func newMediaPlanSingleStreamGraph(rt Runtime, inputs []InputSpec, outputs []EndpointSpec, stream StreamIntent) (mediaPlanSingleStreamGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
-		return nil, false, nil
+		return mediaPlanSingleStreamGraph{}, false, nil
 	}
-	builder := &builder{runtime: runtime}
-	if ok := mediaPlanAttachStreamInputs(builder, inputs); !ok {
-		return nil, false, nil
+	if !mediaPlanStreamInputsSupported(inputs) {
+		return mediaPlanSingleStreamGraph{}, false, nil
 	}
 	selector := streamIntentSelector(stream)
-	builder.decodes = []decodeRequest{{
-		selector:    selector,
-		codecChange: stream.CodecChange,
-	}}
+	plan := mediaPlanSingleStreamGraph{
+		runtime: runtime,
+		inputs:  append([]InputSpec(nil), inputs...),
+		outputs: append([]EndpointSpec(nil), outputs...),
+		stream:  stream,
+		decode: decodeRequest{
+			selector:    selector,
+			codecChange: stream.CodecChange,
+		},
+	}
 	filters, err := mediaPlanStreamFilters(stream)
 	if err != nil {
-		return nil, false, err
+		return mediaPlanSingleStreamGraph{}, false, err
 	}
-	builder.filters = filters
+	plan.filters = filters
 	if codecIntentSet(stream.Encode) && !stream.Encode.Copy {
-		builder.encodes = []encodeRequest{{
+		request := encodeRequest{
 			selector: selector,
 			config:   encodeConfigFromSpec(stream.Encode),
-		}}
+		}
+		plan.encode = &request
 	}
-	mediaPlanAttachStreamOutputs(builder, outputs)
-	return builder, true, nil
+	return plan, true, nil
 }
 
-func mediaPlanAttachStreamInputs(builder *builder, inputs []InputSpec) bool {
+func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
 	if len(inputs) == 1 && inputs[0].rtp == nil {
-		builder.inputs = []format.Input{inputs[0].formatInput()}
 		return true
 	}
-	if !allRTPInputSpecs(inputs) {
-		return false
-	}
-	builder.rtpInputs = make([]rtpInput, 0, len(inputs))
-	for i := range inputs {
-		builder.rtpInputs = append(builder.rtpInputs, inputs[i].rtpBuildInput())
-	}
-	return true
+	return allRTPInputSpecs(inputs)
 }
 
-func mediaPlanAttachStreamOutputs(builder *builder, outputs []EndpointSpec) {
-	for i := range outputs {
-		output := outputs[i]
-		if output.sink != nil {
-			builder.sinks = append(builder.sinks, output.sink)
-			continue
-		}
-		builder.outputWithFormats(output.output, endpointSpecOpenFormat(output), endpointSpecGraphFormat(output))
+func (p mediaPlanSingleStreamGraph) newGraph(ctx context.Context) (pipeline.Graph, error) {
+	return (&builder{runtime: p.runtime}).newGraph(ctx)
+}
+
+func (p mediaPlanSingleStreamGraph) sinkEndpointSpec() (pipeline.Spec, error) {
+	spec, sourceRefs, nodes, err := p.specWithSources()
+	if err != nil {
+		return pipeline.Spec{}, err
 	}
+	previous, err := planDecodeFilterPath(nodes, &spec, sourceRefs, p.decode, p.filters)
+	if err != nil {
+		return pipeline.Spec{}, err
+	}
+	if p.encode != nil {
+		if err := planEncodeSinkPath(nodes, &spec, previous, *p.encode, p.outputs[0].sink); err != nil {
+			return pipeline.Spec{}, err
+		}
+		return spec, nil
+	}
+	if err := planSinkPath(nodes, &spec, previous, p.outputs[0].sink); err != nil {
+		return pipeline.Spec{}, err
+	}
+	return spec, nil
+}
+
+func (p mediaPlanSingleStreamGraph) encodeOutputSpec() (pipeline.Spec, error) {
+	if p.encode == nil {
+		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", Intent{Streams: []StreamIntent{p.stream}})
+	}
+	spec, sourceRefs, nodes, err := p.specWithSources()
+	if err != nil {
+		return pipeline.Spec{}, err
+	}
+	previous, err := planDecodeFilterPath(nodes, &spec, sourceRefs, p.decode, p.filters)
+	if err != nil {
+		return pipeline.Spec{}, err
+	}
+	if err := planEncodeEndpointPath(nodes, &spec, previous, *p.encode, p.outputs); err != nil {
+		return pipeline.Spec{}, err
+	}
+	return spec, nil
+}
+
+func (p mediaPlanSingleStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeRef, map[string]plannedNode, error) {
+	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
+	nodes := make(map[string]plannedNode, len(p.inputs)+len(p.outputs)+len(p.filters)+3)
+	sourceRefs, ok, err := mediaPlanPacketCopySources(&spec, nodes, p.inputs)
+	if err != nil {
+		return pipeline.Spec{}, nil, nil, err
+	}
+	if !ok {
+		return pipeline.Spec{}, nil, nil, recipeGraphUnsupportedError("describe job", Intent{Streams: []StreamIntent{p.stream}})
+	}
+	return spec, sourceRefs, nodes, nil
+}
+
+func (p mediaPlanSingleStreamGraph) compileSinkEndpoint(ctx context.Context, graph pipeline.Graph) error {
+	sourceRefs, streams, rtpBuilds, realtime, err := p.compileSources(ctx, graph)
+	if err != nil {
+		return err
+	}
+	stream, err := selectDecodeStream(streams, p.decode.selector)
+	if err != nil {
+		return err
+	}
+	bounds := codec.DecodeBounds{}
+	if len(rtpBuilds) != 0 {
+		bounds = rtpDecodeBoundsForStream(stream, rtpBuilds)
+	}
+	previousRef, filteredStream, err := compileDecodeFilterPath(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, p.encode == nil, bounds, p.filters)
+	if err != nil {
+		return err
+	}
+	if p.encode != nil {
+		encodeConfig, _, err := prepareEncodeConfig(filteredStream, *p.encode, realtime)
+		if err != nil {
+			return err
+		}
+		return compileEncodeSinkPath(ctx, p.runtime, graph, previousRef, *p.encode, encodeConfig, p.outputs[0].sink)
+	}
+	sinkRef, err := graph.AddSink(p.outputs[0].sink, p.runtime.buffer)
+	if err != nil {
+		return err
+	}
+	return connectRefs(graph, previousRef, sinkRef)
+}
+
+func (p mediaPlanSingleStreamGraph) compileEncodeOutput(ctx context.Context, graph pipeline.Graph) error {
+	if p.encode == nil {
+		return recipeGraphUnsupportedError("build job", Intent{Streams: []StreamIntent{p.stream}})
+	}
+	sourceRefs, streams, rtpBuilds, realtime, err := p.compileSources(ctx, graph)
+	if err != nil {
+		return err
+	}
+	stream, err := selectDecodeStream(streams, p.decode.selector)
+	if err != nil {
+		return err
+	}
+	bounds := codec.DecodeBounds{}
+	if len(rtpBuilds) != 0 {
+		bounds = rtpDecodeBoundsForStream(stream, rtpBuilds)
+	}
+	previousRef, filteredStream, err := compileDecodeFilterPath(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, false, bounds, p.filters)
+	if err != nil {
+		return err
+	}
+	encodeConfig, encodedStream, err := prepareEncodeConfig(filteredStream, *p.encode, realtime)
+	if err != nil {
+		return err
+	}
+	return compileEncodeEndpointPath(ctx, p.runtime, graph, previousRef, *p.encode, encodeConfig, encodedStream, p.outputs)
+}
+
+func (p mediaPlanSingleStreamGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {
+	if len(p.inputs) == 1 && p.inputs[0].rtp == nil {
+		demux, err := (&builder{runtime: p.runtime}).openDemuxSource(ctx, p.inputs[0].formatInput())
+		if err != nil {
+			return nil, nil, nil, false, err
+		}
+		sourceRef, err := graph.AddSource(demux.source, p.runtime.buffer)
+		if err != nil {
+			demux.source.Close()
+			return nil, nil, nil, false, err
+		}
+		return []pipeline.NodeRef{sourceRef}, demux.streams, nil, p.runtime.realtime || p.inputs[0].formatInput().Realtime, nil
+	}
+	if !allRTPInputSpecs(p.inputs) {
+		return nil, nil, nil, false, recipeGraphUnsupportedError("build job", Intent{Streams: []StreamIntent{p.stream}})
+	}
+	sourceRefs := make([]pipeline.NodeRef, 0, len(p.inputs))
+	streams := make([]av.Stream, 0, len(p.inputs))
+	builds := make([]rtpBuild, 0, len(p.inputs))
+	service := &builder{runtime: p.runtime}
+	for i := range p.inputs {
+		receiver, err := service.openRTPSource(ctx, p.inputs[i].rtpBuildInput(), i)
+		if err != nil {
+			return nil, nil, nil, false, err
+		}
+		sourceRef, err := graph.AddSource(receiver.source, p.runtime.buffer)
+		if err != nil {
+			receiver.source.Close()
+			return nil, nil, nil, false, err
+		}
+		sourceRefs = append(sourceRefs, sourceRef)
+		streams = append(streams, receiver.streams...)
+		builds = append(builds, receiver)
+	}
+	return sourceRefs, streams, builds, p.runtime.realtime, nil
 }
 
 func mediaPlanStreamFilters(stream StreamIntent) ([]filterRequest, error) {
@@ -207,32 +354,6 @@ func mediaPlanStreamTransformFilters(stream StreamIntent, selector av.StreamSele
 		filters = append(filters, filterRequest{selector: selector, transform: &transform})
 	}
 	return filters, nil
-}
-
-func (r recipeResolved) compileMediaPlanEncode(ctx context.Context, builder *builder, graph pipeline.Graph) error {
-	switch {
-	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0:
-		return builder.compileDecodeEncodeToOutput(ctx, graph)
-	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0:
-		return builder.compileRTPDecodeEncodeToOutput(ctx, graph)
-	default:
-		return recipeGraphUnsupportedError("build job", r.intent)
-	}
-}
-
-func (r recipeResolved) compileMediaPlanSinkEndpoint(ctx context.Context, builder *builder, graph pipeline.Graph) error {
-	switch {
-	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0 && len(builder.encodes) == 0:
-		return builder.compileDecodeToSink(ctx, graph)
-	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0 && len(builder.encodes) == 0:
-		return builder.compileRTPDecodeToSink(ctx, graph)
-	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0 && len(builder.encodes) == 1:
-		return builder.compileDecodeEncodeToSink(ctx, graph)
-	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0 && len(builder.encodes) == 1:
-		return builder.compileRTPDecodeEncodeToSink(ctx, graph)
-	default:
-		return recipeGraphUnsupportedError("build job", r.intent)
-	}
 }
 
 func (r recipeResolved) compileMediaPlanPacketCopy(ctx context.Context, builder *builder, graph pipeline.Graph) error {

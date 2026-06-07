@@ -982,6 +982,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     small runtime helper from those resolved attachments at the media-plan
     boundary. The old builder-shape gates and lower passes for these direct
     stream jobs are removed. Done.
+251. Move direct stream media-plan specs/builds onto resolved graph plans:
+    direct selected-stream decode/encode recipes now create a small resolved
+    single-stream graph plan from intent plus concrete input, endpoint, stage,
+    transform, tap, and codec attachments. `Describe` and `Build` for those
+    recipes call parameterized decode/filter/encode/source/target helpers
+    instead of first populating a runtime builder and matching its internal
+    fields. Existing expert builder compilers reuse the same helpers so planned
+    graph equivalence stays covered while the recipe path moves closer to
+    `Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph`. Done.
 
 ## First Vertical Slice
 
@@ -1193,9 +1202,9 @@ Required proof:
 
 1. Complete `MediaPlan.Spec()` equivalence for remaining generic `From` and
    mixed-output composer shapes.
-2. Move media-plan build helpers from boundary-created runtime builders toward
-   direct `MediaPlan -> pipeline.Spec -> pipeline.Graph` construction where it
-   reduces duplication without weakening graph equivalence.
+2. Move remaining media-plan build helpers toward direct
+   `MediaPlan -> pipeline.Spec -> pipeline.Graph` construction where it reduces
+   duplication without weakening graph equivalence.
 3. Continue toward direct branch lowering: selected stream, ordered operation
    chain, target refs, mux/sink groups, and shared upstream decode where
    branches select the same input stream. Recipes already use a private
@@ -1237,12 +1246,13 @@ later attachments.
 input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and
 `Explain(ctx)` now require a supported media-plan shape for normal recipes. The
-direct stream and branch-composition paths now keep their concrete attachments
-on the resolved recipe until the media-plan boundary instead of recognizing a
-pre-mutated recipe builder. The next implementation work is to broaden the same
-first-class requirement model to custom filter capability details, richer
-endpoint/container compatibility as WebM/Ogg arrive, and buffered runtime
-attachment without weakening the direct graph branch grammar.
+direct stream paths now use resolved single-stream graph plans, and branch
+composition keeps concrete attachments on the resolved recipe until the
+media-plan boundary instead of recognizing a pre-mutated recipe builder. The
+next implementation work is to broaden the same first-class requirement model
+to custom filter capability details, richer endpoint/container compatibility as
+WebM/Ogg arrive, and buffered runtime attachment without weakening the direct
+graph branch grammar.
 
 ## Validation Gates
 

@@ -2185,13 +2185,13 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	if !ok {
 		t.Fatalf("resolved intent streams = %+v, want one stream", resolved.intent.Streams)
 	}
-	builder, ok, err := mediaPlanSingleStreamBuilder(resolved.runtime, resolved.inputAttachments, resolved.outputAttachments, stream)
+	plan, ok, err := newMediaPlanSingleStreamGraph(resolved.runtime, resolved.inputAttachments, resolved.outputAttachments, stream)
 	if err != nil || !ok {
-		t.Fatalf("mediaPlanSingleStreamBuilder ok=%v err=%v", ok, err)
+		t.Fatalf("newMediaPlanSingleStreamGraph ok=%v err=%v", ok, err)
 	}
-	spec, err := builder.planDecodeEncodeToOutput(pipeline.Spec{Name: "goav", Realtime: runtimeValue(t, runtime).realtime})
+	spec, err := plan.encodeOutputSpec()
 	if err != nil {
-		t.Fatalf("planDecodeEncodeToOutput() error = %v", err)
+		t.Fatalf("encodeOutputSpec() error = %v", err)
 	}
 	planned, err := resolved.Describe()
 	if err != nil {

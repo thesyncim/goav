@@ -120,27 +120,12 @@ func mediaPlanSinkEndpointSpec(state *recipeCompileState) (pipeline.Spec, bool, 
 	if !mediaPlanSinkEndpointShape(stream, state.outputAttachments) {
 		return pipeline.Spec{}, false, nil
 	}
-	builder, ok, err := mediaPlanSingleStreamBuilder(state.runtime, state.inputAttachments, state.outputAttachments, stream)
+	plan, ok, err := newMediaPlanSingleStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
 	if err != nil || !ok {
 		return pipeline.Spec{}, ok, err
 	}
-	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
-	switch {
-	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0 && len(builder.encodes) == 0:
-		spec, err := builder.planDecodeToSink(spec)
-		return spec, err == nil, err
-	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0 && len(builder.encodes) == 0:
-		spec, err := builder.planRTPDecodeToSink(spec)
-		return spec, err == nil, err
-	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0 && len(builder.encodes) == 1:
-		spec, err := builder.planDecodeEncodeToSink(spec)
-		return spec, err == nil, err
-	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0 && len(builder.encodes) == 1:
-		spec, err := builder.planRTPDecodeEncodeToSink(spec)
-		return spec, err == nil, err
-	default:
-		return pipeline.Spec{}, false, nil
-	}
+	spec, err := plan.sinkEndpointSpec()
+	return spec, err == nil, err
 }
 
 func mediaPlanSinkEndpointShape(stream StreamIntent, outputs []EndpointSpec) bool {
@@ -159,21 +144,12 @@ func mediaPlanEncodeSpec(state *recipeCompileState) (pipeline.Spec, bool, error)
 	if !mediaPlanEncodeShape(stream, state.outputAttachments) {
 		return pipeline.Spec{}, false, nil
 	}
-	builder, ok, err := mediaPlanSingleStreamBuilder(state.runtime, state.inputAttachments, state.outputAttachments, stream)
+	plan, ok, err := newMediaPlanSingleStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
 	if err != nil || !ok {
 		return pipeline.Spec{}, ok, err
 	}
-	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
-	switch {
-	case len(builder.inputs) == 1 && len(builder.rtpInputs) == 0:
-		spec, err := builder.planDecodeEncodeToOutput(spec)
-		return spec, err == nil, err
-	case len(builder.rtpInputs) > 0 && len(builder.inputs) == 0:
-		spec, err := builder.planRTPDecodeEncodeToOutput(spec)
-		return spec, err == nil, err
-	default:
-		return pipeline.Spec{}, false, nil
-	}
+	spec, err := plan.encodeOutputSpec()
+	return spec, err == nil, err
 }
 
 func mediaPlanEncodeShape(stream StreamIntent, outputs []EndpointSpec) bool {
