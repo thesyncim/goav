@@ -5,22 +5,27 @@ import "time"
 type MediaType string
 
 const (
-	MediaUnknown MediaType = ""
-	MediaAudio   MediaType = "audio"
-	MediaVideo   MediaType = "video"
-	MediaData    MediaType = "data"
+	MediaUnknown  MediaType = ""
+	MediaAudio    MediaType = "audio"
+	MediaVideo    MediaType = "video"
+	MediaSubtitle MediaType = "subtitle"
+	MediaData     MediaType = "data"
 )
 
 type CodecID string
 
 const (
-	CodecUnknown CodecID = ""
-	CodecOpus    CodecID = "opus"
-	CodecVP8     CodecID = "vp8"
-	CodecVP9     CodecID = "vp9"
-	CodecH264    CodecID = "h264"
-	CodecAV1     CodecID = "av1"
-	CodecPCM     CodecID = "pcm"
+	CodecUnknown  CodecID = ""
+	CodecOpus     CodecID = "opus"
+	CodecVorbis   CodecID = "vorbis"
+	CodecFLAC     CodecID = "flac"
+	CodecAAC      CodecID = "aac"
+	CodecVP8      CodecID = "vp8"
+	CodecVP9      CodecID = "vp9"
+	CodecH264     CodecID = "h264"
+	CodecAV1      CodecID = "av1"
+	CodecPCM      CodecID = "pcm"
+	CodecTextUTF8 CodecID = "text_utf8"
 )
 
 type FormatID string
@@ -34,6 +39,7 @@ const (
 	FormatIVF      FormatID = "ivf"
 	FormatAnnexB   FormatID = "annexb"
 	FormatMatroska FormatID = "matroska"
+	FormatWebM     FormatID = "webm"
 	FormatMP4      FormatID = "mp4"
 )
 

@@ -1,8 +1,10 @@
 module github.com/thesyncim/goav
 
-go 1.26
+go 1.26.2
 
 require (
+	git.quad4.io/Go-Libs/bzip2 v1.1.0
+	github.com/luispater/matroska-go v1.2.4
 	github.com/pion/interceptor v0.1.45
 	github.com/pion/rtcp v1.2.16
 	github.com/pion/rtp v1.10.2
@@ -10,6 +12,7 @@ require (
 	github.com/thesyncim/goh264 v0.0.0-20260605215817-c3ebee4f35c3
 	github.com/thesyncim/gopus v0.1.1
 	github.com/thesyncim/govpx v0.0.0-20260606015758-d64581a69a6f
+	github.com/woozymasta/lzo v0.2.0
 )
 
 require (

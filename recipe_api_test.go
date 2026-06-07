@@ -572,7 +572,7 @@ func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 	report, err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
-		goav.File("recording.webm", io.Discard),
+		goav.File("recording.mp4", io.Discard),
 	).Explain(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_muxer_missing" {
@@ -581,9 +581,9 @@ func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 	if buildErr.Operation != "open target" {
 		t.Fatalf("operation = %q, want open target", buildErr.Operation)
 	}
-	requirement, ok := adapterRequirementByKind(report.RequiredAdapters, "muxer", string(av.FormatMatroska))
-	if !ok || requirement.Status != "missing" || requirement.Format != av.FormatMatroska {
-		t.Fatalf("requirements=%+v, want missing matroska muxer", report.RequiredAdapters)
+	requirement, ok := adapterRequirementByKind(report.RequiredAdapters, "muxer", string(av.FormatMP4))
+	if !ok || requirement.Status != "missing" || requirement.Format != av.FormatMP4 {
+		t.Fatalf("requirements=%+v, want missing mp4 muxer", report.RequiredAdapters)
 	}
 	if len(report.Graph.Nodes) == 0 || report.Summary == "" {
 		t.Fatalf("partial report not populated: %+v", report)
@@ -3396,7 +3396,7 @@ func TestRecordRecipeReportsMissingInputDemuxer(t *testing.T) {
 func TestRecordRecipeReportsMissingTargetMuxer(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
-		goav.File("recording.webm", io.Discard),
+		goav.File("recording.mp4", io.Discard),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -3406,7 +3406,7 @@ func TestRecordRecipeReportsMissingTargetMuxer(t *testing.T) {
 	if buildErr.Operation != "open target" {
 		t.Fatalf("operation = %q, want open target", buildErr.Operation)
 	}
-	if !strings.Contains(err.Error(), `format "matroska"`) ||
+	if !strings.Contains(err.Error(), `format "mp4"`) ||
 		!strings.Contains(err.Error(), "no muxer is registered") ||
 		!strings.Contains(err.Error(), ".ivf") {
 		t.Fatalf("err = %v, want muxer adapter guidance", err)
