@@ -24,6 +24,8 @@ type Muxer struct {
 	infoPosition    uint64
 	tracksPosition  uint64
 	attachPosition  uint64
+	chapterPosition uint64
+	tagsPosition    uint64
 	cuesPosition    uint64
 	clusterPosition uint64
 	segmentPatch    ebml.SizePatch
@@ -52,6 +54,16 @@ func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
 		return nil, err
 	}
 	opts.Attachments = attachments
+	chapters, err := normalizeChapters(opts.Chapters)
+	if err != nil {
+		return nil, err
+	}
+	opts.Chapters = chapters
+	tags, err := normalizeTags(opts.Tags)
+	if err != nil {
+		return nil, err
+	}
+	opts.Tags = tags
 	m := &Muxer{}
 	m.init(w, opts)
 	return m, nil
@@ -63,6 +75,8 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.options = normalizeMuxerOptions(opts)
 	m.options.Info = cloneSegmentInfo(m.options.Info)
 	m.options.Attachments = cloneAttachments(m.options.Attachments)
+	m.options.Chapters = cloneChapters(m.options.Chapters)
+	m.options.Tags = cloneTags(m.options.Tags)
 	m.tracks = m.tracks[:0]
 	m.cues = m.cues[:0]
 	m.headerWritten = false
@@ -74,6 +88,8 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.infoPosition = 0
 	m.tracksPosition = 0
 	m.attachPosition = 0
+	m.chapterPosition = 0
+	m.tagsPosition = 0
 	m.cuesPosition = 0
 	m.clusterPosition = 0
 	m.segmentPatch = ebml.SizePatch{}
@@ -415,6 +431,18 @@ func (m *Muxer) writeHeader() error {
 			return err
 		}
 	}
+	if len(m.options.Chapters) != 0 {
+		m.chapterPosition = m.relativeSegmentPosition()
+		if err := m.writeChapters(); err != nil {
+			return err
+		}
+	}
+	if len(m.options.Tags) != 0 {
+		m.tagsPosition = m.relativeSegmentPosition()
+		if err := m.writeTags(); err != nil {
+			return err
+		}
+	}
 	m.headerWritten = true
 	return nil
 }
@@ -653,6 +681,144 @@ func validateAttachment(attachment Attachment) error {
 	return nil
 }
 
+func normalizeChapters(editions []ChapterEdition) ([]ChapterEdition, error) {
+	if len(editions) == 0 {
+		return nil, nil
+	}
+	out := cloneChapters(editions)
+	var nextUID uint64 = 1
+	usedEditions := make(map[uint64]struct{}, len(out))
+	usedChapters := make(map[uint64]struct{})
+	for i := range out {
+		if out[i].UID != 0 {
+			if _, ok := usedEditions[out[i].UID]; ok {
+				return nil, ErrInvalidData
+			}
+			usedEditions[out[i].UID] = struct{}{}
+		}
+		if len(out[i].Chapters) == 0 {
+			return nil, ErrInvalidData
+		}
+	}
+	for i := range out {
+		if out[i].UID == 0 {
+			for {
+				if _, ok := usedEditions[nextUID]; !ok {
+					break
+				}
+				nextUID++
+			}
+			out[i].UID = nextUID
+			usedEditions[nextUID] = struct{}{}
+		}
+		if err := normalizeChapterList(out[i].Chapters, &nextUID, usedChapters); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func normalizeChapterList(chapters []Chapter, nextUID *uint64, used map[uint64]struct{}) error {
+	for i := range chapters {
+		if chapters[i].UID == 0 {
+			for {
+				if _, ok := used[*nextUID]; !ok {
+					break
+				}
+				(*nextUID)++
+			}
+			chapters[i].UID = *nextUID
+			used[*nextUID] = struct{}{}
+		} else {
+			if _, ok := used[chapters[i].UID]; ok {
+				return ErrInvalidData
+			}
+			used[chapters[i].UID] = struct{}{}
+		}
+		if !chapters[i].EnabledSet {
+			chapters[i].Enabled = true
+			chapters[i].EnabledSet = true
+		}
+		if err := validateChapter(chapters[i]); err != nil {
+			return err
+		}
+		for j := range chapters[i].Displays {
+			if chapters[i].Displays[j].Language == "" {
+				chapters[i].Displays[j].Language = "eng"
+			}
+		}
+		if err := normalizeChapterList(chapters[i].Children, nextUID, used); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateChapter(chapter Chapter) error {
+	if chapter.UID == 0 || chapter.StartNS < 0 || (chapter.EndSet && chapter.EndNS < chapter.StartNS) {
+		return ErrInvalidData
+	}
+	for _, uid := range chapter.TrackUIDs {
+		if uid == 0 {
+			return ErrInvalidData
+		}
+	}
+	for i := range chapter.Displays {
+		if chapter.Displays[i].String == "" {
+			return ErrInvalidData
+		}
+	}
+	return nil
+}
+
+func normalizeTags(tags []Tag) ([]Tag, error) {
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	out := cloneTags(tags)
+	for i := range out {
+		if len(out[i].Simple) == 0 {
+			return nil, ErrInvalidData
+		}
+		if out[i].Target.TypeValue == 0 {
+			out[i].Target.TypeValue = 50
+		}
+		if err := validateTagTarget(out[i].Target); err != nil {
+			return nil, err
+		}
+		if err := normalizeSimpleTags(out[i].Simple); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func validateTagTarget(target TagTarget) error {
+	if target.TypeValue > uint64(^uint32(0)) {
+		return ErrInvalidData
+	}
+	return nil
+}
+
+func normalizeSimpleTags(tags []SimpleTag) error {
+	for i := range tags {
+		if tags[i].Name == "" || (tags[i].StringSet && tags[i].Binary != nil) {
+			return ErrInvalidData
+		}
+		if tags[i].Language == "" {
+			tags[i].Language = "und"
+		}
+		if !tags[i].DefaultSet {
+			tags[i].Default = true
+			tags[i].DefaultSet = true
+		}
+		if err := normalizeSimpleTags(tags[i].Children); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *Muxer) writeTracks() error {
 	var payload bytes.Buffer
 	w := ebml.NewWriter(&payload)
@@ -673,6 +839,229 @@ func (m *Muxer) writeAttachments() error {
 		}
 	}
 	return m.ebml.WriteElement(idAttachments, payload.Bytes())
+}
+
+func (m *Muxer) writeChapters() error {
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	for i := range m.options.Chapters {
+		if err := writeEditionEntry(w, m.options.Chapters[i]); err != nil {
+			return err
+		}
+	}
+	return m.ebml.WriteElement(idChapters, payload.Bytes())
+}
+
+func writeEditionEntry(w *ebml.Writer, edition ChapterEdition) error {
+	var payload bytes.Buffer
+	ew := ebml.NewWriter(&payload)
+	if edition.UID != 0 {
+		if err := ew.WriteUInt(idEditionUID, edition.UID); err != nil {
+			return err
+		}
+	}
+	if err := writeBoolElement(ew, idEditionFlagHidden, edition.Hidden); err != nil {
+		return err
+	}
+	if err := writeBoolElement(ew, idEditionFlagDefault, edition.Default); err != nil {
+		return err
+	}
+	if err := writeBoolElement(ew, idEditionFlagOrdered, edition.Ordered); err != nil {
+		return err
+	}
+	for i := range edition.Chapters {
+		if err := writeChapterAtom(ew, edition.Chapters[i]); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idEditionEntry, payload.Bytes())
+}
+
+func writeChapterAtom(w *ebml.Writer, chapter Chapter) error {
+	var payload bytes.Buffer
+	cw := ebml.NewWriter(&payload)
+	if err := cw.WriteUInt(idChapterUID, chapter.UID); err != nil {
+		return err
+	}
+	if chapter.StringUID != "" {
+		if err := cw.WriteString(idChapterStringUID, chapter.StringUID); err != nil {
+			return err
+		}
+	}
+	if err := cw.WriteUInt(idChapterTimeStart, uint64(chapter.StartNS)); err != nil {
+		return err
+	}
+	if chapter.EndSet {
+		if err := cw.WriteUInt(idChapterTimeEnd, uint64(chapter.EndNS)); err != nil {
+			return err
+		}
+	}
+	if err := writeBoolElement(cw, idChapterFlagHidden, chapter.Hidden); err != nil {
+		return err
+	}
+	if err := writeBoolElement(cw, idChapterFlagEnabled, chapter.Enabled); err != nil {
+		return err
+	}
+	if len(chapter.TrackUIDs) != 0 {
+		if err := writeChapterTrack(cw, chapter.TrackUIDs); err != nil {
+			return err
+		}
+	}
+	for i := range chapter.Displays {
+		if err := writeChapterDisplay(cw, chapter.Displays[i]); err != nil {
+			return err
+		}
+	}
+	for i := range chapter.Children {
+		if err := writeChapterAtom(cw, chapter.Children[i]); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idChapterAtom, payload.Bytes())
+}
+
+func writeChapterTrack(w *ebml.Writer, trackUIDs []uint64) error {
+	var payload bytes.Buffer
+	tw := ebml.NewWriter(&payload)
+	for _, uid := range trackUIDs {
+		if err := tw.WriteUInt(idChapterTrackUID, uid); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idChapterTrack, payload.Bytes())
+}
+
+func writeChapterDisplay(w *ebml.Writer, display ChapterDisplay) error {
+	var payload bytes.Buffer
+	dw := ebml.NewWriter(&payload)
+	if err := dw.WriteString(idChapString, display.String); err != nil {
+		return err
+	}
+	language := display.Language
+	if language == "" && display.LanguageBCP47 == "" {
+		language = "eng"
+	}
+	if language != "" {
+		if err := dw.WriteString(idChapLanguage, language); err != nil {
+			return err
+		}
+	}
+	if display.LanguageBCP47 != "" {
+		if err := dw.WriteString(idChapLanguageBCP47, display.LanguageBCP47); err != nil {
+			return err
+		}
+	}
+	if display.Country != "" {
+		if err := dw.WriteString(idChapCountry, display.Country); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idChapterDisplay, payload.Bytes())
+}
+
+func (m *Muxer) writeTags() error {
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	for i := range m.options.Tags {
+		if err := writeTag(w, m.options.Tags[i]); err != nil {
+			return err
+		}
+	}
+	return m.ebml.WriteElement(idTags, payload.Bytes())
+}
+
+func writeTag(w *ebml.Writer, tag Tag) error {
+	var payload bytes.Buffer
+	tw := ebml.NewWriter(&payload)
+	if err := writeTagTargets(tw, tag.Target); err != nil {
+		return err
+	}
+	for i := range tag.Simple {
+		if err := writeSimpleTag(tw, tag.Simple[i]); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idTag, payload.Bytes())
+}
+
+func writeTagTargets(w *ebml.Writer, target TagTarget) error {
+	var payload bytes.Buffer
+	tw := ebml.NewWriter(&payload)
+	if target.TypeValue != 0 {
+		if err := tw.WriteUInt(idTargetTypeValue, target.TypeValue); err != nil {
+			return err
+		}
+	}
+	if target.Type != "" {
+		if err := tw.WriteString(idTargetType, target.Type); err != nil {
+			return err
+		}
+	}
+	for _, uid := range target.TrackUIDs {
+		if err := tw.WriteUInt(idTagTrackUID, uid); err != nil {
+			return err
+		}
+	}
+	for _, uid := range target.EditionUIDs {
+		if err := tw.WriteUInt(idTagEditionUID, uid); err != nil {
+			return err
+		}
+	}
+	for _, uid := range target.ChapterUIDs {
+		if err := tw.WriteUInt(idTagChapterUID, uid); err != nil {
+			return err
+		}
+	}
+	for _, uid := range target.AttachmentUIDs {
+		if err := tw.WriteUInt(idTagAttachmentUID, uid); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idTargets, payload.Bytes())
+}
+
+func writeSimpleTag(w *ebml.Writer, tag SimpleTag) error {
+	var payload bytes.Buffer
+	tw := ebml.NewWriter(&payload)
+	if err := tw.WriteString(idTagName, tag.Name); err != nil {
+		return err
+	}
+	if tag.Language != "" {
+		if err := tw.WriteString(idTagLanguage, tag.Language); err != nil {
+			return err
+		}
+	}
+	if tag.LanguageBCP47 != "" {
+		if err := tw.WriteString(idTagLanguageBCP47, tag.LanguageBCP47); err != nil {
+			return err
+		}
+	}
+	if err := writeBoolElement(tw, idTagDefault, tag.Default); err != nil {
+		return err
+	}
+	if tag.StringSet {
+		if err := tw.WriteString(idTagString, tag.String); err != nil {
+			return err
+		}
+	}
+	if tag.Binary != nil {
+		if err := writeBinary(tw, idTagBinary, tag.Binary); err != nil {
+			return err
+		}
+	}
+	for i := range tag.Children {
+		if err := writeSimpleTag(tw, tag.Children[i]); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idSimpleTag, payload.Bytes())
+}
+
+func writeBoolElement(w *ebml.Writer, id ebml.ID, value bool) error {
+	if value {
+		return w.WriteUInt(id, 1)
+	}
+	return w.WriteUInt(id, 0)
 }
 
 func writeAttachedFile(w *ebml.Writer, attachment Attachment) error {
@@ -878,6 +1267,8 @@ func (m *Muxer) buildSeekHeadPayload() ([]byte, error) {
 		{id: idInfo, position: m.infoPosition},
 		{id: idTracks, position: m.tracksPosition},
 		{id: idAttachments, position: m.attachPosition},
+		{id: idChapters, position: m.chapterPosition},
+		{id: idTags, position: m.tagsPosition},
 		{id: idCues, position: m.cuesPosition},
 	} {
 		if entry.position == 0 {

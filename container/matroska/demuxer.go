@@ -21,6 +21,8 @@ type Demuxer struct {
 	info            SegmentInfo
 	tracks          []Track
 	attachments     []Attachment
+	chapters        []ChapterEdition
+	tags            []Tag
 	cues            []CuePoint
 	seekEntries     []SeekEntry
 	inSegment       bool
@@ -95,6 +97,8 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.info = SegmentInfo{}
 	d.tracks = d.tracks[:0]
 	d.attachments = d.attachments[:0]
+	d.chapters = d.chapters[:0]
+	d.tags = d.tags[:0]
 	d.cues = d.cues[:0]
 	d.seekEntries = d.seekEntries[:0]
 	d.inSegment = false
@@ -264,6 +268,80 @@ func cloneAttachments(attachments []Attachment) []Attachment {
 	return out
 }
 
+func cloneChapters(editions []ChapterEdition) []ChapterEdition {
+	if len(editions) == 0 {
+		return nil
+	}
+	out := make([]ChapterEdition, len(editions))
+	for i := range editions {
+		out[i] = editions[i]
+		out[i].Chapters = cloneChapterList(editions[i].Chapters)
+	}
+	return out
+}
+
+func cloneChapterList(chapters []Chapter) []Chapter {
+	if len(chapters) == 0 {
+		return nil
+	}
+	out := make([]Chapter, len(chapters))
+	for i := range chapters {
+		out[i] = chapters[i]
+		if len(chapters[i].TrackUIDs) != 0 {
+			out[i].TrackUIDs = append([]uint64(nil), chapters[i].TrackUIDs...)
+		}
+		if len(chapters[i].Displays) != 0 {
+			out[i].Displays = append([]ChapterDisplay(nil), chapters[i].Displays...)
+		}
+		out[i].Children = cloneChapterList(chapters[i].Children)
+	}
+	return out
+}
+
+func cloneTags(tags []Tag) []Tag {
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make([]Tag, len(tags))
+	for i := range tags {
+		out[i] = tags[i]
+		out[i].Target = cloneTagTarget(tags[i].Target)
+		out[i].Simple = cloneSimpleTags(tags[i].Simple)
+	}
+	return out
+}
+
+func cloneTagTarget(target TagTarget) TagTarget {
+	if len(target.TrackUIDs) != 0 {
+		target.TrackUIDs = append([]uint64(nil), target.TrackUIDs...)
+	}
+	if len(target.EditionUIDs) != 0 {
+		target.EditionUIDs = append([]uint64(nil), target.EditionUIDs...)
+	}
+	if len(target.ChapterUIDs) != 0 {
+		target.ChapterUIDs = append([]uint64(nil), target.ChapterUIDs...)
+	}
+	if len(target.AttachmentUIDs) != 0 {
+		target.AttachmentUIDs = append([]uint64(nil), target.AttachmentUIDs...)
+	}
+	return target
+}
+
+func cloneSimpleTags(tags []SimpleTag) []SimpleTag {
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make([]SimpleTag, len(tags))
+	for i := range tags {
+		out[i] = tags[i]
+		if tags[i].Binary != nil {
+			out[i].Binary = append([]byte(nil), tags[i].Binary...)
+		}
+		out[i].Children = cloneSimpleTags(tags[i].Children)
+	}
+	return out
+}
+
 func (d *Demuxer) DocType() string {
 	if d == nil {
 		return ""
@@ -283,6 +361,20 @@ func (d *Demuxer) Attachments() []Attachment {
 		return nil
 	}
 	return cloneAttachments(d.attachments)
+}
+
+func (d *Demuxer) Chapters() []ChapterEdition {
+	if d == nil || len(d.chapters) == 0 {
+		return nil
+	}
+	return cloneChapters(d.chapters)
+}
+
+func (d *Demuxer) Tags() []Tag {
+	if d == nil || len(d.tags) == 0 {
+		return nil
+	}
+	return cloneTags(d.tags)
 }
 
 func (d *Demuxer) Cues() []CuePoint {
@@ -373,6 +465,14 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 			}
 		case idAttachments:
 			if err := d.parseAttachments(header); err != nil {
+				return err
+			}
+		case idChapters:
+			if err := d.parseChapters(header); err != nil {
+				return err
+			}
+		case idTags:
+			if err := d.parseTags(header); err != nil {
 				return err
 			}
 		case idCues:
@@ -470,6 +570,14 @@ func (d *Demuxer) readSegmentHeaders() error {
 			}
 		case idAttachments:
 			if err := d.parseAttachments(header); err != nil {
+				return err
+			}
+		case idChapters:
+			if err := d.parseChapters(header); err != nil {
+				return err
+			}
+		case idTags:
+			if err := d.parseTags(header); err != nil {
 				return err
 			}
 		case idCues:
@@ -928,6 +1036,480 @@ func (d *Demuxer) parseAttachedFile(parent io.Reader, header ebml.Header) (Attac
 		return Attachment{}, ErrInvalidData
 	}
 	return attachment, nil
+}
+
+func (d *Demuxer) parseChapters(header ebml.Header) error {
+	if header.Size.Unknown {
+		return ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(d.reader, header.Size.Value)
+	if err != nil {
+		return err
+	}
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return err
+		}
+		switch child.ID {
+		case idEditionEntry:
+			edition, err := d.parseEditionEntry(master.Reader(), child)
+			if err != nil {
+				return err
+			}
+			d.chapters = append(d.chapters, edition)
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return err
+			}
+		}
+	}
+	return master.Validate()
+}
+
+func (d *Demuxer) parseEditionEntry(parent io.Reader, header ebml.Header) (ChapterEdition, error) {
+	if header.Size.Unknown {
+		return ChapterEdition{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return ChapterEdition{}, err
+	}
+	var edition ChapterEdition
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return ChapterEdition{}, err
+		}
+		switch child.ID {
+		case idEditionUID:
+			edition.UID, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ChapterEdition{}, err
+			}
+		case idEditionFlagHidden:
+			edition.Hidden, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ChapterEdition{}, err
+			}
+		case idEditionFlagDefault:
+			edition.Default, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ChapterEdition{}, err
+			}
+		case idEditionFlagOrdered:
+			edition.Ordered, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ChapterEdition{}, err
+			}
+		case idChapterAtom:
+			chapter, err := d.parseChapterAtom(master.Reader(), child)
+			if err != nil {
+				return ChapterEdition{}, err
+			}
+			edition.Chapters = append(edition.Chapters, chapter)
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return ChapterEdition{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return ChapterEdition{}, err
+	}
+	if len(edition.Chapters) == 0 {
+		return ChapterEdition{}, ErrInvalidData
+	}
+	return edition, nil
+}
+
+func (d *Demuxer) parseChapterAtom(parent io.Reader, header ebml.Header) (Chapter, error) {
+	if header.Size.Unknown {
+		return Chapter{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return Chapter{}, err
+	}
+	chapter := Chapter{Enabled: true}
+	startSeen := false
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return Chapter{}, err
+		}
+		switch child.ID {
+		case idChapterUID:
+			chapter.UID, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Chapter{}, err
+			}
+		case idChapterStringUID:
+			chapter.StringUID, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Chapter{}, err
+			}
+		case idChapterTimeStart:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Chapter{}, err
+			}
+			if value > uint64(math.MaxInt64) {
+				return Chapter{}, ErrInvalidData
+			}
+			chapter.StartNS = int64(value)
+			startSeen = true
+		case idChapterTimeEnd:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Chapter{}, err
+			}
+			if value > uint64(math.MaxInt64) {
+				return Chapter{}, ErrInvalidData
+			}
+			chapter.EndNS = int64(value)
+			chapter.EndSet = true
+		case idChapterFlagHidden:
+			chapter.Hidden, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Chapter{}, err
+			}
+		case idChapterFlagEnabled:
+			chapter.Enabled, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Chapter{}, err
+			}
+			chapter.EnabledSet = true
+		case idChapterTrack:
+			chapter.TrackUIDs, err = d.parseChapterTrack(master.Reader(), child)
+			if err != nil {
+				return Chapter{}, err
+			}
+		case idChapterDisplay:
+			display, err := d.parseChapterDisplay(master.Reader(), child)
+			if err != nil {
+				return Chapter{}, err
+			}
+			chapter.Displays = append(chapter.Displays, display)
+		case idChapterAtom:
+			childChapter, err := d.parseChapterAtom(master.Reader(), child)
+			if err != nil {
+				return Chapter{}, err
+			}
+			chapter.Children = append(chapter.Children, childChapter)
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return Chapter{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return Chapter{}, err
+	}
+	if !startSeen || validateChapter(chapter) != nil {
+		return Chapter{}, ErrInvalidData
+	}
+	return chapter, nil
+}
+
+func (d *Demuxer) parseChapterTrack(parent io.Reader, header ebml.Header) ([]uint64, error) {
+	if header.Size.Unknown {
+		return nil, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return nil, err
+	}
+	var trackUIDs []uint64
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return nil, err
+		}
+		switch child.ID {
+		case idChapterTrackUID:
+			uid, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return nil, err
+			}
+			if uid == 0 {
+				return nil, ErrInvalidData
+			}
+			trackUIDs = append(trackUIDs, uid)
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return nil, err
+	}
+	if len(trackUIDs) == 0 {
+		return nil, ErrInvalidData
+	}
+	return trackUIDs, nil
+}
+
+func (d *Demuxer) parseChapterDisplay(parent io.Reader, header ebml.Header) (ChapterDisplay, error) {
+	if header.Size.Unknown {
+		return ChapterDisplay{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return ChapterDisplay{}, err
+	}
+	display := ChapterDisplay{Language: "eng"}
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return ChapterDisplay{}, err
+		}
+		switch child.ID {
+		case idChapString:
+			display.String, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ChapterDisplay{}, err
+			}
+		case idChapLanguage:
+			display.Language, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ChapterDisplay{}, err
+			}
+		case idChapLanguageBCP47:
+			display.LanguageBCP47, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ChapterDisplay{}, err
+			}
+		case idChapCountry:
+			display.Country, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return ChapterDisplay{}, err
+			}
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return ChapterDisplay{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return ChapterDisplay{}, err
+	}
+	if display.String == "" {
+		return ChapterDisplay{}, ErrInvalidData
+	}
+	return display, nil
+}
+
+func (d *Demuxer) parseTags(header ebml.Header) error {
+	if header.Size.Unknown {
+		return ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(d.reader, header.Size.Value)
+	if err != nil {
+		return err
+	}
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return err
+		}
+		switch child.ID {
+		case idTag:
+			tag, err := d.parseTag(master.Reader(), child)
+			if err != nil {
+				return err
+			}
+			d.tags = append(d.tags, tag)
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return err
+			}
+		}
+	}
+	return master.Validate()
+}
+
+func (d *Demuxer) parseTag(parent io.Reader, header ebml.Header) (Tag, error) {
+	if header.Size.Unknown {
+		return Tag{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return Tag{}, err
+	}
+	var tag Tag
+	targetSeen := false
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return Tag{}, err
+		}
+		switch child.ID {
+		case idTargets:
+			tag.Target, err = d.parseTagTargets(master.Reader(), child)
+			if err != nil {
+				return Tag{}, err
+			}
+			targetSeen = true
+		case idSimpleTag:
+			simple, err := d.parseSimpleTag(master.Reader(), child)
+			if err != nil {
+				return Tag{}, err
+			}
+			tag.Simple = append(tag.Simple, simple)
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return Tag{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return Tag{}, err
+	}
+	if !targetSeen {
+		tag.Target.TypeValue = 50
+	}
+	if len(tag.Simple) == 0 || validateTagTarget(tag.Target) != nil {
+		return Tag{}, ErrInvalidData
+	}
+	return tag, nil
+}
+
+func (d *Demuxer) parseTagTargets(parent io.Reader, header ebml.Header) (TagTarget, error) {
+	if header.Size.Unknown {
+		return TagTarget{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return TagTarget{}, err
+	}
+	target := TagTarget{TypeValue: 50}
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return TagTarget{}, err
+		}
+		switch child.ID {
+		case idTargetTypeValue:
+			target.TypeValue, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return TagTarget{}, err
+			}
+		case idTargetType:
+			target.Type, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return TagTarget{}, err
+			}
+		case idTagTrackUID:
+			target.TrackUIDs, err = appendTagUID(master.Reader(), child, target.TrackUIDs)
+			if err != nil {
+				return TagTarget{}, err
+			}
+		case idTagEditionUID:
+			target.EditionUIDs, err = appendTagUID(master.Reader(), child, target.EditionUIDs)
+			if err != nil {
+				return TagTarget{}, err
+			}
+		case idTagChapterUID:
+			target.ChapterUIDs, err = appendTagUID(master.Reader(), child, target.ChapterUIDs)
+			if err != nil {
+				return TagTarget{}, err
+			}
+		case idTagAttachmentUID:
+			target.AttachmentUIDs, err = appendTagUID(master.Reader(), child, target.AttachmentUIDs)
+			if err != nil {
+				return TagTarget{}, err
+			}
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return TagTarget{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return TagTarget{}, err
+	}
+	if err := validateTagTarget(target); err != nil {
+		return TagTarget{}, err
+	}
+	return target, nil
+}
+
+func appendTagUID(reader io.Reader, child ebml.Header, values []uint64) ([]uint64, error) {
+	value, err := readUIntPayload(reader, child.Size.Value)
+	if err != nil {
+		return nil, err
+	}
+	return append(values, value), nil
+}
+
+func (d *Demuxer) parseSimpleTag(parent io.Reader, header ebml.Header) (SimpleTag, error) {
+	if header.Size.Unknown {
+		return SimpleTag{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return SimpleTag{}, err
+	}
+	tag := SimpleTag{Language: "und", Default: true}
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return SimpleTag{}, err
+		}
+		switch child.ID {
+		case idTagName:
+			tag.Name, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return SimpleTag{}, err
+			}
+		case idTagLanguage:
+			tag.Language, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return SimpleTag{}, err
+			}
+		case idTagLanguageBCP47:
+			tag.LanguageBCP47, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return SimpleTag{}, err
+			}
+		case idTagDefault:
+			tag.Default, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return SimpleTag{}, err
+			}
+			tag.DefaultSet = true
+		case idTagString:
+			tag.String, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return SimpleTag{}, err
+			}
+			tag.StringSet = true
+		case idTagBinary:
+			tag.Binary, err = readBinaryPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return SimpleTag{}, err
+			}
+		case idSimpleTag:
+			childTag, err := d.parseSimpleTag(master.Reader(), child)
+			if err != nil {
+				return SimpleTag{}, err
+			}
+			tag.Children = append(tag.Children, childTag)
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return SimpleTag{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return SimpleTag{}, err
+	}
+	if err := normalizeSimpleTags([]SimpleTag{tag}); err != nil {
+		return SimpleTag{}, err
+	}
+	return tag, nil
 }
 
 func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint, error) {

@@ -105,7 +105,7 @@ func TestUnknownSizeVINT(t *testing.T) {
 }
 
 func TestIDVINT(t *testing.T) {
-	tests := []ID{0x1a45dfa3, 0x18538067, 0x1654ae6b, 0xae, 0xa3, 0x9f}
+	tests := []ID{0x1a45dfa3, 0x18538067, 0x1654ae6b, 0xae, 0xa3, 0x9f, 0x80}
 	var buf [MaxSizeWidth]byte
 	for _, id := range tests {
 		n, err := EncodeID(buf[:], id)
@@ -119,9 +119,6 @@ func TestIDVINT(t *testing.T) {
 		if got != id || width != n {
 			t.Fatalf("id = 0x%x width %d, want 0x%x width %d", uint64(got), width, uint64(id), n)
 		}
-	}
-	if _, _, err := DecodeIDVINT([]byte{0x80}); !errors.Is(err, ErrInvalidElementID) {
-		t.Fatalf("zero-data element id err = %v, want ErrInvalidElementID", err)
 	}
 }
 

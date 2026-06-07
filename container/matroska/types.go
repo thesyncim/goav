@@ -224,6 +224,61 @@ type Attachment struct {
 	Data        []byte
 }
 
+type ChapterEdition struct {
+	UID      uint64
+	Hidden   bool
+	Default  bool
+	Ordered  bool
+	Chapters []Chapter
+}
+
+type Chapter struct {
+	UID        uint64
+	StringUID  string
+	StartNS    int64
+	EndNS      int64
+	EndSet     bool
+	Hidden     bool
+	Enabled    bool
+	EnabledSet bool
+	TrackUIDs  []uint64
+	Displays   []ChapterDisplay
+	Children   []Chapter
+}
+
+type ChapterDisplay struct {
+	String        string
+	Language      string
+	LanguageBCP47 string
+	Country       string
+}
+
+type Tag struct {
+	Target TagTarget
+	Simple []SimpleTag
+}
+
+type TagTarget struct {
+	TypeValue      uint64
+	Type           string
+	TrackUIDs      []uint64
+	EditionUIDs    []uint64
+	ChapterUIDs    []uint64
+	AttachmentUIDs []uint64
+}
+
+type SimpleTag struct {
+	Name          string
+	Language      string
+	LanguageBCP47 string
+	Default       bool
+	DefaultSet    bool
+	String        string
+	StringSet     bool
+	Binary        []byte
+	Children      []SimpleTag
+}
+
 func (p *Packet) Reset() {
 	data := p.Data[:0]
 	references := p.ReferenceBlockTimeNS[:0]
@@ -238,6 +293,8 @@ type MuxerOptions struct {
 	WritingApp           string
 	Info                 SegmentInfo
 	Attachments          []Attachment
+	Chapters             []ChapterEdition
+	Tags                 []Tag
 	TimecodeScaleNS      int64
 	ClusterMaxDurationNS int64
 	Streaming            bool

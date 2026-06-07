@@ -130,6 +130,44 @@ const (
 	idFileMediaType   ebml.ID = 0x4660
 	idFileData        ebml.ID = 0x465c
 	idFileUID         ebml.ID = 0x46ae
+
+	idChapters           ebml.ID = 0x1043a770
+	idEditionEntry       ebml.ID = 0x45b9
+	idEditionUID         ebml.ID = 0x45bc
+	idEditionFlagHidden  ebml.ID = 0x45bd
+	idEditionFlagDefault ebml.ID = 0x45db
+	idEditionFlagOrdered ebml.ID = 0x45dd
+	idChapterAtom        ebml.ID = 0xb6
+	idChapterUID         ebml.ID = 0x73c4
+	idChapterStringUID   ebml.ID = 0x5654
+	idChapterTimeStart   ebml.ID = 0x91
+	idChapterTimeEnd     ebml.ID = 0x92
+	idChapterFlagHidden  ebml.ID = 0x98
+	idChapterFlagEnabled ebml.ID = 0x4598
+	idChapterTrack       ebml.ID = 0x8f
+	idChapterTrackUID    ebml.ID = 0x89
+	idChapterDisplay     ebml.ID = 0x80
+	idChapString         ebml.ID = 0x85
+	idChapLanguage       ebml.ID = 0x437c
+	idChapLanguageBCP47  ebml.ID = 0x437d
+	idChapCountry        ebml.ID = 0x437e
+
+	idTags             ebml.ID = 0x1254c367
+	idTag              ebml.ID = 0x7373
+	idTargets          ebml.ID = 0x63c0
+	idTargetTypeValue  ebml.ID = 0x68ca
+	idTargetType       ebml.ID = 0x63ca
+	idTagTrackUID      ebml.ID = 0x63c5
+	idTagEditionUID    ebml.ID = 0x63c9
+	idTagChapterUID    ebml.ID = 0x63c4
+	idTagAttachmentUID ebml.ID = 0x63c6
+	idSimpleTag        ebml.ID = 0x67c8
+	idTagName          ebml.ID = 0x45a3
+	idTagLanguage      ebml.ID = 0x447a
+	idTagLanguageBCP47 ebml.ID = 0x447b
+	idTagDefault       ebml.ID = 0x4484
+	idTagString        ebml.ID = 0x4487
+	idTagBinary        ebml.ID = 0x4485
 )
 
 const (

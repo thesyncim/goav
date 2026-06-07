@@ -44,14 +44,8 @@ func DecodeIDVINT(src []byte) (ID, int, error) {
 		return 0, 0, io.ErrUnexpectedEOF
 	}
 	var id uint64
-	var data uint64
 	for i := 0; i < width; i++ {
 		id = (id << 8) | uint64(src[i])
-		data = (data << 8) | uint64(src[i])
-	}
-	data &^= uint64(0x80>>uint(width-1)) << uint(8*(width-1))
-	if data == 0 {
-		return 0, 0, ErrInvalidElementID
 	}
 	return ID(id), width, nil
 }

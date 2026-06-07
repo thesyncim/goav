@@ -188,6 +188,118 @@ func TestMuxerDemuxerPreservesAttachments(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesChaptersAndTags(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	opts := MuxerOptions{
+		Chapters: []ChapterEdition{{
+			UID:     77,
+			Default: true,
+			Chapters: []Chapter{{
+				UID:       100,
+				StringUID: "intro",
+				StartNS:   1_000_000_000,
+				EndNS:     2_000_000_000,
+				EndSet:    true,
+				TrackUIDs: []uint64{1},
+				Displays: []ChapterDisplay{{
+					String:        "Intro",
+					Language:      "eng",
+					LanguageBCP47: "en-US",
+					Country:       "us",
+				}},
+				Children: []Chapter{{
+					UID:       101,
+					StringUID: "intro-a",
+					StartNS:   1_200_000_000,
+					EndNS:     1_500_000_000,
+					EndSet:    true,
+					Displays:  []ChapterDisplay{{String: "Beat A"}},
+				}},
+			}},
+		}},
+		Tags: []Tag{{
+			Target: TagTarget{
+				TypeValue:   50,
+				Type:        "MOVIE",
+				TrackUIDs:   []uint64{1},
+				EditionUIDs: []uint64{77},
+				ChapterUIDs: []uint64{100},
+			},
+			Simple: []SimpleTag{{
+				Name:          "TITLE",
+				Language:      "eng",
+				LanguageBCP47: "en-US",
+				Default:       true,
+				DefaultSet:    true,
+				String:        "Camera Roll",
+				StringSet:     true,
+				Children: []SimpleTag{{
+					Name:    "SORT_WITH",
+					Binary:  []byte{1, 2, 3},
+					Default: false,
+				}},
+			}},
+		}},
+	}
+	muxer, err := NewMuxer(ws, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantChapters, err := normalizeChapters(opts.Chapters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTags, err := normalizeTags(opts.Tags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.Tags[0].Simple[0].Children[0].Binary[0] = 0xff
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	positions := collectTopLevelPositions(t, ws.bytes)
+	for _, id := range []ebml.ID{idChapters, idTags} {
+		if _, ok := positions[id]; !ok {
+			t.Fatalf("missing top-level element 0x%x in positions %+v", uint64(id), positions)
+		}
+	}
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSeekEntry(t, demuxer.SeekEntries(), idChapters, positions[idChapters])
+	assertSeekEntry(t, demuxer.SeekEntries(), idTags, positions[idTags])
+	if got := demuxer.Chapters(); !reflect.DeepEqual(got, wantChapters) {
+		t.Fatalf("chapters = %+v, want %+v", got, wantChapters)
+	}
+	gotTags := demuxer.Tags()
+	if !reflect.DeepEqual(gotTags, wantTags) {
+		t.Fatalf("tags = %+v, want %+v", gotTags, wantTags)
+	}
+	gotTags[0].Simple[0].Children[0].Binary[0] = 0xee
+	fresh := demuxer.Tags()
+	if !bytes.Equal(fresh[0].Simple[0].Children[0].Binary, []byte{1, 2, 3}) {
+		t.Fatalf("tag binary alias was not protected: %x", fresh[0].Simple[0].Children[0].Binary)
+	}
+}
+
 func TestMuxerDemuxerRoundTrip(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{DocType: "webm"})
@@ -2453,6 +2565,55 @@ func TestMuxerRejectsInvalidAttachments(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsInvalidChaptersAndTags(t *testing.T) {
+	t.Run("edition without chapters", func(t *testing.T) {
+		if _, err := NewMuxer(discardWriter{}, MuxerOptions{Chapters: []ChapterEdition{{UID: 1}}}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("negative chapter start", func(t *testing.T) {
+		opts := MuxerOptions{Chapters: []ChapterEdition{{Chapters: []Chapter{{StartNS: -1}}}}}
+		if _, err := NewMuxer(discardWriter{}, opts); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("chapter end before start", func(t *testing.T) {
+		opts := MuxerOptions{Chapters: []ChapterEdition{{Chapters: []Chapter{{StartNS: 10, EndNS: 9, EndSet: true}}}}}
+		if _, err := NewMuxer(discardWriter{}, opts); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("chapter display without string", func(t *testing.T) {
+		opts := MuxerOptions{Chapters: []ChapterEdition{{Chapters: []Chapter{{StartNS: 0, Displays: []ChapterDisplay{{Language: "eng"}}}}}}}
+		if _, err := NewMuxer(discardWriter{}, opts); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("duplicate chapter uid", func(t *testing.T) {
+		opts := MuxerOptions{Chapters: []ChapterEdition{{Chapters: []Chapter{{UID: 7, StartNS: 0}, {UID: 7, StartNS: 1}}}}}
+		if _, err := NewMuxer(discardWriter{}, opts); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("tag without simple tag", func(t *testing.T) {
+		if _, err := NewMuxer(discardWriter{}, MuxerOptions{Tags: []Tag{{}}}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("simple tag without name", func(t *testing.T) {
+		opts := MuxerOptions{Tags: []Tag{{Simple: []SimpleTag{{String: "x", StringSet: true}}}}}
+		if _, err := NewMuxer(discardWriter{}, opts); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("simple tag string and binary", func(t *testing.T) {
+		opts := MuxerOptions{Tags: []Tag{{Simple: []SimpleTag{{Name: "TITLE", String: "x", StringSet: true, Binary: []byte{1}}}}}}
+		if _, err := NewMuxer(discardWriter{}, opts); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+}
+
 func TestMuxerSplitsClustersBeforeBlockTimecodeOverflow(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -3514,6 +3675,8 @@ func TestDemuxerValidatesTopLevelMetadataCRC32(t *testing.T) {
 		{name: "tracks", id: idTracks},
 		{name: "cues", id: idCues},
 		{name: "attachments", id: idAttachments},
+		{name: "chapters", id: idChapters},
+		{name: "tags", id: idTags},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name+" valid crc32", func(t *testing.T) {
@@ -3545,6 +3708,14 @@ func TestDemuxerValidatesNestedMetadataCRC32(t *testing.T) {
 		"cuepoint",
 		"cuepositions",
 		"attachedfile",
+		"edition",
+		"chapter",
+		"chaptertrack",
+		"chapterdisplay",
+		"tag",
+		"targets",
+		"simpletag",
+		"childsimpletag",
 	}
 	for _, name := range tests {
 		t.Run(name+" valid crc32", func(t *testing.T) {
@@ -4756,6 +4927,16 @@ func makeMetadataCRCMatroskaData(tb testing.TB, checkedID ebml.ID, mutate func([
 			tb.Fatal(err)
 		}
 	}
+	if checkedID == idChapters {
+		if err := writeMasterWithCRC32(muxer.ebml, idChapters, crcChaptersPayload(tb), mutate); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if checkedID == idTags {
+		if err := writeMasterWithCRC32(muxer.ebml, idTags, crcTagsPayload(tb), mutate); err != nil {
+			tb.Fatal(err)
+		}
+	}
 	if err := muxer.ebml.WriteElement(idCluster, nil); err != nil {
 		tb.Fatal(err)
 	}
@@ -4809,10 +4990,269 @@ func makeNestedCRCMatroskaData(tb testing.TB, target string, mutate func([]byte)
 			tb.Fatal(err)
 		}
 	}
+	switch target {
+	case "edition", "chapter", "chaptertrack", "chapterdisplay":
+		if err := muxer.ebml.WriteElement(idChapters, nestedCRCChaptersPayload(tb, target, mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	case "tag", "targets", "simpletag", "childsimpletag":
+		if err := muxer.ebml.WriteElement(idTags, nestedCRCTagsPayload(tb, target, mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	}
 	if err := muxer.ebml.WriteElement(idCluster, nil); err != nil {
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func crcChaptersPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	if err := writeEditionEntry(ebml.NewWriter(&payload), ChapterEdition{
+		UID: 1,
+		Chapters: []Chapter{{
+			UID:        2,
+			StartNS:    0,
+			Enabled:    true,
+			EnabledSet: true,
+			TrackUIDs:  []uint64{1},
+			Displays: []ChapterDisplay{{
+				String:   "Intro",
+				Language: "eng",
+			}},
+		}},
+	}); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func nestedCRCChaptersPayload(tb testing.TB, target string, mutate func([]byte)) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	editionPayload := crcEditionPayload(tb, target, mutate)
+	var err error
+	if target == "edition" {
+		_, err = writer.Write(checkedElement(tb, idEditionEntry, editionPayload, mutate))
+	} else {
+		err = writer.WriteElement(idEditionEntry, editionPayload)
+	}
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func crcEditionPayload(tb testing.TB, target string, mutate func([]byte)) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writer.WriteUInt(idEditionUID, 1); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idEditionFlagHidden, 0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idEditionFlagDefault, 0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idEditionFlagOrdered, 0); err != nil {
+		tb.Fatal(err)
+	}
+	chapterPayload := crcChapterPayload(tb, target, mutate)
+	var err error
+	if target == "chapter" {
+		_, err = writer.Write(checkedElement(tb, idChapterAtom, chapterPayload, mutate))
+	} else {
+		err = writer.WriteElement(idChapterAtom, chapterPayload)
+	}
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func crcChapterPayload(tb testing.TB, target string, mutate func([]byte)) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writer.WriteUInt(idChapterUID, 2); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idChapterTimeStart, 0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idChapterFlagHidden, 0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idChapterFlagEnabled, 1); err != nil {
+		tb.Fatal(err)
+	}
+	trackPayload := crcChapterTrackPayload(tb)
+	if target == "chaptertrack" {
+		if _, err := writer.Write(checkedElement(tb, idChapterTrack, trackPayload, mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	} else if err := writer.WriteElement(idChapterTrack, trackPayload); err != nil {
+		tb.Fatal(err)
+	}
+	displayPayload := crcChapterDisplayPayload(tb)
+	if target == "chapterdisplay" {
+		if _, err := writer.Write(checkedElement(tb, idChapterDisplay, displayPayload, mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	} else if err := writer.WriteElement(idChapterDisplay, displayPayload); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func crcChapterTrackPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writer.WriteUInt(idChapterTrackUID, 1); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func crcChapterDisplayPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writer.WriteString(idChapString, "Intro"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteString(idChapLanguage, "eng"); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func crcTagsPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	if err := writeTag(ebml.NewWriter(&payload), Tag{
+		Target: TagTarget{
+			TypeValue: 50,
+			Type:      "MOVIE",
+			TrackUIDs: []uint64{1},
+		},
+		Simple: []SimpleTag{{
+			Name:       "TITLE",
+			Language:   "und",
+			Default:    true,
+			DefaultSet: true,
+			String:     "CRC",
+			StringSet:  true,
+		}},
+	}); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func nestedCRCTagsPayload(tb testing.TB, target string, mutate func([]byte)) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	tagPayload := crcTagPayload(tb, target, mutate)
+	var err error
+	if target == "tag" {
+		_, err = writer.Write(checkedElement(tb, idTag, tagPayload, mutate))
+	} else {
+		err = writer.WriteElement(idTag, tagPayload)
+	}
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func crcTagPayload(tb testing.TB, target string, mutate func([]byte)) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	targetsPayload := crcTargetsPayload(tb)
+	if target == "targets" {
+		if _, err := writer.Write(checkedElement(tb, idTargets, targetsPayload, mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	} else if err := writer.WriteElement(idTargets, targetsPayload); err != nil {
+		tb.Fatal(err)
+	}
+	simplePayload := crcSimpleTagPayload(tb, target, mutate)
+	if target == "simpletag" {
+		if _, err := writer.Write(checkedElement(tb, idSimpleTag, simplePayload, mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	} else if err := writer.WriteElement(idSimpleTag, simplePayload); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func crcTargetsPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writer.WriteUInt(idTargetTypeValue, 50); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteString(idTargetType, "MOVIE"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idTagTrackUID, 1); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func crcSimpleTagPayload(tb testing.TB, target string, mutate func([]byte)) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writer.WriteString(idTagName, "TITLE"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteString(idTagLanguage, "und"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idTagDefault, 1); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteString(idTagString, "CRC"); err != nil {
+		tb.Fatal(err)
+	}
+	if target == "childsimpletag" {
+		childPayload := crcSimpleTagLeafPayload(tb)
+		if _, err := writer.Write(checkedElement(tb, idSimpleTag, childPayload, mutate)); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	return payload.Bytes()
+}
+
+func crcSimpleTagLeafPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	writer := ebml.NewWriter(&payload)
+	if err := writer.WriteString(idTagName, "SORT_WITH"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteString(idTagLanguage, "und"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idTagDefault, 1); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteString(idTagString, "crc"); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
 }
 
 func writeNestedCRCTracks(writer *ebml.Writer, target string, mutate func([]byte)) error {
