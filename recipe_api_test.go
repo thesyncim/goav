@@ -1887,18 +1887,19 @@ func TestRecipeConstructorsDoNotExposeRuntimeOptions(t *testing.T) {
 	}
 }
 
-func TestRecipeReportsRuntimeWithoutCompilerBuilder(t *testing.T) {
+func TestRecipeReportsUnsupportedCustomRuntime(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
 		goav.File("recording.ivf", io.Discard),
 	).UseRuntime(recipeAPIRuntimeWithoutBuilder{}).Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_builder_missing" {
-		t.Fatalf("err = %v, want runtime_builder_missing", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_unsupported" {
+		t.Fatalf("err = %v, want runtime_unsupported", err)
 	}
-	if !strings.Contains(err.Error(), "runtime cannot compile recipe jobs") ||
-		!strings.Contains(err.Error(), "goav.Default") {
+	if !strings.Contains(err.Error(), "recipe compilation requires a goav runtime") ||
+		!strings.Contains(err.Error(), "goav.Default") ||
+		!strings.Contains(err.Error(), "goav.New") {
 		t.Fatalf("err = %v, want runtime guidance", err)
 	}
 }

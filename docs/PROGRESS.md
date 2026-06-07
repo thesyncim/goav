@@ -1658,10 +1658,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 332. Remove the resolved-recipe builder fallback:
     `recipeResolved` no longer carries the old runtime builder, and
     `Describe()` now only returns the stored media-plan spec or an actionable
-    unsupported media-plan diagnostic. The builder remains a compiler-pass
-    service for registry and capability checks, but resolved recipe state now
-    consists of intent, concrete attachments, media-plan reports, and the
-    executable media-plan graph.
+    unsupported media-plan diagnostic. Recipe compiler state now consists of
+    intent, concrete attachments, media-plan reports, and the executable
+    media-plan graph.
     Done.
 333. Type runtime branch sources:
     `Branch.From(...)` now accepts only sealed branch-source values: typed taps
@@ -1669,6 +1668,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Runtime.Graph()` for expert graph attachments. Raw string node names no
     longer form the public branch-origin path, and guards keep README/current
     architecture docs plus attach tests on typed source values.
+    Done.
+334. Remove builder services from recipe compilation:
+    normal `From(...)` recipes no longer open or carry the old runtime builder
+    during compiler passes. Runtime validation now checks directly for the
+    standard `Default()`/`New(...)` runtime before media-plan emission, and
+    unsupported custom runtimes fail with recipe/runtime guidance instead of
+    builder-specific diagnostics. Guard coverage rejects `builderAPI` fields in
+    recipe compiler state and old runtime-builder wording in production
+    diagnostics.
     Done.
 
 ## First Vertical Slice
@@ -1943,6 +1951,9 @@ targets without rebuilding the task.
 Runtime branch origins are typed: stable media outlets use `FrameTap` or
 `PacketTap`, while expert explicit-graph attachments use the `GraphNode` or
 `GraphOutlet` handles returned by `Runtime.Graph()`.
+Recipe compilation no longer opens a builder as a validation side channel; the
+normal path validates runtime support, emits a media-plan executable, and builds
+from that executable.
 `MediaPlan` expresses record, stream decode, encode, and branch composition as
 input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and

@@ -55,7 +55,6 @@ type recipeCompileState struct {
 	plan    branchComposePlan
 	planErr error
 
-	builder    builderAPI
 	spec       pipeline.Spec
 	specReady  bool
 	specOrigin string
@@ -145,19 +144,6 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		}
 		if err := pass.Apply(&state); err != nil {
 			return recipeResolved{}, compilerPassError(state.operation, pass.Name(), err)
-		}
-	}
-	if state.builder == nil {
-		return recipeResolved{}, &BuildError{
-			Code:      "runtime_builder_missing",
-			Operation: state.operation,
-			Reason:    "recipe compiler produced no runtime builder",
-			Suggestions: []string{
-				"use goav.Default() for the standard recipe runtime",
-				"use goav.New(...) when customizing adapters",
-				"use runtime.Graph() for explicit graph wiring",
-			},
-			Cause: ErrUnsupportedBuild,
 		}
 	}
 	return recipeResolved{
@@ -313,8 +299,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobInputFormatAdaptersPass(),
 		validateJobKnownInputStreamSelectionPass(),
 		validateJobKnownInputDecodeAdaptersPass(),
-		openRecipeRuntimeBuilderPass(),
-		validateJobStreamRuntimeCapabilitiesPass(),
+		validateRecipeRuntimePass(),
 		emitMediaPlanGraphSpecPass(),
 		validateMuxCompatibilityPass(),
 		requireMediaPlanGraphSpecPass(),
@@ -367,7 +352,7 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		validateKnownBranchInputStreamSelectionPass(),
 		validateKnownBranchInputDecodeAdaptersPass(),
 		planBranchCompositionIntentPass(),
-		openRecipeRuntimeBuilderPass(),
+		validateRecipeRuntimePass(),
 		emitMediaPlanGraphSpecPass(),
 		validateMuxCompatibilityPass(),
 		requireMediaPlanGraphSpecPass(),
@@ -391,6 +376,15 @@ func validateJobRecipePass() recipeCompilePass {
 			return state.recipeErr
 		}
 		return nil
+	}}
+}
+
+func validateRecipeRuntimePass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate recipe runtime", fn: func(state *recipeCompileState) error {
+		if _, ok := state.runtime.(*runtime); ok {
+			return nil
+		}
+		return recipeRuntimeUnsupportedError(state.operation)
 	}}
 }
 
@@ -914,27 +908,6 @@ func validateKnownProbeStreamSelection(probe format.ProbeResult, stream StreamIn
 	}
 	_, err := selectDecodeStream(probe.Streams, streamIntentSelector(stream))
 	return err
-}
-
-func openRecipeRuntimeBuilderPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "open runtime builder", fn: func(state *recipeCompileState) error {
-		builder, err := newRuntimeBuilder(state.runtime, state.operation)
-		if err != nil {
-			return err
-		}
-		state.builder = builder
-		return nil
-	}}
-}
-
-func validateJobStreamRuntimeCapabilitiesPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate job stream runtime capabilities", fn: func(state *recipeCompileState) error {
-		stream, ok := jobIntentStream(state.intent)
-		if !ok {
-			return nil
-		}
-		return validateJobStreamRuntimeCapabilities(state.operation, state.builder, stream)
-	}}
 }
 
 func planBranchCompositionIntentPass() recipeCompilePass {

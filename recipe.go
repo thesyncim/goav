@@ -151,10 +151,6 @@ func (e *BuildError) Unwrap() error {
 	return e.Cause
 }
 
-type builderProvider interface {
-	New() builderAPI
-}
-
 func Default() Runtime {
 	return New(WithDefaults())
 }
@@ -1107,24 +1103,6 @@ func (j *Job) Run(ctx context.Context) error {
 	return task.Run(ctx)
 }
 
-func newRuntimeBuilder(runtime Runtime, operation string) (builderAPI, error) {
-	provider, ok := runtime.(builderProvider)
-	if !ok {
-		return nil, &BuildError{
-			Code:      "runtime_builder_missing",
-			Operation: operation,
-			Reason:    "runtime cannot compile recipe jobs",
-			Suggestions: []string{
-				"use goav.Default() for the standard recipe runtime",
-				"use goav.New(...) when customizing adapters",
-				"use runtime.Graph() for explicit graph wiring",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	}
-	return provider.New(), nil
-}
-
 func (j *Job) validateInputs() error {
 	return validateJobInputs(j.inputs)
 }
@@ -1606,62 +1584,15 @@ func streamEncodeMissingError(operation string, stream StreamIntent) error {
 	}
 }
 
-func validateJobStreamRuntimeCapabilities(operation string, builder builderAPI, stream StreamIntent) error {
-	node := jobStreamIntentName(stream)
-	if builder == nil {
-		return &BuildError{
-			Code:      "runtime_builder_missing",
-			Operation: operation,
-			Node:      node,
-			Reason:    "recipe compiler produced no runtime builder",
-			Suggestions: []string{
-				"use goav.Default() for the standard recipe runtime",
-				"use goav.New(...) when customizing adapters",
-				"use runtime.Graph() for explicit graph wiring",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	}
-	if codecChangePolicySet(stream.CodecChange) {
-		if _, ok := builder.(interface {
-			decodeWithPolicy(av.StreamSelector, CodecChangePolicy) builderAPI
-		}); !ok {
-			return streamCodecChangeRuntimeUnsupportedError(operation, node)
-		}
-	}
-	if len(stream.Transforms) != 0 {
-		if _, ok := builder.(interface {
-			transform(av.StreamSelector, mediaTransform) builderAPI
-		}); !ok {
-			return streamTransformRuntimeUnsupportedError(operation, node)
-		}
-	}
-	return nil
-}
-
-func streamCodecChangeRuntimeUnsupportedError(operation string, node string) error {
+func recipeRuntimeUnsupportedError(operation string) error {
 	return &BuildError{
-		Code:      "codec_change_runtime_unsupported",
+		Code:      "runtime_unsupported",
 		Operation: operation,
-		Node:      node,
-		Reason:    "codec-change policy requires the standard runtime builder",
+		Reason:    "recipe compilation requires a goav runtime",
 		Suggestions: []string{
-			"use goav.Default() or goav.New(...) for live stream recipes",
-			"remove .OnCodecChange(...) when using a custom recipe runtime",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func streamTransformRuntimeUnsupportedError(operation string, node string) error {
-	return &BuildError{
-		Code:      "transform_runtime_unsupported",
-		Operation: operation,
-		Node:      node,
-		Reason:    "stream transforms require the standard runtime builder",
-		Suggestions: []string{
-			"use goav.Default() or goav.New(...) for recipe transforms",
-			"use .Do(stage) when a custom runtime must provide its own filter stage",
+			"use goav.Default() for the standard recipe runtime",
+			"use goav.New(...) when customizing adapters",
+			"use runtime.Graph() for explicit graph wiring with a custom runtime",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

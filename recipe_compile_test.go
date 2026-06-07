@@ -14,37 +14,17 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/rtpav"
-	transcodepkg "github.com/thesyncim/goav/transcode"
 )
 
-type noCapabilityBuilder struct{}
+type stubRuntime struct{}
 
-func (b noCapabilityBuilder) Input(format.Input) builderAPI { return b }
+func (stubRuntime) Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error) {
+	return format.ProbeResult{}, nil
+}
 
-func (b noCapabilityBuilder) RTP(rtpav.PacketReader, ...rtpOption) builderAPI { return b }
-
-func (b noCapabilityBuilder) Mux(format.Output) builderAPI { return b }
-
-func (b noCapabilityBuilder) Decode(av.StreamSelector) builderAPI { return b }
-
-func (b noCapabilityBuilder) Encode(av.StreamSelector, codec.EncodeConfig) builderAPI { return b }
-
-func (b noCapabilityBuilder) Filter(av.StreamSelector, pipeline.Stage) builderAPI { return b }
-
-func (b noCapabilityBuilder) Transcode(transcodepkg.Plan) builderAPI { return b }
-
-func (b noCapabilityBuilder) Source(pipeline.Source) builderAPI { return b }
-
-func (b noCapabilityBuilder) Stage(pipeline.Stage) builderAPI { return b }
-
-func (b noCapabilityBuilder) Sink(pipeline.Sink) builderAPI { return b }
-
-func (b noCapabilityBuilder) Routes(...pipeline.Route) builderAPI { return b }
-
-func (b noCapabilityBuilder) Describe() (pipeline.Spec, error) { return pipeline.Spec{}, nil }
-
-func (b noCapabilityBuilder) Build(context.Context) (Task, error) { return nil, ErrUnsupportedBuild }
+func (stubRuntime) Graph() GraphBuilder {
+	return Default().Graph()
+}
 
 func requireMediaGraph[T any](t *testing.T, resolved recipeResolved) {
 	t.Helper()
@@ -177,6 +157,9 @@ func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {
 		"goav.VideoFlow(",
 		"branchComposeTargetHasMuxEndpoint",
 		"branchComposeTargetEndpointInvalidError",
+		"runtime_builder_missing",
+		"standard runtime builder",
+		"recipe compiler produced no runtime builder",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("production diagnostics keep old public vocabulary %q", forbidden)
@@ -201,6 +184,7 @@ func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 		reflect.TypeOf((*branchCompositionJob)(nil)): "*branchCompositionJob",
 		reflect.TypeOf((*jobStreamBuild)(nil)):       "*jobStreamBuild",
 		reflect.TypeOf([]streamBuild(nil)):           "[]streamBuild",
+		reflect.TypeOf((*builderAPI)(nil)).Elem():    "builderAPI",
 	}
 	for i := 0; i < stateType.NumField(); i++ {
 		field := stateType.Field(i)
@@ -1730,74 +1714,30 @@ func TestJobStreamOutputKindsPassAllowsEncodedPacketFanout(t *testing.T) {
 	}
 }
 
-func TestJobStreamRuntimeCapabilitiesPassRejectsUnsupportedBuilder(t *testing.T) {
-	tests := []struct {
-		name   string
-		stream StreamIntent
-		code   string
-		want   []string
-	}{
-		{
-			name: "codec change policy",
-			stream: StreamIntent{
-				Name:        "video",
-				Select:      StreamSelect{Type: av.MediaVideo},
-				Decode:      true,
-				CodecChange: RealtimeCodecChangePolicy(),
-				Targets:     []string{"frames"},
-			},
-			code: "codec_change_runtime_unsupported",
-			want: []string{"codec-change policy requires the standard runtime builder", "goav.Default"},
-		},
-		{
-			name: "stream transform",
-			stream: StreamIntent{
-				Name:       "audio",
-				Select:     StreamSelect{Type: av.MediaAudio},
-				Decode:     true,
-				Transforms: []TransformSpec{Resample(48_000, Stereo)},
-				Targets:    []string{"frames"},
-			},
-			code: "transform_runtime_unsupported",
-			want: []string{"stream transforms require the standard runtime builder", ".Do(stage)"},
-		},
+func TestRecipeRuntimePassRejectsCustomRuntime(t *testing.T) {
+	state := recipeCompileState{
+		operation: "build job",
+		runtime:   stubRuntime{},
 	}
-	pass := validateJobStreamRuntimeCapabilitiesPass()
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			state := recipeCompileState{
-				operation: "build job",
-				intent: Intent{
-					Inputs:  []InputIntent{{Name: "input"}},
-					Streams: []StreamIntent{tt.stream},
-					Targets: []TargetIntent{{Name: "frames"}},
-				},
-				builder: noCapabilityBuilder{},
-			}
-			err := pass.Apply(&state)
-			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
-			}
-			for _, want := range tt.want {
-				if !strings.Contains(err.Error(), want) {
-					t.Fatalf("err = %v, want %q", err, want)
-				}
-			}
-		})
+	err := validateRecipeRuntimePass().Apply(&state)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime_unsupported wrapping ErrUnsupportedBuild", err)
+	}
+	for _, want := range []string{"recipe compilation requires a goav runtime", "goav.Default", "goav.New", "runtime.Graph"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
 	}
 }
 
 func TestRequireMediaPlanGraphSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
-	runtime := New().(*runtime)
-	builder := (&builder{runtime: runtime}).Input(format.Input{Name: "input.ivf"})
 	state := recipeCompileState{
 		operation: "build job",
 		intent: Intent{
 			Name:   "record",
 			Inputs: []InputIntent{{Name: "input.ivf"}},
 		},
-		builder: builder,
 	}
 
 	err := requireMediaPlanGraphSpecPass().Apply(&state)
