@@ -1163,7 +1163,7 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, target format
 		Details:   details,
 		Suggestions: []string{
 			"reference a branch name",
-			"reference a label listed on the branch",
+			"reference a target name listed on the branch",
 			"omit explicit branch filters when the target should receive every branch",
 		},
 		Cause: ErrUnsupportedBuild,
