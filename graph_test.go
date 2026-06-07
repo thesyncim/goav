@@ -444,6 +444,110 @@ func TestTaskAttachRuntimeResizeBranchRunsFromFrameTap(t *testing.T) {
 	}
 }
 
+func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	resizer := &transcodeTestFilter{}
+	resizeFactory := &transcodeTestFilterFactory{filter: resizer}
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResize,
+		Input:  av.MediaVideo,
+		Output: av.MediaVideo,
+	}, resizeFactory))
+	frame := av.Frame{
+		StreamID: "video",
+		Type:     av.MediaVideo,
+		Video:    &av.VideoFrame{Width: 1280, Height: 720, PixelFormat: av.PixelFormatI420},
+	}
+	source := &runtimeBranchWaitingSource{
+		name:   "source",
+		ready:  make(chan struct{}),
+		resume: make(chan struct{}),
+		msg:    pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	base := &runtimeTestSink{name: "base"}
+	thumbs := &runtimeTestSink{name: "thumbs"}
+	inspect := &runtimeTestSink{name: "inspect"}
+
+	graph := New(filters, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	mediaTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := mediaTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "video.frames",
+		MediaKind: av.MediaVideo,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:      DomainFrame,
+			MediaKind:   av.MediaVideo,
+			StreamID:    "video",
+			Width:       1280,
+			Height:      720,
+			PixelFormat: av.PixelFormatI420,
+		},
+		Node: "source",
+	}}
+	defer mediaTask.Close()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- mediaTask.Run(ctx)
+	}()
+	select {
+	case <-source.ready:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	parent, err := mediaTask.Attach(ctx, Branch("thumb").
+		FromTap("video.frames").
+		Resize(320, 180).
+		Tap("video.320.frames").
+		To(SinkEndpoint(thumbs)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resizeFactory.config.Video == nil ||
+		resizeFactory.config.Video.Width != 320 ||
+		resizeFactory.config.Video.Height != 180 {
+		t.Fatalf("runtime resize config = %+v, want 320x180", resizeFactory.config.Video)
+	}
+	resizedTap, ok := findTap(mediaTask.Taps(), "video.320.frames")
+	if !ok ||
+		resizedTap.Domain != DomainFrame ||
+		resizedTap.MediaKind != av.MediaVideo ||
+		resizedTap.Caps.Width != 320 ||
+		resizedTap.Caps.Height != 180 ||
+		resizedTap.Node != "thumb/resize-thumb" {
+		t.Fatalf("resized tap = %+v ok=%v, want frame video 320x180 tap on thumb/resize-thumb", resizedTap, ok)
+	}
+	child, err := mediaTask.Attach(ctx, Branch("inspect").
+		FromTap("video.320.frames").
+		To(SinkEndpoint(inspect)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(source.resume)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if base.frames != 1 || thumbs.frames != 1 || inspect.frames != 1 || resizer.frames != 1 {
+		t.Fatalf("base=%d thumbs=%d inspect=%d filter=%d", base.frames, thumbs.frames, inspect.frames, resizer.frames)
+	}
+	if err := mediaTask.Detach(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+	if !thumbs.closed || !inspect.closed || !resizer.closed {
+		t.Fatalf("closed thumbs=%v inspect=%v filter=%v", thumbs.closed, inspect.closed, resizer.closed)
+	}
+	if err := child.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	graph := New().Graph()
 	graph.Source("source", &runtimeTestSource{name: "source"})
