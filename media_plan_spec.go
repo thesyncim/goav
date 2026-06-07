@@ -68,10 +68,10 @@ func mediaPlanPacketCopyStream(state *recipeCompileState) (StreamIntent, bool, b
 	if state == nil {
 		return StreamIntent{}, false, false
 	}
-	return mediaPlanPacketCopyIntentStream(state.jobPresent, state.intent, state.streamSteps)
+	return mediaPlanPacketCopyIntentStream(state.jobPresent, state.intent, state.chainSteps)
 }
 
-func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, streamSteps []jobStreamStepAttachment) (StreamIntent, bool, bool) {
+func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, chainSteps []chainStepAttachment) (StreamIntent, bool, bool) {
 	if !jobPresent {
 		return StreamIntent{}, false, false
 	}
@@ -80,7 +80,7 @@ func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, streamSteps
 		return StreamIntent{}, false, true
 	case 1:
 		stream := intent.Streams[0]
-		if stream.Encode.Copy && !stream.Decode && stream.Encode.ID == "" && !stream.Encode.Auto && len(streamSteps) == 0 {
+		if stream.Encode.Copy && !stream.Decode && stream.Encode.ID == "" && !stream.Encode.Auto && len(chainSteps) == 0 {
 			return stream, true, true
 		}
 	}

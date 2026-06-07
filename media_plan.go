@@ -168,7 +168,7 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 		}
 		caps = normalizePlanBranchCaps(caps, stream, firstInput(state.intent.Inputs))
 		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
-		steps := state.streamSteps
+		steps := state.chainSteps
 		if len(state.intent.Streams) > 1 {
 			steps = nil
 		}
@@ -257,7 +257,7 @@ func planCopyBranches(intent Intent, outputs []planOutput) ([]planBranch, []plan
 	return branches, decisions
 }
 
-func planStreamOperations(inputs []InputIntent, stream StreamIntent, branchName string, steps []jobStreamStepAttachment) ([]planOperation, []planDecision) {
+func planStreamOperations(inputs []InputIntent, stream StreamIntent, branchName string, steps []chainStepAttachment) ([]planOperation, []planDecision) {
 	operations := planInputOperations(firstInput(inputs))
 	operations = append(operations, planOperation{
 		Kind:      OpSelect,
@@ -409,7 +409,7 @@ func planInputOperations(input InputIntent) []planOperation {
 	}
 }
 
-func planProcessingOperations(stream StreamIntent, steps []jobStreamStepAttachment) []planOperation {
+func planProcessingOperations(stream StreamIntent, steps []chainStepAttachment) []planOperation {
 	if len(steps) == 0 {
 		operations := make([]planOperation, 0, len(stream.Transforms)+len(stream.Taps))
 		for i := range stream.Transforms {

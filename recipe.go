@@ -895,7 +895,7 @@ type jobStreamBuild struct {
 	name           string
 	selector       av.StreamSelector
 	decode         bool
-	steps          []jobStreamStep
+	steps          []chainStep
 	taps           []string
 	postEncodeTaps []string
 	encode         CodecSpec
@@ -904,14 +904,14 @@ type jobStreamBuild struct {
 	outputNames    []string
 }
 
-type jobStreamStep struct {
+type chainStep struct {
 	stage     pipeline.Stage
 	transform TransformSpec
 	tap       string
 	tapDomain MediaDomain
 }
 
-type jobStreamStepAttachment struct {
+type chainStepAttachment struct {
 	stage          pipeline.Stage
 	hasTransform   bool
 	transformIndex int
@@ -1307,7 +1307,7 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 		Decode:      stream.decode,
 		Operations:  jobStreamOperations(stream),
 		Transforms:  stream.transformSpecs(),
-		Taps:        append(streamStepTapIntents(stream.steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
+		Taps:        append(chainStepTapIntents(stream.steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:      stream.encode,
 		CodecChange: stream.codecChange,
 		Targets:     destinationTargetNamesWithNames(stream.outputs, stream.outputNames),
@@ -1334,7 +1334,7 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 		Decode:     stream.decode,
 		Operations: streamBuildOperations(stream),
 		Transforms: cloneTransformSpecs(stream.transforms),
-		Taps:       append(streamStepTapIntents(streamBuildSteps(stream), stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
+		Taps:       append(chainStepTapIntents(streamChainSteps(stream), stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:     stream.encode,
 		Targets:    append([]string(nil), stream.labels...),
 	}
@@ -1348,7 +1348,7 @@ func jobStreamOperations(stream *jobStreamBuild) []StreamOperation {
 	if stream.decode {
 		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec)})
 	}
-	operations = append(operations, streamStepOperations(stream.steps, stream.selector.Type, initialStepAfter(stream.decode))...)
+	operations = append(operations, chainStepOperations(stream.steps, stream.selector.Type, initialStepAfter(stream.decode))...)
 	if stream.encode.Copy {
 		operations = append(operations, StreamOperation{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
 	} else if codecIntentSet(stream.encode) {
@@ -1366,12 +1366,12 @@ func jobStreamOperations(stream *jobStreamBuild) []StreamOperation {
 }
 
 func streamBuildOperations(stream streamBuild) []StreamOperation {
-	steps := streamBuildSteps(stream)
+	steps := streamChainSteps(stream)
 	operations := make([]StreamOperation, 0, len(steps)+2+len(stream.postEncodeTaps))
 	if stream.decode {
 		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec)})
 	}
-	operations = append(operations, streamStepOperations(steps, stream.selector.Type, initialStepAfter(stream.decode))...)
+	operations = append(operations, chainStepOperations(steps, stream.selector.Type, initialStepAfter(stream.decode))...)
 	if stream.encode.Copy {
 		operations = append(operations, StreamOperation{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
 	} else if codecIntentSet(stream.encode) {
@@ -1388,11 +1388,11 @@ func streamBuildOperations(stream streamBuild) []StreamOperation {
 	return operations
 }
 
-func streamBuildSteps(stream streamBuild) []jobStreamStep {
-	return appendBranchSteps(stream.sharedSteps, stream.steps)
+func streamChainSteps(stream streamBuild) []chainStep {
+	return appendChainSteps(stream.sharedSteps, stream.steps)
 }
 
-func streamStepOperations(steps []jobStreamStep, media av.MediaType, after OperationKind) []StreamOperation {
+func chainStepOperations(steps []chainStep, media av.MediaType, after OperationKind) []StreamOperation {
 	if len(steps) == 0 {
 		return nil
 	}
@@ -1415,7 +1415,7 @@ func streamStepOperations(steps []jobStreamStep, media av.MediaType, after Opera
 			})
 			after = OpTransform
 		case step.tap != "":
-			tap := TapIntent{Name: step.tap, MediaKind: media, Domain: jobStepTapDomain(step, DomainFrame), After: after}
+			tap := TapIntent{Name: step.tap, MediaKind: media, Domain: chainStepTapDomain(step, DomainFrame), After: after}
 			operations = append(operations, StreamOperation{
 				Kind:      OpTap,
 				Component: tap.Name,
@@ -1426,7 +1426,7 @@ func streamStepOperations(steps []jobStreamStep, media av.MediaType, after Opera
 	return operations
 }
 
-func streamStepTapIntents(steps []jobStreamStep, media av.MediaType, after OperationKind) []TapIntent {
+func chainStepTapIntents(steps []chainStep, media av.MediaType, after OperationKind) []TapIntent {
 	if len(steps) == 0 {
 		return nil
 	}
@@ -1442,7 +1442,7 @@ func streamStepTapIntents(steps []jobStreamStep, media av.MediaType, after Opera
 			taps = append(taps, TapIntent{
 				Name:      step.tap,
 				MediaKind: media,
-				Domain:    jobStepTapDomain(step, DomainFrame),
+				Domain:    chainStepTapDomain(step, DomainFrame),
 				After:     after,
 			})
 		}
@@ -1450,7 +1450,7 @@ func streamStepTapIntents(steps []jobStreamStep, media av.MediaType, after Opera
 	return taps
 }
 
-func jobStepTapDomain(step jobStreamStep, fallback MediaDomain) MediaDomain {
+func chainStepTapDomain(step chainStep, fallback MediaDomain) MediaDomain {
 	if step.tapDomain != "" {
 		return step.tapDomain
 	}
@@ -1501,20 +1501,20 @@ func jobStreamOutputNames(stream *jobStreamBuild) []string {
 	return append([]string(nil), stream.outputNames...)
 }
 
-func jobStreamStepAttachments(stream *jobStreamBuild) []jobStreamStepAttachment {
+func chainStepAttachments(stream *jobStreamBuild) []chainStepAttachment {
 	if stream == nil || len(stream.steps) == 0 {
 		return nil
 	}
-	attachments := make([]jobStreamStepAttachment, 0, len(stream.steps))
+	attachments := make([]chainStepAttachment, 0, len(stream.steps))
 	transformIndex := 0
 	for i := range stream.steps {
 		step := stream.steps[i]
 		if step.stage != nil {
-			attachments = append(attachments, jobStreamStepAttachment{stage: step.stage, stepIndex: i})
+			attachments = append(attachments, chainStepAttachment{stage: step.stage, stepIndex: i})
 			continue
 		}
 		if step.transform.Resize != nil || step.transform.Resample != nil {
-			attachments = append(attachments, jobStreamStepAttachment{
+			attachments = append(attachments, chainStepAttachment{
 				hasTransform:   true,
 				transformIndex: transformIndex,
 				stepIndex:      i,
@@ -1523,10 +1523,10 @@ func jobStreamStepAttachments(stream *jobStreamBuild) []jobStreamStepAttachment 
 			continue
 		}
 		if step.tap != "" {
-			attachments = append(attachments, jobStreamStepAttachment{tap: step.tap, stepIndex: i})
+			attachments = append(attachments, chainStepAttachment{tap: step.tap, stepIndex: i})
 			continue
 		}
-		attachments = append(attachments, jobStreamStepAttachment{stepIndex: i})
+		attachments = append(attachments, chainStepAttachment{stepIndex: i})
 	}
 	return attachments
 }
@@ -1681,7 +1681,7 @@ func (s *jobStreamBuild) hasOperation() bool {
 	return s.decode || len(s.steps) != 0 || s.encode.ID != "" || s.encode.Auto || s.encode.Copy
 }
 
-func streamIntentHasOperation(stream StreamIntent, steps []jobStreamStepAttachment) bool {
+func streamIntentHasOperation(stream StreamIntent, steps []chainStepAttachment) bool {
 	return stream.Decode || len(steps) != 0 || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy
 }
 
@@ -1698,22 +1698,22 @@ func (s *jobStreamBuild) transformSpecs() []TransformSpec {
 	return transforms
 }
 
-func streamStepsFromTransforms(transforms []TransformSpec) []jobStreamStep {
+func chainStepsFromTransforms(transforms []TransformSpec) []chainStep {
 	if len(transforms) == 0 {
 		return nil
 	}
-	steps := make([]jobStreamStep, 0, len(transforms))
+	steps := make([]chainStep, 0, len(transforms))
 	for i := range transforms {
-		steps = append(steps, jobStreamStep{transform: cloneTransformSpec(transforms[i])})
+		steps = append(steps, chainStep{transform: cloneTransformSpec(transforms[i])})
 	}
 	return steps
 }
 
-func cloneJobStreamSteps(steps []jobStreamStep) []jobStreamStep {
+func cloneChainSteps(steps []chainStep) []chainStep {
 	if len(steps) == 0 {
 		return nil
 	}
-	out := make([]jobStreamStep, 0, len(steps))
+	out := make([]chainStep, 0, len(steps))
 	for i := range steps {
 		step := steps[i]
 		step.transform = cloneTransformSpec(step.transform)
@@ -1722,10 +1722,10 @@ func cloneJobStreamSteps(steps []jobStreamStep) []jobStreamStep {
 	return out
 }
 
-func appendBranchSteps(prefix []jobStreamStep, branch []jobStreamStep) []jobStreamStep {
-	out := make([]jobStreamStep, 0, len(prefix)+len(branch))
-	out = append(out, cloneJobStreamSteps(prefix)...)
-	out = append(out, cloneJobStreamSteps(branch)...)
+func appendChainSteps(prefix []chainStep, branch []chainStep) []chainStep {
+	out := make([]chainStep, 0, len(prefix)+len(branch))
+	out = append(out, cloneChainSteps(prefix)...)
+	out = append(out, cloneChainSteps(branch)...)
 	return out
 }
 
@@ -2594,7 +2594,7 @@ func codecIntentSet(spec CodecSpec) bool {
 	return spec.ID != "" || spec.Auto || spec.Copy
 }
 
-func streamStepAfterEncodeError(operation string, node string, step string, encode CodecSpec) error {
+func chainStepAfterEncodeError(operation string, node string, step string, encode CodecSpec) error {
 	return &BuildError{
 		Code:      "stream_step_after_encode",
 		Operation: operation,
@@ -2934,8 +2934,8 @@ type streamBuild struct {
 	selector       av.StreamSelector
 	from           TapRef
 	decode         bool
-	sharedSteps    []jobStreamStep
-	steps          []jobStreamStep
+	sharedSteps    []chainStep
+	steps          []chainStep
 	postEncodeTaps []string
 	transforms     []TransformSpec
 	encode         CodecSpec
@@ -2978,7 +2978,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 		return b
 	}
 	if codecIntentSet(stream.encode) && (spec.decode || len(spec.steps) != 0 || codecIntentSet(spec.encode)) {
-		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "flow", stream.encode))
+		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "flow", stream.encode))
 		return b
 	}
 	if spec.decode {
@@ -2990,7 +2990,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 	}
 	if len(spec.steps) != 0 {
 		stream.decode = true
-		stream.steps = append(stream.steps, cloneJobStreamSteps(spec.steps)...)
+		stream.steps = append(stream.steps, cloneChainSteps(spec.steps)...)
 	}
 	if codecIntentSet(spec.encode) {
 		if spec.encode.Copy {
@@ -3049,7 +3049,7 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 		return b
 	}
 	stream.decode = true
-	stream.steps = append(stream.steps, jobStreamStep{tap: tap.name, tapDomain: tap.domain})
+	stream.steps = append(stream.steps, chainStep{tap: tap.name, tapDomain: tap.domain})
 	return b
 }
 
@@ -3088,33 +3088,33 @@ func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
-		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", stream.encode))
+		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", stream.encode))
 		return b
 	}
 	stream.decode = true
-	stream.steps = append(stream.steps, jobStreamStep{stage: stage})
+	stream.steps = append(stream.steps, chainStep{stage: stage})
 	return b
 }
 
 func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
-		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "resize", stream.encode))
+		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resize", stream.encode))
 		return b
 	}
 	stream.decode = true
-	stream.steps = append(stream.steps, jobStreamStep{transform: Resize(width, height, options...)})
+	stream.steps = append(stream.steps, chainStep{transform: Resize(width, height, options...)})
 	return b
 }
 
 func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...audioOption) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
-		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "resample", stream.encode))
+		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resample", stream.encode))
 		return b
 	}
 	stream.decode = true
-	stream.steps = append(stream.steps, jobStreamStep{transform: Resample(sampleRate, channels, options...)})
+	stream.steps = append(stream.steps, chainStep{transform: Resample(sampleRate, channels, options...)})
 	return b
 }
 
@@ -3338,7 +3338,7 @@ func branchComposePlanReady(plan branchComposePlan) bool {
 }
 
 func branchComposeStepsForStreamBuild(stream streamBuild) ([]branchComposeStep, []branchComposeStep) {
-	return branchComposeStepsFromJobSteps(stream.sharedSteps), branchComposeStepsFromJobSteps(stream.steps)
+	return branchComposeStepsFromChainSteps(stream.sharedSteps), branchComposeStepsFromChainSteps(stream.steps)
 }
 
 func branchComposeStepsForStream(stream StreamIntent) ([]branchComposeStep, []branchComposeStep) {
@@ -3348,7 +3348,7 @@ func branchComposeStepsForStream(stream StreamIntent) ([]branchComposeStep, []br
 	if len(stream.Transforms) == 0 {
 		return nil, nil
 	}
-	return nil, branchComposeStepsFromJobSteps(streamStepsFromTransforms(stream.Transforms))
+	return nil, branchComposeStepsFromChainSteps(chainStepsFromTransforms(stream.Transforms))
 }
 
 func branchComposeStepsFromOperations(operations []StreamOperation, anchorTap string) ([]branchComposeStep, []branchComposeStep) {
@@ -3403,7 +3403,7 @@ func branchComposeStepsFromOperations(operations []StreamOperation, anchorTap st
 	return shared, branch
 }
 
-func branchComposeStepsFromJobSteps(steps []jobStreamStep) []branchComposeStep {
+func branchComposeStepsFromChainSteps(steps []chainStep) []branchComposeStep {
 	if len(steps) == 0 {
 		return nil
 	}

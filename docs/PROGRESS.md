@@ -1586,6 +1586,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     guard coverage keeps the branch-only source helpers and old packet-copy
     source helper name from returning.
     Done.
+323. Collapse operation-step vocabulary onto chain steps:
+    stream chains, reusable flows, planned branches, branch-compose lowering,
+    media-plan stream attachments, and runtime attach conversion now share the
+    same internal `chainStep` representation for ordered stage, transform, and
+    tap operations. Runtime branch attach lowers `BranchSpec` through
+    `runtimeBranchStepsFromChain`, planned branch composition lowers through
+    `branchComposeStepsFromChainSteps`, and guard coverage rejects the old
+    job-stream step vocabulary from production chain internals.
+    Done.
 
 ## First Vertical Slice
 

@@ -535,5 +535,5 @@ func mediaPlanStreamTransformFilters(stream StreamIntent, selector av.StreamSele
 }
 
 func (r recipeResolved) packetCopyStream() (StreamIntent, bool, bool) {
-	return mediaPlanPacketCopyIntentStream(true, r.intent, r.streamAttachments)
+	return mediaPlanPacketCopyIntentStream(true, r.intent, r.chainAttachments)
 }

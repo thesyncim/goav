@@ -21,7 +21,7 @@ type streamFlowSpec struct {
 	name           string
 	media          av.MediaType
 	decode         bool
-	steps          []jobStreamStep
+	steps          []chainStep
 	postEncodeTaps []string
 	transforms     []TransformSpec
 	encode         CodecSpec
@@ -227,7 +227,7 @@ func (b *flowBuilder) decode() {
 		return
 	}
 	if codecIntentSet(b.spec.encode) {
-		b.setErr(streamStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "decode", b.spec.encode))
+		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "decode", b.spec.encode))
 		return
 	}
 	if b.spec.decode {
@@ -246,11 +246,11 @@ func (b *flowBuilder) transform(spec TransformSpec) {
 		return
 	}
 	if codecIntentSet(b.spec.encode) {
-		b.setErr(streamStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), flowTransformStepName(spec), b.spec.encode))
+		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), flowTransformStepName(spec), b.spec.encode))
 		return
 	}
 	transform := cloneTransformSpec(spec)
-	b.spec.steps = append(b.spec.steps, jobStreamStep{transform: transform})
+	b.spec.steps = append(b.spec.steps, chainStep{transform: transform})
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpec(spec))
 }
 
@@ -259,14 +259,14 @@ func (b *flowBuilder) stage(stage pipeline.Stage) {
 		return
 	}
 	if codecIntentSet(b.spec.encode) {
-		b.setErr(streamStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "custom stage", b.spec.encode))
+		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "custom stage", b.spec.encode))
 		return
 	}
 	if stage == nil {
 		b.setErr(streamStageMissingError(StreamIntent{Name: firstNonEmpty(b.spec.name, "flow")}))
 		return
 	}
-	b.spec.steps = append(b.spec.steps, jobStreamStep{stage: stage})
+	b.spec.steps = append(b.spec.steps, chainStep{stage: stage})
 }
 
 func (b *flowBuilder) tap(tap TapRef) {
@@ -299,7 +299,7 @@ func (b *flowBuilder) tap(tap TapRef) {
 		b.setErr(err)
 		return
 	}
-	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: tap.name, tapDomain: tap.domain})
+	b.spec.steps = append(b.spec.steps, chainStep{tap: tap.name, tapDomain: tap.domain})
 }
 
 func (b *flowBuilder) encode(codec CodecSpec) {
@@ -322,7 +322,7 @@ func (b *flowBuilder) snapshot() streamFlowSpec {
 		return streamFlowSpec{err: nilFlowError()}
 	}
 	spec := b.spec
-	spec.steps = cloneJobStreamSteps(spec.steps)
+	spec.steps = cloneChainSteps(spec.steps)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
 	return spec

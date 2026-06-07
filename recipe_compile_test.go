@@ -94,6 +94,44 @@ func TestMediaPlanStreamGraphOwnsPacketCopyAndDirectStreams(t *testing.T) {
 	}
 }
 
+func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
+	var body strings.Builder
+	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	text := body.String()
+	for _, forbidden := range []string{
+		"jobStreamStep",
+		"streamStepOperations",
+		"streamStepTapIntents",
+		"jobStepTapDomain",
+		"streamStepsFromTransforms",
+		"cloneJobStreamSteps",
+		"appendBranchSteps",
+		"transformSpecsFromJobSteps",
+		"branchComposeStepsFromJobSteps",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("operation chains should not use old job-stream step vocabulary %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"type chainStep struct",
+		"func chainStepOperations",
+		"func branchComposeStepsFromChainSteps",
+		"func runtimeBranchStepsFromChain",
+		"func cloneChainSteps",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("operation chains should keep shared chain vocabulary %q", required)
+		}
+	}
+}
+
 func TestRuntimeBuilderUsesMuxVerbNotOutput(t *testing.T) {
 	builder := reflect.TypeOf((*builderAPI)(nil)).Elem()
 	if _, ok := builder.MethodByName("Output"); ok {
@@ -1746,7 +1784,7 @@ func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 					}},
 					Targets: []TargetIntent{{Name: "frames"}},
 				},
-				streamSteps: []jobStreamStepAttachment{{stepIndex: 0}},
+				chainSteps: []chainStepAttachment{{stepIndex: 0}},
 			},
 			code:  "stage_missing",
 			cause: ErrNilStage,
@@ -1767,7 +1805,7 @@ func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 					}},
 					Targets: []TargetIntent{{Name: "frames"}},
 				},
-				streamSteps: []jobStreamStepAttachment{{
+				chainSteps: []chainStepAttachment{{
 					hasTransform:   true,
 					transformIndex: 1,
 					stepIndex:      0,
@@ -2676,7 +2714,7 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	if !specHasNode(spec, "meter") || !specHasNode(spec, "encode-audio") || !specHasNode(spec, "archive.ogg") {
 		t.Fatalf("spec = %+v, want stage, encoder, and target from resolved attachments", spec)
 	}
-	if len(resolved.streamAttachments) == 0 {
+	if len(resolved.chainAttachments) == 0 {
 		t.Fatalf("resolved stream attachments are empty; taps and custom stages should be carried on the resolved recipe")
 	}
 }
