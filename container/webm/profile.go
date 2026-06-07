@@ -138,6 +138,47 @@ func validateTrack(track Track) error {
 	default:
 		return ErrUnsupportedWebMCodec
 	}
+	if err := validateContentEncodings(track.ContentEncodings); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateContentEncodings(encodings []ContentEncoding) error {
+	for i := range encodings {
+		if err := validateContentEncoding(encodings[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateContentEncoding(encoding ContentEncoding) error {
+	scope := encoding.Scope
+	if scope == 0 {
+		scope = ContentEncodingScopeBlock
+	}
+	if scope != ContentEncodingScopeBlock {
+		return ErrUnsupportedWebMContentEncoding
+	}
+	if encoding.Type != ContentEncodingTypeEncryption ||
+		!encoding.EncryptionSet ||
+		encoding.CompressionSet {
+		return ErrUnsupportedWebMContentEncoding
+	}
+	return validateContentEncryption(encoding.Encryption)
+}
+
+func validateContentEncryption(encryption ContentEncryption) error {
+	if encryption.Algorithm != ContentEncAlgoAES ||
+		!encryption.AESSettingsSet ||
+		encryption.AESSettings.CipherMode != ContentEncAESCipherModeCTR ||
+		len(encryption.Signature) != 0 ||
+		len(encryption.SignatureKeyID) != 0 ||
+		encryption.SignatureAlgorithm != ContentSigAlgoNotSigned ||
+		encryption.SignatureHashAlgorithm != ContentSigHashAlgoNotSigned {
+		return ErrUnsupportedWebMContentEncoding
+	}
 	return nil
 }
 

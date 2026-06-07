@@ -75,6 +75,94 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsUnsupportedContentEncodings(t *testing.T) {
+	tests := []struct {
+		name     string
+		encoding ContentEncoding
+	}{
+		{
+			name: "compression",
+			encoding: ContentEncoding{
+				Type:           ContentEncodingTypeCompression,
+				CompressionSet: true,
+				Compression:    ContentCompression{Algorithm: ContentCompAlgoZlib},
+			},
+		},
+		{
+			name: "private scope encryption",
+			encoding: ContentEncoding{
+				Scope:         ContentEncodingScopePrivate,
+				Type:          ContentEncodingTypeEncryption,
+				EncryptionSet: true,
+				Encryption:    validWebMContentEncryption([]byte("scope-key")),
+			},
+		},
+		{
+			name: "missing aes settings",
+			encoding: ContentEncoding{
+				Type:          ContentEncodingTypeEncryption,
+				EncryptionSet: true,
+				Encryption: ContentEncryption{
+					Algorithm: ContentEncAlgoAES,
+					KeyID:     []byte("missing-aes"),
+				},
+			},
+		},
+		{
+			name: "cbc encryption",
+			encoding: ContentEncoding{
+				Type:          ContentEncodingTypeEncryption,
+				EncryptionSet: true,
+				Encryption: ContentEncryption{
+					Algorithm:      ContentEncAlgoAES,
+					KeyID:          []byte("cbc-key"),
+					AESSettingsSet: true,
+					AESSettings:    ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCBC},
+				},
+			},
+		},
+		{
+			name: "signature metadata",
+			encoding: ContentEncoding{
+				Type:          ContentEncodingTypeEncryption,
+				EncryptionSet: true,
+				Encryption: ContentEncryption{
+					Algorithm:          ContentEncAlgoAES,
+					KeyID:              []byte("signature-key"),
+					AESSettingsSet:     true,
+					AESSettings:        ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCTR},
+					Signature:          []byte{1},
+					SignatureAlgorithm: ContentSigAlgoRSA,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := muxer.AddTrack(Track{
+				Type:             TrackVideo,
+				Codec:            CodecVP8,
+				ContentEncodings: []ContentEncoding{tt.encoding},
+				Video:            VideoConfig{Width: 16, Height: 16},
+			}); !errors.Is(err, ErrUnsupportedWebMContentEncoding) {
+				t.Fatalf("err = %v, want ErrUnsupportedWebMContentEncoding", err)
+			}
+		})
+	}
+}
+
+func TestDemuxerRejectsUnsupportedContentEncodings(t *testing.T) {
+	data := makeCompressedDocTypeWebMData(t)
+	if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrUnsupportedWebMContentEncoding) {
+		t.Fatalf("err = %v, want ErrUnsupportedWebMContentEncoding", err)
+	}
+}
+
 func TestMuxerRejectsInvalidSegmentInfoMetadata(t *testing.T) {
 	if _, err := NewMuxer(io.Discard, MuxerOptions{
 		Info: SegmentInfo{SegmentUUID: []byte{1, 2, 3}},
@@ -1731,6 +1819,49 @@ func benchmarkWebMCorpusCapacity(cycles int, payloads benchmarkWebMPayloadSet) i
 	payloadBytes := payloads.totalBytes * int64(cycles)
 	metadataBytes := int64(cycles*benchmarkWebMTrackCount*128 + 64*1024)
 	return int(payloadBytes + metadataBytes)
+}
+
+func validWebMContentEncryption(keyID []byte) ContentEncryption {
+	return ContentEncryption{
+		Algorithm:      ContentEncAlgoAES,
+		KeyID:          append([]byte(nil), keyID...),
+		AESSettingsSet: true,
+		AESSettings:    ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCTR},
+	}
+}
+
+func makeCompressedDocTypeWebMData(tb testing.TB) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := matroska.NewMuxer(&buffer, matroska.MuxerOptions{DocType: "webm"})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(matroska.Track{
+		Type:  matroska.TrackVideo,
+		Codec: matroska.CodecVP8,
+		ContentEncodings: []matroska.ContentEncoding{{
+			Type:           matroska.ContentEncodingTypeCompression,
+			CompressionSet: true,
+			Compression:    matroska.ContentCompression{Algorithm: matroska.ContentCompAlgoZlib},
+		}},
+		Video: matroska.VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.WritePacket(matroska.Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
 }
 
 func unknownWebMElementBytes(tb testing.TB, id ebml.ID, payload []byte) []byte {
