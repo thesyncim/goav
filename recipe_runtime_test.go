@@ -1926,6 +1926,14 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToTargets(t *testing.T) {
 	if err := builtTask.Detach(ctx, attachment); err != nil {
 		t.Fatal(err)
 	}
+	if !encoder.closed {
+		t.Fatal("fanout encoder was not closed by detach")
+	}
+	for i, muxer := range muxers.muxers {
+		if !muxer.closed {
+			t.Fatalf("muxer[%d] was not closed by detach", i)
+		}
+	}
 }
 
 func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
