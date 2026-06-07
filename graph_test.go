@@ -562,6 +562,141 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 	}
 }
 
+func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	resizer := &transcodeTestFilter{}
+	resizeFactory := &transcodeTestFilterFactory{filter: resizer}
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResize,
+		Input:  av.MediaVideo,
+		Output: av.MediaVideo,
+	}, resizeFactory))
+	frames := []av.Frame{
+		{StreamID: "video", Type: av.MediaVideo, Video: &av.VideoFrame{Width: 1280, Height: 720, PixelFormat: av.PixelFormatI420}},
+		{StreamID: "video", Type: av.MediaVideo, Video: &av.VideoFrame{Width: 1280, Height: 720, PixelFormat: av.PixelFormatI420}},
+		{StreamID: "video", Type: av.MediaVideo, Video: &av.VideoFrame{Width: 1280, Height: 720, PixelFormat: av.PixelFormatI420}},
+	}
+	source := &runtimeBranchStepSource{
+		name: "source",
+		messages: []pipeline.Message{
+			{Kind: pipeline.MessageFrame, Frame: &frames[0]},
+			{Kind: pipeline.MessageFrame, Frame: &frames[1]},
+			{Kind: pipeline.MessageFrame, Frame: &frames[2]},
+		},
+		emitted: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+		resume: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+	}
+	base := newRuntimeObservedSink("base", 3)
+	thumbs := newRuntimeObservedSink("thumbs", 1)
+	inspect := newRuntimeObservedSink("inspect", 1)
+
+	graph := New(filters, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	mediaTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := mediaTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "video.frames",
+		MediaKind: av.MediaVideo,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:      DomainFrame,
+			MediaKind:   av.MediaVideo,
+			StreamID:    "video",
+			Width:       1280,
+			Height:      720,
+			PixelFormat: av.PixelFormatI420,
+		},
+		Node: "source",
+	}}
+	defer mediaTask.Close()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- mediaTask.Run(ctx)
+	}()
+	select {
+	case <-source.emitted[0]:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	parent, err := mediaTask.Attach(ctx, Branch("thumb").
+		FromTap("video.frames").
+		Buffer(pipeline.BufferPolicy{Capacity: 2}).
+		Resize(320, 180).
+		Tap("video.320.frames").
+		To(SinkEndpoint(thumbs)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resizedTap, ok := findTap(mediaTask.Taps(), "video.320.frames")
+	if !ok ||
+		resizedTap.Domain != DomainFrame ||
+		resizedTap.MediaKind != av.MediaVideo ||
+		resizedTap.Caps.Width != 320 ||
+		resizedTap.Caps.Height != 180 ||
+		resizedTap.Node != "thumb/resize-thumb" {
+		t.Fatalf("resized tap = %+v ok=%v, want frame video 320x180 tap on thumb/resize-thumb", resizedTap, ok)
+	}
+	child, err := mediaTask.Attach(ctx, Branch("inspect").
+		FromTap("video.320.frames").
+		Buffer(pipeline.BufferPolicy{Capacity: 2}).
+		To(SinkEndpoint(inspect)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(source.resume[0])
+	select {
+	case <-thumbs.received:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case <-inspect.received:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := mediaTask.Detach(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+	if !thumbs.closedValue() || !inspect.closedValue() || !resizer.closed {
+		t.Fatalf("closed thumbs=%v inspect=%v resize=%v", thumbs.closedValue(), inspect.closedValue(), resizer.closed)
+	}
+	close(source.resume[1])
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if got := base.countValue(); got != 3 {
+		t.Fatalf("base count = %d, want all three frames", got)
+	}
+	if resizer.frames != 1 {
+		t.Fatalf("resize frames = %d, want only the second frame before detach", resizer.frames)
+	}
+	if got := thumbs.countValue(); got != 1 {
+		t.Fatalf("thumbs count = %d, want only second resized frame", got)
+	}
+	if got := inspect.countValue(); got != 1 {
+		t.Fatalf("inspect count = %d, want only second resized frame", got)
+	}
+	if _, ok := findTap(mediaTask.Taps(), "video.320.frames"); ok {
+		t.Fatalf("video.320.frames tap still visible after parent detach: %+v", mediaTask.Taps())
+	}
+	if err := child.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	graph := New().Graph()
 	graph.Source("source", &runtimeTestSource{name: "source"})

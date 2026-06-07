@@ -173,7 +173,8 @@ make the implementation match the composable planner promise.
   targets, Opus encoded late recording from frame taps, flow-applied Opus
   encode-to-target branches, post-encode packet taps, and dependent late
   branches after runtime resize taps plus live buffered custom-stage and
-  post-encode nested tap detach covered; deeper transform/filter lifecycle
-  stress proof remains planned.
+  post-encode nested tap detach covered; live buffered runtime resize subtree
+  detach is now covered, and deeper resample/filter lifecycle stress proof
+  remains planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.
