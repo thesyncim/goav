@@ -60,7 +60,7 @@ func Descriptor() format.Descriptor {
 		MinStreams: 1,
 		MaxStreams: 1,
 		Metadata: av.Metadata{
-			"summary": "IVF targets support one VP8, VP9, or AV1 video stream",
+			"summary": "IVF destinations support one VP8, VP9, or AV1 video stream",
 		},
 	}
 }

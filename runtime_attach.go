@@ -69,17 +69,17 @@ type runtimeBranchTerminal struct {
 	owned    bool
 }
 
-type runtimeBranchGroupTargets struct {
+type runtimeBranchGroupDestinations struct {
 	sharedSinkKeys map[string]struct{}
 	sharedMuxKeys  map[string]struct{}
 }
 
 type runtimeAttachGroup struct {
-	targets     runtimeBranchGroupTargets
-	reserved    map[string]struct{}
-	sharedSinks map[string]*runtimeSharedSinkTarget
-	sharedMuxes map[string]*runtimeSharedMuxTarget
-	muxOrder    []string
+	destinations runtimeBranchGroupDestinations
+	reserved     map[string]struct{}
+	sharedSinks  map[string]*runtimeSharedSinkTarget
+	sharedMuxes  map[string]*runtimeSharedMuxTarget
+	muxOrder     []string
 }
 
 type runtimeSharedSinkTarget struct {
@@ -185,13 +185,13 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		}
 		branches[i] = branch
 	}
-	targets, err := validateRuntimeBranchGroupTargets(branches)
+	destinations, err := validateRuntimeBranchGroupDestinations(branches)
 	if err != nil {
 		return nil, err
 	}
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
-	group := newRuntimeAttachGroup(targets)
+	group := newRuntimeAttachGroup(destinations)
 	var patch runtimeGraphPatch
 	nodeNamesByBranch := make([][]string, len(branches))
 	preparedBranches := 0
@@ -244,7 +244,7 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		}
 		patch.addApplied(branchRefs, branchRoutes, branchTaps)
 	}
-	sharedRefs, sharedRoutes, err := group.attachSharedMuxTargets(t.graph)
+	sharedRefs, sharedRoutes, err := group.attachSharedMuxDestinations(t.graph)
 	if err != nil {
 		patch.addApplied(sharedRefs, sharedRoutes, nil)
 		return rollback(err)
@@ -273,16 +273,16 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	}
 	branch.steps = runtimeBranchStepsFromChain(spec.decode, spec.decodeCodec, spec.steps)
 	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
-	if len(spec.targets) == 0 {
+	if len(spec.destinations) == 0 {
 		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
-	for i := range spec.targets {
-		target := cloneTargetSpec(spec.targets[i])
-		if target.err != nil {
-			return branch, target.err
+	for i := range spec.destinations {
+		ref := cloneDestinationRef(spec.destinations[i])
+		if ref.err != nil {
+			return branch, ref.err
 		}
-		destination := cloneDestinationSpec(target.dest)
-		name := firstNonEmpty(target.name, spec.name, "branch")
+		destination := cloneDestinationSpec(ref.dest)
+		name := firstNonEmpty(ref.name, spec.name, "branch")
 		if err := destination.validate("attach runtime branch", name); err != nil {
 			return branch, err
 		}
@@ -290,7 +290,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 			name:     name,
 			dest:     destination,
 			sink:     destination.sink,
-			shareKey: runtimeBranchSharedTargetKey(target),
+			shareKey: runtimeBranchSharedDestinationKey(ref),
 		})
 	}
 	return branch, nil
@@ -328,8 +328,8 @@ func runtimeBranchStepFromChainStep(step chainStep, after OperationKind) (runtim
 	}
 }
 
-func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchGroupTargets, error) {
-	var targets runtimeBranchGroupTargets
+func validateRuntimeBranchGroupDestinations(branches []runtimeBranch) (runtimeBranchGroupDestinations, error) {
+	var destinations runtimeBranchGroupDestinations
 	seen := make(map[string]runtimeBranchDestination)
 	seenBranch := make(map[string]string)
 	for i := range branches {
@@ -343,20 +343,20 @@ func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchG
 				if first.shareKey != "" && first.shareKey == branch.destinations[j].shareKey {
 					switch {
 					case runtimeBranchDestinationCanShareSink(first) && runtimeBranchDestinationCanShareSink(branch.destinations[j]):
-						if targets.sharedSinkKeys == nil {
-							targets.sharedSinkKeys = make(map[string]struct{})
+						if destinations.sharedSinkKeys == nil {
+							destinations.sharedSinkKeys = make(map[string]struct{})
 						}
-						targets.sharedSinkKeys[first.shareKey] = struct{}{}
+						destinations.sharedSinkKeys[first.shareKey] = struct{}{}
 						continue
 					case runtimeBranchDestinationCanShareMux(first) && runtimeBranchDestinationCanShareMux(branch.destinations[j]):
-						if targets.sharedMuxKeys == nil {
-							targets.sharedMuxKeys = make(map[string]struct{})
+						if destinations.sharedMuxKeys == nil {
+							destinations.sharedMuxKeys = make(map[string]struct{})
 						}
-						targets.sharedMuxKeys[first.shareKey] = struct{}{}
+						destinations.sharedMuxKeys[first.shareKey] = struct{}{}
 						continue
 					}
 				}
-				return targets, &BuildError{
+				return destinations, &BuildError{
 					Code:      "target_duplicate",
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(branch.name, "branch"),
@@ -378,7 +378,7 @@ func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchG
 			seenBranch[label] = firstNonEmpty(branch.name, fmt.Sprintf("branch-%d", i+1))
 		}
 	}
-	return targets, nil
+	return destinations, nil
 }
 
 func runtimeBranchDestinationCanShareSink(destination runtimeBranchDestination) bool {
@@ -389,35 +389,35 @@ func runtimeBranchDestinationCanShareMux(destination runtimeBranchDestination) b
 	return destination.sink == nil && destinationSpecHasOutput(destination.dest)
 }
 
-func runtimeBranchSharedTargetKey(target targetSpec) string {
+func runtimeBranchSharedDestinationKey(target destinationRef) string {
 	if target.id == 0 {
 		return ""
 	}
 	return strconv.FormatUint(target.id, 10)
 }
 
-func newRuntimeAttachGroup(targets runtimeBranchGroupTargets) *runtimeAttachGroup {
+func newRuntimeAttachGroup(destinations runtimeBranchGroupDestinations) *runtimeAttachGroup {
 	return &runtimeAttachGroup{
-		targets:     targets,
-		reserved:    make(map[string]struct{}),
-		sharedSinks: make(map[string]*runtimeSharedSinkTarget),
-		sharedMuxes: make(map[string]*runtimeSharedMuxTarget),
+		destinations: destinations,
+		reserved:     make(map[string]struct{}),
+		sharedSinks:  make(map[string]*runtimeSharedSinkTarget),
+		sharedMuxes:  make(map[string]*runtimeSharedMuxTarget),
 	}
 }
 
 func (g *runtimeAttachGroup) isSharedSink(key string) bool {
-	if g == nil || key == "" || len(g.targets.sharedSinkKeys) == 0 {
+	if g == nil || key == "" || len(g.destinations.sharedSinkKeys) == 0 {
 		return false
 	}
-	_, ok := g.targets.sharedSinkKeys[key]
+	_, ok := g.destinations.sharedSinkKeys[key]
 	return ok
 }
 
 func (g *runtimeAttachGroup) isSharedMux(key string) bool {
-	if g == nil || key == "" || len(g.targets.sharedMuxKeys) == 0 {
+	if g == nil || key == "" || len(g.destinations.sharedMuxKeys) == 0 {
 		return false
 	}
-	_, ok := g.targets.sharedMuxKeys[key]
+	_, ok := g.destinations.sharedMuxKeys[key]
 	return ok
 }
 
@@ -544,7 +544,7 @@ func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *run
 	return nil
 }
 
-func (g *runtimeAttachGroup) attachSharedMuxTargets(graph pipeline.Graph) ([]pipeline.NodeRef, []pipeline.Route, error) {
+func (g *runtimeAttachGroup) attachSharedMuxDestinations(graph pipeline.Graph) ([]pipeline.NodeRef, []pipeline.Route, error) {
 	if g == nil || len(g.muxOrder) == 0 {
 		return nil, nil, nil
 	}
@@ -616,9 +616,9 @@ func runtimeMuxTargetFormat(ctx context.Context, rt *runtime, dest destinationSp
 	return result.Format, nil
 }
 
-func runtimeMuxCompatibilityIssue(targetName string, formatID av.FormatID, branches []string, streams []av.Stream, rt Runtime) (muxCompatibilityIssue, bool) {
+func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, branches []string, streams []av.Stream, rt Runtime) (muxCompatibilityIssue, bool) {
 	output := planOutput{
-		Name:       targetName,
+		Name:       destinationName,
 		Operation:  OpMux,
 		Format:     formatID,
 		BranchRefs: append([]string(nil), branches...),
@@ -818,8 +818,8 @@ func validateRuntimeBranchShapeContract(branch runtimeBranch, initial MediaShape
 		if shape.Domain == DomainPacket {
 			continue
 		}
-		target := firstNonEmpty(destination.name, destination.dest.label(fmt.Sprintf("target%d", i+1)))
-		return targetShapeMismatchError("attach runtime branch", branch.name, target, destination.dest, shape)
+		destinationName := firstNonEmpty(destination.name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
+		return destinationShapeMismatchError("attach runtime branch", branch.name, destinationName, destination.dest, shape)
 	}
 	return nil
 }
@@ -959,8 +959,8 @@ func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch ru
 		return runtimeBranchTerminal{}, err
 	}
 	branchName := firstNonEmpty(branch.name, destination.name, "branch")
-	targetName := firstNonEmpty(destination.name, destination.dest.label(branchName))
-	if issue, ok := runtimeMuxCompatibilityIssue(targetName, formatID, []string{branchName}, []av.Stream{stream}, rt); ok {
+	destinationName := firstNonEmpty(destination.name, destination.dest.label(branchName))
+	if issue, ok := runtimeMuxCompatibilityIssue(destinationName, formatID, []string{branchName}, []av.Stream{stream}, rt); ok {
 		return runtimeBranchTerminal{}, muxCompatibilityBuildError("attach runtime branch", issue)
 	}
 	muxStage, err := (&builder{runtime: rt}).openMuxDestinationStage(
@@ -1577,7 +1577,7 @@ func validateRuntimeBranchTargets(branch runtimeBranch) error {
 	for i := range branch.destinations {
 		name := firstNonEmpty(branch.destinations[i].name, branch.destinations[i].dest.label(fmt.Sprintf("target%d", i+1)))
 		if firstIndex, ok := seen[name]; ok {
-			return duplicateRuntimeBranchTargetRefError(branch.name, name, firstIndex, i)
+			return duplicateRuntimeBranchDestinationRefError(branch.name, name, firstIndex, i)
 		}
 		seen[name] = i
 	}
@@ -2042,7 +2042,7 @@ func runtimeBranchNodeDuplicateError(node string) error {
 	}
 }
 
-func duplicateRuntimeBranchTargetRefError(branch string, label string, firstIndex int, secondIndex int) error {
+func duplicateRuntimeBranchDestinationRefError(branch string, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
 		Code:      "target_duplicate",
 		Operation: "attach runtime branch",

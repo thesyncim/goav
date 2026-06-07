@@ -76,7 +76,7 @@ runtime attach. Public vocabulary stays `Input`, `Chain`, `Tap`, `Branch`,
    choices should be visible to realtime users.
 15. Remove old workflow residue from normal composition: `transcode` imports,
     `branchComposePlan`, branch-compose labels, string output refs,
-    `targetNames`, `runtimeBranch`, workflow-kind compiler switches, and
+    `destinationNames` bridge fields, `runtimeBranch`, workflow-kind compiler switches, and
     route-policy leaks should be quarantined or deleted from the normal planner.
 16. Add runtime observability through task stats, traces, drop reasons, and
    latency counters. Task stats now include graph and per-node counters, and

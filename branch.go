@@ -10,7 +10,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-var targetSpecSeq atomic.Uint64
+var destinationRefSeq atomic.Uint64
 var destinationSpecSeq atomic.Uint64
 
 // Destination is an opaque handle for a file, URI, object writer, media sink,
@@ -71,22 +71,22 @@ type destinationBinding struct {
 	hasDirect bool
 }
 
-type targetSpec struct {
+type destinationRef struct {
 	name string
 	dest destinationSpec
 	id   uint64
 	err  error
 }
 
-func newDirectTargetSpec(name string, dest destinationSpec) targetSpec {
+func newDirectDestinationRef(name string, dest destinationSpec) destinationRef {
 	if name == "" {
-		return targetSpec{dest: dest, err: targetNameMissingError(dest)}
+		return destinationRef{dest: dest, err: destinationNameMissingError(dest)}
 	}
 	id := dest.id
 	if id == 0 {
-		id = targetSpecSeq.Add(1)
+		id = destinationRefSeq.Add(1)
 	}
-	return targetSpec{
+	return destinationRef{
 		name: name,
 		dest: dest.withName(firstNonEmpty(dest.name, name)),
 		id:   id,
@@ -123,17 +123,17 @@ func destinationSpecEmpty(dest destinationSpec) bool {
 }
 
 type BranchSpec struct {
-	name           string
-	media          av.MediaType
-	decode         bool
-	decodeCodec    CodecSpec
-	operations     []StreamOperation
-	steps          []chainStep
-	postEncodeTaps []string
-	transforms     []TransformSpec
-	encode         CodecSpec
-	targets        []targetSpec
-	targetNames    []string
+	name             string
+	media            av.MediaType
+	decode           bool
+	decodeCodec      CodecSpec
+	operations       []StreamOperation
+	steps            []chainStep
+	postEncodeTaps   []string
+	transforms       []TransformSpec
+	encode           CodecSpec
+	destinations     []destinationRef
+	destinationNames []string
 
 	from         string
 	tap          string
@@ -410,18 +410,18 @@ func (b *branchBuilder) VP9(bitrate int, options ...codecOption) *branchBuilder 
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *branchBuilder) To(targets ...Destination) BranchSpec {
+func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
 	if b == nil {
 		return BranchSpec{err: nilBranchError()}
 	}
 	spec := b.snapshot()
-	if len(targets) == 0 {
-		spec.err = branchTargetMissingError(spec.name)
+	if len(destinations) == 0 {
+		spec.err = branchDestinationMissingError(spec.name)
 		return spec
 	}
-	for i := range targets {
-		target := targets[i]
-		binding, err := destinationBindingFromDestination(target)
+	for i := range destinations {
+		destination := destinations[i]
+		binding, err := destinationBindingFromDestination(destination)
 		if err != nil {
 			spec.err = branchDestinationInvalidError(spec.name, err.Error())
 			return spec
@@ -442,8 +442,8 @@ func (b *branchBuilder) snapshot() BranchSpec {
 	spec.steps = cloneChainSteps(spec.steps)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
-	spec.targets = cloneTargetSpecs(spec.targets)
-	spec.targetNames = append([]string(nil), spec.targetNames...)
+	spec.destinations = cloneDestinationRefs(spec.destinations)
+	spec.destinationNames = append([]string(nil), spec.destinationNames...)
 	return spec
 }
 
@@ -457,13 +457,13 @@ func appendDestination(spec *BranchSpec, destination destinationBinding, index i
 	switch {
 	case destination.hasDirect:
 		destination := destination.dest
-		targetName := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
-		target := newDirectTargetSpec(targetName, destination)
-		if target.err != nil {
-			return target.err
+		destinationName := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
+		ref := newDirectDestinationRef(destinationName, destination)
+		if ref.err != nil {
+			return ref.err
 		}
-		spec.targets = append(spec.targets, target)
-		spec.targetNames = append(spec.targetNames, target.name)
+		spec.destinations = append(spec.destinations, ref)
+		spec.destinationNames = append(spec.destinationNames, ref.name)
 		return nil
 	default:
 		return branchDestinationInvalidError(spec.name, "unsupported branch destination")
@@ -501,7 +501,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			job.setErr(err)
 			return job
 		}
-		if err := job.addBranchTargets(branches[i].targets...); err != nil {
+		if err := job.addBranchDestinations(branches[i].destinations...); err != nil {
 			job.setErr(err)
 			return job
 		}
@@ -534,9 +534,9 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 				append([]string(nil), stream.postEncodeTaps...),
 				branches[i].postEncodeTaps...,
 			),
-			transforms:  appendTransformSpecs(transformSpecsFromChainSteps(sharedSteps), branches[i].transforms),
-			encode:      encode,
-			targetNames: append([]string(nil), branches[i].targetNames...),
+			transforms:       appendTransformSpecs(transformSpecsFromChainSteps(sharedSteps), branches[i].transforms),
+			encode:           encode,
+			destinationNames: append([]string(nil), branches[i].destinationNames...),
 		})
 	}
 	return job
@@ -555,7 +555,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	if spec.name == "" {
 		return branchIntentNameMissingError(index, StreamIntent{Select: StreamSelect{Type: selected}})
 	}
-	if len(spec.targetNames) == 0 {
+	if len(spec.destinationNames) == 0 {
 		return branchIntentTargetMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
 	}
 	stream := StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
@@ -587,23 +587,23 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	if parentPacket && !spec.decode && !codecIntentSet(effectiveEncode) {
 		effectiveEncode = Copy()
 	}
-	if !codecIntentSet(effectiveEncode) && !branchTargetsAllSinkDestinations(spec.targets) {
+	if !codecIntentSet(effectiveEncode) && !branchDestinationsAllSinkDestinations(spec.destinations) {
 		return branchEncodeMissingError(stream)
 	}
-	seen := make(map[string]int, len(spec.targetNames))
-	for i, targetName := range spec.targetNames {
-		if targetName == "" {
-			return branchTargetNameEmptyError(streamBuild{name: spec.name, selector: av.StreamSelector{Type: selected}}, i)
+	seen := make(map[string]int, len(spec.destinationNames))
+	for i, destinationName := range spec.destinationNames {
+		if destinationName == "" {
+			return branchDestinationNameEmptyError(streamBuild{name: spec.name, selector: av.StreamSelector{Type: selected}}, i)
 		}
-		if firstIndex, ok := seen[targetName]; ok {
+		if firstIndex, ok := seen[destinationName]; ok {
 			return duplicateBranchDestinationError(
-				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Destinations: spec.targetNames},
-				targetName,
+				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Destinations: spec.destinationNames},
+				destinationName,
 				firstIndex,
 				i,
 			)
 		}
-		seen[targetName] = i
+		seen[destinationName] = i
 	}
 	return nil
 }
@@ -892,32 +892,32 @@ func branchPacketTransformUnsupportedError(stream StreamIntent) error {
 	}
 }
 
-func branchTargetsAllSinkDestinations(targets []targetSpec) bool {
-	if len(targets) == 0 {
+func branchDestinationsAllSinkDestinations(destinations []destinationRef) bool {
+	if len(destinations) == 0 {
 		return false
 	}
-	for i := range targets {
-		if targets[i].dest.sink == nil {
+	for i := range destinations {
+		if destinations[i].dest.sink == nil {
 			return false
 		}
 	}
 	return true
 }
 
-func cloneTargetSpecs(targets []targetSpec) []targetSpec {
-	if len(targets) == 0 {
+func cloneDestinationRefs(destinations []destinationRef) []destinationRef {
+	if len(destinations) == 0 {
 		return nil
 	}
-	out := make([]targetSpec, 0, len(targets))
-	for i := range targets {
-		out = append(out, cloneTargetSpec(targets[i]))
+	out := make([]destinationRef, 0, len(destinations))
+	for i := range destinations {
+		out = append(out, cloneDestinationRef(destinations[i]))
 	}
 	return out
 }
 
-func cloneTargetSpec(target targetSpec) targetSpec {
-	target.dest = cloneDestinationSpec(target.dest)
-	return target
+func cloneDestinationRef(ref destinationRef) destinationRef {
+	ref.dest = cloneDestinationSpec(ref.dest)
+	return ref
 }
 
 func cloneDestinationSpec(dest destinationSpec) destinationSpec {
@@ -950,7 +950,7 @@ func nilBranchError() error {
 	}
 }
 
-func branchTargetMissingError(name string) error {
+func branchDestinationMissingError(name string) error {
 	return &BuildError{
 		Code:      "target_missing",
 		Operation: "build branch",
@@ -990,7 +990,7 @@ func destinationInvalidError(operation string, node string, reason string) error
 	}
 }
 
-func targetNameMissingError(dest destinationSpec) error {
+func destinationNameMissingError(dest destinationSpec) error {
 	return &BuildError{
 		Code:      "target_invalid",
 		Operation: "build target",

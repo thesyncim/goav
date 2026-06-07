@@ -36,7 +36,7 @@ func Descriptor() format.Descriptor {
 		MinStreams: 1,
 		MaxStreams: 1,
 		Metadata: av.Metadata{
-			"summary": "Annex B targets support one H264 video stream",
+			"summary": "Annex B destinations support one H264 video stream",
 		},
 	}
 }

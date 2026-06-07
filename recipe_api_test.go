@@ -1345,7 +1345,7 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
 		t.Fatalf("err = %v, want target_mux_incompatible", err)
 	}
-	for _, want := range []string{"target=web", "format=ivf", "branch=v8 codec=vp8 media=video", "branch=v9 codec=vp9 media=video"} {
+	for _, want := range []string{"destination=web", "format=ivf", "branch=v8 codec=vp8 media=video", "branch=v9 codec=vp9 media=video"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want detail %q", err, want)
 		}
@@ -1392,7 +1392,7 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 	}
 	for _, want := range []string{
 		"test matroska target accepts one Opus audio stream",
-		"target=out.mkv",
+		"destination=out.mkv",
 		"format=matroska",
 		"branch=video codec=vp8 media=video",
 	} {
@@ -1469,8 +1469,8 @@ func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
 		t.Fatalf("err = %v, want target_mux_incompatible", err)
 	}
-	if !strings.Contains(err.Error(), "Annex B targets support one H264 video stream") ||
-		!strings.Contains(err.Error(), "target=out.h264") ||
+	if !strings.Contains(err.Error(), "Annex B destinations support one H264 video stream") ||
+		!strings.Contains(err.Error(), "destination=out.h264") ||
 		!strings.Contains(err.Error(), "branch=video codec=vp8 media=video") {
 		t.Fatalf("err = %v, want Annex B codec guidance", err)
 	}
@@ -1912,7 +1912,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"the routing handle: reusing the same `Destination` value",
 		"DestinationProvider` is the extension point",
 		"Direct `.To(...)` chains are only ergonomic syntax",
-		"`branchComposePlan`, `runtimeBranch`, `targetNames`",
+		"`branchComposePlan`, `runtimeBranch`, `destinationNames`",
 		"normal composition does not import `goav/transcode`",
 	} {
 		if !strings.Contains(progressText, required) {

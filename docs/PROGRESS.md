@@ -73,7 +73,7 @@ The implementation target is explicit:
   and a `WorkPatch` for runtime attach;
 - `Explain`, `Build`, `Attach`, and `Snapshot` read the same planned work;
 - normal composition does not import `goav/transcode`, carry labels, carry string
-  target names, or dispatch by workflow kind;
+  destination names, or dispatch by workflow kind;
 - root `Runtime` stays small; graph composition is internal or expert-only, not
   the normal public API;
 - observation remains ordinary branch composition from typed taps with `Do(...)`
@@ -102,12 +102,12 @@ are:
   the same branch model as `Branches(Branch("main").To(...))`.
 - `BranchSpec`, chain state, runtime attached branches, and `FlowSpec` converge
   on one ordered operation list. Parallel fields such as `decode`, `steps`,
-  `transforms`, `encode`, post-encode taps, labels, and target-name lists are
+  `transforms`, `encode`, post-encode taps, labels, and destination-name bridge fields are
   migration debt until they disappear.
 - Initial build emits `WorkPlan`; runtime attach emits `WorkPatch` from the same
   planner against existing typed taps. Attach validates destinations and opens
   them before graph mutation, then rolls back cleanly on failure.
-- `branchComposePlan`, `runtimeBranch`, `targetNames`, string output refs,
+- `branchComposePlan`, `runtimeBranch`, `destinationNames` bridge fields, string output refs,
   transcode imports in normal composition, and workflow-kind compiler switches
   are explicit removal targets, not extension points.
 - `Runtime.Graph`, graph handles, source/stage/sink node wiring, and route APIs
@@ -446,7 +446,7 @@ are:
 103. Tighten RTP recipe codec intent so built-in receive wiring is limited to
     Opus, VP8, VP9, H264, and AV1, while custom payload handling stays in the
     advanced runtime layer. Done.
-104. Add recipe output validation so nil sink targets, empty target refs, and
+104. Add recipe output validation so nil sink targets, empty destination refs, and
 	file outputs without writers fail before graph compilation. Done.
 105. Add recipe RTP reader validation so nil packet readers fail before source
     construction while codec-intent diagnostics still cover valid readers.
@@ -513,7 +513,7 @@ are:
     depacketizer wiring.
     Done.
 130. Earlier experiment: make a top-level `Decode(input, output)` helper use
-	`Sink(...)` target refs. Superseded before release by
+	`Sink(...)` destination refs. Superseded before release by
 	`From(input).Stream()/Audio()/Video().Decode().To(Sink(...))`. Done.
 131. Earlier experiment: prune transcode branch-local direct outputs so branches
     route through labels and outputs are defined separately. Superseded before
@@ -665,9 +665,9 @@ are:
     generic `From(input).To(...)` recipes during intent validation. Superseded
     before release by packet-domain `Sink` support for `.Copy()` and
     stream-scoped packet sinks. Done.
-171. Earlier experiment: reject sink targets as planned branch targets because
-    planned branch targets were treated as mux-only groups. Superseded before
-    release by domain-honest branch targets where sinks can receive raw frames
+171. Earlier experiment: reject sink targets as planned branch destinations because
+    planned branch destinations were treated as mux-only groups. Superseded before
+    release by domain-honest branch destinations where sinks can receive raw frames
     or encoded packets. Done.
 172. Preserve `ErrUnsupportedBuild` through more recipe `BuildError`
     diagnostics for unsupported shapes such as multiple file inputs, selected
@@ -727,7 +727,7 @@ are:
     from public `Intent` before readers, writers, sinks, and stage attachments
     are validated. Done.
 186. Split transcode recipe validation the same way: one input, branch presence,
-    branch names, selectors, encode targets, branch target refs, duplicate
+    branch names, selectors, encode targets, branch destination refs, duplicate
     branch routes, duplicate branch names, and transform shape now fail from
     public `Intent`, while RTP rejection and mux-output attachment validation
     stay in a concrete attachment pass before plan lowering. Done.
@@ -796,7 +796,7 @@ are:
     descriptor-only decoders before demuxers are opened whenever the registered
     prober already exposes an unambiguous selected stream codec. Done.
 203. Validate unresolved transcode encode intents through the shared recipe
-    encode rules: `Auto()` and `Copy()` branch targets now fail with explicit
+    encode rules: `Auto()` and `Copy()` branch destinations now fail with explicit
     intent diagnostics instead of falling through as missing encoders. Done.
 204. Make unmatched transcode output groups actionable: advanced transcode
     plans whose output branch lists select no branch now return
@@ -1001,7 +1001,7 @@ are:
     diagnostic without treating it as a missing adapter. Done.
 238. Clean the composition vocabulary around branches and targets:
     public planned splits use `Branch`/`Branches`, logical destinations use
-    `Target`, target refs remain `File`, `URIOut`, and `Sink`, and
+    `Target`, destination refs remain `File`, `URIOut`, and `Sink`, and
     flows are reusable operation sequences without `.To(...)`. `Task.Attach`
     now consumes the same `BranchSpec` shape for runtime sink attachment from
     named taps, and the old public `Output`/`Outputs` recipe binding surface is
@@ -1040,11 +1040,11 @@ are:
     forcing decoder preflight, direct encode-to-sink reuses the encoder stage
     path, and planned/built graph equivalence plus runtime packet delivery are
     covered by tests. Done.
-244. Support sink targets as planned branch targets:
+244. Support sink targets as planned branch destinations:
 	`Branches(goav.Branch(name).To(goav.Target(name, Sink(...))))`
 	now stays in frame domain when no encoder is declared, can attach after
 	ordered branch operations such as `Resize(...)`, and sends encoded packets to
-	the same sink target shape after Opus/VP8/VP9 encode. Mux targets still
+	the same sink destination shape after Opus/VP8/VP9 encode. Mux destinations still
 	require explicit encode, planned branch `.Copy()` remains rejected because
 	planned branches begin after decode, and the low-level transcode plan now
 	carries either a mux target or a sink target per target. Done.
@@ -1069,7 +1069,7 @@ are:
     planning/build helpers consume branch-compose routes and targets. Done.
 248. Rename branch-composition recipe compiler state:
     recipe compilation now uses branch-composition job, branch input attachment,
-    branch target attachment, branch probe, branch target validation, and branch
+    branch destination attachment, branch probe, branch destination validation, and branch
     transform validation names. `Explain(ctx)`, media-plan recognition, mux
     compatibility checks, and tests use the renamed state while the advanced
     `Transcode(plan)` boundary remains isolated. Done.
@@ -1080,9 +1080,9 @@ are:
     branch composition. Done.
 250. Keep direct stream recipes on resolved media-plan attachments:
 	selected stream decode-to-sink, encode-to-sink, and encode-to-output
-	recipes no longer lower inputs, stream operations, or target refs into the
+	recipes no longer lower inputs, stream operations, or destination refs into the
 	recipe compile builder before media-plan recognition. The resolved recipe
-	carries concrete inputs, target refs, ordered stream attachments, codec-change
+	carries concrete inputs, destination refs, ordered stream attachments, codec-change
 	policy, custom stages, transforms, and taps; describe/build construct the
     small runtime helper from those resolved attachments at the media-plan
     boundary. The old builder-shape gates and lower passes for these direct
@@ -1107,7 +1107,7 @@ are:
     stateless branch route planning and compile helpers. Done.
 253. Move packet-copy recipes onto a resolved media-plan graph:
     packet-preserving record/remux/fanout recipes now create a resolved
-    packet-copy graph plan from concrete inputs, target refs, and optional selected
+    packet-copy graph plan from concrete inputs, destination refs, and optional selected
     stream intent. `Describe` and `Build` share that plan for file/protocol and
     RTP/WebRTC packet copy, including selected-stream fanout, instead of keeping
     packet copy as recipe-resolved graph mutation helpers. Done.
@@ -1207,7 +1207,7 @@ are:
 267. Keep mux diagnostics in the Branch/Target vocabulary:
     recipe preflight now reports missing target muxers as
     `target_muxer_missing` and constrained mux groups as
-    `target_mux_incompatible`, including `target=...` details for the branches
+    `target_mux_incompatible`, including `destination=...` details for the branches
     feeding the mux group. The expert graph builder still reports
     `output_muxer_missing` at the low-level `format.Output` boundary, keeping
     public recipe diagnostics aligned with `Target` without blurring runtime
@@ -1480,7 +1480,7 @@ are:
     metadata. Done.
 301. Unify direct stream destinations with branch destinations:
 	stream `.To(...)` now accepts the same typed `Target` or direct target-ref
-	values as branch `.To(...)`. Direct stream target names travel beside
+	values as branch `.To(...)`. Direct stream destination names travel beside
 	target-ref attachments, so the planner validates logical targets without
 	renaming file or URI refs used for adapter probing.
     `TestStreamRecipeCanWriteToTypedTarget` and
@@ -1488,14 +1488,14 @@ are:
     equivalence, mux execution, and cleanup. Done.
 302. Unify packet-preserving job destinations with the same target grammar:
 	root `From(input).Copy().To(...)` now accepts typed `Target` values or
-	direct target refs, matching stream and branch `.To(...)` without a separate
-	registration step. Job-level target names travel beside target-ref
+	direct destination refs, matching stream and branch `.To(...)` without a separate
+	registration step. Job-level destination names travel beside target-ref
 	attachments, preserving physical file/URI names for format probing while
-    keeping stable logical target names in intent and diagnostics.
+    keeping stable logical destination names in intent and diagnostics.
     `TestRecordRecipeCanWriteToTypedTarget` and
     `TestRecordRecipeCopyToTypedTargetRuns` pin intent, graph descriptions,
     build equivalence, mux execution, and cleanup. Done.
-303. Validate duplicate runtime branch targets before graph mutation:
+303. Validate duplicate runtime branch destinations before graph mutation:
     `Task.Attach(ctx, goav.Branch(...).To(target, target))` now fails with the
     same `Branch`/`Target` vocabulary used by planned branches, before opening
     encoders, opening muxers, registering taps, or changing graph edges.
@@ -1519,7 +1519,7 @@ are:
 305. Attach runtime branch groups without adding a second concept:
     `Task.Attach(ctx, Branch(...), Branch(...))` now treats several runtime
     branches as one atomic attachment. Later branches in the same call can
-    anchor from taps published by earlier branches, duplicate target names with
+    anchor from taps published by earlier branches, duplicate destination names with
     different target values fail before graph mutation, and any later
     prepare/connect failure rolls the whole group back. `Attachment.Spec()`,
     `Attachment.Stats()`,
@@ -1573,7 +1573,7 @@ are:
     from.
     Done.
 310. Rename the sealed `To(...)` argument:
-    `.To(...)` accepts target refs, while the concrete user concepts remain
+    `.To(...)` accepts destination refs, while the concrete user concepts remain
     `Target` values plus `File`, `URIOut`, and `Sink`. Internal compiler
     bindings keep the same target-ref shape, so the old target-union
     vocabulary does not remain in the public grammar. Slice coverage proves
@@ -1783,12 +1783,12 @@ are:
     recipe compiler state and old runtime-builder wording in production
     diagnostics.
     Done.
-335. Rename the public destination plumbing to target refs:
+335. Rename the public destination plumbing to destination refs:
     `File`, `URIOut`, `Sink`, and `Target` moved onto the public target-ref
     vocabulary accepted by `.To(...)`, replacing the old exported target union.
     README and current architecture docs still teach concrete target values,
     while guard coverage rejects the old exported type from the front door. A
-    later slice split direct target refs from named `Target` refs so
+    later slice split direct destination refs from named `Target` refs so
     `Target(name, direct)` cannot wrap another named target.
     Done.
 336. Promote debugging and diagnostics as normal composition:
@@ -1832,7 +1832,7 @@ are:
     Done.
 341. Promote custom destinations as the extension surface:
     `Destination`, `DestinationContract`, `TargetInfo`, `DestinationWriter`,
-    `Writer`, `WriteCloser`, `Format`, and `MIME` make byte/object targets
+    `Writer`, `WriteCloser`, `Format`, and `MIME` make byte/object destinations
     implementable outside package `goav`. `File`, `URIOut`, `Sink`, `Writer`,
     and `Target` now feed `.To(...)` through the public `Destination` model,
     custom writers receive resolved target info before mux open, transactional
@@ -1867,7 +1867,7 @@ are:
     `graphPlan` now carries a cloned operation sequence derived from branch
     operations and target groups. The sequence includes source boundary,
     select, decode, tap, transform, encode, mux, and sink/write target
-    operations with branch, node, shapes, sharing, and target refs, giving the
+    operations with branch, node, shapes, sharing, and destination refs, giving the
     next build-lowering slice a concrete plan to execute instead of matching
     workflow-specific compiler shapes.
     Done.
@@ -1875,14 +1875,14 @@ are:
     the old executable interface is now a `graphPlanLowerer`, and
     `buildGraphPlanTask` calls `graphPlan.lower(...)` instead of invoking a
     workflow compile method directly. Graph-plan lowering validates readiness,
-    edge sources and targets, operation kinds, branch ownership, and target refs
+    edge sources and targets, operation kinds, branch ownership, and destination refs
     before a lowerer can mutate the runtime graph. Tests pin invalid ordered
     operations failing with `graph_plan_invalid` before lowerer mutation.
     Done.
 347. Lower packet-copy build from graph-plan operations:
     packet-preserving copy now prepares runtime select and target lowering from
     `graphPlan.operations`. Missing selected-stream `OpSelect`, unexpected
-    select operations, missing target operations, unbound target refs, and
+    select operations, missing target operations, unbound destination refs, and
     sink/mux target-kind mismatches fail as graph-plan errors before source
     opening or runtime graph mutation. The stream lowerer still owns concrete
     source and destination adapters while packet-copy sequencing comes from the
@@ -1892,7 +1892,7 @@ are:
     direct decode/filter/encode stream build now prepares select, decode,
     transform/stage count, encode, and target operations from
     `graphPlan.operations` before source opening. Encoded stream targets lower
-    from prepared graph-plan target refs, so mux/sink ordering and binding come
+    from prepared graph-plan destination refs, so mux/sink ordering and binding come
     from the plan instead of raw output loops. Tests pin missing decode, encode,
     and target operations failing as `graph_plan_invalid` before adapter/source
     work can mask the planner error.
@@ -1907,12 +1907,12 @@ are:
     target operations failing as `graph_plan_invalid` before adapter/source
     work can mask planner defects.
     Done.
-350. Remove label wording from normal branch target plumbing:
-    `BranchSpec` and branch `streamBuild` now carry `targetNames` instead of
-    internal `labels`, and normal branch duplicate/missing-target diagnostics
-    talk about typed target names. This keeps the front-door composition model
-    centered on `Target` values and direct `Destination` values instead of
-    leaking historical string-label routing into new planner work.
+350. Remove label wording from normal branch destination plumbing:
+    `BranchSpec` and branch `streamBuild` now carry `destinationNames` bridge
+    fields instead of internal `labels`, and normal branch duplicate/missing
+    destination diagnostics talk about typed destination names. This keeps the
+    front-door composition model centered on direct `Destination` values instead
+    of leaking historical string-label routing into new planner work.
     Done.
 351. Prove runtime attach to custom writer destinations:
     runtime `Task.Attach` now has a positive acceptance test for attaching a
@@ -1970,7 +1970,7 @@ are:
 357. Lower direct stream targets from graph-plan refs:
     packet-copy, decoded-frame sink, and encoded mux/sink direct stream lowerers
     now validate target operation nodes and name runtime mux/sink target nodes
-    from graph-plan refs. Tests mutate planned target refs for packet-copy,
+    from graph-plan refs. Tests mutate planned destination refs for packet-copy,
     decoded-frame, and encoded direct chains and prove the built graph still
     equals the described graph.
     Done.
@@ -1985,7 +1985,7 @@ are:
 359. Scope selected direct lowering to one branch operation set:
     selected packet-copy and direct frame-stream graph-plan lowerers now isolate
     exactly one branch operation set before reading select, decode, filter,
-    encode, and target refs. Whole-input packet copy still supports multiple
+    encode, and destination refs. Whole-input packet copy still supports multiple
     input branches, but selected direct chains can no longer accidentally lower
     against unrelated branch operations in the same plan. Tests inject a second
     planned branch into selected packet-copy and decoded frame-stream plans and
@@ -2004,7 +2004,7 @@ are:
     Done.
 361. Lower direct frame-stream builds through branch routes:
     direct frame-stream runtime builds now convert the resolved chain into one
-    branch route, map graph-plan select/decode/filter/encode/target refs into
+    branch route, map graph-plan select/decode/filter/encode/destination refs into
     branch-compose lowering structs, then call `compileBranchComposeInputs` and
     `compileBranchComposeRoutes`. The old direct decode/filter/encode/target
     lowerer helpers are gone from `mediaPlanStreamGraph`. Direct decoded sink
@@ -2016,7 +2016,7 @@ are:
 362. Lower selected packet-copy through branch routes:
     selected packet-copy specs and runtime builds now convert the resolved
     selected stream into one branch route, map the graph-plan select ref and
-    target refs into branch-compose inputs/targets, then call the shared
+    destination refs into branch-compose inputs/targets, then call the shared
     branch-compose input and route lowerers. Whole-input packet copy still keeps
     its multi-input fanout path. Guard tests pin selected packet-copy branch
     route reuse, and ref-mutation tests prove the selected packet-copy build
@@ -2116,7 +2116,7 @@ are:
     without treating preset sample-rate or channel defaults as proof required
     from packet inputs.
     Done.
-373. Validate terminal target shapes and runtime attach shapes:
+373. Validate terminal destination shapes and runtime attach shapes:
     Planned recipes now compute each stream's final ordered-operation shape and
     reject file, URI, writer, object, and mux targets unless the terminal media
     is packet-domain. Sink targets remain the raw observation endpoint for frame
@@ -2146,7 +2146,7 @@ are:
     now a concrete opaque handle rather than an externally implemented
     interface. Public tests and runtime examples pass `Destination` values
     directly, and planner assertions expect destination names such as
-    `archive.ogg` or sink names instead of separate logical target names.
+    `archive.ogg` or sink names instead of separate logical destination names.
     `DestinationProvider` plus `Custom(name, provider, opts...)` is the
     custom-provider entry point, so external provider implementations must be
     wrapped by a goav-owned destination handle before they can participate in
@@ -2441,7 +2441,7 @@ Required proof:
    attach emits `WorkPatch` from the same branch planner against existing taps.
    `Explain`, `Build`, `Attach`, and `Snapshot` must read the same planned work.
 5. Remove old workflow residue from normal composition: `branchComposePlan`,
-   `runtimeBranch`, labels, string target names, `targetNames`, `transcode`
+   `runtimeBranch`, labels, string destination names, `destinationNames` bridge fields, `transcode`
    imports, workflow-kind compiler switches, route-policy leaks, and pre-release
    compatibility aliases.
 6. Keep `Flow` boring. A flow is reusable operations plus media kind, shape

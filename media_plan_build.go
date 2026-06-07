@@ -540,7 +540,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeTargets(plan graphPlan)
 		targetIndex := branchComposeTargetRouteIndex(p.targets, operation.Name)
 		if targetIndex < 0 {
 			return nil, graphPlanInvalidError("branch composition destination operation is not bound to a target", []string{
-				"target=" + operation.Name,
+				"destination=" + operation.Name,
 				"node=" + operation.Node.String(),
 			})
 		}
@@ -551,7 +551,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeTargets(plan graphPlan)
 		matches, ok := branchComposeDestinationOperationMatches(p.branches, branchesByTarget[operation.Name])
 		if !ok || !branchComposeTargetBranchesMatch(target, matches) {
 			return nil, graphPlanInvalidError("branch composition destination operation branches do not match target routes", []string{
-				"target=" + operation.Name,
+				"destination=" + operation.Name,
 			})
 		}
 		target.node = operation.Node
@@ -568,7 +568,7 @@ func validateBranchComposeDestinationOperation(operation graphPlanDestinationOpe
 	if target.sink != nil {
 		if operation.Kind != OpSink {
 			return graphPlanInvalidError("branch composition destination operation kind does not match sink target", []string{
-				"target=" + operation.Name,
+				"destination=" + operation.Name,
 				"kind=" + string(operation.Kind),
 			})
 		}
@@ -576,7 +576,7 @@ func validateBranchComposeDestinationOperation(operation graphPlanDestinationOpe
 	}
 	if operation.Kind != OpMux && operation.Kind != OpWrite {
 		return graphPlanInvalidError("branch composition destination operation kind does not match byte target", []string{
-			"target=" + operation.Name,
+			"destination=" + operation.Name,
 			"kind=" + string(operation.Kind),
 		})
 	}
@@ -806,7 +806,7 @@ func (p mediaPlanStreamGraph) compileSelectedPacketCopyBranchCompose(ctx context
 		target := targets[i]
 		if target.OutputIndex < 0 || target.OutputIndex >= len(outputs) {
 			return graphPlanInvalidError("selected packet-copy destination operation is not bound to a branch route destination", []string{
-				"target=" + target.Name,
+				"destination=" + target.Name,
 				"node=" + target.Node.String(),
 			})
 		}
@@ -875,7 +875,7 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 		outputIndex, ok := graphPlanOutputIndex(plan.outputs, target.Name)
 		if !ok || outputIndex < 0 || outputIndex >= len(p.outputs) {
 			return nil, graphPlanInvalidError("packet-copy destination operation is not bound to an output", []string{
-				"target=" + target.Name,
+				"destination=" + target.Name,
 				"node=" + target.Node.String(),
 			})
 		}
@@ -884,7 +884,7 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 			matches, ok := packetCopyDestinationOperationMatches(plan.branches, branchesByTarget[target.Name])
 			if !ok || !packetCopyTargetBranchesMatch(plan.outputs[outputIndex], matches, plan.branches) {
 				return nil, graphPlanInvalidError("packet-copy destination operation branches do not match output branches", []string{
-					"target=" + target.Name,
+					"destination=" + target.Name,
 				})
 			}
 			target.Matches = matches
@@ -893,7 +893,7 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 		if output.sink != nil {
 			if target.Kind != OpSink {
 				return nil, graphPlanInvalidError("packet-copy destination operation kind does not match sink destination", []string{
-					"target=" + target.Name,
+					"destination=" + target.Name,
 					"kind=" + string(target.Kind),
 				})
 			}
@@ -902,7 +902,7 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 		}
 		if target.Kind != OpMux && target.Kind != OpWrite {
 			return nil, graphPlanInvalidError("packet-copy destination operation kind does not match byte destination", []string{
-				"target=" + target.Name,
+				"destination=" + target.Name,
 				"kind=" + string(target.Kind),
 			})
 		}
@@ -993,14 +993,14 @@ func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
 func packetCopyDestinationRefs(target graphPlanDestinationOperation, refs []pipeline.NodeRef) ([]pipeline.NodeRef, error) {
 	if len(target.Matches) == 0 {
 		return nil, graphPlanInvalidError("packet-copy destination operation has no branch matches", []string{
-			"target=" + target.Name,
+			"destination=" + target.Name,
 		})
 	}
 	out := make([]pipeline.NodeRef, 0, len(target.Matches))
 	for _, index := range target.Matches {
 		if index < 0 || index >= len(refs) {
 			return nil, graphPlanInvalidError("packet-copy destination operation branch match is outside source refs", []string{
-				"target=" + target.Name,
+				"destination=" + target.Name,
 				"match=" + strconv.Itoa(index),
 				"sources=" + strconv.Itoa(len(refs)),
 			})
@@ -1013,14 +1013,14 @@ func packetCopyDestinationRefs(target graphPlanDestinationOperation, refs []pipe
 func packetCopyDestinationStreams(target graphPlanDestinationOperation, streamGroups [][]av.Stream) ([]av.Stream, error) {
 	if len(target.Matches) == 0 {
 		return nil, graphPlanInvalidError("packet-copy destination operation has no branch matches", []string{
-			"target=" + target.Name,
+			"destination=" + target.Name,
 		})
 	}
 	out := make([]av.Stream, 0, len(target.Matches))
 	for _, index := range target.Matches {
 		if index < 0 || index >= len(streamGroups) {
 			return nil, graphPlanInvalidError("packet-copy destination operation branch match is outside stream groups", []string{
-				"target=" + target.Name,
+				"destination=" + target.Name,
 				"match=" + strconv.Itoa(index),
 				"stream_groups=" + strconv.Itoa(len(streamGroups)),
 			})
@@ -1029,7 +1029,7 @@ func packetCopyDestinationStreams(target graphPlanDestinationOperation, streamGr
 	}
 	if len(out) == 0 {
 		return nil, graphPlanInvalidError("packet-copy destination operation has no streams for matched branches", []string{
-			"target=" + target.Name,
+			"destination=" + target.Name,
 		})
 	}
 	return out, nil
@@ -1055,7 +1055,7 @@ type graphPlanDestinationOperation struct {
 func validateGraphPlanDestinationOperationNode(scope string, target graphPlanDestinationOperation) error {
 	if target.Node == "" {
 		return graphPlanInvalidError(scope+" destination operation has no node", []string{
-			"target=" + target.Name,
+			"destination=" + target.Name,
 			"kind=" + string(target.Kind),
 		})
 	}
@@ -1116,7 +1116,7 @@ func validateGraphPlanDuplicateDestinationOperation(scope string, target string,
 		return nil
 	}
 	return graphPlanInvalidError(firstNonEmpty(scope, "graph-plan")+" destination operation is not consistent across branches", []string{
-		"target=" + target,
+		"destination=" + target,
 		"first_node=" + first.Node.String(),
 		"next_node=" + next.Node.String(),
 		"first_kind=" + string(first.Kind),
@@ -1262,7 +1262,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamDestinations(operations []graphP
 		outputIndex, ok := graphPlanOutputIndex(outputs, target.Name)
 		if !ok || outputIndex < 0 || outputIndex >= len(p.outputs) {
 			return nil, graphPlanInvalidError("frame stream destination operation is not bound to an output", []string{
-				"target=" + target.Name,
+				"destination=" + target.Name,
 				"node=" + target.Node.String(),
 			})
 		}
@@ -1272,7 +1272,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamDestinations(operations []graphP
 		if output.sink != nil {
 			if target.Kind != OpSink {
 				return nil, graphPlanInvalidError("frame stream destination operation kind does not match sink destination", []string{
-					"target=" + target.Name,
+					"destination=" + target.Name,
 					"kind=" + string(target.Kind),
 				})
 			}
@@ -1280,12 +1280,12 @@ func (p mediaPlanStreamGraph) prepareFrameStreamDestinations(operations []graphP
 		}
 		if p.encode == nil {
 			return nil, graphPlanInvalidError("decoded frame stream cannot lower to a byte target without encode", []string{
-				"target=" + target.Name,
+				"destination=" + target.Name,
 			})
 		}
 		if target.Kind != OpMux && target.Kind != OpWrite {
 			return nil, graphPlanInvalidError("frame stream destination operation kind does not match byte destination", []string{
-				"target=" + target.Name,
+				"destination=" + target.Name,
 				"kind=" + string(target.Kind),
 			})
 		}
@@ -1441,7 +1441,7 @@ func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Contex
 		target := lowering.targets[i]
 		if target.OutputIndex < 0 || target.OutputIndex >= len(outputs) {
 			return graphPlanInvalidError("frame stream destination operation is not bound to a branch route destination", []string{
-				"target=" + target.Name,
+				"destination=" + target.Name,
 				"node=" + target.Node.String(),
 			})
 		}

@@ -485,7 +485,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if tap := streamBuildOperations(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != DomainPacket {
 		t.Fatalf("copy branch tap = %+v, want packet branch tap", tap)
 	}
-	copyPlan, err := planBranchCompositionRecipe(copyJob.Intent(), copyJob.inputs[0], copyJob.branchTargets, copyJob.branchStreams)
+	copyPlan, err := planBranchCompositionRecipe(copyJob.Intent(), copyJob.inputs[0], copyJob.branchDestinations, copyJob.branchStreams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -562,7 +562,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		operationOnlyStreams[i].sharedSteps = nil
 		operationOnlyStreams[i].steps = nil
 	}
-	plan, err := planBranchCompositionRecipe(job.Intent(), job.inputs[0], job.branchTargets, operationOnlyStreams)
+	plan, err := planBranchCompositionRecipe(job.Intent(), job.inputs[0], job.branchDestinations, operationOnlyStreams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -620,12 +620,12 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		intentWithoutOperations.Streams[i].Transforms = nil
 	}
 	media := buildMediaPlan(&recipeCompileState{
-		operation:                branchCompositionOperation,
-		branchCompositionPresent: true,
-		intent:                   intentWithoutOperations,
-		branchInputAttachment:    job.inputs[0],
-		branchTargetAttachments:  job.branchTargets,
-		plan:                     plan,
+		operation:                    branchCompositionOperation,
+		branchCompositionPresent:     true,
+		intent:                       intentWithoutOperations,
+		branchInputAttachment:        job.inputs[0],
+		branchDestinationAttachments: job.branchDestinations,
+		plan:                         plan,
 	})
 	if len(media.Branches) != 2 {
 		t.Fatalf("media branches = %d, want 2", len(media.Branches))
@@ -791,18 +791,18 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 				inputAttachments:  []InputSpec{FileInput("input.ivf", strings.NewReader(""))},
 				outputAttachments: nil,
 			},
-			want: "targets",
+			want: "destinations",
 		},
 		{
-			name: "branch targets",
+			name: "branch destinations",
 			state: recipeCompileState{
-				operation:                branchCompositionOperation,
-				branchCompositionPresent: true,
-				intent:                   Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Destinations: []DestinationIntent{{Name: "web.ivf"}}},
-				branchInputAttachment:    FileInput("input.ivf", strings.NewReader("")),
-				branchTargetAttachments:  nil,
+				operation:                    branchCompositionOperation,
+				branchCompositionPresent:     true,
+				intent:                       Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Destinations: []DestinationIntent{{Name: "web.ivf"}}},
+				branchInputAttachment:        FileInput("input.ivf", strings.NewReader("")),
+				branchDestinationAttachments: nil,
 			},
-			want: "targets",
+			want: "destinations",
 		},
 	}
 	pass := validateRecipeAttachmentConsistencyPass()
@@ -971,12 +971,12 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 		},
 		{
 			name: "transcode probed format",
-			pass: validateBranchTargetFormatAdaptersPass(),
+			pass: validateBranchDestinationFormatAdaptersPass(),
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
 				runtime:   Default(),
-				branchTargetAttachments: []namedTargetSpec{{
+				branchDestinationAttachments: []namedDestinationSpec{{
 					name:   "web",
 					output: fileDestination("web.mp4", io.Discard),
 				}},
@@ -1035,7 +1035,7 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 		},
 		{
 			name: "transcode probed output format",
-			pass: validateBranchTargetFormatAdaptersPass(),
+			pass: validateBranchDestinationFormatAdaptersPass(),
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
@@ -1043,18 +1043,18 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 					testFormatProber(remuxTestProber{}),
 					testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 				)),
-				branchTargetAttachments: []namedTargetSpec{{
+				branchDestinationAttachments: []namedDestinationSpec{{
 					name:   "web",
 					output: fileDestination("web.ogg", io.Discard),
 				}},
 			},
 			validate: func(t *testing.T, state recipeCompileState) {
 				t.Helper()
-				if len(state.branchTargetAttachments) != 1 ||
-					state.branchTargetAttachments[0].output.format != "" ||
-					state.branchTargetAttachments[0].output.resolvedFormat != av.FormatOgg ||
-					state.branchTargetAttachments[0].output.output.Name != "web.ogg" {
-					t.Fatalf("branch target attachments = %+v, want resolved Ogg format", state.branchTargetAttachments)
+				if len(state.branchDestinationAttachments) != 1 ||
+					state.branchDestinationAttachments[0].output.format != "" ||
+					state.branchDestinationAttachments[0].output.resolvedFormat != av.FormatOgg ||
+					state.branchDestinationAttachments[0].output.output.Name != "web.ogg" {
+					t.Fatalf("branch destination attachments = %+v, want resolved Ogg format", state.branchDestinationAttachments)
 				}
 			},
 		},
@@ -1154,14 +1154,14 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 			Destinations: []DestinationIntent{{Name: "archive"}},
 		},
 		branchInputAttachment: FileInput("input.ivf", strings.NewReader("")),
-		branchTargetAttachments: []namedTargetSpec{{
+		branchDestinationAttachments: []namedDestinationSpec{{
 			name:   "archive",
 			output: fileDestination("archive.ogg", io.Discard),
 		}},
 	}
 
-	if err := validateBranchTargetFormatAdaptersPass().Apply(&state); err != nil {
-		t.Fatalf("validateBranchTargetFormatAdaptersPass() error = %v", err)
+	if err := validateBranchDestinationFormatAdaptersPass().Apply(&state); err != nil {
+		t.Fatalf("validateBranchDestinationFormatAdaptersPass() error = %v", err)
 	}
 	if err := planBranchCompositionIntentPass().Apply(&state); err != nil {
 		t.Fatalf("planBranchCompositionIntentPass() error = %v", err)
@@ -2463,7 +2463,7 @@ func TestRecipeOperationShapePassAllowsCustomStageShapeDeclaration(t *testing.T)
 	}
 }
 
-func TestRecipeTargetShapePassRejectsFrameShapeForMuxTarget(t *testing.T) {
+func TestRecipeDestinationShapePassRejectsFrameShapeForMuxDestination(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
 		intent: Intent{
@@ -2482,14 +2482,14 @@ func TestRecipeTargetShapePassRejectsFrameShapeForMuxTarget(t *testing.T) {
 		outputAttachments: []destinationSpec{fileDestination("archive.ivf", io.Discard)},
 	}
 
-	err := validateRecipeTargetShapesPass().Apply(&state)
+	err := validateRecipeDestinationShapesPass().Apply(&state)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_shape_mismatch wrapping ErrUnsupportedBuild", err)
 	}
 	for _, want := range []string{
-		"byte or mux target requires packet-domain media",
-		"target=archive.ivf",
+		"byte or mux destination requires packet-domain media",
+		"destination=archive.ivf",
 		"expected_shape=domain=packet media=video",
 		"actual_shape=domain=frame media=video",
 		"goav.Sink",
@@ -2500,7 +2500,7 @@ func TestRecipeTargetShapePassRejectsFrameShapeForMuxTarget(t *testing.T) {
 	}
 }
 
-func TestRecipeTargetShapePassAllowsFrameShapeForSinkTarget(t *testing.T) {
+func TestRecipeDestinationShapePassAllowsFrameShapeForSinkDestination(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
 		intent: Intent{
@@ -2517,8 +2517,8 @@ func TestRecipeTargetShapePassAllowsFrameShapeForSinkTarget(t *testing.T) {
 		},
 		outputAttachments: []destinationSpec{sinkDestination(SinkFunc("frames", func(context.Context, Message) error { return nil }))},
 	}
-	if err := validateRecipeTargetShapesPass().Apply(&state); err != nil {
-		t.Fatalf("validateRecipeTargetShapesPass() error = %v", err)
+	if err := validateRecipeDestinationShapesPass().Apply(&state); err != nil {
+		t.Fatalf("validateRecipeDestinationShapesPass() error = %v", err)
 	}
 }
 
@@ -2553,7 +2553,7 @@ func TestRequireGraphPlanSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want recipe_graph_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	for _, want := range []string{"recipe intent", "inputs: 1", "targets: 0", "goav.From", ".Copy().To", ".Branches"} {
+	for _, want := range []string{"recipe intent", "inputs: 1", "destinations: 0", "goav.From", ".Copy().To", ".Branches"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
@@ -2786,7 +2786,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 			want: "automatic codec selection",
 		},
 		{
-			name: "duplicate branch target",
+			name: "duplicate branch destination",
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				intent: Intent{
@@ -2829,7 +2829,7 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 			name: "rtp input",
 			state: recipeCompileState{
 				branchInputAttachment: RTP(&runtimeRTPReceiver{}).Name("video").Codec(VP8()),
-				branchTargetAttachments: []namedTargetSpec{{
+				branchDestinationAttachments: []namedDestinationSpec{{
 					name:   "web",
 					output: fileDestination("web.ivf", io.Discard),
 				}},
@@ -2838,10 +2838,10 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 			want: "RTP transcode recipes",
 		},
 		{
-			name: "duplicate targets",
+			name: "duplicate destinations",
 			state: recipeCompileState{
 				branchInputAttachment: FileInput("input.ivf", strings.NewReader("")),
-				branchTargetAttachments: []namedTargetSpec{
+				branchDestinationAttachments: []namedDestinationSpec{
 					{name: "web", output: fileDestination("web.ivf", io.Discard)},
 					{name: "web", output: fileDestination("preview.ivf", io.Discard)},
 				},
@@ -2877,7 +2877,7 @@ func TestTranscodeBranchTargetKindsPassAllowsCopyMuxBranches(t *testing.T) {
 				Destinations: []string{"web"},
 			}},
 		},
-		branchTargetAttachments: []namedTargetSpec{{
+		branchDestinationAttachments: []namedDestinationSpec{{
 			name:   "web",
 			output: fileDestination("web.ivf", io.Discard),
 		}},
@@ -2886,8 +2886,8 @@ func TestTranscodeBranchTargetKindsPassAllowsCopyMuxBranches(t *testing.T) {
 	if err := validateBranchCompositionIntentShapePass().Apply(&state); err != nil {
 		t.Fatalf("validateBranchCompositionIntentShapePass() error = %v", err)
 	}
-	if err := validateBranchTargetKindsPass().Apply(&state); err != nil {
-		t.Fatalf("validateBranchTargetKindsPass() error = %v", err)
+	if err := validateBranchDestinationKindsPass().Apply(&state); err != nil {
+		t.Fatalf("validateBranchDestinationKindsPass() error = %v", err)
 	}
 }
 
@@ -2902,14 +2902,14 @@ func TestTranscodeBranchTargetKindsPassAllowsRawSinkBranches(t *testing.T) {
 				Destinations: []string{"frames"},
 			}},
 		},
-		branchTargetAttachments: []namedTargetSpec{{
+		branchDestinationAttachments: []namedDestinationSpec{{
 			name:   "frames",
 			output: sinkDestination(SinkFunc("frames", func(context.Context, Message) error { return nil })),
 		}},
 	}
 
-	if err := validateBranchTargetKindsPass().Apply(&state); err != nil {
-		t.Fatalf("validateBranchTargetKindsPass() error = %v", err)
+	if err := validateBranchDestinationKindsPass().Apply(&state); err != nil {
+		t.Fatalf("validateBranchDestinationKindsPass() error = %v", err)
 	}
 }
 
@@ -2924,13 +2924,13 @@ func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
 				Destinations: []string{"web"},
 			}},
 		},
-		branchTargetAttachments: []namedTargetSpec{{
+		branchDestinationAttachments: []namedDestinationSpec{{
 			name:   "web",
 			output: fileDestination("web.ivf", io.Discard),
 		}},
 	}
 
-	err := validateBranchTargetKindsPass().Apply(&state)
+	err := validateBranchDestinationKindsPass().Apply(&state)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
@@ -2953,13 +2953,13 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 			}},
 			Destinations: []DestinationIntent{{Name: "web.ivf"}},
 		},
-		branchTargetAttachments: []namedTargetSpec{{
+		branchDestinationAttachments: []namedDestinationSpec{{
 			name:   "web",
 			output: fileDestination("web.ivf", io.Discard),
 		}},
 	}
 
-	err := validateBranchTargetBindingsPass().Apply(&state)
+	err := validateBranchDestinationBindingsPass().Apply(&state)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_missing" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_missing wrapping ErrUnsupportedBuild", err)

@@ -39,18 +39,18 @@ type recipeCompileState struct {
 	branchCompositionPresent bool
 	recipeErr                error
 
-	inputAttachments  []InputSpec
-	jobOutputCount    int
-	chainSteps        []chainStepAttachment
-	outputAttachments []destinationSpec
-	outputTargetNames []string
-	inputProbes       []format.ProbeResult
+	inputAttachments       []InputSpec
+	jobOutputCount         int
+	chainSteps             []chainStepAttachment
+	outputAttachments      []destinationSpec
+	outputDestinationNames []string
+	inputProbes            []format.ProbeResult
 
-	branchInputAttachment   InputSpec
-	branchTargetAttachments []namedTargetSpec
-	branchInputProbe        format.ProbeResult
-	branchInputProbeReady   bool
-	branchCompositionSplit  bool
+	branchInputAttachment        InputSpec
+	branchDestinationAttachments []namedDestinationSpec
+	branchInputProbe             format.ProbeResult
+	branchInputProbeReady        bool
+	branchCompositionSplit       bool
 
 	plan    branchComposePlan
 	planErr error
@@ -86,14 +86,14 @@ func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 		if formatID == "" {
 			continue
 		}
-		formats[jobOutputTargetName(s.outputAttachments, s.outputTargetNames, i)] = formatID
+		formats[jobOutputDestinationName(s.outputAttachments, s.outputDestinationNames, i)] = formatID
 	}
-	for i := range s.branchTargetAttachments {
-		formatID := destinationSpecFormat(s.branchTargetAttachments[i].output)
+	for i := range s.branchDestinationAttachments {
+		formatID := destinationSpecFormat(s.branchDestinationAttachments[i].output)
 		if formatID == "" {
 			continue
 		}
-		label := firstNonEmpty(s.branchTargetAttachments[i].name, s.branchTargetAttachments[i].output.label(fmt.Sprintf("output-%d", i)))
+		label := firstNonEmpty(s.branchDestinationAttachments[i].name, s.branchDestinationAttachments[i].output.label(fmt.Sprintf("output-%d", i)))
 		formats[label] = formatID
 	}
 	if len(formats) == 0 {
@@ -285,7 +285,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		state.inputAttachments = append([]InputSpec(nil), job.inputs...)
 		state.jobOutputCount = len(job.outputs)
 		state.outputAttachments = jobAllOutputs(job.outputs, jobStreamOutputs(job.stream))
-		state.outputTargetNames = job.allOutputNames()
+		state.outputDestinationNames = job.allOutputNames()
 		state.chainSteps = chainStepAttachments(job.stream)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
@@ -305,7 +305,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobInputFormatAdaptersPass(),
 		validateJobKnownInputStreamSelectionPass(),
 		validateRecipeOperationShapesPass(),
-		validateRecipeTargetShapesPass(),
+		validateRecipeDestinationShapesPass(),
 		validateJobKnownInputDecodeAdaptersPass(),
 		validateRecipeRuntimePass(),
 		emitGraphPlanSpecPass(),
@@ -319,7 +319,7 @@ func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (
 		runtime:         job.runtime,
 		name:            job.name,
 		streams:         append([]streamBuild(nil), job.branchStreams...),
-		outputs:         append([]namedTargetSpec(nil), job.branchTargets...),
+		outputs:         append([]namedDestinationSpec(nil), job.branchDestinations...),
 		err:             job.err,
 		fromBranchSplit: true,
 	}
@@ -342,7 +342,7 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		state.runtime = job.runtime
 		state.recipeErr = job.err
 		state.branchInputAttachment = job.input
-		state.branchTargetAttachments = append([]namedTargetSpec(nil), job.outputs...)
+		state.branchDestinationAttachments = append([]namedDestinationSpec(nil), job.outputs...)
 		state.branchCompositionSplit = job.fromBranchSplit
 		state.plan, state.planErr = job.Plan()
 	}
@@ -351,15 +351,15 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		validateBranchCompositionIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
 		validateBranchCompositionAttachmentsPass(),
-		validateBranchTargetBindingsPass(),
-		validateBranchTargetKindsPass(),
-		validateBranchTargetFormatAdaptersPass(),
+		validateBranchDestinationBindingsPass(),
+		validateBranchDestinationKindsPass(),
+		validateBranchDestinationFormatAdaptersPass(),
 		validateBranchEncodeAdaptersPass(),
 		validateBranchTransformAdaptersPass(),
 		validateBranchInputFormatAdaptersPass(),
 		validateKnownBranchInputStreamSelectionPass(),
 		validateRecipeOperationShapesPass(),
-		validateRecipeTargetShapesPass(),
+		validateRecipeDestinationShapesPass(),
 		validateKnownBranchInputDecodeAdaptersPass(),
 		planBranchCompositionIntentPass(),
 		validateRecipeRuntimePass(),
@@ -449,7 +449,7 @@ func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
 	}
 }
 
-func jobTargetReferenceMissingError(operation string, stream StreamIntent, label string) error {
+func jobDestinationReferenceMissingError(operation string, stream StreamIntent, label string) error {
 	return &BuildError{
 		Code:      "output_missing",
 		Operation: operation,
@@ -566,7 +566,7 @@ func validateJobAttachmentsPass() recipeCompilePass {
 		if err := validateJobInputs(state.inputAttachments); err != nil {
 			return err
 		}
-		return validateDestinationSpecs(state.operation, state.outputAttachments, state.outputTargetNames...)
+		return validateDestinationSpecs(state.operation, state.outputAttachments, state.outputDestinationNames...)
 	}}
 }
 
@@ -575,7 +575,7 @@ func validateJobOutputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, state.outputAttachments, state.outputTargetNames...)
+		outputs, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, state.outputAttachments, state.outputDestinationNames...)
 		if err != nil {
 			return err
 		}
@@ -683,7 +683,7 @@ func validateJobOutputBindingsPass() recipeCompilePass {
 		if !ok {
 			return nil
 		}
-		return validateJobOutputBindings(state.operation, stream, state.outputAttachments, state.outputTargetNames)
+		return validateJobOutputBindings(state.operation, stream, state.outputAttachments, state.outputDestinationNames)
 	}}
 }
 
@@ -725,31 +725,31 @@ func validateBranchCompositionIntentShapePass() recipeCompilePass {
 
 func validateBranchCompositionAttachmentsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode attachments", fn: func(state *recipeCompileState) error {
-		return validateBranchCompositionAttachments(state.branchInputAttachment, state.branchTargetAttachments, state.branchCompositionSplit)
+		return validateBranchCompositionAttachments(state.branchInputAttachment, state.branchDestinationAttachments, state.branchCompositionSplit)
 	}}
 }
 
-func validateBranchTargetFormatAdaptersPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate branch target format adapters", fn: func(state *recipeCompileState) error {
+func validateBranchDestinationFormatAdaptersPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate branch destination format adapters", fn: func(state *recipeCompileState) error {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs := make([]destinationSpec, 0, len(state.branchTargetAttachments))
-		targetNames := make([]string, 0, len(state.branchTargetAttachments))
-		for i := range state.branchTargetAttachments {
-			output := state.branchTargetAttachments[i].output.withName(firstNonEmpty(
-				state.branchTargetAttachments[i].output.name,
-				state.branchTargetAttachments[i].name,
+		outputs := make([]destinationSpec, 0, len(state.branchDestinationAttachments))
+		destinationNames := make([]string, 0, len(state.branchDestinationAttachments))
+		for i := range state.branchDestinationAttachments {
+			output := state.branchDestinationAttachments[i].output.withName(firstNonEmpty(
+				state.branchDestinationAttachments[i].output.name,
+				state.branchDestinationAttachments[i].name,
 			))
 			outputs = append(outputs, output)
-			targetNames = append(targetNames, state.branchTargetAttachments[i].name)
+			destinationNames = append(destinationNames, state.branchDestinationAttachments[i].name)
 		}
-		resolved, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, outputs, targetNames...)
+		resolved, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, outputs, destinationNames...)
 		if err != nil {
 			return err
 		}
-		for i := range state.branchTargetAttachments {
-			state.branchTargetAttachments[i].output = resolved[i]
+		for i := range state.branchDestinationAttachments {
+			state.branchDestinationAttachments[i].output = resolved[i]
 		}
 		return nil
 	}}
@@ -790,15 +790,15 @@ func validateBranchTransformAdaptersPass() recipeCompilePass {
 	}}
 }
 
-func validateBranchTargetBindingsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate branch target bindings", fn: func(state *recipeCompileState) error {
-		return validateBranchTargetBindings(state.intent, state.branchTargetAttachments)
+func validateBranchDestinationBindingsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate branch destination bindings", fn: func(state *recipeCompileState) error {
+		return validateBranchDestinationBindings(state.intent, state.branchDestinationAttachments)
 	}}
 }
 
-func validateBranchTargetKindsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate branch target kinds", fn: func(state *recipeCompileState) error {
-		return validateBranchTargetKinds(state.intent, state.branchTargetAttachments)
+func validateBranchDestinationKindsPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate branch destination kinds", fn: func(state *recipeCompileState) error {
+		return validateBranchDestinationKinds(state.intent, state.branchDestinationAttachments)
 	}}
 }
 
@@ -810,14 +810,14 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), len(state.inputAttachments))
 			}
 			if len(state.intent.Destinations) != len(state.outputAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Destinations), len(state.outputAttachments))
+				return recipeAttachmentMismatchError(state.operation, "destinations", len(state.intent.Destinations), len(state.outputAttachments))
 			}
 		case state.branchCompositionPresent:
 			if len(state.intent.Inputs) != 1 {
 				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), 1)
 			}
-			if len(state.intent.Destinations) != len(state.branchTargetAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Destinations), len(state.branchTargetAttachments))
+			if len(state.intent.Destinations) != len(state.branchDestinationAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "destinations", len(state.intent.Destinations), len(state.branchDestinationAttachments))
 			}
 		}
 		return nil
@@ -936,9 +936,9 @@ func validateRecipeOperationShapesPass() recipeCompilePass {
 	}}
 }
 
-func validateRecipeTargetShapesPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate recipe target shapes", fn: func(state *recipeCompileState) error {
-		outputs := state.recipeTargetDestinationSet()
+func validateRecipeDestinationShapesPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate recipe destination shapes", fn: func(state *recipeCompileState) error {
+		outputs := state.recipeDestinationSet()
 		if len(outputs) == 0 {
 			return nil
 		}
@@ -951,7 +951,7 @@ func validateRecipeTargetShapesPass() recipeCompilePass {
 				if !ok {
 					continue
 				}
-				if err := validateRecipeTargetShape(state.operation, node, label, destination, shape); err != nil {
+				if err := validateRecipeDestinationShape(state.operation, node, label, destination, shape); err != nil {
 					return err
 				}
 			}
@@ -960,16 +960,16 @@ func validateRecipeTargetShapesPass() recipeCompilePass {
 	}}
 }
 
-func (s *recipeCompileState) recipeTargetDestinationSet() map[string]destinationSpec {
+func (s *recipeCompileState) recipeDestinationSet() map[string]destinationSpec {
 	if s == nil {
 		return nil
 	}
 	if s.branchCompositionPresent {
-		return branchTargetDestinationSet(s.branchTargetAttachments)
+		return branchDestinationSet(s.branchDestinationAttachments)
 	}
 	outputs := make(map[string]destinationSpec, len(s.outputAttachments))
 	for i := range s.outputAttachments {
-		outputs[jobOutputTargetName(s.outputAttachments, s.outputTargetNames, i)] = s.outputAttachments[i]
+		outputs[jobOutputDestinationName(s.outputAttachments, s.outputDestinationNames, i)] = s.outputAttachments[i]
 	}
 	return outputs
 }
@@ -1002,7 +1002,7 @@ func recipeFinalStreamShape(state *recipeCompileState, stream StreamIntent) Medi
 	return shape
 }
 
-func validateRecipeTargetShape(operation string, node string, target string, destination destinationSpec, shape MediaShape) error {
+func validateRecipeDestinationShape(operation string, node string, destinationName string, destination destinationSpec, shape MediaShape) error {
 	if destination.sink != nil {
 		return nil
 	}
@@ -1012,23 +1012,23 @@ func validateRecipeTargetShape(operation string, node string, target string, des
 	if shape.Domain == DomainPacket {
 		return nil
 	}
-	return targetShapeMismatchError(operation, node, target, destination, shape)
+	return destinationShapeMismatchError(operation, node, destinationName, destination, shape)
 }
 
-func targetShapeMismatchError(operation string, node string, target string, destination destinationSpec, shape MediaShape) error {
-	label := firstNonEmpty(target, destination.label("target"))
+func destinationShapeMismatchError(operation string, node string, destinationName string, destination destinationSpec, shape MediaShape) error {
+	label := firstNonEmpty(destinationName, destination.label("destination"))
 	return &BuildError{
 		Code:      "target_shape_mismatch",
 		Operation: operation,
-		Node:      firstNonEmpty(node, label, "target"),
-		Reason:    "byte or mux target requires packet-domain media",
+		Node:      firstNonEmpty(node, label, "destination"),
+		Reason:    "byte or mux destination requires packet-domain media",
 		Details: []string{
-			"target=" + label,
+			"destination=" + label,
 			"expected_shape=" + Shape(ShapeDomain(DomainPacket), ShapeMedia(shape.MediaKind)).String(),
 			"actual_shape=" + shape.String(),
 		},
 		Suggestions: []string{
-			"call .Opus(...), .VP8(...), or .VP9(...) before writing to file, URI, writer, or object targets",
+			"call .Opus(...), .VP8(...), or .VP9(...) before writing to file, URI, writer, or object destinations",
 			"use .Copy() from a packet-domain stream point for packet-preserving output",
 			"send frame-domain media to goav.Sink(...) instead of a byte destination",
 		},
@@ -1152,7 +1152,7 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 			return state.planErr
 		}
 		if branchComposePlanReady(state.plan) {
-			fresh, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchTargetAttachments, nil)
+			fresh, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchDestinationAttachments, nil)
 			if err != nil {
 				return err
 			}
@@ -1160,7 +1160,7 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 			state.plan.Destinations = fresh.Destinations
 			return nil
 		}
-		plan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchTargetAttachments, nil)
+		plan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchDestinationAttachments, nil)
 		if err != nil {
 			return err
 		}
@@ -1174,7 +1174,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		fmt.Sprintf("recipe: %s", firstNonEmpty(intent.Name, "unnamed")),
 		fmt.Sprintf("inputs: %d", len(intent.Inputs)),
 		fmt.Sprintf("streams: %d", len(intent.Streams)),
-		fmt.Sprintf("targets: %d", len(intent.Destinations)),
+		fmt.Sprintf("destinations: %d", len(intent.Destinations)),
 	}
 	return &BuildError{
 		Code:      "recipe_graph_unsupported",

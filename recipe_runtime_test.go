@@ -3122,7 +3122,7 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 				Media:      []av.MediaType{av.MediaAudio},
 				Codecs:     []av.CodecID{av.CodecPCM},
 				MaxStreams: 1,
-				Metadata:   av.Metadata{"summary": "audioonly targets accept PCM audio only"},
+				Metadata:   av.Metadata{"summary": "audioonly destinations accept PCM audio only"},
 			}, muxers)
 		},
 	)
@@ -3150,8 +3150,8 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "target_mux_incompatible" ||
-		!strings.Contains(err.Error(), "audioonly targets accept PCM audio only") ||
-		!strings.Contains(err.Error(), "target=archive") ||
+		!strings.Contains(err.Error(), "audioonly destinations accept PCM audio only") ||
+		!strings.Contains(err.Error(), "destination=archive") ||
 		!strings.Contains(err.Error(), "branch=archive codec=opus media=audio") {
 		t.Fatalf("err = %v, want descriptor-backed runtime mux incompatibility", err)
 	}
@@ -3330,8 +3330,8 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 		t.Fatalf("err = %v, want target_shape_mismatch", err)
 	}
 	for _, want := range []string{
-		"byte or mux target requires packet-domain media",
-		"target=archive",
+		"byte or mux destination requires packet-domain media",
+		"destination=archive",
 		"actual_shape=domain=frame media=audio",
 		"goav.Sink",
 	} {

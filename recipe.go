@@ -1187,15 +1187,15 @@ func (s destinationSpec) intentWithName(name string) DestinationIntent {
 }
 
 type Job struct {
-	name          string
-	runtime       Runtime
-	inputs        []InputSpec
-	outputs       []destinationSpec
-	outputNames   []string
-	stream        *jobStreamBuild
-	branchStreams []streamBuild
-	branchTargets []namedTargetSpec
-	err           error
+	name               string
+	runtime            Runtime
+	inputs             []InputSpec
+	outputs            []destinationSpec
+	outputNames        []string
+	stream             *jobStreamBuild
+	branchStreams      []streamBuild
+	branchDestinations []namedDestinationSpec
+	err                error
 }
 
 type jobStreamBuild struct {
@@ -1343,14 +1343,14 @@ func (j *Job) setErr(err error) {
 	}
 }
 
-func (j *Job) To(targets ...Destination) *Job {
+func (j *Job) To(destinations ...Destination) *Job {
 	if len(j.branchStreams) != 0 {
 		j.setErr(branchOutputScopeError("branches"))
 		return j
 	}
-	for i := range targets {
-		target := targets[i]
-		binding, err := destinationBindingFromDestination(target)
+	for i := range destinations {
+		destination := destinations[i]
+		binding, err := destinationBindingFromDestination(destination)
 		if err != nil {
 			j.setErr(jobDestinationInvalidError("job", err.Error()))
 			return j
@@ -1366,30 +1366,30 @@ func (j *Job) To(targets ...Destination) *Job {
 	return j
 }
 
-func (j *Job) addBranchTargets(targets ...targetSpec) error {
-	seen := make(map[string]string, len(j.branchTargets)+len(targets))
-	for i := range j.branchTargets {
-		seen[j.branchTargets[i].name] = targetIdentity(j.branchTargets[i])
+func (j *Job) addBranchDestinations(destinations ...destinationRef) error {
+	seen := make(map[string]string, len(j.branchDestinations)+len(destinations))
+	for i := range j.branchDestinations {
+		seen[j.branchDestinations[i].name] = destinationIdentity(j.branchDestinations[i])
 	}
-	for i := range targets {
-		target := cloneTargetSpec(targets[i])
-		if target.err != nil {
-			return target.err
+	for i := range destinations {
+		destination := cloneDestinationRef(destinations[i])
+		if destination.err != nil {
+			return destination.err
 		}
-		if target.name == "" {
-			return targetNameMissingError(target.dest)
+		if destination.name == "" {
+			return destinationNameMissingError(destination.dest)
 		}
-		target.dest = target.dest.withName(firstNonEmpty(target.dest.name, target.name))
-		named := namedTargetSpec{name: target.name, output: target.dest}
-		identity := targetIdentity(named)
+		destination.dest = destination.dest.withName(firstNonEmpty(destination.dest.name, destination.name))
+		named := namedDestinationSpec{name: destination.name, output: destination.dest}
+		identity := destinationIdentity(named)
 		if existing, ok := seen[named.name]; ok {
 			if existing != identity {
-				return branchTargetDuplicateError(named.name)
+				return branchDestinationDuplicateError(named.name)
 			}
 			continue
 		}
 		seen[named.name] = identity
-		j.branchTargets = append(j.branchTargets, named)
+		j.branchDestinations = append(j.branchDestinations, named)
 	}
 	return nil
 }
@@ -1440,8 +1440,8 @@ func (j *Job) Intent() Intent {
 		for i := range j.branchStreams {
 			intent.Streams = append(intent.Streams, branchStreamIntent(j.branchStreams[i]))
 		}
-		for i := range j.branchTargets {
-			intent.Destinations = append(intent.Destinations, j.branchTargets[i].output.intentWithName(j.branchTargets[i].name))
+		for i := range j.branchDestinations {
+			intent.Destinations = append(intent.Destinations, j.branchDestinations[i].output.intentWithName(j.branchDestinations[i].name))
 		}
 		return intent
 	} else if j.stream != nil {
@@ -1581,30 +1581,30 @@ func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool
 	return jobOutputScopeMixedError("build job", stream)
 }
 
-func validateJobOutputBindings(operation string, stream StreamIntent, outputs []destinationSpec, targetNames []string) error {
-	targets := jobOutputTargetSet(outputs, targetNames)
-	for _, target := range stream.Destinations {
-		if _, ok := targets[target]; ok {
+func validateJobOutputBindings(operation string, stream StreamIntent, outputs []destinationSpec, destinationNames []string) error {
+	destinations := jobOutputDestinationSet(outputs, destinationNames)
+	for _, destinationName := range stream.Destinations {
+		if _, ok := destinations[destinationName]; ok {
 			continue
 		}
-		return jobTargetReferenceMissingError(operation, stream, target)
+		return jobDestinationReferenceMissingError(operation, stream, destinationName)
 	}
 	return nil
 }
 
-func jobOutputTargetSet(outputs []destinationSpec, targetNames []string) map[string]struct{} {
-	targets := make(map[string]struct{}, len(outputs))
+func jobOutputDestinationSet(outputs []destinationSpec, destinationNames []string) map[string]struct{} {
+	destinations := make(map[string]struct{}, len(outputs))
 	for i := range outputs {
-		targets[jobOutputTargetName(outputs, targetNames, i)] = struct{}{}
+		destinations[jobOutputDestinationName(outputs, destinationNames, i)] = struct{}{}
 	}
-	return targets
+	return destinations
 }
 
 func (j *Job) allOutputs() []destinationSpec {
-	if len(j.branchTargets) != 0 {
-		outputs := make([]destinationSpec, 0, len(j.branchTargets))
-		for i := range j.branchTargets {
-			outputs = append(outputs, j.branchTargets[i].output)
+	if len(j.branchDestinations) != 0 {
+		outputs := make([]destinationSpec, 0, len(j.branchDestinations))
+		for i := range j.branchDestinations {
+			outputs = append(outputs, j.branchDestinations[i].output)
 		}
 		return outputs
 	}
@@ -1612,10 +1612,10 @@ func (j *Job) allOutputs() []destinationSpec {
 }
 
 func (j *Job) allOutputNames() []string {
-	if len(j.branchTargets) != 0 {
-		names := make([]string, 0, len(j.branchTargets))
-		for i := range j.branchTargets {
-			names = append(names, j.branchTargets[i].name)
+	if len(j.branchDestinations) != 0 {
+		names := make([]string, 0, len(j.branchDestinations))
+		for i := range j.branchDestinations {
+			names = append(names, j.branchDestinations[i].name)
 		}
 		return names
 	}
@@ -1686,7 +1686,7 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 		Taps:         append(chainStepTapIntents(stream.steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:       cloneCodecSpec(stream.encode),
 		CodecChange:  stream.codecChange,
-		Destinations: destinationTargetNamesWithNames(stream.outputs, stream.outputNames),
+		Destinations: destinationNamesWithOverrides(stream.outputs, stream.outputNames),
 	}
 }
 
@@ -1713,7 +1713,7 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 		Transforms:   cloneTransformSpecs(stream.transforms),
 		Taps:         append(chainStepTapIntents(streamChainSteps(stream), stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:       cloneCodecSpec(stream.encode),
-		Destinations: append([]string(nil), stream.targetNames...),
+		Destinations: append([]string(nil), stream.destinationNames...),
 	}
 }
 
@@ -2236,22 +2236,22 @@ func outputsContainSinkDestination(outputs []destinationSpec) bool {
 	return false
 }
 
-func validateDestinationSpecs(operation string, outputs []destinationSpec, targetNames ...string) error {
+func validateDestinationSpecs(operation string, outputs []destinationSpec, destinationNames ...string) error {
 	seen := make(map[string]bool, len(outputs))
 	for i := range outputs {
 		fallback := fmt.Sprintf("output-%d", i)
 		if err := outputs[i].validate(operation, fallback); err != nil {
 			return err
 		}
-		name := jobOutputTargetName(outputs, targetNames, i)
-		targetNamed := i < len(targetNames) && targetNames[i] != ""
+		name := jobOutputDestinationName(outputs, destinationNames, i)
+		destinationNamed := i < len(destinationNames) && destinationNames[i] != ""
 		if previousTargetNamed, ok := seen[name]; ok {
-			if targetNamed || previousTargetNamed {
+			if destinationNamed || previousTargetNamed {
 				return duplicateTargetDestinationError(operation, name)
 			}
 			return duplicateOutputError(operation, name)
 		}
-		seen[name] = targetNamed
+		seen[name] = destinationNamed
 	}
 	return nil
 }
@@ -2279,7 +2279,7 @@ func validateInputFormatAdapters(ctx context.Context, rt Runtime, inputs []Input
 	return probes, nil
 }
 
-func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []destinationSpec, targetNames ...string) ([]destinationSpec, error) {
+func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []destinationSpec, destinationNames ...string) ([]destinationSpec, error) {
 	resolved := append([]destinationSpec(nil), outputs...)
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
@@ -2293,21 +2293,21 @@ func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []des
 		if formatID == "" {
 			result, err := standard.formats.Probe(ctx, outputProbeRequest(resolved[i].output))
 			if err != nil {
-				return nil, targetFormatProbeError(targetNodeName(resolved[i].output, i, targetNames), resolved[i].output, err)
+				return nil, targetFormatProbeError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, err)
 			}
 			formatID = result.Format
 			resolved[i] = resolved[i].withResolvedFormat(formatID)
 		}
 		if _, err := standard.formats.MuxerFactory(formatID); err != nil {
-			return nil, targetMuxerMissingError(targetNodeName(resolved[i].output, i, targetNames), resolved[i].output, formatID, err)
+			return nil, targetMuxerMissingError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, formatID, err)
 		}
 	}
 	return resolved, nil
 }
 
-func targetNodeName(output format.Output, index int, targetNames []string) string {
-	if index >= 0 && index < len(targetNames) && targetNames[index] != "" {
-		return targetNames[index]
+func destinationNodeName(output format.Output, index int, destinationNames []string) string {
+	if index >= 0 && index < len(destinationNames) && destinationNames[index] != "" {
+		return destinationNames[index]
 	}
 	return muxNodeName(output, index)
 }
@@ -3436,21 +3436,21 @@ func newStreamSelector(media av.MediaType, options ...streamOption) av.StreamSel
 }
 
 type streamBuild struct {
-	name           string
-	selector       av.StreamSelector
-	from           TapRef
-	decode         bool
-	decodeCodec    CodecSpec
-	operations     []StreamOperation
-	operationSplit bool
-	sharedOps      []StreamOperation
-	privateOps     []StreamOperation
-	sharedSteps    []chainStep
-	steps          []chainStep
-	postEncodeTaps []string
-	transforms     []TransformSpec
-	encode         CodecSpec
-	targetNames    []string
+	name             string
+	selector         av.StreamSelector
+	from             TapRef
+	decode           bool
+	decodeCodec      CodecSpec
+	operations       []StreamOperation
+	operationSplit   bool
+	sharedOps        []StreamOperation
+	privateOps       []StreamOperation
+	sharedSteps      []chainStep
+	steps            []chainStep
+	postEncodeTaps   []string
+	transforms       []TransformSpec
+	encode           CodecSpec
+	destinationNames []string
 }
 
 func StreamID(id av.StreamID) streamOption {
@@ -3687,12 +3687,12 @@ func (b *jobStreamBuilder) VP9(bitrate int, options ...codecOption) *jobStreamBu
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *jobStreamBuilder) To(targets ...Destination) *Job {
+func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 	stream := b.current()
-	outputs := make([]destinationSpec, 0, len(targets))
-	for i := range targets {
-		target := targets[i]
-		binding, err := destinationBindingFromDestination(target)
+	outputs := make([]destinationSpec, 0, len(destinations))
+	for i := range destinations {
+		destination := destinations[i]
+		binding, err := destinationBindingFromDestination(destination)
 		if err != nil {
 			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), err.Error()))
 			return b.job
@@ -3737,19 +3737,19 @@ type branchCompositionJob struct {
 	name    string
 	input   InputSpec
 	streams []streamBuild
-	outputs []namedTargetSpec
+	outputs []namedDestinationSpec
 	err     error
 
 	fromBranchSplit bool
 }
 
-type namedTargetSpec struct {
+type namedDestinationSpec struct {
 	name   string
 	output destinationSpec
 }
 
-func targetIdentity(target namedTargetSpec) string {
-	output := target.output
+func destinationIdentity(destination namedDestinationSpec) string {
+	output := destination.output
 	sinkName := ""
 	sinkAddr := ""
 	if output.sink != nil {
@@ -3757,8 +3757,8 @@ func targetIdentity(target namedTargetSpec) string {
 		sinkAddr = fmt.Sprintf("%p", output.sink)
 	}
 	return strings.Join([]string{
-		target.name,
-		strconv.FormatUint(target.output.id, 10),
+		destination.name,
+		strconv.FormatUint(destination.output.id, 10),
 		output.label(""),
 		sinkName,
 		sinkAddr,
@@ -3803,9 +3803,9 @@ func (j *branchCompositionJob) Plan() (branchComposePlan, error) {
 	return planBranchCompositionRecipe(j.Intent(), j.input, j.outputs, j.streams)
 }
 
-func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []namedTargetSpec, branchBuilds []streamBuild) (branchComposePlan, error) {
+func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []namedDestinationSpec, branchBuilds []streamBuild) (branchComposePlan, error) {
 	streams := intent.Streams
-	outputs, outputOrder := branchTargetAttachmentSet(namedOutputs)
+	outputs, outputOrder := branchDestinationAttachmentSet(namedOutputs)
 
 	branches := make([]branchComposeBranch, 0, len(streams))
 	outputBranches := make(map[string][]string, len(outputs))
@@ -4078,10 +4078,10 @@ func validateBranchIntentShape(stream StreamIntent, index int) error {
 	if len(stream.Destinations) == 0 {
 		return branchIntentTargetMissingError(stream)
 	}
-	return validateBranchTargets(stream)
+	return validateBranchDestinations(stream)
 }
 
-func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedTargetSpec, fromBranchSplit bool) error {
+func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedDestinationSpec, fromBranchSplit bool) error {
 	if err := input.validate(); err != nil {
 		return err
 	}
@@ -4097,15 +4097,15 @@ func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedT
 		}
 		name := namedOutputs[i].name
 		if _, ok := seen[name]; ok {
-			return branchTargetDuplicateError(name)
+			return branchDestinationDuplicateError(name)
 		}
 		seen[name] = struct{}{}
 	}
 	return nil
 }
 
-func validateBranchTargetKinds(intent Intent, namedOutputs []namedTargetSpec) error {
-	outputs := branchTargetDestinationSet(namedOutputs)
+func validateBranchDestinationKinds(intent Intent, namedOutputs []namedDestinationSpec) error {
+	outputs := branchDestinationSet(namedOutputs)
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
 		hasMuxTarget := false
@@ -4126,21 +4126,21 @@ func validateBranchTargetKinds(intent Intent, namedOutputs []namedTargetSpec) er
 	return nil
 }
 
-func validateBranchTargetBindings(intent Intent, namedOutputs []namedTargetSpec) error {
-	outputs := branchTargetLabelSet(namedOutputs)
+func validateBranchDestinationBindings(intent Intent, namedOutputs []namedDestinationSpec) error {
+	outputs := branchDestinationLabelSet(namedOutputs)
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
 		for _, label := range stream.Destinations {
 			if _, ok := outputs[label]; ok {
 				continue
 			}
-			return branchTargetReferenceMissingError(stream, label)
+			return branchDestinationReferenceMissingError(stream, label)
 		}
 	}
 	return nil
 }
 
-func branchTargetDestinationSet(namedOutputs []namedTargetSpec) map[string]destinationSpec {
+func branchDestinationSet(namedOutputs []namedDestinationSpec) map[string]destinationSpec {
 	outputs := make(map[string]destinationSpec, len(namedOutputs))
 	for i := range namedOutputs {
 		outputs[namedOutputs[i].name] = namedOutputs[i].output
@@ -4148,7 +4148,7 @@ func branchTargetDestinationSet(namedOutputs []namedTargetSpec) map[string]desti
 	return outputs
 }
 
-func branchTargetAttachmentSet(namedOutputs []namedTargetSpec) (map[string]destinationSpec, []string) {
+func branchDestinationAttachmentSet(namedOutputs []namedDestinationSpec) (map[string]destinationSpec, []string) {
 	outputs := make(map[string]destinationSpec, len(namedOutputs))
 	outputOrder := make([]string, 0, len(namedOutputs))
 	for i := range namedOutputs {
@@ -4159,7 +4159,7 @@ func branchTargetAttachmentSet(namedOutputs []namedTargetSpec) (map[string]desti
 	return outputs, outputOrder
 }
 
-func branchTargetLabelSet(namedOutputs []namedTargetSpec) map[string]struct{} {
+func branchDestinationLabelSet(namedOutputs []namedDestinationSpec) map[string]struct{} {
 	outputs := make(map[string]struct{}, len(namedOutputs))
 	for i := range namedOutputs {
 		outputs[namedOutputs[i].name] = struct{}{}
@@ -4228,7 +4228,7 @@ func branchIntentTargetMissingError(stream StreamIntent) error {
 	}
 }
 
-func branchTargetReferenceMissingError(stream StreamIntent, label string) error {
+func branchDestinationReferenceMissingError(stream StreamIntent, label string) error {
 	return &BuildError{
 		Code:      "target_missing",
 		Operation: branchCompositionOperation,
@@ -4255,7 +4255,7 @@ func transcodeUnsupportedRTPInputError() error {
 	}
 }
 
-func branchTargetNameEmptyError(stream streamBuild, index int) error {
+func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 	return &BuildError{
 		Code:      "target_invalid",
 		Operation: branchCompositionOperation,
@@ -4272,7 +4272,7 @@ func branchTargetNameEmptyError(stream streamBuild, index int) error {
 	}
 }
 
-func branchTargetDefinitionNameEmptyError(output destinationSpec) error {
+func branchDestinationDefinitionNameEmptyError(output destinationSpec) error {
 	err := &BuildError{
 		Code:      "target_invalid",
 		Operation: branchCompositionOperation,
@@ -4290,7 +4290,7 @@ func branchTargetDefinitionNameEmptyError(output destinationSpec) error {
 	return err
 }
 
-func branchTargetDuplicateError(name string) error {
+func branchDestinationDuplicateError(name string) error {
 	return &BuildError{
 		Code:      "target_duplicate",
 		Operation: branchCompositionOperation,
@@ -4316,8 +4316,8 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 		},
 		Suggestions: []string{
 			"use unique names such as .Video(\"720p\") and .Video(\"360p\")",
-			"route one branch to multiple targets by calling .To(target, otherTarget)",
-			"route different branches to the same target by reusing the target value",
+			"route one branch to multiple destinations by calling .To(destination, otherDestination)",
+			"route different branches to the same destination by reusing the destination value",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -4341,7 +4341,7 @@ func branchIntentNameMissingError(index int, stream StreamIntent) error {
 	}
 }
 
-func validateBranchTargets(stream StreamIntent) error {
+func validateBranchDestinations(stream StreamIntent) error {
 	seen := make(map[string]int, len(stream.Destinations))
 	for i, target := range stream.Destinations {
 		if firstIndex, ok := seen[target]; ok {
@@ -4457,7 +4457,7 @@ func branchStreamName(stream streamBuild) string {
 	return firstNonEmpty(stream.name, string(stream.selector.Type), "stream")
 }
 
-func destinationTargetNames(outputs []destinationSpec) []string {
+func destinationNamesFromSpecs(outputs []destinationSpec) []string {
 	names := make([]string, 0, len(outputs))
 	for i := range outputs {
 		names = append(names, outputs[i].label(fmt.Sprintf("output-%d", i)))
@@ -4465,17 +4465,17 @@ func destinationTargetNames(outputs []destinationSpec) []string {
 	return names
 }
 
-func destinationTargetNamesWithNames(outputs []destinationSpec, targetNames []string) []string {
+func destinationNamesWithOverrides(outputs []destinationSpec, destinationNames []string) []string {
 	names := make([]string, 0, len(outputs))
 	for i := range outputs {
-		names = append(names, jobOutputTargetName(outputs, targetNames, i))
+		names = append(names, jobOutputDestinationName(outputs, destinationNames, i))
 	}
 	return names
 }
 
-func jobOutputTargetName(outputs []destinationSpec, targetNames []string, index int) string {
-	if index >= 0 && index < len(targetNames) && targetNames[index] != "" {
-		return targetNames[index]
+func jobOutputDestinationName(outputs []destinationSpec, destinationNames []string, index int) string {
+	if index >= 0 && index < len(destinationNames) && destinationNames[index] != "" {
+		return destinationNames[index]
 	}
 	return outputs[index].label(fmt.Sprintf("output-%d", index))
 }

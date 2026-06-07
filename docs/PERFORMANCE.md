@@ -23,7 +23,7 @@ The API can stay expressive only if those expressions collapse into direct,
 reusable runtime objects. Declarative recipes are allowed to build plans,
 diagnostics, and graphs up front; once running, stages should reuse caller-owned
 messages, result structs, frame planes, packet buffers, and scratch storage.
-The target shape is one cold-path executable `WorkPlan` and runtime `WorkPatch`;
+The intended shape is one cold-path executable `WorkPlan` and runtime `WorkPatch`;
 packet, frame, event, and mux/demux loops must not route
 through fluent recipe objects or workflow-specific compiler dispatch.
 

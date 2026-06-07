@@ -10,7 +10,7 @@ import (
 
 type muxCompatibilityIssue struct {
 	Code        string
-	Target      string
+	Destination string
 	Format      av.FormatID
 	Reason      string
 	Details     []string
@@ -239,11 +239,11 @@ func checkKnownMuxCompatibility(output planOutput, streams []plannedMuxStream, r
 			av.CodecVP8: true,
 			av.CodecVP9: true,
 			av.CodecAV1: true,
-		}, "IVF targets support one VP8, VP9, or AV1 video stream")
+		}, "IVF destinations support one VP8, VP9, or AV1 video stream")
 	case av.FormatAnnexB:
 		return checkSingleVideoMuxCompatibility(output, streams, map[av.CodecID]bool{
 			av.CodecH264: true,
-		}, "Annex B targets support one H264 video stream")
+		}, "Annex B destinations support one H264 video stream")
 	default:
 		return muxCompatibilityIssue{}, false
 	}
@@ -305,9 +305,9 @@ func descriptorMuxReason(formatID av.FormatID, desc format.Descriptor) string {
 		parts = append(parts, "codecs="+joinCodecIDs(desc.Codecs))
 	}
 	if len(parts) == 0 {
-		return string(formatID) + " target rejected the planned mux group"
+		return string(formatID) + " destination rejected the planned mux group"
 	}
-	return string(formatID) + " targets support " + strings.Join(parts, ", ")
+	return string(formatID) + " destinations support " + strings.Join(parts, ", ")
 }
 
 func mediaAllowed(allowed []av.MediaType, media av.MediaType) bool {
@@ -374,7 +374,7 @@ func checkSingleVideoMuxCompatibility(output planOutput, streams []plannedMuxStr
 func newMuxCompatibilityIssue(output planOutput, streams []plannedMuxStream, reason string) muxCompatibilityIssue {
 	return muxCompatibilityIssue{
 		Code:        "target_mux_incompatible",
-		Target:      output.Name,
+		Destination: output.Name,
 		Format:      output.Format,
 		Reason:      reason,
 		Details:     muxCompatibilityDetails(output, streams),
@@ -384,7 +384,7 @@ func newMuxCompatibilityIssue(output planOutput, streams []plannedMuxStream, rea
 
 func muxCompatibilityDetails(output planOutput, streams []plannedMuxStream) []string {
 	details := []string{
-		"target=" + output.Name,
+		"destination=" + output.Name,
 		"format=" + string(output.Format),
 	}
 	if len(streams) == 0 {
@@ -410,14 +410,14 @@ func muxCompatibilitySuggestions(formatID av.FormatID) []string {
 	switch formatID {
 	case av.FormatIVF:
 		return []string{
-			"route exactly one VP8, VP9, or AV1 video branch to each .ivf target",
-			"send audio or additional video branches to a separate target",
+			"route exactly one VP8, VP9, or AV1 video branch to each .ivf destination",
+			"send audio or additional video branches to a separate destination",
 			"choose a container adapter that supports the planned mux group",
 		}
 	case av.FormatAnnexB:
 		return []string{
-			"route exactly one H264 video branch to each Annex B target",
-			"send audio or additional video branches to a separate target",
+			"route exactly one H264 video branch to each Annex B destination",
+			"send audio or additional video branches to a separate destination",
 			"choose a container adapter that supports the planned mux group",
 		}
 	default:
@@ -429,7 +429,7 @@ func muxCompatibilityBuildError(operation string, issue muxCompatibilityIssue) e
 	return &BuildError{
 		Code:        issue.Code,
 		Operation:   operation,
-		Node:        issue.Target,
+		Node:        issue.Destination,
 		Reason:      issue.Reason,
 		Details:     append([]string(nil), issue.Details...),
 		Suggestions: append([]string(nil), issue.Suggestions...),
@@ -442,7 +442,7 @@ func muxCompatibilityDiagnostics(issues []muxCompatibilityIssue) []PlanDiagnosti
 	for i := range issues {
 		diagnostics = append(diagnostics, PlanDiagnostic{
 			Code:        issues[i].Code,
-			Node:        issues[i].Target,
+			Node:        issues[i].Destination,
 			Message:     issues[i].Reason,
 			Details:     append([]string(nil), issues[i].Details...),
 			Suggestions: append([]string(nil), issues[i].Suggestions...),
