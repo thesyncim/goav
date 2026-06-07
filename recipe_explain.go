@@ -45,16 +45,9 @@ type StreamReport struct {
 	Select       StreamSelect
 	Decode       bool
 	Operations   []OperationReport
-	Transforms   []TransformReport
 	Encode       CodecSpec
 	CodecChange  CodecChangePolicy
 	Destinations []string
-}
-
-type TransformReport struct {
-	Kind     string
-	Resize   *filter.ResizeConfig
-	Resample *filter.ResampleConfig
 }
 
 type DestinationReport struct {
@@ -240,7 +233,6 @@ func explainStreams(streams []StreamIntent) []StreamReport {
 			Select:       stream.Select,
 			Decode:       stream.Decode,
 			Operations:   explainOperationSpecs(stream.Operations),
-			Transforms:   explainTransforms(streamIntentTransformSpecs(stream)),
 			Encode:       stream.Encode,
 			CodecChange:  stream.CodecChange,
 			Destinations: append([]string(nil), stream.Destinations...),
@@ -335,26 +327,6 @@ func explainDecisions(decisions []planDecision) []Decision {
 			Branch:  decision.Branch,
 			Message: decision.Message,
 		})
-	}
-	return reports
-}
-
-func explainTransforms(transforms []TransformSpec) []TransformReport {
-	reports := make([]TransformReport, 0, len(transforms))
-	for i := range transforms {
-		transform := transforms[i]
-		report := TransformReport{}
-		if transform.Resize != nil {
-			resize := *transform.Resize
-			report.Kind = filter.FactoryResize
-			report.Resize = &resize
-		}
-		if transform.Resample != nil {
-			resample := *transform.Resample
-			report.Kind = filter.FactoryResample
-			report.Resample = &resample
-		}
-		reports = append(reports, report)
 	}
 	return reports
 }
@@ -980,7 +952,6 @@ func cloneIntent(intent Intent) Intent {
 	clone.Streams = append([]StreamIntent(nil), intent.Streams...)
 	for i := range clone.Streams {
 		clone.Streams[i].Operations = cloneOperationSpecs(intent.Streams[i].Operations)
-		clone.Streams[i].Transforms = cloneTransformSpecs(intent.Streams[i].Transforms)
 		clone.Streams[i].Taps = cloneTapIntents(intent.Streams[i].Taps)
 		clone.Streams[i].Destinations = append([]string(nil), intent.Streams[i].Destinations...)
 	}

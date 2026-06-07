@@ -45,7 +45,6 @@ type StreamIntent struct {
 	Decode       bool
 	DecodeCodec  CodecSpec
 	Operations   []OperationSpec
-	Transforms   []TransformSpec
 	Taps         []TapIntent
 	Encode       CodecSpec
 	CodecChange  CodecChangePolicy
@@ -1797,7 +1796,6 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 		Decode:       stream.decode,
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
 		Operations:   jobOperationSpecs(stream),
-		Transforms:   stream.transformSpecs(),
 		Taps:         append(chainStepTapIntents(steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:       cloneCodecSpec(stream.encode),
 		CodecChange:  stream.codecChange,
@@ -1826,7 +1824,6 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 		Decode:       stream.decode,
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
 		Operations:   streamBuildOperationSpecs(stream),
-		Transforms:   transformSpecsFromOperationSpecs(streamBuildOperationSpecs(stream)),
 		Taps:         append(chainStepTapIntents(steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:       cloneCodecSpec(stream.encode),
 		Destinations: append([]string(nil), stream.destinationNames...),
@@ -2265,20 +2262,6 @@ func (s *jobStreamBuild) hasOperation() bool {
 
 func streamIntentHasOperation(stream StreamIntent, steps []chainStepAttachment) bool {
 	return stream.Decode || len(stream.Operations) != 0 || len(steps) != 0 || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy
-}
-
-func (s *jobStreamBuild) transformSpecs() []TransformSpec {
-	steps := jobStreamChainSteps(s)
-	if len(steps) == 0 {
-		return nil
-	}
-	transforms := make([]TransformSpec, 0, len(steps))
-	for i := range steps {
-		if steps[i].transform.Resize != nil || steps[i].transform.Resample != nil {
-			transforms = append(transforms, steps[i].transform)
-		}
-	}
-	return transforms
 }
 
 func jobStreamChainSteps(stream *jobStreamBuild) []chainStep {
@@ -3994,9 +3977,6 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		branchName := stream.Name
 		selector := streamIntentSelector(stream)
 		operations := cloneOperationSpecs(stream.Operations)
-		if len(operations) == 0 {
-			operations = operationSpecsFromTransforms(streamIntentTransformSpecs(stream))
-		}
 		var sharedOperations []OperationSpec
 		var privateOperations []OperationSpec
 		if i < len(branchBuilds) {
@@ -4073,17 +4053,6 @@ func splitOperationSpecsByShared(operations []OperationSpec) ([]OperationSpec, [
 		private = append(private, operation)
 	}
 	return cloneOperationSpecs(shared), cloneOperationSpecs(private)
-}
-
-func operationSpecsFromTransforms(transforms []TransformSpec) []OperationSpec {
-	if len(transforms) == 0 {
-		return nil
-	}
-	operations := make([]OperationSpec, 0, len(transforms))
-	for i := range transforms {
-		operations = append(operations, operationSpecForTransform(transforms[i]))
-	}
-	return operations
 }
 
 func branchChainStepsFromOperationSpecsAroundTap(operations []OperationSpec, anchorTap string) ([]chainStep, []chainStep) {
@@ -4593,10 +4562,7 @@ func validateBranchTransforms(stream StreamIntent) error {
 }
 
 func streamIntentTransformSpecs(stream StreamIntent) []TransformSpec {
-	if len(stream.Operations) != 0 {
-		return transformSpecsFromOperationSpecs(stream.Operations)
-	}
-	return cloneTransformSpecs(stream.Transforms)
+	return transformSpecsFromOperationSpecs(stream.Operations)
 }
 
 func transformSpecsFromOperationSpecs(operations []OperationSpec) []TransformSpec {
@@ -4609,9 +4575,6 @@ func transformSpecsFromOperationSpecs(operations []OperationSpec) []TransformSpe
 			continue
 		}
 		transform := cloneTransformSpec(operations[i].Transform)
-		if transform.Resize == nil && transform.Resample == nil {
-			continue
-		}
 		transforms = append(transforms, transform)
 	}
 	return transforms

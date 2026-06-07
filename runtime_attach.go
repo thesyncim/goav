@@ -829,7 +829,7 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 			streamIntent := StreamIntent{
 				Name:       firstNonEmpty(branch.name, "branch"),
 				Select:     StreamSelect{Type: currentStream.Type},
-				Transforms: []TransformSpec{step.transform},
+				Operations: []OperationSpec{operationSpecForTransform(step.transform)},
 			}
 			if _, err := t.runtime.filters.Factory(transformName); err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
