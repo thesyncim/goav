@@ -183,8 +183,17 @@ return goav.From(goav.WebRTCTrack(audio)).
     Run(ctx)
 ```
 
-Non-encoding flows can also be applied to runtime branches attached from frame
-taps.
+Flows can also be applied to runtime branches. The flow still owns only the
+operation sequence; the branch owns the target.
+
+```go
+record, err := task.Attach(ctx,
+    goav.Branch("archive").
+        FromTap("audio.decoded").
+        Apply(archive).
+        To(archiveTarget),
+)
+```
 
 ## Runtime Attach
 
@@ -259,11 +268,11 @@ defer record.Close(ctx)
 
 `Task.Taps()` lists available attach points. `Attach` adds a downstream sink
 or endpoint branch to a running direct task graph without rebuilding upstream.
-Late branches can run custom `.Do(...)` stages, resize/resample from frame taps,
-encode Opus/VP8/VP9 from frame taps, copy from packet taps, and expose their own
-`.Tap(name)` outlets for later attachments. H264 and AV1 recipe encoding remain
-work in progress. Detaching a parent attachment also removes dependent late
-branches anchored from its taps.
+Late branches can apply flows, run custom `.Do(...)` stages, resize/resample
+from frame taps, encode Opus/VP8/VP9 from frame taps, copy from packet taps, and
+expose their own `.Tap(name)` outlets for later attachments. H264 and AV1 recipe
+encoding remain work in progress. Detaching a parent attachment also removes
+dependent late branches anchored from its taps.
 
 ## Explain And Inspect
 
@@ -352,8 +361,9 @@ Implemented now:
 - Packet-preserving `Copy().To(...)`.
 - Stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode.
 - Typed `Branch`, `Target`, endpoint, and `Flow` composition.
-- Runtime branch attachment from named taps with custom stages, resize/resample
-  from frame taps, nested runtime taps, `Attachment.Close(ctx)`, and
+- Runtime branch attachment from named taps with flows, custom stages,
+  resize/resample from frame taps, late Opus/VP8/VP9 encode endpoints, packet
+  copy endpoints, nested runtime taps, `Attachment.Close(ctx)`, and
   `Task.Detach(ctx, h)`.
 - Custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
   generic `Codec` specs.
