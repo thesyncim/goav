@@ -1866,6 +1866,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     decoded-frame, and encoded direct chains and prove the built graph still
     equals the described graph.
     Done.
+358. Lower direct stream operations from graph-plan refs:
+    decoded direct stream lowering now records select, decode, transform/stage,
+    and encode operation node refs from the graph plan before source opening.
+    Runtime decode/filter helpers accept planned node refs, built-in transforms
+    and custom stages are named from those refs, and direct encode lowering uses
+    the planned encode node ref. Tests mutate planned select, decode, resample,
+    and encode refs and prove the built graph still equals the described graph.
+    Done.
 
 ## First Vertical Slice
 
@@ -2077,10 +2085,9 @@ Required proof:
 ## Next Slices
 
 1. Make direct chains implicit branches. Direct packet-copy, decode-to-sink, and
-   encode-to-target target nodes now consume graph-plan target refs; the next
-   step is to make direct select/decode/filter/encode operation nodes and
-   branch-composition operation nodes share one branch planner instead of
-   workflow-shape graph modes.
+   encode-to-target operation and target nodes now consume graph-plan refs; the
+   next step is to make direct chains and branch composition share one branch
+   planner instead of workflow-shape graph modes.
 2. Add `GraphPatch` for runtime attach. `Task.Attach` should plan branch specs
    from existing typed taps, validate caps and targets before mutation, reuse
    upstream nodes, allocate only downstream branch nodes, and share mux/sink
@@ -2123,16 +2130,18 @@ Required proof:
    regression tests for each planner slice.
 13. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: make the rest of direct chain operation lowering share
-the branch operation model and keep runtime attach converging toward the same
-patchable planner model. Packet-copy, direct frame-stream, and grouped
-branch-compose builds now consume graph-plan operation records for validation,
-target node construction, and target routing; grouped branch-compose also
-consumes select/decode input refs, shared/private step refs, and encode refs.
-The public recipe surface is small: `From`, chains,
-`Tap`, `Branch`, `Branches`, `Target`,
-`File`, `URIOut`, `Writer`, `Object`, `Sink`, `Flow`, `Codec`, and runtime
-`Attach`. Flows expand
+Current pressure point: collapse direct chains into the branch planner model and
+keep runtime attach converging toward the same patchable planner model.
+Packet-copy, direct frame-stream, and grouped branch-compose builds now consume
+graph-plan operation records for validation, operation node construction,
+target node construction, and target routing; direct frame-stream builds consume
+select/decode/filter/encode refs, and grouped branch-compose consumes
+select/decode input refs, shared/private step refs, encode refs, and target
+refs. The public recipe surface is small: `From`, chains,
+`Tap`, `Branch`, `Branches`, `Target`, `File`, `URIOut`, `Writer`, `Object`,
+`Sink`, `Flow`, `Codec`, and runtime `Attach`. `Destination` remains the
+externally implementable extension surface for custom byte writers, object
+uploads, URI-backed outputs, and sink groups without graph-node plumbing. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into
 branch intent instead of a parallel graph language, and
 codec-specific config stays on `CodecSpec` through `Config`, `Param`, and
