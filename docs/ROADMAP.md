@@ -175,8 +175,8 @@ make the implementation match the composable planner promise.
   branches after runtime resize/resample taps plus live buffered custom-stage
   and post-encode nested tap detach covered; live buffered runtime resize and
   resample subtree detach plus post-open filter cleanup on rejected branches are
-  now covered, and graph-mutation rollback after opened runtime filters is
-  covered. Deeper terminal-stage rollback lifecycle stress proof remains
-  planned.
+  now covered, and graph-mutation rollback after opened runtime filters,
+  encoders, and mux terminal stages is covered. Deeper terminal sink/endpoint
+  lifecycle stress remains planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

@@ -1275,6 +1275,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     the first branch connection. Runtime attach removes the partially added
     stage, closes the opened filter, registers no branch taps, and leaves the
     graph spec unchanged. Done.
+290. Prove runtime terminal-stage rollback after graph mutation failure:
+    `TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails` now
+    attaches from an audio frame tap, opens a resample filter, Opus encoder, and
+    Ogg mux target, then rejects the terminal target connection after two
+    successful branch-stage connects. Runtime attach removes the mux, encoder,
+    and transform nodes in reverse order, drops the partial edges, closes every
+    owned component, registers no branch taps, and leaves the graph spec
+    unchanged. Done.
 
 ## First Vertical Slice
 
@@ -1529,8 +1537,8 @@ feeding dependent packet-copy branches, live buffered parent detach that removes
 nested transform frame-tap, custom-stage frame-tap, and post-encode packet-tap
 subtrees before future media reaches them, runtime filter cleanup after
 post-open duplicate-tap rejection, graph rollback after post-open connect
-failure,
-flow-applied Opus encode-to-target branches, late Opus/VP8/VP9
+failure, terminal-stage rollback after post-open transform/encode/mux target
+mutation failure, flow-applied Opus encode-to-target branches, late Opus/VP8/VP9
 encode-to-endpoint, packet-copy endpoint, packet-copy recording, Opus encoded
 late recording, and sink branches that can publish nested runtime taps for later
 attachments.
@@ -1543,7 +1551,7 @@ direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
 broaden descriptor-backed endpoint/container capability data as WebM/Ogg arrive
-and keep broadening runtime attachment stress around terminal-stage rollback and
+and keep broadening runtime attachment stress around terminal sink/endpoint and
 generic lifecycle boundaries without weakening the direct graph branch grammar.
 
 ## Validation Gates

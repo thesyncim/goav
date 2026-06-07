@@ -998,6 +998,94 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing.T) {
+	ctx := context.Background()
+	resampler := &transcodeTestFilter{}
+	resampleFactory := &transcodeTestFilterFactory{filter: resampler}
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	muxers := &remuxTestMuxerFactory{}
+	rt := runtimeValue(t, New(
+		withTestFilters(testFilterFactory(filter.Descriptor{
+			Name:   filter.FactoryResample,
+			Input:  av.MediaAudio,
+			Output: av.MediaAudio,
+		}, resampleFactory)),
+		withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory)),
+		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
+	))
+	graph := newRuntimeRollbackGraph()
+	graph.failConnectAt = 3
+	mediaTask := &task{
+		graph:   graph,
+		runtime: rt,
+		taps: []TapInfo{{
+			Name:      "audio.frames",
+			MediaKind: av.MediaAudio,
+			Domain:    DomainFrame,
+			Caps: StreamCaps{
+				Domain:       DomainFrame,
+				MediaKind:    av.MediaAudio,
+				StreamID:     "audio",
+				Codec:        av.CodecOpus,
+				SampleRate:   48000,
+				Channels:     Stereo,
+				SampleFormat: av.SampleFormatS16,
+			},
+			Node: "source",
+		}},
+	}
+	before := mediaTask.Describe()
+
+	_, err := mediaTask.Attach(ctx, Branch("archive").
+		FromTap("audio.frames").
+		Resample(16_000, Mono).
+		Opus(96_000).
+		To(Target("archive", FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg))))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) ||
+		buildErr.Code != "runtime_branch_graph_error" ||
+		buildErr.Operation != "connect branch target" ||
+		!errors.Is(err, errRuntimeRollbackConnect) {
+		t.Fatalf("err = %v, want runtime_branch_graph_error wrapping terminal connect failure", err)
+	}
+	if resampleFactory.config.Audio == nil ||
+		resampleFactory.config.Audio.SampleRate != 16_000 ||
+		resampleFactory.config.Audio.Channels != Mono {
+		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before graph rollback", resampleFactory.config.Audio)
+	}
+	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Bitrate != 96_000 {
+		t.Fatalf("runtime encode config = %+v, want Opus 96k before graph rollback", encoderFactory.config)
+	}
+	if len(muxers.muxers) != 1 || !muxers.muxers[0].opened {
+		t.Fatalf("muxers = %+v, want one opened Ogg muxer before graph rollback", muxers.muxers)
+	}
+	if !resampler.closed {
+		t.Fatal("runtime filter was not closed after terminal graph rollback")
+	}
+	if !encoder.closed {
+		t.Fatal("runtime encoder was not closed after terminal graph rollback")
+	}
+	if !muxers.muxers[0].closed {
+		t.Fatal("runtime muxer was not closed after terminal graph rollback")
+	}
+	if graph.connects != 3 {
+		t.Fatalf("connects = %d, want terminal connect failure after two successful branch connects", graph.connects)
+	}
+	wantRemoved := []string{"archive/archive.ogg", "archive/encode-archive", "archive/resample-archive"}
+	if !reflect.DeepEqual(graph.removed, wantRemoved) {
+		t.Fatalf("removed = %v, want %v", graph.removed, wantRemoved)
+	}
+	if after := mediaTask.Describe(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("graph mutated after rejected terminal attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
+	}
+	for _, tap := range mediaTask.Taps() {
+		if strings.Contains(tap.Node.String(), "archive") {
+			t.Fatalf("runtime branch tap registered after terminal graph rollback: %+v", tap)
+		}
+	}
+}
+
 func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	graph := New().Graph()
 	graph.Source("source", &runtimeTestSource{name: "source"})
@@ -1903,10 +1991,11 @@ func findTap(taps []TapInfo, name string) (TapInfo, bool) {
 var errRuntimeRollbackConnect = errors.New("runtime rollback connect failure")
 
 type runtimeRollbackGraph struct {
-	spec     pipeline.Spec
-	events   chan av.Event
-	connects int
-	removed  []string
+	spec          pipeline.Spec
+	events        chan av.Event
+	connects      int
+	failConnectAt int
+	removed       []string
 }
 
 func newRuntimeRollbackGraph() *runtimeRollbackGraph {
@@ -1918,7 +2007,8 @@ func newRuntimeRollbackGraph() *runtimeRollbackGraph {
 				Kind: pipeline.NodeSource,
 			}},
 		},
-		events: make(chan av.Event),
+		events:        make(chan av.Event),
+		failConnectAt: 1,
 	}
 }
 
@@ -1940,9 +2030,20 @@ func (g *runtimeRollbackGraph) AddSink(sink pipeline.Sink, _ pipeline.BufferPoli
 	return pipeline.NodeRef(name), nil
 }
 
-func (g *runtimeRollbackGraph) Connect(pipeline.Route) error {
+func (g *runtimeRollbackGraph) Connect(route pipeline.Route) error {
 	g.connects++
-	return errRuntimeRollbackConnect
+	if g.failConnectAt <= 0 || g.connects == g.failConnectAt {
+		return errRuntimeRollbackConnect
+	}
+	for i := range route.To {
+		g.spec.Edges = append(g.spec.Edges, pipeline.EdgeSpec{
+			From:   pipeline.NodeRef(route.From),
+			To:     pipeline.NodeRef(route.To[i]),
+			Policy: route.Policy,
+			Label:  route.Label,
+		})
+	}
+	return nil
 }
 
 func (g *runtimeRollbackGraph) Disconnect(pipeline.Route) error {
@@ -1960,6 +2061,14 @@ func (g *runtimeRollbackGraph) Remove(ref pipeline.NodeRef) error {
 		nodes = append(nodes, g.spec.Nodes[i])
 	}
 	g.spec.Nodes = nodes
+	edges := g.spec.Edges[:0]
+	for i := range g.spec.Edges {
+		if g.spec.Edges[i].From.String() == name || g.spec.Edges[i].To.String() == name {
+			continue
+		}
+		edges = append(edges, g.spec.Edges[i])
+	}
+	g.spec.Edges = edges
 	return nil
 }
 
