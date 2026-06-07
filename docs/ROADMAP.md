@@ -17,8 +17,9 @@ make the implementation match the composable planner promise.
    where possible. Branches must be orthogonal at operation boundaries: after
    decode, after resize/resample, after custom stages, after taps, and later
    after sink/output attachment where runtime support makes sense. Custom stage
-   and transform steps are active; custom filter adapter metadata and late muxed
-   runtime targets remain next slices.
+   and transform steps are active, runtime branches can publish nested taps, and
+   custom filter adapter metadata plus late muxed runtime targets remain next
+   slices.
 3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
    for `From`, packet copy, stream decode, branch composition, and reusable flows
    onto direct media-plan graph construction.

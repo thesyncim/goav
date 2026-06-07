@@ -280,6 +280,104 @@ func TestTaskCloseStopsRuntimeAttachments(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
+	ctx := context.Background()
+	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{7}}}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	base := &runtimeTestSink{name: "base"}
+	parentStage := &runtimeTestStage{name: "sample"}
+	parentSink := &runtimeTestSink{name: "sampled"}
+	childSink := &runtimeTestSink{name: "shots"}
+
+	graph := New().Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	parent, err := task.Attach(ctx,
+		Branch("sampler").
+			From("source").
+			Do(parentStage).
+			Tap("video.sampled").
+			To(FrameSink(parentSink)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tap, ok := findTap(task.Taps(), "video.sampled")
+	if !ok || tap.Node != "sampler/sample" {
+		t.Fatalf("tap = %+v, ok=%v, want sampler/sample", tap, ok)
+	}
+
+	child, err := task.Attach(ctx, Branch("screenshots").FromTap("video.sampled").To(FrameSink(childSink)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 1 || parentStage.count != 1 || parentSink.count != 1 || childSink.count != 1 {
+		t.Fatalf("base=%d stage=%d parent=%d child=%d", base.count, parentStage.count, parentSink.count, childSink.count)
+	}
+
+	if err := task.Detach(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := findTap(task.Taps(), "video.sampled"); ok {
+		t.Fatalf("runtime tap still present after detach: %+v", task.Taps())
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "sampler/") || strings.Contains(text, "screenshots/") {
+		t.Fatalf("spec:\n%s", text)
+	}
+	if err := child.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
+	ctx := context.Background()
+	graph := New().Graph()
+	src := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	first, err := task.Attach(ctx,
+		Branch("first").
+			From("source").
+			Do(&runtimeTestStage{name: "stage"}).
+			Tap("sampled").
+			To(FrameSink(&runtimeTestSink{name: "first"})),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close(ctx)
+
+	_, err = task.Attach(ctx,
+		Branch("second").
+			From("source").
+			Do(&runtimeTestStage{name: "stage"}).
+			Tap("sampled").
+			To(FrameSink(&runtimeTestSink{name: "second"})),
+	)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_tap_duplicate" {
+		t.Fatalf("err = %v, want runtime_branch_tap_duplicate", err)
+	}
+}
+
 func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	graph := New().Graph()
 	graph.Source("source", &runtimeTestSource{name: "source"})
@@ -341,6 +439,15 @@ func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
 	if expert.from != "decode-audio" || expert.tap != "" {
 		t.Fatalf("expert anchor tap=%q from=%q, want node only", expert.tap, expert.from)
 	}
+}
+
+func findTap(taps []TapInfo, name string) (TapInfo, bool) {
+	for i := range taps {
+		if taps[i].Name == name {
+			return taps[i], true
+		}
+	}
+	return TapInfo{}, false
 }
 
 type runtimeBranchStepSource struct {

@@ -899,6 +899,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     now consumes the same `BranchSpec` shape for runtime sink attachment from
     named taps, and the old public `Output`/`Outputs` recipe binding surface is
     removed. Done.
+239. Let runtime branches publish downstream taps:
+    `Task.Attach(ctx, goav.Branch(...).FromTap(...).Do(stage).Tap(name).To(FrameSink(...)))`
+    now exposes the branch tap through `Task.Taps()`, preserves the anchor caps
+    where known, lets later runtime branches attach from that new tap, rejects
+    duplicate runtime tap names, and detaches dependent runtime branch subtrees
+    when the parent attachment is removed. Runtime transforms, encode, and
+    muxed target endpoints remain planned-graph slices until caps negotiation
+    and mux lifecycle planning are explicit. Done.
 
 ## First Vertical Slice
 
@@ -1143,7 +1151,9 @@ capability planning around the ordered operation model. The public recipe
 surface is small: `From`, stream builders, `Tap`, `Branch`, `Branches`,
 `Target`, endpoint constructors, `Flow`, `Codec`, and runtime `Attach`. Flows
 expand into branch intent instead of a parallel graph language, and
-`Task.Attach` remains the late branch control plane for running direct graphs.
+`Task.Attach` remains the late branch control plane for running direct graphs,
+including custom-stage sink branches that can publish nested runtime taps for
+later attachments.
 `MediaPlan` expresses record, stream decode, encode, branch composition, and
 transcode as input refs, stream selectors, ordered operations, target refs,
 taps, and planner decisions. `Describe`, `Build`, and

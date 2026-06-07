@@ -196,7 +196,10 @@ return task.Detach(ctx, shots)
 ```
 
 `Task.Taps()` lists available attach points. `Attach` adds a downstream sink
-branch to a running direct task graph without rebuilding upstream.
+branch to a running direct task graph without rebuilding upstream. Late branches
+can run custom `.Do(...)` stages and expose their own `.Tap(name)` outlets for
+later attachments; detaching a parent attachment also removes dependent late
+branches anchored from its taps.
 
 ## Explain And Inspect
 
@@ -285,8 +288,8 @@ Implemented now:
 - Packet-preserving `Copy().To(...)`.
 - Stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode.
 - Typed `Branch`, `Target`, endpoint, and `Flow` composition.
-- Runtime branch attachment from named taps with `Attachment.Close(ctx)` and
-  `Task.Detach(ctx, h)`.
+- Runtime branch attachment from named taps with custom stages, nested runtime
+  taps, `Attachment.Close(ctx)`, and `Task.Detach(ctx, h)`.
 - Custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
   generic `Codec` specs.
 - Structured `Explain(ctx)` reports and `Describe()` graph specs.

@@ -19,12 +19,18 @@ type runtimeBranch struct {
 	name   string
 	from   string
 	tap    string
-	stages []pipeline.Stage
+	anchor TapInfo
+	steps  []runtimeBranchStep
 	sink   pipeline.Sink
 	policy pipeline.RoutePolicy
 	label  string
 	buffer pipeline.BufferPolicy
 	err    error
+}
+
+type runtimeBranchStep struct {
+	stage pipeline.Stage
+	tap   string
 }
 
 // Attachment is a live runtime branch attached to a task.
@@ -51,8 +57,11 @@ func (t *task) Attach(ctx context.Context, spec BranchSpec) (Attachment, error) 
 	defer t.attachMu.Unlock()
 
 	graphSpec := t.graph.Spec()
-	branch.from, err = t.resolveRuntimeBranchAnchor(branch, graphSpec)
+	branch.from, branch.anchor, err = t.resolveRuntimeBranchAnchor(branch, graphSpec)
 	if err != nil {
+		return nil, err
+	}
+	if err := t.validateRuntimeBranchTapsLocked(branch); err != nil {
 		return nil, err
 	}
 
@@ -60,19 +69,23 @@ func (t *task) Attach(ctx context.Context, spec BranchSpec) (Attachment, error) 
 	if err != nil {
 		return nil, err
 	}
-	refs, routes, err := t.attachRuntimeBranch(branch, nodeNames)
+	refs, routes, taps, err := t.attachRuntimeBranch(branch, nodeNames)
 	if err != nil {
 		t.rollbackRuntimeBranch(refs)
 		return nil, err
 	}
 	attachment := &runtimeAttachment{
-		id:     nextRuntimeAttachmentID(branch.name),
-		name:   branch.name,
-		owner:  t,
-		nodes:  refs,
-		routes: routes,
+		id:         nextRuntimeAttachmentID(branch.name),
+		name:       branch.name,
+		owner:      t,
+		anchorTap:  branch.tap,
+		anchorNode: branch.from,
+		nodes:      refs,
+		routes:     routes,
+		taps:       taps,
 	}
 	t.trackAttachmentLocked(attachment)
+	t.addAttachmentTapsLocked(taps)
 	return attachment, nil
 }
 
@@ -92,11 +105,11 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		step := spec.steps[i]
 		switch {
 		case step.stage != nil:
-			branch.stages = append(branch.stages, step.stage)
+			branch.steps = append(branch.steps, runtimeBranchStep{stage: step.stage})
 		case step.transform.Resize != nil || step.transform.Resample != nil:
 			return branch, runtimeBranchInvalidError("runtime branch transforms are not dynamic yet", "attach runtime branches with .Do(stage).To(goav.FrameSink(...)) or plan resize/resample branches before Build")
 		case step.tap != "":
-			return branch, runtimeBranchInvalidError("runtime branch taps are not dynamic yet", "attach from an existing tap with .FromTap(name) and add stages before the sink")
+			branch.steps = append(branch.steps, runtimeBranchStep{tap: step.tap})
 		}
 	}
 	if codecIntentSet(spec.encode) {
@@ -113,67 +126,81 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	return branch, nil
 }
 
-func (t *task) resolveRuntimeBranchAnchor(branch runtimeBranch, spec pipeline.Spec) (string, error) {
+func (t *task) resolveRuntimeBranchAnchor(branch runtimeBranch, spec pipeline.Spec) (string, TapInfo, error) {
 	if branch.tap != "" {
-		for _, tap := range t.Taps() {
+		taps := t.tapsLocked()
+		for _, tap := range taps {
 			if tap.Name == branch.tap {
-				return tap.Node.String(), nil
+				return tap.Node.String(), tap, nil
 			}
 		}
-		return "", runtimeBranchTapMissingError(branch.tap, t.Taps())
+		return "", TapInfo{}, runtimeBranchTapMissingError(branch.tap, taps)
 	}
 	if !specHasNode(spec, branch.from) {
-		return "", runtimeBranchAnchorMissingError(branch.from)
+		return "", TapInfo{}, runtimeBranchAnchorMissingError(branch.from)
 	}
-	return branch.from, nil
+	return branch.from, TapInfo{Node: pipeline.NodeRef(branch.from)}, nil
 }
 
-func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]pipeline.NodeRef, []pipeline.Route, error) {
+func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]pipeline.NodeRef, []pipeline.Route, []TapInfo, error) {
 	refs := make([]pipeline.NodeRef, 0, len(nodeNames))
 	routes := make([]pipeline.Route, 0, len(nodeNames))
-	var previous pipeline.NodeRef
-	for i := range branch.stages {
-		ref, err := t.graph.AddStage(namedStage{name: nodeNames[i], stage: branch.stages[i]}, branch.buffer)
+	taps := make([]TapInfo, 0, runtimeBranchTapCount(branch))
+	previous := pipeline.NodeRef(branch.from)
+	stageIndex := 0
+	connectedFromAnchor := false
+	for i := range branch.steps {
+		step := branch.steps[i]
+		if step.tap != "" {
+			taps = append(taps, runtimeBranchTapInfo(branch, step.tap, previous))
+			continue
+		}
+		if step.stage == nil {
+			continue
+		}
+		ref, err := t.graph.AddStage(namedStage{name: nodeNames[stageIndex], stage: step.stage}, branch.buffer)
 		if err != nil {
-			return refs, routes, runtimeBranchGraphError("add stage", nodeNames[i], err)
+			return refs, routes, taps, runtimeBranchGraphError("add stage", nodeNames[stageIndex], err)
 		}
 		refs = append(refs, ref)
-		if i == 0 {
+		if !connectedFromAnchor {
 			route := runtimeBranchRoute(pipeline.NodeRef(branch.from), ref, branch)
 			if err := t.graph.Connect(route); err != nil {
-				return refs, routes, runtimeBranchGraphError("connect branch", nodeNames[i], err)
+				return refs, routes, taps, runtimeBranchGraphError("connect branch", nodeNames[stageIndex], err)
 			}
 			routes = append(routes, route)
+			connectedFromAnchor = true
 		} else {
 			route := routeBetween(previous, ref)
 			if err := t.graph.Connect(route); err != nil {
-				return refs, routes, runtimeBranchGraphError("connect branch stage", nodeNames[i], err)
+				return refs, routes, taps, runtimeBranchGraphError("connect branch stage", nodeNames[stageIndex], err)
 			}
 			routes = append(routes, route)
 		}
 		previous = ref
+		stageIndex++
 	}
 
 	sinkName := nodeNames[len(nodeNames)-1]
 	sinkRef, err := t.graph.AddSink(namedSink{name: sinkName, sink: branch.sink}, branch.buffer)
 	if err != nil {
-		return refs, routes, runtimeBranchGraphError("add sink", sinkName, err)
+		return refs, routes, taps, runtimeBranchGraphError("add sink", sinkName, err)
 	}
 	refs = append(refs, sinkRef)
-	if len(branch.stages) == 0 {
+	if !connectedFromAnchor {
 		route := runtimeBranchRoute(pipeline.NodeRef(branch.from), sinkRef, branch)
 		if err := t.graph.Connect(route); err != nil {
-			return refs, routes, runtimeBranchGraphError("connect branch", sinkName, err)
+			return refs, routes, taps, runtimeBranchGraphError("connect branch", sinkName, err)
 		}
 		routes = append(routes, route)
-		return refs, routes, nil
+		return refs, routes, taps, nil
 	}
 	route := routeBetween(previous, sinkRef)
 	if err := t.graph.Connect(route); err != nil {
-		return refs, routes, runtimeBranchGraphError("connect branch sink", sinkName, err)
+		return refs, routes, taps, runtimeBranchGraphError("connect branch sink", sinkName, err)
 	}
 	routes = append(routes, route)
-	return refs, routes, nil
+	return refs, routes, taps, nil
 }
 
 func (t *task) rollbackRuntimeBranch(nodes []pipeline.NodeRef) {
@@ -187,6 +214,59 @@ func (t *task) trackAttachmentLocked(attachment *runtimeAttachment) {
 		t.attachments = make(map[*runtimeAttachment]struct{})
 	}
 	t.attachments[attachment] = struct{}{}
+}
+
+func (t *task) tapsLocked() []TapInfo {
+	var base []TapInfo
+	if len(t.taps) != 0 {
+		base = t.taps
+	} else {
+		base = inferSpecTaps(t.graph.Spec())
+	}
+	out := make([]TapInfo, 0, len(base)+len(t.branchTaps))
+	seen := make(map[string]struct{}, len(base)+len(t.branchTaps))
+	appendTap := func(tap TapInfo) {
+		if tap.Name == "" {
+			return
+		}
+		if _, ok := seen[tap.Name]; ok {
+			return
+		}
+		seen[tap.Name] = struct{}{}
+		out = append(out, tap)
+	}
+	for i := range base {
+		appendTap(base[i])
+	}
+	for i := range t.branchTaps {
+		appendTap(t.branchTaps[i])
+	}
+	return out
+}
+
+func (t *task) addAttachmentTapsLocked(taps []TapInfo) {
+	if len(taps) == 0 {
+		return
+	}
+	t.branchTaps = append(t.branchTaps, taps...)
+}
+
+func (t *task) removeAttachmentTapsLocked(attachment *runtimeAttachment) {
+	if attachment == nil || len(attachment.taps) == 0 || len(t.branchTaps) == 0 {
+		return
+	}
+	remove := make(map[string]struct{}, len(attachment.taps))
+	for i := range attachment.taps {
+		remove[attachment.taps[i].Name] = struct{}{}
+	}
+	out := t.branchTaps[:0]
+	for i := range t.branchTaps {
+		if _, ok := remove[t.branchTaps[i].Name]; ok {
+			continue
+		}
+		out = append(out, t.branchTaps[i])
+	}
+	t.branchTaps = out
 }
 
 func (t *task) stopAttachment(ctx context.Context, attachment *runtimeAttachment) error {
@@ -205,26 +285,78 @@ func (t *task) stopAttachmentLocked(ctx context.Context, attachment *runtimeAtta
 	if attachment == nil {
 		return nil
 	}
+	first := t.stopAttachmentChildrenLocked(ctx, attachment)
 	attachment.stopMu.Lock()
 	defer attachment.stopMu.Unlock()
 	if attachment.stopped {
 		delete(t.attachments, attachment)
-		return nil
+		return first
 	}
 	err := attachment.stopLocked(t.graph)
 	attachment.stopped = true
+	t.removeAttachmentTapsLocked(attachment)
 	delete(t.attachments, attachment)
+	if first != nil {
+		return first
+	}
 	return err
 }
 
+func (t *task) stopAttachmentChildrenLocked(ctx context.Context, attachment *runtimeAttachment) error {
+	if attachment == nil {
+		return nil
+	}
+	var first error
+	for {
+		child := t.childAttachmentLocked(attachment)
+		if child == nil {
+			return first
+		}
+		if err := t.stopAttachmentLocked(ctx, child); first == nil && err != nil {
+			first = err
+		}
+	}
+}
+
+func (t *task) childAttachmentLocked(parent *runtimeAttachment) *runtimeAttachment {
+	if parent == nil {
+		return nil
+	}
+	taps := make(map[string]struct{}, len(parent.taps))
+	for i := range parent.taps {
+		if parent.taps[i].Name != "" {
+			taps[parent.taps[i].Name] = struct{}{}
+		}
+	}
+	nodes := make(map[string]struct{}, len(parent.nodes))
+	for i := range parent.nodes {
+		nodes[parent.nodes[i].String()] = struct{}{}
+	}
+	for attachment := range t.attachments {
+		if attachment == nil || attachment == parent || attachment.stopped {
+			continue
+		}
+		if _, ok := taps[attachment.anchorTap]; ok && attachment.anchorTap != "" {
+			return attachment
+		}
+		if _, ok := nodes[attachment.anchorNode]; ok && attachment.anchorNode != "" {
+			return attachment
+		}
+	}
+	return nil
+}
+
 type runtimeAttachment struct {
-	id      string
-	name    string
-	owner   *task
-	nodes   []pipeline.NodeRef
-	routes  []pipeline.Route
-	stopMu  sync.Mutex
-	stopped bool
+	id         string
+	name       string
+	owner      *task
+	anchorTap  string
+	anchorNode string
+	nodes      []pipeline.NodeRef
+	routes     []pipeline.Route
+	taps       []TapInfo
+	stopMu     sync.Mutex
+	stopped    bool
 }
 
 func (a *runtimeAttachment) ID() string {
@@ -319,20 +451,90 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 }
 
 func runtimeBranchNodeNames(branch runtimeBranch, spec pipeline.Spec) ([]string, error) {
-	names := make([]string, 0, len(branch.stages)+1)
-	seen := make(map[string]struct{}, len(branch.stages)+1)
-	for i := range branch.stages {
-		name := runtimeBranchNodeName(branch.name, branch.stages[i].Name(), fmt.Sprintf("stage%d", i+1))
+	names := make([]string, 0, runtimeBranchStageCount(branch)+1)
+	seen := make(map[string]struct{}, runtimeBranchStageCount(branch)+1)
+	stageIndex := 0
+	for i := range branch.steps {
+		if branch.steps[i].stage == nil {
+			continue
+		}
+		name := runtimeBranchNodeName(branch.name, branch.steps[i].stage.Name(), fmt.Sprintf("stage%d", stageIndex+1))
 		if err := validateRuntimeBranchNodeName(spec, seen, name); err != nil {
 			return nil, err
 		}
 		names = append(names, name)
+		stageIndex++
 	}
 	name := runtimeBranchNodeName(branch.name, branch.sink.Name(), "sink")
 	if err := validateRuntimeBranchNodeName(spec, seen, name); err != nil {
 		return nil, err
 	}
 	return append(names, name), nil
+}
+
+func runtimeBranchStageCount(branch runtimeBranch) int {
+	count := 0
+	for i := range branch.steps {
+		if branch.steps[i].stage != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func runtimeBranchTapCount(branch runtimeBranch) int {
+	count := 0
+	for i := range branch.steps {
+		if branch.steps[i].tap != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func (t *task) validateRuntimeBranchTapsLocked(branch runtimeBranch) error {
+	seen := make(map[string]struct{}, runtimeBranchTapCount(branch))
+	current := t.tapsLocked()
+	existing := make(map[string]struct{}, len(current))
+	for i := range current {
+		existing[current[i].Name] = struct{}{}
+	}
+	for i := range branch.steps {
+		name := branch.steps[i].tap
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			return runtimeBranchTapDuplicateError(name)
+		}
+		seen[name] = struct{}{}
+		if _, ok := existing[name]; ok {
+			return runtimeBranchTapDuplicateError(name)
+		}
+	}
+	return nil
+}
+
+func runtimeBranchTapInfo(branch runtimeBranch, name string, node pipeline.NodeRef) TapInfo {
+	domain := branch.anchor.Domain
+	if domain == "" {
+		domain = DomainPacket
+	}
+	media := branch.anchor.MediaKind
+	caps := branch.anchor.Caps
+	if caps.Domain == "" {
+		caps.Domain = domain
+	}
+	if caps.MediaKind == "" {
+		caps.MediaKind = media
+	}
+	return TapInfo{
+		Name:      name,
+		MediaKind: media,
+		Domain:    domain,
+		Caps:      caps,
+		Node:      node,
+	}
 }
 
 func validateRuntimeBranchNodeName(spec pipeline.Spec, seen map[string]struct{}, name string) error {
@@ -447,6 +649,20 @@ func runtimeBranchNodeDuplicateError(node string) error {
 			"use distinct stage and sink names inside repeated runtime branches",
 		},
 		Cause: pipeline.ErrNodeExists,
+	}
+}
+
+func runtimeBranchTapDuplicateError(name string) error {
+	return &BuildError{
+		Code:      "runtime_branch_tap_duplicate",
+		Operation: "attach runtime branch",
+		Node:      name,
+		Reason:    "branch tap name already exists in the task",
+		Suggestions: []string{
+			"use a unique tap name for each runtime branch outlet",
+			"call task.Taps() before attaching to inspect the current tap names",
+		},
+		Cause: ErrUnsupportedBuild,
 	}
 }
 

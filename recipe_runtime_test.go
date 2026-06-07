@@ -739,10 +739,34 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 		t.Fatalf("resize tap = %+v, want frame video tap with graph node", resizeTap)
 	}
 
-	attachment, err := task.Attach(ctx, Branch("screenshots").FromTap("video.720p.frames").To(FrameSink(SinkFunc("screenshots", func(context.Context, Message) error {
+	sample := &runtimeTestStage{name: "sample"}
+	attachment, err := task.Attach(ctx, Branch("screenshots").
+		FromTap("video.720p.frames").
+		Do(sample).
+		Tap("video.720p.sampled").
+		To(FrameSink(SinkFunc("screenshots", func(context.Context, Message) error {
+			return nil
+		}))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sampledTap TapInfo
+	for _, tap := range task.Taps() {
+		if tap.Name == "video.720p.sampled" {
+			sampledTap = tap
+			break
+		}
+	}
+	if sampledTap.Name == "" || sampledTap.Domain != DomainFrame || sampledTap.MediaKind != av.MediaVideo || sampledTap.Node != "screenshots/sample" {
+		t.Fatalf("sampled tap = %+v, want frame video tap on screenshots/sample", sampledTap)
+	}
+	nestedAttachment, err := task.Attach(ctx, Branch("preview").FromTap("video.720p.sampled").To(FrameSink(SinkFunc("preview", func(context.Context, Message) error {
 		return nil
 	}))))
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Detach(ctx, nestedAttachment); err != nil {
 		t.Fatal(err)
 	}
 	if err := task.Detach(ctx, attachment); err != nil {

@@ -428,6 +428,7 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 type task struct {
 	graph       pipeline.Graph
 	taps        []TapInfo
+	branchTaps  []TapInfo
 	attachMu    sync.Mutex
 	attachments map[*runtimeAttachment]struct{}
 }
@@ -457,12 +458,9 @@ func (t *task) Stats() TaskStats {
 }
 
 func (t *task) Taps() []TapInfo {
-	if len(t.taps) != 0 {
-		out := make([]TapInfo, len(t.taps))
-		copy(out, t.taps)
-		return out
-	}
-	return inferSpecTaps(t.graph.Spec())
+	t.attachMu.Lock()
+	defer t.attachMu.Unlock()
+	return t.tapsLocked()
 }
 
 func (t *task) Detach(ctx context.Context, attachment Attachment) error {
