@@ -146,9 +146,20 @@ func (b *BranchBuilder) Apply(flow Flow) *BranchBuilder {
 		b.setErr(err)
 		return b
 	}
-	if codecIntentSet(b.spec.encode) && (len(spec.steps) != 0 || codecIntentSet(spec.encode)) {
+	if codecIntentSet(b.spec.encode) && (spec.decode || len(spec.steps) != 0 || codecIntentSet(spec.encode)) {
 		b.setErr(streamStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "flow", b.spec.encode))
 		return b
+	}
+	if spec.decode {
+		if b.spec.decode {
+			b.setErr(duplicateBranchDecodeError(firstNonEmpty(b.spec.name, "branch")))
+			return b
+		}
+		if len(b.spec.steps) != 0 {
+			b.setErr(branchDecodeOrderError(firstNonEmpty(b.spec.name, "branch")))
+			return b
+		}
+		b.spec.decode = true
 	}
 	b.spec.steps = append(b.spec.steps, cloneJobStreamSteps(spec.steps)...)
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpecs(spec.transforms)...)

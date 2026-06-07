@@ -2849,9 +2849,16 @@ func (b *JobStreamBuilder) Apply(flow Flow) *JobStreamBuilder {
 		b.job.setErr(err)
 		return b
 	}
-	if codecIntentSet(stream.encode) && (len(spec.steps) != 0 || codecIntentSet(spec.encode)) {
+	if codecIntentSet(stream.encode) && (spec.decode || len(spec.steps) != 0 || codecIntentSet(spec.encode)) {
 		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "flow", stream.encode))
 		return b
+	}
+	if spec.decode {
+		if stream.decode || len(stream.steps) != 0 {
+			b.job.setErr(flowDecodeDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
+			return b
+		}
+		stream.decode = true
 	}
 	if len(spec.steps) != 0 {
 		stream.decode = true

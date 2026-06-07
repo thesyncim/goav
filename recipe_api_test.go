@@ -2162,6 +2162,82 @@ func TestFlowBranchSnapshotsBuilderState(t *testing.T) {
 	}
 }
 
+func TestFlowDecodeAppliesToPacketBranchIntent(t *testing.T) {
+	flow := goav.AudioFlow("voice").
+		Decode().
+		Resample(16_000, goav.Mono).
+		Opus(64_000)
+	target := goav.Target("voice", goav.SinkEndpoint(goav.SinkFunc("voice", func(context.Context, goav.Message) error {
+		return nil
+	})))
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Copy().
+		Branches(goav.Branch("voice").Apply(flow).To(target))
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	stream := intent.Streams[0]
+	if stream.Name != "voice" ||
+		!stream.Decode ||
+		len(stream.Transforms) != 1 ||
+		stream.Transforms[0].Resample.SampleRate != 16_000 ||
+		stream.Encode.ID != av.CodecOpus ||
+		stream.Encode.Bitrate != 64_000 ||
+		len(stream.Targets) != 1 ||
+		stream.Targets[0] != "voice" {
+		t.Fatalf("stream intent: %+v", stream)
+	}
+	want := []goav.OperationKind{goav.OpDecode, goav.OpTransform, goav.OpEncode}
+	if !equalOperationKinds(streamOperationKinds(stream.Operations), want) {
+		t.Fatalf("operations=%+v, want %+v", stream.Operations, want)
+	}
+}
+
+func TestFlowDecodeRejectsAfterStreamDecode(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Apply(goav.AudioFlow("voice").Decode()).
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_decode_domain_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want flow_decode_domain_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "requires a packet-domain stream point") ||
+		!strings.Contains(err.Error(), "after stream decode") {
+		t.Fatalf("err = %v, want flow decode domain guidance", err)
+	}
+}
+
+func TestFlowDecodeMustBeFirstOperation(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(goav.AudioFlow("voice").
+			Resample(16_000, goav.Mono).
+			Decode()).
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_decode_order_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want flow_decode_order_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "decode must be the first flow operation") ||
+		!strings.Contains(err.Error(), ".Decode().Resample") {
+		t.Fatalf("err = %v, want flow decode order guidance", err)
+	}
+}
+
 func TestNilFlowIsActionable(t *testing.T) {
 	var flow *goav.AudioFlowBuilder
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).

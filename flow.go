@@ -19,6 +19,7 @@ type Flow interface {
 type streamFlowSpec struct {
 	name       string
 	media      av.MediaType
+	decode     bool
 	steps      []jobStreamStep
 	transforms []TransformSpec
 	encode     CodecSpec
@@ -69,6 +70,14 @@ func (b *AudioFlowBuilder) isFlow() {}
 
 func (b *VideoFlowBuilder) isFlow() {}
 
+func (b *AudioFlowBuilder) Decode() *AudioFlowBuilder {
+	if b == nil {
+		return b
+	}
+	b.flowBuilder.decode()
+	return b
+}
+
 func (b *AudioFlowBuilder) Resample(sampleRate int, channels int, options ...audioOption) *AudioFlowBuilder {
 	if b == nil {
 		return b
@@ -118,6 +127,14 @@ func (b *AudioFlowBuilder) flowSpec() streamFlowSpec {
 		return streamFlowSpec{err: nilFlowError()}
 	}
 	return b.flowBuilder.snapshot()
+}
+
+func (b *VideoFlowBuilder) Decode() *VideoFlowBuilder {
+	if b == nil {
+		return b
+	}
+	b.flowBuilder.decode()
+	return b
 }
 
 func (b *VideoFlowBuilder) Resize(width int, height int, options ...resizeOption) *VideoFlowBuilder {
@@ -172,6 +189,25 @@ func (b *flowBuilder) name() string {
 		return ""
 	}
 	return b.spec.name
+}
+
+func (b *flowBuilder) decode() {
+	if b == nil {
+		return
+	}
+	if codecIntentSet(b.spec.encode) {
+		b.setErr(streamStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "decode", b.spec.encode))
+		return
+	}
+	if b.spec.decode {
+		b.setErr(duplicateFlowDecodeError(firstNonEmpty(b.spec.name, "flow")))
+		return
+	}
+	if len(b.spec.steps) != 0 {
+		b.setErr(flowDecodeOrderError(firstNonEmpty(b.spec.name, "flow")))
+		return
+	}
+	b.spec.decode = true
 }
 
 func (b *flowBuilder) transform(spec TransformSpec) {
@@ -306,6 +342,49 @@ func flowTransformStepName(spec TransformSpec) string {
 
 func duplicateFlowEncodeError(name string, first CodecSpec, second CodecSpec) error {
 	return duplicateStreamEncodeError("build flow", firstNonEmpty(name, "flow"), first, second)
+}
+
+func duplicateFlowDecodeError(node string) error {
+	return &BuildError{
+		Code:      "flow_decode_duplicate",
+		Operation: "build flow",
+		Node:      node,
+		Reason:    "flow already decodes its input packets",
+		Suggestions: []string{
+			"call .Decode() once at the start of the flow",
+			"remove the second .Decode() call",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func flowDecodeOrderError(node string) error {
+	return &BuildError{
+		Code:      "flow_decode_order_invalid",
+		Operation: "build flow",
+		Node:      node,
+		Reason:    "decode must be the first flow operation",
+		Suggestions: []string{
+			"write goav.AudioFlow(name).Decode().Resample(...)",
+			"omit .Decode() when the flow is only applied after stream decode",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func flowDecodeDomainError(operation string, node string) error {
+	return &BuildError{
+		Code:      "flow_decode_domain_mismatch",
+		Operation: operation,
+		Node:      firstNonEmpty(node, "flow"),
+		Reason:    "flow decoding requires a packet-domain stream point",
+		Suggestions: []string{
+			"omit .Decode() when applying the flow after stream decode",
+			"use the flow from a packet branch or packet tap when it should own decode",
+			"split packet-preserving streams with .Copy().Branches(...) before applying the flow",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func nilFlowError() error {

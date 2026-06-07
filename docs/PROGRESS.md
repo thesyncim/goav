@@ -1335,6 +1335,16 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap` proves a
     running packet tap can attach that same decode/resample/encode/mux chain,
     publish a post-encode packet tap, and detach all owned components. Done.
+297. Let reusable flows own decode when that is the reusable operation boundary:
+    `AudioFlow` and `VideoFlow` now expose `.Decode()` as a first operation.
+    Applying a decode flow to a packet branch or runtime packet tap feeds the
+    same BranchSpec decode path as direct `Branch.Decode()`, while applying it
+    after an already-decoded stream fails with actionable guidance.
+    `TestFlowDecodeAppliesToPacketBranchIntent`,
+    `TestFlowDecodeRejectsAfterStreamDecode`,
+    `TestFlowDecodeMustBeFirstOperation`, and
+    `TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap` pin the contract.
+    Done.
 
 ## First Vertical Slice
 

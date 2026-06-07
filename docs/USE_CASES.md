@@ -149,8 +149,8 @@ instead of growing special-case APIs.
 ## Reusable Flows
 
 Flows are reusable ordered operation sequences: custom stages, taps, transforms,
-and an optional terminal encoder. Branches own targets, so reusable and ad hoc
-splits use the same API.
+an optional first decode, and an optional terminal encoder. Branches own
+targets, so reusable and ad hoc splits use the same API.
 
 ```go
 voice := goav.AudioFlow("voice").Resample(16_000, goav.Mono).Tap("audio.voice.frames").OpusVoice()

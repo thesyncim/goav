@@ -2607,6 +2607,87 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
+	ctx := context.Background()
+	decoder := &decodeTestDecoder{}
+	decoderFactory := &decodeTestDecoderFactory{decoder: decoder}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, decoderFactory),
+	)
+	packet := av.Packet{
+		StreamID: "audio",
+		Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+	}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	base := &runtimeTestSink{name: "base"}
+	graph := New(codecs).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.packets",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainPacket,
+		Caps: StreamCaps{
+			Domain:     DomainPacket,
+			MediaKind:  av.MediaAudio,
+			StreamID:   "audio",
+			Codec:      av.CodecOpus,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	flow := AudioFlow("preview").
+		Decode().
+		Tap("audio.flow.decoded")
+	decoded := &runtimeTestSink{name: "decoded"}
+	attachment, err := builtTask.Attach(ctx, Branch("preview").
+		FromTap("audio.packets").
+		Apply(flow).
+		To(SinkEndpoint(decoded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachmentText := specText(attachment.Spec())
+	if !strings.Contains(attachmentText, "preview/decode-preview -> preview/decoded") {
+		t.Fatalf("attachment spec:\n%s", attachmentText)
+	}
+	decodedTap, ok := findTap(builtTask.Taps(), "audio.flow.decoded")
+	if !ok ||
+		decodedTap.Domain != DomainFrame ||
+		decodedTap.MediaKind != av.MediaAudio ||
+		decodedTap.Node != "preview/decode-preview" {
+		t.Fatalf("decoded tap = %+v ok=%v, want frame tap on flow decoder", decodedTap, ok)
+	}
+
+	if err := builtTask.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 1 || decoder.decodes != 1 || decoded.frames != 1 {
+		t.Fatalf("base=%d decodes=%d decodedFrames=%d", base.count, decoder.decodes, decoded.frames)
+	}
+	if decoderFactory.config.Stream.ID != "audio" ||
+		decoderFactory.config.Stream.Codec.ID != av.CodecOpus {
+		t.Fatalf("runtime decode config: %+v", decoderFactory.config)
+	}
+	if err := builtTask.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	if !decoder.closed || !decoded.closed {
+		t.Fatalf("closed decoder=%v decoded=%v", decoder.closed, decoded.closed)
+	}
+}
+
 func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}
