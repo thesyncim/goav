@@ -356,7 +356,7 @@ func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.G
 		return err
 	}
 
-	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, realtime)
+	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, nil, realtime)
 }
 
 func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
@@ -401,7 +401,7 @@ func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipelin
 		return err
 	}
 
-	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, realtime)
+	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, nil, realtime)
 }
 
 func compileBranchComposeInputs(
@@ -482,6 +482,7 @@ func compileBranchComposeRoutes(
 	outputs []branchComposeTargetRoute,
 	branchInputs []pipeline.NodeRef,
 	branchStreams []av.Stream,
+	sharedStepPlan map[string][]pipeline.NodeRef,
 	realtime bool,
 ) error {
 	runtime := service.runtime
@@ -494,8 +495,13 @@ func compileBranchComposeRoutes(
 		firstBranch := prefix.branches[0]
 		branchRef := branchInputs[firstBranch]
 		branchStream := branchStreams[firstBranch]
+		stepRefs := branchComposeSharedStepPlanRefs(sharedStepPlan, branches, prefix.branches)
 		for j := range prefix.steps {
-			stage, outputStream, err := service.newBranchComposeStepStage(ctx, prefix.steps[j], branchStream, realtime)
+			stageName := ""
+			if j < len(stepRefs) {
+				stageName = stepRefs[j].String()
+			}
+			stage, outputStream, err := service.newBranchComposeStepStageNamed(ctx, stageName, prefix.steps[j], branchStream, realtime)
 			if err != nil {
 				return err
 			}
@@ -597,14 +603,40 @@ func compileBranchComposeRoutes(
 	return nil
 }
 
+func branchComposeSharedStepPlanRefs(sharedStepPlan map[string][]pipeline.NodeRef, branches []branchComposeRoute, indices []int) []pipeline.NodeRef {
+	if len(sharedStepPlan) == 0 {
+		return nil
+	}
+	for _, index := range indices {
+		if index < 0 || index >= len(branches) {
+			continue
+		}
+		if refs := sharedStepPlan[branches[index].name]; len(refs) != 0 {
+			return refs
+		}
+	}
+	return nil
+}
+
 func (b *builder) newBranchComposeStepStage(ctx context.Context, transform mediaTransform, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
+	return b.newBranchComposeStepStageNamed(ctx, "", transform, stream, realtime)
+}
+
+func (b *builder) newBranchComposeStepStageNamed(ctx context.Context, name string, transform mediaTransform, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
 	if transform.stage != nil {
+		if name != "" && name != transform.stage.Name() {
+			return namedStage{name: name, stage: transform.stage}, stream, nil
+		}
 		return transform.stage, stream, nil
 	}
-	return b.newMediaTransformStage(ctx, transform, stream, realtime)
+	return b.newMediaTransformStageNamed(ctx, name, transform, stream, realtime)
 }
 
 func (b *builder) newMediaTransformStage(ctx context.Context, transform mediaTransform, stream av.Stream, realtime bool) (*filter.Stage, av.Stream, error) {
+	return b.newMediaTransformStageNamed(ctx, "", transform, stream, realtime)
+}
+
+func (b *builder) newMediaTransformStageNamed(ctx context.Context, name string, transform mediaTransform, stream av.Stream, realtime bool) (*filter.Stage, av.Stream, error) {
 	outputStream, err := applyMediaTransformToStream(stream, transform)
 	if err != nil {
 		return nil, av.Stream{}, err
@@ -623,8 +655,9 @@ func (b *builder) newMediaTransformStage(ctx context.Context, transform mediaTra
 	if err != nil {
 		return nil, av.Stream{}, err
 	}
+	name = firstNonEmpty(name, transform.name)
 	stage, err := filter.NewStage(filter.StageConfig{
-		Name:   transform.name,
+		Name:   name,
 		Detail: mediaTransformDetail(transform),
 		Filter: frameFilter,
 		Result: filterResultForStream(outputStream),
