@@ -260,6 +260,12 @@ func TestExternalMKVExtractMatroskaTimestamps(t *testing.T) {
 	assertMKVExtractMatroskaTimestamps(t, mkvextract, file, expectedMatroskaTimestampsByStream(want))
 }
 
+func TestExternalMKVExtractMatroskaCues(t *testing.T) {
+	mkvextract := requireExternalTool(t, "mkvextract")
+	file, want := writeCueOracleMatroska(t)
+	assertMKVExtractMatroskaCues(t, mkvextract, file, want)
+}
+
 func TestExternalMKVExtractMatroskaTrackPayloads(t *testing.T) {
 	mkvextract := requireExternalTool(t, "mkvextract")
 	file, _ := writePacketOracleMatroska(t)
@@ -765,6 +771,68 @@ func writeAttachmentOracleMatroska(t testing.TB) (string, []externalMatroskaAtta
 	return file, want
 }
 
+func writeCueOracleMatroska(t testing.TB) (string, map[int][]externalMatroskaCue) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "cue-oracle.mkv")
+	output, err := os.Create(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxer, err := NewMuxer(output, MuxerOptions{CuePolicy: CuePolicyAllPackets})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	audioID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	videoID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: audioID, TimeNS: 0, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: videoID, TimeNS: 10_000_000, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}},
+		{TrackID: audioID, TimeNS: 20_000_000, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: videoID, TimeNS: 30_000_000, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			_ = output.Close()
+			t.Fatalf("write cue packet %d: %v", i, err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return file, map[int][]externalMatroskaCue{
+		0: {
+			{TimeNS: 0, DurationNS: 20_000_000, HasPosition: true},
+			{TimeNS: 20_000_000, DurationNS: 20_000_000, HasPosition: true},
+		},
+		1: {
+			{TimeNS: 10_000_000, DurationNS: 20_000_000, HasPosition: true},
+			{TimeNS: 30_000_000, DurationNS: 20_000_000, HasPosition: true},
+		},
+	}
+}
+
 func probeExternalMatroskaPackets(t testing.TB, tool string, file string) []externalMatroskaPacket {
 	t.Helper()
 	output := runExternalTool(t, tool, "-v", "quiet", "-show_entries", "packet=stream_index,pts_time,duration_time,flags,size", "-of", "json", file)
@@ -992,6 +1060,137 @@ func readMatroskaTimestampsV2(t testing.TB, file string) []int64 {
 		timestamps = append(timestamps, timeNS)
 	}
 	return timestamps
+}
+
+func assertMKVExtractMatroskaCues(t testing.TB, tool string, file string, want map[int][]externalMatroskaCue) {
+	t.Helper()
+	outDir := t.TempDir()
+	args := []string{file, "cues"}
+	paths := make(map[int]string, len(want))
+	for stream := range want {
+		path := filepath.Join(outDir, fmt.Sprintf("track-%d.cues.txt", stream))
+		paths[stream] = path
+		args = append(args, fmt.Sprintf("%d:%s", stream, path))
+	}
+	runExternalTool(t, tool, args...)
+	for stream, path := range paths {
+		got := readMatroskaCues(t, path)
+		if !equalExternalMatroskaCues(got, want[stream]) {
+			t.Fatalf("mkvextract stream %d cues = %+v, want %+v", stream, got, want[stream])
+		}
+	}
+}
+
+type externalMatroskaCue struct {
+	TimeNS      int64
+	DurationNS  int64
+	HasPosition bool
+}
+
+func readMatroskaCues(t testing.TB, file string) []externalMatroskaCue {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cues []externalMatroskaCue
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		cue, err := parseMatroskaCueLine(line)
+		if err != nil {
+			t.Fatalf("parse %s line %q: %v", file, line, err)
+		}
+		cues = append(cues, cue)
+	}
+	return cues
+}
+
+func parseMatroskaCueLine(line string) (externalMatroskaCue, error) {
+	fields := make(map[string]string)
+	for _, field := range strings.Fields(line) {
+		key, value, ok := strings.Cut(field, "=")
+		if !ok {
+			return externalMatroskaCue{}, fmt.Errorf("invalid cue field %q", field)
+		}
+		fields[key] = value
+	}
+	timestamp, ok := fields["timestamp"]
+	if !ok {
+		return externalMatroskaCue{}, fmt.Errorf("missing timestamp")
+	}
+	timeNS, err := parseMatroskaCueClockNS(timestamp)
+	if err != nil {
+		return externalMatroskaCue{}, fmt.Errorf("timestamp %q: %w", timestamp, err)
+	}
+	duration := fields["duration"]
+	if duration == "" {
+		return externalMatroskaCue{}, fmt.Errorf("missing duration")
+	}
+	var durationNS int64
+	if duration != "-" {
+		durationNS, err = parseMatroskaCueClockNS(duration)
+		if err != nil {
+			return externalMatroskaCue{}, fmt.Errorf("duration %q: %w", duration, err)
+		}
+	}
+	if _, err := strconv.ParseUint(fields["cluster_position"], 10, 64); err != nil {
+		return externalMatroskaCue{}, fmt.Errorf("cluster_position %q: %w", fields["cluster_position"], err)
+	}
+	if _, err := strconv.ParseUint(fields["relative_position"], 10, 64); err != nil {
+		return externalMatroskaCue{}, fmt.Errorf("relative_position %q: %w", fields["relative_position"], err)
+	}
+	return externalMatroskaCue{TimeNS: timeNS, DurationNS: durationNS, HasPosition: true}, nil
+}
+
+func parseMatroskaCueClockNS(value string) (int64, error) {
+	parts := strings.Split(value, ":")
+	if len(parts) != 3 {
+		return 0, fmt.Errorf("invalid cue timestamp")
+	}
+	hours, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	minutes, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	secondParts := strings.SplitN(parts[2], ".", 2)
+	seconds, err := strconv.ParseInt(secondParts[0], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	nanoseconds := ((hours*60+minutes)*60 + seconds) * 1_000_000_000
+	if len(secondParts) == 2 {
+		frac := secondParts[1]
+		if len(frac) > 9 {
+			frac = frac[:9]
+		}
+		for len(frac) < 9 {
+			frac += "0"
+		}
+		fracNS, err := strconv.ParseInt(frac, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		nanoseconds += fracNS
+	}
+	return nanoseconds, nil
+}
+
+func equalExternalMatroskaCues(left []externalMatroskaCue, right []externalMatroskaCue) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func parseMatroskaTimestampV2NS(value string) (int64, error) {

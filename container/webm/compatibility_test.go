@@ -199,6 +199,12 @@ func TestExternalMKVExtractWebMTimestamps(t *testing.T) {
 	assertMKVExtractWebMTimestamps(t, mkvextract, file, expectedWebMTimestampsByStream(want))
 }
 
+func TestExternalMKVExtractWebMCues(t *testing.T) {
+	mkvextract := requireTool(t, "mkvextract")
+	file, want := writeCueOracleWebM(t)
+	assertMKVExtractWebMCues(t, mkvextract, file, want)
+}
+
 func TestExternalMKVExtractWebMTrackPayloads(t *testing.T) {
 	mkvextract := requireTool(t, "mkvextract")
 	file, _ := writePacketOracleWebM(t)
@@ -409,6 +415,68 @@ func writeMetadataOracleWebM(t testing.TB) string {
 		t.Fatal(err)
 	}
 	return file
+}
+
+func writeCueOracleWebM(t testing.TB) (string, map[int][]externalWebMCue) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "cue-oracle.webm")
+	output, err := os.Create(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxer, err := NewMuxer(output, MuxerOptions{CuePolicy: CuePolicyAllPackets})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	audioID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	videoID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: audioID, TimeNS: 0, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: videoID, TimeNS: 10_000_000, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}},
+		{TrackID: audioID, TimeNS: 20_000_000, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: videoID, TimeNS: 30_000_000, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			_ = output.Close()
+			t.Fatalf("write cue packet %d: %v", i, err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return file, map[int][]externalWebMCue{
+		0: {
+			{TimeNS: 0, DurationNS: 20_000_000, HasPosition: true},
+			{TimeNS: 20_000_000, DurationNS: 20_000_000, HasPosition: true},
+		},
+		1: {
+			{TimeNS: 10_000_000, DurationNS: 20_000_000, HasPosition: true},
+			{TimeNS: 30_000_000, DurationNS: 20_000_000, HasPosition: true},
+		},
+	}
 }
 
 func probeExternalWebMPackets(t testing.TB, tool string, file string) []externalWebMPacket {
@@ -631,6 +699,137 @@ func readWebMTimestampsV2(t testing.TB, file string) []int64 {
 		timestamps = append(timestamps, timeNS)
 	}
 	return timestamps
+}
+
+func assertMKVExtractWebMCues(t testing.TB, tool string, file string, want map[int][]externalWebMCue) {
+	t.Helper()
+	outDir := t.TempDir()
+	args := []string{file, "cues"}
+	paths := make(map[int]string, len(want))
+	for stream := range want {
+		path := filepath.Join(outDir, fmt.Sprintf("track-%d.cues.txt", stream))
+		paths[stream] = path
+		args = append(args, fmt.Sprintf("%d:%s", stream, path))
+	}
+	runExternal(t, tool, args...)
+	for stream, path := range paths {
+		got := readWebMCues(t, path)
+		if !equalExternalWebMCues(got, want[stream]) {
+			t.Fatalf("mkvextract stream %d cues = %+v, want %+v", stream, got, want[stream])
+		}
+	}
+}
+
+type externalWebMCue struct {
+	TimeNS      int64
+	DurationNS  int64
+	HasPosition bool
+}
+
+func readWebMCues(t testing.TB, file string) []externalWebMCue {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cues []externalWebMCue
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		cue, err := parseWebMCueLine(line)
+		if err != nil {
+			t.Fatalf("parse %s line %q: %v", file, line, err)
+		}
+		cues = append(cues, cue)
+	}
+	return cues
+}
+
+func parseWebMCueLine(line string) (externalWebMCue, error) {
+	fields := make(map[string]string)
+	for _, field := range strings.Fields(line) {
+		key, value, ok := strings.Cut(field, "=")
+		if !ok {
+			return externalWebMCue{}, fmt.Errorf("invalid cue field %q", field)
+		}
+		fields[key] = value
+	}
+	timestamp, ok := fields["timestamp"]
+	if !ok {
+		return externalWebMCue{}, fmt.Errorf("missing timestamp")
+	}
+	timeNS, err := parseWebMCueClockNS(timestamp)
+	if err != nil {
+		return externalWebMCue{}, fmt.Errorf("timestamp %q: %w", timestamp, err)
+	}
+	duration := fields["duration"]
+	if duration == "" {
+		return externalWebMCue{}, fmt.Errorf("missing duration")
+	}
+	var durationNS int64
+	if duration != "-" {
+		durationNS, err = parseWebMCueClockNS(duration)
+		if err != nil {
+			return externalWebMCue{}, fmt.Errorf("duration %q: %w", duration, err)
+		}
+	}
+	if _, err := strconv.ParseUint(fields["cluster_position"], 10, 64); err != nil {
+		return externalWebMCue{}, fmt.Errorf("cluster_position %q: %w", fields["cluster_position"], err)
+	}
+	if _, err := strconv.ParseUint(fields["relative_position"], 10, 64); err != nil {
+		return externalWebMCue{}, fmt.Errorf("relative_position %q: %w", fields["relative_position"], err)
+	}
+	return externalWebMCue{TimeNS: timeNS, DurationNS: durationNS, HasPosition: true}, nil
+}
+
+func parseWebMCueClockNS(value string) (int64, error) {
+	parts := strings.Split(value, ":")
+	if len(parts) != 3 {
+		return 0, fmt.Errorf("invalid cue timestamp")
+	}
+	hours, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	minutes, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	secondParts := strings.SplitN(parts[2], ".", 2)
+	seconds, err := strconv.ParseInt(secondParts[0], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	nanoseconds := ((hours*60+minutes)*60 + seconds) * 1_000_000_000
+	if len(secondParts) == 2 {
+		frac := secondParts[1]
+		if len(frac) > 9 {
+			frac = frac[:9]
+		}
+		for len(frac) < 9 {
+			frac += "0"
+		}
+		fracNS, err := strconv.ParseInt(frac, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		nanoseconds += fracNS
+	}
+	return nanoseconds, nil
+}
+
+func equalExternalWebMCues(left []externalWebMCue, right []externalWebMCue) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func parseWebMTimestampV2NS(value string) (int64, error) {
