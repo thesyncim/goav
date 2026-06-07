@@ -877,6 +877,7 @@ type jobStreamBuild struct {
 	encode         CodecSpec
 	codecChange    CodecChangePolicy
 	outputs        []EndpointSpec
+	outputNames    []string
 }
 
 type jobStreamStep struct {
@@ -1014,6 +1015,17 @@ func (j *Job) Intent() Intent {
 		return intent
 	} else if j.stream != nil {
 		intent.Streams = append(intent.Streams, jobStreamIntent(j.stream))
+		for i := range j.outputs {
+			intent.Targets = append(intent.Targets, j.outputs[i].intent())
+		}
+		for i := range j.stream.outputs {
+			name := ""
+			if i < len(j.stream.outputNames) {
+				name = j.stream.outputNames[i]
+			}
+			intent.Targets = append(intent.Targets, j.stream.outputs[i].intentWithName(name))
+		}
+		return intent
 	}
 	outputs := j.allOutputs()
 	for i := range outputs {
@@ -1147,8 +1159,8 @@ func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool
 	return jobOutputScopeMixedError("build job", stream)
 }
 
-func validateJobOutputBindings(operation string, stream StreamIntent, outputs []EndpointSpec) error {
-	labels := jobOutputLabelSet(outputs)
+func validateJobOutputBindings(operation string, stream StreamIntent, outputs []EndpointSpec, targetNames []string) error {
+	labels := jobOutputLabelSet(outputs, targetNames)
 	for _, label := range stream.Targets {
 		if _, ok := labels[label]; ok {
 			continue
@@ -1158,10 +1170,10 @@ func validateJobOutputBindings(operation string, stream StreamIntent, outputs []
 	return nil
 }
 
-func jobOutputLabelSet(outputs []EndpointSpec) map[string]struct{} {
+func jobOutputLabelSet(outputs []EndpointSpec, targetNames []string) map[string]struct{} {
 	labels := make(map[string]struct{}, len(outputs))
 	for i := range outputs {
-		labels[outputs[i].label(fmt.Sprintf("output-%d", i))] = struct{}{}
+		labels[jobOutputTargetName(outputs, targetNames, i)] = struct{}{}
 	}
 	return labels
 }
@@ -1177,6 +1189,17 @@ func (j *Job) allOutputs() []EndpointSpec {
 	return jobAllOutputs(j.outputs, jobStreamOutputs(j.stream))
 }
 
+func (j *Job) allOutputNames() []string {
+	if len(j.branchTargets) != 0 {
+		names := make([]string, 0, len(j.branchTargets))
+		for i := range j.branchTargets {
+			names = append(names, j.branchTargets[i].name)
+		}
+		return names
+	}
+	return jobAllOutputNames(j.outputs, jobStreamOutputNames(j.stream))
+}
+
 func jobAllOutputs(outputs []EndpointSpec, streamOutputs []EndpointSpec) []EndpointSpec {
 	if len(streamOutputs) == 0 {
 		return append([]EndpointSpec(nil), outputs...)
@@ -1184,6 +1207,18 @@ func jobAllOutputs(outputs []EndpointSpec, streamOutputs []EndpointSpec) []Endpo
 	all := make([]EndpointSpec, 0, len(outputs)+len(streamOutputs))
 	all = append(all, outputs...)
 	all = append(all, streamOutputs...)
+	return all
+}
+
+func jobAllOutputNames(outputs []EndpointSpec, streamOutputNames []string) []string {
+	if len(streamOutputNames) == 0 {
+		return make([]string, len(outputs))
+	}
+	all := make([]string, 0, len(outputs)+len(streamOutputNames))
+	for range outputs {
+		all = append(all, "")
+	}
+	all = append(all, streamOutputNames...)
 	return all
 }
 
@@ -1230,7 +1265,7 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 		Taps:        append(streamStepTapIntents(stream.steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:      stream.encode,
 		CodecChange: stream.codecChange,
-		Targets:     endpointTargetNames(stream.outputs),
+		Targets:     endpointTargetNamesWithNames(stream.outputs, stream.outputNames),
 	}
 }
 
@@ -1406,6 +1441,13 @@ func jobStreamOutputs(stream *jobStreamBuild) []EndpointSpec {
 		return nil
 	}
 	return append([]EndpointSpec(nil), stream.outputs...)
+}
+
+func jobStreamOutputNames(stream *jobStreamBuild) []string {
+	if stream == nil || len(stream.outputNames) == 0 {
+		return nil
+	}
+	return append([]string(nil), stream.outputNames...)
 }
 
 func jobStreamStepAttachments(stream *jobStreamBuild) []jobStreamStepAttachment {
@@ -1661,18 +1703,22 @@ func outputsContainSinkEndpoint(outputs []EndpointSpec) bool {
 	return false
 }
 
-func validateEndpointSpecs(operation string, outputs []EndpointSpec) error {
-	seen := make(map[string]struct{}, len(outputs))
+func validateEndpointSpecs(operation string, outputs []EndpointSpec, targetNames ...string) error {
+	seen := make(map[string]bool, len(outputs))
 	for i := range outputs {
 		fallback := fmt.Sprintf("output-%d", i)
 		if err := outputs[i].validate(operation, fallback); err != nil {
 			return err
 		}
-		name := outputs[i].label(fallback)
-		if _, ok := seen[name]; ok {
+		name := jobOutputTargetName(outputs, targetNames, i)
+		targetNamed := i < len(targetNames) && targetNames[i] != ""
+		if previousTargetNamed, ok := seen[name]; ok {
+			if targetNamed || previousTargetNamed {
+				return duplicateTargetDestinationError(operation, name)
+			}
 			return duplicateOutputError(operation, name)
 		}
-		seen[name] = struct{}{}
+		seen[name] = targetNamed
 	}
 	return nil
 }
@@ -2458,6 +2504,21 @@ func duplicateOutputError(operation string, name string) error {
 	}
 }
 
+func duplicateTargetDestinationError(operation string, name string) error {
+	return &BuildError{
+		Code:      "target_duplicate",
+		Operation: operation,
+		Node:      name,
+		Reason:    fmt.Sprintf("target %q is attached more than once", name),
+		Suggestions: []string{
+			"list each goav.Target value once in .To(...)",
+			"use distinct target names when writing to separate endpoints",
+			"reuse one target from multiple branches through .Branches(...) when outputs should be grouped",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
 func validateRecipeStreamSelector(operation string, node string, selector av.StreamSelector) error {
 	if selector.Index >= 0 {
 		return nil
@@ -3012,13 +3073,46 @@ func (b *JobStreamBuilder) VP9(bitrate int, options ...codecOption) *JobStreamBu
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *JobStreamBuilder) To(outputs ...EndpointSpec) *Job {
+func (b *JobStreamBuilder) To(destinations ...TargetOrEndpoint) *Job {
 	stream := b.current()
-	stream.outputs = append(stream.outputs, outputs...)
+	outputs := make([]EndpointSpec, 0, len(destinations))
+	for i := range destinations {
+		destination := destinations[i]
+		if destination == nil {
+			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream destination is nil"))
+			return b.job
+		}
+		output, name, err := streamEndpointFromDestination(jobStreamName(stream), destination.targetOrEndpoint(), i)
+		if err != nil {
+			b.job.setErr(err)
+			return b.job
+		}
+		stream.outputs = append(stream.outputs, output)
+		stream.outputNames = append(stream.outputNames, name)
+		outputs = append(outputs, output)
+	}
 	if outputsContainSinkEndpoint(outputs) && !codecIntentSet(stream.encode) {
 		stream.decode = true
 	}
 	return b.job
+}
+
+func streamEndpointFromDestination(streamName string, destination targetOrEndpointDestination, index int) (EndpointSpec, string, error) {
+	switch {
+	case destination.hasTarget:
+		target := cloneTargetSpec(destination.target)
+		if target.err != nil {
+			return EndpointSpec{}, "", target.err
+		}
+		if target.name == "" {
+			return EndpointSpec{}, "", targetNameMissingError(target.endpoint)
+		}
+		return cloneEndpointSpec(target.endpoint), target.name, nil
+	case destination.hasEndpoint:
+		return cloneEndpointSpec(destination.endpoint), "", nil
+	default:
+		return EndpointSpec{}, "", streamDestinationInvalidError(streamName, "unsupported stream destination")
+	}
 }
 
 func (b *JobStreamBuilder) current() *jobStreamBuild {
@@ -3696,6 +3790,21 @@ func endpointTargetNames(outputs []EndpointSpec) []string {
 		labels = append(labels, outputs[i].label(fmt.Sprintf("output-%d", i)))
 	}
 	return labels
+}
+
+func endpointTargetNamesWithNames(outputs []EndpointSpec, targetNames []string) []string {
+	labels := make([]string, 0, len(outputs))
+	for i := range outputs {
+		labels = append(labels, jobOutputTargetName(outputs, targetNames, i))
+	}
+	return labels
+}
+
+func jobOutputTargetName(outputs []EndpointSpec, targetNames []string, index int) string {
+	if index >= 0 && index < len(targetNames) && targetNames[index] != "" {
+		return targetNames[index]
+	}
+	return outputs[index].label(fmt.Sprintf("output-%d", index))
 }
 
 func firstNonEmpty(values ...string) string {

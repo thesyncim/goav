@@ -26,7 +26,7 @@ type runtimeBranch struct {
 	steps          []runtimeBranchStep
 	postEncodeTaps []string
 	encode         CodecSpec
-	destinations   []runtimeBranchDestination
+	destinations   []runtimeBranchEndpoint
 	terminals      []runtimeBranchTerminal
 	policy         pipeline.RoutePolicy
 	label          string
@@ -44,7 +44,7 @@ type runtimeBranchStep struct {
 	owned     bool
 }
 
-type runtimeBranchDestination struct {
+type runtimeBranchEndpoint struct {
 	name     string
 	endpoint EndpointSpec
 	sink     pipeline.Sink
@@ -164,7 +164,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		if err := endpoint.validate("attach runtime branch", name); err != nil {
 			return branch, err
 		}
-		branch.destinations = append(branch.destinations, runtimeBranchDestination{
+		branch.destinations = append(branch.destinations, runtimeBranchEndpoint{
 			name:     name,
 			endpoint: endpoint,
 			sink:     endpoint.sink,
@@ -269,13 +269,13 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch) 
 			step.caps = currentCaps
 		}
 	}
-	if err := t.prepareRuntimeBranchDestination(ctx, branch, currentStream, currentCaps); err != nil {
+	if err := t.prepareRuntimeBranchEndpoints(ctx, branch, currentStream, currentCaps); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (t *task) prepareRuntimeBranchDestination(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentCaps StreamCaps) error {
+func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentCaps StreamCaps) error {
 	if branch == nil {
 		return nil
 	}
@@ -402,7 +402,7 @@ func (t *task) runtimeBranchMuxFormat(ctx context.Context, endpoint EndpointSpec
 	return result.Format, nil
 }
 
-func runtimeBranchMuxCompatibilityIssue(branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, formatID av.FormatID, rt Runtime) (muxCompatibilityIssue, bool) {
+func runtimeBranchMuxCompatibilityIssue(branch runtimeBranch, destination runtimeBranchEndpoint, stream av.Stream, formatID av.FormatID, rt Runtime) (muxCompatibilityIssue, bool) {
 	branchName := firstNonEmpty(branch.name, destination.name, "branch")
 	targetName := firstNonEmpty(destination.name, destination.endpoint.label(branchName))
 	output := planOutput{

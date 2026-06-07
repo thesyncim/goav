@@ -44,6 +44,7 @@ type recipeCompileState struct {
 	jobOutputCount    int
 	streamSteps       []jobStreamStepAttachment
 	outputAttachments []EndpointSpec
+	outputTargetNames []string
 	inputProbes       []format.ProbeResult
 
 	branchInputAttachment   InputSpec
@@ -87,7 +88,7 @@ func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 		if formatID == "" {
 			continue
 		}
-		formats[s.outputAttachments[i].label(fmt.Sprintf("output-%d", i))] = formatID
+		formats[jobOutputTargetName(s.outputAttachments, s.outputTargetNames, i)] = formatID
 	}
 	for i := range s.branchTargetAttachments {
 		formatID := endpointSpecFormat(s.branchTargetAttachments[i].output)
@@ -306,6 +307,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		state.inputAttachments = append([]InputSpec(nil), job.inputs...)
 		state.jobOutputCount = len(job.outputs)
 		state.outputAttachments = jobAllOutputs(job.outputs, jobStreamOutputs(job.stream))
+		state.outputTargetNames = job.allOutputNames()
 		state.streamSteps = jobStreamStepAttachments(job.stream)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
@@ -574,7 +576,7 @@ func validateJobAttachmentsPass() recipeCompilePass {
 		if err := validateJobInputs(state.inputAttachments); err != nil {
 			return err
 		}
-		return validateEndpointSpecs(state.operation, state.outputAttachments)
+		return validateEndpointSpecs(state.operation, state.outputAttachments, state.outputTargetNames...)
 	}}
 }
 
@@ -583,7 +585,7 @@ func validateJobOutputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, state.outputAttachments)
+		outputs, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, state.outputAttachments, state.outputTargetNames...)
 		if err != nil {
 			return err
 		}
@@ -688,7 +690,7 @@ func validateJobOutputBindingsPass() recipeCompilePass {
 		if !ok {
 			return nil
 		}
-		return validateJobOutputBindings(state.operation, stream, state.outputAttachments)
+		return validateJobOutputBindings(state.operation, stream, state.outputAttachments, state.outputTargetNames)
 	}}
 }
 

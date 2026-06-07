@@ -160,6 +160,12 @@ archiveTarget := goav.Target("archive", goav.FileOutput("archive.ogg", archiveFi
 
 err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
+    Apply(voice).
+    To(voiceTarget).
+    Run(ctx)
+
+err = goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+    Audio().
     Decode().
     Branches(
         goav.Branch("voice").Apply(voice).To(voiceTarget),

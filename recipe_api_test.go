@@ -371,7 +371,7 @@ func (j *testBranchJob) materialize() *goav.Job {
 		if branch.encode.ID != "" {
 			builder = builder.Encode(branch.encode)
 		}
-		destinations := make([]goav.BranchDestination, 0, len(branch.targets))
+		destinations := make([]goav.TargetOrEndpoint, 0, len(branch.targets))
 		for i := range branch.targets {
 			destinations = append(destinations, branch.targets[i])
 		}
@@ -1803,6 +1803,40 @@ func TestAudioFlowAppliesToStreamRecipeIntent(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeCanWriteToTypedTarget(t *testing.T) {
+	voice := goav.AudioFlow("voice").
+		Resample(16_000, goav.Mono).
+		OpusVoice()
+	voiceTarget := goav.Target("voice", goav.FileOutput("voice.ogg", io.Discard))
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(voice).
+		To(voiceTarget)
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 || len(intent.Targets) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	stream := intent.Streams[0]
+	if stream.Select.Type != av.MediaAudio ||
+		!stream.Decode ||
+		stream.Encode.ID != av.CodecOpus ||
+		!equalStrings(stream.Targets, []string{"voice"}) ||
+		intent.Targets[0].Name != "voice" {
+		t.Fatalf("intent: %+v", intent)
+	}
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "encode-audio -> voice.ogg") {
+		t.Fatalf("spec:\n%s", text)
+	}
+}
+
 func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
 	meter := goav.FrameFunc("meter", func(context.Context, *av.Frame, goav.Emit) error {
 		return nil
@@ -2765,6 +2799,23 @@ func TestStreamRecipeRejectsDuplicateSinkEndpointOutputs(t *testing.T) {
 	if !strings.Contains(err.Error(), `output name "frames"`) ||
 		!strings.Contains(err.Error(), ".Name") {
 		t.Fatalf("err = %v, want duplicate sink guidance", err)
+	}
+}
+
+func TestStreamRecipeRejectsDuplicateTypedTargets(t *testing.T) {
+	target := goav.Target("voice", goav.FileOutput("voice.ogg", io.Discard))
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Opus(96_000).
+		To(target, target).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), `target "voice" is attached more than once`) {
+		t.Fatalf("err = %v, want duplicate target guidance", err)
 	}
 }
 

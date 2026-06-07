@@ -1371,6 +1371,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps`, and
     `TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap` pin the boundary
     metadata. Done.
+301. Unify direct stream destinations with branch destinations:
+    stream `.To(...)` now accepts the same typed `Target` or direct endpoint
+    values as branch `.To(...)`. Direct stream target names travel beside
+    endpoint attachments, so the planner validates logical targets without
+    renaming file or URI endpoints used for adapter probing.
+    `TestStreamRecipeCanWriteToTypedTarget` and
+    `TestStreamRecipeEncodeToTypedTargetRuns` pin intent, Describe/Build
+    equivalence, mux execution, and cleanup. Done.
 
 ## First Vertical Slice
 

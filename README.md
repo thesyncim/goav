@@ -179,6 +179,16 @@ archiveTarget := goav.Target("archive", goav.FileOutput("archive.ogg", archiveFi
 
 return goav.From(goav.WebRTCTrack(audio)).
     Audio().
+    Apply(voice).
+    To(voiceTarget).
+    Run(ctx)
+```
+
+Branch when the same media point needs several downstream chains:
+
+```go
+return goav.From(goav.WebRTCTrack(audio)).
+    Audio().
     Decode().
     Branches(
         goav.Branch("voice").Apply(voice).To(voiceTarget),

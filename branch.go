@@ -7,14 +7,13 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-// BranchDestination is a typed destination for a branch. Use Target for named
-// mux/sink groups, or pass an endpoint such as FileOutput, URIOutput, or
-// SinkEndpoint directly.
-type BranchDestination interface {
-	branchDestination() branchDestination
+// TargetOrEndpoint is accepted by To. Use Target for named mux/sink groups, or
+// pass an endpoint such as FileOutput, URIOutput, or SinkEndpoint directly.
+type TargetOrEndpoint interface {
+	targetOrEndpoint() targetOrEndpointDestination
 }
 
-type branchDestination struct {
+type targetOrEndpointDestination struct {
 	target      TargetSpec
 	endpoint    EndpointSpec
 	hasTarget   bool
@@ -37,12 +36,12 @@ func Target(name string, endpoint EndpointSpec) TargetSpec {
 	return TargetSpec{name: name, endpoint: endpoint.Name(firstNonEmpty(endpoint.name, name))}
 }
 
-func (t TargetSpec) branchDestination() branchDestination {
-	return branchDestination{target: t, hasTarget: true}
+func (t TargetSpec) targetOrEndpoint() targetOrEndpointDestination {
+	return targetOrEndpointDestination{target: t, hasTarget: true}
 }
 
-func (s EndpointSpec) branchDestination() branchDestination {
-	return branchDestination{endpoint: s, hasEndpoint: true}
+func (s EndpointSpec) targetOrEndpoint() targetOrEndpointDestination {
+	return targetOrEndpointDestination{endpoint: s, hasEndpoint: true}
 }
 
 type BranchSpec struct {
@@ -281,7 +280,7 @@ func (b *BranchBuilder) VP9(bitrate int, options ...codecOption) *BranchBuilder 
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *BranchBuilder) To(destinations ...BranchDestination) BranchSpec {
+func (b *BranchBuilder) To(destinations ...TargetOrEndpoint) BranchSpec {
 	if b == nil {
 		return BranchSpec{err: nilBranchError()}
 	}
@@ -293,10 +292,10 @@ func (b *BranchBuilder) To(destinations ...BranchDestination) BranchSpec {
 	for i := range destinations {
 		destination := destinations[i]
 		if destination == nil {
-			spec.err = branchDestinationInvalidError(spec.name, "branch destination is nil")
+			spec.err = targetOrEndpointInvalidError(spec.name, "branch destination is nil")
 			return spec
 		}
-		if err := appendBranchDestination(&spec, destination.branchDestination(), i); err != nil {
+		if err := appendTargetOrEndpoint(&spec, destination.targetOrEndpoint(), i); err != nil {
 			spec.err = err
 			return spec
 		}
@@ -320,7 +319,7 @@ func (b *BranchBuilder) setErr(err error) {
 	}
 }
 
-func appendBranchDestination(spec *BranchSpec, destination branchDestination, index int) error {
+func appendTargetOrEndpoint(spec *BranchSpec, destination targetOrEndpointDestination, index int) error {
 	switch {
 	case destination.hasTarget:
 		target := cloneTargetSpec(destination.target)
@@ -345,7 +344,7 @@ func appendBranchDestination(spec *BranchSpec, destination branchDestination, in
 		spec.labels = append(spec.labels, target.name)
 		return nil
 	default:
-		return branchDestinationInvalidError(spec.name, "unsupported branch destination")
+		return targetOrEndpointInvalidError(spec.name, "unsupported branch destination")
 	}
 }
 
@@ -646,11 +645,25 @@ func branchTargetMissingError(name string) error {
 	}
 }
 
-func branchDestinationInvalidError(name string, reason string) error {
+func targetOrEndpointInvalidError(name string, reason string) error {
 	return &BuildError{
 		Code:      "target_invalid",
 		Operation: "build branch",
 		Node:      firstNonEmpty(name, "branch"),
+		Reason:    reason,
+		Suggestions: []string{
+			"use goav.Target(name, endpoint) for named mux/sink groups",
+			"use goav.FileOutput(...), goav.URIOutput(...), or goav.SinkEndpoint(...) as endpoints",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func streamDestinationInvalidError(name string, reason string) error {
+	return &BuildError{
+		Code:      "target_invalid",
+		Operation: "build stream",
+		Node:      firstNonEmpty(name, "stream"),
 		Reason:    reason,
 		Suggestions: []string{
 			"use goav.Target(name, endpoint) for named mux/sink groups",
