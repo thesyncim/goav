@@ -240,6 +240,7 @@ func tapInfosFromPlan(taps []planTap) []TapInfo {
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,
 			After:     taps[i].After,
+			Shape:     taps[i].Caps,
 			Caps:      taps[i].Caps,
 			Node:      taps[i].Node,
 		})
@@ -518,11 +519,11 @@ func validateJobStreamTransformIntentShape(operation string, stream StreamIntent
 			}
 		case transform.Resize != nil:
 			if selector.Type == av.MediaAudio {
-				return transformMediaError(node, "resize", "video")
+				return transformMediaError(node, "resize", av.MediaVideo, selector.Type)
 			}
 		case transform.Resample != nil:
 			if selector.Type == av.MediaVideo {
-				return transformMediaError(node, "resample", "audio")
+				return transformMediaError(node, "resample", av.MediaAudio, selector.Type)
 			}
 		default:
 			return &BuildError{

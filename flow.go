@@ -14,6 +14,9 @@ import (
 // branches own targets.
 type Chain interface {
 	Name() string
+	InputShapes() ShapeSet
+	OutputShapes(MediaShape) ShapeSet
+	Taps() []TapRef
 	isChain()
 }
 
@@ -93,6 +96,48 @@ func (b *videoChain) Name() string {
 func (b *audioChain) isChain() {}
 
 func (b *videoChain) isChain() {}
+
+func (b *audioChain) InputShapes() ShapeSet {
+	if b == nil {
+		return nil
+	}
+	return b.chainBuilder.inputShapes()
+}
+
+func (b *videoChain) InputShapes() ShapeSet {
+	if b == nil {
+		return nil
+	}
+	return b.chainBuilder.inputShapes()
+}
+
+func (b *audioChain) OutputShapes(input MediaShape) ShapeSet {
+	if b == nil {
+		return nil
+	}
+	return b.chainBuilder.outputShapes(input)
+}
+
+func (b *videoChain) OutputShapes(input MediaShape) ShapeSet {
+	if b == nil {
+		return nil
+	}
+	return b.chainBuilder.outputShapes(input)
+}
+
+func (b *audioChain) Taps() []TapRef {
+	if b == nil {
+		return nil
+	}
+	return b.chainBuilder.taps()
+}
+
+func (b *videoChain) Taps() []TapRef {
+	if b == nil {
+		return nil
+	}
+	return b.chainBuilder.taps()
+}
 
 func (b *audioChain) Decode(options ...codecOption) *audioChain {
 	if b == nil {
@@ -221,6 +266,76 @@ func (b *chainBuilder) name() string {
 		return ""
 	}
 	return b.spec.name
+}
+
+func (b *chainBuilder) inputShapes() ShapeSet {
+	if b == nil {
+		return nil
+	}
+	switch {
+	case b.spec.decode:
+		return ShapeSet{PacketShape(b.spec.media, b.spec.decodeCodec.ID)}
+	case b.spec.encode.Copy:
+		return ShapeSet{PacketShape(b.spec.media, "")}
+	default:
+		return ShapeSet{FrameShape(b.spec.media)}
+	}
+}
+
+func (b *chainBuilder) outputShapes(input MediaShape) ShapeSet {
+	if b == nil {
+		return nil
+	}
+	shape := input
+	if shape.MediaKind == "" {
+		shape.MediaKind = b.spec.media
+	}
+	if shape.Domain == "" {
+		switch {
+		case b.spec.decode || b.spec.encode.Copy:
+			shape.Domain = DomainPacket
+		default:
+			shape.Domain = DomainFrame
+		}
+	}
+	if b.spec.decode {
+		shape.Domain = DomainFrame
+	}
+	for i := range b.spec.steps {
+		step := b.spec.steps[i]
+		if step.transform.Resize == nil && step.transform.Resample == nil {
+			continue
+		}
+		shapes := step.transform.OutputShapes(shape)
+		if len(shapes) != 0 {
+			shape = shapes[0]
+		}
+	}
+	if codecIntentSet(b.spec.encode) {
+		shapes := b.spec.encode.OutputShapes(shape)
+		if len(shapes) != 0 {
+			shape = shapes[0]
+		}
+	}
+	return ShapeSet{shape}
+}
+
+func (b *chainBuilder) taps() []TapRef {
+	if b == nil {
+		return nil
+	}
+	out := make([]TapRef, 0, len(b.spec.steps)+len(b.spec.postEncodeTaps))
+	for i := range b.spec.steps {
+		step := b.spec.steps[i]
+		if step.tap == "" {
+			continue
+		}
+		out = append(out, TapRef{name: step.tap, domain: chainStepTapDomain(step, DomainFrame)})
+	}
+	for i := range b.spec.postEncodeTaps {
+		out = append(out, PacketTap(b.spec.postEncodeTaps[i]))
+	}
+	return out
 }
 
 func (b *chainBuilder) decode(options ...codecOption) {
