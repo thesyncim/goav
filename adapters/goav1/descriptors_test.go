@@ -29,10 +29,10 @@ func TestDescriptor(t *testing.T) {
 			t.Fatalf("pixel formats = %v, missing %s", desc.Capabilities.PixelFormats, pixelFormat)
 		}
 	}
-	if len(desc.Capabilities.BuildTags) != 1 || desc.Capabilities.BuildTags[0] != "goav_goav1" {
+	if len(desc.Capabilities.BuildTags) != 0 {
 		t.Fatalf("build tags = %v", desc.Capabilities.BuildTags)
 	}
-	if desc.Backend.Status != "planned-build-tagged" {
+	if desc.Backend.Status != "active" {
 		t.Fatalf("backend status = %q", desc.Backend.Status)
 	}
 }
