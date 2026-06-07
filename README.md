@@ -557,12 +557,38 @@ encoder factories in the application runtime, then reference them with generic
 capability checks, so incompatible known media or frame formats fail before
 decoder/encoder allocation or graph mutation. Adapter authoring details live in
 [`docs/ADAPTERS.md`](docs/ADAPTERS.md).
+
+Opus, VP8, and VP9 are the full encode/decode recipe verticals. H264 and AV1
+receive/decode paths are active while recipe encode remains guarded as work in
+progress. Codec-specific knobs stay on the same `CodecSpec`:
+
+```go
+vp9 := goav.VP9(
+    goav.Bitrate(2_000_000),
+    goav.Config(myVP9EncoderConfig),
+    goav.Param("deadline", "realtime"),
+    goav.Control(myVP9Control),
+)
+
+return goav.From(input).
+    Video().
+    Decode(goav.Config(myVP9DecoderConfig)).
+    Resize(1280, 720).
+    Encode(vp9).
+    To(goav.File("preview.ivf", preview)).
+    Run(ctx)
+```
+
+Adapters decide which concrete config and control types they understand; the
+public grammar stays Input, Chain, Tap, Branch, Target, and Task.
 The reusable component catalog and allocation proof map live in
 [`docs/COMPONENTS.md`](docs/COMPONENTS.md).
 
 ## Expert Graph API
 
-`Runtime.Graph()` is the escape hatch for manual wiring.
+`Runtime.Graph()` is the escape hatch for manual wiring. Normal application
+workflows should be expressible through declarative recipes; the graph API is
+for adapter development, advanced embedding, and tests.
 
 ```go
 rt := goav.Default()

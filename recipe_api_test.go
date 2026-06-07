@@ -385,11 +385,11 @@ func (j *testBranchJob) materialize() *goav.Job {
 		if branch.encode.ID != "" {
 			builder = builder.Encode(branch.encode)
 		}
-		destinations := make([]goav.TargetRef, 0, len(branch.targets))
+		targets := make([]goav.TargetRef, 0, len(branch.targets))
 		for i := range branch.targets {
-			destinations = append(destinations, branch.targets[i])
+			targets = append(targets, branch.targets[i])
 		}
-		job = stream.Branches(builder.To(destinations...))
+		job = stream.Branches(builder.To(targets...))
 	}
 	return job
 }
@@ -1635,6 +1635,78 @@ func TestDocsShowDebugDiagnosticsWorkflow(t *testing.T) {
 	}
 }
 
+func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	readmeText := string(readme)
+	for _, required := range []string{
+		"goav.Config(",
+		"goav.Param(",
+		"goav.Control(",
+		"Opus, VP8, and VP9 are the full encode/decode recipe verticals",
+		"public grammar stays Input, Chain, Tap, Branch, Target, and Task",
+		"workflows should be expressible through declarative recipes",
+	} {
+		if !strings.Contains(readmeText, required) {
+			t.Fatalf("README should keep codec/declarative goal text %q", required)
+		}
+	}
+
+	performance, err := os.ReadFile("docs/PERFORMANCE.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	performanceText := string(performance)
+	for _, required := range []string{
+		"Hot paths must avoid hidden allocation",
+		"Keep recipe, flow, branch, tap, target, and codec abstractions cold-path only",
+		"do not dispatch through them for each packet or frame",
+		"one cold-path executable `GraphPlan` and runtime",
+		"must not route",
+		"workflow-specific compiler dispatch",
+	} {
+		if !strings.Contains(performanceText, required) {
+			t.Fatalf("performance docs should keep zero-cost goal text %q", required)
+		}
+	}
+
+	roadmap, err := os.ReadFile("docs/ROADMAP.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	roadmapText := string(roadmap)
+	for _, required := range []string{
+		"`input -> chain -> tap -> branch -> target` lowers into",
+		"`GraphPlan -> pipeline.Graph -> Task`",
+		"Make runtime attachment a patch of the same plan model",
+		"Planned branches and",
+		"runtime branches must share capability and target compatibility validation",
+	} {
+		if !strings.Contains(roadmapText, required) {
+			t.Fatalf("roadmap should keep graph-plan goal text %q", required)
+		}
+	}
+
+	progress, err := os.ReadFile("docs/PROGRESS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	progressText := string(progress)
+	for _, required := range []string{
+		"normal workflows lower from `input -> chain -> tap -> branch -> target` into `GraphPlan -> pipeline.Graph -> Task`",
+		"`GraphPatch` is the runtime attach form",
+		"Direct chains become implicit branches",
+		"separate workflow graph",
+		"families",
+	} {
+		if !strings.Contains(progressText, required) {
+			t.Fatalf("progress should keep graph-plan goal text %q", required)
+		}
+	}
+}
+
 func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 	var body strings.Builder
 	for _, file := range []string{
@@ -1870,7 +1942,7 @@ func TestStreamIntentUsesTypedTapAnchor(t *testing.T) {
 	}
 }
 
-func TestHighLevelCompositionInternalsUseDestinationVocabulary(t *testing.T) {
+func TestHighLevelCompositionInternalsAvoidEndpointVocabulary(t *testing.T) {
 	files := []string{
 		"branch.go",
 		"flow.go",
@@ -1887,7 +1959,7 @@ func TestHighLevelCompositionInternalsUseDestinationVocabulary(t *testing.T) {
 			t.Fatal(err)
 		}
 		if strings.Contains(strings.ToLower(string(body)), "endpoint") {
-			t.Fatalf("%s uses endpoint vocabulary; use destination naming in high-level composition code", file)
+			t.Fatalf("%s uses endpoint vocabulary; use target and target-ref naming in high-level composition code", file)
 		}
 	}
 }
@@ -2961,7 +3033,7 @@ func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
 	}
 }
 
-func TestReadmeDecodeShortcutUsesSinkDestination(t *testing.T) {
+func TestReadmeDecodeShortcutUsesSinkTarget(t *testing.T) {
 	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 		return nil
 	})
@@ -3040,7 +3112,7 @@ func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 	}
 }
 
-func TestDecodeRecipeRejectsNilSinkDestination(t *testing.T) {
+func TestDecodeRecipeRejectsNilSinkTarget(t *testing.T) {
 	_, err := decodeJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		goav.Sink(nil),
@@ -3050,7 +3122,7 @@ func TestDecodeRecipeRejectsNilSinkDestination(t *testing.T) {
 		t.Fatalf("err = %v, want output_invalid wrapping ErrNilSink", err)
 	}
 	if !strings.Contains(err.Error(), "non-nil sink") {
-		t.Fatalf("err = %v, want sink destination guidance", err)
+		t.Fatalf("err = %v, want sink target guidance", err)
 	}
 }
 
@@ -3083,7 +3155,7 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 	}
 }
 
-func TestPacketCopyRecipeAcceptsSinkDestination(t *testing.T) {
+func TestPacketCopyRecipeAcceptsSinkTarget(t *testing.T) {
 	spec, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.Opus())).
 		Copy().
 		To(goav.Sink(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
@@ -3153,7 +3225,7 @@ func TestRecordRecipeRejectsUnnamedFileWithoutFormat(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
+func TestRecordRecipeRejectsFormatOnlyTargetRef(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
 		goav.URIOut("").Format(av.FormatIVF),
@@ -3224,7 +3296,7 @@ func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeRejectsDuplicateSinkDestinations(t *testing.T) {
+func TestStreamRecipeRejectsDuplicateSinkTargets(t *testing.T) {
 	sink := func(context.Context, goav.Message) error { return nil }
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -3492,7 +3564,7 @@ func TestStreamRecipeIntentOperationsImplyDecode(t *testing.T) {
 		job  *goav.Job
 	}{
 		{
-			name: "sink destination",
+			name: "sink target",
 			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 				Audio().
 				To(goav.Sink(sink)),
@@ -3711,7 +3783,7 @@ func TestStreamRecipeRejectsMixedSinkAndFile(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeAllowsEncodedMuxAndSinkDestinations(t *testing.T) {
+func TestStreamRecipeAllowsEncodedMuxAndSinkTargets(t *testing.T) {
 	rt := goav.New(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
@@ -4391,7 +4463,7 @@ func TestBranchRecipeRejectsMissingBranchName(t *testing.T) {
 	}
 }
 
-func TestBranchRecipeRejectsInvalidDestination(t *testing.T) {
+func TestBranchRecipeRejectsInvalidTargetRef(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").VP9(600_000).
 		To(goav.Target("preview", goav.File("preview.webm", nil))).

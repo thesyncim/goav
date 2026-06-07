@@ -99,6 +99,13 @@ type DecodeConfig struct {
 	LowLatency bool
 	Resilience ResiliencePolicy
 	Bounds     DecodeBounds
+	// Config carries one adapter-specific typed config value. Adapter packages
+	// must document the concrete type before reading it.
+	Config any
+	// Opaque carries named adapter-specific decode parameters.
+	Opaque map[string]any
+	// Controls carries adapter-specific control values applied at open.
+	Controls []any
 	// OpaqueState carries adapter-specific, caller-owned state. Adapter
 	// packages must document the concrete type before reading it.
 	OpaqueState any
@@ -111,7 +118,13 @@ type EncodeConfig struct {
 	LowLatency bool
 	Bitrate    int
 	Framerate  av.Duration
-	Opaque     map[string]any
+	// Config carries one adapter-specific typed config value. Adapter packages
+	// must document the concrete type before reading it.
+	Config any
+	// Opaque carries named adapter-specific encode parameters.
+	Opaque map[string]any
+	// Controls carries adapter-specific control values applied at open.
+	Controls []any
 }
 
 type DecodeResult struct {

@@ -8,40 +8,25 @@ validation gates. This roadmap keeps the broader phase view.
 The recipe surface is now pointed in the right direction; the next work is to
 make the implementation match the composable planner promise.
 
-1. Make `Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph` the normal
-   recipe branch. Normal recipes should require media-plan recognition instead of
-   adding workflow-specific matchers.
-2. Treat branches as generic ordered stream operations and mux groups.
-   `From(input).Audio()/Video().Branches(...)`, `Branch(...)`, and
-   `Flow(name).Audio()/Video()` values should produce equivalent `MediaPlan`
-   shapes
-   where possible. Branches must be orthogonal at operation boundaries: after
-   decode, after resize/resample, after custom stages, after taps, and later
-   after sink/output attachment where runtime support makes sense. Custom stage
-   and transform steps are active, reusable flows carry optional first decode,
-   ordered stage, tap, transform, terminal encode, and sink target steps.
-   Planned branches can now
-   end in frame-domain sink targets after decode/resize/resample/custom stages
-   or in packet-domain sink targets after Opus/VP8/VP9 encode. Runtime
-   branches can apply flows from frame taps, publish nested taps, encode
-   Opus/VP8/VP9 into targets, copy packet taps into targets, and decode
-   packet taps into new frame-domain work. Buffered runtime mutation and deeper
-   capability metadata remain next slices.
-3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
-   for `From`, packet copy, stream decode, branch composition, and reusable flows
-   onto direct media-plan graph construction. Branch composition now carries a
-   recipe-owned branch-compose plan; the advanced `transcode.Plan` path adapts
-   into that plan instead of being the recipe IR. Runtime branch-composer helpers
-   now use branch/media naming, and branch inputs plus resolved targets stay on
-   the resolved plan until a media-plan branch graph emits specs or builds the
-   runtime graph. Packet copy/fanout recipes now do the same through a resolved
-   packet-copy graph plan. Direct stream decode/encode recipes now keep resolved
-   inputs, target refs, ordered stream attachments, codec-change policy, custom
-   stages, transforms, and taps until the media-plan boundary instead of
-   compiling from pre-lowered builder state; they now describe/build through a
-   resolved single-stream graph plan and shared parameterized graph helpers. The
-   remaining work is deeper direct graph construction and capability planning
-   behind media-plan executables.
+1. Make the declarative grammar the only normal composer:
+   `input -> chain -> tap -> branch -> target` lowers into
+   `GraphPlan -> pipeline.Graph -> Task`. `MediaPlan` is the transition object
+   until `GraphPlan` owns executable nodes, edges, taps, branches, targets, and
+   diagnostics directly. The expert graph builder remains an escape hatch and
+   runtime substrate, not the normal user-facing way to express workflows.
+2. Treat direct chains as implicit branches. These should be equivalent plan
+   shapes except for branch names:
+   `From(input).Audio().Decode().To(Sink(...))` and
+   `From(input).Audio().Branches(Branch("main").Decode().To(Sink(...)))`.
+   Copy-to-file, decode-to-sink, encode-to-target, branch composition, and
+   mixed audio/video target groups must stop being special workflow graph modes
+   and become branch plans over ordered operations.
+3. Make runtime attachment a patch of the same plan model. `Task.Attach` should
+   compile `Branch(...)` plus existing `TapInfo` into `GraphPatch`, validate the
+   patch before graph mutation, allocate only downstream nodes, reuse upstream
+   decoders and transforms from frame/packet taps, share target/mux nodes while
+   branches use them, and detach only branch-owned nodes. Planned branches and
+   runtime branches must share capability and target compatibility validation.
 4. Add a capability model for streams, codecs, filters, and containers so the
    planner can explain copy/decode/encode choices, missing adapters, transform
    incompatibilities, and mux-output conflicts before runtime execution. Codec
@@ -97,11 +82,11 @@ make the implementation match the composable planner promise.
 - `gopus` decoder adapter.
 - Raw PCM sink for validation.
 
-## Phase 1b: Generic source shape
+## Phase 1b: Generic input shape
 
-- Explicit source/stage/sink graph builder.
+- Explicit source/stage/sink graph builder as the advanced layer.
 - Pre-build graph description and optional diagram exporters.
-- Protocol source contracts outside the core runtime.
+- Protocol input contracts outside the core runtime.
 - Demux boundaries for protocol/file adapters.
 - Live input events for connect, disconnect, and timestamp discontinuity.
   Timestamp discontinuity first slice active for RTP receive.
@@ -113,6 +98,9 @@ make the implementation match the composable planner promise.
 - VP8/VP9 depacketization.
 - `govpx` VP8/VP9 decode adapters behind `goav_govpx`. First slices active.
 - `govpx` VP8/VP9 encode adapters behind `goav_govpx`. First slices active.
+- Keep Opus, VP8, and VP9 as the first full encode/decode recipe verticals;
+  H264 and AV1 remain receive/decode-first until their encode adapters are
+  equally solid.
 - Keyframe request events.
 - Loss recovery and drop-until-sync behavior.
 

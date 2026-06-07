@@ -87,6 +87,7 @@ type BranchSpec struct {
 	name           string
 	media          av.MediaType
 	decode         bool
+	decodeCodec    CodecSpec
 	steps          []chainStep
 	postEncodeTaps []string
 	transforms     []TransformSpec
@@ -167,7 +168,7 @@ func (b *branchBuilder) Buffer(policy pipeline.BufferPolicy) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Decode() *branchBuilder {
+func (b *branchBuilder) Decode(options ...codecOption) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -184,6 +185,7 @@ func (b *branchBuilder) Decode() *branchBuilder {
 		return b
 	}
 	b.spec.decode = true
+	b.spec.decodeCodec = mergeDecodeCodecSpec(b.spec.decodeCodec, codecSpecFromOptions(options...))
 	return b
 }
 
@@ -218,6 +220,7 @@ func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 			return b
 		}
 		b.spec.decode = true
+		b.spec.decodeCodec = mergeDecodeCodecSpec(b.spec.decodeCodec, spec.decodeCodec)
 	}
 	b.spec.steps = append(b.spec.steps, cloneChainSteps(spec.steps)...)
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpecs(spec.transforms)...)
@@ -320,7 +323,7 @@ func (b *branchBuilder) Encode(codec CodecSpec) *branchBuilder {
 		b.setErr(branchDecodeCopyError(firstNonEmpty(b.spec.name, "branch")))
 		return b
 	}
-	b.spec.encode = codec
+	b.spec.encode = cloneCodecSpec(codec)
 	return b
 }
 
@@ -340,22 +343,22 @@ func (b *branchBuilder) VP9(bitrate int, options ...codecOption) *branchBuilder 
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *branchBuilder) To(destinations ...TargetRef) BranchSpec {
+func (b *branchBuilder) To(targets ...TargetRef) BranchSpec {
 	if b == nil {
 		return BranchSpec{err: nilBranchError()}
 	}
 	spec := b.snapshot()
-	if len(destinations) == 0 {
+	if len(targets) == 0 {
 		spec.err = branchTargetMissingError(spec.name)
 		return spec
 	}
-	for i := range destinations {
-		destination := destinations[i]
-		if destination == nil {
+	for i := range targets {
+		target := targets[i]
+		if target == nil {
 			spec.err = branchDestinationInvalidError(spec.name, "branch target ref is nil")
 			return spec
 		}
-		if err := appendDestination(&spec, destination.destination(), i); err != nil {
+		if err := appendDestination(&spec, target.destination(), i); err != nil {
 			spec.err = err
 			return spec
 		}
@@ -365,6 +368,8 @@ func (b *branchBuilder) To(destinations ...TargetRef) BranchSpec {
 
 func (b *branchBuilder) snapshot() BranchSpec {
 	spec := b.spec
+	spec.decodeCodec = cloneCodecSpec(spec.decodeCodec)
+	spec.encode = cloneCodecSpec(spec.encode)
 	spec.steps = cloneChainSteps(spec.steps)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
@@ -443,7 +448,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			job.setErr(err)
 			return job
 		}
-		encode := branches[i].encode
+		encode := cloneCodecSpec(branches[i].encode)
 		if parentPacket && !branches[i].decode && !codecIntentSet(encode) {
 			encode = Copy()
 		}
@@ -458,6 +463,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			selector:    stream.selector,
 			from:        from,
 			decode:      decode,
+			decodeCodec: mergeDecodeCodecSpec(stream.decodeCodec, branches[i].decodeCodec),
 			sharedSteps: sharedSteps,
 			steps:       cloneChainSteps(branches[i].steps),
 			postEncodeTaps: append(

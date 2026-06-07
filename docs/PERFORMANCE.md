@@ -6,6 +6,7 @@ Cold paths may allocate:
 
 - runtime and graph construction
 - registry setup
+- declarative recipe planning and validation
 - codec open/configuration
 - format probing
 - output buffer allocation by the caller
@@ -18,6 +19,14 @@ Hot paths must avoid hidden allocation:
 - per mux/demux packet
 - per direct pipeline message
 
+The API can stay expressive only if those expressions collapse into direct,
+reusable runtime objects. Declarative recipes are allowed to build plans,
+diagnostics, and graphs up front; once running, stages should reuse caller-owned
+messages, result structs, frame planes, packet buffers, and scratch storage.
+The target shape is one cold-path executable `GraphPlan` and runtime
+`GraphPatch` planner; packet, frame, event, and mux/demux loops must not route
+through fluent recipe objects or workflow-specific compiler dispatch.
+
 ## Rules
 
 - Prefer `Into` methods that fill caller-owned result structs.
@@ -25,6 +34,10 @@ Hot paths must avoid hidden allocation:
 - Preallocate result slices and frame plane buffers.
 - Return capacity errors instead of appending beyond capacity.
 - Avoid `fmt`, map writes, closure allocation, and error wrapping in hot paths.
+- Keep recipe, flow, branch, tap, target, and codec abstractions cold-path only;
+  do not dispatch through them for each packet or frame.
+- Prefer one planned graph over multiple workflow-specific graph modes; adding a
+  new operation should not add a new per-packet abstraction layer.
 - Fanout should share payload references unless an explicit policy requires a
   copy.
 

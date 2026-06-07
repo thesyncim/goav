@@ -103,6 +103,7 @@ func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, str
 	if err := validateDecodeAdapterDescriptors("build decode stage", intent, b.runtime.codecs, decodeAdapterRequestFromStream(stream, intent)); err != nil {
 		return nil, err
 	}
+	stream = decodeStreamWithSpec(stream, request.config)
 	result := decodeResultForStream(stream, bounds)
 	config := codec.DecodeConfig{
 		Stream:     stream,
@@ -114,7 +115,10 @@ func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, str
 			DropDamagedVideo: stream.Type == av.MediaVideo,
 			RequestKeyframes: stream.Type == av.MediaVideo,
 		},
-		Bounds: decodeBoundsForStream(stream, result, bounds),
+		Bounds:   decodeBoundsForStream(stream, result, bounds),
+		Config:   request.config.Config,
+		Opaque:   cloneAnyMap(request.config.Opaque),
+		Controls: append([]any(nil), request.config.Controls...),
 	}
 	stateFromFactory := false
 	if stateFactory, ok := factory.(codec.DecodeStateFactory); ok {
@@ -547,6 +551,27 @@ func decodeResultForStream(stream av.Stream, bounds codec.DecodeBounds) codec.De
 		Events:   make([]av.Event, 0, positiveOrDefault(bounds.MaxEventsPerInput, 1)),
 		Requests: make([]codec.ControlRequest, 0, positiveOrDefault(bounds.MaxRequestsPerInput, 1)),
 	}
+}
+
+func decodeStreamWithSpec(stream av.Stream, spec CodecSpec) av.Stream {
+	if spec.ID == "" && spec.Type == "" && !codecSpecHasParameters(spec) {
+		return stream
+	}
+	parameters := mergeCodecParameters(stream.Codec, spec.Parameters)
+	if spec.ID != "" {
+		parameters.ID = spec.ID
+	}
+	if spec.Type != "" && parameters.Type == "" {
+		parameters.Type = spec.Type
+	}
+	if stream.Type == "" {
+		stream.Type = parameters.Type
+	}
+	stream.Codec = parameters
+	if stream.TimeBase == (av.TimeBase{}) && parameters.ClockRate != 0 {
+		stream.TimeBase = av.RTPTimeBase(parameters.ClockRate)
+	}
+	return stream
 }
 
 func decodeBoundsForStream(stream av.Stream, result codec.DecodeResult, bounds codec.DecodeBounds) codec.DecodeBounds {

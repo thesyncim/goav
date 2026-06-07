@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -20,6 +21,7 @@ type branchComposeRoute struct {
 	name        string
 	branch      branchComposeBranch
 	copy        bool
+	decode      CodecSpec
 	sharedSteps []mediaTransform
 	steps       []mediaTransform
 	request     encodeRequest
@@ -443,7 +445,11 @@ func compileBranchComposeInputs(
 		if len(builds) != 0 {
 			bounds = rtpDecodeBoundsForStream(selected, builds)
 		}
-		decodeStage, err := service.newDecodeStage(ctx, decodeRequest{selector: selector}, selected, realtime, false, bounds)
+		decodeConfig, err := branchComposeGroupDecodeConfig(decodedBranches, branches)
+		if err != nil {
+			return nil, nil, err
+		}
+		decodeStage, err := service.newDecodeStage(ctx, decodeRequest{selector: selector, config: decodeConfig}, selected, realtime, false, bounds)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -732,7 +738,7 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 			return nil, err
 		}
 
-		config := branch.Encode
+		config := cloneEncodeConfig(branch.Encode)
 		if config.Stream.ID == "" {
 			config.Stream.ID = av.StreamID(name)
 		}
@@ -746,6 +752,7 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 			name:        name,
 			branch:      branch,
 			copy:        branch.Copy,
+			decode:      cloneCodecSpec(branch.DecodeConfig),
 			sharedSteps: sharedSteps,
 			steps:       steps,
 			request: encodeRequest{
@@ -784,6 +791,58 @@ func branchComposeDecodedBranchIndices(indices []int, branches []branchComposeRo
 		}
 	}
 	return decoded
+}
+
+func branchComposeGroupDecodeConfig(indices []int, branches []branchComposeRoute) (CodecSpec, error) {
+	var config CodecSpec
+	var owner string
+	haveConfig := false
+	for _, index := range indices {
+		if index < 0 || index >= len(branches) {
+			continue
+		}
+		candidate := cloneCodecSpec(branches[index].decode)
+		if !codecSpecHasDecodeIntent(candidate) {
+			continue
+		}
+		if !haveConfig {
+			config = candidate
+			owner = branches[index].name
+			haveConfig = true
+			continue
+		}
+		if !reflect.DeepEqual(config, candidate) {
+			return CodecSpec{}, branchComposeDecodeConfigConflictError(owner, branches[index].name)
+		}
+	}
+	return config, nil
+}
+
+func codecSpecHasDecodeIntent(spec CodecSpec) bool {
+	return spec.ID != "" ||
+		spec.Type != "" ||
+		codecSpecHasParameters(spec) ||
+		spec.Bitrate != 0 ||
+		spec.Config != nil ||
+		len(spec.Opaque) != 0 ||
+		len(spec.Controls) != 0
+}
+
+func branchComposeDecodeConfigConflictError(first string, second string) error {
+	return &BuildError{
+		Code:      "decode_config_conflict",
+		Operation: "build branch composition",
+		Node:      second,
+		Reason:    "branches that share one decoder declared different decode configs",
+		Details: []string{
+			"first branch: " + first,
+			"conflicting branch: " + second,
+		},
+		Suggestions: []string{
+			"move shared decode config to the stream chain with .Decode(...)",
+			"use the same decode config for branches that share a decoder",
+		},
+	}
 }
 
 func branchComposeDuplicateBranchError(name string, index int) error {

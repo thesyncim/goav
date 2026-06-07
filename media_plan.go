@@ -363,7 +363,7 @@ func planOperationFromStreamOperation(operation StreamOperation) planOperation {
 	case OpDecode:
 		return planOperation{
 			Kind:      OpDecode,
-			Component: operation.Component,
+			Component: firstNonEmpty(string(operation.Decode.ID), operation.Component),
 			Detail:    "packets to frames",
 			Shared:    operation.Shared,
 		}

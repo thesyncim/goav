@@ -3482,12 +3482,13 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	)
 	decoder := &recipePCMDecoder{}
+	var decoderConfig codec.DecodeConfig
 	encoder := &encodeTestEncoder{}
 	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
 	desc := CodecDescriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
 	runtime := New(
 		formats,
-		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder}),
+		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder, config: &decoderConfig}),
 		WithEncoder(desc, encoderFactory),
 		WithStdFilters(),
 	)
@@ -3552,21 +3553,38 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	)
 	decoder := &recipePCMDecoder{}
+	var decoderConfig codec.DecodeConfig
 	encoder := &encodeTestEncoder{}
 	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
 	desc := CodecDescriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
 	runtime := New(
 		formats,
-		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder}),
+		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder, config: &decoderConfig}),
 		WithEncoder(desc, encoderFactory),
 		WithStdFilters(),
 	)
-	encoded := Codec(customPCM, av.MediaAudio, SampleRate(16_000), Channels(Mono))
+	decodeConfig := codecControlTestConfig{Name: "decode"}
+	decodeControl := codecControlTestControl{Name: "decode-control"}
+	encodeConfig := codecControlTestConfig{Name: "encode"}
+	encodeControl := codecControlTestControl{Name: "encode-control"}
+	encoded := Codec(
+		customPCM,
+		av.MediaAudio,
+		SampleRate(16_000),
+		Channels(Mono),
+		Config(encodeConfig),
+		Param("speed", "fast"),
+		Control(encodeControl),
+	)
 	archive := Target("archive", File("archive.ogg", io.Discard))
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(runtime).
 		Audio().
-		Decode().
+		Decode(
+			Config(decodeConfig),
+			Param("concealment", "on"),
+			Control(decodeControl),
+		).
 		Branches(
 			Branch("main").
 				Resample(16_000, Mono).
@@ -3583,11 +3601,21 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 	if decoder.decodes != 1 || encoder.encodes != 1 || encoder.flushes != 1 {
 		t.Fatalf("decodes=%d encodes=%d flushes=%d", decoder.decodes, encoder.encodes, encoder.flushes)
 	}
+	if !reflect.DeepEqual(decoderConfig.Config, decodeConfig) ||
+		decoderConfig.Opaque["concealment"] != "on" ||
+		!reflect.DeepEqual(decoderConfig.Controls, []any{decodeControl}) {
+		t.Fatalf("decoder config: %+v", decoderConfig)
+	}
 	if encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
 		encoderFactory.config.Stream.Codec.Channels != Mono ||
 		encoderFactory.config.Parameters.ID != customPCM ||
 		encoderFactory.config.Stream.Codec.ID != customPCM {
 		t.Fatalf("branch custom encode config: %+v", encoderFactory.config)
+	}
+	if !reflect.DeepEqual(encoderFactory.config.Config, encodeConfig) ||
+		encoderFactory.config.Opaque["speed"] != "fast" ||
+		!reflect.DeepEqual(encoderFactory.config.Controls, []any{encodeControl}) {
+		t.Fatalf("encoder config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "main" {
 		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
@@ -3597,11 +3625,78 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 	}
 }
 
-type recipePCMDecoderFactory struct {
-	decoder *recipePCMDecoder
+func TestBranchCompositionRejectsConflictingDecodeConfigs(t *testing.T) {
+	ctx := context.Background()
+	customPCM := av.CodecID("x_pcm_s16")
+	streams := []av.Stream{{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:           customPCM,
+			Type:         av.MediaAudio,
+			SampleRate:   48000,
+			ClockRate:    48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatS16,
+		},
+	}}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: &decodeTestDemuxer{streams: streams}}),
+	)
+	decoder := &recipePCMDecoder{}
+	desc := CodecDescriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
+	runtime := New(
+		formats,
+		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder}),
+	)
+
+	_, err := From(FileInput("input.ogg", nil)).UseRuntime(runtime).
+		Audio().
+		Copy().
+		Branches(
+			Branch("left").
+				Decode(Config(codecControlTestConfig{Name: "left"})).
+				To(Sink(SinkFunc("left", func(context.Context, Message) error {
+					return nil
+				}))),
+			Branch("right").
+				Decode(Config(codecControlTestConfig{Name: "right"})).
+				To(Sink(SinkFunc("right", func(context.Context, Message) error {
+					return nil
+				}))),
+		).
+		Build(ctx)
+	if err == nil {
+		t.Fatal("expected conflicting decode config error")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "decode_config_conflict" {
+		t.Fatalf("err = %v, want decode_config_conflict", err)
+	}
+	if decoder.decodes != 0 {
+		t.Fatalf("decoder ran before conflict was reported: %d", decoder.decodes)
+	}
 }
 
-func (f recipePCMDecoderFactory) NewDecoder(context.Context, codec.DecodeConfig) (codec.Decoder, error) {
+type codecControlTestConfig struct {
+	Name string
+}
+
+type codecControlTestControl struct {
+	Name string
+}
+
+type recipePCMDecoderFactory struct {
+	decoder *recipePCMDecoder
+	config  *codec.DecodeConfig
+}
+
+func (f recipePCMDecoderFactory) NewDecoder(_ context.Context, config codec.DecodeConfig) (codec.Decoder, error) {
+	if f.config != nil {
+		*f.config = config
+	}
 	return f.decoder, nil
 }
 

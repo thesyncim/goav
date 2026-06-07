@@ -107,6 +107,7 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 		decode: decodeRequest{
 			selector:    selector,
 			codecChange: stream.CodecChange,
+			config:      cloneCodecSpec(stream.DecodeCodec),
 		},
 	}
 	filters, err := mediaPlanStreamFilters(stream)

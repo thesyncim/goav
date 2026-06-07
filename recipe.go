@@ -42,6 +42,7 @@ type StreamIntent struct {
 	Select      StreamSelect
 	From        TapRef
 	Decode      bool
+	DecodeCodec CodecSpec
 	Operations  []StreamOperation
 	Transforms  []TransformSpec
 	Taps        []TapIntent
@@ -56,6 +57,7 @@ type StreamOperation struct {
 	Stage     pipeline.Stage
 	Transform TransformSpec
 	Tap       TapIntent
+	Decode    CodecSpec
 	Encode    CodecSpec
 	Shared    bool
 }
@@ -162,6 +164,9 @@ type CodecSpec struct {
 	Type          av.MediaType
 	Parameters    av.CodecParameters
 	Bitrate       int
+	Config        any
+	Opaque        map[string]any
+	Controls      []any
 	Copy          bool
 	Auto          bool
 	sampleRateSet bool
@@ -270,11 +275,46 @@ func ClockRate(clockRate uint32) codecOption {
 func Parameters(parameters av.CodecParameters) codecOption {
 	return func(spec *CodecSpec) {
 		spec.Parameters = parameters
+		if spec.ID == "" && parameters.ID != "" {
+			spec.ID = parameters.ID
+		}
+		if spec.Type == "" && parameters.Type != "" {
+			spec.Type = parameters.Type
+		}
 		if spec.Parameters.ID == "" {
 			spec.Parameters.ID = spec.ID
 		}
 		if spec.Parameters.Type == "" {
 			spec.Parameters.Type = spec.Type
+		}
+	}
+}
+
+// Config attaches one adapter-specific typed codec configuration value.
+func Config(config any) codecOption {
+	return func(spec *CodecSpec) {
+		spec.Config = config
+	}
+}
+
+// Param attaches a named adapter-specific codec parameter.
+func Param(name string, value any) codecOption {
+	return func(spec *CodecSpec) {
+		if name == "" {
+			return
+		}
+		if spec.Opaque == nil {
+			spec.Opaque = make(map[string]any, 1)
+		}
+		spec.Opaque[name] = value
+	}
+}
+
+// Control attaches an adapter-specific codec control value.
+func Control(control any) codecOption {
+	return func(spec *CodecSpec) {
+		if control != nil {
+			spec.Controls = append(spec.Controls, control)
 		}
 	}
 }
@@ -293,6 +333,87 @@ func codecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, opt
 		spec.Parameters.Type = media
 	}
 	return spec
+}
+
+func codecSpecFromOptions(options ...codecOption) CodecSpec {
+	var spec CodecSpec
+	for i := range options {
+		if options[i] != nil {
+			options[i](&spec)
+		}
+	}
+	if spec.Parameters.ID != "" && spec.ID == "" {
+		spec.ID = spec.Parameters.ID
+	}
+	if spec.Parameters.Type != "" && spec.Type == "" {
+		spec.Type = spec.Parameters.Type
+	}
+	return spec
+}
+
+func cloneCodecSpec(spec CodecSpec) CodecSpec {
+	spec.Parameters.Attributes = cloneMetadata(spec.Parameters.Attributes)
+	spec.Parameters.ExtraData = cloneBuffer(spec.Parameters.ExtraData)
+	spec.Opaque = cloneAnyMap(spec.Opaque)
+	spec.Controls = append([]any(nil), spec.Controls...)
+	return spec
+}
+
+func cloneAnyMap(values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
+}
+
+func mergeDecodeCodecSpec(base CodecSpec, override CodecSpec) CodecSpec {
+	if override.ID != "" {
+		base.ID = override.ID
+	}
+	if override.Type != "" {
+		base.Type = override.Type
+	}
+	base.Parameters = mergeCodecParameters(base.Parameters, override.Parameters)
+	if override.Bitrate != 0 {
+		base.Bitrate = override.Bitrate
+	}
+	if override.Config != nil {
+		base.Config = override.Config
+	}
+	if len(override.Opaque) != 0 {
+		if base.Opaque == nil {
+			base.Opaque = make(map[string]any, len(override.Opaque))
+		}
+		for key, value := range override.Opaque {
+			base.Opaque[key] = value
+		}
+	}
+	base.Controls = append(base.Controls, override.Controls...)
+	base.sampleRateSet = base.sampleRateSet || override.sampleRateSet
+	base.channelsSet = base.channelsSet || override.channelsSet
+	return base
+}
+
+func codecSpecHasParameters(spec CodecSpec) bool {
+	parameters := spec.Parameters
+	return parameters.ID != "" ||
+		parameters.Type != "" ||
+		parameters.Profile != "" ||
+		parameters.Level != "" ||
+		parameters.ClockRate != 0 ||
+		parameters.SampleRate != 0 ||
+		parameters.Channels != 0 ||
+		parameters.ChannelLayout != "" ||
+		parameters.Width != 0 ||
+		parameters.Height != 0 ||
+		parameters.PixelFormat != "" ||
+		parameters.SampleFormat != "" ||
+		len(parameters.ExtraData.Bytes) != 0 ||
+		len(parameters.Attributes) != 0
 }
 
 type resizeOption func(*filter.ResizeConfig)
@@ -380,7 +501,7 @@ func (s InputSpec) MIME(mimeType string) InputSpec {
 }
 
 func (s InputSpec) Codec(codec CodecSpec) InputSpec {
-	s.codec = codec
+	s.codec = cloneCodecSpec(codec)
 	return s
 }
 
@@ -667,7 +788,7 @@ func (s InputSpec) intent() InputIntent {
 		URI:      s.input.URI,
 		Protocol: s.input.Protocol,
 		MIMEType: s.input.MIMEType,
-		Codec:    s.codec,
+		Codec:    cloneCodecSpec(s.codec),
 		Realtime: s.input.Realtime || s.rtp != nil,
 	}
 }
@@ -892,6 +1013,7 @@ type jobStreamBuild struct {
 	name           string
 	selector       av.StreamSelector
 	decode         bool
+	decodeCodec    CodecSpec
 	steps          []chainStep
 	taps           []string
 	postEncodeTaps []string
@@ -948,18 +1070,18 @@ func (j *Job) setErr(err error) {
 	}
 }
 
-func (j *Job) To(destinations ...TargetRef) *Job {
+func (j *Job) To(targets ...TargetRef) *Job {
 	if len(j.branchStreams) != 0 {
 		j.setErr(branchOutputScopeError("branches"))
 		return j
 	}
-	for i := range destinations {
-		destination := destinations[i]
-		if destination == nil {
+	for i := range targets {
+		target := targets[i]
+		if target == nil {
 			j.setErr(jobDestinationInvalidError("job", "job target ref is nil"))
 			return j
 		}
-		output, name, err := destinationFromBinding("build job", "job", destination.destination(), i)
+		output, name, err := destinationFromBinding("build job", "job", target.destination(), i)
 		if err != nil {
 			j.setErr(err)
 			return j
@@ -1284,10 +1406,11 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 			Name:     stream.selector.Name,
 		},
 		Decode:      stream.decode,
+		DecodeCodec: cloneCodecSpec(stream.decodeCodec),
 		Operations:  jobStreamOperations(stream),
 		Transforms:  stream.transformSpecs(),
 		Taps:        append(chainStepTapIntents(stream.steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
-		Encode:      stream.encode,
+		Encode:      cloneCodecSpec(stream.encode),
 		CodecChange: stream.codecChange,
 		Targets:     destinationTargetNamesWithNames(stream.outputs, stream.outputNames),
 	}
@@ -1309,13 +1432,14 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 			Codec:    stream.selector.Codec,
 			Name:     stream.selector.Name,
 		},
-		From:       stream.from,
-		Decode:     stream.decode,
-		Operations: streamBuildOperations(stream),
-		Transforms: cloneTransformSpecs(stream.transforms),
-		Taps:       append(chainStepTapIntents(streamChainSteps(stream), stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
-		Encode:     stream.encode,
-		Targets:    append([]string(nil), stream.labels...),
+		From:        stream.from,
+		Decode:      stream.decode,
+		DecodeCodec: cloneCodecSpec(stream.decodeCodec),
+		Operations:  streamBuildOperations(stream),
+		Transforms:  cloneTransformSpecs(stream.transforms),
+		Taps:        append(chainStepTapIntents(streamChainSteps(stream), stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
+		Encode:      cloneCodecSpec(stream.encode),
+		Targets:     append([]string(nil), stream.labels...),
 	}
 }
 
@@ -1325,7 +1449,7 @@ func jobStreamOperations(stream *jobStreamBuild) []StreamOperation {
 	}
 	operations := make([]StreamOperation, 0, len(stream.steps)+1+len(stream.postEncodeTaps))
 	if stream.decode {
-		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec)})
+		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec), Decode: cloneCodecSpec(stream.decodeCodec)})
 	}
 	operations = append(operations, chainStepOperations(stream.steps, stream.selector.Type, initialStepAfter(stream.decode))...)
 	if stream.encode.Copy {
@@ -1351,6 +1475,7 @@ func streamBuildOperations(stream streamBuild) []StreamOperation {
 		operations = append(operations, StreamOperation{
 			Kind:      OpDecode,
 			Component: string(stream.selector.Codec),
+			Decode:    cloneCodecSpec(stream.decodeCodec),
 			Shared:    stream.from.Domain() == DomainFrame,
 		})
 	}
@@ -2609,7 +2734,26 @@ func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
 	return codec.EncodeConfig{
 		Parameters: parameters,
 		Bitrate:    spec.Bitrate,
+		Config:     spec.Config,
+		Opaque:     cloneAnyMap(spec.Opaque),
+		Controls:   append([]any(nil), spec.Controls...),
 	}
+}
+
+func cloneEncodeConfig(config codec.EncodeConfig) codec.EncodeConfig {
+	config.Stream.Codec.Attributes = cloneMetadata(config.Stream.Codec.Attributes)
+	config.Stream.Codec.ExtraData = cloneBuffer(config.Stream.Codec.ExtraData)
+	config.Stream.Metadata = cloneMetadata(config.Stream.Metadata)
+	config.Parameters.Attributes = cloneMetadata(config.Parameters.Attributes)
+	config.Parameters.ExtraData = cloneBuffer(config.Parameters.ExtraData)
+	config.Opaque = cloneAnyMap(config.Opaque)
+	config.Controls = append([]any(nil), config.Controls...)
+	return config
+}
+
+func cloneBuffer(buffer av.Buffer) av.Buffer {
+	buffer.Bytes = append([]byte(nil), buffer.Bytes...)
+	return buffer
 }
 
 func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
@@ -2885,6 +3029,7 @@ type streamBuild struct {
 	selector       av.StreamSelector
 	from           TapRef
 	decode         bool
+	decodeCodec    CodecSpec
 	sharedSteps    []chainStep
 	steps          []chainStep
 	postEncodeTaps []string
@@ -2938,6 +3083,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 			return b
 		}
 		stream.decode = true
+		stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, spec.decodeCodec)
 	}
 	if len(spec.steps) != 0 {
 		stream.decode = true
@@ -2958,9 +3104,10 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) Decode() *jobStreamBuilder {
+func (b *jobStreamBuilder) Decode(options ...codecOption) *jobStreamBuilder {
 	stream := b.current()
 	stream.decode = true
+	stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, codecSpecFromOptions(options...))
 	return b
 }
 
@@ -3076,7 +3223,7 @@ func (b *jobStreamBuilder) Encode(codec CodecSpec) *jobStreamBuilder {
 		return b
 	}
 	stream.decode = true
-	stream.encode = codec
+	stream.encode = cloneCodecSpec(codec)
 	return b
 }
 
@@ -3098,16 +3245,16 @@ func (b *jobStreamBuilder) VP9(bitrate int, options ...codecOption) *jobStreamBu
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *jobStreamBuilder) To(destinations ...TargetRef) *Job {
+func (b *jobStreamBuilder) To(targets ...TargetRef) *Job {
 	stream := b.current()
-	outputs := make([]destinationSpec, 0, len(destinations))
-	for i := range destinations {
-		destination := destinations[i]
-		if destination == nil {
+	outputs := make([]destinationSpec, 0, len(targets))
+	for i := range targets {
+		target := targets[i]
+		if target == nil {
 			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream target ref is nil"))
 			return b.job
 		}
-		output, name, err := destinationFromBinding("build stream", jobStreamName(stream), destination.destination(), i)
+		output, name, err := destinationFromBinding("build stream", jobStreamName(stream), target.destination(), i)
 		if err != nil {
 			b.job.setErr(err)
 			return b.job
@@ -3239,17 +3386,15 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 			sharedSteps, branchSteps = branchChainStepsForStreamBuild(branchBuilds[i])
 		}
 		branch := branchComposeBranch{
-			Name:        branchName,
-			Selector:    selector,
-			Decode:      stream.Decode,
-			Copy:        stream.Encode.Copy,
-			SharedSteps: sharedSteps,
-			Steps:       branchSteps,
-			Encode: codec.EncodeConfig{
-				Parameters: stream.Encode.Parameters,
-				Bitrate:    stream.Encode.Bitrate,
-			},
-			Labels: append([]string(nil), stream.Targets...),
+			Name:         branchName,
+			Selector:     selector,
+			Decode:       stream.Decode,
+			Copy:         stream.Encode.Copy,
+			SharedSteps:  sharedSteps,
+			Steps:        branchSteps,
+			DecodeConfig: cloneCodecSpec(stream.DecodeCodec),
+			Encode:       encodeConfigFromSpec(stream.Encode),
+			Labels:       append([]string(nil), stream.Targets...),
 		}
 		for _, label := range stream.Targets {
 			outputBranches[label] = append(outputBranches[label], branchName)

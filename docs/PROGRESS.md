@@ -999,7 +999,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     stateless branch route planning and compile helpers. Done.
 253. Move packet-copy recipes onto a resolved media-plan graph:
     packet-preserving record/remux/fanout recipes now create a resolved
-    packet-copy graph plan from concrete inputs, endpoints, and optional selected
+    packet-copy graph plan from concrete inputs, target refs, and optional selected
     stream intent. `Describe` and `Build` share that plan for file/protocol and
     RTP/WebRTC packet copy, including selected-stream fanout, instead of keeping
     packet copy as recipe-resolved graph mutation helpers. Done.
@@ -1352,7 +1352,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestBranchRejectsConflictingFlowMedia` pin planned diagnostics, while
     `TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation` proves runtime
     attach rejects the same mismatch before graph mutation. Done.
-299. Prove flow-owned decode on direct stream chains:
+299. Prove flow-owned decode on direct chains:
     `Audio().Apply(Flow(name).Decode()...)` now has explicit intent and
     runtime coverage, completing the stream, planned branch, and runtime branch
     triangle for reusable decode-owning flows.
@@ -1458,7 +1458,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `AudioFlow` and `VideoFlow` now carry taps declared after an encoder as
     packet-domain attach points, matching stream and branch tap semantics
     instead of making flows a weaker operation language. Flow-applied taps flow
-    through direct stream chains, planned branches, and runtime branches.
+    through direct chains, planned branches, and runtime branches.
     `TestFlowTapAfterEncodeIsPacketTap` pins the intent shape, and
     `TestTaskAttachRuntimeFlowCustomEncodeMuxBranch` proves a live flow-encoded
     runtime branch can publish a packet tap that another runtime branch attaches
@@ -1467,7 +1467,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 310. Rename the sealed `To(...)` argument:
     `.To(...)` accepts target refs, while the concrete user concepts remain
     `Target` values plus `File`, `URIOut`, and `Sink`. Internal compiler
-    bindings keep the same target-ref shape, so the old target-or-endpoint union
+    bindings keep the same target-ref shape, so the old target-union
     vocabulary does not remain in the public grammar. Slice coverage proves
     dynamic target-ref slices still work, and
     `TestPackageKeepsLegacyHelpersOutOfFrontDoor` rejects obsolete exported
@@ -1520,11 +1520,11 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 315. Collapse high-level implementation naming onto destinations:
     private target bindings, branch destinations, runtime branch terminal
     preparation, mux format helpers, and encode-to-destination graph helpers now
-    use destination naming instead of endpoint naming. Internal target records
+    use destination naming throughout. Internal target records
     store destinations, direct `.To(...)` bindings are direct destinations,
     runtime attach prepares branch destinations, and media-plan encode paths
-	plan and compile destination paths. The old target-endpoint vocabulary remains
-	only in regression guards, not in active composition code.
+    plan and compile destination paths. The old terminal vocabulary remains only
+    in regression guards, not in active composition code.
     Done.
 316. Hide concrete chain builder type names:
     `From(...).Audio()/Video()/Stream()`, `Branch(name)`, and
@@ -1601,9 +1601,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     the deleted mirror type from production chain internals.
     Done.
 325. Keep diagnostics on the current front door:
-	production build diagnostics no longer suggest old recipe families or
-	target-endpoint terminology when the user should choose `From(...)`,
-	`Runtime.Graph()`, `Target`, `Sink`, `File`, or `URIOut`.
+    production build diagnostics no longer suggest old recipe families or
+    stale terminal vocabulary when the user should choose `From(...)`,
+    `Runtime.Graph()`, `Target`, `Sink`, `File`, or `URIOut`.
     Branch target validation now talks about destinations and targets, and guard
     coverage rejects the stale diagnostic vocabulary from production files.
     Done.
@@ -1688,6 +1688,31 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Task.Attach`, and sample both `Attachment.Stats()` and whole-task
     `Task.Stats()`. This keeps diagnostics on the same Input, Chain, Tap,
     Branch, Target, Task grammar instead of adding a separate debug API.
+    Done.
+337. Carry codec-specific configs and controls through recipe codecs:
+    `CodecSpec` now carries one typed `Config`, named `Param` values, and typed
+    `Control` values. Stream, branch, flow, branch-composition, and runtime
+    attach paths clone and propagate those values into `codec.DecodeConfig` and
+    `codec.EncodeConfig`, while Opus/VP8/VP9 remain the simple full-codec
+    helpers and generic `Codec(...)` keeps custom adapters orthogonal.
+    Runtime coverage proves declarative decode and encode options reach custom
+    factories through the branch composer.
+    Done.
+338. Make performance and declarative-first explicit goal constraints:
+    `docs/PERFORMANCE.md`, the roadmap, and this tracker now say recipe
+    planning may allocate, but running packet/frame/event paths must reuse
+    messages, result structs, buffers, and adapter scratch. The expert graph
+    builder remains available for adapter work and advanced embedding, while
+    normal workflows should be expressible through the declarative Input,
+    Chain, Tap, Branch, Target, and Task grammar.
+    Done.
+339. Set the next planner target to one executable graph plan:
+    Direct chains become implicit branches, normal recipes lower toward
+    `GraphPlan -> pipeline.Graph -> Task`, and runtime attach lowers toward
+    `GraphPatch` from typed taps. This makes copy, decode-to-sink,
+    encode-to-target, branch composition, mixed target groups, and late
+    attachments one branch-planning problem instead of separate workflow graph
+    families.
     Done.
 
 ## First Vertical Slice
@@ -1888,8 +1913,9 @@ Required proof:
 | --- | --- | --- |
 | Clear minimal architecture | `README.md`, `docs/ARCHITECTURE.md`, package boundaries | active |
 | Simple high-level API | recipes, chains, branch composition, runtime attach, structured `Explain(ctx)`, `MediaPlan` branch IR, executable media-plan graphs, and custom codec hooks | first slices active |
-| Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts | active |
-| Realtime Opus vertical slice | RTP/WebRTC boundary, Opus depacketizer, `gopus` decoder | active |
+| Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts for advanced embedding and adapter work, not the normal composer | active |
+| Full Opus/VP8/VP9 codec verticals | Opus, VP8, and VP9 are the first full encode/decode recipe targets; H264 and AV1 stay receive/decode-first until encode is equally solid | active |
+| One grammar, one engine | normal workflows lower from `input -> chain -> tap -> branch -> target` into `GraphPlan -> pipeline.Graph -> Task`; `GraphPatch` is the runtime attach form | planned |
 | Allocation guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters | active for implemented paths |
 | Adapter boundaries | `adapters/ivf`, `adapters/annexb`, `adapters/gopus`, `adapters/govpx`, `adapters/goav1`, `adapters/goh264` | active |
 | No cgo | `hygiene_test.go` | active |
@@ -1898,48 +1924,67 @@ Required proof:
 
 ## Next Slices
 
-1. Complete `MediaPlan.Spec()` equivalence for remaining generic `From` and
-   mixed-output composer shapes.
-2. Move executable media-plan graph helpers toward direct
-   `MediaPlan -> pipeline.Spec -> pipeline.Graph` construction where it reduces
-   duplication without weakening graph equivalence.
-3. Continue toward direct branch lowering: selected stream, ordered operation
-   chain, target refs, mux/sink groups, and shared upstream decode where
-   branches select the same input stream. Recipes already use a private
-   branch-compose plan, branch-named compile state, and resolved branch inputs;
-   the advanced `Transcode(plan)` path adapts into it at the boundary.
+1. Add the executable `GraphPlan` target beside `MediaPlan`: one plan contains
+   inputs, ordered operation nodes, edges, taps, branches, targets,
+   diagnostics, and build policies. `MediaPlan` remains the transition boundary
+   only until `GraphPlan -> pipeline.Graph -> Task` covers normal recipes.
+2. Make direct chains implicit branches. Packet copy, decode-to-sink,
+   transform/encode-to-target, planned branch composition, and mixed
+   audio/video target groups should all lower through the same branch planner
+   instead of workflow-shape graph modes.
+3. Add `GraphPatch` for runtime attach. `Task.Attach` should plan branch specs
+   from existing typed taps, validate caps and targets before mutation, reuse
+   upstream nodes, allocate only downstream branch nodes, and share mux/sink
+   targets with planned branches through the same validation code.
 4. Add first-class capability data for stream, codec, transform, and container
    planning so missing adapters and incompatible mux/transform chains fail
    before runtime execution with useful suggestions.
-5. Keep custom composition orthogonal by proving generic `Codec` specs, custom
+5. Keep codec-specific params, configs, and controls orthogonal: built-in Opus,
+   VP8, and VP9 helpers plus generic `Codec(...)` specs use `Config`, `Param`,
+   and `Control` for adapter-specific decode/encode knobs without creating
+   per-codec public APIs.
+6. Keep custom composition orthogonal by proving generic `Codec` specs, custom
    filter adapters, sinks, and outputs through decode, transform, encode,
    reusable flows, planned branches, and runtime attachments without
    workflow-specific helpers. Branches and runtime attachments must be able to
    anchor after meaningful operation boundaries, including post-decode,
    post-resize/resample, post-custom-stage, and sink/observation boundaries,
    instead of introducing a different concept for each workflow shape.
-6. Prove equivalent plans where possible between declared
+7. Prove equivalent plans where possible between declared
    `From(...).Branches(...)` compositions and branches built from reusable
    flows.
-7. Keep README examples executable with `Default()` or clearly behind explicit
+8. Keep README examples executable with `Default()` or clearly behind explicit
    adapter requirements; WebM/Ogg remain high-value adapter work after the
    planner can compose them naturally.
-8. Keep state-of-art debugging examples in the front-door docs: preflight
+9. Keep state-of-art debugging examples in the front-door docs: preflight
    `Explain(ctx)` diagnostics, live `Task.Events()` drains, typed tap discovery,
    runtime diagnostic branches through `Task.Attach`, and scoped
    `Attachment.Stats()` plus whole-task `Task.Stats()`.
-9. Extend observability from `Task.Stats()` into traces, drop reasons, and
+10. Keep declarative recipes as the normal composer. `Runtime.Graph()` remains
+   the expert escape hatch and runtime substrate, but normal use cases should
+   become expressible through Input, Chain, Tap, Branch, Target, and Task.
+   Adding an operation should require an operation descriptor, capability rules,
+   and a component builder, not a new graph type or compile switch.
+11. Preserve zero-allocation/zero-cost hot paths: recipe planning may allocate,
+   but running packet/frame/event paths must reuse messages, results, buffers,
+   and adapter-owned scratch with allocation guards for each new planner slice.
+12. Extend observability from `Task.Stats()` into traces, drop reasons, and
    latency counters for realtime debugging.
-10. Add allocation, event, lifecycle, graph-equivalence, and no-dispatch
+13. Add allocation, event, lifecycle, graph-equivalence, and no-dispatch
    regression tests for each planner slice.
-11. Update this tracker with the new evidence and next pressure point.
+14. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: finish direct media-plan graph construction and deepen
-capability planning around the ordered operation model. The public recipe
-surface is small: `From`, chains, `Tap`, `Branch`, `Branches`, `Target`,
+Current pressure point: finish the move from media-plan executables to one
+executable `GraphPlan` and deepen capability planning around the ordered
+operation model. The public recipe surface is small: `From`, chains, `Tap`,
+`Branch`, `Branches`, `Target`,
 `File`, `URIOut`, `Sink`, `Flow`, `Codec`, and runtime `Attach`. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into
 branch intent instead of a parallel graph language, and
+codec-specific config stays on `CodecSpec` through `Config`, `Param`, and
+`Control` instead of growing per-codec public APIs. Opus, VP8, and VP9 are the
+full encode/decode verticals; H264 and AV1 recipe encode remains guarded until
+the adapters are complete.
 `Task.Attach` remains the late branch control plane for running graphs,
 including custom-stage, resize/resample, branch-local node stats, dependent
 branches after runtime resize and resample taps, post-encode packet taps
@@ -1972,20 +2017,25 @@ live debug branch, and scoped `Attachment.Stats()` beside whole-task
 `Task.Stats()`.
 Recipe compilation no longer opens a builder as a validation side channel; the
 normal path validates runtime support, emits a media-plan executable, and builds
-from that executable.
-`MediaPlan` expresses record, stream decode, encode, and branch composition as
-input refs, stream selectors, ordered operations, target refs, taps, and planner
-decisions. `Describe`, `Build`, and
-`Explain(ctx)` now require a supported media-plan shape for normal recipes. The
-packet-copy paths use resolved graph plans for concrete inputs and target refs,
-direct stream paths use resolved single-stream graph plans, and branch
-composition uses a resolved branch graph plan that carries concrete input and
-target attachments to spec/build time. Resolved recipes no longer retain the old
-runtime builder as a describe/build fallback; the only normal execution path is
-through the stored media-plan executable. The next implementation work is to
-broaden descriptor-backed target/container capability data as WebM/Ogg arrive
-and keep broadening runtime attachment stress around generic lifecycle
-boundaries without weakening the direct graph branch grammar.
+from that executable. The next shape is stricter: every normal expression lowers
+to `GraphPlan`, and every late branch lowers to `GraphPatch`. Direct chains are
+implicit branches, runtime attach is downstream patch application from typed
+taps, planned and runtime branches share caps/target validation, and no normal
+composition path should dispatch by copy/sink/encode/branch workflow shape.
+The expert graph builder is not the target user-facing composer; it remains the
+advanced escape hatch and runtime substrate while normal use cases move through
+declarative recipes. Flexible composition must still compile into direct
+runtime objects: hot packet/frame/event paths should stay allocation-guarded and
+avoid dispatching through recipe abstractions.
+`MediaPlan` currently expresses record, stream decode, encode, and branch
+composition as input refs, stream selectors, ordered operations, target refs,
+taps, and planner decisions. `Describe`, `Build`, and `Explain(ctx)` now require
+a supported media-plan shape for normal recipes. The next implementation work is
+to introduce `GraphPlan` beside it, convert stream and branch shapes into that
+single executable IR, add `GraphPatch` for runtime attach, broaden
+descriptor-backed target/container capability data as WebM/Ogg arrive, and keep
+broadening runtime attachment stress around generic lifecycle boundaries without
+weakening the direct graph branch grammar.
 
 ## Validation Gates
 

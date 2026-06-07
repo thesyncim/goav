@@ -21,6 +21,7 @@ type chainSpec struct {
 	name           string
 	media          av.MediaType
 	decode         bool
+	decodeCodec    CodecSpec
 	steps          []chainStep
 	postEncodeTaps []string
 	transforms     []TransformSpec
@@ -93,11 +94,11 @@ func (b *audioChain) isChain() {}
 
 func (b *videoChain) isChain() {}
 
-func (b *audioChain) Decode() *audioChain {
+func (b *audioChain) Decode(options ...codecOption) *audioChain {
 	if b == nil {
 		return b
 	}
-	b.chainBuilder.decode()
+	b.chainBuilder.decode(options...)
 	return b
 }
 
@@ -156,11 +157,11 @@ func (b *audioChain) chainSpec() chainSpec {
 	return b.chainBuilder.snapshot()
 }
 
-func (b *videoChain) Decode() *videoChain {
+func (b *videoChain) Decode(options ...codecOption) *videoChain {
 	if b == nil {
 		return b
 	}
-	b.chainBuilder.decode()
+	b.chainBuilder.decode(options...)
 	return b
 }
 
@@ -222,7 +223,7 @@ func (b *chainBuilder) name() string {
 	return b.spec.name
 }
 
-func (b *chainBuilder) decode() {
+func (b *chainBuilder) decode(options ...codecOption) {
 	if b == nil {
 		return
 	}
@@ -239,6 +240,7 @@ func (b *chainBuilder) decode() {
 		return
 	}
 	b.spec.decode = true
+	b.spec.decodeCodec = mergeDecodeCodecSpec(b.spec.decodeCodec, codecSpecFromOptions(options...))
 }
 
 func (b *chainBuilder) transform(spec TransformSpec) {
@@ -314,7 +316,7 @@ func (b *chainBuilder) encode(codec CodecSpec) {
 		b.setErr(flowCopyDomainError("build flow", firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
-	b.spec.encode = codec
+	b.spec.encode = cloneCodecSpec(codec)
 }
 
 func (b *chainBuilder) snapshot() chainSpec {
@@ -322,6 +324,8 @@ func (b *chainBuilder) snapshot() chainSpec {
 		return chainSpec{err: nilFlowError()}
 	}
 	spec := b.spec
+	spec.decodeCodec = cloneCodecSpec(spec.decodeCodec)
+	spec.encode = cloneCodecSpec(spec.encode)
 	spec.steps = cloneChainSteps(spec.steps)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)

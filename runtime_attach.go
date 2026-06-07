@@ -40,6 +40,7 @@ type runtimeBranch struct {
 type runtimeBranchStep struct {
 	stage     pipeline.Stage
 	decode    bool
+	codec     CodecSpec
 	transform TransformSpec
 	tap       string
 	tapDomain MediaDomain
@@ -229,12 +230,12 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		from:      spec.from,
 		tap:       spec.tap,
 		tapDomain: spec.tapDomain,
-		encode:    spec.encode,
+		encode:    cloneCodecSpec(spec.encode),
 		policy:    spec.policy,
 		label:     spec.label,
 		buffer:    spec.buffer,
 	}
-	branch.steps = runtimeBranchStepsFromChain(spec.decode, spec.steps)
+	branch.steps = runtimeBranchStepsFromChain(spec.decode, spec.decodeCodec, spec.steps)
 	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	if len(spec.targets) == 0 {
 		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.Target(name, destination))")
@@ -259,10 +260,10 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	return branch, nil
 }
 
-func runtimeBranchStepsFromChain(decode bool, steps []chainStep) []runtimeBranchStep {
+func runtimeBranchStepsFromChain(decode bool, decodeCodec CodecSpec, steps []chainStep) []runtimeBranchStep {
 	out := make([]runtimeBranchStep, 0, len(steps)+1)
 	if decode {
-		out = append(out, runtimeBranchStep{decode: true})
+		out = append(out, runtimeBranchStep{decode: true, codec: cloneCodecSpec(decodeCodec)})
 	}
 	after := initialStepAfter(decode)
 	for i := range steps {
@@ -656,7 +657,7 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 		step := &branch.steps[i]
 		switch {
 		case step.decode:
-			decodedStage, err := t.prepareRuntimeBranchDecode(ctx, branch.name, currentStream, currentCaps)
+			decodedStage, err := t.prepareRuntimeBranchDecode(ctx, branch.name, currentStream, currentCaps, step.codec)
 			if err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
 				return err
@@ -840,7 +841,7 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 	return nil
 }
 
-func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentCaps StreamCaps) (pipeline.Stage, error) {
+func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentCaps StreamCaps, spec CodecSpec) (pipeline.Stage, error) {
 	if t.runtime == nil {
 		return nil, runtimeBranchInvalidError(
 			"runtime branch decoding requires the standard runtime",
@@ -853,7 +854,7 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string
 	if currentStream.Codec.ID == "" {
 		return nil, runtimeBranchDecodeCodecMissingError(branchName, currentCaps)
 	}
-	request := runtimeBranchDecodeRequest(branchName, currentStream)
+	request := runtimeBranchDecodeRequest(branchName, currentStream, spec)
 	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
 		stream := StreamIntent{Name: branchName, Decode: true}
 		return nil, recipeDecodeAdapterError("attach runtime branch", stream, currentStream.Codec.ID, t.runtime.codecs, err)
@@ -1673,7 +1674,7 @@ func runtimeBranchEncodeRequest(branch runtimeBranch, stream av.Stream) encodeRe
 	}
 }
 
-func runtimeBranchDecodeRequest(branchName string, stream av.Stream) decodeRequest {
+func runtimeBranchDecodeRequest(branchName string, stream av.Stream, spec CodecSpec) decodeRequest {
 	selector := av.StreamSelector{
 		Name:  firstNonEmpty(branchName, stream.Name),
 		Type:  stream.Type,
@@ -1683,7 +1684,7 @@ func runtimeBranchDecodeRequest(branchName string, stream av.Stream) decodeReque
 	if selector.Type == "" {
 		selector.Type = stream.Codec.Type
 	}
-	return decodeRequest{selector: selector}
+	return decodeRequest{selector: selector, config: cloneCodecSpec(spec)}
 }
 
 func streamCapsFromRuntimeBranchStream(stream av.Stream, previous StreamCaps) StreamCaps {
