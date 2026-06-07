@@ -2642,6 +2642,110 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 	}
 }
 
+func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
+	web := Target("web", fileDestination("web.ivf", io.Discard))
+	thumbnail := Target("thumbnail", sinkDestination(SinkFunc("thumbnail", func(context.Context, Message) error {
+		return nil
+	})))
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Resize(1280, 720).
+		Tap(FrameTap("video.720p.frames")).
+		Branches(
+			Branch("web").VP9(2_000_000).To(web),
+			Branch("thumb").Resize(320, 180).To(thumbnail),
+		)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	operations := resolved.graphPlan.operationPlan()
+	for _, want := range []pipeline.NodeRef{"select-video", "decode-video", "resize-video", "encode-web", "resize-thumb"} {
+		if !graphPlanOperationNodePresent(operations, want) {
+			t.Fatalf("graphPlan operations = %+v, want node %s", operations, want)
+		}
+	}
+	for _, duplicate := range []pipeline.NodeRef{"decode-web", "decode-thumb", "resize-web"} {
+		if graphPlanOperationNodePresent(operations, duplicate) {
+			t.Fatalf("graphPlan operations = %+v, want shared node instead of %s", operations, duplicate)
+		}
+	}
+}
+
+func TestBranchComposeLowererUsesPlanInputOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "select-audio", "select-plan-audio")
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "decode-audio", "decode-plan-audio")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "select-plan-audio") || !specHasNode(planned, "decode-plan-audio") {
+		t.Fatalf("planned = %+v, want renamed plan input nodes", planned)
+	}
+}
+
+func renameGraphPlanNodeRef(plan graphPlan, oldName string, newName string) graphPlan {
+	oldRef := pipeline.NodeRef(oldName)
+	newRef := pipeline.NodeRef(newName)
+	for i := range plan.nodes {
+		if plan.nodes[i].Name == oldName {
+			plan.nodes[i].Name = newName
+		}
+	}
+	for i := range plan.edges {
+		if plan.edges[i].From == oldRef {
+			plan.edges[i].From = newRef
+		}
+		if plan.edges[i].To == oldRef {
+			plan.edges[i].To = newRef
+		}
+	}
+	for i := range plan.operations {
+		if plan.operations[i].Node == oldRef {
+			plan.operations[i].Node = newRef
+		}
+	}
+	for i := range plan.taps {
+		if plan.taps[i].Node == oldRef {
+			plan.taps[i].Node = newRef
+		}
+	}
+	return plan
+}
+
 func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T) {
 	web := Target("web", fileDestination("web.ivf", io.Discard))
 	mobile := Target("mobile", fileDestination("mobile.ivf", io.Discard))

@@ -85,12 +85,17 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 }
 
 func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
+	return b.newDecodeStageNamed(ctx, decodeNodeName(request.selector), request, stream, realtime, dropInputEvents, bounds)
+}
+
+func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
 	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
 	if err != nil {
 		return nil, err
 	}
+	name = firstNonEmpty(name, decodeNodeName(request.selector))
 	intent := StreamIntent{
-		Name: decodeNodeName(request.selector),
+		Name: name,
 		Select: StreamSelect{
 			ID:       request.selector.ID,
 			Index:    request.selector.Index,
@@ -137,7 +142,7 @@ func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, str
 		return nil, err
 	}
 	stage, err := codec.NewDecoderStage(codec.DecoderStageConfig{
-		Name:            decodeNodeName(request.selector),
+		Name:            name,
 		Detail:          decodeRequestDetail(request),
 		InputStream:     stream,
 		Decoder:         decoder,

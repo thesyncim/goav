@@ -250,7 +250,7 @@ func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, plan graphPlan, 
 	if err != nil {
 		return err
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, p.branches, sources.realtime)
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, p.branches, lowering.inputs, sources.realtime)
 	if err != nil {
 		return err
 	}
@@ -258,7 +258,13 @@ func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, plan graphPlan, 
 }
 
 type graphPlanBranchComposeLowering struct {
+	inputs  map[string]graphPlanBranchComposeInputOperation
 	targets []branchComposeTargetRoute
+}
+
+type graphPlanBranchComposeInputOperation struct {
+	selectNode pipeline.NodeRef
+	decodeNode pipeline.NodeRef
 }
 
 func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan graphPlan) (graphPlanBranchComposeLowering, error) {
@@ -275,11 +281,78 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan 
 			return graphPlanBranchComposeLowering{}, err
 		}
 	}
+	inputs, err := p.prepareBranchComposeInputOperations(branchOperations)
+	if err != nil {
+		return graphPlanBranchComposeLowering{}, err
+	}
 	targets, err := p.prepareBranchComposeTargets(plan)
 	if err != nil {
 		return graphPlanBranchComposeLowering{}, err
 	}
-	return graphPlanBranchComposeLowering{targets: targets}, nil
+	return graphPlanBranchComposeLowering{inputs: inputs, targets: targets}, nil
+}
+
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeInputOperations(branchOperations map[string][]graphPlanOperation) (map[string]graphPlanBranchComposeInputOperation, error) {
+	groups := branchComposeSelectorGroups(p.branches)
+	inputs := make(map[string]graphPlanBranchComposeInputOperation, len(groups))
+	for i := range groups {
+		var input graphPlanBranchComposeInputOperation
+		for _, branchIndex := range groups[i].branches {
+			if branchIndex < 0 || branchIndex >= len(p.branches) {
+				continue
+			}
+			branch := p.branches[branchIndex]
+			operations := branchOperations[branch.name]
+			selectOperation, ok := graphPlanBranchOperation(operations, OpSelect)
+			if !ok {
+				return nil, graphPlanInvalidError("branch composition graph plan has no select operation for branch", []string{
+					"branch=" + branch.name,
+				})
+			}
+			if err := assignBranchComposeInputNode(&input.selectNode, selectOperation.Node, branch.name, "select"); err != nil {
+				return nil, err
+			}
+			if !branchComposeRouteNeedsDecode(branch) {
+				continue
+			}
+			decodeOperation, ok := graphPlanBranchOperation(operations, OpDecode)
+			if !ok {
+				return nil, graphPlanInvalidError("branch composition graph plan has no decode operation for branch", []string{
+					"branch=" + branch.name,
+				})
+			}
+			if err := assignBranchComposeInputNode(&input.decodeNode, decodeOperation.Node, branch.name, "decode"); err != nil {
+				return nil, err
+			}
+		}
+		inputs[branchComposeSelectorKey(groups[i].selector)] = input
+	}
+	return inputs, nil
+}
+
+func assignBranchComposeInputNode(target *pipeline.NodeRef, node pipeline.NodeRef, branch string, kind string) error {
+	if node == "" {
+		return graphPlanInvalidError("branch composition graph plan input operation has no node", []string{
+			"branch=" + branch,
+			"kind=" + kind,
+		})
+	}
+	if target == nil {
+		return nil
+	}
+	if *target == "" {
+		*target = node
+		return nil
+	}
+	if *target != node {
+		return graphPlanInvalidError("branch composition graph plan input operation is not shared by selector group", []string{
+			"branch=" + branch,
+			"kind=" + kind,
+			"first=" + target.String(),
+			"next=" + node.String(),
+		})
+	}
+	return nil
 }
 
 func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branch branchComposeRoute, operations []graphPlanOperation) error {
@@ -319,6 +392,15 @@ func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branc
 		})
 	}
 	return nil
+}
+
+func graphPlanBranchOperation(operations []graphPlanOperation, kind OperationKind) (graphPlanOperation, bool) {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return operations[i], true
+		}
+	}
+	return graphPlanOperation{}, false
 }
 
 func (p mediaPlanBranchComposeGraph) validateBranchComposeStepOperations(branch branchComposeRoute, operations []graphPlanOperation) error {

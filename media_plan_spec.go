@@ -128,7 +128,7 @@ func graphPlanOperationsFromMediaPlan(plan mediaPlan) []graphPlanOperation {
 			operation := branch.Operations[j]
 			operations = append(operations, graphPlanOperation{
 				Branch:    branch.Name,
-				Node:      pipeline.NodeRef(planOperationNodeName(branch.Name, operation, j)),
+				Node:      pipeline.NodeRef(planOperationNodeName(branch, operation, j)),
 				Kind:      operation.Kind,
 				Component: operation.Component,
 				Detail:    operation.Detail,
