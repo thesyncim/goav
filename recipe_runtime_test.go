@@ -419,6 +419,101 @@ func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
 	}
 }
 
+func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
+	ctx := context.Background()
+	stream := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+	}
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    Stereo,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{4, 5, 6},
+		}},
+		events: make(chan av.Event),
+	}
+	state := &writerDestinationState{}
+	muxer := &writerDestinationMuxer{}
+	runtime := New(withTestFormats(
+		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
+	))
+	task, err := From(RTP(receiver).Name("audio").Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2})).
+		UseRuntime(runtime).
+		Audio().
+		Copy().
+		Tap(PacketTap("audio.packets")).
+		To(Sink(SinkFunc("base", func(context.Context, Message) error { return nil }))).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := Writer(
+		"s3://bucket/late.ogg",
+		func(_ context.Context, info TargetInfo) (io.WriteCloser, error) {
+			state.opens++
+			state.info = info
+			return &writerDestinationWriteCloser{state: state}, nil
+		},
+		Format(av.FormatOgg),
+		MIME("audio/ogg"),
+	)
+	attachment, err := task.Attach(ctx,
+		Branch("late").
+			From(PacketTap("audio.packets")).
+			Copy().
+			To(Target("late-recording", writer)),
+	)
+	if err != nil {
+		_ = task.Close()
+		t.Fatal(err)
+	}
+	if attachment == nil {
+		_ = task.Close()
+		t.Fatal("attachment = nil, want runtime attachment")
+	}
+	if state.opens != 1 ||
+		state.info.Name != "s3://bucket/late.ogg" ||
+		state.info.Format != av.FormatOgg ||
+		state.info.MIMEType != "audio/ogg" ||
+		len(state.info.Streams) != 1 ||
+		state.info.Streams[0].ID != "audio" {
+		_ = task.Close()
+		t.Fatalf("target info: opens=%d info=%+v", state.opens, state.info)
+	}
+	if err := task.Run(ctx); err != nil {
+		_ = task.Close()
+		t.Fatal(err)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(state.bytes.Bytes(), []byte{4, 5, 6}) {
+		t.Fatalf("written bytes = %v", state.bytes.Bytes())
+	}
+	if muxer.writes != 1 {
+		t.Fatalf("muxer writes = %d, want 1", muxer.writes)
+	}
+	if state.closes != 1 || state.commits != 1 || state.aborts != 0 {
+		t.Fatalf("closes=%d commits=%d aborts=%d, want one close and commit", state.closes, state.commits, state.aborts)
+	}
+}
+
 func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
