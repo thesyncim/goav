@@ -246,6 +246,15 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if err != nil {
 		return err
 	}
+	if len(packet.ContentEncryptionPartitions) != 0 {
+		hasEncryption, err := trackHasBlockEncryption(track)
+		if err != nil {
+			return err
+		}
+		if !hasEncryption {
+			return ErrInvalidData
+		}
+	}
 	if !m.headerWritten {
 		if maxAdditionID > track.MaxBlockAdditionID {
 			track.MaxBlockAdditionID = maxAdditionID
@@ -1520,7 +1529,7 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 	var payloadSize int
 	var err error
 	if blockPayloadNeedsBuffering(track) {
-		blockPayload, err = m.muxedBlockPayload(track, packet.Data)
+		blockPayload, err = m.muxedBlockPayload(track, packet.Data, packet.ContentEncryptionPartitions)
 		if err != nil {
 			return err
 		}
@@ -1715,7 +1724,7 @@ func writeBlockMore(w *ebml.Writer, addition BlockAddition) error {
 
 func (m *Muxer) writeBlock(id ebml.ID, packet Packet, blockTimecode int16, flags byte, track Track) error {
 	if len(track.ContentEncodings) != 0 && blockPayloadNeedsBuffering(track) {
-		payload, err := m.muxedBlockPayload(track, packet.Data)
+		payload, err := m.muxedBlockPayload(track, packet.Data, packet.ContentEncryptionPartitions)
 		if err != nil {
 			return err
 		}
@@ -2143,13 +2152,19 @@ func blockPayloadSize(track Track, data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (m *Muxer) muxedBlockPayload(track Track, data []byte) ([]byte, error) {
+func (m *Muxer) muxedBlockPayload(track Track, data []byte, partitions []uint32) ([]byte, error) {
 	if len(track.ContentEncodings) == 0 {
+		if len(partitions) != 0 {
+			return nil, ErrInvalidData
+		}
 		return m.codecMuxedBlockPayload(track, data)
 	}
 	encoding, err := blockContentEncoding(track)
 	if err != nil {
 		return nil, err
+	}
+	if len(partitions) != 0 && !encoding.encryptionSet {
+		return nil, ErrInvalidData
 	}
 	if encoding.headerSet {
 		if !bytes.HasPrefix(data, encoding.headerSettings) {
@@ -2176,7 +2191,7 @@ func (m *Muxer) muxedBlockPayload(track Track, data []byte) ([]byte, error) {
 		return nil, err
 	}
 	if encoding.encryptionSet {
-		return m.encryptBlockPayload(encoding, payload)
+		return m.encryptBlockPayload(encoding, payload, partitions)
 	}
 	return payload, nil
 }
@@ -2250,7 +2265,7 @@ func (m *Muxer) prepareLacedBlockPayload(frames [][]byte, track Track, sizes []i
 	}
 	m.lacePayload = m.lacePayload[:0]
 	for i := range frames {
-		payload, err := m.muxedBlockPayload(track, frames[i])
+		payload, err := m.muxedBlockPayload(track, frames[i], nil)
 		if err != nil {
 			return nil, err
 		}
@@ -3418,6 +3433,17 @@ func blockContentEncoding(track Track) (blockContentEncodingInfo, error) {
 		return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 	}
 	return out, nil
+}
+
+func trackHasBlockEncryption(track Track) (bool, error) {
+	if len(track.ContentEncodings) == 0 {
+		return false, nil
+	}
+	encoding, err := blockContentEncoding(track)
+	if err != nil {
+		return false, err
+	}
+	return encoding.encryptionSet, nil
 }
 
 func blockHeaderStripping(track Track) ([]byte, bool, error) {

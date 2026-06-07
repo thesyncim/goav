@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/binary"
 	"io"
 )
 
@@ -64,7 +65,10 @@ func contentEncryptionKey(keys []ContentEncryptionKey, keyID []byte) ([]byte, er
 	return nil, ErrUnsupportedContentEncoding
 }
 
-func (m *Muxer) encryptBlockPayload(encoding blockContentEncodingInfo, payload []byte) ([]byte, error) {
+func (m *Muxer) encryptBlockPayload(encoding blockContentEncodingInfo, payload []byte, partitions []uint32) ([]byte, error) {
+	if err := validateContentEncryptionPartitions(partitions, len(payload)); err != nil {
+		return nil, err
+	}
 	key, err := contentEncryptionKey(m.options.ContentEncryptionKeys, encoding.encryption.KeyID)
 	if err != nil {
 		return nil, err
@@ -82,19 +86,43 @@ func (m *Muxer) encryptBlockPayload(encoding blockContentEncodingInfo, payload [
 	stream := cipher.NewCTR(block, counter[:])
 
 	m.encryptionPayload.Reset()
-	m.encryptionPayload.Grow(1 + contentEncryptionIVSize + len(payload))
-	if err := m.encryptionPayload.WriteByte(contentEncryptionSignalEncrypted); err != nil {
+	headerSize := 1 + contentEncryptionIVSize
+	if len(partitions) != 0 {
+		headerSize += 1 + 4*len(partitions)
+	}
+	m.encryptionPayload.Grow(headerSize + len(payload))
+	signal := contentEncryptionSignalEncrypted
+	if len(partitions) != 0 {
+		signal |= contentEncryptionSignalPartitioned
+	}
+	if err := m.encryptionPayload.WriteByte(signal); err != nil {
 		return nil, err
 	}
 	if _, err := m.encryptionPayload.Write(m.contentEncryptionIV[:]); err != nil {
 		return nil, err
+	}
+	if len(partitions) != 0 {
+		if err := m.encryptionPayload.WriteByte(byte(len(partitions))); err != nil {
+			return nil, err
+		}
+		var offsetScratch [4]byte
+		for i := range partitions {
+			binary.BigEndian.PutUint32(offsetScratch[:], partitions[i])
+			if _, err := m.encryptionPayload.Write(offsetScratch[:]); err != nil {
+				return nil, err
+			}
+		}
 	}
 	payloadOffset := m.encryptionPayload.Len()
 	if _, err := m.encryptionPayload.Write(payload); err != nil {
 		return nil, err
 	}
 	out := m.encryptionPayload.Bytes()
-	stream.XORKeyStream(out[payloadOffset:], out[payloadOffset:])
+	if len(partitions) == 0 {
+		stream.XORKeyStream(out[payloadOffset:], out[payloadOffset:])
+	} else {
+		xorContentEncryptionPartitions(stream, out[payloadOffset:], partitions)
+	}
 	incrementContentEncryptionIV(&m.contentEncryptionIV)
 	return out, nil
 }
@@ -124,20 +152,69 @@ func incrementContentEncryptionIV(iv *[contentEncryptionIVSize]byte) {
 	}
 }
 
+func validateContentEncryptionPartitions(partitions []uint32, payloadSize int) error {
+	if len(partitions) == 0 {
+		return nil
+	}
+	if len(partitions) > 255 || payloadSize < 0 {
+		return ErrInvalidData
+	}
+	previous := uint32(0)
+	for i := range partitions {
+		offset := partitions[i]
+		if uint64(offset) > uint64(payloadSize) {
+			return ErrInvalidData
+		}
+		if i > 0 && offset <= previous {
+			return ErrInvalidData
+		}
+		previous = offset
+	}
+	return nil
+}
+
 func (d *Demuxer) decryptBlockPayload(encoding blockContentEncodingInfo, frame []byte) ([]byte, error) {
 	if len(frame) == 0 {
 		return nil, ErrInvalidData
 	}
 	signal := frame[0]
-	if signal&contentEncryptionSignalExtension != 0 || signal&contentEncryptionSignalPartitioned != 0 {
+	if signal&contentEncryptionSignalExtension != 0 {
 		return nil, ErrUnsupportedContentEncoding
 	}
 	payload := frame[1:]
+	if signal&contentEncryptionSignalPartitioned != 0 && signal&contentEncryptionSignalEncrypted == 0 {
+		return nil, ErrInvalidData
+	}
 	if signal&contentEncryptionSignalEncrypted == 0 {
 		return payload, nil
 	}
 	if len(payload) < contentEncryptionIVSize {
 		return nil, ErrInvalidData
+	}
+	iv := payload[:contentEncryptionIVSize]
+	payload = payload[contentEncryptionIVSize:]
+	partitions := d.contentPartitions[:0]
+	if signal&contentEncryptionSignalPartitioned != 0 {
+		if len(payload) == 0 {
+			return nil, ErrInvalidData
+		}
+		count := int(payload[0])
+		payload = payload[1:]
+		if len(payload) < 4*count {
+			return nil, ErrInvalidData
+		}
+		if cap(partitions) < count {
+			partitions = make([]uint32, 0, count)
+		}
+		partitions = partitions[:count]
+		for i := range partitions {
+			partitions[i] = binary.BigEndian.Uint32(payload[:4])
+			payload = payload[4:]
+		}
+		if err := validateContentEncryptionPartitions(partitions, len(payload)); err != nil {
+			return nil, err
+		}
+		d.contentPartitions = partitions
 	}
 	key, err := contentEncryptionKey(d.options.ContentEncryptionKeys, encoding.encryption.KeyID)
 	if err != nil {
@@ -148,9 +225,28 @@ func (d *Demuxer) decryptBlockPayload(encoding blockContentEncodingInfo, frame [
 		return nil, ErrInvalidData
 	}
 	var counter [aes.BlockSize]byte
-	copy(counter[:contentEncryptionIVSize], payload[:contentEncryptionIVSize])
-	payload = payload[contentEncryptionIVSize:]
+	copy(counter[:contentEncryptionIVSize], iv)
 	stream := cipher.NewCTR(block, counter[:])
-	stream.XORKeyStream(payload, payload)
+	if len(partitions) == 0 {
+		stream.XORKeyStream(payload, payload)
+	} else {
+		xorContentEncryptionPartitions(stream, payload, partitions)
+	}
 	return payload, nil
+}
+
+func xorContentEncryptionPartitions(stream cipher.Stream, payload []byte, partitions []uint32) {
+	encrypted := false
+	start := 0
+	for i := range partitions {
+		end := int(partitions[i])
+		if encrypted {
+			stream.XORKeyStream(payload[start:end], payload[start:end])
+		}
+		encrypted = !encrypted
+		start = end
+	}
+	if encrypted {
+		stream.XORKeyStream(payload[start:], payload[start:])
+	}
 }

@@ -197,6 +197,83 @@ func TestMuxerDemuxerAppliesAESCTRContentEncryption(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerAppliesPartitionedAESCTRContentEncryption(t *testing.T) {
+	keyID := []byte("webm-aes-partitioned-key")
+	key := []byte{
+		0x30, 0x31, 0x32, 0x33,
+		0x34, 0x35, 0x36, 0x37,
+		0x38, 0x39, 0x3a, 0x3b,
+		0x3c, 0x3d, 0x3e, 0x3f,
+	}
+	keys := []ContentEncryptionKey{{KeyID: keyID, Key: key}}
+	initialIV := []byte{0x20, 0x42, 0x64, 0x86, 0xa8, 0xca, 0xec, 0x0e}
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{
+		ContentEncryptionKeys:      keys,
+		ContentEncryptionInitialIV: initialIV,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		ContentEncodings: []ContentEncoding{{
+			Type:          ContentEncodingTypeEncryption,
+			EncryptionSet: true,
+			Encryption: ContentEncryption{
+				Algorithm:      ContentEncAlgoAES,
+				KeyID:          keyID,
+				AESSettingsSet: true,
+				AESSettings:    ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCTR},
+			},
+		}},
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clearPrefix := []byte("webm partition clear prefix:")
+	secret := []byte("webm partition encrypted middle webm partition encrypted middle")
+	clearSuffix := []byte(":webm partition clear suffix")
+	want := append(append(append([]byte(nil), clearPrefix...), secret...), clearSuffix...)
+	partitions := []uint32{uint32(len(clearPrefix)), uint32(len(clearPrefix) + len(secret))}
+	if err := muxer.WritePacket(Packet{
+		TrackID:                     trackID,
+		TimeNS:                      0,
+		Keyframe:                    true,
+		Data:                        want,
+		ContentEncryptionPartitions: partitions,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	encoded := buffer.Bytes()
+	if !bytes.Contains(encoded, clearPrefix) {
+		t.Fatalf("file does not contain clear prefix")
+	}
+	if !bytes.Contains(encoded, clearSuffix) {
+		t.Fatalf("file does not contain clear suffix")
+	}
+	if bytes.Contains(encoded, secret) {
+		t.Fatalf("file still contains encrypted partition %q", secret)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(encoded), DemuxerOptions{ContentEncryptionKeys: keys})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, len(want))}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(packet.Data, want) {
+		t.Fatalf("packet data = %q, want %q", packet.Data, want)
+	}
+}
+
 func TestMuxerDemuxerPreservesAudioOutputSampleRate(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})

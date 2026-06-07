@@ -247,18 +247,19 @@ const (
 )
 
 type Packet struct {
-	TrackID              uint32
-	TimeNS               int64
-	DurationNS           int64
-	ReferenceBlockTimeNS []int64
-	ReferencePriority    uint64
-	DiscardPaddingNS     int64
-	CodecState           []byte
-	BlockAdditions       []BlockAddition
-	Keyframe             bool
-	Invisible            bool
-	Discardable          bool
-	Data                 []byte
+	TrackID                     uint32
+	TimeNS                      int64
+	DurationNS                  int64
+	ReferenceBlockTimeNS        []int64
+	ReferencePriority           uint64
+	DiscardPaddingNS            int64
+	CodecState                  []byte
+	BlockAdditions              []BlockAddition
+	Keyframe                    bool
+	Invisible                   bool
+	Discardable                 bool
+	Data                        []byte
+	ContentEncryptionPartitions []uint32
 }
 
 type BlockAddition struct {
@@ -419,11 +420,13 @@ func (p *Packet) Reset() {
 	references := p.ReferenceBlockTimeNS[:0]
 	codecState := p.CodecState[:0]
 	additions := p.BlockAdditions[:0]
+	partitions := p.ContentEncryptionPartitions[:0]
 	*p = Packet{
-		Data:                 data,
-		ReferenceBlockTimeNS: references,
-		CodecState:           codecState,
-		BlockAdditions:       additions,
+		Data:                        data,
+		ReferenceBlockTimeNS:        references,
+		CodecState:                  codecState,
+		BlockAdditions:              additions,
+		ContentEncryptionPartitions: partitions,
 	}
 }
 
