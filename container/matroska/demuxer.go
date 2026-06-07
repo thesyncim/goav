@@ -2595,9 +2595,10 @@ func (d *Demuxer) parseTracks(header ebml.Header) error {
 			if err != nil {
 				return err
 			}
-			if track.ID != 0 {
-				d.upsertTrack(track)
+			if d.hasTrack(track.ID) || d.hasTrackUID(track.UID) {
+				return ErrInvalidData
 			}
+			d.tracks = append(d.tracks, track)
 		default:
 			if err := appendUnknownChildElement(master.Reader(), child, isKnownTracksElement, &d.unknownTracks); err != nil {
 				return err
@@ -3501,6 +3502,12 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 	}
 	track := Track{Language: "und", TimebaseNum: 1, TimebaseDen: timeNS, CodecDecodeAll: true, FlagEnabled: true, FlagDefault: true, FlagLacing: true}
 	var codecID string
+	trackNumberSeen := false
+	trackUIDSeen := false
+	trackTypeSeen := false
+	codecIDSeen := false
+	videoSeen := false
+	audioSeen := false
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -3508,6 +3515,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 		}
 		switch child.ID {
 		case idTrackNumber:
+			if trackNumberSeen {
+				return Track{}, ErrInvalidData
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -3517,7 +3527,11 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 			track.ID = trackID
+			trackNumberSeen = true
 		case idTrackUID:
+			if trackUIDSeen {
+				return Track{}, ErrInvalidData
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -3526,7 +3540,11 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, ErrInvalidData
 			}
 			track.UID = value
+			trackUIDSeen = true
 		case idTrackType:
+			if trackTypeSeen {
+				return Track{}, ErrInvalidData
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
@@ -3539,6 +3557,7 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			default:
 				track.Type = TrackUnknown
 			}
+			trackTypeSeen = true
 		case idFlagEnabled:
 			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
@@ -3621,11 +3640,15 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.LanguageBCP47 = value
 		case idCodecID:
+			if codecIDSeen {
+				return Track{}, ErrInvalidData
+			}
 			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Track{}, err
 			}
 			codecID = value
+			codecIDSeen = true
 		case idCodecName:
 			value, err := readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
@@ -3721,17 +3744,25 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.CodecPrivate = value
 		case idVideo:
+			if videoSeen {
+				return Track{}, ErrInvalidData
+			}
 			video, err := d.parseVideo(master.Reader(), child)
 			if err != nil {
 				return Track{}, err
 			}
 			track.Video = video
+			videoSeen = true
 		case idAudio:
+			if audioSeen {
+				return Track{}, ErrInvalidData
+			}
 			audio, err := d.parseAudio(master.Reader(), child)
 			if err != nil {
 				return Track{}, err
 			}
 			track.Audio = audio
+			audioSeen = true
 		default:
 			if err := appendUnknownChildElement(master.Reader(), child, isKnownTrackEntryElement, &track.UnknownElements); err != nil {
 				return Track{}, err
@@ -3740,6 +3771,12 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 	}
 	if err := master.Validate(); err != nil {
 		return Track{}, err
+	}
+	if !trackNumberSeen || !trackTypeSeen || !codecIDSeen {
+		return Track{}, ErrInvalidData
+	}
+	if (track.Type == TrackVideo && !videoSeen) || (track.Type == TrackAudio && !audioSeen) {
+		return Track{}, ErrInvalidData
 	}
 	if track.UID == 0 {
 		track.UID = uint64(track.ID)
@@ -5580,6 +5617,18 @@ func (d *Demuxer) defaultDurationNS(trackID uint32) int64 {
 func (d *Demuxer) hasTrack(id uint32) bool {
 	_, ok := d.trackIndex(id)
 	return ok
+}
+
+func (d *Demuxer) hasTrackUID(uid uint64) bool {
+	if uid == 0 {
+		return false
+	}
+	for i := range d.tracks {
+		if d.tracks[i].UID == uid {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Demuxer) track(id uint32) (Track, bool) {

@@ -155,6 +155,10 @@ Current milestone:
 - Demux validation rejects on-disk track, cue, and block track numbers that
   cannot fit the public `uint32` track ID surface, and blocks that reference
   undeclared tracks.
+- Demux validation rejects malformed `TrackEntry` records that omit required
+  TrackNumber, TrackType, CodecID, or audio/video settings, duplicate singleton
+  identity fields inside one TrackEntry, or reuse TrackNumber/TrackUID across
+  entries.
 - Mux and demux validation rejects negative or overflowing track timing,
   audio, and video metadata before it can wrap into EBML unsigned integers or
   public `int` fields.

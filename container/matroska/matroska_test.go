@@ -9604,6 +9604,130 @@ func TestDemuxerRejectsInvalidBlockAdditions(t *testing.T) {
 }
 
 func TestDemuxerRejectsInvalidTrackMetadata(t *testing.T) {
+	t.Run("missing track number", func(t *testing.T) {
+		entry := defaultTrackEntryFixture()
+		entry.NumberSet = false
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, entry)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("missing track type", func(t *testing.T) {
+		entry := defaultTrackEntryFixture()
+		entry.TypeSet = false
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, entry)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("missing codec id", func(t *testing.T) {
+		entry := defaultTrackEntryFixture()
+		entry.CodecIDSet = false
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, entry)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("missing video settings", func(t *testing.T) {
+		entry := defaultTrackEntryFixture()
+		entry.MediaSet = false
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, entry)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("missing audio settings", func(t *testing.T) {
+		entry := defaultTrackEntryFixture()
+		entry.Type = matroskaTrackAudio
+		entry.CodecID = codecIDOpus
+		entry.MediaSet = false
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, entry)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("duplicate track number", func(t *testing.T) {
+		first := defaultTrackEntryFixture()
+		second := defaultTrackEntryFixture()
+		second.UID = 2
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, first, second)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("duplicate track uid", func(t *testing.T) {
+		first := defaultTrackEntryFixture()
+		second := defaultTrackEntryFixture()
+		second.Number = 2
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, first, second)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("duplicate track number element", func(t *testing.T) {
+		entry := defaultTrackEntryFixture()
+		entry.DuplicateNumber = true
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, entry)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("duplicate track uid element", func(t *testing.T) {
+		entry := defaultTrackEntryFixture()
+		entry.DuplicateUID = true
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, entry)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("duplicate track type element", func(t *testing.T) {
+		entry := defaultTrackEntryFixture()
+		entry.DuplicateType = true
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, entry)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("duplicate codec id element", func(t *testing.T) {
+		entry := defaultTrackEntryFixture()
+		entry.DuplicateCodecID = true
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, entry)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
+	t.Run("duplicate video element", func(t *testing.T) {
+		entry := defaultTrackEntryFixture()
+		entry.DuplicateMedia = true
+		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
+			return writeTracksWithTrackEntryFixtures(writer, entry)
+		})
+		if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+			t.Fatalf("err = %v, want ErrInvalidData", err)
+		}
+	})
 	t.Run("video dimension overflow", func(t *testing.T) {
 		data := makeTrackMetadataMatroskaData(t, func(writer *ebml.Writer) error {
 			return writeTracksWithVideoDimensions(writer, maxIntValue+1, 16)
@@ -13243,6 +13367,118 @@ func writeTracksWithTrackExtra(writer *ebml.Writer, writeExtra func(*ebml.Writer
 		return err
 	}
 	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+type trackEntryFixture struct {
+	Number           uint64
+	UID              uint64
+	Type             uint64
+	CodecID          string
+	NumberSet        bool
+	UIDSet           bool
+	TypeSet          bool
+	CodecIDSet       bool
+	MediaSet         bool
+	DuplicateNumber  bool
+	DuplicateUID     bool
+	DuplicateType    bool
+	DuplicateCodecID bool
+	DuplicateMedia   bool
+}
+
+func defaultTrackEntryFixture() trackEntryFixture {
+	return trackEntryFixture{
+		Number:     1,
+		UID:        1,
+		Type:       matroskaTrackVideo,
+		CodecID:    codecIDVP8,
+		NumberSet:  true,
+		UIDSet:     true,
+		TypeSet:    true,
+		CodecIDSet: true,
+		MediaSet:   true,
+	}
+}
+
+func writeTracksWithTrackEntryFixtures(writer *ebml.Writer, entries ...trackEntryFixture) error {
+	var tracks bytes.Buffer
+	tw := ebml.NewWriter(&tracks)
+	for i := range entries {
+		var entry bytes.Buffer
+		ew := ebml.NewWriter(&entry)
+		if err := writeTrackEntryFixture(ew, entries[i]); err != nil {
+			return err
+		}
+		if err := tw.WriteElement(idTrackEntry, entry.Bytes()); err != nil {
+			return err
+		}
+	}
+	return writer.WriteElement(idTracks, tracks.Bytes())
+}
+
+func writeTrackEntryFixture(w *ebml.Writer, entry trackEntryFixture) error {
+	if entry.NumberSet {
+		if err := w.WriteUInt(idTrackNumber, entry.Number); err != nil {
+			return err
+		}
+		if entry.DuplicateNumber {
+			if err := w.WriteUInt(idTrackNumber, entry.Number); err != nil {
+				return err
+			}
+		}
+	}
+	if entry.UIDSet {
+		if err := w.WriteUInt(idTrackUID, entry.UID); err != nil {
+			return err
+		}
+		if entry.DuplicateUID {
+			if err := w.WriteUInt(idTrackUID, entry.UID); err != nil {
+				return err
+			}
+		}
+	}
+	if entry.TypeSet {
+		if err := w.WriteUInt(idTrackType, entry.Type); err != nil {
+			return err
+		}
+		if entry.DuplicateType {
+			if err := w.WriteUInt(idTrackType, entry.Type); err != nil {
+				return err
+			}
+		}
+	}
+	if entry.CodecIDSet {
+		if err := w.WriteString(idCodecID, entry.CodecID); err != nil {
+			return err
+		}
+		if entry.DuplicateCodecID {
+			if err := w.WriteString(idCodecID, entry.CodecID); err != nil {
+				return err
+			}
+		}
+	}
+	if entry.MediaSet {
+		if err := writeTrackEntryFixtureMedia(w, entry.Type); err != nil {
+			return err
+		}
+		if entry.DuplicateMedia {
+			if err := writeTrackEntryFixtureMedia(w, entry.Type); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func writeTrackEntryFixtureMedia(w *ebml.Writer, trackType uint64) error {
+	switch trackType {
+	case matroskaTrackAudio:
+		return writeAudio(w, AudioConfig{SampleRate: 48000, Channels: 2})
+	case matroskaTrackVideo:
+		return writeVideo(w, VideoConfig{Width: 16, Height: 16})
+	default:
+		return nil
+	}
 }
 
 func trackTranslatePayload(t testing.TB, writeID bool, writeCodec bool) []byte {
