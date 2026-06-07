@@ -1354,6 +1354,97 @@ func TestBranchCompositionPacketBranchDecodeSinkRuns(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	resampleFactory := &transcodeTestFilterFactory{}
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResample,
+		Input:  av.MediaAudio,
+		Output: av.MediaAudio,
+	}, resampleFactory))
+	decoder := &decodeTestDecoder{}
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
+	)
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs, filters)).
+		Audio().
+		Copy().
+		Branches(
+			Branch("voice").
+				Decode().
+				Resample(16_000, Mono).
+				Opus(64_000).
+				To(Target("voice", FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg))),
+		)
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(planned)
+	for _, want := range []string{
+		"select-audio -> decode-audio",
+		"decode-audio -> resample-voice",
+		"resample-voice -> encode-voice",
+		"encode-voice -> voice.ogg",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("planned spec missing %q:\n%s", want, text)
+		}
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || resampleFactory.filter.frames != 1 || encoder.encodes != 1 {
+		t.Fatalf("decodes=%d resampled=%d encodes=%d", decoder.decodes, resampleFactory.filter.frames, encoder.encodes)
+	}
+	if encoderFactory.config.Stream.ID != "voice" ||
+		encoderFactory.config.Parameters.ID != av.CodecOpus ||
+		encoderFactory.config.Bitrate != 64_000 {
+		t.Fatalf("encode config: %+v", encoderFactory.config)
+	}
+	if resampleFactory.config.Audio == nil ||
+		resampleFactory.config.Audio.SampleRate != 16_000 ||
+		resampleFactory.config.Audio.Channels != Mono {
+		t.Fatalf("resample config = %+v, want 16k mono", resampleFactory.config.Audio)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "voice" {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !decoder.closed || !resampleFactory.filter.closed || !encoder.closed || !muxers.muxers[0].closed {
+		t.Fatalf("closed demux=%v decoder=%v resample=%v encoder=%v mux=%v",
+			demuxer.closed, decoder.closed, resampleFactory.filter.closed, encoder.closed, muxers.muxers[0].closed)
+	}
+}
+
 func TestBranchCompositionFrameSinkFanoutRuns(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
@@ -2513,6 +2604,130 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 	}
 	if err := child.Close(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.T) {
+	ctx := context.Background()
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &decodeTestDecoder{}
+	decoderFactory := &decodeTestDecoderFactory{decoder: decoder}
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, decoderFactory),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
+	)
+	resampleFactory := &transcodeTestFilterFactory{}
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResample,
+		Input:  av.MediaAudio,
+		Output: av.MediaAudio,
+	}, resampleFactory))
+	packet := av.Packet{
+		StreamID: "audio",
+		Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+	}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	base := &runtimeTestSink{name: "base"}
+	graph := New(formats, codecs, filters).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.packets",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainPacket,
+		Caps: StreamCaps{
+			Domain:       DomainPacket,
+			MediaKind:    av.MediaAudio,
+			StreamID:     "audio",
+			Codec:        av.CodecOpus,
+			SampleRate:   48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatS16,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	attachment, err := builtTask.Attach(ctx, Branch("voice").
+		FromTap("audio.packets").
+		Decode().
+		Resample(16_000, Mono).
+		Opus(64_000).
+		Tap("audio.voice.packets").
+		To(Target("voice", FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachmentText := specText(attachment.Spec())
+	for _, want := range []string{
+		"voice/decode-voice -> voice/resample-voice",
+		"voice/resample-voice -> voice/encode-voice",
+		"voice/encode-voice -> voice/voice.ogg",
+	} {
+		if !strings.Contains(attachmentText, want) {
+			t.Fatalf("attachment spec missing %q:\n%s", want, attachmentText)
+		}
+	}
+	packetTap, ok := findTap(builtTask.Taps(), "audio.voice.packets")
+	if !ok ||
+		packetTap.Domain != DomainPacket ||
+		packetTap.MediaKind != av.MediaAudio ||
+		packetTap.Caps.Codec != av.CodecOpus ||
+		packetTap.Caps.SampleRate != 16_000 ||
+		packetTap.Caps.Channels != Mono ||
+		packetTap.Node != "voice/encode-voice" {
+		t.Fatalf("packet tap = %+v ok=%v, want Opus 16k mono packet tap on voice encoder", packetTap, ok)
+	}
+
+	if err := builtTask.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 1 || decoder.decodes != 1 || resampleFactory.filter.frames != 1 || encoder.encodes != 1 {
+		t.Fatalf("base=%d decodes=%d resampled=%d encodes=%d",
+			base.count, decoder.decodes, resampleFactory.filter.frames, encoder.encodes)
+	}
+	if decoderFactory.config.Stream.ID != "audio" ||
+		decoderFactory.config.Stream.Codec.ID != av.CodecOpus ||
+		decoderFactory.config.Stream.Codec.SampleRate != 48000 {
+		t.Fatalf("decode config: %+v", decoderFactory.config)
+	}
+	if resampleFactory.config.Audio == nil ||
+		resampleFactory.config.Audio.SampleRate != 16_000 ||
+		resampleFactory.config.Audio.Channels != Mono {
+		t.Fatalf("runtime resample config = %+v, want 16k mono", resampleFactory.config.Audio)
+	}
+	if encoderFactory.config.Stream.ID != "voice" ||
+		encoderFactory.config.Stream.Codec.ID != av.CodecOpus ||
+		encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
+		encoderFactory.config.Stream.Codec.Channels != Mono ||
+		encoderFactory.config.Bitrate != 64_000 {
+		t.Fatalf("encode config: %+v", encoderFactory.config)
+	}
+	if len(muxers.muxers) != 1 ||
+		muxers.muxers[0].writes != 1 ||
+		muxers.muxers[0].lastStream != "voice" {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := builtTask.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	if !decoder.closed || !resampleFactory.filter.closed || !encoder.closed || !muxers.muxers[0].closed {
+		t.Fatalf("closed decoder=%v resample=%v encoder=%v mux=%v",
+			decoder.closed, resampleFactory.filter.closed, encoder.closed, muxers.muxers[0].closed)
 	}
 }
 

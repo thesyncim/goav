@@ -1328,6 +1328,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestBranchCompositionRejectsDecodeThenCopy` pin the public operation order.
     `TestBranchCompositionRejectsDecodeFromFrameBranchPoint` keeps decode as the
     packet-to-frame boundary instead of compatibility sugar. Done.
+296. Prove decoded packet branches compose into full operation chains:
+    `TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns` proves a
+    planned packet-copy split can decode, resample, encode Opus, and mux through
+    the same Branch/Target grammar.
+    `TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap` proves a
+    running packet tap can attach that same decode/resample/encode/mux chain,
+    publish a post-encode packet tap, and detach all owned components. Done.
 
 ## First Vertical Slice
 
@@ -1596,7 +1603,8 @@ branches to typed targets, matching the same operation grammar used by planned
 branches and direct stream chains.
 `Branch.Decode()` is active for packet-domain planned branches and runtime
 packet taps, so packet-copy fanout and late receive tasks can branch into raw
-frame processing without rebuilding the task.
+frame processing, transform, re-encode, publish new packet taps, and write new
+targets without rebuilding the task.
 `MediaPlan` expresses record, stream decode, encode, and branch composition as
 input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and
