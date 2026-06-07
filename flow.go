@@ -11,7 +11,7 @@ import (
 //
 // Build chains with Flow(name).Audio() or Flow(name).Video(), then apply them
 // to one stream chain or to a Branch. A chain is only an operation sequence;
-// branches own targets.
+// branches own destinations.
 type Chain interface {
 	Name() string
 	InputShapes() ShapeSet
@@ -610,7 +610,7 @@ func branchOutputScopeError(node string) error {
 		Code:      "output_scope_mixed",
 		Operation: "build branches",
 		Node:      node,
-		Reason:    "branch targets are declared inside Branch(...).To(...)",
+		Reason:    "branch destinations are declared inside Branch(...).To(...)",
 		Suggestions: []string{
 			"route branches with .Branches(goav.Branch(name).To(goav.File(name, writer)))",
 			"use stream .To(goav.File(...)) or .To(goav.Sink(...)) only for one ordinary stream destination",

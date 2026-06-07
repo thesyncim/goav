@@ -78,18 +78,18 @@ type runtimeBranchGroupDestinations struct {
 type runtimeAttachGroup struct {
 	destinations runtimeBranchGroupDestinations
 	reserved     map[string]struct{}
-	sharedSinks  map[string]*runtimeSharedSinkTarget
-	sharedMuxes  map[string]*runtimeSharedMuxTarget
+	sharedSinks  map[string]*runtimeSharedSinkDestination
+	sharedMuxes  map[string]*runtimeSharedMuxDestination
 	muxOrder     []string
 }
 
-type runtimeSharedSinkTarget struct {
+type runtimeSharedSinkDestination struct {
 	name string
 	sink pipeline.Sink
 	ref  pipeline.NodeRef
 }
 
-type runtimeSharedMuxTarget struct {
+type runtimeSharedMuxDestination struct {
 	name     string
 	dest     destinationSpec
 	streams  []av.Stream
@@ -435,7 +435,7 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeBranch) (runtimeBr
 					}
 				}
 				return destinations, &BuildError{
-					Code:      "target_duplicate",
+					Code:      "destination_duplicate",
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(branch.name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
@@ -478,8 +478,8 @@ func newRuntimeAttachGroup(destinations runtimeBranchGroupDestinations) *runtime
 	return &runtimeAttachGroup{
 		destinations: destinations,
 		reserved:     make(map[string]struct{}),
-		sharedSinks:  make(map[string]*runtimeSharedSinkTarget),
-		sharedMuxes:  make(map[string]*runtimeSharedMuxTarget),
+		sharedSinks:  make(map[string]*runtimeSharedSinkDestination),
+		sharedMuxes:  make(map[string]*runtimeSharedMuxDestination),
 	}
 }
 
@@ -524,7 +524,7 @@ func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, terminal runt
 	if err := g.reserveNode(spec, name); err != nil {
 		return err
 	}
-	g.sharedSinks[terminal.shareKey] = &runtimeSharedSinkTarget{name: name, sink: terminal.sink}
+	g.sharedSinks[terminal.shareKey] = &runtimeSharedSinkDestination{name: name, sink: terminal.sink}
 	return nil
 }
 
@@ -557,7 +557,7 @@ func (g *runtimeAttachGroup) reserveSharedMux(spec pipeline.Spec, branch runtime
 		if err := g.reserveNode(spec, name); err != nil {
 			return err
 		}
-		target = &runtimeSharedMuxTarget{
+		target = &runtimeSharedMuxDestination{
 			name:   name,
 			dest:   terminal.dest,
 			buffer: branch.buffer,
@@ -599,7 +599,7 @@ func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *run
 		if target == nil {
 			continue
 		}
-		formatID, err := runtimeMuxTargetFormat(ctx, rt, target.dest, i)
+		formatID, err := runtimeMuxDestinationFormat(ctx, rt, target.dest, i)
 		if err != nil {
 			return err
 		}
@@ -635,13 +635,13 @@ func (g *runtimeAttachGroup) attachSharedMuxDestinations(graph pipeline.Graph) (
 		}
 		ref, err := graph.AddStage(namedStage{name: target.name, stage: target.stage}, target.buffer)
 		if err != nil {
-			return refs, routes, runtimeBranchGraphError("add mux target", target.name, err)
+			return refs, routes, runtimeBranchGraphError("add mux destination", target.name, err)
 		}
 		target.ref = ref
 		refs = append(refs, ref)
 		for i := range target.routes {
 			if err := graph.Connect(target.routes[i]); err != nil {
-				return refs, routes, runtimeBranchGraphError("connect mux target", target.name, err)
+				return refs, routes, runtimeBranchGraphError("connect mux destination", target.name, err)
 			}
 			routes = append(routes, target.routes[i])
 		}
@@ -676,7 +676,7 @@ func (g *runtimeAttachGroup) failSharedMuxStages() {
 	}
 }
 
-func runtimeMuxTargetFormat(ctx context.Context, rt *runtime, dest destinationSpec, index int) (av.FormatID, error) {
+func runtimeMuxDestinationFormat(ctx context.Context, rt *runtime, dest destinationSpec, index int) (av.FormatID, error) {
 	formatID := destinationOpenFormat(dest)
 	if formatID != "" {
 		return formatID, nil
@@ -1008,7 +1008,7 @@ func runtimeBranchSharedMuxTerminal(destination runtimeBranchDestination, stream
 }
 
 func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, shape MediaShape, index int) (runtimeBranchTerminal, error) {
-	formatID, err := runtimeMuxTargetFormat(ctx, rt, destination.dest, index)
+	formatID, err := runtimeMuxDestinationFormat(ctx, rt, destination.dest, index)
 	if err != nil {
 		return runtimeBranchTerminal{}, err
 	}
@@ -1619,13 +1619,13 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 	if len(branch.destinations) == 0 {
 		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
-	if err := validateRuntimeBranchTargets(branch); err != nil {
+	if err := validateRuntimeBranchDestinations(branch); err != nil {
 		return err
 	}
 	return nil
 }
 
-func validateRuntimeBranchTargets(branch runtimeBranch) error {
+func validateRuntimeBranchDestinations(branch runtimeBranch) error {
 	seen := make(map[string]int, len(branch.destinations))
 	for i := range branch.destinations {
 		name := firstNonEmpty(branch.destinations[i].name, branch.destinations[i].dest.label(fmt.Sprintf("target%d", i+1)))
@@ -2097,7 +2097,7 @@ func runtimeBranchNodeDuplicateError(node string) error {
 
 func duplicateRuntimeBranchDestinationRefError(branch string, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Code:      "target_duplicate",
+		Code:      "destination_duplicate",
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", label),

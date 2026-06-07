@@ -469,19 +469,19 @@ func workPatchOperationKindsForBranch(operations []workOperation, branch string)
 	return out
 }
 
-func TestRuntimeAttachUsesSharedMuxTargetPreparation(t *testing.T) {
+func TestRuntimeAttachUsesSharedMuxDestinationPreparation(t *testing.T) {
 	body, err := os.ReadFile("runtime_attach.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(body)
 	for _, required := range []string{
-		"func runtimeMuxTargetFormat",
+		"func runtimeMuxDestinationFormat",
 		"func runtimeMuxCompatibilityIssue",
 		"func prepareRuntimeBranchMuxTerminal",
 		"func runtimeBranchSinkTerminal",
 		"func runtimeBranchSharedMuxTerminal",
-		"runtimeMuxTargetFormat(ctx, rt, target.dest, i)",
+		"runtimeMuxDestinationFormat(ctx, rt, target.dest, i)",
 		"runtimeMuxCompatibilityIssue(target.name",
 		"prepareRuntimeBranchMuxTerminal(ctx, t.runtime",
 	} {
@@ -612,8 +612,8 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkDestinationNames(t *tes
 		Branch("right").From(src).To(right),
 	)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "reuse one destination value") {
 		t.Fatalf("err = %v, want shared destination value guidance", err)
@@ -642,8 +642,8 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxDestinations(t *testing.
 		Branch("right").From(src).To(right),
 	)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "runtime branch group reuses one destination name") ||
 		!strings.Contains(err.Error(), "runtime destination group") ||

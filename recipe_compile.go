@@ -1044,7 +1044,7 @@ func validateRecipeDestinationShape(operation string, node string, destinationNa
 func destinationShapeMismatchError(operation string, node string, destinationName string, destination destinationSpec, shape MediaShape) error {
 	label := firstNonEmpty(destinationName, destination.label("destination"))
 	return &BuildError{
-		Code:      "target_shape_mismatch",
+		Code:      "destination_shape_mismatch",
 		Operation: operation,
 		Node:      firstNonEmpty(node, label, "destination"),
 		Reason:    "byte or mux destination requires packet-domain media",

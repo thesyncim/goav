@@ -732,10 +732,10 @@ func TestRuntimeBuilderTranscodeRequiresMatchingOutputSelection(t *testing.T) {
 
 	_, err := newTestBuilder(t).Transcode(plan).Describe()
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "branch_target_unmatched" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want branch_target_unmatched wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_destination_unmatched" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want branch_destination_unmatched wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "target selects no branches") ||
+	if !strings.Contains(err.Error(), "destination selects no branches") ||
 		!strings.Contains(err.Error(), "requested: missing") ||
 		!strings.Contains(err.Error(), "branch name") {
 		t.Fatalf("err = %v, want unmatched output guidance", err)
@@ -766,7 +766,7 @@ func TestRuntimeBuilderTranscodeReportsEmptyPlanParts(t *testing.T) {
 					Encode:   pcmEncodeConfig(),
 				}},
 			},
-			want: "no targets",
+			want: "no destinations",
 		},
 	}
 	for _, tt := range tests {

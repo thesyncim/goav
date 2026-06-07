@@ -76,10 +76,10 @@ func branchComposePlanFromTranscode(plan transcode.Plan) branchComposePlan {
 			Metadata:          branch.Metadata,
 		})
 	}
-	targets := make([]branchComposeTarget, 0, len(plan.Outputs))
+	destinations := make([]branchComposeTarget, 0, len(plan.Outputs))
 	for i := range plan.Outputs {
 		output := plan.Outputs[i]
-		targets = append(targets, branchComposeTarget{
+		destinations = append(destinations, branchComposeTarget{
 			Name:           output.Name,
 			Target:         output.Target,
 			Sink:           output.Sink,
@@ -93,7 +93,7 @@ func branchComposePlanFromTranscode(plan transcode.Plan) branchComposePlan {
 		Name:         plan.Name,
 		Input:        plan.Input,
 		Branches:     branches,
-		Destinations: targets,
+		Destinations: destinations,
 		Metadata:     plan.Metadata,
 	}
 }

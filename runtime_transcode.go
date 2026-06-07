@@ -707,13 +707,13 @@ func prepareBranchComposePlan(plan branchComposePlan) ([]branchComposeRoute, []b
 		return nil, nil, branchComposePlanEmptyError("branches")
 	}
 	if len(plan.Destinations) == 0 {
-		return nil, nil, branchComposePlanEmptyError("targets")
+		return nil, nil, branchComposePlanEmptyError("destinations")
 	}
 	branches, err := branchComposeRoutes(plan)
 	if err != nil {
 		return nil, nil, err
 	}
-	outputs, err := branchComposeTargets(plan, branches)
+	outputs, err := branchComposeDestinations(plan, branches)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1267,7 +1267,7 @@ func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, ope
 	}
 }
 
-func branchComposeTargets(plan branchComposePlan, branches []branchComposeRoute) ([]branchComposeTargetRoute, error) {
+func branchComposeDestinations(plan branchComposePlan, branches []branchComposeRoute) ([]branchComposeTargetRoute, error) {
 	outputs := make([]branchComposeTargetRoute, len(plan.Destinations))
 	for i := range plan.Destinations {
 		output := plan.Destinations[i]
@@ -1309,22 +1309,22 @@ func branchComposeTargetHasMuxDestination(output branchComposeTarget) bool {
 		output.OpenFormat() != ""
 }
 
-func branchComposeTargetUnmatchedError(output branchComposeTarget, target format.Output) error {
-	node := firstNonEmpty(output.Name, target.Name, target.URI, "output")
+func branchComposeTargetUnmatchedError(output branchComposeTarget, destination format.Output) error {
+	node := firstNonEmpty(output.Name, destination.Name, destination.URI, "output")
 	details := make([]string, 0, 1)
 	if len(output.Branches) != 0 {
 		details = append(details, "requested: "+strings.Join(output.Branches, ", "))
 	}
 	return &BuildError{
-		Code:      "branch_target_unmatched",
+		Code:      "branch_destination_unmatched",
 		Operation: "build branch composition",
 		Node:      node,
-		Reason:    "target selects no branches",
+		Reason:    "destination selects no branches",
 		Details:   details,
 		Suggestions: []string{
 			"reference a branch name",
-			"reference a target name listed on the branch",
-			"omit explicit branch filters when the target should receive every branch",
+			"reference a destination name listed on the branch",
+			"omit explicit branch filters when the destination should receive every branch",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1332,7 +1332,7 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, target format
 
 func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reason string) error {
 	return &BuildError{
-		Code:      "branch_target_invalid",
+		Code:      "branch_destination_invalid",
 		Operation: "build branch composition",
 		Node:      branchComposeTargetNodeName(output, "output"),
 		Reason:    reason,
@@ -1344,17 +1344,17 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 	}
 }
 
-func branchComposeTargetEncodeMissingError(output branchComposeTarget, target format.Output, branch branchComposeRoute) error {
+func branchComposeTargetEncodeMissingError(output branchComposeTarget, destination format.Output, branch branchComposeRoute) error {
 	return &BuildError{
 		Code:      "encode_missing",
 		Operation: "build branch composition",
 		Node:      firstNonEmpty(branch.name, branch.branch.Name, branchComposeTargetNodeName(output, "output")),
-		Reason:    "muxed targets require encoded branches",
+		Reason:    "muxed destinations require encoded branches",
 		Details: []string{
-			"target: " + firstNonEmpty(output.Name, target.Name, target.URI, "output"),
+			"destination: " + firstNonEmpty(output.Name, destination.Name, destination.URI, "output"),
 		},
 		Suggestions: []string{
-			"encode the branch before routing it to a mux target",
+			"encode the branch before routing it to a mux destination",
 			"route raw decoded branches to goav.Sink(sink)",
 		},
 		Cause: ErrUnsupportedBuild,

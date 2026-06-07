@@ -84,18 +84,18 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 	}
 }
 
-func targetFormatProbeError(node string, output format.Output, cause error) error {
+func destinationFormatProbeError(node string, output format.Output, cause error) error {
 	if !errors.Is(cause, format.ErrNotFound) {
 		return cause
 	}
 	return &BuildError{
-		Code:      "target_format_unknown",
-		Operation: "open target",
+		Code:      "destination_format_unknown",
+		Operation: "open destination",
 		Node:      node,
-		Reason:    "target format could not be detected",
+		Reason:    "destination format could not be detected",
 		Details:   outputFormatDetails(output),
 		Suggestions: []string{
-			"give file targets a name or MIME type a registered prober can recognize",
+			"give file destinations a name or MIME type a registered prober can recognize",
 			"pass goav.Format(...) to the destination constructor when the writer has no filename",
 			"register a format adapter with goav.New(goav.WithFormatAdapter(...))",
 		},
@@ -103,19 +103,19 @@ func targetFormatProbeError(node string, output format.Output, cause error) erro
 	}
 }
 
-func targetMuxerMissingError(node string, output format.Output, id av.FormatID, cause error) error {
+func destinationMuxerMissingError(node string, output format.Output, id av.FormatID, cause error) error {
 	if !errors.Is(cause, format.ErrNotFound) {
 		return cause
 	}
 	return &BuildError{
-		Code:      "target_muxer_missing",
-		Operation: "open target",
+		Code:      "destination_muxer_missing",
+		Operation: "open destination",
 		Node:      node,
-		Reason:    "format " + quoteFormat(id) + " was selected for target but no muxer is registered",
+		Reason:    "format " + quoteFormat(id) + " was selected for destination but no muxer is registered",
 		Details:   append(outputFormatDetails(output), "format="+string(id)),
 		Suggestions: []string{
 			"register a format adapter that provides a " + string(id) + " muxer",
-			"choose a target container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
+			"choose a destination container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
 			"call .UseRuntime(goav.New(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
 		},
 		Cause: cause,

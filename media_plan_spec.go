@@ -468,7 +468,7 @@ func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inp
 	return refs, true, nil
 }
 
-func mediaPlanPacketCopyTargets(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []destinationSpec) ([]pipeline.NodeRef, error) {
+func mediaPlanPacketCopyDestinations(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []destinationSpec) ([]pipeline.NodeRef, error) {
 	refs := make([]pipeline.NodeRef, 0, len(outputs))
 	for i := range outputs {
 		if outputs[i].sink != nil {

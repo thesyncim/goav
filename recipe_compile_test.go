@@ -262,7 +262,7 @@ func TestDirectFrameStreamsUseBranchRoutePlanner(t *testing.T) {
 	for _, forbidden := range []string{
 		"compileSinkDestination",
 		"compileEncodeOutput",
-		"lowerEncodeTargets",
+		"lowerEncodeDestinations",
 		"planDecodeFilterPath(",
 		"planEncodeDestinationPath(",
 		"planEncodeSinkPath(",
@@ -1080,11 +1080,11 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.pass.Apply(&tt.state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "target_muxer_missing" || !errors.Is(err, format.ErrNotFound) {
-				t.Fatalf("err = %v, want target_muxer_missing wrapping format.ErrNotFound", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != "destination_muxer_missing" || !errors.Is(err, format.ErrNotFound) {
+				t.Fatalf("err = %v, want destination_muxer_missing wrapping format.ErrNotFound", err)
 			}
-			if buildErr.Operation != "open target" {
-				t.Fatalf("operation = %q, want open target", buildErr.Operation)
+			if buildErr.Operation != "open destination" {
+				t.Fatalf("operation = %q, want open destination", buildErr.Operation)
 			}
 			if !strings.Contains(err.Error(), tt.want) ||
 				!strings.Contains(err.Error(), "no muxer is registered") ||
@@ -1265,7 +1265,7 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 	}
 }
 
-func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedTargets(t *testing.T) {
+func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedDestinations(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream()}
 	runtime := New(
 		withTestFormats(
@@ -2576,8 +2576,8 @@ func TestRecipeDestinationShapePassRejectsFrameShapeForMuxDestination(t *testing
 
 	err := validateRecipeDestinationShapesPass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want target_shape_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_shape_mismatch wrapping ErrUnsupportedBuild", err)
 	}
 	for _, want := range []string{
 		"byte or mux destination requires packet-domain media",
@@ -2891,7 +2891,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					}},
 				},
 			},
-			code: "target_duplicate",
+			code: "destination_duplicate",
 			want: "more than once",
 		},
 	}
@@ -2938,7 +2938,7 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 					{name: "web", output: fileDestination("preview.ivf", io.Discard)},
 				},
 			},
-			code: "target_duplicate",
+			code: "destination_duplicate",
 			want: "defined more than once",
 		},
 	}
@@ -3053,8 +3053,8 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 
 	err := validateBranchDestinationBindingsPass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_missing" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want target_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_missing" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_missing wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "destination missing is referenced but not defined") ||
 		!strings.Contains(err.Error(), "destination values") {
@@ -3258,7 +3258,7 @@ func graphPlanOperationTargetPresent(operations []graphPlanOperation, target str
 	return false
 }
 
-func graphPlanOperationsWithoutTargets(operations []graphPlanOperation) []graphPlanOperation {
+func graphPlanOperationsWithoutDestinations(operations []graphPlanOperation) []graphPlanOperation {
 	out := make([]graphPlanOperation, 0, len(operations))
 	for i := range operations {
 		if graphPlanOperationDestinationsRequired(operations[i].Kind) {
@@ -3299,16 +3299,16 @@ func graphPlanOperationsWithoutBranchTarget(operations []graphPlanOperation, bra
 			out = append(out, operation)
 			continue
 		}
-		targets := make([]string, 0, len(operation.Destinations))
+		destinations := make([]string, 0, len(operation.Destinations))
 		for _, next := range operation.Destinations {
 			if next != target {
-				targets = append(targets, next)
+				destinations = append(destinations, next)
 			}
 		}
-		if len(targets) == 0 {
+		if len(destinations) == 0 {
 			continue
 		}
-		operation.Destinations = targets
+		operation.Destinations = destinations
 		out = append(out, operation)
 	}
 	return out
@@ -3746,7 +3746,7 @@ func TestBranchComposeLowererUsesPlanDestinationOperationNodes(t *testing.T) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 	if !specHasNode(planned, "target-plan-archive") || !specHasNode(planned, "target-plan-frames") {
-		t.Fatalf("planned = %+v, want renamed target nodes", planned)
+		t.Fatalf("planned = %+v, want renamed destination nodes", planned)
 	}
 }
 
@@ -3889,7 +3889,7 @@ func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testi
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutTargets(resolved.graphPlan.operations)
+	resolved.graphPlan.operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.operations)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -3898,7 +3898,7 @@ func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testi
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
 		!strings.Contains(err.Error(), "branch composition graph plan has no destination operations") {
-		t.Fatalf("err = %v, want missing target-operation graph-plan error", err)
+		t.Fatalf("err = %v, want missing destination-operation graph-plan error", err)
 	}
 }
 
@@ -3974,7 +3974,7 @@ func TestStreamGraphLowererUsesPlanPacketCopyDestinationOperationNodes(t *testin
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 	if !specHasNode(planned, "target-plan-archive") || !specHasNode(planned, "target-plan-packets") {
-		t.Fatalf("planned = %+v, want renamed packet-copy target nodes", planned)
+		t.Fatalf("planned = %+v, want renamed packet-copy destination nodes", planned)
 	}
 }
 
@@ -4024,7 +4024,7 @@ func TestPacketCopyLowererRequiresDestinationOperationsBeforeSources(t *testing.
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutTargets(resolved.graphPlan.operations)
+	resolved.graphPlan.operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.operations)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4033,7 +4033,7 @@ func TestPacketCopyLowererRequiresDestinationOperationsBeforeSources(t *testing.
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
 		!strings.Contains(err.Error(), "packet-copy graph plan has no destination operations") {
-		t.Fatalf("err = %v, want missing target-operation graph-plan error", err)
+		t.Fatalf("err = %v, want missing destination-operation graph-plan error", err)
 	}
 }
 
@@ -4079,7 +4079,7 @@ func TestPacketCopyLowererRequiresTargetBranchBindingsBeforeSources(t *testing.T
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
 		!strings.Contains(err.Error(), "packet-copy destination operation branches do not match output branches") {
-		t.Fatalf("err = %v, want packet-copy target branch binding graph-plan error", err)
+		t.Fatalf("err = %v, want packet-copy destination branch binding graph-plan error", err)
 	}
 }
 
@@ -4239,7 +4239,7 @@ func TestStreamGraphLowererUsesPlanDecodedSinkDestinationOperationNode(t *testin
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 	if !specHasNode(planned, "target-plan-frames") {
-		t.Fatalf("planned = %+v, want renamed decoded sink target node", planned)
+		t.Fatalf("planned = %+v, want renamed decoded sink destination node", planned)
 	}
 }
 
@@ -4324,7 +4324,7 @@ func TestFrameStreamLowererRequiresDestinationOperationsBeforeSources(t *testing
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutTargets(resolved.graphPlan.operations)
+	resolved.graphPlan.operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.operations)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4333,7 +4333,7 @@ func TestFrameStreamLowererRequiresDestinationOperationsBeforeSources(t *testing
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
 		!strings.Contains(err.Error(), "frame stream graph plan has no destination operations") {
-		t.Fatalf("err = %v, want missing target-operation graph-plan error", err)
+		t.Fatalf("err = %v, want missing destination-operation graph-plan error", err)
 	}
 }
 
@@ -4648,7 +4648,7 @@ func TestStreamGraphLowererUsesPlanEncodedDestinationOperationNodes(t *testing.T
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 	if !specHasNode(planned, "target-plan-archive") || !specHasNode(planned, "target-plan-packets") {
-		t.Fatalf("planned = %+v, want renamed encoded target nodes", planned)
+		t.Fatalf("planned = %+v, want renamed encoded destination nodes", planned)
 	}
 }
 

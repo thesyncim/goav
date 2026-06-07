@@ -121,13 +121,13 @@ func (g *graphBuilder) Connect(from GraphOutlet, to ...GraphInlet) GraphBuilder 
 		g.setErr(pipeline.ErrUnknownNode)
 		return g
 	}
-	targets := make([]string, len(to))
+	destinations := make([]string, len(to))
 	for i := range to {
 		if to[i].name == "" {
 			g.setErr(pipeline.ErrUnknownNode)
 			return g
 		}
-		targets[i] = to[i].name
+		destinations[i] = to[i].name
 	}
 	policy := from.policy
 	if policy == "" {
@@ -135,7 +135,7 @@ func (g *graphBuilder) Connect(from GraphOutlet, to ...GraphInlet) GraphBuilder 
 	}
 	g.builder = g.builder.Routes(pipeline.Route{
 		From:   from.name,
-		To:     targets,
+		To:     destinations,
 		Policy: policy,
 		Label:  from.label,
 	})

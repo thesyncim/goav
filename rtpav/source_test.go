@@ -271,7 +271,7 @@ func TestSourceCodecChangedReplacementUpdatesEOSStream(t *testing.T) {
 	}
 }
 
-func TestSourceCodecChangedUpdatesTargetedStreamInMultiStreamSource(t *testing.T) {
+func TestSourceCodecChangedUpdatesDestinedStreamInMultiStreamSource(t *testing.T) {
 	audio := av.Stream{
 		ID:    "audio",
 		Type:  av.MediaAudio,

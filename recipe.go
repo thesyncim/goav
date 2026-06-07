@@ -1248,7 +1248,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
-			Code:      "output_target_missing",
+			Code:      "output_destination_missing",
 			Operation: operation,
 			Node:      node,
 			Reason:    "output has no URI, writer, or sink",
@@ -2167,10 +2167,10 @@ func streamStageMissingError(stream StreamIntent) error {
 }
 
 func validateJobStreamOutputKinds(operation string, stream StreamIntent, outputs []destinationSpec) error {
-	if outputsContainSinkDestination(outputs) && outputsContainMuxTarget(outputs) && !codecIntentSet(stream.Encode) {
+	if outputsContainSinkDestination(outputs) && outputsContainMuxDestination(outputs) && !codecIntentSet(stream.Encode) {
 		return mixedStreamOutputError(operation, stream)
 	}
-	if stream.Encode.ID == "" && !stream.Encode.Copy && outputsContainMuxTarget(outputs) {
+	if stream.Encode.ID == "" && !stream.Encode.Copy && outputsContainMuxDestination(outputs) {
 		return streamEncodeMissingError(operation, stream)
 	}
 	return nil
@@ -2314,7 +2314,7 @@ func appendTransformSpecs(prefix []TransformSpec, branch []TransformSpec) []Tran
 	return out
 }
 
-func outputsContainMuxTarget(outputs []destinationSpec) bool {
+func outputsContainMuxDestination(outputs []destinationSpec) bool {
 	for i := range outputs {
 		if outputs[i].sink == nil {
 			return true
@@ -2343,7 +2343,7 @@ func validateDestinationSpecs(operation string, outputs []destinationSpec, desti
 		destinationNamed := i < len(destinationNames) && destinationNames[i] != ""
 		if previousTargetNamed, ok := seen[name]; ok {
 			if destinationNamed || previousTargetNamed {
-				return duplicateTargetDestinationError(operation, name)
+				return duplicateDestinationHandleError(operation, name)
 			}
 			return duplicateOutputError(operation, name)
 		}
@@ -2393,13 +2393,13 @@ func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []des
 		if formatID == "" {
 			result, err := standard.formats.Probe(ctx, outputProbeRequest(resolved[i].output))
 			if err != nil {
-				return nil, targetFormatProbeError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, err)
+				return nil, destinationFormatProbeError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, err)
 			}
 			formatID = result.Format
 			resolved[i] = resolved[i].withResolvedFormat(formatID)
 		}
 		if _, err := standard.formats.MuxerFactory(formatID); err != nil {
-			return nil, targetMuxerMissingError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, formatID, err)
+			return nil, destinationMuxerMissingError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, formatID, err)
 		}
 	}
 	return resolved, nil
@@ -3137,9 +3137,9 @@ func duplicateOutputError(operation string, name string) error {
 	}
 }
 
-func duplicateTargetDestinationError(operation string, name string) error {
+func duplicateDestinationHandleError(operation string, name string) error {
 	return &BuildError{
-		Code:      "target_duplicate",
+		Code:      "destination_duplicate",
 		Operation: operation,
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is attached more than once", name),
@@ -4058,7 +4058,7 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		branches = append(branches, branch)
 	}
 
-	planTargets := make([]branchComposeTarget, 0, len(outputOrder))
+	planDestinations := make([]branchComposeTarget, 0, len(outputOrder))
 	for i := range outputOrder {
 		name := outputOrder[i]
 		output := outputs[name]
@@ -4073,13 +4073,13 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		if output.resolvedFormat != "" {
 			planTarget = resolveBranchComposeTargetFormat(planTarget, output.resolvedFormat)
 		}
-		planTargets = append(planTargets, planTarget)
+		planDestinations = append(planDestinations, planTarget)
 	}
 	return branchComposePlan{
 		Name:         "branch-composition",
 		Input:        input.input,
 		Branches:     branches,
-		Destinations: planTargets,
+		Destinations: planDestinations,
 	}, nil
 }
 
@@ -4285,7 +4285,7 @@ func validateBranchIntentShape(stream StreamIntent, index int) error {
 		}
 	}
 	if len(stream.Destinations) == 0 {
-		return branchIntentTargetMissingError(stream)
+		return branchIntentDestinationMissingError(stream)
 	}
 	return validateBranchDestinations(stream)
 }
@@ -4317,18 +4317,18 @@ func validateBranchDestinationKinds(intent Intent, namedOutputs []namedDestinati
 	outputs := branchDestinationSet(namedOutputs)
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
-		hasMuxTarget := false
+		hasMuxDestination := false
 		for _, label := range stream.Destinations {
 			output, ok := outputs[label]
 			if !ok {
 				continue
 			}
 			if output.sink == nil {
-				hasMuxTarget = true
+				hasMuxDestination = true
 				break
 			}
 		}
-		if hasMuxTarget && !codecIntentSet(stream.Encode) {
+		if hasMuxDestination && !codecIntentSet(stream.Encode) {
 			return branchEncodeMissingError(stream)
 		}
 	}
@@ -4422,10 +4422,10 @@ func branchCopyUnsupportedError(stream StreamIntent) error {
 	}
 }
 
-func branchIntentTargetMissingError(stream StreamIntent) error {
+func branchIntentDestinationMissingError(stream StreamIntent) error {
 	selector := streamIntentSelector(stream)
 	return &BuildError{
-		Code:      "target_missing",
+		Code:      "destination_missing",
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
 		Reason:    "branch has no destination",
@@ -4439,7 +4439,7 @@ func branchIntentTargetMissingError(stream StreamIntent) error {
 
 func branchDestinationReferenceMissingError(stream StreamIntent, label string) error {
 	return &BuildError{
-		Code:      "target_missing",
+		Code:      "destination_missing",
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
 		Reason:    "destination " + label + " is referenced but not defined",
@@ -4466,7 +4466,7 @@ func transcodeUnsupportedRTPInputError() error {
 
 func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 	return &BuildError{
-		Code:      "target_invalid",
+		Code:      "destination_invalid",
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
 		Reason:    "branch destinations must be non-empty",
@@ -4483,7 +4483,7 @@ func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 
 func branchDestinationDefinitionNameEmptyError(output destinationSpec) error {
 	err := &BuildError{
-		Code:      "target_invalid",
+		Code:      "destination_invalid",
 		Operation: branchCompositionOperation,
 		Node:      output.label("output"),
 		Reason:    "destination name is empty",
@@ -4501,7 +4501,7 @@ func branchDestinationDefinitionNameEmptyError(output destinationSpec) error {
 
 func branchDestinationDuplicateError(name string) error {
 	return &BuildError{
-		Code:      "target_duplicate",
+		Code:      "destination_duplicate",
 		Operation: branchCompositionOperation,
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is defined more than once with different destination handles", name),
@@ -4563,7 +4563,7 @@ func validateBranchDestinations(stream StreamIntent) error {
 
 func duplicateBranchDestinationError(stream StreamIntent, target string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Code:      "target_duplicate",
+		Code:      "destination_duplicate",
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", target),

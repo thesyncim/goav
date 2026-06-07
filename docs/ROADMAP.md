@@ -141,7 +141,7 @@ runtime attach. Public vocabulary stays `Input`, `Stream`, `Operation`, `Tap`,
 - IVF output for VP8/VP9/AV1 packet recording.
 - WebRTC session receive to file.
 - Probe output and stream inspection.
-- Multiple target branches from one receive graph.
+- Multiple destination branches from one receive graph.
 
 ## Phase 3b: Transcode ladders
 
@@ -149,7 +149,7 @@ runtime attach. Public vocabulary stays `Input`, `Stream`, `Operation`, `Tap`,
 - Resample filter contract implementation. S16 adapter active.
 - Decode sharing across branches. First planner branch active.
 - Per-branch encoder configs. First planner branch active.
-- Multiple mux/output targets from one plan. First planner branch active.
+- Multiple mux/output destinations from one plan. First planner branch active.
 - Resize/resample branch execution. First concrete adapters active.
 
 ## Phase 4: H264 and concrete AV1 decode
@@ -192,12 +192,12 @@ runtime attach. Public vocabulary stays `Input`, `Stream`, `Operation`, `Tap`,
   branch slices are active; runtime stage/sink attachments are active for direct
   task graphs and bounded buffered task graphs, with packet-copy late recording
   targets, Opus encoded late recording from frame taps, flow-applied Opus
-  encode-to-target branches, post-encode packet taps, and dependent late
+  encode-to-destination branches, post-encode packet taps, and dependent late
   branches after runtime resize/resample taps plus live buffered custom-stage
   and post-encode nested tap detach covered; live buffered runtime resize and
   resample subtree detach plus post-open filter cleanup on rejected branches are
   now covered, and graph-mutation rollback after opened runtime filters,
-  encoders, mux terminal stages, and sink targets is covered. Closed direct
+  encoders, mux terminal stages, and sink destinations is covered. Closed direct
   and buffered graphs reject dynamic node additions before mutation while
   runtime attach closes any already-prepared branch components. Deeper generic
   lifecycle stress remains planned.

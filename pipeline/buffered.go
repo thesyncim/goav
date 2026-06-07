@@ -174,7 +174,7 @@ func (g *bufferedRunner) Connect(route Route) error {
 		return ErrInvalidLink
 	}
 
-	targets := make([]int, 0, len(route.To))
+	destinations := make([]int, 0, len(route.To))
 	for i := range route.To {
 		to, ok := g.index[route.To[i]]
 		if !ok || !g.nodes[to].active {
@@ -183,10 +183,10 @@ func (g *bufferedRunner) Connect(route Route) error {
 		if g.nodes[to].kind == nodeSource {
 			return ErrInvalidLink
 		}
-		targets = append(targets, to)
+		destinations = append(destinations, to)
 	}
 	g.nodes[from].routes = append(g.nodes[from].routes, directRoute{
-		to:     targets,
+		to:     destinations,
 		policy: policy,
 		label:  route.Label,
 	})
@@ -210,13 +210,13 @@ func (g *bufferedRunner) Disconnect(route Route) error {
 	if !ok || !g.nodes[from].active {
 		return ErrUnknownNode
 	}
-	targets := make(map[int]struct{}, len(route.To))
+	destinations := make(map[int]struct{}, len(route.To))
 	for i := range route.To {
 		to, ok := g.index[route.To[i]]
 		if !ok {
 			return ErrUnknownNode
 		}
-		targets[to] = struct{}{}
+		destinations[to] = struct{}{}
 	}
 	removed := false
 	routes := g.nodes[from].routes[:0]
@@ -228,7 +228,7 @@ func (g *bufferedRunner) Disconnect(route Route) error {
 		}
 		to := existing.to[:0]
 		for j := range existing.to {
-			if _, ok := targets[existing.to[j]]; ok {
+			if _, ok := destinations[existing.to[j]]; ok {
 				removed = true
 				continue
 			}

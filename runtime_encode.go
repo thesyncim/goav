@@ -542,7 +542,7 @@ func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 
 func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 	return &BuildError{
-		Code:      "encode_target_missing",
+		Code:      "encode_destination_missing",
 		Operation: "configure encode",
 		Node:      encodeNodeName(request),
 		Reason:    "no target codec was provided",

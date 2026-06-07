@@ -208,7 +208,7 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 			Stream:     stream.Select,
 			Shape:      shape,
 			Operations: operations,
-			Outputs:    planBranchTargets(stream.Destinations, outputs),
+			Outputs:    planBranchDestinations(stream.Destinations, outputs),
 		})
 		decisions = append(decisions, branchDecisions...)
 	}
@@ -244,7 +244,7 @@ func planBranchesFromBranchComposePlan(state *recipeCompileState, outputs []plan
 			Stream:     stream.Select,
 			Shape:      shape,
 			Operations: operations,
-			Outputs:    planBranchTargets(stream.Destinations, outputs),
+			Outputs:    planBranchDestinations(stream.Destinations, outputs),
 		})
 		decisions = append(decisions, branchDecisions...)
 	}
@@ -951,7 +951,7 @@ func planBranchOperationScopeName(branch planBranch) string {
 	)
 }
 
-func planBranchTargets(targetRefs []string, outputs []planOutput) []string {
+func planBranchDestinations(targetRefs []string, outputs []planOutput) []string {
 	if len(targetRefs) != 0 {
 		return append([]string(nil), targetRefs...)
 	}

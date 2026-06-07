@@ -459,12 +459,12 @@ type testBranchStream interface {
 }
 
 type testTranscodeBranch struct {
-	name       string
-	media      av.MediaType
-	flows      []goav.Chain
-	transforms []goav.TransformSpec
-	encode     goav.CodecSpec
-	targets    []goav.Destination
+	name         string
+	media        av.MediaType
+	flows        []goav.Chain
+	transforms   []goav.TransformSpec
+	encode       goav.CodecSpec
+	destinations []goav.Destination
 }
 
 type testTranscodeBranchBuilder struct {
@@ -527,11 +527,11 @@ func (j *testBranchJob) materialize() *goav.Job {
 		if branch.encode.ID != "" {
 			builder = builder.Encode(branch.encode)
 		}
-		targets := make([]goav.Destination, 0, len(branch.targets))
-		for i := range branch.targets {
-			targets = append(targets, branch.targets[i])
+		destinations := make([]goav.Destination, 0, len(branch.destinations))
+		for i := range branch.destinations {
+			destinations = append(destinations, branch.destinations[i])
 		}
-		job = stream.Branches(builder.To(targets...))
+		job = stream.Branches(builder.To(destinations...))
 	}
 	return job
 }
@@ -576,8 +576,8 @@ func (b *testTranscodeBranchBuilder) Encode(codec goav.CodecSpec) *testTranscode
 	return b
 }
 
-func (b *testTranscodeBranchBuilder) To(targets ...goav.Destination) *testBranchJob {
-	b.current().targets = append([]goav.Destination(nil), targets...)
+func (b *testTranscodeBranchBuilder) To(destinations ...goav.Destination) *testBranchJob {
+	b.current().destinations = append([]goav.Destination(nil), destinations...)
 	return b.job
 }
 
@@ -681,11 +681,11 @@ func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 		goav.File("recording.mp4", io.Discard),
 	).Explain(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_muxer_missing" {
-		t.Fatalf("err = %v, want target_muxer_missing", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_muxer_missing" {
+		t.Fatalf("err = %v, want destination_muxer_missing", err)
 	}
-	if buildErr.Operation != "open target" {
-		t.Fatalf("operation = %q, want open target", buildErr.Operation)
+	if buildErr.Operation != "open destination" {
+		t.Fatalf("operation = %q, want open destination", buildErr.Operation)
 	}
 	requirement, ok := adapterRequirementByKind(report.RequiredAdapters, "muxer", string(av.FormatMP4))
 	if !ok || requirement.Status != "missing" || requirement.Format != av.FormatMP4 {
@@ -694,7 +694,7 @@ func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 	if len(report.Graph.Nodes) == 0 || report.Summary == "" {
 		t.Fatalf("partial report not populated: %+v", report)
 	}
-	if len(report.Warnings) != 1 || report.Warnings[0].Code != "target_muxer_missing" {
+	if len(report.Warnings) != 1 || report.Warnings[0].Code != "destination_muxer_missing" {
 		t.Fatalf("warnings=%+v", report.Warnings)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].Kind != "muxer" || report.Missing[0].Status != "missing" {
@@ -1342,8 +1342,8 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 		).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
-		t.Fatalf("err = %v, want target_mux_incompatible", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_mux_incompatible" {
+		t.Fatalf("err = %v, want destination_mux_incompatible", err)
 	}
 	for _, want := range []string{"destination=web", "format=ivf", "branch=v8 codec=vp8 media=video", "branch=v9 codec=vp9 media=video"} {
 		if !strings.Contains(err.Error(), want) {
@@ -1387,8 +1387,8 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 		Branches(goav.Branch("video").Encode(goav.VP8(goav.Bitrate(600_000))).To(target)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
-		t.Fatalf("err = %v, want target_mux_incompatible", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_mux_incompatible" {
+		t.Fatalf("err = %v, want destination_mux_incompatible", err)
 	}
 	for _, want := range []string{
 		"test matroska target accepts one Opus audio stream",
@@ -1429,10 +1429,10 @@ func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
 		).
 		Explain(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
-		t.Fatalf("err = %v, want target_mux_incompatible", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_mux_incompatible" {
+		t.Fatalf("err = %v, want destination_mux_incompatible", err)
 	}
-	if !hasPlanWarning(report.Warnings, "target_mux_incompatible") {
+	if !hasPlanWarning(report.Warnings, "destination_mux_incompatible") {
 		t.Fatalf("warnings=%+v, want mux compatibility warning", report.Warnings)
 	}
 	if len(report.Missing) != 0 {
@@ -1466,8 +1466,8 @@ func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 		To(goav.File("out.h264", io.Discard, goav.Format(av.FormatAnnexB))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
-		t.Fatalf("err = %v, want target_mux_incompatible", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_mux_incompatible" {
+		t.Fatalf("err = %v, want destination_mux_incompatible", err)
 	}
 	if !strings.Contains(err.Error(), "Annex B destinations support one H264 video stream") ||
 		!strings.Contains(err.Error(), "destination=out.h264") ||
@@ -1796,6 +1796,46 @@ func TestReadmeUsesBranchDestinationVocabulary(t *testing.T) {
 	}
 }
 
+func TestPublicDiagnosticsUseDestinationVocabulary(t *testing.T) {
+	files := []string{
+		"branch.go",
+		"recipe.go",
+		"recipe_compile.go",
+		"recipe_mux_compat.go",
+		"runtime_attach.go",
+		"runtime_encode.go",
+		"runtime_format_error.go",
+		"runtime_transcode.go",
+	}
+	forbidden := []string{
+		"target_muxer_missing",
+		"target_format_unknown",
+		"target_mux_incompatible",
+		"target_shape_mismatch",
+		"target_duplicate",
+		"target_missing",
+		"target_invalid",
+		"branch_target_unmatched",
+		"output_target_missing",
+		"open target",
+		"sink target",
+		"mux target",
+		"byte target",
+	}
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(body)
+		for _, term := range forbidden {
+			if strings.Contains(text, term) {
+				t.Fatalf("%s should use destination vocabulary, found %q", file, term)
+			}
+		}
+	}
+}
+
 func TestReadmeShowsCustomDestinations(t *testing.T) {
 	body, err := os.ReadFile("README.md")
 	if err != nil {
@@ -2001,8 +2041,8 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"`Target`, destination constructors",
 		"`File`, `URIOut`, and `Sink` destination constructors",
 		"TargetRef",
-		"Recipes: From, chains, taps, branches, targets",
-		"Intent graph: inputs, selected media, chain operations, targets, policies",
+		"Recipes: From, chains, taps, branches, destinations",
+		"Intent graph: inputs, selected media, chain operations, destinations, policies",
 		"`Target`, `Destination`, and `Chain` composition",
 		"named `Target` refs for shared mux/sink groups",
 	} {
@@ -2365,7 +2405,7 @@ func TestHighLevelCompositionInternalsAvoidEndpointVocabulary(t *testing.T) {
 			t.Fatal(err)
 		}
 		if strings.Contains(strings.ToLower(string(body)), "endpoint") {
-			t.Fatalf("%s uses endpoint vocabulary; use target and target-ref naming in high-level composition code", file)
+			t.Fatalf("%s uses endpoint vocabulary; use destination naming in high-level composition code", file)
 		}
 	}
 }
@@ -2431,7 +2471,7 @@ func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeCanWriteToTypedTarget(t *testing.T) {
+func TestRecordRecipeCanWriteToTypedDestination(t *testing.T) {
 	target := goav.File("recording.ivf", io.Discard)
 	job := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
 		Copy().
@@ -2578,7 +2618,7 @@ func TestAudioChainAppliesToStreamRecipeIntent(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeCanWriteToTypedTarget(t *testing.T) {
+func TestStreamRecipeCanWriteToTypedDestination(t *testing.T) {
 	voice := goav.Flow("voice").
 		Audio().
 		Resample(16_000, goav.Mono).
@@ -2614,7 +2654,7 @@ func TestStreamRecipeCanWriteToTypedTarget(t *testing.T) {
 }
 
 func TestToAcceptsDestinationSlices(t *testing.T) {
-	targets := []goav.Destination{
+	destinations := []goav.Destination{
 		goav.File("archive.ogg", io.Discard),
 		goav.Sink(goav.SinkFunc("stats", func(context.Context, goav.Message) error {
 			return nil
@@ -2624,7 +2664,7 @@ func TestToAcceptsDestinationSlices(t *testing.T) {
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Encode(goav.Opus(goav.Bitrate(96_000))).
-		To(targets...)
+		To(destinations...)
 
 	intent := job.Intent()
 	if len(intent.Streams) != 1 ||
@@ -2670,8 +2710,8 @@ func TestDuplicateDestinationNameRequiresSameHandle(t *testing.T) {
 		).
 		Describe()
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" {
-		t.Fatalf("err = %v, want target_duplicate", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
+		t.Fatalf("err = %v, want destination_duplicate", err)
 	}
 }
 
@@ -2696,7 +2736,7 @@ func TestDestinationConstructorsReturnDestination(t *testing.T) {
 	}
 }
 
-func TestExternalCustomDestinationCanBeTargeted(t *testing.T) {
+func TestExternalCustomDestinationCanBeDestined(t *testing.T) {
 	dest := recipeAPICustomDestination{}
 	target := goav.Custom("custom", dest)
 
@@ -3423,7 +3463,7 @@ func TestNilFlowBranchIsActionable(t *testing.T) {
 	}
 }
 
-func TestBranchesRejectOuterOutputsAndDuplicateTargets(t *testing.T) {
+func TestBranchesRejectOuterOutputsAndDuplicateDestinations(t *testing.T) {
 	voice := goav.Flow("voice").Audio().Encode(goav.Opus(goav.Bitrate(32_000), goav.Channels(goav.Mono)))
 	voiceOut := goav.File("voice.ogg", io.Discard)
 
@@ -3441,8 +3481,8 @@ func TestBranchesRejectOuterOutputsAndDuplicateTargets(t *testing.T) {
 		Audio().
 		Branches(goav.Branch("voice").Apply(voice).To(voiceOut, voiceOut)).
 		Describe()
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" {
-		t.Fatalf("err = %v, want target_duplicate", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
+		t.Fatalf("err = %v, want destination_duplicate", err)
 	}
 }
 
@@ -3549,7 +3589,7 @@ func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
 	}
 }
 
-func TestReadmeDecodeShortcutUsesSinkTarget(t *testing.T) {
+func TestReadmeDecodeShortcutUsesSinkDestination(t *testing.T) {
 	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 		return nil
 	})
@@ -3628,7 +3668,7 @@ func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 	}
 }
 
-func TestDecodeRecipeRejectsNilSinkTarget(t *testing.T) {
+func TestDecodeRecipeRejectsNilSinkDestination(t *testing.T) {
 	_, err := decodeJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		goav.Sink(nil),
@@ -3638,7 +3678,7 @@ func TestDecodeRecipeRejectsNilSinkTarget(t *testing.T) {
 		t.Fatalf("err = %v, want output_invalid wrapping ErrNilSink", err)
 	}
 	if !strings.Contains(err.Error(), "non-nil sink") {
-		t.Fatalf("err = %v, want sink target guidance", err)
+		t.Fatalf("err = %v, want sink destination guidance", err)
 	}
 }
 
@@ -3671,7 +3711,7 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 	}
 }
 
-func TestPacketCopyRecipeAcceptsSinkTarget(t *testing.T) {
+func TestPacketCopyRecipeAcceptsSinkDestination(t *testing.T) {
 	spec, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.Opus())).
 		Copy().
 		To(goav.Sink(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
@@ -3704,8 +3744,8 @@ func TestRecordRecipeRejectsEmptyDestination(t *testing.T) {
 		target,
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want target_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_invalid wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "destination is empty") ||
 		!strings.Contains(err.Error(), "goav.File") ||
@@ -3748,12 +3788,12 @@ func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_target_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_target_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_destination_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_destination_missing wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "no URI, writer, or sink") ||
 		!strings.Contains(err.Error(), "goav.File") {
-		t.Fatalf("err = %v, want output target guidance", err)
+		t.Fatalf("err = %v, want output destination guidance", err)
 	}
 }
 
@@ -3774,18 +3814,18 @@ func TestRecordRecipeReportsMissingInputDemuxer(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeReportsMissingTargetMuxer(t *testing.T) {
+func TestRecordRecipeReportsMissingDestinationMuxer(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.File("recording.mp4", io.Discard),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_muxer_missing" {
-		t.Fatalf("err = %v, want target_muxer_missing", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_muxer_missing" {
+		t.Fatalf("err = %v, want destination_muxer_missing", err)
 	}
-	if buildErr.Operation != "open target" {
-		t.Fatalf("operation = %q, want open target", buildErr.Operation)
+	if buildErr.Operation != "open destination" {
+		t.Fatalf("operation = %q, want open destination", buildErr.Operation)
 	}
 	if !strings.Contains(err.Error(), `format "mp4"`) ||
 		!strings.Contains(err.Error(), "no muxer is registered") ||
@@ -3812,7 +3852,7 @@ func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeRejectsDuplicateSinkTargets(t *testing.T) {
+func TestStreamRecipeRejectsDuplicateSinkDestinations(t *testing.T) {
 	sink := func(context.Context, goav.Message) error { return nil }
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -3832,7 +3872,7 @@ func TestStreamRecipeRejectsDuplicateSinkTargets(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeRejectsDuplicateTypedTargets(t *testing.T) {
+func TestStreamRecipeRejectsDuplicateTypedDestinations(t *testing.T) {
 	target := goav.File("voice.ogg", io.Discard)
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(goav.New()).
@@ -4081,7 +4121,7 @@ func TestStreamRecipeIntentOperationsImplyDecode(t *testing.T) {
 		job  *goav.Job
 	}{
 		{
-			name: "sink target",
+			name: "sink destination",
 			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 				Audio().
 				To(goav.Sink(sink)),
@@ -4300,7 +4340,7 @@ func TestStreamRecipeRejectsMixedSinkAndFile(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeAllowsEncodedMuxAndSinkTargets(t *testing.T) {
+func TestStreamRecipeAllowsEncodedMuxAndSinkDestinations(t *testing.T) {
 	rt := goav.New(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
@@ -4912,7 +4952,7 @@ func TestBranchRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
 	}
 }
 
-func TestBranchRecipeSingleBranchUsesTarget(t *testing.T) {
+func TestBranchRecipeSingleBranchUsesDestination(t *testing.T) {
 	preview := goav.File("preview.webm", io.Discard)
 	job := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").Resize(640, 360).Encode(goav.VP9(goav.Bitrate(600_000))).
@@ -4941,8 +4981,8 @@ func TestBranchRecipeRejectsDuplicateDestinations(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), `destination "web.webm"`) ||
 		!strings.Contains(err.Error(), "reuse the same destination value") {
@@ -4957,8 +4997,8 @@ func TestBranchRecipeRejectsDuplicateBranchDestinations(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), `branch routes to destination "web.webm" more than once`) ||
 		!strings.Contains(err.Error(), "second destination index: 1") ||
@@ -5021,8 +5061,8 @@ func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_muxer_missing" {
-		t.Fatalf("err = %v, want target_muxer_missing", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_muxer_missing" {
+		t.Fatalf("err = %v, want destination_muxer_missing", err)
 	}
 	if buildErr.Node != "archive.ogg" {
 		t.Fatalf("node = %q, want archive.ogg destination", buildErr.Node)
@@ -5032,7 +5072,7 @@ func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
 	}
 }
 
-func TestBranchCompositionAcceptsSinkTarget(t *testing.T) {
+func TestBranchCompositionAcceptsSinkDestination(t *testing.T) {
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -5561,14 +5601,14 @@ func TestBranchRecipeRequiresBranch(t *testing.T) {
 	}
 }
 
-func TestBranchRecipeRequiresBranchTarget(t *testing.T) {
+func TestBranchRecipeRequiresBranchDestination(t *testing.T) {
 	job := branchJob(goav.FileInput("input.webm", strings.NewReader("")))
 	job.Video("360p").Encode(goav.VP9(goav.Bitrate(600_000)))
 	_, err := job.Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want target_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_missing wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "branch has no destination") ||
 		!strings.Contains(err.Error(), "goav.File") {

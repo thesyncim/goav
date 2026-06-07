@@ -537,7 +537,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		return branchIntentNameMissingError(index, StreamIntent{Select: StreamSelect{Type: selected}})
 	}
 	if len(spec.destinationNames) == 0 {
-		return branchIntentTargetMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
+		return branchIntentDestinationMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
 	}
 	stream := StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
 	if spec.decode && !parentPacket {
@@ -990,7 +990,7 @@ func nilBranchError() error {
 
 func branchDestinationMissingError(name string) error {
 	return &BuildError{
-		Code:      "target_missing",
+		Code:      "destination_missing",
 		Operation: "build branch",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "branch has no destination",
@@ -1016,7 +1016,7 @@ func jobDestinationInvalidError(name string, reason string) error {
 
 func destinationInvalidError(operation string, node string, reason string) error {
 	return &BuildError{
-		Code:      "target_invalid",
+		Code:      "destination_invalid",
 		Operation: operation,
 		Node:      node,
 		Reason:    reason,
@@ -1030,9 +1030,9 @@ func destinationInvalidError(operation string, node string, reason string) error
 
 func destinationNameMissingError(dest destinationSpec) error {
 	return &BuildError{
-		Code:      "target_invalid",
-		Operation: "build target",
-		Node:      dest.label("target"),
+		Code:      "destination_invalid",
+		Operation: "build destination",
+		Node:      dest.label("destination"),
 		Reason:    "destination name is empty",
 		Suggestions: []string{
 			"pass a named destination such as goav.File(\"web.ivf\", writer)",

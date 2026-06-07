@@ -201,7 +201,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeCopyToTypedTargetRuns(t *testing.T) {
+func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
 		ID:       "audio",
@@ -1418,7 +1418,7 @@ func TestStreamRecipeEncodeFansOutToMuxAndSinkDestinations(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeEncodeToTypedTargetRuns(t *testing.T) {
+func TestStreamRecipeEncodeToTypedDestinationRuns(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{
@@ -1730,7 +1730,7 @@ func firstMuxWrites(factory *remuxTestMuxerFactory) int {
 	return factory.muxers[0].writes
 }
 
-func TestStreamRecipeCopyTapCanAttachRuntimeMuxTarget(t *testing.T) {
+func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
 		ID:       "audio",
@@ -3361,7 +3361,7 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 		To(File("archive.audioonly", io.Discard, Format(audioOnly))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
-		buildErr.Code != "target_mux_incompatible" ||
+		buildErr.Code != "destination_mux_incompatible" ||
 		!strings.Contains(err.Error(), "audioonly destinations accept PCM audio only") ||
 		!strings.Contains(err.Error(), "destination=archive") ||
 		!strings.Contains(err.Error(), "branch=archive codec=opus media=audio") {
@@ -3431,7 +3431,7 @@ func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 	}
 }
 
-func TestTaskAttachRejectsDuplicateRuntimeBranchTargetsBeforeMutation(t *testing.T) {
+func TestTaskAttachRejectsDuplicateRuntimeBranchDestinationsBeforeMutation(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}
 	encoderFactory := &encodeTestEncoderFactory{}
@@ -3481,10 +3481,10 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchTargetsBeforeMutation(t *testing
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
-		buildErr.Code != "target_duplicate" ||
+		buildErr.Code != "destination_duplicate" ||
 		buildErr.Operation != "attach runtime branch" ||
 		!errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want runtime target_duplicate wrapping ErrUnsupportedBuild", err)
+		t.Fatalf("err = %v, want runtime destination_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), `branch routes to destination "archive.ogg" more than once`) ||
 		!strings.Contains(err.Error(), "second destination index: 1") ||
@@ -3538,8 +3538,8 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 		From(FrameTap("audio.frames")).
 		To(File("archive.ogg", io.Discard)))
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_shape_mismatch" {
-		t.Fatalf("err = %v, want target_shape_mismatch", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_shape_mismatch" {
+		t.Fatalf("err = %v, want destination_shape_mismatch", err)
 	}
 	for _, want := range []string{
 		"byte or mux destination requires packet-domain media",
@@ -4265,7 +4265,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 	}
 }
 
-func TestTaskAttachRuntimeEncodeBranchFansOutToTargets(t *testing.T) {
+func TestTaskAttachRuntimeEncodeBranchFansOutToDestinations(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}
 	formats := withTestFormats(

@@ -725,7 +725,7 @@ func annotatePlanReportError(report *PlanReport, err error) {
 	})
 	requirement, ok := adapterRequirementFromBuildError(buildErr)
 	if !ok {
-		if buildErr.Code == "target_mux_incompatible" {
+		if buildErr.Code == "destination_mux_incompatible" {
 			return
 		}
 		report.Missing = append(report.Missing, Requirement{
@@ -759,7 +759,7 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, formatID != ""
-	case "output_muxer_missing", "target_muxer_missing":
+	case "output_muxer_missing", "destination_muxer_missing":
 		formatID := av.FormatID(details["format"])
 		return AdapterRequirement{
 			Kind:       "muxer",
@@ -966,7 +966,7 @@ func explainSummary(report PlanReport) string {
 	if len(report.Destinations) == 1 {
 		target = firstNonEmpty(report.Destinations[0].Name, report.Destinations[0].URI, target)
 	} else if len(report.Destinations) > 1 {
-		target = fmt.Sprintf("%d targets", len(report.Destinations))
+		target = fmt.Sprintf("%d destinations", len(report.Destinations))
 	}
 	if len(report.Streams) == 0 {
 		return fmt.Sprintf("%s %s to %s", name, input, target)

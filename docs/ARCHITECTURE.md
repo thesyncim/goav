@@ -66,7 +66,7 @@ and encoders, so runtime branches attached from those taps start with useful
 codec, width/height, sample-rate, channel, and sample/pixel-format context.
 Codec descriptors describe encode/decode media and frame-format constraints,
 filter descriptors describe transform media constraints, and format descriptors
-describe target container media, codec, and stream-count constraints so adapter
+describe destination container media, codec, and stream-count constraints so adapter
 conflicts can fail before planned or runtime graph mutation. Declared branch
 composition still carries private branch-compose migration state owned by the
 recipe compiler; the advanced `transcode.Plan` path must keep shrinking until it

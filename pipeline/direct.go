@@ -160,7 +160,7 @@ func (g *directRunner) Connect(route Route) error {
 		return ErrInvalidLink
 	}
 
-	targets := make([]int, 0, len(route.To))
+	destinations := make([]int, 0, len(route.To))
 	for i := range route.To {
 		to, ok := g.index[route.To[i]]
 		if !ok || !g.nodes[to].active {
@@ -169,10 +169,10 @@ func (g *directRunner) Connect(route Route) error {
 		if g.nodes[to].kind == nodeSource {
 			return ErrInvalidLink
 		}
-		targets = append(targets, to)
+		destinations = append(destinations, to)
 	}
 	g.nodes[from].routes = append(g.nodes[from].routes, directRoute{
-		to:     targets,
+		to:     destinations,
 		policy: policy,
 		label:  route.Label,
 	})
@@ -193,13 +193,13 @@ func (g *directRunner) Disconnect(route Route) error {
 	if !ok || !g.nodes[from].active {
 		return ErrUnknownNode
 	}
-	targets := make(map[int]struct{}, len(route.To))
+	destinations := make(map[int]struct{}, len(route.To))
 	for i := range route.To {
 		to, ok := g.index[route.To[i]]
 		if !ok {
 			return ErrUnknownNode
 		}
-		targets[to] = struct{}{}
+		destinations[to] = struct{}{}
 	}
 	removed := false
 	routes := g.nodes[from].routes[:0]
@@ -211,7 +211,7 @@ func (g *directRunner) Disconnect(route Route) error {
 		}
 		to := existing.to[:0]
 		for j := range existing.to {
-			if _, ok := targets[existing.to[j]]; ok {
+			if _, ok := destinations[existing.to[j]]; ok {
 				removed = true
 				continue
 			}
@@ -442,7 +442,7 @@ func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 	}
 
 	var targetStack [8]int
-	targets := targetStack[:0]
+	destinations := targetStack[:0]
 	routes := fromNode.routes
 	for i := range routes {
 		route := &routes[i]
@@ -450,16 +450,16 @@ func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 			continue
 		}
 		for j := range route.to {
-			if len(targets) < cap(targets) {
-				targets = append(targets, route.to[j])
+			if len(destinations) < cap(destinations) {
+				destinations = append(destinations, route.to[j])
 				continue
 			}
-			targets = append(targets, route.to[j])
+			destinations = append(destinations, route.to[j])
 		}
 	}
 	g.mu.RUnlock()
-	for i := range targets {
-		if err := g.deliver(ctx, targets[i], msg); err != nil {
+	for i := range destinations {
+		if err := g.deliver(ctx, destinations[i], msg); err != nil {
 			return err
 		}
 	}

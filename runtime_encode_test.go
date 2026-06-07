@@ -325,8 +325,8 @@ func TestRuntimeBuilderDecodeEncodeRequiresTargetCodec(t *testing.T) {
 		Mux(format.Output{Name: "archive.ogg"}).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_target_missing" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_target_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_destination_missing" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_destination_missing wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "no target codec") || !strings.Contains(err.Error(), "codec.EncodeConfig.Parameters.ID") {
 		t.Fatalf("err = %v, want target codec guidance", err)
