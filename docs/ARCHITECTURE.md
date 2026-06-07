@@ -61,9 +61,11 @@ on branch-compose routes, target routes, selector/stream groups, and media
 transforms. Branch-composition inputs and resolved targets are carried by the
 resolved recipe into a media-plan branch graph; `Describe` and `Build` use that
 graph plan directly and only borrow runtime services for adapter-backed sources,
-filters, encoders, and muxers. Direct selected-stream decode/encode recipes also
-keep their inputs, endpoints, ordered stream attachments, codec-change policy,
-custom stages, transforms, and taps on the resolved recipe until the media-plan
+filters, encoders, and muxers. Packet-preserving copy/fanout recipes use the
+same resolved graph-plan pattern for concrete inputs, endpoints, and optional
+selected streams. Direct selected-stream decode/encode recipes also keep their
+inputs, endpoints, ordered stream attachments, codec-change policy, custom
+stages, transforms, and taps on the resolved recipe until the media-plan
 boundary. Those direct stream recipes now build and describe through a resolved
 single-stream graph plan and shared parameterized
 source/decode/filter/encode/target helpers instead of a pre-populated runtime

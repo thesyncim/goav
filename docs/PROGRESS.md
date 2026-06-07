@@ -999,6 +999,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     graph builder to own the media-plan boundary. The advanced `Transcode(plan)`
     compiler path remains as an explicit boundary adapter over the same
     stateless branch route planning and compile helpers. Done.
+253. Move packet-copy recipes onto a resolved media-plan graph:
+    packet-preserving record/remux/fanout recipes now create a resolved
+    packet-copy graph plan from concrete inputs, endpoints, and optional selected
+    stream intent. `Describe` and `Build` share that plan for file/protocol and
+    RTP/WebRTC packet copy, including selected-stream fanout, instead of keeping
+    packet copy as recipe-resolved graph mutation helpers. Done.
 
 ## First Vertical Slice
 
@@ -1254,7 +1260,8 @@ later attachments.
 input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and
 `Explain(ctx)` now require a supported media-plan shape for normal recipes. The
-direct stream paths now use resolved single-stream graph plans, and branch
+packet-copy paths use resolved graph plans for concrete inputs and endpoints,
+direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
 broaden the same first-class requirement model to custom filter capability

@@ -49,63 +49,31 @@ func mediaPlanPacketCopySpec(state *recipeCompileState) (pipeline.Spec, bool, er
 	if !ok {
 		return pipeline.Spec{}, false, nil
 	}
-	if len(state.inputAttachments) == 0 || len(state.outputAttachments) == 0 {
-		return pipeline.Spec{}, false, nil
-	}
-	runtime, ok := state.runtime.(*runtime)
-	if !ok || runtime == nil {
-		return pipeline.Spec{}, false, nil
-	}
-
-	spec := pipeline.Spec{Name: "goav", Realtime: runtime.realtime}
-	nodes := make(map[string]plannedNode, len(state.inputAttachments)+len(state.outputAttachments)+1)
-	sourceRefs, ok, err := mediaPlanPacketCopySources(&spec, nodes, state.inputAttachments)
+	plan, ok, err := newMediaPlanPacketCopyGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream, selectedStream)
 	if err != nil || !ok {
 		return pipeline.Spec{}, ok, err
 	}
-	upstreamRefs := sourceRefs
-	if selectedStream {
-		selector := streamIntentSelector(stream)
-		selectName := selectNodeName(selector)
-		selectRef := pipeline.NodeRef(selectName)
-		if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef, selectNodeDetail(selector)); err != nil {
-			return pipeline.Spec{}, false, err
-		}
-		for i := range sourceRefs {
-			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-				From:   sourceRefs[i],
-				To:     selectRef,
-				Policy: pipeline.RouteAll,
-			})
-		}
-		upstreamRefs = []pipeline.NodeRef{selectRef}
-	}
-	targetRefs, err := mediaPlanPacketCopyTargets(&spec, nodes, state.outputAttachments)
-	if err != nil {
-		return pipeline.Spec{}, false, err
-	}
-	for i := range upstreamRefs {
-		for j := range targetRefs {
-			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-				From:   upstreamRefs[i],
-				To:     targetRefs[j],
-				Policy: pipeline.RouteAll,
-			})
-		}
-	}
-	return spec, true, nil
+	spec, err := plan.spec()
+	return spec, err == nil, err
 }
 
 func mediaPlanPacketCopyStream(state *recipeCompileState) (StreamIntent, bool, bool) {
-	if state == nil || !state.jobPresent {
+	if state == nil {
 		return StreamIntent{}, false, false
 	}
-	switch len(state.intent.Streams) {
+	return mediaPlanPacketCopyIntentStream(state.jobPresent, state.intent, state.streamSteps)
+}
+
+func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, streamSteps []jobStreamStepAttachment) (StreamIntent, bool, bool) {
+	if !jobPresent {
+		return StreamIntent{}, false, false
+	}
+	switch len(intent.Streams) {
 	case 0:
 		return StreamIntent{}, false, true
 	case 1:
-		stream := state.intent.Streams[0]
-		if stream.Encode.Copy && !stream.Decode && stream.Encode.ID == "" && !stream.Encode.Auto && len(state.streamSteps) == 0 {
+		stream := intent.Streams[0]
+		if stream.Encode.Copy && !stream.Decode && stream.Encode.ID == "" && !stream.Encode.Auto && len(streamSteps) == 0 {
 			return stream, true, true
 		}
 	}

@@ -31,11 +31,12 @@ make the implementation match the composable planner promise.
    into that plan instead of being the recipe IR. Runtime branch-composer helpers
    now use branch/media naming, and branch inputs plus resolved targets stay on
    the resolved plan until a media-plan branch graph emits specs or builds the
-   runtime graph. Direct stream decode/encode recipes now keep resolved inputs,
-   endpoints, ordered stream attachments, codec-change policy, custom stages,
-   transforms, and taps until the media-plan boundary instead of compiling from
-   pre-lowered builder state; they now describe/build through a resolved
-   single-stream graph plan and shared parameterized graph helpers. The
+   runtime graph. Packet copy/fanout recipes now do the same through a resolved
+   packet-copy graph plan. Direct stream decode/encode recipes now keep resolved
+   inputs, endpoints, ordered stream attachments, codec-change policy, custom
+   stages, transforms, and taps until the media-plan boundary instead of
+   compiling from pre-lowered builder state; they now describe/build through a
+   resolved single-stream graph plan and shared parameterized graph helpers. The
    remaining work is deeper direct graph construction and capability planning
    behind the remaining media-plan build kinds.
 4. Add a capability model for streams, codecs, filters, and containers so the
