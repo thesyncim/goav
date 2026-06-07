@@ -13,35 +13,48 @@ var targetSpecSeq atomic.Uint64
 // Destination is accepted by To. Use Target for named mux/sink groups, or pass
 // FileOutput, URIOutput, or Sink directly for one-off destinations.
 type Destination interface {
+	// Name overrides the destination name used for diagnostics and graph nodes.
+	Name(string) Destination
+	// MIME sets the MIME type used for format detection.
+	MIME(string) Destination
+	// Format sets the container format explicitly.
+	Format(av.FormatID) Destination
 	destination() destinationBinding
 }
 
 type destinationBinding struct {
 	target    targetSpec
-	dest      DestinationSpec
+	dest      destinationSpec
 	hasTarget bool
 	hasDirect bool
 }
 
 type targetSpec struct {
 	name string
-	dest DestinationSpec
+	dest destinationSpec
 	id   uint64
 	err  error
 }
 
 // Target binds a stable target name to a concrete destination.
-func Target(name string, dest DestinationSpec) Destination {
-	return newTargetSpec(name, dest)
+func Target(name string, dest Destination) Destination {
+	if dest == nil {
+		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target destination is nil")}
+	}
+	binding := dest.destination()
+	if !binding.hasDirect {
+		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target destination must be a file, URI, or sink destination")}
+	}
+	return newTargetSpec(name, binding.dest)
 }
 
-func newTargetSpec(name string, dest DestinationSpec) targetSpec {
+func newTargetSpec(name string, dest destinationSpec) targetSpec {
 	if name == "" {
 		return targetSpec{dest: dest, err: targetNameMissingError(dest)}
 	}
 	return targetSpec{
 		name: name,
-		dest: dest.Name(firstNonEmpty(dest.name, name)),
+		dest: dest.withName(firstNonEmpty(dest.name, name)),
 		id:   targetSpecSeq.Add(1),
 	}
 }
@@ -50,7 +63,23 @@ func (t targetSpec) destination() destinationBinding {
 	return destinationBinding{target: t, hasTarget: true}
 }
 
-func (s DestinationSpec) destination() destinationBinding {
+func (t targetSpec) Name(name string) Destination {
+	t.name = name
+	t.dest = t.dest.withName(firstNonEmpty(t.dest.name, name))
+	return t
+}
+
+func (t targetSpec) MIME(mimeType string) Destination {
+	t.dest = t.dest.withMIME(mimeType)
+	return t
+}
+
+func (t targetSpec) Format(format av.FormatID) Destination {
+	t.dest = t.dest.withFormat(format)
+	return t
+}
+
+func (s destinationSpec) destination() destinationBinding {
 	return destinationBinding{dest: s, hasDirect: true}
 }
 
@@ -358,7 +387,7 @@ func appendDestination(spec *BranchSpec, destination destinationBinding, index i
 		if target.name == "" {
 			return targetNameMissingError(target.dest)
 		}
-		target.dest = target.dest.Name(firstNonEmpty(target.dest.name, target.name))
+		target.dest = target.dest.withName(firstNonEmpty(target.dest.name, target.name))
 		spec.targets = append(spec.targets, target)
 		spec.labels = append(spec.labels, target.name)
 		return nil
@@ -819,7 +848,7 @@ func cloneTargetSpec(target targetSpec) targetSpec {
 	return target
 }
 
-func cloneDestinationSpec(dest DestinationSpec) DestinationSpec {
+func cloneDestinationSpec(dest destinationSpec) destinationSpec {
 	return dest
 }
 
@@ -889,7 +918,7 @@ func destinationInvalidError(operation string, node string, reason string) error
 	}
 }
 
-func targetNameMissingError(dest DestinationSpec) error {
+func targetNameMissingError(dest destinationSpec) error {
 	return &BuildError{
 		Code:      "target_invalid",
 		Operation: "build target",

@@ -288,15 +288,11 @@ func operationReportByKind(operations []goav.OperationReport, kind goav.Operatio
 	return goav.OperationReport{}, false
 }
 
-func recordJob(input goav.InputSpec, outputs ...goav.DestinationSpec) *goav.Job {
-	destinations := make([]goav.Destination, 0, len(outputs))
-	for i := range outputs {
-		destinations = append(destinations, outputs[i])
-	}
-	return goav.From(input).Copy().To(destinations...)
+func recordJob(input goav.InputSpec, outputs ...goav.Destination) *goav.Job {
+	return goav.From(input).Copy().To(outputs...)
 }
 
-func decodeJob(input goav.InputSpec, output goav.DestinationSpec) *goav.Job {
+func decodeJob(input goav.InputSpec, output goav.Destination) *goav.Job {
 	return goav.From(input).Stream().Decode().To(output)
 }
 
@@ -1346,6 +1342,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"AudioFlowBuilder": true,
 		"VideoFlowBuilder": true,
 		"Input":            true,
+		"DestinationSpec":  true,
 		"Output":           true,
 		"OutputIntent":     true,
 		"OutputReport":     true,
@@ -2978,18 +2975,20 @@ func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsEmptyDestinationSpec(t *testing.T) {
+func TestRecordRecipeRejectsNilDestination(t *testing.T) {
+	var destination goav.Destination
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		goav.DestinationSpec{},
+		destination,
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want target_invalid wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "empty destination spec") ||
-		!strings.Contains(err.Error(), "goav.FileOutput") {
-		t.Fatalf("err = %v, want output constructor guidance", err)
+	if !strings.Contains(err.Error(), "destination is nil") ||
+		!strings.Contains(err.Error(), "goav.FileOutput") ||
+		!strings.Contains(err.Error(), "goav.Sink") {
+		t.Fatalf("err = %v, want destination constructor guidance", err)
 	}
 }
 
@@ -3020,10 +3019,10 @@ func TestRecordRecipeRejectsUnnamedFileOutputWithoutFormat(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsFormatOnlyDestinationSpec(t *testing.T) {
+func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
-		goav.DestinationSpec{}.Format(av.FormatIVF),
+		goav.URIOutput("").Format(av.FormatIVF),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError

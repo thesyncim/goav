@@ -95,7 +95,7 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 				operation:         "build job",
 				jobPresent:        true,
 				intent:            Intent{Inputs: []InputIntent{{Name: "input.ivf"}}},
-				outputAttachments: []DestinationSpec{FileOutput("recording.ivf", io.Discard)},
+				outputAttachments: []destinationSpec{fileDestination("recording.ivf", io.Discard)},
 			},
 			want: "inputs",
 		},
@@ -237,8 +237,8 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 			}},
 			Targets: []TargetIntent{{Name: "archive.ogg"}},
 		},
-		outputAttachments: []DestinationSpec{
-			FileOutput("archive.ogg", io.Discard),
+		outputAttachments: []destinationSpec{
+			fileDestination("archive.ogg", io.Discard),
 		},
 	}
 
@@ -267,8 +267,8 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
 				runtime:   Default(),
-				outputAttachments: []DestinationSpec{
-					FileOutput("recording.webm", io.Discard),
+				outputAttachments: []destinationSpec{
+					fileDestination("recording.webm", io.Discard),
 				},
 			},
 			want: `format "matroska"`,
@@ -280,8 +280,8 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
 				runtime:   Default(),
-				outputAttachments: []DestinationSpec{
-					FileOutput("", io.Discard).Format(av.FormatOgg),
+				outputAttachments: []destinationSpec{
+					fileDestination("", io.Discard).withFormat(av.FormatOgg),
 				},
 			},
 			want: `format "ogg"`,
@@ -295,7 +295,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 				runtime:   Default(),
 				branchTargetAttachments: []namedTargetSpec{{
 					name:   "web",
-					output: FileOutput("web.webm", io.Discard),
+					output: fileDestination("web.webm", io.Discard),
 				}},
 			},
 			want: `format "matroska"`,
@@ -337,8 +337,8 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 					testFormatProber(remuxTestProber{}),
 					testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 				)),
-				outputAttachments: []DestinationSpec{
-					FileOutput("recording.ogg", io.Discard),
+				outputAttachments: []destinationSpec{
+					fileDestination("recording.ogg", io.Discard),
 				},
 			},
 			validate: func(t *testing.T, state recipeCompileState) {
@@ -362,7 +362,7 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 				)),
 				branchTargetAttachments: []namedTargetSpec{{
 					name:   "web",
-					output: FileOutput("web.ogg", io.Discard),
+					output: fileDestination("web.ogg", io.Discard),
 				}},
 			},
 			validate: func(t *testing.T, state recipeCompileState) {
@@ -384,8 +384,8 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 				runtime: New(withTestFormats(
 					testFormatMuxer(av.FormatIVF, &remuxTestMuxerFactory{}),
 				)),
-				outputAttachments: []DestinationSpec{
-					FileOutput("recording.media", io.Discard).Format(av.FormatIVF),
+				outputAttachments: []destinationSpec{
+					fileDestination("recording.media", io.Discard).withFormat(av.FormatIVF),
 				},
 			},
 			validate: func(t *testing.T, state recipeCompileState) {
@@ -425,7 +425,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 				},
 			}},
 		}).Name("audio").Codec(Opus()),
-	).Copy().To(FileOutput("recording.ogg", io.Discard)).UseRuntime(runtime)
+	).Copy().To(fileDestination("recording.ogg", io.Discard)).UseRuntime(runtime)
 
 	resolved, err := compileJobRecipeForBuild(job)
 	if err != nil {
@@ -473,7 +473,7 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 		branchInputAttachment: FileInput("input.ivf", strings.NewReader("")),
 		branchTargetAttachments: []namedTargetSpec{{
 			name:   "archive",
-			output: FileOutput("archive.ogg", io.Discard),
+			output: fileDestination("archive.ogg", io.Discard),
 		}},
 	}
 
@@ -506,7 +506,7 @@ func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedTargets(t *testing.T)
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Opus(96_000).To(Target("archive", FileOutput("archive.ogg", io.Discard))))
+		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(context.Background(), job)
 	if err != nil {
@@ -1519,12 +1519,12 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 }
 
 func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
-	frameSink := Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))
-	fileOutput := FileOutput("archive.ogg", io.Discard)
+	frameSink := sinkDestination(SinkFunc("frames", func(context.Context, Message) error { return nil }))
+	fileOutput := fileDestination("archive.ogg", io.Discard)
 	tests := []struct {
 		name    string
 		stream  StreamIntent
-		outputs []DestinationSpec
+		outputs []destinationSpec
 		code    string
 		want    []string
 	}{
@@ -1535,7 +1535,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 				Decode:  true,
 				Targets: []string{"frames", "archive.ogg"},
 			},
-			outputs: []DestinationSpec{frameSink, fileOutput},
+			outputs: []destinationSpec{frameSink, fileOutput},
 			code:    "output_kind_mixed",
 			want:    []string{"cannot mix sinks and muxed outputs", ".Branches(...)"},
 		},
@@ -1546,7 +1546,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 				Decode:  true,
 				Targets: []string{"archive.ogg"},
 			},
-			outputs: []DestinationSpec{fileOutput},
+			outputs: []destinationSpec{fileOutput},
 			code:    "encode_missing",
 			want:    []string{"decoded frames cannot be written", ".Opus"},
 		},
@@ -1578,8 +1578,8 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 }
 
 func TestJobStreamOutputKindsPassAllowsEncodedPacketFanout(t *testing.T) {
-	packetSink := Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))
-	fileOutput := FileOutput("archive.ogg", io.Discard)
+	packetSink := sinkDestination(SinkFunc("packets", func(context.Context, Message) error { return nil }))
+	fileOutput := fileDestination("archive.ogg", io.Discard)
 	state := recipeCompileState{
 		operation: "build job",
 		intent: Intent{
@@ -1592,7 +1592,7 @@ func TestJobStreamOutputKindsPassAllowsEncodedPacketFanout(t *testing.T) {
 			}},
 			Targets: []TargetIntent{{Name: "packets"}, {Name: "archive.ogg"}},
 		},
-		outputAttachments: []DestinationSpec{packetSink, fileOutput},
+		outputAttachments: []destinationSpec{packetSink, fileOutput},
 	}
 	if err := validateJobStreamOutputKindsPass().Apply(&state); err != nil {
 		t.Fatalf("validateJobStreamOutputKindsPass() error = %v", err)
@@ -1952,7 +1952,7 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 				branchInputAttachment: RTP(&runtimeRTPReceiver{}).Name("video").Codec(VP8()),
 				branchTargetAttachments: []namedTargetSpec{{
 					name:   "web",
-					output: FileOutput("web.ivf", io.Discard),
+					output: fileDestination("web.ivf", io.Discard),
 				}},
 			},
 			code: "unsupported_input",
@@ -1963,8 +1963,8 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 			state: recipeCompileState{
 				branchInputAttachment: FileInput("input.ivf", strings.NewReader("")),
 				branchTargetAttachments: []namedTargetSpec{
-					{name: "web", output: FileOutput("web.ivf", io.Discard)},
-					{name: "web", output: FileOutput("preview.ivf", io.Discard)},
+					{name: "web", output: fileDestination("web.ivf", io.Discard)},
+					{name: "web", output: fileDestination("preview.ivf", io.Discard)},
 				},
 			},
 			code: "target_duplicate",
@@ -2000,7 +2000,7 @@ func TestTranscodeBranchTargetKindsPassAllowsCopyMuxBranches(t *testing.T) {
 		},
 		branchTargetAttachments: []namedTargetSpec{{
 			name:   "web",
-			output: FileOutput("web.ivf", io.Discard),
+			output: fileDestination("web.ivf", io.Discard),
 		}},
 	}
 
@@ -2025,7 +2025,7 @@ func TestTranscodeBranchTargetKindsPassAllowsRawSinkBranches(t *testing.T) {
 		},
 		branchTargetAttachments: []namedTargetSpec{{
 			name:   "frames",
-			output: Sink(SinkFunc("frames", func(context.Context, Message) error { return nil })),
+			output: sinkDestination(SinkFunc("frames", func(context.Context, Message) error { return nil })),
 		}},
 	}
 
@@ -2047,7 +2047,7 @@ func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
 		},
 		branchTargetAttachments: []namedTargetSpec{{
 			name:   "web",
-			output: FileOutput("web.ivf", io.Discard),
+			output: fileDestination("web.ivf", io.Discard),
 		}},
 	}
 
@@ -2076,7 +2076,7 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 		},
 		branchTargetAttachments: []namedTargetSpec{{
 			name:   "web",
-			output: FileOutput("web.ivf", io.Discard),
+			output: fileDestination("web.ivf", io.Discard),
 		}},
 	}
 
@@ -2137,7 +2137,7 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(FileOutput("recording.ivf", io.Discard))
+	).Copy().To(fileDestination("recording.ivf", io.Discard))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2177,7 +2177,7 @@ func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
 func TestMediaPlanGraphSpecPassPlansFileCopy(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(FileOutput("recording.ivf", io.Discard).Format(av.FormatIVF))
+	).Copy().To(fileDestination("recording.ivf", io.Discard).Format(av.FormatIVF))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2218,7 +2218,7 @@ func TestMediaPlanGraphSpecPassPlansRTPCopy(t *testing.T) {
 				Type: av.MediaVideo,
 			},
 		}}}).Name("video").Codec(VP8()),
-	).Copy().To(FileOutput("recording.ivf", io.Discard).Format(av.FormatIVF))
+	).Copy().To(fileDestination("recording.ivf", io.Discard).Format(av.FormatIVF))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2250,7 +2250,7 @@ func TestMediaPlanGraphSpecPassPlansRTPCopy(t *testing.T) {
 }
 
 func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
-	web := Target("web", FileOutput("web.ivf", io.Discard))
+	web := Target("web", fileDestination("web.ivf", io.Discard))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -2299,8 +2299,8 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 }
 
 func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) {
-	voice := Target("voice", FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg))
-	archive := Target("archive", FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg))
+	voice := Target("voice", fileDestination("voice.ogg", io.Discard).Format(av.FormatOgg))
+	archive := Target("archive", fileDestination("archive.ogg", io.Discard).Format(av.FormatOgg))
 	job := From(RTP(&runtimeRTPReceiver{
 		streams: []Stream{audioOpusTestStream()},
 	}).Name("audio").Codec(Opus())).
@@ -2356,7 +2356,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 		Audio().
 		Decode().
 		Tap(FrameTap("audio.decoded")).
-		Branches(Branch("main").Opus(96_000).To(Target("archive", FileOutput("archive.ogg", io.Discard))))
+		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -2389,7 +2389,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 				},
 			}},
 		}).Name("video").Codec(VP8()),
-	).Copy().To(FileOutput("recording.ivf", io.Discard))
+	).Copy().To(fileDestination("recording.ivf", io.Discard))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2562,7 +2562,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 		Decode().
 		Do(&runtimeTestStage{name: "meter"}).
 		Opus(96_000).
-		To(FileOutput("archive.ogg", io.Discard))
+		To(fileDestination("archive.ogg", io.Discard))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -2607,7 +2607,7 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 		Tap(FrameTap("audio.decoded")).
 		Do(&runtimeTestStage{name: "meter"}).
 		Opus(96_000).
-		To(FileOutput("archive.ogg", io.Discard))
+		To(fileDestination("archive.ogg", io.Discard))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -2703,7 +2703,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 		Decode().
 		Opus(96_000).
 		To(
-			FileOutput("archive.ogg", io.Discard),
+			fileDestination("archive.ogg", io.Discard),
 			Sink(&runtimeTestSink{name: "packets"}),
 		)
 
@@ -2748,7 +2748,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 		Audio().
 		Decode().
 		Opus(96_000).
-		To(FileOutput("archive.ogg", io.Discard))
+		To(fileDestination("archive.ogg", io.Discard))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {

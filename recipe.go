@@ -690,8 +690,8 @@ func (s InputSpec) selector(media av.MediaType) av.StreamSelector {
 	return selector
 }
 
-// DestinationSpec describes a concrete file, URI, writer, or sink destination.
-type DestinationSpec struct {
+// destinationSpec describes a concrete file, URI, writer, or sink destination.
+type destinationSpec struct {
 	output         format.Output
 	sink           pipeline.Sink
 	format         av.FormatID
@@ -701,8 +701,12 @@ type DestinationSpec struct {
 }
 
 // FileOutput creates a writer-backed file destination.
-func FileOutput(name string, writer io.Writer) DestinationSpec {
-	return DestinationSpec{
+func FileOutput(name string, writer io.Writer) Destination {
+	return fileDestination(name, writer)
+}
+
+func fileDestination(name string, writer io.Writer) destinationSpec {
+	return destinationSpec{
 		output: format.Output{
 			Name:     name,
 			Protocol: av.ProtocolFile,
@@ -713,8 +717,12 @@ func FileOutput(name string, writer io.Writer) DestinationSpec {
 }
 
 // URIOutput creates a URI destination opened by a registered format adapter.
-func URIOutput(uri string) DestinationSpec {
-	return DestinationSpec{
+func URIOutput(uri string) Destination {
+	return uriDestination(uri)
+}
+
+func uriDestination(uri string) destinationSpec {
+	return destinationSpec{
 		output: format.Output{
 			Name: uri,
 			URI:  uri,
@@ -724,20 +732,28 @@ func URIOutput(uri string) DestinationSpec {
 }
 
 // Sink creates a sink destination for decoded frames or packets.
-func Sink(sink pipeline.Sink) DestinationSpec {
+func Sink(sink pipeline.Sink) Destination {
+	return sinkDestination(sink)
+}
+
+func sinkDestination(sink pipeline.Sink) destinationSpec {
 	name := ""
 	if sink != nil {
 		name = sink.Name()
 	}
 	if sink == nil {
-		return DestinationSpec{err: ErrNilSink}
+		return destinationSpec{err: ErrNilSink}
 	}
-	return DestinationSpec{sink: sink, name: name}
+	return destinationSpec{sink: sink, name: name}
 }
 
 // Name overrides the destination name used for diagnostics and mux graph nodes.
 // Sink graph nodes use the wrapped sink's Name.
-func (s DestinationSpec) Name(name string) DestinationSpec {
+func (s destinationSpec) Name(name string) Destination {
+	return s.withName(name)
+}
+
+func (s destinationSpec) withName(name string) destinationSpec {
 	s.name = name
 	if s.sink == nil {
 		s.output.Name = name
@@ -746,23 +762,31 @@ func (s DestinationSpec) Name(name string) DestinationSpec {
 }
 
 // MIME sets the destination MIME type used for format detection.
-func (s DestinationSpec) MIME(mimeType string) DestinationSpec {
+func (s destinationSpec) MIME(mimeType string) Destination {
+	return s.withMIME(mimeType)
+}
+
+func (s destinationSpec) withMIME(mimeType string) destinationSpec {
 	s.output.MIMEType = mimeType
 	return s
 }
 
 // Format sets the destination container format explicitly.
-func (s DestinationSpec) Format(format av.FormatID) DestinationSpec {
+func (s destinationSpec) Format(format av.FormatID) Destination {
+	return s.withFormat(format)
+}
+
+func (s destinationSpec) withFormat(format av.FormatID) destinationSpec {
 	s.format = format
 	return s
 }
 
-func (s DestinationSpec) withResolvedFormat(format av.FormatID) DestinationSpec {
+func (s destinationSpec) withResolvedFormat(format av.FormatID) destinationSpec {
 	s.resolvedFormat = format
 	return s
 }
 
-func (s DestinationSpec) validate(operation string, fallback string) error {
+func (s destinationSpec) validate(operation string, fallback string) error {
 	node := s.label(fallback)
 	if s.err != nil {
 		return &BuildError{
@@ -835,11 +859,11 @@ func (s DestinationSpec) validate(operation string, fallback string) error {
 	return nil
 }
 
-func (s DestinationSpec) label(fallback string) string {
+func (s destinationSpec) label(fallback string) string {
 	return firstNonEmpty(s.name, s.output.Name, s.output.URI, fallback)
 }
 
-func (s DestinationSpec) intent() TargetIntent {
+func (s destinationSpec) intent() TargetIntent {
 	return TargetIntent{
 		Name:     s.label("output"),
 		URI:      s.output.URI,
@@ -849,7 +873,7 @@ func (s DestinationSpec) intent() TargetIntent {
 	}
 }
 
-func (s DestinationSpec) intentWithName(name string) TargetIntent {
+func (s destinationSpec) intentWithName(name string) TargetIntent {
 	intent := s.intent()
 	intent.Name = firstNonEmpty(name, intent.Name)
 	return intent
@@ -859,7 +883,7 @@ type Job struct {
 	name          string
 	runtime       Runtime
 	inputs        []InputSpec
-	outputs       []DestinationSpec
+	outputs       []destinationSpec
 	outputNames   []string
 	stream        *jobStreamBuild
 	branchStreams []streamBuild
@@ -876,7 +900,7 @@ type jobStreamBuild struct {
 	postEncodeTaps []string
 	encode         CodecSpec
 	codecChange    CodecChangePolicy
-	outputs        []DestinationSpec
+	outputs        []destinationSpec
 	outputNames    []string
 }
 
@@ -962,7 +986,7 @@ func (j *Job) addBranchTargets(targets ...targetSpec) error {
 		if target.name == "" {
 			return targetNameMissingError(target.dest)
 		}
-		target.dest = target.dest.Name(firstNonEmpty(target.dest.name, target.name))
+		target.dest = target.dest.withName(firstNonEmpty(target.dest.name, target.name))
 		named := namedTargetSpec{name: target.name, output: target.dest}
 		identity := targetIdentity(named)
 		if existing, ok := seen[named.name]; ok {
@@ -1182,7 +1206,7 @@ func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool
 	return jobOutputScopeMixedError("build job", stream)
 }
 
-func validateJobOutputBindings(operation string, stream StreamIntent, outputs []DestinationSpec, targetNames []string) error {
+func validateJobOutputBindings(operation string, stream StreamIntent, outputs []destinationSpec, targetNames []string) error {
 	labels := jobOutputLabelSet(outputs, targetNames)
 	for _, label := range stream.Targets {
 		if _, ok := labels[label]; ok {
@@ -1193,7 +1217,7 @@ func validateJobOutputBindings(operation string, stream StreamIntent, outputs []
 	return nil
 }
 
-func jobOutputLabelSet(outputs []DestinationSpec, targetNames []string) map[string]struct{} {
+func jobOutputLabelSet(outputs []destinationSpec, targetNames []string) map[string]struct{} {
 	labels := make(map[string]struct{}, len(outputs))
 	for i := range outputs {
 		labels[jobOutputTargetName(outputs, targetNames, i)] = struct{}{}
@@ -1201,9 +1225,9 @@ func jobOutputLabelSet(outputs []DestinationSpec, targetNames []string) map[stri
 	return labels
 }
 
-func (j *Job) allOutputs() []DestinationSpec {
+func (j *Job) allOutputs() []destinationSpec {
 	if len(j.branchTargets) != 0 {
-		outputs := make([]DestinationSpec, 0, len(j.branchTargets))
+		outputs := make([]destinationSpec, 0, len(j.branchTargets))
 		for i := range j.branchTargets {
 			outputs = append(outputs, j.branchTargets[i].output)
 		}
@@ -1223,11 +1247,11 @@ func (j *Job) allOutputNames() []string {
 	return jobAllOutputNames(j.outputNames, jobStreamOutputNames(j.stream))
 }
 
-func jobAllOutputs(outputs []DestinationSpec, streamOutputs []DestinationSpec) []DestinationSpec {
+func jobAllOutputs(outputs []destinationSpec, streamOutputs []destinationSpec) []destinationSpec {
 	if len(streamOutputs) == 0 {
-		return append([]DestinationSpec(nil), outputs...)
+		return append([]destinationSpec(nil), outputs...)
 	}
-	all := make([]DestinationSpec, 0, len(outputs)+len(streamOutputs))
+	all := make([]destinationSpec, 0, len(outputs)+len(streamOutputs))
 	all = append(all, outputs...)
 	all = append(all, streamOutputs...)
 	return all
@@ -1463,11 +1487,11 @@ func streamNeedsDecodeFromBuild(stream *jobStreamBuild) bool {
 	return stream.decode || len(stream.steps) != 0 || stream.encode.ID != "" || stream.encode.Auto || stream.encode.Copy
 }
 
-func jobStreamOutputs(stream *jobStreamBuild) []DestinationSpec {
+func jobStreamOutputs(stream *jobStreamBuild) []destinationSpec {
 	if stream == nil || len(stream.outputs) == 0 {
 		return nil
 	}
-	return append([]DestinationSpec(nil), stream.outputs...)
+	return append([]destinationSpec(nil), stream.outputs...)
 }
 
 func jobStreamOutputNames(stream *jobStreamBuild) []string {
@@ -1522,7 +1546,7 @@ func streamStageMissingError(stream StreamIntent) error {
 	}
 }
 
-func validateJobStreamOutputKinds(operation string, stream StreamIntent, outputs []DestinationSpec) error {
+func validateJobStreamOutputKinds(operation string, stream StreamIntent, outputs []destinationSpec) error {
 	if outputsContainSinkDestination(outputs) && outputsContainMuxTarget(outputs) && !codecIntentSet(stream.Encode) {
 		return mixedStreamOutputError(operation, stream)
 	}
@@ -1712,7 +1736,7 @@ func appendTransformSpecs(prefix []TransformSpec, branch []TransformSpec) []Tran
 	return out
 }
 
-func outputsContainMuxTarget(outputs []DestinationSpec) bool {
+func outputsContainMuxTarget(outputs []destinationSpec) bool {
 	for i := range outputs {
 		if outputs[i].sink == nil {
 			return true
@@ -1721,7 +1745,7 @@ func outputsContainMuxTarget(outputs []DestinationSpec) bool {
 	return false
 }
 
-func outputsContainSinkDestination(outputs []DestinationSpec) bool {
+func outputsContainSinkDestination(outputs []destinationSpec) bool {
 	for i := range outputs {
 		if outputs[i].sink != nil {
 			return true
@@ -1730,7 +1754,7 @@ func outputsContainSinkDestination(outputs []DestinationSpec) bool {
 	return false
 }
 
-func validateDestinationSpecs(operation string, outputs []DestinationSpec, targetNames ...string) error {
+func validateDestinationSpecs(operation string, outputs []destinationSpec, targetNames ...string) error {
 	seen := make(map[string]bool, len(outputs))
 	for i := range outputs {
 		fallback := fmt.Sprintf("output-%d", i)
@@ -1773,8 +1797,8 @@ func validateInputFormatAdapters(ctx context.Context, rt Runtime, inputs []Input
 	return probes, nil
 }
 
-func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []DestinationSpec, targetNames ...string) ([]DestinationSpec, error) {
-	resolved := append([]DestinationSpec(nil), outputs...)
+func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []destinationSpec, targetNames ...string) ([]destinationSpec, error) {
+	resolved := append([]destinationSpec(nil), outputs...)
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
 		return resolved, nil
@@ -3125,7 +3149,7 @@ func (b *jobStreamBuilder) VP9(bitrate int, options ...codecOption) *jobStreamBu
 
 func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 	stream := b.current()
-	outputs := make([]DestinationSpec, 0, len(destinations))
+	outputs := make([]destinationSpec, 0, len(destinations))
 	for i := range destinations {
 		destination := destinations[i]
 		if destination == nil {
@@ -3147,21 +3171,21 @@ func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 	return b.job
 }
 
-func destinationFromBinding(operation string, node string, destination destinationBinding, index int) (DestinationSpec, string, error) {
+func destinationFromBinding(operation string, node string, destination destinationBinding, index int) (destinationSpec, string, error) {
 	switch {
 	case destination.hasTarget:
 		target := cloneTargetSpec(destination.target)
 		if target.err != nil {
-			return DestinationSpec{}, "", target.err
+			return destinationSpec{}, "", target.err
 		}
 		if target.name == "" {
-			return DestinationSpec{}, "", targetNameMissingError(target.dest)
+			return destinationSpec{}, "", targetNameMissingError(target.dest)
 		}
 		return cloneDestinationSpec(target.dest), target.name, nil
 	case destination.hasDirect:
 		return cloneDestinationSpec(destination.dest), "", nil
 	default:
-		return DestinationSpec{}, "", destinationInvalidError(operation, node, "unsupported destination")
+		return destinationSpec{}, "", destinationInvalidError(operation, node, "unsupported destination")
 	}
 }
 
@@ -3189,7 +3213,7 @@ type branchCompositionJob struct {
 
 type namedTargetSpec struct {
 	name   string
-	output DestinationSpec
+	output destinationSpec
 }
 
 func targetIdentity(target namedTargetSpec) string {
@@ -3525,21 +3549,21 @@ func validateBranchTargetBindings(intent Intent, namedOutputs []namedTargetSpec)
 	return nil
 }
 
-func branchTargetDestinationSet(namedOutputs []namedTargetSpec) map[string]DestinationSpec {
-	outputs := make(map[string]DestinationSpec, len(namedOutputs))
+func branchTargetDestinationSet(namedOutputs []namedTargetSpec) map[string]destinationSpec {
+	outputs := make(map[string]destinationSpec, len(namedOutputs))
 	for i := range namedOutputs {
 		outputs[namedOutputs[i].name] = namedOutputs[i].output
 	}
 	return outputs
 }
 
-func branchTargetAttachmentSet(namedOutputs []namedTargetSpec) (map[string]DestinationSpec, []string) {
-	outputs := make(map[string]DestinationSpec, len(namedOutputs))
+func branchTargetAttachmentSet(namedOutputs []namedTargetSpec) (map[string]destinationSpec, []string) {
+	outputs := make(map[string]destinationSpec, len(namedOutputs))
 	outputOrder := make([]string, 0, len(namedOutputs))
 	for i := range namedOutputs {
 		name := namedOutputs[i].name
 		outputOrder = append(outputOrder, name)
-		outputs[name] = namedOutputs[i].output.Name(firstNonEmpty(namedOutputs[i].output.name, name))
+		outputs[name] = namedOutputs[i].output.withName(firstNonEmpty(namedOutputs[i].output.name, name))
 	}
 	return outputs, outputOrder
 }
@@ -3653,7 +3677,7 @@ func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 	}
 }
 
-func transcodeEmptyOutputDefinitionLabelError(output DestinationSpec) error {
+func transcodeEmptyOutputDefinitionLabelError(output destinationSpec) error {
 	err := &BuildError{
 		Code:      "target_invalid",
 		Operation: branchCompositionOperation,
@@ -3834,7 +3858,7 @@ func branchStreamName(stream streamBuild) string {
 	return firstNonEmpty(stream.name, string(stream.selector.Type), "stream")
 }
 
-func destinationTargetNames(outputs []DestinationSpec) []string {
+func destinationTargetNames(outputs []destinationSpec) []string {
 	labels := make([]string, 0, len(outputs))
 	for i := range outputs {
 		labels = append(labels, outputs[i].label(fmt.Sprintf("output-%d", i)))
@@ -3842,7 +3866,7 @@ func destinationTargetNames(outputs []DestinationSpec) []string {
 	return labels
 }
 
-func destinationTargetNamesWithNames(outputs []DestinationSpec, targetNames []string) []string {
+func destinationTargetNamesWithNames(outputs []destinationSpec, targetNames []string) []string {
 	labels := make([]string, 0, len(outputs))
 	for i := range outputs {
 		labels = append(labels, jobOutputTargetName(outputs, targetNames, i))
@@ -3850,7 +3874,7 @@ func destinationTargetNamesWithNames(outputs []DestinationSpec, targetNames []st
 	return labels
 }
 
-func jobOutputTargetName(outputs []DestinationSpec, targetNames []string, index int) string {
+func jobOutputTargetName(outputs []destinationSpec, targetNames []string, index int) string {
 	if index >= 0 && index < len(targetNames) && targetNames[index] != "" {
 		return targetNames[index]
 	}

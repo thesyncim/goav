@@ -137,15 +137,15 @@ func (b *builder) planRTPDecodeEncodeToSink(spec pipeline.Spec) (pipeline.Spec, 
 }
 
 func (b *builder) planEncodeOutputPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, request encodeRequest) error {
-	outputs := make([]DestinationSpec, 0, len(b.outputs))
+	outputs := make([]destinationSpec, 0, len(b.outputs))
 	for i := range b.outputs {
-		output := DestinationSpec{output: b.outputs[i], format: b.outputFormat(i), resolvedFormat: b.outputOpenFormat(i)}
+		output := destinationSpec{output: b.outputs[i], format: b.outputFormat(i), resolvedFormat: b.outputOpenFormat(i)}
 		outputs = append(outputs, output)
 	}
 	return planEncodeDestinationPath(nodes, spec, upstream, request, outputs)
 }
 
-func planEncodeDestinationPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, request encodeRequest, outputs []DestinationSpec) error {
+func planEncodeDestinationPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, request encodeRequest, outputs []destinationSpec) error {
 	encodeName := encodeNodeName(request)
 	encodeRef := pipeline.NodeRef(encodeName)
 	if err := addPlannedNode(nodes, spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(request)); err != nil {
@@ -354,15 +354,15 @@ func (b *builder) compileRTPDecodeEncodeToSink(ctx context.Context, graph pipeli
 }
 
 func (b *builder) compileEncodeOutputPath(ctx context.Context, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream) error {
-	outputs := make([]DestinationSpec, 0, len(b.outputs))
+	outputs := make([]destinationSpec, 0, len(b.outputs))
 	for i := range b.outputs {
-		output := DestinationSpec{output: b.outputs[i], format: b.outputFormat(i), resolvedFormat: b.outputOpenFormat(i)}
+		output := destinationSpec{output: b.outputs[i], format: b.outputFormat(i), resolvedFormat: b.outputOpenFormat(i)}
 		outputs = append(outputs, output)
 	}
 	return compileEncodeDestinationPath(ctx, b.runtime, graph, upstream, request, config, stream, outputs)
 }
 
-func compileEncodeDestinationPath(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream, outputs []DestinationSpec) error {
+func compileEncodeDestinationPath(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream, outputs []destinationSpec) error {
 	encodeRef, err := compileEncodeStage(ctx, runtime, graph, upstream, request, config)
 	if err != nil {
 		return err

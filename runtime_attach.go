@@ -50,7 +50,7 @@ type runtimeBranchStep struct {
 
 type runtimeBranchDestination struct {
 	name     string
-	dest     DestinationSpec
+	dest     destinationSpec
 	sink     pipeline.Sink
 	shareKey string
 }
@@ -58,7 +58,7 @@ type runtimeBranchDestination struct {
 type runtimeBranchTerminal struct {
 	name     string
 	shareKey string
-	dest     DestinationSpec
+	dest     destinationSpec
 	stream   av.Stream
 	stage    pipeline.Stage
 	sink     pipeline.Sink
@@ -87,7 +87,7 @@ type runtimeSharedSinkTarget struct {
 
 type runtimeSharedMuxTarget struct {
 	name     string
-	dest     DestinationSpec
+	dest     destinationSpec
 	streams  []av.Stream
 	branches []string
 	stage    *format.MuxStage
@@ -532,7 +532,7 @@ func (g *runtimeAttachGroup) closeSharedMuxStages() {
 	}
 }
 
-func runtimeSharedMuxFormat(ctx context.Context, rt *runtime, dest DestinationSpec, index int) (av.FormatID, error) {
+func runtimeSharedMuxFormat(ctx context.Context, rt *runtime, dest destinationSpec, index int) (av.FormatID, error) {
 	formatID := destinationOpenFormat(dest)
 	if formatID != "" {
 		return formatID, nil
@@ -859,7 +859,7 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string
 	return stage, nil
 }
 
-func (t *task) runtimeBranchMuxFormat(ctx context.Context, dest DestinationSpec, index int) (av.FormatID, error) {
+func (t *task) runtimeBranchMuxFormat(ctx context.Context, dest destinationSpec, index int) (av.FormatID, error) {
 	formatID := destinationOpenFormat(dest)
 	if formatID != "" {
 		return formatID, nil
@@ -1405,7 +1405,7 @@ func validateRuntimeBranchTargets(branch runtimeBranch) error {
 	return nil
 }
 
-func destinationSpecHasOutput(dest DestinationSpec) bool {
+func destinationSpecHasOutput(dest destinationSpec) bool {
 	return dest.output.Name != "" ||
 		dest.output.URI != "" ||
 		dest.output.Writer != nil ||

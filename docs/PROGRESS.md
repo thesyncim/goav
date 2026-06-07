@@ -1546,6 +1546,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     to `.To(...)` like any other destination. Guard coverage rejects
     `TargetSpec` as an exported front-door type.
     Done.
+318. Hide concrete destination specs:
+    `FileOutput`, `URIOutput`, `Sink`, and `Target` now return the public
+    `Destination` interface directly, with fluent `.Name`, `.MIME`, and
+    `.Format` methods kept on that interface. The concrete destination record
+    is package-private, compiler-state tests use private constructors where they
+    need exact records, and guard coverage rejects `DestinationSpec` as an
+    exported front-door type.
+    Done.
 
 ## First Vertical Slice
 
