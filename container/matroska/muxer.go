@@ -119,6 +119,9 @@ func (m *Muxer) AddTrack(track Track) (uint32, error) {
 	if m.headerWritten {
 		return 0, ErrTrackAfterWrite
 	}
+	if err := normalizeTrackBlockAdditionMetadata(&track); err != nil {
+		return 0, err
+	}
 	if err := validateTrack(track); err != nil {
 		return 0, err
 	}
@@ -138,13 +141,7 @@ func (m *Muxer) AddTrack(track Track) (uint32, error) {
 		track.TimebaseNum = 1
 		track.TimebaseDen = int64(timeNS)
 	}
-	if len(track.CodecPrivate) != 0 {
-		track.CodecPrivate = append([]byte(nil), track.CodecPrivate...)
-	}
-	if len(track.Video.Projection.Private) != 0 {
-		track.Video.Projection.Private = append([]byte(nil), track.Video.Projection.Private...)
-	}
-	m.tracks = append(m.tracks, track)
+	m.tracks = append(m.tracks, cloneTrack(track))
 	return track.ID, nil
 }
 
@@ -161,6 +158,35 @@ func normalizeTrackIdentity(track *Track) {
 	if !track.FlagLacingSet {
 		track.FlagLacing = true
 	}
+}
+
+func normalizeTrackBlockAdditionMetadata(track *Track) error {
+	maxMappingID, err := maxBlockAdditionMappingID(track.BlockAdditionMappings)
+	if err != nil {
+		return ErrInvalidTrack
+	}
+	if maxMappingID == 0 {
+		return nil
+	}
+	if track.MaxBlockAdditionID == 0 {
+		track.MaxBlockAdditionID = maxMappingID
+		return nil
+	}
+	if maxMappingID > track.MaxBlockAdditionID {
+		return ErrInvalidTrack
+	}
+	return nil
+}
+
+func validateTrackBlockAdditionMetadata(track Track) error {
+	maxMappingID, err := maxBlockAdditionMappingID(track.BlockAdditionMappings)
+	if err != nil {
+		return err
+	}
+	if maxMappingID > track.MaxBlockAdditionID {
+		return ErrInvalidData
+	}
+	return nil
 }
 
 func (m *Muxer) WritePacket(packet Packet) error {
@@ -187,10 +213,15 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if err := validateReferenceBlockTimes(packet.ReferenceBlockTimeNS, m.options.TimecodeScaleNS); err != nil {
 		return err
 	}
-	if err := validateBlockAdditions(packet.BlockAdditions); err != nil {
+	maxAdditionID, err := validateBlockAdditions(packet.BlockAdditions)
+	if err != nil {
 		return err
 	}
 	if !m.headerWritten {
+		if maxAdditionID > track.MaxBlockAdditionID {
+			track.MaxBlockAdditionID = maxAdditionID
+			m.tracks[trackIndex].MaxBlockAdditionID = maxAdditionID
+		}
 		var err error
 		track, err = m.prepareTracksForHeader(trackIndex, [][]byte{packet.Data})
 		if err != nil {
@@ -201,6 +232,8 @@ func (m *Muxer) WritePacket(packet Packet) error {
 		}
 	} else if codecRequiresPrivateForHeader(track.Codec) && len(track.CodecPrivate) == 0 {
 		return ErrInvalidTrack
+	} else if maxAdditionID > track.MaxBlockAdditionID {
+		return ErrInvalidData
 	}
 	timecode := packet.TimeNS / m.options.TimecodeScaleNS
 	if m.shouldStartCluster(timecode) {
@@ -1706,22 +1739,33 @@ func validateReferenceBlockTimes(references []int64, scaleNS int64) error {
 	return nil
 }
 
-func validateBlockAdditions(additions []BlockAddition) error {
+func validateBlockAdditions(additions []BlockAddition) (uint64, error) {
 	if len(additions) == 0 {
-		return nil
+		return 0, nil
 	}
-	seen := make(map[uint64]struct{}, len(additions))
+	var maxID uint64
 	for i := range additions {
 		id := blockAdditionID(additions[i].ID)
 		if id == 0 {
-			return ErrInvalidData
+			return 0, ErrInvalidData
 		}
-		if _, ok := seen[id]; ok {
-			return ErrInvalidData
+		if hasBlockAdditionID(additions[:i], id) {
+			return 0, ErrInvalidData
 		}
-		seen[id] = struct{}{}
+		if id > maxID {
+			maxID = id
+		}
 	}
-	return nil
+	return maxID, nil
+}
+
+func hasBlockAdditionID(additions []BlockAddition, id uint64) bool {
+	for i := range additions {
+		if blockAdditionID(additions[i].ID) == id {
+			return true
+		}
+	}
+	return false
 }
 
 func blockAdditionID(id uint64) uint64 {
@@ -1729,6 +1773,28 @@ func blockAdditionID(id uint64) uint64 {
 		return 1
 	}
 	return id
+}
+
+func maxBlockAdditionMappingID(mappings []BlockAdditionMapping) (uint64, error) {
+	if len(mappings) == 0 {
+		return 0, nil
+	}
+	var maxID uint64
+	for i := range mappings {
+		id := mappings[i].IDValue
+		if id < 2 {
+			return 0, ErrInvalidData
+		}
+		for j := 0; j < i; j++ {
+			if mappings[j].IDValue == id {
+				return 0, ErrInvalidData
+			}
+		}
+		if id > maxID {
+			maxID = id
+		}
+	}
+	return maxID, nil
 }
 
 func scaledReferenceBlockTicks(timeNS int64, scaleNS int64) int64 {
@@ -2224,6 +2290,16 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 			return err
 		}
 	}
+	if track.MaxBlockAdditionID != 0 {
+		if err := tw.WriteUInt(idMaxBlockAdditionID, track.MaxBlockAdditionID); err != nil {
+			return err
+		}
+	}
+	for i := range track.BlockAdditionMappings {
+		if err := writeBlockAdditionMapping(tw, track.BlockAdditionMappings[i]); err != nil {
+			return err
+		}
+	}
 	private := track.CodecPrivate
 	if len(private) == 0 {
 		private = defaultCodecPrivate(track, scratch)
@@ -2258,6 +2334,28 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 		}
 	}
 	return w.WriteElement(idTrackEntry, payload.Bytes())
+}
+
+func writeBlockAdditionMapping(w *ebml.Writer, mapping BlockAdditionMapping) error {
+	var payload bytes.Buffer
+	mw := ebml.NewWriter(&payload)
+	if err := mw.WriteUInt(idBlockAddIDValue, mapping.IDValue); err != nil {
+		return err
+	}
+	if mapping.Name != "" {
+		if err := mw.WriteString(idBlockAddIDName, mapping.Name); err != nil {
+			return err
+		}
+	}
+	if err := mw.WriteUInt(idBlockAddIDType, mapping.Type); err != nil {
+		return err
+	}
+	if mapping.ExtraData != nil {
+		if err := writeBinary(mw, idBlockAddIDExtraData, mapping.ExtraData); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idBlockAdditionMapping, payload.Bytes())
 }
 
 func trackCodecTiming(track Track, private []byte) (int64, int64, error) {
@@ -2560,6 +2658,10 @@ func validateTrack(track Track) error {
 		return ErrInvalidTrack
 	}
 	if track.DefaultDurationNS < 0 || track.DefaultDecodedFieldDurationNS < 0 || track.CodecDelayNS < 0 || track.SeekPreRollNS < 0 {
+		return ErrInvalidTrack
+	}
+	maxMappingID, err := maxBlockAdditionMappingID(track.BlockAdditionMappings)
+	if err != nil || maxMappingID > track.MaxBlockAdditionID {
 		return ErrInvalidTrack
 	}
 	if _, err := matroskaCodecID(track.Codec); err != nil {

@@ -105,6 +105,12 @@ const (
 	idBitDepth             ebml.ID = 0x6264
 	idDefaultDur           ebml.ID = 0x23e383
 	idDefaultDecodedDur    ebml.ID = 0x234e7a
+	idMaxBlockAdditionID   ebml.ID = 0x55ee
+	idBlockAdditionMapping ebml.ID = 0x41e4
+	idBlockAddIDValue      ebml.ID = 0x41f0
+	idBlockAddIDName       ebml.ID = 0x41a4
+	idBlockAddIDType       ebml.ID = 0x41e7
+	idBlockAddIDExtraData  ebml.ID = 0x41ed
 
 	idCluster           ebml.ID = 0x1f43b675
 	idTimestamp         ebml.ID = 0xe7

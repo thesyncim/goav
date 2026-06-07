@@ -238,7 +238,22 @@ func cloneTrack(track Track) Track {
 	if len(track.Video.Projection.Private) != 0 {
 		track.Video.Projection.Private = append([]byte(nil), track.Video.Projection.Private...)
 	}
+	track.BlockAdditionMappings = cloneBlockAdditionMappings(track.BlockAdditionMappings)
 	return track
+}
+
+func cloneBlockAdditionMappings(mappings []BlockAdditionMapping) []BlockAdditionMapping {
+	if len(mappings) == 0 {
+		return nil
+	}
+	out := make([]BlockAdditionMapping, len(mappings))
+	for i := range mappings {
+		out[i] = mappings[i]
+		if mappings[i].ExtraData != nil {
+			out[i].ExtraData = append([]byte(nil), mappings[i].ExtraData...)
+		}
+	}
+	return out
 }
 
 func cloneSegmentInfo(info SegmentInfo) SegmentInfo {
@@ -1766,6 +1781,18 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 			track.DefaultDecodedFieldDurationNS = value
+		case idMaxBlockAdditionID:
+			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.MaxBlockAdditionID = value
+		case idBlockAdditionMapping:
+			mapping, err := d.parseBlockAdditionMapping(master.Reader(), child)
+			if err != nil {
+				return Track{}, err
+			}
+			track.BlockAdditionMappings = append(track.BlockAdditionMappings, mapping)
 		case idCodecDelay:
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
@@ -1838,7 +1865,62 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			return Track{}, err
 		}
 	}
+	if err := validateTrackBlockAdditionMetadata(track); err != nil {
+		return Track{}, err
+	}
 	return track, nil
+}
+
+func (d *Demuxer) parseBlockAdditionMapping(parent io.Reader, header ebml.Header) (BlockAdditionMapping, error) {
+	if header.Size.Unknown {
+		return BlockAdditionMapping{}, ErrInvalidData
+	}
+	master, err := d.checkedMasterReader(parent, header.Size.Value)
+	if err != nil {
+		return BlockAdditionMapping{}, err
+	}
+	var mapping BlockAdditionMapping
+	idSeen := false
+	for !master.Done() {
+		child, err := master.ReadHeader()
+		if err != nil {
+			return BlockAdditionMapping{}, err
+		}
+		switch child.ID {
+		case idBlockAddIDValue:
+			mapping.IDValue, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return BlockAdditionMapping{}, err
+			}
+			idSeen = true
+		case idBlockAddIDName:
+			mapping.Name, err = readStringPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return BlockAdditionMapping{}, err
+			}
+		case idBlockAddIDType:
+			mapping.Type, err = readUIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return BlockAdditionMapping{}, err
+			}
+		case idBlockAddIDExtraData:
+			mapping.ExtraData, err = readBinaryPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return BlockAdditionMapping{}, err
+			}
+		default:
+			if err := skipElement(master.Reader(), child); err != nil {
+				return BlockAdditionMapping{}, err
+			}
+		}
+	}
+	if err := master.Validate(); err != nil {
+		return BlockAdditionMapping{}, err
+	}
+	if !idSeen || mapping.IDValue < 2 {
+		return BlockAdditionMapping{}, ErrInvalidData
+	}
+	return mapping, nil
 }
 
 func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig, error) {
@@ -2421,6 +2503,17 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 		}
 		dst.DurationNS = durationNS
 	}
+	if maxAdditionID, err := validateBlockAdditions(dst.BlockAdditions); err != nil {
+		return err
+	} else if maxAdditionID != 0 {
+		track, ok := d.track(dst.TrackID)
+		if !ok {
+			return ErrUnknownTrack
+		}
+		if maxAdditionID > track.MaxBlockAdditionID {
+			return ErrInvalidData
+		}
+	}
 	dst.Keyframe = !referenceSeen
 	if d.laceFrameCount > 0 {
 		d.laceKeyframe = !referenceSeen
@@ -2438,7 +2531,6 @@ func (d *Demuxer) parseBlockAdditions(parent *ebml.Reader, header ebml.Header) (
 	limit := io.LimitedReader{R: parent, N: int64(header.Size.Value)}
 	reader := ebml.NewReader(&limit, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
 	var additions []BlockAddition
-	seen := make(map[uint64]struct{})
 	for limit.N > 0 {
 		child, err := reader.ReadHeader()
 		if err != nil {
@@ -2451,10 +2543,9 @@ func (d *Demuxer) parseBlockAdditions(parent *ebml.Reader, header ebml.Header) (
 				return nil, err
 			}
 			id := blockAdditionID(addition.ID)
-			if _, ok := seen[id]; ok {
+			if hasBlockAdditionID(additions, id) {
 				return nil, ErrInvalidData
 			}
-			seen[id] = struct{}{}
 			additions = append(additions, addition)
 		default:
 			if err := skipElement(reader, child); err != nil {

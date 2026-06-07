@@ -144,10 +144,19 @@ type Track struct {
 	FlagCommentarySet             bool
 	FlagLacing                    bool
 	FlagLacingSet                 bool
+	MaxBlockAdditionID            uint64
+	BlockAdditionMappings         []BlockAdditionMapping
 	Audio                         AudioConfig
 	Video                         VideoConfig
 
 	CodecPrivate []byte
+}
+
+type BlockAdditionMapping struct {
+	IDValue   uint64
+	Name      string
+	Type      uint64
+	ExtraData []byte
 }
 
 type Packet struct {
