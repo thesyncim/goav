@@ -1,5 +1,3 @@
-//go:build goav_goav1
-
 package goav
 
 import (

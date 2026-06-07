@@ -24,13 +24,12 @@ func Descriptor() codec.Descriptor {
 				av.PixelFormatGray8,
 			},
 			RTPPayloads: []string{"video/av1"},
-			BuildTags:   []string{"goav_goav1"},
 		},
 		Backend: codec.Backend{
 			Name:    "goav1",
 			Module:  "github.com/thesyncim/goav1",
 			Package: "github.com/thesyncim/goav/adapters/goav1",
-			Status:  "planned-build-tagged",
+			Status:  "active",
 		},
 	}
 }

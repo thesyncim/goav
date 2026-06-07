@@ -1,5 +1,3 @@
-//go:build goav_govpx
-
 package govpx
 
 import (

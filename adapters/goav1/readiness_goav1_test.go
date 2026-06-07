@@ -1,5 +1,3 @@
-//go:build goav_goav1
-
 package goav1
 
 import (
@@ -8,12 +6,12 @@ import (
 	backend "github.com/thesyncim/goav1"
 )
 
-func TestTaggedBackendRealtimeAPISurface(t *testing.T) {
+func TestBackendRealtimeAPISurface(t *testing.T) {
 	desc := Descriptor()
 	if desc.Backend.Module != "github.com/thesyncim/goav1" {
 		t.Fatalf("backend module = %q", desc.Backend.Module)
 	}
-	if len(desc.Capabilities.BuildTags) != 1 || desc.Capabilities.BuildTags[0] != "goav_goav1" {
+	if len(desc.Capabilities.BuildTags) != 0 {
 		t.Fatalf("build tags = %v", desc.Capabilities.BuildTags)
 	}
 

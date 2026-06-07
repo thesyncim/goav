@@ -25,13 +25,12 @@ func descriptor(id av.CodecID, name string, pixelFormats []string, rtpPayloads [
 		Capabilities: codec.Capabilities{
 			PixelFormats: pixelFormats,
 			RTPPayloads:  rtpPayloads,
-			BuildTags:    []string{"goav_govpx"},
 		},
 		Backend: codec.Backend{
 			Name:    backendName,
 			Module:  "github.com/thesyncim/govpx",
 			Package: "github.com/thesyncim/goav/adapters/govpx",
-			Status:  "planned-build-tagged",
+			Status:  "active",
 		},
 	}
 }

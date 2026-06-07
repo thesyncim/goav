@@ -1,5 +1,3 @@
-//go:build goav_govpx
-
 package govpx
 
 import (
@@ -12,7 +10,7 @@ import (
 	govpxlib "github.com/thesyncim/govpx"
 )
 
-func TestRegisterWithBuildTagProvidesVP8AndVP9Factories(t *testing.T) {
+func TestRegisterProvidesVP8AndVP9Factories(t *testing.T) {
 	registry := codec.NewRegistry()
 	Register(registry)
 
