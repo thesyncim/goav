@@ -227,6 +227,18 @@ func TestExternalFFProbeMatroskaPacketOracle(t *testing.T) {
 	assertExternalMatroskaPackets(t, "local", local, want)
 }
 
+func TestExternalMKVMergeMatroskaPacketRoundTrip(t *testing.T) {
+	mkvmerge := requireExternalTool(t, "mkvmerge")
+	ffprobe := requireExternalTool(t, "ffprobe")
+	file, _ := writePacketOracleMatroska(t)
+	wantPayloads := readLocalMatroskaPacketPayloads(t, file)
+	remuxed := filepath.Join(t.TempDir(), "mkvmerge-packet-oracle.mkv")
+	runExternalTool(t, mkvmerge, "--quiet", "-o", remuxed, file)
+
+	assertExternalMatroskaCodecPackets(t, "mkvmerge ffprobe", probeExternalMatroskaCodecPackets(t, ffprobe, remuxed), externalMatroskaCodecPacketsForPayloads(t, wantPayloads))
+	assertLocalMatroskaPacketPayloads(t, "mkvmerge local", readLocalMatroskaPacketPayloads(t, remuxed), wantPayloads)
+}
+
 func writeFFmpegAV1OpusMatroskaRecording(t testing.TB) string {
 	t.Helper()
 	tool := requireExternalTool(t, "ffmpeg")
@@ -425,6 +437,16 @@ type externalMatroskaPacket struct {
 	Size        int
 }
 
+type localMatroskaPacketPayload struct {
+	Codec Codec
+	Data  []byte
+}
+
+type externalMatroskaCodecPacket struct {
+	Codec string
+	Size  int
+}
+
 func writePacketOracleMatroska(t testing.TB) (string, []externalMatroskaPacket) {
 	t.Helper()
 	file := filepath.Join(t.TempDir(), "packet-oracle.mkv")
@@ -569,6 +591,41 @@ func probeExternalMatroskaPackets(t testing.TB, tool string, file string) []exte
 	return packets
 }
 
+func probeExternalMatroskaCodecPackets(t testing.TB, tool string, file string) []externalMatroskaCodecPacket {
+	t.Helper()
+	output := runExternalTool(t, tool, "-v", "quiet", "-show_entries", "packet=stream_index,size", "-show_entries", "stream=index,codec_name", "-of", "json", file)
+	var decoded struct {
+		Packets []struct {
+			StreamIndex int    `json:"stream_index"`
+			Size        string `json:"size"`
+		} `json:"packets"`
+		Streams []struct {
+			Index     int    `json:"index"`
+			CodecName string `json:"codec_name"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode ffprobe packets: %v\n%s", err, output)
+	}
+	streams := make(map[int]string, len(decoded.Streams))
+	for i := range decoded.Streams {
+		streams[decoded.Streams[i].Index] = decoded.Streams[i].CodecName
+	}
+	packets := make([]externalMatroskaCodecPacket, 0, len(decoded.Packets))
+	for i := range decoded.Packets {
+		codec, ok := streams[decoded.Packets[i].StreamIndex]
+		if !ok {
+			t.Fatalf("packet %d references unknown stream %d", i, decoded.Packets[i].StreamIndex)
+		}
+		size, err := strconv.Atoi(decoded.Packets[i].Size)
+		if err != nil {
+			t.Fatalf("packet %d size %q: %v", i, decoded.Packets[i].Size, err)
+		}
+		packets = append(packets, externalMatroskaCodecPacket{Codec: codec, Size: size})
+	}
+	return packets
+}
+
 func readLocalMatroskaPacketOracle(t testing.TB, file string) []externalMatroskaPacket {
 	t.Helper()
 	input, err := os.Open(file)
@@ -617,6 +674,44 @@ func readLocalMatroskaPacketOracle(t testing.TB, file string) []externalMatroska
 	return packets
 }
 
+func readLocalMatroskaPacketPayloads(t testing.TB, file string) []localMatroskaPacketPayload {
+	t.Helper()
+	input, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	demuxer, err := NewDemuxer(input, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	streams := make(map[uint32]int, len(tracks))
+	for i := range tracks {
+		streams[tracks[i].ID] = i
+	}
+	var packets []localMatroskaPacketPayload
+	packet := Packet{Data: make([]byte, 0, 1<<20)}
+	for {
+		err := demuxer.ReadPacket(&packet)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream, ok := streams[packet.TrackID]
+		if !ok {
+			t.Fatalf("packet references unknown track %d", packet.TrackID)
+		}
+		packets = append(packets, localMatroskaPacketPayload{
+			Codec: tracks[stream].Codec,
+			Data:  append([]byte(nil), packet.Data...),
+		})
+	}
+	return packets
+}
+
 func assertExternalMatroskaPackets(t testing.TB, name string, got []externalMatroskaPacket, want []externalMatroskaPacket) {
 	t.Helper()
 	if len(got) != len(want) {
@@ -626,6 +721,89 @@ func assertExternalMatroskaPackets(t testing.TB, name string, got []externalMatr
 		if got[i] != want[i] {
 			t.Fatalf("%s packet %d = %+v, want %+v", name, i, got[i], want[i])
 		}
+	}
+}
+
+func assertExternalMatroskaCodecPackets(t testing.TB, name string, got []externalMatroskaCodecPacket, want []externalMatroskaCodecPacket) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s packets = %d, want %d: %+v", name, len(got), len(want), got)
+	}
+	matched := make([]bool, len(got))
+	for i := range want {
+		found := false
+		for j := range got {
+			if matched[j] || got[j] != want[i] {
+				continue
+			}
+			matched[j] = true
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("%s missing packet %+v in %+v", name, want[i], got)
+		}
+	}
+}
+
+func assertLocalMatroskaPacketPayloads(t testing.TB, name string, got []localMatroskaPacketPayload, want []localMatroskaPacketPayload) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s packets = %d, want %d", name, len(got), len(want))
+	}
+	matched := make([]bool, len(got))
+	for i := range want {
+		found := false
+		for j := range got {
+			if matched[j] || got[j].Codec != want[i].Codec || !bytes.Equal(got[j].Data, want[i].Data) {
+				continue
+			}
+			matched[j] = true
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("%s missing packet codec=%d data=%x in %+v", name, want[i].Codec, want[i].Data, got)
+		}
+	}
+}
+
+func externalMatroskaCodecPacketsForPayloads(t testing.TB, payloads []localMatroskaPacketPayload) []externalMatroskaCodecPacket {
+	t.Helper()
+	packets := make([]externalMatroskaCodecPacket, 0, len(payloads))
+	for i := range payloads {
+		size := len(payloads[i].Data)
+		if payloads[i].Codec == CodecH264 {
+			var err error
+			size, err = h264AnnexBToAVCSize(payloads[i].Data, 4)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		packets = append(packets, externalMatroskaCodecPacket{
+			Codec: externalMatroskaCodecName(t, payloads[i].Codec),
+			Size:  size,
+		})
+	}
+	return packets
+}
+
+func externalMatroskaCodecName(t testing.TB, codec Codec) string {
+	t.Helper()
+	switch codec {
+	case CodecOpus:
+		return "opus"
+	case CodecAV1:
+		return "av1"
+	case CodecH264:
+		return "h264"
+	case CodecVP9:
+		return "vp9"
+	case CodecVP8:
+		return "vp8"
+	default:
+		t.Fatalf("unsupported external codec %d", codec)
+		return ""
 	}
 }
 

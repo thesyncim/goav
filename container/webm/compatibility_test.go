@@ -166,6 +166,18 @@ func TestExternalFFProbeWebMPacketOracle(t *testing.T) {
 	assertExternalWebMPackets(t, "local", local, want)
 }
 
+func TestExternalMKVMergeWebMPacketRoundTrip(t *testing.T) {
+	mkvmerge := requireTool(t, "mkvmerge")
+	ffprobe := requireTool(t, "ffprobe")
+	file, _ := writePacketOracleWebM(t)
+	wantPayloads := readLocalWebMPacketPayloads(t, file)
+	remuxed := filepath.Join(t.TempDir(), "mkvmerge-packet-oracle.webm")
+	runExternal(t, mkvmerge, "--quiet", "--webm", "-o", remuxed, file)
+
+	assertExternalWebMCodecPackets(t, "mkvmerge ffprobe", probeExternalWebMCodecPackets(t, ffprobe, remuxed), externalWebMCodecPacketsForPayloads(t, wantPayloads))
+	assertLocalWebMPacketPayloads(t, "mkvmerge local", readLocalWebMPacketPayloads(t, remuxed), wantPayloads)
+}
+
 func TestExternalMKVToolNixCompat(t *testing.T) {
 	file := writeCompatibilityWebM(t)
 	if tool, ok := lookupTool("mkvalidator"); ok {
@@ -190,6 +202,16 @@ type externalWebMPacket struct {
 	DurationNS  int64
 	Keyframe    bool
 	Size        int
+}
+
+type localWebMPacketPayload struct {
+	Codec Codec
+	Data  []byte
+}
+
+type externalWebMCodecPacket struct {
+	Codec string
+	Size  int
 }
 
 func writePacketOracleWebM(t testing.TB) (string, []externalWebMPacket) {
@@ -313,6 +335,41 @@ func probeExternalWebMPackets(t testing.TB, tool string, file string) []external
 	return packets
 }
 
+func probeExternalWebMCodecPackets(t testing.TB, tool string, file string) []externalWebMCodecPacket {
+	t.Helper()
+	output := runExternal(t, tool, "-v", "quiet", "-show_entries", "packet=stream_index,size", "-show_entries", "stream=index,codec_name", "-of", "json", file)
+	var decoded struct {
+		Packets []struct {
+			StreamIndex int    `json:"stream_index"`
+			Size        string `json:"size"`
+		} `json:"packets"`
+		Streams []struct {
+			Index     int    `json:"index"`
+			CodecName string `json:"codec_name"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode ffprobe packets: %v\n%s", err, output)
+	}
+	streams := make(map[int]string, len(decoded.Streams))
+	for i := range decoded.Streams {
+		streams[decoded.Streams[i].Index] = decoded.Streams[i].CodecName
+	}
+	packets := make([]externalWebMCodecPacket, 0, len(decoded.Packets))
+	for i := range decoded.Packets {
+		codec, ok := streams[decoded.Packets[i].StreamIndex]
+		if !ok {
+			t.Fatalf("packet %d references unknown stream %d", i, decoded.Packets[i].StreamIndex)
+		}
+		size, err := strconv.Atoi(decoded.Packets[i].Size)
+		if err != nil {
+			t.Fatalf("packet %d size %q: %v", i, decoded.Packets[i].Size, err)
+		}
+		packets = append(packets, externalWebMCodecPacket{Codec: codec, Size: size})
+	}
+	return packets
+}
+
 func readLocalWebMPacketOracle(t testing.TB, file string) []externalWebMPacket {
 	t.Helper()
 	input, err := os.Open(file)
@@ -354,6 +411,44 @@ func readLocalWebMPacketOracle(t testing.TB, file string) []externalWebMPacket {
 	return packets
 }
 
+func readLocalWebMPacketPayloads(t testing.TB, file string) []localWebMPacketPayload {
+	t.Helper()
+	input, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	demuxer, err := NewDemuxer(input, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	streams := make(map[uint32]int, len(tracks))
+	for i := range tracks {
+		streams[tracks[i].ID] = i
+	}
+	var packets []localWebMPacketPayload
+	packet := Packet{Data: make([]byte, 0, 1<<20)}
+	for {
+		err := demuxer.ReadPacket(&packet)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream, ok := streams[packet.TrackID]
+		if !ok {
+			t.Fatalf("packet references unknown track %d", packet.TrackID)
+		}
+		packets = append(packets, localWebMPacketPayload{
+			Codec: tracks[stream].Codec,
+			Data:  append([]byte(nil), packet.Data...),
+		})
+	}
+	return packets
+}
+
 func assertExternalWebMPackets(t testing.TB, name string, got []externalWebMPacket, want []externalWebMPacket) {
 	t.Helper()
 	if len(got) != len(want) {
@@ -363,6 +458,79 @@ func assertExternalWebMPackets(t testing.TB, name string, got []externalWebMPack
 		if got[i] != want[i] {
 			t.Fatalf("%s packet %d = %+v, want %+v", name, i, got[i], want[i])
 		}
+	}
+}
+
+func assertExternalWebMCodecPackets(t testing.TB, name string, got []externalWebMCodecPacket, want []externalWebMCodecPacket) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s packets = %d, want %d: %+v", name, len(got), len(want), got)
+	}
+	matched := make([]bool, len(got))
+	for i := range want {
+		found := false
+		for j := range got {
+			if matched[j] || got[j] != want[i] {
+				continue
+			}
+			matched[j] = true
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("%s missing packet %+v in %+v", name, want[i], got)
+		}
+	}
+}
+
+func assertLocalWebMPacketPayloads(t testing.TB, name string, got []localWebMPacketPayload, want []localWebMPacketPayload) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s packets = %d, want %d", name, len(got), len(want))
+	}
+	matched := make([]bool, len(got))
+	for i := range want {
+		found := false
+		for j := range got {
+			if matched[j] || got[j].Codec != want[i].Codec || !bytes.Equal(got[j].Data, want[i].Data) {
+				continue
+			}
+			matched[j] = true
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("%s missing packet codec=%d data=%x in %+v", name, want[i].Codec, want[i].Data, got)
+		}
+	}
+}
+
+func externalWebMCodecPacketsForPayloads(t testing.TB, payloads []localWebMPacketPayload) []externalWebMCodecPacket {
+	t.Helper()
+	packets := make([]externalWebMCodecPacket, 0, len(payloads))
+	for i := range payloads {
+		packets = append(packets, externalWebMCodecPacket{
+			Codec: externalWebMCodecName(t, payloads[i].Codec),
+			Size:  len(payloads[i].Data),
+		})
+	}
+	return packets
+}
+
+func externalWebMCodecName(t testing.TB, codec Codec) string {
+	t.Helper()
+	switch codec {
+	case CodecOpus:
+		return "opus"
+	case CodecAV1:
+		return "av1"
+	case CodecVP9:
+		return "vp9"
+	case CodecVP8:
+		return "vp8"
+	default:
+		t.Fatalf("unsupported external codec %d", codec)
+		return ""
 	}
 }
 
