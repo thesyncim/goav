@@ -39,6 +39,9 @@ type CuePoint = matroska.CuePoint
 type CueTrackPosition = matroska.CueTrackPosition
 type CueReference = matroska.CueReference
 type SeekEntry = matroska.SeekEntry
+type ChapterEdition = matroska.ChapterEdition
+type Chapter = matroska.Chapter
+type ChapterDisplay = matroska.ChapterDisplay
 type Tag = matroska.Tag
 type TagTarget = matroska.TagTarget
 type SimpleTag = matroska.SimpleTag
@@ -102,6 +105,7 @@ type MuxerOptions struct {
 	Streaming                  bool
 	CuePolicy                  CuePolicy
 	WriteCRC32                 bool
+	Chapters                   []ChapterEdition
 	Tags                       []Tag
 	UnknownSegmentElements     []UnknownElement
 	UnknownTracksElements      []UnknownElement
@@ -143,6 +147,7 @@ func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 		Streaming:                  opts.Streaming,
 		CuePolicy:                  cuePolicy,
 		WriteCRC32:                 opts.WriteCRC32,
+		Chapters:                   opts.Chapters,
 		Tags:                       opts.Tags,
 		UnknownSegmentElements:     opts.UnknownSegmentElements,
 		UnknownTracksElements:      opts.UnknownTracksElements,
@@ -177,6 +182,9 @@ func validateTrack(track Track) error {
 }
 
 func validateMuxerOptions(opts MuxerOptions) error {
+	if err := validateChapters(opts.Chapters); err != nil {
+		return err
+	}
 	return validateTags(opts.Tags)
 }
 
@@ -184,7 +192,62 @@ func validateDemuxerMetadata(demuxer *matroska.Demuxer) error {
 	if len(demuxer.Attachments()) != 0 || len(demuxer.UnknownAttachmentsElements()) != 0 {
 		return ErrUnsupportedWebMMetadata
 	}
+	if err := validateChapters(demuxer.Chapters()); err != nil {
+		return err
+	}
 	return validateTags(demuxer.Tags())
+}
+
+func validateChapters(editions []ChapterEdition) error {
+	for i := range editions {
+		if err := validateChapterEdition(editions[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateChapterEdition(edition ChapterEdition) error {
+	if edition.UID != 0 ||
+		edition.Hidden ||
+		edition.Default ||
+		edition.Ordered ||
+		len(edition.UnknownElements) != 0 {
+		return ErrUnsupportedWebMMetadata
+	}
+	for i := range edition.Chapters {
+		if err := validateChapter(edition.Chapters[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateChapter(chapter Chapter) error {
+	if chapter.Hidden ||
+		chapter.EnabledSet ||
+		len(chapter.TrackUIDs) != 0 ||
+		len(chapter.UnknownElements) != 0 {
+		return ErrUnsupportedWebMMetadata
+	}
+	for i := range chapter.Displays {
+		if err := validateChapterDisplay(chapter.Displays[i]); err != nil {
+			return err
+		}
+	}
+	for i := range chapter.Children {
+		if err := validateChapter(chapter.Children[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateChapterDisplay(display ChapterDisplay) error {
+	if len(display.UnknownElements) != 0 {
+		return ErrUnsupportedWebMMetadata
+	}
+	return nil
 }
 
 func validateTags(tags []Tag) error {

@@ -718,6 +718,191 @@ func TestMuxerDemuxerPreservesTags(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesChapters(t *testing.T) {
+	wantChapters := []ChapterEdition{{
+		Chapters: []Chapter{{
+			UID:       7,
+			StringUID: "intro",
+			StartNS:   0,
+			EndNS:     1_000_000_000,
+			EndSet:    true,
+			Enabled:   true,
+			Displays: []ChapterDisplay{{
+				String:        "Intro",
+				Language:      "eng",
+				LanguageBCP47: "en-US",
+				Country:       "us",
+			}},
+			Children: []Chapter{{
+				UID:     8,
+				StartNS: 500_000_000,
+				Enabled: true,
+				Displays: []ChapterDisplay{{
+					String:   "Halfway",
+					Language: "eng",
+				}},
+			}},
+		}},
+	}}
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{Chapters: wantChapters})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantChapters[0].Chapters[0].Displays[0].String = "mutated after muxer construction"
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	wantChapters[0].Chapters[0].Displays[0].String = "Intro"
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotChapters := demuxer.Chapters()
+	if !reflect.DeepEqual(gotChapters, wantChapters) {
+		t.Fatalf("chapters = %+v, want %+v", gotChapters, wantChapters)
+	}
+	gotChapters[0].Chapters[0].Displays[0].String = "mutated demuxer result"
+	if got := demuxer.Chapters(); !reflect.DeepEqual(got, wantChapters) {
+		t.Fatalf("fresh chapters = %+v, want %+v", got, wantChapters)
+	}
+}
+
+func TestMuxerRejectsUnsupportedChapterMetadata(t *testing.T) {
+	baseChapter := func() Chapter {
+		return Chapter{
+			UID:     7,
+			StartNS: 0,
+			Displays: []ChapterDisplay{{
+				String:   "Intro",
+				Language: "eng",
+			}},
+		}
+	}
+	baseEdition := func() ChapterEdition {
+		return ChapterEdition{Chapters: []Chapter{baseChapter()}}
+	}
+	tests := []struct {
+		name    string
+		edition ChapterEdition
+	}{
+		{
+			name: "edition uid",
+			edition: ChapterEdition{
+				UID:      1,
+				Chapters: []Chapter{baseChapter()},
+			},
+		},
+		{
+			name: "edition hidden",
+			edition: func() ChapterEdition {
+				edition := baseEdition()
+				edition.Hidden = true
+				return edition
+			}(),
+		},
+		{
+			name: "edition default",
+			edition: func() ChapterEdition {
+				edition := baseEdition()
+				edition.Default = true
+				return edition
+			}(),
+		},
+		{
+			name: "edition ordered",
+			edition: func() ChapterEdition {
+				edition := baseEdition()
+				edition.Ordered = true
+				return edition
+			}(),
+		},
+		{
+			name: "edition unknown",
+			edition: func() ChapterEdition {
+				edition := baseEdition()
+				edition.UnknownElements = []UnknownElement{{Raw: unknownWebMElementBytes(t, 0x4ff6, []byte{1})}}
+				return edition
+			}(),
+		},
+		{
+			name: "chapter hidden",
+			edition: func() ChapterEdition {
+				edition := baseEdition()
+				edition.Chapters[0].Hidden = true
+				return edition
+			}(),
+		},
+		{
+			name: "chapter enabled flag",
+			edition: func() ChapterEdition {
+				edition := baseEdition()
+				edition.Chapters[0].Enabled = true
+				edition.Chapters[0].EnabledSet = true
+				return edition
+			}(),
+		},
+		{
+			name: "chapter track",
+			edition: func() ChapterEdition {
+				edition := baseEdition()
+				edition.Chapters[0].TrackUIDs = []uint64{11}
+				return edition
+			}(),
+		},
+		{
+			name: "chapter unknown",
+			edition: func() ChapterEdition {
+				edition := baseEdition()
+				edition.Chapters[0].UnknownElements = []UnknownElement{{Raw: unknownWebMElementBytes(t, 0x4ff5, []byte{1})}}
+				return edition
+			}(),
+		},
+		{
+			name: "chapter display unknown",
+			edition: func() ChapterEdition {
+				edition := baseEdition()
+				edition.Chapters[0].Displays[0].UnknownElements = []UnknownElement{{Raw: unknownWebMElementBytes(t, 0x4ff4, []byte{1})}}
+				return edition
+			}(),
+		},
+		{
+			name: "child chapter enabled flag",
+			edition: func() ChapterEdition {
+				edition := baseEdition()
+				edition.Chapters[0].Children = []Chapter{baseChapter()}
+				edition.Chapters[0].Children[0].UID = 8
+				edition.Chapters[0].Children[0].EnabledSet = true
+				return edition
+			}(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewMuxer(io.Discard, MuxerOptions{Chapters: []ChapterEdition{tt.edition}}); !errors.Is(err, ErrUnsupportedWebMMetadata) {
+				t.Fatalf("err = %v, want ErrUnsupportedWebMMetadata", err)
+			}
+		})
+	}
+}
+
 func TestMuxerRejectsUnsupportedTagMetadata(t *testing.T) {
 	baseSimple := []SimpleTag{{
 		Name:       "TITLE",

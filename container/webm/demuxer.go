@@ -61,6 +61,13 @@ func (d *Demuxer) SeekEntries() []SeekEntry {
 	return d.inner.SeekEntries()
 }
 
+func (d *Demuxer) Chapters() []ChapterEdition {
+	if d == nil || d.inner == nil {
+		return nil
+	}
+	return d.inner.Chapters()
+}
+
 func (d *Demuxer) Tags() []Tag {
 	if d == nil || d.inner == nil {
 		return nil

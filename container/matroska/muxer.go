@@ -1457,8 +1457,9 @@ func (m *Muxer) writeAttachments() error {
 func (m *Muxer) writeChapters() error {
 	var payload bytes.Buffer
 	w := ebml.NewWriter(&payload)
+	options := chapterWriteOptions{webm: m.options.DocType == "webm"}
 	for i := range m.options.Chapters {
-		if err := writeEditionEntry(w, m.options.Chapters[i]); err != nil {
+		if err := writeEditionEntryWithOptions(w, m.options.Chapters[i], options); err != nil {
 			return err
 		}
 	}
@@ -1468,37 +1469,60 @@ func (m *Muxer) writeChapters() error {
 	return m.writeMasterElement(idChapters, payload.Bytes())
 }
 
+type chapterWriteOptions struct {
+	webm bool
+}
+
 func writeEditionEntry(w *ebml.Writer, edition ChapterEdition) error {
+	return writeEditionEntryWithOptions(w, edition, chapterWriteOptions{})
+}
+
+func writeEditionEntryWithOptions(w *ebml.Writer, edition ChapterEdition, options chapterWriteOptions) error {
 	var payload bytes.Buffer
 	ew := ebml.NewWriter(&payload)
-	if edition.UID != 0 {
+	if options.webm {
+		if edition.Hidden || edition.Default || edition.Ordered || len(edition.UnknownElements) != 0 {
+			return ErrInvalidData
+		}
+	} else if edition.UID != 0 {
 		if err := ew.WriteUInt(idEditionUID, edition.UID); err != nil {
 			return err
 		}
 	}
-	if err := writeBoolElement(ew, idEditionFlagHidden, edition.Hidden); err != nil {
-		return err
-	}
-	if err := writeBoolElement(ew, idEditionFlagDefault, edition.Default); err != nil {
-		return err
-	}
-	if err := writeBoolElement(ew, idEditionFlagOrdered, edition.Ordered); err != nil {
-		return err
-	}
-	for i := range edition.Chapters {
-		if err := writeChapterAtom(ew, edition.Chapters[i]); err != nil {
+	if !options.webm {
+		if err := writeBoolElement(ew, idEditionFlagHidden, edition.Hidden); err != nil {
+			return err
+		}
+		if err := writeBoolElement(ew, idEditionFlagDefault, edition.Default); err != nil {
+			return err
+		}
+		if err := writeBoolElement(ew, idEditionFlagOrdered, edition.Ordered); err != nil {
 			return err
 		}
 	}
-	if err := writeUnknownElements(ew, edition.UnknownElements); err != nil {
-		return err
+	for i := range edition.Chapters {
+		if err := writeChapterAtomWithOptions(ew, edition.Chapters[i], options); err != nil {
+			return err
+		}
+	}
+	if !options.webm {
+		if err := writeUnknownElements(ew, edition.UnknownElements); err != nil {
+			return err
+		}
 	}
 	return w.WriteElement(idEditionEntry, payload.Bytes())
 }
 
 func writeChapterAtom(w *ebml.Writer, chapter Chapter) error {
+	return writeChapterAtomWithOptions(w, chapter, chapterWriteOptions{})
+}
+
+func writeChapterAtomWithOptions(w *ebml.Writer, chapter Chapter, options chapterWriteOptions) error {
 	var payload bytes.Buffer
 	cw := ebml.NewWriter(&payload)
+	if options.webm && (chapter.Hidden || len(chapter.TrackUIDs) != 0 || len(chapter.UnknownElements) != 0) {
+		return ErrInvalidData
+	}
 	if err := cw.WriteUInt(idChapterUID, chapter.UID); err != nil {
 		return err
 	}
@@ -1515,29 +1539,33 @@ func writeChapterAtom(w *ebml.Writer, chapter Chapter) error {
 			return err
 		}
 	}
-	if err := writeBoolElement(cw, idChapterFlagHidden, chapter.Hidden); err != nil {
-		return err
-	}
-	if err := writeBoolElement(cw, idChapterFlagEnabled, chapter.Enabled); err != nil {
-		return err
-	}
-	if len(chapter.TrackUIDs) != 0 {
-		if err := writeChapterTrack(cw, chapter.TrackUIDs); err != nil {
+	if !options.webm {
+		if err := writeBoolElement(cw, idChapterFlagHidden, chapter.Hidden); err != nil {
 			return err
+		}
+		if err := writeBoolElement(cw, idChapterFlagEnabled, chapter.Enabled); err != nil {
+			return err
+		}
+		if len(chapter.TrackUIDs) != 0 {
+			if err := writeChapterTrack(cw, chapter.TrackUIDs); err != nil {
+				return err
+			}
 		}
 	}
 	for i := range chapter.Displays {
-		if err := writeChapterDisplay(cw, chapter.Displays[i]); err != nil {
+		if err := writeChapterDisplayWithOptions(cw, chapter.Displays[i], options); err != nil {
 			return err
 		}
 	}
 	for i := range chapter.Children {
-		if err := writeChapterAtom(cw, chapter.Children[i]); err != nil {
+		if err := writeChapterAtomWithOptions(cw, chapter.Children[i], options); err != nil {
 			return err
 		}
 	}
-	if err := writeUnknownElements(cw, chapter.UnknownElements); err != nil {
-		return err
+	if !options.webm {
+		if err := writeUnknownElements(cw, chapter.UnknownElements); err != nil {
+			return err
+		}
 	}
 	return w.WriteElement(idChapterAtom, payload.Bytes())
 }
@@ -1554,8 +1582,15 @@ func writeChapterTrack(w *ebml.Writer, trackUIDs []uint64) error {
 }
 
 func writeChapterDisplay(w *ebml.Writer, display ChapterDisplay) error {
+	return writeChapterDisplayWithOptions(w, display, chapterWriteOptions{})
+}
+
+func writeChapterDisplayWithOptions(w *ebml.Writer, display ChapterDisplay, options chapterWriteOptions) error {
 	var payload bytes.Buffer
 	dw := ebml.NewWriter(&payload)
+	if options.webm && len(display.UnknownElements) != 0 {
+		return ErrInvalidData
+	}
 	if err := dw.WriteString(idChapString, display.String); err != nil {
 		return err
 	}
@@ -1578,8 +1613,10 @@ func writeChapterDisplay(w *ebml.Writer, display ChapterDisplay) error {
 			return err
 		}
 	}
-	if err := writeUnknownElements(dw, display.UnknownElements); err != nil {
-		return err
+	if !options.webm {
+		if err := writeUnknownElements(dw, display.UnknownElements); err != nil {
+			return err
+		}
 	}
 	return w.WriteElement(idChapterDisplay, payload.Bytes())
 }
