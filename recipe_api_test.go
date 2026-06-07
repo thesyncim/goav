@@ -811,6 +811,52 @@ func TestExplainReportsIncompatibleFilterDescriptor(t *testing.T) {
 	}
 }
 
+func TestExplainReportsIncompatibleEncodeDescriptor(t *testing.T) {
+	custom := av.CodecID("x_audio")
+	rt := goav.New(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		registry.RegisterEncoder(codec.Descriptor{
+			ID:   custom,
+			Type: av.MediaVideo,
+			Capabilities: codec.Capabilities{
+				PixelFormats: []string{av.PixelFormatI420},
+			},
+		}, recipeAPIEncoderFactory{})
+	}))
+
+	report, err := goav.From(goav.FileInput("input.raw", strings.NewReader(""))).
+		UseRuntime(rt).
+		Audio().
+		Encode(goav.Codec(custom, av.MediaAudio)).
+		To(goav.SinkEndpoint(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Explain(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_incompatible" {
+		t.Fatalf("err = %v, want encode_adapter_incompatible", err)
+	}
+	requirement, ok := adapterRequirementByKindAndOwner(report.RequiredAdapters, "encoder", string(custom), "audio")
+	if !ok {
+		t.Fatalf("requirements=%+v, want incompatible encoder requirement", report.RequiredAdapters)
+	}
+	if requirement.Status != "incompatible" ||
+		len(requirement.Media) != 1 ||
+		requirement.Media[0] != av.MediaVideo ||
+		len(requirement.PixelFormats) != 1 ||
+		requirement.PixelFormats[0] != av.PixelFormatI420 {
+		t.Fatalf("encoder requirement = %+v", requirement)
+	}
+	if !hasPlanWarning(report.Warnings, "encode_adapter_incompatible") {
+		t.Fatalf("warnings=%+v, want incompatible encoder warning", report.Warnings)
+	}
+	if len(report.Missing) != 1 ||
+		report.Missing[0].Kind != "encoder" ||
+		report.Missing[0].Name != string(custom) ||
+		report.Missing[0].Status != "incompatible" {
+		t.Fatalf("missing=%+v, want incompatible encoder requirement", report.Missing)
+	}
+}
+
 func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 	rt := goav.New(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {

@@ -76,13 +76,42 @@ func TestRegistryReportsDescriptorOnlyFactoriesUnavailable(t *testing.T) {
 
 func TestRegistryDescriptorsAreCopied(t *testing.T) {
 	registry := NewRegistry()
-	registry.RegisterDecoder(Descriptor{ID: av.CodecOpus, Name: "original"}, testDecoderFactory{})
+	registry.RegisterDecoder(Descriptor{
+		ID:       av.CodecOpus,
+		Name:     "original",
+		Modes:    []Mode{ModeDecode},
+		Profiles: []string{"lowdelay"},
+		Capabilities: Capabilities{
+			SampleFormats: []string{av.SampleFormatS16},
+			PixelFormats:  []string{av.PixelFormatI420},
+			RTPPayloads:   []string{"audio/opus"},
+			BuildTags:     []string{"tag"},
+		},
+	}, testDecoderFactory{})
 
 	descriptors := registry.Descriptors()
 	descriptors[0].Name = "mutated"
+	descriptors[0].Modes[0] = ModeEncode
+	descriptors[0].Profiles[0] = "mutated"
+	descriptors[0].Capabilities.SampleFormats[0] = av.SampleFormatF32
+	descriptors[0].Capabilities.PixelFormats[0] = av.PixelFormatYUV420P
+	descriptors[0].Capabilities.RTPPayloads[0] = "mutated"
+	descriptors[0].Capabilities.BuildTags[0] = "mutated"
+
+	found, err := registry.Find(av.CodecOpus, ModeDecode)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	found[0].Capabilities.SampleFormats[0] = "mutated"
 
 	again := registry.Descriptors()
-	if again[0].Name != "original" {
+	if again[0].Name != "original" ||
+		!again[0].Supports(ModeDecode) ||
+		again[0].Profiles[0] != "lowdelay" ||
+		again[0].Capabilities.SampleFormats[0] != av.SampleFormatS16 ||
+		again[0].Capabilities.PixelFormats[0] != av.PixelFormatI420 ||
+		again[0].Capabilities.RTPPayloads[0] != "audio/opus" ||
+		again[0].Capabilities.BuildTags[0] != "tag" {
 		t.Fatalf("descriptor mutation leaked: %+v", again[0])
 	}
 }

@@ -437,13 +437,7 @@ func appendBranchOperationRequirements(requirements []AdapterRequirement, resolv
 				})
 				continue
 			}
-			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
-				Kind:       "decoder",
-				Name:       string(codecID),
-				Codec:      codecID,
-				RequiredBy: requiredBy,
-				Status:     adapterRequirementRuntimeStatus(resolved.runtime, "decoder", "", codecID, ""),
-			})
+			requirements = appendAdapterRequirement(requirements, codecAdapterRequirement(resolved.runtime, "decoder", codecID, requiredBy))
 		case OpTransform:
 			name := operation.Component
 			if name == "" || name == "transform" {
@@ -455,13 +449,7 @@ func appendBranchOperationRequirements(requirements []AdapterRequirement, resolv
 			if codecID == "" {
 				continue
 			}
-			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
-				Kind:       "encoder",
-				Name:       string(codecID),
-				Codec:      codecID,
-				RequiredBy: requiredBy,
-				Status:     adapterRequirementRuntimeStatus(resolved.runtime, "encoder", "", codecID, ""),
-			})
+			requirements = appendAdapterRequirement(requirements, codecAdapterRequirement(resolved.runtime, "encoder", codecID, requiredBy))
 		}
 	}
 	return requirements, warnings
@@ -619,6 +607,46 @@ func codecFactoryStatus(err error) string {
 	return "missing"
 }
 
+func codecAdapterRequirement(rt Runtime, kind string, codecID av.CodecID, requiredBy string) AdapterRequirement {
+	requirement := AdapterRequirement{
+		Kind:       kind,
+		Name:       string(codecID),
+		Codec:      codecID,
+		RequiredBy: requiredBy,
+		Status:     adapterRequirementRuntimeStatus(rt, kind, "", codecID, ""),
+	}
+	descriptors := codecDescriptorsForRequirement(rt, kind, codecID)
+	return applyCodecDescriptorRequirement(requirement, descriptors)
+}
+
+func codecDescriptorsForRequirement(rt Runtime, kind string, codecID av.CodecID) []codec.Descriptor {
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil || codecID == "" {
+		return nil
+	}
+	mode := codec.ModeDecode
+	if kind == "encoder" {
+		mode = codec.ModeEncode
+	}
+	descriptors, err := standard.codecs.Find(codecID, mode)
+	if err != nil {
+		return nil
+	}
+	return descriptors
+}
+
+func applyCodecDescriptorRequirement(requirement AdapterRequirement, descriptors []codec.Descriptor) AdapterRequirement {
+	for i := range descriptors {
+		if descriptors[i].Type != "" && !mediaAllowed(requirement.Media, descriptors[i].Type) {
+			requirement.Media = append(requirement.Media, descriptors[i].Type)
+		}
+		requirement.SampleFormats = mergeStringList(requirement.SampleFormats, descriptors[i].Capabilities.SampleFormats)
+		requirement.PixelFormats = mergeStringList(requirement.PixelFormats, descriptors[i].Capabilities.PixelFormats)
+		requirement.Realtime = requirement.Realtime || descriptors[i].Realtime
+	}
+	return requirement
+}
+
 func reportDecodeCodec(resolved recipeResolved, stream StreamIntent) (av.CodecID, bool) {
 	if codecID, ok := liveDecodeCodec(resolved.intent.Inputs, stream); ok {
 		return codecID, true
@@ -724,15 +752,34 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, codecID != ""
-	case "encode_adapter_missing", "encode_adapter_unavailable":
+	case "encode_adapter_missing", "encode_adapter_unavailable", "encode_adapter_incompatible":
 		codecID := av.CodecID(details["codec"])
-		return AdapterRequirement{
+		requirement := AdapterRequirement{
 			Kind:       "encoder",
 			Name:       string(codecID),
 			Codec:      codecID,
 			RequiredBy: requiredBy,
 			Status:     status,
-		}, codecID != ""
+		}
+		if details["supported_media"] != "" {
+			requirement.Media = mediaTypesFromStrings(splitDetailCSV(details["supported_media"]))
+		}
+		if details["field"] == "media" && details["supported"] != "" && len(requirement.Media) == 0 {
+			requirement.Media = mediaTypesFromStrings(splitDetailCSV(details["supported"]))
+		}
+		if details["supported_sample_formats"] != "" {
+			requirement.SampleFormats = splitDetailCSV(details["supported_sample_formats"])
+		}
+		if details["field"] == "sample_format" && details["supported"] != "" && len(requirement.SampleFormats) == 0 {
+			requirement.SampleFormats = splitDetailCSV(details["supported"])
+		}
+		if details["supported_pixel_formats"] != "" {
+			requirement.PixelFormats = splitDetailCSV(details["supported_pixel_formats"])
+		}
+		if details["field"] == "pixel_format" && details["supported"] != "" && len(requirement.PixelFormats) == 0 {
+			requirement.PixelFormats = splitDetailCSV(details["supported"])
+		}
+		return requirement, codecID != ""
 	case "transform_adapter_missing", "transform_adapter_incompatible":
 		name := details["transform"]
 		requirement := filterAdapterRequirement(nil, name, requiredBy)
@@ -825,6 +872,19 @@ func resizeModesFromStrings(values []string) []filter.ResizeMode {
 	for i := range values {
 		if values[i] != "" {
 			out = append(out, filter.ResizeMode(values[i]))
+		}
+	}
+	return out
+}
+
+func mediaTypesFromStrings(values []string) []av.MediaType {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]av.MediaType, 0, len(values))
+	for i := range values {
+		if values[i] != "" {
+			out = append(out, av.MediaType(values[i]))
 		}
 	}
 	return out

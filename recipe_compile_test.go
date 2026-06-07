@@ -1093,6 +1093,103 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 	}
 }
 
+func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
+	audioCodec := av.CodecID("x_audio")
+	videoCodec := av.CodecID("x_video")
+	tests := []struct {
+		name  string
+		pass  recipeCompilePass
+		state recipeCompileState
+		want  []string
+	}{
+		{
+			name: "job encoder advertises video for audio stream",
+			pass: validateJobEncodeAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightEncodeAdapters: true},
+				runtime: New(withTestCodecs(testCodecEncoder(codec.Descriptor{
+					ID:   audioCodec,
+					Type: av.MediaVideo,
+				}, &encodeTestEncoderFactory{}))),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:   "audio",
+					Select: StreamSelect{Type: av.MediaAudio},
+					Encode: Codec(audioCodec, av.MediaAudio),
+				}}},
+			},
+			want: []string{"encoder adapter does not support the requested media", "codec=x_audio", "field=media", "requested=audio", "supported=video"},
+		},
+		{
+			name: "branch encoder rejects sample format",
+			pass: validateBranchEncodeAdaptersPass(),
+			state: recipeCompileState{
+				operation: branchCompositionOperation,
+				options:   recipeCompileOptions{preflightEncodeAdapters: true},
+				runtime: New(withTestCodecs(testCodecEncoder(codec.Descriptor{
+					ID:   audioCodec,
+					Type: av.MediaAudio,
+					Capabilities: codec.Capabilities{
+						SampleFormats: []string{av.SampleFormatS16},
+					},
+				}, &encodeTestEncoderFactory{}))),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:   "voice",
+					Select: StreamSelect{Type: av.MediaAudio},
+					Encode: Codec(audioCodec, av.MediaAudio, Parameters(av.CodecParameters{
+						ID:           audioCodec,
+						Type:         av.MediaAudio,
+						SampleFormat: av.SampleFormatF32,
+					})),
+				}}},
+			},
+			want: []string{"encoder adapter does not support the requested sample format", "field=sample_format", "requested=f32", "supported=s16"},
+		},
+		{
+			name: "branch encoder rejects transformed pixel format",
+			pass: validateBranchEncodeAdaptersPass(),
+			state: recipeCompileState{
+				operation: branchCompositionOperation,
+				options:   recipeCompileOptions{preflightEncodeAdapters: true},
+				runtime: New(withTestCodecs(testCodecEncoder(codec.Descriptor{
+					ID:   videoCodec,
+					Type: av.MediaVideo,
+					Capabilities: codec.Capabilities{
+						PixelFormats: []string{av.PixelFormatI420},
+					},
+				}, &encodeTestEncoderFactory{}))),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:   "preview",
+					Select: StreamSelect{Type: av.MediaVideo},
+					Transforms: []TransformSpec{{
+						Resize: &filter.ResizeConfig{
+							Width:       640,
+							Height:      360,
+							PixelFormat: av.PixelFormatYUV420P,
+						},
+					}},
+					Encode: Codec(videoCodec, av.MediaVideo),
+				}}},
+			},
+			want: []string{"encoder adapter does not support the requested pixel format", "field=pixel_format", "requested=yuv420p", "supported=i420"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_incompatible" || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want encode_adapter_incompatible wrapping ErrUnsupportedBuild", err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 	tests := []struct {
 		name  string

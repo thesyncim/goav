@@ -390,6 +390,10 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 	if err != nil {
 		return av.Stream{}, err
 	}
+	stream := StreamIntent{Name: branch.name, Select: StreamSelect{Type: currentStream.Type}, Encode: branch.encode}
+	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(branch.encode, encodedStream)); err != nil {
+		return av.Stream{}, err
+	}
 	stage, err := (&builder{runtime: t.runtime}).newEncodeStage(ctx, request, config)
 	if err != nil {
 		return av.Stream{}, err

@@ -2206,6 +2206,82 @@ func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
+	ctx := context.Background()
+	customPCM := av.CodecID("x_pcm_s16")
+	encoderFactory := &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}
+	codecs := withTestCodecs(
+		testCodecEncoder(codec.Descriptor{
+			ID:   customPCM,
+			Type: av.MediaAudio,
+			Capabilities: codec.Capabilities{
+				SampleFormats: []string{av.SampleFormatS16},
+			},
+		}, encoderFactory),
+	)
+	frame := av.Frame{
+		StreamID: "audio",
+		Type:     av.MediaAudio,
+		Audio: &av.AudioFrame{
+			SampleRate:   48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatF32,
+			Samples:      480,
+		},
+	}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	base := &runtimeTestSink{name: "base"}
+	graph := New(codecs).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:       DomainFrame,
+			MediaKind:    av.MediaAudio,
+			StreamID:     "audio",
+			Codec:        av.CodecPCM,
+			SampleRate:   48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatF32,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+	before := builtTask.Describe()
+
+	_, err = builtTask.Attach(ctx, Branch("record").
+		FromTap("audio.frames").
+		Encode(Codec(customPCM, av.MediaAudio)).
+		To(SinkEndpoint(SinkFunc("record", func(context.Context, Message) error {
+			return nil
+		}))))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) ||
+		buildErr.Code != "encode_adapter_incompatible" ||
+		!strings.Contains(err.Error(), "field=sample_format") ||
+		!strings.Contains(err.Error(), "requested=f32") ||
+		!strings.Contains(err.Error(), "supported=s16") {
+		t.Fatalf("err = %v, want runtime encode descriptor config error", err)
+	}
+	if len(encoderFactory.configs) != 0 {
+		t.Fatalf("encoder opened before descriptor preflight: %+v", encoderFactory.configs)
+	}
+	if after := builtTask.Describe(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
+	}
+}
+
 func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 	ctx := context.Background()
 	customPCM := av.CodecID("x_pcm_s16")

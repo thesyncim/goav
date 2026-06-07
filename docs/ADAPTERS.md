@@ -242,6 +242,9 @@ breaking the default build or forcing heavier tagged code paths. When a
 descriptor exists but no factory is registered,
 `DecoderFactory` or `EncoderFactory` returns `codec.ErrUnavailable`, not
 `codec.ErrNotFound`.
+When a factory is registered, descriptor media and sample/pixel format
+capabilities become preflight constraints for recipe and runtime branch
+encodes.
 
 Concrete factories should replace these descriptor-only registrations once each
 codec path has caller-owned output buffers and allocation tests.

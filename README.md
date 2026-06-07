@@ -335,9 +335,11 @@ expert graph API.
 
 Custom codecs use the same recipe concepts as built-ins: register decoder or
 encoder factories in the application runtime, then reference them with generic
-`Codec` specs in streams, branches, or flows. Adapter authoring details live in
-[`docs/ADAPTERS.md`](docs/ADAPTERS.md). The reusable component catalog and
-allocation proof map live in [`docs/COMPONENTS.md`](docs/COMPONENTS.md).
+`Codec` specs in streams, branches, or flows. Codec descriptors drive
+capability checks, so incompatible media or frame formats fail before graph
+mutation. Adapter authoring details live in [`docs/ADAPTERS.md`](docs/ADAPTERS.md).
+The reusable component catalog and allocation proof map live in
+[`docs/COMPONENTS.md`](docs/COMPONENTS.md).
 
 ## Expert Graph API
 
