@@ -117,7 +117,7 @@ err := goav.From(input).
 ```
 
 Branch-local custom stages and transforms share the ordered operation model.
-Custom filter adapters and late muxed runtime outputs should extend that same
+Custom filter adapters and late muxed runtime targets should extend that same
 model instead of growing special-case APIs.
 
 ## Reusable Flows

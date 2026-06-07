@@ -18,7 +18,7 @@ make the implementation match the composable planner promise.
    decode, after resize/resample, after custom stages, after taps, and later
    after sink/output attachment where runtime support makes sense. Custom stage
    and transform steps are active; custom filter adapter metadata and late muxed
-   runtime outputs remain next slices.
+   runtime targets remain next slices.
 3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
    for `From`, packet copy, stream decode, branch composition, and reusable flows
    onto direct media-plan graph construction.
@@ -27,7 +27,7 @@ make the implementation match the composable planner promise.
    incompatibilities, and mux-output conflicts before runtime execution.
 5. Keep custom composition orthogonal: application-local codecs use
    `goav.Codec`, `WithDecoder`, and `WithEncoder`; custom stages, filters,
-   sinks, and outputs use the same stream and runtime-attachment concepts as
+   sinks, and targets use the same stream and runtime-attachment concepts as
    built-ins instead of workflow-specific helpers.
 6. Keep first-page examples executable with `goav.Default()`, or keep examples
    that require unavailable containers in clearly labeled adapter sections.
@@ -93,7 +93,7 @@ make the implementation match the composable planner promise.
 - IVF output for VP8/VP9/AV1 packet recording.
 - WebRTC session receive to file.
 - Probe output and stream inspection.
-- Multiple output branches from one receive graph.
+- Multiple target branches from one receive graph.
 
 ## Phase 3b: Transcode ladders
 
@@ -141,6 +141,6 @@ make the implementation match the composable planner promise.
 - Reusable `AudioFlow`/`VideoFlow` values that apply to stream chains or
   branches. Build-time file/protocol and RTP/WebRTC branch slices are active;
   runtime stage/sink attachments are active for direct task graphs; buffered
-  attachments and late recording outputs remain planned.
+  attachments and late recording targets remain planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

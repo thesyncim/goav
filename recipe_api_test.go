@@ -446,12 +446,12 @@ func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 		!report.Inputs[0].Realtime {
 		t.Fatalf("inputs=%+v", report.Inputs)
 	}
-	if len(report.Outputs) != 1 || report.Outputs[0].Name != "recording.ivf" ||
-		report.Outputs[0].Format != av.FormatIVF || report.Outputs[0].Kind != "mux" {
-		t.Fatalf("outputs=%+v", report.Outputs)
+	if len(report.Targets) != 1 || report.Targets[0].Name != "recording.ivf" ||
+		report.Targets[0].Format != av.FormatIVF || report.Targets[0].Kind != "mux" {
+		t.Fatalf("targets=%+v", report.Targets)
 	}
-	if !equalStrings(report.Outputs[0].Branches, []string{"video"}) {
-		t.Fatalf("output branches=%+v", report.Outputs[0].Branches)
+	if !equalStrings(report.Targets[0].Branches, []string{"video"}) {
+		t.Fatalf("target branches=%+v", report.Targets[0].Branches)
 	}
 	if len(report.Branches) != 1 || report.Branches[0].Name != "video" ||
 		!equalOperationKinds(operationKinds(report.Branches[0].Operations), []goav.OperationKind{goav.OpDepacketize, goav.OpCopy}) {
@@ -549,8 +549,8 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 	if len(report.Branches) != 2 {
 		t.Fatalf("branches=%+v", report.Branches)
 	}
-	if len(report.Outputs) != 1 || report.Outputs[0].Name != "web" || !equalStrings(report.Outputs[0].Branches, []string{"v", "a"}) {
-		t.Fatalf("outputs=%+v", report.Outputs)
+	if len(report.Targets) != 1 || report.Targets[0].Name != "web" || !equalStrings(report.Targets[0].Branches, []string{"v", "a"}) {
+		t.Fatalf("targets=%+v", report.Targets)
 	}
 	want := []goav.OperationKind{goav.OpDemux, goav.OpSelect, goav.OpDecode, goav.OpTap, goav.OpTransform, goav.OpEncode}
 	for _, name := range []string{"v", "a"} {
@@ -561,8 +561,8 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 		if !equalOperationKinds(operationKinds(branch.Operations), want) {
 			t.Fatalf("%s operations=%+v", name, branch.Operations)
 		}
-		if len(branch.Outputs) != 1 || branch.Outputs[0] != "web" {
-			t.Fatalf("%s outputs=%+v", name, branch.Outputs)
+		if len(branch.Targets) != 1 || branch.Targets[0] != "web" {
+			t.Fatalf("%s targets=%+v", name, branch.Targets)
 		}
 		for _, operation := range branch.Operations {
 			if operation.Kind == goav.OperationKind("transcode") {
@@ -717,8 +717,8 @@ func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
 	if len(report.Missing) != 0 {
 		t.Fatalf("missing=%+v, want none for mux compatibility", report.Missing)
 	}
-	if len(report.Outputs) != 1 || !equalStrings(report.Outputs[0].Branches, []string{"v8", "v9"}) {
-		t.Fatalf("outputs=%+v", report.Outputs)
+	if len(report.Targets) != 1 || !equalStrings(report.Targets[0].Branches, []string{"v8", "v9"}) {
+		t.Fatalf("targets=%+v", report.Targets)
 	}
 }
 
@@ -788,7 +788,12 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Builder":         true,
 		"Input":           true,
 		"Output":          true,
+		"OutputIntent":    true,
+		"OutputReport":    true,
 		"OutputSpec":      true,
+		"Path":            true,
+		"PathSpec":        true,
+		"PathBuilder":     true,
 		"AudioOption":     true,
 		"RecordOption":    true,
 		"ProbeRequest":    true,
@@ -1081,7 +1086,7 @@ func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 		t.Fatalf("spec:\n%s", specText(spec))
 	}
 	intent := job.Intent()
-	if intent.Name != "from" || len(intent.Inputs) != 1 || len(intent.Outputs) != 1 {
+	if intent.Name != "from" || len(intent.Inputs) != 1 || len(intent.Targets) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
 }
@@ -1103,7 +1108,7 @@ func TestReadmeRecordFanoutRecipeIsSmall(t *testing.T) {
 		t.Fatalf("spec:\n%s", text)
 	}
 	intent := job.Intent()
-	if intent.Name != "from" || len(intent.Inputs) != 1 || len(intent.Outputs) != 2 {
+	if intent.Name != "from" || len(intent.Inputs) != 1 || len(intent.Targets) != 2 {
 		t.Fatalf("intent: %+v", intent)
 	}
 }
@@ -1157,7 +1162,7 @@ func TestReadmeCustomStageToCustomSinkRecipeIsSmall(t *testing.T) {
 	}
 	intent := job.Intent()
 	if len(intent.Streams) != 1 || !intent.Streams[0].Decode || intent.Streams[0].Encode.ID != "" ||
-		len(intent.Outputs) != 1 || intent.Outputs[0].Name != "levels" {
+		len(intent.Targets) != 1 || intent.Targets[0].Name != "levels" {
 		t.Fatalf("intent: %+v", intent)
 	}
 }
@@ -1232,7 +1237,7 @@ func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 		t.Fatalf("Branches returned %T, want *goav.Job", job)
 	}
 	intent := job.Intent()
-	if len(intent.Streams) != 2 || len(intent.Outputs) != 2 {
+	if len(intent.Streams) != 2 || len(intent.Targets) != 2 {
 		t.Fatalf("intent: %+v", intent)
 	}
 	if intent.Streams[0].Name != "voice" || intent.Streams[1].Name != "archive" ||
@@ -1312,7 +1317,7 @@ func TestBranchesGroupSelectedStreams(t *testing.T) {
 		)
 
 	intent := job.Intent()
-	if len(intent.Streams) != 3 || len(intent.Outputs) != 2 {
+	if len(intent.Streams) != 3 || len(intent.Targets) != 2 {
 		t.Fatalf("intent: %+v", intent)
 	}
 	tests := []struct {
@@ -1583,7 +1588,7 @@ func TestFlowBranchesDescribeLiveInputBranches(t *testing.T) {
 		}
 	}
 	intent := job.Intent()
-	if len(intent.Streams) != 2 || len(intent.Outputs) != 2 ||
+	if len(intent.Streams) != 2 || len(intent.Targets) != 2 ||
 		intent.Streams[0].Select.Type != av.MediaAudio ||
 		intent.Streams[0].Encode.ID != av.CodecOpus ||
 		intent.Streams[1].Encode.ID != av.CodecOpus {
@@ -2845,7 +2850,7 @@ func TestTranscodeRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
 	if len(intent.Streams) != 2 ||
 		len(intent.Streams[0].RouteTo) != 1 || intent.Streams[0].RouteTo[0] != "web" ||
 		len(intent.Streams[1].RouteTo) != 1 || intent.Streams[1].RouteTo[0] != "web" ||
-		len(intent.Outputs) != 1 {
+		len(intent.Targets) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
 }
@@ -2865,7 +2870,7 @@ func TestTranscodeRecipeSingleBranchUsesTarget(t *testing.T) {
 		t.Fatalf("spec:\n%s", text)
 	}
 	intent := job.Intent()
-	if len(intent.Streams) != 1 || len(intent.Streams[0].RouteTo) != 1 || len(intent.Outputs) != 1 {
+	if len(intent.Streams) != 1 || len(intent.Streams[0].RouteTo) != 1 || len(intent.Targets) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
 }

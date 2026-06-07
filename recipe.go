@@ -25,7 +25,7 @@ type Intent struct {
 	Name     string
 	Inputs   []InputIntent
 	Streams  []StreamIntent
-	Outputs  []OutputIntent
+	Targets  []TargetIntent
 	Policies PolicyIntent
 }
 
@@ -60,7 +60,7 @@ type StreamOperation struct {
 	Encode    CodecSpec
 }
 
-type OutputIntent struct {
+type TargetIntent struct {
 	Name     string
 	URI      string
 	Protocol av.ProtocolID
@@ -889,8 +889,8 @@ func (s EndpointSpec) label(fallback string) string {
 	return firstNonEmpty(s.name, s.output.Name, s.output.URI, fallback)
 }
 
-func (s EndpointSpec) intent() OutputIntent {
-	return OutputIntent{
+func (s EndpointSpec) intent() TargetIntent {
+	return TargetIntent{
 		Name:     s.label("output"),
 		URI:      s.output.URI,
 		Protocol: s.output.Protocol,
@@ -899,7 +899,7 @@ func (s EndpointSpec) intent() OutputIntent {
 	}
 }
 
-func (s EndpointSpec) intentWithName(name string) OutputIntent {
+func (s EndpointSpec) intentWithName(name string) TargetIntent {
 	intent := s.intent()
 	intent.Name = firstNonEmpty(name, intent.Name)
 	return intent
@@ -1065,7 +1065,7 @@ func (j *Job) Intent() Intent {
 			intent.Streams = append(intent.Streams, transcodeStreamIntent(j.branchStreams[i]))
 		}
 		for i := range j.branchTargets {
-			intent.Outputs = append(intent.Outputs, j.branchTargets[i].output.intentWithName(j.branchTargets[i].name))
+			intent.Targets = append(intent.Targets, j.branchTargets[i].output.intentWithName(j.branchTargets[i].name))
 		}
 		return intent
 	} else if j.stream != nil {
@@ -1073,7 +1073,7 @@ func (j *Job) Intent() Intent {
 	}
 	outputs := j.allOutputs()
 	for i := range outputs {
-		intent.Outputs = append(intent.Outputs, outputs[i].intent())
+		intent.Targets = append(intent.Targets, outputs[i].intent())
 	}
 	return intent
 }
@@ -2754,7 +2754,7 @@ func (j *transcodeJob) Intent() Intent {
 		intent.Streams = append(intent.Streams, transcodeStreamIntent(j.streams[i]))
 	}
 	for i := range j.outputs {
-		intent.Outputs = append(intent.Outputs, j.outputs[i].output.intentWithName(j.outputs[i].name))
+		intent.Targets = append(intent.Targets, j.outputs[i].output.intentWithName(j.outputs[i].name))
 	}
 	return intent
 }

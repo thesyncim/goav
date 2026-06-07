@@ -92,7 +92,7 @@ func buildMediaPlan(state *recipeCompileState) mediaPlan {
 	}
 	plan.Inputs = planInputs(intent.Inputs)
 	plan.Streams = planStreams(intent.Streams)
-	plan.Outputs = planOutputs(intent.Outputs, state.outputFormatMap())
+	plan.Outputs = planOutputs(intent.Targets, state.outputFormatMap())
 	plan.Branches, plan.Decisions = planBranches(state, plan.Outputs)
 	plan.Taps = planTaps(plan.Branches)
 	plan.Outputs = planOutputsWithBranches(plan.Outputs, plan.Branches)
@@ -125,7 +125,7 @@ func planStreams(streams []StreamIntent) []planStream {
 	return out
 }
 
-func planOutputs(outputs []OutputIntent, formats map[string]av.FormatID) []planOutput {
+func planOutputs(outputs []TargetIntent, formats map[string]av.FormatID) []planOutput {
 	out := make([]planOutput, 0, len(outputs))
 	for i := range outputs {
 		output := outputs[i]

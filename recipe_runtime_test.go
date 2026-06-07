@@ -369,7 +369,7 @@ func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
 		FileInput("input.ogg", strings.NewReader("")),
 	).Copy().To(FileOutput("", io.Discard).MIME("audio/ogg")).UseRuntime(runtime)
 	intent := job.Intent()
-	if len(intent.Outputs) != 1 || intent.Outputs[0].MIMEType != "audio/ogg" {
+	if len(intent.Targets) != 1 || intent.Targets[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
 	}
 

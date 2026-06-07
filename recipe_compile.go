@@ -393,7 +393,7 @@ func validateJobIntentShape(operation string, intent Intent, jobOutputCount int)
 	if len(intent.Streams) > 1 {
 		return jobIntentTooManyStreamsError(operation, intent.Streams)
 	}
-	if len(intent.Outputs) == 0 {
+	if len(intent.Targets) == 0 {
 		return &BuildError{Code: "output_missing", Operation: operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
 	}
 	if err := validateJobIntentOutputScope(operation, intent, jobOutputCount, stream, hasStream); err != nil {
@@ -409,7 +409,7 @@ func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCoun
 	if !hasStream {
 		return nil
 	}
-	if jobOutputCount == 0 && len(intent.Outputs) == len(stream.RouteTo) {
+	if jobOutputCount == 0 && len(intent.Targets) == len(stream.RouteTo) {
 		return nil
 	}
 	return jobOutputScopeMixedError(operation, stream)
@@ -779,15 +779,15 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 			if len(state.intent.Inputs) != len(state.inputAttachments) {
 				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), len(state.inputAttachments))
 			}
-			if len(state.intent.Outputs) != len(state.outputAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "outputs", len(state.intent.Outputs), len(state.outputAttachments))
+			if len(state.intent.Targets) != len(state.outputAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Targets), len(state.outputAttachments))
 			}
 		case state.transcodePresent:
 			if len(state.intent.Inputs) != 1 {
 				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), 1)
 			}
-			if len(state.intent.Outputs) != len(state.transcodeTargetAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "outputs", len(state.intent.Outputs), len(state.transcodeTargetAttachments))
+			if len(state.intent.Targets) != len(state.transcodeTargetAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "targets", len(state.intent.Targets), len(state.transcodeTargetAttachments))
 			}
 		}
 		return nil
@@ -997,7 +997,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		fmt.Sprintf("recipe: %s", firstNonEmpty(intent.Name, "unnamed")),
 		fmt.Sprintf("inputs: %d", len(intent.Inputs)),
 		fmt.Sprintf("streams: %d", len(intent.Streams)),
-		fmt.Sprintf("outputs: %d", len(intent.Outputs)),
+		fmt.Sprintf("targets: %d", len(intent.Targets)),
 	}
 	return &BuildError{
 		Code:      "recipe_graph_unsupported",

@@ -77,7 +77,7 @@ adapters are registered by the application or an adapter bundle.
 
 ### Branches And Targets
 
-Use branches when one selected stream should become multiple encoded outputs.
+Use branches when one selected stream should become multiple encoded targets.
 Targets are typed values, so normal recipes do not route by string labels.
 
 ```go

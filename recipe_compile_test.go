@@ -86,22 +86,22 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 			state: recipeCompileState{
 				operation:         "build job",
 				jobPresent:        true,
-				intent:            Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Outputs: []OutputIntent{{Name: "recording.ivf"}}},
+				intent:            Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Targets: []TargetIntent{{Name: "recording.ivf"}}},
 				inputAttachments:  []InputSpec{FileInput("input.ivf", strings.NewReader(""))},
 				outputAttachments: nil,
 			},
-			want: "outputs",
+			want: "targets",
 		},
 		{
 			name: "transcode outputs",
 			state: recipeCompileState{
 				operation:                  transcodeRecipeOperation,
 				transcodePresent:           true,
-				intent:                     Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Outputs: []OutputIntent{{Name: "web.ivf"}}},
+				intent:                     Intent{Inputs: []InputIntent{{Name: "input.ivf"}}, Targets: []TargetIntent{{Name: "web.ivf"}}},
 				transcodeInputAttachment:   FileInput("input.ivf", strings.NewReader("")),
 				transcodeTargetAttachments: nil,
 			},
-			want: "outputs",
+			want: "targets",
 		},
 	}
 	pass := validateRecipeAttachmentConsistencyPass()
@@ -135,7 +135,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				intent: Intent{
-					Outputs: []OutputIntent{{Name: "recording.ivf"}},
+					Targets: []TargetIntent{{Name: "recording.ivf"}},
 				},
 			},
 			code: "input_missing",
@@ -151,7 +151,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 						{Name: "audio", Decode: true, RouteTo: []string{"audio"}},
 						{Name: "video", Decode: true, RouteTo: []string{"video"}},
 					},
-					Outputs: []OutputIntent{{Name: "audio"}, {Name: "video"}},
+					Targets: []TargetIntent{{Name: "audio"}, {Name: "video"}},
 				},
 			},
 			code: "stream_duplicate",
@@ -169,7 +169,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 						Decode:  true,
 						RouteTo: []string{"frames"},
 					}},
-					Outputs: []OutputIntent{{Name: "archive.ivf"}, {Name: "frames"}},
+					Targets: []TargetIntent{{Name: "archive.ivf"}, {Name: "frames"}},
 				},
 			},
 			code: "output_scope_mixed",
@@ -185,7 +185,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 						Name:    "audio",
 						RouteTo: []string{"frames"},
 					}},
-					Outputs: []OutputIntent{{Name: "frames"}},
+					Targets: []TargetIntent{{Name: "frames"}},
 				},
 			},
 			code: "stream_operation_missing",
@@ -217,7 +217,7 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 				Decode:  true,
 				RouteTo: []string{"missing"},
 			}},
-			Outputs: []OutputIntent{{Name: "archive.ogg"}},
+			Targets: []TargetIntent{{Name: "archive.ogg"}},
 		},
 		outputAttachments: []EndpointSpec{
 			FileOutput("archive.ogg", io.Discard),
@@ -449,7 +449,7 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 				Encode:  Opus(Bitrate(96_000)),
 				RouteTo: []string{"archive"},
 			}},
-			Outputs: []OutputIntent{{Name: "archive"}},
+			Targets: []TargetIntent{{Name: "archive"}},
 		},
 		transcodeInputAttachment: FileInput("input.ivf", strings.NewReader("")),
 		transcodeTargetAttachments: []namedTargetSpec{{
@@ -1168,7 +1168,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 				intent: Intent{
 					Inputs:  []InputIntent{{Name: "input.ogg"}},
 					Streams: []StreamIntent{tt.stream},
-					Outputs: []OutputIntent{{Name: "unused"}},
+					Targets: []TargetIntent{{Name: "unused"}},
 				},
 				outputAttachments: tt.outputs,
 			}
@@ -1226,7 +1226,7 @@ func TestJobStreamRuntimeCapabilitiesPassRejectsUnsupportedBuilder(t *testing.T)
 				intent: Intent{
 					Inputs:  []InputIntent{{Name: "input"}},
 					Streams: []StreamIntent{tt.stream},
-					Outputs: []OutputIntent{{Name: "frames"}},
+					Targets: []TargetIntent{{Name: "frames"}},
 				},
 				builder: noCapabilityBuilder{},
 			}
@@ -1261,7 +1261,7 @@ func TestRequireMediaPlanGraphSpecPassWrapsUnsupportedRecipeShape(t *testing.T) 
 	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want recipe_graph_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	for _, want := range []string{"recipe intent", "inputs: 1", "outputs: 0", "goav.From", ".Copy().To", ".Branches"} {
+	for _, want := range []string{"recipe intent", "inputs: 1", "targets: 0", "goav.From", ".Copy().To", ".Branches"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
@@ -1290,7 +1290,7 @@ func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 						Decode:  true,
 						RouteTo: []string{"frames"},
 					}},
-					Outputs: []OutputIntent{{Name: "frames"}},
+					Targets: []TargetIntent{{Name: "frames"}},
 				},
 				streamSteps: []jobStreamStepAttachment{{stepIndex: 0}},
 			},
@@ -1311,7 +1311,7 @@ func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 						Transforms: []TransformSpec{Resample(48_000, Stereo)},
 						RouteTo:    []string{"frames"},
 					}},
-					Outputs: []OutputIntent{{Name: "frames"}},
+					Targets: []TargetIntent{{Name: "frames"}},
 				},
 				streamSteps: []jobStreamStepAttachment{{
 					hasTransform:   true,
@@ -1393,7 +1393,7 @@ func TestJobIntentShapePassRejectsStreamTransforms(t *testing.T) {
 				intent: Intent{
 					Inputs:  []InputIntent{{Name: "input"}},
 					Streams: []StreamIntent{tt.stream},
-					Outputs: []OutputIntent{{Name: "frames"}},
+					Targets: []TargetIntent{{Name: "frames"}},
 				},
 			}
 			err := pass.Apply(&state)
@@ -1594,7 +1594,7 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 				Encode:  VP9(Bitrate(600_000)),
 				RouteTo: []string{"missing"},
 			}},
-			Outputs: []OutputIntent{{Name: "web.ivf"}},
+			Targets: []TargetIntent{{Name: "web.ivf"}},
 		},
 		transcodeTargetAttachments: []namedTargetSpec{{
 			name:   "web",
@@ -1683,8 +1683,8 @@ func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
 	if len(resolved.intent.Inputs) != 1 || resolved.intent.Inputs[0].Name != "input.ivf" {
 		t.Fatalf("intent inputs = %+v", resolved.intent.Inputs)
 	}
-	if len(resolved.intent.Outputs) != 1 || resolved.intent.Outputs[0].Name != "recording.ivf" {
-		t.Fatalf("intent outputs = %+v", resolved.intent.Outputs)
+	if len(resolved.intent.Targets) != 1 || resolved.intent.Targets[0].Name != "recording.ivf" {
+		t.Fatalf("intent targets = %+v", resolved.intent.Targets)
 	}
 	spec, err := resolved.Describe()
 	if err != nil {

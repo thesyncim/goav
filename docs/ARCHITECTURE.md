@@ -19,7 +19,7 @@ Application
   |
 Recipes: From, stream chains, taps, branches, targets
   |
-Intent graph: inputs, streams, transforms, outputs, policies
+Intent graph: inputs, streams, transforms, targets, policies
   |
 MediaPlan planner passes
   |
@@ -77,8 +77,8 @@ come from `.Tap(name)` and are listed by `Task.Taps()`; runtime branches attach
 with `goav.Branch("name").FromTap(name)`. Expert graph nodes can still be
 addressed with `From(node)` and `Task.Describe`. This is for late analysis taps,
 meters, and screenshot collectors that should observe future messages without
-rebuilding the task. Buffered runtime attachments and late muxed output branches
-remain separate slices because they need queue, worker, and mux-output lifecycle
+rebuilding the task. Buffered runtime attachments and late muxed target branches
+remain separate slices because they need queue, worker, and mux lifecycle
 management.
 
 Current graph execution covers:

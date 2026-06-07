@@ -83,8 +83,8 @@ contract:
 | `pipeline.Emitter` | stable | emits messages | Lets stages forward packets, frames, and events without changing graph topology. |
 | `pipeline.Route` | stable | graph edge policy | Describes one edge with optional stream or event scoping. |
 | fanout routing | stable | one-to-many edges | One upstream can feed several downstream stages or sinks. |
-| `MediaPlan` | experimental | recipe intent to composable branch IR | Captures inputs, stream selectors, branch operations, output groups, taps, and decisions before graph construction. Transcode is represented as ordinary branches, not as a runtime mode. |
-| `PlanReport` | experimental | recipe intent to structured explanation | `Job.Explain(ctx)` reports inputs, stream branches, branch operations, taps, planner decisions, outputs, adapter requirements, warnings, and the graph without embedding a text or diagram renderer in core. |
+| `MediaPlan` | experimental | recipe intent to composable branch IR | Captures inputs, stream selectors, branch operations, target groups, taps, and decisions before graph construction. Transcode is represented as ordinary branches, not as a runtime mode. |
+| `PlanReport` | experimental | recipe intent to structured explanation | `Job.Explain(ctx)` reports inputs, stream branches, branch operations, taps, planner decisions, targets, adapter requirements, warnings, and the graph without embedding a text or diagram renderer in core. |
 | runtime attach | experimental | running direct graph to new stage/sink branch | `Task.Attach(ctx, goav.Branch(...).FromTap(...))` attaches stage/sink branches to future messages in direct graphs; `Attachment.Close(ctx)` or `Task.Detach(ctx, h)` removes one branch, `Task.Taps()` lists stable recipe outlets, and buffered live attachments are guarded until queue/worker extension exists. |
 | `pipeline.BufferPolicy` | experimental | execution policy | Controls direct, buffered, backpressure, and dropping behavior where supported. |
 | graph stats | experimental | counters/events | `Task.Stats()` exposes packet, frame, event, drop, and last-event counters. |
