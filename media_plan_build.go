@@ -52,7 +52,7 @@ func buildGraphPlanTask(ctx context.Context, plan graphPlan) (Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := plan.executable.compile(ctx, graph, service); err != nil {
+	if err := plan.lower(ctx, graph, service); err != nil {
 		graph.Close()
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func (p mediaPlanStreamGraph) runtimeRef() *runtime {
 	return p.runtime
 }
 
-func (p mediaPlanStreamGraph) compile(ctx context.Context, graph pipeline.Graph, service *builder) error {
+func (p mediaPlanStreamGraph) lower(ctx context.Context, _ graphPlan, graph pipeline.Graph, service *builder) error {
 	if p.copyPackets {
 		return p.compilePacketCopy(ctx, graph, service)
 	}
@@ -85,10 +85,6 @@ func (p mediaPlanStreamGraph) compile(ctx context.Context, graph pipeline.Graph,
 
 func (p mediaPlanStreamGraph) hasSingleSinkDestination() bool {
 	return len(p.outputs) == 1 && p.outputs[0].sink != nil
-}
-
-func (p mediaPlanBranchComposeGraph) runtimeRef() *runtime {
-	return p.runtime
 }
 
 func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream StreamIntent) (mediaPlanStreamGraph, bool, error) {
@@ -232,7 +228,11 @@ func (p mediaPlanBranchComposeGraph) nodeCapacity() int {
 	return 1 + 3 + len(p.branches) + branchChainStepCount(p.branches) + len(p.targets)
 }
 
-func (p mediaPlanBranchComposeGraph) compile(ctx context.Context, graph pipeline.Graph, service *builder) error {
+func (p mediaPlanBranchComposeGraph) runtimeRef() *runtime {
+	return p.runtime
+}
+
+func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, _ graphPlan, graph pipeline.Graph, service *builder) error {
 	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, []InputSpec{p.input}, "build branch composition", Intent{Name: p.plan.Name})
 	if err != nil {
 		return err

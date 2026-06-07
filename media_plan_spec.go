@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
@@ -11,10 +12,10 @@ const (
 	graphSpecOriginGraphPlan = "graph_plan"
 )
 
-type mediaPlanExecutable interface {
+type graphPlanLowerer interface {
 	spec() (pipeline.Spec, error)
 	runtimeRef() *runtime
-	compile(context.Context, pipeline.Graph, *builder) error
+	lower(context.Context, graphPlan, pipeline.Graph, *builder) error
 }
 
 type graphPlan struct {
@@ -31,7 +32,7 @@ type graphPlan struct {
 	outputs     []planOutput
 	decisions   []planDecision
 	diagnostics []PlanDiagnostic
-	executable  mediaPlanExecutable
+	lowerer     graphPlanLowerer
 }
 
 type graphPlanOperation struct {
@@ -46,7 +47,7 @@ type graphPlanOperation struct {
 }
 
 func (p graphPlan) ready() bool {
-	return p.executable != nil && p.runtime != nil
+	return p.lowerer != nil && p.runtime != nil
 }
 
 func (p graphPlan) Describe() (pipeline.Spec, error) {
@@ -61,6 +62,13 @@ func (p graphPlan) Build(ctx context.Context) (Task, error) {
 		return nil, recipeGraphUnsupportedError("build graph plan", Intent{})
 	}
 	return buildGraphPlanTask(ctx, p)
+}
+
+func (p graphPlan) lower(ctx context.Context, graph pipeline.Graph, service *builder) error {
+	if err := validateGraphPlanLowering(p); err != nil {
+		return err
+	}
+	return p.lowerer.lower(ctx, p, graph, service)
 }
 
 func (p graphPlan) spec() pipeline.Spec {
@@ -89,7 +97,7 @@ func (p graphPlan) operationPlan() []graphPlanOperation {
 	return cloneGraphPlanOperations(p.operations)
 }
 
-func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, executable mediaPlanExecutable) graphPlan {
+func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, lowerer graphPlanLowerer) graphPlan {
 	return graphPlan{
 		runtime:     runtime,
 		name:        firstNonEmpty(spec.Name, plan.Name, "goav"),
@@ -104,7 +112,7 @@ func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, executab
 		outputs:     clonePlanOutputs(plan.Outputs),
 		decisions:   clonePlanDecisions(plan.Decisions),
 		diagnostics: clonePlanDiagnostics(plan.Diagnostics),
-		executable:  executable,
+		lowerer:     lowerer,
 	}
 }
 
@@ -167,6 +175,90 @@ func cloneGraphPlanOperations(operations []graphPlanOperation) []graphPlanOperat
 	return out
 }
 
+func validateGraphPlanLowering(plan graphPlan) error {
+	if !plan.ready() {
+		return graphPlanInvalidError("graph plan is not ready", nil)
+	}
+	if len(plan.nodes) != 0 && len(plan.operations) == 0 {
+		return graphPlanInvalidError("graph plan has nodes but no ordered operations", []string{
+			"nodes=" + strconv.Itoa(len(plan.nodes)),
+		})
+	}
+	if err := validateGraphPlanEdges(plan); err != nil {
+		return err
+	}
+	for i := range plan.operations {
+		operation := plan.operations[i]
+		details := []string{
+			"operation=" + strconv.Itoa(i),
+			"branch=" + operation.Branch,
+			"node=" + operation.Node.String(),
+			"kind=" + string(operation.Kind),
+		}
+		if operation.Kind == "" {
+			return graphPlanInvalidError("graph-plan operation has no kind", details)
+		}
+		if operation.Branch == "" {
+			return graphPlanInvalidError("graph-plan operation has no branch", details)
+		}
+		if graphPlanOperationTargetsRequired(operation.Kind) && len(operation.Targets) == 0 {
+			return graphPlanInvalidError("graph-plan target operation has no target refs", details)
+		}
+	}
+	return nil
+}
+
+func validateGraphPlanEdges(plan graphPlan) error {
+	if len(plan.edges) == 0 {
+		return nil
+	}
+	nodes := make(map[pipeline.NodeRef]struct{}, len(plan.nodes))
+	for i := range plan.nodes {
+		nodes[pipeline.NodeRef(plan.nodes[i].Name)] = struct{}{}
+	}
+	for i := range plan.edges {
+		edge := plan.edges[i]
+		details := []string{
+			"edge=" + strconv.Itoa(i),
+			"from=" + edge.From.String(),
+			"to=" + edge.To.String(),
+		}
+		if edge.From == "" || edge.To == "" {
+			return graphPlanInvalidError("graph-plan edge is missing a source or target", details)
+		}
+		if _, ok := nodes[edge.From]; !ok {
+			return graphPlanInvalidError("graph-plan edge source is not a planned node", details)
+		}
+		if _, ok := nodes[edge.To]; !ok {
+			return graphPlanInvalidError("graph-plan edge target is not a planned node", details)
+		}
+	}
+	return nil
+}
+
+func graphPlanOperationTargetsRequired(kind OperationKind) bool {
+	switch kind {
+	case OpMux, OpSink, OpWrite:
+		return true
+	default:
+		return false
+	}
+}
+
+func graphPlanInvalidError(reason string, details []string) error {
+	return &BuildError{
+		Code:      "graph_plan_invalid",
+		Operation: "build graph plan",
+		Reason:    reason,
+		Details:   append([]string(nil), details...),
+		Suggestions: []string{
+			"compile recipes through goav.From(...), chains, branches, and targets",
+			"keep graph-plan nodes, edges, operations, and targets in sync",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
 func emitGraphPlanSpecPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "emit graph plan spec", fn: func(state *recipeCompileState) error {
 		plan, ok, err := graphPlanForState(state)
@@ -182,36 +274,36 @@ func emitGraphPlanSpecPass() recipeCompilePass {
 }
 
 func graphPlanForState(state *recipeCompileState) (graphPlan, bool, error) {
-	executable, ok, err := mediaPlanGraph(state)
+	lowerer, ok, err := graphPlanLowererForState(state)
 	if err != nil || !ok {
 		return graphPlan{}, ok, err
 	}
-	spec, err := executable.spec()
+	spec, err := lowerer.spec()
 	if err != nil {
 		return graphPlan{}, false, err
 	}
 	plan := buildMediaPlan(state)
-	return newGraphPlan(executable.runtimeRef(), spec, plan, executable), true, nil
+	return newGraphPlan(lowerer.runtimeRef(), spec, plan, lowerer), true, nil
 }
 
-func mediaPlanGraph(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
-	if graph, ok, err := mediaPlanStreamExecutableForState(state); err != nil || ok {
+func graphPlanLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
+	if graph, ok, err := mediaPlanStreamLowererForState(state); err != nil || ok {
 		return graph, ok, err
 	}
-	if graph, ok, err := mediaPlanBranchComposerExecutable(state); err != nil || ok {
+	if graph, ok, err := mediaPlanBranchComposerLowerer(state); err != nil || ok {
 		return graph, ok, err
 	}
 	return nil, false, nil
 }
 
-func mediaPlanStreamExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
-	if graph, ok, err := mediaPlanPacketCopyStreamExecutableForState(state); err != nil || ok {
+func mediaPlanStreamLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
+	if graph, ok, err := mediaPlanPacketCopyStreamLowererForState(state); err != nil || ok {
 		return graph, ok, err
 	}
-	return mediaPlanDecodeStreamExecutableForState(state)
+	return mediaPlanDecodeStreamLowererForState(state)
 }
 
-func mediaPlanPacketCopyStreamExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
+func mediaPlanPacketCopyStreamLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
 	stream, selectedStream, ok := mediaPlanPacketCopyStream(state)
 	if !ok {
 		return nil, false, nil
@@ -246,7 +338,7 @@ func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, chainSteps 
 	return StreamIntent{}, false, false
 }
 
-func mediaPlanDecodeStreamExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
+func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
 	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
 		return nil, false, nil
 	}
@@ -280,7 +372,7 @@ func mediaPlanEncodeShape(stream StreamIntent, outputs []destinationSpec) bool {
 	return len(stream.Targets) == len(outputs)
 }
 
-func mediaPlanBranchComposerExecutable(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
+func mediaPlanBranchComposerLowerer(state *recipeCompileState) (graphPlanLowerer, bool, error) {
 	if state == nil || !state.branchCompositionPresent {
 		return nil, false, nil
 	}
