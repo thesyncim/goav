@@ -59,16 +59,6 @@ func (b *FlowBuilder) Video() *VideoFlowBuilder {
 	return newVideoFlow(b.name)
 }
 
-// AudioFlow creates a reusable audio stream fragment.
-func AudioFlow(name string) *AudioFlowBuilder {
-	return Flow(name).Audio()
-}
-
-// VideoFlow creates a reusable video stream fragment.
-func VideoFlow(name string) *VideoFlowBuilder {
-	return Flow(name).Video()
-}
-
 func newAudioFlow(name string) *AudioFlowBuilder {
 	return &AudioFlowBuilder{flowBuilder{spec: streamFlowSpec{name: name, media: av.MediaAudio}}}
 }
@@ -135,10 +125,6 @@ func (b *AudioFlowBuilder) Tap(tap TapRef) *AudioFlowBuilder {
 	return b
 }
 
-func (b *AudioFlowBuilder) TapName(name string) *AudioFlowBuilder {
-	return b.Tap(namedTap(name))
-}
-
 func (b *AudioFlowBuilder) Encode(codec CodecSpec) *AudioFlowBuilder {
 	if b == nil {
 		return b
@@ -200,10 +186,6 @@ func (b *VideoFlowBuilder) Tap(tap TapRef) *VideoFlowBuilder {
 	}
 	b.flowBuilder.tap(tap)
 	return b
-}
-
-func (b *VideoFlowBuilder) TapName(name string) *VideoFlowBuilder {
-	return b.Tap(namedTap(name))
 }
 
 func (b *VideoFlowBuilder) Encode(codec CodecSpec) *VideoFlowBuilder {
@@ -317,7 +299,7 @@ func (b *flowBuilder) tap(tap TapRef) {
 		b.setErr(err)
 		return
 	}
-	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: tap.name})
+	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: tap.name, tapDomain: tap.domain})
 }
 
 func (b *flowBuilder) encode(codec CodecSpec) {

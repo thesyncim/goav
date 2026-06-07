@@ -1,60 +1,65 @@
 package goav
 
 import (
+	"context"
+
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
 
 const (
 	graphSpecOriginMediaPlan = "media_plan"
-
-	mediaBuildKindPacketCopy   = "packet_copy"
-	mediaBuildKindSinkEndpoint = "sink_endpoint"
-	mediaBuildKindEncode       = "encode"
-	mediaBuildKindBranch       = "branch_composer"
 )
+
+type mediaPlanExecutable interface {
+	spec() (pipeline.Spec, error)
+	build(context.Context) (Task, error)
+}
 
 func emitMediaPlanGraphSpecPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "emit media plan graph spec", fn: func(state *recipeCompileState) error {
-		spec, kind, ok, err := mediaPlanGraphSpec(state)
+		graph, ok, err := mediaPlanGraph(state)
 		if err != nil || !ok {
+			return err
+		}
+		spec, err := graph.spec()
+		if err != nil {
 			return err
 		}
 		state.spec = spec
 		state.specReady = true
 		state.specOrigin = graphSpecOriginMediaPlan
-		state.mediaBuildKind = kind
+		state.mediaGraph = graph
 		return nil
 	}}
 }
 
-func mediaPlanGraphSpec(state *recipeCompileState) (pipeline.Spec, string, bool, error) {
-	if spec, ok, err := mediaPlanPacketCopySpec(state); err != nil || ok {
-		return spec, mediaBuildKindPacketCopy, ok, err
+func mediaPlanGraph(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
+	if graph, ok, err := mediaPlanPacketCopyExecutable(state); err != nil || ok {
+		return graph, ok, err
 	}
-	if spec, ok, err := mediaPlanSinkEndpointSpec(state); err != nil || ok {
-		return spec, mediaBuildKindSinkEndpoint, ok, err
+	if graph, ok, err := mediaPlanSinkDestinationExecutableForState(state); err != nil || ok {
+		return graph, ok, err
 	}
-	if spec, ok, err := mediaPlanEncodeSpec(state); err != nil || ok {
-		return spec, mediaBuildKindEncode, ok, err
+	if graph, ok, err := mediaPlanEncodeExecutableForState(state); err != nil || ok {
+		return graph, ok, err
 	}
-	if spec, ok, err := mediaPlanBranchComposerSpec(state); err != nil || ok {
-		return spec, mediaBuildKindBranch, ok, err
+	if graph, ok, err := mediaPlanBranchComposerExecutable(state); err != nil || ok {
+		return graph, ok, err
 	}
-	return pipeline.Spec{}, "", false, nil
+	return nil, false, nil
 }
 
-func mediaPlanPacketCopySpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
+func mediaPlanPacketCopyExecutable(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
 	stream, selectedStream, ok := mediaPlanPacketCopyStream(state)
 	if !ok {
-		return pipeline.Spec{}, false, nil
+		return nil, false, nil
 	}
 	plan, ok, err := newMediaPlanPacketCopyGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream, selectedStream)
 	if err != nil || !ok {
-		return pipeline.Spec{}, ok, err
+		return nil, ok, err
 	}
-	spec, err := plan.spec()
-	return spec, err == nil, err
+	return plan, true, nil
 }
 
 func mediaPlanPacketCopyStream(state *recipeCompileState) (StreamIntent, bool, bool) {
@@ -80,23 +85,22 @@ func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, streamSteps
 	return StreamIntent{}, false, false
 }
 
-func mediaPlanSinkEndpointSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
+func mediaPlanSinkDestinationExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
 	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
-		return pipeline.Spec{}, false, nil
+		return nil, false, nil
 	}
 	stream := state.intent.Streams[0]
-	if !mediaPlanSinkEndpointShape(stream, state.outputAttachments) {
-		return pipeline.Spec{}, false, nil
+	if !mediaPlanSinkDestinationShape(stream, state.outputAttachments) {
+		return nil, false, nil
 	}
 	plan, ok, err := newMediaPlanSingleStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
 	if err != nil || !ok {
-		return pipeline.Spec{}, ok, err
+		return nil, ok, err
 	}
-	spec, err := plan.sinkEndpointSpec()
-	return spec, err == nil, err
+	return mediaPlanSinkDestinationExecutable{mediaPlanSingleStreamGraph: plan}, true, nil
 }
 
-func mediaPlanSinkEndpointShape(stream StreamIntent, outputs []EndpointSpec) bool {
+func mediaPlanSinkDestinationShape(stream StreamIntent, outputs []DestinationSpec) bool {
 	return len(outputs) == 1 &&
 		outputs[0].sink != nil &&
 		stream.Decode &&
@@ -104,39 +108,37 @@ func mediaPlanSinkEndpointShape(stream StreamIntent, outputs []EndpointSpec) boo
 		!stream.Encode.Copy
 }
 
-func mediaPlanEncodeSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
+func mediaPlanEncodeExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
 	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
-		return pipeline.Spec{}, false, nil
+		return nil, false, nil
 	}
 	stream := state.intent.Streams[0]
 	if !mediaPlanEncodeShape(stream, state.outputAttachments) {
-		return pipeline.Spec{}, false, nil
+		return nil, false, nil
 	}
 	plan, ok, err := newMediaPlanSingleStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
 	if err != nil || !ok {
-		return pipeline.Spec{}, ok, err
+		return nil, ok, err
 	}
-	spec, err := plan.encodeOutputSpec()
-	return spec, err == nil, err
+	return mediaPlanEncodeExecutable{mediaPlanSingleStreamGraph: plan}, true, nil
 }
 
-func mediaPlanEncodeShape(stream StreamIntent, outputs []EndpointSpec) bool {
+func mediaPlanEncodeShape(stream StreamIntent, outputs []DestinationSpec) bool {
 	if !stream.Decode || !codecIntentSet(stream.Encode) || stream.Encode.Copy || len(outputs) == 0 {
 		return false
 	}
 	return len(stream.Targets) == len(outputs)
 }
 
-func mediaPlanBranchComposerSpec(state *recipeCompileState) (pipeline.Spec, bool, error) {
+func mediaPlanBranchComposerExecutable(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
 	if state == nil || !state.branchCompositionPresent {
-		return pipeline.Spec{}, false, nil
+		return nil, false, nil
 	}
 	plan, ok, err := newMediaPlanBranchComposeGraph(state.runtime, state.branchInputAttachment, state.plan)
 	if err != nil || !ok {
-		return pipeline.Spec{}, ok, err
+		return nil, ok, err
 	}
-	spec, err := plan.spec()
-	return spec, err == nil, err
+	return plan, true, nil
 }
 
 func mediaPlanPacketCopySources(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {
@@ -165,7 +167,7 @@ func mediaPlanPacketCopySources(spec *pipeline.Spec, nodes map[string]plannedNod
 	return refs, true, nil
 }
 
-func mediaPlanPacketCopyTargets(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []EndpointSpec) ([]pipeline.NodeRef, error) {
+func mediaPlanPacketCopyTargets(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []DestinationSpec) ([]pipeline.NodeRef, error) {
 	refs := make([]pipeline.NodeRef, 0, len(outputs))
 	for i := range outputs {
 		if outputs[i].sink != nil {
@@ -201,10 +203,10 @@ func allRTPInputSpecs(inputs []InputSpec) bool {
 	return true
 }
 
-func endpointSpecGraphFormat(output EndpointSpec) av.FormatID {
+func endpointSpecGraphFormat(output DestinationSpec) av.FormatID {
 	return output.format
 }
 
-func endpointSpecOpenFormat(output EndpointSpec) av.FormatID {
+func endpointSpecOpenFormat(output DestinationSpec) av.FormatID {
 	return endpointSpecFormat(output)
 }

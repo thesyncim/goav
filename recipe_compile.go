@@ -17,9 +17,9 @@ type recipeResolved struct {
 	spec                  pipeline.Spec
 	specReady             bool
 	specOrigin            string
-	mediaBuildKind        string
+	mediaGraph            mediaPlanExecutable
 	inputAttachments      []InputSpec
-	outputAttachments     []EndpointSpec
+	outputAttachments     []DestinationSpec
 	streamAttachments     []jobStreamStepAttachment
 	inputProbes           []format.ProbeResult
 	branchInputAttachment InputSpec
@@ -43,7 +43,7 @@ type recipeCompileState struct {
 	inputAttachments  []InputSpec
 	jobOutputCount    int
 	streamSteps       []jobStreamStepAttachment
-	outputAttachments []EndpointSpec
+	outputAttachments []DestinationSpec
 	outputTargetNames []string
 	inputProbes       []format.ProbeResult
 
@@ -56,11 +56,11 @@ type recipeCompileState struct {
 	plan    branchComposePlan
 	planErr error
 
-	builder        builderAPI
-	spec           pipeline.Spec
-	specReady      bool
-	specOrigin     string
-	mediaBuildKind string
+	builder    builderAPI
+	spec       pipeline.Spec
+	specReady  bool
+	specOrigin string
+	mediaGraph mediaPlanExecutable
 }
 
 type recipeCompileOptions struct {
@@ -104,7 +104,7 @@ func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 	return formats
 }
 
-func endpointSpecFormat(output EndpointSpec) av.FormatID {
+func endpointSpecFormat(output DestinationSpec) av.FormatID {
 	if output.resolvedFormat != "" {
 		return output.resolvedFormat
 	}
@@ -168,9 +168,9 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		spec:                  state.spec,
 		specReady:             state.specReady,
 		specOrigin:            state.specOrigin,
-		mediaBuildKind:        state.mediaBuildKind,
+		mediaGraph:            state.mediaGraph,
 		inputAttachments:      append([]InputSpec(nil), state.inputAttachments...),
-		outputAttachments:     append([]EndpointSpec(nil), state.outputAttachments...),
+		outputAttachments:     append([]DestinationSpec(nil), state.outputAttachments...),
 		streamAttachments:     append([]jobStreamStepAttachment(nil), state.streamSteps...),
 		inputProbes:           append([]format.ProbeResult(nil), state.inputProbes...),
 		branchInputAttachment: state.branchInputAttachment,
@@ -213,22 +213,10 @@ func (r recipeResolved) Describe() (pipeline.Spec, error) {
 }
 
 func (r recipeResolved) Build(ctx context.Context) (Task, error) {
-	var (
-		task Task
-		err  error
-	)
-	switch r.mediaBuildKind {
-	case mediaBuildKindPacketCopy:
-		task, err = r.buildMediaPlanPacketCopyTask(ctx)
-	case mediaBuildKindSinkEndpoint:
-		task, err = r.buildMediaPlanSinkEndpointTask(ctx)
-	case mediaBuildKindEncode:
-		task, err = r.buildMediaPlanEncodeTask(ctx)
-	case mediaBuildKindBranch:
-		task, err = r.buildMediaPlanBranchComposerTask(ctx)
-	default:
-		err = recipeGraphUnsupportedError("build recipe", r.intent)
+	if r.mediaGraph == nil {
+		return nil, recipeGraphUnsupportedError("build recipe", r.intent)
 	}
+	task, err := r.mediaGraph.build(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +729,7 @@ func validateBranchTargetFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs := make([]EndpointSpec, 0, len(state.branchTargetAttachments))
+		outputs := make([]DestinationSpec, 0, len(state.branchTargetAttachments))
 		targetNames := make([]string, 0, len(state.branchTargetAttachments))
 		for i := range state.branchTargetAttachments {
 			output := state.branchTargetAttachments[i].output.Name(firstNonEmpty(
@@ -997,7 +985,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 
 func requireMediaPlanGraphSpecPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "require media plan graph spec", fn: func(state *recipeCompileState) error {
-		if state.specReady && state.specOrigin == graphSpecOriginMediaPlan && state.mediaBuildKind != "" {
+		if state.specReady && state.specOrigin == graphSpecOriginMediaPlan && state.mediaGraph != nil {
 			return nil
 		}
 		return recipeGraphUnsupportedError(state.operation, state.intent)

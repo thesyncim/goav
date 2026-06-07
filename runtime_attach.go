@@ -42,6 +42,7 @@ type runtimeBranchStep struct {
 	decode    bool
 	transform TransformSpec
 	tap       string
+	tapDomain MediaDomain
 	after     OperationKind
 	caps      StreamCaps
 	owned     bool
@@ -49,7 +50,7 @@ type runtimeBranchStep struct {
 
 type runtimeBranchEndpoint struct {
 	name     string
-	endpoint EndpointSpec
+	endpoint DestinationSpec
 	sink     pipeline.Sink
 	shareKey string
 }
@@ -57,7 +58,7 @@ type runtimeBranchEndpoint struct {
 type runtimeBranchTerminal struct {
 	name     string
 	shareKey string
-	endpoint EndpointSpec
+	endpoint DestinationSpec
 	stream   av.Stream
 	stage    pipeline.Stage
 	sink     pipeline.Sink
@@ -86,7 +87,7 @@ type runtimeSharedSinkTarget struct {
 
 type runtimeSharedMuxTarget struct {
 	name     string
-	endpoint EndpointSpec
+	endpoint DestinationSpec
 	streams  []av.Stream
 	branches []string
 	stage    *format.MuxStage
@@ -109,7 +110,7 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		return nil, err
 	}
 	if len(specs) == 0 {
-		return nil, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more goav.Branch(name)...To(endpoint) values")
+		return nil, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more goav.Branch(name)...To(destination) values")
 	}
 	branches := make([]runtimeBranch, len(specs))
 	for i := range specs {
@@ -247,7 +248,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 			branch.steps = append(branch.steps, runtimeBranchStep{transform: cloneTransformSpec(step.transform)})
 			after = OpTransform
 		case step.tap != "":
-			branch.steps = append(branch.steps, runtimeBranchStep{tap: step.tap, after: after})
+			branch.steps = append(branch.steps, runtimeBranchStep{tap: step.tap, tapDomain: step.tapDomain, after: after})
 		}
 	}
 	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
@@ -313,9 +314,9 @@ func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchG
 						"second branch: " + firstNonEmpty(branch.name, fmt.Sprintf("branch-%d", i+1)),
 					},
 					Suggestions: []string{
-						"reuse one goav.Target(name, endpoint) value when branches should share a runtime target group",
-						"use distinct goav.Target names for independent runtime endpoints",
-						"use a sink endpoint for runtime observer groups or a mux endpoint for runtime recording groups",
+						"reuse one goav.Target(name, destination) value when branches should share a runtime target group",
+						"use distinct goav.Target names for independent runtime destinations",
+						"use a sink destination for runtime observer groups or a mux destination for runtime recording groups",
 					},
 					Cause: ErrUnsupportedBuild,
 				}
@@ -531,7 +532,7 @@ func (g *runtimeAttachGroup) closeSharedMuxStages() {
 	}
 }
 
-func runtimeSharedMuxFormat(ctx context.Context, rt *runtime, endpoint EndpointSpec, index int) (av.FormatID, error) {
+func runtimeSharedMuxFormat(ctx context.Context, rt *runtime, endpoint DestinationSpec, index int) (av.FormatID, error) {
 	formatID := endpointSpecOpenFormat(endpoint)
 	if formatID != "" {
 		return formatID, nil
@@ -702,6 +703,10 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 			step.caps = currentCaps
 			transformIndex++
 		case step.tap != "":
+			if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.name, "branch"), TapRef{name: step.tap, domain: step.tapDomain}, currentCaps.Domain); err != nil {
+				closeRuntimeBranchOwnedStages(*branch)
+				return err
+			}
 			step.caps = currentCaps
 		}
 	}
@@ -757,7 +762,7 @@ func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtim
 	if t.runtime == nil {
 		closeRuntimeBranchOwnedStages(*branch)
 		return runtimeBranchInvalidError(
-			"runtime branch mux endpoints require the standard runtime",
+			"runtime branch mux destinations require the standard runtime",
 			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching file or URI branches",
 		)
 	}
@@ -854,7 +859,7 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string
 	return stage, nil
 }
 
-func (t *task) runtimeBranchMuxFormat(ctx context.Context, endpoint EndpointSpec, index int) (av.FormatID, error) {
+func (t *task) runtimeBranchMuxFormat(ctx context.Context, endpoint DestinationSpec, index int) (av.FormatID, error) {
 	formatID := endpointSpecOpenFormat(endpoint)
 	if formatID != "" {
 		return formatID, nil
@@ -936,9 +941,10 @@ func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, caps StreamCaps, a
 	}
 	for i := range branch.postEncodeTaps {
 		branch.steps = append(branch.steps, runtimeBranchStep{
-			tap:   branch.postEncodeTaps[i],
-			after: after,
-			caps:  caps,
+			tap:       branch.postEncodeTaps[i],
+			tapDomain: DomainPacket,
+			after:     after,
+			caps:      caps,
 		})
 	}
 	branch.postEncodeTaps = nil
@@ -1399,7 +1405,7 @@ func validateRuntimeBranchTargets(branch runtimeBranch) error {
 	return nil
 }
 
-func endpointSpecHasOutput(endpoint EndpointSpec) bool {
+func endpointSpecHasOutput(endpoint DestinationSpec) bool {
 	return endpoint.output.Name != "" ||
 		endpoint.output.URI != "" ||
 		endpoint.output.Writer != nil ||
@@ -2005,7 +2011,7 @@ func runtimeBranchMuxCodecMissingError(branch string, caps StreamCaps) error {
 		Code:      "runtime_branch_mux_codec_missing",
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
-		Reason:    "runtime branch mux endpoint needs codec metadata",
+		Reason:    "runtime branch mux destination needs codec metadata",
 		Details:   runtimeBranchCapsDetails(caps),
 		Suggestions: []string{
 			"attach from a recipe tap with codec caps",

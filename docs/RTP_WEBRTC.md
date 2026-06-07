@@ -127,7 +127,7 @@ It can also decode a selected live stream directly into frames:
 err := goav.From(goav.WebRTCTrack(track)).
     Audio().
     Decode().
-    To(goav.SinkEndpoint(frames)).
+    To(goav.Sink(frames)).
     Run(ctx)
 ```
 
@@ -135,7 +135,7 @@ For repeated RTP/WebRTC inputs, the generated graph feeds all sources into the
 selector before the decoder. Single-stream RTP sources stamp EOS with the stream
 ID so unrelated inputs do not flush the selected decoder.
 Optional filter stages can be inserted on the stream chain before
-`.To(goav.SinkEndpoint(...))` when their selector matches the decoded stream.
+`.To(goav.Sink(...))` when their selector matches the decoded stream.
 Decoder factories can optionally provide adapter-specific reusable state for
 this high-level path. `WithRTPDecodeBounds(...)` lets an RTP input seed payload,
 retained-fragment, output-count, and geometry limits into that state provider.
@@ -224,7 +224,7 @@ Stream recipes can name the supported live policy explicitly:
 err := goav.From(goav.WebRTCTrack(track)).
     Video().
     OnCodecChange(goav.RealtimeCodecChangePolicy()).
-    To(goav.SinkEndpoint(frames)).
+    To(goav.Sink(frames)).
     Run(ctx)
 ```
 

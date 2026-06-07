@@ -16,10 +16,6 @@ func PacketTap(name string) TapRef {
 	return TapRef{name: name, domain: DomainPacket}
 }
 
-func namedTap(name string) TapRef {
-	return TapRef{name: name}
-}
-
 func (t TapRef) Name() string {
 	return t.name
 }
@@ -45,7 +41,6 @@ func validateTapDomain(operation string, node string, tap TapRef, actual MediaDo
 		Suggestions: []string{
 			"use goav.FrameTap(name) after decode, resize, resample, or custom frame stages",
 			"use goav.PacketTap(name) after .Copy() or an encoder",
-			"use .TapName(name) only when intentionally deferring tap-domain checks",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -59,7 +54,6 @@ func branchSourceInvalidError(node string) error {
 		Reason:    "branch source must be a typed tap or expert graph node name",
 		Suggestions: []string{
 			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for tap branches",
-			"use .FromTap(name) for compatibility with string tap names",
 			"use .From(\"node\") only for expert graph-node attachments",
 		},
 		Cause: ErrUnsupportedBuild,

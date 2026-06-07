@@ -1,5 +1,5 @@
 // Package goav exposes the top-level runtime contracts for composing media
-// inputs, codecs, streams, branches, targets, and endpoints.
+// inputs, codecs, streams, branches, taps, targets, and tasks.
 package goav
 
 import (
@@ -66,7 +66,7 @@ type Runtime interface {
 }
 
 // GraphBuilder is the handle-based expert graph layer. Most applications should
-// start with From and compose streams, branches, taps, targets, and endpoints.
+// start with From and compose streams, branches, taps, targets, and tasks.
 type GraphBuilder interface {
 	Source(string, pipeline.Source) GraphNode
 	Stage(string, pipeline.Stage) GraphNode
