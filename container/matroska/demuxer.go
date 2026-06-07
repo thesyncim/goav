@@ -47,6 +47,11 @@ type Demuxer struct {
 	laceContent       blockContentEncodingInfo
 	laceTimeNS        int64
 	laceDurationNS    int64
+	laceReferences    []int64
+	lacePriority      uint64
+	laceDiscardPadNS  int64
+	laceCodecState    []byte
+	laceAdditions     []BlockAddition
 	laceFrameCount    int
 	laceFrameIndex    int
 	laceKeyframe      bool
@@ -3048,10 +3053,15 @@ func scaleReferenceBlockTimeNS(ticks int64, scaleNS int64) (int64, error) {
 	return ticks * scaleNS, nil
 }
 
-func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
+func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 	if header.Size.Unknown {
 		return ErrInvalidData
 	}
+	defer func() {
+		if err != nil && !errors.Is(err, ErrPayloadTooSmall) {
+			d.clearLace()
+		}
+	}()
 	dst.Reset()
 	d.groupLimit.R = d.reader
 	d.groupLimit.N = int64(header.Size.Value)
@@ -3155,11 +3165,33 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 	dst.Keyframe = !referenceSeen
 	if d.laceFrameCount > 0 {
 		d.laceKeyframe = !referenceSeen
+		d.captureLaceGroupMetadata(dst)
 	}
 	if payloadErr != nil {
 		return payloadErr
 	}
 	return nil
+}
+
+func (d *Demuxer) captureLaceGroupMetadata(src *Packet) {
+	d.laceReferences = append(d.laceReferences[:0], src.ReferenceBlockTimeNS...)
+	d.lacePriority = src.ReferencePriority
+	d.laceDiscardPadNS = src.DiscardPaddingNS
+	d.laceCodecState = append(d.laceCodecState[:0], src.CodecState...)
+	d.laceAdditions = clonePacketBlockAdditions(d.laceAdditions, src.BlockAdditions)
+}
+
+func clonePacketBlockAdditions(dst []BlockAddition, src []BlockAddition) []BlockAddition {
+	if len(src) == 0 {
+		return dst[:0]
+	}
+	dst = append(dst[:0], src...)
+	for i := range src {
+		if src[i].Data != nil {
+			dst[i].Data = append([]byte(nil), src[i].Data...)
+		}
+	}
+	return dst
 }
 
 func (d *Demuxer) parseBlockAdditions(parent *ebml.Reader, header ebml.Header) ([]BlockAddition, error) {
@@ -3833,11 +3865,26 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 	dst.Keyframe = d.laceKeyframe
 	dst.Invisible = d.laceInvisible
 	dst.Discardable = d.laceDiscardable
+	d.applyLaceGroupMetadata(dst)
 	d.laceFrameIndex++
 	if d.laceFrameIndex >= d.laceFrameCount {
 		d.clearLace()
 	}
 	return nil
+}
+
+func (d *Demuxer) applyLaceGroupMetadata(dst *Packet) {
+	if len(d.laceReferences) != 0 {
+		dst.ReferenceBlockTimeNS = append(dst.ReferenceBlockTimeNS, d.laceReferences...)
+	}
+	dst.ReferencePriority = d.lacePriority
+	dst.DiscardPaddingNS = d.laceDiscardPadNS
+	if len(d.laceCodecState) != 0 {
+		dst.CodecState = append(dst.CodecState, d.laceCodecState...)
+	}
+	if len(d.laceAdditions) != 0 {
+		dst.BlockAdditions = clonePacketBlockAdditions(dst.BlockAdditions, d.laceAdditions)
+	}
 }
 
 func (d *Demuxer) finishLacedCodecPayload(dst *Packet) error {
@@ -3860,6 +3907,11 @@ func (d *Demuxer) clearLace() {
 	d.laceContent = blockContentEncodingInfo{}
 	d.laceTimeNS = 0
 	d.laceDurationNS = 0
+	d.laceReferences = d.laceReferences[:0]
+	d.lacePriority = 0
+	d.laceDiscardPadNS = 0
+	d.laceCodecState = d.laceCodecState[:0]
+	d.laceAdditions = d.laceAdditions[:0]
 	d.laceFrameCount = 0
 	d.laceFrameIndex = 0
 	d.laceKeyframe = false

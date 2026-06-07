@@ -297,8 +297,11 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	return nil
 }
 
-// WriteLacedPacket writes multiple frames for one track into one SimpleBlock.
-// For timestamp-accurate demuxing, the track should declare DefaultDurationNS.
+// WriteLacedPacket writes multiple frames for one track into one laced block.
+// It uses SimpleBlock unless BlockGroup-only metadata is present.
+// For timestamp-accurate SimpleBlock demuxing, the track should declare
+// DefaultDurationNS. When FrameDurationNS is set, a BlockGroup is written and
+// the demuxer returns that per-frame duration for each laced frame.
 func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 	if m == nil || m.writer == nil {
 		return ErrNilWriter
@@ -314,10 +317,32 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 	if packet.TimeNS < 0 {
 		return ErrInvalidData
 	}
+	if packet.FrameDurationNS < 0 ||
+		(packet.FrameDurationNS > 0 && len(packet.Frames) > 0 &&
+			int64(len(packet.Frames)) > math.MaxInt64/packet.FrameDurationNS) {
+		return ErrInvalidData
+	}
+	if packet.Keyframe && len(packet.ReferenceBlockTimeNS) != 0 {
+		return ErrInvalidData
+	}
+	if err := validateReferenceBlockTimes(packet.ReferenceBlockTimeNS, m.options.TimecodeScaleNS); err != nil {
+		return err
+	}
+	maxAdditionID, err := validateBlockAdditions(packet.BlockAdditions)
+	if err != nil {
+		return err
+	}
+	if packet.Discardable && lacedPacketNeedsBlockGroup(packet) {
+		return ErrInvalidData
+	}
 	if track.FlagLacingSet && !track.FlagLacing {
 		return ErrInvalidTrack
 	}
 	if !m.headerWritten {
+		if maxAdditionID > track.MaxBlockAdditionID {
+			track.MaxBlockAdditionID = maxAdditionID
+			m.tracks[trackIndex].MaxBlockAdditionID = maxAdditionID
+		}
 		var err error
 		track, err = m.prepareTracksForHeader(trackIndex, packet.Frames)
 		if err != nil {
@@ -325,6 +350,8 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 		}
 	} else if codecRequiresPrivateForHeader(track.Codec) && len(track.CodecPrivate) == 0 {
 		return ErrInvalidTrack
+	} else if maxAdditionID > track.MaxBlockAdditionID {
+		return ErrInvalidData
 	}
 	if blockPayloadsNeedSizing(track) {
 		return m.writeSizedLacedPacket(packet, track)
@@ -383,7 +410,11 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 	}
 	relativePosition := m.relativeClusterPosition()
 	blockNumber := m.clusterBlock + 1
-	if err := m.writeLacedBlock(packet, int16(delta), lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
+	if lacedPacketNeedsBlockGroup(packet) {
+		if err := m.writeLacedBlockGroup(packet, int16(delta), lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
+			return err
+		}
+	} else if err := m.writeLacedBlock(idSimpleBlock, packet, int16(delta), lacedSimpleBlockFlags(packet), lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
 		return err
 	}
 	m.clusterBlock = blockNumber
@@ -1682,6 +1713,140 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 	return nil
 }
 
+func (m *Muxer) writeLacedBlockGroup(packet LacedPacket, blockTimecode int16, lacing byte, payloadSize uint64, track Track, muxedFrameSizes []int, muxedPayload []byte) error {
+	durationTicks, err := scaledLacedBlockDurationTicks(packet.FrameDurationNS, len(packet.Frames), m.options.TimecodeScaleNS)
+	if err != nil {
+		return err
+	}
+	groupSize, err := lacedBlockGroupSize(packet, durationTicks, payloadSize, m.options.TimecodeScaleNS)
+	if err != nil {
+		return err
+	}
+	if err := m.ebml.WriteHeader(idBlockGroup, groupSize); err != nil {
+		return err
+	}
+	if err := m.writeLacedBlock(idBlock, packet, blockTimecode, lacedBlockGroupFlags(packet), lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
+		return err
+	}
+	if len(packet.BlockAdditions) != 0 {
+		if err := writeBlockAdditions(m.ebml, packet.BlockAdditions); err != nil {
+			return err
+		}
+	}
+	if durationTicks != 0 {
+		if err := m.ebml.WriteUInt(idBlockDuration, durationTicks); err != nil {
+			return err
+		}
+	}
+	if packet.ReferencePriority != 0 {
+		if err := m.ebml.WriteUInt(idReferencePriority, packet.ReferencePriority); err != nil {
+			return err
+		}
+	}
+	if durationTicks != 0 && !packet.Keyframe && len(packet.ReferenceBlockTimeNS) == 0 {
+		if err := m.ebml.WriteInt(idReferenceBlk, 0); err != nil {
+			return err
+		}
+	}
+	for i := range packet.ReferenceBlockTimeNS {
+		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS)
+		if err := m.ebml.WriteInt(idReferenceBlk, ticks); err != nil {
+			return err
+		}
+	}
+	if len(packet.CodecState) != 0 {
+		if err := writeBinary(m.ebml, idCodecState, packet.CodecState); err != nil {
+			return err
+		}
+	}
+	if packet.DiscardPaddingNS != 0 {
+		if err := m.ebml.WriteInt(idDiscardPad, packet.DiscardPaddingNS); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func lacedBlockGroupSize(packet LacedPacket, durationTicks uint64, lacedBlockPayloadSize uint64, scaleNS int64) (uint64, error) {
+	blockHeaderSize, err := elementEncodedSize(idBlock, lacedBlockPayloadSize)
+	if err != nil {
+		return 0, err
+	}
+	groupSize := blockHeaderSize + lacedBlockPayloadSize
+	if len(packet.BlockAdditions) != 0 {
+		additionsSize, err := blockAdditionsElementEncodedSize(packet.BlockAdditions)
+		if err != nil {
+			return 0, err
+		}
+		groupSize, err = checkedAddUint64(groupSize, additionsSize)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if durationTicks != 0 {
+		durationElementSize, err := uintElementEncodedSize(idBlockDuration, durationTicks)
+		if err != nil {
+			return 0, err
+		}
+		groupSize, err = checkedAddUint64(groupSize, durationElementSize)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if packet.ReferencePriority != 0 {
+		prioritySize, err := uintElementEncodedSize(idReferencePriority, packet.ReferencePriority)
+		if err != nil {
+			return 0, err
+		}
+		groupSize, err = checkedAddUint64(groupSize, prioritySize)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if durationTicks != 0 && !packet.Keyframe && len(packet.ReferenceBlockTimeNS) == 0 {
+		referenceSize, err := intElementEncodedSize(idReferenceBlk, 0)
+		if err != nil {
+			return 0, err
+		}
+		groupSize, err = checkedAddUint64(groupSize, referenceSize)
+		if err != nil {
+			return 0, err
+		}
+	}
+	for i := range packet.ReferenceBlockTimeNS {
+		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], scaleNS)
+		referenceSize, err := intElementEncodedSize(idReferenceBlk, ticks)
+		if err != nil {
+			return 0, err
+		}
+		groupSize, err = checkedAddUint64(groupSize, referenceSize)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if len(packet.CodecState) != 0 {
+		stateSize, err := binaryElementEncodedSize(idCodecState, packet.CodecState)
+		if err != nil {
+			return 0, err
+		}
+		groupSize, err = checkedAddUint64(groupSize, stateSize)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if packet.DiscardPaddingNS != 0 {
+		paddingSize, err := intElementEncodedSize(idDiscardPad, packet.DiscardPaddingNS)
+		if err != nil {
+			return 0, err
+		}
+		groupSize, err = checkedAddUint64(groupSize, paddingSize)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return groupSize, nil
+}
+
 func writeBlockAdditions(w *ebml.Writer, additions []BlockAddition) error {
 	payloadSize := uint64(0)
 	for i := range additions {
@@ -1819,8 +1984,8 @@ func (m *Muxer) writeBlockData(track Track, data []byte) error {
 	return err
 }
 
-func (m *Muxer) writeLacedBlock(packet LacedPacket, blockTimecode int16, lacing byte, payloadSize uint64, track Track, muxedFrameSizes []int, muxedPayload []byte) error {
-	if err := m.ebml.WriteHeader(idSimpleBlock, payloadSize); err != nil {
+func (m *Muxer) writeLacedBlock(id ebml.ID, packet LacedPacket, blockTimecode int16, flags byte, lacing byte, payloadSize uint64, track Track, muxedFrameSizes []int, muxedPayload []byte) error {
+	if err := m.ebml.WriteHeader(id, payloadSize); err != nil {
 		return err
 	}
 	n, err := ebml.EncodeUnsignedVINT(m.blockScratch[:], uint64(packet.TrackID))
@@ -1828,7 +1993,7 @@ func (m *Muxer) writeLacedBlock(packet LacedPacket, blockTimecode int16, lacing 
 		return err
 	}
 	binary.BigEndian.PutUint16(m.blockScratch[n:n+2], uint16(blockTimecode))
-	m.blockScratch[n+2] = lacedBlockFlags(packet) | lacing
+	m.blockScratch[n+2] = flags | lacing
 	if _, err := m.ebml.Write(m.blockScratch[:n+3]); err != nil {
 		return err
 	}
@@ -1931,7 +2096,7 @@ func simpleBlockFlags(packet Packet) byte {
 	return flags
 }
 
-func lacedBlockFlags(packet LacedPacket) byte {
+func lacedSimpleBlockFlags(packet LacedPacket) byte {
 	flags := byte(0)
 	if packet.Keyframe {
 		flags |= simpleBlockKeyframe
@@ -1943,6 +2108,13 @@ func lacedBlockFlags(packet LacedPacket) byte {
 		flags |= simpleBlockDiscardable
 	}
 	return flags
+}
+
+func lacedBlockGroupFlags(packet LacedPacket) byte {
+	if packet.Invisible {
+		return simpleBlockInvisible
+	}
+	return 0
 }
 
 func blockFlags(packet Packet) byte {
@@ -1961,6 +2133,20 @@ func scaledDurationTicks(durationNS int64, scaleNS int64) uint64 {
 		value++
 	}
 	return uint64(value)
+}
+
+func scaledLacedBlockDurationTicks(frameDurationNS int64, frameCount int, scaleNS int64) (uint64, error) {
+	if frameDurationNS <= 0 {
+		return 0, nil
+	}
+	if frameCount <= 0 || scaleNS <= 0 {
+		return 0, ErrInvalidData
+	}
+	frameTicks := scaledDurationTicks(frameDurationNS, scaleNS)
+	if frameTicks > math.MaxUint64/uint64(frameCount) {
+		return 0, ErrInvalidData
+	}
+	return frameTicks * uint64(frameCount), nil
 }
 
 func validateReferenceBlockTimes(references []int64, scaleNS int64) error {
@@ -2081,7 +2267,10 @@ func framePayloadSize(frames [][]byte, sizes []int, index int) int {
 
 func (m *Muxer) lacedPacketEndTime(packet LacedPacket) (int64, error) {
 	end := packet.TimeNS
-	durationNS := m.defaultDurationNS(packet.TrackID)
+	durationNS := packet.FrameDurationNS
+	if durationNS <= 0 {
+		durationNS = m.defaultDurationNS(packet.TrackID)
+	}
 	if durationNS <= 0 {
 		return end, nil
 	}
@@ -2093,6 +2282,15 @@ func (m *Muxer) lacedPacketEndTime(packet LacedPacket) (int64, error) {
 		return 0, ErrInvalidData
 	}
 	return packet.TimeNS + totalDuration, nil
+}
+
+func lacedPacketNeedsBlockGroup(packet LacedPacket) bool {
+	return packet.FrameDurationNS > 0 ||
+		len(packet.ReferenceBlockTimeNS) != 0 ||
+		packet.ReferencePriority != 0 ||
+		packet.DiscardPaddingNS != 0 ||
+		len(packet.CodecState) != 0 ||
+		len(packet.BlockAdditions) != 0
 }
 
 func blockPayloadFrameSizes(frames [][]byte, track Track, sizes []int) error {

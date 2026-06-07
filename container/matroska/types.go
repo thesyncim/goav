@@ -283,15 +283,22 @@ const (
 )
 
 // LacedPacket writes multiple frames for one track into a single laced block.
-// Frame timestamps are derived by demuxers from the track default duration.
+// Frame timestamps are derived by demuxers from FrameDurationNS when set, or
+// from the track default duration otherwise.
 type LacedPacket struct {
-	TrackID     uint32
-	TimeNS      int64
-	Keyframe    bool
-	Invisible   bool
-	Discardable bool
-	Lacing      LacingMode
-	Frames      [][]byte
+	TrackID              uint32
+	TimeNS               int64
+	FrameDurationNS      int64
+	ReferenceBlockTimeNS []int64
+	ReferencePriority    uint64
+	DiscardPaddingNS     int64
+	CodecState           []byte
+	BlockAdditions       []BlockAddition
+	Keyframe             bool
+	Invisible            bool
+	Discardable          bool
+	Lacing               LacingMode
+	Frames               [][]byte
 }
 
 type CuePoint struct {

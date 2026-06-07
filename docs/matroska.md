@@ -62,10 +62,12 @@ Current milestone:
   when present to position directly on the cued block.
 - Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
   a requested timestamp.
-- BlockGroup reading and writing for single-frame blocks with BlockDuration;
-  packets may carry one or more `ReferenceBlock` offsets, and non-keyframe
-  duration BlockGroups use `ReferenceBlock=0` when exact dependency
-  information is not available.
+- BlockGroup reading and writing for single-frame and laced blocks with
+  BlockDuration; packets may carry one or more `ReferenceBlock` offsets,
+  reference priority, codec state, discard padding, and block additions.
+  Laced BlockGroup demuxing preserves that group metadata on every emitted
+  frame. Non-keyframe duration BlockGroups use `ReferenceBlock=0` when exact
+  dependency information is not available.
 - Xiph, fixed-size, and EBML laced block muxing and demuxing with bounded
   scratch buffers.
 - Matroska mux/demux for Opus, PCMU, PCMA, VP8, VP9, AV1, H.264, and H.265
@@ -149,6 +151,11 @@ observed packet end time expressed in those same timestamp-scale ticks.
 When `ReferenceBlockTimeNS` is set, the muxer writes one `ReferenceBlock`
 element per offset. Offsets are signed nanosecond values relative to the packet
 timestamp and are stored in timestamp-scale ticks.
+`WriteLacedPacket` writes a SimpleBlock by default. When `FrameDurationNS`,
+references, reference priority, codec state, discard padding, or block
+additions are set, it writes a laced BlockGroup. `FrameDurationNS` is per
+emitted frame; the stored BlockDuration is the total laced block duration so
+demuxing returns the same per-frame duration.
 Negative packet durations and packet end times that overflow `int64` are
 rejected before bytes are written.
 Seekable mode also writes Cues for keyframe packets using Segment-relative
@@ -261,5 +268,5 @@ Committed benchmarks cover:
   --summary`, and `mkvmerge` copy/remux on the same input files.
 
 Future benchmarks should add large-file scan speed on real WebRTC recordings,
-more lacing variants, and comparisons against other Go EBML/Matroska libraries
-on the same corpus.
+encrypted laced-block cases, and comparisons against other Go EBML/Matroska
+libraries on the same corpus.

@@ -6487,6 +6487,106 @@ func TestMuxerWritesLacedSimpleBlocks(t *testing.T) {
 	}
 }
 
+func TestDemuxerPreservesLacedBlockGroupMetadataAcrossFrames(t *testing.T) {
+	frames := [][]byte{{1, 2}, {3}, {4, 5, 6}}
+	data := makeLacedBlockGroupMatroskaData(t, simpleBlockLacingEBML, frames)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAdditions := []BlockAddition{{ID: 2, Data: []byte{0xaa, 0xbb}}}
+	packet := Packet{
+		Data:                 make([]byte, 0, 16),
+		ReferenceBlockTimeNS: make([]int64, 0, 1),
+		CodecState:           make([]byte, 0, 4),
+		BlockAdditions:       make([]BlockAddition, 0, 1),
+	}
+	for i := range frames {
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatalf("read frame %d: %v", i, err)
+		}
+		if packet.TrackID != 1 || packet.TimeNS != int64(i)*20_000_000 ||
+			packet.DurationNS != 20_000_000 || packet.Keyframe || !packet.Invisible ||
+			packet.ReferencePriority != 2 || packet.DiscardPaddingNS != -3_000_000 ||
+			!equalInt64s(packet.ReferenceBlockTimeNS, []int64{-20_000_000}) ||
+			!bytes.Equal(packet.CodecState, []byte{0xcc, 0xdd}) ||
+			!equalBlockAdditions(packet.BlockAdditions, wantAdditions) ||
+			!bytes.Equal(packet.Data, frames[i]) {
+			t.Fatalf("frame %d packet=%+v data=%v", i, packet, packet.Data)
+		}
+		if i == 0 {
+			packet.ReferenceBlockTimeNS[0] = 0
+			packet.CodecState[0] = 0
+			packet.BlockAdditions[0].Data[0] = 0
+		}
+	}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
+func TestMuxerWritesLacedBlockGroupsWithExtras(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{TimecodeScaleNS: 1_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := [][]byte{{0x10}, {0x20, 0x21}, {0x30}}
+	packet := LacedPacket{
+		TrackID:              trackID,
+		TimeNS:               40_000_000,
+		FrameDurationNS:      20_000_000,
+		ReferenceBlockTimeNS: []int64{-20_000_000},
+		ReferencePriority:    3,
+		DiscardPaddingNS:     -2_000_000,
+		CodecState:           []byte{0x99, 0x98},
+		BlockAdditions:       []BlockAddition{{ID: 2, Data: []byte{0x88}}},
+		Invisible:            true,
+		Lacing:               LacingAuto,
+		Frames:               frames,
+	}
+	if err := muxer.WriteLacedPacket(packet); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{
+		Data:                 make([]byte, 0, 16),
+		ReferenceBlockTimeNS: make([]int64, 0, 1),
+		CodecState:           make([]byte, 0, 2),
+		BlockAdditions:       make([]BlockAddition, 0, 1),
+	}
+	for i := range frames {
+		if err := demuxer.ReadPacket(&got); err != nil {
+			t.Fatalf("read frame %d: %v", i, err)
+		}
+		if got.TrackID != trackID || got.TimeNS != packet.TimeNS+int64(i)*packet.FrameDurationNS ||
+			got.DurationNS != packet.FrameDurationNS || got.Keyframe || !got.Invisible ||
+			got.ReferencePriority != packet.ReferencePriority ||
+			got.DiscardPaddingNS != packet.DiscardPaddingNS ||
+			!equalInt64s(got.ReferenceBlockTimeNS, packet.ReferenceBlockTimeNS) ||
+			!bytes.Equal(got.CodecState, packet.CodecState) ||
+			!equalBlockAdditions(got.BlockAdditions, packet.BlockAdditions) ||
+			!bytes.Equal(got.Data, frames[i]) {
+			t.Fatalf("frame %d packet=%+v data=%v", i, got, got.Data)
+		}
+	}
+}
+
 func TestMuxerRejectsInvalidLacedPackets(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -6549,6 +6649,26 @@ func TestMuxerRejectsInvalidLacedPackets(t *testing.T) {
 				Frames:  [][]byte{{1}, {2}},
 			},
 			want: ErrUnsupportedLacing,
+		},
+		{
+			name: "keyframe with references",
+			packet: LacedPacket{
+				TrackID:              trackID,
+				Keyframe:             true,
+				ReferenceBlockTimeNS: []int64{-20_000_000},
+				Frames:               [][]byte{{1}, {2}},
+			},
+			want: ErrInvalidData,
+		},
+		{
+			name: "discardable block group",
+			packet: LacedPacket{
+				TrackID:         trackID,
+				FrameDurationNS: 20_000_000,
+				Discardable:     true,
+				Frames:          [][]byte{{1}, {2}},
+			},
+			want: ErrInvalidData,
 		},
 	}
 	for _, tt := range tests {
@@ -8795,6 +8915,60 @@ func makeLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, defaultD
 	return buffer.Bytes()
 }
 
+func makeLacedBlockGroupMatroskaData(tb testing.TB, lacing byte, frames [][]byte) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{TimecodeScaleNS: 1_000_000})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:               TrackVideo,
+		Codec:              CodecVP8,
+		MaxBlockAdditionID: 2,
+		Video:              VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.writeHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		tb.Fatal(err)
+	}
+	var group bytes.Buffer
+	writer := ebml.NewWriter(&group)
+	if err := writeLacedBlockElement(writer, idBlock, trackID, simpleBlockInvisible|lacing, frames); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeBlockAdditions(writer, []BlockAddition{{ID: 2, Data: []byte{0xaa, 0xbb}}}); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idBlockDuration, 60); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUInt(idReferencePriority, 2); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteInt(idReferenceBlk, -20); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeBinary(writer, idCodecState, []byte{0xcc, 0xdd}); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteInt(idDiscardPad, -3_000_000); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.ebml.WriteElement(idBlockGroup, group.Bytes()); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
 func makeTrackNumberMatroskaData(tb testing.TB, trackNumber uint64) []byte {
 	tb.Helper()
 	var buffer bytes.Buffer
@@ -10351,6 +10525,10 @@ func blockPayloadWithTrackNumber(trackNumber uint64, flags byte, frame []byte) (
 }
 
 func writeLacedSimpleBlock(writer *ebml.Writer, trackID uint32, lacing byte, frames [][]byte) error {
+	return writeLacedBlockElement(writer, idSimpleBlock, trackID, simpleBlockKeyframe|lacing, frames)
+}
+
+func writeLacedBlockElement(writer *ebml.Writer, id ebml.ID, trackID uint32, flags byte, frames [][]byte) error {
 	var payload bytes.Buffer
 	var scratch [ebml.MaxSizeWidth]byte
 	n, err := ebml.EncodeUnsignedVINT(scratch[:], uint64(trackID))
@@ -10360,12 +10538,13 @@ func writeLacedSimpleBlock(writer *ebml.Writer, trackID uint32, lacing byte, fra
 	payload.Write(scratch[:n])
 	var blockHeader [3]byte
 	binary.BigEndian.PutUint16(blockHeader[:2], 0)
-	blockHeader[2] = simpleBlockKeyframe | lacing
+	blockHeader[2] = flags
 	payload.Write(blockHeader[:])
 	if len(frames) < 2 || len(frames) > 256 {
 		return ErrInvalidData
 	}
 	payload.WriteByte(byte(len(frames) - 1))
+	lacing := flags & simpleBlockLacingMask
 	switch lacing {
 	case simpleBlockLacingXiph:
 		for i := 0; i < len(frames)-1; i++ {
@@ -10407,7 +10586,7 @@ func writeLacedSimpleBlock(writer *ebml.Writer, trackID uint32, lacing byte, fra
 	for i := range frames {
 		payload.Write(frames[i])
 	}
-	return writer.WriteElement(idSimpleBlock, payload.Bytes())
+	return writer.WriteElement(id, payload.Bytes())
 }
 
 func encodeSignedLaceVINT(dst []byte, value int64) (int, error) {
