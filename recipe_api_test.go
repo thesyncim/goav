@@ -270,6 +270,15 @@ func branchByName(branches []goav.BranchReport, name string) (goav.BranchReport,
 	return goav.BranchReport{}, false
 }
 
+func tapReportByName(taps []goav.TapReport, name string) (goav.TapReport, bool) {
+	for i := range taps {
+		if taps[i].Name == name {
+			return taps[i], true
+		}
+	}
+	return goav.TapReport{}, false
+}
+
 func recordJob(input goav.InputSpec, outputs ...goav.EndpointSpec) *goav.Job {
 	return goav.From(input).Copy().To(outputs...)
 }
@@ -609,6 +618,112 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 	}
 	if len(report.Decisions) < 4 {
 		t.Fatalf("decisions=%+v, want decode and encode decisions per branch", report.Decisions)
+	}
+}
+
+func TestExplainReportsBranchCapsFromProbedInput(t *testing.T) {
+	rt := goav.New(
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
+				Index: 0,
+				ID:    "audio",
+				Type:  av.MediaAudio,
+				Codec: av.CodecParameters{
+					ID:           av.CodecOpus,
+					Type:         av.MediaAudio,
+					SampleRate:   48000,
+					Channels:     goav.Stereo,
+					SampleFormat: av.SampleFormatS16,
+				},
+			}}})
+			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
+		}),
+		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
+		}),
+	)
+
+	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Explain(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch, ok := branchByName(report.Branches, "audio")
+	if !ok {
+		t.Fatalf("branches=%+v, want audio", report.Branches)
+	}
+	if branch.Caps.Domain != goav.DomainPacket ||
+		branch.Caps.MediaKind != av.MediaAudio ||
+		branch.Caps.StreamID != "audio" ||
+		branch.Caps.Codec != av.CodecOpus ||
+		branch.Caps.SampleRate != 48000 ||
+		branch.Caps.Channels != goav.Stereo ||
+		branch.Caps.SampleFormat != av.SampleFormatS16 {
+		t.Fatalf("branch caps=%+v, want probed audio packet caps", branch.Caps)
+	}
+	tap, ok := tapReportByName(report.Taps, "audio.decoded")
+	if !ok {
+		t.Fatalf("taps=%+v, want audio.decoded", report.Taps)
+	}
+	if tap.Caps.Domain != goav.DomainFrame ||
+		tap.Caps.MediaKind != av.MediaAudio ||
+		tap.Caps.StreamID != "audio" ||
+		tap.Caps.Codec != av.CodecOpus ||
+		tap.Caps.SampleRate != 48000 ||
+		tap.Caps.Channels != goav.Stereo ||
+		tap.Caps.SampleFormat != av.SampleFormatS16 {
+		t.Fatalf("tap caps=%+v, want decoded audio frame caps", tap.Caps)
+	}
+}
+
+func TestExplainReportsBranchCapsFromLiveCodecIntent(t *testing.T) {
+	rt := goav.New(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
+	}))
+
+	report, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.Opus())).
+		UseRuntime(rt).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Explain(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch, ok := branchByName(report.Branches, "audio")
+	if !ok {
+		t.Fatalf("branches=%+v, want audio", report.Branches)
+	}
+	if branch.Caps.Domain != goav.DomainPacket ||
+		branch.Caps.MediaKind != av.MediaAudio ||
+		branch.Caps.StreamID != "audio" ||
+		branch.Caps.Codec != av.CodecOpus ||
+		branch.Caps.SampleRate != 48000 ||
+		branch.Caps.Channels != goav.Stereo ||
+		!branch.Caps.Realtime {
+		t.Fatalf("branch caps=%+v, want live Opus packet caps", branch.Caps)
+	}
+	tap, ok := tapReportByName(report.Taps, "audio.decoded")
+	if !ok {
+		t.Fatalf("taps=%+v, want audio.decoded", report.Taps)
+	}
+	if tap.Caps.Domain != goav.DomainFrame ||
+		tap.Caps.MediaKind != av.MediaAudio ||
+		tap.Caps.Codec != av.CodecOpus ||
+		tap.Caps.SampleRate != 48000 ||
+		tap.Caps.Channels != goav.Stereo ||
+		!tap.Caps.Realtime {
+		t.Fatalf("tap caps=%+v, want live decoded audio frame caps", tap.Caps)
 	}
 }
 

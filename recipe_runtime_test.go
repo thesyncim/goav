@@ -1600,8 +1600,14 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 			break
 		}
 	}
-	if resizeTap.Name == "" || resizeTap.Domain != DomainFrame || resizeTap.MediaKind != av.MediaVideo || resizeTap.Node == "" {
-		t.Fatalf("resize tap = %+v, want frame video tap with graph node", resizeTap)
+	if resizeTap.Name == "" ||
+		resizeTap.Domain != DomainFrame ||
+		resizeTap.MediaKind != av.MediaVideo ||
+		resizeTap.Caps.Width != 1280 ||
+		resizeTap.Caps.Height != 720 ||
+		resizeTap.Caps.PixelFormat != av.PixelFormatYUV420P ||
+		resizeTap.Node == "" {
+		t.Fatalf("resize tap = %+v, want frame video 1280x720 tap with graph node", resizeTap)
 	}
 
 	attachment, err := task.Attach(ctx, Branch("screenshots").

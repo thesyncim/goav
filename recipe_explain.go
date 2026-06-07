@@ -71,6 +71,7 @@ type BranchReport struct {
 	Name       string
 	Input      string
 	Stream     StreamSelect
+	Caps       StreamCaps
 	Operations []OperationReport
 	Targets    []string
 }
@@ -281,6 +282,7 @@ func explainBranches(branches []planBranch) []BranchReport {
 			Name:       branch.Name,
 			Input:      branch.Input,
 			Stream:     branch.Stream,
+			Caps:       branch.Caps,
 			Operations: explainOperations(branch.Operations),
 			Targets:    append([]string(nil), branch.Outputs...),
 		})

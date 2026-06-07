@@ -53,7 +53,11 @@ writers, sinks, and stages through validation, media-plan creation, planner
 lowering, and planned-spec emission. Branches carry ordered stage, transform, tap,
 and encode operations and can start after earlier stream operations such as
 decode, resize, resample, custom stages, and taps. `Job.Explain(ctx)` reports the
-`MediaPlan` branch operations, taps, decisions, and adapter capability details.
+`MediaPlan` branch operations, resolved branch stream caps, taps, decisions, and
+adapter capability details. Planned taps inherit stream caps from probe/live
+metadata and update them through transforms, so runtime branches attached from
+those taps start with useful width/height, sample-rate, channel, and
+sample/pixel-format context.
 Codec descriptors describe encode/decode media and frame-format constraints,
 filter descriptors describe transform media constraints, and format descriptors
 describe target container media, codec, and stream-count constraints so adapter
