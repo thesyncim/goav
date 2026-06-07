@@ -103,7 +103,7 @@ type runtime struct {
 type builderAPI interface {
 	Input(format.Input) builderAPI
 	RTP(rtpav.PacketReader, ...rtpOption) builderAPI
-	Output(format.Output) builderAPI
+	Mux(format.Output) builderAPI
 	Decode(av.StreamSelector) builderAPI
 	Encode(av.StreamSelector, codec.EncodeConfig) builderAPI
 	Filter(av.StreamSelector, pipeline.Stage) builderAPI
@@ -199,7 +199,7 @@ func (b *builder) RTP(receiver rtpav.PacketReader, options ...rtpOption) builder
 	return b
 }
 
-func (b *builder) Output(output format.Output) builderAPI {
+func (b *builder) Mux(output format.Output) builderAPI {
 	return b.outputWithFormats(output, "", "")
 }
 

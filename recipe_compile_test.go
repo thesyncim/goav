@@ -23,7 +23,7 @@ func (b noCapabilityBuilder) Input(format.Input) builderAPI { return b }
 
 func (b noCapabilityBuilder) RTP(rtpav.PacketReader, ...rtpOption) builderAPI { return b }
 
-func (b noCapabilityBuilder) Output(format.Output) builderAPI { return b }
+func (b noCapabilityBuilder) Mux(format.Output) builderAPI { return b }
 
 func (b noCapabilityBuilder) Decode(av.StreamSelector) builderAPI { return b }
 
@@ -44,6 +44,16 @@ func (b noCapabilityBuilder) Routes(...pipeline.Route) builderAPI { return b }
 func (b noCapabilityBuilder) Describe() (pipeline.Spec, error) { return pipeline.Spec{}, nil }
 
 func (b noCapabilityBuilder) Build(context.Context) (Task, error) { return nil, ErrUnsupportedBuild }
+
+func TestRuntimeBuilderUsesMuxVerbNotOutput(t *testing.T) {
+	builder := reflect.TypeOf((*builderAPI)(nil)).Elem()
+	if _, ok := builder.MethodByName("Output"); ok {
+		t.Fatal("private runtime builder should not expose Output; use Mux for mux endpoints")
+	}
+	if _, ok := builder.MethodByName("Mux"); !ok {
+		t.Fatal("private runtime builder should expose Mux for mux endpoints")
+	}
+}
 
 func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 	stateType := reflect.TypeOf(recipeCompileState{})

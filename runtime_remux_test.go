@@ -120,8 +120,8 @@ func (m *remuxTestMuxer) Close() error {
 func TestRuntimeBuilderDescribeRemux(t *testing.T) {
 	spec, err := newTestBuilder(t).
 		Input(format.Input{Name: "input.ogg"}).
-		Output(format.Output{Name: "archive.ogg"}).
-		Output(format.Output{Name: "preview.ogg"}).
+		Mux(format.Output{Name: "archive.ogg"}).
+		Mux(format.Output{Name: "preview.ogg"}).
 		Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -147,8 +147,8 @@ func TestRuntimeBuilderInputOutputRemux(t *testing.T) {
 
 	builder := newTestBuilder(t, formats).
 		Input(format.Input{Name: "input.ogg"}).
-		Output(format.Output{Name: "archive.ogg"}).
-		Output(format.Output{Name: "preview.ogg"})
+		Mux(format.Output{Name: "archive.ogg"}).
+		Mux(format.Output{Name: "preview.ogg"})
 	planned, err := builder.Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +200,7 @@ func TestRuntimeBuilderInputOutputRemux(t *testing.T) {
 func TestRuntimeBuilderReportsMissingInputDemuxer(t *testing.T) {
 	_, err := newTestBuilder(t).
 		Input(format.Input{Name: "input.ogg"}).
-		Output(format.Output{Name: "recording.ivf"}).
+		Mux(format.Output{Name: "recording.ivf"}).
 		Build(context.Background())
 
 	var buildErr *BuildError
@@ -221,7 +221,7 @@ func TestRuntimeBuilderReportsMissingOutputMuxer(t *testing.T) {
 		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
 	)).
 		Input(format.Input{Name: "input.ogg"}).
-		Output(format.Output{Name: "archive.webm"}).
+		Mux(format.Output{Name: "archive.webm"}).
 		Build(context.Background())
 
 	var buildErr *BuildError

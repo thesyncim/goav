@@ -1447,6 +1447,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     before graph mutation. `TestTaskAttachRuntimeBranchGroupSharesMuxTarget`
     pins the shared mux node, stream set, writes, stats, and detach cleanup.
     Done.
+308. Rename the private runtime mux builder verb:
+    the internal builder interface now uses `Mux(format.Output)`, and runtime
+    compiler tests use `Mux(...)` so the older output-group vocabulary does not
+    remain in private mux plumbing.
+    Public recipes stay on the cleaner `Target` plus endpoint model, while the
+    advanced graph escape hatch remains handle-based. `TestRuntimeBuilderUsesMuxVerbNotOutput`
+    pins the private builder contract.
+    Done.
 
 ## First Vertical Slice
 
