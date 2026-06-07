@@ -1123,6 +1123,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     the README now has test coverage that the reusable flow example contains
     exactly one `voice` branch and one `archive` branch, keeping the public docs
     aligned with the one-branch-name/one-target grammar. Done.
+271. Allow direct packet-domain fanout to mux and sink endpoints:
+    stream recipes now permit `.Copy().To(file, SinkEndpoint(...))` and
+    `.Opus(...).To(file, SinkEndpoint(...))` because both destinations receive
+    encoded packets. The media-plan encode path now plans and builds sink
+    endpoints beside mux endpoints after one encoder, while decoded frame-domain
+    sink+mux mixes still fail with the existing guidance. Runtime tests prove
+    both packet-copy and Opus-encode fanout write the mux and packet sink from
+    the same upstream packet path. Done.
 
 ## First Vertical Slice
 

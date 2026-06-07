@@ -157,6 +157,12 @@ func planEncodeEndpointPath(nodes map[string]plannedNode, spec *pipeline.Spec, u
 		Policy: pipeline.RouteAll,
 	})
 	for i := range outputs {
+		if outputs[i].sink != nil {
+			if err := planSinkPath(nodes, spec, encodeRef, outputs[i].sink); err != nil {
+				return err
+			}
+			continue
+		}
 		outputName := muxNodeName(outputs[i].output, i)
 		outputRef := pipeline.NodeRef(outputName)
 		if err := addPlannedNode(nodes, spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetailWithFormat(outputs[i].output, endpointSpecGraphFormat(outputs[i]))); err != nil {
@@ -365,6 +371,16 @@ func compileEncodeEndpointPath(ctx context.Context, runtime *runtime, graph pipe
 	streams := []av.Stream{stream}
 	service := &builder{runtime: runtime}
 	for i := range outputs {
+		if outputs[i].sink != nil {
+			sinkRef, err := graph.AddSink(outputs[i].sink, runtime.buffer)
+			if err != nil {
+				return err
+			}
+			if err := connectRefs(graph, encodeRef, sinkRef); err != nil {
+				return err
+			}
+			continue
+		}
 		muxStage, err := service.openMuxStageWithFormat(ctx, outputs[i].output, i, streams, endpointSpecOpenFormat(outputs[i]), endpointSpecGraphFormat(outputs[i]))
 		if err != nil {
 			return err

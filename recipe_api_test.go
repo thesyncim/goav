@@ -2514,25 +2514,43 @@ func TestStreamRecipeRejectsMixedSinkEndpointAndFileOutput(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeRejectsMixedEncodedOutputAndSinkEndpoint(t *testing.T) {
-	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+func TestStreamRecipeAllowsEncodedMuxAndSinkEndpoints(t *testing.T) {
+	rt := goav.New(
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
+				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
+			}})
+			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
+			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
+		}),
+		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
+			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIEncoderFactory{})
+		}),
+	)
+
+	spec, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
 		Audio().
 		Opus(96_000).
 		To(
 			goav.FileOutput("archive.ogg", io.Discard),
-			goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			goav.SinkEndpoint(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
 				return nil
 			})),
 		).
-		Build(context.Background())
-
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_kind_mixed wrapping ErrUnsupportedBuild", err)
+		Describe()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), ".To(goav.SinkEndpoint") ||
-		!strings.Contains(err.Error(), ".To(goav.FileOutput") {
-		t.Fatalf("err = %v, want decoded or encoded output guidance", err)
+	text := specText(spec)
+	for _, want := range []string{
+		"encode-audio -> archive.ogg",
+		"encode-audio -> packets",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec:\n%s\nwant %q", text, want)
+		}
 	}
 }
 

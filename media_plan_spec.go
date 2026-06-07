@@ -124,11 +124,6 @@ func mediaPlanEncodeShape(stream StreamIntent, outputs []EndpointSpec) bool {
 	if !stream.Decode || !codecIntentSet(stream.Encode) || stream.Encode.Copy || len(outputs) == 0 {
 		return false
 	}
-	for i := range outputs {
-		if outputs[i].sink != nil {
-			return false
-		}
-	}
 	return len(stream.Targets) == len(outputs)
 }
 

@@ -622,6 +622,61 @@ func TestStreamRecipeEncodeToSinkEndpointRuns(t *testing.T) {
 	}
 }
 
+func TestStreamRecipeEncodeFansOutToMuxAndSinkEndpoints(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &decodeTestDecoder{}
+	encoder := &encodeTestEncoder{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder}),
+	)
+	sink := &runtimeTestSink{name: "packets"}
+
+	task, err := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
+		Audio().
+		Opus(96_000).
+		To(
+			FileOutput("archive.ogg", io.Discard),
+			SinkEndpoint(sink),
+		).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || encoder.encodes != 1 || len(muxers.muxers) != 1 || sink.lastPacket == nil || sink.frames != 0 {
+		t.Fatalf("decodes=%d encodes=%d muxers=%d packet=%v frames=%d", decoder.decodes, encoder.encodes, len(muxers.muxers), sink.lastPacket, sink.frames)
+	}
+	if muxers.muxers[0].writes != 1 {
+		t.Fatalf("mux writes=%d, want 1", muxers.muxers[0].writes)
+	}
+	if len(sink.lastPacketValue.Payload.Bytes) != 1 || sink.lastPacketValue.Payload.Bytes[0] != 7 {
+		t.Fatalf("packet payload=%v", sink.lastPacketValue.Payload.Bytes)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !decoder.closed || !encoder.closed || !muxers.muxers[0].closed || !sink.closed {
+		t.Fatalf("closed demux=%v decoder=%v encoder=%v mux=%v sink=%v", demuxer.closed, decoder.closed, encoder.closed, muxers.muxers[0].closed, sink.closed)
+	}
+}
+
 func TestStreamRecipeCopyTapCanAttachRuntimeSink(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
@@ -664,6 +719,51 @@ func TestStreamRecipeCopyTapCanAttachRuntimeSink(t *testing.T) {
 	}
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStreamRecipeCopyFansOutToMuxAndSinkEndpoints(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	sink := &runtimeTestSink{name: "packets"}
+	task, err := From(FileInput("input.ogg", nil)).UseRuntime(New(formats)).
+		Audio().
+		Copy().
+		To(
+			FileOutput("archive.ogg", io.Discard),
+			SinkEndpoint(sink),
+		).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(muxers.muxers) != 1 || sink.lastPacket == nil || sink.frames != 0 {
+		t.Fatalf("muxers=%d packet=%v frames=%d", len(muxers.muxers), sink.lastPacket, sink.frames)
+	}
+	if muxers.muxers[0].writes != 1 {
+		t.Fatalf("mux writes=%d, want 1", muxers.muxers[0].writes)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !muxers.muxers[0].closed || !sink.closed {
+		t.Fatalf("closed demux=%v mux=%v sink=%v", demuxer.closed, muxers.muxers[0].closed, sink.closed)
 	}
 }
 

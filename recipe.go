@@ -1438,7 +1438,7 @@ func streamStageMissingError(stream StreamIntent) error {
 }
 
 func validateJobStreamOutputKinds(operation string, stream StreamIntent, outputs []EndpointSpec) error {
-	if outputsContainSinkEndpoint(outputs) && outputsContainMuxTarget(outputs) {
+	if outputsContainSinkEndpoint(outputs) && outputsContainMuxTarget(outputs) && !codecIntentSet(stream.Encode) {
 		return mixedStreamOutputError(operation, stream)
 	}
 	if stream.Encode.ID == "" && !stream.Encode.Copy && outputsContainMuxTarget(outputs) {

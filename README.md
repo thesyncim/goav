@@ -56,7 +56,9 @@ return goav.From(goav.WebRTCTrack(track)).
 ```
 
 `SinkEndpoint` receives frames at decoded points and packets after `.Copy()` or
-after an encoder such as `.Opus(...)`, `.VP8(...)`, or `.VP9(...)`.
+after an encoder such as `.Opus(...)`, `.VP8(...)`, or `.VP9(...)`. Packet
+streams can fan out to mux endpoints and packet sinks from the same encoded or
+copied stream.
 
 Resize and encode one video stream:
 
@@ -365,6 +367,8 @@ Implemented now:
 - `From(input)` as the public composition front door.
 - Packet-preserving `Copy().To(...)`.
 - Stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode.
+- Packet-domain fanout from `.Copy()` or an encoder to both mux endpoints and
+  `SinkEndpoint` packet observers.
 - Typed `Branch`, `Target`, endpoint, and `Flow` composition.
 - Runtime branch attachment from named taps with flows, custom stages,
   resize/resample from frame taps, late Opus/VP8/VP9 encode endpoints, packet

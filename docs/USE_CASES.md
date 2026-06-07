@@ -121,6 +121,8 @@ Containers shown outside IVF/Annex B require matching adapters.
 Custom work should be optional and local. A stage can live inside a normal
 stream recipe, a sink endpoint can receive frames before encode or packets
 after copy/encode, and a running task can attach a sink from a declared tap.
+Once a stream is in packet domain through `.Copy()` or an encoder, it can fan
+out to both mux endpoints and packet sink endpoints.
 
 ```go
 meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
