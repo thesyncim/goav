@@ -92,7 +92,10 @@ func (rtpTranscodeGraphCompiler) build(ctx context.Context, b *builder) (Task, e
 }
 
 func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
-	plan := b.transcodes[0]
+	return b.planTranscodePlan(spec, b.transcodes[0])
+}
+
+func (b *builder) planTranscodePlan(spec pipeline.Spec, plan transcode.Plan) (pipeline.Spec, error) {
 	branches, outputs, err := prepareTranscodePlan(plan)
 	if err != nil {
 		return pipeline.Spec{}, err
@@ -109,7 +112,11 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 }
 
 func (b *builder) planRTPTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
-	branches, outputs, err := prepareTranscodePlan(b.transcodes[0])
+	return b.planRTPTranscodePlan(spec, b.transcodes[0])
+}
+
+func (b *builder) planRTPTranscodePlan(spec pipeline.Spec, plan transcode.Plan) (pipeline.Spec, error) {
+	branches, outputs, err := prepareTranscodePlan(plan)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
@@ -272,7 +279,10 @@ func (b *builder) buildRTPTranscode(ctx context.Context) (Task, error) {
 }
 
 func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) error {
-	plan := b.transcodes[0]
+	return b.compileTranscodePlan(ctx, graph, b.transcodes[0])
+}
+
+func (b *builder) compileTranscodePlan(ctx context.Context, graph pipeline.Graph, plan transcode.Plan) error {
 	branches, outputs, err := prepareTranscodePlan(plan)
 	if err != nil {
 		return err
@@ -310,7 +320,11 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 }
 
 func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
-	branches, outputs, err := prepareTranscodePlan(b.transcodes[0])
+	return b.compileRTPTranscodePlan(ctx, graph, b.transcodes[0])
+}
+
+func (b *builder) compileRTPTranscodePlan(ctx context.Context, graph pipeline.Graph, plan transcode.Plan) error {
+	branches, outputs, err := prepareTranscodePlan(plan)
 	if err != nil {
 		return err
 	}

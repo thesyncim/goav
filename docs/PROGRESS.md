@@ -942,6 +942,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     require explicit encode, planned branch `.Copy()` remains rejected because
     planned branches begin after decode, and the low-level transcode plan now
     carries either a mux endpoint or a sink endpoint per target. Done.
+245. Keep recipe branch composition off the internal transcode request list:
+    the transcode/branch intent pass still produces the shared resolved plan,
+    but recipe lowering no longer calls `builder.Transcode(plan)`. Media-plan
+    branch describe/build now pass the resolved plan directly into shared graph
+    planning and compile helpers, while the advanced internal `Transcode(plan)`
+    builder path remains available for low-level tests and migration work. Done.
 
 ## First Vertical Slice
 
@@ -1156,9 +1162,11 @@ Required proof:
 2. Move the remaining media-plan build kinds toward direct
    `MediaPlan -> pipeline.Spec -> pipeline.Graph` construction and shrink
    internal builder lowering behind those build kinds.
-3. Replace the remaining special transcode plan path with generic branch
-   lowering: selected stream, ordered operation chain, output refs, mux groups,
-   and shared upstream decode where branches select the same input stream.
+3. Replace the remaining special transcode-shaped graph helpers behind branch
+   composition with generic branch lowering: selected stream, ordered operation
+   chain, output refs, mux/sink groups, and shared upstream decode where
+   branches select the same input stream. Recipe lowering already keeps the
+   resolved plan off `builder.Transcode(plan)`.
 4. Add first-class capability data for stream, codec, transform, and container
    planning so missing adapters and incompatible mux/transform chains fail
    before runtime execution with useful suggestions.

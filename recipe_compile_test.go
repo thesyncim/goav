@@ -1820,8 +1820,11 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	if !ok {
 		t.Fatalf("resolved builder type = %T, want *builder", resolved.builder)
 	}
-	if len(builder.transcodes) != 1 {
-		t.Fatalf("builder transcodes = %d, want 1", len(builder.transcodes))
+	if len(builder.transcodes) != 0 {
+		t.Fatalf("builder transcodes = %d, want recipe plan kept off builder", len(builder.transcodes))
+	}
+	if len(resolved.plan.Branches) != 1 || resolved.plan.Branches[0].Name != "360p" {
+		t.Fatalf("resolved plan branches = %+v, want 360p branch", resolved.plan.Branches)
 	}
 	if resolved.mediaBuildKind != mediaBuildKindBranch {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindBranch)
@@ -1867,8 +1870,11 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	if !ok {
 		t.Fatalf("resolved builder type = %T, want *builder", resolved.builder)
 	}
-	if len(builder.transcodes) != 1 || len(builder.rtpInputs) != 1 {
-		t.Fatalf("builder transcodes=%d rtp=%d, want live branch composer", len(builder.transcodes), len(builder.rtpInputs))
+	if len(builder.transcodes) != 0 || len(builder.rtpInputs) != 1 {
+		t.Fatalf("builder transcodes=%d rtp=%d, want live branch composer runtime input without builder transcode", len(builder.transcodes), len(builder.rtpInputs))
+	}
+	if len(resolved.plan.Branches) != 2 {
+		t.Fatalf("resolved plan branches = %+v, want two live flow branches", resolved.plan.Branches)
 	}
 	if resolved.mediaBuildKind != mediaBuildKindBranch {
 		t.Fatalf("media build kind = %q, want %q", resolved.mediaBuildKind, mediaBuildKindBranch)

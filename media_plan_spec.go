@@ -192,11 +192,11 @@ func mediaPlanBranchComposerSpec(state *recipeCompileState) (pipeline.Spec, bool
 	}
 	spec := pipeline.Spec{Name: "goav", Realtime: builder.runtime.realtime}
 	switch {
-	case len(builder.rtpInputs) == 0:
-		spec, err := builder.planTranscode(spec)
+	case state.transcodeInputAttachment.rtp == nil:
+		spec, err := builder.planTranscodePlan(spec, state.plan)
 		return spec, err == nil, err
 	case len(builder.rtpInputs) > 0:
-		spec, err := builder.planRTPTranscode(spec)
+		spec, err := builder.planRTPTranscodePlan(spec, state.plan)
 		return spec, err == nil, err
 	default:
 		return pipeline.Spec{}, false, nil
@@ -205,7 +205,7 @@ func mediaPlanBranchComposerSpec(state *recipeCompileState) (pipeline.Spec, bool
 
 func builderCanBuildBranchComposer(builder *builder) bool {
 	return builder != nil &&
-		len(builder.transcodes) == 1 &&
+		len(builder.transcodes) == 0 &&
 		len(builder.inputs) == 0 &&
 		len(builder.outputs) == 0 &&
 		len(builder.decodes) == 0 &&

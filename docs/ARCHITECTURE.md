@@ -36,8 +36,9 @@ container, and filter integrations. `goav.Default()` registers the standard
 in-repo adapters for the beginner path, while `goav.New(...)` keeps minimal and
 embedded runtimes explicit. `From(input)` is the beginner-facing front door. It
 produces a small intent model for packet copy, stream decode, transform, encode,
-declared branch composition, and runtime tap naming. The target architecture is one media planner that
-validates, probes, resolves streams, resolves formats/codecs, chooses
+declared branch composition, and runtime tap naming. The target architecture is
+one media planner that validates, probes, resolves streams, resolves
+formats/codecs, chooses
 packet-copy or decode branches, inserts demux or depacketize boundaries, inserts
 select/decode/transform/stage/tap/encode operations, groups branches by targets,
 assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
@@ -52,10 +53,12 @@ writers, sinks, and stages through validation, media-plan creation, planner
 lowering, and planned-spec emission. Branches carry ordered stage, transform, tap,
 and encode operations and can start after earlier stream operations such as
 decode, resize, resample, custom stages, and taps. `Job.Explain(ctx)` reports the
-`MediaPlan` branch operations, taps, and decisions. The next architectural
-pressure is to shrink the remaining internal builder lowering behind each
-media-plan build kind until graph construction is directly
-`MediaPlan -> pipeline.Spec -> pipeline.Graph`.
+`MediaPlan` branch operations, taps, and decisions. Declared branch composition
+now keeps its resolved plan outside the internal builder request list and passes
+that plan directly into graph planning/build helpers. The next architectural
+pressure is to shrink the remaining builder-shaped lowering behind the other
+media-plan build kinds until graph construction is directly
+`Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph`.
 
 The handle-based graph builder remains available as the advanced layer through
 `Runtime.Graph()`. It names sources, stages, and sinks once, then connects typed

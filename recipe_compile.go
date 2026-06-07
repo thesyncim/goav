@@ -974,7 +974,6 @@ func lowerTranscodePlanPass() recipeCompilePass {
 		if state.transcodeBranchSplit && state.transcodeInputAttachment.rtp != nil {
 			state.builder = state.transcodeInputAttachment.apply(state.builder)
 		}
-		state.builder = state.builder.Transcode(state.plan)
 		return nil
 	}}
 }
