@@ -42,8 +42,8 @@ make the implementation match the composable planner promise.
 4. Add a capability model for streams, codecs, filters, and containers so the
    planner can explain copy/decode/encode choices, missing adapters, transform
    incompatibilities, and mux-output conflicts before runtime execution. Codec
-   descriptors now preflight encoder media/sample/pixel compatibility for
-   planned and runtime branches. Filter descriptor metadata now feeds
+   descriptors now preflight known decoder and encoder media/sample/pixel
+   compatibility for planned and runtime branches. Filter descriptor metadata now feeds
    `Explain(ctx)` and descriptor media mismatches plus config-specific
    pixel/sample-format and resize-mode mismatches fail during planned and
    runtime branch preflight. Format descriptors now report container

@@ -108,7 +108,7 @@ contract:
 | Component | Status | Accepts/Emits | Contract Notes |
 | --- | --- | --- | --- |
 | `codec.Registry` | stable | descriptors/factories | Discovers reusable decoder and encoder factories and returns cloned descriptor capability metadata for planning. |
-| `codec.Descriptor` | stable | codec metadata | Owns codec identity, media type, modes, realtime status, and sample/pixel/RTP/build-tag capabilities. Encoder descriptors participate in planned and runtime branch preflight. |
+| `codec.Descriptor` | stable | codec metadata | Owns codec identity, media type, modes, realtime status, and sample/pixel/RTP/build-tag capabilities. Decoder and encoder descriptors participate in planned and runtime branch preflight when stream metadata is known. |
 | `codec.DecoderFactory` / `EncoderFactory` | stable | stage factories | Construct concrete codec components from selected stream config. |
 | `codec.DecoderStage` | stable | packets to frames/events | Decodes packets, preserves realtime events, drives loss behavior, and flushes before EOS. |
 | `codec.EncoderStage` | stable | frames to packets/events | Encodes frames, observes control events, preserves lifecycle events, and flushes delayed packets before EOS. |

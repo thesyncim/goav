@@ -89,6 +89,20 @@ func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, str
 	if err != nil {
 		return nil, err
 	}
+	intent := StreamIntent{
+		Name: decodeNodeName(request.selector),
+		Select: StreamSelect{
+			ID:       request.selector.ID,
+			Index:    request.selector.Index,
+			UseIndex: request.selector.UseIndex,
+			Type:     request.selector.Type,
+			Codec:    request.selector.Codec,
+			Name:     request.selector.Name,
+		},
+	}
+	if err := validateDecodeAdapterDescriptors("build decode stage", intent, b.runtime.codecs, decodeAdapterRequestFromStream(stream, intent)); err != nil {
+		return nil, err
+	}
 	result := decodeResultForStream(stream, bounds)
 	config := codec.DecodeConfig{
 		Stream:     stream,

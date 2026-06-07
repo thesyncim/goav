@@ -857,6 +857,66 @@ func TestExplainReportsIncompatibleEncodeDescriptor(t *testing.T) {
 	}
 }
 
+func TestExplainReportsIncompatibleDecodeDescriptor(t *testing.T) {
+	custom := av.CodecID("x_audio")
+	rt := goav.New(
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
+				Index: 0,
+				ID:    "audio",
+				Type:  av.MediaAudio,
+				Codec: av.CodecParameters{
+					ID:           custom,
+					Type:         av.MediaAudio,
+					SampleFormat: av.SampleFormatF32,
+				},
+			}}})
+			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
+		}),
+		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+			registry.RegisterDecoder(codec.Descriptor{
+				ID:   custom,
+				Type: av.MediaAudio,
+				Capabilities: codec.Capabilities{
+					SampleFormats: []string{av.SampleFormatS16},
+				},
+			}, recipeAPIDecoderFactory{})
+		}),
+	)
+
+	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Audio().
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Explain(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "decode_adapter_incompatible" {
+		t.Fatalf("err = %v, want decode_adapter_incompatible", err)
+	}
+	requirement, ok := adapterRequirementByKindAndOwner(report.RequiredAdapters, "decoder", string(custom), "audio")
+	if !ok {
+		t.Fatalf("requirements=%+v, want incompatible decoder requirement", report.RequiredAdapters)
+	}
+	if requirement.Status != "incompatible" ||
+		len(requirement.Media) != 1 ||
+		requirement.Media[0] != av.MediaAudio ||
+		len(requirement.SampleFormats) != 1 ||
+		requirement.SampleFormats[0] != av.SampleFormatS16 {
+		t.Fatalf("decoder requirement = %+v", requirement)
+	}
+	if !hasPlanWarning(report.Warnings, "decode_adapter_incompatible") {
+		t.Fatalf("warnings=%+v, want incompatible decoder warning", report.Warnings)
+	}
+	if len(report.Missing) != 1 ||
+		report.Missing[0].Kind != "decoder" ||
+		report.Missing[0].Name != string(custom) ||
+		report.Missing[0].Status != "incompatible" {
+		t.Fatalf("missing=%+v, want incompatible decoder requirement", report.Missing)
+	}
+}
+
 func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 	rt := goav.New(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {

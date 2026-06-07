@@ -1727,12 +1727,15 @@ func validateRecipeDecodeAdapters(operation string, rt Runtime, intent Intent) e
 		if !streamNeedsDecode(stream) {
 			continue
 		}
-		codecID, ok := liveDecodeCodec(intent.Inputs, stream)
-		if !ok || codecID == "" {
+		request, ok := liveDecodeAdapterRequest(intent.Inputs, stream)
+		if !ok || request.Codec == "" {
 			continue
 		}
-		if _, err := standard.codecs.DecoderFactory(codecID); err != nil {
-			return recipeDecodeAdapterError(operation, stream, codecID, standard.codecs, err)
+		if _, err := standard.codecs.DecoderFactory(request.Codec); err != nil {
+			return recipeDecodeAdapterError(operation, stream, request.Codec, standard.codecs, err)
+		}
+		if err := validateDecodeAdapterDescriptors(operation, stream, standard.codecs, request); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1748,12 +1751,16 @@ func validateKnownRecipeDecodeAdapters(operation string, rt Runtime, probes []fo
 		if !streamNeedsDecode(stream) {
 			continue
 		}
-		codecID, ok := knownProbeDecodeCodec(probes, stream)
-		if !ok || codecID == "" {
+		selected, ok := knownProbeDecodeStream(probes, stream)
+		if !ok || selected.Codec.ID == "" {
 			continue
 		}
-		if _, err := standard.codecs.DecoderFactory(codecID); err != nil {
-			return recipeDecodeAdapterError(operation, stream, codecID, standard.codecs, err)
+		if _, err := standard.codecs.DecoderFactory(selected.Codec.ID); err != nil {
+			return recipeDecodeAdapterError(operation, stream, selected.Codec.ID, standard.codecs, err)
+		}
+		request := decodeAdapterRequestFromStream(selected, stream)
+		if err := validateDecodeAdapterDescriptors(operation, stream, standard.codecs, request); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1798,8 +1805,8 @@ func liveIntentStreams(inputs []InputIntent) []av.Stream {
 	return streams
 }
 
-func knownProbeDecodeCodec(probes []format.ProbeResult, stream StreamIntent) (av.CodecID, bool) {
-	candidates := make([]av.CodecID, 0, len(probes))
+func knownProbeDecodeStream(probes []format.ProbeResult, stream StreamIntent) (av.Stream, bool) {
+	candidates := make([]av.Stream, 0, len(probes))
 	selector := streamIntentSelector(stream)
 	for i := range probes {
 		if len(probes[i].Streams) == 0 {
@@ -1809,44 +1816,52 @@ func knownProbeDecodeCodec(probes []format.ProbeResult, stream StreamIntent) (av
 		if err != nil || selected.Codec.ID == "" {
 			continue
 		}
-		candidates = append(candidates, selected.Codec.ID)
+		candidates = append(candidates, selected)
 	}
 	if len(candidates) != 1 {
-		return "", false
+		return av.Stream{}, false
 	}
 	return candidates[0], true
+}
+
+func knownProbeDecodeCodec(probes []format.ProbeResult, stream StreamIntent) (av.CodecID, bool) {
+	selected, ok := knownProbeDecodeStream(probes, stream)
+	if !ok {
+		return "", false
+	}
+	return selected.Codec.ID, true
 }
 
 func streamNeedsDecode(stream StreamIntent) bool {
 	return stream.Decode || len(stream.Transforms) != 0 || stream.Encode.ID != ""
 }
 
-func liveDecodeCodec(inputs []InputIntent, stream StreamIntent) (av.CodecID, bool) {
-	selector := stream.Select
-	candidates := make([]av.CodecID, 0, len(inputs))
-	for i := range inputs {
-		input := inputs[i]
-		if !input.Realtime || input.Codec.ID == "" {
-			continue
-		}
-		if selector.Codec != "" && selector.Codec != input.Codec.ID {
-			continue
-		}
-		if selector.Type != "" && input.Codec.Type != "" && selector.Type != input.Codec.Type {
-			continue
-		}
-		if selector.Name != "" && selector.Name != input.Name {
-			continue
-		}
-		if selector.ID != "" && input.Name != string(selector.ID) {
-			continue
-		}
-		candidates = append(candidates, input.Codec.ID)
+func liveDecodeAdapterRequest(inputs []InputIntent, stream StreamIntent) (codecAdapterRequest, bool) {
+	selected, ok := liveDecodeStream(inputs, stream)
+	if !ok {
+		return codecAdapterRequest{}, false
 	}
-	if len(candidates) != 1 {
+	return decodeAdapterRequestFromStream(selected, stream), true
+}
+
+func liveDecodeStream(inputs []InputIntent, stream StreamIntent) (av.Stream, bool) {
+	streams := liveIntentStreams(inputs)
+	if len(streams) == 0 {
+		return av.Stream{}, false
+	}
+	selected, err := selectDecodeStream(streams, streamIntentSelector(stream))
+	if err != nil || selected.Codec.ID == "" {
+		return av.Stream{}, false
+	}
+	return selected, true
+}
+
+func liveDecodeCodec(inputs []InputIntent, stream StreamIntent) (av.CodecID, bool) {
+	selected, ok := liveDecodeStream(inputs, stream)
+	if !ok {
 		return "", false
 	}
-	return candidates[0], true
+	return selected.Codec.ID, true
 }
 
 func recipeDecodeAdapterError(operation string, stream StreamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
@@ -1878,6 +1893,67 @@ func recipeDecodeAdapterError(operation string, stream StreamIntent, codecID av.
 	}
 }
 
+func validateDecodeAdapterDescriptors(operation string, stream StreamIntent, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
+	if registry == nil || request.Codec == "" {
+		return nil
+	}
+	descriptors, err := registry.Find(request.Codec, codec.ModeDecode)
+	if err != nil {
+		return nil
+	}
+	for i := range descriptors {
+		if codecDescriptorSupports(descriptors[i], request) {
+			return nil
+		}
+	}
+	return decodeAdapterIncompatibleError(operation, stream, request, descriptors)
+}
+
+func decodeAdapterRequestFromStream(stream av.Stream, intent StreamIntent) codecAdapterRequest {
+	return codecAdapterRequest{
+		Codec:        stream.Codec.ID,
+		Media:        firstNonEmptyMedia(stream.Codec.Type, stream.Type, intent.Select.Type, codecMedia(stream.Codec.ID)),
+		SampleFormat: stream.Codec.SampleFormat,
+		PixelFormat:  stream.Codec.PixelFormat,
+	}
+}
+
+func decodeAdapterIncompatibleError(operation string, stream StreamIntent, request codecAdapterRequest, descriptors []codec.Descriptor) error {
+	field, requested, supported := codecAdapterIncompatibilityField(request, descriptors)
+	label := strings.ReplaceAll(field, "_", " ")
+	details := []string{
+		"codec=" + string(request.Codec),
+		"field=" + field,
+		"requested=" + requested,
+		"supported=" + supported,
+	}
+	if request.Media != "" {
+		details = append(details, "requested_media="+string(request.Media))
+	}
+	if media := descriptorSupportedMedia(descriptors); len(media) != 0 {
+		details = append(details, "supported_media="+joinMediaTypes(media))
+	}
+	if sampleFormats := descriptorSupportedSampleFormats(descriptors); len(sampleFormats) != 0 {
+		details = append(details, "supported_sample_formats="+strings.Join(sampleFormats, ","))
+	}
+	if pixelFormats := descriptorSupportedPixelFormats(descriptors); len(pixelFormats) != 0 {
+		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
+	}
+	return &BuildError{
+		Code:      "decode_adapter_incompatible",
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    string(request.Codec) + " decoder adapter does not support the requested " + label,
+		Details:   details,
+		Suggestions: []string{
+			"choose a decoder adapter that supports this " + label,
+			"fix the input stream metadata if it describes the wrong media or frame format",
+			"fix the codec descriptor if the implementation already supports this config",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
 func validateRecipeEncodeAdapters(operation string, rt Runtime, streams []StreamIntent) error {
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
@@ -1900,15 +1976,15 @@ func validateRecipeEncodeAdapters(operation string, rt Runtime, streams []Stream
 	return nil
 }
 
-type encodeAdapterRequest struct {
+type codecAdapterRequest struct {
 	Codec        av.CodecID
 	Media        av.MediaType
 	SampleFormat string
 	PixelFormat  string
 }
 
-func encodeAdapterRequestFromStreamIntent(stream StreamIntent) encodeAdapterRequest {
-	return encodeAdapterRequest{
+func encodeAdapterRequestFromStreamIntent(stream StreamIntent) codecAdapterRequest {
+	return codecAdapterRequest{
 		Codec:        stream.Encode.ID,
 		Media:        firstNonEmptyMedia(stream.Encode.Type, stream.Encode.Parameters.Type, stream.Select.Type, codecMedia(stream.Encode.ID)),
 		SampleFormat: firstNonEmpty(stream.Encode.Parameters.SampleFormat, streamIntentSampleFormat(stream)),
@@ -1916,8 +1992,8 @@ func encodeAdapterRequestFromStreamIntent(stream StreamIntent) encodeAdapterRequ
 	}
 }
 
-func encodeAdapterRequestFromPreparedStream(spec CodecSpec, stream av.Stream) encodeAdapterRequest {
-	return encodeAdapterRequest{
+func encodeAdapterRequestFromPreparedStream(spec CodecSpec, stream av.Stream) codecAdapterRequest {
+	return codecAdapterRequest{
 		Codec:        spec.ID,
 		Media:        firstNonEmptyMedia(spec.Type, spec.Parameters.Type, stream.Type, stream.Codec.Type, codecMedia(spec.ID)),
 		SampleFormat: firstNonEmpty(spec.Parameters.SampleFormat, stream.Codec.SampleFormat),
@@ -1955,7 +2031,7 @@ func streamIntentPixelFormat(stream StreamIntent) string {
 	return ""
 }
 
-func validateEncodeAdapterDescriptors(operation string, stream StreamIntent, registry *codec.SimpleRegistry, request encodeAdapterRequest) error {
+func validateEncodeAdapterDescriptors(operation string, stream StreamIntent, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
 	if registry == nil || request.Codec == "" {
 		return nil
 	}
@@ -1964,14 +2040,14 @@ func validateEncodeAdapterDescriptors(operation string, stream StreamIntent, reg
 		return nil
 	}
 	for i := range descriptors {
-		if encodeDescriptorSupports(descriptors[i], request) {
+		if codecDescriptorSupports(descriptors[i], request) {
 			return nil
 		}
 	}
 	return encodeAdapterIncompatibleError(operation, stream, request, descriptors)
 }
 
-func encodeDescriptorSupports(desc codec.Descriptor, request encodeAdapterRequest) bool {
+func codecDescriptorSupports(desc codec.Descriptor, request codecAdapterRequest) bool {
 	if request.Media != "" && desc.Type != "" && desc.Type != request.Media {
 		return false
 	}
@@ -1984,8 +2060,8 @@ func encodeDescriptorSupports(desc codec.Descriptor, request encodeAdapterReques
 	return true
 }
 
-func encodeAdapterIncompatibleError(operation string, stream StreamIntent, request encodeAdapterRequest, descriptors []codec.Descriptor) error {
-	field, requested, supported := encodeAdapterIncompatibilityField(request, descriptors)
+func encodeAdapterIncompatibleError(operation string, stream StreamIntent, request codecAdapterRequest, descriptors []codec.Descriptor) error {
+	field, requested, supported := codecAdapterIncompatibilityField(request, descriptors)
 	label := strings.ReplaceAll(field, "_", " ")
 	details := []string{
 		"codec=" + string(request.Codec),
@@ -2020,22 +2096,22 @@ func encodeAdapterIncompatibleError(operation string, stream StreamIntent, reque
 	}
 }
 
-func encodeAdapterIncompatibilityField(request encodeAdapterRequest, descriptors []codec.Descriptor) (string, string, string) {
-	mediaCompatible := encodeDescriptorsMediaCompatible(descriptors, request.Media)
+func codecAdapterIncompatibilityField(request codecAdapterRequest, descriptors []codec.Descriptor) (string, string, string) {
+	mediaCompatible := codecDescriptorsMediaCompatible(descriptors, request.Media)
 	if request.Media != "" && !mediaCompatible {
 		return "media", string(request.Media), joinMediaTypes(descriptorSupportedMedia(descriptors))
 	}
 	mediaDescriptors := descriptorsMatchingMedia(descriptors, request.Media)
-	if request.SampleFormat != "" && !encodeDescriptorsSampleFormatCompatible(mediaDescriptors, request.SampleFormat) {
+	if request.SampleFormat != "" && !codecDescriptorsSampleFormatCompatible(mediaDescriptors, request.SampleFormat) {
 		return "sample_format", request.SampleFormat, strings.Join(descriptorSupportedSampleFormats(mediaDescriptors), ",")
 	}
-	if request.PixelFormat != "" && !encodeDescriptorsPixelFormatCompatible(mediaDescriptors, request.PixelFormat) {
+	if request.PixelFormat != "" && !codecDescriptorsPixelFormatCompatible(mediaDescriptors, request.PixelFormat) {
 		return "pixel_format", request.PixelFormat, strings.Join(descriptorSupportedPixelFormats(mediaDescriptors), ",")
 	}
 	return "codec", string(request.Codec), string(request.Codec)
 }
 
-func encodeDescriptorsMediaCompatible(descriptors []codec.Descriptor, media av.MediaType) bool {
+func codecDescriptorsMediaCompatible(descriptors []codec.Descriptor, media av.MediaType) bool {
 	if media == "" {
 		return true
 	}
@@ -2060,7 +2136,7 @@ func descriptorsMatchingMedia(descriptors []codec.Descriptor, media av.MediaType
 	return out
 }
 
-func encodeDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, sampleFormat string) bool {
+func codecDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, sampleFormat string) bool {
 	if sampleFormat == "" {
 		return true
 	}
@@ -2073,7 +2149,7 @@ func encodeDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, sam
 	return false
 }
 
-func encodeDescriptorsPixelFormatCompatible(descriptors []codec.Descriptor, pixelFormat string) bool {
+func codecDescriptorsPixelFormatCompatible(descriptors []codec.Descriptor, pixelFormat string) bool {
 	if pixelFormat == "" {
 		return true
 	}

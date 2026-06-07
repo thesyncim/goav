@@ -1018,6 +1018,128 @@ func TestKnownInputDecodeAdapterPassDefersAmbiguousSelection(t *testing.T) {
 	}
 }
 
+func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
+	audioCodec := av.CodecID("x_audio")
+	videoCodec := av.CodecID("x_video")
+	tests := []struct {
+		name  string
+		pass  recipeCompilePass
+		state recipeCompileState
+		want  []string
+	}{
+		{
+			name: "job decoder advertises video for audio live stream",
+			pass: validateJobDecodeAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightDecodeAdapters: true},
+				runtime: New(withTestCodecs(testCodecDecoder(codec.Descriptor{
+					ID:   audioCodec,
+					Type: av.MediaVideo,
+				}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))),
+				intent: Intent{
+					Inputs: []InputIntent{{
+						Name:     "audio",
+						Protocol: av.ProtocolRTP,
+						Codec:    Codec(audioCodec, av.MediaAudio),
+						Realtime: true,
+					}},
+					Streams: []StreamIntent{{
+						Name:   "audio",
+						Select: StreamSelect{Type: av.MediaAudio},
+						Decode: true,
+					}},
+				},
+			},
+			want: []string{"decoder adapter does not support the requested media", "codec=x_audio", "field=media", "requested=audio", "supported=video"},
+		},
+		{
+			name: "job decoder rejects probed sample format",
+			pass: validateJobKnownInputDecodeAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightDecodeAdapters: true},
+				runtime: New(withTestCodecs(testCodecDecoder(codec.Descriptor{
+					ID:   audioCodec,
+					Type: av.MediaAudio,
+					Capabilities: codec.Capabilities{
+						SampleFormats: []string{av.SampleFormatS16},
+					},
+				}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:   "audio",
+					Select: StreamSelect{Type: av.MediaAudio},
+					Decode: true,
+				}}},
+				inputProbes: []format.ProbeResult{{
+					Format: av.FormatOgg,
+					Streams: []av.Stream{{
+						Index: 0,
+						ID:    "audio",
+						Type:  av.MediaAudio,
+						Codec: av.CodecParameters{
+							ID:           audioCodec,
+							Type:         av.MediaAudio,
+							SampleFormat: av.SampleFormatF32,
+						},
+					}},
+				}},
+			},
+			want: []string{"decoder adapter does not support the requested sample format", "field=sample_format", "requested=f32", "supported=s16"},
+		},
+		{
+			name: "branch decoder rejects probed pixel format",
+			pass: validateKnownBranchInputDecodeAdaptersPass(),
+			state: recipeCompileState{
+				operation: branchCompositionOperation,
+				options:   recipeCompileOptions{preflightDecodeAdapters: true},
+				runtime: New(withTestCodecs(testCodecDecoder(codec.Descriptor{
+					ID:   videoCodec,
+					Type: av.MediaVideo,
+					Capabilities: codec.Capabilities{
+						PixelFormats: []string{av.PixelFormatI420},
+					},
+				}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:    "preview",
+					Select:  StreamSelect{Type: av.MediaVideo},
+					Encode:  VP9(Bitrate(600_000)),
+					Targets: []string{"web"},
+				}}},
+				branchInputProbeReady: true,
+				branchInputProbe: format.ProbeResult{
+					Format: av.FormatMatroska,
+					Streams: []av.Stream{{
+						Index: 0,
+						ID:    "video",
+						Type:  av.MediaVideo,
+						Codec: av.CodecParameters{
+							ID:          videoCodec,
+							Type:        av.MediaVideo,
+							PixelFormat: av.PixelFormatYUV420P,
+						},
+					}},
+				},
+			},
+			want: []string{"decoder adapter does not support the requested pixel format", "field=pixel_format", "requested=yuv420p", "supported=i420"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "decode_adapter_incompatible" || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want decode_adapter_incompatible wrapping ErrUnsupportedBuild", err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 	descriptorOnly := codec.NewRegistry()
 	descriptorOnly.RegisterDescriptor(codec.Descriptor{

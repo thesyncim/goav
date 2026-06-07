@@ -743,15 +743,17 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, formatID != ""
-	case "decode_adapter_missing", "decode_adapter_unavailable":
+	case "decode_adapter_missing", "decode_adapter_unavailable", "decode_adapter_incompatible":
 		codecID := av.CodecID(details["codec"])
-		return AdapterRequirement{
+		requirement := AdapterRequirement{
 			Kind:       "decoder",
 			Name:       string(codecID),
 			Codec:      codecID,
 			RequiredBy: requiredBy,
 			Status:     status,
-		}, codecID != ""
+		}
+		applyCodecDetailsFromBuildError(&requirement, details)
+		return requirement, codecID != ""
 	case "encode_adapter_missing", "encode_adapter_unavailable", "encode_adapter_incompatible":
 		codecID := av.CodecID(details["codec"])
 		requirement := AdapterRequirement{
@@ -761,24 +763,7 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 			RequiredBy: requiredBy,
 			Status:     status,
 		}
-		if details["supported_media"] != "" {
-			requirement.Media = mediaTypesFromStrings(splitDetailCSV(details["supported_media"]))
-		}
-		if details["field"] == "media" && details["supported"] != "" && len(requirement.Media) == 0 {
-			requirement.Media = mediaTypesFromStrings(splitDetailCSV(details["supported"]))
-		}
-		if details["supported_sample_formats"] != "" {
-			requirement.SampleFormats = splitDetailCSV(details["supported_sample_formats"])
-		}
-		if details["field"] == "sample_format" && details["supported"] != "" && len(requirement.SampleFormats) == 0 {
-			requirement.SampleFormats = splitDetailCSV(details["supported"])
-		}
-		if details["supported_pixel_formats"] != "" {
-			requirement.PixelFormats = splitDetailCSV(details["supported_pixel_formats"])
-		}
-		if details["field"] == "pixel_format" && details["supported"] != "" && len(requirement.PixelFormats) == 0 {
-			requirement.PixelFormats = splitDetailCSV(details["supported"])
-		}
+		applyCodecDetailsFromBuildError(&requirement, details)
 		return requirement, codecID != ""
 	case "transform_adapter_missing", "transform_adapter_incompatible":
 		name := details["transform"]
@@ -810,6 +795,30 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 			}, true
 		}
 		return AdapterRequirement{}, false
+	}
+}
+
+func applyCodecDetailsFromBuildError(requirement *AdapterRequirement, details map[string]string) {
+	if requirement == nil {
+		return
+	}
+	if details["supported_media"] != "" {
+		requirement.Media = mediaTypesFromStrings(splitDetailCSV(details["supported_media"]))
+	}
+	if details["field"] == "media" && details["supported"] != "" && len(requirement.Media) == 0 {
+		requirement.Media = mediaTypesFromStrings(splitDetailCSV(details["supported"]))
+	}
+	if details["supported_sample_formats"] != "" {
+		requirement.SampleFormats = splitDetailCSV(details["supported_sample_formats"])
+	}
+	if details["field"] == "sample_format" && details["supported"] != "" && len(requirement.SampleFormats) == 0 {
+		requirement.SampleFormats = splitDetailCSV(details["supported"])
+	}
+	if details["supported_pixel_formats"] != "" {
+		requirement.PixelFormats = splitDetailCSV(details["supported_pixel_formats"])
+	}
+	if details["field"] == "pixel_format" && details["supported"] != "" && len(requirement.PixelFormats) == 0 {
+		requirement.PixelFormats = splitDetailCSV(details["supported"])
 	}
 }
 

@@ -167,6 +167,10 @@ scratch so concrete resize filters can keep plane ownership with the caller.
 Mux targets also preflight format descriptor media, codec, and stream-count
 constraints for both planned branches and runtime attachments before a muxer is
 opened.
+Decoder inputs preflight codec descriptor media, sample-format, and pixel-format
+constraints for live/probed recipe streams and runtime graph construction before
+a decoder is opened. Unknown stream frame formats remain unconstrained until an
+adapter can inspect real input.
 Encoder targets preflight codec descriptor media, sample-format, and
 pixel-format constraints for planned branches and runtime attachments before an
 encoder is opened.
