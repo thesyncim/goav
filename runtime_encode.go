@@ -142,10 +142,10 @@ func (b *builder) planEncodeOutputPath(nodes map[string]plannedNode, spec *pipel
 		output := DestinationSpec{output: b.outputs[i], format: b.outputFormat(i), resolvedFormat: b.outputOpenFormat(i)}
 		outputs = append(outputs, output)
 	}
-	return planEncodeEndpointPath(nodes, spec, upstream, request, outputs)
+	return planEncodeDestinationPath(nodes, spec, upstream, request, outputs)
 }
 
-func planEncodeEndpointPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, request encodeRequest, outputs []DestinationSpec) error {
+func planEncodeDestinationPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream pipeline.NodeRef, request encodeRequest, outputs []DestinationSpec) error {
 	encodeName := encodeNodeName(request)
 	encodeRef := pipeline.NodeRef(encodeName)
 	if err := addPlannedNode(nodes, spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(request)); err != nil {
@@ -165,7 +165,7 @@ func planEncodeEndpointPath(nodes map[string]plannedNode, spec *pipeline.Spec, u
 		}
 		outputName := muxNodeName(outputs[i].output, i)
 		outputRef := pipeline.NodeRef(outputName)
-		if err := addPlannedNode(nodes, spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetailWithFormat(outputs[i].output, endpointSpecGraphFormat(outputs[i]))); err != nil {
+		if err := addPlannedNode(nodes, spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetailWithFormat(outputs[i].output, destinationGraphFormat(outputs[i]))); err != nil {
 			return err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
@@ -359,10 +359,10 @@ func (b *builder) compileEncodeOutputPath(ctx context.Context, graph pipeline.Gr
 		output := DestinationSpec{output: b.outputs[i], format: b.outputFormat(i), resolvedFormat: b.outputOpenFormat(i)}
 		outputs = append(outputs, output)
 	}
-	return compileEncodeEndpointPath(ctx, b.runtime, graph, upstream, request, config, stream, outputs)
+	return compileEncodeDestinationPath(ctx, b.runtime, graph, upstream, request, config, stream, outputs)
 }
 
-func compileEncodeEndpointPath(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream, outputs []DestinationSpec) error {
+func compileEncodeDestinationPath(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream, outputs []DestinationSpec) error {
 	encodeRef, err := compileEncodeStage(ctx, runtime, graph, upstream, request, config)
 	if err != nil {
 		return err
@@ -381,7 +381,7 @@ func compileEncodeEndpointPath(ctx context.Context, runtime *runtime, graph pipe
 			}
 			continue
 		}
-		muxStage, err := service.openMuxStageWithFormat(ctx, outputs[i].output, i, streams, endpointSpecOpenFormat(outputs[i]), endpointSpecGraphFormat(outputs[i]))
+		muxStage, err := service.openMuxStageWithFormat(ctx, outputs[i].output, i, streams, destinationOpenFormat(outputs[i]), destinationGraphFormat(outputs[i]))
 		if err != nil {
 			return err
 		}

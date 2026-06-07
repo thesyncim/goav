@@ -435,10 +435,10 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 	if len(resolved.outputAttachments) != 1 {
 		t.Fatalf("resolved output attachments = %d, want 1", len(resolved.outputAttachments))
 	}
-	if got := endpointSpecOpenFormat(resolved.outputAttachments[0]); got != av.FormatOgg {
+	if got := destinationOpenFormat(resolved.outputAttachments[0]); got != av.FormatOgg {
 		t.Fatalf("open output format = %q, want resolved Ogg format", got)
 	}
-	if got := endpointSpecGraphFormat(resolved.outputAttachments[0]); got != "" {
+	if got := destinationGraphFormat(resolved.outputAttachments[0]); got != "" {
 		t.Fatalf("graph detail output format = %q, want inferred format hidden from graph detail", got)
 	}
 	task, err := resolved.Build(context.Background())

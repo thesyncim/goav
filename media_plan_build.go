@@ -400,7 +400,7 @@ func (p mediaPlanPacketCopyGraph) compileTargets(
 			}
 			continue
 		}
-		stage, err := service.openMuxStageWithFormat(ctx, output.output, i, targetStreams, endpointSpecOpenFormat(output), endpointSpecGraphFormat(output))
+		stage, err := service.openMuxStageWithFormat(ctx, output.output, i, targetStreams, destinationOpenFormat(output), destinationGraphFormat(output))
 		if err != nil {
 			return err
 		}
@@ -455,7 +455,7 @@ func (p mediaPlanSingleStreamGraph) encodeOutputSpec() (pipeline.Spec, error) {
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
-	if err := planEncodeEndpointPath(nodes, &spec, previous, *p.encode, p.outputs); err != nil {
+	if err := planEncodeDestinationPath(nodes, &spec, previous, *p.encode, p.outputs); err != nil {
 		return pipeline.Spec{}, err
 	}
 	return spec, nil
@@ -529,7 +529,7 @@ func (p mediaPlanSingleStreamGraph) compileEncodeOutput(ctx context.Context, gra
 	if err != nil {
 		return err
 	}
-	return compileEncodeEndpointPath(ctx, p.runtime, graph, previousRef, *p.encode, encodeConfig, encodedStream, p.outputs)
+	return compileEncodeDestinationPath(ctx, p.runtime, graph, previousRef, *p.encode, encodeConfig, encodedStream, p.outputs)
 }
 
 func (p mediaPlanSingleStreamGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {

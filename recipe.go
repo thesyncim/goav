@@ -938,7 +938,7 @@ func (j *Job) To(destinations ...Destination) *Job {
 			j.setErr(jobDestinationInvalidError("job", "job destination is nil"))
 			return j
 		}
-		output, name, err := endpointFromDestination("build job", "job", destination.destination(), i)
+		output, name, err := destinationFromBinding("build job", "job", destination.destination(), i)
 		if err != nil {
 			j.setErr(err)
 			return j
@@ -960,10 +960,10 @@ func (j *Job) addBranchTargets(targets ...TargetSpec) error {
 			return target.err
 		}
 		if target.name == "" {
-			return targetNameMissingError(target.endpoint)
+			return targetNameMissingError(target.dest)
 		}
-		target.endpoint = target.endpoint.Name(firstNonEmpty(target.endpoint.name, target.name))
-		named := namedTargetSpec{name: target.name, output: target.endpoint}
+		target.dest = target.dest.Name(firstNonEmpty(target.dest.name, target.name))
+		named := namedTargetSpec{name: target.name, output: target.dest}
 		identity := targetIdentity(named)
 		if existing, ok := seen[named.name]; ok {
 			if existing != identity {
@@ -1286,7 +1286,7 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 		Taps:        append(streamStepTapIntents(stream.steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:      stream.encode,
 		CodecChange: stream.codecChange,
-		Targets:     endpointTargetNamesWithNames(stream.outputs, stream.outputNames),
+		Targets:     destinationTargetNamesWithNames(stream.outputs, stream.outputNames),
 	}
 }
 
@@ -1730,7 +1730,7 @@ func outputsContainSinkDestination(outputs []DestinationSpec) bool {
 	return false
 }
 
-func validateEndpointSpecs(operation string, outputs []DestinationSpec, targetNames ...string) error {
+func validateDestinationSpecs(operation string, outputs []DestinationSpec, targetNames ...string) error {
 	seen := make(map[string]bool, len(outputs))
 	for i := range outputs {
 		fallback := fmt.Sprintf("output-%d", i)
@@ -3132,7 +3132,7 @@ func (b *JobStreamBuilder) To(destinations ...Destination) *Job {
 			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream destination is nil"))
 			return b.job
 		}
-		output, name, err := endpointFromDestination("build stream", jobStreamName(stream), destination.destination(), i)
+		output, name, err := destinationFromBinding("build stream", jobStreamName(stream), destination.destination(), i)
 		if err != nil {
 			b.job.setErr(err)
 			return b.job
@@ -3147,7 +3147,7 @@ func (b *JobStreamBuilder) To(destinations ...Destination) *Job {
 	return b.job
 }
 
-func endpointFromDestination(operation string, node string, destination destinationBinding, index int) (DestinationSpec, string, error) {
+func destinationFromBinding(operation string, node string, destination destinationBinding, index int) (DestinationSpec, string, error) {
 	switch {
 	case destination.hasTarget:
 		target := cloneTargetSpec(destination.target)
@@ -3155,11 +3155,11 @@ func endpointFromDestination(operation string, node string, destination destinat
 			return DestinationSpec{}, "", target.err
 		}
 		if target.name == "" {
-			return DestinationSpec{}, "", targetNameMissingError(target.endpoint)
+			return DestinationSpec{}, "", targetNameMissingError(target.dest)
 		}
-		return cloneDestinationSpec(target.endpoint), target.name, nil
-	case destination.hasEndpoint:
-		return cloneDestinationSpec(destination.endpoint), "", nil
+		return cloneDestinationSpec(target.dest), target.name, nil
+	case destination.hasDirect:
+		return cloneDestinationSpec(destination.dest), "", nil
 	default:
 		return DestinationSpec{}, "", destinationInvalidError(operation, node, "unsupported destination")
 	}
@@ -3490,7 +3490,7 @@ func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedT
 }
 
 func validateBranchTargetKinds(intent Intent, namedOutputs []namedTargetSpec) error {
-	outputs := branchTargetEndpointSet(namedOutputs)
+	outputs := branchTargetDestinationSet(namedOutputs)
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
 		hasMuxTarget := false
@@ -3525,7 +3525,7 @@ func validateBranchTargetBindings(intent Intent, namedOutputs []namedTargetSpec)
 	return nil
 }
 
-func branchTargetEndpointSet(namedOutputs []namedTargetSpec) map[string]DestinationSpec {
+func branchTargetDestinationSet(namedOutputs []namedTargetSpec) map[string]DestinationSpec {
 	outputs := make(map[string]DestinationSpec, len(namedOutputs))
 	for i := range namedOutputs {
 		outputs[namedOutputs[i].name] = namedOutputs[i].output
@@ -3834,7 +3834,7 @@ func branchStreamName(stream streamBuild) string {
 	return firstNonEmpty(stream.name, string(stream.selector.Type), "stream")
 }
 
-func endpointTargetNames(outputs []DestinationSpec) []string {
+func destinationTargetNames(outputs []DestinationSpec) []string {
 	labels := make([]string, 0, len(outputs))
 	for i := range outputs {
 		labels = append(labels, outputs[i].label(fmt.Sprintf("output-%d", i)))
@@ -3842,7 +3842,7 @@ func endpointTargetNames(outputs []DestinationSpec) []string {
 	return labels
 }
 
-func endpointTargetNamesWithNames(outputs []DestinationSpec, targetNames []string) []string {
+func destinationTargetNamesWithNames(outputs []DestinationSpec, targetNames []string) []string {
 	labels := make([]string, 0, len(outputs))
 	for i := range outputs {
 		labels = append(labels, jobOutputTargetName(outputs, targetNames, i))

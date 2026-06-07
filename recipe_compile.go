@@ -84,14 +84,14 @@ func (o recipeCompileOptions) Context() context.Context {
 func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 	formats := make(map[string]av.FormatID)
 	for i := range s.outputAttachments {
-		formatID := endpointSpecFormat(s.outputAttachments[i])
+		formatID := destinationSpecFormat(s.outputAttachments[i])
 		if formatID == "" {
 			continue
 		}
 		formats[jobOutputTargetName(s.outputAttachments, s.outputTargetNames, i)] = formatID
 	}
 	for i := range s.branchTargetAttachments {
-		formatID := endpointSpecFormat(s.branchTargetAttachments[i].output)
+		formatID := destinationSpecFormat(s.branchTargetAttachments[i].output)
 		if formatID == "" {
 			continue
 		}
@@ -104,7 +104,7 @@ func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 	return formats
 }
 
-func endpointSpecFormat(output DestinationSpec) av.FormatID {
+func destinationSpecFormat(output DestinationSpec) av.FormatID {
 	if output.resolvedFormat != "" {
 		return output.resolvedFormat
 	}
@@ -564,7 +564,7 @@ func validateJobAttachmentsPass() recipeCompilePass {
 		if err := validateJobInputs(state.inputAttachments); err != nil {
 			return err
 		}
-		return validateEndpointSpecs(state.operation, state.outputAttachments, state.outputTargetNames...)
+		return validateDestinationSpecs(state.operation, state.outputAttachments, state.outputTargetNames...)
 	}}
 }
 

@@ -29,7 +29,7 @@ type runtimeBranch struct {
 	steps          []runtimeBranchStep
 	postEncodeTaps []string
 	encode         CodecSpec
-	destinations   []runtimeBranchEndpoint
+	destinations   []runtimeBranchDestination
 	terminals      []runtimeBranchTerminal
 	policy         pipeline.RoutePolicy
 	label          string
@@ -48,9 +48,9 @@ type runtimeBranchStep struct {
 	owned     bool
 }
 
-type runtimeBranchEndpoint struct {
+type runtimeBranchDestination struct {
 	name     string
-	endpoint DestinationSpec
+	dest     DestinationSpec
 	sink     pipeline.Sink
 	shareKey string
 }
@@ -58,7 +58,7 @@ type runtimeBranchEndpoint struct {
 type runtimeBranchTerminal struct {
 	name     string
 	shareKey string
-	endpoint DestinationSpec
+	dest     DestinationSpec
 	stream   av.Stream
 	stage    pipeline.Stage
 	sink     pipeline.Sink
@@ -87,7 +87,7 @@ type runtimeSharedSinkTarget struct {
 
 type runtimeSharedMuxTarget struct {
 	name     string
-	endpoint DestinationSpec
+	dest     DestinationSpec
 	streams  []av.Stream
 	branches []string
 	stage    *format.MuxStage
@@ -260,15 +260,15 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		if target.err != nil {
 			return branch, target.err
 		}
-		endpoint := cloneDestinationSpec(target.endpoint)
+		destination := cloneDestinationSpec(target.dest)
 		name := firstNonEmpty(target.name, spec.name, "branch")
-		if err := endpoint.validate("attach runtime branch", name); err != nil {
+		if err := destination.validate("attach runtime branch", name); err != nil {
 			return branch, err
 		}
-		branch.destinations = append(branch.destinations, runtimeBranchEndpoint{
+		branch.destinations = append(branch.destinations, runtimeBranchDestination{
 			name:     name,
-			endpoint: endpoint,
-			sink:     endpoint.sink,
+			dest:     destination,
+			sink:     destination.sink,
 			shareKey: runtimeBranchSharedTargetKey(target),
 		})
 	}
@@ -277,7 +277,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 
 func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchGroupTargets, error) {
 	var targets runtimeBranchGroupTargets
-	seen := make(map[string]runtimeBranchEndpoint)
+	seen := make(map[string]runtimeBranchDestination)
 	seenBranch := make(map[string]string)
 	for i := range branches {
 		branch := branches[i]
@@ -289,13 +289,13 @@ func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchG
 			if first, ok := seen[label]; ok {
 				if first.shareKey != "" && first.shareKey == branch.destinations[j].shareKey {
 					switch {
-					case runtimeBranchEndpointCanShareSink(first) && runtimeBranchEndpointCanShareSink(branch.destinations[j]):
+					case runtimeBranchDestinationCanShareSink(first) && runtimeBranchDestinationCanShareSink(branch.destinations[j]):
 						if targets.sharedSinkKeys == nil {
 							targets.sharedSinkKeys = make(map[string]struct{})
 						}
 						targets.sharedSinkKeys[first.shareKey] = struct{}{}
 						continue
-					case runtimeBranchEndpointCanShareMux(first) && runtimeBranchEndpointCanShareMux(branch.destinations[j]):
+					case runtimeBranchDestinationCanShareMux(first) && runtimeBranchDestinationCanShareMux(branch.destinations[j]):
 						if targets.sharedMuxKeys == nil {
 							targets.sharedMuxKeys = make(map[string]struct{})
 						}
@@ -328,12 +328,12 @@ func validateRuntimeBranchGroupTargets(branches []runtimeBranch) (runtimeBranchG
 	return targets, nil
 }
 
-func runtimeBranchEndpointCanShareSink(endpoint runtimeBranchEndpoint) bool {
-	return endpoint.sink != nil && !endpointSpecHasOutput(endpoint.endpoint)
+func runtimeBranchDestinationCanShareSink(destination runtimeBranchDestination) bool {
+	return destination.sink != nil && !destinationSpecHasOutput(destination.dest)
 }
 
-func runtimeBranchEndpointCanShareMux(endpoint runtimeBranchEndpoint) bool {
-	return endpoint.sink == nil && endpointSpecHasOutput(endpoint.endpoint)
+func runtimeBranchDestinationCanShareMux(destination runtimeBranchDestination) bool {
+	return destination.sink == nil && destinationSpecHasOutput(destination.dest)
 }
 
 func runtimeBranchSharedTargetKey(target TargetSpec) string {
@@ -422,14 +422,14 @@ func (g *runtimeAttachGroup) reserveSharedMux(spec pipeline.Spec, branch runtime
 	}
 	target, ok := g.sharedMuxes[terminal.shareKey]
 	if !ok {
-		name := firstNonEmpty(terminal.name, terminal.endpoint.label(firstNonEmpty(branch.name, "target")), "target")
+		name := firstNonEmpty(terminal.name, terminal.dest.label(firstNonEmpty(branch.name, "target")), "target")
 		if err := g.reserveNode(spec, name); err != nil {
 			return err
 		}
 		target = &runtimeSharedMuxTarget{
-			name:     name,
-			endpoint: terminal.endpoint,
-			buffer:   branch.buffer,
+			name:   name,
+			dest:   terminal.dest,
+			buffer: branch.buffer,
 		}
 		g.sharedMuxes[terminal.shareKey] = target
 		g.muxOrder = append(g.muxOrder, terminal.shareKey)
@@ -468,7 +468,7 @@ func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *run
 		if target == nil {
 			continue
 		}
-		formatID, err := runtimeSharedMuxFormat(ctx, rt, target.endpoint, i)
+		formatID, err := runtimeSharedMuxFormat(ctx, rt, target.dest, i)
 		if err != nil {
 			return err
 		}
@@ -477,11 +477,11 @@ func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *run
 		}
 		stage, err := service.openMuxStageWithFormat(
 			ctx,
-			target.endpoint.output,
+			target.dest.output,
 			i,
 			target.streams,
 			formatID,
-			endpointSpecGraphFormat(target.endpoint),
+			destinationGraphFormat(target.dest),
 		)
 		if err != nil {
 			return err
@@ -532,14 +532,14 @@ func (g *runtimeAttachGroup) closeSharedMuxStages() {
 	}
 }
 
-func runtimeSharedMuxFormat(ctx context.Context, rt *runtime, endpoint DestinationSpec, index int) (av.FormatID, error) {
-	formatID := endpointSpecOpenFormat(endpoint)
+func runtimeSharedMuxFormat(ctx context.Context, rt *runtime, dest DestinationSpec, index int) (av.FormatID, error) {
+	formatID := destinationOpenFormat(dest)
 	if formatID != "" {
 		return formatID, nil
 	}
-	result, err := rt.formats.Probe(ctx, outputProbeRequest(endpoint.output))
+	result, err := rt.formats.Probe(ctx, outputProbeRequest(dest.output))
 	if err != nil {
-		return "", outputFormatProbeError(endpoint.output, index, err)
+		return "", outputFormatProbeError(dest.output, index, err)
 	}
 	return result.Format, nil
 }
@@ -710,13 +710,13 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 			step.caps = currentCaps
 		}
 	}
-	if err := t.prepareRuntimeBranchEndpoints(ctx, branch, currentStream, currentCaps, group); err != nil {
+	if err := t.prepareRuntimeBranchDestinations(ctx, branch, currentStream, currentCaps, group); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentCaps StreamCaps, group *runtimeAttachGroup) error {
+func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentCaps StreamCaps, group *runtimeAttachGroup) error {
 	if branch == nil {
 		return nil
 	}
@@ -725,7 +725,7 @@ func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtim
 	}
 	stream := currentStream
 	caps := currentCaps
-	hasMuxEndpoint := runtimeBranchHasMuxEndpoint(*branch)
+	hasMuxDestination := runtimeBranchHasMuxDestination(*branch)
 	if branch.encode.Copy {
 		if currentCaps.Domain != DomainPacket {
 			closeRuntimeBranchOwnedStages(*branch)
@@ -741,17 +741,17 @@ func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtim
 		stream = encodedStream
 		caps = streamPacketCapsFromRuntimeBranchStream(encodedStream, currentCaps)
 		appendRuntimeBranchPostEncodeTaps(branch, caps, OpEncode)
-	} else if hasMuxEndpoint {
+	} else if hasMuxDestination {
 		closeRuntimeBranchOwnedStages(*branch)
 		return runtimeBranchEncodeMissingError(branch.name)
 	}
-	if !hasMuxEndpoint {
+	if !hasMuxDestination {
 		for i := range branch.destinations {
 			destination := branch.destinations[i]
 			branch.terminals = append(branch.terminals, runtimeBranchTerminal{
 				name:     destination.name,
 				shareKey: destination.shareKey,
-				endpoint: destination.endpoint,
+				dest:     destination.dest,
 				stream:   stream,
 				sink:     destination.sink,
 				caps:     caps,
@@ -776,7 +776,7 @@ func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtim
 			branch.terminals = append(branch.terminals, runtimeBranchTerminal{
 				name:     destination.name,
 				shareKey: destination.shareKey,
-				endpoint: destination.endpoint,
+				dest:     destination.dest,
 				stream:   stream,
 				sink:     destination.sink,
 				caps:     caps,
@@ -787,13 +787,13 @@ func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtim
 			branch.terminals = append(branch.terminals, runtimeBranchTerminal{
 				name:     destination.name,
 				shareKey: destination.shareKey,
-				endpoint: destination.endpoint,
+				dest:     destination.dest,
 				stream:   stream,
 				caps:     caps,
 			})
 			continue
 		}
-		formatID, err := t.runtimeBranchMuxFormat(ctx, destination.endpoint, i)
+		formatID, err := t.runtimeBranchMuxFormat(ctx, destination.dest, i)
 		if err != nil {
 			closeRuntimeBranchOwnedStages(*branch)
 			return err
@@ -804,23 +804,23 @@ func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtim
 		}
 		muxStage, err := (&builder{runtime: t.runtime}).openMuxStageWithFormat(
 			ctx,
-			destination.endpoint.output,
+			destination.dest.output,
 			i,
 			[]av.Stream{stream},
 			formatID,
-			endpointSpecGraphFormat(destination.endpoint),
+			destinationGraphFormat(destination.dest),
 		)
 		if err != nil {
 			closeRuntimeBranchOwnedStages(*branch)
 			return err
 		}
 		branch.terminals = append(branch.terminals, runtimeBranchTerminal{
-			name:     destination.name,
-			endpoint: destination.endpoint,
-			stream:   stream,
-			stage:    muxStage,
-			caps:     caps,
-			owned:    true,
+			name:   destination.name,
+			dest:   destination.dest,
+			stream: stream,
+			stage:  muxStage,
+			caps:   caps,
+			owned:  true,
 		})
 	}
 	return nil
@@ -859,21 +859,21 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string
 	return stage, nil
 }
 
-func (t *task) runtimeBranchMuxFormat(ctx context.Context, endpoint DestinationSpec, index int) (av.FormatID, error) {
-	formatID := endpointSpecOpenFormat(endpoint)
+func (t *task) runtimeBranchMuxFormat(ctx context.Context, dest DestinationSpec, index int) (av.FormatID, error) {
+	formatID := destinationOpenFormat(dest)
 	if formatID != "" {
 		return formatID, nil
 	}
-	result, err := t.runtime.formats.Probe(ctx, outputProbeRequest(endpoint.output))
+	result, err := t.runtime.formats.Probe(ctx, outputProbeRequest(dest.output))
 	if err != nil {
-		return "", outputFormatProbeError(endpoint.output, index, err)
+		return "", outputFormatProbeError(dest.output, index, err)
 	}
 	return result.Format, nil
 }
 
-func runtimeBranchMuxCompatibilityIssue(branch runtimeBranch, destination runtimeBranchEndpoint, stream av.Stream, formatID av.FormatID, rt Runtime) (muxCompatibilityIssue, bool) {
+func runtimeBranchMuxCompatibilityIssue(branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, formatID av.FormatID, rt Runtime) (muxCompatibilityIssue, bool) {
 	branchName := firstNonEmpty(branch.name, destination.name, "branch")
-	targetName := firstNonEmpty(destination.name, destination.endpoint.label(branchName))
+	targetName := firstNonEmpty(destination.name, destination.dest.label(branchName))
 	output := planOutput{
 		Name:       targetName,
 		Operation:  OpMux,
@@ -888,9 +888,9 @@ func runtimeBranchMuxCompatibilityIssue(branch runtimeBranch, destination runtim
 	return checkKnownMuxCompatibility(output, []plannedMuxStream{streamInfo}, rt)
 }
 
-func runtimeBranchHasMuxEndpoint(branch runtimeBranch) bool {
+func runtimeBranchHasMuxDestination(branch runtimeBranch) bool {
 	for i := range branch.destinations {
-		if branch.destinations[i].sink == nil && endpointSpecHasOutput(branch.destinations[i].endpoint) {
+		if branch.destinations[i].sink == nil && destinationSpecHasOutput(branch.destinations[i].dest) {
 			return true
 		}
 	}
@@ -1396,7 +1396,7 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 func validateRuntimeBranchTargets(branch runtimeBranch) error {
 	seen := make(map[string]int, len(branch.destinations))
 	for i := range branch.destinations {
-		name := firstNonEmpty(branch.destinations[i].name, branch.destinations[i].endpoint.label(fmt.Sprintf("target%d", i+1)))
+		name := firstNonEmpty(branch.destinations[i].name, branch.destinations[i].dest.label(fmt.Sprintf("target%d", i+1)))
 		if firstIndex, ok := seen[name]; ok {
 			return duplicateRuntimeBranchTargetRefError(branch.name, name, firstIndex, i)
 		}
@@ -1405,12 +1405,12 @@ func validateRuntimeBranchTargets(branch runtimeBranch) error {
 	return nil
 }
 
-func endpointSpecHasOutput(endpoint DestinationSpec) bool {
-	return endpoint.output.Name != "" ||
-		endpoint.output.URI != "" ||
-		endpoint.output.Writer != nil ||
-		endpoint.format != "" ||
-		endpoint.resolvedFormat != ""
+func destinationSpecHasOutput(dest DestinationSpec) bool {
+	return dest.output.Name != "" ||
+		dest.output.URI != "" ||
+		dest.output.Writer != nil ||
+		dest.format != "" ||
+		dest.resolvedFormat != ""
 }
 
 func runtimeBranchNodeNames(branch runtimeBranch, spec pipeline.Spec, group *runtimeAttachGroup) ([]string, error) {

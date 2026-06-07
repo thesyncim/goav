@@ -1731,6 +1731,27 @@ func TestStreamIntentUsesTypedTapAnchor(t *testing.T) {
 	}
 }
 
+func TestHighLevelCompositionInternalsUseDestinationVocabulary(t *testing.T) {
+	files := []string{
+		"branch.go",
+		"recipe.go",
+		"recipe_compile.go",
+		"media_plan_spec.go",
+		"media_plan_build.go",
+		"runtime_attach.go",
+		"runtime_encode.go",
+	}
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(strings.ToLower(string(body)), "endpoint") {
+			t.Fatalf("%s uses endpoint vocabulary; use destination naming in high-level composition code", file)
+		}
+	}
+}
+
 func TestRecipeConstructorsDoNotExposeRuntimeOptions(t *testing.T) {
 	inputType := reflect.TypeOf(goav.InputSpec{})
 	jobType := reflect.TypeOf((*goav.Job)(nil))

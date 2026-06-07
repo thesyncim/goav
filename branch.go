@@ -17,30 +17,30 @@ type Destination interface {
 }
 
 type destinationBinding struct {
-	target      TargetSpec
-	endpoint    DestinationSpec
-	hasTarget   bool
-	hasEndpoint bool
+	target    TargetSpec
+	dest      DestinationSpec
+	hasTarget bool
+	hasDirect bool
 }
 
 // TargetSpec names a logical destination. Several branches can feed the same
 // target so the runtime can mux or group them as one output.
 type TargetSpec struct {
-	name     string
-	endpoint DestinationSpec
-	id       uint64
-	err      error
+	name string
+	dest DestinationSpec
+	id   uint64
+	err  error
 }
 
 // Target binds a stable target name to a concrete destination.
-func Target(name string, endpoint DestinationSpec) TargetSpec {
+func Target(name string, dest DestinationSpec) TargetSpec {
 	if name == "" {
-		return TargetSpec{endpoint: endpoint, err: targetNameMissingError(endpoint)}
+		return TargetSpec{dest: dest, err: targetNameMissingError(dest)}
 	}
 	return TargetSpec{
-		name:     name,
-		endpoint: endpoint.Name(firstNonEmpty(endpoint.name, name)),
-		id:       targetSpecSeq.Add(1),
+		name: name,
+		dest: dest.Name(firstNonEmpty(dest.name, name)),
+		id:   targetSpecSeq.Add(1),
 	}
 }
 
@@ -49,7 +49,7 @@ func (t TargetSpec) destination() destinationBinding {
 }
 
 func (s DestinationSpec) destination() destinationBinding {
-	return destinationBinding{endpoint: s, hasEndpoint: true}
+	return destinationBinding{dest: s, hasDirect: true}
 }
 
 type BranchSpec struct {
@@ -354,16 +354,16 @@ func appendDestination(spec *BranchSpec, destination destinationBinding, index i
 			return target.err
 		}
 		if target.name == "" {
-			return targetNameMissingError(target.endpoint)
+			return targetNameMissingError(target.dest)
 		}
-		target.endpoint = target.endpoint.Name(firstNonEmpty(target.endpoint.name, target.name))
+		target.dest = target.dest.Name(firstNonEmpty(target.dest.name, target.name))
 		spec.targets = append(spec.targets, target)
 		spec.labels = append(spec.labels, target.name)
 		return nil
-	case destination.hasEndpoint:
-		endpoint := destination.endpoint
-		name := endpoint.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
-		target := Target(name, endpoint)
+	case destination.hasDirect:
+		destination := destination.dest
+		name := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
+		target := Target(name, destination)
 		if target.err != nil {
 			return target.err
 		}
@@ -794,7 +794,7 @@ func branchTargetsAllSinkDestinations(targets []TargetSpec) bool {
 		return false
 	}
 	for i := range targets {
-		if targets[i].endpoint.sink == nil {
+		if targets[i].dest.sink == nil {
 			return false
 		}
 	}
@@ -813,12 +813,12 @@ func cloneTargetSpecs(targets []TargetSpec) []TargetSpec {
 }
 
 func cloneTargetSpec(target TargetSpec) TargetSpec {
-	target.endpoint = cloneDestinationSpec(target.endpoint)
+	target.dest = cloneDestinationSpec(target.dest)
 	return target
 }
 
-func cloneDestinationSpec(destination DestinationSpec) DestinationSpec {
-	return destination
+func cloneDestinationSpec(dest DestinationSpec) DestinationSpec {
+	return dest
 }
 
 func branchMissingError(node string) error {
@@ -887,11 +887,11 @@ func destinationInvalidError(operation string, node string, reason string) error
 	}
 }
 
-func targetNameMissingError(endpoint DestinationSpec) error {
+func targetNameMissingError(dest DestinationSpec) error {
 	return &BuildError{
 		Code:      "target_invalid",
 		Operation: "build target",
-		Node:      endpoint.label("target"),
+		Node:      dest.label("target"),
 		Reason:    "target name is empty",
 		Suggestions: []string{
 			"call goav.Target(\"web\", goav.FileOutput(...)) with a stable target name",

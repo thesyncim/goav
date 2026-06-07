@@ -1518,6 +1518,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     API test rejects the old field name from returning. This keeps planned
     branches, runtime attach, and reusable flows on the same typed tap grammar.
     Done.
+315. Collapse high-level implementation naming onto destinations:
+    private target bindings, branch destinations, runtime branch terminal
+    preparation, mux format helpers, and encode-to-destination graph helpers now
+    use destination naming instead of endpoint naming. `TargetSpec` stores a
+    destination, direct `.To(...)` bindings are direct destinations, runtime
+    attach prepares branch destinations, and media-plan encode paths plan and
+    compile destination paths. The public `Endpoint` vocabulary remains only in
+    regression guards and historical notes, not in active composition code.
+    Done.
 
 ## First Vertical Slice
 
