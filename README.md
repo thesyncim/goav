@@ -222,7 +222,8 @@ return goav.From(goav.WebRTCTrack(audio)).
     Run(ctx)
 ```
 
-Branch when the same media point needs several downstream chains:
+Use a direct chain when one reusable flow feeds one target. Branch when the same
+media point needs several downstream chains:
 
 ```go
 return goav.From(goav.WebRTCTrack(audio)).

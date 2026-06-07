@@ -3325,6 +3325,69 @@ func TestPacketCopyLowererRequiresConsistentTargetOperationsBeforeSources(t *tes
 	}
 }
 
+func TestPacketCopyTargetStreamsUseMatchedSourceGroups(t *testing.T) {
+	left := []av.Stream{{
+		ID:   "left-audio",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			ID:   av.CodecOpus,
+			Type: av.MediaAudio,
+		},
+	}}
+	right := []av.Stream{{
+		ID:   "right-audio",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			ID:   av.CodecOpus,
+			Type: av.MediaAudio,
+		},
+	}, {
+		ID:   "right-video",
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			ID:   av.CodecVP8,
+			Type: av.MediaVideo,
+		},
+	}}
+
+	streams, err := packetCopyTargetStreams(graphPlanTargetOperation{
+		Name:    "recording",
+		Matches: []int{1},
+	}, [][]av.Stream{left, right})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(streams) != 2 || streams[0].ID != "right-audio" || streams[1].ID != "right-video" {
+		t.Fatalf("streams = %+v, want only matched source group", streams)
+	}
+}
+
+func TestPacketCopyLowererPreservesAllStreamsForSingleSourceRemux(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream(), videoVP8TranscodeTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, muxers),
+		),
+	)
+	task, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Copy().
+		To(fileDestination("recording.ogg", io.Discard)).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if len(muxers.muxers) != 1 || muxers.muxers[0].streamCount != 2 ||
+		!streamIDsEqual(muxers.muxers[0].openedStreams, []av.StreamID{"audio", "video"}) {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+}
+
 func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}

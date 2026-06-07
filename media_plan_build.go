@@ -38,10 +38,11 @@ type mediaPlanBranchComposeGraph struct {
 }
 
 type mediaPlanCompiledSources struct {
-	refs      []pipeline.NodeRef
-	streams   []av.Stream
-	rtpBuilds []rtpBuild
-	realtime  bool
+	refs         []pipeline.NodeRef
+	streams      []av.Stream
+	streamGroups [][]av.Stream
+	rtpBuilds    []rtpBuild
+	realtime     bool
 }
 
 func buildGraphPlanTask(ctx context.Context, plan graphPlan) (Task, error) {
@@ -779,12 +780,11 @@ func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, plan graphPla
 	if p.selectedStream {
 		return p.compileSelectedPacketCopyBranchCompose(ctx, graph, service, selectOperation, targets)
 	}
-	sourceRefs, streams, _, _, err := p.compileSources(ctx, graph)
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []StreamIntent{p.stream}})
 	if err != nil {
 		return err
 	}
-	targetRefs := sourceRefs
-	return p.lowerPacketCopyTargets(ctx, graph, service, targets, targetRefs, streams)
+	return p.lowerPacketCopyTargets(ctx, graph, service, targets, sources.refs, sources.streamGroups)
 }
 
 func (p mediaPlanStreamGraph) compileSelectedPacketCopyBranchCompose(ctx context.Context, graph pipeline.Graph, service *builder, selectOperation graphPlanOperation, targets []graphPlanTargetOperation) error {
@@ -943,7 +943,7 @@ func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
 	service *builder,
 	targets []graphPlanTargetOperation,
 	targetRefs []pipeline.NodeRef,
-	streams []av.Stream,
+	streamGroups [][]av.Stream,
 ) error {
 	for i := range targets {
 		target := targets[i]
@@ -964,7 +964,7 @@ func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
 			}
 			continue
 		}
-		targetStreams, err := packetCopyTargetStreams(target, streams, len(targetRefs))
+		targetStreams, err := packetCopyTargetStreams(target, streamGroups)
 		if err != nil {
 			return err
 		}
@@ -1006,33 +1006,27 @@ func packetCopyTargetRefs(target graphPlanTargetOperation, refs []pipeline.NodeR
 	return out, nil
 }
 
-func packetCopyTargetStreams(target graphPlanTargetOperation, streams []av.Stream, sourceCount int) ([]av.Stream, error) {
+func packetCopyTargetStreams(target graphPlanTargetOperation, streamGroups [][]av.Stream) ([]av.Stream, error) {
 	if len(target.Matches) == 0 {
 		return nil, graphPlanInvalidError("packet-copy target operation has no branch matches", []string{
 			"target=" + target.Name,
 		})
 	}
-	if sourceCount == 1 || len(target.Matches) == sourceCount {
-		return append([]av.Stream(nil), streams...), nil
-	}
-	if len(streams) != sourceCount {
-		return nil, graphPlanInvalidError("packet-copy target operation cannot map partial branch matches to streams", []string{
-			"target=" + target.Name,
-			"matches=" + strconv.Itoa(len(target.Matches)),
-			"sources=" + strconv.Itoa(sourceCount),
-			"streams=" + strconv.Itoa(len(streams)),
-		})
-	}
 	out := make([]av.Stream, 0, len(target.Matches))
 	for _, index := range target.Matches {
-		if index < 0 || index >= len(streams) {
-			return nil, graphPlanInvalidError("packet-copy target operation branch match is outside streams", []string{
+		if index < 0 || index >= len(streamGroups) {
+			return nil, graphPlanInvalidError("packet-copy target operation branch match is outside stream groups", []string{
 				"target=" + target.Name,
 				"match=" + strconv.Itoa(index),
-				"streams=" + strconv.Itoa(len(streams)),
+				"stream_groups=" + strconv.Itoa(len(streamGroups)),
 			})
 		}
-		out = append(out, streams[index])
+		out = append(out, streamGroups[index]...)
+	}
+	if len(out) == 0 {
+		return nil, graphPlanInvalidError("packet-copy target operation has no streams for matched branches", []string{
+			"target=" + target.Name,
+		})
 	}
 	return out, nil
 }
@@ -1468,14 +1462,6 @@ func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Contex
 	return compileBranchComposeRoutes(ctx, service, graph, branches, outputs, branchInputs, branchStreams, nil, branchPlan, sources.realtime)
 }
 
-func (p mediaPlanStreamGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {
-	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []StreamIntent{p.stream}})
-	if err != nil {
-		return nil, nil, nil, false, err
-	}
-	return sources.refs, sources.streams, sources.rtpBuilds, sources.realtime, nil
-}
-
 func compileMediaPlanSources(
 	ctx context.Context,
 	runtime *runtime,
@@ -1500,9 +1486,10 @@ func compileMediaPlanSources(
 			return mediaPlanCompiledSources{}, err
 		}
 		return mediaPlanCompiledSources{
-			refs:     []pipeline.NodeRef{sourceRef},
-			streams:  demux.streams,
-			realtime: runtime.realtime || input.Realtime,
+			refs:         []pipeline.NodeRef{sourceRef},
+			streams:      append([]av.Stream(nil), demux.streams...),
+			streamGroups: [][]av.Stream{append([]av.Stream(nil), demux.streams...)},
+			realtime:     runtime.realtime || input.Realtime,
 		}, nil
 	}
 	if !allRTPInputSpecs(inputs) {
@@ -1510,6 +1497,7 @@ func compileMediaPlanSources(
 	}
 	sourceRefs := make([]pipeline.NodeRef, 0, len(inputs))
 	streams := make([]av.Stream, 0, len(inputs))
+	streamGroups := make([][]av.Stream, 0, len(inputs))
 	builds := make([]rtpBuild, 0, len(inputs))
 	for i := range inputs {
 		receiver, err := service.openRTPSource(ctx, inputs[i].rtpBuildInput(), i)
@@ -1522,14 +1510,17 @@ func compileMediaPlanSources(
 			return mediaPlanCompiledSources{}, err
 		}
 		sourceRefs = append(sourceRefs, sourceRef)
-		streams = append(streams, receiver.streams...)
+		sourceStreams := append([]av.Stream(nil), receiver.streams...)
+		streams = append(streams, sourceStreams...)
+		streamGroups = append(streamGroups, sourceStreams)
 		builds = append(builds, receiver)
 	}
 	return mediaPlanCompiledSources{
-		refs:      sourceRefs,
-		streams:   streams,
-		rtpBuilds: builds,
-		realtime:  runtime.realtime,
+		refs:         sourceRefs,
+		streams:      streams,
+		streamGroups: streamGroups,
+		rtpBuilds:    builds,
+		realtime:     runtime.realtime,
 	}, nil
 }
 

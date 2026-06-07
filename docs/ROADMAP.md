@@ -8,6 +8,12 @@ validation gates. This roadmap keeps the broader phase view.
 The recipe surface is now pointed in the right direction; the next work is to
 make the implementation match the composable planner promise.
 
+GoAV should not become a GStreamer clone. The remaining work is the Go-native
+flow-control layer: formal media shapes, branch-local buffering, observation
+from typed taps, task/branch/target lifecycle, custom sources, and one planner
+for planned and runtime branches. Public vocabulary stays `Input`, `Chain`,
+`Tap`, `Branch`, `Target`, `Destination`, `Flow`, and `Task`.
+
 1. Make the declarative grammar the only normal composer:
    `input -> chain -> tap -> branch -> target` lowers into
    `GraphPlan -> pipeline.Graph -> Task`. `GraphPlan` now owns planned
@@ -30,43 +36,50 @@ make the implementation match the composable planner promise.
    decoders and transforms from frame/packet taps, share target/mux nodes while
    branches use them, and detach only branch-owned nodes. Planned branches and
    runtime branches must share capability and target compatibility validation.
-4. Add a capability model for streams, codecs, filters, and containers so the
-   planner can explain copy/decode/encode choices, missing adapters, transform
-   incompatibilities, and mux-output conflicts before runtime execution. Codec
-   descriptors now preflight known decoder and encoder media/sample/pixel
-   compatibility for planned and runtime branches. Branch planning now carries
-   stream caps from probed inputs and live codec intent into `Explain(ctx)`,
-   operation output caps, and planned taps. Filter descriptor metadata now feeds
-   `Explain(ctx)` and descriptor media mismatches plus config-specific
-   pixel/sample-format and resize-mode mismatches fail during planned and runtime
-   branch preflight. Format descriptors now report container
-   media/codecs/stream-count capabilities and descriptor-backed mux target
-   conflicts fail before planned or runtime graph mutation.
-5. Keep custom composition orthogonal: application-local codecs use
+4. Add formal media shape contracts for streams, codecs, filters, containers,
+   flows, taps, branches, targets, and destinations. The current descriptor and
+   report capability work is the migration base, but the public direction is
+   `MediaShape`/shape contracts with useful expected-vs-actual diagnostics
+   before decoder, encoder, filter, muxer, or graph mutation.
+5. Add branch-local buffering, ownership, and lifecycle policies. Branches need
+   explicit buffer modes, drop counters/reasons, safe shared frame ownership,
+   detach drain/abort choices, and destination commit/abort/close guarantees.
+6. Add Go-native observation and control without graph handles. `Observe` is
+   typed tap instrumentation, `.Do(...)` remains data-plane processing, `Watch`
+   filters events, and `Snapshot` reports task state, branches, taps, targets,
+   target state, and scoped stats.
+7. Add custom source symmetry: application code can push packets, frames,
+   events, and EOS from a declared shape just as it can provide custom stages,
+   sinks, writers, and object destinations today.
+8. Keep custom composition orthogonal: application-local codecs use
    `goav.Codec`, `WithDecoder`, and `WithEncoder`; custom stages, filters,
    sinks, and targets use the same stream and runtime-attachment concepts as
    built-ins instead of workflow-specific helpers.
-6. Keep first-page examples executable with `goav.Default()`, or keep examples
+9. Keep first-page examples executable with `goav.Default()`, or keep examples
    that require unavailable containers in clearly labeled adapter sections.
-7. Treat adapter coverage as product surface after the planner can absorb it.
+10. Treat adapter coverage as product surface after the planner can absorb it.
    WebM and Ogg remain the next high-value containers because they unlock
    expected RTP/WebRTC record and muxed audio/video examples.
-8. Generalize flows as reusable operation sequences over chains, not as a
+11. Generalize flows as reusable operation sequences over chains, not as a
    second graph DSL. Branches own targets through `.To(goav.Target(...))`;
    runtime `Task.Attach(ctx, goav.Branch(...))` remains the late control-plane
    branch for running direct graphs.
-9. Promote live codec-change behavior into explicit policy: compatible rebind,
+12. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
    choices should be visible to realtime users.
-10. Add runtime observability through task stats, traces, drop reasons, and
+13. Remove old workflow residue from normal composition: `transcode` imports,
+    branch-compose labels, string output refs, the separate runtime-branch
+    compilation path, and route-policy leaks should be quarantined or deleted
+    from the normal planner.
+14. Add runtime observability through task stats, traces, drop reasons, and
    latency counters. Task stats now include graph and per-node counters, and
    runtime attachments expose branch-owned node stats; traces and latency
    counters remain future slices.
-11. Prepare v0.1 only after README examples compile/run or clearly name their
+15. Prepare v0.1 only after README examples compile/run or clearly name their
     adapter requirements, default and tagged tests pass, core stays cgo-free,
     hot-path allocation guards remain green, and one public RTP/WebRTC record
     branch plus one public file transcode branch work end to end.
-12. Confirm `go 1.26` in `go.mod` is intentional before tagging; it sets the
+16. Confirm `go 1.26` in `go.mod` is intentional before tagging; it sets the
     installation floor for users and CI.
 
 ## Phase 0: API sketch
