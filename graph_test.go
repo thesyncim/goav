@@ -362,7 +362,7 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 		Branch("sampler").
 			From("source").
 			Do(parentStage).
-			Tap("video.sampled").
+			TapName("video.sampled").
 			To(SinkEndpoint(parentSink)),
 		Branch("screenshots").
 			FromTap("video.sampled").
@@ -719,7 +719,7 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 		Branch("sampler").
 			From("source").
 			Do(parentStage).
-			Tap("video.sampled").
+			TapName("video.sampled").
 			To(SinkEndpoint(parentSink)),
 	)
 	if err != nil {
@@ -771,7 +771,7 @@ func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
 		Branch("first").
 			From("source").
 			Do(&runtimeTestStage{name: "stage"}).
-			Tap("sampled").
+			TapName("sampled").
 			To(SinkEndpoint(&runtimeTestSink{name: "first"})),
 	)
 	if err != nil {
@@ -783,7 +783,7 @@ func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
 		Branch("second").
 			From("source").
 			Do(&runtimeTestStage{name: "stage"}).
-			Tap("sampled").
+			TapName("sampled").
 			To(SinkEndpoint(&runtimeTestSink{name: "second"})),
 	)
 	var buildErr *BuildError
@@ -915,7 +915,7 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 	parent, err := mediaTask.Attach(ctx, Branch("thumb").
 		FromTap("video.frames").
 		Resize(320, 180).
-		Tap("video.320.frames").
+		TapName("video.320.frames").
 		To(SinkEndpoint(thumbs)))
 	if err != nil {
 		t.Fatal(err)
@@ -1031,7 +1031,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 		FromTap("video.frames").
 		Buffer(pipeline.BufferPolicy{Capacity: 2}).
 		Resize(320, 180).
-		Tap("video.320.frames").
+		TapName("video.320.frames").
 		To(SinkEndpoint(thumbs)))
 	if err != nil {
 		t.Fatal(err)
@@ -1167,7 +1167,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 		FromTap("audio.frames").
 		Buffer(pipeline.BufferPolicy{Capacity: 2}).
 		Resample(16_000, Mono).
-		Tap("audio.16k").
+		TapName("audio.16k").
 		To(SinkEndpoint(voice)))
 	if err != nil {
 		t.Fatal(err)
@@ -1290,7 +1290,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 	_, err = mediaTask.Attach(ctx, Branch("voice").
 		FromTap("audio.frames").
 		Resample(16_000, Mono).
-		Tap("audio.16k").
+		TapName("audio.16k").
 		To(SinkEndpoint(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
 		}))))
@@ -1358,7 +1358,7 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 	_, err := mediaTask.Attach(ctx, Branch("voice").
 		FromTap("audio.frames").
 		Resample(16_000, Mono).
-		Tap("audio.16k").
+		TapName("audio.16k").
 		To(SinkEndpoint(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
 		}))))
@@ -2013,7 +2013,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 		FromTap("audio.packets").
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Copy().
-		Tap("audio.copied").
+		TapName("audio.copied").
 		To(SinkEndpoint(copied)))
 	if err != nil {
 		t.Fatal(err)
@@ -2316,7 +2316,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 		FromTap("audio.frames").
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Opus(96_000).
-		Tap("audio.encoded").
+		TapName("audio.encoded").
 		To(SinkEndpoint(encoded)))
 	if err != nil {
 		t.Fatal(err)
@@ -2431,7 +2431,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 		FromTap("audio.frames").
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Opus(96_000).
-		Tap("audio.encoded").
+		TapName("audio.encoded").
 		To(SinkEndpoint(encoded)))
 	if err != nil {
 		t.Fatal(err)
@@ -2552,7 +2552,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 		FromTap("audio.frames").
 		Buffer(pipeline.BufferPolicy{Capacity: 2}).
 		Do(meter).
-		Tap("audio.metered").
+		TapName("audio.metered").
 		To(SinkEndpoint(analysis)))
 	if err != nil {
 		t.Fatal(err)

@@ -724,7 +724,7 @@ func URIOutput(uri string) EndpointSpec {
 	}
 }
 
-// SinkEndpoint creates a decoded-frame or packet sink endpoint.
+// SinkEndpoint creates a decoded-frame or packet sink destination.
 func SinkEndpoint(sink pipeline.Sink) EndpointSpec {
 	name := ""
 	if sink != nil {
@@ -734,6 +734,11 @@ func SinkEndpoint(sink pipeline.Sink) EndpointSpec {
 		return EndpointSpec{err: ErrNilSink}
 	}
 	return EndpointSpec{sink: sink, name: name}
+}
+
+// Sink creates a sink destination for decoded frames or packets.
+func Sink(sink pipeline.Sink) EndpointSpec {
+	return SinkEndpoint(sink)
 }
 
 // Name overrides the endpoint name used for diagnostics and mux graph nodes.
@@ -772,7 +777,7 @@ func (s EndpointSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    s.err.Error(),
 			Suggestions: []string{
-				"pass a non-nil sink to goav.SinkEndpoint(...)",
+				"pass a non-nil sink to goav.Sink(...)",
 				"use goav.FileOutput(...) or goav.URIOutput(...) for muxed output",
 			},
 			Cause: s.err,
@@ -789,7 +794,7 @@ func (s EndpointSpec) validate(operation string, fallback string) error {
 			Reason:    "empty endpoint spec",
 			Suggestions: []string{
 				"use goav.FileOutput(name, writer) for muxed output",
-				"use goav.SinkEndpoint(sink) for decoded frames",
+				"use goav.Sink(sink) for decoded frames or packets",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -1531,9 +1536,9 @@ func mixedStreamOutputError(operation string, stream StreamIntent) error {
 		Code:      "output_kind_mixed",
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
-		Reason:    "stream recipes cannot mix sink endpoints and muxed outputs",
+		Reason:    "stream recipes cannot mix sinks and muxed outputs",
 		Suggestions: []string{
-			"use .To(goav.SinkEndpoint(...)) for decoded frames",
+			"use .To(goav.Sink(...)) for decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
 		},
@@ -1549,7 +1554,7 @@ func streamEncodeMissingError(operation string, stream StreamIntent) error {
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
 		Suggestions: []string{
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...))",
-			"send decoded frames to goav.SinkEndpoint(...)",
+			"send decoded frames to goav.Sink(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -2487,7 +2492,7 @@ func recipeEncodeAdapterError(operation string, stream StreamIntent, registry *c
 		Details:   details,
 		Suggestions: []string{
 			"register a codec adapter that provides a " + string(stream.Encode.ID) + " encoder",
-			"use .To(goav.SinkEndpoint(...)) to receive decoded frames without encoding",
+			"use .To(goav.Sink(...)) to receive decoded frames without encoding",
 			"use .Copy().To(output) for packet-preserving output when re-encoding is not needed",
 		},
 		Cause: cause,
@@ -2660,7 +2665,7 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			Node:      node,
 			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode branches currently target opus, vp8, and vp9",
 			Suggestions: []string{
-				"decode the stream with .To(goav.SinkEndpoint(...))",
+				"decode the stream with .To(goav.Sink(...))",
 				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode branches",
 				"use the expert builder with an explicit codec.EncodeConfig when testing an experimental encoder",
 			},
@@ -2936,7 +2941,7 @@ type JobStreamBuilder struct {
 	stream *jobStreamBuild
 }
 
-func (b *JobStreamBuilder) Apply(flow Flow) *JobStreamBuilder {
+func (b *JobStreamBuilder) Apply(flow Chain) *JobStreamBuilder {
 	spec, err := flowSpecFrom(flow)
 	if err != nil {
 		b.job.setErr(err)
@@ -2990,16 +2995,16 @@ func (b *JobStreamBuilder) Copy() *JobStreamBuilder {
 	return b
 }
 
-func (b *JobStreamBuilder) Tap(name string) *JobStreamBuilder {
+func (b *JobStreamBuilder) Tap(tap TapRef) *JobStreamBuilder {
 	stream := b.current()
-	if name == "" {
+	if tap.name == "" {
 		b.job.setErr(&BuildError{
 			Code:      "tap_invalid",
 			Operation: "build stream",
 			Node:      jobStreamName(stream),
 			Reason:    "tap name is empty",
 			Suggestions: []string{
-				"call .Tap(\"video.decoded\") or another stable tap name",
+				"call .Tap(goav.FrameTap(\"video.decoded\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -3007,12 +3012,24 @@ func (b *JobStreamBuilder) Tap(name string) *JobStreamBuilder {
 		return b
 	}
 	if codecIntentSet(stream.encode) {
-		stream.postEncodeTaps = append(stream.postEncodeTaps, name)
+		if err := validateTapDomain("build stream", jobStreamName(stream), tap, DomainPacket); err != nil {
+			b.job.setErr(err)
+			return b
+		}
+		stream.postEncodeTaps = append(stream.postEncodeTaps, tap.name)
+		return b
+	}
+	if err := validateTapDomain("build stream", jobStreamName(stream), tap, DomainFrame); err != nil {
+		b.job.setErr(err)
 		return b
 	}
 	stream.decode = true
-	stream.steps = append(stream.steps, jobStreamStep{tap: name})
+	stream.steps = append(stream.steps, jobStreamStep{tap: tap.name})
 	return b
+}
+
+func (b *JobStreamBuilder) TapName(name string) *JobStreamBuilder {
+	return b.Tap(namedTap(name))
 }
 
 func streamSelectFromAV(selector av.StreamSelector) StreamSelect {
@@ -3559,7 +3576,7 @@ func branchEncodeMissingError(stream StreamIntent) error {
 		Reason:    "branch needs an encoder before writing to a muxed target",
 		Suggestions: []string{
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(...)",
-			"route raw frames to goav.SinkEndpoint(...) when the branch should stay decoded",
+			"route raw frames to goav.Sink(...) when the branch should stay decoded",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3574,7 +3591,7 @@ func branchCopyUnsupportedError(stream StreamIntent) error {
 		Suggestions: []string{
 			"use goav.From(input).Copy().Branches(...) for packet-preserving planned branches",
 			"attach a runtime branch from a packet tap and call .Copy() when packet-domain fanout is needed",
-			"omit .Copy() when the branch should deliver decoded frames to goav.SinkEndpoint(...)",
+			"omit .Copy() when the branch should deliver decoded frames to goav.Sink(...)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

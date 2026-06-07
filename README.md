@@ -13,13 +13,11 @@ from the same few concepts.
 ## Vocabulary
 
 - `Input`: where media comes from.
-- `Stream`: the selected audio/video stream.
-- `Operation`: decode, resize, resample, custom stage, encode, or copy.
-- `Tap`: a stable typed attach point.
-- `Branch`: a downstream chain from a stream point or tap.
+- `Chain`: selected media plus operations such as decode, resize, resample,
+  custom stages, encode, or copy.
+- `Tap`: a typed attach point created with `FrameTap` or `PacketTap`.
+- `Branch`: a downstream chain from a chain point or tap.
 - `Target`: a named destination group, such as a mux or sink group.
-- `Endpoint`: the actual file, URI, writer, or sink.
-- `Flow`: a reusable operation sequence, not a destination.
 - `Task`: a running graph with attach/detach, events, stats, and taps.
 
 ## 30-Second Examples
@@ -45,8 +43,8 @@ return goav.From(goav.FileInput("input.ivf", in)).
     Run(ctx)
 ```
 
-Use `Target` when a destination needs a stable logical name; direct endpoints
-remain the shortest spelling for one-off outputs.
+Use `Target` when a destination needs a stable logical name; direct files, URIs,
+and sinks remain the shortest spelling for one-off outputs.
 
 Decode one WebRTC audio track to frames:
 
@@ -54,14 +52,13 @@ Decode one WebRTC audio track to frames:
 return goav.From(goav.WebRTCTrack(track)).
     Audio().
     Decode().
-    To(goav.SinkEndpoint(frames)).
+    To(goav.Sink(frames)).
     Run(ctx)
 ```
 
-`SinkEndpoint` receives frames at decoded points and packets after `.Copy()` or
-after an encoder such as `.Opus(...)`, `.VP8(...)`, or `.VP9(...)`. Packet
-streams can fan out to mux endpoints and packet sinks from the same encoded or
-copied stream.
+`Sink` receives frames at decoded points and packets after `.Copy()` or an
+encoder such as `.Opus(...)`, `.VP8(...)`, or `.VP9(...)`. Packet streams can
+fan out to file targets and packet sinks from the same encoded or copied chain.
 
 Resize and encode one video stream:
 
@@ -87,16 +84,19 @@ adapters are registered by the application or an adapter bundle.
 
 Use branches when one selected stream should become multiple downstream targets.
 Targets are typed values, so normal recipes do not route by string labels. A
-target can be a mux group or a sink endpoint.
+target can be a mux group or a sink group.
 
 ```go
+decoded := goav.FrameTap("video.decoded")
+previewFrames := goav.FrameTap("video.preview.frames")
+
 archive := goav.Target("archive", goav.FileOutput("archive.ivf", archiveFile))
 preview := goav.Target("preview", goav.FileOutput("preview.ivf", previewFile))
 
 return goav.From(input).
     Video().
     Decode().
-    Tap("video.decoded").
+    Tap(decoded).
     Branches(
         goav.Branch("archive").
             Resize(1920, 1080).
@@ -105,36 +105,39 @@ return goav.From(input).
         goav.Branch("preview").
             Resize(640, 360).
             Do(frameMeter).
-            Tap("video.preview.frames").
+            Tap(previewFrames).
             VP8(600_000).
             To(preview),
     ).
     Run(ctx)
 ```
 
-Omit `FromTap` when every branch starts from the current stream point. Use
-`FromTap` when one branch should start from an earlier stable tap while another
+Omit `From(...)` when every branch starts from the current chain point. Use a
+typed tap when one branch should start from an earlier point while another
 continues from a later operation:
 
 ```go
+decoded := goav.FrameTap("video.decoded")
+frames720p := goav.FrameTap("video.720p.frames")
+
 thumbnail := goav.Target("thumbnail",
-    goav.SinkEndpoint(goav.SinkFunc("thumbnail", saveFrame)),
+    goav.Sink(goav.SinkFunc("thumbnail", saveFrame)),
 )
 web := goav.Target("web", goav.FileOutput("web.ivf", webFile))
 
 return goav.From(input).
     Video().
     Decode().
-    Tap("video.decoded").
+    Tap(decoded).
     Resize(1280, 720).
-    Tap("video.720p.frames").
+    Tap(frames720p).
     Branches(
         goav.Branch("thumbnail").
-            FromTap("video.decoded").
+            From(decoded).
             Resize(320, 180).
             To(thumbnail),
         goav.Branch("web").
-            FromTap("video.720p.frames").
+            From(frames720p).
             VP9(2_000_000).
             To(web),
     ).
@@ -166,12 +169,12 @@ return goav.From(goav.FileInput("source.webm", in)).
     Run(ctx)
 ```
 
-Branches do not have to encode when the target is a sink endpoint. This is the
+Branches do not have to encode when the target is a sink. This is the
 same operation chain, just ending in frame domain:
 
 ```go
 thumbnail := goav.Target("thumbnail",
-    goav.SinkEndpoint(goav.SinkFunc("thumbnail", saveFrame)),
+    goav.Sink(goav.SinkFunc("thumbnail", saveFrame)),
 )
 
 return goav.From(input).
@@ -189,23 +192,20 @@ Recipe encode conveniences are strongest for Opus, VP8, and VP9. H264 and AV1
 are receive/decode codec specs today; recipe encode support for them is still
 work in progress.
 
-### Flows
+### Reuse
 
-A flow is reusable ordered work: custom stages, taps, transforms, and an
-optional terminal encoder. A branch owns the target.
-When the reusable work should own the packet-to-frame boundary, start the flow
-with `.Decode()` and apply it from a stream chain, packet branch, or packet tap.
-When the reusable work should preserve packets, start it with `.Copy()`.
-`Tap(...)` publishes a frame attach point before encode and a packet attach
-point after `.Copy()` or encode.
+When chain operations repeat, extract a reusable flow. A flow owns only
+operations. A branch owns the target.
 
 ```go
-voice := goav.AudioFlow("voice").
+voiceFrames := goav.FrameTap("audio.voice.frames")
+
+voice := goav.Flow("voice").Audio().
     Resample(16_000, goav.Mono).
-    Tap("audio.voice.frames").
+    Tap(voiceFrames).
     OpusVoice()
 
-archive := goav.AudioFlow("archive").
+archive := goav.Flow("archive").Audio().
     Resample(48_000, goav.Stereo).
     OpusMusic()
 
@@ -238,7 +238,7 @@ operation sequence; the branch owns the target or targets.
 ```go
 record, err := task.Attach(ctx,
     goav.Branch("archive").
-        FromTap("audio.decoded").
+        From(goav.FrameTap("audio.decoded")).
         Apply(archive).
         To(archiveTarget),
 )
@@ -251,6 +251,9 @@ attachment. Place taps where future work may attach: after decode, after resize
 or resample, after a custom stage, or after encode.
 
 ```go
+frames720p := goav.FrameTap("video.720p.frames")
+screenshotFrames := goav.FrameTap("video.screenshot.frames")
+
 web := goav.Target("web", goav.FileOutput("web.ivf", webFile))
 
 task, err := goav.From(input).
@@ -259,7 +262,7 @@ task, err := goav.From(input).
     Branches(
         goav.Branch("720p").
             Resize(1280, 720).
-            Tap("video.720p.frames").
+            Tap(frames720p).
             VP9(2_000_000).
             To(web),
     ).
@@ -272,10 +275,10 @@ go func() { _ = task.Run(ctx) }()
 
 shots, err := task.Attach(ctx,
     goav.Branch("screenshots").
-        FromTap("video.720p.frames").
+        From(frames720p).
         Resize(320, 180).
-        Tap("video.screenshot.frames").
-        To(goav.SinkEndpoint(goav.SinkFunc("screenshots", collectScreenshot))),
+        Tap(screenshotFrames).
+        To(goav.Sink(goav.SinkFunc("screenshots", collectScreenshot))),
 )
 if err != nil {
     return err
@@ -283,14 +286,15 @@ if err != nil {
 return task.Detach(ctx, shots)
 ```
 
-Frame taps can also grow a late encoded endpoint:
+Frame taps can also grow a late encoded destination:
 
 ```go
+audioDecoded := goav.FrameTap("audio.decoded")
 recording := goav.Target("recording", goav.FileOutput("recording.ogg", file))
 
 record, err := task.Attach(ctx,
     goav.Branch("record-audio").
-        FromTap("audio.decoded").
+        From(audioDecoded).
         Opus(96_000).
         To(recording),
 )
@@ -304,15 +308,18 @@ One `Attach` call can add several runtime branches atomically. Later branches
 in the same call can use taps published by earlier branches:
 
 ```go
+frames720p := goav.FrameTap("video.720p.frames")
+sampledFrames := goav.FrameTap("video.sampled.frames")
+
 group, err := task.Attach(ctx,
     goav.Branch("sampler").
-        FromTap("video.720p.frames").
+        From(frames720p).
         Resize(320, 180).
-        Tap("video.sampled.frames").
-        To(goav.SinkEndpoint(goav.SinkFunc("sampler", collectSample))),
+        Tap(sampledFrames).
+        To(goav.Sink(goav.SinkFunc("sampler", collectSample))),
     goav.Branch("screenshots").
-        FromTap("video.sampled.frames").
-        To(goav.SinkEndpoint(goav.SinkFunc("screenshots", collectScreenshot))),
+        From(sampledFrames).
+        To(goav.Sink(goav.SinkFunc("screenshots", collectScreenshot))),
 )
 if err != nil {
     return err
@@ -324,36 +331,41 @@ Reuse the same sink `Target` value inside a grouped attach when several branches
 should feed one runtime observer:
 
 ```go
+frames720p := goav.FrameTap("video.720p.frames")
 samples := goav.Target("samples",
-    goav.SinkEndpoint(goav.SinkFunc("samples", collectSample)),
+    goav.Sink(goav.SinkFunc("samples", collectSample)),
 )
 
 group, err := task.Attach(ctx,
-    goav.Branch("left").FromTap("video.720p.frames").To(samples),
-    goav.Branch("right").FromTap("video.720p.frames").To(samples),
+    goav.Branch("left").From(frames720p).To(samples),
+    goav.Branch("right").From(frames720p).To(samples),
 )
 ```
 
 The same rule works for mux targets: reuse one typed `Target` value when several
-encoded packet branches should feed one late recording endpoint.
+encoded packet branches should feed one late recording destination.
 
 ```go
+audioEncoded := goav.PacketTap("audio.encoded")
+videoEncoded := goav.PacketTap("video.encoded")
 recording := goav.Target("recording",
     goav.FileOutput("recording.webm", file),
 )
 
 group, err := task.Attach(ctx,
-    goav.Branch("audio").FromTap("audio.encoded").Copy().To(recording),
-    goav.Branch("video").FromTap("video.encoded").Copy().To(recording),
+    goav.Branch("audio").From(audioEncoded).Copy().To(recording),
+    goav.Branch("video").From(videoEncoded).Copy().To(recording),
 )
 ```
 
-Packet taps can be copied into a late endpoint:
+Packet taps can be copied into a late destination:
 
 ```go
+audioEncoded := goav.PacketTap("audio.encoded")
+
 record, err := task.Attach(ctx,
     goav.Branch("record-packets").
-        FromTap("audio.encoded").
+        From(audioEncoded).
         Copy().
         To(goav.Target("recording", goav.FileOutput("recording.ogg", file))),
 )
@@ -366,12 +378,15 @@ defer record.Close(ctx)
 Packet taps can also become late decoded frame branches:
 
 ```go
+audioPackets := goav.PacketTap("audio.packets")
+previewFrames := goav.FrameTap("audio.decoded.preview")
+
 preview, err := task.Attach(ctx,
     goav.Branch("preview").
-        FromTap("audio.packets").
+        From(audioPackets).
         Decode().
-        Tap("audio.decoded.preview").
-        To(goav.SinkEndpoint(frames)),
+        Tap(previewFrames).
+        To(goav.Sink(frames)),
 )
 if err != nil {
     return err
@@ -379,13 +394,13 @@ if err != nil {
 defer preview.Close(ctx)
 ```
 
-`Task.Taps()` lists available attach points. `Attach` adds downstream sink
-or endpoint branches to a running direct task graph without rebuilding upstream.
+`Task.Taps()` lists available attach points. `Attach` adds downstream sink or
+destination branches to a running direct task graph without rebuilding upstream.
 Late branches can apply flows, run custom `.Do(...)` stages, resize/resample
 from frame taps, encode Opus/VP8/VP9 from frame taps, copy or decode from
 packet taps, and write to one or more typed targets before exposing their own
-`.Tap(name)` outlets for later attachments. Observer branches can use
-`.Do(goav.FrameFunc(...)).Tap(name).To(goav.SinkEndpoint(...))` to both inspect
+typed tap outlets for later attachments. Observer branches can use
+`.Do(goav.FrameFunc(...)).Tap(goav.FrameTap(name)).To(goav.Sink(...))` to both inspect
 frames and publish a downstream attach point. H264 and AV1 recipe encoding
 remain work in progress. A grouped attach rolls back the whole group if any
 branch cannot be prepared or connected. Detaching a parent attachment also
@@ -437,7 +452,7 @@ return goav.From(input).
     Audio().
     Decode().
     Do(meter).
-    To(goav.SinkEndpoint(levels)).
+    To(goav.Sink(levels)).
     Run(ctx)
 ```
 
@@ -486,14 +501,14 @@ Implemented now:
 - `From(input)` as the public composition front door.
 - Packet-preserving `Copy().To(...)`.
 - Stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode.
-- Packet-domain fanout from `.Copy()` or an encoder to both mux endpoints and
-  `SinkEndpoint` packet observers.
+- Packet-domain fanout from `.Copy()` or an encoder to both files and packet
+  sinks.
 - Planned packet-copy branches with `.Copy().Branches(...)`, sharing one stream
   selector without creating decoders.
-- Typed `Branch`, `Target`, endpoint, and `Flow` composition.
-- Runtime branch attachment from named taps with flows, custom stages,
-  resize/resample from frame taps, late Opus/VP8/VP9 encode endpoints, packet
-  copy endpoints, nested runtime taps, `Attachment.Close(ctx)`, and
+- Typed `Tap`, `Branch`, `Target`, and reusable chain composition.
+- Runtime branch attachment from typed taps with reusable flows, custom stages,
+  resize/resample from frame taps, late Opus/VP8/VP9 encode destinations,
+  packet-copy destinations, nested runtime taps, `Attachment.Close(ctx)`, and
   `Task.Detach(ctx, h)`.
 - Custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
   generic `Codec` specs.

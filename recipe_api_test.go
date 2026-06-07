@@ -309,7 +309,7 @@ type testBranchJob struct {
 type testTranscodeBranch struct {
 	name       string
 	media      av.MediaType
-	flows      []goav.Flow
+	flows      []goav.Chain
 	transforms []goav.TransformSpec
 	encode     goav.CodecSpec
 	targets    []goav.TargetSpec
@@ -352,11 +352,11 @@ func (j *testBranchJob) materialize() *goav.Job {
 		var stream *goav.JobStreamBuilder
 		switch branch.media {
 		case av.MediaAudio:
-			stream = job.Audio().Decode().Tap("audio.decoded")
+			stream = job.Audio().Decode().TapName("audio.decoded")
 		case av.MediaVideo:
-			stream = job.Video().Decode().Tap("video.decoded")
+			stream = job.Video().Decode().TapName("video.decoded")
 		default:
-			stream = job.Stream().Decode().Tap("stream.decoded")
+			stream = job.Stream().Decode().TapName("stream.decoded")
 		}
 		builder := goav.Branch(branch.name)
 		for _, flow := range branch.flows {
@@ -404,7 +404,7 @@ func (j *testBranchJob) Run(ctx context.Context) error {
 	return j.materialize().Run(ctx)
 }
 
-func (b *testTranscodeBranchBuilder) Apply(flow goav.Flow) *testTranscodeBranchBuilder {
+func (b *testTranscodeBranchBuilder) Apply(flow goav.Chain) *testTranscodeBranchBuilder {
 	b.current().flows = append(b.current().flows, flow)
 	return b
 }
@@ -660,7 +660,7 @@ func TestExplainReportsBranchCapsFromProbedInput(t *testing.T) {
 		UseRuntime(rt).
 		Audio().
 		Decode().
-		Tap("audio.decoded").
+		TapName("audio.decoded").
 		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
@@ -705,7 +705,7 @@ func TestExplainReportsBranchCapsFromLiveCodecIntent(t *testing.T) {
 		UseRuntime(rt).
 		Audio().
 		Decode().
-		Tap("audio.decoded").
+		TapName("audio.decoded").
 		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
@@ -776,7 +776,7 @@ func TestExplainReportsOperationCapsThroughResizeAndEncode(t *testing.T) {
 			goav.Branch("preview").
 				Resize(1280, 720).
 				VP9(2_000_000).
-				Tap("video.encoded").
+				TapName("video.encoded").
 				To(web),
 		).
 		Explain(context.Background())
@@ -1423,10 +1423,21 @@ func TestRuntimeBranchTapAnchorIsPublicAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = task.Attach(context.Background(),
+		goav.Branch("wrong-domain").
+			From(goav.PacketTap("audio.decoded")).
+			To(goav.Sink(goav.SinkFunc("wrong-domain", func(context.Context, goav.Message) error {
+				return nil
+			}))),
+	)
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" {
+		t.Fatalf("err = %v, want tap_domain_mismatch", err)
+	}
 	attachment, err := task.Attach(context.Background(),
 		goav.Branch("levels").
-			FromTap("audio.decoded").
-			To(goav.SinkEndpoint(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
+			From(goav.FrameTap("audio.decoded")).
+			To(goav.Sink(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
 				return nil
 			}))),
 	)
@@ -1438,6 +1449,75 @@ func TestRuntimeBranchTapAnchorIsPublicAPI(t *testing.T) {
 	}
 	if err := attachment.Close(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTypedTapRefsDriveStreamIntent(t *testing.T) {
+	decoded := goav.FrameTap("audio.decoded")
+	encoded := goav.PacketTap("audio.encoded")
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Tap(decoded).
+		Opus(96_000).
+		Tap(encoded).
+		To(goav.FileOutput("encoded.ogg", io.Discard))
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	taps := intent.Streams[0].Taps
+	if len(taps) != 2 ||
+		taps[0].Name != decoded.Name() ||
+		taps[0].Domain != goav.DomainFrame ||
+		taps[0].After != goav.OpDecode ||
+		taps[1].Name != encoded.Name() ||
+		taps[1].Domain != goav.DomainPacket ||
+		taps[1].After != goav.OpEncode {
+		t.Fatalf("taps: %+v", taps)
+	}
+}
+
+func TestTypedTapDomainMismatchIsActionable(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Copy().
+		Tap(goav.FrameTap("audio.packets")).
+		To(goav.FileOutput("copy.ogg", io.Discard)).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want tap_domain_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "FrameTap") ||
+		!strings.Contains(err.Error(), "PacketTap") {
+		t.Fatalf("err = %v, want typed tap guidance", err)
+	}
+}
+
+func TestTypedBranchTapDomainMismatchIsActionable(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Branches(
+			goav.Branch("levels").
+				Tap(goav.PacketTap("audio.levels")).
+				To(goav.Sink(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
+					return nil
+				}))),
+		).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want tap_domain_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "FrameTap") ||
+		!strings.Contains(err.Error(), "PacketTap") {
+		t.Fatalf("err = %v, want typed tap guidance", err)
 	}
 }
 
@@ -1473,6 +1553,11 @@ func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
 		".To(\"",
 		"PathSpec",
 		"PathBuilder",
+		"FromTap(",
+		"SinkEndpoint",
+		"TapName(",
+		"AudioFlow(",
+		"VideoFlow(",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("README keeps old branch/target vocabulary %q", forbidden)
@@ -1482,6 +1567,10 @@ func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
 		"goav.Branch(",
 		"Branches(",
 		"goav.Target(",
+		"goav.FrameTap(",
+		"goav.PacketTap(",
+		"goav.Sink(",
+		"goav.Flow(",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("README should show %s in the public composition grammar", required)
@@ -1892,7 +1981,7 @@ func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
 	})
 	voice := goav.AudioFlow("voice").
 		Do(meter).
-		Tap("audio.after-meter").
+		TapName("audio.after-meter").
 		Resample(16_000, goav.Mono).
 		OpusVoice()
 
@@ -1922,7 +2011,7 @@ func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
 func TestFlowTapAfterEncodeIsPacketTap(t *testing.T) {
 	voice := goav.AudioFlow("voice").
 		OpusVoice().
-		Tap("audio.voice.packets")
+		TapName("audio.voice.packets")
 
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -1954,7 +2043,7 @@ func TestFlowTapAfterEncodeIsPacketTap(t *testing.T) {
 func TestFlowCopyAppliesToStreamRecipeIntent(t *testing.T) {
 	packets := goav.AudioFlow("packets").
 		Copy().
-		Tap("audio.copied")
+		TapName("audio.copied")
 
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -2038,7 +2127,7 @@ func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 	preview := goav.VideoFlow("preview").
 		Resize(640, 360).
-		Tap("preview.frames").
+		TapName("preview.frames").
 		VP9(600_000)
 	web := goav.Target("web", goav.FileOutput("preview.webm", io.Discard))
 
@@ -2086,7 +2175,7 @@ func TestBranchesGroupSelectedStreams(t *testing.T) {
 	job := goav.From(goav.FileInput("source.webm", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap("video.decoded").
+		TapName("video.decoded").
 		Branches(
 			goav.Branch("v1080").
 				Resize(1920, 1080).
@@ -2099,7 +2188,7 @@ func TestBranchesGroupSelectedStreams(t *testing.T) {
 		).
 		Audio().
 		Decode().
-		Tap("audio.decoded").
+		TapName("audio.decoded").
 		Branches(
 			goav.Branch("a96").
 				Resample(48_000, goav.Stereo).
@@ -2162,7 +2251,7 @@ func TestBranchAfterDecodeCustomStageUsesOrderedOperations(t *testing.T) {
 	job := goav.From(goav.FileInput("source.webm", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap("video.decoded").
+		TapName("video.decoded").
 		Branches(
 			goav.Branch("v360").
 				Do(meter).
@@ -2204,11 +2293,11 @@ func TestBranchTapAfterEncodeIsPacketTap(t *testing.T) {
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Decode().
-		Tap("audio.decoded").
+		TapName("audio.decoded").
 		Branches(
 			goav.Branch("archive").
 				Opus(96_000).
-				Tap("audio.encoded").
+				TapName("audio.encoded").
 				To(archive),
 		)
 
@@ -2249,7 +2338,7 @@ func TestBranchCustomStageUsesOrderedOperations(t *testing.T) {
 	job := goav.From(goav.FileInput("source.webm", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap("video.decoded").
+		TapName("video.decoded").
 		Branches(
 			goav.Branch("v360").
 				Resize(640, 360).
@@ -2294,7 +2383,7 @@ func TestFlowMediaMismatchIsActionable(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" {
 		t.Fatalf("err = %v, want flow_media_mismatch", err)
 	}
-	if !strings.Contains(err.Error(), "AudioFlow") || !strings.Contains(err.Error(), "VideoFlow") {
+	if !strings.Contains(err.Error(), "Flow(name).Audio") || !strings.Contains(err.Error(), "Flow(name).Video") {
 		t.Fatalf("err = %v, want flow guidance", err)
 	}
 }
@@ -2314,8 +2403,8 @@ func TestFlowBranchMediaMismatchIsActionable(t *testing.T) {
 		t.Fatalf("err = %v, want flow_media_mismatch wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "audio flow cannot be applied to video stream") ||
-		!strings.Contains(err.Error(), "AudioFlow") ||
-		!strings.Contains(err.Error(), "VideoFlow") {
+		!strings.Contains(err.Error(), "Flow(name).Audio") ||
+		!strings.Contains(err.Error(), "Flow(name).Video") {
 		t.Fatalf("err = %v, want branch flow media guidance", err)
 	}
 }
@@ -2336,8 +2425,8 @@ func TestBranchRejectsConflictingFlowMedia(t *testing.T) {
 		t.Fatalf("err = %v, want flow_media_mismatch wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "video flow cannot be applied to audio stream") ||
-		!strings.Contains(err.Error(), "AudioFlow") ||
-		!strings.Contains(err.Error(), "VideoFlow") {
+		!strings.Contains(err.Error(), "Flow(name).Audio") ||
+		!strings.Contains(err.Error(), "Flow(name).Video") {
 		t.Fatalf("err = %v, want conflicting flow media guidance", err)
 	}
 }
@@ -2401,7 +2490,7 @@ func TestFlowDecodeAppliesToPacketBranchIntent(t *testing.T) {
 func TestFlowDecodeAppliesToStreamRecipeIntent(t *testing.T) {
 	flow := goav.AudioFlow("preview").
 		Decode().
-		Tap("audio.flow.decoded")
+		TapName("audio.flow.decoded")
 
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -2577,7 +2666,7 @@ func TestBranchesRejectOuterOutputsAndDuplicateTargets(t *testing.T) {
 func TestFlowRejectsNonTapOperationsAfterEncode(t *testing.T) {
 	tests := []struct {
 		name string
-		flow goav.Flow
+		flow goav.Chain
 		want string
 	}{
 		{
@@ -2791,7 +2880,7 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "goav.SinkEndpoint") ||
+	if !strings.Contains(err.Error(), "goav.Sink") ||
 		!strings.Contains(err.Error(), ".Copy().To(output)") {
 		t.Fatalf("err = %v, want decode output guidance", err)
 	}
@@ -3417,7 +3506,7 @@ func TestStreamRecipeRejectsMixedSinkEndpointAndFileOutput(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want output_kind_mixed wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "cannot mix sink endpoints and muxed outputs") ||
+	if !strings.Contains(err.Error(), "cannot mix sinks and muxed outputs") ||
 		!strings.Contains(err.Error(), ".Branches") {
 		t.Fatalf("err = %v, want mixed output guidance", err)
 	}
@@ -3593,7 +3682,7 @@ func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T)
 		t.Fatalf("err = %v, want encode_adapter_missing wrapping codec.ErrNotFound", err)
 	}
 	if !strings.Contains(err.Error(), "codec=opus") ||
-		!strings.Contains(err.Error(), "SinkEndpoint") ||
+		!strings.Contains(err.Error(), "Sink") ||
 		strings.Contains(err.Error(), "cannot open input") ||
 		strings.Contains(err.Error(), "input_demuxer_missing") {
 		t.Fatalf("err = %v, want encode adapter guidance before input diagnostics", err)
@@ -4195,7 +4284,7 @@ func TestBranchCompositionSharesParentOperationBeforeBranches(t *testing.T) {
 		Video().
 		Decode().
 		Resize(1280, 720).
-		Tap("video.720p.frames").
+		TapName("video.720p.frames").
 		Branches(
 			goav.Branch("web").
 				VP9(2_000_000).
@@ -4238,9 +4327,9 @@ func TestBranchCompositionCanSplitFromEarlierTap(t *testing.T) {
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap("video.decoded").
+		TapName("video.decoded").
 		Resize(1280, 720).
-		Tap("video.720p.frames").
+		TapName("video.720p.frames").
 		Branches(
 			goav.Branch("raw-preview").
 				FromTap("video.decoded").
@@ -4307,7 +4396,7 @@ func TestBranchCompositionRejectsMissingPlannedTap(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "branch_tap_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want branch_tap_missing wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), `Tap("video.missing")`) ||
+	if !strings.Contains(err.Error(), `Tap(goav.FrameTap("video.missing"))`) ||
 		!strings.Contains(err.Error(), "current stream point") {
 		t.Fatalf("err = %v, want planned tap guidance", err)
 	}
@@ -4332,7 +4421,7 @@ func TestBranchCompositionRejectsGraphNodeSource(t *testing.T) {
 		t.Fatalf("err = %v, want branch_source_invalid wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "graph node names") ||
-		!strings.Contains(err.Error(), "FromTap") {
+		!strings.Contains(err.Error(), "From(goav.FrameTap") {
 		t.Fatalf("err = %v, want planned branch source guidance", err)
 	}
 }
@@ -4342,7 +4431,7 @@ func TestBranchCompositionRejectsStreamEncodeBeforeBranches(t *testing.T) {
 		Video().
 		Decode().
 		VP9(2_000_000).
-		Tap("video.encoded").
+		TapName("video.encoded").
 		Branches(
 			goav.Branch("packets").
 				To(goav.Target("packets", goav.SinkEndpoint(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
@@ -4465,7 +4554,7 @@ func TestBranchCompositionAllowsPacketCopyBranches(t *testing.T) {
 	job := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Copy().
-		Tap("video.packets").
+		TapName("video.packets").
 		Branches(
 			goav.Branch("archive").To(archive),
 			goav.Branch("packets").To(packets),
@@ -4601,7 +4690,7 @@ func TestBranchRecipeRejectsNegativeStreamIndex(t *testing.T) {
 		materialize().
 		Audio(goav.StreamIndex(-1)).
 		Decode().
-		Tap("audio.decoded").
+		TapName("audio.decoded").
 		Branches(goav.Branch("bad").Opus(64_000).To(goav.Target("bad", goav.FileOutput("bad.ogg", io.Discard)))).
 		Build(context.Background())
 
@@ -4651,7 +4740,7 @@ func TestBranchRecipeRejectsProcessingAfterEncoder(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap("video.decoded").
+		TapName("video.decoded").
 		Branches(
 			goav.Branch("360p").
 				VP9(600_000).
@@ -4675,7 +4764,7 @@ func TestBranchRecipeRejectsDuplicateEncoder(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap("video.decoded").
+		TapName("video.decoded").
 		Branches(
 			goav.Branch("360p").
 				VP9(600_000).

@@ -721,7 +721,7 @@ func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "decodes: 1") ||
 		!strings.Contains(err.Error(), "outputs: 1") ||
-		!strings.Contains(err.Error(), "SinkEndpoint") {
+		!strings.Contains(err.Error(), "Sink") {
 		t.Fatalf("err = %v, want unsupported shape guidance", err)
 	}
 }

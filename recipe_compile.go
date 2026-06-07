@@ -563,7 +563,7 @@ func streamOperationMissingError(operation string, node string) error {
 		Node:      node,
 		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
 		Suggestions: []string{
-			"call .To(goav.SinkEndpoint(...)) to receive decoded frames",
+			"call .To(goav.Sink(...)) to receive decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before writing to a file output",
 			"use .Copy().To(output) for packet-preserving record or remux",
 		},
@@ -988,7 +988,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		Details:   details,
 		Suggestions: []string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
-			"use goav.From(input).Audio().To(goav.SinkEndpoint(...)) or .Video().To(...) for decoded frames",
+			"use goav.From(input).Audio().To(goav.Sink(...)) or .Video().To(...) for decoded frames",
 			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,

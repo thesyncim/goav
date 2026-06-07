@@ -1190,7 +1190,7 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 			},
 			code:  "encode_adapter_missing",
 			cause: codec.ErrNotFound,
-			want:  []string{"no encoder adapter", "codec=opus", "SinkEndpoint"},
+			want:  []string{"no encoder adapter", "codec=opus", "Sink"},
 		},
 		{
 			name: "transcode descriptor-only encoder",
@@ -1531,7 +1531,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			},
 			outputs: []EndpointSpec{frameSink, fileOutput},
 			code:    "output_kind_mixed",
-			want:    []string{"cannot mix sink endpoints and muxed outputs", ".Branches(...)"},
+			want:    []string{"cannot mix sinks and muxed outputs", ".Branches(...)"},
 		},
 		{
 			name: "mux output without encoder",
@@ -2050,7 +2050,7 @@ func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "muxed target") || !strings.Contains(err.Error(), "SinkEndpoint") {
+	if !strings.Contains(err.Error(), "muxed target") || !strings.Contains(err.Error(), "Sink") {
 		t.Fatalf("err = %v, want mux and sink guidance", err)
 	}
 }
@@ -2250,7 +2250,7 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap("video.decoded").
+		TapName("video.decoded").
 		Branches(
 			Branch("360p").
 				Resize(640, 360).
@@ -2355,7 +2355,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Tap("audio.decoded").
+		TapName("audio.decoded").
 		Branches(Branch("main").Opus(96_000).To(Target("archive", FileOutput("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -2618,7 +2618,7 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Tap("audio.decoded").
+		TapName("audio.decoded").
 		Do(&runtimeTestStage{name: "meter"}).
 		Opus(96_000).
 		To(FileOutput("archive.ogg", io.Discard))

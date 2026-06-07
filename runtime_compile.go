@@ -55,8 +55,8 @@ func unsupportedRuntimeGraphError(b *builder) error {
 		Reason:    "no compiler matches this builder shape",
 		Details:   details,
 		Suggestions: []string{
-			"use Record or From(...).To(...) for packet-preserving record and remux jobs",
-			"use Decode or From(...).Audio()/Video().To(SinkEndpoint(...)) for frame output",
+			"use From(...).Copy().To(...) for packet-preserving record and remux jobs",
+			"use From(...).Audio()/Video().Decode().To(Sink(...)) for frame output",
 			"avoid mixing explicit Source/Stage/Sink graph nodes with high-level runtime builder requests",
 		},
 		Cause: ErrUnsupportedBuild,

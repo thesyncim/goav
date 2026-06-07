@@ -24,6 +24,7 @@ type runtimeBranch struct {
 	media          av.MediaType
 	from           string
 	tap            string
+	tapDomain      MediaDomain
 	anchor         TapInfo
 	steps          []runtimeBranchStep
 	postEncodeTaps []string
@@ -222,14 +223,15 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		return runtimeBranch{err: spec.err}, spec.err
 	}
 	branch := runtimeBranch{
-		name:   spec.name,
-		media:  spec.media,
-		from:   spec.from,
-		tap:    spec.tap,
-		encode: spec.encode,
-		policy: spec.policy,
-		label:  spec.label,
-		buffer: spec.buffer,
+		name:      spec.name,
+		media:     spec.media,
+		from:      spec.from,
+		tap:       spec.tap,
+		tapDomain: spec.tapDomain,
+		encode:    spec.encode,
+		policy:    spec.policy,
+		label:     spec.label,
+		buffer:    spec.buffer,
 	}
 	if spec.decode {
 		branch.steps = append(branch.steps, runtimeBranchStep{decode: true})
@@ -250,7 +252,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	}
 	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	if len(spec.targets) == 0 {
-		return branch, runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.SinkEndpoint(sink)) or .To(goav.Target(name, endpoint))")
+		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.Target(name, destination))")
 	}
 	for i := range spec.targets {
 		target := cloneTargetSpec(spec.targets[i])
@@ -396,11 +398,11 @@ func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, terminal runt
 
 func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, terminal runtimeBranchTerminal, buffer pipeline.BufferPolicy) (pipeline.NodeRef, bool, error) {
 	if g == nil || !g.isSharedSink(terminal.shareKey) {
-		return "", false, runtimeBranchInvalidError("shared sink target is not registered", "reuse one goav.Target(name, goav.SinkEndpoint(sink)) value inside one Task.Attach call")
+		return "", false, runtimeBranchInvalidError("shared sink target is not registered", "reuse one goav.Target(name, goav.Sink(sink)) value inside one Task.Attach call")
 	}
 	target := g.sharedSinks[terminal.shareKey]
 	if target == nil {
-		return "", false, runtimeBranchInvalidError("shared sink target is not reserved", "reuse one goav.Target(name, goav.SinkEndpoint(sink)) value inside one Task.Attach call")
+		return "", false, runtimeBranchInvalidError("shared sink target is not reserved", "reuse one goav.Target(name, goav.Sink(sink)) value inside one Task.Attach call")
 	}
 	if target.ref != "" {
 		return target.ref, false, nil
@@ -609,6 +611,9 @@ func (t *task) resolveRuntimeBranchAnchor(branch *runtimeBranch, spec pipeline.S
 		taps = append(taps, pending...)
 		for _, tap := range taps {
 			if tap.Name == branch.tap {
+				if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.name, "branch"), TapRef{name: branch.tap, domain: branch.tapDomain}, tap.Domain); err != nil {
+					return "", TapInfo{}, err
+				}
 				return tap.Node.String(), tap, nil
 			}
 		}
@@ -660,7 +665,7 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 				closeRuntimeBranchOwnedStages(*branch)
 				return runtimeBranchInvalidError(
 					"runtime branch transforms require a frame tap",
-					"attach transform branches with .FromTap(name) where name is declared after Decode, Resize, Resample, or a frame-stage Tap",
+					"attach transform branches with .From(goav.FrameTap(name)) where name is declared after Decode, Resize, Resample, or a frame-stage Tap",
 				)
 			}
 			transformName := transformFactoryName(step.transform)
@@ -711,7 +716,7 @@ func (t *task) prepareRuntimeBranchEndpoints(ctx context.Context, branch *runtim
 		return nil
 	}
 	if len(branch.destinations) == 0 {
-		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.SinkEndpoint(sink)) or .To(goav.FileOutput(name, writer))")
+		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.FileOutput(name, writer))")
 	}
 	stream := currentStream
 	caps := currentCaps
@@ -1371,10 +1376,10 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 		return runtimeBranchInvalidError("branch name is empty", "start with goav.Branch(\"name\")")
 	}
 	if branch.from == "" && branch.tap == "" {
-		return runtimeBranchInvalidError("branch source is empty", "call .FromTap(name) with a tap from Task.Taps() or .From(node) with an expert graph node")
+		return runtimeBranchInvalidError("branch source is empty", "call .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(node) with an expert graph node")
 	}
 	if len(branch.destinations) == 0 {
-		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.SinkEndpoint(sink)) or .To(goav.FileOutput(name, writer))")
+		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.FileOutput(name, writer))")
 	}
 	if err := validateRuntimeBranchTargets(branch); err != nil {
 		return err
@@ -1808,7 +1813,7 @@ func runtimeBranchAnchorMissingError(node string) error {
 		Node:      node,
 		Reason:    "branch source node does not exist in the running task graph",
 		Suggestions: []string{
-			"call task.Taps() and use .FromTap(name) for stable media outlets",
+			"call task.Taps() and use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for stable media outlets",
 			"call task.Describe() and use a node name from the graph spec for expert graph attachments",
 			"attach from a stable decoded-frame tap when the branch needs raw frames",
 		},
@@ -1828,7 +1833,7 @@ func runtimeBranchTapMissingError(name string, taps []TapInfo) error {
 		Reason:    "branch source tap does not exist in the running task",
 		Details:   details,
 		Suggestions: []string{
-			"add .Tap(" + strconv.Quote(name) + ") at the point you want to attach",
+			"add .Tap(goav.FrameTap(" + strconv.Quote(name) + ")) or .Tap(goav.PacketTap(" + strconv.Quote(name) + ")) at the point you want to attach",
 			"call task.Taps() before attaching runtime branches",
 			"use .From(node) only for expert graph-node attachments",
 		},
@@ -1890,8 +1895,8 @@ func runtimeBranchTransformMediaError(branch string, transform string, media str
 		Node:      branch,
 		Reason:    transform + " applies to " + media + " frame taps",
 		Suggestions: []string{
-			"use .Video().Decode().Tap(name) or a video transform tap before attaching .Resize(...)",
-			"use .Audio().Decode().Tap(name) or an audio transform tap before attaching .Resample(...)",
+			"use .Video().Decode().Tap(goav.FrameTap(name)) or a video transform tap before attaching .Resize(...)",
+			"use .Audio().Decode().Tap(goav.FrameTap(name)) or an audio transform tap before attaching .Resample(...)",
 			"call task.Taps() and choose a tap with matching media kind",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -1925,7 +1930,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 		Suggestions: []string{
 			"call .Copy() when attaching from a packet tap",
 			"call .Opus(...), .VP8(...), or .VP9(...) when attaching from a frame tap",
-			"use .To(goav.SinkEndpoint(...)) when the runtime branch should receive raw frames",
+			"use .To(goav.Sink(...)) when the runtime branch should receive raw frames",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1988,7 +1993,7 @@ func runtimeBranchCopyDomainError(branch string, caps StreamCaps) error {
 		Details:   runtimeBranchCapsDetails(caps),
 		Suggestions: []string{
 			"attach from a tap declared after Copy or Encode",
-			"encode frame taps with .Opus(...), .VP8(...), or .VP9(...) before writing a muxed endpoint",
+			"encode frame taps with .Opus(...), .VP8(...), or .VP9(...) before writing a muxed destination",
 			"call task.Taps() and choose a tap with domain=packet",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -2005,7 +2010,7 @@ func runtimeBranchMuxCodecMissingError(branch string, caps StreamCaps) error {
 		Suggestions: []string{
 			"attach from a recipe tap with codec caps",
 			"set an explicit encoder such as .Opus(...), .VP8(...), or .VP9(...)",
-			"use .To(goav.SinkEndpoint(...)) when the branch should stay raw",
+			"use .To(goav.Sink(...)) when the branch should stay raw",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
