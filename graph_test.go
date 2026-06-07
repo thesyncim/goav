@@ -526,24 +526,124 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	target := Target("shared", FileOutput("shared.ivf", io.Discard))
+	left := Target("shared", FileOutput("left.ogg", io.Discard).Format(av.FormatOgg))
+	right := Target("shared", FileOutput("right.ogg", io.Discard).Format(av.FormatOgg))
 
 	_, err = task.Attach(ctx,
-		Branch("left").From("source").To(target),
-		Branch("right").From("source").To(target),
+		Branch("left").From("source").To(left),
+		Branch("right").From("source").To(right),
 	)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "runtime branch group reuses one target name") ||
-		!strings.Contains(err.Error(), "runtime sink group") ||
-		!strings.Contains(err.Error(), "planned Branches") {
+		!strings.Contains(err.Error(), "runtime target group") ||
+		!strings.Contains(err.Error(), "mux endpoint") {
 		t.Fatalf("err = %v, want grouped target guidance", err)
 	}
 	text := specText(task.Describe())
 	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
 		t.Fatalf("spec mutated after duplicate target rejection:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupSharesMuxTarget(t *testing.T) {
+	ctx := context.Background()
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(testFormatMuxer(av.FormatOgg, muxers))
+	audioPacket := av.Packet{
+		StreamID: "audio",
+		Payload:  av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+	}
+	videoPacket := av.Packet{
+		StreamID: "video",
+		Payload:  av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable},
+	}
+	audioBase := &runtimeTestSink{name: "audio-base"}
+	videoBase := &runtimeTestSink{name: "video-base"}
+	graph := New(formats).Graph()
+	audioSource := graph.Source("audio-source", &runtimeTestSource{name: "audio-source", message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &audioPacket}})
+	videoSource := graph.Source("video-source", &runtimeTestSource{name: "video-source", message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &videoPacket}})
+	graph.Connect(audioSource.Out(), graph.Sink("audio-base", audioBase).In())
+	graph.Connect(videoSource.Out(), graph.Sink("video-base", videoBase).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := builtTask.(*task)
+	task.taps = []TapInfo{
+		{
+			Name:      "audio.packets",
+			MediaKind: av.MediaAudio,
+			Domain:    DomainPacket,
+			Caps: StreamCaps{
+				Domain:     DomainPacket,
+				MediaKind:  av.MediaAudio,
+				StreamID:   "audio",
+				Codec:      av.CodecOpus,
+				SampleRate: 48000,
+				Channels:   Stereo,
+			},
+			Node: "audio-source",
+		},
+		{
+			Name:      "video.packets",
+			MediaKind: av.MediaVideo,
+			Domain:    DomainPacket,
+			Caps: StreamCaps{
+				Domain:    DomainPacket,
+				MediaKind: av.MediaVideo,
+				StreamID:  "video",
+				Codec:     av.CodecVP8,
+				Width:     640,
+				Height:    360,
+			},
+			Node: "video-source",
+		},
+	}
+	defer builtTask.Close()
+	target := Target("recording", FileOutput("recording.ogg", io.Discard).Format(av.FormatOgg))
+
+	attachment, err := builtTask.Attach(ctx,
+		Branch("audio").FromTap("audio.packets").Copy().To(target),
+		Branch("video").FromTap("video.packets").Copy().To(target),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := attachment.Spec()
+	text := specText(spec)
+	if !strings.Contains(text, "audio-source -> recording") ||
+		!strings.Contains(text, "video-source -> recording") ||
+		strings.Contains(text, "audio/recording") ||
+		strings.Contains(text, "video/recording") {
+		t.Fatalf("shared mux target spec:\n%s", text)
+	}
+	if err := builtTask.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if audioBase.count != 1 || videoBase.count != 1 {
+		t.Fatalf("base counts audio=%d video=%d, want both source packets delivered", audioBase.count, videoBase.count)
+	}
+	if len(muxers.muxers) != 1 ||
+		muxers.muxers[0].writes != 2 ||
+		!streamIDsEqual(muxers.muxers[0].openedStreams, []av.StreamID{"audio", "video"}) ||
+		!streamIDsEqual(muxers.muxers[0].writtenStreams, []av.StreamID{"audio", "video"}) {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	stats := attachment.Stats()
+	if len(stats.Nodes) != 1 || stats.Nodes["recording"].InMessages != 2 || stats.Nodes["recording"].OutMessages != 0 {
+		t.Fatalf("shared mux target stats = %+v", stats)
+	}
+	if err := builtTask.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	if !muxers.muxers[0].closed {
+		t.Fatal("shared runtime mux target was not closed by detach")
+	}
+	if strings.Contains(specText(builtTask.Describe()), "recording") {
+		t.Fatalf("spec retained shared mux target after detach:\n%s", specText(builtTask.Describe()))
 	}
 }
 

@@ -331,6 +331,20 @@ group, err := task.Attach(ctx,
 )
 ```
 
+The same rule works for mux targets: reuse one typed `Target` value when several
+encoded packet branches should feed one late recording endpoint.
+
+```go
+recording := goav.Target("recording",
+    goav.FileOutput("recording.webm", file),
+)
+
+group, err := task.Attach(ctx,
+    goav.Branch("audio").FromTap("audio.encoded").Copy().To(recording),
+    goav.Branch("video").FromTap("video.encoded").Copy().To(recording),
+)
+```
+
 Packet taps can be copied into a late endpoint:
 
 ```go
@@ -374,8 +388,8 @@ remain work in progress. A grouped attach rolls back the whole group if any
 branch cannot be prepared or connected. Detaching a parent attachment also
 removes dependent late branches anchored from its taps. `Attachment.Stats()`
 reports only the branch-owned node counters; `Task.Stats()` reports the whole
-graph. Runtime grouped mux targets remain planned-composition work; grouped
-runtime branches can share one sink target value.
+graph. Runtime branches can share one typed sink or mux target value inside an
+atomic attach group.
 Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
 packet-domain taps.
 

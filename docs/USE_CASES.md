@@ -299,6 +299,24 @@ if err != nil {
 defer group.Close(ctx)
 ```
 
+One grouped runtime mux target value can receive several encoded packet
+branches:
+
+```go
+recording := goav.Target("recording",
+    goav.FileOutput("recording.webm", file),
+)
+
+group, err := task.Attach(ctx,
+    goav.Branch("audio").FromTap("audio.encoded").Copy().To(recording),
+    goav.Branch("video").FromTap("video.encoded").Copy().To(recording),
+)
+if err != nil {
+    return err
+}
+defer group.Close(ctx)
+```
+
 Use `.Copy()` from a packet tap when the branch should stay encoded:
 
 ```go
@@ -342,8 +360,7 @@ publishing a nested tap with
 recipe encoding remain work in progress. Detaching a parent runtime branch
 removes dependent late branches anchored from its taps. Direct and bounded
 buffered task graphs both support late stage/sink branches. Runtime branch
-groups can share one sink target value; mux target groups are still expressed as
-planned `Branches(...)` compositions.
+groups can share one typed sink or mux target value.
 
 ## Generic File Or Protocol Ingest
 

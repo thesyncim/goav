@@ -1412,9 +1412,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 305. Attach runtime branch groups without adding a second concept:
     `Task.Attach(ctx, Branch(...), Branch(...))` now treats several runtime
     branches as one atomic attachment. Later branches in the same call can
-    anchor from taps published by earlier branches, duplicate mux target names
-    fail before graph mutation, and any later prepare/connect failure rolls the
-    whole group back. `Attachment.Spec()`, `Attachment.Stats()`,
+    anchor from taps published by earlier branches, duplicate target names with
+    different target values fail before graph mutation, and any later
+    prepare/connect failure rolls the whole group back. `Attachment.Spec()`,
+    `Attachment.Stats()`,
     `Attachment.Close(ctx)`, and `Task.Detach(ctx, h)` operate over the grouped
     branch-owned nodes and taps, while parent-detach cleanup tracks every anchor
     used by a grouped attachment.
@@ -1435,6 +1436,16 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     delivery, stats, and detach cleanup, and
     `TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkTargetNames` pins the
     duplicate-name diagnostic.
+    Done.
+307. Share runtime mux targets inside branch groups:
+    grouped runtime branches can now reuse the same
+    `goav.Target(name, goav.FileOutput(...))` value and attach one shared mux
+    node opened with every branch output stream. Shared mux targets are prepared
+    from the full group before graph mutation, route every matching branch into
+    one target node, report branch-owned mux stats through `Attachment.Stats()`,
+    and close on detach. Different target values with the same name still fail
+    before graph mutation. `TestTaskAttachRuntimeBranchGroupSharesMuxTarget`
+    pins the shared mux node, stream set, writes, stats, and detach cleanup.
     Done.
 
 ## First Vertical Slice
