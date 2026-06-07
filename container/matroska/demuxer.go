@@ -455,8 +455,9 @@ func (d *Demuxer) ReadCuedPacketAtTime(timeNS int64, dst *Packet) error {
 	return d.readCuedPacket(cue, position, 0, timeNS, dst)
 }
 
-// ReadPacketAtTime seeks to the nearest preceding cue and reads forward until
-// it finds the first packet at or after timeNS.
+// ReadPacketAtTime reads the first packet at or after timeNS. Seekable readers
+// use a direct packet index when Cues are absent or too sparse to identify
+// uncued packets without scanning.
 func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
 	if d == nil || d.reader == nil {
 		return ErrNilReader
@@ -478,7 +479,7 @@ func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
 		} else {
 			return err
 		}
-	} else if cue := d.cueForTime(timeNS); cue.TimeNS > timeNS {
+	} else {
 		if err := d.readIndexedPacketAtOrAfterTime(timeNS, dst); err == nil {
 			return nil
 		}
@@ -527,8 +528,9 @@ func (d *Demuxer) ReadCuedTrackPacketAtTime(trackID uint32, timeNS int64, dst *P
 	return d.readCuedPacket(cue, position, trackID, timeNS, dst)
 }
 
-// ReadTrackPacketAtTime seeks to the nearest preceding cue for trackID and
-// reads forward until it finds the first packet for trackID at or after timeNS.
+// ReadTrackPacketAtTime reads the first packet for trackID at or after timeNS.
+// Seekable readers use a direct packet index when Cues are absent or too sparse
+// for that track.
 func (d *Demuxer) ReadTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packet) error {
 	if d == nil || d.reader == nil {
 		return ErrNilReader
@@ -553,7 +555,7 @@ func (d *Demuxer) ReadTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packe
 		} else {
 			return err
 		}
-	} else if cue, _, ok := d.cueForTrackTime(trackID, timeNS); !ok || cue.TimeNS > timeNS {
+	} else {
 		if err := d.readIndexedTrackPacketAtOrAfterTime(trackID, timeNS, dst); err == nil {
 			return nil
 		}

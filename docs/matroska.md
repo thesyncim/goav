@@ -68,10 +68,11 @@ Current milestone:
   absent.
 - Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
   a requested timestamp.
-- Seekable files without usable Cues build a one-time block-position packet
-  index, so `SeekToTime`, `ReadPacketAtTime`, `SeekToTrackTime`, and
+- Seekable packet-at-time reads build a one-time block-position packet index
+  when Cues are absent or sparse, so `ReadPacketAtTime` and
   `ReadTrackPacketAtTime` can jump directly to uncued SimpleBlock and
-  BlockGroup entries, including indexed laced frames.
+  BlockGroup entries, including indexed laced frames. `SeekToTime` and
+  `SeekToTrackTime` use the same packet index when Cues are absent or unusable.
 - Direct cue-backed `ReadCuedPacketAtTime` and `ReadCuedTrackPacketAtTime`
   extraction for cues at or after a requested timestamp. Exact block cues jump
   directly to `CueRelativePosition` or `CueBlockNumber`; cluster-only cues scan
@@ -79,7 +80,8 @@ Current milestone:
   scanning uncued packets between cues.
 - Track-specific cue-assisted `SeekToTrackTime` and `ReadTrackPacketAtTime`
   for multi-track recordings with per-track cue positions, with the same
-  packet-index fallback when a track has no usable cue.
+  packet-index fallback when a track has no usable cue or the requested packet
+  is uncued.
 - BlockGroup reading and writing for single-frame and laced blocks with
   BlockDuration; packets may carry one or more `ReferenceBlock` offsets,
   reference priority, codec state, discard padding, and block additions.
@@ -216,8 +218,8 @@ positions the next read directly on the cued block. If a cue omits
 `CueRelativePosition` but has `CueBlockNumber`, the demuxer scans the Cluster to
 that block number and hands that block to the next read. A successful seek
 clears pending laced-frame state before reading from the target cluster.
-When Cues are absent, when the target is before the first cue, or when a
-specific track has no usable cue, seekable demuxers build a packet index from
+When Cues are absent, sparse, before the target packet, or missing for a
+specific track, seekable packet-at-time reads build a packet index from
 Segment-relative Cluster positions, block positions, Cluster timecodes, track
 numbers, and laced-frame numbers. The fallback seeks directly to the indexed
 SimpleBlock or BlockGroup and lets the normal demux path decode the packet, so

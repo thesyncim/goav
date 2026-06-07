@@ -8003,6 +8003,58 @@ func TestDemuxerReadPacketAtTimeUsesCues(t *testing.T) {
 	}
 }
 
+func TestDemuxerReadPacketAtTimeUsesPacketIndexWithSparseCues(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 60_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}},
+		{TrackID: trackID, TimeNS: 20_000_000, Data: []byte{2}},
+		{TrackID: trackID, TimeNS: 40_000_000, Keyframe: true, Data: []byte{3}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacketAtTime(10_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.packetIndexBuilt {
+		t.Fatal("packet index was not built for sparse cue read")
+	}
+	if got.TimeNS != packets[1].TimeNS || !bytes.Equal(got.Data, packets[1].Data) {
+		t.Fatalf("packet at sparse-cue time = %+v data=%v, want uncued packet %+v data=%v", got, got.Data, packets[1], packets[1].Data)
+	}
+
+	cued := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadCuedPacketAtTime(10_000_000, &cued); err != nil {
+		t.Fatal(err)
+	}
+	if cued.TimeNS != packets[2].TimeNS || !bytes.Equal(cued.Data, packets[2].Data) {
+		t.Fatalf("cued packet at sparse-cue time = %+v data=%v, want next cue %+v data=%v", cued, cued.Data, packets[2], packets[2].Data)
+	}
+}
+
 func TestDemuxerSeekToTimeUsesClusterIndexWithoutCues(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{
@@ -8171,6 +8223,69 @@ func TestDemuxerReadTrackPacketAtTimeUsesClusterIndexWithoutTrackCues(t *testing
 	}
 	if got.TrackID != videoID || got.TimeNS != 40_000_000 || !bytes.Equal(got.Data, []byte{0xb2}) {
 		t.Fatalf("video packet at time from sparse cues = %+v data=%v, want video at 40000000", got, got.Data)
+	}
+}
+
+func TestDemuxerReadTrackPacketAtTimeUsesPacketIndexWithSparseTrackCues(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 60_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	videoID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: audioID, TimeNS: 0, DurationNS: 20_000_000, Data: []byte{0xa0}},
+		{TrackID: videoID, TimeNS: 0, Keyframe: true, Data: []byte{0xb0}},
+		{TrackID: audioID, TimeNS: 20_000_000, DurationNS: 20_000_000, Data: []byte{0xa1}},
+		{TrackID: videoID, TimeNS: 20_000_000, Data: []byte{0xb1}},
+		{TrackID: audioID, TimeNS: 40_000_000, DurationNS: 20_000_000, Data: []byte{0xa2}},
+		{TrackID: videoID, TimeNS: 40_000_000, Keyframe: true, Data: []byte{0xb2}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadTrackPacketAtTime(videoID, 10_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.packetIndexBuilt {
+		t.Fatal("packet index was not built for sparse track cue read")
+	}
+	if got.TrackID != videoID || got.TimeNS != 20_000_000 || !bytes.Equal(got.Data, []byte{0xb1}) {
+		t.Fatalf("video packet at sparse-track-cue time = %+v data=%v, want video at 20000000", got, got.Data)
+	}
+
+	if err := demuxer.ReadCuedTrackPacketAtTime(videoID, 10_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != videoID || got.TimeNS != 40_000_000 || !bytes.Equal(got.Data, []byte{0xb2}) {
+		t.Fatalf("video cued packet = %+v data=%v, want next video cue at 40000000", got, got.Data)
 	}
 }
 
@@ -11032,6 +11147,9 @@ func benchmarkReadPacketAtTimeWebRTCCorpus(b *testing.B, cycles int) {
 		b.Fatal(err)
 	}
 	packet := Packet{Data: make([]byte, 0, payloads.maxPayload)}
+	if err := demuxer.ReadPacketAtTime(0, &packet); err != nil {
+		b.Fatal(err)
+	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
