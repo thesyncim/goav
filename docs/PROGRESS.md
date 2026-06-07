@@ -1105,6 +1105,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `output_muxer_missing` at the low-level `format.Output` boundary, keeping
     public recipe diagnostics aligned with `Target` without blurring runtime
     internals. Done.
+268. Remove explicit target-registration sugar from the public Job API:
+    branch composition now relies on typed destinations collected from
+    `Branch(...).To(Target(...))` and direct endpoint `.To(...)` calls; the
+    exported `Job.Targets(...)` registration escape hatch was removed. The API
+    guard now rejects `Targets` alongside `Path`, `Paths`, `Output`, and
+    `Outputs`, keeping the normal grammar to one way to attach a target. Done.
 
 ## First Vertical Slice
 

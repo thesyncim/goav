@@ -934,13 +934,6 @@ func (j *Job) To(outputs ...EndpointSpec) *Job {
 	return j
 }
 
-func (j *Job) Targets(targets ...TargetSpec) *Job {
-	if err := j.addBranchTargets(targets...); err != nil {
-		j.setErr(err)
-	}
-	return j
-}
-
 func (j *Job) addBranchTargets(targets ...TargetSpec) error {
 	seen := make(map[string]string, len(j.branchTargets)+len(targets))
 	for i := range j.branchTargets {

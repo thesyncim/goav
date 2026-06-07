@@ -256,7 +256,6 @@ type testBranchJob struct {
 	input    goav.InputSpec
 	runtime  goav.Runtime
 	branches []testTranscodeBranch
-	outputs  []testTranscodeOutput
 }
 
 type testTranscodeBranch struct {
@@ -266,11 +265,6 @@ type testTranscodeBranch struct {
 	transforms []goav.TransformSpec
 	encode     goav.CodecSpec
 	targets    []goav.TargetSpec
-}
-
-type testTranscodeOutput struct {
-	name   string
-	output goav.EndpointSpec
 }
 
 type testTranscodeBranchBuilder struct {
@@ -298,11 +292,6 @@ func (j *testBranchJob) Video(name string) *testTranscodeBranchBuilder {
 func (j *testBranchJob) stream(name string, media av.MediaType) *testTranscodeBranchBuilder {
 	j.branches = append(j.branches, testTranscodeBranch{name: name, media: media})
 	return &testTranscodeBranchBuilder{job: j, index: len(j.branches) - 1}
-}
-
-func (j *testBranchJob) Target(name string, output goav.EndpointSpec) *testBranchJob {
-	j.outputs = append(j.outputs, testTranscodeOutput{name: name, output: output})
-	return j
 }
 
 func (j *testBranchJob) materialize() *goav.Job {
@@ -344,11 +333,6 @@ func (j *testBranchJob) materialize() *goav.Job {
 		}
 		job = stream.Branches(builder.To(destinations...))
 	}
-	targets := make([]goav.TargetSpec, 0, len(j.outputs))
-	for i := range j.outputs {
-		targets = append(targets, goav.Target(j.outputs[i].name, j.outputs[i].output))
-	}
-	job.Targets(targets...)
 	return job
 }
 
@@ -802,6 +786,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"FrameSink":              true,
 		"Output":                 true,
 		"Outputs":                true,
+		"Targets":                true,
 		"Path":                   true,
 		"Paths":                  true,
 	}
@@ -3045,9 +3030,10 @@ func TestBranchRecipeSingleBranchUsesTarget(t *testing.T) {
 
 func TestBranchRecipeRejectsDuplicateTargets(t *testing.T) {
 	web := goav.Target("web", goav.FileOutput("web.webm", io.Discard))
+	web2 := goav.Target("web", goav.FileOutput("web2.webm", io.Discard))
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").VP9(2_000_000).To(web).
-		Target("web", goav.FileOutput("web2.webm", io.Discard)).
+		Video("360p").VP9(600_000).To(web2).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
