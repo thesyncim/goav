@@ -159,7 +159,8 @@ make the implementation match the composable planner promise.
 - Reusable `AudioFlow`/`VideoFlow` values that apply to stream chains,
   branches, and non-encoding runtime attachments. Build-time file/protocol and
   RTP/WebRTC branch slices are active; runtime stage/sink attachments are active
-  for direct task graphs and bounded buffered task graphs; late recording
-  targets and deeper buffered lifecycle proof remain planned.
+  for direct task graphs and bounded buffered task graphs, with packet-copy late
+  recording targets covered; encoded late recording and deeper buffered
+  lifecycle proof remain planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

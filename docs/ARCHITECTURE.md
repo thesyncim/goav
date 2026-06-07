@@ -102,8 +102,9 @@ runtime branches anchored from that parent's taps. Expert graph nodes can still
 be addressed with `From(node)` and `Task.Describe`. This is for late analysis,
 meters, screenshot collectors, and late recording branches that should observe
 future messages without rebuilding the task. Buffered runtime attachment owns
-queue and worker lifecycle for late nodes; broader mux/recording and teardown
-stress coverage remains an active slice.
+queue and worker lifecycle for late nodes; packet-copy recording targets are
+covered, while broader encoded mux and teardown stress coverage remains an
+active slice.
 
 Current graph execution covers:
 
