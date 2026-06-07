@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -290,13 +291,13 @@ func TestTaskAttachRuntimeBranchGroup(t *testing.T) {
 	graph := Expert(New()).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
-	task, err := graph.Build(ctx)
+	builtTask, err := graph.Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer task.Close()
+	defer builtTask.Close()
 
-	attachment, err := task.Attach(ctx,
+	attachment, err := builtTask.Attach(ctx,
 		Branch("left").From(src).Do(leftStage).To(Sink(leftSink)),
 		Branch("right").From(src).Do(rightStage).To(Sink(rightSink)),
 	)
@@ -318,7 +319,7 @@ func TestTaskAttachRuntimeBranchGroup(t *testing.T) {
 		}
 	}
 
-	if err := task.Run(ctx); err != nil {
+	if err := builtTask.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if base.count != 1 || leftStage.count != 1 || rightStage.count != 1 || leftSink.count != 1 || rightSink.count != 1 {
@@ -328,10 +329,10 @@ func TestTaskAttachRuntimeBranchGroup(t *testing.T) {
 	if len(stats.Nodes) != 4 || stats.Nodes["left/left-stage"].InPackets != 1 || stats.Nodes["right/right-stage"].InPackets != 1 {
 		t.Fatalf("branch stats = %+v", stats)
 	}
-	if err := task.Detach(ctx, attachment); err != nil {
+	if err := builtTask.Detach(ctx, attachment); err != nil {
 		t.Fatal(err)
 	}
-	text := specText(task.Describe())
+	text := specText(builtTask.Describe())
 	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
 		t.Fatalf("spec:\n%s", text)
 	}
@@ -352,13 +353,13 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 	graph := Expert(New()).Graph()
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
-	task, err := graph.Build(ctx)
+	builtTask, err := graph.Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer task.Close()
+	defer builtTask.Close()
 
-	attachment, err := task.Attach(ctx,
+	attachment, err := builtTask.Attach(ctx,
 		Branch("sampler").
 			From(src).
 			Do(parentStage).
@@ -371,25 +372,56 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tap, ok := findTap(task.Taps(), "video.sampled")
+	tap, ok := findTap(builtTask.Taps(), "video.sampled")
 	if !ok || tap.Node != "sampler/sample" {
 		t.Fatalf("tap = %+v, ok=%v, want sampler/sample", tap, ok)
 	}
-	if err := task.Run(ctx); err != nil {
+	runtimeTask, ok := builtTask.(*task)
+	if !ok {
+		t.Fatalf("task = %T, want *task", builtTask)
+	}
+	runtimeTask.attachMu.Lock()
+	branchTapCount := len(runtimeTask.branchTaps)
+	runtimeTask.attachMu.Unlock()
+	if branchTapCount != 1 {
+		t.Fatalf("runtime branch tap count = %d, want 1", branchTapCount)
+	}
+	if err := builtTask.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if base.count != 1 || parentStage.count != 1 || parentSink.count != 1 || childSink.count != 1 {
 		t.Fatalf("base=%d stage=%d parent=%d child=%d", base.count, parentStage.count, parentSink.count, childSink.count)
 	}
-	if err := task.Detach(ctx, attachment); err != nil {
+	if err := builtTask.Detach(ctx, attachment); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := findTap(task.Taps(), "video.sampled"); ok {
-		t.Fatalf("runtime tap still present after grouped detach: %+v", task.Taps())
+	if _, ok := findTap(builtTask.Taps(), "video.sampled"); ok {
+		t.Fatalf("runtime tap still present after grouped detach: %+v", builtTask.Taps())
 	}
-	text := specText(task.Describe())
+	text := specText(builtTask.Describe())
 	if strings.Contains(text, "sampler/") || strings.Contains(text, "screenshots/") {
 		t.Fatalf("spec:\n%s", text)
+	}
+}
+
+func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
+	body, err := os.ReadFile("runtime_attach.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"type runtimeGraphPatch struct",
+		"func (p *runtimeGraphPatch) addAnchor",
+		"func (p *runtimeGraphPatch) addApplied",
+		"func (p runtimeGraphPatch) rollback",
+		"func (p runtimeGraphPatch) attachment",
+		"patch.resetPlannedTaps()",
+		"patch.attachment(t, name)",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("runtime attach should lower through runtimeGraphPatch; missing %q", required)
+		}
 	}
 }
 

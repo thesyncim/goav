@@ -97,6 +97,58 @@ type runtimeSharedMuxTarget struct {
 	buffer   pipeline.BufferPolicy
 }
 
+type runtimeGraphPatch struct {
+	nodes       []pipeline.NodeRef
+	routes      []pipeline.Route
+	taps        []TapInfo
+	anchorTaps  []string
+	anchorNodes []string
+}
+
+func (p *runtimeGraphPatch) addAnchor(branch runtimeBranch) {
+	if branch.tap != "" {
+		p.anchorTaps = append(p.anchorTaps, branch.tap)
+	}
+	if branch.from != "" {
+		p.anchorNodes = append(p.anchorNodes, branch.from)
+	}
+}
+
+func (p *runtimeGraphPatch) addApplied(nodes []pipeline.NodeRef, routes []pipeline.Route, taps []TapInfo) {
+	p.nodes = append(p.nodes, nodes...)
+	p.routes = append(p.routes, routes...)
+	p.taps = append(p.taps, taps...)
+}
+
+func (p *runtimeGraphPatch) addPlannedTaps(taps []TapInfo) {
+	p.taps = append(p.taps, taps...)
+}
+
+func (p *runtimeGraphPatch) resetPlannedTaps() {
+	p.taps = p.taps[:0]
+}
+
+func (p runtimeGraphPatch) rollback(task *task) {
+	if task != nil {
+		task.rollbackRuntimeBranch(p.nodes)
+	}
+}
+
+func (p runtimeGraphPatch) attachment(owner *task, name string) *runtimeAttachment {
+	return &runtimeAttachment{
+		id:          nextRuntimeAttachmentID(name),
+		name:        name,
+		owner:       owner,
+		anchorTap:   firstNonEmpty(p.anchorTaps...),
+		anchorNode:  firstNonEmpty(p.anchorNodes...),
+		anchorTaps:  uniqueStrings(p.anchorTaps),
+		anchorNodes: uniqueStrings(p.anchorNodes),
+		nodes:       append([]pipeline.NodeRef(nil), p.nodes...),
+		routes:      append([]pipeline.Route(nil), p.routes...),
+		taps:        append([]TapInfo(nil), p.taps...),
+	}
+}
+
 // Attachment is a live runtime branch attached to a task.
 type Attachment interface {
 	ID() string
@@ -131,14 +183,7 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 	group := newRuntimeAttachGroup(targets)
-
-	var (
-		refs        []pipeline.NodeRef
-		routes      []pipeline.Route
-		taps        []TapInfo
-		anchorTaps  []string
-		anchorNodes []string
-	)
+	var patch runtimeGraphPatch
 	nodeNamesByBranch := make([][]string, len(branches))
 	preparedBranches := 0
 	rollback := func(err error) (Attachment, error) {
@@ -147,29 +192,24 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		}
 		group.failSharedMuxStages()
 		group.closeSharedMuxStages()
-		t.rollbackRuntimeBranch(refs)
+		patch.rollback(t)
 		return nil, err
 	}
 	for i := range branches {
 		branch := &branches[i]
 		graphSpec := t.graph.Spec()
 		var err error
-		branch.from, branch.anchor, err = t.resolveRuntimeBranchAnchor(branch, graphSpec, taps)
+		branch.from, branch.anchor, err = t.resolveRuntimeBranchAnchor(branch, graphSpec, patch.taps)
 		if err != nil {
 			return rollback(err)
 		}
-		if branch.tap != "" {
-			anchorTaps = append(anchorTaps, branch.tap)
-		}
-		if branch.from != "" {
-			anchorNodes = append(anchorNodes, branch.from)
-		}
+		patch.addAnchor(*branch)
 		if err := t.prepareRuntimeBranch(ctx, branch, group); err != nil {
 			preparedBranches = i + 1
 			return rollback(err)
 		}
 		preparedBranches = i + 1
-		if err := t.validateRuntimeBranchTapsLocked(*branch, taps); err != nil {
+		if err := t.validateRuntimeBranchTapsLocked(*branch, patch.taps); err != nil {
 			return rollback(err)
 		}
 		nodeNames, err := runtimeBranchNodeNames(*branch, graphSpec, group)
@@ -177,47 +217,32 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 			return rollback(err)
 		}
 		nodeNamesByBranch[i] = nodeNames
-		taps = append(taps, runtimeBranchPlannedTaps(*branch, nodeNames)...)
+		patch.addPlannedTaps(runtimeBranchPlannedTaps(*branch, nodeNames))
 	}
 	if err := group.prepareSharedMuxStages(ctx, t.runtime); err != nil {
 		return rollback(err)
 	}
-	taps = taps[:0]
+	patch.resetPlannedTaps()
 	for i := range branches {
 		branch := &branches[i]
 		nodeNames := nodeNamesByBranch[i]
 		branchRefs, branchRoutes, branchTaps, err := t.attachRuntimeBranch(*branch, nodeNames, group)
 		if err != nil {
-			refs = append(refs, branchRefs...)
+			patch.addApplied(branchRefs, nil, nil)
 			return rollback(err)
 		}
-		refs = append(refs, branchRefs...)
-		routes = append(routes, branchRoutes...)
-		taps = append(taps, branchTaps...)
+		patch.addApplied(branchRefs, branchRoutes, branchTaps)
 	}
 	sharedRefs, sharedRoutes, err := group.attachSharedMuxTargets(t.graph)
 	if err != nil {
-		refs = append(refs, sharedRefs...)
-		routes = append(routes, sharedRoutes...)
+		patch.addApplied(sharedRefs, sharedRoutes, nil)
 		return rollback(err)
 	}
-	refs = append(refs, sharedRefs...)
-	routes = append(routes, sharedRoutes...)
+	patch.addApplied(sharedRefs, sharedRoutes, nil)
 	name := runtimeAttachmentName(branches)
-	attachment := &runtimeAttachment{
-		id:          nextRuntimeAttachmentID(name),
-		name:        name,
-		owner:       t,
-		anchorTap:   firstNonEmpty(anchorTaps...),
-		anchorNode:  firstNonEmpty(anchorNodes...),
-		anchorTaps:  uniqueStrings(anchorTaps),
-		anchorNodes: uniqueStrings(anchorNodes),
-		nodes:       refs,
-		routes:      routes,
-		taps:        taps,
-	}
+	attachment := patch.attachment(t, name)
 	t.trackAttachmentLocked(attachment)
-	t.addAttachmentTapsLocked(taps)
+	t.addAttachmentTapsLocked(patch.taps)
 	return attachment, nil
 }
 

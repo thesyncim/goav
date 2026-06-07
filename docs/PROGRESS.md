@@ -1924,6 +1924,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     public front door, while docs and diagnostics point users at constructor
     options instead of `.Format(...)`/`.MIME(...)` destination chaining.
     Done.
+364. Introduce the runtime attach graph-patch boundary:
+    `Task.Attach` now collects late-branch anchors, planned taps, applied nodes,
+    routes, and published taps in a private `runtimeGraphPatch` before creating
+    the attachment handle. Rollback removes patch nodes through that boundary,
+    and attachment handles clone the patch state instead of aliasing local
+    slices. Tests pin the graph-patch lowering shape and prove grouped runtime
+    branches publish a pending tap once internally while still allowing a later
+    branch in the same attach call to consume it.
+    Done.
 
 ## First Vertical Slice
 
@@ -2140,10 +2149,10 @@ Required proof:
    planning/lowering. Destination configuration is also one constructor-option
    path. The next step is to move whole-input packet-copy and runtime attach
    toward the same branch/patch planner instead of workflow-shape graph modes.
-2. Add `GraphPatch` for runtime attach. `Task.Attach` should plan branch specs
-   from existing typed taps, validate caps and targets before mutation, reuse
-   upstream nodes, allocate only downstream branch nodes, and share mux/sink
-   targets with planned branches through the same validation code.
+2. Finish `GraphPatch` for runtime attach. `Task.Attach` now has a private patch
+   boundary; the next step is to move more cap/target validation and shared
+   mux/sink preparation into reusable planner helpers shared with planned
+   branches.
 3. Add first-class capability data for stream, codec, transform, and container
    planning so missing adapters and incompatible mux/transform chains fail
    before runtime execution with useful suggestions.
@@ -2204,7 +2213,9 @@ codec-specific config stays on `CodecSpec` through `Config`, `Param`, and
 `Control` instead of growing per-codec public APIs. Opus, VP8, and VP9 are the
 full encode/decode verticals; H264 and AV1 recipe encode remains guarded until
 the adapters are complete.
-`Task.Attach` remains the late branch control plane for running graphs,
+`Task.Attach` remains the late branch control plane for running graphs, now with
+a private runtime graph-patch boundary that owns anchors, planned taps, applied
+nodes, routes, and published taps during prepare/apply/rollback,
 including custom-stage, resize/resample, branch-local node stats, dependent
 branches after runtime resize and resample taps, post-encode packet taps
 feeding dependent packet-copy branches, live buffered parent detach that removes
@@ -2237,7 +2248,7 @@ live debug branch, and scoped `Attachment.Stats()` beside whole-task
 Recipe compilation no longer opens a builder as a validation side channel; the
 normal path validates runtime support, emits a graph plan, and builds from that
 graph plan. The next shape is stricter: every normal expression lowers to
-`GraphPlan`, and every late branch lowers to `GraphPatch`. Direct chains are
+`GraphPlan`, and every late branch lowers to the runtime graph-patch boundary. Direct chains are
 implicit branches, runtime attach is downstream patch application from typed
 taps, planned and runtime branches share caps/target validation, and no normal
 composition path should dispatch by copy/sink/encode/branch workflow shape.

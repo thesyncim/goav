@@ -133,11 +133,14 @@ can explain when branches reuse decode, transform, stage, or tap boundaries
 before diverging into private downstream chains. A route carries all media by
 default, or matches one stream or event type.
 
-`Task.Attach` is the first runtime control-plane operation. It attaches a named
-downstream branch to a built graph and returns an attachment handle with
-`Close(ctx)`. Direct graphs and bounded buffered graphs both support late
-stage/sink branches for future messages. `Task.Detach(ctx, h)` removes one live
-attachment, and `Task.Close()` stops attachments before closing the graph.
+`Task.Attach` is the first runtime control-plane operation. It plans a private
+runtime graph patch from one or more named downstream branches, prepares
+destinations and branch components before graph mutation, applies the patch
+atomically enough to roll back opened nodes on failure, and returns an
+attachment handle with `Close(ctx)`. Direct graphs and bounded buffered graphs
+both support late stage/sink branches for future messages. `Task.Detach(ctx, h)`
+removes one live attachment, and `Task.Close()` stops attachments before closing
+the graph.
 Stable recipe outlets come from typed `.Tap(goav.FrameTap(name))` or
 `.Tap(goav.PacketTap(name))` calls and are listed by `Task.Taps()`; runtime
 branches attach with `goav.Branch("name").From(tap)`. A late branch can run
