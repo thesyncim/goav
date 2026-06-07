@@ -2016,6 +2016,96 @@ func TestMuxerRejectsInvalidFLACCodecPrivate(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesAACCodecPrivate(t *testing.T) {
+	var buffer bytes.Buffer
+	private := makeAACAudioSpecificConfig(48000, 2)
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:         TrackAudio,
+		Codec:        CodecAAC,
+		Audio:        AudioConfig{SampleRate: 48000, Channels: 2},
+		CodecPrivate: private,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{0x21, 0x10, 0x56, 0xe5}
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     20_000_000,
+		DurationNS: 20_000_000,
+		Keyframe:   true,
+		Data:       want,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Codec != CodecAAC ||
+		tracks[0].Type != TrackAudio ||
+		tracks[0].Audio.SampleRate != 48000 ||
+		tracks[0].Audio.Channels != 2 ||
+		!bytes.Equal(tracks[0].CodecPrivate, private) {
+		t.Fatalf("track = %+v private=%x", tracks[0], tracks[0].CodecPrivate)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != trackID ||
+		got.TimeNS != 20_000_000 ||
+		got.DurationNS != 20_000_000 ||
+		!bytes.Equal(got.Data, want) {
+		t.Fatalf("packet = %+v data=%x, want track %d data=%x", got, got.Data, trackID, want)
+	}
+}
+
+func TestMuxerRejectsInvalidAACCodecPrivate(t *testing.T) {
+	tests := []struct {
+		name    string
+		private []byte
+	}{
+		{name: "missing", private: nil},
+		{name: "short", private: []byte{0x11}},
+		{name: "zero object type", private: []byte{0x01, 0x90}},
+		{name: "reserved sample rate", private: []byte{0x17, 0x90}},
+		{name: "zero explicit sample rate", private: []byte{0x17, 0x80, 0x00, 0x00, 0x00}},
+		{name: "program config channels", private: []byte{0x11, 0x80}},
+		{name: "reserved channel config", private: []byte{0x11, 0xf8}},
+		{name: "sample rate mismatch", private: makeAACAudioSpecificConfig(44100, 2)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := muxer.AddTrack(Track{
+				Type:         TrackAudio,
+				Codec:        CodecAAC,
+				Audio:        AudioConfig{SampleRate: 48000, Channels: 2},
+				CodecPrivate: tt.private,
+			}); !errors.Is(err, ErrInvalidTrack) {
+				t.Fatalf("err = %v, want ErrInvalidTrack", err)
+			}
+		})
+	}
+}
+
 func TestMuxerDemuxerPreservesTrackUIDAndFlags(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -12873,6 +12963,65 @@ func TestFormatMuxerDemuxerSupportsFLAC(t *testing.T) {
 	}
 }
 
+func TestFormatMuxerDemuxerSupportsAAC(t *testing.T) {
+	ctx := context.Background()
+	private := makeAACAudioSpecificConfig(48000, 2)
+	stream := av.Stream{
+		ID:       "audio",
+		Index:    0,
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecAAC,
+			Type:       av.MediaAudio,
+			SampleRate: 48000,
+			Channels:   2,
+			ExtraData:  av.Buffer{Bytes: private},
+		},
+	}
+	var buffer bytes.Buffer
+	muxer := &FormatMuxer{}
+	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Write(ctx, &av.Packet{
+		StreamID: stream.ID,
+		Payload:  av.Buffer{Bytes: []byte{0x21, 0x10, 0x56, 0xe5}},
+		PTS:      av.Timestamp{Value: 960, Base: stream.TimeBase},
+		Duration: av.Duration{Value: 960, Base: stream.TimeBase},
+		Keyframe: true,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &FormatDemuxer{}
+	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	streams := demuxer.Streams()
+	if len(streams) != 1 ||
+		streams[0].Codec.ID != av.CodecAAC ||
+		streams[0].Codec.SampleRate != 48000 ||
+		streams[0].Codec.Channels != 2 ||
+		!bytes.Equal(streams[0].Codec.ExtraData.Bytes, private) {
+		t.Fatalf("streams = %+v", streams)
+	}
+	result := format.ReadResult{Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, 8)}}}
+	if err := demuxer.ReadInto(ctx, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.PacketReady ||
+		result.Packet.StreamID != "1" ||
+		result.Packet.PTS.Value != 20_000_000 ||
+		result.Packet.Duration.Value != 20_000_000 ||
+		!bytes.Equal(result.Packet.Payload.Bytes, []byte{0x21, 0x10, 0x56, 0xe5}) {
+		t.Fatalf("result = %+v packet=%+v", result, result.Packet)
+	}
+}
+
 func TestFormatDemuxerStreamsReturnsExtraDataCopies(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
@@ -14499,6 +14648,28 @@ func writeFLACStreamInfoAudio(streamInfo []byte, sampleRate int, channels int, b
 	streamInfo[11] = byte(sampleRate >> 4)
 	streamInfo[12] = byte((sampleRate&0x0f)<<4 | (channelsMinusOne&0x07)<<1 | (bitsMinusOne>>4)&0x01)
 	streamInfo[13] = byte(bitsMinusOne << 4)
+}
+
+func makeAACAudioSpecificConfig(sampleRate int, channels int) []byte {
+	index := aacSamplingFrequencyIndex(sampleRate)
+	if index < 0 || channels < 1 || channels > 7 {
+		panic("invalid AAC test config")
+	}
+	channelConfig := channels
+	if channels == 8 {
+		channelConfig = 7
+	}
+	value := uint16(2<<11 | index<<7 | channelConfig<<3)
+	return []byte{byte(value >> 8), byte(value)}
+}
+
+func aacSamplingFrequencyIndex(sampleRate int) int {
+	for i, rate := range aacSamplingFrequencies {
+		if rate == sampleRate {
+			return i
+		}
+	}
+	return -1
 }
 
 func validVorbisCodecPrivate() []byte {

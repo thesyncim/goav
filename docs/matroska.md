@@ -94,7 +94,7 @@ Current milestone:
   dependency information is not available.
 - Xiph, fixed-size, and EBML laced block muxing and demuxing with bounded
   scratch buffers.
-- Matroska mux/demux for Opus, Vorbis, FLAC, PCMU, PCMA, VP8, VP9, AV1,
+- Matroska mux/demux for Opus, Vorbis, FLAC, AAC, PCMU, PCMA, VP8, VP9, AV1,
   H.264, H.265, and S_TEXT/UTF8 subtitle track declarations, with WebM
   enforcing Opus, Vorbis, VP8, VP9, and AV1 only.
 - The WebRTC codec surface exposed by `av` is covered by Matroska:
@@ -312,6 +312,9 @@ Current mappings:
 - FLAC: `A_FLAC` with parsed `fLaC` codec-private metadata. Demuxers expose
   sample rate, channel count, and bit depth from STREAMINFO; muxers require
   caller-provided codec-private data.
+- AAC: `A_AAC` with parsed AudioSpecificConfig codec-private data. Demuxers
+  expose sample rate and channel count from the configuration; muxers require
+  caller-provided codec-private data.
 - PCMU/PCMA: `A_MS/ACM` with generated and parsed WAVEFORMATEX codec-private
   data for G.711 mu-law and A-law tracks.
 - VP8: `V_VP8`
@@ -345,7 +348,7 @@ after a packet has entered that pending queue is rejected, and `Close` returns
 `ErrInvalidTrack` if a required seed packet never arrives.
 
 WebM accepts only Opus, Vorbis, VP8, VP9, and AV1. It rejects H.264, H.265,
-FLAC, PCM variants, repair streams, retransmission streams, FEC streams,
+FLAC, AAC, PCM variants, repair streams, retransmission streams, FEC streams,
 non-WebM Matroska document types, Matroska-only content compression, content
 signatures, non-AES encryption, AES-CBC, and non-block content encoding scopes.
 WebM content encryption is limited to block-scope AES-CTR. VP8 tracks must not
@@ -404,10 +407,10 @@ Compatibility tools are optional in CI and run when installed:
 - `mkvmerge`
 
 Current external checks cover WebM VP8/VP9/AV1/Opus/Vorbis files, Matroska
-files carrying the WebRTC codec set plus Vorbis and FLAC, Matroska S_TEXT/UTF8
-subtitle extraction, and Matroska H.264/AV1 files whose codec-private data is
-generated from the first packet. Internal generated-path checks also cover
-H.265 HEVC private-data generation and packet conversion.
+files carrying the WebRTC codec set plus Vorbis, FLAC, and AAC, Matroska
+S_TEXT/UTF8 subtitle extraction, and Matroska H.264/AV1 files whose
+codec-private data is generated from the first packet. Internal generated-path
+checks also cover H.265 HEVC private-data generation and packet conversion.
 The external checks also generate small
 FFmpeg-authored Matroska/WebM files, read them through the Go demuxers, remux
 the first packet through the Go muxers, and verify the remuxed output with

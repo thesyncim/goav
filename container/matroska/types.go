@@ -9,6 +9,7 @@ const (
 	CodecOpus
 	CodecVorbis
 	CodecFLAC
+	CodecAAC
 	CodecPCMU
 	CodecPCMA
 	CodecVP8

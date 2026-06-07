@@ -54,6 +54,9 @@ func TestMuxerEnforcesProfile(t *testing.T) {
 	if _, err := muxer.AddTrack(Track{Type: TrackAudio, Codec: matroska.CodecFLAC, CodecPrivate: validWebMFLACCodecPrivate()}); !errors.Is(err, ErrUnsupportedWebMCodec) {
 		t.Fatalf("err = %v, want ErrUnsupportedWebMCodec", err)
 	}
+	if _, err := muxer.AddTrack(Track{Type: TrackAudio, Codec: matroska.CodecAAC, CodecPrivate: []byte{0x11, 0x90}}); !errors.Is(err, ErrUnsupportedWebMCodec) {
+		t.Fatalf("err = %v, want ErrUnsupportedWebMCodec", err)
+	}
 }
 
 func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {

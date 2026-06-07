@@ -2,6 +2,7 @@ package matroska
 
 import (
 	"encoding/binary"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -34,6 +35,7 @@ const (
 	codecIDOpus     = "A_OPUS"
 	codecIDVorbis   = "A_VORBIS"
 	codecIDFLAC     = "A_FLAC"
+	codecIDAAC      = "A_AAC"
 	codecIDMS       = "A_MS/ACM"
 	codecIDVP8      = "V_VP8"
 	codecIDVP9      = "V_VP9"
@@ -51,6 +53,8 @@ func matroskaCodecID(codec Codec) (string, error) {
 		return codecIDVorbis, nil
 	case CodecFLAC:
 		return codecIDFLAC, nil
+	case CodecAAC:
+		return codecIDAAC, nil
 	case CodecPCMU, CodecPCMA:
 		return codecIDMS, nil
 	case CodecVP8:
@@ -78,6 +82,8 @@ func codecFromMatroskaID(id string, private []byte) Codec {
 		return CodecVorbis
 	case codecIDFLAC:
 		return CodecFLAC
+	case codecIDAAC:
+		return CodecAAC
 	case codecIDVP8:
 		return CodecVP8
 	case codecIDVP9:
@@ -94,6 +100,9 @@ func codecFromMatroskaID(id string, private []byte) Codec {
 		if len(private) >= 2 {
 			return codecFromMSACMTag(binary.LittleEndian.Uint16(private[:2]))
 		}
+	}
+	if strings.HasPrefix(id, "A_AAC/") || strings.HasPrefix(id, "A_AAC-") {
+		return CodecAAC
 	}
 	return CodecUnknown
 }
@@ -117,6 +126,8 @@ func codecFromAV(id av.CodecID) Codec {
 		return CodecVorbis
 	case av.CodecFLAC:
 		return CodecFLAC
+	case av.CodecAAC:
+		return CodecAAC
 	case av.CodecVP8:
 		return CodecVP8
 	case av.CodecVP9:
@@ -142,6 +153,8 @@ func codecToAV(codec Codec) av.CodecID {
 		return av.CodecVorbis
 	case CodecFLAC:
 		return av.CodecFLAC
+	case CodecAAC:
+		return av.CodecAAC
 	case CodecVP8:
 		return av.CodecVP8
 	case CodecVP9:
@@ -156,6 +169,142 @@ func codecToAV(codec Codec) av.CodecID {
 		return av.CodecTextUTF8
 	default:
 		return av.CodecUnknown
+	}
+}
+
+type aacAudioSpecificConfig struct {
+	ObjectType int
+	SampleRate int
+	Channels   int
+}
+
+func parseAACAudioSpecificConfig(private []byte) (aacAudioSpecificConfig, error) {
+	reader := aacConfigBitReader{data: private}
+	objectType, err := readAACAudioObjectType(&reader)
+	if err != nil || objectType == 0 {
+		return aacAudioSpecificConfig{}, ErrInvalidData
+	}
+	sampleRate, err := readAACSamplingFrequency(&reader)
+	if err != nil {
+		return aacAudioSpecificConfig{}, ErrInvalidData
+	}
+	channelConfig, err := reader.read(4)
+	if err != nil {
+		return aacAudioSpecificConfig{}, ErrInvalidData
+	}
+	channels := aacChannelCount(int(channelConfig))
+	if channels == 0 {
+		return aacAudioSpecificConfig{}, ErrInvalidData
+	}
+	if objectType == 5 || objectType == 29 {
+		extensionRate, err := readAACSamplingFrequency(&reader)
+		if err != nil {
+			return aacAudioSpecificConfig{}, ErrInvalidData
+		}
+		extensionObjectType, err := readAACAudioObjectType(&reader)
+		if err != nil || extensionObjectType == 0 {
+			return aacAudioSpecificConfig{}, ErrInvalidData
+		}
+		objectType = extensionObjectType
+		sampleRate = extensionRate
+	}
+	return aacAudioSpecificConfig{
+		ObjectType: objectType,
+		SampleRate: sampleRate,
+		Channels:   channels,
+	}, nil
+}
+
+type aacConfigBitReader struct {
+	data []byte
+	bit  int
+}
+
+func (r *aacConfigBitReader) read(bits int) (uint32, error) {
+	if bits <= 0 || bits > 32 || len(r.data)*8-r.bit < bits {
+		return 0, ErrInvalidData
+	}
+	var value uint32
+	for i := 0; i < bits; i++ {
+		byteIndex := r.bit / 8
+		bitIndex := 7 - r.bit%8
+		value = (value << 1) | uint32((r.data[byteIndex]>>bitIndex)&1)
+		r.bit++
+	}
+	return value, nil
+}
+
+func readAACAudioObjectType(reader *aacConfigBitReader) (int, error) {
+	value, err := reader.read(5)
+	if err != nil {
+		return 0, err
+	}
+	if value == 31 {
+		extension, err := reader.read(6)
+		if err != nil {
+			return 0, err
+		}
+		value = 32 + extension
+	}
+	return int(value), nil
+}
+
+func readAACSamplingFrequency(reader *aacConfigBitReader) (int, error) {
+	index, err := reader.read(4)
+	if err != nil {
+		return 0, err
+	}
+	if index == 15 {
+		value, err := reader.read(24)
+		if err != nil || value == 0 || uint64(value) > maxIntValue {
+			return 0, ErrInvalidData
+		}
+		return int(value), nil
+	}
+	if index >= uint32(len(aacSamplingFrequencies)) || aacSamplingFrequencies[index] == 0 {
+		return 0, ErrInvalidData
+	}
+	return aacSamplingFrequencies[index], nil
+}
+
+var aacSamplingFrequencies = [...]int{
+	96000,
+	88200,
+	64000,
+	48000,
+	44100,
+	32000,
+	24000,
+	22050,
+	16000,
+	12000,
+	11025,
+	8000,
+	7350,
+}
+
+func aacChannelCount(config int) int {
+	switch config {
+	case 1:
+		return 1
+	case 2:
+		return 2
+	case 3:
+		return 3
+	case 4:
+		return 4
+	case 5:
+		return 5
+	case 6:
+		return 6
+	case 7:
+		return 8
+	case 11:
+		return 7
+	case 12, 14:
+		return 8
+	default:
+		return 0
 	}
 }
 

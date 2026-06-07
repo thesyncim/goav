@@ -126,6 +126,7 @@ func TestExternalDemuxerReadsFFmpegMatroskaCodecs(t *testing.T) {
 		{name: "opus", codec: CodecOpus, typ: TrackAudio, write: writeFFmpegOpusMatroska},
 		{name: "vorbis", codec: CodecVorbis, typ: TrackAudio, write: writeFFmpegVorbisMatroska},
 		{name: "flac", codec: CodecFLAC, typ: TrackAudio, write: writeFFmpegFLACMatroska},
+		{name: "aac", codec: CodecAAC, typ: TrackAudio, write: writeFFmpegAACMatroska},
 		{name: "pcmu", codec: CodecPCMU, typ: TrackAudio, write: writeFFmpegPCMUMatroska},
 		{name: "pcma", codec: CodecPCMA, typ: TrackAudio, write: writeFFmpegPCMAMatroska},
 	}
@@ -159,6 +160,9 @@ func TestExternalDemuxerReadsFFmpegMatroskaCodecs(t *testing.T) {
 			}
 			if tt.codec == CodecFLAC && (tracks[0].Audio.SampleRate != 48000 || tracks[0].Audio.Channels == 0 || tracks[0].Audio.BitDepth == 0 || len(tracks[0].CodecPrivate) == 0) {
 				t.Fatalf("audio = %+v private=%x, want 48000 Hz flac with codec private", tracks[0].Audio, tracks[0].CodecPrivate)
+			}
+			if tt.codec == CodecAAC && (tracks[0].Audio.SampleRate != 48000 || tracks[0].Audio.Channels == 0 || len(tracks[0].CodecPrivate) == 0) {
+				t.Fatalf("audio = %+v private=%x, want 48000 Hz aac with codec private", tracks[0].Audio, tracks[0].CodecPrivate)
 			}
 			if (tt.codec == CodecPCMU || tt.codec == CodecPCMA) && (tracks[0].Audio.SampleRate != 8000 || tracks[0].Audio.Channels != 1 || tracks[0].Audio.BitDepth != 8) {
 				t.Fatalf("audio = %+v, want 8000 Hz mono 8-bit G.711", tracks[0].Audio)
@@ -206,6 +210,7 @@ func TestExternalRemuxesFFmpegMatroskaCodecs(t *testing.T) {
 		{name: "opus", ffprobe: "opus", write: writeFFmpegOpusMatroska, requireType: TrackAudio},
 		{name: "vorbis", ffprobe: "vorbis", write: writeFFmpegVorbisMatroska, requireType: TrackAudio},
 		{name: "flac", ffprobe: "flac", write: writeFFmpegFLACMatroska, requireType: TrackAudio},
+		{name: "aac", ffprobe: "aac", write: writeFFmpegAACMatroska, requireType: TrackAudio},
 		{name: "pcmu", ffprobe: "pcm_mulaw", write: writeFFmpegPCMUMatroska, requireType: TrackAudio},
 		{name: "pcma", ffprobe: "pcm_alaw", write: writeFFmpegPCMAMatroska, requireType: TrackAudio},
 	}
@@ -1664,6 +1669,8 @@ func externalMatroskaCodecName(t testing.TB, codec Codec) string {
 		return "vorbis"
 	case CodecFLAC:
 		return "flac"
+	case CodecAAC:
+		return "aac"
 	case CodecAV1:
 		return "av1"
 	case CodecH264:
@@ -1857,6 +1864,23 @@ func writeFFmpegFLACMatroska(t testing.TB) string {
 		"-f", "lavfi",
 		"-i", "sine=frequency=1000:sample_rate=48000:duration=0.02",
 		"-c:a", "flac",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegAACMatroska(t testing.TB) string {
+	t.Helper()
+	tool := requireExternalTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-aac.mkv")
+	runExternalToolOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=0.02",
+		"-c:a", "aac",
+		"-ac", "2",
 		file,
 	)
 	return file

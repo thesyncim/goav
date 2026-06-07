@@ -4485,6 +4485,14 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 		track.Audio.SampleRate = private.SampleRate
 		track.Audio.BitDepth = private.BitsPerSample
 	}
+	if track.Codec == CodecAAC {
+		private, err := parseAACAudioSpecificConfig(track.CodecPrivate)
+		if err != nil {
+			return Track{}, err
+		}
+		track.Audio.Channels = private.Channels
+		track.Audio.SampleRate = private.SampleRate
+	}
 	if track.Codec == CodecAV1 && len(track.CodecPrivate) != 0 {
 		if _, err := parseAV1CodecConfigurationRecord(track.CodecPrivate); err != nil {
 			return Track{}, err

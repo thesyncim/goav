@@ -4233,6 +4233,20 @@ func validateTrack(track Track) error {
 			if track.Audio.BitDepth != 0 && track.Audio.BitDepth != private.BitsPerSample {
 				return ErrInvalidTrack
 			}
+		case CodecAAC:
+			if len(track.CodecPrivate) == 0 {
+				return ErrInvalidTrack
+			}
+			private, err := parseAACAudioSpecificConfig(track.CodecPrivate)
+			if err != nil {
+				return ErrInvalidTrack
+			}
+			if track.Audio.SampleRate != 0 && track.Audio.SampleRate != private.SampleRate {
+				return ErrInvalidTrack
+			}
+			if track.Audio.Channels != 0 && track.Audio.Channels != private.Channels {
+				return ErrInvalidTrack
+			}
 		case CodecPCMU, CodecPCMA:
 			if len(track.CodecPrivate) != 0 {
 				format, err := parseMSACMWaveFormat(track.CodecPrivate)

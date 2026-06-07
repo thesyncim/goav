@@ -19,6 +19,7 @@ const (
 	CodecOpus     CodecID = "opus"
 	CodecVorbis   CodecID = "vorbis"
 	CodecFLAC     CodecID = "flac"
+	CodecAAC      CodecID = "aac"
 	CodecVP8      CodecID = "vp8"
 	CodecVP9      CodecID = "vp9"
 	CodecH264     CodecID = "h264"
