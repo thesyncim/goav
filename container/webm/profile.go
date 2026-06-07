@@ -8,10 +8,11 @@ import (
 type Codec = matroska.Codec
 
 const (
-	CodecOpus = matroska.CodecOpus
-	CodecVP8  = matroska.CodecVP8
-	CodecVP9  = matroska.CodecVP9
-	CodecAV1  = matroska.CodecAV1
+	CodecOpus   = matroska.CodecOpus
+	CodecVorbis = matroska.CodecVorbis
+	CodecVP8    = matroska.CodecVP8
+	CodecVP9    = matroska.CodecVP9
+	CodecAV1    = matroska.CodecAV1
 )
 
 type TrackType = matroska.TrackType
@@ -158,7 +159,7 @@ func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 
 func validateTrack(track Track) error {
 	switch track.Codec {
-	case matroska.CodecOpus:
+	case matroska.CodecOpus, matroska.CodecVorbis:
 		if track.Type != matroska.TrackAudio {
 			return ErrUnsupportedWebMCodec
 		}
@@ -304,6 +305,10 @@ func validateCodecPrivate(track Track) error {
 		if len(track.CodecPrivate) != 0 {
 			return ErrUnsupportedWebMCodecPrivate
 		}
+	case CodecVorbis:
+		if len(track.CodecPrivate) == 0 {
+			return ErrUnsupportedWebMCodecPrivate
+		}
 	case CodecVP9:
 		if len(track.CodecPrivate) != 0 {
 			return validateVP9CodecPrivate(track.CodecPrivate)
@@ -416,6 +421,8 @@ func codecFromAV(id av.CodecID) matroska.Codec {
 	switch id {
 	case av.CodecOpus:
 		return matroska.CodecOpus
+	case av.CodecVorbis:
+		return matroska.CodecVorbis
 	case av.CodecVP8:
 		return matroska.CodecVP8
 	case av.CodecVP9:
@@ -431,6 +438,8 @@ func codecToAV(codec matroska.Codec) av.CodecID {
 	switch codec {
 	case matroska.CodecOpus:
 		return av.CodecOpus
+	case matroska.CodecVorbis:
+		return av.CodecVorbis
 	case matroska.CodecVP8:
 		return av.CodecVP8
 	case matroska.CodecVP9:

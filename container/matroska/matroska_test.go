@@ -1835,6 +1835,96 @@ func TestMuxerDemuxerPreservesMSACMG711CodecPrivate(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesVorbisCodecPrivate(t *testing.T) {
+	var buffer bytes.Buffer
+	private := validVorbisCodecPrivate()
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:         TrackAudio,
+		Codec:        CodecVorbis,
+		Audio:        AudioConfig{SampleRate: 48000, Channels: 2},
+		CodecPrivate: private,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{0x11, 0x22, 0x33}
+	if err := muxer.WritePacket(Packet{
+		TrackID:    trackID,
+		TimeNS:     20_000_000,
+		DurationNS: 20_000_000,
+		Keyframe:   true,
+		Data:       want,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].Codec != CodecVorbis ||
+		tracks[0].Type != TrackAudio ||
+		tracks[0].Audio.SampleRate != 48000 ||
+		tracks[0].Audio.Channels != 2 ||
+		!bytes.Equal(tracks[0].CodecPrivate, private) {
+		t.Fatalf("track = %+v private=%x", tracks[0], tracks[0].CodecPrivate)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != trackID ||
+		got.TimeNS != 20_000_000 ||
+		got.DurationNS != 20_000_000 ||
+		!bytes.Equal(got.Data, want) {
+		t.Fatalf("packet = %+v data=%x, want track %d data=%x", got, got.Data, trackID, want)
+	}
+}
+
+func TestMuxerRejectsInvalidVorbisCodecPrivate(t *testing.T) {
+	tests := []struct {
+		name    string
+		private []byte
+	}{
+		{name: "missing", private: nil},
+		{name: "wrong packet count", private: []byte{1, 7, 7, 1, 'v', 'o', 'r', 'b', 'i', 's', 3, 'v', 'o', 'r', 'b', 'i', 's', 5, 'v', 'o', 'r', 'b', 'i', 's'}},
+		{name: "truncated xiph lacing", private: []byte{2, 255}},
+		{name: "empty identification", private: []byte{2, 0, 7, 3, 'v', 'o', 'r', 'b', 'i', 's', 5, 'v', 'o', 'r', 'b', 'i', 's'}},
+		{name: "wrong header order", private: vorbisCodecPrivateWithHeaders([]byte{3, 'v', 'o', 'r', 'b', 'i', 's'}, []byte{1, 'v', 'o', 'r', 'b', 'i', 's'}, []byte{5, 'v', 'o', 'r', 'b', 'i', 's'})},
+		{name: "zero channels", private: vorbisCodecPrivateWithIdentificationByte(11, 0)},
+		{name: "zero sample rate", private: vorbisCodecPrivateWithIdentificationBytes(12, 0, 0, 0, 0)},
+		{name: "missing framing bit", private: vorbisCodecPrivateWithIdentificationByte(29, 0)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := muxer.AddTrack(Track{
+				Type:         TrackAudio,
+				Codec:        CodecVorbis,
+				Audio:        AudioConfig{SampleRate: 48000, Channels: 2},
+				CodecPrivate: tt.private,
+			}); !errors.Is(err, ErrInvalidTrack) {
+				t.Fatalf("err = %v, want ErrInvalidTrack", err)
+			}
+		})
+	}
+}
+
 func TestMuxerDemuxerPreservesTrackUIDAndFlags(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -12574,6 +12664,65 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFormatMuxerDemuxerSupportsVorbis(t *testing.T) {
+	ctx := context.Background()
+	private := validVorbisCodecPrivate()
+	stream := av.Stream{
+		ID:       "audio",
+		Index:    0,
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecVorbis,
+			Type:       av.MediaAudio,
+			SampleRate: 48000,
+			Channels:   2,
+			ExtraData:  av.Buffer{Bytes: private},
+		},
+	}
+	var buffer bytes.Buffer
+	muxer := &FormatMuxer{}
+	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Write(ctx, &av.Packet{
+		StreamID: stream.ID,
+		Payload:  av.Buffer{Bytes: []byte{0xaa, 0xbb}},
+		PTS:      av.Timestamp{Value: 960, Base: stream.TimeBase},
+		Duration: av.Duration{Value: 960, Base: stream.TimeBase},
+		Keyframe: true,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &FormatDemuxer{}
+	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	streams := demuxer.Streams()
+	if len(streams) != 1 ||
+		streams[0].Codec.ID != av.CodecVorbis ||
+		streams[0].Codec.SampleRate != 48000 ||
+		streams[0].Codec.Channels != 2 ||
+		!bytes.Equal(streams[0].Codec.ExtraData.Bytes, private) {
+		t.Fatalf("streams = %+v", streams)
+	}
+	result := format.ReadResult{Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, 8)}}}
+	if err := demuxer.ReadInto(ctx, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.PacketReady ||
+		result.Packet.StreamID != "1" ||
+		result.Packet.PTS.Value != 20_000_000 ||
+		result.Packet.Duration.Value != 20_000_000 ||
+		!bytes.Equal(result.Packet.Payload.Bytes, []byte{0xaa, 0xbb}) {
+		t.Fatalf("result = %+v packet=%+v", result, result.Packet)
+	}
+}
+
 func TestFormatDemuxerStreamsReturnsExtraDataCopies(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
@@ -14166,6 +14315,52 @@ func msACMWaveFormatBytes(tag uint16, channels int, sampleRate int, avgBytesPerS
 	binary.LittleEndian.PutUint16(private[14:16], uint16(bitsPerSample))
 	binary.LittleEndian.PutUint16(private[16:18], uint16(len(extra)))
 	copy(private[waveFormatExBaseSize:], extra)
+	return private
+}
+
+func validVorbisCodecPrivate() []byte {
+	identification := make([]byte, 30)
+	identification[0] = 1
+	copy(identification[1:], "vorbis")
+	identification[11] = 2
+	binary.LittleEndian.PutUint32(identification[12:16], 48000)
+	identification[28] = 0xb6
+	identification[29] = 1
+	comment := []byte{3, 'v', 'o', 'r', 'b', 'i', 's'}
+	setup := []byte{5, 'v', 'o', 'r', 'b', 'i', 's', 0}
+	return vorbisCodecPrivateWithHeaders(identification, comment, setup)
+}
+
+func vorbisCodecPrivateWithIdentificationByte(offset int, value byte) []byte {
+	private := validVorbisCodecPrivate()
+	idStart := 3
+	private[idStart+offset] = value
+	return private
+}
+
+func vorbisCodecPrivateWithIdentificationBytes(offset int, values ...byte) []byte {
+	private := validVorbisCodecPrivate()
+	idStart := 3
+	copy(private[idStart+offset:], values)
+	return private
+}
+
+func vorbisCodecPrivateWithHeaders(headers ...[]byte) []byte {
+	if len(headers) == 0 {
+		return nil
+	}
+	private := []byte{byte(len(headers) - 1)}
+	for i := 0; i < len(headers)-1; i++ {
+		size := len(headers[i])
+		for size >= 255 {
+			private = append(private, 255)
+			size -= 255
+		}
+		private = append(private, byte(size))
+	}
+	for i := range headers {
+		private = append(private, headers[i]...)
+	}
 	return private
 }
 

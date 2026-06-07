@@ -62,6 +62,7 @@ func TestExternalDemuxerReadsFFmpegWebMCodecs(t *testing.T) {
 		{name: "vp9", codec: CodecVP9, typ: TrackVideo, write: writeFFmpegVP9WebM},
 		{name: "av1", codec: CodecAV1, typ: TrackVideo, write: writeFFmpegAV1WebM},
 		{name: "opus", codec: CodecOpus, typ: TrackAudio, write: writeFFmpegOpusWebM},
+		{name: "vorbis", codec: CodecVorbis, typ: TrackAudio, write: writeFFmpegVorbisWebM},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -86,7 +87,7 @@ func TestExternalDemuxerReadsFFmpegWebMCodecs(t *testing.T) {
 				t.Fatalf("video = %+v, want 16x16", tracks[0].Video)
 			}
 			if tt.typ == TrackAudio && (tracks[0].Audio.SampleRate != 48000 || tracks[0].Audio.Channels == 0) {
-				t.Fatalf("audio = %+v, want 48000 Hz opus", tracks[0].Audio)
+				t.Fatalf("audio = %+v, want 48000 Hz audio", tracks[0].Audio)
 			}
 			packet := Packet{Data: make([]byte, 0, 1<<20)}
 			for {
@@ -124,6 +125,7 @@ func TestExternalRemuxesFFmpegWebMCodecs(t *testing.T) {
 		{name: "vp9", ffprobe: "vp9", write: writeFFmpegVP9WebM, requireType: TrackVideo},
 		{name: "av1", ffprobe: "av1", write: writeFFmpegAV1WebM, requireType: TrackVideo},
 		{name: "opus", ffprobe: "opus", write: writeFFmpegOpusWebM, requireType: TrackAudio},
+		{name: "vorbis", ffprobe: "vorbis", write: writeFFmpegVorbisWebM, requireType: TrackAudio},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -139,34 +141,37 @@ func TestExternalRemuxesFFmpegWebMCodecs(t *testing.T) {
 func TestExternalReadsAndRemuxesFFmpegWebMRecordings(t *testing.T) {
 	tool := requireTool(t, "ffprobe")
 	tests := []struct {
-		name  string
-		codec Codec
-		probe string
-		write func(testing.TB) string
+		name       string
+		codec      Codec
+		probe      string
+		audioCodec Codec
+		audioProbe string
+		write      func(testing.TB) string
 	}{
-		{name: "vp8", codec: CodecVP8, probe: "vp8", write: writeFFmpegVP8OpusWebMRecording},
-		{name: "vp9", codec: CodecVP9, probe: "vp9", write: writeFFmpegVP9OpusWebMRecording},
-		{name: "av1", codec: CodecAV1, probe: "av1", write: writeFFmpegAV1OpusWebMRecording},
+		{name: "vp8-opus", codec: CodecVP8, probe: "vp8", audioCodec: CodecOpus, audioProbe: "opus", write: writeFFmpegVP8OpusWebMRecording},
+		{name: "vp9-opus", codec: CodecVP9, probe: "vp9", audioCodec: CodecOpus, audioProbe: "opus", write: writeFFmpegVP9OpusWebMRecording},
+		{name: "av1-opus", codec: CodecAV1, probe: "av1", audioCodec: CodecOpus, audioProbe: "opus", write: writeFFmpegAV1OpusWebMRecording},
+		{name: "vp8-vorbis", codec: CodecVP8, probe: "vp8", audioCodec: CodecVorbis, audioProbe: "vorbis", write: writeFFmpegVP8VorbisWebMRecording},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			file := tt.write(t)
 			tracks, stats := readWebMRecording(t, file)
 			video := requireWebMRecordingTrack(t, tracks, tt.codec, TrackVideo)
-			audio := requireWebMRecordingTrack(t, tracks, CodecOpus, TrackAudio)
+			audio := requireWebMRecordingTrack(t, tracks, tt.audioCodec, TrackAudio)
 			assertWebMRecordingStats(t, stats, video.ID, audio.ID)
 			assertWebMRecordingMatchesFFProbe(t, "ffmpeg", tracks, stats, probeExternalWebMRecordingStats(t, tool, file))
 
 			remuxed := remuxWebMRecording(t, file)
 			output := runExternal(t, tool, "-v", "error", "-show_entries", "stream=codec_name", "-of", "default=nw=1", remuxed)
-			for _, codec := range []string{tt.probe, "opus"} {
+			for _, codec := range []string{tt.probe, tt.audioProbe} {
 				if !strings.Contains(output, codec) {
 					t.Fatalf("ffprobe output missing %s:\n%s", codec, output)
 				}
 			}
 			remuxedTracks, remuxedStats := readWebMRecording(t, remuxed)
 			remuxedVideo := requireWebMRecordingTrack(t, remuxedTracks, tt.codec, TrackVideo)
-			remuxedAudio := requireWebMRecordingTrack(t, remuxedTracks, CodecOpus, TrackAudio)
+			remuxedAudio := requireWebMRecordingTrack(t, remuxedTracks, tt.audioCodec, TrackAudio)
 			assertWebMRecordingStats(t, remuxedStats, remuxedVideo.ID, remuxedAudio.ID)
 			assertWebMRecordingMatchesFFProbe(t, "remuxed ffmpeg", remuxedTracks, remuxedStats, probeExternalWebMRecordingStats(t, tool, remuxed))
 		})
@@ -1115,6 +1120,8 @@ func externalWebMCodecName(t testing.TB, codec Codec) string {
 	switch codec {
 	case CodecOpus:
 		return "opus"
+	case CodecVorbis:
+		return "vorbis"
 	case CodecAV1:
 		return "av1"
 	case CodecVP9:
@@ -1261,6 +1268,24 @@ func writeFFmpegOpusWebM(t testing.TB) string {
 	return file
 }
 
+func writeFFmpegVorbisWebM(t testing.TB) string {
+	t.Helper()
+	tool := requireTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-vorbis.webm")
+	runExternalOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=0.02",
+		"-c:a", "vorbis",
+		"-ac", "2",
+		"-strict", "-2",
+		file,
+	)
+	return file
+}
+
 func writeFFmpegVP8OpusWebMRecording(t testing.TB) string {
 	t.Helper()
 	tool := requireTool(t, "ffmpeg")
@@ -1284,6 +1309,34 @@ func writeFFmpegVP8OpusWebMRecording(t testing.TB) string {
 		"-c:a", "libopus",
 		"-application", "voip",
 		"-frame_duration", "20",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegVP8VorbisWebMRecording(t testing.TB) string {
+	t.Helper()
+	tool := requireTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-vp8-vorbis-recording.webm")
+	runExternalOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=5:duration=1",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=1",
+		"-map", "0:v:0",
+		"-map", "1:a:0",
+		"-shortest",
+		"-c:v", "libvpx",
+		"-deadline", "realtime",
+		"-cpu-used", "8",
+		"-b:v", "100k",
+		"-g", "5",
+		"-c:a", "vorbis",
+		"-ac", "2",
+		"-strict", "-2",
 		file,
 	)
 	return file

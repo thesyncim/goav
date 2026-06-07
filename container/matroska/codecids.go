@@ -32,6 +32,7 @@ const (
 
 const (
 	codecIDOpus     = "A_OPUS"
+	codecIDVorbis   = "A_VORBIS"
 	codecIDMS       = "A_MS/ACM"
 	codecIDVP8      = "V_VP8"
 	codecIDVP9      = "V_VP9"
@@ -45,6 +46,8 @@ func matroskaCodecID(codec Codec) (string, error) {
 	switch codec {
 	case CodecOpus:
 		return codecIDOpus, nil
+	case CodecVorbis:
+		return codecIDVorbis, nil
 	case CodecPCMU, CodecPCMA:
 		return codecIDMS, nil
 	case CodecVP8:
@@ -68,6 +71,8 @@ func codecFromMatroskaID(id string, private []byte) Codec {
 	switch id {
 	case codecIDOpus:
 		return CodecOpus
+	case codecIDVorbis:
+		return CodecVorbis
 	case codecIDVP8:
 		return CodecVP8
 	case codecIDVP9:
@@ -103,6 +108,8 @@ func codecFromAV(id av.CodecID) Codec {
 	switch id {
 	case av.CodecOpus:
 		return CodecOpus
+	case av.CodecVorbis:
+		return CodecVorbis
 	case av.CodecVP8:
 		return CodecVP8
 	case av.CodecVP9:
@@ -124,6 +131,8 @@ func codecToAV(codec Codec) av.CodecID {
 	switch codec {
 	case CodecOpus:
 		return av.CodecOpus
+	case CodecVorbis:
+		return av.CodecVorbis
 	case CodecVP8:
 		return av.CodecVP8
 	case CodecVP9:
@@ -139,6 +148,82 @@ func codecToAV(codec Codec) av.CodecID {
 	default:
 		return av.CodecUnknown
 	}
+}
+
+type vorbisCodecPrivate struct {
+	Channels   int
+	SampleRate int
+}
+
+func parseVorbisCodecPrivate(private []byte) (vorbisCodecPrivate, error) {
+	if len(private) < 4 || private[0] != 2 {
+		return vorbisCodecPrivate{}, ErrInvalidData
+	}
+	offset := 1
+	var sizes [2]int
+	for i := range sizes {
+		size := 0
+		for {
+			if offset >= len(private) {
+				return vorbisCodecPrivate{}, ErrInvalidData
+			}
+			value := int(private[offset])
+			offset++
+			if uint64(size) > maxIntValue-uint64(value) {
+				return vorbisCodecPrivate{}, ErrInvalidData
+			}
+			size += value
+			if value != 255 {
+				break
+			}
+		}
+		if size == 0 {
+			return vorbisCodecPrivate{}, ErrInvalidData
+		}
+		sizes[i] = size
+	}
+	if sizes[0] > len(private)-offset || sizes[1] > len(private)-offset-sizes[0] {
+		return vorbisCodecPrivate{}, ErrInvalidData
+	}
+	lastSize := len(private) - offset - sizes[0] - sizes[1]
+	if lastSize == 0 {
+		return vorbisCodecPrivate{}, ErrInvalidData
+	}
+	identification := private[offset : offset+sizes[0]]
+	offset += sizes[0]
+	comment := private[offset : offset+sizes[1]]
+	offset += sizes[1]
+	setup := private[offset:]
+	if len(identification) < 30 ||
+		!hasVorbisPacketHeader(identification, 1) ||
+		!hasVorbisPacketHeader(comment, 3) ||
+		!hasVorbisPacketHeader(setup, 5) {
+		return vorbisCodecPrivate{}, ErrInvalidData
+	}
+	if binary.LittleEndian.Uint32(identification[7:11]) != 0 {
+		return vorbisCodecPrivate{}, ErrInvalidData
+	}
+	channels := int(identification[11])
+	sampleRate := binary.LittleEndian.Uint32(identification[12:16])
+	if channels == 0 || sampleRate == 0 || uint64(sampleRate) > maxIntValue {
+		return vorbisCodecPrivate{}, ErrInvalidData
+	}
+	blockSizes := identification[28]
+	if blockSizes&0x0f > blockSizes>>4 || identification[29]&0x01 == 0 {
+		return vorbisCodecPrivate{}, ErrInvalidData
+	}
+	return vorbisCodecPrivate{Channels: channels, SampleRate: int(sampleRate)}, nil
+}
+
+func hasVorbisPacketHeader(packet []byte, packetType byte) bool {
+	return len(packet) >= 7 &&
+		packet[0] == packetType &&
+		packet[1] == 'v' &&
+		packet[2] == 'o' &&
+		packet[3] == 'r' &&
+		packet[4] == 'b' &&
+		packet[5] == 'i' &&
+		packet[6] == 's'
 }
 
 func defaultCodecPrivate(track Track, scratch *[codecPrivateScratchSize]byte) []byte {

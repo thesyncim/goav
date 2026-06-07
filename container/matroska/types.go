@@ -7,6 +7,7 @@ type Codec int
 const (
 	CodecUnknown Codec = iota
 	CodecOpus
+	CodecVorbis
 	CodecPCMU
 	CodecPCMA
 	CodecVP8

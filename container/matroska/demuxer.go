@@ -4468,6 +4468,14 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			track.SeekPreRollNS = opusDefaultSeekPreRollNS
 		}
 	}
+	if track.Codec == CodecVorbis {
+		private, err := parseVorbisCodecPrivate(track.CodecPrivate)
+		if err != nil {
+			return Track{}, err
+		}
+		track.Audio.Channels = private.Channels
+		track.Audio.SampleRate = private.SampleRate
+	}
 	if track.Codec == CodecAV1 && len(track.CodecPrivate) != 0 {
 		if _, err := parseAV1CodecConfigurationRecord(track.CodecPrivate); err != nil {
 			return Track{}, err

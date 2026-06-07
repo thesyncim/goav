@@ -3,6 +3,7 @@ package webm
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"os"
@@ -263,6 +264,15 @@ func TestMuxerRejectsUnsupportedCodecPrivate(t *testing.T) {
 				CodecPrivate: validVP9CodecPrivate(),
 				Video:        VideoConfig{Width: 16, Height: 16},
 			},
+		},
+		{
+			name: "missing vorbis private",
+			track: Track{
+				Type:  TrackAudio,
+				Codec: CodecVorbis,
+				Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+			},
+			wantErr: ErrUnsupportedWebMCodecPrivate,
 		},
 	}
 	for _, tt := range tests {
@@ -1951,6 +1961,16 @@ func TestMuxerDemuxerSupportsWebMCodecs(t *testing.T) {
 			data: []byte{0x01, 0x02},
 		},
 		{
+			name: "vorbis",
+			track: Track{
+				Type:         TrackAudio,
+				Codec:        CodecVorbis,
+				Audio:        AudioConfig{SampleRate: 48000, Channels: 2},
+				CodecPrivate: validWebMVorbisCodecPrivate(),
+			},
+			data: []byte{0x11, 0x22, 0x33},
+		},
+		{
 			name: "vp8",
 			track: Track{
 				Type:  TrackVideo,
@@ -2526,6 +2546,65 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFormatMuxerDemuxerSupportsVorbis(t *testing.T) {
+	ctx := context.Background()
+	private := validWebMVorbisCodecPrivate()
+	stream := av.Stream{
+		ID:       "audio",
+		Index:    0,
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecVorbis,
+			Type:       av.MediaAudio,
+			SampleRate: 48000,
+			Channels:   2,
+			ExtraData:  av.Buffer{Bytes: private},
+		},
+	}
+	var buffer bytes.Buffer
+	muxer := &FormatMuxer{}
+	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Write(ctx, &av.Packet{
+		StreamID: stream.ID,
+		Payload:  av.Buffer{Bytes: []byte{0xaa, 0xbb}},
+		PTS:      av.Timestamp{Value: 960, Base: stream.TimeBase},
+		Duration: av.Duration{Value: 960, Base: stream.TimeBase},
+		Keyframe: true,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer := &FormatDemuxer{}
+	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	streams := demuxer.Streams()
+	if len(streams) != 1 ||
+		streams[0].Codec.ID != av.CodecVorbis ||
+		streams[0].Codec.SampleRate != 48000 ||
+		streams[0].Codec.Channels != 2 ||
+		!bytes.Equal(streams[0].Codec.ExtraData.Bytes, private) {
+		t.Fatalf("streams = %+v", streams)
+	}
+	result := format.ReadResult{Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 0, 8)}}}
+	if err := demuxer.ReadInto(ctx, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.PacketReady ||
+		result.Packet.StreamID != "1" ||
+		result.Packet.PTS.Value != 20_000_000 ||
+		result.Packet.Duration.Value != 20_000_000 ||
+		!bytes.Equal(result.Packet.Payload.Bytes, []byte{0xaa, 0xbb}) {
+		t.Fatalf("result = %+v packet=%+v", result, result.Packet)
+	}
+}
+
 func TestFormatDemuxerStreamsReturnsExtraDataCopies(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
@@ -3054,6 +3133,23 @@ func validVP9CodecPrivate() []byte {
 		3, 1, 8,
 		4, 1, 1,
 	}
+}
+
+func validWebMVorbisCodecPrivate() []byte {
+	identification := make([]byte, 30)
+	identification[0] = 1
+	copy(identification[1:], "vorbis")
+	identification[11] = 2
+	binary.LittleEndian.PutUint32(identification[12:16], 48000)
+	identification[28] = 0xb6
+	identification[29] = 1
+	comment := []byte{3, 'v', 'o', 'r', 'b', 'i', 's'}
+	setup := []byte{5, 'v', 'o', 'r', 'b', 'i', 's', 0}
+	private := []byte{2, byte(len(identification)), byte(len(comment))}
+	private = append(private, identification...)
+	private = append(private, comment...)
+	private = append(private, setup...)
+	return private
 }
 
 func makeCompressedDocTypeWebMData(tb testing.TB) []byte {

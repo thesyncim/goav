@@ -124,6 +124,7 @@ func TestExternalDemuxerReadsFFmpegMatroskaCodecs(t *testing.T) {
 		{name: "vp8", codec: CodecVP8, typ: TrackVideo, write: writeFFmpegVP8Matroska},
 		{name: "vp9", codec: CodecVP9, typ: TrackVideo, write: writeFFmpegVP9Matroska},
 		{name: "opus", codec: CodecOpus, typ: TrackAudio, write: writeFFmpegOpusMatroska},
+		{name: "vorbis", codec: CodecVorbis, typ: TrackAudio, write: writeFFmpegVorbisMatroska},
 		{name: "pcmu", codec: CodecPCMU, typ: TrackAudio, write: writeFFmpegPCMUMatroska},
 		{name: "pcma", codec: CodecPCMA, typ: TrackAudio, write: writeFFmpegPCMAMatroska},
 	}
@@ -151,6 +152,9 @@ func TestExternalDemuxerReadsFFmpegMatroskaCodecs(t *testing.T) {
 			}
 			if tt.codec == CodecOpus && (tracks[0].Audio.SampleRate != 48000 || tracks[0].Audio.Channels == 0) {
 				t.Fatalf("audio = %+v, want 48000 Hz opus", tracks[0].Audio)
+			}
+			if tt.codec == CodecVorbis && (tracks[0].Audio.SampleRate != 48000 || tracks[0].Audio.Channels == 0 || len(tracks[0].CodecPrivate) == 0) {
+				t.Fatalf("audio = %+v private=%x, want 48000 Hz vorbis with codec private", tracks[0].Audio, tracks[0].CodecPrivate)
 			}
 			if (tt.codec == CodecPCMU || tt.codec == CodecPCMA) && (tracks[0].Audio.SampleRate != 8000 || tracks[0].Audio.Channels != 1 || tracks[0].Audio.BitDepth != 8) {
 				t.Fatalf("audio = %+v, want 8000 Hz mono 8-bit G.711", tracks[0].Audio)
@@ -196,6 +200,7 @@ func TestExternalRemuxesFFmpegMatroskaCodecs(t *testing.T) {
 		{name: "vp8", ffprobe: "vp8", write: writeFFmpegVP8Matroska, requireType: TrackVideo},
 		{name: "vp9", ffprobe: "vp9", write: writeFFmpegVP9Matroska, requireType: TrackVideo},
 		{name: "opus", ffprobe: "opus", write: writeFFmpegOpusMatroska, requireType: TrackAudio},
+		{name: "vorbis", ffprobe: "vorbis", write: writeFFmpegVorbisMatroska, requireType: TrackAudio},
 		{name: "pcmu", ffprobe: "pcm_mulaw", write: writeFFmpegPCMUMatroska, requireType: TrackAudio},
 		{name: "pcma", ffprobe: "pcm_alaw", write: writeFFmpegPCMAMatroska, requireType: TrackAudio},
 	}
@@ -1650,6 +1655,8 @@ func externalMatroskaCodecName(t testing.TB, codec Codec) string {
 	switch codec {
 	case CodecOpus:
 		return "opus"
+	case CodecVorbis:
+		return "vorbis"
 	case CodecAV1:
 		return "av1"
 	case CodecH264:
@@ -1809,6 +1816,24 @@ func writeFFmpegOpusMatroska(t testing.TB) string {
 		"-c:a", "libopus",
 		"-application", "voip",
 		"-frame_duration", "20",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegVorbisMatroska(t testing.TB) string {
+	t.Helper()
+	tool := requireExternalTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-vorbis.mkv")
+	runExternalToolOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=0.02",
+		"-c:a", "vorbis",
+		"-ac", "2",
+		"-strict", "-2",
 		file,
 	)
 	return file

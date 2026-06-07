@@ -17,6 +17,7 @@ type CodecID string
 const (
 	CodecUnknown  CodecID = ""
 	CodecOpus     CodecID = "opus"
+	CodecVorbis   CodecID = "vorbis"
 	CodecVP8      CodecID = "vp8"
 	CodecVP9      CodecID = "vp9"
 	CodecH264     CodecID = "h264"

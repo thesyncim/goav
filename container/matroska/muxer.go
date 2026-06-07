@@ -4202,6 +4202,20 @@ func validateTrack(track Track) error {
 			if len(track.CodecPrivate) == 0 && !canWriteDefaultOpusHead(track) {
 				return ErrInvalidTrack
 			}
+		case CodecVorbis:
+			if len(track.CodecPrivate) == 0 {
+				return ErrInvalidTrack
+			}
+			private, err := parseVorbisCodecPrivate(track.CodecPrivate)
+			if err != nil {
+				return ErrInvalidTrack
+			}
+			if track.Audio.SampleRate != 0 && track.Audio.SampleRate != private.SampleRate {
+				return ErrInvalidTrack
+			}
+			if track.Audio.Channels != 0 && track.Audio.Channels != private.Channels {
+				return ErrInvalidTrack
+			}
 		case CodecPCMU, CodecPCMA:
 			if len(track.CodecPrivate) != 0 {
 				format, err := parseMSACMWaveFormat(track.CodecPrivate)
