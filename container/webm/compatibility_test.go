@@ -121,6 +121,40 @@ func TestExternalRemuxesFFmpegWebMCodecs(t *testing.T) {
 	}
 }
 
+func TestExternalReadsAndRemuxesFFmpegWebMRecordings(t *testing.T) {
+	tool := requireTool(t, "ffprobe")
+	tests := []struct {
+		name  string
+		codec Codec
+		probe string
+		write func(testing.TB) string
+	}{
+		{name: "vp9", codec: CodecVP9, probe: "vp9", write: writeFFmpegVP9OpusWebMRecording},
+		{name: "av1", codec: CodecAV1, probe: "av1", write: writeFFmpegAV1OpusWebMRecording},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := tt.write(t)
+			tracks, stats := readWebMRecording(t, file)
+			video := requireWebMRecordingTrack(t, tracks, tt.codec, TrackVideo)
+			audio := requireWebMRecordingTrack(t, tracks, CodecOpus, TrackAudio)
+			assertWebMRecordingStats(t, stats, video.ID, audio.ID)
+
+			remuxed := remuxWebMRecording(t, file)
+			output := runExternal(t, tool, "-v", "error", "-show_entries", "stream=codec_name", "-of", "default=nw=1", remuxed)
+			for _, codec := range []string{tt.probe, "opus"} {
+				if !strings.Contains(output, codec) {
+					t.Fatalf("ffprobe output missing %s:\n%s", codec, output)
+				}
+			}
+			remuxedTracks, remuxedStats := readWebMRecording(t, remuxed)
+			remuxedVideo := requireWebMRecordingTrack(t, remuxedTracks, tt.codec, TrackVideo)
+			remuxedAudio := requireWebMRecordingTrack(t, remuxedTracks, CodecOpus, TrackAudio)
+			assertWebMRecordingStats(t, remuxedStats, remuxedVideo.ID, remuxedAudio.ID)
+		})
+	}
+}
+
 func TestExternalMKVToolNixCompat(t *testing.T) {
 	file := writeCompatibilityWebM(t)
 	if tool, ok := lookupTool("mkvalidator"); ok {
@@ -247,6 +281,61 @@ func writeFFmpegOpusWebM(t testing.TB) string {
 	return file
 }
 
+func writeFFmpegVP9OpusWebMRecording(t testing.TB) string {
+	t.Helper()
+	tool := requireTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-vp9-opus-recording.webm")
+	runExternalOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=5:duration=1",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=1",
+		"-map", "0:v:0",
+		"-map", "1:a:0",
+		"-shortest",
+		"-c:v", "libvpx-vp9",
+		"-deadline", "realtime",
+		"-cpu-used", "8",
+		"-b:v", "100k",
+		"-g", "5",
+		"-c:a", "libopus",
+		"-application", "voip",
+		"-frame_duration", "20",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegAV1OpusWebMRecording(t testing.TB) string {
+	t.Helper()
+	tool := requireTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-av1-opus-recording.webm")
+	runExternalOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=5:duration=1",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=1",
+		"-map", "0:v:0",
+		"-map", "1:a:0",
+		"-shortest",
+		"-c:v", "libsvtav1",
+		"-preset", "13",
+		"-crf", "50",
+		"-g", "5",
+		"-c:a", "libopus",
+		"-application", "voip",
+		"-frame_duration", "20",
+		file,
+	)
+	return file
+}
+
 func writeCompatibilityWebM(t *testing.T) string {
 	t.Helper()
 	var buffer bytes.Buffer
@@ -362,6 +451,143 @@ func remuxFirstWebMPacket(t testing.TB, file string, requireType TrackType) stri
 	}
 	out := filepath.Join(t.TempDir(), "remuxed.webm")
 	if err := os.WriteFile(out, buffer.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+type externalWebMRecordingStats struct {
+	packets   map[uint32]int
+	keyframes map[uint32]int
+	lastTime  map[uint32]int64
+}
+
+func readWebMRecording(t testing.TB, file string) ([]Track, externalWebMRecordingStats) {
+	t.Helper()
+	input, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	demuxer, err := NewDemuxer(input, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	stats := externalWebMRecordingStats{
+		packets:   make(map[uint32]int, len(tracks)),
+		keyframes: make(map[uint32]int, len(tracks)),
+		lastTime:  make(map[uint32]int64, len(tracks)),
+	}
+	seen := make(map[uint32]bool, len(tracks))
+	packet := Packet{Data: make([]byte, 0, 1<<20)}
+	for {
+		err := demuxer.ReadPacket(&packet)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(packet.Data) == 0 {
+			t.Fatalf("empty packet from %s for track %d", file, packet.TrackID)
+		}
+		if seen[packet.TrackID] && packet.TimeNS < stats.lastTime[packet.TrackID] {
+			t.Fatalf("track %d time moved backward: got %d after %d", packet.TrackID, packet.TimeNS, stats.lastTime[packet.TrackID])
+		}
+		seen[packet.TrackID] = true
+		stats.lastTime[packet.TrackID] = packet.TimeNS
+		stats.packets[packet.TrackID]++
+		if packet.Keyframe {
+			stats.keyframes[packet.TrackID]++
+		}
+	}
+	return tracks, stats
+}
+
+func requireWebMRecordingTrack(t testing.TB, tracks []Track, codec Codec, typ TrackType) Track {
+	t.Helper()
+	for i := range tracks {
+		if tracks[i].Codec == codec && tracks[i].Type == typ {
+			return tracks[i]
+		}
+	}
+	t.Fatalf("missing %v %v track in %+v", codec, typ, tracks)
+	return Track{}
+}
+
+func assertWebMRecordingStats(t testing.TB, stats externalWebMRecordingStats, videoID uint32, audioID uint32) {
+	t.Helper()
+	if stats.packets[videoID] < 3 {
+		t.Fatalf("video packets = %d, want at least 3", stats.packets[videoID])
+	}
+	if stats.packets[audioID] < 10 {
+		t.Fatalf("audio packets = %d, want at least 10", stats.packets[audioID])
+	}
+	if stats.keyframes[videoID] == 0 {
+		t.Fatalf("video keyframes = 0")
+	}
+	if stats.lastTime[videoID] <= 0 || stats.lastTime[audioID] <= 0 {
+		t.Fatalf("last times = %+v, want positive audio/video timelines", stats.lastTime)
+	}
+}
+
+func remuxWebMRecording(t testing.TB, file string) string {
+	t.Helper()
+	input, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	demuxer, err := NewDemuxer(input, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "recording-remux.webm")
+	output, err := os.Create(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxer, err := NewMuxer(output, MuxerOptions{})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	trackIDs := make(map[uint32]uint32, len(demuxer.Tracks()))
+	for _, track := range demuxer.Tracks() {
+		id, err := muxer.AddTrack(track)
+		if err != nil {
+			_ = output.Close()
+			t.Fatal(err)
+		}
+		trackIDs[track.ID] = id
+	}
+	packet := Packet{Data: make([]byte, 0, 1<<20)}
+	for {
+		err := demuxer.ReadPacket(&packet)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			_ = output.Close()
+			t.Fatal(err)
+		}
+		id, ok := trackIDs[packet.TrackID]
+		if !ok {
+			_ = output.Close()
+			t.Fatalf("packet references unknown track %d", packet.TrackID)
+		}
+		packet.TrackID = id
+		if err := muxer.WritePacket(packet); err != nil {
+			_ = output.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
 		t.Fatal(err)
 	}
 	return out

@@ -145,6 +145,27 @@ func TestExternalRemuxesFFmpegMatroskaCodecs(t *testing.T) {
 	}
 }
 
+func TestExternalReadsAndRemuxesFFmpegMatroskaRecording(t *testing.T) {
+	tool := requireExternalTool(t, "ffprobe")
+	file := writeFFmpegH264OpusMatroskaRecording(t)
+	tracks, stats := readMatroskaRecording(t, file)
+	video := requireMatroskaRecordingTrack(t, tracks, CodecH264, TrackVideo)
+	audio := requireMatroskaRecordingTrack(t, tracks, CodecOpus, TrackAudio)
+	assertMatroskaRecordingStats(t, stats, video.ID, audio.ID)
+
+	remuxed := remuxMatroskaRecording(t, file)
+	output := runExternalTool(t, tool, "-v", "error", "-show_entries", "stream=codec_name", "-of", "default=nw=1", remuxed)
+	for _, codec := range []string{"h264", "opus"} {
+		if !strings.Contains(output, codec) {
+			t.Fatalf("ffprobe output missing %s:\n%s", codec, output)
+		}
+	}
+	remuxedTracks, remuxedStats := readMatroskaRecording(t, remuxed)
+	remuxedVideo := requireMatroskaRecordingTrack(t, remuxedTracks, CodecH264, TrackVideo)
+	remuxedAudio := requireMatroskaRecordingTrack(t, remuxedTracks, CodecOpus, TrackAudio)
+	assertMatroskaRecordingStats(t, remuxedStats, remuxedVideo.ID, remuxedAudio.ID)
+}
+
 func TestExternalMatroskaToolCompat(t *testing.T) {
 	file := writeCompatibilityMatroska(t)
 	if tool, ok := lookupExternalTool("mkvalidator"); ok {
@@ -331,6 +352,34 @@ func writeFFmpegOpusMatroska(t testing.TB) string {
 	return file
 }
 
+func writeFFmpegH264OpusMatroskaRecording(t testing.TB) string {
+	t.Helper()
+	tool := requireExternalTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-h264-opus-recording.mkv")
+	runExternalToolOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=5:duration=1",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=1",
+		"-map", "0:v:0",
+		"-map", "1:a:0",
+		"-shortest",
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-tune", "zerolatency",
+		"-pix_fmt", "yuv420p",
+		"-g", "5",
+		"-c:a", "libopus",
+		"-application", "voip",
+		"-frame_duration", "20",
+		file,
+	)
+	return file
+}
+
 func writeOpusTimingMatroska(t *testing.T) string {
 	t.Helper()
 	var buffer bytes.Buffer
@@ -416,6 +465,143 @@ func remuxFirstMatroskaPacket(t testing.TB, file string, requireType TrackType, 
 	}
 	out := filepath.Join(t.TempDir(), "remuxed.mkv")
 	if err := os.WriteFile(out, buffer.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+type externalMatroskaRecordingStats struct {
+	packets   map[uint32]int
+	keyframes map[uint32]int
+	lastTime  map[uint32]int64
+}
+
+func readMatroskaRecording(t testing.TB, file string) ([]Track, externalMatroskaRecordingStats) {
+	t.Helper()
+	input, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	demuxer, err := NewDemuxer(input, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	stats := externalMatroskaRecordingStats{
+		packets:   make(map[uint32]int, len(tracks)),
+		keyframes: make(map[uint32]int, len(tracks)),
+		lastTime:  make(map[uint32]int64, len(tracks)),
+	}
+	seen := make(map[uint32]bool, len(tracks))
+	packet := Packet{Data: make([]byte, 0, 1<<20)}
+	for {
+		err := demuxer.ReadPacket(&packet)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(packet.Data) == 0 {
+			t.Fatalf("empty packet from %s for track %d", file, packet.TrackID)
+		}
+		if seen[packet.TrackID] && packet.TimeNS < stats.lastTime[packet.TrackID] {
+			t.Fatalf("track %d time moved backward: got %d after %d", packet.TrackID, packet.TimeNS, stats.lastTime[packet.TrackID])
+		}
+		seen[packet.TrackID] = true
+		stats.lastTime[packet.TrackID] = packet.TimeNS
+		stats.packets[packet.TrackID]++
+		if packet.Keyframe {
+			stats.keyframes[packet.TrackID]++
+		}
+	}
+	return tracks, stats
+}
+
+func requireMatroskaRecordingTrack(t testing.TB, tracks []Track, codec Codec, typ TrackType) Track {
+	t.Helper()
+	for i := range tracks {
+		if tracks[i].Codec == codec && tracks[i].Type == typ {
+			return tracks[i]
+		}
+	}
+	t.Fatalf("missing %v %v track in %+v", codec, typ, tracks)
+	return Track{}
+}
+
+func assertMatroskaRecordingStats(t testing.TB, stats externalMatroskaRecordingStats, videoID uint32, audioID uint32) {
+	t.Helper()
+	if stats.packets[videoID] < 3 {
+		t.Fatalf("video packets = %d, want at least 3", stats.packets[videoID])
+	}
+	if stats.packets[audioID] < 10 {
+		t.Fatalf("audio packets = %d, want at least 10", stats.packets[audioID])
+	}
+	if stats.keyframes[videoID] == 0 {
+		t.Fatalf("video keyframes = 0")
+	}
+	if stats.lastTime[videoID] <= 0 || stats.lastTime[audioID] <= 0 {
+		t.Fatalf("last times = %+v, want positive audio/video timelines", stats.lastTime)
+	}
+}
+
+func remuxMatroskaRecording(t testing.TB, file string) string {
+	t.Helper()
+	input, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	demuxer, err := NewDemuxer(input, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "recording-remux.mkv")
+	output, err := os.Create(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxer, err := NewMuxer(output, MuxerOptions{})
+	if err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	trackIDs := make(map[uint32]uint32, len(demuxer.Tracks()))
+	for _, track := range demuxer.Tracks() {
+		id, err := muxer.AddTrack(track)
+		if err != nil {
+			_ = output.Close()
+			t.Fatal(err)
+		}
+		trackIDs[track.ID] = id
+	}
+	packet := Packet{Data: make([]byte, 0, 1<<20)}
+	for {
+		err := demuxer.ReadPacket(&packet)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			_ = output.Close()
+			t.Fatal(err)
+		}
+		id, ok := trackIDs[packet.TrackID]
+		if !ok {
+			_ = output.Close()
+			t.Fatalf("packet references unknown track %d", packet.TrackID)
+		}
+		packet.TrackID = id
+		if err := muxer.WritePacket(packet); err != nil {
+			_ = output.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
 		t.Fatal(err)
 	}
 	return out
