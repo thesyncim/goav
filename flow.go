@@ -25,6 +25,7 @@ type chainSpec struct {
 	media          av.MediaType
 	decode         bool
 	decodeCodec    CodecSpec
+	operations     []StreamOperation
 	steps          []chainStep
 	postEncodeTaps []string
 	transforms     []TransformSpec
@@ -314,25 +315,8 @@ func (b *chainBuilder) outputShapes(input MediaShape) ShapeSet {
 			shape.Domain = DomainFrame
 		}
 	}
-	if b.spec.decode {
-		shape.Domain = DomainFrame
-	}
-	for i := range b.spec.steps {
-		step := b.spec.steps[i]
-		if !mediaShapeEmpty(step.shape) {
-			shape = mergeMediaShape(shape, step.shape)
-			continue
-		}
-		if step.transform.Resize == nil && step.transform.Resample == nil {
-			continue
-		}
-		shapes := step.transform.OutputShapes(shape)
-		if len(shapes) != 0 {
-			shape = shapes[0]
-		}
-	}
-	if codecIntentSet(b.spec.encode) {
-		shapes := b.spec.encode.OutputShapes(shape)
+	for i := range b.spec.operations {
+		shapes := b.spec.operations[i].OutputShapes(shape)
 		if len(shapes) != 0 {
 			shape = shapes[0]
 		}
@@ -344,16 +328,13 @@ func (b *chainBuilder) taps() []TapRef {
 	if b == nil {
 		return nil
 	}
-	out := make([]TapRef, 0, len(b.spec.steps)+len(b.spec.postEncodeTaps))
-	for i := range b.spec.steps {
-		step := b.spec.steps[i]
-		if step.tap == "" {
+	out := make([]TapRef, 0, len(b.spec.operations))
+	for i := range b.spec.operations {
+		operation := b.spec.operations[i]
+		if operation.Kind != OpTap || operation.Tap.Name == "" {
 			continue
 		}
-		out = append(out, TapRef{name: step.tap, domain: chainStepTapDomain(step, DomainFrame)})
-	}
-	for i := range b.spec.postEncodeTaps {
-		out = append(out, PacketTap(b.spec.postEncodeTaps[i]))
+		out = append(out, TapRef{name: operation.Tap.Name, domain: operation.Tap.Domain})
 	}
 	return out
 }
@@ -376,6 +357,7 @@ func (b *chainBuilder) decode(options ...codecOption) {
 	}
 	b.spec.decode = true
 	b.spec.decodeCodec = mergeDecodeCodecSpec(b.spec.decodeCodec, codecSpecFromOptions(options...))
+	b.spec.operations = append(b.spec.operations, streamOperationForDecode(b.spec.decodeCodec, string(b.spec.decodeCodec.ID)))
 }
 
 func (b *chainBuilder) transform(spec TransformSpec) {
@@ -389,6 +371,7 @@ func (b *chainBuilder) transform(spec TransformSpec) {
 	transform := cloneTransformSpec(spec)
 	b.spec.steps = append(b.spec.steps, chainStep{transform: transform})
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpec(spec))
+	b.spec.operations = append(b.spec.operations, streamOperationForTransform(transform))
 }
 
 func (b *chainBuilder) stage(stage pipeline.Stage) {
@@ -404,6 +387,7 @@ func (b *chainBuilder) stage(stage pipeline.Stage) {
 		return
 	}
 	b.spec.steps = append(b.spec.steps, chainStep{stage: stage})
+	b.spec.operations = append(b.spec.operations, streamOperationForStage(stage))
 }
 
 func (b *chainBuilder) shape(shape MediaShape) {
@@ -415,6 +399,7 @@ func (b *chainBuilder) shape(shape MediaShape) {
 		return
 	}
 	b.spec.steps = append(b.spec.steps, chainStep{shape: shape})
+	b.spec.operations = append(b.spec.operations, streamOperationForShape(shape))
 }
 
 func (b *chainBuilder) tap(tap TapRef) {
@@ -441,6 +426,7 @@ func (b *chainBuilder) tap(tap TapRef) {
 			return
 		}
 		b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, tap.name)
+		b.spec.operations = append(b.spec.operations, streamOperationForTap(tap, b.spec.media, streamOperationAfter(b.spec.operations, OpEncode)))
 		return
 	}
 	if err := validateTapDomain("build flow", firstNonEmpty(b.spec.name, "flow"), tap, DomainFrame); err != nil {
@@ -448,6 +434,7 @@ func (b *chainBuilder) tap(tap TapRef) {
 		return
 	}
 	b.spec.steps = append(b.spec.steps, chainStep{tap: tap.name, tapDomain: tap.domain})
+	b.spec.operations = append(b.spec.operations, streamOperationForTap(tap, b.spec.media, streamOperationAfter(b.spec.operations, initialStepAfter(b.spec.decode))))
 }
 
 func (b *chainBuilder) encode(codec CodecSpec) {
@@ -463,6 +450,7 @@ func (b *chainBuilder) encode(codec CodecSpec) {
 		return
 	}
 	b.spec.encode = cloneCodecSpec(codec)
+	b.spec.operations = append(b.spec.operations, streamOperationForEncode(b.spec.encode))
 }
 
 func (b *chainBuilder) snapshot() chainSpec {
@@ -472,6 +460,7 @@ func (b *chainBuilder) snapshot() chainSpec {
 	spec := b.spec
 	spec.decodeCodec = cloneCodecSpec(spec.decodeCodec)
 	spec.encode = cloneCodecSpec(spec.encode)
+	spec.operations = cloneStreamOperations(spec.operations)
 	spec.steps = cloneChainSteps(spec.steps)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)

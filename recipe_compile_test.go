@@ -245,11 +245,78 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 		"func chainSpecFrom",
 		"func validateChainMedia",
 		"func cloneChainSteps",
+		"operations     []StreamOperation",
+		"func streamOperationForTransform",
+		"func streamOperationForTap",
+		"func ensureJobStreamDecodeOperation",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("operation chains should keep shared chain vocabulary %q", required)
 		}
 	}
+}
+
+func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
+	voice := Flow("voice").Audio().
+		Resample(16_000, Mono).
+		Tap(FrameTap("audio.voice.frames")).
+		OpusVoice().
+		Tap(PacketTap("audio.voice.packets"))
+
+	flowSpec, err := chainSpecFrom(voice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := streamOperationKindsForTest(flowSpec.operations), []OperationKind{OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("flow operations = %+v, want %+v", got, want)
+	}
+	flowOutputs := voice.OutputShapes(FrameShape(
+		av.MediaAudio,
+		ShapeAudio(48_000, Stereo, av.SampleFormatS16),
+	))
+	if len(flowOutputs) != 1 || flowOutputs[0].Domain != DomainPacket || flowOutputs[0].MediaKind != av.MediaAudio || flowOutputs[0].Codec != av.CodecOpus {
+		t.Fatalf("flow output shapes = %+v, want Opus packets", flowOutputs)
+	}
+	flowTaps := voice.Taps()
+	if len(flowTaps) != 2 ||
+		flowTaps[0].Name() != "audio.voice.frames" ||
+		flowTaps[0].Domain() != DomainFrame ||
+		flowTaps[1].Name() != "audio.voice.packets" ||
+		flowTaps[1].Domain() != DomainPacket {
+		t.Fatalf("flow taps = %+v, want frame then packet taps", flowTaps)
+	}
+
+	job := From(FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(voice).
+		To(File("voice.ogg", io.Discard))
+	if job.err != nil {
+		t.Fatal(job.err)
+	}
+	if job.stream == nil {
+		t.Fatal("job stream is nil")
+	}
+	if got, want := streamOperationKindsForTest(job.stream.operations), []OperationKind{OpDecode, OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("direct stream stored operations = %+v, want %+v", got, want)
+	}
+
+	branch := Branch("archive").
+		Apply(voice).
+		To(File("archive.ogg", io.Discard))
+	if branch.err != nil {
+		t.Fatal(branch.err)
+	}
+	if got, want := streamOperationKindsForTest(branch.operations), []OperationKind{OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("branch stored operations = %+v, want %+v", got, want)
+	}
+}
+
+func streamOperationKindsForTest(operations []StreamOperation) []OperationKind {
+	out := make([]OperationKind, 0, len(operations))
+	for i := range operations {
+		out = append(out, operations[i].Kind)
+	}
+	return out
 }
 
 func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {

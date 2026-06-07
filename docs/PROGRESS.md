@@ -2153,6 +2153,20 @@ are:
     routing identity. Diagnostics that previously suggested `Target(...)` now
     point at `File`, `URIOut`, `Sink`, `Custom`, or `.To(output)`.
     Done.
+377. Start converging direct chains, branches, and flows on one ordered
+    operation list:
+    `chainSpec`, `BranchSpec`, direct stream builds, and branch stream builds
+    now carry `[]StreamOperation` as the migration base for the one-operation
+    model. Flow shape/tap reporting reads the ordered operation list, fluent
+    flow/branch/direct-stream methods append operation records as they mutate
+    the bridge fields, and direct stream methods that imply frames now record
+    their implicit decode operation before transform/stage/encode work. Direct
+    stream intent now reads the stored operation list when present. Planned
+    branch splits preserve the combined parent-plus-branch operation list, and
+    tests pin flow, direct stream, and branch operation order. Legacy parallel
+    fields remain only as lowerer bridge debt until `WorkPlan`/`WorkPatch`
+    consumes operation lists directly.
+    Done.
 
 ## First Vertical Slice
 

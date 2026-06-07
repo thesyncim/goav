@@ -1203,6 +1203,7 @@ type jobStreamBuild struct {
 	selector       av.StreamSelector
 	decode         bool
 	decodeCodec    CodecSpec
+	operations     []StreamOperation
 	steps          []chainStep
 	taps           []string
 	postEncodeTaps []string
@@ -1218,6 +1219,83 @@ type chainStep struct {
 	transform TransformSpec
 	tap       string
 	tapDomain MediaDomain
+}
+
+func streamOperationForDecode(codec CodecSpec, component string) StreamOperation {
+	return StreamOperation{Kind: OpDecode, Component: component, Decode: cloneCodecSpec(codec)}
+}
+
+func streamOperationForCopy(codec CodecSpec) StreamOperation {
+	return StreamOperation{Kind: OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(codec)}
+}
+
+func streamOperationForEncode(codec CodecSpec) StreamOperation {
+	if codec.Copy {
+		return streamOperationForCopy(codec)
+	}
+	return StreamOperation{Kind: OpEncode, Component: string(codec.ID), Encode: cloneCodecSpec(codec)}
+}
+
+func streamOperationForStage(stage pipeline.Stage) StreamOperation {
+	name := ""
+	if stage != nil {
+		name = stage.Name()
+	}
+	return StreamOperation{Kind: OpStage, Component: name, Stage: stage}
+}
+
+func streamOperationForShape(shape MediaShape) StreamOperation {
+	return StreamOperation{Kind: OpShape, Component: "shape", Shape: shape}
+}
+
+func streamOperationForTransform(transform TransformSpec) StreamOperation {
+	return StreamOperation{
+		Kind:      OpTransform,
+		Component: transformFactoryName(transform),
+		Transform: cloneTransformSpec(transform),
+	}
+}
+
+func streamOperationForTap(tap TapRef, media av.MediaType, after OperationKind) StreamOperation {
+	intent := TapIntent{Name: tap.name, MediaKind: media, Domain: tap.domain, After: after}
+	return StreamOperation{Kind: OpTap, Component: tap.name, Tap: intent}
+}
+
+func streamOperationAfter(operations []StreamOperation, fallback OperationKind) OperationKind {
+	after := fallback
+	for i := range operations {
+		switch operations[i].Kind {
+		case OpTap:
+			continue
+		default:
+			after = operations[i].Kind
+		}
+	}
+	return after
+}
+
+func jobStreamHasDecodeOperation(stream *jobStreamBuild) bool {
+	if stream == nil {
+		return false
+	}
+	for i := range stream.operations {
+		if stream.operations[i].Kind == OpDecode {
+			return true
+		}
+	}
+	return false
+}
+
+func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
+	if stream == nil {
+		return
+	}
+	stream.decode = true
+	if jobStreamHasDecodeOperation(stream) {
+		return
+	}
+	operation := streamOperationForDecode(stream.decodeCodec, string(stream.selector.Codec))
+	stream.operations = append([]StreamOperation{operation}, stream.operations...)
 }
 
 type chainStepAttachment struct {
@@ -1638,6 +1716,9 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 func jobStreamOperations(stream *jobStreamBuild) []StreamOperation {
 	if stream == nil {
 		return nil
+	}
+	if len(stream.operations) != 0 {
+		return cloneStreamOperations(stream.operations)
 	}
 	operations := make([]StreamOperation, 0, len(stream.steps)+1+len(stream.postEncodeTaps))
 	if stream.decode {
@@ -3248,6 +3329,7 @@ type streamBuild struct {
 	from           TapRef
 	decode         bool
 	decodeCodec    CodecSpec
+	operations     []StreamOperation
 	sharedSteps    []chainStep
 	steps          []chainStep
 	postEncodeTaps []string
@@ -3303,10 +3385,16 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 		stream.decode = true
 		stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, spec.decodeCodec)
 	}
+	if len(spec.steps) != 0 && !spec.decode {
+		ensureJobStreamDecodeOperation(stream)
+	}
 	if len(spec.steps) != 0 {
-		stream.decode = true
 		stream.steps = append(stream.steps, cloneChainSteps(spec.steps)...)
 	}
+	if codecIntentSet(spec.encode) && !spec.encode.Copy && !spec.decode {
+		ensureJobStreamDecodeOperation(stream)
+	}
+	stream.operations = append(stream.operations, cloneStreamOperations(spec.operations)...)
 	if codecIntentSet(spec.encode) {
 		if spec.encode.Copy {
 			if stream.decode || len(stream.steps) != 0 {
@@ -3315,7 +3403,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 			}
 			stream.encode = Copy()
 		} else {
-			b.Encode(spec.encode)
+			stream.encode = cloneCodecSpec(spec.encode)
 		}
 	}
 	stream.postEncodeTaps = append(stream.postEncodeTaps, spec.postEncodeTaps...)
@@ -3326,6 +3414,7 @@ func (b *jobStreamBuilder) Decode(options ...codecOption) *jobStreamBuilder {
 	stream := b.current()
 	stream.decode = true
 	stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, codecSpecFromOptions(options...))
+	stream.operations = append(stream.operations, streamOperationForDecode(stream.decodeCodec, string(stream.selector.Codec)))
 	return b
 }
 
@@ -3333,6 +3422,7 @@ func (b *jobStreamBuilder) Copy() *jobStreamBuilder {
 	stream := b.current()
 	stream.decode = false
 	stream.encode = Copy()
+	stream.operations = append(stream.operations, streamOperationForCopy(stream.encode))
 	return b
 }
 
@@ -3358,14 +3448,16 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 			return b
 		}
 		stream.postEncodeTaps = append(stream.postEncodeTaps, tap.name)
+		stream.operations = append(stream.operations, streamOperationForTap(tap, stream.selector.Type, streamOperationAfter(stream.operations, OpEncode)))
 		return b
 	}
 	if err := validateTapDomain("build stream", jobStreamName(stream), tap, DomainFrame); err != nil {
 		b.job.setErr(err)
 		return b
 	}
-	stream.decode = true
+	ensureJobStreamDecodeOperation(stream)
 	stream.steps = append(stream.steps, chainStep{tap: tap.name, tapDomain: tap.domain})
+	stream.operations = append(stream.operations, streamOperationForTap(tap, stream.selector.Type, streamOperationAfter(stream.operations, initialStepAfter(stream.decode))))
 	return b
 }
 
@@ -3407,8 +3499,9 @@ func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", stream.encode))
 		return b
 	}
-	stream.decode = true
+	ensureJobStreamDecodeOperation(stream)
 	stream.steps = append(stream.steps, chainStep{stage: stage})
+	stream.operations = append(stream.operations, streamOperationForStage(stage))
 	return b
 }
 
@@ -3419,6 +3512,7 @@ func (b *jobStreamBuilder) Shape(shape MediaShape) *jobStreamBuilder {
 		return b
 	}
 	stream.steps = append(stream.steps, chainStep{shape: shape})
+	stream.operations = append(stream.operations, streamOperationForShape(shape))
 	return b
 }
 
@@ -3428,8 +3522,10 @@ func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resize", stream.encode))
 		return b
 	}
-	stream.decode = true
-	stream.steps = append(stream.steps, chainStep{transform: Resize(width, height, options...)})
+	ensureJobStreamDecodeOperation(stream)
+	transform := Resize(width, height, options...)
+	stream.steps = append(stream.steps, chainStep{transform: transform})
+	stream.operations = append(stream.operations, streamOperationForTransform(transform))
 	return b
 }
 
@@ -3439,8 +3535,10 @@ func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resample", stream.encode))
 		return b
 	}
-	stream.decode = true
-	stream.steps = append(stream.steps, chainStep{transform: Resample(sampleRate, channels, options...)})
+	ensureJobStreamDecodeOperation(stream)
+	transform := Resample(sampleRate, channels, options...)
+	stream.steps = append(stream.steps, chainStep{transform: transform})
+	stream.operations = append(stream.operations, streamOperationForTransform(transform))
 	return b
 }
 
@@ -3450,8 +3548,9 @@ func (b *jobStreamBuilder) Encode(codec CodecSpec) *jobStreamBuilder {
 		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), stream.encode, codec))
 		return b
 	}
-	stream.decode = true
+	ensureJobStreamDecodeOperation(stream)
 	stream.encode = cloneCodecSpec(codec)
+	stream.operations = append(stream.operations, streamOperationForEncode(stream.encode))
 	return b
 }
 

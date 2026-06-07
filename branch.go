@@ -127,6 +127,7 @@ type BranchSpec struct {
 	media          av.MediaType
 	decode         bool
 	decodeCodec    CodecSpec
+	operations     []StreamOperation
 	steps          []chainStep
 	postEncodeTaps []string
 	transforms     []TransformSpec
@@ -231,6 +232,7 @@ func (b *branchBuilder) Decode(options ...codecOption) *branchBuilder {
 	}
 	b.spec.decode = true
 	b.spec.decodeCodec = mergeDecodeCodecSpec(b.spec.decodeCodec, codecSpecFromOptions(options...))
+	b.spec.operations = append(b.spec.operations, streamOperationForDecode(b.spec.decodeCodec, string(b.spec.decodeCodec.ID)))
 	return b
 }
 
@@ -269,12 +271,13 @@ func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 	}
 	b.spec.steps = append(b.spec.steps, cloneChainSteps(spec.steps)...)
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpecs(spec.transforms)...)
+	b.spec.operations = append(b.spec.operations, cloneStreamOperations(spec.operations)...)
 	if codecIntentSet(spec.encode) {
 		if spec.encode.Copy && (b.spec.decode || len(b.spec.steps) != 0) {
 			b.setErr(flowCopyDomainError("build branch", firstNonEmpty(spec.name, b.spec.name, "flow")))
 			return b
 		}
-		b.Encode(spec.encode)
+		b.spec.encode = cloneCodecSpec(spec.encode)
 	}
 	b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, spec.postEncodeTaps...)
 	return b
@@ -294,6 +297,7 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 			return b
 		}
 		b.spec.steps = append(b.spec.steps, chainStep{stage: stages[i]})
+		b.spec.operations = append(b.spec.operations, streamOperationForStage(stages[i]))
 	}
 	return b
 }
@@ -307,6 +311,7 @@ func (b *branchBuilder) Shape(shape MediaShape) *branchBuilder {
 		return b
 	}
 	b.spec.steps = append(b.spec.steps, chainStep{shape: shape})
+	b.spec.operations = append(b.spec.operations, streamOperationForShape(shape))
 	return b
 }
 
@@ -321,6 +326,7 @@ func (b *branchBuilder) Resize(width int, height int, options ...resizeOption) *
 	transform := Resize(width, height, options...)
 	b.spec.steps = append(b.spec.steps, chainStep{transform: transform})
 	b.spec.transforms = append(b.spec.transforms, transform)
+	b.spec.operations = append(b.spec.operations, streamOperationForTransform(transform))
 	return b
 }
 
@@ -335,6 +341,7 @@ func (b *branchBuilder) Resample(sampleRate int, channels int, options ...audioO
 	transform := Resample(sampleRate, channels, options...)
 	b.spec.steps = append(b.spec.steps, chainStep{transform: transform})
 	b.spec.transforms = append(b.spec.transforms, transform)
+	b.spec.operations = append(b.spec.operations, streamOperationForTransform(transform))
 	return b
 }
 
@@ -362,9 +369,11 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 			return b
 		}
 		b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, tap.name)
+		b.spec.operations = append(b.spec.operations, streamOperationForTap(tap, b.spec.media, streamOperationAfter(b.spec.operations, OpEncode)))
 		return b
 	}
 	b.spec.steps = append(b.spec.steps, chainStep{tap: tap.name, tapDomain: tap.domain})
+	b.spec.operations = append(b.spec.operations, streamOperationForTap(tap, b.spec.media, streamOperationAfter(b.spec.operations, initialStepAfter(b.spec.decode))))
 	return b
 }
 
@@ -381,6 +390,7 @@ func (b *branchBuilder) Encode(codec CodecSpec) *branchBuilder {
 		return b
 	}
 	b.spec.encode = cloneCodecSpec(codec)
+	b.spec.operations = append(b.spec.operations, streamOperationForEncode(b.spec.encode))
 	return b
 }
 
@@ -428,6 +438,7 @@ func (b *branchBuilder) snapshot() BranchSpec {
 	spec := b.spec
 	spec.decodeCodec = cloneCodecSpec(spec.decodeCodec)
 	spec.encode = cloneCodecSpec(spec.encode)
+	spec.operations = cloneStreamOperations(spec.operations)
 	spec.steps = cloneChainSteps(spec.steps)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
@@ -504,12 +515,14 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			job.setErr(err)
 			return job
 		}
+		operations := append(cloneStreamOperations(stream.operations), cloneStreamOperations(branches[i].operations)...)
 		job.branchStreams = append(job.branchStreams, streamBuild{
 			name:        branches[i].name,
 			selector:    stream.selector,
 			from:        from,
 			decode:      decode,
 			decodeCodec: mergeDecodeCodecSpec(stream.decodeCodec, branches[i].decodeCodec),
+			operations:  operations,
 			sharedSteps: sharedSteps,
 			steps:       cloneChainSteps(branches[i].steps),
 			postEncodeTaps: append(
