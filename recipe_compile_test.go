@@ -139,7 +139,7 @@ func TestMediaPlanStreamGraphOwnsPacketCopyAndDirectStreams(t *testing.T) {
 	}
 }
 
-func TestDirectFrameStreamSpecsUseBranchRoutePlanner(t *testing.T) {
+func TestDirectFrameStreamsUseBranchRoutePlanner(t *testing.T) {
 	body, err := os.ReadFile("media_plan_build.go")
 	if err != nil {
 		t.Fatal(err)
@@ -147,20 +147,27 @@ func TestDirectFrameStreamSpecsUseBranchRoutePlanner(t *testing.T) {
 	text := string(body)
 	for _, required := range []string{
 		"frameStreamBranchComposeSpec",
+		"compileFrameStreamBranchCompose",
 		"planBranchComposeRoutes",
+		"compileBranchComposeInputs",
+		"compileBranchComposeRoutes",
 	} {
 		if !strings.Contains(text, required) {
-			t.Fatalf("direct frame-stream specs should use branch route planner; missing %q", required)
+			t.Fatalf("direct frame streams should use branch route planner; missing %q", required)
 		}
 	}
 	for _, forbidden := range []string{
+		"compileSinkDestination",
+		"compileEncodeOutput",
+		"lowerEncodeTargets",
 		"planDecodeFilterPath(",
 		"planEncodeDestinationPath(",
 		"planEncodeSinkPath(",
 		"planSinkPath(",
+		"compileDecodeFilterPathNamed(",
 	} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("direct frame-stream specs should not use legacy per-workflow spec helper %q", forbidden)
+			t.Fatalf("direct frame streams should not use legacy per-workflow helper %q", forbidden)
 		}
 	}
 }

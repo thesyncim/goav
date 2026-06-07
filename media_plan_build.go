@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -84,10 +83,7 @@ func (p mediaPlanStreamGraph) lower(ctx context.Context, plan graphPlan, graph p
 	if err != nil {
 		return err
 	}
-	if p.hasSingleSinkDestination() {
-		return p.compileSinkDestination(ctx, graph, lowering)
-	}
-	return p.compileEncodeOutput(ctx, graph, service, lowering)
+	return p.compileFrameStreamBranchCompose(ctx, graph, service, lowering)
 }
 
 func (p mediaPlanStreamGraph) hasSingleSinkDestination() bool {
@@ -1151,9 +1147,10 @@ func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeR
 			DecodeConfig: cloneCodecSpec(p.decode.config),
 			CodecChange:  p.decode.codecChange,
 		},
-		decode:      cloneCodecSpec(p.decode.config),
-		codecChange: p.decode.codecChange,
-		request:     request,
+		decode:           cloneCodecSpec(p.decode.config),
+		codecChange:      p.decode.codecChange,
+		dropDecodeEvents: p.encode == nil,
+		request:          request,
 	}}
 	outputs := make([]branchComposeTargetRoute, len(p.outputs))
 	for i := range p.outputs {
@@ -1220,121 +1217,51 @@ func cloneMediaTransform(transform mediaTransform) mediaTransform {
 	return transform
 }
 
-func (p mediaPlanStreamGraph) compileSinkDestination(ctx context.Context, graph pipeline.Graph, lowering graphPlanFrameStreamLowering) error {
-	sourceRefs, streams, rtpBuilds, realtime, err := p.compileSources(ctx, graph)
+func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Context, graph pipeline.Graph, service *builder, lowering graphPlanFrameStreamLowering) error {
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []StreamIntent{p.stream}})
 	if err != nil {
 		return err
 	}
-	stream, err := selectDecodeStream(streams, p.decode.selector)
+	branches, outputs, err := p.frameStreamBranchComposeRoutes()
 	if err != nil {
 		return err
 	}
-	bounds := codec.DecodeBounds{}
-	if len(rtpBuilds) != 0 {
-		bounds = rtpDecodeBoundsForStream(stream, rtpBuilds)
-	}
-	previousRef, filteredStream, err := compileDecodeFilterPathNamed(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, p.encode == nil, bounds, p.filters, graphPlanDecodeFilterNodes{
-		selectNode:  lowering.selectNode,
-		decodeNode:  lowering.decodeNode,
-		filterNodes: lowering.filterNodes,
-	})
-	if err != nil {
-		return err
-	}
-	if p.encode != nil {
-		encodeConfig, _, err := prepareEncodeConfig(filteredStream, *p.encode, realtime)
-		if err != nil {
-			return err
-		}
-		return p.lowerEncodeTargets(ctx, &builder{runtime: p.runtime}, graph, previousRef, *p.encode, encodeConfig, filteredStream, lowering.encodeNode, lowering.targets)
-	}
-	if len(lowering.targets) != 1 || lowering.targets[0].OutputIndex != 0 {
-		return graphPlanInvalidError("decoded frame sink graph plan must have exactly one sink target", []string{
-			"targets=" + strconv.Itoa(len(lowering.targets)),
+	if len(branches) != 1 {
+		return graphPlanInvalidError("frame stream branch route count must be one", []string{
+			"branches=" + strconv.Itoa(len(branches)),
 		})
 	}
-	target := lowering.targets[0]
-	sinkRef, err := graph.AddSink(namedSinkForGraphPlanTarget(target, p.outputs[0].sink), p.runtime.buffer)
-	if err != nil {
-		return err
-	}
-	return connectRefs(graph, previousRef, sinkRef)
-}
-
-func (p mediaPlanStreamGraph) compileEncodeOutput(ctx context.Context, graph pipeline.Graph, service *builder, lowering graphPlanFrameStreamLowering) error {
-	if p.encode == nil {
-		return recipeGraphUnsupportedError("build job", Intent{Streams: []StreamIntent{p.stream}})
-	}
-	sourceRefs, streams, rtpBuilds, realtime, err := p.compileSources(ctx, graph)
-	if err != nil {
-		return err
-	}
-	stream, err := selectDecodeStream(streams, p.decode.selector)
-	if err != nil {
-		return err
-	}
-	bounds := codec.DecodeBounds{}
-	if len(rtpBuilds) != 0 {
-		bounds = rtpDecodeBoundsForStream(stream, rtpBuilds)
-	}
-	previousRef, filteredStream, err := compileDecodeFilterPathNamed(ctx, p.runtime, graph, sourceRefs, p.decode, stream, realtime, false, bounds, p.filters, graphPlanDecodeFilterNodes{
-		selectNode:  lowering.selectNode,
-		decodeNode:  lowering.decodeNode,
-		filterNodes: lowering.filterNodes,
-	})
-	if err != nil {
-		return err
-	}
-	encodeConfig, encodedStream, err := prepareEncodeConfig(filteredStream, *p.encode, realtime)
-	if err != nil {
-		return err
-	}
-	return p.lowerEncodeTargets(ctx, service, graph, previousRef, *p.encode, encodeConfig, encodedStream, lowering.encodeNode, lowering.targets)
-}
-
-func (p mediaPlanStreamGraph) lowerEncodeTargets(
-	ctx context.Context,
-	service *builder,
-	graph pipeline.Graph,
-	upstream pipeline.NodeRef,
-	request encodeRequest,
-	config codec.EncodeConfig,
-	stream av.Stream,
-	encodeNode pipeline.NodeRef,
-	targets []graphPlanTargetOperation,
-) error {
-	encodeRef, err := compileEncodeStageNamed(ctx, p.runtime, graph, encodeNode.String(), upstream, request, config)
-	if err != nil {
-		return err
-	}
-	streams := []av.Stream{stream}
-	for i := range targets {
-		target := targets[i]
-		output := p.outputs[target.OutputIndex]
-		if output.sink != nil {
-			sinkRef, err := graph.AddSink(namedSinkForGraphPlanTarget(target, output.sink), p.runtime.buffer)
-			if err != nil {
-				return err
-			}
-			if err := connectRefs(graph, encodeRef, sinkRef); err != nil {
-				return err
-			}
-			continue
+	for i := range lowering.targets {
+		target := lowering.targets[i]
+		if target.OutputIndex < 0 || target.OutputIndex >= len(outputs) {
+			return graphPlanInvalidError("frame stream target operation is not bound to a branch route target", []string{
+				"target=" + target.Name,
+				"node=" + target.Node.String(),
+			})
 		}
-		muxStage, err := service.openMuxDestinationStage(ctx, output, target.OutputIndex, streams, destinationOpenFormat(output), destinationGraphFormat(output))
-		if err != nil {
-			return err
-		}
-		muxRef, err := graph.AddStage(namedStageForGraphPlanTarget(target, muxStage), p.runtime.buffer)
-		if err != nil {
-			muxStage.Close()
-			return err
-		}
-		if err := connectRefs(graph, encodeRef, muxRef); err != nil {
-			return err
-		}
+		outputs[target.OutputIndex].node = target.Node
 	}
-	return nil
+	groups, err := resolveBranchComposeStreamGroups(sources.streams, branches)
+	if err != nil {
+		return err
+	}
+	inputPlan := map[string]graphPlanBranchComposeInputOperation{
+		branchComposeSelectorKey(p.decode.selector): {
+			selectNode: lowering.selectNode,
+			decodeNode: lowering.decodeNode,
+		},
+	}
+	branchPlan := map[string]graphPlanBranchComposeBranchOperation{
+		branches[0].name: {
+			privateSteps: append([]pipeline.NodeRef(nil), lowering.filterNodes...),
+			encodeNode:   lowering.encodeNode,
+		},
+	}
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, branches, inputPlan, sources.realtime)
+	if err != nil {
+		return err
+	}
+	return compileBranchComposeRoutes(ctx, service, graph, branches, outputs, branchInputs, branchStreams, nil, branchPlan, sources.realtime)
 }
 
 func (p mediaPlanStreamGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {
