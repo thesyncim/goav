@@ -2181,6 +2181,15 @@ are:
     Tests pin implicit decode, parent-copy packet anchoring, earlier frame-tap
     slicing, and shared/private operation flags.
     Done.
+379. Project branch-compose bridge steps from split operations:
+    When planned branch stream builds carry split operation metadata, the branch
+    composition planner now derives `SharedSteps` and branch-local `Steps` from
+    `sharedOps` and `privateOps` instead of from the older `sharedSteps`/`steps`
+    bridge fields. This keeps the existing `branchComposePlan` lowerers stable
+    while moving their input source toward the single operation model. Tests
+    clear the bridge step fields before planning and prove shared parent resize
+    and private thumbnail resize still survive through operation projection.
+    Done.
 
 ## First Vertical Slice
 

@@ -237,6 +237,7 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 		"type chainStep struct",
 		"func chainStepOperations",
 		"func branchChainStepsFromOperations",
+		"func branchChainStepsFromOperationList",
 		"func branchChainStepsFromChain",
 		"func branchChainStepsFromTranscode",
 		"func runtimeBranchStepsFromChain",
@@ -437,6 +438,31 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	}
 	if webOps[3].Tap.Name != "video.720p.frames" {
 		t.Fatalf("web operations = %+v, want anchor tap video.720p.frames", webOps)
+	}
+
+	operationOnlyStreams := append([]streamBuild(nil), job.branchStreams...)
+	for i := range operationOnlyStreams {
+		operationOnlyStreams[i].sharedSteps = nil
+		operationOnlyStreams[i].steps = nil
+	}
+	plan, err := planBranchCompositionRecipe(job.Intent(), job.inputs[0], job.branchTargets, operationOnlyStreams)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Branches) != 2 {
+		t.Fatalf("plan branches = %d, want 2", len(plan.Branches))
+	}
+	if len(plan.Branches[0].SharedSteps) != 0 ||
+		len(plan.Branches[0].Steps) != 1 ||
+		plan.Branches[0].Steps[0].transform.Resize == nil ||
+		plan.Branches[0].Steps[0].transform.Resize.Width != 320 {
+		t.Fatalf("raw plan branch = %+v, want private thumbnail resize from operation split", plan.Branches[0])
+	}
+	if len(plan.Branches[1].SharedSteps) != 1 ||
+		plan.Branches[1].SharedSteps[0].transform.Resize == nil ||
+		plan.Branches[1].SharedSteps[0].transform.Resize.Width != 1280 ||
+		len(plan.Branches[1].Steps) != 0 {
+		t.Fatalf("web plan branch = %+v, want shared 720p resize from operation split", plan.Branches[1])
 	}
 }
 

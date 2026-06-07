@@ -3871,6 +3871,9 @@ func branchComposePlanReady(plan branchComposePlan) bool {
 }
 
 func branchChainStepsForStreamBuild(stream streamBuild) ([]chainStep, []chainStep) {
+	if stream.operationSplit {
+		return branchChainStepsFromOperationList(stream.sharedOps), branchChainStepsFromOperationList(stream.privateOps)
+	}
 	return branchChainStepsFromChain(stream.sharedSteps), branchChainStepsFromChain(stream.steps)
 }
 
@@ -3937,6 +3940,31 @@ func branchChainStepsFromOperations(operations []StreamOperation, anchorTap stri
 		return nil, steps
 	}
 	return shared, branch
+}
+
+func branchChainStepsFromOperationList(operations []StreamOperation) []chainStep {
+	if len(operations) == 0 {
+		return nil
+	}
+	steps := make([]chainStep, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		switch operation.Kind {
+		case OpStage:
+			if operation.Stage != nil {
+				steps = append(steps, chainStep{stage: operation.Stage})
+			}
+		case OpShape:
+			if !mediaShapeEmpty(operation.Shape) {
+				steps = append(steps, chainStep{shape: operation.Shape})
+			}
+		case OpTransform:
+			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
+				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
+			}
+		}
+	}
+	return steps
 }
 
 func branchChainStepsFromChain(steps []chainStep) []chainStep {
