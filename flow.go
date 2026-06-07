@@ -14,10 +14,10 @@ import (
 // branches own targets.
 type Chain interface {
 	Name() string
-	isFlow()
+	isChain()
 }
 
-type streamFlowSpec struct {
+type chainSpec struct {
 	name           string
 	media          av.MediaType
 	decode         bool
@@ -28,12 +28,12 @@ type streamFlowSpec struct {
 	err            error
 }
 
-type flowBuilder struct {
-	spec streamFlowSpec
+type chainBuilder struct {
+	spec chainSpec
 }
 
-type flowSnapshotter interface {
-	flowSpec() streamFlowSpec
+type chainSnapshotter interface {
+	chainSpec() chainSpec
 }
 
 type flowRoot struct {
@@ -47,57 +47,57 @@ func Flow(name string) *flowRoot {
 
 func (b *flowRoot) Audio() *audioChain {
 	if b == nil {
-		return newAudioFlow("")
+		return newAudioChain("")
 	}
-	return newAudioFlow(b.name)
+	return newAudioChain(b.name)
 }
 
 func (b *flowRoot) Video() *videoChain {
 	if b == nil {
-		return newVideoFlow("")
+		return newVideoChain("")
 	}
-	return newVideoFlow(b.name)
+	return newVideoChain(b.name)
 }
 
-func newAudioFlow(name string) *audioChain {
-	return &audioChain{flowBuilder{spec: streamFlowSpec{name: name, media: av.MediaAudio}}}
+func newAudioChain(name string) *audioChain {
+	return &audioChain{chainBuilder{spec: chainSpec{name: name, media: av.MediaAudio}}}
 }
 
-func newVideoFlow(name string) *videoChain {
-	return &videoChain{flowBuilder{spec: streamFlowSpec{name: name, media: av.MediaVideo}}}
+func newVideoChain(name string) *videoChain {
+	return &videoChain{chainBuilder{spec: chainSpec{name: name, media: av.MediaVideo}}}
 }
 
 type audioChain struct {
-	flowBuilder
+	chainBuilder
 }
 
 type videoChain struct {
-	flowBuilder
+	chainBuilder
 }
 
 func (b *audioChain) Name() string {
 	if b == nil {
 		return ""
 	}
-	return b.flowBuilder.name()
+	return b.chainBuilder.name()
 }
 
 func (b *videoChain) Name() string {
 	if b == nil {
 		return ""
 	}
-	return b.flowBuilder.name()
+	return b.chainBuilder.name()
 }
 
-func (b *audioChain) isFlow() {}
+func (b *audioChain) isChain() {}
 
-func (b *videoChain) isFlow() {}
+func (b *videoChain) isChain() {}
 
 func (b *audioChain) Decode() *audioChain {
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.decode()
+	b.chainBuilder.decode()
 	return b
 }
 
@@ -105,7 +105,7 @@ func (b *audioChain) Resample(sampleRate int, channels int, options ...audioOpti
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.transform(Resample(sampleRate, channels, options...))
+	b.chainBuilder.transform(Resample(sampleRate, channels, options...))
 	return b
 }
 
@@ -113,7 +113,7 @@ func (b *audioChain) Do(stage pipeline.Stage) *audioChain {
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.stage(stage)
+	b.chainBuilder.stage(stage)
 	return b
 }
 
@@ -121,7 +121,7 @@ func (b *audioChain) Tap(tap TapRef) *audioChain {
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.tap(tap)
+	b.chainBuilder.tap(tap)
 	return b
 }
 
@@ -129,7 +129,7 @@ func (b *audioChain) Encode(codec CodecSpec) *audioChain {
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.encode(codec)
+	b.chainBuilder.encode(codec)
 	return b
 }
 
@@ -149,18 +149,18 @@ func (b *audioChain) OpusMusic() *audioChain {
 	return b.Encode(OpusMusic())
 }
 
-func (b *audioChain) flowSpec() streamFlowSpec {
+func (b *audioChain) chainSpec() chainSpec {
 	if b == nil {
-		return streamFlowSpec{err: nilFlowError()}
+		return chainSpec{err: nilFlowError()}
 	}
-	return b.flowBuilder.snapshot()
+	return b.chainBuilder.snapshot()
 }
 
 func (b *videoChain) Decode() *videoChain {
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.decode()
+	b.chainBuilder.decode()
 	return b
 }
 
@@ -168,7 +168,7 @@ func (b *videoChain) Resize(width int, height int, options ...resizeOption) *vid
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.transform(Resize(width, height, options...))
+	b.chainBuilder.transform(Resize(width, height, options...))
 	return b
 }
 
@@ -176,7 +176,7 @@ func (b *videoChain) Do(stage pipeline.Stage) *videoChain {
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.stage(stage)
+	b.chainBuilder.stage(stage)
 	return b
 }
 
@@ -184,7 +184,7 @@ func (b *videoChain) Tap(tap TapRef) *videoChain {
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.tap(tap)
+	b.chainBuilder.tap(tap)
 	return b
 }
 
@@ -192,7 +192,7 @@ func (b *videoChain) Encode(codec CodecSpec) *videoChain {
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.encode(codec)
+	b.chainBuilder.encode(codec)
 	return b
 }
 
@@ -208,21 +208,21 @@ func (b *videoChain) VP9(bitrate int, options ...codecOption) *videoChain {
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *videoChain) flowSpec() streamFlowSpec {
+func (b *videoChain) chainSpec() chainSpec {
 	if b == nil {
-		return streamFlowSpec{err: nilFlowError()}
+		return chainSpec{err: nilFlowError()}
 	}
-	return b.flowBuilder.snapshot()
+	return b.chainBuilder.snapshot()
 }
 
-func (b *flowBuilder) name() string {
+func (b *chainBuilder) name() string {
 	if b == nil {
 		return ""
 	}
 	return b.spec.name
 }
 
-func (b *flowBuilder) decode() {
+func (b *chainBuilder) decode() {
 	if b == nil {
 		return
 	}
@@ -241,12 +241,12 @@ func (b *flowBuilder) decode() {
 	b.spec.decode = true
 }
 
-func (b *flowBuilder) transform(spec TransformSpec) {
+func (b *chainBuilder) transform(spec TransformSpec) {
 	if b == nil {
 		return
 	}
 	if codecIntentSet(b.spec.encode) {
-		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), flowTransformStepName(spec), b.spec.encode))
+		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), chainTransformStepName(spec), b.spec.encode))
 		return
 	}
 	transform := cloneTransformSpec(spec)
@@ -254,7 +254,7 @@ func (b *flowBuilder) transform(spec TransformSpec) {
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpec(spec))
 }
 
-func (b *flowBuilder) stage(stage pipeline.Stage) {
+func (b *chainBuilder) stage(stage pipeline.Stage) {
 	if b == nil {
 		return
 	}
@@ -269,7 +269,7 @@ func (b *flowBuilder) stage(stage pipeline.Stage) {
 	b.spec.steps = append(b.spec.steps, chainStep{stage: stage})
 }
 
-func (b *flowBuilder) tap(tap TapRef) {
+func (b *chainBuilder) tap(tap TapRef) {
 	if b == nil {
 		return
 	}
@@ -302,7 +302,7 @@ func (b *flowBuilder) tap(tap TapRef) {
 	b.spec.steps = append(b.spec.steps, chainStep{tap: tap.name, tapDomain: tap.domain})
 }
 
-func (b *flowBuilder) encode(codec CodecSpec) {
+func (b *chainBuilder) encode(codec CodecSpec) {
 	if b == nil {
 		return
 	}
@@ -317,9 +317,9 @@ func (b *flowBuilder) encode(codec CodecSpec) {
 	b.spec.encode = codec
 }
 
-func (b *flowBuilder) snapshot() streamFlowSpec {
+func (b *chainBuilder) snapshot() chainSpec {
 	if b == nil {
-		return streamFlowSpec{err: nilFlowError()}
+		return chainSpec{err: nilFlowError()}
 	}
 	spec := b.spec
 	spec.steps = cloneChainSteps(spec.steps)
@@ -328,21 +328,21 @@ func (b *flowBuilder) snapshot() streamFlowSpec {
 	return spec
 }
 
-func (b *flowBuilder) setErr(err error) {
+func (b *chainBuilder) setErr(err error) {
 	if b.spec.err == nil {
 		b.spec.err = err
 	}
 }
 
-func flowSpecFrom(flow Chain) (streamFlowSpec, error) {
+func chainSpecFrom(flow Chain) (chainSpec, error) {
 	if flow == nil {
-		return streamFlowSpec{}, nilFlowError()
+		return chainSpec{}, nilFlowError()
 	}
-	snapshotter, ok := flow.(flowSnapshotter)
+	snapshotter, ok := flow.(chainSnapshotter)
 	if !ok {
-		return streamFlowSpec{}, nilFlowError()
+		return chainSpec{}, nilFlowError()
 	}
-	spec := snapshotter.flowSpec()
+	spec := snapshotter.chainSpec()
 	if spec.err != nil {
 		return spec, spec.err
 	}
@@ -373,7 +373,7 @@ func cloneTransformSpec(spec TransformSpec) TransformSpec {
 	return out
 }
 
-func flowTransformStepName(spec TransformSpec) string {
+func chainTransformStepName(spec TransformSpec) string {
 	switch {
 	case spec.Resize != nil:
 		return "resize"
@@ -458,7 +458,7 @@ func nilFlowError() error {
 	}
 }
 
-func validateFlowMedia(operation string, node string, selected av.MediaType, spec streamFlowSpec) error {
+func validateChainMedia(operation string, node string, selected av.MediaType, spec chainSpec) error {
 	if selected == "" || spec.media == "" || selected == spec.media {
 		return nil
 	}

@@ -189,7 +189,7 @@ func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 	if b == nil {
 		return b
 	}
-	spec, err := flowSpecFrom(flow)
+	spec, err := chainSpecFrom(flow)
 	if err != nil {
 		b.setErr(err)
 		return b
@@ -201,7 +201,7 @@ func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 	if spec.media != "" {
 		if b.spec.media == "" {
 			b.spec.media = spec.media
-		} else if err := validateFlowMedia("build branch", firstNonEmpty(b.spec.name, "branch"), b.spec.media, spec); err != nil {
+		} else if err := validateChainMedia("build branch", firstNonEmpty(b.spec.name, "branch"), b.spec.media, spec); err != nil {
 			b.setErr(err)
 			return b
 		}
@@ -477,7 +477,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	if spec.from != "" {
 		return plannedBranchNodeSourceError(spec.name, spec.from)
 	}
-	if err := validateFlowMedia("build branches", firstNonEmpty(spec.name, "branch"), selected, streamFlowSpec{name: spec.name, media: spec.media}); err != nil {
+	if err := validateChainMedia("build branches", firstNonEmpty(spec.name, "branch"), selected, chainSpec{name: spec.name, media: spec.media}); err != nil {
 		return err
 	}
 	if spec.name == "" {

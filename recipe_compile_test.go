@@ -115,9 +115,18 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 		"transformSpecsFromJobSteps",
 		"branchComposeStep",
 		"branchComposeStepsFromJobSteps",
+		"streamFlowSpec",
+		"flowBuilder",
+		"flowSnapshotter",
+		"flowSpecFrom",
+		"validateFlowMedia",
+		"flowTransformStepName",
+		"isFlow",
+		"newAudioFlow",
+		"newVideoFlow",
 	} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("operation chains should not use old job-stream step vocabulary %q", forbidden)
+			t.Fatalf("operation chains should not use old chain implementation vocabulary %q", forbidden)
 		}
 	}
 	for _, required := range []string{
@@ -127,6 +136,10 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 		"func branchChainStepsFromChain",
 		"func branchChainStepsFromTranscode",
 		"func runtimeBranchStepsFromChain",
+		"type chainSpec struct",
+		"type chainBuilder struct",
+		"func chainSpecFrom",
+		"func validateChainMedia",
 		"func cloneChainSteps",
 	} {
 		if !strings.Contains(text, required) {

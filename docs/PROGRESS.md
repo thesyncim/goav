@@ -1610,6 +1610,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Branch target validation now talks about destinations and targets, and guard
     coverage rejects the stale diagnostic vocabulary from production files.
     Done.
+326. Name reusable fragments as chains internally:
+    `Flow(name).Audio()/Video()` remains the public constructor for reusable
+    operation fragments, but the implementation now lowers them through
+    `chainSpec`, `chainBuilder`, and `chainSpecFrom` instead of a separate
+    flow-shaped spec/builder vocabulary. The sealed `Chain` marker is now
+    `isChain`, package comments list inputs/chains/taps/branches/targets/tasks,
+    and guard coverage rejects the old reusable-flow implementation names.
+    Done.
 
 ## First Vertical Slice
 

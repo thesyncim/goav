@@ -646,7 +646,7 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 	}
 	currentCaps := runtimeBranchAnchorCaps(branch.anchor)
 	if branch.media != "" && currentCaps.MediaKind != "" {
-		if err := validateFlowMedia("attach runtime branch", firstNonEmpty(branch.name, "branch"), currentCaps.MediaKind, streamFlowSpec{name: branch.name, media: branch.media}); err != nil {
+		if err := validateChainMedia("attach runtime branch", firstNonEmpty(branch.name, "branch"), currentCaps.MediaKind, chainSpec{name: branch.name, media: branch.media}); err != nil {
 			return err
 		}
 	}

@@ -2967,13 +2967,13 @@ type jobStreamBuilder struct {
 }
 
 func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
-	spec, err := flowSpecFrom(flow)
+	spec, err := chainSpecFrom(flow)
 	if err != nil {
 		b.job.setErr(err)
 		return b
 	}
 	stream := b.current()
-	if err := validateFlowMedia("build stream", jobStreamName(stream), stream.selector.Type, spec); err != nil {
+	if err := validateChainMedia("build stream", jobStreamName(stream), stream.selector.Type, spec); err != nil {
 		b.job.setErr(err)
 		return b
 	}
