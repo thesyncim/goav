@@ -18,14 +18,15 @@ type transcodeGraphCompiler struct{}
 type rtpTranscodeGraphCompiler struct{}
 
 type branchComposeRoute struct {
-	name        string
-	branch      branchComposeBranch
-	copy        bool
-	decode      CodecSpec
-	codecChange CodecChangePolicy
-	sharedSteps []mediaTransform
-	steps       []mediaTransform
-	request     encodeRequest
+	name             string
+	branch           branchComposeBranch
+	copy             bool
+	decode           CodecSpec
+	codecChange      CodecChangePolicy
+	dropDecodeEvents bool
+	sharedSteps      []mediaTransform
+	steps            []mediaTransform
+	request          encodeRequest
 }
 
 type mediaTransform struct {
@@ -467,8 +468,9 @@ func compileBranchComposeInputs(
 		if err != nil {
 			return nil, nil, err
 		}
+		dropDecodeEvents := branchComposeGroupDropDecodeEvents(decodedBranches, branches)
 		decodeName := firstNonEmpty(planned.decodeNode.String(), decodeNodeName(selector))
-		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig, codecChange: codecChange}, selected, realtime, false, bounds)
+		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig, codecChange: codecChange}, selected, realtime, dropDecodeEvents, bounds)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -822,13 +824,14 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 			config.Stream.Metadata = branch.Metadata
 		}
 		branches[i] = branchComposeRoute{
-			name:        name,
-			branch:      branch,
-			copy:        branch.Copy,
-			decode:      cloneCodecSpec(branch.DecodeConfig),
-			codecChange: branch.CodecChange,
-			sharedSteps: sharedSteps,
-			steps:       steps,
+			name:             name,
+			branch:           branch,
+			copy:             branch.Copy,
+			decode:           cloneCodecSpec(branch.DecodeConfig),
+			codecChange:      branch.CodecChange,
+			dropDecodeEvents: false,
+			sharedSteps:      sharedSteps,
+			steps:            steps,
 			request: encodeRequest{
 				name:     name,
 				selector: branch.Selector,
@@ -915,6 +918,21 @@ func branchComposeGroupCodecChangePolicy(indices []int, branches []branchCompose
 		}
 	}
 	return policy, nil
+}
+
+func branchComposeGroupDropDecodeEvents(indices []int, branches []branchComposeRoute) bool {
+	if len(indices) == 0 {
+		return false
+	}
+	for _, index := range indices {
+		if index < 0 || index >= len(branches) {
+			return false
+		}
+		if !branches[index].dropDecodeEvents {
+			return false
+		}
+	}
+	return true
 }
 
 func codecSpecHasDecodeIntent(spec CodecSpec) bool {

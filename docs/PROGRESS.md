@@ -1893,6 +1893,17 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     preserve Describe/Build parity for direct frame-stream jobs, keep codec
     change policy visible, and keep graph-plan ref mutation coverage green.
     Done.
+361. Lower direct frame-stream builds through branch routes:
+    direct frame-stream runtime builds now convert the resolved chain into one
+    branch route, map graph-plan select/decode/filter/encode/target refs into
+    branch-compose lowering structs, then call `compileBranchComposeInputs` and
+    `compileBranchComposeRoutes`. The old direct decode/filter/encode/target
+    lowerer helpers are gone from `mediaPlanStreamGraph`. Direct decoded sink
+    chains preserve their decoder input-event drop behavior through an explicit
+    route flag, while normal branch composition keeps events visible downstream.
+    Guard tests pin both spec and runtime planner reuse, and existing
+    Describe/Build parity plus graph-plan ref mutation tests stay green.
+    Done.
 
 ## First Vertical Slice
 
@@ -2105,9 +2116,9 @@ Required proof:
 1. Make direct chains implicit branches. Direct packet-copy, decode-to-sink, and
    encode-to-target operation and target nodes now consume graph-plan refs and
    selected direct chains are branch-scoped during lowering; direct frame-stream
-   specs now use the branch route planner. The next step is to make direct
-   frame-stream runtime lowering and branch composition share one branch planner
-   instead of workflow-shape graph modes.
+   specs and runtime builds now use branch route planning/lowering. The next
+   step is to collapse selected packet-copy and runtime attach toward the same
+   branch/patch planner instead of workflow-shape graph modes.
 2. Add `GraphPatch` for runtime attach. `Task.Attach` should plan branch specs
    from existing typed taps, validate caps and targets before mutation, reuse
    upstream nodes, allocate only downstream branch nodes, and share mux/sink
@@ -2156,10 +2167,10 @@ Packet-copy, direct frame-stream, and grouped branch-compose builds now consume
 graph-plan operation records for validation, operation node construction,
 target node construction, and target routing; direct frame-stream builds consume
 one branch operation set plus select/decode/filter/encode refs, direct
-frame-stream specs use `planBranchComposeRoutes`, selected packet-copy also
-validates one branch operation set, and grouped branch-compose consumes
-select/decode input refs, shared/private step refs, encode refs, and target
-refs. The public recipe surface is small: `From`, chains,
+frame-stream specs and runtime builds use branch route helpers, selected
+packet-copy also validates one branch operation set, and grouped branch-compose
+consumes select/decode input refs, shared/private step refs, encode refs, and
+target refs. The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`, `File`, `URIOut`, `Writer`, `Object`,
 `Sink`, `Flow`, `Codec`, and runtime `Attach`. `Destination` remains the
 externally implementable extension surface for custom byte writers, object
