@@ -2442,6 +2442,17 @@ func graphPlanOperationsWithoutKind(operations []graphPlanOperation, kind Operat
 	return out
 }
 
+func graphPlanOperationsWithoutBranch(operations []graphPlanOperation, branch string) []graphPlanOperation {
+	out := make([]graphPlanOperation, 0, len(operations))
+	for i := range operations {
+		if operations[i].Branch == branch {
+			continue
+		}
+		out = append(out, operations[i])
+	}
+	return out
+}
+
 func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
@@ -2628,6 +2639,86 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 	defer task.Close()
 	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}
+
+func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T) {
+	web := Target("web", fileDestination("web.ivf", io.Discard))
+	mobile := Target("mobile", fileDestination("mobile.ivf", io.Discard))
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			Branch("720p").Resize(1280, 720).VP9(2_000_000).To(web),
+			Branch("360p").Resize(640, 360).VP8(600_000).To(mobile),
+		)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutBranch(resolved.graphPlan.operations, "360p")
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "branch composition graph plan has no operations for branch") {
+		t.Fatalf("err = %v, want missing branch-operation graph-plan error", err)
+	}
+}
+
+func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
+	web := Target("web", fileDestination("web.ivf", io.Discard))
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			Branch("720p").Resize(1280, 720).VP9(2_000_000).To(web),
+		)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpDecode)
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "branch composition graph plan has no decode operation for branch") {
+		t.Fatalf("err = %v, want missing decode-operation graph-plan error", err)
+	}
+}
+
+func TestBranchComposeLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
+	web := Target("web", fileDestination("web.ivf", io.Discard))
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Branches(
+			Branch("720p").Resize(1280, 720).VP9(2_000_000).To(web),
+		)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutTargets(resolved.graphPlan.operations)
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "branch composition graph plan has no target operations") {
+		t.Fatalf("err = %v, want missing target-operation graph-plan error", err)
 	}
 }
 

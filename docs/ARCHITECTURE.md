@@ -88,10 +88,11 @@ pre-populated runtime builder. `recipeResolved` no longer carries a parallel
 media-plan report copy:
 `Explain`, mux diagnostics, and task tap installation read cloned views from the
 graph plan. The graph plan also carries an ordered operation sequence derived
-from branch operations and target groups. Packet-copy and direct stream
-decode/filter/encode builds now consume that sequence for pre-mutation
-validation and target lowering. The next architectural pressure is to move
-branch-compose build onto the same sequence.
+from branch operations and target groups. Packet-copy, direct stream
+decode/filter/encode, and grouped branch-compose builds now consume that
+sequence for pre-mutation validation and target binding. The next architectural
+pressure is to make branch-compose shared select/decode/transform lowering
+execute directly from those operation records.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and
