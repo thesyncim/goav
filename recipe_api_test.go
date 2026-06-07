@@ -28,6 +28,10 @@ import (
 
 type recipeAPIRTPReader struct{}
 
+type recipeAPIVideoRTPReader struct {
+	recipeAPIRTPReader
+}
+
 type recipeAPISource struct {
 	name string
 }
@@ -103,6 +107,28 @@ func (recipeAPIRuntimeWithoutBuilder) Graph() goav.GraphBuilder {
 
 func (recipeAPIRTPReader) Streams(context.Context) ([]goav.Stream, error) {
 	return []goav.Stream{{ID: "audio", Type: "audio"}}, nil
+}
+
+func (recipeAPIVideoRTPReader) Streams(context.Context) ([]goav.Stream, error) {
+	return []goav.Stream{{
+		ID:   "video",
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			ID:   av.CodecVP8,
+			Type: av.MediaVideo,
+		},
+	}}, nil
+}
+
+func (recipeAPIVideoRTPReader) PayloadMap() rtpav.PayloadMap {
+	return rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+		PayloadType: 96,
+		Parameters: av.CodecParameters{
+			ID:        av.CodecVP8,
+			Type:      av.MediaVideo,
+			ClockRate: 90000,
+		},
+	}})
 }
 
 func (recipeAPIRTPReader) PayloadMap() rtpav.PayloadMap {
@@ -422,7 +448,7 @@ func TestRecipesExposeStructuredExplain(t *testing.T) {
 
 func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 	report, err := recordJob(
-		goav.RTP(recipeAPIRTPReader{}).Name("video").Codec(goav.VP8()),
+		goav.RTP(recipeAPIVideoRTPReader{}).Name("video").Codec(goav.VP8()),
 		goav.FileOutput("recording.ivf", io.Discard),
 	).Explain(context.Background())
 	if err != nil {
@@ -453,6 +479,18 @@ func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 	if !hasRequirement(report.RequiredAdapters, "rtp-depacketizer", av.CodecVP8, "") ||
 		!hasRequirement(report.RequiredAdapters, "muxer", "", av.FormatIVF) {
 		t.Fatalf("requirements=%+v", report.RequiredAdapters)
+	}
+	muxer, ok := adapterRequirementByKind(report.RequiredAdapters, "muxer", string(av.FormatIVF))
+	if !ok ||
+		muxer.MaxStreams != 1 ||
+		len(muxer.Media) != 1 ||
+		muxer.Media[0] != av.MediaVideo ||
+		len(muxer.Codecs) != 3 ||
+		muxer.Codecs[0] != av.CodecVP8 ||
+		muxer.Codecs[1] != av.CodecVP9 ||
+		muxer.Codecs[2] != av.CodecAV1 ||
+		muxer.Metadata["summary"] == "" {
+		t.Fatalf("ivf requirement=%+v, want container capability details", muxer)
 	}
 	if len(report.Warnings) != 0 {
 		t.Fatalf("warnings=%+v", report.Warnings)
@@ -803,6 +841,53 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "route exactly one VP8, VP9, or AV1 video branch") {
 		t.Fatalf("err = %v, want IVF guidance", err)
+	}
+}
+
+func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
+	rt := goav.New(
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
+				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
+			}})
+			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
+			registry.RegisterMuxerDescriptor(format.Descriptor{
+				Format:     av.FormatMatroska,
+				Media:      []av.MediaType{av.MediaAudio},
+				Codecs:     []av.CodecID{av.CodecOpus},
+				MinStreams: 1,
+				MaxStreams: 1,
+				Metadata: av.Metadata{
+					"summary": "test matroska target accepts one Opus audio stream",
+				},
+			}, recipeAPIMuxerFactory{})
+		}),
+		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
+			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
+		}),
+	)
+
+	target := goav.Target("audio-only", goav.FileOutput("out.mkv", io.Discard).Format(av.FormatMatroska))
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Video().
+		Decode().
+		Branches(goav.Branch("video").VP8(600_000).To(target)).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
+		t.Fatalf("err = %v, want target_mux_incompatible", err)
+	}
+	for _, want := range []string{
+		"test matroska target accepts one Opus audio stream",
+		"target=audio-only",
+		"format=matroska",
+		"branch=video codec=vp8 media=video",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want detail %q", err, want)
+		}
 	}
 }
 

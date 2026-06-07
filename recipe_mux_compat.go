@@ -41,11 +41,11 @@ func stateMuxCompatibilityIssues(state *recipeCompileState) []muxCompatibilityIs
 		return nil
 	}
 	plan := buildMediaPlan(state)
-	return muxCompatibilityIssues(plan, state.intent, state.inputProbes, state.branchInputProbe, state.branchInputProbeReady)
+	return muxCompatibilityIssues(plan, state.intent, state.inputProbes, state.branchInputProbe, state.branchInputProbeReady, state.runtime)
 }
 
 func resolvedMuxCompatibilityIssues(resolved recipeResolved) []muxCompatibilityIssue {
-	return muxCompatibilityIssues(resolved.mediaPlan, resolved.intent, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady)
+	return muxCompatibilityIssues(resolved.mediaPlan, resolved.intent, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady, resolved.runtime)
 }
 
 func muxCompatibilityIssues(
@@ -54,6 +54,7 @@ func muxCompatibilityIssues(
 	inputProbes []format.ProbeResult,
 	transcodeProbe format.ProbeResult,
 	transcodeProbeReady bool,
+	rt Runtime,
 ) []muxCompatibilityIssue {
 	var issues []muxCompatibilityIssue
 	branches := planBranchesByName(plan.Branches)
@@ -63,7 +64,7 @@ func muxCompatibilityIssues(
 			continue
 		}
 		streams := muxOutputStreams(output, branches, plan.Branches, intent, inputProbes, transcodeProbe, transcodeProbeReady)
-		if issue, ok := checkKnownMuxCompatibility(output, streams); ok {
+		if issue, ok := checkKnownMuxCompatibility(output, streams, rt); ok {
 			issues = append(issues, issue)
 		}
 	}
@@ -226,7 +227,12 @@ func probedMuxInputCodec(probes []format.ProbeResult, branch planBranch) (av.Cod
 	return stream.Codec.ID, media, true
 }
 
-func checkKnownMuxCompatibility(output planOutput, streams []plannedMuxStream) (muxCompatibilityIssue, bool) {
+func checkKnownMuxCompatibility(output planOutput, streams []plannedMuxStream, rt Runtime) (muxCompatibilityIssue, bool) {
+	if desc, ok := muxerDescriptorForRuntime(rt, output.Format); ok {
+		if issue, checked := checkDescriptorMuxCompatibility(output, streams, desc); checked {
+			return issue, true
+		}
+	}
 	switch output.Format {
 	case av.FormatIVF:
 		return checkSingleVideoMuxCompatibility(output, streams, map[av.CodecID]bool{
@@ -241,6 +247,111 @@ func checkKnownMuxCompatibility(output planOutput, streams []plannedMuxStream) (
 	default:
 		return muxCompatibilityIssue{}, false
 	}
+}
+
+func muxerDescriptorForRuntime(rt Runtime, formatID av.FormatID) (format.Descriptor, bool) {
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return format.Descriptor{}, false
+	}
+	desc, err := standard.formats.MuxerDescriptor(formatID)
+	if err != nil {
+		return format.Descriptor{}, false
+	}
+	if desc.Format == "" {
+		desc.Format = formatID
+	}
+	return desc, true
+}
+
+func checkDescriptorMuxCompatibility(output planOutput, streams []plannedMuxStream, desc format.Descriptor) (muxCompatibilityIssue, bool) {
+	if desc.MinStreams > 0 && len(streams) < desc.MinStreams {
+		return newMuxCompatibilityIssue(output, streams, descriptorMuxReason(output.Format, desc)), true
+	}
+	if desc.MaxStreams > 0 && len(streams) > desc.MaxStreams {
+		return newMuxCompatibilityIssue(output, streams, descriptorMuxReason(output.Format, desc)), true
+	}
+	if len(desc.Media) == 0 && len(desc.Codecs) == 0 {
+		return muxCompatibilityIssue{}, false
+	}
+	for i := range streams {
+		stream := streams[i]
+		if stream.Media != "" && len(desc.Media) != 0 && !mediaAllowed(desc.Media, stream.Media) {
+			return newMuxCompatibilityIssue(output, streams, descriptorMuxReason(output.Format, desc)), true
+		}
+		if stream.Codec != "" && len(desc.Codecs) != 0 && !codecAllowed(desc.Codecs, stream.Codec) {
+			return newMuxCompatibilityIssue(output, streams, descriptorMuxReason(output.Format, desc)), true
+		}
+	}
+	return muxCompatibilityIssue{}, false
+}
+
+func descriptorMuxReason(formatID av.FormatID, desc format.Descriptor) string {
+	if desc.Metadata != nil && desc.Metadata["summary"] != "" {
+		return desc.Metadata["summary"]
+	}
+	var parts []string
+	if desc.MaxStreams > 0 {
+		if desc.MinStreams == desc.MaxStreams {
+			parts = append(parts, fmt.Sprintf("%d stream(s)", desc.MaxStreams))
+		} else {
+			parts = append(parts, fmt.Sprintf("up to %d stream(s)", desc.MaxStreams))
+		}
+	}
+	if len(desc.Media) != 0 {
+		parts = append(parts, "media="+joinMediaTypes(desc.Media))
+	}
+	if len(desc.Codecs) != 0 {
+		parts = append(parts, "codecs="+joinCodecIDs(desc.Codecs))
+	}
+	if len(parts) == 0 {
+		return string(formatID) + " target rejected the planned mux group"
+	}
+	return string(formatID) + " targets support " + strings.Join(parts, ", ")
+}
+
+func mediaAllowed(allowed []av.MediaType, media av.MediaType) bool {
+	for i := range allowed {
+		if allowed[i] == media {
+			return true
+		}
+	}
+	return false
+}
+
+func codecAllowed(allowed []av.CodecID, codecID av.CodecID) bool {
+	for i := range allowed {
+		if allowed[i] == codecID {
+			return true
+		}
+	}
+	return false
+}
+
+func joinMediaTypes(values []av.MediaType) string {
+	if len(values) == 0 {
+		return ""
+	}
+	out := make([]string, 0, len(values))
+	for i := range values {
+		if values[i] != "" {
+			out = append(out, string(values[i]))
+		}
+	}
+	return strings.Join(out, ",")
+}
+
+func joinCodecIDs(values []av.CodecID) string {
+	if len(values) == 0 {
+		return ""
+	}
+	out := make([]string, 0, len(values))
+	for i := range values {
+		if values[i] != "" {
+			out = append(out, string(values[i]))
+		}
+	}
+	return strings.Join(out, ",")
 }
 
 func checkSingleVideoMuxCompatibility(output planOutput, streams []plannedMuxStream, codecs map[av.CodecID]bool, reason string) (muxCompatibilityIssue, bool) {

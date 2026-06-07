@@ -99,6 +99,10 @@ type AdapterRequirement struct {
 	Name       string
 	Format     av.FormatID
 	Codec      av.CodecID
+	Media      []av.MediaType
+	Codecs     []av.CodecID
+	MinStreams int
+	MaxStreams int
 	Transform  string
 	Input      av.MediaType
 	Output     av.MediaType
@@ -372,13 +376,12 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 		input := report.Inputs[i]
 		switch {
 		case input.Format != "" && input.Format != av.FormatRTP && input.Format != av.FormatWebRTC:
-			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
-				Kind:       "demuxer",
-				Name:       string(input.Format),
-				Format:     input.Format,
-				RequiredBy: firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
-				Status:     adapterRequirementRuntimeStatus(resolved.runtime, "demuxer", input.Format, "", ""),
-			})
+			requirements = appendAdapterRequirement(requirements, formatAdapterRequirement(
+				resolved.runtime,
+				"demuxer",
+				input.Format,
+				firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
+			))
 		case input.Realtime && input.Codec != "":
 			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
 				Kind:       "rtp-depacketizer",
@@ -394,13 +397,12 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 		if output.Kind != "mux" || output.Format == "" {
 			continue
 		}
-		requirements = appendAdapterRequirement(requirements, AdapterRequirement{
-			Kind:       "muxer",
-			Name:       string(output.Format),
-			Format:     output.Format,
-			RequiredBy: firstNonEmpty(output.Name, output.URI, fmt.Sprintf("output-%d", i)),
-			Status:     adapterRequirementRuntimeStatus(resolved.runtime, "muxer", output.Format, "", ""),
-		})
+		requirements = appendAdapterRequirement(requirements, formatAdapterRequirement(
+			resolved.runtime,
+			"muxer",
+			output.Format,
+			firstNonEmpty(output.Name, output.URI, fmt.Sprintf("output-%d", i)),
+		))
 	}
 	for i := range report.Branches {
 		branch := report.Branches[i]
@@ -563,6 +565,40 @@ func filterAdapterRequirement(rt Runtime, name string, requiredBy string) Adapte
 	requirement.Output = desc.Output
 	requirement.Realtime = desc.Realtime
 	requirement.Stateless = desc.Stateless
+	requirement.Metadata = cloneMetadata(desc.Metadata)
+	return requirement
+}
+
+func formatAdapterRequirement(rt Runtime, kind string, formatID av.FormatID, requiredBy string) AdapterRequirement {
+	requirement := AdapterRequirement{
+		Kind:       kind,
+		Name:       string(formatID),
+		Format:     formatID,
+		RequiredBy: requiredBy,
+		Status:     adapterRequirementRuntimeStatus(rt, kind, formatID, "", ""),
+	}
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return requirement
+	}
+	var desc format.Descriptor
+	var err error
+	switch kind {
+	case "demuxer":
+		desc, err = standard.formats.DemuxerDescriptor(formatID)
+	case "muxer":
+		desc, err = standard.formats.MuxerDescriptor(formatID)
+	default:
+		return requirement
+	}
+	if err != nil {
+		return requirement
+	}
+	requirement.Media = append([]av.MediaType(nil), desc.Media...)
+	requirement.Codecs = append([]av.CodecID(nil), desc.Codecs...)
+	requirement.MinStreams = desc.MinStreams
+	requirement.MaxStreams = desc.MaxStreams
+	requirement.Realtime = desc.Realtime
 	requirement.Metadata = cloneMetadata(desc.Metadata)
 	return requirement
 }

@@ -43,7 +43,9 @@ make the implementation match the composable planner promise.
    planner can explain copy/decode/encode choices, missing adapters, transform
    incompatibilities, and mux-output conflicts before runtime execution. First
    filter descriptor metadata now feeds `Explain(ctx)` and descriptor media
-   mismatches fail during preflight.
+   mismatches fail during preflight. Format descriptors now report container
+   media/codecs/stream-count capabilities and descriptor-backed mux target
+   conflicts fail before graph mutation.
 5. Keep custom composition orthogonal: application-local codecs use
    `goav.Codec`, `WithDecoder`, and `WithEncoder`; custom stages, filters,
    sinks, and targets use the same stream and runtime-attachment concepts as

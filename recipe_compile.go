@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
@@ -143,7 +144,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 			}
 		}
 		if err := pass.Apply(&state); err != nil {
-			return recipeResolved{}, err
+			return recipeResolved{}, compilerPassError(state.operation, pass.Name(), err)
 		}
 	}
 	if state.builder == nil {
@@ -178,6 +179,29 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		mediaPlan:             buildMediaPlan(&state),
 		plan:                  state.plan,
 	}, nil
+}
+
+func compilerPassError(operation string, pass string, err error) error {
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr == nil {
+		return err
+	}
+	if buildErr.Code != "" || buildErr.Reason != "" || len(buildErr.Details) != 0 || len(buildErr.Suggestions) != 0 {
+		return err
+	}
+	return &BuildError{
+		Code:      "compiler_pass_failed",
+		Operation: firstNonEmpty(buildErr.Operation, operation),
+		Reason:    "recipe compiler pass failed without a diagnostic",
+		Details: []string{
+			"pass=" + pass,
+		},
+		Suggestions: []string{
+			"run Explain(ctx) to inspect the partial plan",
+			"report the pass name with the recipe shape",
+		},
+		Cause: err,
+	}
 }
 
 func (r recipeResolved) Describe() (pipeline.Spec, error) {
