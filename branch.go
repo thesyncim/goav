@@ -187,12 +187,13 @@ type BranchSpec struct {
 	targets        []targetSpec
 	targetNames    []string
 
-	from      string
-	tap       string
-	tapDomain MediaDomain
-	policy    pipeline.RoutePolicy
-	label     string
-	buffer    pipeline.BufferPolicy
+	from         string
+	tap          string
+	tapDomain    MediaDomain
+	policy       pipeline.RoutePolicy
+	label        string
+	branchBuffer BranchBuffer
+	buffer       pipeline.BufferPolicy
 
 	err error
 }
@@ -252,11 +253,16 @@ func (b *branchBuilder) Event(event av.EventType) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Buffer(policy pipeline.BufferPolicy) *branchBuilder {
+func (b *branchBuilder) Buffer(buffer BranchBuffer) *branchBuilder {
 	if b == nil {
 		return b
 	}
-	b.spec.buffer = policy
+	if err := buffer.validate("build branch", firstNonEmpty(b.spec.name, "branch")); err != nil {
+		b.setErr(err)
+		return b
+	}
+	b.spec.branchBuffer = buffer
+	b.spec.buffer = buffer.pipelinePolicy()
 	return b
 }
 

@@ -2010,6 +2010,15 @@ The missing product layer is now explicit:
     declared taps, and compile diagnostics for transform-media mismatches plus
     decoded-frame-to-byte-output failures include expected and actual shapes.
     Done.
+370. Add GoAV-native branch buffer API:
+    `BranchBuffer`, `BranchBufferMode`, `Blocking`, `DropOldest`,
+    `DropNewest`, `Latest`, `CopyMode`, and copy-bound options are the normal
+    branch-facing buffering API. `Branch.Buffer(...)` now accepts
+    `BranchBuffer` and lowers to `pipeline.BufferPolicy` internally, keeping
+    graph buffer structs out of normal branch composition. Tests cover
+    constructor lowering, invalid policies, unsupported unbounded buffers, and
+    the public method signature.
+    Done.
 
 ## First Vertical Slice
 
@@ -2211,7 +2220,7 @@ Required proof:
 | Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts for advanced embedding and adapter work, not the normal composer | active |
 | Full Opus/VP8/VP9 codec verticals | Opus, VP8, and VP9 are the first full encode/decode recipe targets; H264 and AV1 stay receive/decode-first until encode is equally solid | active |
 | Formal media shapes | `MediaShape`/shape-contract planning replaces ad hoc public caps language; operation and flow contracts now expose inferred input/output shape, with full branch/target validation next | active |
-| Branch flow control | branch-local buffers, drop accounting, backpressure, and safe packet/frame ownership are public branch policy, not graph plumbing | planned |
+| Branch flow control | branch-local `BranchBuffer` policy is public branch API; drop accounting, branch stats, and safe packet/frame ownership remain active work | active |
 | Observation/control | `Observe`, `Watch`, `Snapshot`, branch states, target states, and scoped stats expose diagnostics without graph handles | planned |
 | One grammar, one engine | normal workflows lower from `input -> chain -> tap -> branch -> target` into `GraphPlan -> pipeline.Graph -> Task`; runtime attach lowers the same branch plan into `GraphPatch`; `GraphPatch` is the runtime attach form | planned |
 | Custom sources | custom frame/packet/event sources mirror custom stages, sinks, writers, and object destinations | planned |
