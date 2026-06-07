@@ -260,6 +260,13 @@ func TestExternalMKVExtractMatroskaTimestamps(t *testing.T) {
 	assertMKVExtractMatroskaTimestamps(t, mkvextract, file, expectedMatroskaTimestampsByStream(want))
 }
 
+func TestExternalMKVExtractMatroskaTrackPayloads(t *testing.T) {
+	mkvextract := requireExternalTool(t, "mkvextract")
+	file, _ := writePacketOracleMatroska(t)
+	want := expectedMatroskaExtractedTrackPayloads(t, readLocalMatroskaPacketPayloads(t, file))
+	assertMKVExtractMatroskaTrackPayloads(t, mkvextract, file, want)
+}
+
 func writeFFmpegAV1OpusMatroskaRecording(t testing.TB) string {
 	t.Helper()
 	tool := requireExternalTool(t, "ffmpeg")
@@ -459,8 +466,9 @@ type externalMatroskaPacket struct {
 }
 
 type localMatroskaPacketPayload struct {
-	Codec Codec
-	Data  []byte
+	StreamIndex int
+	Codec       Codec
+	Data        []byte
 }
 
 type externalMatroskaCodecPacket struct {
@@ -726,8 +734,9 @@ func readLocalMatroskaPacketPayloads(t testing.TB, file string) []localMatroskaP
 			t.Fatalf("packet references unknown track %d", packet.TrackID)
 		}
 		packets = append(packets, localMatroskaPacketPayload{
-			Codec: tracks[stream].Codec,
-			Data:  append([]byte(nil), packet.Data...),
+			StreamIndex: stream,
+			Codec:       tracks[stream].Codec,
+			Data:        append([]byte(nil), packet.Data...),
 		})
 	}
 	return packets
@@ -834,6 +843,69 @@ func equalInt64Slices(left []int64, right []int64) bool {
 		}
 	}
 	return true
+}
+
+func assertMKVExtractMatroskaTrackPayloads(t testing.TB, tool string, file string, want map[int][][][]byte) {
+	t.Helper()
+	outDir := t.TempDir()
+	args := []string{file, "tracks", "--raw"}
+	paths := make(map[int]string, len(want))
+	for stream := range want {
+		path := filepath.Join(outDir, fmt.Sprintf("track-%d.raw", stream))
+		paths[stream] = path
+		args = append(args, fmt.Sprintf("%d:%s", stream, path))
+	}
+	runExternalTool(t, tool, args...)
+	for stream, path := range paths {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertExtractedMatroskaPayloads(t, stream, got, want[stream])
+	}
+}
+
+func expectedMatroskaExtractedTrackPayloads(t testing.TB, payloads []localMatroskaPacketPayload) map[int][][][]byte {
+	t.Helper()
+	expected := make(map[int][][][]byte)
+	for i := range payloads {
+		expected[payloads[i].StreamIndex] = append(expected[payloads[i].StreamIndex], matroskaExtractedPayloadAlternatives(t, payloads[i]))
+	}
+	return expected
+}
+
+func matroskaExtractedPayloadAlternatives(t testing.TB, payload localMatroskaPacketPayload) [][]byte {
+	t.Helper()
+	alternatives := [][]byte{payload.Data}
+	if payload.Codec != CodecH264 {
+		return alternatives
+	}
+	var buffer bytes.Buffer
+	var scratch [16]byte
+	if err := h264WriteAnnexBAsAVC(&buffer, payload.Data, 4, &scratch); err != nil {
+		t.Fatal(err)
+	}
+	return append(alternatives, buffer.Bytes())
+}
+
+func assertExtractedMatroskaPayloads(t testing.TB, stream int, extracted []byte, want [][][]byte) {
+	t.Helper()
+	offset := 0
+	for i := range want {
+		found := false
+		for j := range want[i] {
+			index := bytes.Index(extracted[offset:], want[i][j])
+			if index < 0 {
+				continue
+			}
+			offset += index + len(want[i][j])
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("mkvextract stream %d missing packet %d alternatives %x in extracted payload %x", stream, i, want[i], extracted)
+		}
+	}
 }
 
 func assertExternalMatroskaCodecPackets(t testing.TB, name string, got []externalMatroskaCodecPacket, want []externalMatroskaCodecPacket) {
