@@ -3198,6 +3198,50 @@ func TestBranchCompositionAcceptsSinkEndpointAfterResize(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionSharesParentOperationBeforeBranches(t *testing.T) {
+	web := goav.Target("web", goav.FileOutput("web.webm", io.Discard))
+	thumbnail := goav.Target("thumbnail", goav.SinkEndpoint(goav.SinkFunc("thumbnail", func(context.Context, goav.Message) error {
+		return nil
+	})))
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		Resize(1280, 720).
+		Tap("video.720p.frames").
+		Branches(
+			goav.Branch("web").
+				VP9(2_000_000).
+				To(web),
+			goav.Branch("thumb").
+				Resize(320, 180).
+				To(thumbnail),
+		)
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	for _, want := range []string{
+		"decode-video -> resize-video",
+		"resize-video -> encode-web",
+		"resize-video -> resize-thumb",
+		"resize-thumb -> thumbnail",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec missing %q:\n%s", want, text)
+		}
+	}
+	for _, duplicate := range []string{
+		"decode-video -> resize-web",
+		"decode-video -> resize-thumb",
+	} {
+		if strings.Contains(text, duplicate) {
+			t.Fatalf("shared resize was duplicated as %q:\n%s", duplicate, text)
+		}
+	}
+}
+
 func TestBranchRecipeRequiresBranch(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Build(context.Background())

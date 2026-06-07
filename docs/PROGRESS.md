@@ -1055,6 +1055,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     a later `Task.Attach(ctx, goav.Branch(...).FromTap(...).Copy().To(goav.Target(...)))`
     recording branch receives future RTP packets through the same typed
     `Branch`/`Target` grammar as planned composition. Done.
+261. Share planned branch operation prefixes before tapped split points:
+    `Video().Decode().Resize(...).Tap(...).Branches(...)` now lowers the resize
+    as one shared branch-composer node feeding downstream encode, thumbnail, or
+    analysis branches instead of duplicating the parent resize inside every
+    branch. Describe/build graph equivalence coverage pins the shared-prefix
+    shape so planned branches and runtime `FromTap` branches keep the same
+    media-point model. Done.
 
 ## First Vertical Slice
 

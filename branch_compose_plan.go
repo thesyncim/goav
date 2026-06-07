@@ -18,15 +18,16 @@ type branchComposePlan struct {
 }
 
 type branchComposeBranch struct {
-	Name     string
-	Selector av.StreamSelector
-	Decode   bool
-	Steps    []branchComposeStep
-	Resize   *filter.ResizeConfig
-	Resample *filter.ResampleConfig
-	Encode   codec.EncodeConfig
-	Labels   []string
-	Metadata av.Metadata
+	Name        string
+	Selector    av.StreamSelector
+	Decode      bool
+	SharedSteps []branchComposeStep
+	Steps       []branchComposeStep
+	Resize      *filter.ResizeConfig
+	Resample    *filter.ResampleConfig
+	Encode      codec.EncodeConfig
+	Labels      []string
+	Metadata    av.Metadata
 }
 
 type branchComposeStep struct {

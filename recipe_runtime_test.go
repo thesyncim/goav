@@ -872,6 +872,65 @@ func TestBranchCompositionRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionSharedParentOperationDescribeMatchesBuiltGraph(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{videoVP8TranscodeTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	resizeFactory := &transcodeTestFilterFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatIVF, muxers),
+	)
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResize,
+		Input:  av.MediaVideo,
+		Output: av.MediaVideo,
+	}, resizeFactory))
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+	)
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs, filters)).
+		Video().
+		Decode().
+		Resize(1280, 720).
+		Tap("video.720p.frames").
+		Branches(
+			Branch("web").
+				VP9(2_000_000).
+				To(Target("web", FileOutput("web.ivf", io.Discard).Format(av.FormatIVF))),
+			Branch("thumb").
+				Resize(320, 180).
+				To(Target("thumbnail", SinkEndpoint(&runtimeTestSink{name: "thumbnail"}))),
+		)
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(planned)
+	for _, want := range []string{
+		"decode-video -> resize-video",
+		"resize-video -> encode-web",
+		"resize-video -> resize-thumb",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("planned spec missing %q:\n%s", want, text)
+		}
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
+	}
+}
+
 func TestBranchCompositionFrameSinkEndpointRuns(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}

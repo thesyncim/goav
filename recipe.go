@@ -2655,17 +2655,19 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		stream := streams[i]
 		branchName := stream.Name
 		selector := streamIntentSelector(stream)
+		sharedSteps, branchSteps := branchComposeStepsForStream(stream)
 		branch := branchComposeBranch{
-			Name:     branchName,
-			Selector: selector,
-			Decode:   true,
+			Name:        branchName,
+			Selector:    selector,
+			Decode:      true,
+			SharedSteps: sharedSteps,
+			Steps:       branchSteps,
 			Encode: codec.EncodeConfig{
 				Parameters: stream.Encode.Parameters,
 				Bitrate:    stream.Encode.Bitrate,
 			},
 			Labels: append([]string(nil), stream.Targets...),
 		}
-		branch.Steps = branchComposeStepsForStream(stream)
 		for _, label := range stream.Targets {
 			outputBranches[label] = append(outputBranches[label], branchName)
 		}
@@ -2699,40 +2701,66 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 	}, nil
 }
 
-func branchComposeStepsForStream(stream StreamIntent) []branchComposeStep {
+func branchComposeStepsForStream(stream StreamIntent) ([]branchComposeStep, []branchComposeStep) {
 	if len(stream.Operations) != 0 {
-		return branchComposeStepsFromOperations(stream.Operations)
+		return branchComposeStepsFromOperations(stream.Operations, stream.FromTap)
 	}
 	if len(stream.Transforms) == 0 {
-		return nil
+		return nil, nil
 	}
-	return branchComposeStepsFromJobSteps(streamStepsFromTransforms(stream.Transforms))
+	return nil, branchComposeStepsFromJobSteps(streamStepsFromTransforms(stream.Transforms))
 }
 
-func branchComposeStepsFromOperations(operations []StreamOperation) []branchComposeStep {
+func branchComposeStepsFromOperations(operations []StreamOperation, fromTap string) ([]branchComposeStep, []branchComposeStep) {
 	if len(operations) == 0 {
-		return nil
+		return nil, nil
 	}
-	out := make([]branchComposeStep, 0, len(operations))
+	steps := make([]branchComposeStep, 0, len(operations))
+	shared := make([]branchComposeStep, 0)
+	branch := make([]branchComposeStep, 0)
+	split := fromTap == ""
+	foundSplit := fromTap == ""
 	for i := range operations {
 		operation := operations[i]
+		if operation.Kind == OpTap && operation.Component == fromTap {
+			split = true
+			foundSplit = true
+			continue
+		}
+		var step branchComposeStep
+		hasStep := false
 		switch operation.Kind {
 		case OpStage:
 			if operation.Stage != nil {
-				out = append(out, branchComposeStep{Stage: operation.Stage})
+				step = branchComposeStep{Stage: operation.Stage}
+				hasStep = true
 			}
 		case OpTransform:
 			switch {
 			case operation.Transform.Resize != nil:
 				resize := *operation.Transform.Resize
-				out = append(out, branchComposeStep{Resize: &resize})
+				step = branchComposeStep{Resize: &resize}
+				hasStep = true
 			case operation.Transform.Resample != nil:
 				resample := *operation.Transform.Resample
-				out = append(out, branchComposeStep{Resample: &resample})
+				step = branchComposeStep{Resample: &resample}
+				hasStep = true
 			}
 		}
+		if !hasStep {
+			continue
+		}
+		steps = append(steps, step)
+		if split {
+			branch = append(branch, step)
+		} else {
+			shared = append(shared, step)
+		}
 	}
-	return out
+	if !foundSplit {
+		return nil, steps
+	}
+	return shared, branch
 }
 
 func branchComposeStepsFromJobSteps(steps []jobStreamStep) []branchComposeStep {

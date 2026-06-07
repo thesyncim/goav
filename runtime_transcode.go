@@ -17,10 +17,11 @@ type transcodeGraphCompiler struct{}
 type rtpTranscodeGraphCompiler struct{}
 
 type branchComposeRoute struct {
-	name    string
-	branch  branchComposeBranch
-	steps   []mediaTransform
-	request encodeRequest
+	name        string
+	branch      branchComposeBranch
+	sharedSteps []mediaTransform
+	steps       []mediaTransform
+	request     encodeRequest
 }
 
 type mediaTransform struct {
@@ -46,6 +47,11 @@ type branchComposeSelectorGroup struct {
 type branchComposeStreamGroup struct {
 	selector av.StreamSelector
 	stream   av.Stream
+	branches []int
+}
+
+type branchComposeSharedStepGroup struct {
+	steps    []mediaTransform
 	branches []int
 }
 
@@ -178,8 +184,25 @@ func planBranchComposeRoutes(
 			Policy: pipeline.RouteAll,
 		})
 		groupNodeOrder = append(groupNodeOrder, selectRef, decodeRef)
-		for _, branchIndex := range groups[i].branches {
-			branchInputs[branchIndex] = decodeRef
+		for _, prefix := range branchComposeSharedStepGroups(groups[i].branches, branches) {
+			branchRef := decodeRef
+			for j := range prefix.steps {
+				stepRef := pipeline.NodeRef(prefix.steps[j].name)
+				if err := addPlannedNode(nodes, &spec, prefix.steps[j].name, pipeline.NodeStage, stepRef, mediaTransformDetail(prefix.steps[j])); err != nil {
+					return pipeline.Spec{}, err
+				}
+				outgoingEdge := pipeline.EdgeSpec{
+					From:   branchRef,
+					To:     stepRef,
+					Policy: pipeline.RouteAll,
+				}
+				groupEdges[branchRef] = append(groupEdges[branchRef], outgoingEdge)
+				branchRef = stepRef
+				groupNodeOrder = append(groupNodeOrder, stepRef)
+			}
+			for _, branchIndex := range prefix.branches {
+				branchInputs[branchIndex] = branchRef
+			}
 		}
 	}
 
@@ -404,11 +427,42 @@ func compileBranchComposeRoutes(
 	realtime bool,
 ) error {
 	service := &builder{runtime: runtime}
+	branchRefs := append([]pipeline.NodeRef(nil), branchInputs...)
+	branchInputStreams := append([]av.Stream(nil), branchStreams...)
+	for _, prefix := range branchComposeRuntimeSharedStepGroups(branches, branchInputs, branchStreams) {
+		if len(prefix.branches) == 0 {
+			continue
+		}
+		firstBranch := prefix.branches[0]
+		branchRef := branchInputs[firstBranch]
+		branchStream := branchStreams[firstBranch]
+		for j := range prefix.steps {
+			stage, outputStream, err := service.newBranchComposeStepStage(ctx, prefix.steps[j], branchStream, realtime)
+			if err != nil {
+				return err
+			}
+			stageRef, err := graph.AddStage(stage, runtime.buffer)
+			if err != nil {
+				stage.Close()
+				return err
+			}
+			if err := connectRefs(graph, branchRef, stageRef); err != nil {
+				return err
+			}
+			branchRef = stageRef
+			branchStream = outputStream
+		}
+		for _, branchIndex := range prefix.branches {
+			branchRefs[branchIndex] = branchRef
+			branchInputStreams[branchIndex] = branchStream
+		}
+	}
+
 	branchOutputRefs := make([]pipeline.NodeRef, len(branches))
 	branchOutputStreams := make([]av.Stream, len(branches))
 	for i := range branches {
-		branchRef := branchInputs[i]
-		branchStream := branchStreams[i]
+		branchRef := branchRefs[i]
+		branchStream := branchInputStreams[i]
 		for j := range branches[i].steps {
 			stage, outputStream, err := service.newBranchComposeStepStage(ctx, branches[i].steps[j], branchStream, realtime)
 			if err != nil {
@@ -621,6 +675,10 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 			return nil, branchComposeDuplicateBranchError(name, i)
 		}
 		names[name] = struct{}{}
+		sharedSteps, err := branchComposeSharedRouteSteps(branch)
+		if err != nil {
+			return nil, err
+		}
 		steps, err := branchComposeRouteSteps(name, branch)
 		if err != nil {
 			return nil, err
@@ -637,9 +695,10 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 			config.Stream.Metadata = branch.Metadata
 		}
 		branches[i] = branchComposeRoute{
-			name:   name,
-			branch: branch,
-			steps:  steps,
+			name:        name,
+			branch:      branch,
+			sharedSteps: sharedSteps,
+			steps:       steps,
 			request: encodeRequest{
 				name:     name,
 				selector: branch.Selector,
@@ -648,6 +707,13 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 		}
 	}
 	return branches, nil
+}
+
+func branchComposeSharedRouteSteps(branch branchComposeBranch) ([]mediaTransform, error) {
+	if len(branch.SharedSteps) == 0 {
+		return nil, nil
+	}
+	return branchComposeRouteStepsForName(branchComposeSharedStepName(branch), branch.SharedSteps)
 }
 
 func branchComposeRouteNeedsEncode(branch branchComposeRoute) bool {
@@ -675,19 +741,23 @@ func branchComposeRouteSteps(name string, branch branchComposeBranch) ([]mediaTr
 	if len(branch.Steps) == 0 {
 		return branchComposeStepsFromLegacyFields(name, branch)
 	}
-	steps := make([]mediaTransform, 0, len(branch.Steps))
+	return branchComposeRouteStepsForName(name, branch.Steps)
+}
+
+func branchComposeRouteStepsForName(name string, steps []branchComposeStep) ([]mediaTransform, error) {
+	out := make([]mediaTransform, 0, len(steps))
 	transformIndex := 0
-	for i := range branch.Steps {
-		step, err := branchComposeRouteStep(name, transformIndex, branch.Steps[i])
+	for i := range steps {
+		step, err := branchComposeRouteStep(name, transformIndex, steps[i])
 		if err != nil {
 			return nil, err
 		}
-		if branch.Steps[i].Stage == nil {
+		if steps[i].Stage == nil {
 			transformIndex++
 		}
-		steps = append(steps, step)
+		out = append(out, step)
 	}
-	return steps, nil
+	return out, nil
 }
 
 func branchComposeStepsFromLegacyFields(name string, branch branchComposeBranch) ([]mediaTransform, error) {
@@ -769,9 +839,80 @@ func branchComposeStepError(name string, reason string) error {
 func branchComposeStepCount(branches []branchComposeRoute) int {
 	count := 0
 	for i := range branches {
-		count += len(branches[i].steps)
+		count += len(branches[i].sharedSteps) + len(branches[i].steps)
 	}
 	return count
+}
+
+func branchComposeSharedStepName(branch branchComposeBranch) string {
+	return firstNonEmpty(string(branch.Selector.Type), string(branch.Selector.ID), branch.Selector.Name, "stream")
+}
+
+func branchComposeSharedStepGroups(indices []int, branches []branchComposeRoute) []branchComposeSharedStepGroup {
+	groups := make([]branchComposeSharedStepGroup, 0, len(indices))
+	positions := make(map[string]int, len(indices))
+	for _, index := range indices {
+		key := mediaTransformsKey(branches[index].sharedSteps)
+		position, ok := positions[key]
+		if !ok {
+			position = len(groups)
+			positions[key] = position
+			groups = append(groups, branchComposeSharedStepGroup{
+				steps: append([]mediaTransform(nil), branches[index].sharedSteps...),
+			})
+		}
+		groups[position].branches = append(groups[position].branches, index)
+	}
+	return groups
+}
+
+func branchComposeRuntimeSharedStepGroups(branches []branchComposeRoute, inputs []pipeline.NodeRef, streams []av.Stream) []branchComposeSharedStepGroup {
+	groups := make([]branchComposeSharedStepGroup, 0, len(branches))
+	positions := make(map[string]int, len(branches))
+	for i := range branches {
+		key := strings.Join([]string{
+			string(inputs[i]),
+			string(streams[i].ID),
+			string(streams[i].Type),
+			string(streams[i].Codec.ID),
+			mediaTransformsKey(branches[i].sharedSteps),
+		}, "\x00")
+		position, ok := positions[key]
+		if !ok {
+			position = len(groups)
+			positions[key] = position
+			groups = append(groups, branchComposeSharedStepGroup{
+				steps: append([]mediaTransform(nil), branches[i].sharedSteps...),
+			})
+		}
+		groups[position].branches = append(groups[position].branches, i)
+	}
+	return groups
+}
+
+func mediaTransformsKey(steps []mediaTransform) string {
+	if len(steps) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(steps))
+	for i := range steps {
+		keys = append(keys, mediaTransformKey(steps[i]))
+	}
+	return strings.Join(keys, "\x01")
+}
+
+func mediaTransformKey(step mediaTransform) string {
+	parts := []string{step.name, step.factory}
+	if step.stage != nil {
+		parts = append(parts, "stage", step.stage.Name())
+	}
+	if step.video != nil {
+		parts = append(parts, "resize", strconv.Itoa(step.video.Width), strconv.Itoa(step.video.Height), string(step.video.Mode), step.video.PixelFormat)
+	}
+	if step.audio != nil {
+		parts = append(parts, "resample", strconv.Itoa(step.audio.SampleRate), strconv.Itoa(step.audio.Channels), step.audio.ChannelLayout, step.audio.SampleFormat)
+	}
+	return strings.Join(parts, "\x02")
 }
 
 func applyMediaTransformToStream(stream av.Stream, transform mediaTransform) (av.Stream, error) {
