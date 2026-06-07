@@ -73,9 +73,9 @@ func (p mediaPlanStreamGraph) runtimeRef() *runtime {
 	return p.runtime
 }
 
-func (p mediaPlanStreamGraph) lower(ctx context.Context, _ graphPlan, graph pipeline.Graph, service *builder) error {
+func (p mediaPlanStreamGraph) lower(ctx context.Context, plan graphPlan, graph pipeline.Graph, service *builder) error {
 	if p.copyPackets {
-		return p.compilePacketCopy(ctx, graph, service)
+		return p.lowerPacketCopy(ctx, plan, graph, service)
 	}
 	if p.hasSingleSinkDestination() {
 		return p.compileSinkDestination(ctx, graph)
@@ -248,30 +248,25 @@ func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, _ graphPlan, gra
 	return compileBranchComposeRoutes(ctx, service, graph, p.branches, p.targets, branchInputs, branchStreams, sources.realtime)
 }
 
-func (p mediaPlanStreamGraph) compilePacketCopy(ctx context.Context, graph pipeline.Graph, service *builder) error {
+func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, plan graphPlan, graph pipeline.Graph, service *builder) error {
+	selectOperation, hasSelect, targets, err := p.preparePacketCopyOperationLowering(plan)
+	if err != nil {
+		return err
+	}
 	sourceRefs, streams, _, _, err := p.compileSources(ctx, graph)
 	if err != nil {
 		return err
 	}
-	return p.compilePacketCopyTargets(ctx, graph, service, sourceRefs, streams)
-}
-
-func (p mediaPlanStreamGraph) compilePacketCopyTargets(
-	ctx context.Context,
-	graph pipeline.Graph,
-	service *builder,
-	sourceRefs []pipeline.NodeRef,
-	streams []av.Stream,
-) error {
 	targetRefs := sourceRefs
 	targetStreams := streams
-	if p.selectedStream {
+	if hasSelect {
 		selector := streamIntentSelector(p.stream)
 		selected, err := selectDecodeStream(streams, selector)
 		if err != nil {
 			return err
 		}
-		selectStage := newStreamSelectStage(selectNodeName(selector), selected, selector, selectNodeDetail(selector))
+		selectName := firstNonEmpty(selectOperation.Node.String(), selectNodeName(selector))
+		selectStage := newStreamSelectStage(selectName, selected, selector, selectNodeDetail(selector))
 		selectRef, err := graph.AddStage(selectStage, p.runtime.buffer)
 		if err != nil {
 			selectStage.Close()
@@ -285,8 +280,67 @@ func (p mediaPlanStreamGraph) compilePacketCopyTargets(
 		targetRefs = []pipeline.NodeRef{selectRef}
 		targetStreams = []av.Stream{selected}
 	}
-	for i := range p.outputs {
-		output := p.outputs[i]
+	return p.lowerPacketCopyTargets(ctx, graph, service, targets, targetRefs, targetStreams)
+}
+
+func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(plan graphPlan) (graphPlanOperation, bool, []graphPlanTargetOperation, error) {
+	selectOperation, hasSelect := graphPlanFirstOperation(plan.operations, OpSelect)
+	switch {
+	case p.selectedStream && !hasSelect:
+		return graphPlanOperation{}, false, nil, graphPlanInvalidError("selected packet-copy graph plan has no select operation", []string{
+			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+		})
+	case !p.selectedStream && hasSelect:
+		return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy graph plan has an unexpected select operation", []string{
+			"node=" + selectOperation.Node.String(),
+		})
+	}
+	targets := graphPlanTargetOperations(plan.operations)
+	if len(targets) == 0 {
+		return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy graph plan has no target operations", nil)
+	}
+	for i := range targets {
+		target := targets[i]
+		outputIndex, ok := graphPlanOutputIndex(plan.outputs, target.Name)
+		if !ok || outputIndex < 0 || outputIndex >= len(p.outputs) {
+			return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy target operation is not bound to an output", []string{
+				"target=" + target.Name,
+				"node=" + target.Node.String(),
+			})
+		}
+		target.OutputIndex = outputIndex
+		targets[i] = target
+		output := p.outputs[outputIndex]
+		if output.sink != nil {
+			if target.Kind != OpSink {
+				return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy target operation kind does not match sink destination", []string{
+					"target=" + target.Name,
+					"kind=" + string(target.Kind),
+				})
+			}
+			continue
+		}
+		if target.Kind != OpMux && target.Kind != OpWrite {
+			return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy target operation kind does not match byte destination", []string{
+				"target=" + target.Name,
+				"kind=" + string(target.Kind),
+			})
+		}
+	}
+	return selectOperation, hasSelect, targets, nil
+}
+
+func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
+	ctx context.Context,
+	graph pipeline.Graph,
+	service *builder,
+	targets []graphPlanTargetOperation,
+	targetRefs []pipeline.NodeRef,
+	streams []av.Stream,
+) error {
+	for i := range targets {
+		target := targets[i]
+		output := p.outputs[target.OutputIndex]
 		if output.sink != nil {
 			sinkRef, err := graph.AddSink(output.sink, p.runtime.buffer)
 			if err != nil {
@@ -299,7 +353,7 @@ func (p mediaPlanStreamGraph) compilePacketCopyTargets(
 			}
 			continue
 		}
-		stage, err := service.openMuxDestinationStage(ctx, output, i, targetStreams, destinationOpenFormat(output), destinationGraphFormat(output))
+		stage, err := service.openMuxDestinationStage(ctx, output, target.OutputIndex, streams, destinationOpenFormat(output), destinationGraphFormat(output))
 		if err != nil {
 			return err
 		}
@@ -315,6 +369,57 @@ func (p mediaPlanStreamGraph) compilePacketCopyTargets(
 		}
 	}
 	return nil
+}
+
+func graphPlanFirstOperation(operations []graphPlanOperation, kind OperationKind) (graphPlanOperation, bool) {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return operations[i], true
+		}
+	}
+	return graphPlanOperation{}, false
+}
+
+type graphPlanTargetOperation struct {
+	Name        string
+	Node        pipeline.NodeRef
+	Kind        OperationKind
+	OutputIndex int
+}
+
+func graphPlanTargetOperations(operations []graphPlanOperation) []graphPlanTargetOperation {
+	targets := make([]graphPlanTargetOperation, 0)
+	seen := make(map[string]struct{})
+	for i := range operations {
+		operation := operations[i]
+		if !graphPlanOperationTargetsRequired(operation.Kind) {
+			continue
+		}
+		for _, target := range operation.Targets {
+			if target == "" {
+				continue
+			}
+			if _, ok := seen[target]; ok {
+				continue
+			}
+			seen[target] = struct{}{}
+			targets = append(targets, graphPlanTargetOperation{
+				Name: target,
+				Node: operation.Node,
+				Kind: operation.Kind,
+			})
+		}
+	}
+	return targets
+}
+
+func graphPlanOutputIndex(outputs []planOutput, target string) (int, bool) {
+	for i := range outputs {
+		if outputs[i].Name == target {
+			return i, true
+		}
+	}
+	return -1, false
 }
 
 func (p mediaPlanStreamGraph) sinkDestinationSpec() (pipeline.Spec, error) {
