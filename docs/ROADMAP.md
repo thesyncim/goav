@@ -12,11 +12,11 @@ GoAV should not become a GStreamer clone. The remaining work is the Go-native
 work-planning layer: stable destinations, one ordered operation model, formal
 media shapes, branch-local buffering, branch-based observation from typed taps,
 task/branch/destination lifecycle, custom sources, and one planner for build and
-runtime attach. Public vocabulary stays `Input`, `Chain`, `Tap`, `Branch`,
-`Destination`, `Flow`, and `Task`.
+runtime attach. Public vocabulary stays `Input`, `Stream`, `Operation`, `Tap`,
+`Branch`, `Destination`, `Flow`, and `Task`.
 
 1. Make the declarative grammar the only normal composer:
-   `input -> chain -> tap -> branch -> destination` lowers into
+   `input -> stream -> operations -> tap -> branch -> destination` lowers into
    `WorkPlan -> pipeline.Graph -> Task`. Runtime attach lowers the same branch
    model into `WorkPatch`. The planner owns operations, taps, branches,
    destinations, edges, decisions, diagnostics, and lifecycle metadata; the
@@ -29,14 +29,14 @@ runtime attach. Public vocabulary stays `Input`, `Chain`, `Tap`, `Branch`,
    providers, not by making external values own routing identity. Normal docs
    and examples must not use `Target(...)`, labels, output refs, or
    `.To("label")`.
-3. Treat direct chains as implicit branches. These should be equivalent plan
+3. Treat direct streams as implicit branches. These should be equivalent plan
    shapes except for branch names:
    `From(input).Audio().Decode().To(Sink(...))` and
    `From(input).Audio().Branches(Branch("main").Decode().To(Sink(...)))`.
    Copy-to-file, decode-to-sink, encode-to-destination, branch composition, and
    mixed audio/video destinations must stop being special workflow graph modes
    and become branch plans over ordered operations.
-4. Replace parallel chain/branch fields with one operation list. Direct chains,
+4. Replace parallel stream/branch fields with one operation list. Direct streams,
    planned branches, runtime attached branches, and flows all carry the same
    ordered operation specs and share validation, shape inference, component
    building, and explanation.
@@ -62,14 +62,14 @@ runtime attach. Public vocabulary stays `Input`, `Chain`, `Tap`, `Branch`,
    sinks, writers, and object destinations today.
 10. Keep custom composition orthogonal: application-local codecs use
    `goav.Codec`, `WithDecoder`, and `WithEncoder`; custom stages, filters,
-   sinks, destinations, and sources use the same chain/branch concepts as
+   sinks, destinations, and sources use the same stream/branch concepts as
    built-ins instead of workflow-specific helpers.
 11. Keep first-page examples executable with `goav.Default()`, or keep examples
    that require unavailable containers in clearly labeled adapter sections.
 12. Treat adapter coverage as product surface after the planner can absorb it.
    WebM and Ogg remain the next high-value containers because they unlock
    expected RTP/WebRTC record and muxed audio/video examples.
-13. Keep flows boring: reusable operation sequences over chains, not a second
+13. Keep flows boring: reusable operation sequences over streams, not a second
    graph DSL and not a destination/branch/routing concept.
 14. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
@@ -86,7 +86,7 @@ runtime attach. Public vocabulary stays `Input`, `Chain`, `Tap`, `Branch`,
     not use `Record`, `Transcode`, `Decode(input, ...)`, `Path`, `Output`,
     `Outputs`, `Target`, `.To("label")`, `Runtime.Graph`, graph handles, or
     normal-code imports of `pipeline`, `codec`, `filter`, `format`, or `rtpav`.
-    Direct chains and explicit `Branch("main")` forms should describe equivalent
+    Direct streams and explicit `Branch("main")` forms should describe equivalent
     planned work.
 18. Prepare v0.1 only after README examples compile/run or clearly name their
     adapter requirements, default and tagged tests pass, core stays cgo-free,
@@ -186,7 +186,7 @@ runtime attach. Public vocabulary stays `Input`, `Chain`, `Tap`, `Branch`,
   branches, and transcode recipes. `Explain(ctx)`, media-plan `Describe`, and
   resolved-attachment `Build` slices are active for record, direct streams, and
   branch composition; deeper direct graph construction remains planned.
-- Reusable `Flow(name).Audio()/Video()` values that apply to chains,
+- Reusable `Flow(name).Audio()/Video()` values that apply to streams,
   branches, and runtime attachments. Build-time file/protocol and RTP/WebRTC
   branch slices are active; runtime stage/sink attachments are active for direct
   task graphs and bounded buffered task graphs, with packet-copy late recording

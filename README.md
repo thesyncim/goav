@@ -13,11 +13,12 @@ from the same few concepts.
 ## Vocabulary
 
 - `Input`: where media comes from.
-- `Chain`: selected media plus operations such as decode, resize, resample,
-  custom stages, encode, or copy.
+- `Stream`: which media stream is selected.
+- `Operation`: decode, resize, resample, custom stage, encode, or copy.
 - `Tap`: a typed attach point created with `FrameTap` or `PacketTap`.
-- `Branch`: a downstream chain from a chain point or tap.
+- `Branch`: downstream operations from a stream point or tap.
 - `Destination`: a file, URI, writer, object upload, media sink, or shared mux/sink group.
+- `Flow`: a reusable operation sequence.
 - `Task`: a running graph with attach/detach, events, stats, and taps.
 
 ## 30-Second Examples
@@ -60,7 +61,7 @@ return goav.From(goav.WebRTCTrack(track)).
 `.Encode(goav.Opus(...))`, `.Encode(goav.VP8(...))`, or
 `.Encode(goav.VP9(...))`. Packet streams can
 fan out to file destinations and packet sinks from the same encoded or copied
-chain.
+stream point.
 
 Resize and encode one video stream:
 
@@ -115,7 +116,7 @@ return goav.From(input).
     Run(ctx)
 ```
 
-Omit `From(...)` when every branch starts from the current chain point. Use a
+Omit `From(...)` when every branch starts from the current stream point. Use a
 typed tap when one branch should start from an earlier point while another
 continues from a later operation:
 
@@ -172,7 +173,7 @@ return goav.From(goav.FileInput("source.webm", in)).
 ```
 
 Branches do not have to encode when the destination is a sink. This is the
-same operation chain, just ending in frame domain:
+same operation sequence, just ending in frame domain:
 
 ```go
 thumbnail := goav.Sink(goav.SinkFunc("thumbnail", saveFrame))
@@ -217,7 +218,7 @@ work in progress.
 
 ### Reuse
 
-When chain operations repeat, extract a reusable flow. A flow owns only
+When operations repeat, extract a reusable flow. A flow owns only
 operations. A branch owns the destination.
 
 ```go
@@ -251,8 +252,8 @@ return goav.From(goav.WebRTCTrack(audio)).
     Run(ctx)
 ```
 
-Use a direct chain when one reusable flow feeds one destination. Branch when the
-same media point needs several downstream chains:
+Use a direct stream when one reusable flow feeds one destination. Branch when the
+same media point needs several downstream operation sequences:
 
 ```go
 return goav.From(goav.WebRTCTrack(audio)).
@@ -675,7 +676,8 @@ consume matching decoded media. File, URI, writer, and object destinations consu
 packet-domain media; use `goav.Sink(...)` when a branch should end as frames.
 
 Adapters decide which concrete config and control types they understand; the
-public grammar stays Input, Chain, Tap, Branch, Destination, and Task.
+public grammar stays Input, Stream, Operation, Tap, Branch, Destination, Flow,
+and Task.
 The reusable component catalog and allocation proof map live in
 [`docs/COMPONENTS.md`](docs/COMPONENTS.md).
 
@@ -693,7 +695,7 @@ Implemented now:
   sinks.
 - Planned packet-copy branches with `.Copy().Branches(...)`, sharing one stream
   selector without creating decoders.
-- Typed `Tap`, `Branch`, `Destination`, and reusable chain composition.
+- Typed `Tap`, `Branch`, `Destination`, and reusable operation composition.
 - Runtime branch attachment from typed taps with reusable flows, custom stages,
   resize/resample from frame taps, late Opus/VP8/VP9 encode destinations,
   packet-copy destinations, nested runtime taps, `Attachment.Close(ctx)`, and

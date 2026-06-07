@@ -1845,7 +1845,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"goav.Param(",
 		"goav.Control(",
 		"Opus, VP8, and VP9 are the full encode/decode recipe verticals",
-		"public grammar stays Input, Chain, Tap, Branch, Destination, and Task",
+		"public grammar stays Input, Stream, Operation, Tap, Branch, Destination, Flow,",
 		"workflows should be expressible through declarative recipes",
 	} {
 		if !strings.Contains(readmeText, required) {
@@ -1877,7 +1877,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	}
 	roadmapText := string(roadmap)
 	for _, required := range []string{
-		"`input -> chain -> tap -> branch -> destination` lowers into",
+		"`input -> stream -> operations -> tap -> branch -> destination` lowers into",
 		"`WorkPlan -> pipeline.Graph -> Task`",
 		"Make runtime attachment a patch of the same plan model",
 		"`WorkPatch`",
@@ -1894,13 +1894,13 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	}
 	progressText := string(progress)
 	for _, required := range []string{
-		"normal workflows lower from `input -> chain -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`",
+		"normal workflows lower from `input -> stream -> operations -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`",
 		"runtime attach lowers the same branch model into `WorkPatch`",
-		"direct chains are syntax sugar for an implicit `Branch(\"main\")`",
+		"direct streams are syntax sugar for an implicit `Branch(\"main\")`",
 		"`Destination` is",
 		"the routing handle: reusing the same `Destination` value",
 		"DestinationProvider` is the extension point",
-		"Direct `.To(...)` chains are only ergonomic syntax",
+		"Direct `.To(...)` streams are only ergonomic syntax",
 		"`branchComposePlan`, `runtimeBranch`, `destinationNames`",
 		"normal composition does not import `goav/transcode`",
 	} {
@@ -1958,13 +1958,13 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		}
 	}
 	for _, required := range []string{
-		"Recipes: From, chains, taps, branches, destinations",
-		"Intent graph: inputs, selected media, chain operations, destinations, policies",
+		"Recipes: From, stream selection, operations, taps, branches, destinations",
+		"Intent graph: inputs, selected streams, ordered operations, destinations, policies",
 		"work-plan lowerers",
-		"Chain transforms such as",
-		"Simple high-level API | `From`, chains",
-		"surface is small: `From`, chains",
-		"`Branch`, `Destination`, and `Chain` composition",
+		"Operation transforms such as",
+		"Simple high-level API | `From`, stream selection, ordered operations",
+		"surface is small: `From`, stream selection, ordered operations",
+		"`Branch`, `Destination`, and operation composition",
 		"direct `File`/`URIOut`/`Sink` destinations",
 		"custom `Writer` destinations with `DestinationInfo`",
 		"stable destination handles for shared mux/sink groups",
@@ -2028,8 +2028,8 @@ func TestDocsExplainFlowVersusBranchRule(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := strings.Join(strings.Fields(string(body)), " ")
-		if !strings.Contains(text, "Use a direct chain when one reusable flow feeds one destination") ||
-			!strings.Contains(text, "media point needs several downstream chains") {
+		if !strings.Contains(text, "Use a direct stream when one reusable flow feeds one destination") ||
+			!strings.Contains(text, "media point needs several downstream operation sequences") {
 			t.Fatalf("%s should explain when to use a direct flow chain versus branches", file)
 		}
 	}

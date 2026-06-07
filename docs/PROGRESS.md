@@ -49,8 +49,9 @@ The public grammar is:
 From(input) -> Chain -> operations -> Tap -> Branch -> Destination -> Task
 ```
 
-The public nouns are `Input`, `Chain`, `Tap`, `Branch`, `Destination`, `Flow`,
-and `Task`. Remove or demote beginner-facing `Target`, `Record`, `Transcode`,
+The public nouns are `Input`, `Stream`, `Operation`, `Tap`, `Branch`,
+`Destination`, `Flow`, and `Task`. Remove or demote beginner-facing `Target`,
+`Record`, `Transcode`,
 decode helpers, `Path`, `Output`/`Outputs`, `To("label")`, `Flow.To(...)`,
 compatibility shims, and graph handles as the normal composer. `Destination` is
 the routing handle: reusing the same `Destination` value groups branches into
@@ -60,8 +61,8 @@ reliable.
 
 The implementation target is explicit:
 
-- direct chains are syntax sugar for an implicit `Branch("main")`;
-- direct chains, planned branches, runtime attached branches, and flows all use
+- direct streams are syntax sugar for an implicit `Branch("main")`;
+- direct streams, planned branches, runtime attached branches, and flows all use
   one ordered `OperationSpec` list;
 - every fluent operation appends exactly one operation: decode, copy, shape,
   transform, stage, encode, or tap;
@@ -100,7 +101,7 @@ are:
 - `DestinationProvider` is the extension point for custom byte/object/sink
   behavior. `Destination` itself is the goav-owned handle and is not a public
   graph node, route label, or adapter registry key.
-- Direct `.To(...)` chains are only ergonomic syntax. Internally they lower to
+- Direct `.To(...)` streams are only ergonomic syntax. Internally they lower to
   the same branch model as `Branches(Branch("main").To(...))`.
 - `BranchSpec`, chain state, runtime attached branches, and `FlowSpec` converge
   on one ordered operation list. Parallel fields such as `decode`, `steps`,
@@ -1602,9 +1603,9 @@ are:
     stream/flow tap declarations reject frame-vs-packet mismatches at build
     time. `Sink(...)` is the preferred sink destination spelling, and
     `Flow(name).Audio()` / `Flow(name).Video()` are the canonical reusable-chain
-    constructors. The README first page now teaches Input, Chain, Tap, Branch,
-    Target, and Task, and its preferred examples use typed taps, `Sink`, and
-    canonical `Flow`. `TestRuntimeBranchTapAnchorIsPublicAPI`,
+    constructors. The README first page now teaches Input, Stream, Operation,
+    Tap, Branch, Destination, Flow, and Task, and its preferred examples use
+    typed taps, `Sink`, and canonical `Flow`. `TestRuntimeBranchTapAnchorIsPublicAPI`,
     `TestTypedTapRefsDriveStreamIntent`, `TestTypedTapDomainMismatchIsActionable`,
     and `TestReadmeUsesBranchTargetVocabulary` pin the public grammar.
     Done.
@@ -1800,8 +1801,9 @@ are:
     `Explain(ctx)` before opening the graph, drain `Task.Events()` while the
     graph runs, attach a live diagnostic branch from a typed tap with
     `Task.Attach`, and sample both `Attachment.Stats()` and whole-task
-    `Task.Stats()`. This keeps diagnostics on the same Input, Chain, Tap,
-    Branch, Target, Task grammar instead of adding a separate debug API.
+    `Task.Stats()`. This keeps diagnostics on the same Input, Stream,
+    Operation, Tap, Branch, Destination, Flow, and Task grammar instead of
+    adding a separate debug API.
     Done.
 337. Carry codec-specific configs and controls through recipe codecs:
     `CodecSpec` now carries one typed `Config`, named `Param` values, and typed
@@ -1818,10 +1820,10 @@ are:
     messages, result structs, buffers, and adapter scratch. The expert graph
     builder remains available for adapter work and advanced embedding, while
     normal workflows should be expressible through the declarative Input,
-    Chain, Tap, Branch, Target, and Task grammar.
+    Stream, Operation, Tap, Branch, Destination, Flow, and Task grammar.
     Done.
 339. Set the next planner target to one executable graph plan:
-    Direct chains become implicit branches, normal recipes lower toward
+    Direct streams become implicit branches, normal recipes lower toward
     `GraphPlan -> pipeline.Graph -> Task`, and runtime attach lowers toward
     `GraphPatch` from typed taps. This makes copy, decode-to-sink,
     encode-to-target, branch composition, mixed target groups, and late
@@ -2157,7 +2159,7 @@ are:
     routing identity. Diagnostics that previously suggested `Target(...)` now
     point at `File`, `URIOut`, `Sink`, `Custom`, or `.To(output)`.
     Done.
-377. Start converging direct chains, branches, and flows on one ordered
+377. Start converging direct streams, branches, and flows on one ordered
     operation list:
     `chainSpec`, `BranchSpec`, direct stream builds, and branch stream builds
     now carry `[]OperationSpec` as the migration base for the one-operation
@@ -2413,13 +2415,13 @@ Required proof:
 | Gate | Evidence | State |
 | --- | --- | --- |
 | Clear minimal architecture | `README.md`, `docs/ARCHITECTURE.md`, package boundaries | active |
-| Simple high-level API | `From`, chains, typed taps, branches, destinations, flows, runtime attach, structured `Explain(ctx)`, executable work-plan boundary, and custom codec hooks | first slices active |
+| Simple high-level API | `From`, stream selection, ordered operations, typed taps, branches, destinations, flows, runtime attach, structured `Explain(ctx)`, executable work-plan boundary, and custom codec hooks | first slices active |
 | Explicit low-level API | `pipeline`, `codec`, `format`, `rtpav`, `webrtcav` contracts for advanced embedding and adapter work, not the normal composer | active |
 | Full Opus/VP8/VP9 codec verticals | Opus, VP8, and VP9 are the first full encode/decode recipe targets; H264 and AV1 stay receive/decode-first until encode is equally solid | active |
 | Formal media shapes | `MediaShape`/shape-contract planning owns structural media attributes; operation and flow contracts now expose inferred input/output shape, and ordered job/branch operation validation is active, with destination validation next | active |
 | Branch flow control | branch-local `BranchBuffer` policy is public branch API; drop accounting, branch stats, and safe packet/frame ownership remain active work | active |
 | Observation/control | `Branch + Do + Sink`, `Events`, `Snapshot`, branch snapshots, destination snapshots, and scoped stats expose diagnostics without graph handles | first snapshot slice active |
-| One grammar, one engine | normal workflows lower from `input -> chain -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`; runtime attach lowers the same branch model into `WorkPatch` | planned |
+| One grammar, one engine | normal workflows lower from `input -> stream -> operations -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`; runtime attach lowers the same branch model into `WorkPatch` | planned |
 | Custom sources | custom frame/packet/event sources mirror custom stages, sinks, writers, and object destinations | planned |
 | Allocation guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters | active for implemented paths |
 | Adapter boundaries | `adapters/ivf`, `adapters/annexb`, `adapters/gopus`, `adapters/govpx`, `adapters/goav1`, `adapters/goh264` | active |
@@ -2434,11 +2436,11 @@ Required proof:
    destination handle groups branches; different destinations with the same name
    but incompatible providers/config fail during planning. README and normal API
    examples must stop using `Target(...)` or `.To("label")`.
-2. Replace parallel branch/chain fields with one ordered operation list.
+2. Replace parallel stream/branch fields with one ordered operation list.
    `Decode`, `Copy`, `Shape`, `Resize`, `Resample`, `Do`, `Encode`, codec
-   helpers, and `Tap` all append `OperationSpec` entries. Direct chains,
+   helpers, and `Tap` all append `OperationSpec` entries. Direct streams,
    planned branches, runtime attach, and flows share validation and lowering.
-3. Treat direct chains as implicit branches. Copy-to-file, decode-to-sink,
+3. Treat direct streams as implicit branches. Copy-to-file, decode-to-sink,
    encode-to-destination, branch composition, and mixed audio/video shared
    destinations become branch plans over ordered operations, not workflow modes.
 4. Build one planner for build and attach. Initial jobs emit `WorkPlan`; runtime
@@ -2486,7 +2488,7 @@ Required proof:
     component builder.
 
 Current pressure point: collapse typed target routing into stable `Destination`
-handles, then normalize direct chains and branches onto one ordered operation
+handles, then normalize direct streams and branches onto one ordered operation
 list so shape validation, destination compatibility, runtime attach, and branch
 buffers move into the single `WorkPlan`/`WorkPatch` planner.
 Packet-copy, direct frame-stream, and grouped branch-compose builds now consume
@@ -2502,7 +2504,8 @@ for the broader branch/patch planner shape, but its lowerer now validates
 planned copy operations, consistent duplicate destination operations, and target
 branch bindings before source opening, then routes targets by planned branch
 matches with source-owned stream groups. The intended public recipe surface is
-small: `From`, chains, `Tap`, `Branch`, `Branches`, `File`, `URIOut`, `Writer`,
+small: `From`, stream selection, ordered operations, `Tap`, `Branch`,
+`Branches`, `File`, `URIOut`, `Writer`,
 `Object`, `Sink`, `Flow`, `Codec`, and runtime `Attach`; `Destination` is the
 stable routing handle and externally implementable extension surface for custom
 byte writers, object uploads, URI-backed outputs, sink groups, and shared mux
@@ -2551,7 +2554,7 @@ live debug branch, and scoped `Attachment.Stats()` beside whole-task
 Recipe compilation no longer opens a builder as a validation side channel; the
 normal path validates runtime support, emits a graph plan, and builds from that
 graph plan. The next shape is stricter: every normal expression lowers to
-`GraphPlan`, and every late branch lowers to the runtime graph-patch boundary. Direct chains are
+`GraphPlan`, and every late branch lowers to the runtime graph-patch boundary. Direct streams are
 implicit branches, runtime attach is downstream patch application from typed
 taps, planned and runtime branches must share shape/destination/buffer/lifecycle
 validation, and no normal composition path should dispatch by copy/sink/encode/
@@ -2586,7 +2589,8 @@ descriptor-backed destination/container capability data as WebM/Ogg arrive, and
 keep broadening runtime attachment stress around generic lifecycle boundaries
 without weakening the direct branch grammar.
 The latest direction sharpens the active goal further: normal composition must
-use only `Input`, `Chain`, `Tap`, `Branch`, `Destination`, `Flow`, and `Task`;
+use only `Input`, `Stream`, `Operation`, `Tap`, `Branch`, `Destination`,
+`Flow`, and `Task`;
 `Branch` is the real unit of work; `Destination` is the routing handle; `Flow`
 is only reusable operations; runtime inspection is attached branch work; and
 `WorkPlan`/`WorkPatch` are the executable boundaries for build and attach.

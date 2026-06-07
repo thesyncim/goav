@@ -17,9 +17,9 @@ and keyframe recovery are represented as events instead of hidden side effects.
 ```text
 Application
   |
-Recipes: From, chains, taps, branches, destinations
+Recipes: From, stream selection, operations, taps, branches, destinations
   |
-Intent graph: inputs, selected media, chain operations, destinations, policies
+Intent graph: inputs, selected streams, ordered operations, destinations, policies
   |
 MediaPlan planner passes
   |
@@ -35,9 +35,10 @@ registries, with small adapter registration hooks for optional codec,
 container, and filter integrations. `goav.Default()` registers the standard
 in-repo adapters for the beginner path, while `goav.New(...)` keeps minimal and
 embedded runtimes explicit. `From(input)` is the beginner-facing front door. The
-surface is small: `From`, chains, taps, branches, destinations, flows, and tasks.
-`Branch`, `Destination`, and `Chain` composition is the normal user-facing model.
-produces a small intent model for packet copy, stream decode, transform, encode,
+surface is small: `From`, stream selection, ordered operations, taps, branches,
+destinations, flows, and tasks. `Branch`, `Destination`, and operation composition
+is the normal user-facing model. Recipes produce a small intent
+model for packet copy, stream decode, transform, encode,
 declared branch composition, and runtime tap naming. The target architecture is
 one media work planner that validates, probes, resolves streams, resolves
 formats/codecs, chooses
@@ -147,7 +148,7 @@ and the same
 `pipeline.Spec`; optional diagram or prose rendering lives outside runtime
 composition. Branch operation reports mark shared upstream work, so the planner
 can explain when branches reuse decode, transform, stage, or tap boundaries
-before diverging into private downstream chains. A route carries all media by
+before diverging into private downstream operation sequences. A route carries all media by
 default, or matches one stream or event type.
 
 `Task.Attach` is the first runtime control-plane operation. It plans a private
@@ -243,7 +244,7 @@ encoder is opened.
 Recipe helpers also expose `PacketFunc`, `FrameFunc`, `EventFunc`, and
 `SinkFunc` so small custom processing hooks can participate in the graph without
 implementing full source/stage/sink types.
-Chain transforms such as `Audio().Resample(...)` and
+Operation transforms such as `Audio().Resample(...)` and
 `Video().Resize(...)` lower through the same filter registry as transcode
 branches, so common processing does not require manually building filter stages.
 
@@ -349,7 +350,7 @@ messages, keeps upstream events visible by default, flushes before EOS, and uses
 packet-loss events to trigger audio PLC paths such as Opus concealment. The
 runtime builder asks decoder factories for optional adapter-owned state before
 opening stages, so heavyweight backends can stay hidden behind the same fluent
-chain decode recipe. The encoder stage turns frame messages into
+stream decode recipe. The encoder stage turns frame messages into
 packet messages, observes upstream events for encoder state, flushes delayed
 packets before EOS, and consumes input events after the graph observes them.
 
@@ -402,13 +403,13 @@ That shape supports:
 
 `Transcode` is user-facing syntax, not a runtime engine. It lowers into the
 same `MediaPlan` branch shape as `From(input).Audio()/Video().Branches(...)` and
-flow-derived branches: input ref, stream selector, operation chain, destinations,
+flow-derived branches: input ref, stream selector, operation sequence, destinations,
 and mux groups. Mixed audio/video outputs are modeled as mux groups receiving
 ordinary encoded branches.
 
 Multiple branches that select the same input stream should share upstream demux,
 selection, and decode nodes unless a future isolation policy asks otherwise.
-When a stream chain declares operations before `.Branches(...)`, the planner
+When a stream declares operations before `.Branches(...)`, the planner
 treats the current stream point as a shared prefix: one resize/resample/stage
 can feed several downstream branches. Naming that point with `.Tap(...)` is
 only required when a stable runtime attachment handle should be exposed through

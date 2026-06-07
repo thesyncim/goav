@@ -65,7 +65,7 @@ suggests `StreamID`, `StreamName`, or `StreamIndex(0)`.
 ## Branches
 
 `FrameTap` and `PacketTap` name stable points. `Branches` declares downstream
-alternatives from one selected stream. Each branch is an ordered chain: custom
+alternatives from one selected stream. Each branch is ordered operations: custom
 stages, transforms, taps, optional encode, then typed destinations. Mux
 destinations require encoded packets; sink destinations can receive decoded frames before encode
 or packets after copy/encode. This keeps complex work natural without exposing
@@ -121,7 +121,7 @@ err := goav.From(input).
 
 Containers shown outside IVF/Annex B require matching adapters.
 
-Branches normally start from the current chain point. When one branch needs an
+Branches normally start from the current stream point. When one branch needs an
 earlier operation boundary, name that boundary with a typed tap and anchor the
 branch with `From`:
 
@@ -182,7 +182,7 @@ instead of growing special-case APIs.
 
 ## Reuse
 
-When chain operations repeat, extract a flow. A flow is only a reusable ordered
+When operations repeat, extract a flow. A flow is only a reusable ordered
 operation sequence: custom stages, taps, transforms, an optional first decode,
 and an optional terminal encoder. Branches own destinations, so reusable and ad hoc
 splits use the same API.
@@ -227,11 +227,11 @@ err = goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Run(ctx)
 ```
 
-The same flow shape can be applied to a direct stream chain or to a runtime
+The same flow shape can be applied to a direct stream or to a runtime
 branch attached from a tap. The flow still owns only operations; the stream or
-branch owns its destination. Use a direct chain when one reusable flow feeds one
+branch owns its destination. Use a direct stream when one reusable flow feeds one
 destination. Use branches when the same media point needs several downstream
-chains.
+operation sequences.
 
 ```go
 archiveHandle, err := task.Attach(ctx,
