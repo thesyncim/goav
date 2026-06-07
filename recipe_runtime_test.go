@@ -1120,6 +1120,69 @@ func TestBranchCompositionFrameSinkEndpointRuns(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionFrameSinkFanoutRuns(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	decoder := &decodeTestDecoder{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+	)
+	analysis := &runtimeTestSink{name: "analysis"}
+	preview := &runtimeTestSink{name: "preview"}
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Branches(
+			Branch("frames").To(
+				Target("analysis", SinkEndpoint(analysis)),
+				Target("preview", SinkEndpoint(preview)),
+			),
+		)
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plannedText := specText(planned)
+	if strings.Contains(plannedText, "encode-frames") ||
+		!strings.Contains(plannedText, "decode-audio -> analysis") ||
+		!strings.Contains(plannedText, "decode-audio -> preview") {
+		t.Fatalf("planned:\n%s", plannedText)
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 ||
+		analysis.frames != 1 ||
+		preview.frames != 1 ||
+		analysis.lastFrame.StreamID != "audio" ||
+		preview.lastFrame.StreamID != "audio" {
+		t.Fatalf("decodes=%d analysis=%d preview=%d", decoder.decodes, analysis.frames, preview.frames)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !decoder.closed || !analysis.closed || !preview.closed {
+		t.Fatalf("closed demux=%v decoder=%v analysis=%v preview=%v", demuxer.closed, decoder.closed, analysis.closed, preview.closed)
+	}
+}
+
 func TestBranchCompositionResizeSinkEndpointRuns(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{videoVP8TranscodeTestStream()}

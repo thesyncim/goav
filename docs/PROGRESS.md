@@ -1091,6 +1091,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     attachment. Runtime branches now match planned branch `.To(target, ...)`
     grammar for target fanout while preserving detach and nested tap ownership.
     Done.
+266. Prove planned raw sink target fanout:
+    a single decoded planned branch can now be tested as
+    `Branch("frames").To(Target("analysis", SinkEndpoint(...)), Target("preview", SinkEndpoint(...)))`,
+    with no encoder inserted and both sink endpoints receiving the same decoded
+    frame. This keeps planned and runtime branch fanout aligned across mux and
+    sink targets. Done.
 
 ## First Vertical Slice
 
