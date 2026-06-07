@@ -21,6 +21,7 @@ func BenchmarkExternalWebMRecordingScan(b *testing.B) {
 		{name: "av1-opus", write: writeFFmpegAV1OpusWebMRecording},
 	}
 	ffprobe := requireTool(b, "ffprobe")
+	mkvinfo := requireTool(b, "mkvinfo")
 	for _, benchmark := range benchmarks {
 		b.Run(benchmark.name, func(b *testing.B) {
 			file := benchmark.write(b)
@@ -44,6 +45,14 @@ func BenchmarkExternalWebMRecordingScan(b *testing.B) {
 					runExternalBenchmarkCommand(b, ffprobe, "-v", "error", "-show_packets", "-of", "compact", file)
 				}
 			})
+			b.Run("mkvinfo-summary", func(b *testing.B) {
+				b.ReportAllocs()
+				b.SetBytes(int64(len(data)))
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					runExternalBenchmarkCommand(b, mkvinfo, "--summary", file)
+				}
+			})
 		})
 	}
 }
@@ -57,6 +66,7 @@ func BenchmarkExternalWebMRecordingRemux(b *testing.B) {
 		{name: "av1-opus", write: writeFFmpegAV1OpusWebMRecording},
 	}
 	ffmpeg := requireTool(b, "ffmpeg")
+	mkvmerge := requireTool(b, "mkvmerge")
 	outDir := b.TempDir()
 	for _, benchmark := range benchmarks {
 		b.Run(benchmark.name, func(b *testing.B) {
@@ -80,6 +90,16 @@ func BenchmarkExternalWebMRecordingRemux(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					runExternalBenchmarkCommand(b, ffmpeg, "-y", "-v", "error", "-i", file, "-map", "0", "-c", "copy", out)
+				}
+			})
+			b.Run("mkvmerge-copy-file", func(b *testing.B) {
+				out := filepath.Join(outDir, benchmark.name+"-mkvmerge.webm")
+				b.ReportAllocs()
+				b.SetBytes(int64(len(data)))
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					_ = os.Remove(out)
+					runExternalBenchmarkCommand(b, mkvmerge, "--quiet", "--webm", "-o", out, file)
 				}
 			})
 		})

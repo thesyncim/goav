@@ -256,9 +256,9 @@ Committed benchmarks cover:
   AV1, and Opus.
 - External head-to-head recording benchmarks on FFmpeg-authored corpora:
   Matroska H.264+Opus and WebM VP9+Opus plus AV1+Opus Go demux/remux runs are
-  compared against `ffprobe -show_packets` and `ffmpeg -c copy` on the same
-  input files.
+  compared against `ffprobe -show_packets`, `ffmpeg -c copy`, `mkvinfo
+  --summary`, and `mkvmerge` copy/remux on the same input files.
 
 Future benchmarks should add large-file scan speed on real WebRTC recordings,
-more lacing variants, and comparisons against `mkvmerge` and other Go
-EBML/Matroska libraries on the same corpus.
+more lacing variants, and comparisons against other Go EBML/Matroska libraries
+on the same corpus.

@@ -16,6 +16,7 @@ func BenchmarkExternalMatroskaRecordingScan(b *testing.B) {
 	file := writeFFmpegH264OpusMatroskaRecording(b)
 	data := readBenchmarkFile(b, file)
 	ffprobe := requireExternalTool(b, "ffprobe")
+	mkvinfo := requireExternalTool(b, "mkvinfo")
 	b.Run("go-demux", func(b *testing.B) {
 		packet := Packet{Data: make([]byte, 0, 1<<20)}
 		b.ReportAllocs()
@@ -35,12 +36,21 @@ func BenchmarkExternalMatroskaRecordingScan(b *testing.B) {
 			runExternalBenchmarkCommand(b, ffprobe, "-v", "error", "-show_packets", "-of", "compact", file)
 		}
 	})
+	b.Run("mkvinfo-summary", func(b *testing.B) {
+		b.ReportAllocs()
+		b.SetBytes(int64(len(data)))
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			runExternalBenchmarkCommand(b, mkvinfo, "--summary", file)
+		}
+	})
 }
 
 func BenchmarkExternalMatroskaRecordingRemux(b *testing.B) {
 	file := writeFFmpegH264OpusMatroskaRecording(b)
 	data := readBenchmarkFile(b, file)
 	ffmpeg := requireExternalTool(b, "ffmpeg")
+	mkvmerge := requireExternalTool(b, "mkvmerge")
 	outDir := b.TempDir()
 	b.Run("go-remux-discard", func(b *testing.B) {
 		packet := Packet{Data: make([]byte, 0, 1<<20)}
@@ -60,6 +70,16 @@ func BenchmarkExternalMatroskaRecordingRemux(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			runExternalBenchmarkCommand(b, ffmpeg, "-y", "-v", "error", "-i", file, "-map", "0", "-c", "copy", out)
+		}
+	})
+	b.Run("mkvmerge-copy-file", func(b *testing.B) {
+		out := filepath.Join(outDir, "mkvmerge-copy.mkv")
+		b.ReportAllocs()
+		b.SetBytes(int64(len(data)))
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_ = os.Remove(out)
+			runExternalBenchmarkCommand(b, mkvmerge, "--quiet", "-o", out, file)
 		}
 	})
 }
