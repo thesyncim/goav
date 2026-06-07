@@ -323,6 +323,109 @@ func TestMuxerDemuxerPreservesChaptersAndTags(t *testing.T) {
 	}
 }
 
+func TestDemuxerRejectsDuplicateMetadataUIDs(t *testing.T) {
+	tests := []struct {
+		name          string
+		writeMetadata func(*ebml.Writer) error
+	}{
+		{
+			name: "attachment uid in one attachments master",
+			writeMetadata: func(w *ebml.Writer) error {
+				return writeAttachmentsElement(w,
+					Attachment{UID: 7, Filename: "a.txt", MIMEType: "text/plain", Data: []byte("a")},
+					Attachment{UID: 7, Filename: "b.txt", MIMEType: "text/plain", Data: []byte("b")},
+				)
+			},
+		},
+		{
+			name: "attachment uid across attachments masters",
+			writeMetadata: func(w *ebml.Writer) error {
+				if err := writeAttachmentsElement(w,
+					Attachment{UID: 8, Filename: "a.txt", MIMEType: "text/plain", Data: []byte("a")},
+				); err != nil {
+					return err
+				}
+				return writeAttachmentsElement(w,
+					Attachment{UID: 8, Filename: "b.txt", MIMEType: "text/plain", Data: []byte("b")},
+				)
+			},
+		},
+		{
+			name: "edition uid in one chapters master",
+			writeMetadata: func(w *ebml.Writer) error {
+				return writeChaptersElement(w,
+					ChapterEdition{UID: 9, Chapters: []Chapter{metadataValidationChapter(1, 0)}},
+					ChapterEdition{UID: 9, Chapters: []Chapter{metadataValidationChapter(2, 1)}},
+				)
+			},
+		},
+		{
+			name: "edition uid across chapters masters",
+			writeMetadata: func(w *ebml.Writer) error {
+				if err := writeChaptersElement(w,
+					ChapterEdition{UID: 10, Chapters: []Chapter{metadataValidationChapter(1, 0)}},
+				); err != nil {
+					return err
+				}
+				return writeChaptersElement(w,
+					ChapterEdition{UID: 10, Chapters: []Chapter{metadataValidationChapter(2, 1)}},
+				)
+			},
+		},
+		{
+			name: "chapter uid siblings",
+			writeMetadata: func(w *ebml.Writer) error {
+				return writeChaptersElement(w,
+					ChapterEdition{UID: 11, Chapters: []Chapter{
+						metadataValidationChapter(3, 0),
+						metadataValidationChapter(3, 1),
+					}},
+				)
+			},
+		},
+		{
+			name: "chapter uid nested",
+			writeMetadata: func(w *ebml.Writer) error {
+				chapter := metadataValidationChapter(4, 0)
+				chapter.Children = []Chapter{metadataValidationChapter(4, 1)}
+				return writeChaptersElement(w,
+					ChapterEdition{UID: 12, Chapters: []Chapter{chapter}},
+				)
+			},
+		},
+		{
+			name: "chapter uid across editions",
+			writeMetadata: func(w *ebml.Writer) error {
+				return writeChaptersElement(w,
+					ChapterEdition{UID: 13, Chapters: []Chapter{metadataValidationChapter(5, 0)}},
+					ChapterEdition{UID: 14, Chapters: []Chapter{metadataValidationChapter(5, 1)}},
+				)
+			},
+		},
+		{
+			name: "chapter uid across chapters masters",
+			writeMetadata: func(w *ebml.Writer) error {
+				if err := writeChaptersElement(w,
+					ChapterEdition{UID: 15, Chapters: []Chapter{metadataValidationChapter(6, 0)}},
+				); err != nil {
+					return err
+				}
+				return writeChaptersElement(w,
+					ChapterEdition{UID: 16, Chapters: []Chapter{metadataValidationChapter(6, 1)}},
+				)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeTopLevelMetadataMatroskaData(t, tt.writeMetadata)
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
 func TestMuxerDemuxerRoundTrip(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{DocType: "webm"})
@@ -9622,6 +9725,59 @@ func makeInfoMetadataMatroskaData(tb testing.TB, writeInfo func(*ebml.Writer) er
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func makeTopLevelMetadataMatroskaData(tb testing.TB, writeMetadata func(*ebml.Writer) error) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	writeMatroskaSegmentPrefix(tb, muxer)
+	if err := writeTracksWithVideoDimensions(muxer.ebml, 16, 16); err != nil {
+		tb.Fatal(err)
+	}
+	if writeMetadata != nil {
+		if err := writeMetadata(muxer.ebml); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if err := muxer.ebml.WriteElement(idCluster, nil); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func writeAttachmentsElement(w *ebml.Writer, attachments ...Attachment) error {
+	var payload bytes.Buffer
+	aw := ebml.NewWriter(&payload)
+	for i := range attachments {
+		if err := writeAttachedFile(aw, attachments[i]); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idAttachments, payload.Bytes())
+}
+
+func writeChaptersElement(w *ebml.Writer, editions ...ChapterEdition) error {
+	var payload bytes.Buffer
+	cw := ebml.NewWriter(&payload)
+	for i := range editions {
+		if err := writeEditionEntry(cw, editions[i]); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idChapters, payload.Bytes())
+}
+
+func metadataValidationChapter(uid uint64, startNS int64) Chapter {
+	return Chapter{
+		UID:        uid,
+		StartNS:    startNS,
+		Enabled:    true,
+		EnabledSet: true,
+	}
 }
 
 func writeInfoWithElements(writer *ebml.Writer, writeExtra func(*ebml.Writer) error) error {

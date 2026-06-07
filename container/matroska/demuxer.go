@@ -1326,6 +1326,16 @@ func (d *Demuxer) parseAttachments(header ebml.Header) error {
 	if err != nil {
 		return err
 	}
+	usedUIDs := make(map[uint64]struct{}, len(d.attachments))
+	for i := range d.attachments {
+		if d.attachments[i].UID == 0 {
+			return ErrInvalidData
+		}
+		if _, ok := usedUIDs[d.attachments[i].UID]; ok {
+			return ErrInvalidData
+		}
+		usedUIDs[d.attachments[i].UID] = struct{}{}
+	}
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -1337,6 +1347,10 @@ func (d *Demuxer) parseAttachments(header ebml.Header) error {
 			if err != nil {
 				return err
 			}
+			if _, ok := usedUIDs[attachment.UID]; ok {
+				return ErrInvalidData
+			}
+			usedUIDs[attachment.UID] = struct{}{}
 			d.attachments = append(d.attachments, attachment)
 		default:
 			if err := skipElement(master.Reader(), child); err != nil {
@@ -1415,6 +1429,19 @@ func (d *Demuxer) parseChapters(header ebml.Header) error {
 	if err != nil {
 		return err
 	}
+	usedEditions := make(map[uint64]struct{}, len(d.chapters))
+	usedChapters := make(map[uint64]struct{})
+	for i := range d.chapters {
+		if d.chapters[i].UID != 0 {
+			if _, ok := usedEditions[d.chapters[i].UID]; ok {
+				return ErrInvalidData
+			}
+			usedEditions[d.chapters[i].UID] = struct{}{}
+		}
+		if err := collectChapterUIDs(d.chapters[i].Chapters, usedChapters); err != nil {
+			return err
+		}
+	}
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -1426,6 +1453,15 @@ func (d *Demuxer) parseChapters(header ebml.Header) error {
 			if err != nil {
 				return err
 			}
+			if edition.UID != 0 {
+				if _, ok := usedEditions[edition.UID]; ok {
+					return ErrInvalidData
+				}
+				usedEditions[edition.UID] = struct{}{}
+			}
+			if err := collectChapterUIDs(edition.Chapters, usedChapters); err != nil {
+				return err
+			}
 			d.chapters = append(d.chapters, edition)
 		default:
 			if err := skipElement(master.Reader(), child); err != nil {
@@ -1434,6 +1470,22 @@ func (d *Demuxer) parseChapters(header ebml.Header) error {
 		}
 	}
 	return master.Validate()
+}
+
+func collectChapterUIDs(chapters []Chapter, used map[uint64]struct{}) error {
+	for i := range chapters {
+		if chapters[i].UID == 0 {
+			return ErrInvalidData
+		}
+		if _, ok := used[chapters[i].UID]; ok {
+			return ErrInvalidData
+		}
+		used[chapters[i].UID] = struct{}{}
+		if err := collectChapterUIDs(chapters[i].Children, used); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (d *Demuxer) parseEditionEntry(parent io.Reader, header ebml.Header) (ChapterEdition, error) {

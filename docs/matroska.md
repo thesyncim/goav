@@ -118,6 +118,9 @@ Current milestone:
 - Mux and demux validation rejects negative or overflowing track timing,
   audio, and video metadata before it can wrap into EBML unsigned integers or
   public `int` fields.
+- Demux validation rejects duplicate attachment UIDs, duplicate edition UIDs,
+  and duplicate chapter UIDs across repeated top-level metadata masters and
+  nested chapter trees.
 
 ## Deferred Features
 
