@@ -93,8 +93,11 @@ decode/filter/encode, and grouped branch-compose builds now consume that
 sequence for pre-mutation validation and target binding. Grouped branch-compose
 input lowering also consumes graph-plan select/decode node refs, so described
 and built graphs stay equivalent even when operation refs are changed by later
-planning passes. The next architectural pressure is to make branch-compose
-shared transform/stage lowering execute directly from those operation records.
+planning passes. Shared branch-compose transform/stage lowering consumes the
+same operation refs and validates that branches sharing one selector group also
+share the same planned step refs. The next architectural pressure is to make
+private branch transform/stage and encode lowering execute directly from those
+operation records.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and

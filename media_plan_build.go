@@ -254,12 +254,13 @@ func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, plan graphPlan, 
 	if err != nil {
 		return err
 	}
-	return compileBranchComposeRoutes(ctx, service, graph, p.branches, lowering.targets, branchInputs, branchStreams, sources.realtime)
+	return compileBranchComposeRoutes(ctx, service, graph, p.branches, lowering.targets, branchInputs, branchStreams, lowering.sharedSteps, sources.realtime)
 }
 
 type graphPlanBranchComposeLowering struct {
-	inputs  map[string]graphPlanBranchComposeInputOperation
-	targets []branchComposeTargetRoute
+	inputs      map[string]graphPlanBranchComposeInputOperation
+	sharedSteps map[string][]pipeline.NodeRef
+	targets     []branchComposeTargetRoute
 }
 
 type graphPlanBranchComposeInputOperation struct {
@@ -285,11 +286,15 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan 
 	if err != nil {
 		return graphPlanBranchComposeLowering{}, err
 	}
+	sharedSteps, err := p.prepareBranchComposeSharedStepOperations(branchOperations)
+	if err != nil {
+		return graphPlanBranchComposeLowering{}, err
+	}
 	targets, err := p.prepareBranchComposeTargets(plan)
 	if err != nil {
 		return graphPlanBranchComposeLowering{}, err
 	}
-	return graphPlanBranchComposeLowering{inputs: inputs, targets: targets}, nil
+	return graphPlanBranchComposeLowering{inputs: inputs, sharedSteps: sharedSteps, targets: targets}, nil
 }
 
 func (p mediaPlanBranchComposeGraph) prepareBranchComposeInputOperations(branchOperations map[string][]graphPlanOperation) (map[string]graphPlanBranchComposeInputOperation, error) {
@@ -353,6 +358,45 @@ func assignBranchComposeInputNode(target *pipeline.NodeRef, node pipeline.NodeRe
 		})
 	}
 	return nil
+}
+
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeSharedStepOperations(branchOperations map[string][]graphPlanOperation) (map[string][]pipeline.NodeRef, error) {
+	stepsByBranch := make(map[string][]pipeline.NodeRef, len(p.branches))
+	for i := range p.branches {
+		branch := p.branches[i]
+		refs, err := graphPlanBranchStepOperationNodes(branchOperations[branch.name], true, branch.name)
+		if err != nil {
+			return nil, err
+		}
+		stepsByBranch[branch.name] = refs
+	}
+	groups := branchComposeSelectorGroups(p.branches)
+	for i := range groups {
+		decodedBranches := branchComposeDecodedBranchIndices(groups[i].branches, p.branches)
+		for _, prefix := range branchComposeSharedStepGroups(decodedBranches, p.branches) {
+			var firstBranch string
+			var first []pipeline.NodeRef
+			for _, branchIndex := range prefix.branches {
+				if branchIndex < 0 || branchIndex >= len(p.branches) {
+					continue
+				}
+				branch := p.branches[branchIndex]
+				next := stepsByBranch[branch.name]
+				if firstBranch == "" {
+					firstBranch = branch.name
+					first = next
+					continue
+				}
+				if !pipelineNodeRefsEqual(first, next) {
+					return nil, graphPlanInvalidError("branch composition graph plan shared operations are not shared by selector group", []string{
+						"first=" + firstBranch,
+						"next=" + branch.name,
+					})
+				}
+			}
+		}
+	}
+	return stepsByBranch, nil
 }
 
 func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branch branchComposeRoute, operations []graphPlanOperation) error {
@@ -546,6 +590,39 @@ func graphPlanBranchStepOperationCount(operations []graphPlanOperation, shared b
 		}
 	}
 	return count
+}
+
+func graphPlanBranchStepOperationNodes(operations []graphPlanOperation, shared bool, branch string) ([]pipeline.NodeRef, error) {
+	refs := make([]pipeline.NodeRef, 0)
+	for i := range operations {
+		operation := operations[i]
+		if operation.Shared != shared {
+			continue
+		}
+		if operation.Kind != OpTransform && operation.Kind != OpStage {
+			continue
+		}
+		if operation.Node == "" {
+			return nil, graphPlanInvalidError("branch composition graph plan step operation has no node", []string{
+				"branch=" + branch,
+				"kind=" + string(operation.Kind),
+			})
+		}
+		refs = append(refs, operation.Node)
+	}
+	return refs, nil
+}
+
+func pipelineNodeRefsEqual(first []pipeline.NodeRef, second []pipeline.NodeRef) bool {
+	if len(first) != len(second) {
+		return false
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func graphPlanTargetBranchNames(operations []graphPlanOperation) map[string]map[string]struct{} {
