@@ -7,16 +7,24 @@ import (
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
 
 var targetSpecSeq atomic.Uint64
 var destinationSpecSeq atomic.Uint64
 
-// Destination is a concrete media target such as a file, URI, object writer, or
-// media sink. Applications can implement this interface in their own packages.
+// Destination is a concrete media destination such as a file, URI, object
+// writer, or media sink. Built-in constructors and Custom return destination
+// values with goav-owned routing identity.
 type Destination interface {
+	Name() string
+	Contract() DestinationContract
+	Open(context.Context, TargetInfo) (DestinationWriter, error)
+}
+
+// DestinationProvider opens a custom destination behind a goav-owned
+// Destination handle.
+type DestinationProvider interface {
 	Name() string
 	Contract() DestinationContract
 	Open(context.Context, TargetInfo) (DestinationWriter, error)
@@ -61,9 +69,7 @@ type WriterOpenFunc func(context.Context, TargetInfo) (io.WriteCloser, error)
 type ObjectOpenFunc func(context.Context, TargetInfo) (TransactionalDestinationWriter, error)
 
 type destinationBinding struct {
-	target    targetSpec
 	dest      destinationSpec
-	hasTarget bool
 	hasDirect bool
 }
 
@@ -72,32 +78,6 @@ type targetSpec struct {
 	dest destinationSpec
 	id   uint64
 	err  error
-}
-
-// Target binds a stable target name to a destination.
-func Target(name string, dest Destination) Destination {
-	if dest == nil {
-		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "destination is nil")}
-	}
-	if _, ok := dest.(targetSpec); ok {
-		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target cannot wrap another goav.Target")}
-	}
-	destination, err := destinationSpecFromDestination(dest)
-	if err != nil {
-		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), err.Error())}
-	}
-	return newTargetSpec(name, destination)
-}
-
-func newTargetSpec(name string, dest destinationSpec) targetSpec {
-	if name == "" {
-		return targetSpec{dest: dest, err: targetNameMissingError(dest)}
-	}
-	return targetSpec{
-		name: name,
-		dest: dest.withName(firstNonEmpty(dest.name, name)),
-		id:   targetSpecSeq.Add(1),
-	}
 }
 
 func newDirectTargetSpec(name string, dest destinationSpec) targetSpec {
@@ -115,31 +95,9 @@ func newDirectTargetSpec(name string, dest destinationSpec) targetSpec {
 	}
 }
 
-func (t targetSpec) destination() destinationBinding {
-	return destinationBinding{target: t, hasTarget: true}
-}
-
-func (t targetSpec) Name() string {
-	return t.name
-}
-
-func (t targetSpec) Contract() DestinationContract {
-	return t.dest.Contract()
-}
-
-func (t targetSpec) Open(ctx context.Context, info TargetInfo) (DestinationWriter, error) {
-	if info.Name == "" {
-		info.Name = t.name
-	}
-	return t.dest.Open(ctx, info)
-}
-
 func destinationBindingFromDestination(dest Destination) (destinationBinding, error) {
 	if dest == nil {
 		return destinationBinding{}, fmt.Errorf("destination is nil")
-	}
-	if target, ok := dest.(targetSpec); ok {
-		return destinationBinding{target: target, hasTarget: true}, nil
 	}
 	direct, err := destinationSpecFromDestination(dest)
 	if err != nil {
@@ -152,29 +110,8 @@ func destinationSpecFromDestination(dest Destination) (destinationSpec, error) {
 	switch value := dest.(type) {
 	case destinationSpec:
 		return cloneDestinationSpec(value), nil
-	case targetSpec:
-		return destinationSpec{}, fmt.Errorf("target cannot be used as a direct destination")
 	default:
-		name := dest.Name()
-		contract := dest.Contract()
-		spec := destinationSpec{
-			id:     destinationSpecSeq.Add(1),
-			custom: dest,
-			name:   name,
-			output: format.Output{
-				Name:     name,
-				URI:      name,
-				Protocol: contract.Protocol,
-				Realtime: contract.Realtime,
-			},
-		}
-		if len(contract.Formats) != 0 {
-			spec.format = contract.Formats[0]
-		}
-		if len(contract.MIMETypes) != 0 {
-			spec.output.MIMEType = contract.MIMETypes[0]
-		}
-		return spec, nil
+		return destinationSpec{}, fmt.Errorf("custom destination providers must be wrapped with goav.Custom(name, provider)")
 	}
 }
 
@@ -518,18 +455,6 @@ func (b *branchBuilder) setErr(err error) {
 
 func appendDestination(spec *BranchSpec, destination destinationBinding, index int) error {
 	switch {
-	case destination.hasTarget:
-		target := cloneTargetSpec(destination.target)
-		if target.err != nil {
-			return target.err
-		}
-		if target.name == "" {
-			return targetNameMissingError(target.dest)
-		}
-		target.dest = target.dest.withName(firstNonEmpty(target.dest.name, target.name))
-		spec.targets = append(spec.targets, target)
-		spec.targetNames = append(spec.targetNames, target.name)
-		return nil
 	case destination.hasDirect:
 		destination := destination.dest
 		targetName := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))

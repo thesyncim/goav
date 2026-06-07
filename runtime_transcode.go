@@ -724,7 +724,7 @@ func branchComposePlanEmptyError(kind string) error {
 	suggestions := []string{
 		"add at least one branch with a selector and encoder",
 		"add at least one target destination",
-		"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for the recipe API",
+		"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(output)) for the recipe API",
 	}
 	reason := "branch composition has no " + kind
 	return &BuildError{
@@ -1095,7 +1095,7 @@ func branchChainStepError(name string, reason string) error {
 		Suggestions: []string{
 			"use one operation per branch step",
 			"use resize on video branches and resample on audio branches",
-			"use goav.Branch(name).Do(stage).Resize(...).VP9(...).To(goav.Target(\"web\", output)) for recipe branch steps",
+			"use goav.Branch(name).Do(stage).Resize(...).VP9(...).To(output) for recipe branch steps",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1310,8 +1310,8 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 		Node:      branchComposeTargetNodeName(output, "output"),
 		Reason:    reason,
 		Suggestions: []string{
-			"use goav.Target(name, goav.Sink(sink)) for frame or packet sink targets",
-			"use goav.Target(name, goav.File(...)) or goav.Target(name, goav.URIOut(...)) for muxed destinations",
+			"use goav.Sink(sink) for frame or packet sink destinations",
+			"use goav.File(...) or goav.URIOut(...) for muxed destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1328,7 +1328,7 @@ func branchComposeTargetEncodeMissingError(output branchComposeTarget, target fo
 		},
 		Suggestions: []string{
 			"encode the branch before routing it to a mux target",
-			"route raw decoded branches to goav.Target(name, goav.Sink(sink))",
+			"route raw decoded branches to goav.Sink(sink)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

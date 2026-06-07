@@ -742,7 +742,7 @@ func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedTargets(t *testing.T)
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Opus(96_000).To(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(context.Background(), job)
 	if err != nil {
@@ -2604,7 +2604,7 @@ func TestCompileJobRecipeCarriesIntentAndGraphPlanBuild(t *testing.T) {
 }
 
 func TestGraphPlanCarriesReportMetadata(t *testing.T) {
-	web := Target("web", fileDestination("web.ivf", io.Discard).withFormat(av.FormatIVF))
+	web := fileDestination("web.ivf", io.Discard).withFormat(av.FormatIVF)
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -2630,8 +2630,8 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 	if len(plan.Taps) != 1 || plan.Taps[0].Name != "video.decoded" {
 		t.Fatalf("graphPlan media plan taps = %+v, want video.decoded tap", plan.Taps)
 	}
-	if len(plan.Outputs) != 1 || plan.Outputs[0].Name != "web" || !reflect.DeepEqual(plan.Outputs[0].BranchRefs, []string{"360p"}) {
-		t.Fatalf("graphPlan media plan outputs = %+v, want web owned by 360p", plan.Outputs)
+	if len(plan.Outputs) != 1 || plan.Outputs[0].Name != "web.ivf" || !reflect.DeepEqual(plan.Outputs[0].BranchRefs, []string{"360p"}) {
+		t.Fatalf("graphPlan media plan outputs = %+v, want web.ivf owned by 360p", plan.Outputs)
 	}
 	operations := resolved.graphPlan.operationPlan()
 	for _, want := range []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpEncode, OpMux} {
@@ -2641,8 +2641,8 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 	}
 	if !graphPlanOperationNodePresent(operations, pipeline.NodeRef("resize-360p")) ||
 		!graphPlanOperationNodePresent(operations, pipeline.NodeRef("encode-360p")) ||
-		!graphPlanOperationTargetPresent(operations, "web") {
-		t.Fatalf("graphPlan operations = %+v, want resize, encode, and web target operations", operations)
+		!graphPlanOperationTargetPresent(operations, "web.ivf") {
+		t.Fatalf("graphPlan operations = %+v, want resize, encode, and web.ivf destination operations", operations)
 	}
 	report, err := newPlanReport("build job", resolved)
 	if err != nil {
@@ -2866,7 +2866,7 @@ func TestGraphPlanSpecPassPlansRTPCopy(t *testing.T) {
 }
 
 func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
-	web := Target("web", fileDestination("web.ivf", io.Discard))
+	web := fileDestination("web.ivf", io.Discard)
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -2895,8 +2895,8 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	if len(resolved.intent.Streams) != 1 || resolved.intent.Streams[0].Name != "360p" {
 		t.Fatalf("intent streams = %+v", resolved.intent.Streams)
 	}
-	if got := resolved.intent.Streams[0].Targets; len(got) != 1 || got[0] != "web" {
-		t.Fatalf("intent route targets = %+v, want [web]", got)
+	if got := resolved.intent.Streams[0].Targets; len(got) != 1 || got[0] != "web.ivf" {
+		t.Fatalf("intent route targets = %+v, want [web.ivf]", got)
 	}
 	spec, err := resolved.Describe()
 	if err != nil {
@@ -2908,8 +2908,8 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 }
 
 func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) {
-	voice := Target("voice", fileDestination("voice.ogg", io.Discard).withFormat(av.FormatOgg))
-	archive := Target("archive", fileDestination("archive.ogg", io.Discard).withFormat(av.FormatOgg))
+	voice := fileDestination("voice.ogg", io.Discard).withFormat(av.FormatOgg)
+	archive := fileDestination("archive.ogg", io.Discard).withFormat(av.FormatOgg)
 	job := From(RTP(&runtimeRTPReceiver{
 		streams: []Stream{audioOpusTestStream()},
 	}).Name("audio").Codec(Opus())).
@@ -2958,7 +2958,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 		Audio().
 		Decode().
 		Tap(FrameTap("audio.decoded")).
-		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Opus(96_000).To(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -2980,10 +2980,10 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 }
 
 func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
-	web := Target("web", fileDestination("web.ivf", io.Discard))
-	thumbnail := Target("thumbnail", sinkDestination(SinkFunc("thumbnail", func(context.Context, Message) error {
+	web := fileDestination("web.ivf", io.Discard)
+	thumbnail := sinkDestination(SinkFunc("thumbnail", func(context.Context, Message) error {
 		return nil
-	})))
+	}))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -3029,7 +3029,7 @@ func TestBranchComposeLowererUsesPlanInputOperationNodes(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Opus(96_000).To(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3078,7 +3078,7 @@ func TestBranchComposeLowererUsesPlanSharedStepOperationNodes(t *testing.T) {
 		Audio().
 		Decode().
 		Resample(48_000, Stereo).
-		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Opus(96_000).To(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3128,7 +3128,7 @@ func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testi
 		Branches(Branch("main").
 			Resample(16_000, Mono).
 			Opus(96_000).
-			To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+			To(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3168,10 +3168,10 @@ func TestBranchComposeLowererUsesPlanTargetOperationNodes(t *testing.T) {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	archive := Target("archive", fileDestination("archive.ogg", io.Discard))
-	frames := Target("frames", Sink(SinkFunc("frames", func(context.Context, Message) error {
+	archive := fileDestination("archive.ogg", io.Discard)
+	frames := Sink(SinkFunc("frames", func(context.Context, Message) error {
 		return nil
-	})))
+	}))
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
@@ -3184,9 +3184,9 @@ func TestBranchComposeLowererUsesPlanTargetOperationNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	archiveNode, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, "archive")
+	archiveNode, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, "archive.ogg")
 	if !ok {
-		t.Fatalf("graphPlan operations = %+v, want archive target operation", resolved.graphPlan.operations)
+		t.Fatalf("graphPlan operations = %+v, want archive.ogg destination operation", resolved.graphPlan.operations)
 	}
 	framesNode, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, "frames")
 	if !ok {
@@ -3284,8 +3284,8 @@ func renameGraphPlanNodeRef(plan graphPlan, oldName string, newName string) grap
 }
 
 func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T) {
-	web := Target("web", fileDestination("web.ivf", io.Discard))
-	mobile := Target("mobile", fileDestination("mobile.ivf", io.Discard))
+	web := fileDestination("web.ivf", io.Discard)
+	mobile := fileDestination("mobile.ivf", io.Discard)
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -3312,7 +3312,7 @@ func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T)
 }
 
 func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
-	web := Target("web", fileDestination("web.ivf", io.Discard))
+	web := fileDestination("web.ivf", io.Discard)
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -3338,7 +3338,7 @@ func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) 
 }
 
 func TestBranchComposeLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
-	web := Target("web", fileDestination("web.ivf", io.Discard))
+	web := fileDestination("web.ivf", io.Discard)
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().

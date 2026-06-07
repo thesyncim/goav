@@ -815,7 +815,7 @@ type destinationSpec struct {
 	id             uint64
 	output         format.Output
 	sink           pipeline.Sink
-	custom         Destination
+	custom         DestinationProvider
 	format         av.FormatID
 	resolvedFormat av.FormatID
 	name           string
@@ -881,6 +881,45 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 		return destinationSpec{id: destinationSpecSeq.Add(1), err: ErrNilSink}
 	}
 	return destinationSpec{id: destinationSpecSeq.Add(1), sink: sink, name: name}
+}
+
+func Custom(name string, provider DestinationProvider, opts ...DestinationOption) Destination {
+	spec := customDestination(name, provider)
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i](&spec)
+		}
+	}
+	return spec
+}
+
+func customDestination(name string, provider DestinationProvider) destinationSpec {
+	if provider == nil {
+		return destinationSpec{id: destinationSpecSeq.Add(1), err: ErrNilWriter}
+	}
+	contract := provider.Contract()
+	spec := destinationSpec{
+		id:     destinationSpecSeq.Add(1),
+		custom: provider,
+		output: format.Output{
+			Name:     name,
+			URI:      name,
+			Protocol: contract.Protocol,
+			Realtime: contract.Realtime,
+		},
+		name: firstNonEmpty(name, provider.Name()),
+	}
+	if spec.output.Name == "" {
+		spec.output.Name = spec.name
+		spec.output.URI = spec.name
+	}
+	if len(contract.Formats) != 0 {
+		spec.format = contract.Formats[0]
+	}
+	if len(contract.MIMETypes) != 0 {
+		spec.output.MIMEType = contract.MIMETypes[0]
+	}
+	return spec
 }
 
 func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destination {
@@ -3465,15 +3504,6 @@ func (b *jobStreamBuilder) To(targets ...Destination) *Job {
 
 func destinationFromBinding(operation string, node string, destination destinationBinding, index int) (destinationSpec, string, error) {
 	switch {
-	case destination.hasTarget:
-		target := cloneTargetSpec(destination.target)
-		if target.err != nil {
-			return destinationSpec{}, "", target.err
-		}
-		if target.name == "" {
-			return destinationSpec{}, "", targetNameMissingError(target.dest)
-		}
-		return cloneDestinationSpec(target.dest), target.name, nil
 	case destination.hasDirect:
 		return cloneDestinationSpec(destination.dest), "", nil
 	default:

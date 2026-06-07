@@ -443,7 +443,7 @@ func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
-			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for named branches",
+			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(output)) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -458,7 +458,7 @@ func jobTargetReferenceMissingError(operation string, stream StreamIntent, label
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
-			"finish each branch with a typed target such as .To(goav.Target(\"web\", output))",
+			"finish each branch with a typed destination such as .To(output)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1184,7 +1184,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		Suggestions: []string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
 			"use goav.From(input).Audio().To(goav.Sink(...)) or .Video().To(...) for decoded frames",
-			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for named branches",
+			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(output)) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

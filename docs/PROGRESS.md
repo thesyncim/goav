@@ -2141,6 +2141,17 @@ are:
     without `Target(...)`, and user-facing duplicate/missing destination
     diagnostics point at destination values.
     Done.
+376. Remove the public `Target` compatibility wrapper:
+    `Target(...)` is no longer exported from the root API. Public tests and
+    runtime examples now pass `Destination` values directly, and planner
+    assertions expect destination names such as `archive.ogg` or sink names
+    instead of separate logical target names. `DestinationProvider` plus
+    `Custom(name, provider, opts...)` is the custom-provider entry point, so
+    external provider implementations must be wrapped by a goav-owned
+    destination handle before they can participate in routing identity.
+    Diagnostics that previously suggested `Target(...)` now point at `File`,
+    `URIOut`, `Sink`, `Custom`, or `.To(output)`.
+    Done.
 
 ## First Vertical Slice
 

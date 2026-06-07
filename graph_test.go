@@ -1500,7 +1500,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
 		Opus(96_000).
-		To(Target("archive", File("archive.ogg", io.Discard, Format(av.FormatOgg)))))
+		To(File("archive.ogg", io.Discard, Format(av.FormatOgg))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "runtime_branch_graph_error" ||
@@ -1665,7 +1665,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
 		Opus(96_000).
-		To(Target("archive", File("archive.ogg", io.Discard, Format(av.FormatOgg)))))
+		To(File("archive.ogg", io.Discard, Format(av.FormatOgg))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "runtime_branch_graph_error" ||
@@ -1749,7 +1749,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
 		Opus(96_000).
-		To(Target("archive", File("archive.ogg", io.Discard, Format(av.FormatOgg)))))
+		To(File("archive.ogg", io.Discard, Format(av.FormatOgg))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "runtime_branch_node_duplicate" ||
@@ -1993,7 +1993,7 @@ func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 	attachment, err := builtTask.Attach(ctx, Branch("record").
 		From(PacketTap("audio.packets")).
 		Copy().
-		To(Target("record", File("recording.ogg", io.Discard))))
+		To(File("recording.ogg", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2094,7 +2094,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 		From(PacketTap("audio.copied")).
 		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
 		Copy().
-		To(Target("record", File("recording.ogg", io.Discard))))
+		To(File("recording.ogg", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2182,7 +2182,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 		From(FrameTap("audio.frames")).
 		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
 		Opus(96_000).
-		To(Target("record", File("recording.ogg", io.Discard))))
+		To(File("recording.ogg", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2283,7 +2283,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 		From(FrameTap("audio.frames")).
 		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
 		Apply(archive).
-		To(Target("archive", File("archive.ogg", io.Discard))))
+		To(File("archive.ogg", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2397,7 +2397,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 		From(PacketTap("audio.encoded")).
 		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
 		Copy().
-		To(Target("record", File("recording.ogg", io.Discard))))
+		To(File("recording.ogg", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2035,15 +2035,15 @@ func duplicateRuntimeBranchTargetRefError(branch string, label string, firstInde
 		Code:      "target_duplicate",
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
-		Reason:    fmt.Sprintf("branch routes to target %q more than once", label),
+		Reason:    fmt.Sprintf("branch routes to destination %q more than once", label),
 		Details: []string{
-			fmt.Sprintf("first target index: %d", firstIndex),
-			fmt.Sprintf("second target index: %d", secondIndex),
+			fmt.Sprintf("first destination index: %d", firstIndex),
+			fmt.Sprintf("second destination index: %d", secondIndex),
 		},
 		Suggestions: []string{
-			"list each target once in .To(...)",
-			"route one runtime branch to multiple targets with distinct values such as .To(archive, monitor)",
-			"reuse typed target values across separate Branch(...) attachments when they should share a logical target",
+			"list each destination once in .To(...)",
+			"route one runtime branch to multiple destinations with distinct values such as .To(archive, monitor)",
+			"reuse destination values across separate Branch(...) attachments when they should share a logical destination",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

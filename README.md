@@ -587,6 +587,8 @@ can see the final destination metadata. Transactional writers commit after succe
 runs or detach, abort on build, runtime, or attach failure, and close exactly
 once.
 Normal application workflows should be expressible through declarative recipes.
+Use `goav.Custom(name, provider)` when a package owns a reusable destination
+provider; the returned destination value is still the stable routing handle.
 
 ```go
 s3 := goav.Object("s3://bucket/call.ivf",
