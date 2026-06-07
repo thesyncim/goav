@@ -982,19 +982,19 @@ func (j *Job) And(inputs ...InputSpec) *Job {
 	return j
 }
 
-func (j *Job) Audio(options ...streamOption) *JobStreamBuilder {
+func (j *Job) Audio(options ...streamOption) *jobStreamBuilder {
 	return j.streamBuilder("audio", av.MediaAudio, options...)
 }
 
-func (j *Job) Video(options ...streamOption) *JobStreamBuilder {
+func (j *Job) Video(options ...streamOption) *jobStreamBuilder {
 	return j.streamBuilder("video", av.MediaVideo, options...)
 }
 
-func (j *Job) Stream(options ...streamOption) *JobStreamBuilder {
+func (j *Job) Stream(options ...streamOption) *jobStreamBuilder {
 	return j.streamBuilder("stream", "", options...)
 }
 
-func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOption) *JobStreamBuilder {
+func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOption) *jobStreamBuilder {
 	stream := &jobStreamBuild{
 		name:     name,
 		selector: newStreamSelector(media, options...),
@@ -1002,13 +1002,13 @@ func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOp
 	if j.stream != nil {
 		if len(j.branchStreams) != 0 {
 			j.stream = stream
-			return &JobStreamBuilder{job: j, stream: stream}
+			return &jobStreamBuilder{job: j, stream: stream}
 		}
 		j.err = duplicateJobStreamError(j.stream, stream)
-		return &JobStreamBuilder{job: j, stream: stream}
+		return &jobStreamBuilder{job: j, stream: stream}
 	}
 	j.stream = stream
-	return &JobStreamBuilder{job: j, stream: stream}
+	return &jobStreamBuilder{job: j, stream: stream}
 }
 
 func (j *Job) Intent() Intent {
@@ -2937,12 +2937,12 @@ func StreamIndex(index int) streamOption {
 	}
 }
 
-type JobStreamBuilder struct {
+type jobStreamBuilder struct {
 	job    *Job
 	stream *jobStreamBuild
 }
 
-func (b *JobStreamBuilder) Apply(flow Chain) *JobStreamBuilder {
+func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 	spec, err := flowSpecFrom(flow)
 	if err != nil {
 		b.job.setErr(err)
@@ -2983,20 +2983,20 @@ func (b *JobStreamBuilder) Apply(flow Chain) *JobStreamBuilder {
 	return b
 }
 
-func (b *JobStreamBuilder) Decode() *JobStreamBuilder {
+func (b *jobStreamBuilder) Decode() *jobStreamBuilder {
 	stream := b.current()
 	stream.decode = true
 	return b
 }
 
-func (b *JobStreamBuilder) Copy() *JobStreamBuilder {
+func (b *jobStreamBuilder) Copy() *jobStreamBuilder {
 	stream := b.current()
 	stream.decode = false
 	stream.encode = Copy()
 	return b
 }
 
-func (b *JobStreamBuilder) Tap(tap TapRef) *JobStreamBuilder {
+func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 	stream := b.current()
 	if tap.name == "" {
 		b.job.setErr(&BuildError{
@@ -3061,7 +3061,7 @@ func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 	return TapRef{}
 }
 
-func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
+func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
 		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", stream.encode))
@@ -3072,7 +3072,7 @@ func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
 	return b
 }
 
-func (b *JobStreamBuilder) Resize(width int, height int, options ...resizeOption) *JobStreamBuilder {
+func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
 		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "resize", stream.encode))
@@ -3083,7 +3083,7 @@ func (b *JobStreamBuilder) Resize(width int, height int, options ...resizeOption
 	return b
 }
 
-func (b *JobStreamBuilder) Resample(sampleRate int, channels int, options ...audioOption) *JobStreamBuilder {
+func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...audioOption) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
 		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "resample", stream.encode))
@@ -3094,7 +3094,7 @@ func (b *JobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 	return b
 }
 
-func (b *JobStreamBuilder) Encode(codec CodecSpec) *JobStreamBuilder {
+func (b *jobStreamBuilder) Encode(codec CodecSpec) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
 		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), stream.encode, codec))
@@ -3105,25 +3105,25 @@ func (b *JobStreamBuilder) Encode(codec CodecSpec) *JobStreamBuilder {
 	return b
 }
 
-func (b *JobStreamBuilder) OnCodecChange(policy CodecChangePolicy) *JobStreamBuilder {
+func (b *jobStreamBuilder) OnCodecChange(policy CodecChangePolicy) *jobStreamBuilder {
 	stream := b.current()
 	stream.codecChange = policy
 	return b
 }
 
-func (b *JobStreamBuilder) Opus(bitrate int, options ...codecOption) *JobStreamBuilder {
+func (b *jobStreamBuilder) Opus(bitrate int, options ...codecOption) *jobStreamBuilder {
 	return b.Encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *JobStreamBuilder) VP8(bitrate int, options ...codecOption) *JobStreamBuilder {
+func (b *jobStreamBuilder) VP8(bitrate int, options ...codecOption) *jobStreamBuilder {
 	return b.Encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *JobStreamBuilder) VP9(bitrate int, options ...codecOption) *JobStreamBuilder {
+func (b *jobStreamBuilder) VP9(bitrate int, options ...codecOption) *jobStreamBuilder {
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *JobStreamBuilder) To(destinations ...Destination) *Job {
+func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 	stream := b.current()
 	outputs := make([]DestinationSpec, 0, len(destinations))
 	for i := range destinations {
@@ -3165,7 +3165,7 @@ func destinationFromBinding(operation string, node string, destination destinati
 	}
 }
 
-func (b *JobStreamBuilder) current() *jobStreamBuild {
+func (b *jobStreamBuilder) current() *jobStreamBuild {
 	if b.stream != nil {
 		return b.stream
 	}

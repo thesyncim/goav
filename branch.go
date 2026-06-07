@@ -73,15 +73,15 @@ type BranchSpec struct {
 	err error
 }
 
-type BranchBuilder struct {
+type branchBuilder struct {
 	spec BranchSpec
 }
 
-func Branch(name string) *BranchBuilder {
-	return &BranchBuilder{spec: BranchSpec{name: name}}
+func Branch(name string) *branchBuilder {
+	return &branchBuilder{spec: BranchSpec{name: name}}
 }
 
-func (b *BranchBuilder) From(source any) *BranchBuilder {
+func (b *branchBuilder) From(source any) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -98,7 +98,7 @@ func (b *BranchBuilder) From(source any) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) fromTypedTap(tap TapRef) *BranchBuilder {
+func (b *branchBuilder) fromTypedTap(tap TapRef) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -108,7 +108,7 @@ func (b *BranchBuilder) fromTypedTap(tap TapRef) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Stream(stream av.StreamID) *BranchBuilder {
+func (b *branchBuilder) Stream(stream av.StreamID) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -117,7 +117,7 @@ func (b *BranchBuilder) Stream(stream av.StreamID) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Event(event av.EventType) *BranchBuilder {
+func (b *branchBuilder) Event(event av.EventType) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -126,7 +126,7 @@ func (b *BranchBuilder) Event(event av.EventType) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Buffer(policy pipeline.BufferPolicy) *BranchBuilder {
+func (b *branchBuilder) Buffer(policy pipeline.BufferPolicy) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -134,7 +134,7 @@ func (b *BranchBuilder) Buffer(policy pipeline.BufferPolicy) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Decode() *BranchBuilder {
+func (b *branchBuilder) Decode() *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -154,7 +154,7 @@ func (b *BranchBuilder) Decode() *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Apply(flow Chain) *BranchBuilder {
+func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -199,7 +199,7 @@ func (b *BranchBuilder) Apply(flow Chain) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Do(stages ...pipeline.Stage) *BranchBuilder {
+func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -217,7 +217,7 @@ func (b *BranchBuilder) Do(stages ...pipeline.Stage) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Resize(width int, height int, options ...resizeOption) *BranchBuilder {
+func (b *branchBuilder) Resize(width int, height int, options ...resizeOption) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -231,7 +231,7 @@ func (b *BranchBuilder) Resize(width int, height int, options ...resizeOption) *
 	return b
 }
 
-func (b *BranchBuilder) Resample(sampleRate int, channels int, options ...audioOption) *BranchBuilder {
+func (b *branchBuilder) Resample(sampleRate int, channels int, options ...audioOption) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -245,7 +245,7 @@ func (b *BranchBuilder) Resample(sampleRate int, channels int, options ...audioO
 	return b
 }
 
-func (b *BranchBuilder) Tap(tap TapRef) *BranchBuilder {
+func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -275,7 +275,7 @@ func (b *BranchBuilder) Tap(tap TapRef) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Encode(codec CodecSpec) *BranchBuilder {
+func (b *branchBuilder) Encode(codec CodecSpec) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -291,23 +291,23 @@ func (b *BranchBuilder) Encode(codec CodecSpec) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Copy() *BranchBuilder {
+func (b *branchBuilder) Copy() *branchBuilder {
 	return b.Encode(Copy())
 }
 
-func (b *BranchBuilder) Opus(bitrate int, options ...codecOption) *BranchBuilder {
+func (b *branchBuilder) Opus(bitrate int, options ...codecOption) *branchBuilder {
 	return b.Encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *BranchBuilder) VP8(bitrate int, options ...codecOption) *BranchBuilder {
+func (b *branchBuilder) VP8(bitrate int, options ...codecOption) *branchBuilder {
 	return b.Encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *BranchBuilder) VP9(bitrate int, options ...codecOption) *BranchBuilder {
+func (b *branchBuilder) VP9(bitrate int, options ...codecOption) *branchBuilder {
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *BranchBuilder) To(destinations ...Destination) BranchSpec {
+func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
 	if b == nil {
 		return BranchSpec{err: nilBranchError()}
 	}
@@ -330,7 +330,7 @@ func (b *BranchBuilder) To(destinations ...Destination) BranchSpec {
 	return spec
 }
 
-func (b *BranchBuilder) snapshot() BranchSpec {
+func (b *branchBuilder) snapshot() BranchSpec {
 	spec := b.spec
 	spec.steps = cloneJobStreamSteps(spec.steps)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
@@ -340,7 +340,7 @@ func (b *BranchBuilder) snapshot() BranchSpec {
 	return spec
 }
 
-func (b *BranchBuilder) setErr(err error) {
+func (b *branchBuilder) setErr(err error) {
 	if b.spec.err == nil {
 		b.spec.err = err
 	}
@@ -375,7 +375,7 @@ func appendDestination(spec *BranchSpec, destination destinationBinding, index i
 	}
 }
 
-func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
+func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 	stream := b.current()
 	job := b.job
 	if len(branches) == 0 {

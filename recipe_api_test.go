@@ -306,6 +306,10 @@ type testBranchJob struct {
 	branches []testTranscodeBranch
 }
 
+type testBranchStream interface {
+	Branches(...goav.BranchSpec) *goav.Job
+}
+
 type testTranscodeBranch struct {
 	name       string
 	media      av.MediaType
@@ -349,7 +353,7 @@ func (j *testBranchJob) materialize() *goav.Job {
 	}
 	for i := range j.branches {
 		branch := j.branches[i]
-		var stream *goav.JobStreamBuilder
+		var stream testBranchStream
 		switch branch.media {
 		case av.MediaAudio:
 			stream = job.Audio().Decode().Tap(goav.FrameTap("audio.decoded"))
@@ -1336,6 +1340,11 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 	}
 	legacyTypes := map[string]bool{
 		"Builder":          true,
+		"BranchBuilder":    true,
+		"JobStreamBuilder": true,
+		"FlowBuilder":      true,
+		"AudioFlowBuilder": true,
+		"VideoFlowBuilder": true,
 		"Input":            true,
 		"Output":           true,
 		"OutputIntent":     true,
@@ -1396,18 +1405,18 @@ func TestInputSpecKeepsManualDepacketizersOutOfRecipeFrontDoor(t *testing.T) {
 }
 
 func TestBranchesIsTheOnlyPublicPlannedSplitVerb(t *testing.T) {
-	streamType := reflect.TypeOf((*goav.JobStreamBuilder)(nil))
+	streamType := reflect.TypeOf(goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).Audio())
 	if _, ok := streamType.MethodByName("Branches"); !ok {
-		t.Fatal("JobStreamBuilder should expose Branches for planned stream splits")
+		t.Fatal("stream chain should expose Branches for planned stream splits")
 	}
 	if _, ok := streamType.MethodByName("Fork"); ok {
-		t.Fatal("JobStreamBuilder should not expose Fork; Branches is the public planned split verb")
+		t.Fatal("stream chain should not expose Fork; Branches is the public planned split verb")
 	}
 	if _, ok := streamType.MethodByName("Tee"); ok {
-		t.Fatal("JobStreamBuilder should not expose Tee; flows apply to branches")
+		t.Fatal("stream chain should not expose Tee; flows apply to branches")
 	}
 	if _, ok := streamType.MethodByName("Branch"); ok {
-		t.Fatal("JobStreamBuilder should not expose build-time Branch; use Branches")
+		t.Fatal("stream chain should not expose build-time Branch; use Branches")
 	}
 }
 
@@ -2668,7 +2677,7 @@ func TestFlowCopyRequiresPacketDomain(t *testing.T) {
 }
 
 func TestNilFlowIsActionable(t *testing.T) {
-	var flow *goav.AudioFlowBuilder
+	var flow goav.Chain
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Apply(flow).
@@ -2682,7 +2691,7 @@ func TestNilFlowIsActionable(t *testing.T) {
 }
 
 func TestNilFlowBranchIsActionable(t *testing.T) {
-	var flow *goav.AudioFlowBuilder
+	var flow goav.Chain
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Branches(goav.Branch("voice").Apply(flow).To(goav.Target("voice", goav.FileOutput("voice.ogg", io.Discard)))).
