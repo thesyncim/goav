@@ -1062,6 +1062,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     branch. Describe/build graph equivalence coverage pins the shared-prefix
     shape so planned branches and runtime `FromTap` branches keep the same
     media-point model. Done.
+262. Make planned branches split from the current stream point without requiring
+    an explicit tap:
+    `Video().Decode().Resize(...).Branches(...)` now shares the resize as the
+    current branch point too; `.Tap(...)` remains the way to publish a stable
+    runtime attachment outlet, not a requirement for planned graph
+    correctness. Intent coverage verifies these unnamed current-point splits do
+    not pretend to reference `video.decoded`, and describe/build equivalence
+    coverage pins the shared-prefix graph. Done.
 
 ## First Vertical Slice
 

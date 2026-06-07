@@ -51,7 +51,8 @@ type recipeCompileState struct {
 	branchInputProbeReady   bool
 	branchCompositionSplit  bool
 
-	plan branchComposePlan
+	plan    branchComposePlan
+	planErr error
 
 	builder        builderAPI
 	spec           pipeline.Spec
@@ -337,6 +338,7 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		state.branchInputAttachment = job.input
 		state.branchTargetAttachments = append([]namedTargetSpec(nil), job.outputs...)
 		state.branchCompositionSplit = job.fromBranchSplit
+		state.plan, state.planErr = job.Plan()
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateBranchCompositionRecipePass(),
@@ -922,7 +924,13 @@ func validateJobStreamRuntimeCapabilitiesPass() recipeCompilePass {
 
 func planBranchCompositionIntentPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "plan branch composition intent", fn: func(state *recipeCompileState) error {
-		plan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchTargetAttachments)
+		if state.planErr != nil {
+			return state.planErr
+		}
+		if branchComposePlanReady(state.plan) {
+			return nil
+		}
+		plan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchTargetAttachments, nil)
 		if err != nil {
 			return err
 		}

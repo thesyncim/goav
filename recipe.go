@@ -1259,7 +1259,7 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 		Decode:     stream.decode,
 		Operations: streamBuildOperations(stream),
 		Transforms: cloneTransformSpecs(stream.transforms),
-		Taps:       append(streamStepTapIntents(stream.steps, stream.selector.Type), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
+		Taps:       append(streamStepTapIntents(streamBuildSteps(stream), stream.selector.Type), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:     stream.encode,
 		Targets:    append([]string(nil), stream.labels...),
 	}
@@ -1291,11 +1291,12 @@ func jobStreamOperations(stream *jobStreamBuild) []StreamOperation {
 }
 
 func streamBuildOperations(stream streamBuild) []StreamOperation {
-	operations := make([]StreamOperation, 0, len(stream.steps)+2+len(stream.postEncodeTaps))
+	steps := streamBuildSteps(stream)
+	operations := make([]StreamOperation, 0, len(steps)+2+len(stream.postEncodeTaps))
 	if stream.decode {
 		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec)})
 	}
-	operations = append(operations, streamStepOperations(stream.steps, stream.selector.Type)...)
+	operations = append(operations, streamStepOperations(steps, stream.selector.Type)...)
 	if stream.encode.Copy {
 		operations = append(operations, StreamOperation{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
 	} else if codecIntentSet(stream.encode) {
@@ -1310,6 +1311,10 @@ func streamBuildOperations(stream streamBuild) []StreamOperation {
 		operations = append(operations, StreamOperation{Kind: OpTap, Component: tap.Name, Tap: tap})
 	}
 	return operations
+}
+
+func streamBuildSteps(stream streamBuild) []jobStreamStep {
+	return appendBranchSteps(stream.sharedSteps, stream.steps)
 }
 
 func streamStepOperations(steps []jobStreamStep, media av.MediaType) []StreamOperation {
@@ -2377,6 +2382,7 @@ type streamBuild struct {
 	selector       av.StreamSelector
 	fromTap        string
 	decode         bool
+	sharedSteps    []jobStreamStep
 	steps          []jobStreamStep
 	postEncodeTaps []string
 	transforms     []TransformSpec
@@ -2491,7 +2497,7 @@ func lastStreamTap(stream *jobStreamBuild) string {
 			return stream.steps[i].tap
 		}
 	}
-	if stream.selector.Type != "" && stream.decode {
+	if len(stream.steps) == 0 && stream.selector.Type != "" && stream.decode {
 		return defaultDecodedTapName(stream.selector.Type)
 	}
 	return ""
@@ -2642,7 +2648,14 @@ func (j *branchCompositionJob) Intent() Intent {
 	return intent
 }
 
-func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []namedTargetSpec) (branchComposePlan, error) {
+func (j *branchCompositionJob) Plan() (branchComposePlan, error) {
+	if j == nil {
+		return branchComposePlan{}, nil
+	}
+	return planBranchCompositionRecipe(j.Intent(), j.input, j.outputs, j.streams)
+}
+
+func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []namedTargetSpec, branchBuilds []streamBuild) (branchComposePlan, error) {
 	streams := intent.Streams
 	outputs, outputOrder := branchTargetAttachmentSet(namedOutputs)
 
@@ -2656,6 +2669,9 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		branchName := stream.Name
 		selector := streamIntentSelector(stream)
 		sharedSteps, branchSteps := branchComposeStepsForStream(stream)
+		if i < len(branchBuilds) {
+			sharedSteps, branchSteps = branchComposeStepsForStreamBuild(branchBuilds[i])
+		}
 		branch := branchComposeBranch{
 			Name:        branchName,
 			Selector:    selector,
@@ -2699,6 +2715,14 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		Branches: branches,
 		Targets:  planTargets,
 	}, nil
+}
+
+func branchComposePlanReady(plan branchComposePlan) bool {
+	return len(plan.Branches) != 0 || len(plan.Targets) != 0
+}
+
+func branchComposeStepsForStreamBuild(stream streamBuild) ([]branchComposeStep, []branchComposeStep) {
+	return branchComposeStepsFromJobSteps(stream.sharedSteps), branchComposeStepsFromJobSteps(stream.steps)
 }
 
 func branchComposeStepsForStream(stream StreamIntent) ([]branchComposeStep, []branchComposeStep) {

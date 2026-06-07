@@ -3242,6 +3242,53 @@ func TestBranchCompositionSharesParentOperationBeforeBranches(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionSharesCurrentPointWithoutExplicitTap(t *testing.T) {
+	web := goav.Target("web", goav.FileOutput("web.webm", io.Discard))
+	thumbnail := goav.Target("thumbnail", goav.SinkEndpoint(goav.SinkFunc("thumbnail", func(context.Context, goav.Message) error {
+		return nil
+	})))
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		Resize(1280, 720).
+		Branches(
+			goav.Branch("web").
+				VP9(2_000_000).
+				To(web),
+			goav.Branch("thumb").
+				Resize(320, 180).
+				To(thumbnail),
+		)
+
+	intent := job.Intent()
+	if len(intent.Streams) != 2 || intent.Streams[0].FromTap != "" || intent.Streams[1].FromTap != "" {
+		t.Fatalf("intent streams = %+v, want unnamed current-point branch split", intent.Streams)
+	}
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	for _, want := range []string{
+		"decode-video -> resize-video",
+		"resize-video -> encode-web",
+		"resize-video -> resize-thumb",
+		"resize-thumb -> thumbnail",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec missing %q:\n%s", want, text)
+		}
+	}
+	for _, duplicate := range []string{
+		"decode-video -> resize-web",
+		"decode-video -> resize-thumb",
+	} {
+		if strings.Contains(text, duplicate) {
+			t.Fatalf("current-point resize was duplicated as %q:\n%s", duplicate, text)
+		}
+	}
+}
+
 func TestBranchRecipeRequiresBranch(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Build(context.Background())

@@ -322,13 +322,14 @@ ordinary encoded branches.
 
 Multiple branches that select the same input stream should share upstream demux,
 selection, and decode nodes unless a future isolation policy asks otherwise.
-When a stream chain declares operations before `.Branches(...)` and names that
-media point with `.Tap(...)`, the planner treats those operations as a shared
-prefix: one resize/resample/stage can feed several downstream branches. One
-target can be a mux group that receives coordinated encoded branches from
-different media streams. Resize, resample, and custom stage steps become
-ordinary branch operations; transform steps use matching filter factories when
-registered.
+When a stream chain declares operations before `.Branches(...)`, the planner
+treats the current stream point as a shared prefix: one resize/resample/stage
+can feed several downstream branches. Naming that point with `.Tap(...)` is
+only required when a stable runtime attachment handle should be exposed through
+`Task.Taps()`. One target can be a mux group that receives coordinated encoded
+branches from different media streams. Resize, resample, and custom stage steps
+become ordinary branch operations; transform steps use matching filter
+factories when registered.
 
 Typical use cases:
 

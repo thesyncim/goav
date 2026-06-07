@@ -331,11 +331,12 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			return job
 		}
 		job.branchStreams = append(job.branchStreams, streamBuild{
-			name:     branches[i].name,
-			selector: stream.selector,
-			fromTap:  lastStreamTap(stream),
-			decode:   true,
-			steps:    appendBranchSteps(stream.steps, branches[i].steps),
+			name:        branches[i].name,
+			selector:    stream.selector,
+			fromTap:     lastStreamTap(stream),
+			decode:      true,
+			sharedSteps: cloneJobStreamSteps(stream.steps),
+			steps:       cloneJobStreamSteps(branches[i].steps),
 			postEncodeTaps: append(
 				append([]string(nil), stream.postEncodeTaps...),
 				branches[i].postEncodeTaps...,
