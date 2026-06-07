@@ -1239,7 +1239,6 @@ type jobStreamBuild struct {
 	decode         bool
 	decodeCodec    CodecSpec
 	operations     []OperationSpec
-	steps          []chainStep
 	taps           []string
 	postEncodeTaps []string
 	encode         CodecSpec
@@ -1313,6 +1312,20 @@ func operationSpecsContainKind(operations []OperationSpec, kind OperationKind) b
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true
+		}
+	}
+	return false
+}
+
+func operationSpecsContainChainStep(operations []OperationSpec) bool {
+	for i := range operations {
+		switch operations[i].Kind {
+		case OpStage, OpShape, OpTransform:
+			return true
+		case OpTap:
+			if operations[i].Tap.Domain != DomainPacket {
+				return true
+			}
 		}
 	}
 	return false
@@ -1704,6 +1717,7 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 		afterPacketOperation = OpCopy
 	}
 	afterStepOperation := initialStepAfter(stream.decode)
+	steps := jobStreamChainSteps(stream)
 	return StreamIntent{
 		Name: stream.name,
 		Select: StreamSelect{
@@ -1718,7 +1732,7 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
 		Operations:   jobOperationSpecs(stream),
 		Transforms:   stream.transformSpecs(),
-		Taps:         append(chainStepTapIntents(stream.steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
+		Taps:         append(chainStepTapIntents(steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:       cloneCodecSpec(stream.encode),
 		CodecChange:  stream.codecChange,
 		Destinations: destinationNamesWithOverrides(stream.outputs, stream.outputNames),
@@ -1759,11 +1773,12 @@ func jobOperationSpecs(stream *jobStreamBuild) []OperationSpec {
 	if len(stream.operations) != 0 {
 		return cloneOperationSpecs(stream.operations)
 	}
-	operations := make([]OperationSpec, 0, len(stream.steps)+1+len(stream.postEncodeTaps))
+	steps := jobStreamChainSteps(stream)
+	operations := make([]OperationSpec, 0, len(steps)+1+len(stream.postEncodeTaps))
 	if stream.decode {
 		operations = append(operations, OperationSpec{Kind: OpDecode, Component: string(stream.selector.Codec), Decode: cloneCodecSpec(stream.decodeCodec)})
 	}
-	operations = append(operations, chainStepOperations(stream.steps, stream.selector.Type, initialStepAfter(stream.decode))...)
+	operations = append(operations, chainStepOperations(steps, stream.selector.Type, initialStepAfter(stream.decode))...)
 	if stream.encode.Copy {
 		operations = append(operations, OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
 	} else if codecIntentSet(stream.encode) {
@@ -2040,7 +2055,7 @@ func streamNeedsDecodeFromBuild(stream *jobStreamBuild) bool {
 	if stream == nil {
 		return false
 	}
-	return stream.decode || len(stream.steps) != 0 || stream.encode.ID != "" || stream.encode.Auto || stream.encode.Copy
+	return stream.decode || operationSpecsContainChainStep(stream.operations) || stream.encode.ID != "" || stream.encode.Auto || stream.encode.Copy
 }
 
 func jobStreamOutputs(stream *jobStreamBuild) []destinationSpec {
@@ -2058,13 +2073,14 @@ func jobStreamOutputNames(stream *jobStreamBuild) []string {
 }
 
 func chainStepAttachments(stream *jobStreamBuild) []chainStepAttachment {
-	if stream == nil || len(stream.steps) == 0 {
+	steps := jobStreamChainSteps(stream)
+	if len(steps) == 0 {
 		return nil
 	}
-	attachments := make([]chainStepAttachment, 0, len(stream.steps))
+	attachments := make([]chainStepAttachment, 0, len(steps))
 	transformIndex := 0
-	for i := range stream.steps {
-		step := stream.steps[i]
+	for i := range steps {
+		step := steps[i]
 		if step.stage != nil {
 			attachments = append(attachments, chainStepAttachment{stage: step.stage, stepIndex: i})
 			continue
@@ -2195,7 +2211,7 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 }
 
 func (s *jobStreamBuild) hasOperation() bool {
-	return s.decode || len(s.steps) != 0 || s.encode.ID != "" || s.encode.Auto || s.encode.Copy
+	return s.decode || operationSpecsContainChainStep(s.operations) || s.encode.ID != "" || s.encode.Auto || s.encode.Copy
 }
 
 func streamIntentHasOperation(stream StreamIntent, steps []chainStepAttachment) bool {
@@ -2203,16 +2219,24 @@ func streamIntentHasOperation(stream StreamIntent, steps []chainStepAttachment) 
 }
 
 func (s *jobStreamBuild) transformSpecs() []TransformSpec {
-	if s == nil {
+	steps := jobStreamChainSteps(s)
+	if len(steps) == 0 {
 		return nil
 	}
-	transforms := make([]TransformSpec, 0, len(s.steps))
-	for i := range s.steps {
-		if s.steps[i].transform.Resize != nil || s.steps[i].transform.Resample != nil {
-			transforms = append(transforms, s.steps[i].transform)
+	transforms := make([]TransformSpec, 0, len(steps))
+	for i := range steps {
+		if steps[i].transform.Resize != nil || steps[i].transform.Resample != nil {
+			transforms = append(transforms, steps[i].transform)
 		}
 	}
 	return transforms
+}
+
+func jobStreamChainSteps(stream *jobStreamBuild) []chainStep {
+	if stream == nil {
+		return nil
+	}
+	return chainStepsFromChainOperations(stream.operations)
 }
 
 func chainStepsFromTransforms(transforms []TransformSpec) []chainStep {
@@ -3555,23 +3579,21 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 		b.job.setErr(err)
 		return b
 	}
-	if codecIntentSet(stream.encode) && (spec.decode || len(spec.steps) != 0 || codecIntentSet(spec.encode)) {
+	specSteps := chainStepsFromChainOperations(spec.operations)
+	if codecIntentSet(stream.encode) && (spec.decode || len(specSteps) != 0 || codecIntentSet(spec.encode)) {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "flow", stream.encode))
 		return b
 	}
 	if spec.decode {
-		if stream.decode || len(stream.steps) != 0 {
+		if stream.decode || operationSpecsContainChainStep(stream.operations) {
 			b.job.setErr(flowDecodeDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
 			return b
 		}
 		stream.decode = true
 		stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, spec.decodeCodec)
 	}
-	if len(spec.steps) != 0 && !spec.decode {
+	if len(specSteps) != 0 && !spec.decode {
 		ensureJobStreamDecodeOperation(stream)
-	}
-	if len(spec.steps) != 0 {
-		stream.steps = append(stream.steps, cloneChainSteps(spec.steps)...)
 	}
 	if codecIntentSet(spec.encode) && !spec.encode.Copy && !spec.decode {
 		ensureJobStreamDecodeOperation(stream)
@@ -3579,7 +3601,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 	stream.operations = append(stream.operations, cloneOperationSpecs(spec.operations)...)
 	if codecIntentSet(spec.encode) {
 		if spec.encode.Copy {
-			if stream.decode || len(stream.steps) != 0 {
+			if stream.decode || operationSpecsContainChainStep(stream.operations) {
 				b.job.setErr(flowCopyDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
 				return b
 			}
@@ -3638,7 +3660,6 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 		return b
 	}
 	ensureJobStreamDecodeOperation(stream)
-	stream.steps = append(stream.steps, chainStep{tap: tap.name, tapDomain: tap.domain})
 	stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, initialStepAfter(stream.decode))))
 	return b
 }
@@ -3661,15 +3682,16 @@ func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 	if len(stream.postEncodeTaps) != 0 {
 		return PacketTap(stream.postEncodeTaps[len(stream.postEncodeTaps)-1])
 	}
-	if stream.encode.Copy && len(stream.steps) == 0 && stream.selector.Type != "" {
+	steps := jobStreamChainSteps(stream)
+	if stream.encode.Copy && len(steps) == 0 && stream.selector.Type != "" {
 		return PacketTap(defaultPacketTapName(stream.selector.Type, 0))
 	}
-	for i := len(stream.steps) - 1; i >= 0; i-- {
-		if stream.steps[i].tap != "" {
-			return tapWithDomain(TapRef{name: stream.steps[i].tap, domain: stream.steps[i].tapDomain}, DomainFrame)
+	for i := len(steps) - 1; i >= 0; i-- {
+		if steps[i].tap != "" {
+			return tapWithDomain(TapRef{name: steps[i].tap, domain: steps[i].tapDomain}, DomainFrame)
 		}
 	}
-	if len(stream.steps) == 0 && stream.selector.Type != "" && stream.decode {
+	if len(steps) == 0 && stream.selector.Type != "" && stream.decode {
 		return FrameTap(defaultDecodedTapName(stream.selector.Type))
 	}
 	return TapRef{}
@@ -3681,8 +3703,11 @@ func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", stream.encode))
 		return b
 	}
+	if stage == nil {
+		b.job.setErr(streamStageMissingError(StreamIntent{Name: jobStreamName(stream)}))
+		return b
+	}
 	ensureJobStreamDecodeOperation(stream)
-	stream.steps = append(stream.steps, chainStep{stage: stage})
 	stream.operations = append(stream.operations, operationSpecForStage(stage))
 	return b
 }
@@ -3693,7 +3718,6 @@ func (b *jobStreamBuilder) Shape(shape MediaShape) *jobStreamBuilder {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "shape", stream.encode))
 		return b
 	}
-	stream.steps = append(stream.steps, chainStep{shape: shape})
 	stream.operations = append(stream.operations, operationSpecForShape(shape))
 	return b
 }
@@ -3706,7 +3730,6 @@ func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption
 	}
 	ensureJobStreamDecodeOperation(stream)
 	transform := Resize(width, height, options...)
-	stream.steps = append(stream.steps, chainStep{transform: transform})
 	stream.operations = append(stream.operations, operationSpecForTransform(transform))
 	return b
 }
@@ -3719,7 +3742,6 @@ func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 	}
 	ensureJobStreamDecodeOperation(stream)
 	transform := Resample(sampleRate, channels, options...)
-	stream.steps = append(stream.steps, chainStep{transform: transform})
 	stream.operations = append(stream.operations, operationSpecForTransform(transform))
 	return b
 }
@@ -4045,6 +4067,35 @@ func chainStepsFromOperationSpecs(operations []OperationSpec) []chainStep {
 		case OpTransform:
 			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
 				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
+			}
+		}
+	}
+	return steps
+}
+
+func chainStepsFromChainOperations(operations []OperationSpec) []chainStep {
+	if len(operations) == 0 {
+		return nil
+	}
+	steps := make([]chainStep, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		switch operation.Kind {
+		case OpStage:
+			if operation.Stage != nil {
+				steps = append(steps, chainStep{stage: operation.Stage})
+			}
+		case OpShape:
+			if !mediaShapeEmpty(operation.Shape) {
+				steps = append(steps, chainStep{shape: operation.Shape})
+			}
+		case OpTransform:
+			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
+				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
+			}
+		case OpTap:
+			if operation.Tap.Name != "" && operation.Tap.Domain != DomainPacket {
+				steps = append(steps, chainStep{tap: operation.Tap.Name, tapDomain: operation.Tap.Domain})
 			}
 		}
 	}

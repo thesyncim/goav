@@ -26,7 +26,6 @@ type chainSpec struct {
 	decode         bool
 	decodeCodec    CodecSpec
 	operations     []OperationSpec
-	steps          []chainStep
 	postEncodeTaps []string
 	transforms     []TransformSpec
 	encode         CodecSpec
@@ -331,7 +330,7 @@ func (b *chainBuilder) decode(options ...CodecOption) {
 		b.setErr(duplicateFlowDecodeError(firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
-	if len(b.spec.steps) != 0 {
+	if operationSpecsContainChainStep(b.spec.operations) {
 		b.setErr(flowDecodeOrderError(firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
@@ -349,7 +348,6 @@ func (b *chainBuilder) transform(spec TransformSpec) {
 		return
 	}
 	transform := cloneTransformSpec(spec)
-	b.spec.steps = append(b.spec.steps, chainStep{transform: transform})
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpec(spec))
 	b.spec.operations = append(b.spec.operations, operationSpecForTransform(transform))
 }
@@ -366,7 +364,6 @@ func (b *chainBuilder) stage(stage pipeline.Stage) {
 		b.setErr(streamStageMissingError(StreamIntent{Name: firstNonEmpty(b.spec.name, "flow")}))
 		return
 	}
-	b.spec.steps = append(b.spec.steps, chainStep{stage: stage})
 	b.spec.operations = append(b.spec.operations, operationSpecForStage(stage))
 }
 
@@ -378,7 +375,6 @@ func (b *chainBuilder) shape(shape MediaShape) {
 		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "shape", b.spec.encode))
 		return
 	}
-	b.spec.steps = append(b.spec.steps, chainStep{shape: shape})
 	b.spec.operations = append(b.spec.operations, operationSpecForShape(shape))
 }
 
@@ -413,7 +409,6 @@ func (b *chainBuilder) tap(tap TapRef) {
 		b.setErr(err)
 		return
 	}
-	b.spec.steps = append(b.spec.steps, chainStep{tap: tap.name, tapDomain: tap.domain})
 	b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, initialStepAfter(b.spec.decode))))
 }
 
@@ -425,7 +420,7 @@ func (b *chainBuilder) encode(codec CodecSpec) {
 		b.setErr(duplicateFlowEncodeError(b.spec.name, b.spec.encode, codec))
 		return
 	}
-	if codec.Copy && (b.spec.decode || len(b.spec.steps) != 0) {
+	if codec.Copy && (b.spec.decode || operationSpecsContainChainStep(b.spec.operations)) {
 		b.setErr(flowCopyDomainError("build flow", firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
@@ -441,7 +436,6 @@ func (b *chainBuilder) snapshot() chainSpec {
 	spec.decodeCodec = cloneCodecSpec(spec.decodeCodec)
 	spec.encode = cloneCodecSpec(spec.encode)
 	spec.operations = cloneOperationSpecs(spec.operations)
-	spec.steps = cloneChainSteps(spec.steps)
 	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
 	return spec

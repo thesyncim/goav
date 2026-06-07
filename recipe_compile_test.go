@@ -360,6 +360,33 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	}
 }
 
+func TestReusableAndRecipeChainsStoreOperationSpecsOnly(t *testing.T) {
+	flowBody, err := os.ReadFile("flow.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(flowBody), "steps          []chainStep") {
+		t.Fatal("chainSpec should store OperationSpec, not a parallel chainStep slice")
+	}
+
+	recipeBody, err := os.ReadFile("recipe.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(recipeBody)
+	start := strings.Index(text, "type jobStreamBuild struct")
+	if start < 0 {
+		t.Fatal("could not locate jobStreamBuild boundary")
+	}
+	end := strings.Index(text[start:], "type chainStep struct")
+	if end < 0 {
+		t.Fatal("could not locate jobStreamBuild boundary")
+	}
+	if strings.Contains(text[start:start+end], "steps          []chainStep") {
+		t.Fatal("jobStreamBuild should store OperationSpec, not a parallel chainStep slice")
+	}
+}
+
 func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	voice := Flow("voice").Audio().
 		Resample(16_000, Mono).
@@ -401,7 +428,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 		t.Fatal("job stream is nil")
 	}
 	if got, want := operationSpecKindsForTest(job.stream.operations), []OperationKind{OpDecode, OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("direct stream stored operations = %+v, want %+v", got, want)
+		t.Fatalf("recipe chain stored operations = %+v, want %+v", got, want)
 	}
 
 	branch := Branch("archive").

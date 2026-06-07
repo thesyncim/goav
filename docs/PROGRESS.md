@@ -2604,6 +2604,12 @@ flow builders expose `.Encode(codec)` as the only encode operation, keeping the
 main builder from accumulating one-off tuning methods. `OpusVoice` and
 `OpusMusic` are removed before release for the same reason; voice/music choices
 are ordinary `Opus(Bitrate(...), Channels(...))` codec values.
+Reusable flows and ordinary chains now store their ordered work
+only as `OperationSpec`. Legacy `chainStep` is derived at the remaining
+branch/runtime lowerer boundary, which keeps this pass scoped while making the
+next deletion obvious: branch composition and runtime attach should consume the
+same operation sequence directly instead of projecting back through a parallel
+step list.
 
 ## Validation Gates
 
