@@ -1741,6 +1741,7 @@ func TestStreamIntentUsesTypedTapAnchor(t *testing.T) {
 func TestHighLevelCompositionInternalsUseDestinationVocabulary(t *testing.T) {
 	files := []string{
 		"branch.go",
+		"flow.go",
 		"recipe.go",
 		"recipe_compile.go",
 		"media_plan_spec.go",

@@ -25,14 +25,6 @@ type mediaPlanSingleStreamGraph struct {
 	encode  *encodeRequest
 }
 
-type mediaPlanSinkDestinationExecutable struct {
-	mediaPlanSingleStreamGraph
-}
-
-type mediaPlanEncodeExecutable struct {
-	mediaPlanSingleStreamGraph
-}
-
 type mediaPlanPacketCopyGraph struct {
 	runtime        *runtime
 	inputs         []InputSpec
@@ -61,36 +53,34 @@ func (p mediaPlanPacketCopyGraph) build(ctx context.Context) (Task, error) {
 	return newTask(graph, p.runtime), nil
 }
 
-func (p mediaPlanSinkDestinationExecutable) spec() (pipeline.Spec, error) {
-	return p.sinkDestinationSpec()
-}
-
-func (p mediaPlanSinkDestinationExecutable) build(ctx context.Context) (Task, error) {
-	graph, err := p.newGraph(ctx)
-	if err != nil {
-		return nil, err
+func (p mediaPlanSingleStreamGraph) spec() (pipeline.Spec, error) {
+	if p.hasSingleSinkDestination() {
+		return p.sinkDestinationSpec()
 	}
-	if err := p.compileSinkDestination(ctx, graph); err != nil {
-		graph.Close()
-		return nil, err
-	}
-	return newTask(graph, p.runtime), nil
-}
-
-func (p mediaPlanEncodeExecutable) spec() (pipeline.Spec, error) {
 	return p.encodeOutputSpec()
 }
 
-func (p mediaPlanEncodeExecutable) build(ctx context.Context) (Task, error) {
+func (p mediaPlanSingleStreamGraph) build(ctx context.Context) (Task, error) {
 	graph, err := p.newGraph(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := p.compileEncodeOutput(ctx, graph); err != nil {
+	if err := p.compile(ctx, graph); err != nil {
 		graph.Close()
 		return nil, err
 	}
 	return newTask(graph, p.runtime), nil
+}
+
+func (p mediaPlanSingleStreamGraph) compile(ctx context.Context, graph pipeline.Graph) error {
+	if p.hasSingleSinkDestination() {
+		return p.compileSinkDestination(ctx, graph)
+	}
+	return p.compileEncodeOutput(ctx, graph)
+}
+
+func (p mediaPlanSingleStreamGraph) hasSingleSinkDestination() bool {
+	return len(p.outputs) == 1 && p.outputs[0].sink != nil
 }
 
 func (p mediaPlanBranchComposeGraph) build(ctx context.Context) (Task, error) {

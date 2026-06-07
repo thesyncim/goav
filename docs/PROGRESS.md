@@ -1554,6 +1554,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     need exact records, and guard coverage rejects `DestinationSpec` as an
     exported front-door type.
     Done.
+319. Unify single-stream media-plan execution:
+    decoded frame sinks, encode-to-file/URI destinations, encode-to-sink
+    destinations, and mixed encoded fanout now all compile through
+    `mediaPlanSingleStreamGraph` instead of separate sink and encode executable
+    wrappers. The media-plan selector has one single-stream branch, tests assert
+    that common single-stream recipes share that executable path, and flow
+    diagnostics are covered by the destination-vocabulary guard.
+    Done.
 
 ## First Vertical Slice
 

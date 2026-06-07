@@ -2431,7 +2431,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSinkDestinationExecutable](t, resolved)
+	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2467,7 +2467,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSinkDestinationExecutable](t, resolved)
+	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
 	task, err := resolved.Build(ctx)
 	if err != nil {
 		t.Fatalf("resolved.Build() error = %v", err)
@@ -2493,7 +2493,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSinkDestinationExecutable](t, resolved)
+	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2568,7 +2568,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanEncodeExecutable](t, resolved)
+	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2664,7 +2664,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSinkDestinationExecutable](t, resolved)
+	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2711,7 +2711,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanEncodeExecutable](t, resolved)
+	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2754,7 +2754,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanEncodeExecutable](t, resolved)
+	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)

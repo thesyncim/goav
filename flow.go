@@ -499,8 +499,8 @@ func branchOutputScopeError(node string) error {
 		Node:      node,
 		Reason:    "branch targets are declared inside Branch(...).To(...)",
 		Suggestions: []string{
-			"route branches with .Branches(goav.Branch(name).To(goav.Target(name, endpoint)))",
-			"use stream .To(endpoint) only for one ordinary stream output",
+			"route branches with .Branches(goav.Branch(name).To(goav.Target(name, goav.FileOutput(...))))",
+			"use stream .To(goav.FileOutput(...)) or .To(goav.Sink(...)) only for one ordinary stream destination",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
