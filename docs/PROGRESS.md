@@ -1263,6 +1263,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     parent closes the resample filter plus both sinks, removes the nested tap,
     and prevents later frames from re-entering the detached audio transform
     subtree while the base graph continues. Done.
+288. Prove runtime filter cleanup after late validation failure:
+    `TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter`
+    now opens a runtime resample filter, then rejects the branch because it
+    tries to publish a tap name already present on the task. The opened filter
+    is closed, no branch nodes or taps are registered, and the graph spec stays
+    unchanged. Done.
 
 ## First Vertical Slice
 
@@ -1512,10 +1518,11 @@ expand ordered stage/tap/transform/encode operations into branch intent instead
 of a parallel graph language, and
 `Task.Attach` remains the late branch control plane for running graphs,
 including custom-stage, resize/resample, branch-local node stats, dependent
-branches after runtime resize and resample taps, post-encode packet taps feeding dependent
-packet-copy branches, live buffered parent detach that removes nested
-transform frame-tap, custom-stage frame-tap, and post-encode packet-tap
-subtrees before future media reaches them,
+branches after runtime resize and resample taps, post-encode packet taps
+feeding dependent packet-copy branches, live buffered parent detach that removes
+nested transform frame-tap, custom-stage frame-tap, and post-encode packet-tap
+subtrees before future media reaches them, runtime filter cleanup after
+post-open duplicate-tap rejection,
 flow-applied Opus encode-to-target branches, late Opus/VP8/VP9
 encode-to-endpoint, packet-copy endpoint, packet-copy recording, Opus encoded
 late recording, and sink branches that can publish nested runtime taps for later
@@ -1529,8 +1536,8 @@ direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
 broaden descriptor-backed endpoint/container capability data as WebM/Ogg arrive
-and keep broadening runtime attachment stress around generic filter lifecycle
-boundaries without weakening the direct graph branch grammar.
+and keep broadening runtime attachment stress around graph rollback and generic
+filter lifecycle boundaries without weakening the direct graph branch grammar.
 
 ## Validation Gates
 

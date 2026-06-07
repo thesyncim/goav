@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -831,6 +832,100 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 	}
 	if err := child.Close(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *testing.T) {
+	ctx := context.Background()
+	resampler := &transcodeTestFilter{}
+	resampleFactory := &transcodeTestFilterFactory{filter: resampler}
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResample,
+		Input:  av.MediaAudio,
+		Output: av.MediaAudio,
+	}, resampleFactory))
+	source := &runtimeTestSource{
+		name: "source",
+		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &av.Frame{
+			StreamID: "audio",
+			Type:     av.MediaAudio,
+			Audio:    &av.AudioFrame{SampleRate: 48000, Channels: Stereo, SampleFormat: av.SampleFormatS16},
+		}},
+	}
+	graph := New(filters).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	mediaTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := mediaTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:       DomainFrame,
+			MediaKind:    av.MediaAudio,
+			StreamID:     "audio",
+			Codec:        av.CodecOpus,
+			SampleRate:   48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatS16,
+		},
+		Node: "source",
+	}, {
+		Name:      "audio.16k",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:       DomainFrame,
+			MediaKind:    av.MediaAudio,
+			StreamID:     "audio",
+			Codec:        av.CodecOpus,
+			SampleRate:   16000,
+			Channels:     Mono,
+			SampleFormat: av.SampleFormatS16,
+		},
+		Node: "source",
+	}}
+	defer mediaTask.Close()
+	before := mediaTask.Describe()
+
+	_, err = mediaTask.Attach(ctx, Branch("voice").
+		FromTap("audio.frames").
+		Resample(16_000, Mono).
+		Tap("audio.16k").
+		To(SinkEndpoint(SinkFunc("voice", func(context.Context, Message) error {
+			return nil
+		}))))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_tap_duplicate" {
+		t.Fatalf("err = %v, want runtime_branch_tap_duplicate", err)
+	}
+	if resampleFactory.config.Audio == nil ||
+		resampleFactory.config.Audio.SampleRate != 16_000 ||
+		resampleFactory.config.Audio.Channels != Mono {
+		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before duplicate-tap rejection", resampleFactory.config.Audio)
+	}
+	if !resampler.closed {
+		t.Fatal("runtime filter was not closed after duplicate-tap rejection")
+	}
+	if after := mediaTask.Describe(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
+	}
+	taps := mediaTask.Taps()
+	count := 0
+	for _, tap := range taps {
+		if tap.Name == "audio.16k" {
+			count++
+		}
+		if strings.Contains(tap.Node.String(), "voice") {
+			t.Fatalf("runtime branch tap registered after rejected attach: %+v", tap)
+		}
+	}
+	if count != 1 {
+		t.Fatalf("audio.16k tap count = %d in %+v, want existing tap only", count, taps)
 	}
 }
 

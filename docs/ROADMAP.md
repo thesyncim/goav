@@ -174,7 +174,7 @@ make the implementation match the composable planner promise.
   encode-to-target branches, post-encode packet taps, and dependent late
   branches after runtime resize/resample taps plus live buffered custom-stage
   and post-encode nested tap detach covered; live buffered runtime resize and
-  resample subtree detach are now covered, and deeper generic filter lifecycle
-  stress proof remains planned.
+  resample subtree detach plus post-open filter cleanup on rejected branches are
+  now covered, and deeper graph-rollback lifecycle stress proof remains planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.
