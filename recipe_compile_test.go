@@ -2888,6 +2888,16 @@ func graphPlanTargetOperationNode(operations []graphPlanOperation, target string
 	return "", false
 }
 
+func renameResolvedGraphPlanTargetNode(t *testing.T, resolved recipeResolved, target string, name string) recipeResolved {
+	t.Helper()
+	node, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, target)
+	if !ok {
+		t.Fatalf("graphPlan operations = %+v, want target operation %q", resolved.graphPlan.operations, target)
+	}
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, node.String(), name)
+	return resolved
+}
+
 func renameGraphPlanNodeRef(plan graphPlan, oldName string, newName string) graphPlan {
 	oldRef := pipeline.NodeRef(oldName)
 	newRef := pipeline.NodeRef(newName)
@@ -3031,6 +3041,48 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	}
 }
 
+func TestStreamGraphLowererUsesPlanPacketCopyTargetOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Copy().
+		To(
+			fileDestination("archive.ogg", io.Discard),
+			Sink(&runtimeTestSink{name: "packets"}),
+		)
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved = renameResolvedGraphPlanTargetNode(t, resolved, "archive.ogg", "target-plan-archive")
+	resolved = renameResolvedGraphPlanTargetNode(t, resolved, "packets", "target-plan-packets")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "target-plan-archive") || !specHasNode(planned, "target-plan-packets") {
+		t.Fatalf("planned = %+v, want renamed packet-copy target nodes", planned)
+	}
+}
+
 func TestPacketCopyLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
@@ -3085,6 +3137,44 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	defer task.Close()
 	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+}
+
+func TestStreamGraphLowererUsesPlanDecodedSinkTargetOperationNode(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		),
+		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		To(Sink(&runtimeTestSink{name: "frames"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved = renameResolvedGraphPlanTargetNode(t, resolved, "frames", "target-plan-frames")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "target-plan-frames") {
+		t.Fatalf("planned = %+v, want renamed decoded sink target node", planned)
 	}
 }
 
@@ -3304,6 +3394,53 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	}
 	if !specHasNode(built, "meter") || !specHasNode(built, "encode-audio") || !specHasNode(built, "archive.ogg") {
 		t.Fatalf("built spec = %+v, want meter, encode, and mux nodes", built)
+	}
+}
+
+func TestStreamGraphLowererUsesPlanEncodedTargetOperationNodes(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Opus(96_000).
+		To(
+			fileDestination("archive.ogg", io.Discard),
+			Sink(&runtimeTestSink{name: "packets"}),
+		)
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved = renameResolvedGraphPlanTargetNode(t, resolved, "archive.ogg", "target-plan-archive")
+	resolved = renameResolvedGraphPlanTargetNode(t, resolved, "packets", "target-plan-packets")
+	planned, err := resolved.Describe()
+	if err != nil {
+		t.Fatalf("resolved.Describe() error = %v", err)
+	}
+	task, err := resolved.Build(ctx)
+	if err != nil {
+		t.Fatalf("resolved.Build() error = %v", err)
+	}
+	defer task.Close()
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned = %+v, built = %+v", planned, built)
+	}
+	if !specHasNode(planned, "target-plan-archive") || !specHasNode(planned, "target-plan-packets") {
+		t.Fatalf("planned = %+v, want renamed encoded target nodes", planned)
 	}
 }
 
