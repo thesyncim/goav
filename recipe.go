@@ -892,6 +892,15 @@ func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) 
 	}, opts...)
 }
 
+func Object(name string, open ObjectOpenFunc, opts ...DestinationOption) ConfigurableDestination {
+	return Writer(name, func(ctx context.Context, info TargetInfo) (io.WriteCloser, error) {
+		if open == nil {
+			return nil, ErrNilWriter
+		}
+		return open(ctx, info)
+	}, opts...)
+}
+
 type writerDestination struct {
 	name string
 	open WriterOpenFunc
@@ -942,6 +951,14 @@ func Format(format av.FormatID) DestinationOption {
 	return func(spec *destinationSpec) {
 		if spec != nil {
 			*spec = spec.withFormat(format)
+		}
+	}
+}
+
+func Metadata(metadata av.Metadata) DestinationOption {
+	return func(spec *destinationSpec) {
+		if spec != nil {
+			spec.output.Metadata = cloneMetadata(metadata)
 		}
 	}
 }
@@ -1434,22 +1451,22 @@ func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool
 }
 
 func validateJobOutputBindings(operation string, stream StreamIntent, outputs []destinationSpec, targetNames []string) error {
-	labels := jobOutputLabelSet(outputs, targetNames)
-	for _, label := range stream.Targets {
-		if _, ok := labels[label]; ok {
+	targets := jobOutputTargetSet(outputs, targetNames)
+	for _, target := range stream.Targets {
+		if _, ok := targets[target]; ok {
 			continue
 		}
-		return jobTargetReferenceMissingError(operation, stream, label)
+		return jobTargetReferenceMissingError(operation, stream, target)
 	}
 	return nil
 }
 
-func jobOutputLabelSet(outputs []destinationSpec, targetNames []string) map[string]struct{} {
-	labels := make(map[string]struct{}, len(outputs))
+func jobOutputTargetSet(outputs []destinationSpec, targetNames []string) map[string]struct{} {
+	targets := make(map[string]struct{}, len(outputs))
 	for i := range outputs {
-		labels[jobOutputTargetName(outputs, targetNames, i)] = struct{}{}
+		targets[jobOutputTargetName(outputs, targetNames, i)] = struct{}{}
 	}
-	return labels
+	return targets
 }
 
 func (j *Job) allOutputs() []destinationSpec {
@@ -1565,7 +1582,7 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 		Transforms:  cloneTransformSpecs(stream.transforms),
 		Taps:        append(chainStepTapIntents(streamChainSteps(stream), stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:      cloneCodecSpec(stream.encode),
-		Targets:     append([]string(nil), stream.labels...),
+		Targets:     append([]string(nil), stream.targetNames...),
 	}
 }
 
@@ -3161,7 +3178,7 @@ type streamBuild struct {
 	postEncodeTaps []string
 	transforms     []TransformSpec
 	encode         CodecSpec
-	labels         []string
+	targetNames    []string
 }
 
 func StreamID(id av.StreamID) streamOption {
@@ -3882,7 +3899,7 @@ func transcodeUnsupportedRTPInputError() error {
 	}
 }
 
-func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
+func branchTargetNameEmptyError(stream streamBuild, index int) error {
 	return &BuildError{
 		Code:      "target_invalid",
 		Operation: branchCompositionOperation,
@@ -3899,7 +3916,7 @@ func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 	}
 }
 
-func transcodeEmptyOutputDefinitionLabelError(output destinationSpec) error {
+func branchTargetDefinitionNameEmptyError(output destinationSpec) error {
 	err := &BuildError{
 		Code:      "target_invalid",
 		Operation: branchCompositionOperation,
@@ -3970,21 +3987,21 @@ func branchIntentNameMissingError(index int, stream StreamIntent) error {
 
 func validateBranchTargets(stream StreamIntent) error {
 	seen := make(map[string]int, len(stream.Targets))
-	for i, label := range stream.Targets {
-		if firstIndex, ok := seen[label]; ok {
-			return duplicateBranchDestinationError(stream, label, firstIndex, i)
+	for i, target := range stream.Targets {
+		if firstIndex, ok := seen[target]; ok {
+			return duplicateBranchDestinationError(stream, target, firstIndex, i)
 		}
-		seen[label] = i
+		seen[target] = i
 	}
 	return nil
 }
 
-func duplicateBranchDestinationError(stream StreamIntent, label string, firstIndex int, secondIndex int) error {
+func duplicateBranchDestinationError(stream StreamIntent, target string, firstIndex int, secondIndex int) error {
 	return &BuildError{
 		Code:      "target_duplicate",
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
-		Reason:    fmt.Sprintf("branch routes to target %q more than once", label),
+		Reason:    fmt.Sprintf("branch routes to target %q more than once", target),
 		Details: []string{
 			fmt.Sprintf("first target index: %d", firstIndex),
 			fmt.Sprintf("second target index: %d", secondIndex),
@@ -3992,7 +4009,7 @@ func duplicateBranchDestinationError(stream StreamIntent, label string, firstInd
 		Suggestions: []string{
 			"list each target once in .To(...)",
 			"route one branch to multiple targets with distinct values such as .To(archive, preview)",
-			"reuse typed target values instead of repeating string labels",
+			"reuse typed target values instead of repeating target names",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -4081,19 +4098,19 @@ func branchStreamName(stream streamBuild) string {
 }
 
 func destinationTargetNames(outputs []destinationSpec) []string {
-	labels := make([]string, 0, len(outputs))
+	names := make([]string, 0, len(outputs))
 	for i := range outputs {
-		labels = append(labels, outputs[i].label(fmt.Sprintf("output-%d", i)))
+		names = append(names, outputs[i].label(fmt.Sprintf("output-%d", i)))
 	}
-	return labels
+	return names
 }
 
 func destinationTargetNamesWithNames(outputs []destinationSpec, targetNames []string) []string {
-	labels := make([]string, 0, len(outputs))
+	names := make([]string, 0, len(outputs))
 	for i := range outputs {
-		labels = append(labels, jobOutputTargetName(outputs, targetNames, i))
+		names = append(names, jobOutputTargetName(outputs, targetNames, i))
 	}
-	return labels
+	return names
 }
 
 func jobOutputTargetName(outputs []destinationSpec, targetNames []string, index int) string {

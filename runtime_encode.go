@@ -421,7 +421,15 @@ func (b *builder) compileEncodeStage(ctx context.Context, graph pipeline.Graph, 
 }
 
 func compileEncodeStage(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, error) {
-	stage, err := (&builder{runtime: runtime}).newEncodeStage(ctx, request, config)
+	return compileEncodeStageNamed(ctx, runtime, graph, "", upstream, request, config)
+}
+
+func (b *builder) compileEncodeStageNamed(ctx context.Context, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, error) {
+	return compileEncodeStageNamed(ctx, b.runtime, graph, name, upstream, request, config)
+}
+
+func compileEncodeStageNamed(ctx context.Context, runtime *runtime, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, error) {
+	stage, err := (&builder{runtime: runtime}).newEncodeStageNamed(ctx, name, request, config)
 	if err != nil {
 		return "", err
 	}
@@ -437,6 +445,10 @@ func compileEncodeStage(ctx context.Context, runtime *runtime, graph pipeline.Gr
 }
 
 func (b *builder) newEncodeStage(ctx context.Context, request encodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, error) {
+	return b.newEncodeStageNamed(ctx, "", request, config)
+}
+
+func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request encodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, error) {
 	factory, err := b.runtime.codecs.EncoderFactory(config.Parameters.ID)
 	if err != nil {
 		return nil, err
@@ -445,8 +457,9 @@ func (b *builder) newEncodeStage(ctx context.Context, request encodeRequest, con
 	if err != nil {
 		return nil, err
 	}
+	name = firstNonEmpty(name, encodeNodeName(request))
 	stage, err := codec.NewEncoderStage(codec.EncoderStageConfig{
-		Name:              encodeNodeName(request),
+		Name:              name,
 		Detail:            encodeNodeDetail(request),
 		Encoder:           encoder,
 		Result:            encodeResultForStream(config.Stream),

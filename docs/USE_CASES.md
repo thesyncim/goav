@@ -16,9 +16,9 @@ err := goav.From(goav.WebRTCTrack(track)).
     Run(ctx)
 ```
 
-Wrap a file, URI, or sink with `goav.Target(name, ref)` when the record job
-needs a stable logical target name for diagnostics, explain reports, or later
-mux grouping.
+Wrap a file, URI, writer, object upload, or sink with
+`goav.Target(name, destination)` when the job needs a stable logical target name
+for diagnostics, explain reports, or later mux grouping.
 
 Decoded preview:
 

@@ -36,6 +36,7 @@ type mediaTransform struct {
 }
 
 type branchComposeTargetRoute struct {
+	node    pipeline.NodeRef
 	output  branchComposeTarget
 	target  format.Output
 	sink    pipeline.Sink
@@ -351,12 +352,12 @@ func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.G
 	if err != nil {
 		return err
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, []pipeline.NodeRef{sourceRef}, groups, nil, branches, realtime)
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, []pipeline.NodeRef{sourceRef}, groups, nil, branches, nil, realtime)
 	if err != nil {
 		return err
 	}
 
-	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, realtime)
+	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, nil, nil, realtime)
 }
 
 func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
@@ -396,12 +397,12 @@ func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipelin
 	if err != nil {
 		return err
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, sourceRefs, groups, builds, branches, realtime)
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, sourceRefs, groups, builds, branches, nil, realtime)
 	if err != nil {
 		return err
 	}
 
-	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, realtime)
+	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, nil, nil, realtime)
 }
 
 func compileBranchComposeInputs(
@@ -412,6 +413,7 @@ func compileBranchComposeInputs(
 	groups []branchComposeStreamGroup,
 	builds []rtpBuild,
 	branches []branchComposeRoute,
+	inputPlan map[string]graphPlanBranchComposeInputOperation,
 	realtime bool,
 ) ([]pipeline.NodeRef, []av.Stream, error) {
 	service := &builder{runtime: runtime}
@@ -420,7 +422,9 @@ func compileBranchComposeInputs(
 	for i := range groups {
 		selector := groups[i].selector
 		selected := groups[i].stream
-		selectStage := newStreamSelectStage(selectNodeName(selector), selected, selector, selectNodeDetail(selector))
+		planned := inputPlan[branchComposeSelectorKey(selector)]
+		selectName := firstNonEmpty(planned.selectNode.String(), selectNodeName(selector))
+		selectStage := newStreamSelectStage(selectName, selected, selector, selectNodeDetail(selector))
 		selectRef, err := graph.AddStage(selectStage, runtime.buffer)
 		if err != nil {
 			selectStage.Close()
@@ -449,7 +453,8 @@ func compileBranchComposeInputs(
 		if err != nil {
 			return nil, nil, err
 		}
-		decodeStage, err := service.newDecodeStage(ctx, decodeRequest{selector: selector, config: decodeConfig}, selected, realtime, false, bounds)
+		decodeName := firstNonEmpty(planned.decodeNode.String(), decodeNodeName(selector))
+		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig}, selected, realtime, false, bounds)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -478,6 +483,8 @@ func compileBranchComposeRoutes(
 	outputs []branchComposeTargetRoute,
 	branchInputs []pipeline.NodeRef,
 	branchStreams []av.Stream,
+	sharedStepPlan map[string][]pipeline.NodeRef,
+	branchPlan map[string]graphPlanBranchComposeBranchOperation,
 	realtime bool,
 ) error {
 	runtime := service.runtime
@@ -490,8 +497,13 @@ func compileBranchComposeRoutes(
 		firstBranch := prefix.branches[0]
 		branchRef := branchInputs[firstBranch]
 		branchStream := branchStreams[firstBranch]
+		stepRefs := branchComposeSharedStepPlanRefs(sharedStepPlan, branches, prefix.branches)
 		for j := range prefix.steps {
-			stage, outputStream, err := service.newBranchComposeStepStage(ctx, prefix.steps[j], branchStream, realtime)
+			stageName := ""
+			if j < len(stepRefs) {
+				stageName = stepRefs[j].String()
+			}
+			stage, outputStream, err := service.newBranchComposeStepStageNamed(ctx, stageName, prefix.steps[j], branchStream, realtime)
 			if err != nil {
 				return err
 			}
@@ -517,8 +529,13 @@ func compileBranchComposeRoutes(
 	for i := range branches {
 		branchRef := branchRefs[i]
 		branchStream := branchInputStreams[i]
+		planned := branchPlan[branches[i].name]
 		for j := range branches[i].steps {
-			stage, outputStream, err := service.newBranchComposeStepStage(ctx, branches[i].steps[j], branchStream, realtime)
+			stageName := ""
+			if j < len(planned.privateSteps) {
+				stageName = planned.privateSteps[j].String()
+			}
+			stage, outputStream, err := service.newBranchComposeStepStageNamed(ctx, stageName, branches[i].steps[j], branchStream, realtime)
 			if err != nil {
 				return err
 			}
@@ -539,7 +556,7 @@ func compileBranchComposeRoutes(
 			if err != nil {
 				return err
 			}
-			encodeRef, err := service.compileEncodeStage(ctx, graph, branchRef, branches[i].request, config)
+			encodeRef, err := service.compileEncodeStageNamed(ctx, graph, planned.encodeNode.String(), branchRef, branches[i].request, config)
 			if err != nil {
 				return err
 			}
@@ -552,7 +569,11 @@ func compileBranchComposeRoutes(
 
 	for i := range outputs {
 		if outputs[i].sink != nil {
-			sinkRef, err := graph.AddSink(outputs[i].sink, runtime.buffer)
+			sink := outputs[i].sink
+			if outputs[i].node != "" {
+				sink = namedSink{name: outputs[i].node.String(), sink: sink}
+			}
+			sinkRef, err := graph.AddSink(sink, runtime.buffer)
 			if err != nil {
 				return err
 			}
@@ -579,7 +600,11 @@ func compileBranchComposeRoutes(
 		if err != nil {
 			return err
 		}
-		muxRef, err := graph.AddStage(muxStage, runtime.buffer)
+		stage := pipeline.Stage(muxStage)
+		if outputs[i].node != "" {
+			stage = namedStage{name: outputs[i].node.String(), stage: muxStage}
+		}
+		muxRef, err := graph.AddStage(stage, runtime.buffer)
 		if err != nil {
 			muxStage.Close()
 			return err
@@ -593,14 +618,40 @@ func compileBranchComposeRoutes(
 	return nil
 }
 
+func branchComposeSharedStepPlanRefs(sharedStepPlan map[string][]pipeline.NodeRef, branches []branchComposeRoute, indices []int) []pipeline.NodeRef {
+	if len(sharedStepPlan) == 0 {
+		return nil
+	}
+	for _, index := range indices {
+		if index < 0 || index >= len(branches) {
+			continue
+		}
+		if refs := sharedStepPlan[branches[index].name]; len(refs) != 0 {
+			return refs
+		}
+	}
+	return nil
+}
+
 func (b *builder) newBranchComposeStepStage(ctx context.Context, transform mediaTransform, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
+	return b.newBranchComposeStepStageNamed(ctx, "", transform, stream, realtime)
+}
+
+func (b *builder) newBranchComposeStepStageNamed(ctx context.Context, name string, transform mediaTransform, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
 	if transform.stage != nil {
+		if name != "" && name != transform.stage.Name() {
+			return namedStage{name: name, stage: transform.stage}, stream, nil
+		}
 		return transform.stage, stream, nil
 	}
-	return b.newMediaTransformStage(ctx, transform, stream, realtime)
+	return b.newMediaTransformStageNamed(ctx, name, transform, stream, realtime)
 }
 
 func (b *builder) newMediaTransformStage(ctx context.Context, transform mediaTransform, stream av.Stream, realtime bool) (*filter.Stage, av.Stream, error) {
+	return b.newMediaTransformStageNamed(ctx, "", transform, stream, realtime)
+}
+
+func (b *builder) newMediaTransformStageNamed(ctx context.Context, name string, transform mediaTransform, stream av.Stream, realtime bool) (*filter.Stage, av.Stream, error) {
 	outputStream, err := applyMediaTransformToStream(stream, transform)
 	if err != nil {
 		return nil, av.Stream{}, err
@@ -619,8 +670,9 @@ func (b *builder) newMediaTransformStage(ctx context.Context, transform mediaTra
 	if err != nil {
 		return nil, av.Stream{}, err
 	}
+	name = firstNonEmpty(name, transform.name)
 	stage, err := filter.NewStage(filter.StageConfig{
-		Name:   transform.name,
+		Name:   name,
 		Detail: mediaTransformDetail(transform),
 		Filter: frameFilter,
 		Result: filterResultForStream(outputStream),
@@ -1163,7 +1215,7 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, target format
 		Details:   details,
 		Suggestions: []string{
 			"reference a branch name",
-			"reference a label listed on the branch",
+			"reference a target name listed on the branch",
 			"omit explicit branch filters when the target should receive every branch",
 		},
 		Cause: ErrUnsupportedBuild,
