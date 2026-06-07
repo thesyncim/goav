@@ -1699,14 +1699,14 @@ are:
     guard coverage keeps the branch-only source helpers and old packet-copy
     source helper name from returning.
     Done.
-323. Collapse operation-step vocabulary onto chain steps:
+323. Collapse operation-step vocabulary onto ordered operations:
     stream chains, reusable flows, planned branches, branch-compose lowering,
     media-plan stream attachments, and runtime attach conversion now share the
-    same internal `chainStep` representation for ordered stage, transform, and
-    tap operations. Runtime branch attach lowers `BranchSpec` through
-    `runtimeBranchStepsFromChain`, planned branch composition lowers through
-    branch chain-step helpers, and guard coverage rejects the old
-    job-stream step vocabulary from production chain internals.
+    same ordered operation vocabulary for stage, transform, and tap work.
+    Runtime branch attach prepares wrappers around `OperationSpec`, planned
+    branch composition lowers through branch operation helpers, and guard
+    coverage rejects the old job-stream step vocabulary from production chain
+    internals.
     Done.
 324. Remove the branch-compose step mirror:
     branch composition no longer owns a second stage/resize/resample step
@@ -2643,13 +2643,13 @@ execution state and `runtimeBranch`, while the larger `branchComposePlan` model
 still needs to collapse into `WorkPlan`.
 Runtime attach now starts from the same canonical sequence too:
 `runtimeBranch` carries `[]OperationSpec` from `BranchSpec`, shape validation
-uses those operations directly, and mutable `runtimeBranchStep` values are
-derived only as preparation/execution state for opened decoders, filters,
-encoders, taps, and rollback.
+uses those operations directly, and prepared runtime state now wraps each
+`OperationSpec` instead of copying kind, codec, transform, tap, and shape facts
+into a second runtime step model.
 `WorkPatch` now reports runtime branch work by walking the canonical
-`OperationSpec` list and pairing each operation with its prepared runtime step
-only when a node or prepared shape exists. Packet copy is therefore visible as
-a real operation even though it has no stage, and mutable steps are no longer
+`OperationSpec` list and pairing each operation with its prepared runtime
+operation only when a node or prepared shape exists. Packet copy is therefore
+visible as a real operation even though it has no stage, and mutable steps are no longer
 the reporting source of truth.
 Operation-backed transforms now drive validation, explanation, media planning,
 filter lowering, and public intent/report inspection. The legacy

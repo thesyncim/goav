@@ -89,8 +89,8 @@ func workPatchBranchFromRuntimeBranch(branch runtimeBranch, index int, nodeNames
 			continue
 		}
 		node := pipeline.NodeRef("")
-		if step.hasStep && step.step.stage != nil {
-			node = runtimeBranchStepNode(nodeNames, stageIndex)
+		if step.hasPrepared && runtimeBranchOperationStage(step.prepared) != nil {
+			node = runtimeBranchOperationNode(nodeNames, stageIndex)
 			stageIndex++
 		}
 		appendOperation(workOperation{
@@ -164,18 +164,18 @@ func workPatchBranchFromRuntimeBranch(branch runtimeBranch, index int, nodeNames
 }
 
 type runtimeBranchWorkStep struct {
-	operation OperationSpec
-	step      runtimeBranchStep
-	hasStep   bool
+	operation   OperationSpec
+	prepared    runtimeBranchOperation
+	hasPrepared bool
 }
 
 func runtimeBranchWorkSteps(branch runtimeBranch) []runtimeBranchWorkStep {
 	operations := runtimeBranchShapeOperationSpecs(branch)
-	if len(operations) == 0 && len(branch.steps) == 0 {
+	if len(operations) == 0 && len(branch.prepared) == 0 {
 		return nil
 	}
-	out := make([]runtimeBranchWorkStep, 0, len(operations)+len(branch.steps))
-	stepIndex := 0
+	out := make([]runtimeBranchWorkStep, 0, len(operations)+len(branch.prepared))
+	preparedIndex := 0
 	for i := range operations {
 		operation := operations[i]
 		if operation.Kind == "" {
@@ -183,16 +183,17 @@ func runtimeBranchWorkSteps(branch runtimeBranch) []runtimeBranchWorkStep {
 		}
 		work := runtimeBranchWorkStep{operation: operation}
 		if runtimeBranchOperationNeedsPreparedStep(operation) &&
-			stepIndex < len(branch.steps) &&
-			runtimeBranchStepMatchesOperation(branch.steps[stepIndex], operation) {
-			work.step = branch.steps[stepIndex]
-			work.hasStep = true
-			stepIndex++
+			preparedIndex < len(branch.prepared) &&
+			runtimeBranchPreparedOperationMatches(branch.prepared[preparedIndex], operation) {
+			work.prepared = branch.prepared[preparedIndex]
+			work.hasPrepared = true
+			preparedIndex++
 		}
 		out = append(out, work)
 	}
-	for ; stepIndex < len(branch.steps); stepIndex++ {
-		out = append(out, runtimeBranchWorkStep{step: branch.steps[stepIndex], hasStep: true})
+	for ; preparedIndex < len(branch.prepared); preparedIndex++ {
+		prepared := branch.prepared[preparedIndex]
+		out = append(out, runtimeBranchWorkStep{operation: prepared.spec, prepared: prepared, hasPrepared: true})
 	}
 	return out
 }
@@ -208,23 +209,24 @@ func runtimeBranchOperationNeedsPreparedStep(operation OperationSpec) bool {
 	}
 }
 
-func runtimeBranchStepMatchesOperation(step runtimeBranchStep, operation OperationSpec) bool {
+func runtimeBranchPreparedOperationMatches(prepared runtimeBranchOperation, operation OperationSpec) bool {
+	spec := prepared.spec
 	switch operation.Kind {
 	case OpDecode:
-		return step.kind == OpDecode || step.decode
+		return spec.Kind == OpDecode
 	case OpShape:
-		return step.kind == OpShape || !mediaShapeEmpty(step.shapeUpdate)
+		return spec.Kind == OpShape
 	case OpTransform:
-		return step.kind == OpTransform || runtimeBranchStepHasTransform(step)
+		return spec.Kind == OpTransform
 	case OpStage:
-		return step.kind == OpStage || (step.kind == "" && step.stage != nil)
+		return spec.Kind == OpStage || runtimeBranchOperationStage(prepared) != nil
 	case OpEncode:
-		return step.kind == OpEncode
+		return spec.Kind == OpEncode
 	case OpTap:
-		if step.kind != OpTap && step.tap == "" {
+		if spec.Kind != OpTap {
 			return false
 		}
-		return operation.Tap.Name == "" || step.tap == operation.Tap.Name
+		return operation.Tap.Name == "" || spec.Tap.Name == operation.Tap.Name
 	default:
 		return false
 	}
@@ -234,8 +236,8 @@ func runtimeBranchWorkStepKind(work runtimeBranchWorkStep) OperationKind {
 	if work.operation.Kind != "" {
 		return work.operation.Kind
 	}
-	if work.hasStep {
-		return runtimeBranchStepWorkKind(work.step)
+	if work.hasPrepared {
+		return runtimeBranchPreparedOperationKind(work.prepared)
 	}
 	return OpStage
 }
@@ -254,8 +256,8 @@ func runtimeBranchWorkStepName(work runtimeBranchWorkStep, node pipeline.NodeRef
 	if work.operation.Kind != "" {
 		return string(work.operation.Kind)
 	}
-	if work.hasStep {
-		return runtimeBranchStepWorkName(work.step, node, index)
+	if work.hasPrepared {
+		return runtimeBranchPreparedOperationName(work.prepared, node, index)
 	}
 	return "operation"
 }
@@ -267,8 +269,8 @@ func runtimeBranchWorkStepComponent(work runtimeBranchWorkStep) string {
 			return component
 		}
 	}
-	if work.hasStep {
-		return runtimeBranchStepWorkComponent(work.step)
+	if work.hasPrepared {
+		return runtimeBranchPreparedOperationComponent(work.prepared)
 	}
 	return ""
 }
@@ -293,16 +295,16 @@ func runtimeBranchWorkStepDetail(work runtimeBranchWorkStep) string {
 		if detail := operationSpecDetail(work.operation); detail != "" {
 			return detail
 		}
-		if work.hasStep {
-			return runtimeBranchStepWorkDetail(work.step)
+		if work.hasPrepared {
+			return runtimeBranchPreparedOperationDetail(work.prepared)
 		}
 		return "operation"
 	}
 }
 
 func runtimeBranchWorkStepShapeOut(work runtimeBranchWorkStep, current MediaShape) MediaShape {
-	if work.hasStep {
-		if shape := firstNonEmptyShape(work.step.shape, current); !mediaShapeEmpty(shape) {
+	if work.hasPrepared {
+		if shape := firstNonEmptyShape(work.prepared.shape, current); !mediaShapeEmpty(shape) {
 			return shape
 		}
 	}
@@ -316,8 +318,8 @@ func runtimeBranchWorkStepTapName(work runtimeBranchWorkStep) string {
 	if work.operation.Kind == OpTap {
 		return firstNonEmpty(work.operation.Tap.Name, work.operation.Component)
 	}
-	if work.hasStep {
-		return work.step.tap
+	if work.hasPrepared && work.prepared.spec.Kind == OpTap {
+		return work.prepared.spec.Tap.Name
 	}
 	return ""
 }
@@ -326,68 +328,56 @@ func runtimeBranchWorkStepTapAfter(work runtimeBranchWorkStep) OperationKind {
 	if work.operation.Kind == OpTap && work.operation.Tap.After != "" {
 		return work.operation.Tap.After
 	}
-	if work.hasStep {
-		return work.step.after
+	if work.hasPrepared && work.prepared.spec.Kind == OpTap {
+		return work.prepared.spec.Tap.After
 	}
 	return ""
 }
 
-func runtimeBranchStepNode(nodeNames []string, index int) pipeline.NodeRef {
+func runtimeBranchOperationNode(nodeNames []string, index int) pipeline.NodeRef {
 	if index < 0 || index >= len(nodeNames) {
 		return ""
 	}
 	return pipeline.NodeRef(nodeNames[index])
 }
 
-func runtimeBranchStepWorkKind(step runtimeBranchStep) OperationKind {
-	if step.kind != "" {
-		return step.kind
+func runtimeBranchPreparedOperationKind(operation runtimeBranchOperation) OperationKind {
+	if operation.spec.Kind != "" {
+		return operation.spec.Kind
 	}
-	switch {
-	case step.decode:
-		return OpDecode
-	case runtimeBranchStepHasTransform(step):
-		return OpTransform
-	case !mediaShapeEmpty(step.shapeUpdate):
-		return OpShape
-	case step.tap != "":
-		return OpTap
-	case step.stage != nil:
-		return OpStage
-	default:
+	if runtimeBranchOperationStage(operation) != nil {
 		return OpStage
 	}
+	return OpStage
 }
 
-func runtimeBranchStepWorkName(step runtimeBranchStep, node pipeline.NodeRef, index int) string {
+func runtimeBranchPreparedOperationName(operation runtimeBranchOperation, node pipeline.NodeRef, index int) string {
 	if node != "" {
 		return node.String()
 	}
-	if step.tap != "" {
-		return step.tap
+	if operation.spec.Kind == OpTap && operation.spec.Tap.Name != "" {
+		return operation.spec.Tap.Name
 	}
-	return firstNonEmpty(runtimeBranchStepWorkComponent(step), "operation")
+	return firstNonEmpty(runtimeBranchPreparedOperationComponent(operation), "operation")
 }
 
-func runtimeBranchStepWorkComponent(step runtimeBranchStep) string {
-	switch {
-	case step.stage != nil:
-		return step.stage.Name()
-	case step.decode:
-		return string(step.codec.ID)
-	case runtimeBranchStepHasTransform(step):
-		return transformFactoryName(step.transform)
-	case step.tap != "":
-		return step.tap
-	case !mediaShapeEmpty(step.shapeUpdate):
+func runtimeBranchPreparedOperationComponent(operation runtimeBranchOperation) string {
+	if component := firstNonEmpty(operationSpecComponent(operation.spec), operation.spec.Component); component != "" {
+		return component
+	}
+	if stage := runtimeBranchOperationStage(operation); stage != nil {
+		return stage.Name()
+	}
+	switch operation.spec.Kind {
+	case OpShape:
 		return "shape"
 	default:
 		return ""
 	}
 }
 
-func runtimeBranchStepWorkDetail(step runtimeBranchStep) string {
-	switch runtimeBranchStepWorkKind(step) {
+func runtimeBranchPreparedOperationDetail(operation runtimeBranchOperation) string {
+	switch runtimeBranchPreparedOperationKind(operation) {
 	case OpDecode:
 		return "decode"
 	case OpTransform:

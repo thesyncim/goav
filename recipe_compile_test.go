@@ -343,7 +343,7 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 		"func chainStepsFromOperationSpecs",
 		"func branchOperationSpecsFromTranscodeSteps",
 		"func runtimeBranchOperationSpecsFromSpec",
-		"func runtimeBranchStepsFromOperationSpecs",
+		"func runtimeBranchOperationsFromSpecs",
 		"type chainSpec struct",
 		"type chainBuilder struct",
 		"func chainSpecFrom",
@@ -455,13 +455,16 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 	if runtimeStart < 0 {
 		t.Fatal("could not locate runtimeBranch boundary")
 	}
-	runtimeEnd := strings.Index(runtimeText[runtimeStart:], "type runtimeBranchStep struct")
+	runtimeEnd := strings.Index(runtimeText[runtimeStart:], "type runtimeBranchOperation struct")
 	if runtimeEnd < 0 {
 		t.Fatal("could not locate runtimeBranch boundary")
 	}
 	runtimeBlock := runtimeText[runtimeStart : runtimeStart+runtimeEnd]
 	if !strings.Contains(runtimeBlock, "operations     []OperationSpec") {
 		t.Fatal("runtimeBranch should carry canonical OperationSpec records")
+	}
+	if strings.Contains(runtimeBlock, "steps") || strings.Contains(runtimeText, "type runtimeBranchStep struct") {
+		t.Fatal("runtimeBranch should prepare OperationSpec wrappers, not a parallel runtimeBranchStep model")
 	}
 }
 

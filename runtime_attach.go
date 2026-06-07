@@ -27,7 +27,7 @@ type runtimeBranch struct {
 	tapDomain      MediaDomain
 	anchor         TapInfo
 	operations     []OperationSpec
-	steps          []runtimeBranchStep
+	prepared       []runtimeBranchOperation
 	postEncodeTaps []string
 	encode         CodecSpec
 	destinations   []runtimeBranchDestination
@@ -38,18 +38,11 @@ type runtimeBranch struct {
 	err            error
 }
 
-type runtimeBranchStep struct {
-	stage       pipeline.Stage
-	kind        OperationKind
-	decode      bool
-	codec       CodecSpec
-	transform   TransformSpec
-	tap         string
-	tapDomain   MediaDomain
-	after       OperationKind
-	shapeUpdate MediaShape
-	shape       MediaShape
-	owned       bool
+type runtimeBranchOperation struct {
+	spec  OperationSpec
+	stage pipeline.Stage
+	shape MediaShape
+	owned bool
 }
 
 type runtimeBranchDestination struct {
@@ -274,7 +267,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		label:      spec.label,
 		buffer:     spec.buffer,
 	}
-	branch.steps = runtimeBranchStepsFromOperationSpecs(operations)
+	branch.prepared = runtimeBranchOperationsFromSpecs(operations)
 	branch.postEncodeTaps = runtimeBranchPostEncodeTapsFromOperations(operations, spec.postEncodeTaps)
 	if len(spec.destinations) == 0 {
 		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
@@ -370,36 +363,32 @@ func runtimeBranchPostEncodeTapsFromOperations(operations []OperationSpec, expli
 	return taps
 }
 
-func runtimeBranchStepsFromOperationSpecs(operations []OperationSpec) []runtimeBranchStep {
+func runtimeBranchOperationsFromSpecs(operations []OperationSpec) []runtimeBranchOperation {
 	if len(operations) == 0 {
 		return nil
 	}
-	out := make([]runtimeBranchStep, 0, len(operations))
+	operations = cloneOperationSpecs(operations)
+	out := make([]runtimeBranchOperation, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
 		switch operation.Kind {
 		case OpDecode:
-			out = append(out, runtimeBranchStep{kind: OpDecode, decode: true, codec: cloneCodecSpec(operation.Decode)})
+			out = append(out, runtimeBranchOperation{spec: operation})
 		case OpStage:
 			if operation.Stage != nil {
-				out = append(out, runtimeBranchStep{kind: OpStage, stage: operation.Stage})
+				out = append(out, runtimeBranchOperation{spec: operation})
 			}
 		case OpShape:
 			if !mediaShapeEmpty(operation.Shape) {
-				out = append(out, runtimeBranchStep{kind: OpShape, shapeUpdate: operation.Shape})
+				out = append(out, runtimeBranchOperation{spec: operation})
 			}
 		case OpTransform:
 			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
-				out = append(out, runtimeBranchStep{kind: OpTransform, transform: cloneTransformSpec(operation.Transform)})
+				out = append(out, runtimeBranchOperation{spec: operation})
 			}
 		case OpTap:
 			if operation.Tap.Name != "" && !operationSpecTapIsTerminalPacket(operation) {
-				out = append(out, runtimeBranchStep{
-					kind:      OpTap,
-					tap:       operation.Tap.Name,
-					tapDomain: operation.Tap.Domain,
-					after:     operation.Tap.After,
-				})
+				out = append(out, runtimeBranchOperation{spec: operation})
 			}
 		}
 	}
@@ -791,26 +780,25 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 	}
 	currentStream := streamFromRuntimeBranchShape(branch.name, currentShape)
 	transformIndex := 0
-	for i := range branch.steps {
-		step := &branch.steps[i]
-		switch {
-		case step.decode:
-			decodedStage, err := t.prepareRuntimeBranchDecode(ctx, branch.name, currentStream, currentShape, step.codec)
+	for i := range branch.prepared {
+		operation := &branch.prepared[i]
+		switch operation.spec.Kind {
+		case OpDecode:
+			decodedStage, err := t.prepareRuntimeBranchDecode(ctx, branch.name, currentStream, currentShape, operation.spec.Decode)
 			if err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
 				return err
 			}
-			step.stage = decodedStage
-			step.decode = false
-			step.owned = true
+			operation.stage = decodedStage
+			operation.owned = true
 			currentShape.Domain = DomainFrame
-			step.shape = currentShape
-		case step.stage != nil:
-			step.shape = currentShape
-		case !mediaShapeEmpty(step.shapeUpdate):
-			currentShape = mergeMediaShape(currentShape, step.shapeUpdate)
-			step.shape = currentShape
-		case runtimeBranchStepHasTransform(*step):
+			operation.shape = currentShape
+		case OpStage:
+			operation.shape = currentShape
+		case OpShape:
+			currentShape = mergeMediaShape(currentShape, operation.spec.Shape)
+			operation.shape = currentShape
+		case OpTransform:
 			if t.runtime == nil {
 				closeRuntimeBranchOwnedStages(*branch)
 				return runtimeBranchInvalidError(
@@ -825,23 +813,23 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 					"attach transform branches with .From(goav.FrameTap(name)) where name is declared after Decode, Resize, Resample, or a frame-stage Tap",
 				)
 			}
-			transformName := transformFactoryName(step.transform)
+			transformName := transformFactoryName(operation.spec.Transform)
 			streamIntent := StreamIntent{
 				Name:       firstNonEmpty(branch.name, "branch"),
 				Select:     StreamSelect{Type: currentStream.Type},
-				Operations: []OperationSpec{operationSpecForTransform(step.transform)},
+				Operations: []OperationSpec{operation.spec},
 			}
 			if _, err := t.runtime.filters.Factory(transformName); err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
 				return recipeTransformAdapterError("attach runtime branch", streamIntent, transformName, err)
 			}
 			if desc, err := t.runtime.filters.Descriptor(transformName); err == nil {
-				if err := validateTransformAdapterDescriptor("attach runtime branch", streamIntent, step.transform, transformName, desc); err != nil {
+				if err := validateTransformAdapterDescriptor("attach runtime branch", streamIntent, operation.spec.Transform, transformName, desc); err != nil {
 					closeRuntimeBranchOwnedStages(*branch)
 					return err
 				}
 			}
-			transform, err := runtimeBranchTransform(branch.name, currentStream, step.transform, transformIndex)
+			transform, err := runtimeBranchTransform(branch.name, currentStream, operation.spec.Transform, transformIndex)
 			if err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
 				return err
@@ -851,19 +839,18 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 				closeRuntimeBranchOwnedStages(*branch)
 				return runtimeBranchTransformError(transform.name, err)
 			}
-			step.stage = stage
-			step.transform = TransformSpec{}
-			step.owned = true
+			operation.stage = stage
+			operation.owned = true
 			currentStream = outputStream
 			currentShape = mediaShapeFromRuntimeBranchStream(outputStream, currentShape)
-			step.shape = currentShape
+			operation.shape = currentShape
 			transformIndex++
-		case step.tap != "":
-			if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.name, "branch"), TapRef{name: step.tap, domain: step.tapDomain}, currentShape.Domain); err != nil {
+		case OpTap:
+			if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.name, "branch"), TapRef{name: operation.spec.Tap.Name, domain: operation.spec.Tap.Domain}, currentShape.Domain); err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
 				return err
 			}
-			step.shape = currentShape
+			operation.shape = currentShape
 		}
 	}
 	if err := t.prepareRuntimeBranchDestinations(ctx, branch, currentStream, currentShape, group); err != nil {
@@ -1110,9 +1097,9 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 	if err != nil {
 		return av.Stream{}, err
 	}
-	branch.steps = append(branch.steps, runtimeBranchStep{
+	branch.prepared = append(branch.prepared, runtimeBranchOperation{
+		spec:  operationSpecForEncode(branch.encode),
 		stage: stage,
-		kind:  OpEncode,
 		shape: streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape),
 		owned: true,
 	})
@@ -1124,12 +1111,9 @@ func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, shape MediaShape, 
 		return
 	}
 	for i := range branch.postEncodeTaps {
-		branch.steps = append(branch.steps, runtimeBranchStep{
-			tap:       branch.postEncodeTaps[i],
-			kind:      OpTap,
-			tapDomain: DomainPacket,
-			after:     after,
-			shape:     shape,
+		branch.prepared = append(branch.prepared, runtimeBranchOperation{
+			spec:  operationSpecForTap(PacketTap(branch.postEncodeTaps[i]), shape.MediaKind, after),
+			shape: shape,
 		})
 	}
 	branch.postEncodeTaps = nil
@@ -1142,16 +1126,17 @@ func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string, gro
 	previous := pipeline.NodeRef(branch.from)
 	stageIndex := 0
 	connectedFromAnchor := false
-	for i := range branch.steps {
-		step := branch.steps[i]
-		if step.tap != "" {
-			taps = append(taps, runtimeBranchTapInfo(step.tap, previous, step.shape, step.after))
+	for i := range branch.prepared {
+		operation := branch.prepared[i]
+		if operation.spec.Kind == OpTap && operation.spec.Tap.Name != "" {
+			taps = append(taps, runtimeBranchTapInfo(operation.spec.Tap.Name, previous, operation.shape, operation.spec.Tap.After))
 			continue
 		}
-		if step.stage == nil {
+		stage := runtimeBranchOperationStage(operation)
+		if stage == nil {
 			continue
 		}
-		ref, err := t.graph.AddStage(namedStage{name: nodeNames[stageIndex], stage: step.stage}, branch.buffer)
+		ref, err := t.graph.AddStage(namedStage{name: nodeNames[stageIndex], stage: stage}, branch.buffer)
 		if err != nil {
 			return refs, routes, taps, runtimeBranchGraphError("add stage", nodeNames[stageIndex], err)
 		}
@@ -1650,11 +1635,12 @@ func runtimeBranchNodeNames(branch runtimeBranch, spec pipeline.Spec, group *run
 	names := make([]string, 0, capacity)
 	seen := make(map[string]struct{}, capacity)
 	stageIndex := 0
-	for i := range branch.steps {
-		if branch.steps[i].stage == nil {
+	for i := range branch.prepared {
+		stage := runtimeBranchOperationStage(branch.prepared[i])
+		if stage == nil {
 			continue
 		}
-		name := runtimeBranchNodeName(branch.name, branch.steps[i].stage.Name(), fmt.Sprintf("stage%d", stageIndex+1))
+		name := runtimeBranchNodeName(branch.name, stage.Name(), fmt.Sprintf("stage%d", stageIndex+1))
 		if err := validateRuntimeBranchNodeName(spec, seen, name); err != nil {
 			return nil, err
 		}
@@ -1701,13 +1687,13 @@ func runtimeBranchPlannedTaps(branch runtimeBranch, nodeNames []string) []TapInf
 	taps := make([]TapInfo, 0, runtimeBranchTapCount(branch))
 	previous := pipeline.NodeRef(branch.from)
 	stageIndex := 0
-	for i := range branch.steps {
-		step := branch.steps[i]
-		if step.tap != "" {
-			taps = append(taps, runtimeBranchTapInfo(step.tap, previous, step.shape, step.after))
+	for i := range branch.prepared {
+		operation := branch.prepared[i]
+		if operation.spec.Kind == OpTap && operation.spec.Tap.Name != "" {
+			taps = append(taps, runtimeBranchTapInfo(operation.spec.Tap.Name, previous, operation.shape, operation.spec.Tap.After))
 			continue
 		}
-		if step.stage == nil {
+		if runtimeBranchOperationStage(operation) == nil {
 			continue
 		}
 		if stageIndex >= len(nodeNames) {
@@ -1732,22 +1718,28 @@ func runtimeBranchTerminalName(terminal runtimeBranchTerminal) string {
 
 func runtimeBranchStageCount(branch runtimeBranch) int {
 	count := 0
-	for i := range branch.steps {
-		if branch.steps[i].stage != nil {
+	for i := range branch.prepared {
+		if runtimeBranchOperationStage(branch.prepared[i]) != nil {
 			count++
 		}
 	}
 	return count
 }
 
-func runtimeBranchStepHasTransform(step runtimeBranchStep) bool {
-	return step.transform.Resize != nil || step.transform.Resample != nil
+func runtimeBranchOperationStage(operation runtimeBranchOperation) pipeline.Stage {
+	if operation.stage != nil {
+		return operation.stage
+	}
+	if operation.spec.Kind == OpStage {
+		return operation.spec.Stage
+	}
+	return nil
 }
 
 func runtimeBranchTapCount(branch runtimeBranch) int {
 	count := 0
-	for i := range branch.steps {
-		if branch.steps[i].tap != "" {
+	for i := range branch.prepared {
+		if branch.prepared[i].spec.Kind == OpTap && branch.prepared[i].spec.Tap.Name != "" {
 			count++
 		}
 	}
@@ -1762,8 +1754,12 @@ func (t *task) validateRuntimeBranchTapsLocked(branch runtimeBranch, pending []T
 	for i := range current {
 		existing[current[i].Name] = struct{}{}
 	}
-	for i := range branch.steps {
-		name := branch.steps[i].tap
+	for i := range branch.prepared {
+		operation := branch.prepared[i]
+		if operation.spec.Kind != OpTap {
+			continue
+		}
+		name := operation.spec.Tap.Name
 		if name == "" {
 			continue
 		}
@@ -1966,10 +1962,10 @@ func runtimeBranchTapInfo(name string, node pipeline.NodeRef, shape MediaShape, 
 }
 
 func closeRuntimeBranchOwnedStages(branch runtimeBranch) {
-	for i := range branch.steps {
-		if branch.steps[i].owned && branch.steps[i].stage != nil {
-			markPipelineStageFailed(branch.steps[i].stage)
-			_ = branch.steps[i].stage.Close()
+	for i := range branch.prepared {
+		if branch.prepared[i].owned && branch.prepared[i].stage != nil {
+			markPipelineStageFailed(branch.prepared[i].stage)
+			_ = branch.prepared[i].stage.Close()
 		}
 	}
 	for i := range branch.terminals {
