@@ -1255,6 +1255,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     to that nested tap. Detaching the parent closes the resize filter plus both
     sinks, removes the nested tap, and prevents later frames from re-entering
     the detached transform subtree while the base graph continues. Done.
+287. Prove live buffered subtree detach from runtime resample taps:
+    `TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages` now
+    runs a bounded buffered task while a late parent branch resamples audio from
+    a frame tap, publishes a 16 kHz mono frame tap with retained sample-format
+    caps, and a dependent child attaches to that nested tap. Detaching the
+    parent closes the resample filter plus both sinks, removes the nested tap,
+    and prevents later frames from re-entering the detached audio transform
+    subtree while the base graph continues. Done.
 
 ## First Vertical Slice
 
@@ -1504,7 +1512,7 @@ expand ordered stage/tap/transform/encode operations into branch intent instead
 of a parallel graph language, and
 `Task.Attach` remains the late branch control plane for running graphs,
 including custom-stage, resize/resample, branch-local node stats, dependent
-branches after runtime resize taps, post-encode packet taps feeding dependent
+branches after runtime resize and resample taps, post-encode packet taps feeding dependent
 packet-copy branches, live buffered parent detach that removes nested
 transform frame-tap, custom-stage frame-tap, and post-encode packet-tap
 subtrees before future media reaches them,
@@ -1521,7 +1529,7 @@ direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
 broaden descriptor-backed endpoint/container capability data as WebM/Ogg arrive
-and keep broadening runtime attachment stress around resample/filter lifecycle
+and keep broadening runtime attachment stress around generic filter lifecycle
 boundaries without weakening the direct graph branch grammar.
 
 ## Validation Gates

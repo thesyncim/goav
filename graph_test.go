@@ -697,6 +697,143 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 	}
 }
 
+func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	resampler := &transcodeTestFilter{}
+	resampleFactory := &transcodeTestFilterFactory{filter: resampler}
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResample,
+		Input:  av.MediaAudio,
+		Output: av.MediaAudio,
+	}, resampleFactory))
+	frames := []av.Frame{
+		{StreamID: "audio", Type: av.MediaAudio, Audio: &av.AudioFrame{SampleRate: 48000, Channels: Stereo, SampleFormat: av.SampleFormatS16}},
+		{StreamID: "audio", Type: av.MediaAudio, Audio: &av.AudioFrame{SampleRate: 48000, Channels: Stereo, SampleFormat: av.SampleFormatS16}},
+		{StreamID: "audio", Type: av.MediaAudio, Audio: &av.AudioFrame{SampleRate: 48000, Channels: Stereo, SampleFormat: av.SampleFormatS16}},
+	}
+	source := &runtimeBranchStepSource{
+		name: "source",
+		messages: []pipeline.Message{
+			{Kind: pipeline.MessageFrame, Frame: &frames[0]},
+			{Kind: pipeline.MessageFrame, Frame: &frames[1]},
+			{Kind: pipeline.MessageFrame, Frame: &frames[2]},
+		},
+		emitted: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+		resume: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+	}
+	base := newRuntimeObservedSink("base", 3)
+	voice := newRuntimeObservedSink("voice", 1)
+	monitor := newRuntimeObservedSink("monitor", 1)
+
+	graph := New(filters, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	mediaTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := mediaTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:       DomainFrame,
+			MediaKind:    av.MediaAudio,
+			StreamID:     "audio",
+			Codec:        av.CodecOpus,
+			SampleRate:   48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatS16,
+		},
+		Node: "source",
+	}}
+	defer mediaTask.Close()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- mediaTask.Run(ctx)
+	}()
+	select {
+	case <-source.emitted[0]:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	parent, err := mediaTask.Attach(ctx, Branch("voice").
+		FromTap("audio.frames").
+		Buffer(pipeline.BufferPolicy{Capacity: 2}).
+		Resample(16_000, Mono).
+		Tap("audio.16k").
+		To(SinkEndpoint(voice)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resampledTap, ok := findTap(mediaTask.Taps(), "audio.16k")
+	if !ok ||
+		resampledTap.Domain != DomainFrame ||
+		resampledTap.MediaKind != av.MediaAudio ||
+		resampledTap.Caps.SampleRate != 16_000 ||
+		resampledTap.Caps.Channels != Mono ||
+		resampledTap.Caps.SampleFormat != av.SampleFormatS16 ||
+		resampledTap.Node != "voice/resample-voice" {
+		t.Fatalf("resampled tap = %+v ok=%v, want frame audio 16k mono tap on voice/resample-voice", resampledTap, ok)
+	}
+	child, err := mediaTask.Attach(ctx, Branch("monitor").
+		FromTap("audio.16k").
+		Buffer(pipeline.BufferPolicy{Capacity: 2}).
+		To(SinkEndpoint(monitor)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(source.resume[0])
+	select {
+	case <-voice.received:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case <-monitor.received:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := mediaTask.Detach(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+	if !voice.closedValue() || !monitor.closedValue() || !resampler.closed {
+		t.Fatalf("closed voice=%v monitor=%v resample=%v", voice.closedValue(), monitor.closedValue(), resampler.closed)
+	}
+	close(source.resume[1])
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if got := base.countValue(); got != 3 {
+		t.Fatalf("base count = %d, want all three frames", got)
+	}
+	if resampler.frames != 1 {
+		t.Fatalf("resample frames = %d, want only the second frame before detach", resampler.frames)
+	}
+	if got := voice.countValue(); got != 1 {
+		t.Fatalf("voice count = %d, want only second resampled frame", got)
+	}
+	if got := monitor.countValue(); got != 1 {
+		t.Fatalf("monitor count = %d, want only second resampled frame", got)
+	}
+	if _, ok := findTap(mediaTask.Taps(), "audio.16k"); ok {
+		t.Fatalf("audio.16k tap still visible after parent detach: %+v", mediaTask.Taps())
+	}
+	if err := child.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	graph := New().Graph()
 	graph.Source("source", &runtimeTestSource{name: "source"})
