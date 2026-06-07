@@ -3118,7 +3118,7 @@ func TestGraphPlanViewsAreImmutable(t *testing.T) {
 	plan.Branches[0].Operations[0].Component = "mutated"
 	plan.Outputs[0].BranchRefs[0] = "mutated"
 	operations := resolved.graphPlan.operationPlan()
-	operations[len(operations)-1].Targets[0] = "mutated"
+	operations[len(operations)-1].Destinations[0] = "mutated"
 
 	nextSpec := resolved.graphPlan.spec()
 	if nextSpec.Nodes[0].Name == "mutated" {
@@ -3132,8 +3132,8 @@ func TestGraphPlanViewsAreImmutable(t *testing.T) {
 		t.Fatal("graphPlan.mediaPlan() returned aliased output branch refs")
 	}
 	nextOperations := resolved.graphPlan.operationPlan()
-	if nextOperations[len(nextOperations)-1].Targets[0] == "mutated" {
-		t.Fatal("graphPlan.operationPlan() returned aliased target refs")
+	if nextOperations[len(nextOperations)-1].Destinations[0] == "mutated" {
+		t.Fatal("graphPlan.operationPlan() returned aliased destination refs")
 	}
 }
 
@@ -3157,7 +3157,7 @@ func graphPlanOperationNodePresent(operations []graphPlanOperation, node pipelin
 
 func graphPlanOperationTargetPresent(operations []graphPlanOperation, target string) bool {
 	for i := range operations {
-		for _, next := range operations[i].Targets {
+		for _, next := range operations[i].Destinations {
 			if next == target {
 				return true
 			}
@@ -3169,7 +3169,7 @@ func graphPlanOperationTargetPresent(operations []graphPlanOperation, target str
 func graphPlanOperationsWithoutTargets(operations []graphPlanOperation) []graphPlanOperation {
 	out := make([]graphPlanOperation, 0, len(operations))
 	for i := range operations {
-		if graphPlanOperationTargetsRequired(operations[i].Kind) {
+		if graphPlanOperationDestinationsRequired(operations[i].Kind) {
 			continue
 		}
 		out = append(out, operations[i])
@@ -3203,12 +3203,12 @@ func graphPlanOperationsWithoutBranchTarget(operations []graphPlanOperation, bra
 	out := make([]graphPlanOperation, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
-		if operation.Branch != branch || !graphPlanOperationTargetsRequired(operation.Kind) {
+		if operation.Branch != branch || !graphPlanOperationDestinationsRequired(operation.Kind) {
 			out = append(out, operation)
 			continue
 		}
-		targets := make([]string, 0, len(operation.Targets))
-		for _, next := range operation.Targets {
+		targets := make([]string, 0, len(operation.Destinations))
+		for _, next := range operation.Destinations {
 			if next != target {
 				targets = append(targets, next)
 			}
@@ -3216,7 +3216,7 @@ func graphPlanOperationsWithoutBranchTarget(operations []graphPlanOperation, bra
 		if len(targets) == 0 {
 			continue
 		}
-		operation.Targets = targets
+		operation.Destinations = targets
 		out = append(out, operation)
 	}
 	return out
@@ -3226,10 +3226,10 @@ func graphPlanOperationsWithBranchTargetNode(operations []graphPlanOperation, br
 	out := cloneGraphPlanOperations(operations)
 	for i := range out {
 		operation := out[i]
-		if operation.Branch != branch || !graphPlanOperationTargetsRequired(operation.Kind) {
+		if operation.Branch != branch || !graphPlanOperationDestinationsRequired(operation.Kind) {
 			continue
 		}
-		if !stringInSlice(target, operation.Targets) {
+		if !stringInSlice(target, operation.Destinations) {
 			continue
 		}
 		out[i].Node = node
@@ -3600,7 +3600,7 @@ func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testi
 	}
 }
 
-func TestBranchComposeLowererUsesPlanTargetOperationNodes(t *testing.T) {
+func TestBranchComposeLowererUsesPlanDestinationOperationNodes(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -3631,13 +3631,13 @@ func TestBranchComposeLowererUsesPlanTargetOperationNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	archiveNode, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, "archive.ogg")
+	archiveNode, ok := graphPlanDestinationOperationNode(resolved.graphPlan.operations, "archive.ogg")
 	if !ok {
 		t.Fatalf("graphPlan operations = %+v, want archive.ogg destination operation", resolved.graphPlan.operations)
 	}
-	framesNode, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, "frames")
+	framesNode, ok := graphPlanDestinationOperationNode(resolved.graphPlan.operations, "frames")
 	if !ok {
-		t.Fatalf("graphPlan operations = %+v, want frames target operation", resolved.graphPlan.operations)
+		t.Fatalf("graphPlan operations = %+v, want frames destination operation", resolved.graphPlan.operations)
 	}
 	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, archiveNode.String(), "target-plan-archive")
 	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, framesNode.String(), "target-plan-frames")
@@ -3658,12 +3658,12 @@ func TestBranchComposeLowererUsesPlanTargetOperationNodes(t *testing.T) {
 	}
 }
 
-func graphPlanTargetOperationNode(operations []graphPlanOperation, target string) (pipeline.NodeRef, bool) {
+func graphPlanDestinationOperationNode(operations []graphPlanOperation, target string) (pipeline.NodeRef, bool) {
 	for i := range operations {
-		if !graphPlanOperationTargetsRequired(operations[i].Kind) {
+		if !graphPlanOperationDestinationsRequired(operations[i].Kind) {
 			continue
 		}
-		for _, next := range operations[i].Targets {
+		for _, next := range operations[i].Destinations {
 			if next == target {
 				return operations[i].Node, true
 			}
@@ -3693,9 +3693,9 @@ func renameResolvedGraphPlanOperationNode(t *testing.T, resolved recipeResolved,
 
 func renameResolvedGraphPlanTargetNode(t *testing.T, resolved recipeResolved, target string, name string) recipeResolved {
 	t.Helper()
-	node, ok := graphPlanTargetOperationNode(resolved.graphPlan.operations, target)
+	node, ok := graphPlanDestinationOperationNode(resolved.graphPlan.operations, target)
 	if !ok {
-		t.Fatalf("graphPlan operations = %+v, want target operation %q", resolved.graphPlan.operations, target)
+		t.Fatalf("graphPlan operations = %+v, want destination operation %q", resolved.graphPlan.operations, target)
 	}
 	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, node.String(), name)
 	return resolved
@@ -3784,7 +3784,7 @@ func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) 
 	}
 }
 
-func TestBranchComposeLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
+func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testing.T) {
 	web := destinationHandle(fileDestination("web.ivf", io.Discard))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
@@ -3805,7 +3805,7 @@ func TestBranchComposeLowererRequiresTargetOperationsBeforeSources(t *testing.T)
 	}
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
-		!strings.Contains(err.Error(), "branch composition graph plan has no target operations") {
+		!strings.Contains(err.Error(), "branch composition graph plan has no destination operations") {
 		t.Fatalf("err = %v, want missing target-operation graph-plan error", err)
 	}
 }
@@ -3844,7 +3844,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	}
 }
 
-func TestStreamGraphLowererUsesPlanPacketCopyTargetOperationNodes(t *testing.T) {
+func TestStreamGraphLowererUsesPlanPacketCopyDestinationOperationNodes(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -3923,7 +3923,7 @@ func TestSelectedPacketCopyLowererUsesPlanSelectOperationNode(t *testing.T) {
 	}
 }
 
-func TestPacketCopyLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
+func TestPacketCopyLowererRequiresDestinationOperationsBeforeSources(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
 	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
@@ -3940,7 +3940,7 @@ func TestPacketCopyLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
 	}
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
-		!strings.Contains(err.Error(), "packet-copy graph plan has no target operations") {
+		!strings.Contains(err.Error(), "packet-copy graph plan has no destination operations") {
 		t.Fatalf("err = %v, want missing target-operation graph-plan error", err)
 	}
 }
@@ -3986,12 +3986,12 @@ func TestPacketCopyLowererRequiresTargetBranchBindingsBeforeSources(t *testing.T
 	}
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
-		!strings.Contains(err.Error(), "packet-copy target operation branches do not match output branches") {
+		!strings.Contains(err.Error(), "packet-copy destination operation branches do not match output branches") {
 		t.Fatalf("err = %v, want packet-copy target branch binding graph-plan error", err)
 	}
 }
 
-func TestPacketCopyLowererRequiresConsistentTargetOperationsBeforeSources(t *testing.T) {
+func TestPacketCopyLowererRequiresConsistentDestinationOperationsBeforeSources(t *testing.T) {
 	job := From(
 		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("left").Codec(Opus()),
 	).And(
@@ -4010,7 +4010,7 @@ func TestPacketCopyLowererRequiresConsistentTargetOperationsBeforeSources(t *tes
 	}
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
-		!strings.Contains(err.Error(), "packet-copy target operation is not consistent across branches") {
+		!strings.Contains(err.Error(), "packet-copy destination operation is not consistent across branches") {
 		t.Fatalf("err = %v, want duplicate target consistency graph-plan error", err)
 	}
 }
@@ -4040,7 +4040,7 @@ func TestPacketCopyTargetStreamsUseMatchedSourceGroups(t *testing.T) {
 		},
 	}}
 
-	streams, err := packetCopyTargetStreams(graphPlanTargetOperation{
+	streams, err := packetCopyDestinationStreams(graphPlanDestinationOperation{
 		Name:    "recording",
 		Matches: []int{1},
 	}, [][]av.Stream{left, right})
@@ -4113,7 +4113,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	}
 }
 
-func TestStreamGraphLowererUsesPlanDecodedSinkTargetOperationNode(t *testing.T) {
+func TestStreamGraphLowererUsesPlanDecodedSinkDestinationOperationNode(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
@@ -4222,7 +4222,7 @@ func TestFrameStreamLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
 	}
 }
 
-func TestFrameStreamLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
+func TestFrameStreamLowererRequiresDestinationOperationsBeforeSources(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Decode().
@@ -4240,7 +4240,7 @@ func TestFrameStreamLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
 	}
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
-		!strings.Contains(err.Error(), "frame stream graph plan has no target operations") {
+		!strings.Contains(err.Error(), "frame stream graph plan has no destination operations") {
 		t.Fatalf("err = %v, want missing target-operation graph-plan error", err)
 	}
 }
@@ -4513,7 +4513,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	}
 }
 
-func TestStreamGraphLowererUsesPlanEncodedTargetOperationNodes(t *testing.T) {
+func TestStreamGraphLowererUsesPlanEncodedDestinationOperationNodes(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}

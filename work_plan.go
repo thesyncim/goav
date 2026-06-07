@@ -199,7 +199,7 @@ func workOperationsFromGraphPlan(plan mediaPlan, operations []graphPlanOperation
 			Shared:       operation.Shared,
 			ShapeIn:      shapeIn,
 			ShapeOut:     shapeOut,
-			Destinations: append([]string(nil), operation.Targets...),
+			Destinations: append([]string(nil), operation.Destinations...),
 		})
 		if !workOperationTerminal(operation.Kind) {
 			branchShapes[operation.Branch] = shapeOut

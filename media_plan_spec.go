@@ -38,14 +38,14 @@ type graphPlan struct {
 }
 
 type graphPlanOperation struct {
-	Branch    string
-	Node      pipeline.NodeRef
-	Kind      OperationKind
-	Component string
-	Detail    string
-	Shape     MediaShape
-	Targets   []string
-	Shared    bool
+	Branch       string
+	Node         pipeline.NodeRef
+	Kind         OperationKind
+	Component    string
+	Detail       string
+	Shape        MediaShape
+	Destinations []string
+	Shared       bool
 }
 
 func (p graphPlan) ready() bool {
@@ -149,19 +149,19 @@ func graphPlanOperationsFromMediaPlan(spec pipeline.Spec, plan mediaPlan) []grap
 				Shared:    operation.Shared,
 			})
 		}
-		for _, target := range branch.Outputs {
-			output := outputs[target]
-			node := outputNodes[target]
+		for _, destination := range branch.Outputs {
+			output := outputs[destination]
+			node := outputNodes[destination]
 			if node == "" {
-				node = pipeline.NodeRef(firstNonEmpty(output.Name, target))
+				node = pipeline.NodeRef(firstNonEmpty(output.Name, destination))
 			}
 			operations = append(operations, graphPlanOperation{
-				Branch:    branch.Name,
-				Node:      node,
-				Kind:      output.Operation,
-				Component: output.Component,
-				Detail:    "target",
-				Targets:   []string{target},
+				Branch:       branch.Name,
+				Node:         node,
+				Kind:         output.Operation,
+				Component:    output.Component,
+				Detail:       "destination",
+				Destinations: []string{destination},
 			})
 		}
 	}
@@ -220,7 +220,7 @@ func cloneGraphPlanOperations(operations []graphPlanOperation) []graphPlanOperat
 	out := make([]graphPlanOperation, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
-		operation.Targets = append([]string(nil), operation.Targets...)
+		operation.Destinations = append([]string(nil), operation.Destinations...)
 		out = append(out, operation)
 	}
 	return out
@@ -252,8 +252,8 @@ func validateGraphPlanLowering(plan graphPlan) error {
 		if operation.Branch == "" {
 			return graphPlanInvalidError("graph-plan operation has no branch", details)
 		}
-		if graphPlanOperationTargetsRequired(operation.Kind) && len(operation.Targets) == 0 {
-			return graphPlanInvalidError("graph-plan target operation has no target refs", details)
+		if graphPlanOperationDestinationsRequired(operation.Kind) && len(operation.Destinations) == 0 {
+			return graphPlanInvalidError("graph-plan destination operation has no destination refs", details)
 		}
 	}
 	return nil
@@ -287,7 +287,7 @@ func validateGraphPlanEdges(plan graphPlan) error {
 	return nil
 }
 
-func graphPlanOperationTargetsRequired(kind OperationKind) bool {
+func graphPlanOperationDestinationsRequired(kind OperationKind) bool {
 	switch kind {
 	case OpMux, OpSink, OpWrite:
 		return true
