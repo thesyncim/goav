@@ -515,7 +515,10 @@ func (p mediaPlanBranchComposeGraph) validateBranchComposeStepOperations(branch 
 }
 
 func (p mediaPlanBranchComposeGraph) prepareBranchComposeTargets(plan graphPlan) ([]branchComposeTargetRoute, error) {
-	operations := graphPlanTargetOperations(plan.operations)
+	operations, err := graphPlanUniqueTargetOperations(plan.operations, "branch composition")
+	if err != nil {
+		return nil, err
+	}
 	if len(operations) == 0 {
 		return nil, graphPlanInvalidError("branch composition graph plan has no target operations", nil)
 	}
@@ -618,6 +621,38 @@ func branchComposeTargetBranchesMatch(target branchComposeTargetRoute, matches [
 	}
 	for _, index := range matches {
 		if _, ok := seen[index]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func packetCopyTargetOperationMatches(branches []planBranch, actual map[string]struct{}) ([]int, bool) {
+	if len(actual) == 0 {
+		return nil, false
+	}
+	matches := make([]int, 0, len(actual))
+	for i := range branches {
+		if _, ok := actual[branches[i].Name]; ok {
+			matches = append(matches, i)
+		}
+	}
+	return matches, len(matches) == len(actual)
+}
+
+func packetCopyTargetBranchesMatch(output planOutput, matches []int, branches []planBranch) bool {
+	if len(output.BranchRefs) != len(matches) {
+		return false
+	}
+	seen := make(map[string]struct{}, len(output.BranchRefs))
+	for _, branch := range output.BranchRefs {
+		seen[branch] = struct{}{}
+	}
+	for _, index := range matches {
+		if index < 0 || index >= len(branches) {
+			return false
+		}
+		if _, ok := seen[branches[index].Name]; !ok {
 			return false
 		}
 	}
@@ -809,42 +844,97 @@ func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(plan graphPlan)
 			"node=" + selectOperation.Node.String(),
 		})
 	}
-	targets := graphPlanTargetOperations(operations)
-	if len(targets) == 0 {
-		return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy graph plan has no target operations", nil)
+	if err := p.validatePacketCopyOperationRecords(plan, operations); err != nil {
+		return graphPlanOperation{}, false, nil, err
 	}
+	targets, err := p.preparePacketCopyTargets(plan, operations)
+	if err != nil {
+		return graphPlanOperation{}, false, nil, err
+	}
+	return selectOperation, hasSelect, targets, nil
+}
+
+func (p mediaPlanStreamGraph) preparePacketCopyTargets(plan graphPlan, operations []graphPlanOperation) ([]graphPlanTargetOperation, error) {
+	targets, err := graphPlanUniqueTargetOperations(operations, "packet-copy")
+	if err != nil {
+		return nil, err
+	}
+	if len(targets) == 0 {
+		return nil, graphPlanInvalidError("packet-copy graph plan has no target operations", nil)
+	}
+	branchesByTarget := graphPlanTargetBranchNames(operations)
 	for i := range targets {
 		target := targets[i]
 		if err := validateGraphPlanTargetOperationNode("packet-copy", target); err != nil {
-			return graphPlanOperation{}, false, nil, err
+			return nil, err
 		}
 		outputIndex, ok := graphPlanOutputIndex(plan.outputs, target.Name)
 		if !ok || outputIndex < 0 || outputIndex >= len(p.outputs) {
-			return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy target operation is not bound to an output", []string{
+			return nil, graphPlanInvalidError("packet-copy target operation is not bound to an output", []string{
 				"target=" + target.Name,
 				"node=" + target.Node.String(),
 			})
 		}
 		target.OutputIndex = outputIndex
-		targets[i] = target
+		if !p.selectedStream {
+			matches, ok := packetCopyTargetOperationMatches(plan.branches, branchesByTarget[target.Name])
+			if !ok || !packetCopyTargetBranchesMatch(plan.outputs[outputIndex], matches, plan.branches) {
+				return nil, graphPlanInvalidError("packet-copy target operation branches do not match output branches", []string{
+					"target=" + target.Name,
+				})
+			}
+			target.Matches = matches
+		}
 		output := p.outputs[outputIndex]
 		if output.sink != nil {
 			if target.Kind != OpSink {
-				return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy target operation kind does not match sink destination", []string{
+				return nil, graphPlanInvalidError("packet-copy target operation kind does not match sink destination", []string{
 					"target=" + target.Name,
 					"kind=" + string(target.Kind),
 				})
 			}
+			targets[i] = target
 			continue
 		}
 		if target.Kind != OpMux && target.Kind != OpWrite {
-			return graphPlanOperation{}, false, nil, graphPlanInvalidError("packet-copy target operation kind does not match byte destination", []string{
+			return nil, graphPlanInvalidError("packet-copy target operation kind does not match byte destination", []string{
 				"target=" + target.Name,
 				"kind=" + string(target.Kind),
 			})
 		}
+		targets[i] = target
 	}
-	return selectOperation, hasSelect, targets, nil
+	return targets, nil
+}
+
+func (p mediaPlanStreamGraph) validatePacketCopyOperationRecords(plan graphPlan, operations []graphPlanOperation) error {
+	if p.selectedStream {
+		if !graphPlanBranchOperationsContain(operations, OpCopy) {
+			return graphPlanInvalidError("selected packet-copy graph plan has no copy operation", []string{
+				"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+			})
+		}
+		return nil
+	}
+	byBranch := graphPlanOperationsByBranch(operations)
+	if len(plan.branches) == 0 {
+		return graphPlanInvalidError("packet-copy graph plan has no copy branches", nil)
+	}
+	for i := range plan.branches {
+		branch := plan.branches[i]
+		branchOperations := byBranch[branch.Name]
+		if len(branchOperations) == 0 {
+			return graphPlanInvalidError("packet-copy graph plan has no operations for branch", []string{
+				"branch=" + branch.Name,
+			})
+		}
+		if !graphPlanBranchOperationsContain(branchOperations, OpCopy) {
+			return graphPlanInvalidError("packet-copy graph plan has no copy operation for branch", []string{
+				"branch=" + branch.Name,
+			})
+		}
+	}
+	return nil
 }
 
 func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
@@ -857,20 +947,28 @@ func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
 ) error {
 	for i := range targets {
 		target := targets[i]
+		upstreamRefs, err := packetCopyTargetRefs(target, targetRefs)
+		if err != nil {
+			return err
+		}
 		output := p.outputs[target.OutputIndex]
 		if output.sink != nil {
 			sinkRef, err := graph.AddSink(namedSinkForGraphPlanTarget(target, output.sink), p.runtime.buffer)
 			if err != nil {
 				return err
 			}
-			for j := range targetRefs {
-				if err := connectRefs(graph, targetRefs[j], sinkRef); err != nil {
+			for j := range upstreamRefs {
+				if err := connectRefs(graph, upstreamRefs[j], sinkRef); err != nil {
 					return err
 				}
 			}
 			continue
 		}
-		stage, err := service.openMuxDestinationStage(ctx, output, target.OutputIndex, streams, destinationOpenFormat(output), destinationGraphFormat(output))
+		targetStreams, err := packetCopyTargetStreams(target, streams, len(targetRefs))
+		if err != nil {
+			return err
+		}
+		stage, err := service.openMuxDestinationStage(ctx, output, target.OutputIndex, targetStreams, destinationOpenFormat(output), destinationGraphFormat(output))
 		if err != nil {
 			return err
 		}
@@ -879,13 +977,64 @@ func (p mediaPlanStreamGraph) lowerPacketCopyTargets(
 			stage.Close()
 			return err
 		}
-		for j := range targetRefs {
-			if err := connectRefs(graph, targetRefs[j], stageRef); err != nil {
+		for j := range upstreamRefs {
+			if err := connectRefs(graph, upstreamRefs[j], stageRef); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func packetCopyTargetRefs(target graphPlanTargetOperation, refs []pipeline.NodeRef) ([]pipeline.NodeRef, error) {
+	if len(target.Matches) == 0 {
+		return nil, graphPlanInvalidError("packet-copy target operation has no branch matches", []string{
+			"target=" + target.Name,
+		})
+	}
+	out := make([]pipeline.NodeRef, 0, len(target.Matches))
+	for _, index := range target.Matches {
+		if index < 0 || index >= len(refs) {
+			return nil, graphPlanInvalidError("packet-copy target operation branch match is outside source refs", []string{
+				"target=" + target.Name,
+				"match=" + strconv.Itoa(index),
+				"sources=" + strconv.Itoa(len(refs)),
+			})
+		}
+		out = append(out, refs[index])
+	}
+	return out, nil
+}
+
+func packetCopyTargetStreams(target graphPlanTargetOperation, streams []av.Stream, sourceCount int) ([]av.Stream, error) {
+	if len(target.Matches) == 0 {
+		return nil, graphPlanInvalidError("packet-copy target operation has no branch matches", []string{
+			"target=" + target.Name,
+		})
+	}
+	if sourceCount == 1 || len(target.Matches) == sourceCount {
+		return append([]av.Stream(nil), streams...), nil
+	}
+	if len(streams) != sourceCount {
+		return nil, graphPlanInvalidError("packet-copy target operation cannot map partial branch matches to streams", []string{
+			"target=" + target.Name,
+			"matches=" + strconv.Itoa(len(target.Matches)),
+			"sources=" + strconv.Itoa(sourceCount),
+			"streams=" + strconv.Itoa(len(streams)),
+		})
+	}
+	out := make([]av.Stream, 0, len(target.Matches))
+	for _, index := range target.Matches {
+		if index < 0 || index >= len(streams) {
+			return nil, graphPlanInvalidError("packet-copy target operation branch match is outside streams", []string{
+				"target=" + target.Name,
+				"match=" + strconv.Itoa(index),
+				"streams=" + strconv.Itoa(len(streams)),
+			})
+		}
+		out = append(out, streams[index])
+	}
+	return out, nil
 }
 
 func graphPlanFirstOperation(operations []graphPlanOperation, kind OperationKind) (graphPlanOperation, bool) {
@@ -902,6 +1051,7 @@ type graphPlanTargetOperation struct {
 	Node        pipeline.NodeRef
 	Kind        OperationKind
 	OutputIndex int
+	Matches     []int
 }
 
 func validateGraphPlanTargetOperationNode(scope string, target graphPlanTargetOperation) error {
@@ -929,8 +1079,13 @@ func namedStageForGraphPlanTarget(target graphPlanTargetOperation, stage pipelin
 }
 
 func graphPlanTargetOperations(operations []graphPlanOperation) []graphPlanTargetOperation {
+	targets, _ := graphPlanUniqueTargetOperations(operations, "")
+	return targets
+}
+
+func graphPlanUniqueTargetOperations(operations []graphPlanOperation, scope string) ([]graphPlanTargetOperation, error) {
 	targets := make([]graphPlanTargetOperation, 0)
-	seen := make(map[string]struct{})
+	seen := make(map[string]int)
 	for i := range operations {
 		operation := operations[i]
 		if !graphPlanOperationTargetsRequired(operation.Kind) {
@@ -940,18 +1095,35 @@ func graphPlanTargetOperations(operations []graphPlanOperation) []graphPlanTarge
 			if target == "" {
 				continue
 			}
-			if _, ok := seen[target]; ok {
-				continue
-			}
-			seen[target] = struct{}{}
-			targets = append(targets, graphPlanTargetOperation{
+			next := graphPlanTargetOperation{
 				Name: target,
 				Node: operation.Node,
 				Kind: operation.Kind,
-			})
+			}
+			if index, ok := seen[target]; ok {
+				if err := validateGraphPlanDuplicateTargetOperation(scope, target, targets[index], next); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			seen[target] = len(targets)
+			targets = append(targets, next)
 		}
 	}
-	return targets
+	return targets, nil
+}
+
+func validateGraphPlanDuplicateTargetOperation(scope string, target string, first graphPlanTargetOperation, next graphPlanTargetOperation) error {
+	if first.Node == next.Node && first.Kind == next.Kind {
+		return nil
+	}
+	return graphPlanInvalidError(firstNonEmpty(scope, "graph-plan")+" target operation is not consistent across branches", []string{
+		"target=" + target,
+		"first_node=" + first.Node.String(),
+		"next_node=" + next.Node.String(),
+		"first_kind=" + string(first.Kind),
+		"next_kind=" + string(next.Kind),
+	})
 }
 
 func graphPlanOutputIndex(outputs []planOutput, target string) (int, bool) {
@@ -1067,7 +1239,10 @@ func (p mediaPlanStreamGraph) validateFrameStreamFilterOperations(operations []g
 }
 
 func (p mediaPlanStreamGraph) prepareFrameStreamTargets(operations []graphPlanOperation, outputs []planOutput) ([]graphPlanTargetOperation, error) {
-	targets := graphPlanTargetOperations(operations)
+	targets, err := graphPlanUniqueTargetOperations(operations, "frame stream")
+	if err != nil {
+		return nil, err
+	}
 	if len(targets) == 0 {
 		return nil, graphPlanInvalidError("frame stream graph plan has no target operations", nil)
 	}

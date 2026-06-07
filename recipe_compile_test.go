@@ -2509,6 +2509,44 @@ func graphPlanOperationsWithoutBranch(operations []graphPlanOperation, branch st
 	return out
 }
 
+func graphPlanOperationsWithoutBranchTarget(operations []graphPlanOperation, branch string, target string) []graphPlanOperation {
+	out := make([]graphPlanOperation, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		if operation.Branch != branch || !graphPlanOperationTargetsRequired(operation.Kind) {
+			out = append(out, operation)
+			continue
+		}
+		targets := make([]string, 0, len(operation.Targets))
+		for _, next := range operation.Targets {
+			if next != target {
+				targets = append(targets, next)
+			}
+		}
+		if len(targets) == 0 {
+			continue
+		}
+		operation.Targets = targets
+		out = append(out, operation)
+	}
+	return out
+}
+
+func graphPlanOperationsWithBranchTargetNode(operations []graphPlanOperation, branch string, target string, node pipeline.NodeRef) []graphPlanOperation {
+	out := cloneGraphPlanOperations(operations)
+	for i := range out {
+		operation := out[i]
+		if operation.Branch != branch || !graphPlanOperationTargetsRequired(operation.Kind) {
+			continue
+		}
+		if !stringInSlice(target, operation.Targets) {
+			continue
+		}
+		out[i].Node = node
+	}
+	return out
+}
+
 func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
@@ -3217,6 +3255,76 @@ func TestPacketCopyLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
 	}
 }
 
+func TestPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
+	job := From(
+		FileInput("input.ivf", strings.NewReader("")),
+	).Copy().To(fileDestination("recording.ivf", io.Discard))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpCopy)
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "packet-copy graph plan has no copy operation for branch") {
+		t.Fatalf("err = %v, want missing copy-operation graph-plan error", err)
+	}
+}
+
+func TestPacketCopyLowererRequiresTargetBranchBindingsBeforeSources(t *testing.T) {
+	job := From(
+		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("left").Codec(Opus()),
+	).And(
+		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("right").Codec(Opus()),
+	).Copy().To(Sink(&runtimeTestSink{name: "packets"}))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutBranchTarget(resolved.graphPlan.operations, "right", "packets")
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "packet-copy target operation branches do not match output branches") {
+		t.Fatalf("err = %v, want packet-copy target branch binding graph-plan error", err)
+	}
+}
+
+func TestPacketCopyLowererRequiresConsistentTargetOperationsBeforeSources(t *testing.T) {
+	job := From(
+		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("left").Codec(Opus()),
+	).And(
+		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("right").Codec(Opus()),
+	).Copy().To(Sink(&runtimeTestSink{name: "packets"}))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithBranchTargetNode(resolved.graphPlan.operations, "right", "packets", "packets-right")
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "packet-copy target operation is not consistent across branches") {
+		t.Fatalf("err = %v, want duplicate target consistency graph-plan error", err)
+	}
+}
+
 func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
@@ -3536,6 +3644,38 @@ func TestSelectedPacketCopyLowererRequiresSelectOperationBeforeSources(t *testin
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
 		!strings.Contains(err.Error(), "selected packet-copy graph plan has no select operation") {
 		t.Fatalf("err = %v, want missing select-operation graph-plan error", err)
+	}
+}
+
+func TestSelectedPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Copy().
+		To(Sink(&runtimeTestSink{name: "packets"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpCopy)
+	task, err := resolved.Build(ctx)
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "selected packet-copy graph plan has no copy operation") {
+		t.Fatalf("err = %v, want selected copy-operation graph-plan error", err)
 	}
 }
 

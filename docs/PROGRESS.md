@@ -1943,6 +1943,18 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     patch-era helpers. Guard tests reject split mux format or compatibility
     helpers from returning.
     Done.
+366. Validate packet-copy operation and target records during lowering:
+    whole-input and selected packet-copy lowerers now require the executable
+    graph plan to contain the planned `copy` operation before any source is
+    opened. Whole-input packet copy now also requires target operations to agree
+    on the same node/kind across every branch feeding a named target, validates
+    the target operation branch refs against the media-plan output branch refs,
+    and connects only the matched source branches while preserving all streams
+    for single-source remux. Regression tests remove `OpCopy`, remove one branch
+    target binding from a multi-input copy plan, and mutate duplicate target
+    nodes to prove build fails from graph-plan validation before runtime graph
+    construction.
+    Done.
 
 ## First Vertical Slice
 
@@ -2156,9 +2168,12 @@ Required proof:
    encode-to-target operation and target nodes now consume graph-plan refs and
    selected direct chains are branch-scoped during lowering; direct frame-stream
    and selected packet-copy specs and runtime builds now use branch route
-   planning/lowering. Destination configuration is also one constructor-option
-   path. The next step is to move whole-input packet-copy and runtime attach
-   toward the same branch/patch planner instead of workflow-shape graph modes.
+   planning/lowering. Whole-input packet copy now validates planned copy
+   operations plus branch-bound target operations and lowers target connections
+   from graph-plan branch matches, and destination configuration is one
+   constructor-option path. The next step is to move whole-input packet-copy
+   source/stream grouping and runtime attach toward the same branch/patch
+   planner instead of workflow-shape graph modes.
 2. Finish `GraphPatch` for runtime attach. `Task.Attach` now has a private patch
    boundary plus shared runtime mux target format/compatibility/preparation
    helpers; the next step is to move more cap/target validation and shared
@@ -2213,7 +2228,10 @@ packet-copy specs and runtime builds consume one branch route plus planned
 select/target refs through the same helpers, and grouped branch-compose consumes
 select/decode input refs, shared/private step refs, encode refs, and target
 refs. Whole-input packet copy still preserves multi-input fanout while it waits
-for the broader branch/patch planner shape. The public recipe surface is small: `From`, chains,
+for the broader branch/patch planner shape, but its lowerer now validates
+planned copy operations, consistent duplicate target operations, and target
+branch bindings before source opening, then routes targets by planned branch
+matches. The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`, `File`, `URIOut`, `Writer`, `Object`,
 `Sink`, `Flow`, `Codec`, and runtime `Attach`. `Destination` remains the
 externally implementable extension surface for custom byte writers, object
