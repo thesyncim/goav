@@ -48,7 +48,7 @@ Run:
 ```sh
 go test ./...
 go test -tags goav_goh264 ./adapters/goh264
-go test -tags goav_govpx ./adapters/govpx
+go test ./adapters/govpx
 ```
 
 Current allocation guards cover:

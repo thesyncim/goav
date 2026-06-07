@@ -1,5 +1,3 @@
-//go:build goav_goav1
-
 package goav1
 
 import (
@@ -10,7 +8,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 )
 
-func TestTaggedRegisterDecoderFactory(t *testing.T) {
+func TestRegisterDecoderFactory(t *testing.T) {
 	registry := codec.NewRegistry()
 	Register(registry)
 
@@ -18,7 +16,7 @@ func TestTaggedRegisterDecoderFactory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find AV1: %v", err)
 	}
-	if len(descriptors) != 1 || descriptors[0].Backend.Status != "active-build-tagged" {
+	if len(descriptors) != 1 || descriptors[0].Backend.Status != "active" {
 		t.Fatalf("descriptors = %+v", descriptors)
 	}
 	if _, err := registry.DecoderFactory(av.CodecAV1); err != nil {
@@ -26,7 +24,7 @@ func TestTaggedRegisterDecoderFactory(t *testing.T) {
 	}
 }
 
-func TestTaggedDecoderFactoryRequiresCallerOwnedState(t *testing.T) {
+func TestDecoderFactoryRequiresCallerOwnedState(t *testing.T) {
 	factory := NewDecoderFactory()
 	_, err := factory.NewDecoder(context.Background(), codec.DecodeConfig{
 		Stream: av.Stream{Codec: av.CodecParameters{ID: av.CodecAV1}},
@@ -36,7 +34,7 @@ func TestTaggedDecoderFactoryRequiresCallerOwnedState(t *testing.T) {
 	}
 }
 
-func TestTaggedDecoderFactoryProvidesRuntimeState(t *testing.T) {
+func TestDecoderFactoryProvidesRuntimeState(t *testing.T) {
 	factory := NewDecoderFactory()
 	state, err := factory.NewDecodeState(context.Background(), codec.DecodeConfig{
 		Stream: av.Stream{

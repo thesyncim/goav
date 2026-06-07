@@ -1,5 +1,3 @@
-//go:build goav_goav1
-
 package goav1
 
 import (
@@ -28,7 +26,7 @@ func Register(registry *codec.SimpleRegistry) {
 
 func activeDescriptor() codec.Descriptor {
 	desc := Descriptor()
-	desc.Backend.Status = "active-build-tagged"
+	desc.Backend.Status = "active"
 	return desc
 }
 

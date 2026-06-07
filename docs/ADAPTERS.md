@@ -48,9 +48,9 @@ factories registered on the selected runtime.
 | `adapters/annexb` | H264 Annex B packet mux |
 | `adapters/resample` | pure-Go S16 audio resample and channel conversion filter |
 | `adapters/resize` | pure-Go I420/YUV420P video resize filter |
-| `adapters/gopus` | Opus decode to caller-owned `s16` frames, PLC on packet-loss events |
-| `adapters/govpx` | descriptor-only by default; `goav_govpx` enables VP8/VP9 decode and encode |
-| `adapters/goav1` | descriptor-only by default; `goav_goav1` enables AV1 low-overhead and concrete raw RTP payload decode |
+| `adapters/gopus` | Opus decode and encode with caller-owned `s16` frames/packet buffers, PLC on packet-loss events |
+| `adapters/govpx` | VP8/VP9 decode and encode |
+| `adapters/goav1` | AV1 low-overhead and concrete raw RTP payload decode |
 | `adapters/goh264` | descriptor-only by default; `goav_goh264` enables H264 decode |
 
 ## `ivf`
@@ -91,21 +91,19 @@ The `gopus` adapter wraps `github.com/thesyncim/gopus`.
 
 Current surface:
 
-- descriptor for Opus decode
+- descriptor for Opus decode and encode
 - explicit registry registration
 - RTP Opus depacketized packet to PCM frame path
+- PCM frame to Opus packet encode path
 - packet-loss concealment through `EventPacketLoss`
 - caller-owned frame and plane buffer output
-
-It does not currently claim encode support.
+- caller-owned packet buffer output
 
 ## `govpx`
 
-The `govpx` adapter wraps `github.com/thesyncim/govpx` only when built with
-`goav_govpx`. Normal builds keep VP8 and VP9 descriptors visible without
-importing the module.
+The `govpx` adapter wraps `github.com/thesyncim/govpx` in normal builds.
 
-Current tagged surface:
+Current surface:
 
 - explicit registry registration through `govpx.Register`
 - VP8 and VP9 packet decode through `DecodeIntoWithPTS`
@@ -129,10 +127,10 @@ format conversion remain future slices.
 
 ## `goav1`
 
-The `goav1` adapter is descriptor-only by default. With `goav_goav1`, it wraps
-`github.com/thesyncim/goav1` and registers a first AV1 decoder factory.
+The `goav1` adapter wraps `github.com/thesyncim/goav1` in normal builds and
+registers a first AV1 decoder factory.
 
-Current tagged surface:
+Current surface:
 
 - explicit registry registration through `goav1.Register`
 - `DecoderState` as the documented `codec.DecodeConfig.OpaqueState`
