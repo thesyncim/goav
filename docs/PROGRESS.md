@@ -1234,6 +1234,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     through `Explain(ctx)`, and post-encode planned taps now inherit packet caps
     with the encoded codec and transformed geometry. A public branch report test
     pins resize-to-VP9 operation caps and matching post-encode tap caps. Done.
+284. Prove live buffered subtree detach from nested packet taps:
+    `TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages` now runs a
+    bounded buffered task while a late parent branch encodes from a frame tap,
+    publishes a post-encode packet tap, and a dependent child copies from that
+    nested tap. Detaching the parent closes both branches, removes the nested
+    tap, and prevents later source frames from reaching the detached subtree
+    while the base graph keeps running. Done.
 
 ## First Vertical Slice
 
@@ -1484,7 +1491,8 @@ of a parallel graph language, and
 `Task.Attach` remains the late branch control plane for running graphs,
 including custom-stage, resize/resample, branch-local node stats, dependent
 branches after runtime resize taps, post-encode packet taps feeding dependent
-packet-copy branches,
+packet-copy branches, live buffered parent detach that removes nested
+post-encode packet-tap subtrees before future media reaches them,
 flow-applied Opus encode-to-target branches, late Opus/VP8/VP9
 encode-to-endpoint, packet-copy endpoint, packet-copy recording, Opus encoded
 late recording, and sink branches that can publish nested runtime taps for later
@@ -1498,8 +1506,8 @@ direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
 broaden descriptor-backed endpoint/container capability data as WebM/Ogg arrive
-and keep broadening buffered runtime attachment stress proof without weakening
-the direct graph branch grammar.
+and keep broadening runtime attachment stress around transform/custom-stage
+boundaries without weakening the direct graph branch grammar.
 
 ## Validation Gates
 

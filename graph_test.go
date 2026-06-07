@@ -1199,6 +1199,131 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 	}
 }
 
+func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	codecs := withTestCodecs(
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
+	)
+	frames := []av.Frame{
+		{StreamID: "audio", Type: av.MediaAudio},
+		{StreamID: "audio", Type: av.MediaAudio},
+		{StreamID: "audio", Type: av.MediaAudio},
+	}
+	source := &runtimeBranchStepSource{
+		name: "source",
+		messages: []pipeline.Message{
+			{Kind: pipeline.MessageFrame, Frame: &frames[0]},
+			{Kind: pipeline.MessageFrame, Frame: &frames[1]},
+			{Kind: pipeline.MessageFrame, Frame: &frames[2]},
+		},
+		emitted: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+		resume: []chan struct{}{
+			make(chan struct{}),
+			make(chan struct{}),
+		},
+	}
+	base := newRuntimeObservedSink("base", 3)
+	encoded := newRuntimeObservedSink("encoded", 1)
+	copied := newRuntimeObservedSink("copied", 1)
+
+	graph := New(codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:     DomainFrame,
+			MediaKind:  av.MediaAudio,
+			StreamID:   "audio",
+			Codec:      av.CodecOpus,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- builtTask.Run(ctx)
+	}()
+	select {
+	case <-source.emitted[0]:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	parent, err := builtTask.Attach(ctx, Branch("archive").
+		FromTap("audio.frames").
+		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
+		Opus(96_000).
+		Tap("audio.encoded").
+		To(SinkEndpoint(encoded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := builtTask.Attach(ctx, Branch("copy").
+		FromTap("audio.encoded").
+		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
+		Copy().
+		To(SinkEndpoint(copied)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(source.resume[0])
+	select {
+	case <-encoded.received:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case <-copied.received:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := builtTask.Detach(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+	if !encoded.closedValue() || !copied.closedValue() {
+		t.Fatalf("closed encoded=%v copied=%v", encoded.closedValue(), copied.closedValue())
+	}
+	close(source.resume[1])
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if got := base.countValue(); got != 3 {
+		t.Fatalf("base count = %d, want all three frames", got)
+	}
+	if encoder.encodes != 1 {
+		t.Fatalf("encodes = %d, want only the second frame before detach", encoder.encodes)
+	}
+	if got := encoded.packetValues(); len(got) != 1 || got[0] != 7 {
+		t.Fatalf("encoded packet values = %v, want only second encoded packet", got)
+	}
+	if got := copied.packetValues(); len(got) != 1 || got[0] != 7 {
+		t.Fatalf("copied packet values = %v, want only second copied packet", got)
+	}
+	if _, ok := findTap(builtTask.Taps(), "audio.encoded"); ok {
+		t.Fatalf("audio.encoded tap still visible after parent detach: %+v", builtTask.Taps())
+	}
+	if err := child.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
 	audio := Branch("levels").FromTap("audio.decoded").To(SinkEndpoint(&runtimeTestSink{name: "levels"}))
 	if audio.tap != "audio.decoded" || audio.from != "" {
