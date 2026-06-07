@@ -1070,6 +1070,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     correctness. Intent coverage verifies these unnamed current-point splits do
     not pretend to reference `video.decoded`, and describe/build equivalence
     coverage pins the shared-prefix graph. Done.
+263. Broaden current-point branch proofs beyond video resize:
+    planned branch composition now has coverage for custom `.Do(stage)` current
+    points and an audio `Resample(...)` current point. The audio proof runs the
+    graph and verifies one shared resample feeds both an Opus mux branch and a
+    raw sink branch, preserving the same `Branch`/`Target` grammar across
+    custom stages, audio transforms, and video transforms. Done.
 
 ## First Vertical Slice
 

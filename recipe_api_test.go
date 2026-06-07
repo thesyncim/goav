@@ -3289,6 +3289,54 @@ func TestBranchCompositionSharesCurrentPointWithoutExplicitTap(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionSharesCustomStageCurrentPoint(t *testing.T) {
+	meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+		return emit.Frame(frame)
+	})
+	packets := goav.Target("packets", goav.SinkEndpoint(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
+		return nil
+	})))
+	preview := goav.Target("preview", goav.SinkEndpoint(goav.SinkFunc("preview", func(context.Context, goav.Message) error {
+		return nil
+	})))
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+		Video().
+		Decode().
+		Do(meter).
+		Branches(
+			goav.Branch("web").
+				VP9(2_000_000).
+				To(packets),
+			goav.Branch("preview").
+				Resize(320, 180).
+				To(preview),
+		)
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	for _, want := range []string{
+		"decode-video -> meter",
+		"meter -> encode-web",
+		"meter -> resize-preview",
+		"resize-preview -> preview",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec missing %q:\n%s", want, text)
+		}
+	}
+	for _, duplicate := range []string{
+		"decode-video -> encode-web",
+		"decode-video -> resize-preview",
+	} {
+		if strings.Contains(text, duplicate) {
+			t.Fatalf("custom stage split was duplicated as %q:\n%s", duplicate, text)
+		}
+	}
+}
+
 func TestBranchRecipeRequiresBranch(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Build(context.Background())

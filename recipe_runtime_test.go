@@ -989,6 +989,86 @@ func TestBranchCompositionCurrentPointDescribeMatchesBuiltGraph(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionSharedResampleCurrentPointRuns(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	resampleFactory := &transcodeTestFilterFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResample,
+		Input:  av.MediaAudio,
+		Output: av.MediaAudio,
+	}, resampleFactory))
+	decoder := &decodeTestDecoder{}
+	encoder := &encodeTestEncoder{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder}),
+	)
+	levels := &runtimeTestSink{name: "levels"}
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs, filters)).
+		Audio().
+		Decode().
+		Resample(16_000, Mono).
+		Branches(
+			Branch("voice").
+				Opus(64_000).
+				To(Target("voice", FileOutput("voice.ogg", io.Discard).Format(av.FormatOgg))),
+			Branch("levels").
+				To(Target("levels", SinkEndpoint(levels))),
+		)
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(planned)
+	for _, want := range []string{
+		"decode-audio -> resample-audio",
+		"resample-audio -> encode-voice",
+		"resample-audio -> levels",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("planned spec missing %q:\n%s", want, text)
+		}
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || resampleFactory.filter.frames != 1 || encoder.encodes != 1 || levels.frames != 1 {
+		t.Fatalf("decodes=%d resampled=%d encodes=%d levels=%d", decoder.decodes, resampleFactory.filter.frames, encoder.encodes, levels.frames)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "voice" {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.closed || !resampleFactory.filter.closed || !encoder.closed || !levels.closed || !muxers.muxers[0].closed {
+		t.Fatalf("closed demux=%v resample=%v encoder=%v levels=%v mux=%v", demuxer.closed, resampleFactory.filter.closed, encoder.closed, levels.closed, muxers.muxers[0].closed)
+	}
+}
+
 func TestBranchCompositionFrameSinkEndpointRuns(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
