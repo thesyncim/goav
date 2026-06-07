@@ -13,13 +13,11 @@ import (
 var targetSpecSeq atomic.Uint64
 var destinationSpecSeq atomic.Uint64
 
-// Destination is a concrete media destination such as a file, URI, object
-// writer, or media sink. Built-in constructors and Custom return destination
+// Destination is an opaque handle for a file, URI, object writer, media sink,
+// or shared mux/sink group. Built-in constructors and Custom return destination
 // values with goav-owned routing identity.
-type Destination interface {
-	Name() string
-	Contract() DestinationContract
-	Open(context.Context, TargetInfo) (DestinationWriter, error)
+type Destination struct {
+	spec destinationSpec
 }
 
 // DestinationProvider opens a custom destination behind a goav-owned
@@ -96,9 +94,6 @@ func newDirectTargetSpec(name string, dest destinationSpec) targetSpec {
 }
 
 func destinationBindingFromDestination(dest Destination) (destinationBinding, error) {
-	if dest == nil {
-		return destinationBinding{}, fmt.Errorf("destination is nil")
-	}
 	direct, err := destinationSpecFromDestination(dest)
 	if err != nil {
 		return destinationBinding{}, err
@@ -107,12 +102,10 @@ func destinationBindingFromDestination(dest Destination) (destinationBinding, er
 }
 
 func destinationSpecFromDestination(dest Destination) (destinationSpec, error) {
-	switch value := dest.(type) {
-	case destinationSpec:
-		return cloneDestinationSpec(value), nil
-	default:
-		return destinationSpec{}, fmt.Errorf("custom destination providers must be wrapped with goav.Custom(name, provider)")
+	if destinationSpecEmpty(dest.spec) {
+		return destinationSpec{}, fmt.Errorf("destination is empty")
 	}
+	return cloneDestinationSpec(dest.spec), nil
 }
 
 func destinationSpecEmpty(dest destinationSpec) bool {
@@ -418,10 +411,6 @@ func (b *branchBuilder) To(targets ...Destination) BranchSpec {
 	}
 	for i := range targets {
 		target := targets[i]
-		if target == nil {
-			spec.err = branchDestinationInvalidError(spec.name, "branch destination is nil")
-			return spec
-		}
 		binding, err := destinationBindingFromDestination(target)
 		if err != nil {
 			spec.err = branchDestinationInvalidError(spec.name, err.Error())

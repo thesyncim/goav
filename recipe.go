@@ -822,6 +822,10 @@ type destinationSpec struct {
 	err            error
 }
 
+func destinationHandle(spec destinationSpec) Destination {
+	return Destination{spec: spec}
+}
+
 // File creates a writer-backed destination.
 func File(name string, writer io.Writer, opts ...DestinationOption) Destination {
 	spec := fileDestination(name, writer)
@@ -830,7 +834,7 @@ func File(name string, writer io.Writer, opts ...DestinationOption) Destination 
 			opts[i](&spec)
 		}
 	}
-	return spec
+	return Destination{spec: spec}
 }
 
 func fileDestination(name string, writer io.Writer) destinationSpec {
@@ -853,7 +857,7 @@ func URIOut(uri string, opts ...DestinationOption) Destination {
 			opts[i](&spec)
 		}
 	}
-	return spec
+	return Destination{spec: spec}
 }
 
 func uriDestination(uri string) destinationSpec {
@@ -869,7 +873,7 @@ func uriDestination(uri string) destinationSpec {
 
 // Sink creates a media-message destination for decoded frames or packets.
 func Sink(sink pipeline.Sink) Destination {
-	return sinkDestination(sink)
+	return Destination{spec: sinkDestination(sink)}
 }
 
 func sinkDestination(sink pipeline.Sink) destinationSpec {
@@ -890,7 +894,7 @@ func Custom(name string, provider DestinationProvider, opts ...DestinationOption
 			opts[i](&spec)
 		}
 	}
-	return spec
+	return Destination{spec: spec}
 }
 
 func customDestination(name string, provider DestinationProvider) destinationSpec {
@@ -937,7 +941,7 @@ func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destina
 			opts[i](&spec)
 		}
 	}
-	return spec
+	return Destination{spec: spec}
 }
 
 func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) Destination {
@@ -1264,10 +1268,6 @@ func (j *Job) To(targets ...Destination) *Job {
 	}
 	for i := range targets {
 		target := targets[i]
-		if target == nil {
-			j.setErr(jobDestinationInvalidError("job", "job destination is nil"))
-			return j
-		}
 		binding, err := destinationBindingFromDestination(target)
 		if err != nil {
 			j.setErr(jobDestinationInvalidError("job", err.Error()))
@@ -3478,10 +3478,6 @@ func (b *jobStreamBuilder) To(targets ...Destination) *Job {
 	outputs := make([]destinationSpec, 0, len(targets))
 	for i := range targets {
 		target := targets[i]
-		if target == nil {
-			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream destination is nil"))
-			return b.job
-		}
 		binding, err := destinationBindingFromDestination(target)
 		if err != nil {
 			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), err.Error()))

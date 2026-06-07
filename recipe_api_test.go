@@ -2654,19 +2654,18 @@ func TestExternalCustomDestinationCanBeTargeted(t *testing.T) {
 	}
 }
 
-func TestExternalCustomDestinationMustUseCustomHandle(t *testing.T) {
-	_, err := goav.From(goav.RTP(recipeAPIVideoRTPReader{}).Name("video").Codec(goav.VP8())).
-		Video().
-		Copy().
-		To(recipeAPICustomDestination{}).
-		Build(context.Background())
-
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "target_invalid" {
-		t.Fatalf("err = %v, want target_invalid", err)
+func TestDestinationProviderIsWrappedByCustomHandle(t *testing.T) {
+	providerType := reflect.TypeOf((*goav.DestinationProvider)(nil)).Elem()
+	provider := reflect.TypeOf(recipeAPICustomDestination{})
+	if !provider.Implements(providerType) {
+		t.Fatalf("%v should implement DestinationProvider", provider)
 	}
-	if !strings.Contains(err.Error(), "goav.Custom") {
-		t.Fatalf("err = %v, want Custom guidance", err)
+	destinationType := reflect.TypeOf(goav.Custom("custom", recipeAPICustomDestination{}))
+	if destinationType.Name() != "Destination" || destinationType.Kind() != reflect.Struct {
+		t.Fatalf("Custom return type = %v, want concrete Destination handle", destinationType)
+	}
+	if provider.AssignableTo(destinationType) {
+		t.Fatalf("provider %v should not be assignable to Destination handle %v", provider, destinationType)
 	}
 }
 
@@ -2674,6 +2673,10 @@ func TestRootAPIDoesNotExportTarget(t *testing.T) {
 	body, err := os.ReadFile("branch.go")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "type Destination struct") ||
+		strings.Contains(string(body), "type Destination interface") {
+		t.Fatal("root API should expose Destination as a concrete handle, not an interface")
 	}
 	if strings.Contains(string(body), "func Target(") {
 		t.Fatal("root API should not export Target")
@@ -3631,7 +3634,7 @@ func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsNilDestination(t *testing.T) {
+func TestRecordRecipeRejectsEmptyDestination(t *testing.T) {
 	var target goav.Destination
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
@@ -3641,7 +3644,7 @@ func TestRecordRecipeRejectsNilDestination(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_invalid wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "destination is nil") ||
+	if !strings.Contains(err.Error(), "destination is empty") ||
 		!strings.Contains(err.Error(), "goav.File") ||
 		!strings.Contains(err.Error(), "goav.Sink") {
 		t.Fatalf("err = %v, want destination constructor guidance", err)

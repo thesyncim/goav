@@ -661,7 +661,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 				},
 			}},
 		}).Name("audio").Codec(Opus()),
-	).Copy().To(fileDestination("recording.ogg", io.Discard)).UseRuntime(runtime)
+	).Copy().To(destinationHandle(fileDestination("recording.ogg", io.Discard))).UseRuntime(runtime)
 
 	resolved, err := compileJobRecipeForBuild(job)
 	if err != nil {
@@ -742,7 +742,7 @@ func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedTargets(t *testing.T)
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Opus(96_000).To(fileDestination("archive.ogg", io.Discard)))
+		Branches(Branch("main").Opus(96_000).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(context.Background(), job)
 	if err != nil {
@@ -2569,7 +2569,7 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 func TestCompileJobRecipeCarriesIntentAndGraphPlanBuild(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(fileDestination("recording.ivf", io.Discard))
+	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2604,7 +2604,7 @@ func TestCompileJobRecipeCarriesIntentAndGraphPlanBuild(t *testing.T) {
 }
 
 func TestGraphPlanCarriesReportMetadata(t *testing.T) {
-	web := fileDestination("web.ivf", io.Discard).withFormat(av.FormatIVF)
+	web := destinationHandle(fileDestination("web.ivf", io.Discard).withFormat(av.FormatIVF))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -2659,7 +2659,7 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 func TestGraphPlanViewsAreImmutable(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF))
+	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF)))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2793,7 +2793,7 @@ func graphPlanOperationsWithBranchTargetNode(operations []graphPlanOperation, br
 func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF))
+	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF)))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2834,7 +2834,7 @@ func TestGraphPlanSpecPassPlansRTPCopy(t *testing.T) {
 				Type: av.MediaVideo,
 			},
 		}}}).Name("video").Codec(VP8()),
-	).Copy().To(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF))
+	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF)))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -2866,7 +2866,7 @@ func TestGraphPlanSpecPassPlansRTPCopy(t *testing.T) {
 }
 
 func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
-	web := fileDestination("web.ivf", io.Discard)
+	web := destinationHandle(fileDestination("web.ivf", io.Discard))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -2908,8 +2908,8 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 }
 
 func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) {
-	voice := fileDestination("voice.ogg", io.Discard).withFormat(av.FormatOgg)
-	archive := fileDestination("archive.ogg", io.Discard).withFormat(av.FormatOgg)
+	voice := destinationHandle(fileDestination("voice.ogg", io.Discard).withFormat(av.FormatOgg))
+	archive := destinationHandle(fileDestination("archive.ogg", io.Discard).withFormat(av.FormatOgg))
 	job := From(RTP(&runtimeRTPReceiver{
 		streams: []Stream{audioOpusTestStream()},
 	}).Name("audio").Codec(Opus())).
@@ -2958,7 +2958,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 		Audio().
 		Decode().
 		Tap(FrameTap("audio.decoded")).
-		Branches(Branch("main").Opus(96_000).To(fileDestination("archive.ogg", io.Discard)))
+		Branches(Branch("main").Opus(96_000).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -2980,8 +2980,8 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 }
 
 func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
-	web := fileDestination("web.ivf", io.Discard)
-	thumbnail := sinkDestination(SinkFunc("thumbnail", func(context.Context, Message) error {
+	web := destinationHandle(fileDestination("web.ivf", io.Discard))
+	thumbnail := Sink(SinkFunc("thumbnail", func(context.Context, Message) error {
 		return nil
 	}))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
@@ -3029,7 +3029,7 @@ func TestBranchComposeLowererUsesPlanInputOperationNodes(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Opus(96_000).To(fileDestination("archive.ogg", io.Discard)))
+		Branches(Branch("main").Opus(96_000).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3078,7 +3078,7 @@ func TestBranchComposeLowererUsesPlanSharedStepOperationNodes(t *testing.T) {
 		Audio().
 		Decode().
 		Resample(48_000, Stereo).
-		Branches(Branch("main").Opus(96_000).To(fileDestination("archive.ogg", io.Discard)))
+		Branches(Branch("main").Opus(96_000).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3128,7 +3128,7 @@ func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testi
 		Branches(Branch("main").
 			Resample(16_000, Mono).
 			Opus(96_000).
-			To(fileDestination("archive.ogg", io.Discard)))
+			To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3168,7 +3168,7 @@ func TestBranchComposeLowererUsesPlanTargetOperationNodes(t *testing.T) {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	archive := fileDestination("archive.ogg", io.Discard)
+	archive := destinationHandle(fileDestination("archive.ogg", io.Discard))
 	frames := Sink(SinkFunc("frames", func(context.Context, Message) error {
 		return nil
 	}))
@@ -3284,8 +3284,8 @@ func renameGraphPlanNodeRef(plan graphPlan, oldName string, newName string) grap
 }
 
 func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T) {
-	web := fileDestination("web.ivf", io.Discard)
-	mobile := fileDestination("mobile.ivf", io.Discard)
+	web := destinationHandle(fileDestination("web.ivf", io.Discard))
+	mobile := destinationHandle(fileDestination("mobile.ivf", io.Discard))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -3312,7 +3312,7 @@ func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T)
 }
 
 func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
-	web := fileDestination("web.ivf", io.Discard)
+	web := destinationHandle(fileDestination("web.ivf", io.Discard))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -3338,7 +3338,7 @@ func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) 
 }
 
 func TestBranchComposeLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
-	web := fileDestination("web.ivf", io.Discard)
+	web := destinationHandle(fileDestination("web.ivf", io.Discard))
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -3375,7 +3375,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 				},
 			}},
 		}).Name("video").Codec(VP8()),
-	).Copy().To(fileDestination("recording.ivf", io.Discard))
+	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -3412,7 +3412,7 @@ func TestStreamGraphLowererUsesPlanPacketCopyTargetOperationNodes(t *testing.T) 
 		Audio().
 		Copy().
 		To(
-			fileDestination("archive.ogg", io.Discard),
+			destinationHandle(fileDestination("archive.ogg", io.Discard)),
 			Sink(&runtimeTestSink{name: "packets"}),
 		)
 
@@ -3479,7 +3479,7 @@ func TestSelectedPacketCopyLowererUsesPlanSelectOperationNode(t *testing.T) {
 func TestPacketCopyLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(fileDestination("recording.ivf", io.Discard))
+	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -3501,7 +3501,7 @@ func TestPacketCopyLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
 func TestPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(fileDestination("recording.ivf", io.Discard))
+	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -3619,7 +3619,7 @@ func TestPacketCopyLowererPreservesAllStreamsForSingleSourceRemux(t *testing.T) 
 	)
 	task, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Copy().
-		To(fileDestination("recording.ogg", io.Discard)).
+		To(destinationHandle(fileDestination("recording.ogg", io.Discard))).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -4041,7 +4041,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 		Decode().
 		Do(&runtimeTestStage{name: "meter"}).
 		Opus(96_000).
-		To(fileDestination("archive.ogg", io.Discard))
+		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -4086,7 +4086,7 @@ func TestStreamGraphLowererUsesPlanEncodedTargetOperationNodes(t *testing.T) {
 		Decode().
 		Opus(96_000).
 		To(
-			fileDestination("archive.ogg", io.Discard),
+			destinationHandle(fileDestination("archive.ogg", io.Discard)),
 			Sink(&runtimeTestSink{name: "packets"}),
 		)
 
@@ -4132,7 +4132,7 @@ func TestStreamGraphLowererUsesPlanEncodeOperationNode(t *testing.T) {
 		Audio().
 		Decode().
 		Opus(96_000).
-		To(fileDestination("archive.ogg", io.Discard))
+		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -4161,7 +4161,7 @@ func TestEncodedFrameStreamLowererRequiresEncodeOperationBeforeSources(t *testin
 		Audio().
 		Decode().
 		Opus(96_000).
-		To(fileDestination("archive.ogg", io.Discard))
+		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -4200,7 +4200,7 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 		Tap(FrameTap("audio.decoded")).
 		Do(&runtimeTestStage{name: "meter"}).
 		Opus(96_000).
-		To(fileDestination("archive.ogg", io.Discard))
+		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -4296,7 +4296,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 		Decode().
 		Opus(96_000).
 		To(
-			fileDestination("archive.ogg", io.Discard),
+			destinationHandle(fileDestination("archive.ogg", io.Discard)),
 			Sink(&runtimeTestSink{name: "packets"}),
 		)
 
@@ -4341,7 +4341,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 		Audio().
 		Decode().
 		Opus(96_000).
-		To(fileDestination("archive.ogg", io.Discard))
+		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {

@@ -3358,10 +3358,10 @@ func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
 	cases := []struct {
 		name   string
 		codec  CodecSpec
-		output destinationSpec
+		output Destination
 	}{
-		{name: "h264", codec: H264(Bitrate(2_000_000)), output: fileDestination("archive.h264", io.Discard)},
-		{name: "av1", codec: AV1(Bitrate(2_000_000)), output: fileDestination("archive.ivf", io.Discard)},
+		{name: "h264", codec: H264(Bitrate(2_000_000)), output: destinationHandle(fileDestination("archive.h264", io.Discard))},
+		{name: "av1", codec: AV1(Bitrate(2_000_000)), output: destinationHandle(fileDestination("archive.ivf", io.Discard))},
 	}
 	for _, tc := range cases {
 		_, err := builtTask.Attach(ctx, Branch(tc.name).
