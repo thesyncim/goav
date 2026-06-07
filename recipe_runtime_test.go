@@ -2662,6 +2662,96 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 	}
 }
 
+func tapInfoByName(taps []TapInfo, name string) (TapInfo, bool) {
+	for i := range taps {
+		if taps[i].Name == name {
+			return taps[i], true
+		}
+	}
+	return TapInfo{}, false
+}
+
+func branchSnapshotByName(branches []BranchSnapshot, name string) (BranchSnapshot, bool) {
+	for i := range branches {
+		if branches[i].Name == name {
+			return branches[i], true
+		}
+	}
+	return BranchSnapshot{}, false
+}
+
+func TestTaskSnapshotReportsRuntimeBranchSnapshot(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Tap(FrameTap("audio.frames")).
+		To(Sink(SinkFunc("frames", func(context.Context, Message) error {
+			return nil
+		})))
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	initial := task.Snapshot()
+	if len(initial.Branches) != 0 {
+		t.Fatalf("initial branches = %+v, want none", initial.Branches)
+	}
+	if _, ok := tapInfoByName(initial.Taps, "audio.frames"); !ok {
+		t.Fatalf("initial taps = %+v, want audio.frames", initial.Taps)
+	}
+
+	attachment, err := task.Attach(ctx, Branch("levels").
+		From(FrameTap("audio.frames")).
+		To(Sink(SinkFunc("levels", func(context.Context, Message) error {
+			return nil
+		}))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := task.Snapshot()
+	branch, ok := branchSnapshotByName(snapshot.Branches, "levels")
+	if !ok {
+		t.Fatalf("branches = %+v, want levels branch", snapshot.Branches)
+	}
+	if branch.ID == "" || branch.State != "attached" {
+		t.Fatalf("branch state = %+v, want attached branch with id", branch)
+	}
+	if len(branch.AnchorTaps) != 1 || branch.AnchorTaps[0] != "audio.frames" {
+		t.Fatalf("branch anchors = %+v, want audio.frames", branch.AnchorTaps)
+	}
+	if len(branch.Nodes) == 0 || len(branch.Spec.Nodes) == 0 {
+		t.Fatalf("branch snapshot = %+v, want scoped nodes and spec", branch)
+	}
+	if _, ok := branch.Stats.Nodes[branch.Nodes[0].String()]; len(branch.Stats.Nodes) != 0 && !ok {
+		t.Fatalf("branch stats = %+v, want node stats scoped to branch nodes %+v", branch.Stats, branch.Nodes)
+	}
+	handleSnapshot := attachment.Snapshot()
+	if handleSnapshot.ID != branch.ID || handleSnapshot.Name != branch.Name || handleSnapshot.State != "attached" {
+		t.Fatalf("attachment snapshot = %+v, task branch snapshot = %+v", handleSnapshot, branch)
+	}
+
+	if err := task.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	afterDetach := task.Snapshot()
+	if _, ok := branchSnapshotByName(afterDetach.Branches, "levels"); ok {
+		t.Fatalf("branches after detach = %+v, want levels removed", afterDetach.Branches)
+	}
+}
+
 func TestRuntimeAttachShapeAnnotationCannotBreakOperationContract(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}

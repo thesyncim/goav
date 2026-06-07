@@ -472,6 +472,29 @@ func (t *task) Taps() []TapInfo {
 	return t.tapsLocked()
 }
 
+func (t *task) Snapshot() TaskSnapshot {
+	if t == nil {
+		return TaskSnapshot{}
+	}
+	stats := t.Stats()
+	t.attachMu.Lock()
+	defer t.attachMu.Unlock()
+	branches := make([]BranchSnapshot, 0, len(t.attachments))
+	for attachment := range t.attachments {
+		state := attachment.branchSnapshotLocked(stats)
+		if state.ID == "" && state.Name == "" {
+			continue
+		}
+		branches = append(branches, state)
+	}
+	return TaskSnapshot{
+		Spec:     t.Describe(),
+		Stats:    stats,
+		Taps:     t.tapsLocked(),
+		Branches: branches,
+	}
+}
+
 func (t *task) Detach(ctx context.Context, attachment Attachment) error {
 	if err := ctx.Err(); err != nil {
 		return err

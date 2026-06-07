@@ -1829,10 +1829,9 @@ func TestDocsShowDebugDiagnosticsWorkflow(t *testing.T) {
 			"job.Explain(ctx)",
 			"task.Events()",
 			"task.Attach(ctx",
-			"Attachment.Stats()",
-			"Task.Stats()",
-			"levels.Stats()",
-			"task.Stats()",
+			"Attachment.Snapshot()",
+			"Task.Snapshot()",
+			"task.Snapshot()",
 			"goav.FrameFunc(\"rms\"",
 		} {
 			if !strings.Contains(text, required) {
@@ -1853,7 +1852,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"goav.Param(",
 		"goav.Control(",
 		"Opus, VP8, and VP9 are the full encode/decode recipe verticals",
-		"public grammar stays Input, Chain, Tap, Branch, Target, and Task",
+		"public grammar stays Input, Chain, Tap, Branch, Destination, and Task",
 		"workflows should be expressible through declarative recipes",
 	} {
 		if !strings.Contains(readmeText, required) {
@@ -1868,9 +1867,9 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	performanceText := string(performance)
 	for _, required := range []string{
 		"Hot paths must avoid hidden allocation",
-		"Keep recipe, flow, branch, tap, target, and codec abstractions cold-path only",
+		"Keep recipe, flow, branch, tap, destination, and codec abstractions cold-path",
 		"do not dispatch through them for each packet or frame",
-		"one cold-path executable `GraphPlan` and runtime",
+		"one cold-path executable `WorkPlan` and runtime `WorkPatch`",
 		"must not route",
 		"workflow-specific compiler dispatch",
 	} {
@@ -1885,11 +1884,11 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	}
 	roadmapText := string(roadmap)
 	for _, required := range []string{
-		"`input -> chain -> tap -> branch -> target` lowers into",
-		"`GraphPlan -> pipeline.Graph -> Task`",
+		"`input -> chain -> tap -> branch -> destination` lowers into",
+		"`WorkPlan -> pipeline.Graph -> Task`",
 		"Make runtime attachment a patch of the same plan model",
-		"Planned branches and",
-		"runtime branches must share capability and target compatibility validation",
+		"`WorkPatch`",
+		"Collapse `Target` into `Destination`",
 	} {
 		if !strings.Contains(roadmapText, required) {
 			t.Fatalf("roadmap should keep graph-plan goal text %q", required)
@@ -1902,11 +1901,11 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	}
 	progressText := string(progress)
 	for _, required := range []string{
-		"normal workflows lower from `input -> chain -> tap -> branch -> target` into `GraphPlan -> pipeline.Graph -> Task`",
-		"`GraphPatch` is the runtime attach form",
-		"Direct chains become implicit branches",
-		"separate workflow graph",
-		"families",
+		"normal workflows lower from `input -> chain -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`",
+		"runtime attach lowers the same branch model into `WorkPatch`",
+		"direct chains are syntax sugar for an implicit `Branch(\"main\")`",
+		"Destination` is the routing handle",
+		"normal composition does not import `goav/transcode`",
 	} {
 		if !strings.Contains(progressText, required) {
 			t.Fatalf("progress should keep graph-plan goal text %q", required)
@@ -1952,22 +1951,26 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"`Target`, destination constructors",
 		"`File`, `URIOut`, and `Sink` destination constructors",
 		"TargetRef",
+		"Recipes: From, chains, taps, branches, targets",
+		"Intent graph: inputs, selected media, chain operations, targets, policies",
+		"`Target`, `Destination`, and `Chain` composition",
+		"named `Target` refs for shared mux/sink groups",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("architecture docs keep stale composition vocabulary %q", forbidden)
 		}
 	}
 	for _, required := range []string{
-		"Recipes: From, chains, taps, branches, targets",
-		"Intent graph: inputs, selected media, chain operations, targets, policies",
-		"graph-plan lowerers",
+		"Recipes: From, chains, taps, branches, destinations",
+		"Intent graph: inputs, selected media, chain operations, destinations, policies",
+		"work-plan lowerers",
 		"Chain transforms such as",
 		"Simple high-level API | `From`, chains",
 		"surface is small: `From`, chains",
-		"`Target`, `Destination`, and `Chain` composition",
+		"`Branch`, `Destination`, and `Chain` composition",
 		"direct `File`/`URIOut`/`Sink` destinations",
 		"custom `Writer` destinations with `TargetInfo`",
-		"named `Target` refs for shared mux/sink groups",
+		"stable destination handles for shared mux/sink groups",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("architecture docs should keep current composition vocabulary %q", required)
@@ -2045,17 +2048,17 @@ func TestDocsKeepGoAVNativeGoal(t *testing.T) {
 	}
 	text := strings.Join(strings.Fields(body.String()), " ")
 	for _, required := range []string{
-		"Input -> Chain -> Tap -> Branch -> Target/Destination -> Task",
+		"From(input) -> Chain -> operations -> Tap -> Branch -> Destination -> Task",
 		"MediaShape",
 		"BranchBuffer",
-		"Observe",
-		"Watch",
+		"Branch + Do + Sink",
+		"Events",
 		"Snapshot",
 		"custom source",
-		"BranchSpec -> BranchPlan -> GraphPlan",
-		"BranchSpec -> BranchPlan -> GraphPatch",
+		"WorkPlan",
+		"WorkPatch",
 		"A flow is reusable operations",
-		"planned and runtime branches must share shape/target/buffer/lifecycle validation",
+		"shape validation is central",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("goal docs should include %q", required)

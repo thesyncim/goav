@@ -17,9 +17,9 @@ and keyframe recovery are represented as events instead of hidden side effects.
 ```text
 Application
   |
-Recipes: From, chains, taps, branches, targets
+Recipes: From, chains, taps, branches, destinations
   |
-Intent graph: inputs, selected media, chain operations, targets, policies
+Intent graph: inputs, selected media, chain operations, destinations, policies
   |
 MediaPlan planner passes
   |
@@ -34,22 +34,24 @@ Format, RTP, WebRTC, codec, and filter adapters
 registries, with small adapter registration hooks for optional codec,
 container, and filter integrations. `goav.Default()` registers the standard
 in-repo adapters for the beginner path, while `goav.New(...)` keeps minimal and
-embedded runtimes explicit. `From(input)` is the beginner-facing front door. It
+embedded runtimes explicit. `From(input)` is the beginner-facing front door. The
+surface is small: `From`, chains, taps, branches, destinations, flows, and tasks.
+`Branch`, `Destination`, and `Chain` composition is the normal user-facing model.
 produces a small intent model for packet copy, stream decode, transform, encode,
 declared branch composition, and runtime tap naming. The target architecture is
-one media planner that validates, probes, resolves streams, resolves
+one media work planner that validates, probes, resolves streams, resolves
 formats/codecs, chooses
 packet-copy or decode branches, inserts demux or depacketize boundaries, inserts
-select/decode/transform/stage/tap/encode operations, groups branches by targets,
-assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
+select/decode/transform/stage/tap/encode operations, groups branches by
+destinations, assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
 the runnable graph. `MediaPlan` is the planner/report IR for that work:
 declared branches, reusable flow branches, decode recipes, and
 packet-preserving copy/remux all become ordinary branch operations over the same
-model. `graphPlan` is now the executable cold-path boundary: recipe compilation
-must emit a graph plan before it can describe or build a normal workflow, and
-that graph plan owns planned nodes, edges, ordered operations, report inputs,
-streams, taps, branches, targets, decisions, diagnostics, plus the graph-plan
-lowerer still used to build the runtime graph.
+model. `WorkPlan` is the target executable cold-path boundary: recipe
+compilation must emit planned work before it can explain, describe, or build a
+normal workflow, and that work plan owns planned nodes, edges, ordered
+operations, report inputs, streams, taps, branches, destinations, decisions,
+diagnostics, plus the work-plan lowerers used to build the runtime graph.
 
 The active recipe compiler state carries public `Intent` plus concrete readers,
 writers, sinks, and stages through validation, media-plan creation, graph-plan
@@ -65,24 +67,24 @@ Codec descriptors describe encode/decode media and frame-format constraints,
 filter descriptors describe transform media constraints, and format descriptors
 describe target container media, codec, and stream-count constraints so adapter
 conflicts can fail before planned or runtime graph mutation. Declared branch
-composition now carries a private branch-compose plan owned by the recipe
-compiler; the
-advanced `transcode.Plan` path adapts into that internal shape at its boundary
-instead of being the recipe IR. Runtime branch-composer graph helpers now operate
-on branch-compose routes, target routes, selector/stream groups, and media
-transforms. Branch-composition inputs and resolved targets are carried by the
-resolved recipe into the graph plan; `Describe` and `Build` use that graph plan
-directly and only borrow runtime services for adapter-backed sources,
+composition still carries private branch-compose migration state owned by the
+recipe compiler; the advanced `transcode.Plan` path must keep shrinking until it
+is outside normal composition. Runtime branch-composer graph helpers are being
+folded into the same branch planner used for initial builds and attach patches.
+Branch-composition inputs and resolved destinations are carried by the resolved
+recipe into planned work; `Describe` and `Build` use that work plan directly and
+only borrow runtime services for adapter-backed sources,
 filters, encoders, and muxers. Packet-preserving copy/fanout recipes lower
-their optional select operation and target operations from the graph plan's
+their optional select operation and destination operations from the work plan's
 ordered operation sequence while still borrowing concrete input and destination
 openers from the stream lowerer. Direct selected-stream decode/encode recipes
-validate their select, decode, transform/stage, encode, and target operations
-from the same sequence before source opening, and select/decode/filter/encode
-nodes plus mux/sink target nodes lower from graph-plan refs. Those direct stream
+validate their select, decode, transform/stage, encode, and destination
+operations from the same sequence before source opening, and
+select/decode/filter/encode nodes plus mux/sink destination nodes lower from
+work-plan refs. Those direct stream
 recipes still keep concrete inputs, destinations, ordered stream attachments,
 codec-change policy, custom stages, transforms, and taps on the resolved recipe
-until graph-plan emission. They describe through a resolved single-stream graph
+until work-plan emission. They describe through a resolved single-stream work
 plan using the branch route planner, and build by lowering that single branch
 through the shared branch-compose input/route helpers instead of a pre-populated
 runtime builder. Selected packet-copy recipes use the same single-branch route
@@ -92,54 +94,53 @@ and decoded sink event-drop policy into planned decoder details and runtime
 decoder construction. `recipeResolved` no longer carries a parallel media-plan report
 copy:
 `Explain`, mux diagnostics, and task tap installation read cloned views from the
-graph plan. The graph plan also carries an ordered operation sequence derived
-from branch operations and target groups. Packet-copy, direct stream
+work plan. The work plan also carries an ordered operation sequence derived
+from branch operations and destination groups. Packet-copy, direct stream
 decode/filter/encode, and grouped branch-compose builds now consume that
-sequence for pre-mutation validation, target binding, and target node
+sequence for pre-mutation validation, destination binding, and destination node
 construction. Selected packet-copy and direct frame-stream lowering isolate one
-branch operation set before reading select/decode/filter/encode and target refs;
-selected packet-copy then lowers through branch-compose input and target routes,
+branch operation set before reading select/decode/filter/encode and destination
+refs; selected packet-copy then lowers through branch-compose input and destination routes,
 while whole-input packet copy can still preserve multiple input branches.
-Grouped branch-compose input lowering also consumes graph-plan select/decode node refs, so described
+Grouped branch-compose input lowering also consumes work-plan select/decode node refs, so described
 and built graphs stay equivalent even when operation refs are changed by later
 planning passes. Shared branch-compose transform/stage lowering consumes the
 same operation refs and validates that branches sharing one selector group also
 share the same planned step refs. Private branch transform/stage and encoder
 lowering now consume branch-local operation refs too. Branch-compose mux/sink
-target construction and branch-to-target routing now consume target operation
-records, including planned target node refs. Whole-input packet copy carries
-source-owned stream groups so target stream lists follow graph-plan branch
+destination construction and branch-to-destination routing now consume
+destination operation records, including planned destination node refs.
+Whole-input packet copy carries source-owned stream groups so destination stream lists follow work-plan branch
 matches instead of ad hoc output fanout.
 
 The next architectural pressure is to introduce the explicit GoAV-native
 planning layer:
 
 ```text
-BranchSpec -> BranchPlan -> GraphPlan   // initial build
-BranchSpec -> BranchPlan -> GraphPatch  // runtime attach
+BranchSpec -> WorkPlan   // initial build
+BranchSpec -> WorkPatch  // runtime attach
 ```
 
-`MediaShape` is the target public contract for branch, flow, tap, target, and
-destination compatibility; current stream-cap metadata is the migration base.
-`BranchPlan` should own ordered operations, shape transitions, taps, targets,
-branch buffer policy, detach policy, and lifecycle expectations. `GraphPatch`
-should use the same branch plan as initial build, but anchor downstream of
+`MediaShape` is the target public contract for branch, flow, tap, sink, byte
+destination, shared destination, and custom source compatibility; current
+stream-cap metadata is the migration base. `WorkPlan` should own ordered
+operations, shape transitions, taps, destinations, branch buffer policy, detach
+policy, and lifecycle expectations. `WorkPatch` should use the same branch plan as initial build, but anchor downstream of
 existing typed taps. This removes special workflow compilers from normal
 composition and keeps runtime attach from becoming a separate graph language.
 
-`Destination` is the public extension surface for byte writers, object-store
-uploads, URI-backed outputs, and sink groups. External packages can implement
-`Destination`, or use `Writer`/`Object`, without implementing graph nodes or
-container adapters. `Target(name, destination)` names a logical mux/sink group;
-the graph plan keeps concrete destination openers cold until stream list,
-format, MIME, metadata, and realtime policy are known.
+`Destination` is the public routing handle and extension surface for files, byte
+writers, object-store uploads, URI-backed outputs, frame/packet/event sinks, and
+shared mux/sink groups. Reusing one destination value groups branches. The work
+plan keeps concrete destination openers cold until stream list, format, MIME,
+metadata, and realtime policy are known.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and
 sinks once, then connects typed handles such as `source.Stream("audio")` and
 `decode.Out()` to node inputs. The graph builder is no longer on the public
 `Runtime` interface or an exported top-level constructor. Described graphs and
-execution graphs must stay equivalent across graph-plan lowerers. The graph
+execution graphs must stay equivalent across work-plan lowerers. The graph
 layer stays available for inspection and custom stages. Recipe `Explain(ctx)`
 returns structured workflow-report data, branch operations, planner decisions,
 and the same
@@ -161,8 +162,8 @@ Stable recipe outlets come from typed `.Tap(goav.FrameTap(name))` or
 `.Tap(goav.PacketTap(name))` calls and are listed by `Task.Taps()`; runtime
 branches attach with `goav.Branch("name").From(tap)`. A late branch can run
 custom `.Do(...)` stages, apply reusable flows, resize or resample from frame
-taps, encode Opus/VP8/VP9 from frame taps into a target, copy packet taps into a
-target, decode packet taps into frame-domain work, apply
+taps, encode Opus/VP8/VP9 from frame taps into a destination, copy packet taps
+into a destination, decode packet taps into frame-domain work, apply
 flows that own the packet-to-frame boundary, and expose its own typed tap
 outlets, so another late branch can attach downstream without rebuilding the
 task. Taps declared after encode or copy operations are packet-domain outlets.
@@ -172,9 +173,9 @@ Expert graph attachments can still start from the `GraphNode` or `GraphOutlet`
 handles returned by `goav.Expert(runtime).Graph()`. This is for late analysis,
 meters, screenshot collectors, and late recording branches that should observe
 future messages without rebuilding the task. Buffered runtime attachment owns
-queue and worker lifecycle for late nodes; packet-copy recording targets are
+queue and worker lifecycle for late nodes; packet-copy recording destinations are
 covered, Opus encode-to-recording from frame taps is covered with bounded
-packet copy into the late mux target, flow-applied Opus encode-to-target
+packet copy into the late mux destination, flow-applied Opus encode-to-destination
 branches are covered, flow-owned decode from packet taps is covered,
 post-encode runtime branch taps can feed dependent packet copy branches, and
 bounded buffered graphs can attach a dependent branch after a runtime resize tap
@@ -211,12 +212,12 @@ Current graph execution covers:
 - live RTP/WebRTC reusable branches that receive through `rtpav.Source`, share the
   selected stream decode, then route each flow-derived branch through its own
   transforms, encoder, and mux output
-- transcode recipes for one input grouped by selected stream: video branches can
+- transcode-shaped recipes for one input grouped by selected stream: video branches can
   share a video decode, audio branches can share an audio decode, and one output
-  target can be a mux group that receives coordinated encoded audio and video
+  destination can be a mux group that receives coordinated encoded audio and video
   branches or a sink that receives frames before encode and packets
   after encode. Resize/resample configs insert filter stages through the filter
-  registry, and targets select branches by branch name.
+  registry, and destination groups select branches by planned branch ownership.
 
 Resize and resample branch configs fail explicitly at build time when no matching
 filter factory is registered or when the registered descriptor advertises an

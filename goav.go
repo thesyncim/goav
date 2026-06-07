@@ -67,13 +67,36 @@ type TapInfo struct {
 	Node      pipeline.NodeRef
 }
 
+// TaskSnapshot is an immutable point-in-time view of a task's graph, taps, active
+// runtime branches, and counters.
+type TaskSnapshot struct {
+	Spec     pipeline.Spec
+	Stats    TaskStats
+	Taps     []TapInfo
+	Branches []BranchSnapshot
+}
+
+// BranchSnapshot is an immutable point-in-time view of one runtime branch attached
+// to a running task.
+type BranchSnapshot struct {
+	ID          string
+	Name        string
+	State       string
+	AnchorTaps  []string
+	AnchorNodes []string
+	Nodes       []pipeline.NodeRef
+	Taps        []TapInfo
+	Spec        pipeline.Spec
+	Stats       BranchStats
+}
+
 // Runtime is the composition root for applications embedding goav.
 type Runtime interface {
 	Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error)
 }
 
 // GraphBuilder is the handle-based expert graph layer. Most applications should
-// start with From and compose chains, taps, branches, targets, and tasks.
+// start with From and compose chains, taps, branches, destinations, and tasks.
 type GraphBuilder interface {
 	Source(string, pipeline.Source) GraphNode
 	Stage(string, pipeline.Stage) GraphNode
@@ -90,6 +113,8 @@ type Task interface {
 	Attach(context.Context, ...BranchSpec) (Attachment, error)
 	Detach(context.Context, Attachment) error
 	Taps() []TapInfo
+	// Snapshot returns a point-in-time diagnostic view without exposing graph handles.
+	Snapshot() TaskSnapshot
 	Run(context.Context) error
 	Events() <-chan av.Event
 	Stats() TaskStats

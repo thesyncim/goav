@@ -413,8 +413,8 @@ groups can share one typed sink or mux target value.
 
 Debugging uses the same composition grammar. Explain the plan before opening the
 graph, drain task events while it runs, then attach temporary branches from
-typed taps to collect diagnostics. `Attachment.Stats()` reports the attached
-branch, and `Task.Stats()` reports the whole graph.
+typed taps to collect diagnostics. `Attachment.Snapshot()` reports the attached
+branch, and `Task.Snapshot()` reports the whole graph plus active branches.
 
 ```go
 audioDecoded := goav.FrameTap("audio.decoded")
@@ -461,13 +461,19 @@ if err != nil {
 }
 defer levels.Close(ctx)
 
-graphStats := task.Stats()
-levelStats := levels.Stats()
-log.Printf("packets=%d frames=%d dropped=%d level_frames=%d",
-    graphStats.Packets,
-    graphStats.Frames,
-    graphStats.Dropped,
-    levelStats.Frames)
+state := task.Snapshot()
+levelFrames := uint64(0)
+for _, branch := range state.Branches {
+    if branch.Name == "levels" {
+        levelFrames = branch.Stats.Frames
+    }
+}
+log.Printf("packets=%d frames=%d dropped=%d branches=%d level_frames=%d",
+    state.Stats.Packets,
+    state.Stats.Frames,
+    state.Stats.Dropped,
+    len(state.Branches),
+    levelFrames)
 ```
 
 ## Generic File Or Protocol Ingest

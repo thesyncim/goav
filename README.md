@@ -426,15 +426,16 @@ target branches to a running direct task graph without rebuilding upstream.
 Late branches can apply flows, run custom `.Do(...)` stages, resize/resample
 from frame taps, encode Opus/VP8/VP9 from frame taps, copy or decode from
 packet taps, and write to one or more typed targets before exposing their own
-typed tap outlets for later attachments. Observer branches can use
+typed tap outlets for later attachments. Diagnostic branches can use
 `.Do(goav.FrameFunc(...)).Tap(goav.FrameTap(name)).To(goav.Sink(...))` to both inspect
 frames and publish a downstream attach point. H264 and AV1 recipe encoding
 remain work in progress. A grouped attach rolls back the whole group if any
 branch cannot be prepared or connected. Detaching a parent attachment also
-removes dependent late branches anchored from its taps. `Attachment.Stats()`
-reports only the branch-owned node counters; `Task.Stats()` reports the whole
-graph. Runtime branches can share one typed sink or mux target value inside an
-atomic attach group.
+removes dependent late branches anchored from its taps. `Attachment.Snapshot()`
+reports the branch-owned diagnostic view; `Task.Snapshot()` returns one
+point-in-time view of graph stats, stable taps, and active runtime branches.
+Runtime branches can share one typed sink or mux target value inside an atomic
+attach group.
 Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
 packet-domain taps.
 
@@ -509,20 +510,30 @@ for {
     case <-ctx.Done():
         return ctx.Err()
     case <-ticker.C:
-        graphStats := task.Stats()
-        levelStats := levels.Stats()
-        log.Printf("goav stats packets=%d frames=%d dropped=%d level_frames=%d",
-            graphStats.Packets,
-            graphStats.Frames,
-            graphStats.Dropped,
-            levelStats.Frames)
+        state := task.Snapshot()
+        activeBranches := 0
+        levelFrames := uint64(0)
+        for _, branch := range state.Branches {
+            if branch.State == "attached" {
+                activeBranches++
+            }
+            if branch.Name == "levels" {
+                levelFrames = branch.Stats.Frames
+            }
+        }
+        log.Printf("goav stats packets=%d frames=%d dropped=%d branches=%d level_frames=%d",
+            state.Stats.Packets,
+            state.Stats.Frames,
+            state.Stats.Dropped,
+            activeBranches,
+            levelFrames)
     }
 }
 ```
 
 This works the same for video probes, screenshot collectors, packet loss
 diagnostics, late recording branches, and temporary preview sinks. Attachments
-are removable, and their stats stay scoped to the nodes they own.
+are removable, and snapshots keep their stats scoped to the nodes they own.
 
 ## Explain And Inspect
 
@@ -657,7 +668,7 @@ consume matching decoded media. File, URI, writer, and object targets consume
 packet-domain media; use `goav.Sink(...)` when a branch should end as frames.
 
 Adapters decide which concrete config and control types they understand; the
-public grammar stays Input, Chain, Tap, Branch, Target, and Task.
+public grammar stays Input, Chain, Tap, Branch, Destination, and Task.
 The reusable component catalog and allocation proof map live in
 [`docs/COMPONENTS.md`](docs/COMPONENTS.md).
 
@@ -680,6 +691,7 @@ Implemented now:
   resize/resample from frame taps, late Opus/VP8/VP9 encode targets,
   packet-copy targets, nested runtime taps, `Attachment.Close(ctx)`, and
   `Task.Detach(ctx, h)`.
+- Task snapshots with graph stats, stable taps, and active runtime branch states.
 - Custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
   generic `Codec` specs.
 - Structured `Explain(ctx)` reports and `Describe()` graph specs.

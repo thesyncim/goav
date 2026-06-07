@@ -156,6 +156,7 @@ type Attachment interface {
 	Name() string
 	Spec() pipeline.Spec
 	Stats() BranchStats
+	Snapshot() BranchSnapshot
 	Close(context.Context) error
 }
 
@@ -1389,7 +1390,13 @@ func (a *runtimeAttachment) Spec() pipeline.Spec {
 	if a == nil || a.owner == nil {
 		return pipeline.Spec{}
 	}
-	graph := a.owner.Describe()
+	return a.specFromGraph(a.owner.Describe())
+}
+
+func (a *runtimeAttachment) specFromGraph(graph pipeline.Spec) pipeline.Spec {
+	if a == nil {
+		return pipeline.Spec{}
+	}
 	nodes := make(map[string]struct{}, len(a.nodes))
 	for i := range a.nodes {
 		nodes[a.nodes[i].String()] = struct{}{}
@@ -1413,6 +1420,45 @@ func (a *runtimeAttachment) Stats() BranchStats {
 		return BranchStats{}
 	}
 	return branchStatsForNodes(a.owner.Stats(), a.nodes)
+}
+
+func (a *runtimeAttachment) Snapshot() BranchSnapshot {
+	if a == nil {
+		return BranchSnapshot{}
+	}
+	stats := TaskStats{}
+	if a.owner == nil {
+		return a.branchSnapshotLocked(stats)
+	}
+	stats = a.owner.Stats()
+	a.owner.attachMu.Lock()
+	defer a.owner.attachMu.Unlock()
+	return a.branchSnapshotLocked(stats)
+}
+
+func (a *runtimeAttachment) branchSnapshotLocked(taskStats TaskStats) BranchSnapshot {
+	if a == nil {
+		return BranchSnapshot{}
+	}
+	state := "attached"
+	if a.stopped {
+		state = "detached"
+	}
+	spec := pipeline.Spec{}
+	if a.owner != nil {
+		spec = a.specFromGraph(a.owner.Describe())
+	}
+	return BranchSnapshot{
+		ID:          a.id,
+		Name:        a.name,
+		State:       state,
+		AnchorTaps:  append([]string(nil), a.allAnchorTaps()...),
+		AnchorNodes: append([]string(nil), a.allAnchorNodes()...),
+		Nodes:       append([]pipeline.NodeRef(nil), a.nodes...),
+		Taps:        append([]TapInfo(nil), a.taps...),
+		Spec:        spec,
+		Stats:       branchStatsForNodes(taskStats, a.nodes),
+	}
 }
 
 func (a *runtimeAttachment) Close(ctx context.Context) error {

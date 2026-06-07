@@ -9,77 +9,80 @@ The recipe surface is now pointed in the right direction; the next work is to
 make the implementation match the composable planner promise.
 
 GoAV should not become a GStreamer clone. The remaining work is the Go-native
-flow-control layer: formal media shapes, branch-local buffering, observation
-from typed taps, task/branch/target lifecycle, custom sources, and one planner
-for planned and runtime branches. Public vocabulary stays `Input`, `Chain`,
-`Tap`, `Branch`, `Target`, `Destination`, `Flow`, and `Task`.
+work-planning layer: stable destinations, one ordered operation model, formal
+media shapes, branch-local buffering, branch-based observation from typed taps,
+task/branch/destination lifecycle, custom sources, and one planner for build and
+runtime attach. Public vocabulary stays `Input`, `Chain`, `Tap`, `Branch`,
+`Destination`, `Flow`, and `Task`.
 
 1. Make the declarative grammar the only normal composer:
-   `input -> chain -> tap -> branch -> target` lowers into
-   `GraphPlan -> pipeline.Graph -> Task`. `GraphPlan` now owns planned
-   nodes, edges, ordered operations, taps, branches, targets, decisions, and
-   diagnostics as cold-path metadata; packet-copy and direct frame-stream build
-   consume that sequence for validation and target lowering, and the remaining
-   work is to move branch composition onto the same ordered lowering. The
-   expert graph builder remains an escape hatch and runtime substrate, not the
-   normal user-facing way to express workflows.
-2. Treat direct chains as implicit branches. These should be equivalent plan
+   `input -> chain -> tap -> branch -> destination` lowers into
+   `WorkPlan -> pipeline.Graph -> Task`. Runtime attach lowers the same branch
+   model into `WorkPatch`. The planner owns operations, taps, branches,
+   destinations, edges, decisions, diagnostics, and lifecycle metadata; the
+   executor instantiates the plan instead of dispatching by workflow kind.
+2. Collapse `Target` into `Destination`. `File`, `URIOut`, `Writer`, `Object`,
+   `Sink`, and `Custom` should return stable destination handles. Reusing a
+   destination groups branches into one sink or mux destination. Normal docs and
+   examples should not use `Target(...)`, labels, output refs, or `.To("label")`.
+3. Treat direct chains as implicit branches. These should be equivalent plan
    shapes except for branch names:
    `From(input).Audio().Decode().To(Sink(...))` and
    `From(input).Audio().Branches(Branch("main").Decode().To(Sink(...)))`.
-   Copy-to-file, decode-to-sink, encode-to-target, branch composition, and
-   mixed audio/video target groups must stop being special workflow graph modes
+   Copy-to-file, decode-to-sink, encode-to-destination, branch composition, and
+   mixed audio/video destinations must stop being special workflow graph modes
    and become branch plans over ordered operations.
-3. Make runtime attachment a patch of the same plan model. `Task.Attach` should
-   compile `Branch(...)` plus existing `TapInfo` into `GraphPatch`, validate the
+4. Replace parallel chain/branch fields with one operation list. Direct chains,
+   planned branches, runtime attached branches, and flows all carry the same
+   ordered operation specs and share validation, shape inference, component
+   building, and explanation.
+5. Make runtime attachment a patch of the same plan model. `Task.Attach` should
+   compile `Branch(...)` plus existing `TapInfo` into `WorkPatch`, validate the
    patch before graph mutation, allocate only downstream nodes, reuse upstream
-   decoders and transforms from frame/packet taps, share target/mux nodes while
-   branches use them, and detach only branch-owned nodes. Planned branches and
-   runtime branches must share capability and target compatibility validation.
-4. Add formal media shape contracts for streams, codecs, filters, containers,
-   flows, taps, branches, targets, and destinations. The current descriptor and
+   decoders and transforms from frame/packet taps, share destination/mux nodes
+   while branches use them, and detach only branch-owned nodes.
+6. Add formal media shape contracts for streams, codecs, filters, containers,
+   flows, taps, branches, sinks, byte destinations, and custom sources. The
+   current descriptor and
    report capability work is the migration base, but the public direction is
    `MediaShape`/shape contracts with useful expected-vs-actual diagnostics
    before decoder, encoder, filter, muxer, or graph mutation.
-5. Add branch-local buffering, ownership, and lifecycle policies. Branches need
+7. Add branch-local buffering, ownership, and lifecycle policies. Branches need
    explicit buffer modes, drop counters/reasons, safe shared frame ownership,
    detach drain/abort choices, and destination commit/abort/close guarantees.
-6. Add Go-native observation and control without graph handles. `Observe` is
-   typed tap instrumentation, `.Do(...)` remains data-plane processing, `Watch`
-   filters events, and `Snapshot` reports task state, branches, taps, targets,
-   target state, and scoped stats.
-7. Add custom source symmetry: application code can push packets, frames,
+8. Keep observation as branch composition unless proven insufficient. Runtime
+   diagnostic work is `Branch(...).From(tap).Do(...).To(Sink(...))`; `Snapshot`
+   reports task state, branches, taps, destinations, lifecycle, and scoped stats.
+9. Add custom source symmetry: application code can push packets, frames,
    events, and EOS from a declared shape just as it can provide custom stages,
    sinks, writers, and object destinations today.
-8. Keep custom composition orthogonal: application-local codecs use
+10. Keep custom composition orthogonal: application-local codecs use
    `goav.Codec`, `WithDecoder`, and `WithEncoder`; custom stages, filters,
-   sinks, and targets use the same stream and runtime-attachment concepts as
+   sinks, destinations, and sources use the same chain/branch concepts as
    built-ins instead of workflow-specific helpers.
-9. Keep first-page examples executable with `goav.Default()`, or keep examples
+11. Keep first-page examples executable with `goav.Default()`, or keep examples
    that require unavailable containers in clearly labeled adapter sections.
-10. Treat adapter coverage as product surface after the planner can absorb it.
+12. Treat adapter coverage as product surface after the planner can absorb it.
    WebM and Ogg remain the next high-value containers because they unlock
    expected RTP/WebRTC record and muxed audio/video examples.
-11. Generalize flows as reusable operation sequences over chains, not as a
-   second graph DSL. Branches own targets through `.To(goav.Target(...))`;
-   runtime `Task.Attach(ctx, goav.Branch(...))` remains the late control-plane
-   branch for running direct graphs.
-12. Promote live codec-change behavior into explicit policy: compatible rebind,
+13. Keep flows boring: reusable operation sequences over chains, not a second
+   graph DSL and not a destination/branch/routing concept.
+14. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
    choices should be visible to realtime users.
-13. Remove old workflow residue from normal composition: `transcode` imports,
-    branch-compose labels, string output refs, the separate runtime-branch
-    compilation path, and route-policy leaks should be quarantined or deleted
-    from the normal planner.
-14. Add runtime observability through task stats, traces, drop reasons, and
+15. Remove old workflow residue from normal composition: `transcode` imports,
+    branch-compose labels, string output refs, `targetNames`, the separate
+    runtime-branch compilation path, and route-policy leaks should be quarantined
+    or deleted from the normal planner.
+16. Add runtime observability through task stats, traces, drop reasons, and
    latency counters. Task stats now include graph and per-node counters, and
    runtime attachments expose branch-owned node stats; traces and latency
    counters remain future slices.
-15. Prepare v0.1 only after README examples compile/run or clearly name their
+17. Prepare v0.1 only after README examples compile/run or clearly name their
     adapter requirements, default and tagged tests pass, core stays cgo-free,
     hot-path allocation guards remain green, and one public RTP/WebRTC record
     branch plus one public file transcode branch work end to end.
-16. Confirm `go 1.26` in `go.mod` is intentional before tagging; it sets the
+18. Confirm `go 1.26` in `go.mod` is intentional before tagging; it sets the
     installation floor for users and CI.
 
 ## Phase 0: API sketch
