@@ -25,8 +25,6 @@ type branchComposeBranch struct {
 	Operations        []OperationSpec
 	SharedOperations  []OperationSpec
 	PrivateOperations []OperationSpec
-	SharedSteps       []chainStep
-	Steps             []chainStep
 	Resize            *filter.ResizeConfig
 	Resample          *filter.ResampleConfig
 	DecodeConfig      CodecSpec
@@ -63,17 +61,19 @@ func branchComposePlanFromTranscode(plan transcode.Plan) branchComposePlan {
 	branches := make([]branchComposeBranch, 0, len(plan.Branches))
 	for i := range plan.Branches {
 		branch := plan.Branches[i]
+		operations := branchOperationSpecsFromTranscodeSteps(branch.Steps)
 		branches = append(branches, branchComposeBranch{
-			Name:     branch.Name,
-			Selector: branch.Selector,
-			Decode:   branch.Decode,
-			Copy:     false,
-			Steps:    branchChainStepsFromTranscode(branch.Steps),
-			Resize:   branch.Resize,
-			Resample: branch.Resample,
-			Encode:   branch.Encode,
-			Labels:   append([]string(nil), branch.Labels...),
-			Metadata: branch.Metadata,
+			Name:              branch.Name,
+			Selector:          branch.Selector,
+			Decode:            branch.Decode,
+			Copy:              false,
+			Operations:        cloneOperationSpecs(operations),
+			PrivateOperations: operations,
+			Resize:            branch.Resize,
+			Resample:          branch.Resample,
+			Encode:            branch.Encode,
+			Labels:            append([]string(nil), branch.Labels...),
+			Metadata:          branch.Metadata,
 		})
 	}
 	targets := make([]branchComposeTarget, 0, len(plan.Outputs))
@@ -98,20 +98,24 @@ func branchComposePlanFromTranscode(plan transcode.Plan) branchComposePlan {
 	}
 }
 
-func branchChainStepsFromTranscode(steps []transcode.Step) []chainStep {
+func branchOperationSpecsFromTranscodeSteps(steps []transcode.Step) []OperationSpec {
 	if len(steps) == 0 {
 		return nil
 	}
-	out := make([]chainStep, 0, len(steps))
+	out := make([]OperationSpec, 0, len(steps))
 	for i := range steps {
 		transform := cloneTransformSpec(TransformSpec{
 			Resize:   steps[i].Resize,
 			Resample: steps[i].Resample,
 		})
-		out = append(out, chainStep{
-			stage:     steps[i].Stage,
-			transform: transform,
-		})
+		switch {
+		case steps[i].Stage != nil:
+			out = append(out, operationSpecForStage(steps[i].Stage))
+		case transform.Resize != nil || transform.Resample != nil:
+			out = append(out, operationSpecForTransform(transform))
+		default:
+			out = append(out, OperationSpec{Kind: OpTransform, Component: "transform"})
+		}
 	}
 	return out
 }

@@ -341,7 +341,7 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 		"func chainStepOperations",
 		"func branchChainStepsFromOperationSpecsAroundTap",
 		"func chainStepsFromOperationSpecs",
-		"func branchChainStepsFromTranscode",
+		"func branchOperationSpecsFromTranscodeSteps",
 		"func runtimeBranchStepsFromChain",
 		"type chainSpec struct",
 		"type chainBuilder struct",
@@ -420,6 +420,29 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 	}
 	if strings.Contains(branchText[branchStart:branchStart+branchEnd], "steps") {
 		t.Fatal("BranchSpec should store OperationSpec, not a parallel step slice")
+	}
+
+	composeBody, err := os.ReadFile("branch_compose_plan.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	composeText := string(composeBody)
+	composeStart := strings.Index(composeText, "type branchComposeBranch struct")
+	if composeStart < 0 {
+		t.Fatal("could not locate branchComposeBranch boundary")
+	}
+	composeEnd := strings.Index(composeText[composeStart:], "type branchComposeTarget struct")
+	if composeEnd < 0 {
+		t.Fatal("could not locate branchComposeBranch boundary")
+	}
+	composeBlock := composeText[composeStart : composeStart+composeEnd]
+	for _, forbidden := range []string{
+		"SharedSteps",
+		"Steps             []chainStep",
+	} {
+		if strings.Contains(composeBlock, forbidden) {
+			t.Fatalf("branchComposeBranch should store OperationSpec, not %q", forbidden)
+		}
 	}
 }
 
@@ -624,16 +647,16 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	if len(plan.Branches) != 2 {
 		t.Fatalf("plan branches = %d, want 2", len(plan.Branches))
 	}
-	if len(plan.Branches[0].SharedSteps) != 0 ||
-		len(plan.Branches[0].Steps) != 1 ||
-		plan.Branches[0].Steps[0].transform.Resize == nil ||
-		plan.Branches[0].Steps[0].transform.Resize.Width != 320 {
+	if len(plan.Branches[0].SharedOperations) != 2 ||
+		len(plan.Branches[0].PrivateOperations) != 1 ||
+		plan.Branches[0].PrivateOperations[0].Transform.Resize == nil ||
+		plan.Branches[0].PrivateOperations[0].Transform.Resize.Width != 320 {
 		t.Fatalf("raw plan branch = %+v, want private thumbnail resize from operation split", plan.Branches[0])
 	}
-	if len(plan.Branches[1].SharedSteps) != 1 ||
-		plan.Branches[1].SharedSteps[0].transform.Resize == nil ||
-		plan.Branches[1].SharedSteps[0].transform.Resize.Width != 1280 ||
-		len(plan.Branches[1].Steps) != 0 {
+	if len(plan.Branches[1].SharedOperations) != 4 ||
+		plan.Branches[1].SharedOperations[2].Transform.Resize == nil ||
+		plan.Branches[1].SharedOperations[2].Transform.Resize.Width != 1280 ||
+		len(plan.Branches[1].PrivateOperations) != 1 {
 		t.Fatalf("web plan branch = %+v, want shared 720p resize from operation split", plan.Branches[1])
 	}
 
@@ -644,12 +667,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web plan operations = %+v, want %+v", got, want)
 	}
 
-	operationOnlyPlan := plan
-	for i := range operationOnlyPlan.Branches {
-		operationOnlyPlan.Branches[i].SharedSteps = nil
-		operationOnlyPlan.Branches[i].Steps = nil
-	}
-	routes, _, err := prepareBranchComposePlan(operationOnlyPlan)
+	routes, _, err := prepareBranchComposePlan(plan)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -848,10 +848,7 @@ func branchComposeSharedRouteSteps(branch branchComposeBranch) ([]mediaTransform
 	if len(branch.SharedOperations) != 0 {
 		return branchComposeRouteOperationStepsForName(branchComposeSharedStepName(branch), branch.SharedOperations)
 	}
-	if len(branch.SharedSteps) == 0 {
-		return nil, nil
-	}
-	return branchComposeRouteStepsForName(branchComposeSharedStepName(branch), branch.SharedSteps)
+	return nil, nil
 }
 
 func branchComposeRouteNeedsEncode(branch branchComposeRoute) bool {
@@ -1006,14 +1003,28 @@ func branchComposeRouteSteps(name string, branch branchComposeBranch) ([]mediaTr
 	if len(branch.PrivateOperations) != 0 {
 		return branchComposeRouteOperationStepsForName(name, branch.PrivateOperations)
 	}
-	if len(branch.Steps) == 0 {
-		return branchComposeInlineTransforms(name, branch)
-	}
-	return branchComposeRouteStepsForName(name, branch.Steps)
+	return branchComposeInlineTransforms(name, branch)
 }
 
 func branchComposeRouteOperationStepsForName(name string, operations []OperationSpec) ([]mediaTransform, error) {
-	return branchComposeRouteStepsForName(name, chainStepsFromOperationSpecs(operations))
+	return branchComposeRouteStepsForName(name, branchComposeRouteStepsFromOperationSpecs(operations))
+}
+
+func branchComposeRouteStepsFromOperationSpecs(operations []OperationSpec) []chainStep {
+	if len(operations) == 0 {
+		return nil
+	}
+	steps := make([]chainStep, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		switch operation.Kind {
+		case OpStage:
+			steps = append(steps, chainStep{stage: operation.Stage})
+		case OpTransform:
+			steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
+		}
+	}
+	return steps
 }
 
 func branchComposeRouteStepsForName(name string, steps []chainStep) ([]mediaTransform, error) {

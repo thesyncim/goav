@@ -3866,8 +3866,10 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		stream := streams[i]
 		branchName := stream.Name
 		selector := streamIntentSelector(stream)
-		sharedSteps, branchSteps := branchChainStepsForStream(stream)
 		operations := cloneOperationSpecs(stream.Operations)
+		if len(operations) == 0 && len(stream.Transforms) != 0 {
+			operations = operationSpecsFromTransforms(stream.Transforms)
+		}
 		var sharedOperations []OperationSpec
 		var privateOperations []OperationSpec
 		if i < len(branchBuilds) {
@@ -3875,7 +3877,6 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 			operations = streamBuildOperationSpecs(branchBuild)
 			sharedOperations = cloneOperationSpecs(branchBuild.sharedOps)
 			privateOperations = cloneOperationSpecs(branchBuild.privateOps)
-			sharedSteps, branchSteps = branchChainStepsForStreamBuild(branchBuild)
 		} else {
 			sharedOperations, privateOperations = splitOperationSpecsByShared(operations)
 		}
@@ -3887,8 +3888,6 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 			Operations:        cloneOperationSpecs(operations),
 			SharedOperations:  sharedOperations,
 			PrivateOperations: privateOperations,
-			SharedSteps:       sharedSteps,
-			Steps:             branchSteps,
 			DecodeConfig:      cloneCodecSpec(stream.DecodeCodec),
 			CodecChange:       stream.CodecChange,
 			Encode:            encodeConfigFromSpec(stream.Encode),
@@ -3932,23 +3931,6 @@ func branchComposePlanReady(plan branchComposePlan) bool {
 	return len(plan.Branches) != 0 || len(plan.Destinations) != 0
 }
 
-func branchChainStepsForStreamBuild(stream streamBuild) ([]chainStep, []chainStep) {
-	if len(stream.sharedOps) != 0 || len(stream.privateOps) != 0 {
-		return chainStepsFromOperationSpecs(stream.sharedOps), chainStepsFromOperationSpecs(stream.privateOps)
-	}
-	return branchChainStepsFromOperationSpecsAroundTap(streamBuildOperationSpecs(stream), stream.from.Name())
-}
-
-func branchChainStepsForStream(stream StreamIntent) ([]chainStep, []chainStep) {
-	if len(stream.Operations) != 0 {
-		return branchChainStepsFromOperationSpecsAroundTap(stream.Operations, stream.From.Name())
-	}
-	if len(stream.Transforms) == 0 {
-		return nil, nil
-	}
-	return nil, chainStepsFromTransforms(stream.Transforms)
-}
-
 func splitOperationSpecsByShared(operations []OperationSpec) ([]OperationSpec, []OperationSpec) {
 	if len(operations) == 0 {
 		return nil, nil
@@ -3964,6 +3946,17 @@ func splitOperationSpecsByShared(operations []OperationSpec) ([]OperationSpec, [
 		private = append(private, operation)
 	}
 	return cloneOperationSpecs(shared), cloneOperationSpecs(private)
+}
+
+func operationSpecsFromTransforms(transforms []TransformSpec) []OperationSpec {
+	if len(transforms) == 0 {
+		return nil
+	}
+	operations := make([]OperationSpec, 0, len(transforms))
+	for i := range transforms {
+		operations = append(operations, operationSpecForTransform(transforms[i]))
+	}
+	return operations
 }
 
 func branchChainStepsFromOperationSpecsAroundTap(operations []OperationSpec, anchorTap string) ([]chainStep, []chainStep) {

@@ -2615,8 +2615,11 @@ ordered work only as `OperationSpec`, and the temporary `chainStep` view is
 derived while the older branch-compose and runtime attach lowerers still need
 it. Planned branch stream builds now also keep their work as `OperationSpec`
 plus split `sharedOps`/`privateOps`; they no longer store `sharedSteps` or
-branch `steps`. The remaining bridge is now inside `branchComposePlan` and
-`runtimeBranch` execution state rather than recipe composition structs.
+branch `steps`. `branchComposePlan` now follows that shape too: branches carry
+flattened, shared, and private operation records instead of legacy
+`SharedSteps`/`Steps` fields. The remaining step bridge is now in lowerer route
+execution state and `runtimeBranch`, while the larger `branchComposePlan` model
+still needs to collapse into `WorkPlan`.
 
 ## Validation Gates
 
