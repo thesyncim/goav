@@ -93,13 +93,21 @@ Current milestone:
   Opus track metadata.
 - H.264 tracks validate caller-provided AVCDecoderConfigurationRecord
   codec-private data on mux and demux before exposing or writing track
-  metadata.
-- H.264 muxing can generate AVCDecoderConfigurationRecord codec-private data
-  from SPS/PPS NAL units in the first Annex B packet or laced packet before
-  the header is written.
+  metadata. Muxing can generate AVCDecoderConfigurationRecord codec-private
+  data from SPS/PPS NAL units in the first Annex B packet or laced packet
+  before the header is written.
 - H.264 packet muxing converts public Annex B access units, including laced
   frames, into length-prefixed AVC samples when AVC codec-private data is
   available; demuxing converts those AVC samples back into Annex B packets for
+  the public API.
+- H.265 tracks validate caller-provided HEVCDecoderConfigurationRecord
+  codec-private data on mux and demux before exposing or writing track
+  metadata. Muxing can generate HEVCDecoderConfigurationRecord codec-private
+  data from VPS/SPS/PPS NAL units in the first Annex B packet or laced packet
+  before the header is written.
+- H.265 packet muxing converts public Annex B access units, including laced
+  frames, into length-prefixed HEVC samples when HEVC codec-private data is
+  available; demuxing converts those HEVC samples back into Annex B packets for
   the public API.
 - AV1 tracks validate caller-provided AV1CodecConfigurationRecord codec-private
   data on mux and demux before exposing or writing track metadata; muxing can
@@ -150,7 +158,7 @@ Current milestone:
 These are intentionally not in the first milestone:
 
 - Frame-exact random access for packets that are not represented by Cues.
-- Full codec-private generation and parsers for every codec family.
+- Additional Matroska codec families outside the current supported set.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
 
 Those belong either in future Matroska phases or in separate media pipeline
@@ -239,7 +247,13 @@ Current mappings:
   Public packets use Annex B access units; stored samples use AVC
   length-prefixed NAL units when the length size is known from codec-private
   data.
-- H.265: `V_MPEGH/ISO/HEVC`
+- H.265: `V_MPEGH/ISO/HEVC` with HEVCDecoderConfigurationRecord validation
+  when codec-private data is provided. If H.265 private data is omitted, the
+  first H.265 packet written before the header must be Annex B and must include
+  VPS, SPS, and PPS NAL units so the muxer can generate the HEVC configuration
+  record. Public packets use Annex B access units; stored samples use HEVC
+  length-prefixed NAL units when the length size is known from codec-private
+  data.
 
 WebM accepts only Opus, VP8, VP9, and AV1. It rejects H.264, H.265, PCM
 variants, repair streams, retransmission streams, FEC streams, and non-WebM
@@ -287,7 +301,9 @@ Compatibility tools are optional in CI and run when installed:
 
 Current external checks cover WebM VP8/VP9/AV1/Opus files, Matroska files
 carrying the WebRTC codec set, and Matroska H.264/AV1 files whose
-codec-private data is generated from the first packet. They also generate small
+codec-private data is generated from the first packet. Internal generated-path
+checks also cover H.265 HEVC private-data generation and packet conversion.
+The external checks also generate small
 FFmpeg-authored Matroska/WebM files, read them through the Go demuxers, remux
 the first packet through the Go muxers, and verify the remuxed output with
 `ffprobe` for H.264, AV1, VP8, VP9, and Opus where valid for each container.
@@ -324,6 +340,7 @@ Committed benchmarks cover:
 - SimpleBlock write throughput and allocations.
 - Laced SimpleBlock write throughput and allocations.
 - SimpleBlock read throughput and allocations.
+- H.264 AVC and H.265 HEVC packet conversion allocation guards.
 - Matroska WebRTC-codec corpus mux/demux throughput and allocations across
   Opus, AV1, H.264, VP9, and VP8.
 - Seekable Matroska WebRTC-codec corpus mux/demux throughput, allocation

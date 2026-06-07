@@ -654,6 +654,12 @@ func (m *Muxer) prepareTracksForHeader(trackIndex int, frames [][]byte) (Track, 
 			return Track{}, err
 		}
 		track.CodecPrivate = private
+	case track.Codec == CodecH265 && len(track.CodecPrivate) == 0:
+		private, err := h265HEVCDecoderConfigurationRecordFromAnnexBFrames(frames)
+		if err != nil {
+			return Track{}, err
+		}
+		track.CodecPrivate = private
 	}
 	for i := range m.tracks {
 		candidate := m.tracks[i]
@@ -678,7 +684,7 @@ func (m *Muxer) validateTracksForHeader() error {
 }
 
 func codecRequiresPrivateForHeader(codec Codec) bool {
-	return codec == CodecAV1 || codec == CodecH264
+	return codec == CodecAV1 || codec == CodecH264 || codec == CodecH265
 }
 
 func (m *Muxer) writeEBMLHeader() error {
@@ -2291,7 +2297,7 @@ func (m *Muxer) writeBlock(id ebml.ID, packet Packet, blockTimecode int16, flags
 		}
 		return m.writeBlockPayload(id, packet.TrackID, blockTimecode, flags, payload)
 	}
-	directPayload := len(track.ContentEncodings) == 0 && !(track.Codec == CodecH264 && len(track.CodecPrivate) != 0)
+	directPayload := len(track.ContentEncodings) == 0 && !codecUsesLengthPrefixedSamples(track)
 	payloadSize := len(packet.Data)
 	if !directPayload {
 		var err error
@@ -2366,6 +2372,9 @@ func (m *Muxer) writeBlockData(track Track, data []byte) error {
 	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
 		return h264WriteMuxedPayload(m.ebml, track, data, &m.blockScratch)
 	}
+	if track.Codec == CodecH265 && len(track.CodecPrivate) != 0 {
+		return h265WriteMuxedPayload(m.ebml, track, data, &m.blockScratch)
+	}
 	_, err := m.ebml.Write(data)
 	return err
 }
@@ -2400,7 +2409,7 @@ func (m *Muxer) writeLacedBlock(id ebml.ID, packet LacedPacket, blockTimecode in
 	default:
 		return ErrUnsupportedLacing
 	}
-	directPayload := len(track.ContentEncodings) == 0 && !(track.Codec == CodecH264 && len(track.CodecPrivate) != 0)
+	directPayload := len(track.ContentEncodings) == 0 && !codecUsesLengthPrefixedSamples(track)
 	muxedOffset := 0
 	for i := range packet.Frames {
 		if directPayload {
@@ -2694,7 +2703,7 @@ func blockPayloadFrameSizes(frames [][]byte, track Track, sizes []int) error {
 }
 
 func blockPayloadsNeedSizing(track Track) bool {
-	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+	if codecUsesLengthPrefixedSamples(track) {
 		return true
 	}
 	if len(track.ContentEncodings) == 0 {
@@ -2741,6 +2750,10 @@ func blockPayloadSize(track Track, data []byte) (int, error) {
 	}
 	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
 		size, _, err := h264MuxedPayloadSize(track, data)
+		return size, err
+	}
+	if track.Codec == CodecH265 && len(track.CodecPrivate) != 0 {
+		size, _, err := h265MuxedPayloadSize(track, data)
 		return size, err
 	}
 	return len(data), nil
@@ -2791,14 +2804,27 @@ func (m *Muxer) muxedBlockPayload(track Track, data []byte, partitions []uint32)
 }
 
 func (m *Muxer) codecMuxedBlockPayload(track Track, data []byte) ([]byte, error) {
-	if track.Codec != CodecH264 || len(track.CodecPrivate) == 0 {
+	if !codecUsesLengthPrefixedSamples(track) {
 		return data, nil
 	}
 	m.codecPayload.Reset()
-	if err := h264WriteMuxedPayload(&m.codecPayload, track, data, &m.blockScratch); err != nil {
-		return nil, err
+	switch track.Codec {
+	case CodecH264:
+		if err := h264WriteMuxedPayload(&m.codecPayload, track, data, &m.blockScratch); err != nil {
+			return nil, err
+		}
+	case CodecH265:
+		if err := h265WriteMuxedPayload(&m.codecPayload, track, data, &m.blockScratch); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, ErrInvalidData
 	}
 	return m.codecPayload.Bytes(), nil
+}
+
+func codecUsesLengthPrefixedSamples(track Track) bool {
+	return len(track.CodecPrivate) != 0 && (track.Codec == CodecH264 || track.Codec == CodecH265)
 }
 
 func (m *Muxer) zlibCompressBlockPayload(data []byte) ([]byte, error) {
@@ -3906,7 +3932,13 @@ func validateTrack(track Track) error {
 					return ErrInvalidTrack
 				}
 			}
-		case CodecVP8, CodecVP9, CodecH265:
+		case CodecH265:
+			if len(track.CodecPrivate) != 0 {
+				if _, err := parseHEVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
+					return ErrInvalidTrack
+				}
+			}
+		case CodecVP8, CodecVP9:
 		default:
 			return ErrInvalidTrack
 		}
@@ -4047,7 +4079,7 @@ func blockContentEncoding(track Track) (blockContentEncodingInfo, error) {
 	if out.compression != blockContentTransformNone && out.encryptionSet && out.compressionOrder >= out.encryptionOrder {
 		return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 	}
-	if out.headerSet && track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+	if out.headerSet && codecUsesLengthPrefixedSamples(track) {
 		return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 	}
 	return out, nil

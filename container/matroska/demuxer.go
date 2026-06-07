@@ -2789,6 +2789,11 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			return Track{}, err
 		}
 	}
+	if track.Codec == CodecH265 && len(track.CodecPrivate) != 0 {
+		if _, err := parseHEVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
+			return Track{}, err
+		}
+	}
 	if err := validateTrackBlockAdditionMetadata(track); err != nil {
 		return Track{}, err
 	}
@@ -4059,6 +4064,26 @@ func (d *Demuxer) finishTrackCodecPayload(track Track, dst *Packet) error {
 			return err
 		}
 	}
+	if track.Codec == CodecH265 && len(track.CodecPrivate) != 0 {
+		lengthSize, ok, err := h265TrackNALULengthSize(track)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrInvalidData
+		}
+		convertedSize, err := h264AVCToAnnexBSize(dst.Data, lengthSize)
+		if err != nil {
+			return err
+		}
+		if cap(dst.Data) < convertedSize {
+			return ErrPayloadTooSmall
+		}
+		dst.Data, err = h264AVCToAnnexBInPlace(dst.Data, convertedSize, lengthSize)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -4261,8 +4286,8 @@ func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timecode in
 	}
 	d.laceTrackID = trackID
 	d.laceH264Length = 0
-	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
-		lengthSize, ok, err := h264TrackNALULengthSize(track)
+	if codecUsesLengthPrefixedSamples(track) {
+		lengthSize, ok, err := trackNALULengthSize(track)
 		if err != nil {
 			d.clearLace()
 			return err
