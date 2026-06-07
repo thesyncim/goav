@@ -17,6 +17,7 @@ type Muxer struct {
 	ebml                   *ebml.Writer
 	options                MuxerOptions
 	tracks                 []Track
+	pendingPackets         []pendingMuxerPacket
 	cues                   []CuePoint
 	headerWritten          bool
 	clusterOpen            bool
@@ -51,6 +52,12 @@ type Muxer struct {
 	bzip2Writer            *bzip2.Writer
 	contentEncryptionIV    [contentEncryptionIVSize]byte
 	contentEncryptionIVSet bool
+}
+
+type pendingMuxerPacket struct {
+	laced       bool
+	packet      Packet
+	lacedPacket LacedPacket
 }
 
 func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
@@ -132,6 +139,7 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 		m.options.ContentEncryptionInitialIV = append([]byte(nil), m.options.ContentEncryptionInitialIV...)
 	}
 	m.tracks = m.tracks[:0]
+	m.clearPendingPackets()
 	m.cues = m.cues[:0]
 	m.headerWritten = false
 	m.clusterOpen = false
@@ -180,7 +188,7 @@ func (m *Muxer) AddTrack(track Track) (uint32, error) {
 	if m == nil || m.writer == nil {
 		return 0, ErrNilWriter
 	}
-	if m.headerWritten {
+	if m.headerWritten || len(m.pendingPackets) != 0 {
 		return 0, ErrTrackAfterWrite
 	}
 	if err := normalizeTrackBlockAdditionMetadata(&track); err != nil {
@@ -307,9 +315,12 @@ func (m *Muxer) WritePacket(packet Packet) error {
 			m.tracks[trackIndex].MaxBlockAdditionID = maxAdditionID
 		}
 		var err error
-		track, err = m.prepareTracksForHeader(trackIndex, [][]byte{packet.Data})
+		track, err = m.prepareTrackForHeader(trackIndex, [][]byte{packet.Data})
 		if err != nil {
 			return err
+		}
+		if !m.headerTracksReady() || len(m.pendingPackets) != 0 {
+			return m.queuePacket(packet)
 		}
 		if err := m.writeHeader(); err != nil {
 			return err
@@ -319,6 +330,10 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	} else if maxAdditionID > track.MaxBlockAdditionID {
 		return ErrInvalidData
 	}
+	return m.writePacketReady(packet, track)
+}
+
+func (m *Muxer) writePacketReady(packet Packet, track Track) error {
 	timecode := packet.TimeNS / m.options.TimecodeScaleNS
 	if m.shouldStartCluster(timecode) {
 		if err := m.startCluster(timecode); err != nil {
@@ -393,9 +408,12 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 			m.tracks[trackIndex].MaxBlockAdditionID = maxAdditionID
 		}
 		var err error
-		track, err = m.prepareTracksForHeader(trackIndex, packet.Frames)
+		track, err = m.prepareTrackForHeader(trackIndex, packet.Frames)
 		if err != nil {
 			return err
+		}
+		if !m.headerTracksReady() || len(m.pendingPackets) != 0 {
+			return m.queueLacedPacket(packet)
 		}
 	} else if codecRequiresPrivateForHeader(track.Codec) && len(track.CodecPrivate) == 0 {
 		return ErrInvalidTrack
@@ -489,8 +507,17 @@ func (m *Muxer) Close() error {
 		return nil
 	}
 	if m.writer != nil && !m.headerWritten && len(m.tracks) != 0 {
-		if err := m.writeHeader(); err != nil {
-			return err
+		if len(m.pendingPackets) != 0 {
+			if !m.headerTracksReady() {
+				return ErrInvalidTrack
+			}
+			if err := m.flushPendingPackets(); err != nil {
+				return err
+			}
+		} else {
+			if err := m.writeHeader(); err != nil {
+				return err
+			}
 		}
 	}
 	if m.clusterSized {
@@ -639,7 +666,7 @@ func (m *Muxer) hasTagsElement() bool {
 	return len(m.options.Tags) != 0 || len(m.options.UnknownTagsElements) != 0
 }
 
-func (m *Muxer) prepareTracksForHeader(trackIndex int, frames [][]byte) (Track, error) {
+func (m *Muxer) prepareTrackForHeader(trackIndex int, frames [][]byte) (Track, error) {
 	track := m.tracks[trackIndex]
 	switch {
 	case track.Codec == CodecAV1 && len(track.CodecPrivate) == 0:
@@ -661,17 +688,130 @@ func (m *Muxer) prepareTracksForHeader(trackIndex int, frames [][]byte) (Track, 
 		}
 		track.CodecPrivate = private
 	}
-	for i := range m.tracks {
-		candidate := m.tracks[i]
-		if i == trackIndex {
-			candidate = track
-		}
-		if codecRequiresPrivateForHeader(candidate.Codec) && len(candidate.CodecPrivate) == 0 {
-			return Track{}, ErrInvalidTrack
-		}
-	}
 	m.tracks[trackIndex] = track
 	return track, nil
+}
+
+func (m *Muxer) headerTracksReady() bool {
+	for i := range m.tracks {
+		if codecRequiresPrivateForHeader(m.tracks[i].Codec) && len(m.tracks[i].CodecPrivate) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *Muxer) queuePacket(packet Packet) error {
+	m.pendingPackets = append(m.pendingPackets, pendingMuxerPacket{packet: clonePendingPacket(packet)})
+	if !m.headerTracksReady() {
+		return nil
+	}
+	return m.flushPendingPackets()
+}
+
+func (m *Muxer) queueLacedPacket(packet LacedPacket) error {
+	m.pendingPackets = append(m.pendingPackets, pendingMuxerPacket{laced: true, lacedPacket: clonePendingLacedPacket(packet)})
+	if !m.headerTracksReady() {
+		return nil
+	}
+	return m.flushPendingPackets()
+}
+
+func (m *Muxer) flushPendingPackets() error {
+	if !m.headerTracksReady() {
+		return ErrInvalidTrack
+	}
+	pending := m.pendingPackets
+	m.pendingPackets = nil
+	if err := m.writeHeader(); err != nil {
+		m.pendingPackets = pending
+		return err
+	}
+	for i := range pending {
+		if pending[i].laced {
+			packet := pending[i].lacedPacket
+			track, ok := m.track(packet.TrackID)
+			if !ok {
+				return ErrUnknownTrack
+			}
+			if blockPayloadsNeedSizing(track) {
+				if err := m.writeSizedLacedPacket(packet, track); err != nil {
+					return err
+				}
+			} else if err := m.writeLacedPacket(packet, track, nil, nil); err != nil {
+				return err
+			}
+			continue
+		}
+		packet := pending[i].packet
+		track, ok := m.track(packet.TrackID)
+		if !ok {
+			return ErrUnknownTrack
+		}
+		if err := m.writePacketReady(packet, track); err != nil {
+			return err
+		}
+	}
+	clearPendingPackets(pending)
+	return nil
+}
+
+func (m *Muxer) clearPendingPackets() {
+	clearPendingPackets(m.pendingPackets)
+	m.pendingPackets = m.pendingPackets[:0]
+}
+
+func clearPendingPackets(packets []pendingMuxerPacket) {
+	for i := range packets {
+		packets[i] = pendingMuxerPacket{}
+	}
+}
+
+func clonePendingPacket(packet Packet) Packet {
+	out := packet
+	out.Data = cloneBytes(packet.Data)
+	out.ReferenceBlockTimeNS = cloneInt64s(packet.ReferenceBlockTimeNS)
+	out.CodecState = cloneBytes(packet.CodecState)
+	out.BlockAdditions = clonePacketBlockAdditions(nil, packet.BlockAdditions)
+	out.ContentEncryptionPartitions = cloneUint32s(packet.ContentEncryptionPartitions)
+	out.UnknownClusterElements = cloneUnknownElements(packet.UnknownClusterElements)
+	return out
+}
+
+func clonePendingLacedPacket(packet LacedPacket) LacedPacket {
+	out := packet
+	out.ReferenceBlockTimeNS = cloneInt64s(packet.ReferenceBlockTimeNS)
+	out.CodecState = cloneBytes(packet.CodecState)
+	out.BlockAdditions = clonePacketBlockAdditions(nil, packet.BlockAdditions)
+	out.UnknownClusterElements = cloneUnknownElements(packet.UnknownClusterElements)
+	if len(packet.Frames) != 0 {
+		out.Frames = make([][]byte, len(packet.Frames))
+		for i := range packet.Frames {
+			out.Frames[i] = cloneBytes(packet.Frames[i])
+		}
+	}
+	return out
+}
+
+func cloneBytes(value []byte) []byte {
+	if value == nil {
+		return nil
+	}
+	return append([]byte(nil), value...)
+}
+
+func cloneInt64s(values []int64) []int64 {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]int64(nil), values...)
+}
+
+func cloneUint32s(values []uint32) []uint32 {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]uint32(nil), values...)
 }
 
 func (m *Muxer) validateTracksForHeader() error {

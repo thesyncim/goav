@@ -311,6 +311,13 @@ Current mappings:
   length-prefixed NAL units when the length size is known from codec-private
   data.
 
+When several tracks need generated codec-private data, the muxer defers header
+emission until each required track has supplied a seed packet. Accepted
+pre-header packets are cloned before returning, preserving caller buffer reuse,
+and are flushed in write order once the header can be written. Adding tracks
+after a packet has entered that pending queue is rejected, and `Close` returns
+`ErrInvalidTrack` if a required seed packet never arrives.
+
 WebM accepts only Opus, VP8, VP9, and AV1. It rejects H.264, H.265, PCM
 variants, repair streams, retransmission streams, FEC streams, non-WebM
 Matroska document types, Matroska-only content compression, content signatures,

@@ -1436,6 +1436,82 @@ func TestMuxerDemuxerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMuxerDefersHeaderUntilMultipleAV1CodecPrivateTracksReady(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecAV1,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecAV1,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstData := webmAV1SequenceHeaderOBU()
+	if err := muxer.WritePacket(Packet{TrackID: firstID, TimeNS: 0, Keyframe: true, Data: firstData}); err != nil {
+		t.Fatal(err)
+	}
+	firstData[0] = 0
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before all AV1 private data was available", buffer.Len())
+	}
+	secondData := webmAV1SequenceHeaderOBU()
+	if err := muxer.WritePacket(Packet{TrackID: secondID, TimeNS: 10_000_000, Keyframe: true, Data: secondData}); err != nil {
+		t.Fatal(err)
+	}
+	secondData[0] = 0
+	if buffer.Len() == 0 {
+		t.Fatalf("header was not written after all AV1 private data was available")
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 2 {
+		t.Fatalf("tracks = %d, want 2", len(tracks))
+	}
+	for i := range tracks {
+		if tracks[i].Codec != CodecAV1 || !bytes.Equal(tracks[i].CodecPrivate, webmAV1CodecConfig()) {
+			t.Fatalf("track %d = %+v private=%x", i, tracks[i], tracks[i].CodecPrivate)
+		}
+	}
+
+	wantPackets := []Packet{
+		{TrackID: firstID, TimeNS: 0, Keyframe: true, Data: webmAV1SequenceHeaderOBU()},
+		{TrackID: secondID, TimeNS: 10_000_000, Keyframe: true, Data: webmAV1SequenceHeaderOBU()},
+	}
+	got := Packet{Data: make([]byte, 0, len(webmAV1SequenceHeaderOBU()))}
+	for i := range wantPackets {
+		if err := demuxer.ReadPacket(&got); err != nil {
+			t.Fatalf("packet %d read: %v", i, err)
+		}
+		if got.TrackID != wantPackets[i].TrackID || got.TimeNS != wantPackets[i].TimeNS ||
+			got.Keyframe != wantPackets[i].Keyframe || !bytes.Equal(got.Data, wantPackets[i].Data) {
+			t.Fatalf("packet %d = %+v data=%x, want %+v data=%x", i, got, got.Data, wantPackets[i], wantPackets[i].Data)
+		}
+	}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
 func TestMuxerDemuxerSupportsWebMCodecs(t *testing.T) {
 	tests := []struct {
 		name  string

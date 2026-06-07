@@ -5491,7 +5491,7 @@ func TestMuxerGeneratesAV1CodecPrivateFromFirstLacedPacket(t *testing.T) {
 	}
 }
 
-func TestMuxerRejectsHeaderWhenAV1CodecPrivateIsMissing(t *testing.T) {
+func TestMuxerDefersHeaderWhenAV1CodecPrivateIsMissing(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
 	if err != nil {
@@ -5513,11 +5513,202 @@ func TestMuxerRejectsHeaderWhenAV1CodecPrivateIsMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = muxer.WritePacket(Packet{TrackID: audioTrack, TimeNS: 0, Keyframe: true, Data: []byte{1, 2, 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before AV1 private data was available", buffer.Len())
+	}
+	err = muxer.Close()
 	if !errors.Is(err, ErrInvalidTrack) {
 		t.Fatalf("err = %v, want ErrInvalidTrack", err)
 	}
 	if buffer.Len() != 0 {
 		t.Fatalf("wrote %d bytes before rejecting missing AV1 private data", buffer.Len())
+	}
+}
+
+func TestMuxerDefersHeaderUntilGeneratedCodecPrivateTracksReady(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h264ID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecH264,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	av1ID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecAV1,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opusID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h264Data := h264AnnexBParameterAccessUnit()
+	if err := muxer.WritePacket(Packet{TrackID: h264ID, TimeNS: 0, Keyframe: true, Data: h264Data}); err != nil {
+		t.Fatal(err)
+	}
+	h264Data[0] = 0xff
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before all generated private data was available", buffer.Len())
+	}
+	if _, err := muxer.AddTrack(Track{Type: TrackAudio, Codec: CodecOpus, Audio: AudioConfig{SampleRate: 48000, Channels: 1}}); !errors.Is(err, ErrTrackAfterWrite) {
+		t.Fatalf("err = %v, want ErrTrackAfterWrite", err)
+	}
+
+	opusData := []byte{0xf8, 0xff, 0xfe}
+	if err := muxer.WritePacket(Packet{TrackID: opusID, TimeNS: 20_000_000, Keyframe: true, Data: opusData}); err != nil {
+		t.Fatal(err)
+	}
+	opusData[0] = 0
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before all generated private data was available", buffer.Len())
+	}
+
+	av1Data := av1SequenceHeaderOBU()
+	if err := muxer.WritePacket(Packet{TrackID: av1ID, TimeNS: 40_000_000, Keyframe: true, Data: av1Data}); err != nil {
+		t.Fatal(err)
+	}
+	av1Data[0] = 0
+	if buffer.Len() == 0 {
+		t.Fatalf("header was not written after generated private data became available")
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 3 {
+		t.Fatalf("tracks = %d, want 3", len(tracks))
+	}
+	if !bytes.Equal(tracks[0].CodecPrivate, h264AVCDecoderConfig()) {
+		t.Fatalf("h264 private = %x, want %x", tracks[0].CodecPrivate, h264AVCDecoderConfig())
+	}
+	if !bytes.Equal(tracks[1].CodecPrivate, av1CodecConfig()) {
+		t.Fatalf("av1 private = %x, want %x", tracks[1].CodecPrivate, av1CodecConfig())
+	}
+
+	wantPackets := []Packet{
+		{TrackID: h264ID, TimeNS: 0, Keyframe: true, Data: h264AnnexBParameterAccessUnit()},
+		{TrackID: opusID, TimeNS: 20_000_000, Keyframe: true, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: av1ID, TimeNS: 40_000_000, Keyframe: true, Data: av1SequenceHeaderOBU()},
+	}
+	got := Packet{Data: make([]byte, 0, len(h264AnnexBParameterAccessUnit()))}
+	for i := range wantPackets {
+		if err := demuxer.ReadPacket(&got); err != nil {
+			t.Fatalf("packet %d read: %v", i, err)
+		}
+		if got.TrackID != wantPackets[i].TrackID || got.TimeNS != wantPackets[i].TimeNS ||
+			got.Keyframe != wantPackets[i].Keyframe || !bytes.Equal(got.Data, wantPackets[i].Data) {
+			t.Fatalf("packet %d = %+v data=%x, want %+v data=%x", i, got, got.Data, wantPackets[i], wantPackets[i].Data)
+		}
+	}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
+func TestMuxerDefersLacedHeaderPacketUntilGeneratedCodecPrivateTracksReady(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	av1ID, err := muxer.AddTrack(Track{
+		Type:              TrackVideo,
+		Codec:             CodecAV1,
+		DefaultDurationNS: 20_000_000,
+		Video:             VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h264ID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecH264,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	frames := [][]byte{av1SequenceHeaderOBU(), av1TemporalDelimiterOBU()}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  av1ID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingEBML,
+		Frames:   frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	frames[0][0] = 0
+	frames[1][0] = 0
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before all generated private data was available", buffer.Len())
+	}
+	if err := muxer.WritePacket(Packet{TrackID: h264ID, TimeNS: 40_000_000, Keyframe: true, Data: h264AnnexBParameterAccessUnit()}); err != nil {
+		t.Fatal(err)
+	}
+	if buffer.Len() == 0 {
+		t.Fatalf("header was not written after generated private data became available")
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 2 {
+		t.Fatalf("tracks = %d, want 2", len(tracks))
+	}
+	if !bytes.Equal(tracks[0].CodecPrivate, av1CodecConfig()) {
+		t.Fatalf("av1 private = %x, want %x", tracks[0].CodecPrivate, av1CodecConfig())
+	}
+	if !bytes.Equal(tracks[1].CodecPrivate, h264AVCDecoderConfig()) {
+		t.Fatalf("h264 private = %x, want %x", tracks[1].CodecPrivate, h264AVCDecoderConfig())
+	}
+
+	wantPackets := []Packet{
+		{TrackID: av1ID, TimeNS: 0, DurationNS: 20_000_000, Keyframe: true, Data: av1SequenceHeaderOBU()},
+		{TrackID: av1ID, TimeNS: 20_000_000, DurationNS: 20_000_000, Keyframe: true, Data: av1TemporalDelimiterOBU()},
+		{TrackID: h264ID, TimeNS: 40_000_000, Keyframe: true, Data: h264AnnexBParameterAccessUnit()},
+	}
+	got := Packet{Data: make([]byte, 0, len(h264AnnexBParameterAccessUnit()))}
+	for i := range wantPackets {
+		if err := demuxer.ReadPacket(&got); err != nil {
+			t.Fatalf("packet %d read: %v", i, err)
+		}
+		if got.TrackID != wantPackets[i].TrackID || got.TimeNS != wantPackets[i].TimeNS ||
+			got.DurationNS != wantPackets[i].DurationNS || got.Keyframe != wantPackets[i].Keyframe ||
+			!bytes.Equal(got.Data, wantPackets[i].Data) {
+			t.Fatalf("packet %d = %+v data=%x, want %+v data=%x", i, got, got.Data, wantPackets[i], wantPackets[i].Data)
+		}
+	}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
 	}
 }
 
@@ -5717,7 +5908,7 @@ func TestMuxerGeneratesH264CodecPrivateFromFirstLacedAnnexBPacket(t *testing.T) 
 	}
 }
 
-func TestMuxerRejectsHeaderWhenH264CodecPrivateIsMissing(t *testing.T) {
+func TestMuxerDefersHeaderWhenH264CodecPrivateIsMissing(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
 	if err != nil {
@@ -5739,6 +5930,13 @@ func TestMuxerRejectsHeaderWhenH264CodecPrivateIsMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = muxer.WritePacket(Packet{TrackID: audioTrack, TimeNS: 0, Keyframe: true, Data: []byte{1, 2, 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before H.264 private data was available", buffer.Len())
+	}
+	err = muxer.Close()
 	if !errors.Is(err, ErrInvalidTrack) {
 		t.Fatalf("err = %v, want ErrInvalidTrack", err)
 	}
@@ -6064,7 +6262,7 @@ func TestMuxerGeneratesH265CodecPrivateFromFirstLacedAnnexBPacket(t *testing.T) 
 	}
 }
 
-func TestMuxerRejectsHeaderWhenH265CodecPrivateIsMissing(t *testing.T) {
+func TestMuxerDefersHeaderWhenH265CodecPrivateIsMissing(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
 	if err != nil {
@@ -6086,6 +6284,13 @@ func TestMuxerRejectsHeaderWhenH265CodecPrivateIsMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = muxer.WritePacket(Packet{TrackID: audioTrack, TimeNS: 0, Keyframe: true, Data: []byte{1, 2, 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buffer.Len() != 0 {
+		t.Fatalf("wrote %d bytes before H.265 private data was available", buffer.Len())
+	}
+	err = muxer.Close()
 	if !errors.Is(err, ErrInvalidTrack) {
 		t.Fatalf("err = %v, want ErrInvalidTrack", err)
 	}
