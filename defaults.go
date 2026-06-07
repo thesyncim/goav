@@ -9,6 +9,8 @@ import (
 	ivfadapter "github.com/thesyncim/goav/adapters/ivf"
 	resampleadapter "github.com/thesyncim/goav/adapters/resample"
 	resizeadapter "github.com/thesyncim/goav/adapters/resize"
+	matroskaadapter "github.com/thesyncim/goav/container/matroska"
+	webmadapter "github.com/thesyncim/goav/container/webm"
 )
 
 func WithDefaults() Option {
@@ -23,6 +25,8 @@ func WithStdFormats() Option {
 	return func(runtime *runtime) {
 		ivfadapter.Register(runtime.formats)
 		annexbadapter.Register(runtime.formats)
+		matroskaadapter.Register(runtime.formats)
+		webmadapter.Register(runtime.formats)
 	}
 }
 
