@@ -99,6 +99,7 @@ type MuxerOptions struct {
 	Streaming                  bool
 	CuePolicy                  CuePolicy
 	UnknownSegmentElements     []UnknownElement
+	UnknownTracksElements      []UnknownElement
 	ContentEncryptionKeys      []ContentEncryptionKey
 	ContentEncryptionInitialIV []byte
 }
@@ -118,6 +119,7 @@ func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 		Streaming:                  opts.Streaming,
 		CuePolicy:                  opts.CuePolicy,
 		UnknownSegmentElements:     opts.UnknownSegmentElements,
+		UnknownTracksElements:      opts.UnknownTracksElements,
 		ContentEncryptionKeys:      opts.ContentEncryptionKeys,
 		ContentEncryptionInitialIV: opts.ContentEncryptionInitialIV,
 	}

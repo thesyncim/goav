@@ -236,11 +236,13 @@ func TestMuxerDemuxerPreservesUnknownSegmentElements(t *testing.T) {
 func TestMuxerDemuxerPreservesNestedUnknownElements(t *testing.T) {
 	infoUnknown := unknownWebMElementBytes(t, 0x4ffb, []byte{0x31, 0x32})
 	trackUnknown := unknownWebMElementBytes(t, 0x4ffa, []byte{0x41, 0x42, 0x43})
+	tracksUnknown := unknownWebMElementBytes(t, 0x4ff9, []byte{0x51})
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{
 		Info: SegmentInfo{
 			UnknownElements: []UnknownElement{{Raw: append([]byte(nil), infoUnknown...)}},
 		},
+		UnknownTracksElements: []UnknownElement{{Raw: append([]byte(nil), tracksUnknown...)}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -268,6 +270,9 @@ func TestMuxerDemuxerPreservesNestedUnknownElements(t *testing.T) {
 	if !bytes.Contains(buffer.Bytes(), trackUnknown) {
 		t.Fatalf("muxed data does not contain raw TrackEntry unknown element %x", trackUnknown)
 	}
+	if !bytes.Contains(buffer.Bytes(), tracksUnknown) {
+		t.Fatalf("muxed data does not contain raw Tracks unknown element %x", tracksUnknown)
+	}
 	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -278,8 +283,12 @@ func TestMuxerDemuxerPreservesNestedUnknownElements(t *testing.T) {
 		t.Fatalf("tracks = %d, want 1", len(tracks))
 	}
 	assertWebMUnknownElement(t, "track", tracks[0].UnknownElements, 0x4ffa, trackUnknown)
+	assertWebMUnknownElement(t, "tracks master", demuxer.UnknownTracksElements(), 0x4ff9, tracksUnknown)
 	tracks[0].UnknownElements[0].Raw[0] = 0
 	assertWebMUnknownElement(t, "fresh track", demuxer.Tracks()[0].UnknownElements, 0x4ffa, trackUnknown)
+	elements := demuxer.UnknownTracksElements()
+	elements[0].Raw[0] = 0
+	assertWebMUnknownElement(t, "fresh tracks master", demuxer.UnknownTracksElements(), 0x4ff9, tracksUnknown)
 }
 
 func TestMuxerDemuxerAppliesAESCTRContentEncryption(t *testing.T) {

@@ -123,6 +123,10 @@ Current milestone:
   `Chapter`, `ChapterDisplay`, `Tag`, `TagTarget`, and recursive `SimpleTag`
   values. The muxer validates these blobs against the parent schema so known
   fields cannot be smuggled through the raw-extension path.
+- Finite unknown direct children of the `Tracks`, `Attachments`, `Chapters`,
+  and `Tags` metadata masters are preserved through dedicated muxer options and
+  demuxer accessors, including raw-only optional metadata masters in seekable
+  output.
 - Format registry adapters for `av.Stream` and `av.Packet`.
 - Caller-owned packet data for demuxing.
 - Demux validation rejects on-disk track, cue, and block track numbers that
@@ -141,9 +145,7 @@ These are intentionally not in the first milestone:
 
 - Frame-exact random access for uncued packets or cue points that do not have
   exact `CueRelativePosition` or `CueBlockNumber` entries.
-- Unknown child preservation for direct children of container-only metadata
-  masters such as `Tracks`, `Attachments`, `Chapters`, and `Tags`, plus unknown
-  Cluster child preservation.
+- Unknown Cluster child preservation.
 - Full codec-private generation and parsers for every codec family.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
 

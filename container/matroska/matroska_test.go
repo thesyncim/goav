@@ -417,6 +417,105 @@ func TestMuxerDemuxerRemuxesNestedUnknownElements(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerRemuxesUnknownMasterElements(t *testing.T) {
+	tracksUnknown := unknownElementBytes(t, 0x4feb, []byte{0x11})
+	attachmentsUnknown := unknownElementBytes(t, 0x4fec, []byte{0x12, 0x22})
+	chaptersUnknown := unknownElementBytes(t, 0x4fed, []byte{0x13, 0x23, 0x33})
+	tagsUnknown := unknownElementBytes(t, 0x4fee, []byte{0x14})
+	allUnknowns := [][]byte{tracksUnknown, attachmentsUnknown, chaptersUnknown, tagsUnknown}
+
+	ws := &memoryWriteSeeker{}
+	opts := MuxerOptions{
+		UnknownTracksElements:      []UnknownElement{{Raw: append([]byte(nil), tracksUnknown...)}},
+		UnknownAttachmentsElements: []UnknownElement{{Raw: append([]byte(nil), attachmentsUnknown...)}},
+		UnknownChaptersElements:    []UnknownElement{{Raw: append([]byte(nil), chaptersUnknown...)}},
+		UnknownTagsElements:        []UnknownElement{{Raw: append([]byte(nil), tagsUnknown...)}},
+	}
+	muxer, err := NewMuxer(ws, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.UnknownTracksElements[0].Raw[0] = 0
+	opts.UnknownAttachmentsElements[0].Raw[0] = 0
+	opts.UnknownChaptersElements[0].Raw[0] = 0
+	opts.UnknownTagsElements[0].Raw[0] = 0
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range allUnknowns {
+		if !bytes.Contains(ws.bytes, raw) {
+			t.Fatalf("muxed data does not contain raw unknown master child %x", raw)
+		}
+	}
+	positions := collectTopLevelPositions(t, ws.bytes)
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSeekEntry(t, demuxer.SeekEntries(), idAttachments, positions[idAttachments])
+	assertSeekEntry(t, demuxer.SeekEntries(), idChapters, positions[idChapters])
+	assertSeekEntry(t, demuxer.SeekEntries(), idTags, positions[idTags])
+	assertUnknownElement(t, "tracks master", demuxer.UnknownTracksElements(), 0x4feb, tracksUnknown)
+	assertUnknownElement(t, "attachments master", demuxer.UnknownAttachmentsElements(), 0x4fec, attachmentsUnknown)
+	assertUnknownElement(t, "chapters master", demuxer.UnknownChaptersElements(), 0x4fed, chaptersUnknown)
+	assertUnknownElement(t, "tags master", demuxer.UnknownTagsElements(), 0x4fee, tagsUnknown)
+
+	elements := demuxer.UnknownTracksElements()
+	elements[0].Raw[0] = 0
+	assertUnknownElement(t, "fresh tracks master", demuxer.UnknownTracksElements(), 0x4feb, tracksUnknown)
+	elements = demuxer.UnknownAttachmentsElements()
+	elements[0].Raw[0] = 0
+	assertUnknownElement(t, "fresh attachments master", demuxer.UnknownAttachmentsElements(), 0x4fec, attachmentsUnknown)
+	elements = demuxer.UnknownChaptersElements()
+	elements[0].Raw[0] = 0
+	assertUnknownElement(t, "fresh chapters master", demuxer.UnknownChaptersElements(), 0x4fed, chaptersUnknown)
+	elements = demuxer.UnknownTagsElements()
+	elements[0].Raw[0] = 0
+	assertUnknownElement(t, "fresh tags master", demuxer.UnknownTagsElements(), 0x4fee, tagsUnknown)
+
+	var remuxed bytes.Buffer
+	remuxer, err := NewMuxer(&remuxed, MuxerOptions{
+		UnknownTracksElements:      demuxer.UnknownTracksElements(),
+		UnknownAttachmentsElements: demuxer.UnknownAttachmentsElements(),
+		UnknownChaptersElements:    demuxer.UnknownChaptersElements(),
+		UnknownTagsElements:        demuxer.UnknownTagsElements(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, track := range demuxer.Tracks() {
+		if _, err := remuxer.AddTrack(track); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if err := remuxer.WritePacket(got); err != nil {
+		t.Fatal(err)
+	}
+	if err := remuxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range allUnknowns {
+		if !bytes.Contains(remuxed.Bytes(), raw) {
+			t.Fatalf("remuxed data does not contain raw unknown master child %x", raw)
+		}
+	}
+}
+
 func TestMuxerRejectsInvalidUnknownSegmentElements(t *testing.T) {
 	unknownID := ebml.ID(0x4ffd)
 	valid := unknownElementBytes(t, unknownID, []byte{1})
@@ -440,6 +539,45 @@ func TestMuxerRejectsInvalidUnknownSegmentElements(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := NewMuxer(discardWriter{}, MuxerOptions{UnknownSegmentElements: []UnknownElement{tt.element}}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestMuxerRejectsInvalidUnknownMasterElements(t *testing.T) {
+	tests := []struct {
+		name string
+		opts MuxerOptions
+	}{
+		{
+			name: "known tracks child",
+			opts: MuxerOptions{UnknownTracksElements: []UnknownElement{{
+				Raw: unknownElementBytes(t, idTrackEntry, []byte{}),
+			}}},
+		},
+		{
+			name: "known attachments child",
+			opts: MuxerOptions{UnknownAttachmentsElements: []UnknownElement{{
+				Raw: unknownElementBytes(t, idAttachedFile, []byte{}),
+			}}},
+		},
+		{
+			name: "known chapters child",
+			opts: MuxerOptions{UnknownChaptersElements: []UnknownElement{{
+				Raw: unknownElementBytes(t, idEditionEntry, []byte{}),
+			}}},
+		},
+		{
+			name: "known tags child",
+			opts: MuxerOptions{UnknownTagsElements: []UnknownElement{{
+				Raw: unknownElementBytes(t, idTag, []byte{}),
+			}}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewMuxer(discardWriter{}, tt.opts); !errors.Is(err, ErrInvalidData) {
 				t.Fatalf("err = %v, want ErrInvalidData", err)
 			}
 		})

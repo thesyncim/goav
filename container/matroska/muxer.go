@@ -89,6 +89,26 @@ func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
 		return nil, err
 	}
 	opts.UnknownSegmentElements = unknownSegments
+	unknownTracks, err := normalizeUnknownElementsFor(opts.UnknownTracksElements, isKnownTracksElement)
+	if err != nil {
+		return nil, err
+	}
+	opts.UnknownTracksElements = unknownTracks
+	unknownAttachments, err := normalizeUnknownElementsFor(opts.UnknownAttachmentsElements, isKnownAttachmentsElement)
+	if err != nil {
+		return nil, err
+	}
+	opts.UnknownAttachmentsElements = unknownAttachments
+	unknownChapters, err := normalizeUnknownElementsFor(opts.UnknownChaptersElements, isKnownChaptersElement)
+	if err != nil {
+		return nil, err
+	}
+	opts.UnknownChaptersElements = unknownChapters
+	unknownTags, err := normalizeUnknownElementsFor(opts.UnknownTagsElements, isKnownTagsElement)
+	if err != nil {
+		return nil, err
+	}
+	opts.UnknownTagsElements = unknownTags
 	m := &Muxer{}
 	m.init(w, opts)
 	return m, nil
@@ -103,6 +123,10 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.options.Chapters = cloneChapters(m.options.Chapters)
 	m.options.Tags = cloneTags(m.options.Tags)
 	m.options.UnknownSegmentElements = cloneUnknownElements(m.options.UnknownSegmentElements)
+	m.options.UnknownTracksElements = cloneUnknownElements(m.options.UnknownTracksElements)
+	m.options.UnknownAttachmentsElements = cloneUnknownElements(m.options.UnknownAttachmentsElements)
+	m.options.UnknownChaptersElements = cloneUnknownElements(m.options.UnknownChaptersElements)
+	m.options.UnknownTagsElements = cloneUnknownElements(m.options.UnknownTagsElements)
 	m.options.ContentEncryptionKeys = cloneContentEncryptionKeys(m.options.ContentEncryptionKeys)
 	if m.options.ContentEncryptionInitialIV != nil {
 		m.options.ContentEncryptionInitialIV = append([]byte(nil), m.options.ContentEncryptionInitialIV...)
@@ -566,19 +590,19 @@ func (m *Muxer) writeHeader() error {
 	if err := m.writeTracks(); err != nil {
 		return err
 	}
-	if len(m.options.Attachments) != 0 {
+	if m.hasAttachmentsElement() {
 		m.attachPosition = m.relativeSegmentPosition()
 		if err := m.writeAttachments(); err != nil {
 			return err
 		}
 	}
-	if len(m.options.Chapters) != 0 {
+	if m.hasChaptersElement() {
 		m.chapterPosition = m.relativeSegmentPosition()
 		if err := m.writeChapters(); err != nil {
 			return err
 		}
 	}
-	if len(m.options.Tags) != 0 {
+	if m.hasTagsElement() {
 		m.tagsPosition = m.relativeSegmentPosition()
 		if err := m.writeTags(); err != nil {
 			return err
@@ -589,6 +613,18 @@ func (m *Muxer) writeHeader() error {
 	}
 	m.headerWritten = true
 	return nil
+}
+
+func (m *Muxer) hasAttachmentsElement() bool {
+	return len(m.options.Attachments) != 0 || len(m.options.UnknownAttachmentsElements) != 0
+}
+
+func (m *Muxer) hasChaptersElement() bool {
+	return len(m.options.Chapters) != 0 || len(m.options.UnknownChaptersElements) != 0
+}
+
+func (m *Muxer) hasTagsElement() bool {
+	return len(m.options.Tags) != 0 || len(m.options.UnknownTagsElements) != 0
 }
 
 func (m *Muxer) prepareTracksForHeader(trackIndex int, frames [][]byte) (Track, error) {
@@ -1056,6 +1092,42 @@ func isKnownSegmentElement(id ebml.ID) bool {
 	}
 }
 
+func isKnownTracksElement(id ebml.ID) bool {
+	switch id {
+	case idTrackEntry, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownAttachmentsElement(id ebml.ID) bool {
+	switch id {
+	case idAttachedFile, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownChaptersElement(id ebml.ID) bool {
+	switch id {
+	case idEditionEntry, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownTagsElement(id ebml.ID) bool {
+	switch id {
+	case idTag, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
 func isKnownInfoElement(id ebml.ID) bool {
 	switch id {
 	case idSegmentUUID, idSegmentFilename, idPrevUUID, idPrevFilename, idNextUUID, idNextFilename,
@@ -1186,6 +1258,9 @@ func (m *Muxer) writeTracks() error {
 			return err
 		}
 	}
+	if err := writeUnknownElements(w, m.options.UnknownTracksElements); err != nil {
+		return err
+	}
 	return m.ebml.WriteElement(idTracks, payload.Bytes())
 }
 
@@ -1197,6 +1272,9 @@ func (m *Muxer) writeAttachments() error {
 			return err
 		}
 	}
+	if err := writeUnknownElements(w, m.options.UnknownAttachmentsElements); err != nil {
+		return err
+	}
 	return m.ebml.WriteElement(idAttachments, payload.Bytes())
 }
 
@@ -1207,6 +1285,9 @@ func (m *Muxer) writeChapters() error {
 		if err := writeEditionEntry(w, m.options.Chapters[i]); err != nil {
 			return err
 		}
+	}
+	if err := writeUnknownElements(w, m.options.UnknownChaptersElements); err != nil {
+		return err
 	}
 	return m.ebml.WriteElement(idChapters, payload.Bytes())
 }
@@ -1334,6 +1415,9 @@ func (m *Muxer) writeTags() error {
 		if err := writeTag(w, m.options.Tags[i]); err != nil {
 			return err
 		}
+	}
+	if err := writeUnknownElements(w, m.options.UnknownTagsElements); err != nil {
+		return err
 	}
 	return m.ebml.WriteElement(idTags, payload.Bytes())
 }

@@ -17,53 +17,57 @@ import (
 )
 
 type Demuxer struct {
-	reader            *ebml.Reader
-	seeker            io.ReadSeeker
-	options           DemuxerOptions
-	docType           string
-	segmentData       int64
-	timecodeScaleNS   int64
-	info              SegmentInfo
-	tracks            []Track
-	attachments       []Attachment
-	chapters          []ChapterEdition
-	tags              []Tag
-	unknownSegments   []UnknownElement
-	cues              []CuePoint
-	cuesSorted        bool
-	seekEntries       []SeekEntry
-	inSegment         bool
-	inCluster         bool
-	clusterUnknown    bool
-	clusterEnd        int64
-	clusterTimecode   int64
-	blockLimit        io.LimitedReader
-	groupLimit        io.LimitedReader
-	groupReader       *ebml.Reader
-	blockHeader       [3]byte
-	laceBuffer        []byte
-	laceFrames        []laceFrame
-	laceTrackID       uint32
-	laceH264Length    int
-	laceContent       blockContentEncodingInfo
-	laceTimeNS        int64
-	laceDurationNS    int64
-	laceReferences    []int64
-	lacePriority      uint64
-	laceDiscardPadNS  int64
-	laceCodecState    []byte
-	laceAdditions     []BlockAddition
-	laceFrameCount    int
-	laceFrameIndex    int
-	laceKeyframe      bool
-	laceInvisible     bool
-	laceDiscardable   bool
-	scratch           [ebml.MaxSizeWidth]byte
-	uintScratch       [8]byte
-	contentBuffer     []byte
-	contentPartitions []uint32
-	pendingHeader     ebml.Header
-	pendingHeaderSet  bool
+	reader             *ebml.Reader
+	seeker             io.ReadSeeker
+	options            DemuxerOptions
+	docType            string
+	segmentData        int64
+	timecodeScaleNS    int64
+	info               SegmentInfo
+	tracks             []Track
+	attachments        []Attachment
+	chapters           []ChapterEdition
+	tags               []Tag
+	unknownSegments    []UnknownElement
+	unknownTracks      []UnknownElement
+	unknownAttachments []UnknownElement
+	unknownChapters    []UnknownElement
+	unknownTags        []UnknownElement
+	cues               []CuePoint
+	cuesSorted         bool
+	seekEntries        []SeekEntry
+	inSegment          bool
+	inCluster          bool
+	clusterUnknown     bool
+	clusterEnd         int64
+	clusterTimecode    int64
+	blockLimit         io.LimitedReader
+	groupLimit         io.LimitedReader
+	groupReader        *ebml.Reader
+	blockHeader        [3]byte
+	laceBuffer         []byte
+	laceFrames         []laceFrame
+	laceTrackID        uint32
+	laceH264Length     int
+	laceContent        blockContentEncodingInfo
+	laceTimeNS         int64
+	laceDurationNS     int64
+	laceReferences     []int64
+	lacePriority       uint64
+	laceDiscardPadNS   int64
+	laceCodecState     []byte
+	laceAdditions      []BlockAddition
+	laceFrameCount     int
+	laceFrameIndex     int
+	laceKeyframe       bool
+	laceInvisible      bool
+	laceDiscardable    bool
+	scratch            [ebml.MaxSizeWidth]byte
+	uintScratch        [8]byte
+	contentBuffer      []byte
+	contentPartitions  []uint32
+	pendingHeader      ebml.Header
+	pendingHeaderSet   bool
 }
 
 type laceFrame struct {
@@ -121,6 +125,10 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.chapters = d.chapters[:0]
 	d.tags = d.tags[:0]
 	d.unknownSegments = d.unknownSegments[:0]
+	d.unknownTracks = d.unknownTracks[:0]
+	d.unknownAttachments = d.unknownAttachments[:0]
+	d.unknownChapters = d.unknownChapters[:0]
+	d.unknownTags = d.unknownTags[:0]
 	d.cues = d.cues[:0]
 	d.cuesSorted = true
 	d.seekEntries = d.seekEntries[:0]
@@ -898,6 +906,34 @@ func (d *Demuxer) UnknownSegmentElements() []UnknownElement {
 	return cloneUnknownElements(d.unknownSegments)
 }
 
+func (d *Demuxer) UnknownTracksElements() []UnknownElement {
+	if d == nil || len(d.unknownTracks) == 0 {
+		return nil
+	}
+	return cloneUnknownElements(d.unknownTracks)
+}
+
+func (d *Demuxer) UnknownAttachmentsElements() []UnknownElement {
+	if d == nil || len(d.unknownAttachments) == 0 {
+		return nil
+	}
+	return cloneUnknownElements(d.unknownAttachments)
+}
+
+func (d *Demuxer) UnknownChaptersElements() []UnknownElement {
+	if d == nil || len(d.unknownChapters) == 0 {
+		return nil
+	}
+	return cloneUnknownElements(d.unknownChapters)
+}
+
+func (d *Demuxer) UnknownTagsElements() []UnknownElement {
+	if d == nil || len(d.unknownTags) == 0 {
+		return nil
+	}
+	return cloneUnknownElements(d.unknownTags)
+}
+
 func (d *Demuxer) Cues() []CuePoint {
 	if d == nil || len(d.cues) == 0 {
 		return nil
@@ -1512,7 +1548,7 @@ func (d *Demuxer) parseTracks(header ebml.Header) error {
 				d.upsertTrack(track)
 			}
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownTracksElement, &d.unknownTracks); err != nil {
 				return err
 			}
 		}
@@ -1589,7 +1625,7 @@ func (d *Demuxer) parseAttachments(header ebml.Header) error {
 			usedUIDs[attachment.UID] = struct{}{}
 			d.attachments = append(d.attachments, attachment)
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownAttachmentsElement, &d.unknownAttachments); err != nil {
 				return err
 			}
 		}
@@ -1700,7 +1736,7 @@ func (d *Demuxer) parseChapters(header ebml.Header) error {
 			}
 			d.chapters = append(d.chapters, edition)
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownChaptersElement, &d.unknownChapters); err != nil {
 				return err
 			}
 		}
@@ -1985,7 +2021,7 @@ func (d *Demuxer) parseTags(header ebml.Header) error {
 			}
 			d.tags = append(d.tags, tag)
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownTagsElement, &d.unknownTags); err != nil {
 				return err
 			}
 		}

@@ -478,6 +478,10 @@ type MuxerOptions struct {
 	Chapters                   []ChapterEdition
 	Tags                       []Tag
 	UnknownSegmentElements     []UnknownElement
+	UnknownTracksElements      []UnknownElement
+	UnknownAttachmentsElements []UnknownElement
+	UnknownChaptersElements    []UnknownElement
+	UnknownTagsElements        []UnknownElement
 	TimecodeScaleNS            int64
 	ClusterMaxDurationNS       int64
 	Streaming                  bool
