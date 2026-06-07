@@ -221,6 +221,7 @@ Primary references:
 Compatibility tools are optional in CI and run when installed:
 
 - `ffprobe`
+- `ffmpeg`
 - `mkvalidator`
 - `mkvinfo`
 - `mkvextract`
@@ -228,7 +229,9 @@ Compatibility tools are optional in CI and run when installed:
 
 Current external checks cover WebM VP8/Opus files, Matroska files carrying the
 WebRTC codec set, and Matroska H.264/AV1 files whose codec-private data is
-generated from the first packet.
+generated from the first packet. They also generate small FFmpeg-authored
+Matroska/WebM files and read them through the Go demuxers for H.264, AV1, VP8,
+VP9, and Opus.
 
 ## Benchmark Plan
 

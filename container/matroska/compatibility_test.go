@@ -2,6 +2,8 @@ package matroska
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,6 +50,59 @@ func TestExternalFFProbeReportsOpusCodecTiming(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Fatalf("ffprobe output missing %s:\n%s", want, output)
 		}
+	}
+}
+
+func TestExternalDemuxerReadsFFmpegMatroskaCodecs(t *testing.T) {
+	tests := []struct {
+		name       string
+		codec      Codec
+		write      func(testing.TB) string
+		wantPrefix []byte
+	}{
+		{name: "h264", codec: CodecH264, write: writeFFmpegH264Matroska, wantPrefix: []byte{0, 0, 0, 1}},
+		{name: "av1", codec: CodecAV1, write: writeFFmpegAV1Matroska},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := tt.write(t)
+			input, err := os.Open(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer input.Close()
+			demuxer, err := NewDemuxer(input, DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tracks := demuxer.Tracks()
+			if len(tracks) != 1 {
+				t.Fatalf("tracks = %d, want 1", len(tracks))
+			}
+			if tracks[0].Codec != tt.codec || tracks[0].Type != TrackVideo || tracks[0].Video.Width != 16 || tracks[0].Video.Height != 16 {
+				t.Fatalf("track = %+v, want 16x16 %s video", tracks[0], tt.name)
+			}
+			packet := Packet{Data: make([]byte, 0, 1<<20)}
+			for {
+				err := demuxer.ReadPacket(&packet)
+				if errors.Is(err, io.EOF) {
+					t.Fatalf("no packet read from ffmpeg %s matroska", tt.name)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if packet.TrackID != tracks[0].ID {
+					continue
+				}
+				if len(packet.Data) == 0 {
+					t.Fatalf("empty packet for ffmpeg %s matroska", tt.name)
+				}
+				if len(tt.wantPrefix) != 0 && !bytes.HasPrefix(packet.Data, tt.wantPrefix) {
+					t.Fatalf("packet data prefix = %x, want %x", packet.Data[:min(len(packet.Data), 8)], tt.wantPrefix)
+				}
+				return
+			}
+		})
 	}
 }
 
@@ -140,6 +195,45 @@ func writeCompatibilityMatroska(t *testing.T) string {
 	return file
 }
 
+func writeFFmpegH264Matroska(t testing.TB) string {
+	t.Helper()
+	tool := requireExternalTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-h264.mkv")
+	runExternalToolOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=1:duration=1",
+		"-frames:v", "1",
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-tune", "zerolatency",
+		"-pix_fmt", "yuv420p",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegAV1Matroska(t testing.TB) string {
+	t.Helper()
+	tool := requireExternalTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-av1.mkv")
+	runExternalToolOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=1:duration=1",
+		"-frames:v", "1",
+		"-c:v", "libsvtav1",
+		"-preset", "13",
+		"-crf", "50",
+		file,
+	)
+	return file
+}
+
 func writeOpusTimingMatroska(t *testing.T) string {
 	t.Helper()
 	var buffer bytes.Buffer
@@ -197,7 +291,7 @@ func writeGeneratedPrivateMatroska(t *testing.T, codec Codec, data []byte) strin
 	return file
 }
 
-func requireExternalTool(t *testing.T, name string) string {
+func requireExternalTool(t testing.TB, name string) string {
 	t.Helper()
 	tool, ok := lookupExternalTool(name)
 	if !ok {
@@ -211,12 +305,22 @@ func lookupExternalTool(name string) (string, bool) {
 	return tool, err == nil
 }
 
-func runExternalTool(t *testing.T, tool string, args ...string) string {
+func runExternalTool(t testing.TB, tool string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(tool, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %s failed: %v\n%s", filepath.Base(tool), strings.Join(args, " "), err, output)
+	}
+	return string(output)
+}
+
+func runExternalToolOrSkip(t testing.TB, tool string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(tool, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Skipf("%s %s unavailable: %v\n%s", filepath.Base(tool), strings.Join(args, " "), err, output)
 	}
 	return string(output)
 }

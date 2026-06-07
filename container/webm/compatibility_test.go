@@ -2,6 +2,8 @@ package webm
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +31,66 @@ func TestExternalFFProbeReportsSeekableDuration(t *testing.T) {
 	}
 	if duration < 0.019 || duration > 0.021 {
 		t.Fatalf("duration = %f, want about 0.020", duration)
+	}
+}
+
+func TestExternalDemuxerReadsFFmpegWebMCodecs(t *testing.T) {
+	tests := []struct {
+		name  string
+		codec Codec
+		typ   TrackType
+		write func(testing.TB) string
+	}{
+		{name: "vp8", codec: CodecVP8, typ: TrackVideo, write: writeFFmpegVP8WebM},
+		{name: "vp9", codec: CodecVP9, typ: TrackVideo, write: writeFFmpegVP9WebM},
+		{name: "opus", codec: CodecOpus, typ: TrackAudio, write: writeFFmpegOpusWebM},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := tt.write(t)
+			input, err := os.Open(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer input.Close()
+			demuxer, err := NewDemuxer(input, DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tracks := demuxer.Tracks()
+			if len(tracks) != 1 {
+				t.Fatalf("tracks = %d, want 1", len(tracks))
+			}
+			if tracks[0].Codec != tt.codec || tracks[0].Type != tt.typ {
+				t.Fatalf("track = %+v, want %s %v", tracks[0], tt.name, tt.typ)
+			}
+			if tt.typ == TrackVideo && (tracks[0].Video.Width != 16 || tracks[0].Video.Height != 16) {
+				t.Fatalf("video = %+v, want 16x16", tracks[0].Video)
+			}
+			if tt.typ == TrackAudio && (tracks[0].Audio.SampleRate != 48000 || tracks[0].Audio.Channels == 0) {
+				t.Fatalf("audio = %+v, want 48000 Hz opus", tracks[0].Audio)
+			}
+			packet := Packet{Data: make([]byte, 0, 1<<20)}
+			for {
+				err := demuxer.ReadPacket(&packet)
+				if errors.Is(err, io.EOF) {
+					t.Fatalf("no packet read from ffmpeg %s webm", tt.name)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if packet.TrackID != tracks[0].ID {
+					continue
+				}
+				if len(packet.Data) == 0 {
+					t.Fatalf("empty packet for ffmpeg %s webm", tt.name)
+				}
+				if tt.typ == TrackVideo && !packet.Keyframe {
+					t.Fatalf("packet = %+v, want keyframe payload", packet)
+				}
+				return
+			}
+		})
 	}
 }
 
@@ -81,6 +143,64 @@ func writeSeekableCompatibilityWebM(t *testing.T) string {
 	return file
 }
 
+func writeFFmpegVP8WebM(t testing.TB) string {
+	t.Helper()
+	tool := requireTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-vp8.webm")
+	runExternalOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=1:duration=1",
+		"-frames:v", "1",
+		"-c:v", "libvpx",
+		"-deadline", "realtime",
+		"-cpu-used", "8",
+		"-b:v", "100k",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegVP9WebM(t testing.TB) string {
+	t.Helper()
+	tool := requireTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-vp9.webm")
+	runExternalOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "testsrc=size=16x16:rate=1:duration=1",
+		"-frames:v", "1",
+		"-c:v", "libvpx-vp9",
+		"-deadline", "realtime",
+		"-cpu-used", "8",
+		"-b:v", "100k",
+		file,
+	)
+	return file
+}
+
+func writeFFmpegOpusWebM(t testing.TB) string {
+	t.Helper()
+	tool := requireTool(t, "ffmpeg")
+	file := filepath.Join(t.TempDir(), "ffmpeg-opus.webm")
+	runExternalOrSkip(t, tool,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi",
+		"-i", "sine=frequency=1000:sample_rate=48000:duration=0.02",
+		"-c:a", "libopus",
+		"-application", "voip",
+		"-frame_duration", "20",
+		file,
+	)
+	return file
+}
+
 func writeCompatibilityWebM(t *testing.T) string {
 	t.Helper()
 	var buffer bytes.Buffer
@@ -120,7 +240,7 @@ func writeCompatibilityWebM(t *testing.T) string {
 	return file
 }
 
-func requireTool(t *testing.T, name string) string {
+func requireTool(t testing.TB, name string) string {
 	t.Helper()
 	tool, ok := lookupTool(name)
 	if !ok {
@@ -134,12 +254,22 @@ func lookupTool(name string) (string, bool) {
 	return tool, err == nil
 }
 
-func runExternal(t *testing.T, tool string, args ...string) string {
+func runExternal(t testing.TB, tool string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(tool, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %s failed: %v\n%s", filepath.Base(tool), strings.Join(args, " "), err, output)
+	}
+	return string(output)
+}
+
+func runExternalOrSkip(t testing.TB, tool string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(tool, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Skipf("%s %s unavailable: %v\n%s", filepath.Base(tool), strings.Join(args, " "), err, output)
 	}
 	return string(output)
 }
