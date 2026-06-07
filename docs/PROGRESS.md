@@ -1283,6 +1283,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     and transform nodes in reverse order, drops the partial edges, closes every
     owned component, registers no branch taps, and leaves the graph spec
     unchanged. Done.
+291. Prove runtime sink-endpoint rollback after graph mutation failure:
+    `TestTaskAttachRollsBackRuntimeSinkEndpointWhenGraphConnectFails` now
+    attaches from an audio frame tap, opens a resample filter, adds a terminal
+    `SinkEndpoint`, then rejects the terminal sink connection after the
+    transform connect succeeds. Runtime attach removes the sink and transform
+    nodes in reverse order, drops the partial edge, closes the filter and sink,
+    registers no branch taps, and leaves the graph spec unchanged. Done.
 
 ## First Vertical Slice
 
@@ -1538,6 +1545,7 @@ nested transform frame-tap, custom-stage frame-tap, and post-encode packet-tap
 subtrees before future media reaches them, runtime filter cleanup after
 post-open duplicate-tap rejection, graph rollback after post-open connect
 failure, terminal-stage rollback after post-open transform/encode/mux target
+mutation failure, sink-endpoint rollback after post-open transform/sink graph
 mutation failure, flow-applied Opus encode-to-target branches, late Opus/VP8/VP9
 encode-to-endpoint, packet-copy endpoint, packet-copy recording, Opus encoded
 late recording, and sink branches that can publish nested runtime taps for later
@@ -1551,8 +1559,8 @@ direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
 broaden descriptor-backed endpoint/container capability data as WebM/Ogg arrive
-and keep broadening runtime attachment stress around terminal sink/endpoint and
-generic lifecycle boundaries without weakening the direct graph branch grammar.
+and keep broadening runtime attachment stress around generic lifecycle
+boundaries without weakening the direct graph branch grammar.
 
 ## Validation Gates
 
