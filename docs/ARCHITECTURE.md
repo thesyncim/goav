@@ -113,8 +113,8 @@ outlets, so another late branch can attach downstream without rebuilding the
 task. Taps declared after encode or copy operations are packet-domain outlets.
 H264 and AV1 recipe encoding remain work in progress. Detaching a parent runtime
 branch also removes dependent runtime branches anchored from that parent's taps.
-Expert graph nodes can still be addressed with `From(node)` and
-`Task.Describe`. This is for late analysis,
+Expert graph attachments can still start from the `GraphNode` or `GraphOutlet`
+handles returned by `Runtime.Graph()`. This is for late analysis,
 meters, screenshot collectors, and late recording branches that should observe
 future messages without rebuilding the task. Buffered runtime attachment owns
 queue and worker lifecycle for late nodes; packet-copy recording targets are

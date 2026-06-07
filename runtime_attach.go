@@ -1396,7 +1396,7 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 		return runtimeBranchInvalidError("branch name is empty", "start with goav.Branch(\"name\")")
 	}
 	if branch.from == "" && branch.tap == "" {
-		return runtimeBranchInvalidError("branch source is empty", "call .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(node) with an expert graph node")
+		return runtimeBranchInvalidError("branch source is empty", "call .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(graphNode) with an expert graph handle")
 	}
 	if len(branch.destinations) == 0 {
 		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
@@ -1834,7 +1834,7 @@ func runtimeBranchAnchorMissingError(node string) error {
 		Reason:    "branch source node does not exist in the running task graph",
 		Suggestions: []string{
 			"call task.Taps() and use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for stable media outlets",
-			"call task.Describe() and use a node name from the graph spec for expert graph attachments",
+			"keep the GraphNode returned by Runtime.Graph().Source/Stage/Sink for expert graph attachments",
 			"attach from a stable decoded-frame tap when the branch needs raw frames",
 		},
 		Cause: pipeline.ErrUnknownNode,
@@ -1855,7 +1855,7 @@ func runtimeBranchTapMissingError(name string, taps []TapInfo) error {
 		Suggestions: []string{
 			"add .Tap(goav.FrameTap(" + strconv.Quote(name) + ")) or .Tap(goav.PacketTap(" + strconv.Quote(name) + ")) at the point you want to attach",
 			"call task.Taps() before attaching runtime branches",
-			"use .From(node) only for expert graph-node attachments",
+			"use .From(graphNode) only for expert graph-node attachments",
 		},
 		Cause: pipeline.ErrUnknownNode,
 	}

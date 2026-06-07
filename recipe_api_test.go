@@ -1572,6 +1572,7 @@ func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
 		".Paths(",
 		"goav.Output(",
 		".Outputs(",
+		".From(\"",
 		".To(\"",
 		"PathSpec",
 		"PathBuilder",
@@ -1638,6 +1639,8 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"VideoFlow",
 		"SinkEndpoint",
 		"FromTap",
+		"From(node)",
+		"node names from `Task.Describe()`",
 		"`Target`, `Destination`, and `Chain` composition",
 		"`Target`, destination constructors",
 	} {
@@ -1670,6 +1673,23 @@ func currentProgressSections(text string) string {
 		current.WriteString(done)
 	}
 	return current.String()
+}
+
+func TestBranchFromUsesTypedSources(t *testing.T) {
+	method, ok := reflect.TypeOf(goav.Branch("typed")).MethodByName("From")
+	if !ok {
+		t.Fatal("Branch should expose From")
+	}
+	source := method.Type.In(1)
+	if source.Kind() != reflect.Interface || source.String() == "interface {}" {
+		t.Fatalf("Branch.From source type = %s, want sealed typed source interface", source)
+	}
+
+	_ = goav.Branch("tap").From(goav.FrameTap("audio.decoded"))
+	graph := goav.Default().Graph()
+	node := graph.Source("source", recipeAPISource{name: "source"})
+	_ = goav.Branch("node").From(node)
+	_ = goav.Branch("stream").From(node.Stream("audio"))
 }
 
 func TestReadmeFlowExampleUsesDistinctBranches(t *testing.T) {
@@ -4626,12 +4646,15 @@ func TestBranchCompositionRejectsMissingPlannedTap(t *testing.T) {
 }
 
 func TestBranchCompositionRejectsGraphNodeSource(t *testing.T) {
+	graphNode := goav.Default().Graph().Stage("decode-video", goav.PacketFunc("decode-video", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
+		return emit.Packet(packet)
+	}))
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video().
 		Decode().
 		Branches(
 			goav.Branch("preview").
-				From("decode-video").
+				From(graphNode).
 				Resize(320, 180).
 				To(goav.Target("preview", goav.Sink(goav.SinkFunc("preview", func(context.Context, goav.Message) error {
 					return nil
@@ -4643,7 +4666,7 @@ func TestBranchCompositionRejectsGraphNodeSource(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "branch_source_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want branch_source_invalid wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "graph node names") ||
+	if !strings.Contains(err.Error(), "graph handles") ||
 		!strings.Contains(err.Error(), "From(goav.FrameTap") {
 		t.Fatalf("err = %v, want planned branch source guidance", err)
 	}

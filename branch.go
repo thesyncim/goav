@@ -108,34 +108,36 @@ type branchBuilder struct {
 	spec BranchSpec
 }
 
+type branchSourceBinding struct {
+	from      string
+	tap       string
+	tapDomain MediaDomain
+	policy    pipeline.RoutePolicy
+	label     string
+}
+
+type branchSource interface {
+	branchSource() branchSourceBinding
+}
+
 func Branch(name string) *branchBuilder {
 	return &branchBuilder{spec: BranchSpec{name: name}}
 }
 
-func (b *branchBuilder) From(source any) *branchBuilder {
+func (b *branchBuilder) From(source branchSource) *branchBuilder {
 	if b == nil {
 		return b
 	}
-	switch source := source.(type) {
-	case TapRef:
-		return b.fromTypedTap(source)
-	case string:
-		b.spec.from = source
-		b.spec.tap = ""
-		b.spec.tapDomain = ""
-	default:
+	if source == nil {
 		b.setErr(branchSourceInvalidError(firstNonEmpty(b.spec.name, "branch")))
-	}
-	return b
-}
-
-func (b *branchBuilder) fromTypedTap(tap TapRef) *branchBuilder {
-	if b == nil {
 		return b
 	}
-	b.spec.tap = tap.name
-	b.spec.tapDomain = tap.domain
-	b.spec.from = ""
+	binding := source.branchSource()
+	b.spec.from = binding.from
+	b.spec.tap = binding.tap
+	b.spec.tapDomain = binding.tapDomain
+	b.spec.policy = binding.policy
+	b.spec.label = binding.label
 	return b
 }
 
@@ -679,14 +681,14 @@ func plannedBranchNodeSourceError(name string, source string) error {
 		Code:      "branch_source_invalid",
 		Operation: "build branches",
 		Node:      firstNonEmpty(name, "branch"),
-		Reason:    "planned branches do not anchor from graph node names",
+		Reason:    "planned branches do not anchor from graph handles",
 		Details: []string{
 			"source: " + source,
 		},
 		Suggestions: []string{
 			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) to branch from a stable tap",
 			"omit .From(...) to branch from the current stream point",
-			"use Task.Attach(ctx, goav.Branch(name).From(node)...) for expert runtime graph attachment",
+			"use Task.Attach(ctx, goav.Branch(name).From(graphNode)...) for expert runtime graph attachment",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

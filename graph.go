@@ -25,6 +25,10 @@ func (n GraphNode) Name() string {
 	return n.name
 }
 
+func (n GraphNode) branchSource() branchSourceBinding {
+	return branchSourceBinding{from: n.name, policy: pipeline.RouteAll}
+}
+
 func (n GraphNode) In() GraphInlet {
 	return GraphInlet{name: n.name}
 }
@@ -39,6 +43,14 @@ func (n GraphNode) Stream(stream av.StreamID) GraphOutlet {
 
 func (n GraphNode) Event(event av.EventType) GraphOutlet {
 	return GraphOutlet{name: n.name, policy: pipeline.RouteByEvent, label: string(event)}
+}
+
+func (o GraphOutlet) branchSource() branchSourceBinding {
+	policy := o.policy
+	if policy == "" {
+		policy = pipeline.RouteAll
+	}
+	return branchSourceBinding{from: o.name, policy: policy, label: o.label}
 }
 
 type graphBuilder struct {

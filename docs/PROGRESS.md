@@ -1663,6 +1663,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     consists of intent, concrete attachments, media-plan reports, and the
     executable media-plan graph.
     Done.
+333. Type runtime branch sources:
+    `Branch.From(...)` now accepts only sealed branch-source values: typed taps
+    for media outlets and `GraphNode`/`GraphOutlet` handles from
+    `Runtime.Graph()` for expert graph attachments. Raw string node names no
+    longer form the public branch-origin path, and guards keep README/current
+    architecture docs plus attach tests on typed source values.
+    Done.
 
 ## First Vertical Slice
 
@@ -1933,6 +1940,9 @@ branches and direct chains.
 packet taps, so packet-copy fanout and late receive tasks can branch into raw
 frame processing, transform, re-encode, publish new packet taps, and write new
 targets without rebuilding the task.
+Runtime branch origins are typed: stable media outlets use `FrameTap` or
+`PacketTap`, while expert explicit-graph attachments use the `GraphNode` or
+`GraphOutlet` handles returned by `Runtime.Graph()`.
 `MediaPlan` expresses record, stream decode, encode, and branch composition as
 input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and

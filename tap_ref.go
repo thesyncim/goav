@@ -6,6 +6,10 @@ type TapRef struct {
 	domain MediaDomain
 }
 
+func (t TapRef) branchSource() branchSourceBinding {
+	return branchSourceBinding{tap: t.name, tapDomain: t.domain}
+}
+
 // FrameTap names a frame-domain attach point.
 func FrameTap(name string) TapRef {
 	return TapRef{name: name, domain: DomainFrame}
@@ -58,10 +62,10 @@ func branchSourceInvalidError(node string) error {
 		Code:      "branch_source_invalid",
 		Operation: "build branch",
 		Node:      firstNonEmpty(node, "branch"),
-		Reason:    "branch source must be a typed tap or expert graph node name",
+		Reason:    "branch source must be a typed tap or expert graph handle",
 		Suggestions: []string{
 			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for tap branches",
-			"use .From(\"node\") only for expert graph-node attachments",
+			"use .From(graphNode) only for expert graph-handle attachments",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
