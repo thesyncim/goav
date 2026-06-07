@@ -237,7 +237,11 @@ func (p mediaPlanBranchComposeGraph) runtimeRef() *runtime {
 	return p.runtime
 }
 
-func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, _ graphPlan, graph pipeline.Graph, service *builder) error {
+func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, plan graphPlan, graph pipeline.Graph, service *builder) error {
+	lowering, err := p.prepareBranchComposeOperationLowering(plan)
+	if err != nil {
+		return err
+	}
 	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, []InputSpec{p.input}, "build branch composition", Intent{Name: p.plan.Name})
 	if err != nil {
 		return err
@@ -250,7 +254,238 @@ func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, _ graphPlan, gra
 	if err != nil {
 		return err
 	}
-	return compileBranchComposeRoutes(ctx, service, graph, p.branches, p.targets, branchInputs, branchStreams, sources.realtime)
+	return compileBranchComposeRoutes(ctx, service, graph, p.branches, lowering.targets, branchInputs, branchStreams, sources.realtime)
+}
+
+type graphPlanBranchComposeLowering struct {
+	targets []branchComposeTargetRoute
+}
+
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan graphPlan) (graphPlanBranchComposeLowering, error) {
+	branchOperations := graphPlanOperationsByBranch(plan.operations)
+	for i := range p.branches {
+		branch := p.branches[i]
+		operations := branchOperations[branch.name]
+		if len(operations) == 0 {
+			return graphPlanBranchComposeLowering{}, graphPlanInvalidError("branch composition graph plan has no operations for branch", []string{
+				"branch=" + branch.name,
+			})
+		}
+		if err := p.validateBranchComposeBranchOperations(branch, operations); err != nil {
+			return graphPlanBranchComposeLowering{}, err
+		}
+	}
+	targets, err := p.prepareBranchComposeTargets(plan)
+	if err != nil {
+		return graphPlanBranchComposeLowering{}, err
+	}
+	return graphPlanBranchComposeLowering{targets: targets}, nil
+}
+
+func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branch branchComposeRoute, operations []graphPlanOperation) error {
+	if !graphPlanBranchOperationsContain(operations, OpSelect) {
+		return graphPlanInvalidError("branch composition graph plan has no select operation for branch", []string{
+			"branch=" + branch.name,
+		})
+	}
+	hasDecode := graphPlanBranchOperationsContain(operations, OpDecode)
+	if branchComposeRouteNeedsDecode(branch) && !hasDecode {
+		return graphPlanInvalidError("branch composition graph plan has no decode operation for branch", []string{
+			"branch=" + branch.name,
+		})
+	}
+	if !branchComposeRouteNeedsDecode(branch) && hasDecode {
+		return graphPlanInvalidError("packet branch composition graph plan has an unexpected decode operation", []string{
+			"branch=" + branch.name,
+		})
+	}
+	if !branchComposeRouteNeedsDecode(branch) && !graphPlanBranchOperationsContain(operations, OpCopy) {
+		return graphPlanInvalidError("packet branch composition graph plan has no copy operation for branch", []string{
+			"branch=" + branch.name,
+		})
+	}
+	if err := p.validateBranchComposeStepOperations(branch, operations); err != nil {
+		return err
+	}
+	hasEncode := graphPlanBranchOperationsContain(operations, OpEncode)
+	if branchComposeRouteNeedsEncode(branch) && !hasEncode {
+		return graphPlanInvalidError("branch composition graph plan has no encode operation for branch", []string{
+			"branch=" + branch.name,
+		})
+	}
+	if !branchComposeRouteNeedsEncode(branch) && hasEncode {
+		return graphPlanInvalidError("branch composition graph plan has an unexpected encode operation for branch", []string{
+			"branch=" + branch.name,
+		})
+	}
+	return nil
+}
+
+func (p mediaPlanBranchComposeGraph) validateBranchComposeStepOperations(branch branchComposeRoute, operations []graphPlanOperation) error {
+	shared := graphPlanBranchStepOperationCount(operations, true)
+	private := graphPlanBranchStepOperationCount(operations, false)
+	if shared != len(branch.sharedSteps) {
+		return graphPlanInvalidError("branch composition graph plan shared operations do not match branch chain", []string{
+			"branch=" + branch.name,
+			"planned=" + strconv.Itoa(shared),
+			"steps=" + strconv.Itoa(len(branch.sharedSteps)),
+		})
+	}
+	if private != len(branch.steps) {
+		return graphPlanInvalidError("branch composition graph plan operations do not match branch chain", []string{
+			"branch=" + branch.name,
+			"planned=" + strconv.Itoa(private),
+			"steps=" + strconv.Itoa(len(branch.steps)),
+		})
+	}
+	return nil
+}
+
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeTargets(plan graphPlan) ([]branchComposeTargetRoute, error) {
+	operations := graphPlanTargetOperations(plan.operations)
+	if len(operations) == 0 {
+		return nil, graphPlanInvalidError("branch composition graph plan has no target operations", nil)
+	}
+	if len(operations) != len(p.targets) {
+		return nil, graphPlanInvalidError("branch composition graph plan target count does not match targets", []string{
+			"targets=" + strconv.Itoa(len(operations)),
+			"routes=" + strconv.Itoa(len(p.targets)),
+		})
+	}
+	branchesByTarget := graphPlanTargetBranchNames(plan.operations)
+	targets := make([]branchComposeTargetRoute, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		targetIndex := branchComposeTargetRouteIndex(p.targets, operation.Name)
+		if targetIndex < 0 {
+			return nil, graphPlanInvalidError("branch composition target operation is not bound to a target", []string{
+				"target=" + operation.Name,
+				"node=" + operation.Node.String(),
+			})
+		}
+		target := p.targets[targetIndex]
+		if err := validateBranchComposeTargetOperation(operation, target); err != nil {
+			return nil, err
+		}
+		if !branchComposeTargetBranchesMatch(target, p.branches, branchesByTarget[operation.Name]) {
+			return nil, graphPlanInvalidError("branch composition target operation branches do not match target routes", []string{
+				"target=" + operation.Name,
+			})
+		}
+		targets[i] = target
+	}
+	return targets, nil
+}
+
+func validateBranchComposeTargetOperation(operation graphPlanTargetOperation, target branchComposeTargetRoute) error {
+	if target.sink != nil {
+		if operation.Kind != OpSink {
+			return graphPlanInvalidError("branch composition target operation kind does not match sink target", []string{
+				"target=" + operation.Name,
+				"kind=" + string(operation.Kind),
+			})
+		}
+		return nil
+	}
+	if operation.Kind != OpMux && operation.Kind != OpWrite {
+		return graphPlanInvalidError("branch composition target operation kind does not match byte target", []string{
+			"target=" + operation.Name,
+			"kind=" + string(operation.Kind),
+		})
+	}
+	return nil
+}
+
+func branchComposeTargetRouteIndex(targets []branchComposeTargetRoute, name string) int {
+	for i := range targets {
+		if branchComposeTargetRouteName(targets[i]) == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func branchComposeTargetRouteName(target branchComposeTargetRoute) string {
+	name := firstNonEmpty(target.output.Name, target.target.Name, target.target.URI)
+	if name != "" {
+		return name
+	}
+	if target.sink != nil {
+		return target.sink.Name()
+	}
+	return ""
+}
+
+func branchComposeTargetBranchesMatch(target branchComposeTargetRoute, branches []branchComposeRoute, actual map[string]struct{}) bool {
+	if len(target.matches) != len(actual) {
+		return false
+	}
+	for _, index := range target.matches {
+		if index < 0 || index >= len(branches) {
+			return false
+		}
+		if _, ok := actual[branches[index].name]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func graphPlanOperationsByBranch(operations []graphPlanOperation) map[string][]graphPlanOperation {
+	out := make(map[string][]graphPlanOperation)
+	for i := range operations {
+		branch := operations[i].Branch
+		if branch == "" {
+			continue
+		}
+		out[branch] = append(out[branch], operations[i])
+	}
+	return out
+}
+
+func graphPlanBranchOperationsContain(operations []graphPlanOperation, kind OperationKind) bool {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func graphPlanBranchStepOperationCount(operations []graphPlanOperation, shared bool) int {
+	count := 0
+	for i := range operations {
+		operation := operations[i]
+		if operation.Shared != shared {
+			continue
+		}
+		if operation.Kind == OpTransform || operation.Kind == OpStage {
+			count++
+		}
+	}
+	return count
+}
+
+func graphPlanTargetBranchNames(operations []graphPlanOperation) map[string]map[string]struct{} {
+	out := make(map[string]map[string]struct{})
+	for i := range operations {
+		operation := operations[i]
+		if !graphPlanOperationTargetsRequired(operation.Kind) {
+			continue
+		}
+		for _, target := range operation.Targets {
+			if target == "" || operation.Branch == "" {
+				continue
+			}
+			branches := out[target]
+			if branches == nil {
+				branches = make(map[string]struct{})
+				out[target] = branches
+			}
+			branches[operation.Branch] = struct{}{}
+		}
+	}
+	return out
 }
 
 func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, plan graphPlan, graph pipeline.Graph, service *builder) error {
