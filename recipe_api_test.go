@@ -298,11 +298,11 @@ func countOperationReports(operations []goav.OperationReport, kind goav.Operatio
 	return count
 }
 
-func recordJob(input goav.InputSpec, outputs ...goav.Destination) *goav.Job {
+func recordJob(input goav.InputSpec, outputs ...goav.TargetRef) *goav.Job {
 	return goav.From(input).Copy().To(outputs...)
 }
 
-func decodeJob(input goav.InputSpec, output goav.Destination) *goav.Job {
+func decodeJob(input goav.InputSpec, output goav.TargetRef) *goav.Job {
 	return goav.From(input).Stream().Decode().To(output)
 }
 
@@ -322,7 +322,7 @@ type testTranscodeBranch struct {
 	flows      []goav.Chain
 	transforms []goav.TransformSpec
 	encode     goav.CodecSpec
-	targets    []goav.Destination
+	targets    []goav.TargetRef
 }
 
 type testTranscodeBranchBuilder struct {
@@ -385,7 +385,7 @@ func (j *testBranchJob) materialize() *goav.Job {
 		if branch.encode.ID != "" {
 			builder = builder.Encode(branch.encode)
 		}
-		destinations := make([]goav.Destination, 0, len(branch.targets))
+		destinations := make([]goav.TargetRef, 0, len(branch.targets))
 		for i := range branch.targets {
 			destinations = append(destinations, branch.targets[i])
 		}
@@ -446,8 +446,8 @@ func (b *testTranscodeBranchBuilder) Encode(codec goav.CodecSpec) *testTranscode
 	return b
 }
 
-func (b *testTranscodeBranchBuilder) To(targets ...goav.Destination) *testBranchJob {
-	b.current().targets = append([]goav.Destination(nil), targets...)
+func (b *testTranscodeBranchBuilder) To(targets ...goav.TargetRef) *testBranchJob {
+	b.current().targets = append([]goav.TargetRef(nil), targets...)
 	return b.job
 }
 
@@ -1354,6 +1354,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"AudioFlowBuilder": true,
 		"VideoFlowBuilder": true,
 		"Input":            true,
+		"Destination":      true,
 		"DestinationSpec":  true,
 		"Output":           true,
 		"OutputIntent":     true,
@@ -1606,6 +1607,34 @@ func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
 	}
 }
 
+func TestDocsShowDebugDiagnosticsWorkflow(t *testing.T) {
+	for _, file := range []string{
+		"README.md",
+		"docs/USE_CASES.md",
+	} {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(body)
+		for _, required := range []string{
+			"Debug And Diagnostics",
+			"job.Explain(ctx)",
+			"task.Events()",
+			"task.Attach(ctx",
+			"Attachment.Stats()",
+			"Task.Stats()",
+			"levels.Stats()",
+			"task.Stats()",
+			"goav.FrameFunc(\"rms\"",
+		} {
+			if !strings.Contains(text, required) {
+				t.Fatalf("%s should show debug diagnostics workflow %q", file, required)
+			}
+		}
+	}
+}
+
 func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 	var body strings.Builder
 	for _, file := range []string{
@@ -1641,8 +1670,9 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"FromTap",
 		"From(node)",
 		"node names from `Task.Describe()`",
-		"`Target`, `Destination`, and `Chain` composition",
+		"`Target`, `TargetRef`, and `Chain` composition",
 		"`Target`, destination constructors",
+		"`File`, `URIOut`, and `Sink` destination constructors",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("architecture docs keep stale composition vocabulary %q", forbidden)
@@ -1656,7 +1686,7 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"Simple high-level API | recipes, chains",
 		"surface is small: `From`, chains",
 		"`Target`, and `Chain` composition",
-		"`File`, `URIOut`, and `Sink` destination constructors",
+		"`File`, `URIOut`, and `Sink` target refs",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("architecture docs should keep current composition vocabulary %q", required)
@@ -2105,8 +2135,8 @@ func TestStreamRecipeCanWriteToTypedTarget(t *testing.T) {
 	}
 }
 
-func TestToAcceptsDestinationSlices(t *testing.T) {
-	destinations := []goav.Destination{
+func TestToAcceptsTargetRefSlices(t *testing.T) {
+	targets := []goav.TargetRef{
 		goav.Target("archive", goav.File("archive.ogg", io.Discard)),
 		goav.Sink(goav.SinkFunc("stats", func(context.Context, goav.Message) error {
 			return nil
@@ -2116,7 +2146,7 @@ func TestToAcceptsDestinationSlices(t *testing.T) {
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Opus(96_000).
-		To(destinations...)
+		To(targets...)
 
 	intent := job.Intent()
 	if len(intent.Streams) != 1 ||
@@ -3079,20 +3109,20 @@ func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeRejectsNilDestination(t *testing.T) {
-	var destination goav.Destination
+func TestRecordRecipeRejectsNilTargetRef(t *testing.T) {
+	var target goav.TargetRef
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		destination,
+		target,
 	).Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want target_invalid wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "destination is nil") ||
+	if !strings.Contains(err.Error(), "target ref is nil") ||
 		!strings.Contains(err.Error(), "goav.File") ||
 		!strings.Contains(err.Error(), "goav.Sink") {
-		t.Fatalf("err = %v, want destination constructor guidance", err)
+		t.Fatalf("err = %v, want target-ref constructor guidance", err)
 	}
 }
 

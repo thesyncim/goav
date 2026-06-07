@@ -17,7 +17,7 @@ from the same few concepts.
   custom stages, encode, or copy.
 - `Tap`: a typed attach point created with `FrameTap` or `PacketTap`.
 - `Branch`: a downstream chain from a chain point or tap.
-- `Target`: a named destination group, such as a mux or sink group.
+- `Target`: a named mux or sink group.
 - `Task`: a running graph with attach/detach, events, stats, and taps.
 
 ## 30-Second Examples
@@ -43,7 +43,7 @@ return goav.From(goav.FileInput("input.ivf", in)).
     Run(ctx)
 ```
 
-Use `Target` when a destination needs a stable logical name; direct files, URIs,
+Use `Target` when a target needs a stable logical name; direct files, URIs,
 and sinks remain the shortest spelling for one-off outputs.
 
 Decode one WebRTC audio track to frames:
@@ -286,7 +286,7 @@ if err != nil {
 return task.Detach(ctx, shots)
 ```
 
-Frame taps can also grow a late encoded destination:
+Frame taps can also grow a late encoded target:
 
 ```go
 audioDecoded := goav.FrameTap("audio.decoded")
@@ -343,7 +343,7 @@ group, err := task.Attach(ctx,
 ```
 
 The same rule works for mux targets: reuse one typed `Target` value when several
-encoded packet branches should feed one late recording destination.
+encoded packet branches should feed one late recording target.
 
 ```go
 audioEncoded := goav.PacketTap("audio.encoded")
@@ -358,7 +358,7 @@ group, err := task.Attach(ctx,
 )
 ```
 
-Packet taps can be copied into a late destination:
+Packet taps can be copied into a late target:
 
 ```go
 audioEncoded := goav.PacketTap("audio.encoded")
@@ -395,7 +395,7 @@ defer preview.Close(ctx)
 ```
 
 `Task.Taps()` lists available attach points. `Attach` adds downstream sink or
-destination branches to a running direct task graph without rebuilding upstream.
+target branches to a running direct task graph without rebuilding upstream.
 Late branches can apply flows, run custom `.Do(...)` stages, resize/resample
 from frame taps, encode Opus/VP8/VP9 from frame taps, copy or decode from
 packet taps, and write to one or more typed targets before exposing their own
@@ -410,6 +410,92 @@ graph. Runtime branches can share one typed sink or mux target value inside an
 atomic attach group.
 Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
 packet-domain taps.
+
+## Debug And Diagnostics
+
+Debugging is ordinary composition. Put a typed tap at the point you want to
+observe, call `Explain(ctx)` before opening resources, then attach a live branch
+when the task is running.
+
+```go
+decoded := goav.FrameTap("audio.decoded")
+
+job := goav.From(goav.WebRTCTrack(audio)).
+    Audio().
+    Decode().
+    Tap(decoded).
+    To(goav.Sink(playback))
+
+report, err := job.Explain(ctx)
+if err != nil {
+    return err
+}
+for _, warning := range report.Warnings {
+    log.Printf("goav plan warning code=%s node=%s msg=%s",
+        warning.Code, warning.Node, warning.Message)
+}
+for _, tap := range report.Taps {
+    log.Printf("goav tap name=%s domain=%s media=%s",
+        tap.Name, tap.Domain, tap.MediaKind)
+}
+
+task, err := job.Build(ctx)
+if err != nil {
+    return err
+}
+defer task.Close()
+
+go func() {
+    for event := range task.Events() {
+        log.Printf("goav event type=%s stream=%s reason=%s",
+            event.Type, event.StreamID, event.Reason)
+    }
+}()
+
+go func() {
+    if err := task.Run(ctx); err != nil {
+        log.Printf("goav stopped: %v", err)
+    }
+}()
+
+levels, err := task.Attach(ctx,
+    goav.Branch("levels").
+        From(decoded).
+        Do(goav.FrameFunc("rms", func(_ context.Context, frame *goav.Frame, emit goav.Emit) error {
+            observeRMS(frame)
+            return emit.Frame(frame)
+        })).
+        To(goav.Sink(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
+            return nil
+        }))),
+)
+if err != nil {
+    return err
+}
+defer levels.Close(ctx)
+
+ticker := time.NewTicker(time.Second)
+defer ticker.Stop()
+
+for {
+    select {
+    case <-ctx.Done():
+        return ctx.Err()
+    case <-ticker.C:
+        graphStats := task.Stats()
+        levelStats := levels.Stats()
+        log.Printf("goav stats packets=%d frames=%d dropped=%d level_frames=%d",
+            graphStats.Packets,
+            graphStats.Frames,
+            graphStats.Dropped,
+            levelStats.Frames)
+    }
+}
+```
+
+This works the same for video probes, screenshot collectors, packet loss
+diagnostics, late recording branches, and temporary preview sinks. Attachments
+are removable, and their stats stay scoped to the nodes they own.
 
 ## Explain And Inspect
 
@@ -509,8 +595,8 @@ Implemented now:
   selector without creating decoders.
 - Typed `Tap`, `Branch`, `Target`, and reusable chain composition.
 - Runtime branch attachment from typed taps with reusable flows, custom stages,
-  resize/resample from frame taps, late Opus/VP8/VP9 encode destinations,
-  packet-copy destinations, nested runtime taps, `Attachment.Close(ctx)`, and
+  resize/resample from frame taps, late Opus/VP8/VP9 encode targets,
+  packet-copy targets, nested runtime taps, `Attachment.Close(ctx)`, and
   `Task.Detach(ctx, h)`.
 - Custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
   generic `Codec` specs.

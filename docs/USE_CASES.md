@@ -16,9 +16,9 @@ err := goav.From(goav.WebRTCTrack(track)).
     Run(ctx)
 ```
 
-Wrap the destination with `goav.Target(name, destination)` when the record job needs
-a stable logical target name for diagnostics, explain reports, or later mux
-grouping.
+Wrap a file, URI, or sink with `goav.Target(name, ref)` when the record job
+needs a stable logical target name for diagnostics, explain reports, or later
+mux grouping.
 
 Decoded preview:
 
@@ -382,7 +382,7 @@ Use `Task.Taps()` to discover stable outlets. Use `Task.Detach(ctx, h)` when
 the caller wants the task to own detach semantics. Runtime branches can be
 attached one at a time or as one atomic group. They can run custom stages,
 resize/resample from frame taps, publish additional taps, encode Opus/VP8/VP9
-from frame taps, copy packet taps into destinations, decode packet taps into frame
+from frame taps, copy packet taps into targets, decode packet taps into frame
 branches, and feed later runtime branches from those taps. Taps declared after
 encode or copy are packet taps. Observer branches can end in a sink while
 publishing a nested tap with
@@ -391,6 +391,67 @@ recipe encoding remain work in progress. Detaching a parent runtime branch
 removes dependent late branches anchored from its taps. Direct and bounded
 buffered task graphs both support late stage/sink branches. Runtime branch
 groups can share one typed sink or mux target value.
+
+## Debug And Diagnostics
+
+Debugging uses the same composition grammar. Explain the plan before opening the
+graph, drain task events while it runs, then attach temporary branches from
+typed taps to collect diagnostics. `Attachment.Stats()` reports the attached
+branch, and `Task.Stats()` reports the whole graph.
+
+```go
+audioDecoded := goav.FrameTap("audio.decoded")
+
+job := goav.From(goav.WebRTCTrack(track)).
+    Audio().
+    Decode().
+    Tap(audioDecoded).
+    To(goav.Sink(playback))
+
+report, err := job.Explain(ctx)
+if err != nil {
+    return err
+}
+for _, warning := range report.Warnings {
+    log.Printf("plan warning code=%s node=%s msg=%s",
+        warning.Code, warning.Node, warning.Message)
+}
+
+task, err := job.Build(ctx)
+if err != nil {
+    return err
+}
+go func() {
+    for event := range task.Events() {
+        log.Printf("media event type=%s stream=%s", event.Type, event.StreamID)
+    }
+}()
+go func() { _ = task.Run(ctx) }()
+
+levels, err := task.Attach(ctx,
+    goav.Branch("levels").
+        From(audioDecoded).
+        Do(goav.FrameFunc("rms", func(_ context.Context, frame *goav.Frame, emit goav.Emit) error {
+            observeRMS(frame)
+            return emit.Frame(frame)
+        })).
+        To(goav.Sink(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
+            return nil
+        }))),
+)
+if err != nil {
+    return err
+}
+defer levels.Close(ctx)
+
+graphStats := task.Stats()
+levelStats := levels.Stats()
+log.Printf("packets=%d frames=%d dropped=%d level_frames=%d",
+    graphStats.Packets,
+    graphStats.Frames,
+    graphStats.Dropped,
+    levelStats.Frames)
+```
 
 ## Generic File Or Protocol Ingest
 

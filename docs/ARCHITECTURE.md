@@ -71,9 +71,9 @@ transforms. Branch-composition inputs and resolved targets are carried by the
 resolved recipe into a media-plan branch graph; `Describe` and `Build` use that
 graph plan directly and only borrow runtime services for adapter-backed sources,
 filters, encoders, and muxers. Packet-preserving copy/fanout recipes use the
-same resolved graph-plan pattern for concrete inputs, destinations, and optional
+same resolved graph-plan pattern for concrete inputs, target refs, and optional
 selected streams. Direct selected-stream decode/encode recipes also keep their
-inputs, destinations, ordered stream attachments, codec-change policy, custom
+inputs, target refs, ordered stream attachments, codec-change policy, custom
 stages, transforms, and taps on the resolved recipe until the media-plan
 boundary. Those direct stream recipes now build and describe through a resolved
 single-stream graph plan and shared parameterized
@@ -106,8 +106,8 @@ Stable recipe outlets come from typed `.Tap(goav.FrameTap(name))` or
 `.Tap(goav.PacketTap(name))` calls and are listed by `Task.Taps()`; runtime
 branches attach with `goav.Branch("name").From(tap)`. A late branch can run
 custom `.Do(...)` stages, apply reusable flows, resize or resample from frame
-taps, encode Opus/VP8/VP9 from frame taps into a target destination, copy packet
-taps into a target destination, decode packet taps into frame-domain work, apply
+taps, encode Opus/VP8/VP9 from frame taps into a target, copy packet taps into a
+target, decode packet taps into frame-domain work, apply
 flows that own the packet-to-frame boundary, and expose its own typed tap
 outlets, so another late branch can attach downstream without rebuilding the
 task. Taps declared after encode or copy operations are packet-domain outlets.

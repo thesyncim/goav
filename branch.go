@@ -10,15 +10,15 @@ import (
 
 var targetSpecSeq atomic.Uint64
 
-// Destination is accepted by To. Use Target for named mux/sink groups, or pass
-// File, URIOut, or Sink directly for one-off destinations.
-type Destination interface {
-	// Name overrides the destination name used for diagnostics and graph nodes.
-	Name(string) Destination
+// TargetRef is accepted by To. Use Target for named mux/sink groups, or pass
+// File, URIOut, or Sink directly for one-off targets.
+type TargetRef interface {
+	// Name overrides the target name used for diagnostics and graph nodes.
+	Name(string) TargetRef
 	// MIME sets the MIME type used for format detection.
-	MIME(string) Destination
+	MIME(string) TargetRef
 	// Format sets the container format explicitly.
-	Format(av.FormatID) Destination
+	Format(av.FormatID) TargetRef
 	destination() destinationBinding
 }
 
@@ -36,14 +36,14 @@ type targetSpec struct {
 	err  error
 }
 
-// Target binds a stable target name to a concrete destination.
-func Target(name string, dest Destination) Destination {
+// Target binds a stable target name to a concrete target.
+func Target(name string, dest TargetRef) TargetRef {
 	if dest == nil {
-		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target destination is nil")}
+		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target ref is nil")}
 	}
 	binding := dest.destination()
 	if !binding.hasDirect {
-		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target destination must be a file, URI, or sink destination")}
+		return targetSpec{err: destinationInvalidError("build target", firstNonEmpty(name, "target"), "target ref must be goav.File, goav.URIOut, or goav.Sink")}
 	}
 	return newTargetSpec(name, binding.dest)
 }
@@ -63,18 +63,18 @@ func (t targetSpec) destination() destinationBinding {
 	return destinationBinding{target: t, hasTarget: true}
 }
 
-func (t targetSpec) Name(name string) Destination {
+func (t targetSpec) Name(name string) TargetRef {
 	t.name = name
 	t.dest = t.dest.withName(firstNonEmpty(t.dest.name, name))
 	return t
 }
 
-func (t targetSpec) MIME(mimeType string) Destination {
+func (t targetSpec) MIME(mimeType string) TargetRef {
 	t.dest = t.dest.withMIME(mimeType)
 	return t
 }
 
-func (t targetSpec) Format(format av.FormatID) Destination {
+func (t targetSpec) Format(format av.FormatID) TargetRef {
 	t.dest = t.dest.withFormat(format)
 	return t
 }
@@ -340,7 +340,7 @@ func (b *branchBuilder) VP9(bitrate int, options ...codecOption) *branchBuilder 
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
+func (b *branchBuilder) To(destinations ...TargetRef) BranchSpec {
 	if b == nil {
 		return BranchSpec{err: nilBranchError()}
 	}
@@ -352,7 +352,7 @@ func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
 	for i := range destinations {
 		destination := destinations[i]
 		if destination == nil {
-			spec.err = branchDestinationInvalidError(spec.name, "branch destination is nil")
+			spec.err = branchDestinationInvalidError(spec.name, "branch target ref is nil")
 			return spec
 		}
 		if err := appendDestination(&spec, destination.destination(), i); err != nil {
@@ -404,7 +404,7 @@ func appendDestination(spec *BranchSpec, destination destinationBinding, index i
 		spec.labels = append(spec.labels, target.name)
 		return nil
 	default:
-		return branchDestinationInvalidError(spec.name, "unsupported branch destination")
+		return branchDestinationInvalidError(spec.name, "unsupported branch target ref")
 	}
 }
 
@@ -861,7 +861,7 @@ func branchMissingError(node string) error {
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
 		Suggestions: []string{
-			"pass branches with goav.Branch(name).VP9(...).To(goav.Target(name, destination))",
+			"pass branches with goav.Branch(name).VP9(...).To(goav.Target(name, goav.File(...)))",
 			"reuse the same target value from multiple branches when they should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -888,7 +888,7 @@ func branchTargetMissingError(name string) error {
 		Reason:    "branch has no target",
 		Suggestions: []string{
 			"finish the branch with .To(goav.Target(\"web\", goav.File(...)))",
-			"pass a file, URI, or sink destination directly when no shared target is needed",
+			"pass goav.File(...), goav.URIOut(...), or goav.Sink(...) directly when no shared target is needed",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -913,8 +913,8 @@ func destinationInvalidError(operation string, node string, reason string) error
 		Node:      node,
 		Reason:    reason,
 		Suggestions: []string{
-			"use goav.Target(name, destination) for named mux/sink groups",
-			"use goav.File(...), goav.URIOut(...), or goav.Sink(...) for one-off destinations",
+			"use goav.Target(name, goav.File(...)) for named mux/sink groups",
+			"use goav.File(...), goav.URIOut(...), or goav.Sink(...) for one-off targets",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
