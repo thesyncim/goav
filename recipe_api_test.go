@@ -947,6 +947,20 @@ func TestReadmeUsesBranchTargetVocabulary(t *testing.T) {
 	}
 }
 
+func TestReadmeFlowExampleUsesDistinctBranches(t *testing.T) {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	if got := strings.Count(text, `goav.Branch("voice").Apply(voice).To(voiceTarget)`); got != 1 {
+		t.Fatalf("README voice flow branch count = %d, want 1", got)
+	}
+	if got := strings.Count(text, `goav.Branch("archive").Apply(archive).To(archiveTarget)`); got != 1 {
+		t.Fatalf("README archive flow branch count = %d, want 1", got)
+	}
+}
+
 func TestReadmeThirtySecondExamplesUseDefaultFormats(t *testing.T) {
 	body, err := os.ReadFile("README.md")
 	if err != nil {

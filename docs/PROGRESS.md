@@ -1119,6 +1119,10 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     the decoded frame, and detaching the parent closes the dependent subtree.
     This pins sink/observation-boundary branching without adding a new public
     concept. Done.
+270. Guard README flow examples against branch duplication:
+    the README now has test coverage that the reusable flow example contains
+    exactly one `voice` branch and one `archive` branch, keeping the public docs
+    aligned with the one-branch-name/one-target grammar. Done.
 
 ## First Vertical Slice
 
