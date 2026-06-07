@@ -7885,6 +7885,125 @@ func TestMuxerSplitsClustersBeforeBlockTimecodeOverflow(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerAppliesTrackTimestampScaleAndOffset(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{TimecodeScaleNS: 1_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:                   TrackVideo,
+		Codec:                  CodecVP8,
+		TrackTimestampScale:    0.5,
+		TrackTimestampScaleSet: true,
+		TrackOffsetNS:          5_000_000,
+		TrackOffsetSet:         true,
+		Video:                  VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: trackID, TimeNS: 0, DurationNS: 10_000_000, Keyframe: true, Data: []byte{0}},
+		{TrackID: trackID, TimeNS: 25_000_000, DurationNS: 10_000_000, Keyframe: true, Data: []byte{1}},
+		{TrackID: trackID, TimeNS: 35_000_000, DurationNS: 10_000_000, ReferenceBlockTimeNS: []int64{-10_000_000}, Data: []byte{2}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatalf("write packet %d: %v", i, err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 ||
+		tracks[0].TrackTimestampScale != 0.5 ||
+		!tracks[0].TrackTimestampScaleSet ||
+		tracks[0].TrackOffsetNS != 5_000_000 ||
+		!tracks[0].TrackOffsetSet {
+		t.Fatalf("tracks = %+v, want timestamp scale 0.5 and offset 5000000", tracks)
+	}
+	got := Packet{Data: make([]byte, 0, 4), ReferenceBlockTimeNS: make([]int64, 0, 1)}
+	for i := range packets {
+		if err := demuxer.ReadPacket(&got); err != nil {
+			t.Fatalf("read packet %d: %v", i, err)
+		}
+		if got.TrackID != packets[i].TrackID ||
+			got.TimeNS != packets[i].TimeNS ||
+			got.DurationNS != packets[i].DurationNS ||
+			got.Keyframe != packets[i].Keyframe ||
+			!equalInt64s(got.ReferenceBlockTimeNS, packets[i].ReferenceBlockTimeNS) ||
+			!bytes.Equal(got.Data, packets[i].Data) {
+			t.Fatalf("packet %d = %+v data=%v, want %+v", i, got, got.Data, packets[i])
+		}
+	}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
+func TestMuxerDemuxerAppliesTrackTimestampScaleToLacedBlockGroup(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{TimecodeScaleNS: 1_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:                   TrackAudio,
+		Codec:                  CodecOpus,
+		TrackTimestampScale:    0.5,
+		TrackTimestampScaleSet: true,
+		TrackOffsetNS:          5_000_000,
+		TrackOffsetSet:         true,
+		Audio:                  AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := [][]byte{{0xf8}, {0xff, 0xfe}}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:         trackID,
+		TimeNS:          25_000_000,
+		FrameDurationNS: 10_000_000,
+		Keyframe:        true,
+		Lacing:          LacingEBML,
+		Frames:          frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	for i := range frames {
+		if err := demuxer.ReadPacket(&got); err != nil {
+			t.Fatalf("read frame %d: %v", i, err)
+		}
+		wantTimeNS := 25_000_000 + int64(i)*10_000_000
+		if got.TrackID != trackID ||
+			got.TimeNS != wantTimeNS ||
+			got.DurationNS != 10_000_000 ||
+			!got.Keyframe ||
+			!bytes.Equal(got.Data, frames[i]) {
+			t.Fatalf("frame %d = %+v data=%v, want time=%d data=%v", i, got, got.Data, wantTimeNS, frames[i])
+		}
+	}
+	if err := demuxer.ReadPacket(&got); !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
+}
+
 func TestSeekableMuxerPatchesSegmentClusterAndDuration(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{})

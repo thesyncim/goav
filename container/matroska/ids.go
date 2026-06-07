@@ -58,6 +58,8 @@ const (
 	idSeekPreRoll          ebml.ID = 0x56bb
 	idMinCache             ebml.ID = 0x6de7
 	idMaxCache             ebml.ID = 0x6df8
+	idTrackTimestampScale  ebml.ID = 0x23314f
+	idTrackOffset          ebml.ID = 0x537f
 	idTrackOverlay         ebml.ID = 0x6fab
 	idTrackTranslate       ebml.ID = 0x6624
 	idTrackTranslateTrack  ebml.ID = 0x66a5

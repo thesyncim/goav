@@ -83,6 +83,24 @@ func TestMuxerRejectsInvalidTrackMetadata(t *testing.T) {
 	}); !errors.Is(err, matroska.ErrInvalidTrack) {
 		t.Fatalf("err = %v, want matroska.ErrInvalidTrack", err)
 	}
+	if _, err := muxer.AddTrack(Track{
+		Type:                   TrackVideo,
+		Codec:                  CodecVP8,
+		TrackTimestampScale:    1,
+		TrackTimestampScaleSet: true,
+		Video:                  VideoConfig{Width: 16, Height: 16},
+	}); !errors.Is(err, ErrUnsupportedWebMTrackMetadata) {
+		t.Fatalf("err = %v, want ErrUnsupportedWebMTrackMetadata", err)
+	}
+	if _, err := muxer.AddTrack(Track{
+		Type:           TrackVideo,
+		Codec:          CodecVP8,
+		TrackOffsetNS:  1_000_000,
+		TrackOffsetSet: true,
+		Video:          VideoConfig{Width: 16, Height: 16},
+	}); !errors.Is(err, ErrUnsupportedWebMTrackMetadata) {
+		t.Fatalf("err = %v, want ErrUnsupportedWebMTrackMetadata", err)
+	}
 }
 
 func TestMuxerRejectsUnsupportedContentEncodings(t *testing.T) {

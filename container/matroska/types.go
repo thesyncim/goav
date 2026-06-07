@@ -135,6 +135,10 @@ type Track struct {
 	TimebaseDen                   int64
 	DefaultDurationNS             int64
 	DefaultDecodedFieldDurationNS int64
+	TrackTimestampScale           float64
+	TrackTimestampScaleSet        bool
+	TrackOffsetNS                 int64
+	TrackOffsetSet                bool
 	MinCache                      uint64
 	MinCacheSet                   bool
 	MaxCache                      uint64

@@ -291,7 +291,7 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if packet.Keyframe && len(packet.ReferenceBlockTimeNS) != 0 {
 		return ErrInvalidData
 	}
-	if err := validateReferenceBlockTimes(packet.ReferenceBlockTimeNS, m.options.TimecodeScaleNS); err != nil {
+	if err := validateReferenceBlockTimes(packet.ReferenceBlockTimeNS, m.options.TimecodeScaleNS, track); err != nil {
 		return err
 	}
 	maxAdditionID, err := validateBlockAdditions(packet.BlockAdditions)
@@ -335,27 +335,40 @@ func (m *Muxer) WritePacket(packet Packet) error {
 }
 
 func (m *Muxer) writePacketReady(packet Packet, track Track) error {
-	timecode := packet.TimeNS / m.options.TimecodeScaleNS
-	if m.shouldStartCluster(timecode) {
-		if err := m.startCluster(timecode); err != nil {
+	clusterTimecode, err := trackClusterTimecode(packet.TimeNS, track, m.options.TimecodeScaleNS)
+	if err != nil {
+		return err
+	}
+	cueTimecode, err := cueSegmentTimecode(packet.TimeNS, m.options.TimecodeScaleNS)
+	if err != nil {
+		return err
+	}
+	if m.shouldStartCluster(clusterTimecode) {
+		if err := m.startCluster(clusterTimecode); err != nil {
 			return err
 		}
 	}
-	delta := timecode - m.clusterTimecode
-	if delta < math.MinInt16 || delta > math.MaxInt16 {
-		return ErrTimecodeOverflow
+	blockTimecode, err := trackBlockTimecode(packet.TimeNS, track, m.clusterTimecode, m.options.TimecodeScaleNS)
+	if err == ErrTimecodeOverflow {
+		if err := m.startCluster(clusterTimecode); err != nil {
+			return err
+		}
+		blockTimecode, err = trackBlockTimecode(packet.TimeNS, track, m.clusterTimecode, m.options.TimecodeScaleNS)
+	}
+	if err != nil {
+		return err
 	}
 	if err := writeUnknownElements(m.ebml, packet.UnknownClusterElements); err != nil {
 		return err
 	}
 	relativePosition := m.relativeClusterPosition()
 	blockNumber := m.clusterBlock + 1
-	if err := m.writeSimpleBlock(packet, int16(delta), track); err != nil {
+	if err := m.writeSimpleBlock(packet, blockTimecode, track); err != nil {
 		return err
 	}
 	m.clusterBlock = blockNumber
 	m.updateMaxTime(packet)
-	m.addCue(packet, track, timecode, relativePosition, blockNumber)
+	m.addCue(packet, track, cueTimecode, relativePosition, blockNumber)
 	return nil
 }
 
@@ -384,13 +397,13 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 			int64(len(packet.Frames)) > math.MaxInt64/packet.FrameDurationNS) {
 		return ErrInvalidData
 	}
-	if err := validateLacedFrameDuration(packet.FrameDurationNS, m.options.TimecodeScaleNS); err != nil {
+	if err := validateLacedFrameDuration(packet.FrameDurationNS, m.options.TimecodeScaleNS, track); err != nil {
 		return err
 	}
 	if packet.Keyframe && len(packet.ReferenceBlockTimeNS) != 0 {
 		return ErrInvalidData
 	}
-	if err := validateReferenceBlockTimes(packet.ReferenceBlockTimeNS, m.options.TimecodeScaleNS); err != nil {
+	if err := validateReferenceBlockTimes(packet.ReferenceBlockTimeNS, m.options.TimecodeScaleNS, track); err != nil {
 		return err
 	}
 	maxAdditionID, err := validateBlockAdditions(packet.BlockAdditions)
@@ -469,15 +482,28 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 			return err
 		}
 	}
-	timecode := packet.TimeNS / m.options.TimecodeScaleNS
-	if m.shouldStartCluster(timecode) {
-		if err := m.startCluster(timecode); err != nil {
+	clusterTimecode, err := trackClusterTimecode(packet.TimeNS, track, m.options.TimecodeScaleNS)
+	if err != nil {
+		return err
+	}
+	cueTimecode, err := cueSegmentTimecode(packet.TimeNS, m.options.TimecodeScaleNS)
+	if err != nil {
+		return err
+	}
+	if m.shouldStartCluster(clusterTimecode) {
+		if err := m.startCluster(clusterTimecode); err != nil {
 			return err
 		}
 	}
-	delta := timecode - m.clusterTimecode
-	if delta < math.MinInt16 || delta > math.MaxInt16 {
-		return ErrTimecodeOverflow
+	blockTimecode, err := trackBlockTimecode(packet.TimeNS, track, m.clusterTimecode, m.options.TimecodeScaleNS)
+	if err == ErrTimecodeOverflow {
+		if err := m.startCluster(clusterTimecode); err != nil {
+			return err
+		}
+		blockTimecode, err = trackBlockTimecode(packet.TimeNS, track, m.clusterTimecode, m.options.TimecodeScaleNS)
+	}
+	if err != nil {
+		return err
 	}
 	if err := writeUnknownElements(m.ebml, packet.UnknownClusterElements); err != nil {
 		return err
@@ -485,10 +511,10 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 	relativePosition := m.relativeClusterPosition()
 	blockNumber := m.clusterBlock + 1
 	if lacedPacketNeedsBlockGroup(packet) {
-		if err := m.writeLacedBlockGroup(packet, int16(delta), lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
+		if err := m.writeLacedBlockGroup(packet, blockTimecode, lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
 			return err
 		}
-	} else if err := m.writeLacedBlock(idSimpleBlock, packet, int16(delta), lacedSimpleBlockFlags(packet), lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
+	} else if err := m.writeLacedBlock(idSimpleBlock, packet, blockTimecode, lacedSimpleBlockFlags(packet), lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
 		return err
 	}
 	m.clusterBlock = blockNumber
@@ -504,7 +530,7 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 	if endTime > packet.TimeNS {
 		cuePacket.DurationNS = endTime - packet.TimeNS
 	}
-	m.addCue(cuePacket, track, timecode, relativePosition, blockNumber)
+	m.addCue(cuePacket, track, cueTimecode, relativePosition, blockNumber)
 	return nil
 }
 
@@ -1320,9 +1346,10 @@ func isKnownTrackEntryElement(id ebml.ID) bool {
 		idFlagHearingImpaired, idFlagVisualImpaired, idFlagTextDescriptions, idFlagOriginal,
 		idFlagCommentary, idFlagLacing, idName, idLanguage, idLanguageBCP, idCodecID,
 		idCodecName, idCodecPrivate, idCodecDecodeAll, idCodecDelay, idSeekPreRoll,
-		idMinCache, idMaxCache, idTrackOverlay, idTrackTranslate, idContentEncodings,
-		idVideo, idAudio, idDefaultDur, idDefaultDecodedDur, idMaxBlockAdditionID,
-		idBlockAdditionMapping, idVoid, idCRC32:
+		idMinCache, idMaxCache, idTrackTimestampScale, idTrackOffset, idTrackOverlay,
+		idTrackTranslate, idContentEncodings, idVideo, idAudio, idDefaultDur,
+		idDefaultDecodedDur, idMaxBlockAdditionID, idBlockAdditionMapping, idVoid,
+		idCRC32:
 		return true
 	default:
 		return false
@@ -2062,7 +2089,11 @@ func writeCueTrackPosition(w *ebml.Writer, position CueTrackPosition, scaleNS in
 		}
 	}
 	if position.DurationSet {
-		if err := pw.WriteUInt(idCueDuration, scaledDurationTicks(position.DurationNS, scaleNS)); err != nil {
+		durationTicks, err := scaledSegmentDurationTicks(position.DurationNS, scaleNS)
+		if err != nil {
+			return err
+		}
+		if err := pw.WriteUInt(idCueDuration, durationTicks); err != nil {
 			return err
 		}
 	}
@@ -2251,7 +2282,10 @@ func (m *Muxer) clusterDataOffset() int64 {
 }
 
 func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track) error {
-	durationTicks := scaledDurationTicks(packet.DurationNS, m.options.TimecodeScaleNS)
+	durationTicks, err := scaledDurationTicks(packet.DurationNS, m.options.TimecodeScaleNS, track)
+	if err != nil {
+		return err
+	}
 	if durationTicks == 0 &&
 		len(packet.ReferenceBlockTimeNS) == 0 &&
 		packet.ReferencePriority == 0 &&
@@ -2262,7 +2296,6 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 	}
 	var blockPayload []byte
 	var payloadSize int
-	var err error
 	if blockPayloadNeedsBuffering(track) {
 		blockPayload, err = m.muxedBlockPayload(track, packet.Data, packet.ContentEncryptionPartitions)
 		if err != nil {
@@ -2327,7 +2360,7 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 		}
 	}
 	for i := range packet.ReferenceBlockTimeNS {
-		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS)
+		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS, track)
 		referenceSize, err := intElementEncodedSize(idReferenceBlk, ticks)
 		if err != nil {
 			return err
@@ -2389,7 +2422,7 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 		}
 	}
 	for i := range packet.ReferenceBlockTimeNS {
-		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS)
+		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS, track)
 		if err := m.ebml.WriteInt(idReferenceBlk, ticks); err != nil {
 			return err
 		}
@@ -2408,11 +2441,11 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 }
 
 func (m *Muxer) writeLacedBlockGroup(packet LacedPacket, blockTimecode int16, lacing byte, payloadSize uint64, track Track, muxedFrameSizes []int, muxedPayload []byte) error {
-	durationTicks, err := scaledLacedBlockDurationTicks(packet.FrameDurationNS, len(packet.Frames), m.options.TimecodeScaleNS)
+	durationTicks, err := scaledLacedBlockDurationTicks(packet.FrameDurationNS, len(packet.Frames), m.options.TimecodeScaleNS, track)
 	if err != nil {
 		return err
 	}
-	groupSize, err := lacedBlockGroupSize(packet, durationTicks, payloadSize, m.options.TimecodeScaleNS)
+	groupSize, err := lacedBlockGroupSize(packet, durationTicks, payloadSize, m.options.TimecodeScaleNS, track)
 	if err != nil {
 		return err
 	}
@@ -2443,7 +2476,7 @@ func (m *Muxer) writeLacedBlockGroup(packet LacedPacket, blockTimecode int16, la
 		}
 	}
 	for i := range packet.ReferenceBlockTimeNS {
-		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS)
+		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS, track)
 		if err := m.ebml.WriteInt(idReferenceBlk, ticks); err != nil {
 			return err
 		}
@@ -2461,7 +2494,7 @@ func (m *Muxer) writeLacedBlockGroup(packet LacedPacket, blockTimecode int16, la
 	return nil
 }
 
-func lacedBlockGroupSize(packet LacedPacket, durationTicks uint64, lacedBlockPayloadSize uint64, scaleNS int64) (uint64, error) {
+func lacedBlockGroupSize(packet LacedPacket, durationTicks uint64, lacedBlockPayloadSize uint64, scaleNS int64, track Track) (uint64, error) {
 	blockHeaderSize, err := elementEncodedSize(idBlock, lacedBlockPayloadSize)
 	if err != nil {
 		return 0, err
@@ -2508,7 +2541,7 @@ func lacedBlockGroupSize(packet LacedPacket, durationTicks uint64, lacedBlockPay
 		}
 	}
 	for i := range packet.ReferenceBlockTimeNS {
-		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], scaleNS)
+		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], scaleNS, track)
 		referenceSize, err := intElementEncodedSize(idReferenceBlk, ticks)
 		if err != nil {
 			return 0, err
@@ -2821,56 +2854,127 @@ func blockFlags(packet Packet) byte {
 	return 0
 }
 
-func scaledDurationTicks(durationNS int64, scaleNS int64) uint64 {
+func scaledDurationTicks(durationNS int64, scaleNS int64, track Track) (uint64, error) {
 	if durationNS <= 0 || scaleNS <= 0 {
-		return 0
+		return 0, nil
 	}
-	value := durationNS / scaleNS
-	if durationNS%scaleNS != 0 {
-		value++
+	unit, err := trackTickUnitNS(scaleNS, track)
+	if err != nil {
+		return 0, err
 	}
-	return uint64(value)
+	value := math.Ceil(float64(durationNS) / unit)
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > float64(math.MaxUint64) {
+		return 0, ErrInvalidData
+	}
+	return uint64(value), nil
 }
 
-func scaledLacedBlockDurationTicks(frameDurationNS int64, frameCount int, scaleNS int64) (uint64, error) {
+func scaledLacedBlockDurationTicks(frameDurationNS int64, frameCount int, scaleNS int64, track Track) (uint64, error) {
 	if frameDurationNS <= 0 {
 		return 0, nil
 	}
 	if frameCount <= 0 || scaleNS <= 0 {
 		return 0, ErrInvalidData
 	}
-	frameTicks := scaledDurationTicks(frameDurationNS, scaleNS)
+	frameTicks, err := scaledDurationTicks(frameDurationNS, scaleNS, track)
+	if err != nil {
+		return 0, err
+	}
 	if frameTicks > math.MaxUint64/uint64(frameCount) {
 		return 0, ErrInvalidData
 	}
 	return frameTicks * uint64(frameCount), nil
 }
 
-func validateReferenceBlockTimes(references []int64, scaleNS int64) error {
+func validateReferenceBlockTimes(references []int64, scaleNS int64, track Track) error {
 	if scaleNS <= 0 {
 		return ErrInvalidData
 	}
 	for i := range references {
-		if !timecodeScaleAligned(references[i], scaleNS) {
+		if !trackTickAligned(references[i], scaleNS, track) {
 			return ErrInvalidData
 		}
-		_ = scaledReferenceBlockTicks(references[i], scaleNS)
+		if _, err := checkedScaledReferenceBlockTicks(references[i], scaleNS, track); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func validateLacedFrameDuration(frameDurationNS int64, scaleNS int64) error {
+func validateLacedFrameDuration(frameDurationNS int64, scaleNS int64, track Track) error {
 	if scaleNS <= 0 {
 		return ErrInvalidData
 	}
-	if frameDurationNS > 0 && !timecodeScaleAligned(frameDurationNS, scaleNS) {
+	if frameDurationNS > 0 && !trackTickAligned(frameDurationNS, scaleNS, track) {
 		return ErrInvalidData
 	}
 	return nil
 }
 
-func timecodeScaleAligned(value int64, scaleNS int64) bool {
-	return scaleNS > 0 && value%scaleNS == 0
+func trackTickAligned(value int64, scaleNS int64, track Track) bool {
+	ticks, err := checkedScaledReferenceBlockTicks(value, scaleNS, track)
+	if err != nil {
+		return false
+	}
+	roundTrip, err := scaleTrackTicksNS(ticks, scaleNS, track)
+	return err == nil && roundTrip == value
+}
+
+func scaledSegmentDurationTicks(durationNS int64, scaleNS int64) (uint64, error) {
+	return scaledDurationTicks(durationNS, scaleNS, Track{})
+}
+
+func trackTickUnitNS(scaleNS int64, track Track) (float64, error) {
+	if scaleNS <= 0 {
+		return 0, ErrInvalidData
+	}
+	scale := trackTimestampScale(track)
+	if scale <= 0 || math.IsNaN(scale) || math.IsInf(scale, 0) {
+		return 0, ErrInvalidData
+	}
+	unit := float64(scaleNS) * scale
+	if unit <= 0 || math.IsNaN(unit) || math.IsInf(unit, 0) {
+		return 0, ErrInvalidData
+	}
+	return unit, nil
+}
+
+func cueSegmentTimecode(timeNS int64, scaleNS int64) (int64, error) {
+	if timeNS < 0 || scaleNS <= 0 {
+		return 0, ErrInvalidData
+	}
+	return timeNS / scaleNS, nil
+}
+
+func trackClusterTimecode(timeNS int64, track Track, scaleNS int64) (int64, error) {
+	relativeNS, err := subInt64(timeNS, track.TrackOffsetNS)
+	if err != nil || scaleNS <= 0 {
+		return 0, ErrInvalidData
+	}
+	if relativeNS <= 0 {
+		return 0, nil
+	}
+	return relativeNS / scaleNS, nil
+}
+
+func trackBlockTimecode(timeNS int64, track Track, clusterTimecode int64, scaleNS int64) (int16, error) {
+	relativeNS, err := subInt64(timeNS, track.TrackOffsetNS)
+	if err != nil {
+		return 0, ErrInvalidData
+	}
+	unit, err := trackTickUnitNS(scaleNS, track)
+	if err != nil {
+		return 0, err
+	}
+	segmentTicks := float64(relativeNS) / float64(scaleNS)
+	blockTicks := math.Round((segmentTicks - float64(clusterTimecode)) / trackTimestampScale(track))
+	if math.IsNaN(blockTicks) || math.IsInf(blockTicks, 0) || blockTicks < math.MinInt16 || blockTicks > math.MaxInt16 {
+		return 0, ErrTimecodeOverflow
+	}
+	if math.Abs(blockTicks*unit) > float64(math.MaxInt64) {
+		return 0, ErrInvalidData
+	}
+	return int16(blockTicks), nil
 }
 
 func validateBlockAdditions(additions []BlockAddition) (uint64, error) {
@@ -2931,8 +3035,62 @@ func maxBlockAdditionMappingID(mappings []BlockAdditionMapping) (uint64, error) 
 	return maxID, nil
 }
 
-func scaledReferenceBlockTicks(timeNS int64, scaleNS int64) int64 {
-	return timeNS / scaleNS
+func scaledReferenceBlockTicks(timeNS int64, scaleNS int64, track Track) int64 {
+	ticks, _ := checkedScaledReferenceBlockTicks(timeNS, scaleNS, track)
+	return ticks
+}
+
+func checkedScaledReferenceBlockTicks(timeNS int64, scaleNS int64, track Track) (int64, error) {
+	unit, err := trackTickUnitNS(scaleNS, track)
+	if err != nil {
+		return 0, err
+	}
+	value := math.Round(float64(timeNS) / unit)
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < float64(math.MinInt64) || value > float64(math.MaxInt64) {
+		return 0, ErrInvalidData
+	}
+	return int64(value), nil
+}
+
+func scaleTrackTicksNS(ticks int64, scaleNS int64, track Track) (int64, error) {
+	unit, err := trackTickUnitNS(scaleNS, track)
+	if err != nil {
+		return 0, err
+	}
+	value := math.Round(float64(ticks) * unit)
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < float64(math.MinInt64) || value > float64(math.MaxInt64) {
+		return 0, ErrInvalidData
+	}
+	return int64(value), nil
+}
+
+func trackBlockTimestampNS(clusterTimecode int64, blockTimecode int64, scaleNS int64, track Track) (int64, error) {
+	if scaleNS <= 0 {
+		return 0, ErrInvalidData
+	}
+	scale := trackTimestampScale(track)
+	if scale <= 0 || math.IsNaN(scale) || math.IsInf(scale, 0) {
+		return 0, ErrInvalidData
+	}
+	value := math.Round((float64(clusterTimecode) + float64(blockTimecode)*scale) * float64(scaleNS))
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < float64(math.MinInt64) || value > float64(math.MaxInt64) {
+		return 0, ErrInvalidData
+	}
+	return addInt64(int64(value), track.TrackOffsetNS)
+}
+
+func addInt64(left int64, right int64) (int64, error) {
+	if (right > 0 && left > math.MaxInt64-right) || (right < 0 && left < math.MinInt64-right) {
+		return 0, ErrInvalidData
+	}
+	return left + right, nil
+}
+
+func subInt64(left int64, right int64) (int64, error) {
+	if (right > 0 && left < math.MinInt64+right) || (right < 0 && left > math.MaxInt64+right) {
+		return 0, ErrInvalidData
+	}
+	return left - right, nil
 }
 
 func lacingFlag(mode LacingMode, frames [][]byte, sizes []int) (byte, error) {
@@ -3641,6 +3799,16 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 			return err
 		}
 	}
+	if track.TrackTimestampScaleSet || track.TrackTimestampScale != 0 {
+		if err := tw.WriteFloat64(idTrackTimestampScale, trackTimestampScale(track)); err != nil {
+			return err
+		}
+	}
+	if track.TrackOffsetSet || track.TrackOffsetNS != 0 {
+		if err := tw.WriteInt(idTrackOffset, track.TrackOffsetNS); err != nil {
+			return err
+		}
+	}
 	if track.MaxBlockAdditionID != 0 {
 		if err := tw.WriteUInt(idMaxBlockAdditionID, track.MaxBlockAdditionID); err != nil {
 			return err
@@ -4169,6 +4337,9 @@ func validateTrack(track Track) error {
 	if track.DefaultDurationNS < 0 || track.DefaultDecodedFieldDurationNS < 0 || track.CodecDelayNS < 0 || track.SeekPreRollNS < 0 {
 		return ErrInvalidTrack
 	}
+	if err := validateTrackTiming(track); err != nil {
+		return err
+	}
 	for i := range track.TrackOverlays {
 		if track.TrackOverlays[i] == 0 {
 			return ErrInvalidTrack
@@ -4320,6 +4491,21 @@ func validateTrack(track Track) error {
 		return ErrInvalidTrack
 	}
 	return nil
+}
+
+func validateTrackTiming(track Track) error {
+	scale := trackTimestampScale(track)
+	if scale <= 0 || math.IsNaN(scale) || math.IsInf(scale, 0) {
+		return ErrInvalidTrack
+	}
+	return nil
+}
+
+func trackTimestampScale(track Track) float64 {
+	if track.TrackTimestampScaleSet || track.TrackTimestampScale != 0 {
+		return track.TrackTimestampScale
+	}
+	return 1
 }
 
 func validateTrackTranslate(translate TrackTranslate) error {

@@ -58,6 +58,10 @@ Current milestone:
 - Seekable Segment and Cluster size patching when the writer implements
   `io.Seeker`.
 - Seekable Info Duration patching when packet timestamps/durations are known.
+- Track-level `TrackTimestampScale` and `TrackOffset` metadata, with
+  non-default Track Tick conversion applied to block timestamps,
+  `BlockDuration`, laced BlockGroup frame durations, and `ReferenceBlock`
+  offsets.
 - SeekHead writing and parsing for seekable files.
 - Cues writing and parsing for seekable files, including `CueRelativePosition`
   for block-level precision inside clusters. The default writer policy indexes
@@ -236,6 +240,12 @@ The muxer converts `TimeNS` into Segment timecodes using `TimecodeScaleNS`.
 The default scale is 1 ms, matching common Matroska/WebM practice. Tests use
 timestamps that round-trip exactly at that scale. Callers that need nanosecond
 precision can set `TimecodeScaleNS` to `1`.
+When a track carries `TrackTimestampScale`, block-relative timestamps,
+`BlockDuration`, and `ReferenceBlock` values are stored in Track Ticks using
+that track scale. Demuxers expose the resulting packet timestamps and
+durations in nanoseconds. `TrackOffsetNS` is added to block presentation
+timestamps on demux and subtracted when muxing packet times back into block
+timestamps.
 
 SimpleBlock and Block store a signed 16-bit timestamp relative to the active
 Cluster. The muxer starts a new Cluster when the relative timestamp would
@@ -350,7 +360,8 @@ after a packet has entered that pending queue is rejected, and `Close` returns
 WebM accepts only Opus, Vorbis, VP8, VP9, and AV1. It rejects H.264, H.265,
 FLAC, AAC, PCM variants, repair streams, retransmission streams, FEC streams,
 non-WebM Matroska document types, Matroska-only content compression, content
-signatures, non-AES encryption, AES-CBC, and non-block content encoding scopes.
+signatures, non-AES encryption, AES-CBC, non-block content encoding scopes,
+TrackTimestampScale, and TrackOffset.
 WebM content encryption is limited to block-scope AES-CTR. VP8 tracks must not
 carry codec-private data; Vorbis tracks must carry Matroska/Xiph-laced private
 data; VP9 codec-private data, when present, must use the WebM VP9 codec feature

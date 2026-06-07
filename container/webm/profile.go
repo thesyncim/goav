@@ -173,6 +173,9 @@ func validateTrack(track Track) error {
 	default:
 		return ErrUnsupportedWebMCodec
 	}
+	if track.TrackTimestampScaleSet || track.TrackTimestampScale != 0 || track.TrackOffsetSet || track.TrackOffsetNS != 0 {
+		return ErrUnsupportedWebMTrackMetadata
+	}
 	if err := validateCodecPrivate(track); err != nil {
 		return err
 	}

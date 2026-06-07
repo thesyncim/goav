@@ -1127,7 +1127,7 @@ func (d *Demuxer) readIndexedBlockGroup(reader *ebml.Reader, header ebml.Header,
 	groupReader := ebml.NewReader(&limit, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
 	var info indexedBlockInfo
 	haveBlock := false
-	durationNS := int64(0)
+	durationTicks := uint64(0)
 	for limit.N > 0 {
 		child, err := groupReader.ReadHeader()
 		if err != nil {
@@ -1146,10 +1146,7 @@ func (d *Demuxer) readIndexedBlockGroup(reader *ebml.Reader, header ebml.Header,
 			if err != nil {
 				return err
 			}
-			durationNS, err = scaleCueTicks(value, d.timecodeScaleNS)
-			if err != nil {
-				return err
-			}
+			durationTicks = value
 		default:
 			if err := skipElement(groupReader, child); err != nil {
 				return err
@@ -1161,6 +1158,16 @@ func (d *Demuxer) readIndexedBlockGroup(reader *ebml.Reader, header ebml.Header,
 	}
 	if !haveBlock {
 		return ErrInvalidData
+	}
+	durationNS := int64(0)
+	if durationTicks != 0 {
+		if durationTicks > uint64(math.MaxInt64) {
+			return ErrInvalidData
+		}
+		durationNS, err = scaleTrackTicksNS(int64(durationTicks), d.timecodeScaleNS, d.tracks[info.TrackIndex])
+		if err != nil {
+			return err
+		}
 	}
 	if durationNS > 0 && info.FrameCount > 1 {
 		info.FrameDurationNS = durationNS / int64(info.FrameCount)
@@ -1198,14 +1205,14 @@ func (d *Demuxer) readIndexedBlock(reader *ebml.Reader, header ebml.Header, clus
 		return indexedBlockInfo{}, ErrInvalidData
 	}
 	blockTimecode := int16(binary.BigEndian.Uint16(d.blockHeader[:2]))
-	timecode := clusterTimecode + int64(blockTimecode)
-	if timecode < 0 || timecode > math.MaxInt64/d.timecodeScaleNS {
+	timeNS, err := trackBlockTimestampNS(clusterTimecode, int64(blockTimecode), d.timecodeScaleNS, track)
+	if err != nil || timeNS < 0 {
 		return indexedBlockInfo{}, ErrInvalidData
 	}
 	info := indexedBlockInfo{
 		TrackID:    trackNumber,
 		TrackIndex: trackIndex,
-		TimeNS:     timecode * d.timecodeScaleNS,
+		TimeNS:     timeNS,
 		FrameCount: 1,
 	}
 	if lacing != 0 {
@@ -4087,6 +4094,8 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 	maxCacheSeen := false
 	defaultDurationSeen := false
 	defaultDecodedDurationSeen := false
+	trackTimestampScaleSeen := false
+	trackOffsetSeen := false
 	maxBlockAdditionIDSeen := false
 	codecDecodeAllSeen := false
 	codecDelaySeen := false
@@ -4319,6 +4328,29 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 				return Track{}, err
 			}
 			track.DefaultDecodedFieldDurationNS = value
+		case idTrackTimestampScale:
+			if err := markElementSeen(&trackTimestampScaleSeen); err != nil {
+				return Track{}, err
+			}
+			value, err := readFloatPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+				return Track{}, ErrInvalidData
+			}
+			track.TrackTimestampScale = value
+			track.TrackTimestampScaleSet = true
+		case idTrackOffset:
+			if err := markElementSeen(&trackOffsetSeen); err != nil {
+				return Track{}, err
+			}
+			value, err := readIntPayload(master.Reader(), child.Size.Value)
+			if err != nil {
+				return Track{}, err
+			}
+			track.TrackOffsetNS = value
+			track.TrackOffsetSet = true
 		case idMaxBlockAdditionID:
 			if err := markElementSeen(&maxBlockAdditionIDSeen); err != nil {
 				return Track{}, err
@@ -5631,13 +5663,6 @@ func (d *Demuxer) readSimpleBlock(header ebml.Header, dst *Packet) error {
 	return d.readBlockPayload(d.reader, header.Size.Value, dst, true)
 }
 
-func scaleReferenceBlockTimeNS(ticks int64, scaleNS int64) (int64, error) {
-	if scaleNS <= 0 || ticks > math.MaxInt64/scaleNS || ticks < math.MinInt64/scaleNS {
-		return 0, ErrInvalidData
-	}
-	return ticks * scaleNS, nil
-}
-
 func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 	if header.Size.Unknown {
 		return ErrInvalidData
@@ -5717,11 +5742,7 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 			if err != nil {
 				return err
 			}
-			timeNS, err := scaleReferenceBlockTimeNS(ticks, d.timecodeScaleNS)
-			if err != nil {
-				return err
-			}
-			dst.ReferenceBlockTimeNS = append(dst.ReferenceBlockTimeNS, timeNS)
+			dst.ReferenceBlockTimeNS = append(dst.ReferenceBlockTimeNS, ticks)
 			referenceSeen = true
 		case idDiscardPad:
 			if err := markElementSeen(&discardSeen); err != nil {
@@ -5750,11 +5771,35 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 	if !haveBlock {
 		return ErrInvalidData
 	}
+	metadataTrackID := dst.TrackID
+	if metadataTrackID == 0 && d.laceFrameCount > 0 {
+		metadataTrackID = d.laceTrackID
+	}
+	if metadataTrackID == 0 {
+		if payloadErr != nil {
+			return payloadErr
+		}
+		return ErrUnknownTrack
+	}
+	track, ok := d.track(metadataTrackID)
+	if !ok {
+		return ErrUnknownTrack
+	}
+	for i := range dst.ReferenceBlockTimeNS {
+		timeNS, err := scaleTrackTicksNS(dst.ReferenceBlockTimeNS[i], d.timecodeScaleNS, track)
+		if err != nil {
+			return err
+		}
+		dst.ReferenceBlockTimeNS[i] = timeNS
+	}
 	if durationTicks != 0 {
-		if durationTicks > uint64(math.MaxInt64)/uint64(d.timecodeScaleNS) {
+		if durationTicks > uint64(math.MaxInt64) {
 			return ErrInvalidData
 		}
-		durationNS := int64(durationTicks) * d.timecodeScaleNS
+		durationNS, err := scaleTrackTicksNS(int64(durationTicks), d.timecodeScaleNS, track)
+		if err != nil {
+			return err
+		}
 		if d.lastLaceFrameCount > 0 {
 			durationNS /= int64(d.lastLaceFrameCount)
 			d.laceDurationNS = durationNS
@@ -5768,10 +5813,6 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 	if maxAdditionID, err := validateBlockAdditions(dst.BlockAdditions); err != nil {
 		return err
 	} else if maxAdditionID != 0 {
-		track, ok := d.track(dst.TrackID)
-		if !ok {
-			return ErrUnknownTrack
-		}
 		if maxAdditionID > track.MaxBlockAdditionID {
 			return ErrInvalidData
 		}
@@ -5922,12 +5963,12 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 		return ErrInvalidData
 	}
 	blockTimecode := int16(binary.BigEndian.Uint16(d.blockHeader[:2]))
-	timecode := d.clusterTimecode + int64(blockTimecode)
-	if timecode < 0 {
+	timeNS, err := trackBlockTimestampNS(d.clusterTimecode, int64(blockTimecode), d.timecodeScaleNS, track)
+	if err != nil || timeNS < 0 {
 		return ErrInvalidData
 	}
 	if lacing != 0 {
-		return d.readLacedBlockPayload(track, trackNumber, timecode, flags, lacing, dst, simple)
+		return d.readLacedBlockPayload(track, trackNumber, timeNS, flags, lacing, dst, simple)
 	}
 	frameSize := int(d.blockLimit.N)
 	if len(track.ContentEncodings) != 0 {
@@ -5956,7 +5997,7 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 		return err
 	}
 	dst.TrackID = trackNumber
-	dst.TimeNS = timecode * d.timecodeScaleNS
+	dst.TimeNS = timeNS
 	if simple {
 		dst.Keyframe = flags&simpleBlockKeyframe != 0
 	}
@@ -6248,7 +6289,7 @@ func drainLimited(r *io.LimitedReader) error {
 	return err
 }
 
-func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timecode int64, flags byte, lacing byte, dst *Packet, simple bool) error {
+func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timeNS int64, flags byte, lacing byte, dst *Packet, simple bool) error {
 	frameCountByte, err := d.readBlockByte()
 	if err != nil {
 		return err
@@ -6313,7 +6354,7 @@ func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timecode in
 		}
 		d.laceContent = encoding
 	}
-	d.laceTimeNS = timecode * d.timecodeScaleNS
+	d.laceTimeNS = timeNS
 	d.laceDurationNS = d.defaultDurationNS(trackID)
 	d.laceFrameCount = frameCount
 	d.laceFrameIndex = 0
