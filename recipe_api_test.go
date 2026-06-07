@@ -279,6 +279,15 @@ func tapReportByName(taps []goav.TapReport, name string) (goav.TapReport, bool) 
 	return goav.TapReport{}, false
 }
 
+func operationReportByKind(operations []goav.OperationReport, kind goav.OperationKind) (goav.OperationReport, bool) {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return operations[i], true
+		}
+	}
+	return goav.OperationReport{}, false
+}
+
 func recordJob(input goav.InputSpec, outputs ...goav.EndpointSpec) *goav.Job {
 	return goav.From(input).Copy().To(outputs...)
 }
@@ -724,6 +733,95 @@ func TestExplainReportsBranchCapsFromLiveCodecIntent(t *testing.T) {
 		tap.Caps.Channels != goav.Stereo ||
 		!tap.Caps.Realtime {
 		t.Fatalf("tap caps=%+v, want live decoded audio frame caps", tap.Caps)
+	}
+}
+
+func TestExplainReportsOperationCapsThroughResizeAndEncode(t *testing.T) {
+	rt := goav.New(
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
+				Index: 0,
+				ID:    "video",
+				Type:  av.MediaVideo,
+				Codec: av.CodecParameters{
+					ID:          av.CodecVP8,
+					Type:        av.MediaVideo,
+					Width:       1920,
+					Height:      1080,
+					PixelFormat: av.PixelFormatYUV420P,
+				},
+			}}})
+			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
+			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
+		}),
+		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
+			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
+		}),
+		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+			registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResize, Input: av.MediaVideo, Output: av.MediaVideo}, recipeAPIFilterFactory{})
+		}),
+	)
+
+	web := goav.Target("web", goav.FileOutput("web.ogg", io.Discard))
+	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Video().
+		Decode().
+		Branches(
+			goav.Branch("preview").
+				Resize(1280, 720).
+				VP9(2_000_000).
+				Tap("video.encoded").
+				To(web),
+		).
+		Explain(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch, ok := branchByName(report.Branches, "preview")
+	if !ok {
+		t.Fatalf("branches=%+v, want preview", report.Branches)
+	}
+	if branch.Caps.Domain != goav.DomainPacket ||
+		branch.Caps.MediaKind != av.MediaVideo ||
+		branch.Caps.Codec != av.CodecVP8 ||
+		branch.Caps.Width != 1920 ||
+		branch.Caps.Height != 1080 ||
+		branch.Caps.PixelFormat != av.PixelFormatYUV420P {
+		t.Fatalf("branch caps=%+v, want probed VP8 1920x1080 packet caps", branch.Caps)
+	}
+	resize, ok := operationReportByKind(branch.Operations, goav.OpTransform)
+	if !ok {
+		t.Fatalf("operations=%+v, want resize operation", branch.Operations)
+	}
+	if resize.Caps.Domain != goav.DomainFrame ||
+		resize.Caps.MediaKind != av.MediaVideo ||
+		resize.Caps.Codec != av.CodecVP8 ||
+		resize.Caps.Width != 1280 ||
+		resize.Caps.Height != 720 ||
+		resize.Caps.PixelFormat != av.PixelFormatYUV420P {
+		t.Fatalf("resize caps=%+v, want frame VP8 1280x720 caps", resize.Caps)
+	}
+	encode, ok := operationReportByKind(branch.Operations, goav.OpEncode)
+	if !ok {
+		t.Fatalf("operations=%+v, want encode operation", branch.Operations)
+	}
+	if encode.Caps.Domain != goav.DomainPacket ||
+		encode.Caps.MediaKind != av.MediaVideo ||
+		encode.Caps.StreamID != "preview" ||
+		encode.Caps.Codec != av.CodecVP9 ||
+		encode.Caps.Width != 1280 ||
+		encode.Caps.Height != 720 ||
+		encode.Caps.PixelFormat != av.PixelFormatYUV420P {
+		t.Fatalf("encode caps=%+v, want packet VP9 1280x720 caps", encode.Caps)
+	}
+	tap, ok := tapReportByName(report.Taps, "video.encoded")
+	if !ok {
+		t.Fatalf("taps=%+v, want video.encoded", report.Taps)
+	}
+	if tap.Caps != encode.Caps {
+		t.Fatalf("tap caps=%+v, want encode caps %+v", tap.Caps, encode.Caps)
 	}
 }
 

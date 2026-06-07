@@ -44,11 +44,11 @@ make the implementation match the composable planner promise.
    incompatibilities, and mux-output conflicts before runtime execution. Codec
    descriptors now preflight known decoder and encoder media/sample/pixel
    compatibility for planned and runtime branches. Branch planning now carries
-   stream caps from probed inputs and live codec intent into `Explain(ctx)` and
-   planned taps. Filter descriptor metadata now feeds `Explain(ctx)` and
-   descriptor media mismatches plus config-specific
-   pixel/sample-format and resize-mode mismatches fail during planned and
-   runtime branch preflight. Format descriptors now report container
+   stream caps from probed inputs and live codec intent into `Explain(ctx)`,
+   operation output caps, and planned taps. Filter descriptor metadata now feeds
+   `Explain(ctx)` and descriptor media mismatches plus config-specific
+   pixel/sample-format and resize-mode mismatches fail during planned and runtime
+   branch preflight. Format descriptors now report container
    media/codecs/stream-count capabilities and descriptor-backed mux target
    conflicts fail before planned or runtime graph mutation.
 5. Keep custom composition orthogonal: application-local codecs use

@@ -285,8 +285,8 @@ packet-domain taps.
 ## Explain And Inspect
 
 `Explain(ctx)` reports the workflow: inputs, branches, targets, taps, stream
-caps, adapter requirements with capability details, warnings, and the planned
-graph.
+caps, operation output caps, adapter requirements with capability details,
+warnings, and the planned graph.
 
 ```go
 report, err := job.Explain(ctx)

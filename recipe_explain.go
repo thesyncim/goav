@@ -80,6 +80,7 @@ type OperationReport struct {
 	Kind      OperationKind
 	Component string
 	Detail    string
+	Caps      StreamCaps
 }
 
 type Decision struct {
@@ -252,9 +253,21 @@ func explainStreamOperations(operations []StreamOperation) []OperationReport {
 			Kind:      operations[i].Kind,
 			Component: operations[i].Component,
 			Detail:    streamOperationDetail(operations[i]),
+			Caps:      streamOperationCaps(operations[i]),
 		})
 	}
 	return reports
+}
+
+func streamOperationCaps(operation StreamOperation) StreamCaps {
+	switch operation.Kind {
+	case OpTransform:
+		return streamCapsFromTransform(operation.Transform)
+	case OpEncode:
+		return streamCapsFromCodecSpec(operation.Encode, DomainPacket)
+	default:
+		return StreamCaps{}
+	}
 }
 
 func streamOperationDetail(operation StreamOperation) string {
@@ -298,6 +311,7 @@ func explainOperations(operations []planOperation) []OperationReport {
 			Kind:      operation.Kind,
 			Component: operation.Component,
 			Detail:    operation.Detail,
+			Caps:      operation.Caps,
 		})
 	}
 	return reports

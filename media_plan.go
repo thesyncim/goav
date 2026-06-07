@@ -171,6 +171,7 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 			steps = nil
 		}
 		operations, branchDecisions := planStreamOperations(state.intent.Inputs, stream, branchName, steps)
+		operations = planOperationsWithCaps(branchName, caps, operations)
 		branches = append(branches, planBranch{
 			Name:       branchName,
 			Input:      firstInputName(state.intent.Inputs),
@@ -230,16 +231,18 @@ func planCopyBranches(intent Intent, outputs []planOutput) ([]planBranch, []plan
 	for i := range intent.Inputs {
 		input := intent.Inputs[i]
 		name := firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i))
+		caps := streamCapsFromInputIntent(input, DomainPacket)
 		operations := planInputOperations(input)
 		operations = append(operations, planOperation{
 			Kind:      OpCopy,
 			Component: "packet-copy",
 			Detail:    "preserve encoded packets",
 		})
+		operations = planOperationsWithCaps(name, caps, operations)
 		branches = append(branches, planBranch{
 			Name:       firstNonEmpty(name, fmt.Sprintf("copy-%d", i)),
 			Input:      name,
-			Caps:       streamCapsFromInputIntent(input, DomainPacket),
+			Caps:       caps,
 			Operations: operations,
 			Outputs:    append([]string(nil), outputNames...),
 		})
@@ -294,6 +297,7 @@ func planStreamOperations(inputs []InputIntent, stream StreamIntent, branchName 
 			Kind:      OpEncode,
 			Component: string(stream.Encode.ID),
 			Detail:    "frames to packets",
+			Caps:      streamCapsFromCodecSpec(stream.Encode, DomainPacket),
 		})
 		decisions = append(decisions, planDecision{
 			Code:    "encode_required",
@@ -346,6 +350,7 @@ func planOperationFromStreamOperation(operation StreamOperation) planOperation {
 			Kind:      OpEncode,
 			Component: string(operation.Encode.ID),
 			Detail:    "frames to packets",
+			Caps:      streamCapsFromCodecSpec(operation.Encode, DomainPacket),
 		}
 	case OpDecode:
 		return planOperation{
@@ -390,12 +395,14 @@ func planInputOperations(input InputIntent) []planOperation {
 			Kind:      OpDepacketize,
 			Component: component,
 			Detail:    "receive RTP packets",
+			Caps:      streamCapsFromInputIntent(input, DomainPacket),
 		}}
 	default:
 		return []planOperation{{
 			Kind:      OpDemux,
 			Component: "container",
 			Detail:    "read packets from input",
+			Caps:      streamCapsFromInputIntent(input, DomainPacket),
 		}}
 	}
 }
@@ -492,16 +499,20 @@ func planTaps(branches []planBranch) []planTap {
 		for j := range branch.Operations {
 			operation := branch.Operations[j]
 			if operation.Kind == OpCopy {
-				currentCaps = planCapsAfterOperation(currentCaps, branch, operation)
+				currentCaps = planCapsForOperation(currentCaps, branch, operation)
 				continue
 			}
 			if operation.Kind != OpTap {
-				currentCaps = planCapsAfterOperation(currentCaps, branch, operation)
+				currentCaps = planCapsForOperation(currentCaps, branch, operation)
 				currentNode = planOperationNodeName(branch.Name, operation, j)
 				continue
 			}
 			name := operation.Component
-			tapCaps := normalizeTapCaps(currentCaps)
+			tapCaps := operation.Caps
+			if streamCapsEmpty(tapCaps) {
+				tapCaps = currentCaps
+			}
+			tapCaps = normalizeTapCaps(tapCaps)
 			taps = append(taps, planTap{
 				Name:      name,
 				Node:      pipeline.NodeRef(currentNode),
@@ -513,6 +524,36 @@ func planTaps(branches []planBranch) []planTap {
 		}
 	}
 	return taps
+}
+
+func planOperationsWithCaps(branchName string, baseCaps StreamCaps, operations []planOperation) []planOperation {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := append([]planOperation(nil), operations...)
+	caps := normalizeTapCaps(baseCaps)
+	branch := planBranch{Name: branchName}
+	for i := range out {
+		operation := out[i]
+		if operation.Kind == OpTap {
+			if streamCapsEmpty(operation.Caps) {
+				operation.Caps = caps
+			}
+			out[i] = operation
+			continue
+		}
+		caps = planCapsAfterOperation(caps, branch, operation)
+		operation.Caps = caps
+		out[i] = operation
+	}
+	return out
+}
+
+func planCapsForOperation(current StreamCaps, branch planBranch, operation planOperation) StreamCaps {
+	if !streamCapsEmpty(operation.Caps) {
+		return operation.Caps
+	}
+	return planCapsAfterOperation(current, branch, operation)
 }
 
 func planCapsAfterOperation(caps StreamCaps, branch planBranch, operation planOperation) StreamCaps {
@@ -628,6 +669,18 @@ func streamCapsFromCodecParameters(parameters av.CodecParameters) StreamCaps {
 	}
 }
 
+func streamCapsFromCodecSpec(spec CodecSpec, domain MediaDomain) StreamCaps {
+	caps := streamCapsFromCodecParameters(spec.Parameters)
+	caps.Domain = domain
+	if caps.MediaKind == "" {
+		caps.MediaKind = firstNonEmptyMedia(spec.Type, codecMedia(spec.ID))
+	}
+	if caps.Codec == "" {
+		caps.Codec = spec.ID
+	}
+	return caps
+}
+
 func streamCapsFromTransform(transform TransformSpec) StreamCaps {
 	if transform.Resize != nil {
 		return StreamCaps{
@@ -686,6 +739,21 @@ func mergeStreamCaps(base StreamCaps, next StreamCaps) StreamCaps {
 	}
 	base.Realtime = base.Realtime || next.Realtime
 	return base
+}
+
+func streamCapsEmpty(caps StreamCaps) bool {
+	return caps.Domain == "" &&
+		caps.MediaKind == "" &&
+		caps.StreamID == "" &&
+		caps.Codec == "" &&
+		caps.Format == "" &&
+		caps.Width == 0 &&
+		caps.Height == 0 &&
+		caps.PixelFormat == "" &&
+		caps.SampleRate == 0 &&
+		caps.Channels == 0 &&
+		caps.SampleFormat == "" &&
+		!caps.Realtime
 }
 
 func firstNonEmptyCodec(values ...av.CodecID) av.CodecID {
