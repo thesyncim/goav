@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -190,6 +191,12 @@ func TestExternalFFmpegWebMPacketRoundTrip(t *testing.T) {
 
 	assertExternalWebMCodecPackets(t, "ffmpeg ffprobe", probeExternalWebMCodecPackets(t, ffprobe, remuxed), externalWebMCodecPacketsForPayloads(t, wantPayloads))
 	assertLocalWebMPacketPayloads(t, "ffmpeg local", readLocalWebMPacketPayloads(t, remuxed), wantPayloads)
+}
+
+func TestExternalMKVExtractWebMTimestamps(t *testing.T) {
+	mkvextract := requireTool(t, "mkvextract")
+	file, want := writePacketOracleWebM(t)
+	assertMKVExtractWebMTimestamps(t, mkvextract, file, expectedWebMTimestampsByStream(want))
 }
 
 func TestExternalMKVToolNixCompat(t *testing.T) {
@@ -473,6 +480,97 @@ func assertExternalWebMPackets(t testing.TB, name string, got []externalWebMPack
 			t.Fatalf("%s packet %d = %+v, want %+v", name, i, got[i], want[i])
 		}
 	}
+}
+
+func assertMKVExtractWebMTimestamps(t testing.TB, tool string, file string, want map[int][]int64) {
+	t.Helper()
+	outDir := t.TempDir()
+	args := []string{file, "timestamps_v2"}
+	paths := make(map[int]string, len(want))
+	for stream := range want {
+		path := filepath.Join(outDir, fmt.Sprintf("track-%d.timestamps.txt", stream))
+		paths[stream] = path
+		args = append(args, fmt.Sprintf("%d:%s", stream, path))
+	}
+	runExternal(t, tool, args...)
+	for stream, path := range paths {
+		got := readWebMTimestampsV2(t, path)
+		if !equalWebMInt64Slices(got, want[stream]) {
+			t.Fatalf("mkvextract stream %d timestamps = %v, want %v", stream, got, want[stream])
+		}
+	}
+}
+
+func expectedWebMTimestampsByStream(packets []externalWebMPacket) map[int][]int64 {
+	timestamps := make(map[int][]int64)
+	lastEnd := make(map[int]int64)
+	for i := range packets {
+		timestamps[packets[i].StreamIndex] = append(timestamps[packets[i].StreamIndex], packets[i].TimeNS)
+		if packets[i].DurationNS > 0 {
+			lastEnd[packets[i].StreamIndex] = packets[i].TimeNS + packets[i].DurationNS
+		}
+	}
+	for stream, end := range lastEnd {
+		timestamps[stream] = append(timestamps[stream], end)
+	}
+	return timestamps
+}
+
+func readWebMTimestampsV2(t testing.TB, file string) []int64 {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var timestamps []int64
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		timeNS, err := parseWebMTimestampV2NS(line)
+		if err != nil {
+			t.Fatalf("parse %s line %q: %v", file, line, err)
+		}
+		timestamps = append(timestamps, timeNS)
+	}
+	return timestamps
+}
+
+func parseWebMTimestampV2NS(value string) (int64, error) {
+	parts := strings.SplitN(value, ".", 2)
+	milliseconds, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	nanoseconds := milliseconds * 1_000_000
+	if len(parts) == 2 {
+		frac := parts[1]
+		if len(frac) > 6 {
+			frac = frac[:6]
+		}
+		for len(frac) < 6 {
+			frac += "0"
+		}
+		fracNS, err := strconv.ParseInt(frac, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		nanoseconds += fracNS
+	}
+	return nanoseconds, nil
+}
+
+func equalWebMInt64Slices(left []int64, right []int64) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func assertExternalWebMCodecPackets(t testing.TB, name string, got []externalWebMCodecPacket, want []externalWebMCodecPacket) {
