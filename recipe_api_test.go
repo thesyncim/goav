@@ -289,7 +289,11 @@ func operationReportByKind(operations []goav.OperationReport, kind goav.Operatio
 }
 
 func recordJob(input goav.InputSpec, outputs ...goav.EndpointSpec) *goav.Job {
-	return goav.From(input).Copy().To(outputs...)
+	destinations := make([]goav.TargetOrEndpoint, 0, len(outputs))
+	for i := range outputs {
+		destinations = append(destinations, outputs[i])
+	}
+	return goav.From(input).Copy().To(destinations...)
 }
 
 func decodeJob(input goav.InputSpec, output goav.EndpointSpec) *goav.Job {
@@ -1675,6 +1679,27 @@ func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	intent := job.Intent()
 	if intent.Name != "from" || len(intent.Inputs) != 1 || len(intent.Targets) != 1 {
 		t.Fatalf("intent: %+v", intent)
+	}
+}
+
+func TestRecordRecipeCanWriteToTypedTarget(t *testing.T) {
+	target := goav.Target("recording", goav.FileOutput("recording.ivf", io.Discard))
+	job := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
+		Copy().
+		To(target)
+
+	intent := job.Intent()
+	if len(intent.Targets) != 1 || intent.Targets[0].Name != "recording" {
+		t.Fatalf("intent: %+v", intent)
+	}
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "input.ivf -> recording.ivf") {
+		t.Fatalf("spec:\n%s", text)
 	}
 }
 

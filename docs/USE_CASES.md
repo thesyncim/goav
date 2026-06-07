@@ -16,6 +16,10 @@ err := goav.From(goav.WebRTCTrack(track)).
     Run(ctx)
 ```
 
+Wrap the endpoint with `goav.Target(name, endpoint)` when the record job needs
+a stable logical target name for diagnostics, explain reports, or later mux
+grouping.
+
 Decoded preview:
 
 ```go

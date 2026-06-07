@@ -1379,6 +1379,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestStreamRecipeCanWriteToTypedTarget` and
     `TestStreamRecipeEncodeToTypedTargetRuns` pin intent, Describe/Build
     equivalence, mux execution, and cleanup. Done.
+302. Unify packet-preserving job destinations with the same target grammar:
+    root `From(input).Copy().To(...)` now accepts typed `Target` values or
+    direct endpoints, matching stream and branch `.To(...)` without a separate
+    registration step. Job-level target names travel beside endpoint
+    attachments, preserving physical file/URI names for format probing while
+    keeping stable logical target names in intent and diagnostics.
+    `TestRecordRecipeCanWriteToTypedTarget` and
+    `TestRecordRecipeCopyToTypedTargetRuns` pin intent, graph descriptions,
+    build equivalence, mux execution, and cleanup. Done.
 
 ## First Vertical Slice
 

@@ -646,24 +646,22 @@ func branchTargetMissingError(name string) error {
 }
 
 func targetOrEndpointInvalidError(name string, reason string) error {
-	return &BuildError{
-		Code:      "target_invalid",
-		Operation: "build branch",
-		Node:      firstNonEmpty(name, "branch"),
-		Reason:    reason,
-		Suggestions: []string{
-			"use goav.Target(name, endpoint) for named mux/sink groups",
-			"use goav.FileOutput(...), goav.URIOutput(...), or goav.SinkEndpoint(...) as endpoints",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
+	return destinationInvalidError("build branch", firstNonEmpty(name, "branch"), reason)
 }
 
 func streamDestinationInvalidError(name string, reason string) error {
+	return destinationInvalidError("build stream", firstNonEmpty(name, "stream"), reason)
+}
+
+func jobDestinationInvalidError(name string, reason string) error {
+	return destinationInvalidError("build job", firstNonEmpty(name, "job"), reason)
+}
+
+func destinationInvalidError(operation string, node string, reason string) error {
 	return &BuildError{
 		Code:      "target_invalid",
-		Operation: "build stream",
-		Node:      firstNonEmpty(name, "stream"),
+		Operation: operation,
+		Node:      node,
 		Reason:    reason,
 		Suggestions: []string{
 			"use goav.Target(name, endpoint) for named mux/sink groups",

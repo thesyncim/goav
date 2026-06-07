@@ -861,6 +861,7 @@ type Job struct {
 	runtime       Runtime
 	inputs        []InputSpec
 	outputs       []EndpointSpec
+	outputNames   []string
 	stream        *jobStreamBuild
 	branchStreams []streamBuild
 	branchTargets []namedTargetSpec
@@ -926,12 +927,25 @@ func (j *Job) setErr(err error) {
 	}
 }
 
-func (j *Job) To(outputs ...EndpointSpec) *Job {
+func (j *Job) To(destinations ...TargetOrEndpoint) *Job {
 	if len(j.branchStreams) != 0 {
 		j.setErr(branchOutputScopeError("branches"))
 		return j
 	}
-	j.outputs = append(j.outputs, outputs...)
+	for i := range destinations {
+		destination := destinations[i]
+		if destination == nil {
+			j.setErr(jobDestinationInvalidError("job", "job destination is nil"))
+			return j
+		}
+		output, name, err := endpointFromTargetOrEndpoint("build job", "job", destination.targetOrEndpoint(), i)
+		if err != nil {
+			j.setErr(err)
+			return j
+		}
+		j.outputs = append(j.outputs, output)
+		j.outputNames = append(j.outputNames, name)
+	}
 	return j
 }
 
@@ -1016,7 +1030,11 @@ func (j *Job) Intent() Intent {
 	} else if j.stream != nil {
 		intent.Streams = append(intent.Streams, jobStreamIntent(j.stream))
 		for i := range j.outputs {
-			intent.Targets = append(intent.Targets, j.outputs[i].intent())
+			name := ""
+			if i < len(j.outputNames) {
+				name = j.outputNames[i]
+			}
+			intent.Targets = append(intent.Targets, j.outputs[i].intentWithName(name))
 		}
 		for i := range j.stream.outputs {
 			name := ""
@@ -1028,8 +1046,13 @@ func (j *Job) Intent() Intent {
 		return intent
 	}
 	outputs := j.allOutputs()
+	outputNames := j.allOutputNames()
 	for i := range outputs {
-		intent.Targets = append(intent.Targets, outputs[i].intent())
+		name := ""
+		if i < len(outputNames) {
+			name = outputNames[i]
+		}
+		intent.Targets = append(intent.Targets, outputs[i].intentWithName(name))
 	}
 	return intent
 }
@@ -1197,7 +1220,7 @@ func (j *Job) allOutputNames() []string {
 		}
 		return names
 	}
-	return jobAllOutputNames(j.outputs, jobStreamOutputNames(j.stream))
+	return jobAllOutputNames(j.outputNames, jobStreamOutputNames(j.stream))
 }
 
 func jobAllOutputs(outputs []EndpointSpec, streamOutputs []EndpointSpec) []EndpointSpec {
@@ -1210,14 +1233,12 @@ func jobAllOutputs(outputs []EndpointSpec, streamOutputs []EndpointSpec) []Endpo
 	return all
 }
 
-func jobAllOutputNames(outputs []EndpointSpec, streamOutputNames []string) []string {
+func jobAllOutputNames(outputNames []string, streamOutputNames []string) []string {
 	if len(streamOutputNames) == 0 {
-		return make([]string, len(outputs))
+		return append([]string(nil), outputNames...)
 	}
-	all := make([]string, 0, len(outputs)+len(streamOutputNames))
-	for range outputs {
-		all = append(all, "")
-	}
+	all := make([]string, 0, len(outputNames)+len(streamOutputNames))
+	all = append(all, outputNames...)
 	all = append(all, streamOutputNames...)
 	return all
 }
@@ -3082,7 +3103,7 @@ func (b *JobStreamBuilder) To(destinations ...TargetOrEndpoint) *Job {
 			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream destination is nil"))
 			return b.job
 		}
-		output, name, err := streamEndpointFromDestination(jobStreamName(stream), destination.targetOrEndpoint(), i)
+		output, name, err := endpointFromTargetOrEndpoint("build stream", jobStreamName(stream), destination.targetOrEndpoint(), i)
 		if err != nil {
 			b.job.setErr(err)
 			return b.job
@@ -3097,7 +3118,7 @@ func (b *JobStreamBuilder) To(destinations ...TargetOrEndpoint) *Job {
 	return b.job
 }
 
-func streamEndpointFromDestination(streamName string, destination targetOrEndpointDestination, index int) (EndpointSpec, string, error) {
+func endpointFromTargetOrEndpoint(operation string, node string, destination targetOrEndpointDestination, index int) (EndpointSpec, string, error) {
 	switch {
 	case destination.hasTarget:
 		target := cloneTargetSpec(destination.target)
@@ -3111,7 +3132,7 @@ func streamEndpointFromDestination(streamName string, destination targetOrEndpoi
 	case destination.hasEndpoint:
 		return cloneEndpointSpec(destination.endpoint), "", nil
 	default:
-		return EndpointSpec{}, "", streamDestinationInvalidError(streamName, "unsupported stream destination")
+		return EndpointSpec{}, "", destinationInvalidError(operation, node, "unsupported destination")
 	}
 }
 

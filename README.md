@@ -45,6 +45,9 @@ return goav.From(goav.FileInput("input.ivf", in)).
     Run(ctx)
 ```
 
+Use `Target` when a destination needs a stable logical name; direct endpoints
+remain the shortest spelling for one-off outputs.
+
 Decode one WebRTC audio track to frames:
 
 ```go
