@@ -227,11 +227,12 @@ Compatibility tools are optional in CI and run when installed:
 - `mkvextract`
 - `mkvmerge`
 
-Current external checks cover WebM VP8/Opus files, Matroska files carrying the
-WebRTC codec set, and Matroska H.264/AV1 files whose codec-private data is
-generated from the first packet. They also generate small FFmpeg-authored
-Matroska/WebM files and read them through the Go demuxers for H.264, AV1, VP8,
-VP9, and Opus.
+Current external checks cover WebM VP8/VP9/AV1/Opus files, Matroska files
+carrying the WebRTC codec set, and Matroska H.264/AV1 files whose
+codec-private data is generated from the first packet. They also generate small
+FFmpeg-authored Matroska/WebM files, read them through the Go demuxers, remux
+the first packet through the Go muxers, and verify the remuxed output with
+`ffprobe` for H.264, AV1, VP8, VP9, and Opus where valid for each container.
 
 ## Benchmark Plan
 
