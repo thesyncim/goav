@@ -415,7 +415,9 @@ packet-domain taps.
 
 `Explain(ctx)` reports the workflow: inputs, branches, targets, taps, stream
 caps, operation output caps, adapter requirements with capability details,
-warnings, and the planned graph.
+warnings, and the planned graph. Operation reports mark shared upstream work, so
+branch splits after decode, resize, resample, custom stages, or taps are visible
+without reading the graph directly.
 
 ```go
 report, err := job.Explain(ctx)

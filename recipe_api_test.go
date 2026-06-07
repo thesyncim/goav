@@ -288,6 +288,16 @@ func operationReportByKind(operations []goav.OperationReport, kind goav.Operatio
 	return goav.OperationReport{}, false
 }
 
+func countOperationReports(operations []goav.OperationReport, kind goav.OperationKind, shared bool) int {
+	count := 0
+	for i := range operations {
+		if operations[i].Kind == kind && operations[i].Shared == shared {
+			count++
+		}
+	}
+	return count
+}
+
 func recordJob(input goav.InputSpec, outputs ...goav.Destination) *goav.Job {
 	return goav.From(input).Copy().To(outputs...)
 }
@@ -4420,6 +4430,79 @@ func TestBranchCompositionSharesParentOperationBeforeBranches(t *testing.T) {
 		if strings.Contains(text, duplicate) {
 			t.Fatalf("shared resize was duplicated as %q:\n%s", duplicate, text)
 		}
+	}
+}
+
+func TestExplainMarksSharedBranchOperations(t *testing.T) {
+	rt := goav.New(
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
+				Index: 0,
+				ID:    "video",
+				Type:  av.MediaVideo,
+				Codec: av.CodecParameters{
+					ID:          av.CodecVP8,
+					Type:        av.MediaVideo,
+					Width:       1920,
+					Height:      1080,
+					PixelFormat: av.PixelFormatYUV420P,
+				},
+			}}})
+			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
+			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
+		}),
+		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
+			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
+		}),
+		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+			registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResize, Input: av.MediaVideo, Output: av.MediaVideo}, recipeAPIFilterFactory{})
+		}),
+	)
+
+	web := goav.Target("web", goav.FileOutput("web.ogg", io.Discard))
+	thumbnail := goav.Target("thumbnail", goav.Sink(goav.SinkFunc("thumbnail", func(context.Context, goav.Message) error {
+		return nil
+	})))
+	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Video().
+		Decode().
+		Resize(1280, 720).
+		Tap(goav.FrameTap("video.720p.frames")).
+		Branches(
+			goav.Branch("web").
+				VP9(2_000_000).
+				To(web),
+			goav.Branch("thumb").
+				Resize(320, 180).
+				To(thumbnail),
+		).
+		Explain(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	webBranch, ok := branchByName(report.Branches, "web")
+	if !ok {
+		t.Fatalf("branches=%+v, want web", report.Branches)
+	}
+	if countOperationReports(webBranch.Operations, goav.OpDecode, true) != 1 ||
+		countOperationReports(webBranch.Operations, goav.OpTransform, true) != 1 ||
+		countOperationReports(webBranch.Operations, goav.OpTap, true) != 1 ||
+		countOperationReports(webBranch.Operations, goav.OpEncode, false) != 1 {
+		t.Fatalf("web operations=%+v, want shared decode/resize/tap and private encode", webBranch.Operations)
+	}
+
+	thumbBranch, ok := branchByName(report.Branches, "thumb")
+	if !ok {
+		t.Fatalf("branches=%+v, want thumb", report.Branches)
+	}
+	if countOperationReports(thumbBranch.Operations, goav.OpDecode, true) != 1 ||
+		countOperationReports(thumbBranch.Operations, goav.OpTransform, true) != 1 ||
+		countOperationReports(thumbBranch.Operations, goav.OpTap, true) != 1 ||
+		countOperationReports(thumbBranch.Operations, goav.OpTransform, false) != 1 {
+		t.Fatalf("thumb operations=%+v, want shared parent work and private thumbnail resize", thumbBranch.Operations)
 	}
 }
 

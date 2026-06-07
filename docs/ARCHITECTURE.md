@@ -92,8 +92,10 @@ equivalent for every media-plan executable. The graph layer stays available for
 inspection and custom stages. Recipe `Explain(ctx)` returns structured
 workflow-report data, branch operations, planner decisions, and the same
 `pipeline.Spec`; optional diagram or prose rendering lives outside runtime
-composition. A route carries all media by default, or matches one stream or
-event type.
+composition. Branch operation reports mark shared upstream work, so the planner
+can explain when branches reuse decode, transform, stage, or tap boundaries
+before diverging into private downstream chains. A route carries all media by
+default, or matches one stream or event type.
 
 `Task.Attach` is the first runtime control-plane operation. It attaches a named
 downstream branch to a built graph and returns an attachment handle with

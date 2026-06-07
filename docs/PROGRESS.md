@@ -1625,6 +1625,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     guard coverage rejects stale phrases that would re-teach stream-chain or
     build-kind concepts as public design language.
     Done.
+328. Surface shared branch work in Explain reports:
+    `StreamOperation`, `planOperation`, and `OperationReport` now carry a
+    `Shared` flag. Planned branches mark parent decode and shared chain
+    operations when they reuse the current chain point or a typed frame tap,
+    while branch-private encodes, transforms, and sink work remain unshared.
+    `TestExplainMarksSharedBranchOperations` proves the report matches the
+    graph's shared decode/resize/tap shape without adding another front-door
+    branching concept.
+    Done.
 
 ## First Vertical Slice
 

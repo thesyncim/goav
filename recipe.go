@@ -57,6 +57,7 @@ type StreamOperation struct {
 	Transform TransformSpec
 	Tap       TapIntent
 	Encode    CodecSpec
+	Shared    bool
 }
 
 type TargetIntent struct {
@@ -1369,9 +1370,14 @@ func streamBuildOperations(stream streamBuild) []StreamOperation {
 	steps := streamChainSteps(stream)
 	operations := make([]StreamOperation, 0, len(steps)+2+len(stream.postEncodeTaps))
 	if stream.decode {
-		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec)})
+		operations = append(operations, StreamOperation{
+			Kind:      OpDecode,
+			Component: string(stream.selector.Codec),
+			Shared:    stream.from.Domain() == DomainFrame,
+		})
 	}
 	operations = append(operations, chainStepOperations(steps, stream.selector.Type, initialStepAfter(stream.decode))...)
+	markSharedStreamOperations(operations, stream)
 	if stream.encode.Copy {
 		operations = append(operations, StreamOperation{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
 	} else if codecIntentSet(stream.encode) {
@@ -1386,6 +1392,20 @@ func streamBuildOperations(stream streamBuild) []StreamOperation {
 		operations = append(operations, StreamOperation{Kind: OpTap, Component: tap.Name, Tap: tap})
 	}
 	return operations
+}
+
+func markSharedStreamOperations(operations []StreamOperation, stream streamBuild) {
+	if len(stream.sharedSteps) == 0 {
+		return
+	}
+	sharedOps := chainStepOperations(stream.sharedSteps, stream.selector.Type, initialStepAfter(stream.decode))
+	start := 0
+	if stream.decode {
+		start = 1
+	}
+	for i := 0; i < len(sharedOps) && start+i < len(operations); i++ {
+		operations[start+i].Shared = true
+	}
 }
 
 func streamChainSteps(stream streamBuild) []chainStep {

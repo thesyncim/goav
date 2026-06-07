@@ -74,6 +74,7 @@ type planOperation struct {
 	Detail    string
 	After     OperationKind
 	Caps      StreamCaps
+	Shared    bool
 }
 
 type planOutput struct {
@@ -344,38 +345,47 @@ func planStreamIntentOperations(stream StreamIntent, branchName string) ([]planO
 func planOperationFromStreamOperation(operation StreamOperation) planOperation {
 	switch operation.Kind {
 	case OpTransform:
-		return planTransformOperation(operation.Transform)
+		plan := planTransformOperation(operation.Transform)
+		plan.Shared = operation.Shared
+		return plan
 	case OpTap:
-		return planTapOperation(operation.Tap)
+		plan := planTapOperation(operation.Tap)
+		plan.Shared = operation.Shared
+		return plan
 	case OpEncode:
 		return planOperation{
 			Kind:      OpEncode,
 			Component: string(operation.Encode.ID),
 			Detail:    "frames to packets",
 			Caps:      streamCapsFromCodecSpec(operation.Encode, DomainPacket),
+			Shared:    operation.Shared,
 		}
 	case OpDecode:
 		return planOperation{
 			Kind:      OpDecode,
 			Component: operation.Component,
 			Detail:    "packets to frames",
+			Shared:    operation.Shared,
 		}
 	case OpStage:
 		return planOperation{
 			Kind:      OpStage,
 			Component: operation.Component,
 			Detail:    "custom stage",
+			Shared:    operation.Shared,
 		}
 	case OpCopy:
 		return planOperation{
 			Kind:      OpCopy,
 			Component: firstNonEmpty(operation.Component, "packet-copy"),
 			Detail:    "no frame operation requested",
+			Shared:    operation.Shared,
 		}
 	default:
 		return planOperation{
 			Kind:      operation.Kind,
 			Component: operation.Component,
+			Shared:    operation.Shared,
 		}
 	}
 }
