@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	graphSpecOriginMediaPlan = "media_plan"
+	graphSpecOriginGraphPlan = "graph_plan"
 )
 
 type mediaPlanExecutable interface {
@@ -17,22 +17,58 @@ type mediaPlanExecutable interface {
 	compile(context.Context, pipeline.Graph, *builder) error
 }
 
-func emitMediaPlanGraphSpecPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "emit media plan graph spec", fn: func(state *recipeCompileState) error {
-		graph, ok, err := mediaPlanGraph(state)
+type graphPlan struct {
+	runtime    *runtime
+	spec       pipeline.Spec
+	executable mediaPlanExecutable
+}
+
+func (p graphPlan) ready() bool {
+	return p.executable != nil && p.runtime != nil
+}
+
+func (p graphPlan) Describe() (pipeline.Spec, error) {
+	if !p.ready() {
+		return pipeline.Spec{}, recipeGraphUnsupportedError("describe graph plan", Intent{})
+	}
+	return p.spec, nil
+}
+
+func (p graphPlan) Build(ctx context.Context) (Task, error) {
+	if !p.ready() {
+		return nil, recipeGraphUnsupportedError("build graph plan", Intent{})
+	}
+	return buildGraphPlanTask(ctx, p)
+}
+
+func emitGraphPlanSpecPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "emit graph plan spec", fn: func(state *recipeCompileState) error {
+		plan, ok, err := graphPlanForState(state)
 		if err != nil || !ok {
 			return err
 		}
-		spec, err := graph.spec()
-		if err != nil {
-			return err
-		}
-		state.spec = spec
+		state.spec = plan.spec
 		state.specReady = true
-		state.specOrigin = graphSpecOriginMediaPlan
-		state.mediaGraph = graph
+		state.specOrigin = graphSpecOriginGraphPlan
+		state.graphPlan = plan
 		return nil
 	}}
+}
+
+func graphPlanForState(state *recipeCompileState) (graphPlan, bool, error) {
+	executable, ok, err := mediaPlanGraph(state)
+	if err != nil || !ok {
+		return graphPlan{}, ok, err
+	}
+	spec, err := executable.spec()
+	if err != nil {
+		return graphPlan{}, false, err
+	}
+	return graphPlan{
+		runtime:    executable.runtimeRef(),
+		spec:       spec,
+		executable: executable,
+	}, true, nil
 }
 
 func mediaPlanGraph(state *recipeCompileState) (mediaPlanExecutable, bool, error) {

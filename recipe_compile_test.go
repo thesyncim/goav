@@ -22,18 +22,21 @@ func (stubRuntime) Probe(context.Context, format.ProbeRequest) (format.ProbeResu
 	return format.ProbeResult{}, nil
 }
 
-func requireMediaGraph[T any](t *testing.T, resolved recipeResolved) {
+func requireGraphPlanExecutable[T any](t *testing.T, resolved recipeResolved) {
 	t.Helper()
-	if _, ok := resolved.mediaGraph.(T); !ok {
+	if !resolved.graphPlan.ready() {
+		t.Fatal("resolved graph plan is not ready")
+	}
+	if _, ok := resolved.graphPlan.executable.(T); !ok {
 		var want T
-		t.Fatalf("media graph = %T, want %T", resolved.mediaGraph, want)
+		t.Fatalf("graph plan executable = %T, want %T", resolved.graphPlan.executable, want)
 	}
 }
 
-func TestMediaPlanExecutableUsesSharedBuildLifecycle(t *testing.T) {
+func TestGraphPlanUsesSharedBuildLifecycle(t *testing.T) {
 	executable := reflect.TypeOf((*mediaPlanExecutable)(nil)).Elem()
 	if _, ok := executable.MethodByName("build"); ok {
-		t.Fatal("mediaPlanExecutable should not expose per-plan build; use the shared media-plan executor")
+		t.Fatal("mediaPlanExecutable should not expose per-plan build; use graphPlan.Build")
 	}
 	for _, name := range []string{"spec", "runtimeRef", "compile"} {
 		if _, ok := executable.MethodByName(name); !ok {
@@ -41,7 +44,13 @@ func TestMediaPlanExecutableUsesSharedBuildLifecycle(t *testing.T) {
 		}
 	}
 	if _, ok := reflect.TypeOf(recipeResolved{}).FieldByName("builder"); ok {
-		t.Fatal("recipeResolved should not carry the old runtime builder after media-plan recognition")
+		t.Fatal("recipeResolved should not carry the old runtime builder after graph-plan recognition")
+	}
+	if _, ok := reflect.TypeOf(recipeResolved{}).FieldByName("mediaGraph"); ok {
+		t.Fatal("recipeResolved should not carry mediaGraph; use graphPlan as the executable boundary")
+	}
+	if _, ok := reflect.TypeOf(recipeResolved{}).FieldByName("graphPlan"); !ok {
+		t.Fatal("recipeResolved should carry graphPlan as the executable boundary")
 	}
 }
 
@@ -65,11 +74,11 @@ func TestMediaPlanStreamGraphOwnsPacketCopyAndDirectStreams(t *testing.T) {
 		"func (p mediaPlanBranchComposeGraph) compileSources",
 	} {
 		if strings.Contains(body.String(), forbidden) || strings.Contains(body.String(), "type "+forbidden) {
-			t.Fatalf("%s should not be a separate stream media-plan path", forbidden)
+			t.Fatalf("%s should not be a separate stream graph-plan path", forbidden)
 		}
 	}
 	if !strings.Contains(body.String(), "compileMediaPlanSources") {
-		t.Fatal("media plan graphs should share source compilation")
+		t.Fatal("graph plans should share source compilation")
 	}
 }
 
@@ -542,7 +551,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuild() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	if len(resolved.outputAttachments) != 1 {
 		t.Fatalf("resolved output attachments = %d, want 1", len(resolved.outputAttachments))
 	}
@@ -1727,7 +1736,7 @@ func TestRecipeRuntimePassRejectsCustomRuntime(t *testing.T) {
 	}
 }
 
-func TestRequireMediaPlanGraphSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
+func TestRequireGraphPlanSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
 		intent: Intent{
@@ -1736,7 +1745,7 @@ func TestRequireMediaPlanGraphSpecPassWrapsUnsupportedRecipeShape(t *testing.T) 
 		},
 	}
 
-	err := requireMediaPlanGraphSpecPass().Apply(&state)
+	err := requireGraphPlanSpecPass().Apply(&state)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want recipe_graph_unsupported wrapping ErrUnsupportedBuild", err)
@@ -1746,8 +1755,8 @@ func TestRequireMediaPlanGraphSpecPassWrapsUnsupportedRecipeShape(t *testing.T) 
 			t.Fatalf("err = %v, want %q", err, want)
 		}
 	}
-	if state.specReady || state.mediaGraph != nil {
-		t.Fatalf("state specReady=%v state mediaGraph=%T, want unset after unsupported selection", state.specReady, state.mediaGraph)
+	if state.specReady || state.graphPlan.ready() {
+		t.Fatalf("state specReady=%v state graphPlan=%T, want unset after unsupported selection", state.specReady, state.graphPlan)
 	}
 }
 
@@ -2201,7 +2210,7 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 	}
 }
 
-func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
+func TestCompileJobRecipeCarriesIntentAndGraphPlanBuild(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
 	).Copy().To(fileDestination("recording.ivf", io.Discard))
@@ -2213,10 +2222,10 @@ func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
 	if !resolved.specReady {
 		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
 	}
-	if resolved.specOrigin != graphSpecOriginMediaPlan {
-		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginMediaPlan)
+	if resolved.specOrigin != graphSpecOriginGraphPlan {
+		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginGraphPlan)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	if resolved.intent.Name != "from" {
 		t.Fatalf("intent name = %q, want from", resolved.intent.Name)
 	}
@@ -2238,7 +2247,7 @@ func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
 	}
 }
 
-func TestMediaPlanGraphSpecPassPlansFileCopy(t *testing.T) {
+func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
 	).Copy().To(fileDestination("recording.ivf", io.Discard).Format(av.FormatIVF))
@@ -2247,8 +2256,8 @@ func TestMediaPlanGraphSpecPassPlansFileCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	if resolved.specOrigin != graphSpecOriginMediaPlan {
-		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginMediaPlan)
+	if resolved.specOrigin != graphSpecOriginGraphPlan {
+		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginGraphPlan)
 	}
 	spec, err := resolved.Describe()
 	if err != nil {
@@ -2272,7 +2281,7 @@ func TestMediaPlanGraphSpecPassPlansFileCopy(t *testing.T) {
 	}
 }
 
-func TestMediaPlanGraphSpecPassPlansRTPCopy(t *testing.T) {
+func TestGraphPlanSpecPassPlansRTPCopy(t *testing.T) {
 	job := From(
 		RTP(&runtimeRTPReceiver{streams: []Stream{{
 			ID:   "video",
@@ -2288,8 +2297,8 @@ func TestMediaPlanGraphSpecPassPlansRTPCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	if resolved.specOrigin != graphSpecOriginMediaPlan {
-		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginMediaPlan)
+	if resolved.specOrigin != graphSpecOriginGraphPlan {
+		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginGraphPlan)
 	}
 	spec, err := resolved.Describe()
 	if err != nil {
@@ -2333,7 +2342,7 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	if len(resolved.plan.Branches) != 1 || resolved.plan.Branches[0].Name != "360p" {
 		t.Fatalf("resolved plan branches = %+v, want 360p branch", resolved.plan.Branches)
 	}
-	requireMediaGraph[mediaPlanBranchComposeGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanBranchComposeGraph](t, resolved)
 	if !resolved.specReady {
 		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
 	}
@@ -2377,7 +2386,7 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	if len(resolved.plan.Branches) != 2 {
 		t.Fatalf("resolved plan branches = %+v, want two live flow branches", resolved.plan.Branches)
 	}
-	requireMediaGraph[mediaPlanBranchComposeGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanBranchComposeGraph](t, resolved)
 	spec, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2412,7 +2421,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanBranchComposeGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanBranchComposeGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2445,7 +2454,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2481,7 +2490,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2517,7 +2526,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	task, err := resolved.Build(ctx)
 	if err != nil {
 		t.Fatalf("resolved.Build() error = %v", err)
@@ -2543,7 +2552,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2577,7 +2586,7 @@ func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testin
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2618,7 +2627,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2714,7 +2723,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2761,7 +2770,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2804,7 +2813,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanExecutable[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)

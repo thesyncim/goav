@@ -37,7 +37,7 @@ func validateMuxCompatibilityPass() recipeCompilePass {
 }
 
 func stateMuxCompatibilityIssues(state *recipeCompileState) []muxCompatibilityIssue {
-	if state == nil || !state.specReady || state.specOrigin != graphSpecOriginMediaPlan {
+	if state == nil || !state.specReady || state.specOrigin != graphSpecOriginGraphPlan {
 		return nil
 	}
 	plan := buildMediaPlan(state)

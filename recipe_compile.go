@@ -16,7 +16,7 @@ type recipeResolved struct {
 	spec                  pipeline.Spec
 	specReady             bool
 	specOrigin            string
-	mediaGraph            mediaPlanExecutable
+	graphPlan             graphPlan
 	inputAttachments      []InputSpec
 	outputAttachments     []destinationSpec
 	chainAttachments      []chainStepAttachment
@@ -58,7 +58,7 @@ type recipeCompileState struct {
 	spec       pipeline.Spec
 	specReady  bool
 	specOrigin string
-	mediaGraph mediaPlanExecutable
+	graphPlan  graphPlan
 }
 
 type recipeCompileOptions struct {
@@ -152,7 +152,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		spec:                  state.spec,
 		specReady:             state.specReady,
 		specOrigin:            state.specOrigin,
-		mediaGraph:            state.mediaGraph,
+		graphPlan:             state.graphPlan,
 		inputAttachments:      append([]InputSpec(nil), state.inputAttachments...),
 		outputAttachments:     append([]destinationSpec(nil), state.outputAttachments...),
 		chainAttachments:      append([]chainStepAttachment(nil), state.chainSteps...),
@@ -190,17 +190,17 @@ func compilerPassError(operation string, pass string, err error) error {
 }
 
 func (r recipeResolved) Describe() (pipeline.Spec, error) {
-	if r.specReady && r.specOrigin == graphSpecOriginMediaPlan {
-		return r.spec, nil
+	if r.specReady && r.specOrigin == graphSpecOriginGraphPlan && r.graphPlan.ready() {
+		return r.graphPlan.Describe()
 	}
 	return pipeline.Spec{}, recipeGraphUnsupportedError("describe recipe", r.intent)
 }
 
 func (r recipeResolved) Build(ctx context.Context) (Task, error) {
-	if r.mediaGraph == nil {
+	if !r.graphPlan.ready() {
 		return nil, recipeGraphUnsupportedError("build recipe", r.intent)
 	}
-	task, err := buildMediaPlanTask(ctx, r.mediaGraph)
+	task, err := r.graphPlan.Build(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -300,9 +300,9 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateJobKnownInputStreamSelectionPass(),
 		validateJobKnownInputDecodeAdaptersPass(),
 		validateRecipeRuntimePass(),
-		emitMediaPlanGraphSpecPass(),
+		emitGraphPlanSpecPass(),
 		validateMuxCompatibilityPass(),
-		requireMediaPlanGraphSpecPass(),
+		requireGraphPlanSpecPass(),
 	}}.Compile(state)
 }
 
@@ -353,9 +353,9 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		validateKnownBranchInputDecodeAdaptersPass(),
 		planBranchCompositionIntentPass(),
 		validateRecipeRuntimePass(),
-		emitMediaPlanGraphSpecPass(),
+		emitGraphPlanSpecPass(),
 		validateMuxCompatibilityPass(),
-		requireMediaPlanGraphSpecPass(),
+		requireGraphPlanSpecPass(),
 	}}.Compile(state)
 }
 
@@ -943,7 +943,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 	return &BuildError{
 		Code:      "recipe_graph_unsupported",
 		Operation: operation,
-		Reason:    "recipe intent did not match a supported media-plan graph",
+		Reason:    "recipe intent did not match a supported graph plan",
 		Details:   details,
 		Suggestions: []string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
@@ -954,9 +954,9 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 	}
 }
 
-func requireMediaPlanGraphSpecPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "require media plan graph spec", fn: func(state *recipeCompileState) error {
-		if state.specReady && state.specOrigin == graphSpecOriginMediaPlan && state.mediaGraph != nil {
+func requireGraphPlanSpecPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "require graph plan spec", fn: func(state *recipeCompileState) error {
+		if state.specReady && state.specOrigin == graphSpecOriginGraphPlan && state.graphPlan.ready() {
 			return nil
 		}
 		return recipeGraphUnsupportedError(state.operation, state.intent)

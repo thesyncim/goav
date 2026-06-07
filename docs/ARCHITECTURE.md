@@ -42,16 +42,18 @@ formats/codecs, chooses
 packet-copy or decode branches, inserts demux or depacketize boundaries, inserts
 select/decode/transform/stage/tap/encode operations, groups branches by targets,
 assigns routes and buffer policy, then emits the `pipeline.Spec` used to build
-the runnable graph. `MediaPlan` is the planner IR for that work: declared
-branches, reusable flow branches, decode recipes, and packet-preserving copy/remux
-all become ordinary branch operations over the same model. Recipe compilation
-must recognize a media-plan shape before it can describe or build a normal
-workflow.
+the runnable graph. `MediaPlan` is the planner/report IR for that work:
+declared branches, reusable flow branches, decode recipes, and
+packet-preserving copy/remux all become ordinary branch operations over the same
+model. `graphPlan` is now the executable cold-path boundary: recipe compilation
+must emit a graph plan before it can describe or build a normal workflow, and
+that graph plan owns the planned `pipeline.Spec` plus the transition executable
+used to build the runtime graph.
 
 The active recipe compiler state carries public `Intent` plus concrete readers,
-writers, sinks, and stages through validation, media-plan creation, planner
-lowering, and planned-spec emission. Branches carry ordered stage, transform, tap,
-and encode operations and can start after earlier stream operations such as
+writers, sinks, and stages through validation, media-plan creation, graph-plan
+emission, and planned-spec emission. Branches carry ordered stage, transform,
+tap, and encode operations and can start after earlier stream operations such as
 decode, resize, resample, custom stages, and taps. `Job.Explain(ctx)` reports the
 `MediaPlan` branch operations, each operation's output caps, resolved branch
 stream caps, taps, decisions, and adapter capability details. Planned taps
@@ -68,8 +70,8 @@ advanced `transcode.Plan` path adapts into that internal shape at its boundary
 instead of being the recipe IR. Runtime branch-composer graph helpers now operate
 on branch-compose routes, target routes, selector/stream groups, and media
 transforms. Branch-composition inputs and resolved targets are carried by the
-resolved recipe into a media-plan branch graph; `Describe` and `Build` use that
-graph plan directly and only borrow runtime services for adapter-backed sources,
+resolved recipe into the graph plan; `Describe` and `Build` use that graph plan
+directly and only borrow runtime services for adapter-backed sources,
 filters, encoders, and muxers. Packet-preserving copy/fanout recipes use the
 same resolved graph-plan pattern for concrete inputs, destinations, and optional
 selected streams. Direct selected-stream decode/encode recipes also keep their
@@ -78,17 +80,16 @@ stages, transforms, and taps on the resolved recipe until the media-plan
 boundary. Those direct stream recipes now build and describe through a resolved
 single-stream graph plan and shared parameterized
 source/decode/filter/encode/target helpers instead of a pre-populated runtime
-builder. The next architectural pressure is to move the
-remaining media-plan helpers toward direct graph construction where it reduces
-duplication while keeping the flow `Intent -> MediaPlan -> pipeline.Spec ->
-pipeline.Graph`.
+builder. The next architectural pressure is to make graph plans contain the
+ordered operation nodes directly, rather than wrapping media-plan executables,
+while keeping the flow `Intent -> MediaPlan -> GraphPlan -> pipeline.Graph`.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and
 sinks once, then connects typed handles such as `source.Stream("audio")` and
 `decode.Out()` to node inputs. The graph builder is no longer on the public
 `Runtime` interface or an exported top-level constructor. Described graphs and
-execution graphs must stay equivalent for every media-plan executable. The graph
+execution graphs must stay equivalent for every graph-plan executable. The graph
 layer stays available for inspection and custom stages. Recipe `Explain(ctx)`
 returns structured workflow-report data, branch operations, planner decisions,
 and the same

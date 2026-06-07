@@ -42,8 +42,8 @@ type mediaPlanCompiledSources struct {
 	realtime  bool
 }
 
-func buildMediaPlanTask(ctx context.Context, plan mediaPlanExecutable) (Task, error) {
-	runtime := plan.runtimeRef()
+func buildGraphPlanTask(ctx context.Context, plan graphPlan) (Task, error) {
+	runtime := plan.runtime
 	if runtime == nil {
 		return nil, recipeGraphUnsupportedError("build recipe", Intent{})
 	}
@@ -52,7 +52,7 @@ func buildMediaPlanTask(ctx context.Context, plan mediaPlanExecutable) (Task, er
 	if err != nil {
 		return nil, err
 	}
-	if err := plan.compile(ctx, graph, service); err != nil {
+	if err := plan.executable.compile(ctx, graph, service); err != nil {
 		graph.Close()
 		return nil, err
 	}
