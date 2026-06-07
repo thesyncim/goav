@@ -1,6 +1,8 @@
 package matroska
 
 import (
+	"bytes"
+	"compress/zlib"
 	"encoding/binary"
 	"errors"
 	"hash"
@@ -38,7 +40,7 @@ type Demuxer struct {
 	laceFrames      []laceFrame
 	laceTrackID     uint32
 	laceH264Length  int
-	laceHeaderStrip []byte
+	laceContent     blockContentEncodingInfo
 	laceTimeNS      int64
 	laceDurationNS  int64
 	laceFrameCount  int
@@ -48,6 +50,7 @@ type Demuxer struct {
 	laceDiscardable bool
 	scratch         [ebml.MaxSizeWidth]byte
 	uintScratch     [8]byte
+	contentBuffer   []byte
 }
 
 type laceFrame struct {
@@ -3208,14 +3211,47 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 		return d.readLacedBlockPayload(track, trackNumber, timecode, flags, lacing, dst, simple)
 	}
 	frameSize := int(d.blockLimit.N)
-	var headerStrip []byte
 	if len(track.ContentEncodings) != 0 {
-		var err error
-		headerStrip, _, err = blockHeaderStripping(track)
+		encoding, err := blockContentEncoding(track)
 		if err != nil {
 			return err
 		}
+		switch encoding.transform {
+		case blockContentTransformNone:
+			if err := d.readPlainBlockFrame(track, frameSize, nil, dst); err != nil {
+				return err
+			}
+		case blockContentTransformHeaderStripping:
+			if err := d.readPlainBlockFrame(track, frameSize, encoding.settings, dst); err != nil {
+				return err
+			}
+		case blockContentTransformZlib:
+			frame, err := d.readBlockFrameScratch(frameSize)
+			if err != nil {
+				return err
+			}
+			if err := d.decodeZlibBlockFrame(track, frame, dst); err != nil {
+				return err
+			}
+		default:
+			return ErrUnsupportedContentEncoding
+		}
+	} else if err := d.readPlainBlockFrame(track, frameSize, nil, dst); err != nil {
+		return err
 	}
+	dst.TrackID = trackNumber
+	dst.TimeNS = timecode * d.timecodeScaleNS
+	if simple {
+		dst.Keyframe = flags&simpleBlockKeyframe != 0
+	}
+	dst.Invisible = flags&simpleBlockInvisible != 0
+	if simple {
+		dst.Discardable = flags&simpleBlockDiscardable != 0
+	}
+	return nil
+}
+
+func (d *Demuxer) readPlainBlockFrame(track Track, frameSize int, headerStrip []byte, dst *Packet) error {
 	outSize := frameSize + len(headerStrip)
 	if cap(dst.Data) < outSize {
 		if err := drainLimited(&d.blockLimit); err != nil {
@@ -3228,6 +3264,33 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 	if _, err := io.ReadFull(&d.blockLimit, dst.Data[len(headerStrip):]); err != nil {
 		return err
 	}
+	return d.finishTrackCodecPayload(track, dst)
+}
+
+func (d *Demuxer) readBlockFrameScratch(frameSize int) ([]byte, error) {
+	if frameSize < 0 {
+		return nil, ErrInvalidData
+	}
+	if cap(d.contentBuffer) < frameSize {
+		d.contentBuffer = make([]byte, frameSize)
+	}
+	frame := d.contentBuffer[:frameSize]
+	if _, err := io.ReadFull(&d.blockLimit, frame); err != nil {
+		return nil, err
+	}
+	return frame, nil
+}
+
+func (d *Demuxer) decodeZlibBlockFrame(track Track, frame []byte, dst *Packet) error {
+	decoded, err := zlibDecompressInto(dst.Data[:0], frame)
+	if err != nil {
+		return err
+	}
+	dst.Data = decoded
+	return d.finishTrackCodecPayload(track, dst)
+}
+
+func (d *Demuxer) finishTrackCodecPayload(track Track, dst *Packet) error {
 	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
 		lengthSize, ok, err := h264TrackNALULengthSize(track)
 		if err != nil {
@@ -3248,16 +3311,48 @@ func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple
 			return err
 		}
 	}
-	dst.TrackID = trackNumber
-	dst.TimeNS = timecode * d.timecodeScaleNS
-	if simple {
-		dst.Keyframe = flags&simpleBlockKeyframe != 0
-	}
-	dst.Invisible = flags&simpleBlockInvisible != 0
-	if simple {
-		dst.Discardable = flags&simpleBlockDiscardable != 0
-	}
 	return nil
+}
+
+func zlibDecompressInto(dst []byte, compressed []byte) ([]byte, error) {
+	reader, err := zlib.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return nil, ErrInvalidData
+	}
+	out := dst[:0]
+	for {
+		if len(out) == cap(out) {
+			var probe [1]byte
+			n, readErr := reader.Read(probe[:])
+			if n > 0 {
+				_ = reader.Close()
+				return nil, ErrPayloadTooSmall
+			}
+			if readErr == io.EOF {
+				if err := reader.Close(); err != nil {
+					return nil, ErrInvalidData
+				}
+				return out, nil
+			}
+			if readErr != nil {
+				_ = reader.Close()
+				return nil, ErrInvalidData
+			}
+			continue
+		}
+		n, readErr := reader.Read(out[len(out):cap(out)])
+		out = out[:len(out)+n]
+		if readErr == io.EOF {
+			if err := reader.Close(); err != nil {
+				return nil, ErrInvalidData
+			}
+			return out, nil
+		}
+		if readErr != nil {
+			_ = reader.Close()
+			return nil, ErrInvalidData
+		}
+	}
 }
 
 func trackIDFromUint(value uint64) (uint32, error) {
@@ -3399,12 +3494,12 @@ func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timecode in
 		d.laceH264Length = lengthSize
 	}
 	if len(track.ContentEncodings) != 0 {
-		headerStrip, _, err := blockHeaderStripping(track)
+		encoding, err := blockContentEncoding(track)
 		if err != nil {
 			d.clearLace()
 			return err
 		}
-		d.laceHeaderStrip = headerStrip
+		d.laceContent = encoding
 	}
 	d.laceTimeNS = timecode * d.timecodeScaleNS
 	d.laceDurationNS = d.defaultDurationNS(trackID)
@@ -3526,31 +3621,47 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 		return ErrInvalidData
 	}
 	frame := d.laceFrames[d.laceFrameIndex]
-	outSize := frame.size + len(d.laceHeaderStrip)
-	if d.laceH264Length != 0 {
-		size, err := h264AVCToAnnexBSize(d.laceBuffer[frame.offset:frame.offset+frame.size], d.laceH264Length)
+	frameData := d.laceBuffer[frame.offset : frame.offset+frame.size]
+	if d.laceContent.transform == blockContentTransformZlib {
+		decoded, err := zlibDecompressInto(dst.Data[:0], frameData)
 		if err != nil {
 			return err
 		}
-		outSize = size
-	}
-	if cap(dst.Data) < outSize {
-		return ErrPayloadTooSmall
-	}
-	if d.laceH264Length != 0 {
-		var err error
-		dst.Data = dst.Data[:frame.size]
-		copy(dst.Data, d.laceBuffer[frame.offset:frame.offset+frame.size])
-		dst.Data, err = h264AVCToAnnexBInPlace(dst.Data, outSize, d.laceH264Length)
-		if err != nil {
+		dst.Data = decoded
+		if err := d.finishLacedCodecPayload(dst); err != nil {
 			return err
 		}
 	} else {
-		dst.Data = dst.Data[:outSize]
-		if len(d.laceHeaderStrip) != 0 {
-			copy(dst.Data, d.laceHeaderStrip)
+		headerStrip := d.laceContent.settings
+		if d.laceContent.transform != blockContentTransformHeaderStripping {
+			headerStrip = nil
 		}
-		copy(dst.Data[len(d.laceHeaderStrip):], d.laceBuffer[frame.offset:frame.offset+frame.size])
+		outSize := frame.size + len(headerStrip)
+		if d.laceH264Length != 0 {
+			size, err := h264AVCToAnnexBSize(frameData, d.laceH264Length)
+			if err != nil {
+				return err
+			}
+			outSize = size
+		}
+		if cap(dst.Data) < outSize {
+			return ErrPayloadTooSmall
+		}
+		if d.laceH264Length != 0 {
+			var err error
+			dst.Data = dst.Data[:frame.size]
+			copy(dst.Data, frameData)
+			dst.Data, err = h264AVCToAnnexBInPlace(dst.Data, outSize, d.laceH264Length)
+			if err != nil {
+				return err
+			}
+		} else {
+			dst.Data = dst.Data[:outSize]
+			if len(headerStrip) != 0 {
+				copy(dst.Data, headerStrip)
+			}
+			copy(dst.Data[len(headerStrip):], frameData)
+		}
 	}
 	dst.TrackID = d.laceTrackID
 	dst.TimeNS = d.laceTimeNS
@@ -3568,10 +3679,24 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 	return nil
 }
 
+func (d *Demuxer) finishLacedCodecPayload(dst *Packet) error {
+	if d.laceH264Length != 0 {
+		outSize, err := h264AVCToAnnexBSize(dst.Data, d.laceH264Length)
+		if err != nil {
+			return err
+		}
+		dst.Data, err = h264AVCToAnnexBInPlace(dst.Data, outSize, d.laceH264Length)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (d *Demuxer) clearLace() {
 	d.laceTrackID = 0
 	d.laceH264Length = 0
-	d.laceHeaderStrip = nil
+	d.laceContent = blockContentEncodingInfo{}
 	d.laceTimeNS = 0
 	d.laceDurationNS = 0
 	d.laceFrameCount = 0

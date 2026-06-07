@@ -2,6 +2,7 @@ package matroska
 
 import (
 	"bytes"
+	"compress/zlib"
 	"encoding/binary"
 	"io"
 	"math"
@@ -40,6 +41,10 @@ type Muxer struct {
 	closed          bool
 	scratch         [codecPrivateScratchSize]byte
 	blockScratch    [16]byte
+	blockPayload    bytes.Buffer
+	codecPayload    bytes.Buffer
+	lacePayload     []byte
+	zlibWriter      *zlib.Writer
 }
 
 func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
@@ -103,6 +108,9 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.maxTimeNS = 0
 	m.clusterTimecode = 0
 	m.closed = false
+	m.blockPayload.Reset()
+	m.codecPayload.Reset()
+	m.lacePayload = m.lacePayload[:0]
 	if m.seekable && !m.options.Streaming {
 		capacity := m.options.CueCapacity
 		if capacity <= 0 {
@@ -293,7 +301,7 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 	if blockPayloadsNeedSizing(track) {
 		return m.writeSizedLacedPacket(packet, track)
 	}
-	return m.writeLacedPacket(packet, track, nil)
+	return m.writeLacedPacket(packet, track, nil, nil)
 }
 
 func (m *Muxer) writeSizedLacedPacket(packet LacedPacket, track Track) error {
@@ -302,13 +310,22 @@ func (m *Muxer) writeSizedLacedPacket(packet LacedPacket, track Track) error {
 	}
 	var sizeScratch [defaultMaxLaceFrames]int
 	muxedFrameSizes := sizeScratch[:len(packet.Frames)]
+	var muxedPayload []byte
+	if blockPayloadNeedsBuffering(track) {
+		var err error
+		muxedPayload, err = m.prepareLacedBlockPayload(packet.Frames, track, muxedFrameSizes)
+		if err != nil {
+			return err
+		}
+		return m.writeLacedPacket(packet, track, muxedFrameSizes, muxedPayload)
+	}
 	if err := blockPayloadFrameSizes(packet.Frames, track, muxedFrameSizes); err != nil {
 		return err
 	}
-	return m.writeLacedPacket(packet, track, muxedFrameSizes)
+	return m.writeLacedPacket(packet, track, muxedFrameSizes, muxedPayload)
 }
 
-func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSizes []int) error {
+func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSizes []int, muxedPayload []byte) error {
 	lacing, err := lacingFlag(packet.Lacing, packet.Frames, muxedFrameSizes)
 	if err != nil {
 		return err
@@ -338,7 +355,7 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 	}
 	relativePosition := m.relativeClusterPosition()
 	blockNumber := m.clusterBlock + 1
-	if err := m.writeLacedBlock(packet, int16(delta), lacing, payloadSize, track, muxedFrameSizes); err != nil {
+	if err := m.writeLacedBlock(packet, int16(delta), lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
 		return err
 	}
 	m.clusterBlock = blockNumber
@@ -1483,9 +1500,20 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 		len(packet.BlockAdditions) == 0 {
 		return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
 	}
-	payloadSize, err := blockPayloadSize(track, packet.Data)
-	if err != nil {
-		return err
+	var blockPayload []byte
+	var payloadSize int
+	var err error
+	if blockPayloadNeedsBuffering(track) {
+		blockPayload, err = m.muxedBlockPayload(track, packet.Data)
+		if err != nil {
+			return err
+		}
+		payloadSize = len(blockPayload)
+	} else {
+		payloadSize, err = blockPayloadSize(track, packet.Data)
+		if err != nil {
+			return err
+		}
 	}
 	trackWidth, err := ebml.UnsignedVINTWidth(uint64(packet.TrackID))
 	if err != nil {
@@ -1572,7 +1600,12 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 	if err := m.ebml.WriteHeader(idBlockGroup, groupSize); err != nil {
 		return err
 	}
-	if err := m.writeBlock(idBlock, packet, blockTimecode, blockFlags(packet), track); err != nil {
+	if blockPayload != nil {
+		err = m.writeBlockPayload(idBlock, packet.TrackID, blockTimecode, blockFlags(packet), blockPayload)
+	} else {
+		err = m.writeBlock(idBlock, packet, blockTimecode, blockFlags(packet), track)
+	}
+	if err != nil {
 		return err
 	}
 	if len(packet.BlockAdditions) != 0 {
@@ -1665,6 +1698,13 @@ func writeBlockMore(w *ebml.Writer, addition BlockAddition) error {
 }
 
 func (m *Muxer) writeBlock(id ebml.ID, packet Packet, blockTimecode int16, flags byte, track Track) error {
+	if len(track.ContentEncodings) != 0 && blockPayloadNeedsBuffering(track) {
+		payload, err := m.muxedBlockPayload(track, packet.Data)
+		if err != nil {
+			return err
+		}
+		return m.writeBlockPayload(id, packet.TrackID, blockTimecode, flags, payload)
+	}
 	directPayload := len(track.ContentEncodings) == 0 && !(track.Codec == CodecH264 && len(track.CodecPrivate) != 0)
 	payloadSize := len(packet.Data)
 	if !directPayload {
@@ -1692,11 +1732,39 @@ func (m *Muxer) writeBlock(id ebml.ID, packet Packet, blockTimecode int16, flags
 		return err
 	}
 	if directPayload {
-		_, err = m.ebml.Write(packet.Data)
+		_, err := m.ebml.Write(packet.Data)
 		return err
 	}
-	err = m.writeBlockData(track, packet.Data)
+	return m.writeBlockData(track, packet.Data)
+}
+
+func (m *Muxer) writeBlockPayload(id ebml.ID, trackID uint32, blockTimecode int16, flags byte, payload []byte) error {
+	if err := m.writeBlockHeader(id, trackID, blockTimecode, flags, uint64(len(payload))); err != nil {
+		return err
+	}
+	_, err := m.ebml.Write(payload)
 	return err
+}
+
+func (m *Muxer) writeBlockHeader(id ebml.ID, trackID uint32, blockTimecode int16, flags byte, payloadSize uint64) error {
+	trackWidth, err := ebml.UnsignedVINTWidth(uint64(trackID))
+	if err != nil {
+		return err
+	}
+	size := uint64(trackWidth+3) + payloadSize
+	if err := m.ebml.WriteHeader(id, size); err != nil {
+		return err
+	}
+	n, err := ebml.EncodeUnsignedVINT(m.blockScratch[:], uint64(trackID))
+	if err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint16(m.blockScratch[n:n+2], uint16(blockTimecode))
+	m.blockScratch[n+2] = flags
+	if _, err := m.ebml.Write(m.blockScratch[:n+3]); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *Muxer) writeBlockData(track Track, data []byte) error {
@@ -1716,7 +1784,7 @@ func (m *Muxer) writeBlockData(track Track, data []byte) error {
 	return err
 }
 
-func (m *Muxer) writeLacedBlock(packet LacedPacket, blockTimecode int16, lacing byte, payloadSize uint64, track Track, muxedFrameSizes []int) error {
+func (m *Muxer) writeLacedBlock(packet LacedPacket, blockTimecode int16, lacing byte, payloadSize uint64, track Track, muxedFrameSizes []int, muxedPayload []byte) error {
 	if err := m.ebml.WriteHeader(idSimpleBlock, payloadSize); err != nil {
 		return err
 	}
@@ -1747,14 +1815,27 @@ func (m *Muxer) writeLacedBlock(packet LacedPacket, blockTimecode int16, lacing 
 		return ErrUnsupportedLacing
 	}
 	directPayload := len(track.ContentEncodings) == 0 && !(track.Codec == CodecH264 && len(track.CodecPrivate) != 0)
+	muxedOffset := 0
 	for i := range packet.Frames {
 		if directPayload {
 			if _, err := m.ebml.Write(packet.Frames[i]); err != nil {
 				return err
 			}
+		} else if len(muxedPayload) != 0 {
+			size := muxedFrameSizes[i]
+			if size < 0 || muxedOffset > len(muxedPayload)-size {
+				return ErrInvalidData
+			}
+			if _, err := m.ebml.Write(muxedPayload[muxedOffset : muxedOffset+size]); err != nil {
+				return err
+			}
+			muxedOffset += size
 		} else if err := m.writeBlockData(track, packet.Frames[i]); err != nil {
 			return err
 		}
+	}
+	if len(muxedPayload) != 0 && muxedOffset != len(muxedPayload) {
+		return ErrInvalidData
 	}
 	return nil
 }
@@ -2000,21 +2081,33 @@ func blockPayloadsNeedSizing(track Track) bool {
 	if len(track.ContentEncodings) == 0 {
 		return false
 	}
-	_, stripping, err := blockHeaderStripping(track)
-	return err != nil || stripping
+	encoding, err := blockContentEncoding(track)
+	return err != nil || encoding.transform != blockContentTransformNone
+}
+
+func blockPayloadNeedsBuffering(track Track) bool {
+	if len(track.ContentEncodings) == 0 {
+		return false
+	}
+	encoding, err := blockContentEncoding(track)
+	return err != nil || encoding.transform == blockContentTransformZlib
 }
 
 func blockPayloadSize(track Track, data []byte) (int, error) {
 	if len(track.ContentEncodings) != 0 {
-		headerStrip, _, err := blockHeaderStripping(track)
+		encoding, err := blockContentEncoding(track)
 		if err != nil {
 			return 0, err
 		}
-		if len(headerStrip) != 0 {
-			if !bytes.HasPrefix(data, headerStrip) {
+		switch encoding.transform {
+		case blockContentTransformNone:
+		case blockContentTransformHeaderStripping:
+			if !bytes.HasPrefix(data, encoding.settings) {
 				return 0, ErrInvalidData
 			}
-			data = data[len(headerStrip):]
+			data = data[len(encoding.settings):]
+		case blockContentTransformZlib:
+			return 0, ErrInvalidData
 		}
 	}
 	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
@@ -2022,6 +2115,77 @@ func blockPayloadSize(track Track, data []byte) (int, error) {
 		return size, err
 	}
 	return len(data), nil
+}
+
+func (m *Muxer) muxedBlockPayload(track Track, data []byte) ([]byte, error) {
+	if len(track.ContentEncodings) == 0 {
+		return m.codecMuxedBlockPayload(track, data)
+	}
+	encoding, err := blockContentEncoding(track)
+	if err != nil {
+		return nil, err
+	}
+	switch encoding.transform {
+	case blockContentTransformNone:
+		return m.codecMuxedBlockPayload(track, data)
+	case blockContentTransformHeaderStripping:
+		if !bytes.HasPrefix(data, encoding.settings) {
+			return nil, ErrInvalidData
+		}
+		return m.codecMuxedBlockPayload(track, data[len(encoding.settings):])
+	case blockContentTransformZlib:
+		payload, err := m.codecMuxedBlockPayload(track, data)
+		if err != nil {
+			return nil, err
+		}
+		return m.zlibCompressBlockPayload(payload)
+	default:
+		return nil, ErrUnsupportedContentEncoding
+	}
+}
+
+func (m *Muxer) codecMuxedBlockPayload(track Track, data []byte) ([]byte, error) {
+	if track.Codec != CodecH264 || len(track.CodecPrivate) == 0 {
+		return data, nil
+	}
+	m.codecPayload.Reset()
+	if err := h264WriteMuxedPayload(&m.codecPayload, track, data, &m.blockScratch); err != nil {
+		return nil, err
+	}
+	return m.codecPayload.Bytes(), nil
+}
+
+func (m *Muxer) zlibCompressBlockPayload(data []byte) ([]byte, error) {
+	m.blockPayload.Reset()
+	if m.zlibWriter == nil {
+		m.zlibWriter = zlib.NewWriter(&m.blockPayload)
+	} else {
+		m.zlibWriter.Reset(&m.blockPayload)
+	}
+	if _, err := m.zlibWriter.Write(data); err != nil {
+		_ = m.zlibWriter.Close()
+		return nil, err
+	}
+	if err := m.zlibWriter.Close(); err != nil {
+		return nil, err
+	}
+	return m.blockPayload.Bytes(), nil
+}
+
+func (m *Muxer) prepareLacedBlockPayload(frames [][]byte, track Track, sizes []int) ([]byte, error) {
+	if len(sizes) != len(frames) {
+		return nil, ErrInvalidData
+	}
+	m.lacePayload = m.lacePayload[:0]
+	for i := range frames {
+		payload, err := m.muxedBlockPayload(track, frames[i])
+		if err != nil {
+			return nil, err
+		}
+		sizes[i] = len(payload)
+		m.lacePayload = append(m.lacePayload, payload...)
+	}
+	return m.lacePayload, nil
 }
 
 func (m *Muxer) lacedBlockPayloadSize(packet LacedPacket, lacing byte, muxedFrameSizes []int) (uint64, error) {
@@ -3075,33 +3239,64 @@ func validateContentEncodings(encodings []ContentEncoding) error {
 }
 
 func validateWritableBlockContentEncodings(track Track) error {
-	_, _, err := blockHeaderStripping(track)
+	_, err := blockContentEncoding(track)
 	return err
 }
 
-func blockHeaderStripping(track Track) ([]byte, bool, error) {
-	var settings []byte
-	stripping := false
+type blockContentTransform uint8
+
+const (
+	blockContentTransformNone blockContentTransform = iota
+	blockContentTransformHeaderStripping
+	blockContentTransformZlib
+)
+
+type blockContentEncodingInfo struct {
+	transform blockContentTransform
+	settings  []byte
+}
+
+func blockContentEncoding(track Track) (blockContentEncodingInfo, error) {
+	var out blockContentEncodingInfo
 	for i := range track.ContentEncodings {
 		encoding := track.ContentEncodings[i]
 		if contentEncodingScope(encoding.Scope)&ContentEncodingScopeBlock == 0 {
 			continue
 		}
-		if encoding.Type != ContentEncodingTypeCompression ||
-			!encoding.CompressionSet ||
-			encoding.Compression.Algorithm != ContentCompAlgoHeaderStripping {
-			return nil, false, ErrUnsupportedContentEncoding
+		if out.transform != blockContentTransformNone {
+			return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 		}
-		if stripping {
-			return nil, false, ErrUnsupportedContentEncoding
+		if encoding.Type != ContentEncodingTypeCompression || !encoding.CompressionSet {
+			return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 		}
-		stripping = true
-		settings = encoding.Compression.Settings
+		switch encoding.Compression.Algorithm {
+		case ContentCompAlgoHeaderStripping:
+			out.transform = blockContentTransformHeaderStripping
+			out.settings = encoding.Compression.Settings
+		case ContentCompAlgoZlib:
+			if len(encoding.Compression.Settings) != 0 {
+				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+			}
+			out.transform = blockContentTransformZlib
+		default:
+			return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
+		}
 	}
-	if stripping && track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
-		return nil, false, ErrUnsupportedContentEncoding
+	if out.transform == blockContentTransformHeaderStripping && track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
+		return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 	}
-	return settings, stripping, nil
+	return out, nil
+}
+
+func blockHeaderStripping(track Track) ([]byte, bool, error) {
+	encoding, err := blockContentEncoding(track)
+	if err != nil {
+		return nil, false, err
+	}
+	if encoding.transform != blockContentTransformHeaderStripping {
+		return nil, false, nil
+	}
+	return encoding.settings, true, nil
 }
 
 func validateContentEncoding(encoding ContentEncoding) error {

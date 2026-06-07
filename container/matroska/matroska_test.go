@@ -2,6 +2,7 @@ package matroska
 
 import (
 	"bytes"
+	"compress/zlib"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -1271,6 +1272,221 @@ func TestMuxerDemuxerAppliesHeaderStrippingContentEncoding(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerAppliesZlibContentEncoding(t *testing.T) {
+	tests := []struct {
+		name  string
+		write func(*Muxer, uint32, []byte) error
+		read  func(*Demuxer, []byte)
+	}{
+		{
+			name: "simple block",
+			write: func(muxer *Muxer, trackID uint32, data []byte) error {
+				return muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: data})
+			},
+			read: func(demuxer *Demuxer, want []byte) {
+				packet := Packet{Data: make([]byte, 0, len(want))}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(packet.Data, want) {
+					t.Fatalf("packet data = %q, want %q", packet.Data, want)
+				}
+			},
+		},
+		{
+			name: "block group",
+			write: func(muxer *Muxer, trackID uint32, data []byte) error {
+				return muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, DurationNS: 20_000_000, Keyframe: true, Data: data})
+			},
+			read: func(demuxer *Demuxer, want []byte) {
+				packet := Packet{Data: make([]byte, 0, len(want))}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if packet.DurationNS != 20_000_000 || !bytes.Equal(packet.Data, want) {
+					t.Fatalf("packet = %+v data=%q, want data=%q duration 20000000", packet, packet.Data, want)
+				}
+			},
+		},
+		{
+			name: "laced block",
+			write: func(muxer *Muxer, trackID uint32, data []byte) error {
+				return muxer.WriteLacedPacket(LacedPacket{
+					TrackID:  trackID,
+					TimeNS:   0,
+					Keyframe: true,
+					Lacing:   LacingXiph,
+					Frames: [][]byte{
+						data,
+						zlibTestPayload("second laced block"),
+					},
+				})
+			},
+			read: func(demuxer *Demuxer, want []byte) {
+				packet := Packet{Data: make([]byte, 0, len(want))}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if packet.TimeNS != 0 || packet.DurationNS != 20_000_000 || !bytes.Equal(packet.Data, want) {
+					t.Fatalf("first packet = %+v data=%q, want data=%q duration 20000000", packet, packet.Data, want)
+				}
+				second := zlibTestPayload("second laced block")
+				packet.Data = make([]byte, 0, len(second))
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if packet.TimeNS != 20_000_000 || packet.DurationNS != 20_000_000 || !bytes.Equal(packet.Data, second) {
+					t.Fatalf("second packet = %+v data=%q, want %q", packet, packet.Data, second)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := zlibTestPayload(tt.name)
+			trackID, err := muxer.AddTrack(Track{
+				Type:              TrackVideo,
+				Codec:             CodecVP8,
+				DefaultDurationNS: 20_000_000,
+				ContentEncodings: []ContentEncoding{{
+					Type:           ContentEncodingTypeCompression,
+					CompressionSet: true,
+					Compression: ContentCompression{
+						Algorithm: ContentCompAlgoZlib,
+					},
+				}},
+				Video: VideoConfig{Width: 640, Height: 360},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tt.write(muxer, trackID, want); err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(buffer.Bytes(), want) {
+				t.Fatalf("file still contains uncompressed frame %q", want)
+			}
+
+			demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tt.read(demuxer, want)
+		})
+	}
+}
+
+func TestDemuxerRetriesZlibLacedFrameAfterSmallBuffer(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:              TrackVideo,
+		Codec:             CodecVP8,
+		DefaultDurationNS: 20_000_000,
+		ContentEncodings: []ContentEncoding{{
+			Type:           ContentEncodingTypeCompression,
+			CompressionSet: true,
+			Compression:    ContentCompression{Algorithm: ContentCompAlgoZlib},
+		}},
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := zlibTestPayload("first retry frame")
+	second := zlibTestPayload("second retry frame")
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames:   [][]byte{first, second},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 4)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrPayloadTooSmall) {
+		t.Fatalf("err = %v, want ErrPayloadTooSmall", err)
+	}
+	packet.Data = make([]byte, 0, len(first))
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TimeNS != 0 || !bytes.Equal(packet.Data, first) {
+		t.Fatalf("first retry packet = %+v data=%q", packet, packet.Data)
+	}
+	packet.Data = make([]byte, 0, len(second))
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.TimeNS != 20_000_000 || !bytes.Equal(packet.Data, second) {
+		t.Fatalf("second packet = %+v data=%q", packet, packet.Data)
+	}
+}
+
+func TestMuxerDemuxerAppliesZlibContentEncodingToH264(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:         TrackVideo,
+		Codec:        CodecH264,
+		CodecPrivate: h264AVCDecoderConfigWithLengthSize(2),
+		ContentEncodings: []ContentEncoding{{
+			Type:           ContentEncodingTypeCompression,
+			CompressionSet: true,
+			Compression:    ContentCompression{Algorithm: ContentCompAlgoZlib},
+		}},
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	annexB := h264AnnexBAccessUnit()
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: annexB}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(buffer.Bytes(), annexB) || bytes.Contains(buffer.Bytes(), h264AVCSampleWithLengthSize2()) {
+		t.Fatalf("file still contains uncompressed h264 sample")
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, len(annexB))}
+	if err := demuxer.ReadPacket(&packet); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(packet.Data, annexB) {
+		t.Fatalf("packet data = %v, want %v", packet.Data, annexB)
+	}
+}
+
 func TestMuxerRejectsHeaderStrippingPacketWithoutPrefix(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})
@@ -1314,11 +1530,20 @@ func TestMuxerRejectsUnsupportedBlockContentEncoding(t *testing.T) {
 		wantError error
 	}{
 		{
-			name: "zlib block compression",
+			name: "bzlib block compression",
 			encoding: ContentEncoding{
 				Type:           ContentEncodingTypeCompression,
 				CompressionSet: true,
-				Compression:    ContentCompression{Algorithm: ContentCompAlgoZlib},
+				Compression:    ContentCompression{Algorithm: ContentCompAlgoBzlib},
+			},
+			wantError: ErrUnsupportedContentEncoding,
+		},
+		{
+			name: "lzo block compression",
+			encoding: ContentEncoding{
+				Type:           ContentEncodingTypeCompression,
+				CompressionSet: true,
+				Compression:    ContentCompression{Algorithm: ContentCompAlgoLZO1X},
 			},
 			wantError: ErrUnsupportedContentEncoding,
 		},
@@ -1376,7 +1601,7 @@ func TestMuxerRejectsUnsupportedBlockContentEncoding(t *testing.T) {
 func TestDemuxerRejectsUnsupportedBlockContentEncoding(t *testing.T) {
 	data := makeContentEncodedBlockMatroskaData(t, contentEncodingsPayload(t,
 		contentEncodingPayload(t, func(w *ebml.Writer) error {
-			return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoZlib, nil))
+			return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoBzlib, nil))
 		}),
 	), []byte("compressed"))
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
@@ -1387,6 +1612,56 @@ func TestDemuxerRejectsUnsupportedBlockContentEncoding(t *testing.T) {
 	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrUnsupportedContentEncoding) {
 		t.Fatalf("err = %v, want ErrUnsupportedContentEncoding", err)
 	}
+}
+
+func TestDemuxerRejectsInvalidZlibContentEncodingPayload(t *testing.T) {
+	data := makeContentEncodedBlockMatroskaData(t, contentEncodingsPayload(t,
+		contentEncodingPayload(t, func(w *ebml.Writer) error {
+			return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoZlib, nil))
+		}),
+	), []byte("not a zlib stream"))
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 32)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
+	}
+}
+
+func TestDemuxerRejectsTruncatedZlibContentEncodingPayload(t *testing.T) {
+	var compressed bytes.Buffer
+	zw := zlib.NewWriter(&compressed)
+	if _, err := zw.Write(zlibTestPayload("truncated stream")); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	payload := compressed.Bytes()
+	data := makeContentEncodedBlockMatroskaData(t, contentEncodingsPayload(t,
+		contentEncodingPayload(t, func(w *ebml.Writer) error {
+			return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoZlib, nil))
+		}),
+	), payload[:len(payload)-1])
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, len(zlibTestPayload("truncated stream")))}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
+	}
+}
+
+func zlibTestPayload(label string) []byte {
+	prefix := []byte("zlib content encoding test payload: " + label + ":")
+	payload := make([]byte, 0, len(prefix)*16)
+	for i := 0; i < 16; i++ {
+		payload = append(payload, prefix...)
+	}
+	return payload
 }
 
 func TestMuxerDemuxerPreservesDecodedFieldDuration(t *testing.T) {
