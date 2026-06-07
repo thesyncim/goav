@@ -1043,10 +1043,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     branch-level `.Tap(...)` calls after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`,
     or `.Copy()` now become packet-domain taps in planned branch intent and in
     runtime attachment. A planned-branch test verifies the operation order and
-    `After: OpEncode` tap metadata; bounded-buffered runtime tests attach parent
-    branches that publish encoded or copied packet taps, then attach child
-    packet-copy recording branches from those taps before future media arrives.
-    Done.
+    `After: OpEncode` tap metadata; branch-composition build coverage verifies
+    the built task exposes codec-bearing packet caps so a later recording target
+    can attach from the planned encoded tap; bounded-buffered runtime tests
+    attach parent branches that publish encoded or copied packet taps, then
+    attach child packet-copy recording branches from those taps before future
+    media arrives. Done.
 
 ## First Vertical Slice
 

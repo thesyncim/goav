@@ -162,8 +162,17 @@ err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Run(ctx)
 ```
 
-The same non-encoding flow shape can be applied to a runtime branch attached
-from a frame tap.
+The same flow shape can be applied to a runtime branch attached from a frame
+tap. The flow still owns only operations; the branch owns its target.
+
+```go
+archiveHandle, err := task.Attach(ctx,
+    goav.Branch("archive-live").
+        FromTap("audio.decoded").
+        Apply(archive).
+        To(archiveTarget),
+)
+```
 
 ## Runtime Branches
 
@@ -225,10 +234,10 @@ Use `Task.Taps()` to discover stable outlets. Use `Task.Detach(ctx, h)` when
 the caller wants the task to own detach semantics. Runtime branches can run
 custom stages, resize/resample from frame taps, publish additional taps, encode
 Opus/VP8/VP9 from frame taps, copy packet taps into endpoints, and feed later
-runtime branches from those taps. H264 and AV1 recipe encoding remain work in
-progress. Detaching a parent runtime branch removes dependent late branches
-anchored from its taps. Buffered dynamic branch mutation remains an explicit
-roadmap slice.
+runtime branches from those taps. Taps declared after encode or copy are packet
+taps. H264 and AV1 recipe encoding remain work in progress. Detaching a parent
+runtime branch removes dependent late branches anchored from its taps. Direct
+and bounded buffered task graphs both support late stage/sink branches.
 
 ## Generic File Or Protocol Ingest
 

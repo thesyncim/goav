@@ -947,6 +947,89 @@ func TestBranchCompositionEncodeSinkEndpointRuns(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionTaskAttachesAfterEncodeTap(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &decodeTestDecoder{}
+	encoder := &encodeTestEncoder{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder}),
+	)
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		Branches(
+			Branch("archive").
+				Opus(96_000).
+				Tap("audio.encoded").
+				To(Target("archive", FileOutput("archive.ogg", io.Discard))),
+		)
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	var encodedTap TapInfo
+	for _, tap := range task.Taps() {
+		if tap.Name == "audio.encoded" {
+			encodedTap = tap
+			break
+		}
+	}
+	if encodedTap.Name == "" ||
+		encodedTap.Domain != DomainPacket ||
+		encodedTap.MediaKind != av.MediaAudio ||
+		encodedTap.Caps.Codec != av.CodecOpus ||
+		encodedTap.Caps.StreamID != "archive" ||
+		encodedTap.Node != "encode-archive" {
+		t.Fatalf("encoded tap = %+v, want packet Opus archive tap on encode-archive", encodedTap)
+	}
+
+	recording, err := task.Attach(ctx, Branch("record").
+		FromTap("audio.encoded").
+		Copy().
+		To(Target("record", FileOutput("recording.ogg", io.Discard))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || encoder.encodes != 1 {
+		t.Fatalf("decodes=%d encodes=%d", decoder.decodes, encoder.encodes)
+	}
+	if len(muxers.muxers) != 2 ||
+		muxers.muxers[0].writes != 1 ||
+		muxers.muxers[1].writes != 1 ||
+		muxers.muxers[0].lastStream != "archive" ||
+		muxers.muxers[1].lastStream != "archive" {
+		t.Fatalf("muxers=%d first=%+v second=%+v", len(muxers.muxers), muxers.muxers[0], muxers.muxers[1])
+	}
+	if err := task.Detach(ctx, recording); err != nil {
+		t.Fatal(err)
+	}
+	if !muxers.muxers[1].closed {
+		t.Fatal("late recording muxer was not closed by detach")
+	}
+}
+
 func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{videoVP8TranscodeTestStream()}

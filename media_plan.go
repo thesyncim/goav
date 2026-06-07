@@ -427,6 +427,7 @@ func planTaps(branches []planBranch) []planTap {
 		currentDomain := DomainPacket
 		media := branch.Stream.Type
 		currentStreamID := av.StreamID(firstNonEmpty(string(branch.Stream.ID), branch.Name))
+		currentCodec := branch.Stream.Codec
 		currentNode := firstNonEmpty(branch.Input, branch.Name)
 		for j := range branch.Operations {
 			operation := branch.Operations[j]
@@ -438,6 +439,7 @@ func planTaps(branches []planBranch) []planTap {
 			case OpEncode:
 				currentDomain = DomainPacket
 				currentStreamID = av.StreamID(firstNonEmpty(branch.Name, string(currentStreamID)))
+				currentCodec = av.CodecID(operation.Component)
 			}
 			if operation.Kind == OpCopy {
 				continue
@@ -456,6 +458,7 @@ func planTaps(branches []planBranch) []planTap {
 					Domain:    currentDomain,
 					MediaKind: media,
 					StreamID:  currentStreamID,
+					Codec:     currentCodec,
 				},
 				Shared: true,
 			})
