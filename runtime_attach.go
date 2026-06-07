@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -29,8 +30,11 @@ type runtimeBranch struct {
 }
 
 type runtimeBranchStep struct {
-	stage pipeline.Stage
-	tap   string
+	stage     pipeline.Stage
+	transform TransformSpec
+	tap       string
+	caps      StreamCaps
+	owned     bool
 }
 
 // Attachment is a live runtime branch attached to a task.
@@ -61,17 +65,23 @@ func (t *task) Attach(ctx context.Context, spec BranchSpec) (Attachment, error) 
 	if err != nil {
 		return nil, err
 	}
+	if err := t.prepareRuntimeBranch(ctx, &branch); err != nil {
+		return nil, err
+	}
 	if err := t.validateRuntimeBranchTapsLocked(branch); err != nil {
+		closeRuntimeBranchOwnedStages(branch)
 		return nil, err
 	}
 
 	nodeNames, err := runtimeBranchNodeNames(branch, graphSpec)
 	if err != nil {
+		closeRuntimeBranchOwnedStages(branch)
 		return nil, err
 	}
 	refs, routes, taps, err := t.attachRuntimeBranch(branch, nodeNames)
 	if err != nil {
 		t.rollbackRuntimeBranch(refs)
+		closeRuntimeBranchOwnedStages(branch)
 		return nil, err
 	}
 	attachment := &runtimeAttachment{
@@ -107,7 +117,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		case step.stage != nil:
 			branch.steps = append(branch.steps, runtimeBranchStep{stage: step.stage})
 		case step.transform.Resize != nil || step.transform.Resample != nil:
-			return branch, runtimeBranchInvalidError("runtime branch transforms are not dynamic yet", "attach runtime branches with .Do(stage).To(goav.FrameSink(...)) or plan resize/resample branches before Build")
+			branch.steps = append(branch.steps, runtimeBranchStep{transform: cloneTransformSpec(step.transform)})
 		case step.tap != "":
 			branch.steps = append(branch.steps, runtimeBranchStep{tap: step.tap})
 		}
@@ -142,6 +152,57 @@ func (t *task) resolveRuntimeBranchAnchor(branch runtimeBranch, spec pipeline.Sp
 	return branch.from, TapInfo{Node: pipeline.NodeRef(branch.from)}, nil
 }
 
+func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch) error {
+	if branch == nil {
+		return nil
+	}
+	currentCaps := runtimeBranchAnchorCaps(branch.anchor)
+	currentStream := streamFromRuntimeBranchCaps(branch.name, currentCaps)
+	transformIndex := 0
+	for i := range branch.steps {
+		step := &branch.steps[i]
+		switch {
+		case step.stage != nil:
+			step.caps = currentCaps
+		case runtimeBranchStepHasTransform(*step):
+			if t.runtime == nil {
+				closeRuntimeBranchOwnedStages(*branch)
+				return runtimeBranchInvalidError(
+					"runtime branch transforms require the standard runtime",
+					"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching resize/resample branches",
+				)
+			}
+			if currentCaps.Domain != DomainFrame {
+				closeRuntimeBranchOwnedStages(*branch)
+				return runtimeBranchInvalidError(
+					"runtime branch transforms require a frame tap",
+					"attach transform branches with .FromTap(name) where name is declared after Decode, Resize, Resample, or a frame-stage Tap",
+				)
+			}
+			transform, err := runtimeBranchTransform(branch.name, currentStream, step.transform, transformIndex)
+			if err != nil {
+				closeRuntimeBranchOwnedStages(*branch)
+				return err
+			}
+			stage, outputStream, err := (&builder{runtime: t.runtime}).newTranscodeFilterStage(ctx, transform, currentStream, t.runtime.realtime)
+			if err != nil {
+				closeRuntimeBranchOwnedStages(*branch)
+				return runtimeBranchTransformError(transform.name, err)
+			}
+			step.stage = stage
+			step.transform = TransformSpec{}
+			step.owned = true
+			currentStream = outputStream
+			currentCaps = streamCapsFromRuntimeBranchStream(outputStream, currentCaps)
+			step.caps = currentCaps
+			transformIndex++
+		case step.tap != "":
+			step.caps = currentCaps
+		}
+	}
+	return nil
+}
+
 func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]pipeline.NodeRef, []pipeline.Route, []TapInfo, error) {
 	refs := make([]pipeline.NodeRef, 0, len(nodeNames))
 	routes := make([]pipeline.Route, 0, len(nodeNames))
@@ -152,7 +213,7 @@ func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]
 	for i := range branch.steps {
 		step := branch.steps[i]
 		if step.tap != "" {
-			taps = append(taps, runtimeBranchTapInfo(branch, step.tap, previous))
+			taps = append(taps, runtimeBranchTapInfo(step.tap, previous, step.caps))
 			continue
 		}
 		if step.stage == nil {
@@ -482,6 +543,10 @@ func runtimeBranchStageCount(branch runtimeBranch) int {
 	return count
 }
 
+func runtimeBranchStepHasTransform(step runtimeBranchStep) bool {
+	return step.transform.Resize != nil || step.transform.Resample != nil
+}
+
 func runtimeBranchTapCount(branch runtimeBranch) int {
 	count := 0
 	for i := range branch.steps {
@@ -515,13 +580,130 @@ func (t *task) validateRuntimeBranchTapsLocked(branch runtimeBranch) error {
 	return nil
 }
 
-func runtimeBranchTapInfo(branch runtimeBranch, name string, node pipeline.NodeRef) TapInfo {
-	domain := branch.anchor.Domain
+func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformSpec, index int) (transcodeTransform, error) {
+	base := firstNonEmpty(branchName, "branch")
+	if err := validateTransformSpec("attach runtime branch", base, spec); err != nil {
+		return transcodeTransform{}, err
+	}
+	suffix := ""
+	if index > 0 {
+		suffix = "-" + strconv.Itoa(index+1)
+	}
+	switch {
+	case spec.Resize != nil && spec.Resample != nil:
+		return transcodeTransform{}, &BuildError{
+			Code:      "transform_invalid",
+			Operation: "attach runtime branch",
+			Node:      base,
+			Reason:    "one runtime branch transform cannot be both resize and resample",
+			Cause:     ErrUnsupportedBuild,
+		}
+	case spec.Resize != nil:
+		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
+			return transcodeTransform{}, runtimeBranchTransformMediaError(base, "resize", "video")
+		}
+		resize := *spec.Resize
+		return transcodeTransform{
+			name:    "resize-" + base + suffix,
+			factory: transformFactoryName(spec),
+			video:   &resize,
+		}, nil
+	case spec.Resample != nil:
+		if stream.Type != av.MediaAudio && stream.Codec.Type != av.MediaAudio {
+			return transcodeTransform{}, runtimeBranchTransformMediaError(base, "resample", "audio")
+		}
+		resample := *spec.Resample
+		return transcodeTransform{
+			name:    "resample-" + base + suffix,
+			factory: transformFactoryName(spec),
+			audio:   &resample,
+		}, nil
+	default:
+		return transcodeTransform{}, &BuildError{
+			Code:      "transform_invalid",
+			Operation: "attach runtime branch",
+			Node:      base,
+			Reason:    "empty runtime branch transform",
+			Suggestions: []string{
+				"call .Resize(width, height) for video frame taps",
+				"call .Resample(sampleRate, channels) for audio frame taps",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+}
+
+func runtimeBranchAnchorCaps(anchor TapInfo) StreamCaps {
+	caps := anchor.Caps
+	if caps.Domain == "" {
+		caps.Domain = anchor.Domain
+	}
+	if caps.MediaKind == "" {
+		caps.MediaKind = anchor.MediaKind
+	}
+	return caps
+}
+
+func streamFromRuntimeBranchCaps(name string, caps StreamCaps) av.Stream {
+	stream := av.Stream{
+		ID:   av.StreamID(firstNonEmpty(name, "runtime-branch")),
+		Name: firstNonEmpty(name, "runtime-branch"),
+		Type: caps.MediaKind,
+		Codec: av.CodecParameters{
+			ID:            caps.Codec,
+			Type:          caps.MediaKind,
+			SampleRate:    caps.SampleRate,
+			Channels:      caps.Channels,
+			ChannelLayout: "",
+			Width:         caps.Width,
+			Height:        caps.Height,
+			PixelFormat:   caps.PixelFormat,
+			SampleFormat:  caps.SampleFormat,
+		},
+	}
+	if caps.SampleRate > 0 {
+		stream.Codec.ClockRate = uint32(caps.SampleRate)
+		stream.TimeBase = av.TimeBase{Num: 1, Den: int64(caps.SampleRate)}
+	}
+	return stream
+}
+
+func streamCapsFromRuntimeBranchStream(stream av.Stream, previous StreamCaps) StreamCaps {
+	caps := previous
+	caps.Domain = DomainFrame
+	if stream.Type != "" {
+		caps.MediaKind = stream.Type
+	}
+	if stream.Codec.ID != "" {
+		caps.Codec = stream.Codec.ID
+	}
+	if stream.Codec.Width != 0 {
+		caps.Width = stream.Codec.Width
+	}
+	if stream.Codec.Height != 0 {
+		caps.Height = stream.Codec.Height
+	}
+	if stream.Codec.PixelFormat != "" {
+		caps.PixelFormat = stream.Codec.PixelFormat
+	}
+	if stream.Codec.SampleRate != 0 {
+		caps.SampleRate = stream.Codec.SampleRate
+	}
+	if stream.Codec.Channels != 0 {
+		caps.Channels = stream.Codec.Channels
+	}
+	if stream.Codec.SampleFormat != "" {
+		caps.SampleFormat = stream.Codec.SampleFormat
+	}
+	return caps
+}
+
+func runtimeBranchTapInfo(name string, node pipeline.NodeRef, caps StreamCaps) TapInfo {
+	domain := caps.Domain
 	if domain == "" {
 		domain = DomainPacket
 	}
-	media := branch.anchor.MediaKind
-	caps := branch.anchor.Caps
+	media := caps.MediaKind
 	if caps.Domain == "" {
 		caps.Domain = domain
 	}
@@ -534,6 +716,14 @@ func runtimeBranchTapInfo(branch runtimeBranch, name string, node pipeline.NodeR
 		Domain:    domain,
 		Caps:      caps,
 		Node:      node,
+	}
+}
+
+func closeRuntimeBranchOwnedStages(branch runtimeBranch) {
+	for i := range branch.steps {
+		if branch.steps[i].owned && branch.steps[i].stage != nil {
+			_ = branch.steps[i].stage.Close()
+		}
 	}
 }
 
@@ -663,6 +853,39 @@ func runtimeBranchTapDuplicateError(name string) error {
 			"call task.Taps() before attaching to inspect the current tap names",
 		},
 		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func runtimeBranchTransformMediaError(branch string, transform string, media string) error {
+	return &BuildError{
+		Code:      "runtime_branch_transform_media_mismatch",
+		Operation: "attach runtime branch",
+		Node:      branch,
+		Reason:    transform + " applies to " + media + " frame taps",
+		Suggestions: []string{
+			"use .Video().Decode().Tap(name) or a video transform tap before attaching .Resize(...)",
+			"use .Audio().Decode().Tap(name) or an audio transform tap before attaching .Resample(...)",
+			"call task.Taps() and choose a tap with matching media kind",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func runtimeBranchTransformError(node string, cause error) error {
+	if cause == nil {
+		return nil
+	}
+	return &BuildError{
+		Code:      "runtime_branch_transform_error",
+		Operation: "attach runtime branch",
+		Node:      node,
+		Reason:    "runtime branch transform could not be opened",
+		Suggestions: []string{
+			"register a matching resize or resample filter adapter",
+			"use goav.Default() or goav.New(goav.WithDefaults()) for standard filters",
+			"attach from a frame tap with media caps that match the requested transform",
+		},
+		Cause: cause,
 	}
 }
 

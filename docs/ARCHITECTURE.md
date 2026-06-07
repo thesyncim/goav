@@ -75,14 +75,15 @@ stage/sink branch to a built direct graph and returns an attachment handle with
 `Task.Close()` stops attachments before closing the graph. Stable recipe outlets
 come from `.Tap(name)` and are listed by `Task.Taps()`; runtime branches attach
 with `goav.Branch("name").FromTap(name)`. A late branch can run custom
-`.Do(...)` stages and expose its own `.Tap(name)` outlets, so another late
-branch can attach downstream without rebuilding the task. Detaching a parent
-runtime branch also removes dependent runtime branches anchored from that
-parent's taps. Expert graph nodes can still be addressed with `From(node)` and
-`Task.Describe`. This is for late analysis taps, meters, and screenshot
-collectors that should observe future messages without rebuilding the task.
-Buffered runtime attachments and late muxed target branches remain separate
-slices because they need queue, worker, and mux lifecycle management.
+`.Do(...)` stages, resize or resample from frame taps, and expose its own
+`.Tap(name)` outlets, so another late branch can attach downstream without
+rebuilding the task. Detaching a parent runtime branch also removes dependent
+runtime branches anchored from that parent's taps. Expert graph nodes can still
+be addressed with `From(node)` and `Task.Describe`. This is for late analysis
+taps, meters, and screenshot collectors that should observe future messages
+without rebuilding the task. Buffered runtime attachments, runtime encoders, and
+late muxed target branches remain separate slices because they need queue,
+worker, codec, and mux lifecycle management.
 
 Current graph execution covers:
 

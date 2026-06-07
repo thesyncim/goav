@@ -86,7 +86,7 @@ func (emptyGraphCompiler) build(ctx context.Context, b *builder) (Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 type explicitGraphCompiler struct{}
@@ -108,7 +108,7 @@ func (explicitGraphCompiler) build(ctx context.Context, b *builder) (Task, error
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 type remuxGraphCompiler struct{}

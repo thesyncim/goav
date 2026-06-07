@@ -696,11 +696,12 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	streams := []av.Stream{videoVP8TranscodeTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
 	muxers := &remuxTestMuxerFactory{}
+	resizeFactory := &transcodeTestFilterFactory{}
 	filters := withTestFilters(testFilterFactory(filter.Descriptor{
 		Name:   filter.FactoryResize,
 		Input:  av.MediaVideo,
 		Output: av.MediaVideo,
-	}, &transcodeTestFilterFactory{}))
+	}, resizeFactory))
 	formats := withTestFormats(
 		testFormatProber(remuxTestProber{streams: streams}),
 		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -739,28 +740,35 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 		t.Fatalf("resize tap = %+v, want frame video tap with graph node", resizeTap)
 	}
 
-	sample := &runtimeTestStage{name: "sample"}
 	attachment, err := task.Attach(ctx, Branch("screenshots").
 		FromTap("video.720p.frames").
-		Do(sample).
-		Tap("video.720p.sampled").
+		Resize(320, 180).
+		Tap("video.320.frames").
 		To(FrameSink(SinkFunc("screenshots", func(context.Context, Message) error {
 			return nil
 		}))))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var sampledTap TapInfo
+	if resizeFactory.config.Video == nil || resizeFactory.config.Video.Width != 320 || resizeFactory.config.Video.Height != 180 {
+		t.Fatalf("runtime resize config = %+v, want 320x180", resizeFactory.config.Video)
+	}
+	var resizedTap TapInfo
 	for _, tap := range task.Taps() {
-		if tap.Name == "video.720p.sampled" {
-			sampledTap = tap
+		if tap.Name == "video.320.frames" {
+			resizedTap = tap
 			break
 		}
 	}
-	if sampledTap.Name == "" || sampledTap.Domain != DomainFrame || sampledTap.MediaKind != av.MediaVideo || sampledTap.Node != "screenshots/sample" {
-		t.Fatalf("sampled tap = %+v, want frame video tap on screenshots/sample", sampledTap)
+	if resizedTap.Name == "" ||
+		resizedTap.Domain != DomainFrame ||
+		resizedTap.MediaKind != av.MediaVideo ||
+		resizedTap.Caps.Width != 320 ||
+		resizedTap.Caps.Height != 180 ||
+		resizedTap.Node != "screenshots/resize-screenshots" {
+		t.Fatalf("resized tap = %+v, want frame video 320x180 tap on screenshots/resize-screenshots", resizedTap)
 	}
-	nestedAttachment, err := task.Attach(ctx, Branch("preview").FromTap("video.720p.sampled").To(FrameSink(SinkFunc("preview", func(context.Context, Message) error {
+	nestedAttachment, err := task.Attach(ctx, Branch("preview").FromTap("video.320.frames").To(FrameSink(SinkFunc("preview", func(context.Context, Message) error {
 		return nil
 	}))))
 	if err != nil {
@@ -836,6 +844,69 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := task.Detach(ctx, packetAttachment); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+	)
+	resampleFactory := &transcodeTestFilterFactory{}
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResample,
+		Input:  av.MediaAudio,
+		Output: av.MediaAudio,
+	}, resampleFactory))
+	task, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(New(formats, codecs, filters)).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		To(FrameSink(&runtimeTestSink{name: "frames"})).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	attachment, err := task.Attach(ctx, Branch("voice").
+		FromTap("audio.decoded").
+		Resample(16_000, Mono).
+		Tap("audio.16k").
+		To(FrameSink(SinkFunc("voice", func(context.Context, Message) error {
+			return nil
+		}))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resampleFactory.config.Audio == nil ||
+		resampleFactory.config.Audio.SampleRate != 16_000 ||
+		resampleFactory.config.Audio.Channels != Mono {
+		t.Fatalf("runtime resample config = %+v, want 16k mono", resampleFactory.config.Audio)
+	}
+	var resampledTap TapInfo
+	for _, tap := range task.Taps() {
+		if tap.Name == "audio.16k" {
+			resampledTap = tap
+			break
+		}
+	}
+	if resampledTap.Name == "" ||
+		resampledTap.Domain != DomainFrame ||
+		resampledTap.MediaKind != av.MediaAudio ||
+		resampledTap.Caps.SampleRate != 16_000 ||
+		resampledTap.Caps.Channels != Mono ||
+		resampledTap.Node != "voice/resample-voice" {
+		t.Fatalf("resampled tap = %+v, want frame audio 16k mono tap on voice/resample-voice", resampledTap)
+	}
+	if err := task.Detach(ctx, attachment); err != nil {
 		t.Fatal(err)
 	}
 }

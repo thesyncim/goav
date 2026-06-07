@@ -27,7 +27,7 @@ func (b *builder) buildRemux(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error {

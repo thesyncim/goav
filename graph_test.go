@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -375,6 +376,67 @@ func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_tap_duplicate" {
 		t.Fatalf("err = %v, want runtime_branch_tap_duplicate", err)
+	}
+}
+
+func TestTaskAttachRuntimeResizeBranchRunsFromFrameTap(t *testing.T) {
+	ctx := context.Background()
+	resizer := &transcodeTestFilter{}
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResize,
+		Input:  av.MediaVideo,
+		Output: av.MediaVideo,
+	}, &transcodeTestFilterFactory{filter: resizer}))
+	frame := av.Frame{
+		StreamID: "video",
+		Type:     av.MediaVideo,
+		Video:    &av.VideoFrame{Width: 1280, Height: 720, PixelFormat: av.PixelFormatI420},
+	}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	base := &runtimeTestSink{name: "base"}
+	resized := &runtimeTestSink{name: "resized"}
+
+	graph := New(filters).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	mediaTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := mediaTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "video.frames",
+		MediaKind: av.MediaVideo,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:      DomainFrame,
+			MediaKind:   av.MediaVideo,
+			Width:       1280,
+			Height:      720,
+			PixelFormat: av.PixelFormatI420,
+		},
+		Node: "source",
+	}}
+	defer mediaTask.Close()
+
+	attachment, err := mediaTask.Attach(ctx, Branch("small").
+		FromTap("video.frames").
+		Resize(320, 180).
+		To(FrameSink(resized)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mediaTask.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if base.frames != 1 || resized.frames != 1 || resizer.frames != 1 {
+		t.Fatalf("base=%d resized=%d filter=%d", base.frames, resized.frames, resizer.frames)
+	}
+	if err := mediaTask.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
 	}
 }
 

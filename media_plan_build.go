@@ -21,7 +21,7 @@ func (r recipeResolved) buildMediaPlanPacketCopyTask(ctx context.Context) (Task,
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, builder.runtime), nil
 }
 
 func (r recipeResolved) buildMediaPlanFrameSinkTask(ctx context.Context) (Task, error) {
@@ -37,7 +37,7 @@ func (r recipeResolved) buildMediaPlanFrameSinkTask(ctx context.Context) (Task, 
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, builder.runtime), nil
 }
 
 func (r recipeResolved) buildMediaPlanEncodeTask(ctx context.Context) (Task, error) {
@@ -53,7 +53,7 @@ func (r recipeResolved) buildMediaPlanEncodeTask(ctx context.Context) (Task, err
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, builder.runtime), nil
 }
 
 func (r recipeResolved) buildMediaPlanBranchComposerTask(ctx context.Context) (Task, error) {
@@ -69,7 +69,7 @@ func (r recipeResolved) buildMediaPlanBranchComposerTask(ctx context.Context) (T
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, builder.runtime), nil
 }
 
 func (r recipeResolved) compileMediaPlanBranchComposer(ctx context.Context, builder *builder, graph pipeline.Graph) error {

@@ -127,7 +127,7 @@ func (b *builder) buildDecodeEncodeToOutput(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 func (b *builder) buildRTPDecodeEncodeToOutput(ctx context.Context) (Task, error) {
@@ -139,7 +139,7 @@ func (b *builder) buildRTPDecodeEncodeToOutput(ctx context.Context) (Task, error
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 func (b *builder) compileDecodeEncodeToOutput(ctx context.Context, graph pipeline.Graph) error {

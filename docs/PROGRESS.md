@@ -907,6 +907,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     when the parent attachment is removed. Runtime transforms, encode, and
     muxed target endpoints remain planned-graph slices until caps negotiation
     and mux lifecycle planning are explicit. Done.
+240. Add runtime frame transforms from taps:
+    `Task.Attach(ctx, goav.Branch(name).FromTap(tap).Resize(...).Tap(...).To(FrameSink(...)))`
+    and the audio `Resample(...)` equivalent now materialize through the same
+    filter stage path used by planned branches, require frame-domain taps,
+    carry transformed caps onto nested runtime taps, and keep runtime branches
+    sink-oriented. Runtime encode and muxed target endpoints remain separate
+    slices because they need codec and mux lifecycle planning. Done.
 
 ## First Vertical Slice
 
@@ -1152,8 +1159,8 @@ surface is small: `From`, stream builders, `Tap`, `Branch`, `Branches`,
 `Target`, endpoint constructors, `Flow`, `Codec`, and runtime `Attach`. Flows
 expand into branch intent instead of a parallel graph language, and
 `Task.Attach` remains the late branch control plane for running direct graphs,
-including custom-stage sink branches that can publish nested runtime taps for
-later attachments.
+including custom-stage and resize/resample sink branches that can publish nested
+runtime taps for later attachments.
 `MediaPlan` expresses record, stream decode, encode, branch composition, and
 transcode as input refs, stream selectors, ordered operations, target refs,
 taps, and planner decisions. `Describe`, `Build`, and

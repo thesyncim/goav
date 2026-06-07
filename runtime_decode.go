@@ -58,7 +58,7 @@ func (b *builder) buildDecodeToSink(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph) error {

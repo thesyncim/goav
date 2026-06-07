@@ -167,11 +167,12 @@ defer levels.Close(ctx)
 
 Use `Task.Taps()` to discover stable outlets. Use `Task.Detach(ctx, h)` when
 the caller wants the task to own detach semantics. Runtime branches can run
-custom stages, publish additional taps, and feed later runtime branches from
-those taps. Detaching a parent runtime branch removes dependent late branches
-anchored from its taps. Runtime branches currently attach sink-oriented
-observation work; late muxed recording, late encode/transform planning, and
-buffered dynamic branch mutation remain explicit roadmap slices.
+custom stages, resize/resample from frame taps, publish additional taps, and
+feed later runtime branches from those taps. Detaching a parent runtime branch
+removes dependent late branches anchored from its taps. Runtime branches
+currently attach sink-oriented observation work; late muxed recording, late
+encode planning, and buffered dynamic branch mutation remain explicit roadmap
+slices.
 
 ## Generic File Or Protocol Ingest
 

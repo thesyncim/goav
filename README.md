@@ -187,6 +187,8 @@ go func() { _ = task.Run(ctx) }()
 shots, err := task.Attach(ctx,
     goav.Branch("screenshots").
         FromTap("video.720p.frames").
+        Resize(320, 180).
+        Tap("video.screenshot.frames").
         To(goav.FrameSink(goav.SinkFunc("screenshots", collectScreenshot))),
 )
 if err != nil {
@@ -197,9 +199,9 @@ return task.Detach(ctx, shots)
 
 `Task.Taps()` lists available attach points. `Attach` adds a downstream sink
 branch to a running direct task graph without rebuilding upstream. Late branches
-can run custom `.Do(...)` stages and expose their own `.Tap(name)` outlets for
-later attachments; detaching a parent attachment also removes dependent late
-branches anchored from its taps.
+can run custom `.Do(...)` stages, resize/resample from frame taps, and expose
+their own `.Tap(name)` outlets for later attachments; detaching a parent
+attachment also removes dependent late branches anchored from its taps.
 
 ## Explain And Inspect
 
@@ -288,8 +290,9 @@ Implemented now:
 - Packet-preserving `Copy().To(...)`.
 - Stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode.
 - Typed `Branch`, `Target`, endpoint, and `Flow` composition.
-- Runtime branch attachment from named taps with custom stages, nested runtime
-  taps, `Attachment.Close(ctx)`, and `Task.Detach(ctx, h)`.
+- Runtime branch attachment from named taps with custom stages, resize/resample
+  from frame taps, nested runtime taps, `Attachment.Close(ctx)`, and
+  `Task.Detach(ctx, h)`.
 - Custom decode/encode registration through `WithDecoder`, `WithEncoder`, and
   generic `Codec` specs.
 - Structured `Explain(ctx)` reports and `Describe()` graph specs.

@@ -60,7 +60,7 @@ func (b *builder) buildRTPDecodeToSink(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return &task{graph: graph}, nil
+	return newTask(graph, b.runtime), nil
 }
 
 func (b *builder) compileRTPDecodeToSink(ctx context.Context, graph pipeline.Graph) error {

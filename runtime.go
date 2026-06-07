@@ -427,10 +427,15 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 
 type task struct {
 	graph       pipeline.Graph
+	runtime     *runtime
 	taps        []TapInfo
 	branchTaps  []TapInfo
 	attachMu    sync.Mutex
 	attachments map[*runtimeAttachment]struct{}
+}
+
+func newTask(graph pipeline.Graph, runtime *runtime) *task {
+	return &task{graph: graph, runtime: runtime}
 }
 
 func (t *task) Describe() pipeline.Spec {
