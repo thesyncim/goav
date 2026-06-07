@@ -42,6 +42,8 @@ type Demuxer struct {
 	seekEntries           []SeekEntry
 	clusterIndex          []clusterIndexEntry
 	clusterIndexBuilt     bool
+	packetIndex           []packetIndexEntry
+	packetIndexBuilt      bool
 	inSegment             bool
 	inCluster             bool
 	clusterUnknown        bool
@@ -65,6 +67,10 @@ type Demuxer struct {
 	laceAdditions         []BlockAddition
 	laceFrameCount        int
 	laceFrameIndex        int
+	laceSeekFrameIndex    int
+	lastLaceBaseTimeNS    int64
+	lastLaceFrameIndex    int
+	lastLaceFrameCount    int
 	laceKeyframe          bool
 	laceInvisible         bool
 	laceDiscardable       bool
@@ -84,6 +90,22 @@ type laceFrame struct {
 type clusterIndexEntry struct {
 	TimeNS   int64
 	Position uint64
+}
+
+type packetIndexEntry struct {
+	TimeNS          int64
+	TrackID         uint32
+	ClusterPosition uint64
+	BlockPosition   uint64
+	ClusterTimecode int64
+	FrameIndex      int
+}
+
+type indexedBlockInfo struct {
+	TrackID         uint32
+	TimeNS          int64
+	FrameCount      int
+	FrameDurationNS int64
 }
 
 const (
@@ -149,6 +171,8 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.seekEntries = d.seekEntries[:0]
 	d.clusterIndex = d.clusterIndex[:0]
 	d.clusterIndexBuilt = false
+	d.packetIndex = d.packetIndex[:0]
+	d.packetIndexBuilt = false
 	d.inSegment = false
 	d.inCluster = false
 	d.clusterUnknown = false
@@ -172,12 +196,18 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 	}
 	if err := d.ensureCues(); err != nil {
 		if d.canUseClusterIndexAfterCueError(err) {
+			if err := d.seekToPacketAtOrBeforeTime(timeNS); err == nil {
+				return nil
+			}
 			return d.seekToClusterAtTime(timeNS)
 		}
 		return err
 	}
 	cue := d.cueForTime(timeNS)
 	if cue.TimeNS > timeNS {
+		if err := d.seekToPacketAtOrBeforeTime(timeNS); err == nil {
+			return nil
+		}
 		if err := d.seekToClusterAtTime(timeNS); err == nil {
 			return nil
 		}
@@ -207,15 +237,24 @@ func (d *Demuxer) SeekToTrackTime(trackID uint32, timeNS int64) error {
 	}
 	if err := d.ensureCues(); err != nil {
 		if d.canUseClusterIndexAfterCueError(err) {
+			if err := d.seekToTrackPacketAtOrBeforeTime(trackID, timeNS); err == nil {
+				return nil
+			}
 			return d.seekToClusterAtTime(timeNS)
 		}
 		return err
 	}
 	cue, position, ok := d.cueForTrackTime(trackID, timeNS)
 	if !ok {
+		if err := d.seekToTrackPacketAtOrBeforeTime(trackID, timeNS); err == nil {
+			return nil
+		}
 		return d.seekToClusterAtTime(timeNS)
 	}
 	if cue.TimeNS > timeNS {
+		if err := d.seekToTrackPacketAtOrBeforeTime(trackID, timeNS); err == nil {
+			return nil
+		}
 		if err := d.seekToClusterAtTime(timeNS); err == nil {
 			return nil
 		}
@@ -425,6 +464,25 @@ func (d *Demuxer) ReadPacketAtTime(timeNS int64, dst *Packet) error {
 	if dst == nil {
 		return ErrNilPacket
 	}
+	if d.seeker == nil {
+		return ErrNonSeekableReader
+	}
+	if timeNS < 0 {
+		return ErrInvalidData
+	}
+	if err := d.ensureCues(); err != nil {
+		if d.canUseClusterIndexAfterCueError(err) {
+			if err := d.readIndexedPacketAtOrAfterTime(timeNS, dst); err == nil {
+				return nil
+			}
+		} else {
+			return err
+		}
+	} else if cue := d.cueForTime(timeNS); cue.TimeNS > timeNS {
+		if err := d.readIndexedPacketAtOrAfterTime(timeNS, dst); err == nil {
+			return nil
+		}
+	}
 	if err := d.SeekToTime(timeNS); err != nil {
 		return err
 	}
@@ -477,6 +535,28 @@ func (d *Demuxer) ReadTrackPacketAtTime(trackID uint32, timeNS int64, dst *Packe
 	}
 	if dst == nil {
 		return ErrNilPacket
+	}
+	if d.seeker == nil {
+		return ErrNonSeekableReader
+	}
+	if timeNS < 0 {
+		return ErrInvalidData
+	}
+	if trackID == 0 || !d.hasTrack(trackID) {
+		return ErrUnknownTrack
+	}
+	if err := d.ensureCues(); err != nil {
+		if d.canUseClusterIndexAfterCueError(err) {
+			if err := d.readIndexedTrackPacketAtOrAfterTime(trackID, timeNS, dst); err == nil {
+				return nil
+			}
+		} else {
+			return err
+		}
+	} else if cue, _, ok := d.cueForTrackTime(trackID, timeNS); !ok || cue.TimeNS > timeNS {
+		if err := d.readIndexedTrackPacketAtOrAfterTime(trackID, timeNS, dst); err == nil {
+			return nil
+		}
 	}
 	if err := d.SeekToTrackTime(trackID, timeNS); err != nil {
 		return err
@@ -616,6 +696,541 @@ func firstCueTrackPosition(cue CuePoint) (CueTrackPosition, bool) {
 
 func cuePositionIsDirect(position CueTrackPosition) bool {
 	return position.RelativePositionSet || position.BlockNumberSet
+}
+
+func (d *Demuxer) readIndexedPacketAtOrAfterTime(timeNS int64, dst *Packet) error {
+	entry, err := d.packetAtOrAfterTime(timeNS)
+	if err != nil {
+		return err
+	}
+	if err := d.seekToPacketIndexEntry(entry); err != nil {
+		return err
+	}
+	if err := d.ReadPacket(dst); err != nil {
+		return err
+	}
+	if dst.TimeNS < timeNS {
+		return ErrInvalidData
+	}
+	return nil
+}
+
+func (d *Demuxer) readIndexedTrackPacketAtOrAfterTime(trackID uint32, timeNS int64, dst *Packet) error {
+	entry, err := d.trackPacketAtOrAfterTime(trackID, timeNS)
+	if err != nil {
+		return err
+	}
+	if err := d.seekToPacketIndexEntry(entry); err != nil {
+		return err
+	}
+	if err := d.ReadPacket(dst); err != nil {
+		return err
+	}
+	if dst.TrackID != trackID || dst.TimeNS < timeNS {
+		return ErrInvalidData
+	}
+	return nil
+}
+
+func (d *Demuxer) seekToPacketAtOrBeforeTime(timeNS int64) error {
+	entry, err := d.packetAtOrBeforeTime(timeNS)
+	if err != nil {
+		return err
+	}
+	return d.seekToPacketIndexEntry(entry)
+}
+
+func (d *Demuxer) seekToTrackPacketAtOrBeforeTime(trackID uint32, timeNS int64) error {
+	entry, err := d.trackPacketAtOrBeforeTime(trackID, timeNS)
+	if err != nil {
+		return err
+	}
+	return d.seekToPacketIndexEntry(entry)
+}
+
+func (d *Demuxer) packetAtOrBeforeTime(timeNS int64) (packetIndexEntry, error) {
+	if err := d.ensurePacketIndex(); err != nil {
+		return packetIndexEntry{}, err
+	}
+	index := sort.Search(len(d.packetIndex), func(i int) bool {
+		return d.packetIndex[i].TimeNS > timeNS
+	})
+	if index == 0 {
+		return d.packetIndex[0], nil
+	}
+	return d.packetIndex[index-1], nil
+}
+
+func (d *Demuxer) packetAtOrAfterTime(timeNS int64) (packetIndexEntry, error) {
+	if err := d.ensurePacketIndex(); err != nil {
+		return packetIndexEntry{}, err
+	}
+	index := sort.Search(len(d.packetIndex), func(i int) bool {
+		return d.packetIndex[i].TimeNS >= timeNS
+	})
+	if index == len(d.packetIndex) {
+		return packetIndexEntry{}, ErrInvalidData
+	}
+	return d.packetIndex[index], nil
+}
+
+func (d *Demuxer) trackPacketAtOrBeforeTime(trackID uint32, timeNS int64) (packetIndexEntry, error) {
+	if err := d.ensurePacketIndex(); err != nil {
+		return packetIndexEntry{}, err
+	}
+	index := sort.Search(len(d.packetIndex), func(i int) bool {
+		return d.packetIndex[i].TimeNS > timeNS
+	})
+	for i := index - 1; i >= 0; i-- {
+		if d.packetIndex[i].TrackID == trackID {
+			return d.packetIndex[i], nil
+		}
+	}
+	for i := index; i < len(d.packetIndex); i++ {
+		if d.packetIndex[i].TrackID == trackID {
+			return d.packetIndex[i], nil
+		}
+	}
+	return packetIndexEntry{}, ErrInvalidData
+}
+
+func (d *Demuxer) trackPacketAtOrAfterTime(trackID uint32, timeNS int64) (packetIndexEntry, error) {
+	if err := d.ensurePacketIndex(); err != nil {
+		return packetIndexEntry{}, err
+	}
+	index := sort.Search(len(d.packetIndex), func(i int) bool {
+		return d.packetIndex[i].TimeNS >= timeNS
+	})
+	for i := index; i < len(d.packetIndex); i++ {
+		if d.packetIndex[i].TrackID == trackID {
+			return d.packetIndex[i], nil
+		}
+	}
+	return packetIndexEntry{}, ErrInvalidData
+}
+
+func (d *Demuxer) seekToPacketIndexEntry(entry packetIndexEntry) error {
+	if entry.BlockPosition < entry.ClusterPosition {
+		return ErrInvalidData
+	}
+	cluster, err := d.seekToClusterPosition(entry.ClusterPosition)
+	if err != nil {
+		return err
+	}
+	blockOffset := int64(entry.BlockPosition - entry.ClusterPosition)
+	if blockOffset < cluster.DataOffset {
+		return ErrInvalidData
+	}
+	if !cluster.Size.Unknown && blockOffset >= cluster.DataOffset+int64(cluster.Size.Value) {
+		return ErrInvalidData
+	}
+	if entry.BlockPosition > uint64(math.MaxInt64) ||
+		int64(entry.BlockPosition) > math.MaxInt64-d.segmentData {
+		return ErrInvalidData
+	}
+	if _, err := d.seeker.Seek(d.segmentData+int64(entry.BlockPosition), io.SeekStart); err != nil {
+		return err
+	}
+	d.reader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, blockOffset)
+	header, err := d.reader.ReadHeader()
+	if err != nil {
+		return err
+	}
+	if header.ID != idSimpleBlock && header.ID != idBlockGroup {
+		return ErrInvalidData
+	}
+	d.clusterTimecode = entry.ClusterTimecode
+	d.pendingHeader = header
+	d.pendingHeaderSet = true
+	d.laceSeekFrameIndex = entry.FrameIndex
+	return nil
+}
+
+func (d *Demuxer) ensurePacketIndex() error {
+	if d.packetIndexBuilt {
+		if len(d.packetIndex) == 0 {
+			return ErrInvalidData
+		}
+		return nil
+	}
+	if d.seeker == nil {
+		return ErrNonSeekableReader
+	}
+	d.packetIndex = d.packetIndex[:0]
+	buildClusters := !d.clusterIndexBuilt
+	if buildClusters {
+		d.clusterIndex = d.clusterIndex[:0]
+	}
+	if _, err := d.seeker.Seek(d.segmentData, io.SeekStart); err != nil {
+		return err
+	}
+	indexReader := ebml.NewReader(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	indexReader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, 0)
+	for {
+		if d.segmentIndexDone(indexReader.Offset()) {
+			break
+		}
+		header, err := indexReader.ReadHeader()
+		if err != nil {
+			if d.segmentUnknown && isEOF(err) {
+				break
+			}
+			return err
+		}
+		if err := d.validateSegmentIndexHeader(header); err != nil {
+			return err
+		}
+		switch header.ID {
+		case idCluster:
+			entry, err := d.readClusterPacketIndex(indexReader, header)
+			if err != nil {
+				return err
+			}
+			if buildClusters {
+				d.clusterIndex = append(d.clusterIndex, entry)
+			}
+		default:
+			if err := d.skipSegmentIndexElement(indexReader, header); err != nil {
+				return err
+			}
+		}
+	}
+	d.packetIndexBuilt = true
+	if len(d.packetIndex) == 0 {
+		return ErrInvalidData
+	}
+	sort.SliceStable(d.packetIndex, func(i, j int) bool {
+		if d.packetIndex[i].TimeNS == d.packetIndex[j].TimeNS {
+			if d.packetIndex[i].BlockPosition == d.packetIndex[j].BlockPosition {
+				return d.packetIndex[i].FrameIndex < d.packetIndex[j].FrameIndex
+			}
+			return d.packetIndex[i].BlockPosition < d.packetIndex[j].BlockPosition
+		}
+		return d.packetIndex[i].TimeNS < d.packetIndex[j].TimeNS
+	})
+	if buildClusters {
+		d.clusterIndexBuilt = true
+		if len(d.clusterIndex) != 0 {
+			sort.SliceStable(d.clusterIndex, func(i, j int) bool {
+				if d.clusterIndex[i].TimeNS == d.clusterIndex[j].TimeNS {
+					return d.clusterIndex[i].Position < d.clusterIndex[j].Position
+				}
+				return d.clusterIndex[i].TimeNS < d.clusterIndex[j].TimeNS
+			})
+		}
+	}
+	return nil
+}
+
+func (d *Demuxer) readClusterPacketIndex(reader *ebml.Reader, header ebml.Header) (clusterIndexEntry, error) {
+	if header.Offset < 0 {
+		return clusterIndexEntry{}, ErrInvalidData
+	}
+	clusterPosition := uint64(header.Offset)
+	if header.Size.Unknown {
+		return d.readUnknownClusterPacketIndex(reader, clusterPosition)
+	}
+	clusterEnd, err := d.segmentIndexElementEnd(header)
+	if err != nil {
+		return clusterIndexEntry{}, err
+	}
+	clusterTimecode := int64(0)
+	clusterTimeNS := int64(0)
+	for reader.Offset() < clusterEnd {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return clusterIndexEntry{}, err
+		}
+		if child.ID == idCluster {
+			return clusterIndexEntry{}, ErrInvalidData
+		}
+		if err := d.validateClusterIndexHeader(child, clusterEnd); err != nil {
+			return clusterIndexEntry{}, err
+		}
+		switch child.ID {
+		case idTimestamp:
+			clusterTimeNS, err = d.readClusterIndexTimestamp(reader, child, clusterEnd)
+			if err != nil {
+				return clusterIndexEntry{}, err
+			}
+			clusterTimecode = clusterTimeNS / d.timecodeScaleNS
+		case idSimpleBlock:
+			info, err := d.readIndexedBlock(reader, child, clusterTimecode)
+			if err != nil {
+				return clusterIndexEntry{}, err
+			}
+			if err := d.appendPacketIndexEntries(clusterPosition, uint64(child.Offset), clusterTimecode, info); err != nil {
+				return clusterIndexEntry{}, err
+			}
+		case idBlockGroup:
+			if err := d.readIndexedBlockGroup(reader, child, clusterPosition, clusterTimecode); err != nil {
+				return clusterIndexEntry{}, err
+			}
+		default:
+			if err := d.skipClusterIndexElement(reader, child, clusterEnd); err != nil {
+				return clusterIndexEntry{}, err
+			}
+		}
+	}
+	if err := d.resetSegmentIndexReader(reader, clusterEnd); err != nil {
+		return clusterIndexEntry{}, err
+	}
+	return clusterIndexEntry{TimeNS: clusterTimeNS, Position: clusterPosition}, nil
+}
+
+func (d *Demuxer) readUnknownClusterPacketIndex(reader *ebml.Reader, clusterPosition uint64) (clusterIndexEntry, error) {
+	clusterTimecode := int64(0)
+	clusterTimeNS := int64(0)
+	for {
+		if d.segmentIndexDone(reader.Offset()) {
+			return clusterIndexEntry{TimeNS: clusterTimeNS, Position: clusterPosition}, nil
+		}
+		child, err := reader.ReadHeader()
+		if err != nil {
+			if d.segmentUnknown && isEOF(err) {
+				return clusterIndexEntry{TimeNS: clusterTimeNS, Position: clusterPosition}, nil
+			}
+			return clusterIndexEntry{}, err
+		}
+		if isUnknownClusterTerminator(child.ID) {
+			if err := d.resetSegmentIndexReader(reader, child.Offset); err != nil {
+				return clusterIndexEntry{}, err
+			}
+			return clusterIndexEntry{TimeNS: clusterTimeNS, Position: clusterPosition}, nil
+		}
+		if err := d.validateSegmentIndexHeader(child); err != nil {
+			return clusterIndexEntry{}, err
+		}
+		switch child.ID {
+		case idTimestamp:
+			clusterTimeNS, err = d.readClusterIndexTimestamp(reader, child, 0)
+			if err != nil {
+				return clusterIndexEntry{}, err
+			}
+			clusterTimecode = clusterTimeNS / d.timecodeScaleNS
+		case idSimpleBlock:
+			info, err := d.readIndexedBlock(reader, child, clusterTimecode)
+			if err != nil {
+				return clusterIndexEntry{}, err
+			}
+			if err := d.appendPacketIndexEntries(clusterPosition, uint64(child.Offset), clusterTimecode, info); err != nil {
+				return clusterIndexEntry{}, err
+			}
+		case idBlockGroup:
+			if err := d.readIndexedBlockGroup(reader, child, clusterPosition, clusterTimecode); err != nil {
+				return clusterIndexEntry{}, err
+			}
+		default:
+			if err := d.skipSegmentIndexElement(reader, child); err != nil {
+				return clusterIndexEntry{}, err
+			}
+		}
+	}
+}
+
+func (d *Demuxer) readIndexedBlockGroup(reader *ebml.Reader, header ebml.Header, clusterPosition uint64, clusterTimecode int64) error {
+	if header.Size.Unknown {
+		return ErrInvalidData
+	}
+	groupEnd, err := d.segmentIndexElementEnd(header)
+	if err != nil {
+		return err
+	}
+	limit := io.LimitedReader{R: reader, N: int64(header.Size.Value)}
+	groupReader := ebml.NewReader(&limit, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	var info indexedBlockInfo
+	haveBlock := false
+	durationNS := int64(0)
+	for limit.N > 0 {
+		child, err := groupReader.ReadHeader()
+		if err != nil {
+			return err
+		}
+		switch child.ID {
+		case idBlock:
+			parsed, err := d.readIndexedBlock(groupReader, child, clusterTimecode)
+			if err != nil {
+				return err
+			}
+			info = parsed
+			haveBlock = true
+		case idBlockDuration:
+			value, err := readUIntPayloadScratch(groupReader, child.Size.Value, &d.uintScratch)
+			if err != nil {
+				return err
+			}
+			durationNS, err = scaleCueTicks(value, d.timecodeScaleNS)
+			if err != nil {
+				return err
+			}
+		default:
+			if err := skipElement(groupReader, child); err != nil {
+				return err
+			}
+		}
+	}
+	if limit.N != 0 {
+		return ErrInvalidData
+	}
+	if !haveBlock {
+		return ErrInvalidData
+	}
+	if durationNS > 0 && info.FrameCount > 1 {
+		info.FrameDurationNS = durationNS / int64(info.FrameCount)
+	}
+	if err := d.appendPacketIndexEntries(clusterPosition, uint64(header.Offset), clusterTimecode, info); err != nil {
+		return err
+	}
+	return d.resetSegmentIndexReader(reader, groupEnd)
+}
+
+func (d *Demuxer) readIndexedBlock(reader *ebml.Reader, header ebml.Header, clusterTimecode int64) (indexedBlockInfo, error) {
+	if header.Size.Unknown || header.Size.Value > uint64(math.MaxInt64) {
+		return indexedBlockInfo{}, ErrInvalidData
+	}
+	limit := io.LimitedReader{R: reader, N: int64(header.Size.Value)}
+	trackID, _, err := ebml.ReadUnsignedVINT(&limit, &d.scratch)
+	if err != nil {
+		return indexedBlockInfo{}, err
+	}
+	trackNumber, err := trackIDFromUint(trackID)
+	if err != nil {
+		return indexedBlockInfo{}, err
+	}
+	track, ok := d.track(trackNumber)
+	if !ok {
+		return indexedBlockInfo{}, ErrUnknownTrack
+	}
+	if _, err := io.ReadFull(&limit, d.blockHeader[:]); err != nil {
+		return indexedBlockInfo{}, err
+	}
+	flags := d.blockHeader[2]
+	lacing := flags & simpleBlockLacingMask
+	if lacing != 0 && track.FlagLacingSet && !track.FlagLacing {
+		return indexedBlockInfo{}, ErrInvalidData
+	}
+	blockTimecode := int16(binary.BigEndian.Uint16(d.blockHeader[:2]))
+	timecode := clusterTimecode + int64(blockTimecode)
+	if timecode < 0 || timecode > math.MaxInt64/d.timecodeScaleNS {
+		return indexedBlockInfo{}, ErrInvalidData
+	}
+	info := indexedBlockInfo{
+		TrackID:    trackNumber,
+		TimeNS:     timecode * d.timecodeScaleNS,
+		FrameCount: 1,
+	}
+	if lacing != 0 {
+		frameCount, err := d.readIndexedLace(&limit, lacing)
+		if err != nil {
+			return indexedBlockInfo{}, err
+		}
+		info.FrameCount = frameCount
+		info.FrameDurationNS = d.defaultDurationNS(trackNumber)
+	}
+	if err := drainLimited(&limit); err != nil {
+		return indexedBlockInfo{}, err
+	}
+	return info, nil
+}
+
+func (d *Demuxer) readIndexedLace(limit *io.LimitedReader, lacing byte) (int, error) {
+	var frameCountByte [1]byte
+	if _, err := io.ReadFull(limit, frameCountByte[:]); err != nil {
+		return 0, err
+	}
+	frameCount := int(frameCountByte[0]) + 1
+	if frameCount < 2 || frameCount > len(d.laceFrames) {
+		return 0, ErrLaceTooLarge
+	}
+	switch lacing {
+	case simpleBlockLacingXiph:
+		total := 0
+		for i := 0; i < frameCount-1; i++ {
+			size := 0
+			for {
+				var value [1]byte
+				if _, err := io.ReadFull(limit, value[:]); err != nil {
+					return 0, err
+				}
+				size += int(value[0])
+				if size > len(d.laceBuffer) {
+					return 0, ErrLaceTooLarge
+				}
+				if value[0] != 255 {
+					break
+				}
+			}
+			total += size
+		}
+		if limit.N < int64(total) {
+			return 0, ErrInvalidData
+		}
+	case simpleBlockLacingFixed:
+		if limit.N < 0 || limit.N%int64(frameCount) != 0 {
+			return 0, ErrInvalidData
+		}
+	case simpleBlockLacingEBML:
+		first, _, err := ebml.ReadUnsignedVINT(limit, &d.scratch)
+		if err != nil {
+			return 0, err
+		}
+		if first > uint64(len(d.laceBuffer)) {
+			return 0, ErrLaceTooLarge
+		}
+		total := int(first)
+		previous := int64(first)
+		for i := 1; i < frameCount-1; i++ {
+			delta, err := d.readIndexedSignedLaceVINT(limit)
+			if err != nil {
+				return 0, err
+			}
+			size := previous + delta
+			if size < 0 || size > int64(len(d.laceBuffer)) {
+				return 0, ErrLaceTooLarge
+			}
+			total += int(size)
+			previous = size
+		}
+		if limit.N < int64(total) {
+			return 0, ErrInvalidData
+		}
+	default:
+		return 0, ErrUnsupportedLacing
+	}
+	return frameCount, nil
+}
+
+func (d *Demuxer) readIndexedSignedLaceVINT(limit *io.LimitedReader) (int64, error) {
+	value, width, err := ebml.ReadUnsignedVINT(limit, &d.scratch)
+	if err != nil {
+		return 0, err
+	}
+	bias := (uint64(1) << uint(7*width-1)) - 1
+	if value > uint64(math.MaxInt64)+bias {
+		return 0, ErrInvalidData
+	}
+	return int64(value) - int64(bias), nil
+}
+
+func (d *Demuxer) appendPacketIndexEntries(clusterPosition uint64, blockPosition uint64, clusterTimecode int64, info indexedBlockInfo) error {
+	for frame := 0; frame < info.FrameCount; frame++ {
+		timeNS := info.TimeNS
+		if frame != 0 && info.FrameDurationNS > 0 {
+			if int64(frame) > (math.MaxInt64-timeNS)/info.FrameDurationNS {
+				return ErrInvalidData
+			}
+			timeNS += int64(frame) * info.FrameDurationNS
+		}
+		d.packetIndex = append(d.packetIndex, packetIndexEntry{
+			TimeNS:          timeNS,
+			TrackID:         info.TrackID,
+			ClusterPosition: clusterPosition,
+			BlockPosition:   blockPosition,
+			ClusterTimecode: clusterTimecode,
+			FrameIndex:      frame,
+		})
+	}
+	return nil
 }
 
 func (d *Demuxer) clusterForTime(timeNS int64) (clusterIndexEntry, error) {
@@ -3995,6 +4610,9 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 		}
 	}()
 	dst.Reset()
+	d.lastLaceFrameIndex = -1
+	d.lastLaceFrameCount = 0
+	d.lastLaceBaseTimeNS = 0
 	d.groupLimit.R = d.reader
 	d.groupLimit.N = int64(header.Size.Value)
 	d.groupReader.Reset(&d.groupLimit, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
@@ -4077,7 +4695,11 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 			return ErrInvalidData
 		}
 		durationNS := int64(durationTicks) * d.timecodeScaleNS
-		if d.laceFrameCount > 0 {
+		if d.lastLaceFrameCount > 0 {
+			durationNS /= int64(d.lastLaceFrameCount)
+			d.laceDurationNS = durationNS
+			dst.TimeNS = d.lastLaceBaseTimeNS + int64(d.lastLaceFrameIndex)*durationNS
+		} else if d.laceFrameCount > 0 {
 			durationNS /= int64(d.laceFrameCount)
 			d.laceDurationNS = durationNS
 		}
@@ -4631,6 +5253,14 @@ func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timecode in
 	d.laceDurationNS = d.defaultDurationNS(trackID)
 	d.laceFrameCount = frameCount
 	d.laceFrameIndex = 0
+	if d.laceSeekFrameIndex != 0 {
+		if d.laceSeekFrameIndex < 0 || d.laceSeekFrameIndex >= frameCount {
+			d.clearLace()
+			return ErrInvalidData
+		}
+		d.laceFrameIndex = d.laceSeekFrameIndex
+		d.laceSeekFrameIndex = 0
+	}
 	d.laceKeyframe = simple && flags&simpleBlockKeyframe != 0
 	d.laceInvisible = flags&simpleBlockInvisible != 0
 	d.laceDiscardable = simple && flags&simpleBlockDiscardable != 0
@@ -4804,6 +5434,9 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 	if d.laceFrameIndex == 0 {
 		d.applyPendingClusterUnknownElements(dst)
 	}
+	d.lastLaceBaseTimeNS = d.laceTimeNS
+	d.lastLaceFrameIndex = d.laceFrameIndex
+	d.lastLaceFrameCount = d.laceFrameCount
 	d.laceFrameIndex++
 	if d.laceFrameIndex >= d.laceFrameCount {
 		d.clearLace()
@@ -4872,6 +5505,7 @@ func (d *Demuxer) clearLace() {
 	d.laceAdditions = d.laceAdditions[:0]
 	d.laceFrameCount = 0
 	d.laceFrameIndex = 0
+	d.laceSeekFrameIndex = 0
 	d.laceKeyframe = false
 	d.laceInvisible = false
 	d.laceDiscardable = false

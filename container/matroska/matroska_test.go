@@ -8006,7 +8006,7 @@ func TestDemuxerReadPacketAtTimeUsesCues(t *testing.T) {
 func TestDemuxerSeekToTimeUsesClusterIndexWithoutCues(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{
-		ClusterMaxDurationNS: 1_000_000,
+		ClusterMaxDurationNS: 60_000_000,
 		CuePolicy:            CuePolicyNone,
 	})
 	if err != nil {
@@ -8041,6 +8041,9 @@ func TestDemuxerSeekToTimeUsesClusterIndexWithoutCues(t *testing.T) {
 	if err := demuxer.SeekToTime(3_000_000); err != nil {
 		t.Fatal(err)
 	}
+	if !demuxer.packetIndexBuilt {
+		t.Fatal("packet index was not built for cue-free seek")
+	}
 	got := Packet{Data: make([]byte, 0, 8)}
 	if err := demuxer.ReadPacket(&got); err != nil {
 		t.Fatal(err)
@@ -8053,7 +8056,7 @@ func TestDemuxerSeekToTimeUsesClusterIndexWithoutCues(t *testing.T) {
 func TestDemuxerReadPacketAtTimeUsesClusterIndexWithoutCues(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{
-		ClusterMaxDurationNS: 1_000_000,
+		ClusterMaxDurationNS: 60_000_000,
 		CuePolicy:            CuePolicyNone,
 	})
 	if err != nil {
@@ -8089,6 +8092,9 @@ func TestDemuxerReadPacketAtTimeUsesClusterIndexWithoutCues(t *testing.T) {
 	if err := demuxer.ReadPacketAtTime(3_000_000, &got); err != nil {
 		t.Fatal(err)
 	}
+	if !demuxer.packetIndexBuilt {
+		t.Fatal("packet index was not built for cue-free read")
+	}
 	if got.TimeNS != packets[2].TimeNS || !bytes.Equal(got.Data, packets[2].Data) {
 		t.Fatalf("packet at time without cues = %+v data=%v, want %+v data=%v", got, got.Data, packets[2], packets[2].Data)
 	}
@@ -8097,8 +8103,8 @@ func TestDemuxerReadPacketAtTimeUsesClusterIndexWithoutCues(t *testing.T) {
 func TestDemuxerReadTrackPacketAtTimeUsesClusterIndexWithoutTrackCues(t *testing.T) {
 	ws := &memoryWriteSeeker{}
 	muxer, err := NewMuxer(ws, MuxerOptions{
-		ClusterMaxDurationNS: 1_000_000,
-		CuePolicy:            CuePolicyKeyframes,
+		ClusterMaxDurationNS: 60_000_000,
+		CuePolicy:            CuePolicyNone,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -8142,6 +8148,18 @@ func TestDemuxerReadTrackPacketAtTimeUsesClusterIndexWithoutTrackCues(t *testing
 		t.Fatal(err)
 	}
 	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.SeekToTrackTime(videoID, 30_000_000); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.packetIndexBuilt {
+		t.Fatal("packet index was not built for cue-free track seek")
+	}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != videoID || got.TimeNS != 20_000_000 || !bytes.Equal(got.Data, []byte{0xb1}) {
+		t.Fatalf("packet after cue-free video seek = %+v data=%v, want video at 20000000", got, got.Data)
+	}
 	if err := demuxer.ReadTrackPacketAtTime(audioID, 30_000_000, &got); err != nil {
 		t.Fatal(err)
 	}
@@ -8683,11 +8701,75 @@ func TestDemuxerReadPacketAtTimeFindsLacedFrameWithoutCues(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.SeekToTime(20_000_000); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.packetIndexBuilt {
+		t.Fatal("packet index was not built for cue-free laced seek")
+	}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != 20_000_000 || got.DurationNS != 20_000_000 || !bytes.Equal(got.Data, frames[1]) {
+		t.Fatalf("packet after laced seek without cues = %+v data=%v, want second laced frame", got, got.Data)
+	}
+	demuxer, err = NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := demuxer.ReadPacketAtTime(20_000_000, &got); err != nil {
 		t.Fatal(err)
 	}
 	if got.TimeNS != 20_000_000 || got.DurationNS != 20_000_000 || !bytes.Equal(got.Data, frames[1]) {
 		t.Fatalf("packet at time without cues = %+v data=%v, want second laced frame", got, got.Data)
+	}
+}
+
+func TestDemuxerReadPacketAtTimeFindsLacedBlockGroupFrameWithoutCues(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{CuePolicy: CuePolicyNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackAudio,
+		Codec: CodecOpus,
+		Audio: AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := [][]byte{{0xa0}, {0xa1}, {0xa2}}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:         trackID,
+		TimeNS:          0,
+		Keyframe:        true,
+		Lacing:          LacingXiph,
+		FrameDurationNS: 20_000_000,
+		Frames:          frames,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.SeekToTime(20_000_000); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.packetIndexBuilt {
+		t.Fatal("packet index was not built for cue-free laced BlockGroup seek")
+	}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeNS != 20_000_000 || got.DurationNS != 20_000_000 || !got.Keyframe || !bytes.Equal(got.Data, frames[1]) {
+		t.Fatalf("packet after laced BlockGroup seek without cues = %+v data=%v, want second frame", got, got.Data)
 	}
 }
 
