@@ -1930,6 +1930,79 @@ func TestMuxerCuePolicyAndDemuxerCues(t *testing.T) {
 	}
 }
 
+func TestMuxerCuePolicyAllPacketsWritesCuesSortedByTime(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "sorted-cues-*.webm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	muxer, err := NewMuxer(file, MuxerOptions{CuePolicy: CuePolicyAllPackets})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	videoID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: audioID, TimeNS: 40_000_000, DurationNS: 20_000_000, Data: []byte{0xf8, 0xff, 0xfe}},
+		{TrackID: videoID, TimeNS: 0, DurationNS: 20_000_000, Keyframe: true, Data: []byte{0x9d, 0x01, 0x2a}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatalf("write packet %d: %v", i, err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(file, DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); err != nil {
+		t.Fatal(err)
+	}
+	cues := demuxer.Cues()
+	if len(cues) != 2 {
+		t.Fatalf("cues = %+v, want 2 sorted cues", cues)
+	}
+	if cues[0].TrackID != videoID || cues[0].TimeNS != 0 ||
+		cues[1].TrackID != audioID || cues[1].TimeNS != 40_000_000 {
+		t.Fatalf("cues = %+v, want video at 0 then audio at 40000000", cues)
+	}
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadCuedPacketAtTime(0, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != videoID || got.TimeNS != 0 || !bytes.Equal(got.Data, []byte{0x9d, 0x01, 0x2a}) {
+		t.Fatalf("cued packet = track %d time %d data %v, want video 0", got.TrackID, got.TimeNS, got.Data)
+	}
+	if err := demuxer.ReadCuedTrackPacketAtTime(audioID, 0, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != audioID || got.TimeNS != 40_000_000 || !bytes.Equal(got.Data, []byte{0xf8, 0xff, 0xfe}) {
+		t.Fatalf("audio cued packet = track %d time %d data %v, want audio 40000000", got.TrackID, got.TimeNS, got.Data)
+	}
+}
+
 func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

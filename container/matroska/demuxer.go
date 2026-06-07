@@ -387,14 +387,22 @@ func (d *Demuxer) cueForTime(timeNS int64) CuePoint {
 		}
 		return d.cues[index-1]
 	}
-	cue := d.cues[0]
+	best := d.cues[0]
+	earliest := d.cues[0]
+	found := false
 	for i := range d.cues {
-		if d.cues[i].TimeNS > timeNS {
-			break
+		if d.cues[i].TimeNS < earliest.TimeNS {
+			earliest = d.cues[i]
 		}
-		cue = d.cues[i]
+		if d.cues[i].TimeNS <= timeNS && (!found || d.cues[i].TimeNS > best.TimeNS) {
+			best = d.cues[i]
+			found = true
+		}
 	}
-	return cue
+	if found {
+		return best
+	}
+	return earliest
 }
 
 func (d *Demuxer) cueForTrackTime(trackID uint32, timeNS int64) (CuePoint, CueTrackPosition, bool) {
@@ -416,24 +424,29 @@ func (d *Demuxer) cueForTrackTime(trackID uint32, timeNS int64) (CuePoint, CueTr
 	}
 	var cue CuePoint
 	var position CueTrackPosition
+	var firstCue CuePoint
+	var firstPosition CueTrackPosition
 	found := false
+	firstFound := false
 	for i := range d.cues {
-		if d.cues[i].TimeNS > timeNS {
-			break
-		}
 		if candidate, ok := cuePositionForTrack(d.cues[i], trackID); ok {
-			cue = d.cues[i]
-			position = candidate
-			found = true
+			if !firstFound || d.cues[i].TimeNS < firstCue.TimeNS {
+				firstCue = d.cues[i]
+				firstPosition = candidate
+				firstFound = true
+			}
+			if d.cues[i].TimeNS <= timeNS && (!found || d.cues[i].TimeNS > cue.TimeNS) {
+				cue = d.cues[i]
+				position = candidate
+				found = true
+			}
 		}
 	}
 	if found {
 		return cue, position, true
 	}
-	for i := range d.cues {
-		if candidate, ok := cuePositionForTrack(d.cues[i], trackID); ok {
-			return d.cues[i], candidate, true
-		}
+	if firstFound {
+		return firstCue, firstPosition, true
 	}
 	return CuePoint{}, CueTrackPosition{}, false
 }

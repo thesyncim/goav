@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"sort"
 
 	bzip2 "git.quad4.io/Go-Libs/bzip2/pkg/bzip2"
 	"github.com/thesyncim/goav/container/ebml"
@@ -1861,6 +1862,7 @@ func (m *Muxer) hasCuesToWrite() bool {
 
 func (m *Muxer) writeCues() error {
 	m.cuesPosition = m.relativeSegmentPosition()
+	m.sortCues()
 	var payload bytes.Buffer
 	w := ebml.NewWriter(&payload)
 	for i := range m.cues {
@@ -1869,6 +1871,12 @@ func (m *Muxer) writeCues() error {
 		}
 	}
 	return m.ebml.WriteElement(idCues, payload.Bytes())
+}
+
+func (m *Muxer) sortCues() {
+	sort.SliceStable(m.cues, func(i, j int) bool {
+		return m.cues[i].TimeNS < m.cues[j].TimeNS
+	})
 }
 
 func writeCuePoint(w *ebml.Writer, cue CuePoint, scaleNS int64) error {

@@ -249,8 +249,9 @@ the default to keyframe-only cues. `CuePolicy` allows callers to force
 keyframe-only indexing, force all-packet dense indexing, or disable cues. When
 multiple tracks are cued at the same timestamp, the muxer writes one CuePoint
 with multiple CueTrackPositions while keeping duplicate same-track timestamps as
-separate cue points. The muxer also writes a SeekHead that points to Info,
-Tracks, Attachments, Chapters, Tags, and Cues when present. The demuxer can use a
+separate cue points, then serializes generated Cues in timestamp order. The
+muxer also writes a SeekHead that points to Info, Tracks, Attachments,
+Chapters, Tags, and Cues when present. The demuxer can use a
 pre-Cluster SeekHead to load required Info and Tracks metadata before reading
 the first Cluster even when those masters are physically stored later in the
 Segment. The muxer updates duration and cue state only after the packet bytes

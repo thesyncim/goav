@@ -7802,6 +7802,85 @@ func TestSeekableMuxerCoalescesSameTimeCueTrackPositions(t *testing.T) {
 	}
 }
 
+func TestSeekableMuxerWritesCuesSortedByTime(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 100_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	videoID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: videoID, TimeNS: 40_000_000, Keyframe: true, Data: []byte{4}},
+		{TrackID: audioID, TimeNS: 20_000_000, DurationNS: 20_000_000, Data: []byte{2}},
+		{TrackID: videoID, TimeNS: 0, Keyframe: true, Data: []byte{0}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); err != nil {
+		t.Fatal(err)
+	}
+	if !demuxer.cuesSorted {
+		t.Fatalf("generated cues were parsed as unsorted: %+v", demuxer.Cues())
+	}
+	cues := demuxer.Cues()
+	wantTimes := []int64{0, 20_000_000, 40_000_000}
+	if len(cues) != len(wantTimes) {
+		t.Fatalf("cues = %+v, want %d sorted cues", cues, len(wantTimes))
+	}
+	for i := range wantTimes {
+		if cues[i].TimeNS != wantTimes[i] {
+			t.Fatalf("cue %d time = %d, want %d; cues=%+v", i, cues[i].TimeNS, wantTimes[i], cues)
+		}
+	}
+
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadCuedPacketAtTime(0, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != videoID || got.TimeNS != 0 || !bytes.Equal(got.Data, []byte{0}) {
+		t.Fatalf("cued packet at 0 = track %d time %d data %v, want video 0 [0]", got.TrackID, got.TimeNS, got.Data)
+	}
+	if err := demuxer.ReadCuedTrackPacketAtTime(audioID, 0, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != audioID || got.TimeNS != 20_000_000 || !bytes.Equal(got.Data, []byte{2}) {
+		t.Fatalf("audio cued packet = track %d time %d data %v, want audio 20000000 [2]", got.TrackID, got.TimeNS, got.Data)
+	}
+	if err := demuxer.ReadCuedPacketAtTime(30_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != videoID || got.TimeNS != 40_000_000 || !bytes.Equal(got.Data, []byte{4}) {
+		t.Fatalf("cued packet at 30000000 = track %d time %d data %v, want video 40000000 [4]", got.TrackID, got.TimeNS, got.Data)
+	}
+}
+
 func TestMuxerCuePolicyControlsIndexing(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -8115,8 +8194,11 @@ func TestDemuxerCueForTime(t *testing.T) {
 			{TimeNS: 40_000_000, TrackID: 1},
 		},
 	}
-	if got := unsorted.cueForTime(30_000_000); got.TimeNS != 10_000_000 {
-		t.Fatalf("unsorted fallback cue time = %d, want 10000000", got.TimeNS)
+	if got := unsorted.cueForTime(30_000_000); got.TimeNS != 20_000_000 {
+		t.Fatalf("unsorted fallback cue time = %d, want 20000000", got.TimeNS)
+	}
+	if got := unsorted.cueForTime(5_000_000); got.TimeNS != 10_000_000 {
+		t.Fatalf("early unsorted fallback cue time = %d, want 10000000", got.TimeNS)
 	}
 
 	trackCues := Demuxer{
@@ -8159,6 +8241,52 @@ func TestDemuxerCueForTime(t *testing.T) {
 	}
 	if _, _, ok := trackCues.cueForTrackTime(3, 50_000_000); ok {
 		t.Fatalf("track 3 unexpectedly had a cue")
+	}
+
+	unsortedTrackCues := Demuxer{
+		cuesSorted: false,
+		cues: []CuePoint{
+			{
+				TimeNS: 40_000_000,
+				Positions: []CueTrackPosition{{
+					TrackID:         1,
+					ClusterPosition: 40,
+				}},
+			},
+			{
+				TimeNS: 10_000_000,
+				Positions: []CueTrackPosition{{
+					TrackID:         2,
+					ClusterPosition: 10,
+				}},
+			},
+			{
+				TimeNS: 20_000_000,
+				Positions: []CueTrackPosition{{
+					TrackID:         2,
+					ClusterPosition: 20,
+				}},
+			},
+			{
+				TimeNS: 30_000_000,
+				Positions: []CueTrackPosition{{
+					TrackID:         1,
+					ClusterPosition: 30,
+				}},
+			},
+		},
+	}
+	cue, position, ok = unsortedTrackCues.cueForTrackTime(2, 25_000_000)
+	if !ok || cue.TimeNS != 20_000_000 || position.ClusterPosition != 20 {
+		t.Fatalf("unsorted track 2 cue = %+v position=%+v ok=%v, want cue 20000000 position 20", cue, position, ok)
+	}
+	cue, position, ok = unsortedTrackCues.cueForTrackTime(2, 5_000_000)
+	if !ok || cue.TimeNS != 10_000_000 || position.ClusterPosition != 10 {
+		t.Fatalf("early unsorted track 2 cue = %+v position=%+v ok=%v, want first track cue", cue, position, ok)
+	}
+	cue, position, ok = unsortedTrackCues.cueForTrackTime(1, 35_000_000)
+	if !ok || cue.TimeNS != 30_000_000 || position.ClusterPosition != 30 {
+		t.Fatalf("unsorted track 1 cue = %+v position=%+v ok=%v, want cue 30000000 position 30", cue, position, ok)
 	}
 }
 
