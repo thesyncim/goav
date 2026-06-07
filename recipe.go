@@ -892,6 +892,15 @@ func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) 
 	}, opts...)
 }
 
+func Object(name string, open ObjectOpenFunc, opts ...DestinationOption) ConfigurableDestination {
+	return Writer(name, func(ctx context.Context, info TargetInfo) (io.WriteCloser, error) {
+		if open == nil {
+			return nil, ErrNilWriter
+		}
+		return open(ctx, info)
+	}, opts...)
+}
+
 type writerDestination struct {
 	name string
 	open WriterOpenFunc
@@ -942,6 +951,14 @@ func Format(format av.FormatID) DestinationOption {
 	return func(spec *destinationSpec) {
 		if spec != nil {
 			*spec = spec.withFormat(format)
+		}
+	}
+}
+
+func Metadata(metadata av.Metadata) DestinationOption {
+	return func(spec *destinationSpec) {
+		if spec != nil {
+			spec.output.Metadata = cloneMetadata(metadata)
 		}
 	}
 }
