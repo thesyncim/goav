@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
@@ -581,6 +582,105 @@ func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 	}
 	if err := builtTask.Detach(ctx, attachment); err != nil {
 		t.Fatal(err)
+	}
+	if !muxers.muxers[0].closed {
+		t.Fatal("runtime recording muxer was not closed by detach")
+	}
+}
+
+func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	codecs := withTestCodecs(
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
+	)
+	frame := av.Frame{
+		StreamID: "audio",
+		Type:     av.MediaAudio,
+	}
+	source := &runtimeBranchWaitingSource{
+		name:   "source",
+		ready:  make(chan struct{}),
+		resume: make(chan struct{}),
+		msg:    pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	base := &runtimeTestSink{name: "base"}
+	graph := New(formats, codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:     DomainFrame,
+			MediaKind:  av.MediaAudio,
+			StreamID:   "audio",
+			Codec:      av.CodecOpus,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- builtTask.Run(ctx)
+	}()
+	select {
+	case <-source.ready:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	attachment, err := builtTask.Attach(ctx, Branch("record").
+		FromTap("audio.frames").
+		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
+		Opus(96_000).
+		To(Target("record", FileOutput("recording.ogg", io.Discard))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(specText(attachment.Spec()), "record/encode-record -> record/recording.ogg") {
+		t.Fatalf("attachment spec:\n%s", specText(attachment.Spec()))
+	}
+	close(source.resume)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 1 {
+		t.Fatalf("base=%d, want frame delivered to base sink", base.count)
+	}
+	if encoder.encodes != 1 {
+		t.Fatalf("encodes=%d", encoder.encodes)
+	}
+	if encoderFactory.config.Stream.ID != "record" ||
+		encoderFactory.config.Parameters.ID != av.CodecOpus ||
+		encoderFactory.config.Bitrate != 96_000 {
+		t.Fatalf("encode config: %+v", encoderFactory.config)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 ||
+		muxers.muxers[0].lastStream != "record" || muxers.muxers[0].streamCount != 1 ||
+		!streamIDsEqual(muxers.muxers[0].openedStreams, []av.StreamID{"record"}) {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := builtTask.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	if !encoder.closed {
+		t.Fatal("runtime recording encoder was not closed by detach")
 	}
 	if !muxers.muxers[0].closed {
 		t.Fatal("runtime recording muxer was not closed by detach")

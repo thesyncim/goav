@@ -160,7 +160,7 @@ make the implementation match the composable planner promise.
   branches, and non-encoding runtime attachments. Build-time file/protocol and
   RTP/WebRTC branch slices are active; runtime stage/sink attachments are active
   for direct task graphs and bounded buffered task graphs, with packet-copy late
-  recording targets covered; encoded late recording and deeper buffered
-  lifecycle proof remain planned.
+  recording targets and Opus encoded late recording from frame taps covered;
+  deeper buffered lifecycle proof remains planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.
