@@ -335,3 +335,21 @@ func cloneWorkPatch(patch workPatch) workPatch {
 	clone.Diagnostics = clonePlanDiagnostics(patch.Diagnostics)
 	return clone
 }
+
+func destinationSnapshotsFromWork(destinations []workDestination, open bool) []DestinationSnapshot {
+	if len(destinations) == 0 {
+		return nil
+	}
+	out := make([]DestinationSnapshot, 0, len(destinations))
+	for i := range destinations {
+		out = append(out, DestinationSnapshot{
+			Name:      destinations[i].Name,
+			Operation: destinations[i].Operation,
+			Component: destinations[i].Component,
+			Format:    destinations[i].Format,
+			Branches:  append([]string(nil), destinations[i].Branches...),
+			Open:      open,
+		})
+	}
+	return out
+}

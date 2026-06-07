@@ -488,11 +488,32 @@ func (t *task) Snapshot() TaskSnapshot {
 		branches = append(branches, state)
 	}
 	return TaskSnapshot{
-		Spec:     t.Describe(),
-		Stats:    stats,
-		Taps:     t.tapsLocked(),
-		Branches: branches,
+		Spec:         t.Describe(),
+		Stats:        stats,
+		Taps:         t.tapsLocked(),
+		Branches:     branches,
+		Destinations: taskSnapshotDestinations(branches),
 	}
+}
+
+func taskSnapshotDestinations(branches []BranchSnapshot) []DestinationSnapshot {
+	if len(branches) == 0 {
+		return nil
+	}
+	out := make([]DestinationSnapshot, 0)
+	seen := make(map[string]struct{})
+	for i := range branches {
+		for j := range branches[i].Destinations {
+			destination := branches[i].Destinations[j]
+			key := destination.Name + "\x00" + string(destination.Operation) + "\x00" + destination.Component
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, destination)
+		}
+	}
+	return out
 }
 
 func (t *task) Detach(ctx context.Context, attachment Attachment) error {

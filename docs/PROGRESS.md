@@ -2566,11 +2566,13 @@ refs, taps, and planner decisions. `GraphPlan` now carries a derived internal
 edges, decisions, and diagnostics. Runtime attach now also emits an internal
 `workPatch` from prepared branch specs before graph mutation, carrying branch
 operations, typed taps, destination groups, planned edges, and rollback
-metadata on the resulting attachment. These are the new executable convergence
-boundaries: `Describe`, `Build`, `Explain(ctx)`, and `Attach` must move toward
-the same planned work instead of parallel workflow compilers. The next
-implementation work is to make `workPlan`/`workPatch` the actual lowerer input,
-delete `branchComposePlan` and `runtimeBranch` as separate models, broaden
+metadata on the resulting attachment. `Task.Snapshot()` and
+`Attachment.Snapshot()` now report runtime branch destinations from that
+`workPatch`. These are the new executable convergence boundaries: `Describe`,
+`Build`, `Explain(ctx)`, `Attach`, and `Snapshot` must move toward the same
+planned work instead of parallel workflow compilers. The next implementation
+work is to make `workPlan`/`workPatch` the actual lowerer input, delete
+`branchComposePlan` and `runtimeBranch` as separate models, broaden
 descriptor-backed destination/container capability data as WebM/Ogg arrive, and
 keep broadening runtime attachment stress around generic lifecycle boundaries
 without weakening the direct branch grammar.

@@ -1460,15 +1460,16 @@ func (a *runtimeAttachment) branchSnapshotLocked(taskStats TaskStats) BranchSnap
 		spec = a.specFromGraph(a.owner.Describe())
 	}
 	return BranchSnapshot{
-		ID:          a.id,
-		Name:        a.name,
-		State:       state,
-		AnchorTaps:  append([]string(nil), a.allAnchorTaps()...),
-		AnchorNodes: append([]string(nil), a.allAnchorNodes()...),
-		Nodes:       append([]pipeline.NodeRef(nil), a.nodes...),
-		Taps:        append([]TapInfo(nil), a.taps...),
-		Spec:        spec,
-		Stats:       branchStatsForNodes(taskStats, a.nodes),
+		ID:           a.id,
+		Name:         a.name,
+		State:        state,
+		AnchorTaps:   append([]string(nil), a.allAnchorTaps()...),
+		AnchorNodes:  append([]string(nil), a.allAnchorNodes()...),
+		Nodes:        append([]pipeline.NodeRef(nil), a.nodes...),
+		Taps:         append([]TapInfo(nil), a.taps...),
+		Destinations: destinationSnapshotsFromWork(a.work.Destinations, !a.stopped),
+		Spec:         spec,
+		Stats:        branchStatsForNodes(taskStats, a.nodes),
 	}
 }
 

@@ -2680,6 +2680,15 @@ func branchSnapshotByName(branches []BranchSnapshot, name string) (BranchSnapsho
 	return BranchSnapshot{}, false
 }
 
+func destinationSnapshotByName(destinations []DestinationSnapshot, name string) (DestinationSnapshot, bool) {
+	for i := range destinations {
+		if destinations[i].Name == name {
+			return destinations[i], true
+		}
+	}
+	return DestinationSnapshot{}, false
+}
+
 func TestTaskSnapshotReportsRuntimeBranchSnapshot(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
@@ -2735,12 +2744,29 @@ func TestTaskSnapshotReportsRuntimeBranchSnapshot(t *testing.T) {
 	if len(branch.Nodes) == 0 || len(branch.Spec.Nodes) == 0 {
 		t.Fatalf("branch snapshot = %+v, want scoped nodes and spec", branch)
 	}
+	destination, ok := destinationSnapshotByName(branch.Destinations, "levels")
+	if !ok {
+		t.Fatalf("branch destinations = %+v, want levels", branch.Destinations)
+	}
+	if destination.Operation != OpSink || !destination.Open || !reflect.DeepEqual(destination.Branches, []string{"levels"}) {
+		t.Fatalf("branch destination = %+v, want open levels sink destination", destination)
+	}
+	taskDestination, ok := destinationSnapshotByName(snapshot.Destinations, "levels")
+	if !ok {
+		t.Fatalf("task destinations = %+v, want levels", snapshot.Destinations)
+	}
+	if taskDestination.Operation != OpSink || !taskDestination.Open {
+		t.Fatalf("task destination = %+v, want open sink destination", taskDestination)
+	}
 	if _, ok := branch.Stats.Nodes[branch.Nodes[0].String()]; len(branch.Stats.Nodes) != 0 && !ok {
 		t.Fatalf("branch stats = %+v, want node stats scoped to branch nodes %+v", branch.Stats, branch.Nodes)
 	}
 	handleSnapshot := attachment.Snapshot()
 	if handleSnapshot.ID != branch.ID || handleSnapshot.Name != branch.Name || handleSnapshot.State != "attached" {
 		t.Fatalf("attachment snapshot = %+v, task branch snapshot = %+v", handleSnapshot, branch)
+	}
+	if _, ok := destinationSnapshotByName(handleSnapshot.Destinations, "levels"); !ok {
+		t.Fatalf("attachment destinations = %+v, want levels", handleSnapshot.Destinations)
 	}
 
 	if err := task.Detach(ctx, attachment); err != nil {
