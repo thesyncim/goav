@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/pipeline"
 )
 
 // Flow is a reusable stream-local recipe fragment.
@@ -18,6 +19,7 @@ type Flow interface {
 type streamFlowSpec struct {
 	name       string
 	media      av.MediaType
+	steps      []jobStreamStep
 	transforms []TransformSpec
 	encode     CodecSpec
 	err        error
@@ -75,6 +77,22 @@ func (b *AudioFlowBuilder) Resample(sampleRate int, channels int, options ...aud
 	return b
 }
 
+func (b *AudioFlowBuilder) Do(stage pipeline.Stage) *AudioFlowBuilder {
+	if b == nil {
+		return b
+	}
+	b.flowBuilder.stage(stage)
+	return b
+}
+
+func (b *AudioFlowBuilder) Tap(name string) *AudioFlowBuilder {
+	if b == nil {
+		return b
+	}
+	b.flowBuilder.tap(name)
+	return b
+}
+
 func (b *AudioFlowBuilder) Encode(codec CodecSpec) *AudioFlowBuilder {
 	if b == nil {
 		return b
@@ -107,6 +125,22 @@ func (b *VideoFlowBuilder) Resize(width int, height int, options ...resizeOption
 		return b
 	}
 	b.flowBuilder.transform(Resize(width, height, options...))
+	return b
+}
+
+func (b *VideoFlowBuilder) Do(stage pipeline.Stage) *VideoFlowBuilder {
+	if b == nil {
+		return b
+	}
+	b.flowBuilder.stage(stage)
+	return b
+}
+
+func (b *VideoFlowBuilder) Tap(name string) *VideoFlowBuilder {
+	if b == nil {
+		return b
+	}
+	b.flowBuilder.tap(name)
 	return b
 }
 
@@ -148,7 +182,49 @@ func (b *flowBuilder) transform(spec TransformSpec) {
 		b.setErr(streamStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), flowTransformStepName(spec), b.spec.encode))
 		return
 	}
+	transform := cloneTransformSpec(spec)
+	b.spec.steps = append(b.spec.steps, jobStreamStep{transform: transform})
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpec(spec))
+}
+
+func (b *flowBuilder) stage(stage pipeline.Stage) {
+	if b == nil {
+		return
+	}
+	if codecIntentSet(b.spec.encode) {
+		b.setErr(streamStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "custom stage", b.spec.encode))
+		return
+	}
+	if stage == nil {
+		b.setErr(streamStageMissingError(StreamIntent{Name: firstNonEmpty(b.spec.name, "flow")}))
+		return
+	}
+	b.spec.steps = append(b.spec.steps, jobStreamStep{stage: stage})
+}
+
+func (b *flowBuilder) tap(name string) {
+	if b == nil {
+		return
+	}
+	if codecIntentSet(b.spec.encode) {
+		b.setErr(streamStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "tap", b.spec.encode))
+		return
+	}
+	if name == "" {
+		b.setErr(&BuildError{
+			Code:      "tap_invalid",
+			Operation: "build flow",
+			Node:      firstNonEmpty(b.spec.name, "flow"),
+			Reason:    "tap name is empty",
+			Suggestions: []string{
+				"call .Tap(\"audio.voice.frames\") or another stable tap name",
+				"omit .Tap(...) when no runtime branch should attach at that point",
+			},
+			Cause: ErrUnsupportedBuild,
+		})
+		return
+	}
+	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: name})
 }
 
 func (b *flowBuilder) encode(codec CodecSpec) {
@@ -167,6 +243,7 @@ func (b *flowBuilder) snapshot() streamFlowSpec {
 		return streamFlowSpec{err: nilFlowError()}
 	}
 	spec := b.spec
+	spec.steps = cloneJobStreamSteps(spec.steps)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
 	return spec
 }

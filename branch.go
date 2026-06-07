@@ -50,7 +50,6 @@ type BranchSpec struct {
 	media      av.MediaType
 	steps      []jobStreamStep
 	transforms []TransformSpec
-	taps       []string
 	encode     CodecSpec
 	targets    []TargetSpec
 	labels     []string
@@ -125,11 +124,11 @@ func (b *BranchBuilder) Apply(flow Flow) *BranchBuilder {
 		b.setErr(err)
 		return b
 	}
-	if codecIntentSet(b.spec.encode) && (len(spec.transforms) != 0 || codecIntentSet(spec.encode)) {
+	if codecIntentSet(b.spec.encode) && (len(spec.steps) != 0 || codecIntentSet(spec.encode)) {
 		b.setErr(streamStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "flow", b.spec.encode))
 		return b
 	}
-	b.spec.steps = append(b.spec.steps, streamStepsFromTransforms(spec.transforms)...)
+	b.spec.steps = append(b.spec.steps, cloneJobStreamSteps(spec.steps)...)
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpecs(spec.transforms)...)
 	if codecIntentSet(spec.encode) {
 		return b.Encode(spec.encode)
@@ -202,7 +201,6 @@ func (b *BranchBuilder) Tap(name string) *BranchBuilder {
 		return b
 	}
 	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: name})
-	b.spec.taps = append(b.spec.taps, name)
 	return b
 }
 
@@ -261,7 +259,6 @@ func (b *BranchBuilder) snapshot() BranchSpec {
 	spec := b.spec
 	spec.steps = cloneJobStreamSteps(spec.steps)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
-	spec.taps = append([]string(nil), spec.taps...)
 	spec.targets = cloneTargetSpecs(spec.targets)
 	spec.labels = append([]string(nil), spec.labels...)
 	return spec
@@ -334,7 +331,6 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			decode:     true,
 			steps:      appendBranchSteps(stream.steps, branches[i].steps),
 			transforms: appendTransformSpecs(stream.transformSpecs(), branches[i].transforms),
-			taps:       append([]string(nil), branches[i].taps...),
 			encode:     branches[i].encode,
 			labels:     append([]string(nil), branches[i].labels...),
 		})

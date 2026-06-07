@@ -1363,7 +1363,7 @@ func transcodeStreamIntent(stream streamBuild) StreamIntent {
 		Decode:     stream.decode,
 		Operations: streamBuildOperations(stream),
 		Transforms: cloneTransformSpecs(stream.transforms),
-		Taps:       streamTapIntents(stream.taps, stream.selector.Type, stream.decode),
+		Taps:       streamStepTapIntents(stream.steps, stream.selector.Type),
 		Encode:     stream.encode,
 		Targets:    append([]string(nil), stream.labels...),
 	}
@@ -1430,25 +1430,6 @@ func streamStepOperations(steps []jobStreamStep, media av.MediaType) []StreamOpe
 		}
 	}
 	return operations
-}
-
-func streamTapIntents(names []string, media av.MediaType, decoded bool) []TapIntent {
-	if len(names) == 0 {
-		return nil
-	}
-	domain := DomainPacket
-	if decoded {
-		domain = DomainFrame
-	}
-	taps := make([]TapIntent, 0, len(names))
-	for i := range names {
-		taps = append(taps, TapIntent{
-			Name:      names[i],
-			MediaKind: media,
-			Domain:    domain,
-		})
-	}
-	return taps
 }
 
 func streamStepTapIntents(steps []jobStreamStep, media av.MediaType) []TapIntent {
@@ -2504,7 +2485,6 @@ type streamBuild struct {
 	decode     bool
 	steps      []jobStreamStep
 	transforms []TransformSpec
-	taps       []string
 	encode     CodecSpec
 	labels     []string
 }
@@ -2544,13 +2524,13 @@ func (b *JobStreamBuilder) Apply(flow Flow) *JobStreamBuilder {
 		b.job.setErr(err)
 		return b
 	}
-	if codecIntentSet(stream.encode) && (len(spec.transforms) != 0 || codecIntentSet(spec.encode)) {
+	if codecIntentSet(stream.encode) && (len(spec.steps) != 0 || codecIntentSet(spec.encode)) {
 		b.job.setErr(streamStepAfterEncodeError("build stream", jobStreamName(stream), "flow", stream.encode))
 		return b
 	}
-	for i := range spec.transforms {
+	if len(spec.steps) != 0 {
 		stream.decode = true
-		stream.steps = append(stream.steps, jobStreamStep{transform: cloneTransformSpec(spec.transforms[i])})
+		stream.steps = append(stream.steps, cloneJobStreamSteps(spec.steps)...)
 	}
 	if codecIntentSet(spec.encode) {
 		return b.Encode(spec.encode)

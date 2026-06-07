@@ -17,9 +17,10 @@ make the implementation match the composable planner promise.
    where possible. Branches must be orthogonal at operation boundaries: after
    decode, after resize/resample, after custom stages, after taps, and later
    after sink/output attachment where runtime support makes sense. Custom stage
-   and transform steps are active, runtime branches can resize/resample from
-   frame taps and publish nested taps, and custom filter adapter metadata plus
-   late muxed runtime targets remain next slices.
+   and transform steps are active, reusable flows carry ordered stage, tap,
+   transform, and terminal encode steps, runtime branches can apply non-encoding
+   flows from frame taps and publish nested taps, and custom filter adapter
+   metadata plus late muxed runtime targets remain next slices.
 3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
    for `From`, packet copy, stream decode, branch composition, and reusable flows
    onto direct media-plan graph construction.
@@ -139,9 +140,10 @@ make the implementation match the composable planner promise.
 - `MediaPlan` as the shared branch-operation IR for record, decode, reusable
   branches, and transcode recipes. First `Explain(ctx)` report slice is active;
   direct `Describe`/`Build` lowering remains planned.
-- Reusable `AudioFlow`/`VideoFlow` values that apply to stream chains or
-  branches. Build-time file/protocol and RTP/WebRTC branch slices are active;
-  runtime stage/sink attachments are active for direct task graphs; buffered
-  attachments and late recording targets remain planned.
+- Reusable `AudioFlow`/`VideoFlow` values that apply to stream chains,
+  branches, and non-encoding runtime attachments. Build-time file/protocol and
+  RTP/WebRTC branch slices are active; runtime stage/sink attachments are active
+  for direct task graphs; buffered attachments and late recording targets remain
+  planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

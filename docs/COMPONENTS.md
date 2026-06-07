@@ -14,9 +14,11 @@ expert graphs compose those components directly
 There is no separate "components" API layer. Reusable pieces live in the
 domain packages that own their contracts.
 
-Recipe flows such as `AudioFlow` and `VideoFlow` are reusable intent fragments,
-not graph components. They expand into the same stream intents that recipes and
-branch composers already compile.
+Recipe flows such as `AudioFlow` and `VideoFlow` are reusable ordered intent
+fragments, not graph components. They can carry custom stages, taps,
+transforms, and an optional terminal encoder, then expand into the same stream
+intents that recipes, branch composers, and non-encoding runtime attachments
+already compile.
 
 ## Status
 

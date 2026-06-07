@@ -134,11 +134,13 @@ work in progress.
 
 ### Flows
 
-A flow is reusable work. A branch owns the target.
+A flow is reusable ordered work: custom stages, taps, transforms, and an
+optional terminal encoder. A branch owns the target.
 
 ```go
 voice := goav.AudioFlow("voice").
     Resample(16_000, goav.Mono).
+    Tap("audio.voice.frames").
     OpusVoice()
 
 archive := goav.AudioFlow("archive").
@@ -157,6 +159,9 @@ return goav.From(goav.WebRTCTrack(audio)).
     ).
     Run(ctx)
 ```
+
+Non-encoding flows can also be applied to runtime branches attached from frame
+taps.
 
 ## Runtime Attach
 

@@ -876,15 +876,24 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 	}
 	defer task.Close()
 
+	meter := &runtimeTestStage{name: "meter"}
+	voice := AudioFlow("voice").
+		Do(meter).
+		Resample(16_000, Mono).
+		Tap("audio.16k")
 	attachment, err := task.Attach(ctx, Branch("voice").
 		FromTap("audio.decoded").
-		Resample(16_000, Mono).
-		Tap("audio.16k").
+		Apply(voice).
 		To(FrameSink(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
 		}))))
 	if err != nil {
 		t.Fatal(err)
+	}
+	attachmentText := specText(attachment.Spec())
+	if !strings.Contains(attachmentText, "voice/meter -> voice/resample-voice") ||
+		!strings.Contains(attachmentText, "voice/resample-voice -> voice/voice") {
+		t.Fatalf("attachment spec:\n%s", attachmentText)
 	}
 	if resampleFactory.config.Audio == nil ||
 		resampleFactory.config.Audio.SampleRate != 16_000 ||

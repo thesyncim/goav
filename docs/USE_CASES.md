@@ -122,11 +122,12 @@ model instead of growing special-case APIs.
 
 ## Reusable Flows
 
-Flows are reusable operation sequences. Branches own targets, so reusable and
-ad hoc splits use the same API.
+Flows are reusable ordered operation sequences: custom stages, taps, transforms,
+and an optional terminal encoder. Branches own targets, so reusable and ad hoc
+splits use the same API.
 
 ```go
-voice := goav.AudioFlow("voice").Resample(16_000, goav.Mono).OpusVoice()
+voice := goav.AudioFlow("voice").Resample(16_000, goav.Mono).Tap("audio.voice.frames").OpusVoice()
 archive := goav.AudioFlow("archive").Resample(48_000, goav.Stereo).OpusMusic()
 voiceTarget := goav.Target("voice", goav.FileOutput("voice.ogg", voiceFile))
 archiveTarget := goav.Target("archive", goav.FileOutput("archive.ogg", archiveFile))
@@ -140,6 +141,9 @@ err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     ).
     Run(ctx)
 ```
+
+The same non-encoding flow shape can be applied to a runtime branch attached
+from a frame tap.
 
 ## Runtime Branches
 

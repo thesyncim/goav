@@ -226,6 +226,15 @@ func equalStrings(a []string, b []string) bool {
 	return true
 }
 
+func tapIntentNamesContain(taps []goav.TapIntent, name string) bool {
+	for i := range taps {
+		if taps[i].Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func branchByName(branches []goav.BranchReport, name string) (goav.BranchReport, bool) {
 	for i := range branches {
 		if branches[i].Name == name {
@@ -1216,6 +1225,39 @@ func TestAudioFlowAppliesToStreamRecipeIntent(t *testing.T) {
 	}
 }
 
+func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
+	meter := goav.FrameFunc("meter", func(context.Context, *av.Frame, goav.Emit) error {
+		return nil
+	})
+	voice := goav.AudioFlow("voice").
+		Do(meter).
+		Tap("audio.after-meter").
+		Resample(16_000, goav.Mono).
+		OpusVoice()
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(voice).
+		To(goav.FileOutput("voice.ogg", io.Discard))
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	operations := intent.Streams[0].Operations
+	if len(operations) != 5 ||
+		operations[0].Kind != goav.OpDecode ||
+		operations[1].Kind != goav.OpStage || operations[1].Component != "meter" ||
+		operations[2].Kind != goav.OpTap || operations[2].Tap.Name != "audio.after-meter" ||
+		operations[3].Kind != goav.OpTransform || operations[3].Transform.Resample == nil ||
+		operations[4].Kind != goav.OpEncode || operations[4].Encode.ID != av.CodecOpus {
+		t.Fatalf("operations: %+v", operations)
+	}
+	if len(intent.Streams[0].Taps) != 1 || intent.Streams[0].Taps[0].Name != "audio.after-meter" {
+		t.Fatalf("taps: %+v", intent.Streams[0].Taps)
+	}
+}
+
 func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 	voice := goav.AudioFlow("voice").
 		Resample(16_000, goav.Mono).
@@ -1270,6 +1312,7 @@ func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 	preview := goav.VideoFlow("preview").
 		Resize(640, 360).
+		Tap("preview.frames").
 		VP9(600_000)
 	web := goav.Target("web", goav.FileOutput("preview.webm", io.Discard))
 
@@ -1286,6 +1329,18 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 		intent.Streams[0].Encode.ID != av.CodecVP9 ||
 		intent.Streams[0].Encode.Bitrate != 600_000 {
 		t.Fatalf("intent: %+v", intent)
+	}
+	if !tapIntentNamesContain(intent.Streams[0].Taps, "preview.frames") {
+		t.Fatalf("taps: %+v, want preview.frames", intent.Streams[0].Taps)
+	}
+	operations := intent.Streams[0].Operations
+	if len(operations) != 5 ||
+		operations[0].Kind != goav.OpDecode ||
+		operations[1].Kind != goav.OpTap || operations[1].Tap.Name != "video.decoded" ||
+		operations[2].Kind != goav.OpTransform ||
+		operations[3].Kind != goav.OpTap || operations[3].Tap.Name != "preview.frames" ||
+		operations[4].Kind != goav.OpEncode {
+		t.Fatalf("operations: %+v", operations)
 	}
 }
 
@@ -1537,23 +1592,52 @@ func TestBranchesRejectOuterOutputsAndDuplicateTargets(t *testing.T) {
 	}
 }
 
-func TestFlowRejectsTransformsAfterEncode(t *testing.T) {
-	flow := goav.AudioFlow("voice").
-		OpusVoice().
-		Resample(16_000, goav.Mono)
-
-	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		Audio().
-		Apply(flow).
-		To(goav.FileOutput("voice.ogg", io.Discard)).
-		Describe()
-
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" {
-		t.Fatalf("err = %v, want stream_step_after_encode", err)
+func TestFlowRejectsOperationsAfterEncode(t *testing.T) {
+	tests := []struct {
+		name string
+		flow goav.Flow
+		want string
+	}{
+		{
+			name: "transform",
+			flow: goav.AudioFlow("voice").
+				OpusVoice().
+				Resample(16_000, goav.Mono),
+			want: "resample",
+		},
+		{
+			name: "stage",
+			flow: goav.AudioFlow("voice").
+				OpusVoice().
+				Do(goav.FrameFunc("meter", func(context.Context, *av.Frame, goav.Emit) error {
+					return nil
+				})),
+			want: "custom stage",
+		},
+		{
+			name: "tap",
+			flow: goav.AudioFlow("voice").
+				OpusVoice().
+				Tap("audio.after-encode"),
+			want: "tap",
+		},
 	}
-	if buildErr.Operation != "build flow" || !strings.Contains(err.Error(), "resample") {
-		t.Fatalf("err = %v, want flow resample guidance", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+				Audio().
+				Apply(tt.flow).
+				To(goav.FileOutput("voice.ogg", io.Discard)).
+				Describe()
+
+			var buildErr *goav.BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" {
+				t.Fatalf("err = %v, want stream_step_after_encode", err)
+			}
+			if buildErr.Operation != "build flow" || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want flow %s guidance", err, tt.want)
+			}
+		})
 	}
 }
 

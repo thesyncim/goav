@@ -748,9 +748,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     it afterward for file remux fanout, custom stages, RTP Opus decode, WebRTC
     TrackSet receive, codec EOS flush, and mux write events. Done.
 216. Keep flow ordering consistent with stream recipes: `AudioFlow` and
-    `VideoFlow` now reject transforms declared after a terminal encoder instead
+    `VideoFlow` now reject operations declared after a terminal encoder instead
     of silently normalizing call order, preserving the one-chain rule that
-    transforms come first, one encoder comes last, then outputs are attached;
+    frame operations come first, one encoder comes last, then outputs are attached;
     the sealed `Flow` implementation now uses a private snapshot hook and
     typed-nil flows or branches become structured build errors instead of
     panics. Done.
@@ -914,6 +914,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     carry transformed caps onto nested runtime taps, and keep runtime branches
     sink-oriented. Runtime encode and muxed target endpoints remain separate
     slices because they need codec and mux lifecycle planning. Done.
+241. Make flows ordered operation sequences:
+    `AudioFlow` and `VideoFlow` now carry custom `.Do(stage)` steps,
+    `.Tap(name)` outlets, transforms, and an optional terminal encoder through
+    one private ordered step snapshot. Stream builders, planned branches, and
+    non-encoding runtime branch attachments all apply that same step sequence,
+    while flow operations after encode fail with the existing terminal-encoder
+    diagnostic. Duplicate branch tap bookkeeping was removed so branch intent
+    derives taps from ordered operations. Done.
 
 ## First Vertical Slice
 
@@ -1157,7 +1165,8 @@ Current pressure point: finish direct media-plan graph construction and deepen
 capability planning around the ordered operation model. The public recipe
 surface is small: `From`, stream builders, `Tap`, `Branch`, `Branches`,
 `Target`, endpoint constructors, `Flow`, `Codec`, and runtime `Attach`. Flows
-expand into branch intent instead of a parallel graph language, and
+expand ordered stage/tap/transform/encode operations into branch intent instead
+of a parallel graph language, and
 `Task.Attach` remains the late branch control plane for running direct graphs,
 including custom-stage and resize/resample sink branches that can publish nested
 runtime taps for later attachments.
