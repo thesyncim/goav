@@ -845,6 +845,9 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 }
 
 func branchComposeSharedRouteSteps(branch branchComposeBranch) ([]mediaTransform, error) {
+	if len(branch.SharedOperations) != 0 {
+		return branchComposeRouteOperationStepsForName(branchComposeSharedStepName(branch), branch.SharedOperations)
+	}
 	if len(branch.SharedSteps) == 0 {
 		return nil, nil
 	}
@@ -1000,10 +1003,17 @@ func branchComposeDuplicateBranchError(name string, index int) error {
 }
 
 func branchComposeRouteSteps(name string, branch branchComposeBranch) ([]mediaTransform, error) {
+	if len(branch.PrivateOperations) != 0 {
+		return branchComposeRouteOperationStepsForName(name, branch.PrivateOperations)
+	}
 	if len(branch.Steps) == 0 {
 		return branchComposeInlineTransforms(name, branch)
 	}
 	return branchComposeRouteStepsForName(name, branch.Steps)
+}
+
+func branchComposeRouteOperationStepsForName(name string, operations []StreamOperation) ([]mediaTransform, error) {
+	return branchComposeRouteStepsForName(name, branchChainStepsFromOperationList(operations))
 }
 
 func branchComposeRouteStepsForName(name string, steps []chainStep) ([]mediaTransform, error) {

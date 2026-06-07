@@ -2190,6 +2190,17 @@ are:
     clear the bridge step fields before planning and prove shared parent resize
     and private thumbnail resize still survive through operation projection.
     Done.
+380. Carry operation records through the branch-compose plan:
+    `branchComposeBranch` now carries the flattened operation list plus
+    `SharedOperations` and `PrivateOperations` beside the legacy step fields.
+    Recipe-created branch plans populate those operation records from
+    `streamBuildOperations`, while intent-only paths split operations by their
+    `Shared` flag. Route preparation now prefers operation records when
+    creating shared and branch-local transform routes, using the projected step
+    fields only as a compatibility fallback. Tests prove packet-copy branches
+    retain copy/tap operations in the plan and that routes still prepare from
+    operation records after the bridge step fields are cleared.
+    Done.
 
 ## First Vertical Slice
 

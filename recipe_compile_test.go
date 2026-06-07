@@ -382,6 +382,20 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if tap := streamBuildOperations(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != DomainPacket {
 		t.Fatalf("copy branch tap = %+v, want packet branch tap", tap)
 	}
+	copyPlan, err := planBranchCompositionRecipe(copyJob.Intent(), copyJob.inputs[0], copyJob.branchTargets, copyJob.branchStreams)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(copyPlan.Branches) != 1 {
+		t.Fatalf("copy plan branches = %d, want 1", len(copyPlan.Branches))
+	}
+	if got, want := streamOperationKindsForTest(copyPlan.Branches[0].Operations), []OperationKind{OpCopy, OpTap}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("copy plan operations = %+v, want %+v", got, want)
+	}
+	if len(copyPlan.Branches[0].PrivateOperations) != 2 ||
+		copyPlan.Branches[0].PrivateOperations[1].Tap.Name != "packets.branch" {
+		t.Fatalf("copy private operations = %+v, want copy and packet tap", copyPlan.Branches[0].PrivateOperations)
+	}
 }
 
 func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
@@ -463,6 +477,38 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		plan.Branches[1].SharedSteps[0].transform.Resize.Width != 1280 ||
 		len(plan.Branches[1].Steps) != 0 {
 		t.Fatalf("web plan branch = %+v, want shared 720p resize from operation split", plan.Branches[1])
+	}
+
+	if got, want := streamOperationKindsForTest(plan.Branches[0].Operations), []OperationKind{OpDecode, OpTap, OpTransform}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("raw plan operations = %+v, want %+v", got, want)
+	}
+	if got, want := streamOperationKindsForTest(plan.Branches[1].Operations), []OperationKind{OpDecode, OpTap, OpTransform, OpTap, OpEncode}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("web plan operations = %+v, want %+v", got, want)
+	}
+
+	operationOnlyPlan := plan
+	for i := range operationOnlyPlan.Branches {
+		operationOnlyPlan.Branches[i].SharedSteps = nil
+		operationOnlyPlan.Branches[i].Steps = nil
+	}
+	routes, _, err := prepareBranchComposePlan(operationOnlyPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 2 {
+		t.Fatalf("routes = %d, want 2", len(routes))
+	}
+	if len(routes[0].sharedSteps) != 0 ||
+		len(routes[0].steps) != 1 ||
+		routes[0].steps[0].video == nil ||
+		routes[0].steps[0].video.Width != 320 {
+		t.Fatalf("raw route = %+v, want private thumbnail resize from operation fields", routes[0])
+	}
+	if len(routes[1].sharedSteps) != 1 ||
+		routes[1].sharedSteps[0].video == nil ||
+		routes[1].sharedSteps[0].video.Width != 1280 ||
+		len(routes[1].steps) != 0 {
+		t.Fatalf("web route = %+v, want shared 720p resize from operation fields", routes[1])
 	}
 }
 

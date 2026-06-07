@@ -3817,20 +3817,32 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		branchName := stream.Name
 		selector := streamIntentSelector(stream)
 		sharedSteps, branchSteps := branchChainStepsForStream(stream)
+		operations := cloneStreamOperations(stream.Operations)
+		var sharedOperations []StreamOperation
+		var privateOperations []StreamOperation
 		if i < len(branchBuilds) {
-			sharedSteps, branchSteps = branchChainStepsForStreamBuild(branchBuilds[i])
+			branchBuild := branchBuilds[i]
+			operations = streamBuildOperations(branchBuild)
+			sharedOperations = cloneStreamOperations(branchBuild.sharedOps)
+			privateOperations = cloneStreamOperations(branchBuild.privateOps)
+			sharedSteps, branchSteps = branchChainStepsForStreamBuild(branchBuild)
+		} else {
+			sharedOperations, privateOperations = splitStreamOperationsByShared(operations)
 		}
 		branch := branchComposeBranch{
-			Name:         branchName,
-			Selector:     selector,
-			Decode:       stream.Decode,
-			Copy:         stream.Encode.Copy,
-			SharedSteps:  sharedSteps,
-			Steps:        branchSteps,
-			DecodeConfig: cloneCodecSpec(stream.DecodeCodec),
-			CodecChange:  stream.CodecChange,
-			Encode:       encodeConfigFromSpec(stream.Encode),
-			Labels:       append([]string(nil), stream.Targets...),
+			Name:              branchName,
+			Selector:          selector,
+			Decode:            stream.Decode,
+			Copy:              stream.Encode.Copy,
+			Operations:        cloneStreamOperations(operations),
+			SharedOperations:  sharedOperations,
+			PrivateOperations: privateOperations,
+			SharedSteps:       sharedSteps,
+			Steps:             branchSteps,
+			DecodeConfig:      cloneCodecSpec(stream.DecodeCodec),
+			CodecChange:       stream.CodecChange,
+			Encode:            encodeConfigFromSpec(stream.Encode),
+			Labels:            append([]string(nil), stream.Targets...),
 		}
 		for _, label := range stream.Targets {
 			outputBranches[label] = append(outputBranches[label], branchName)
@@ -3885,6 +3897,23 @@ func branchChainStepsForStream(stream StreamIntent) ([]chainStep, []chainStep) {
 		return nil, nil
 	}
 	return nil, chainStepsFromTransforms(stream.Transforms)
+}
+
+func splitStreamOperationsByShared(operations []StreamOperation) ([]StreamOperation, []StreamOperation) {
+	if len(operations) == 0 {
+		return nil, nil
+	}
+	shared := make([]StreamOperation, 0)
+	private := make([]StreamOperation, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		if operation.Shared {
+			shared = append(shared, operation)
+			continue
+		}
+		private = append(private, operation)
+	}
+	return cloneStreamOperations(shared), cloneStreamOperations(private)
 }
 
 func branchChainStepsFromOperations(operations []StreamOperation, anchorTap string) ([]chainStep, []chainStep) {
