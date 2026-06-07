@@ -1717,6 +1717,20 @@ func TestRootAPIUsesFromCompositionInsteadOfWorkflowHelpers(t *testing.T) {
 	}
 }
 
+func TestStreamIntentUsesTypedTapAnchor(t *testing.T) {
+	stream := reflect.TypeOf(goav.StreamIntent{})
+	if _, ok := stream.FieldByName("FromTap"); ok {
+		t.Fatal("StreamIntent exposes FromTap; use typed TapRef field From")
+	}
+	field, ok := stream.FieldByName("From")
+	if !ok {
+		t.Fatal("StreamIntent should expose typed tap anchor field From")
+	}
+	if field.Type != reflect.TypeOf(goav.TapRef{}) {
+		t.Fatalf("StreamIntent.From type = %s, want goav.TapRef", field.Type)
+	}
+}
+
 func TestRecipeConstructorsDoNotExposeRuntimeOptions(t *testing.T) {
 	inputType := reflect.TypeOf(goav.InputSpec{})
 	jobType := reflect.TypeOf((*goav.Job)(nil))
@@ -2214,18 +2228,19 @@ func TestBranchesGroupSelectedStreams(t *testing.T) {
 		t.Fatalf("intent: %+v", intent)
 	}
 	tests := []struct {
-		name    string
-		fromTap string
-		codec   av.CodecID
-		outputs []string
+		name       string
+		from       string
+		fromDomain goav.MediaDomain
+		codec      av.CodecID
+		outputs    []string
 	}{
-		{name: "v1080", fromTap: "video.decoded", codec: av.CodecVP9, outputs: []string{"watch"}},
-		{name: "v360", fromTap: "video.decoded", codec: av.CodecVP8, outputs: []string{"mobile"}},
-		{name: "a96", fromTap: "audio.decoded", codec: av.CodecOpus, outputs: []string{"watch", "mobile"}},
+		{name: "v1080", from: "video.decoded", fromDomain: goav.DomainFrame, codec: av.CodecVP9, outputs: []string{"watch"}},
+		{name: "v360", from: "video.decoded", fromDomain: goav.DomainFrame, codec: av.CodecVP8, outputs: []string{"mobile"}},
+		{name: "a96", from: "audio.decoded", fromDomain: goav.DomainFrame, codec: av.CodecOpus, outputs: []string{"watch", "mobile"}},
 	}
 	for i := range tests {
 		stream := intent.Streams[i]
-		if stream.Name != tests[i].name || stream.FromTap != tests[i].fromTap ||
+		if stream.Name != tests[i].name || stream.From.Name() != tests[i].from || stream.From.Domain() != tests[i].fromDomain ||
 			stream.Encode.ID != tests[i].codec || !equalStrings(stream.Targets, tests[i].outputs) {
 			t.Fatalf("stream[%d]=%+v, want %+v", i, stream, tests[i])
 		}
@@ -4365,12 +4380,14 @@ func TestBranchCompositionCanSplitFromEarlierTap(t *testing.T) {
 	if len(intent.Streams) != 2 {
 		t.Fatalf("intent streams = %+v, want 2", intent.Streams)
 	}
-	if intent.Streams[0].FromTap != "video.decoded" ||
+	if intent.Streams[0].From.Name() != "video.decoded" ||
+		intent.Streams[0].From.Domain() != goav.DomainFrame ||
 		len(intent.Streams[0].Transforms) != 1 ||
 		intent.Streams[0].Transforms[0].Resize.Width != 320 {
 		t.Fatalf("raw branch intent = %+v, want branch from decoded tap with only thumbnail resize", intent.Streams[0])
 	}
-	if intent.Streams[1].FromTap != "video.720p.frames" ||
+	if intent.Streams[1].From.Name() != "video.720p.frames" ||
+		intent.Streams[1].From.Domain() != goav.DomainFrame ||
 		len(intent.Streams[1].Transforms) != 1 ||
 		intent.Streams[1].Transforms[0].Resize.Width != 1280 {
 		t.Fatalf("web branch intent = %+v, want branch from 720p tap with shared resize", intent.Streams[1])
@@ -4393,7 +4410,7 @@ func TestBranchCompositionCanSplitFromEarlierTap(t *testing.T) {
 	}
 	if strings.Contains(text, "resize-video -> resize-raw-preview") ||
 		strings.Contains(text, "decode-video -> encode-web") {
-		t.Fatalf("branches ignored explicit FromTap anchors:\n%s", text)
+		t.Fatalf("branches ignored explicit typed tap anchors:\n%s", text)
 	}
 }
 
@@ -4490,7 +4507,7 @@ func TestBranchCompositionSharesCurrentPointWithoutExplicitTap(t *testing.T) {
 		)
 
 	intent := job.Intent()
-	if len(intent.Streams) != 2 || intent.Streams[0].FromTap != "" || intent.Streams[1].FromTap != "" {
+	if len(intent.Streams) != 2 || intent.Streams[0].From.Name() != "" || intent.Streams[1].From.Name() != "" {
 		t.Fatalf("intent streams = %+v, want unnamed current-point branch split", intent.Streams)
 	}
 	spec, err := job.Describe()
@@ -4582,8 +4599,10 @@ func TestBranchCompositionAllowsPacketCopyBranches(t *testing.T) {
 
 	intent := job.Intent()
 	if len(intent.Streams) != 2 ||
-		intent.Streams[0].FromTap != "video.packets" ||
-		intent.Streams[1].FromTap != "video.packets" {
+		intent.Streams[0].From.Name() != "video.packets" ||
+		intent.Streams[0].From.Domain() != goav.DomainPacket ||
+		intent.Streams[1].From.Name() != "video.packets" ||
+		intent.Streams[1].From.Domain() != goav.DomainPacket {
 		t.Fatalf("intent streams = %+v, want packet branches from video.packets", intent.Streams)
 	}
 

@@ -40,7 +40,7 @@ type InputIntent struct {
 type StreamIntent struct {
 	Name        string
 	Select      StreamSelect
-	FromTap     string
+	From        TapRef
 	Decode      bool
 	Operations  []StreamOperation
 	Transforms  []TransformSpec
@@ -1306,7 +1306,7 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 			Codec:    stream.selector.Codec,
 			Name:     stream.selector.Name,
 		},
-		FromTap:    stream.fromTap,
+		From:       stream.from,
 		Decode:     stream.decode,
 		Operations: streamBuildOperations(stream),
 		Transforms: cloneTransformSpecs(stream.transforms),
@@ -2908,7 +2908,7 @@ func newStreamSelector(media av.MediaType, options ...streamOption) av.StreamSel
 type streamBuild struct {
 	name           string
 	selector       av.StreamSelector
-	fromTap        string
+	from           TapRef
 	decode         bool
 	sharedSteps    []jobStreamStep
 	steps          []jobStreamStep
@@ -3040,25 +3040,25 @@ func streamSelectFromAV(selector av.StreamSelector) StreamSelect {
 	}
 }
 
-func lastStreamTap(stream *jobStreamBuild) string {
+func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 	if stream == nil {
-		return ""
+		return TapRef{}
 	}
 	if len(stream.postEncodeTaps) != 0 {
-		return stream.postEncodeTaps[len(stream.postEncodeTaps)-1]
+		return PacketTap(stream.postEncodeTaps[len(stream.postEncodeTaps)-1])
 	}
 	if stream.encode.Copy && len(stream.steps) == 0 && stream.selector.Type != "" {
-		return defaultPacketTapName(stream.selector.Type, 0)
+		return PacketTap(defaultPacketTapName(stream.selector.Type, 0))
 	}
 	for i := len(stream.steps) - 1; i >= 0; i-- {
 		if stream.steps[i].tap != "" {
-			return stream.steps[i].tap
+			return tapWithDomain(TapRef{name: stream.steps[i].tap, domain: stream.steps[i].tapDomain}, DomainFrame)
 		}
 	}
 	if len(stream.steps) == 0 && stream.selector.Type != "" && stream.decode {
-		return defaultDecodedTapName(stream.selector.Type)
+		return FrameTap(defaultDecodedTapName(stream.selector.Type))
 	}
-	return ""
+	return TapRef{}
 }
 
 func (b *JobStreamBuilder) Do(stage pipeline.Stage) *JobStreamBuilder {
@@ -3157,9 +3157,9 @@ func endpointFromDestination(operation string, node string, destination destinat
 		if target.name == "" {
 			return DestinationSpec{}, "", targetNameMissingError(target.endpoint)
 		}
-		return cloneEndpointSpec(target.endpoint), target.name, nil
+		return cloneDestinationSpec(target.endpoint), target.name, nil
 	case destination.hasEndpoint:
-		return cloneEndpointSpec(destination.endpoint), "", nil
+		return cloneDestinationSpec(destination.endpoint), "", nil
 	default:
 		return DestinationSpec{}, "", destinationInvalidError(operation, node, "unsupported destination")
 	}
@@ -3319,7 +3319,7 @@ func branchComposeStepsForStreamBuild(stream streamBuild) ([]branchComposeStep, 
 
 func branchComposeStepsForStream(stream StreamIntent) ([]branchComposeStep, []branchComposeStep) {
 	if len(stream.Operations) != 0 {
-		return branchComposeStepsFromOperations(stream.Operations, stream.FromTap)
+		return branchComposeStepsFromOperations(stream.Operations, stream.From.Name())
 	}
 	if len(stream.Transforms) == 0 {
 		return nil, nil
@@ -3327,18 +3327,18 @@ func branchComposeStepsForStream(stream StreamIntent) ([]branchComposeStep, []br
 	return nil, branchComposeStepsFromJobSteps(streamStepsFromTransforms(stream.Transforms))
 }
 
-func branchComposeStepsFromOperations(operations []StreamOperation, fromTap string) ([]branchComposeStep, []branchComposeStep) {
+func branchComposeStepsFromOperations(operations []StreamOperation, anchorTap string) ([]branchComposeStep, []branchComposeStep) {
 	if len(operations) == 0 {
 		return nil, nil
 	}
 	steps := make([]branchComposeStep, 0, len(operations))
 	shared := make([]branchComposeStep, 0)
 	branch := make([]branchComposeStep, 0)
-	split := fromTap == ""
-	foundSplit := fromTap == ""
+	split := anchorTap == ""
+	foundSplit := anchorTap == ""
 	for i := range operations {
 		operation := operations[i]
-		if operation.Kind == OpTap && operation.Component == fromTap {
+		if operation.Kind == OpTap && operation.Component == anchorTap {
 			split = true
 			foundSplit = true
 			continue

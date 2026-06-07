@@ -87,7 +87,7 @@ func (b *BranchBuilder) From(source any) *BranchBuilder {
 	}
 	switch source := source.(type) {
 	case TapRef:
-		return b.fromTap(source)
+		return b.fromTypedTap(source)
 	case string:
 		b.spec.from = source
 		b.spec.tap = ""
@@ -98,7 +98,7 @@ func (b *BranchBuilder) From(source any) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) fromTap(tap TapRef) *BranchBuilder {
+func (b *BranchBuilder) fromTypedTap(tap TapRef) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -415,7 +415,7 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			encode = Copy()
 		}
 		decode := !parentPacket || branches[i].decode
-		sharedSteps, fromTap, err := plannedBranchAnchor(stream, branches[i], parentPacket)
+		sharedSteps, from, err := plannedBranchAnchor(stream, branches[i], parentPacket)
 		if err != nil {
 			job.setErr(err)
 			return job
@@ -423,7 +423,7 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 		job.branchStreams = append(job.branchStreams, streamBuild{
 			name:        branches[i].name,
 			selector:    stream.selector,
-			fromTap:     fromTap,
+			from:        from,
 			decode:      decode,
 			sharedSteps: sharedSteps,
 			steps:       cloneJobStreamSteps(branches[i].steps),
@@ -522,44 +522,48 @@ func validateBranchStepTapDomains(spec BranchSpec, parentPacket bool) error {
 	return nil
 }
 
-func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]jobStreamStep, string, error) {
+func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]jobStreamStep, TapRef, error) {
 	if spec.tap == "" {
 		if parentPacket {
-			return nil, lastStreamTap(stream), nil
+			return nil, lastStreamTapRef(stream), nil
 		}
-		return cloneJobStreamSteps(stream.steps), lastStreamTap(stream), nil
+		return cloneJobStreamSteps(stream.steps), lastStreamTapRef(stream), nil
 	}
 	if stream == nil {
-		return nil, "", plannedBranchTapMissingError("", spec.name, spec.tap)
+		return nil, TapRef{}, plannedBranchTapMissingError("", spec.name, spec.tap)
 	}
 	if parentPacket {
 		if tapIsPacketAnchor(stream, spec.tap) {
-			if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.tap, domain: spec.tapDomain}, DomainPacket); err != nil {
-				return nil, "", err
+			from := TapRef{name: spec.tap, domain: spec.tapDomain}
+			if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainPacket); err != nil {
+				return nil, TapRef{}, err
 			}
-			return nil, spec.tap, nil
+			return nil, tapWithDomain(from, DomainPacket), nil
 		}
-		return nil, "", plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.tap)
+		return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.tap)
 	}
 	if stream.decode && spec.tap == defaultDecodedTapName(stream.selector.Type) {
-		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.tap, domain: spec.tapDomain}, DomainFrame); err != nil {
-			return nil, "", err
+		from := TapRef{name: spec.tap, domain: spec.tapDomain}
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainFrame); err != nil {
+			return nil, TapRef{}, err
 		}
-		return nil, spec.tap, nil
+		return nil, tapWithDomain(from, DomainFrame), nil
 	}
 	if steps, ok := jobStreamStepsThroughTap(stream.steps, spec.tap); ok {
-		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.tap, domain: spec.tapDomain}, DomainFrame); err != nil {
-			return nil, "", err
+		from := TapRef{name: spec.tap, domain: spec.tapDomain}
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainFrame); err != nil {
+			return nil, TapRef{}, err
 		}
-		return steps, spec.tap, nil
+		return steps, tapWithDomain(from, DomainFrame), nil
 	}
 	if tapIsPostEncodeAnchor(stream, spec.tap) {
-		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.tap, domain: spec.tapDomain}, DomainPacket); err != nil {
-			return nil, "", err
+		from := TapRef{name: spec.tap, domain: spec.tapDomain}
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainPacket); err != nil {
+			return nil, TapRef{}, err
 		}
-		return nil, "", plannedBranchPostEncodeTapError(spec.name, spec.tap)
+		return nil, TapRef{}, plannedBranchPostEncodeTapError(spec.name, spec.tap)
 	}
-	return nil, "", plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.tap)
+	return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.tap)
 }
 
 func tapIsPacketAnchor(stream *jobStreamBuild, tap string) bool {
@@ -809,12 +813,12 @@ func cloneTargetSpecs(targets []TargetSpec) []TargetSpec {
 }
 
 func cloneTargetSpec(target TargetSpec) TargetSpec {
-	target.endpoint = cloneEndpointSpec(target.endpoint)
+	target.endpoint = cloneDestinationSpec(target.endpoint)
 	return target
 }
 
-func cloneEndpointSpec(endpoint DestinationSpec) DestinationSpec {
-	return endpoint
+func cloneDestinationSpec(destination DestinationSpec) DestinationSpec {
+	return destination
 }
 
 func branchMissingError(node string) error {

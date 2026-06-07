@@ -1509,6 +1509,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestReadmeUsesBranchTargetVocabulary`, `TestTaskAttachRuntimeBranchGroupCanUsePendingTap`,
     and media-plan executable-shape tests pin the cleanup.
     Done.
+314. Carry typed branch anchors through public intent:
+    `StreamIntent` now exposes `From TapRef` instead of a stringly
+    `FromTap` field, so planned branch origins preserve both stable tap name and
+    frame/packet domain all the way through the composition boundary. Current
+    point branches keep an empty tap ref, explicit frame branches report
+    `DomainFrame`, packet-copy branches report `DomainPacket`, and a structural
+    API test rejects the old field name from returning. This keeps planned
+    branches, runtime attach, and reusable flows on the same typed tap grammar.
+    Done.
 
 ## First Vertical Slice
 

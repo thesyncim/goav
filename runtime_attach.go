@@ -260,7 +260,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		if target.err != nil {
 			return branch, target.err
 		}
-		endpoint := cloneEndpointSpec(target.endpoint)
+		endpoint := cloneDestinationSpec(target.endpoint)
 		name := firstNonEmpty(target.name, spec.name, "branch")
 		if err := endpoint.validate("attach runtime branch", name); err != nil {
 			return branch, err
