@@ -276,6 +276,97 @@ func equalStrings(a []string, b []string) bool {
 	return true
 }
 
+func TestMediaShapePublicContract(t *testing.T) {
+	packet := goav.PacketShape(
+		av.MediaAudio,
+		av.CodecOpus,
+		goav.ShapeStream("audio"),
+		goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+		goav.ShapeRealtime(true),
+	)
+	if packet.Domain != goav.DomainPacket ||
+		packet.MediaKind != av.MediaAudio ||
+		packet.Codec != av.CodecOpus ||
+		packet.SampleRate != 48_000 ||
+		packet.Channels != goav.Stereo ||
+		!packet.Realtime {
+		t.Fatalf("packet shape=%+v, want opus audio packet shape", packet)
+	}
+	if !packet.CompatibleWith(goav.Shape(goav.ShapeDomain(goav.DomainPacket), goav.ShapeMedia(av.MediaAudio))) {
+		t.Fatalf("packet shape should satisfy packet audio contract: %s", packet)
+	}
+	if (goav.ShapeSet{goav.FrameShape(av.MediaAudio)}).Accepts(packet) {
+		t.Fatalf("frame shape set accepted packet shape: %s", packet)
+	}
+
+	var resizeContract goav.ShapeContract = goav.Resize(1280, 720)
+	if !resizeContract.InputShapes().Accepts(goav.FrameShape(av.MediaVideo)) {
+		t.Fatalf("resize input shapes=%+v, want video frame", resizeContract.InputShapes())
+	}
+	resized := resizeContract.OutputShapes(goav.FrameShape(
+		av.MediaVideo,
+		goav.ShapeVideo(1920, 1080, av.PixelFormatYUV420P),
+	))[0]
+	if resized.Domain != goav.DomainFrame ||
+		resized.MediaKind != av.MediaVideo ||
+		resized.Width != 1280 ||
+		resized.Height != 720 ||
+		resized.PixelFormat != av.PixelFormatYUV420P {
+		t.Fatalf("resized shape=%+v, want 1280x720 video frame", resized)
+	}
+
+	var copyContract goav.ShapeContract = goav.Copy()
+	if !copyContract.InputShapes().Accepts(packet) {
+		t.Fatalf("copy input shapes=%+v, want packet domain", copyContract.InputShapes())
+	}
+	copied := copyContract.OutputShapes(packet)[0]
+	if copied != packet {
+		t.Fatalf("copied shape=%+v, want preserved packet %+v", copied, packet)
+	}
+
+	var operationContract goav.ShapeContract = goav.StreamOperation{Kind: goav.OpTransform, Transform: goav.Resample(16_000, goav.Mono)}
+	resampled := operationContract.OutputShapes(goav.FrameShape(
+		av.MediaAudio,
+		goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+	))[0]
+	if resampled.Domain != goav.DomainFrame ||
+		resampled.MediaKind != av.MediaAudio ||
+		resampled.SampleRate != 16_000 ||
+		resampled.Channels != goav.Mono ||
+		resampled.SampleFormat != av.SampleFormatS16 {
+		t.Fatalf("resampled shape=%+v, want 16k mono audio frame", resampled)
+	}
+}
+
+func TestFlowReportsShapeContractAndTaps(t *testing.T) {
+	flow := goav.Flow("voice").Audio().
+		Decode().
+		Resample(16_000, goav.Mono).
+		Tap(goav.FrameTap("voice.frames"))
+
+	inputs := flow.InputShapes()
+	if len(inputs) != 1 || !inputs.Accepts(goav.PacketShape(av.MediaAudio, av.CodecOpus)) {
+		t.Fatalf("flow input shapes=%+v, want audio packet", inputs)
+	}
+	outputs := flow.OutputShapes(goav.PacketShape(
+		av.MediaAudio,
+		av.CodecOpus,
+		goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+	))
+	if len(outputs) != 1 ||
+		outputs[0].Domain != goav.DomainFrame ||
+		outputs[0].MediaKind != av.MediaAudio ||
+		outputs[0].SampleRate != 16_000 ||
+		outputs[0].Channels != goav.Mono ||
+		outputs[0].SampleFormat != av.SampleFormatS16 {
+		t.Fatalf("flow output shapes=%+v, want 16k mono audio frame", outputs)
+	}
+	taps := flow.Taps()
+	if len(taps) != 1 || taps[0].Name() != "voice.frames" || taps[0].Domain() != goav.DomainFrame {
+		t.Fatalf("flow taps=%+v, want frame tap voice.frames", taps)
+	}
+}
+
 func tapIntentNamesContain(taps []goav.TapIntent, name string) bool {
 	for i := range taps {
 		if taps[i].Name == name {
@@ -731,6 +822,9 @@ func TestExplainReportsBranchCapsFromProbedInput(t *testing.T) {
 		branch.Caps.SampleFormat != av.SampleFormatS16 {
 		t.Fatalf("branch caps=%+v, want probed audio packet caps", branch.Caps)
 	}
+	if branch.Shape != branch.Caps {
+		t.Fatalf("branch shape=%+v, want caps %+v", branch.Shape, branch.Caps)
+	}
 	tap, ok := tapReportByName(report.Taps, "audio.decoded")
 	if !ok {
 		t.Fatalf("taps=%+v, want audio.decoded", report.Taps)
@@ -743,6 +837,9 @@ func TestExplainReportsBranchCapsFromProbedInput(t *testing.T) {
 		tap.Caps.Channels != goav.Stereo ||
 		tap.Caps.SampleFormat != av.SampleFormatS16 {
 		t.Fatalf("tap caps=%+v, want decoded audio frame caps", tap.Caps)
+	}
+	if tap.Shape != tap.Caps {
+		t.Fatalf("tap shape=%+v, want caps %+v", tap.Shape, tap.Caps)
 	}
 }
 
@@ -776,6 +873,9 @@ func TestExplainReportsBranchCapsFromLiveCodecIntent(t *testing.T) {
 		!branch.Caps.Realtime {
 		t.Fatalf("branch caps=%+v, want live Opus packet caps", branch.Caps)
 	}
+	if branch.Shape != branch.Caps {
+		t.Fatalf("branch shape=%+v, want caps %+v", branch.Shape, branch.Caps)
+	}
 	tap, ok := tapReportByName(report.Taps, "audio.decoded")
 	if !ok {
 		t.Fatalf("taps=%+v, want audio.decoded", report.Taps)
@@ -787,6 +887,9 @@ func TestExplainReportsBranchCapsFromLiveCodecIntent(t *testing.T) {
 		tap.Caps.Channels != goav.Stereo ||
 		!tap.Caps.Realtime {
 		t.Fatalf("tap caps=%+v, want live decoded audio frame caps", tap.Caps)
+	}
+	if tap.Shape != tap.Caps {
+		t.Fatalf("tap shape=%+v, want caps %+v", tap.Shape, tap.Caps)
 	}
 }
 
@@ -845,6 +948,9 @@ func TestExplainReportsOperationCapsThroughResizeAndEncode(t *testing.T) {
 		branch.Caps.PixelFormat != av.PixelFormatYUV420P {
 		t.Fatalf("branch caps=%+v, want probed VP8 1920x1080 packet caps", branch.Caps)
 	}
+	if branch.Shape != branch.Caps {
+		t.Fatalf("branch shape=%+v, want caps %+v", branch.Shape, branch.Caps)
+	}
 	resize, ok := operationReportByKind(branch.Operations, goav.OpTransform)
 	if !ok {
 		t.Fatalf("operations=%+v, want resize operation", branch.Operations)
@@ -856,6 +962,9 @@ func TestExplainReportsOperationCapsThroughResizeAndEncode(t *testing.T) {
 		resize.Caps.Height != 720 ||
 		resize.Caps.PixelFormat != av.PixelFormatYUV420P {
 		t.Fatalf("resize caps=%+v, want frame VP8 1280x720 caps", resize.Caps)
+	}
+	if resize.Shape != resize.Caps {
+		t.Fatalf("resize shape=%+v, want caps %+v", resize.Shape, resize.Caps)
 	}
 	encode, ok := operationReportByKind(branch.Operations, goav.OpEncode)
 	if !ok {
@@ -870,12 +979,18 @@ func TestExplainReportsOperationCapsThroughResizeAndEncode(t *testing.T) {
 		encode.Caps.PixelFormat != av.PixelFormatYUV420P {
 		t.Fatalf("encode caps=%+v, want packet VP9 1280x720 caps", encode.Caps)
 	}
+	if encode.Shape != encode.Caps {
+		t.Fatalf("encode shape=%+v, want caps %+v", encode.Shape, encode.Caps)
+	}
 	tap, ok := tapReportByName(report.Taps, "video.encoded")
 	if !ok {
 		t.Fatalf("taps=%+v, want video.encoded", report.Taps)
 	}
 	if tap.Caps != encode.Caps {
 		t.Fatalf("tap caps=%+v, want encode caps %+v", tap.Caps, encode.Caps)
+	}
+	if tap.Shape != encode.Shape {
+		t.Fatalf("tap shape=%+v, want encode shape %+v", tap.Shape, encode.Shape)
 	}
 }
 
@@ -1824,7 +1939,7 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"Intent graph: inputs, selected media, chain operations, targets, policies",
 		"graph-plan lowerers",
 		"Chain transforms such as",
-		"Simple high-level API | recipes, chains",
+		"Simple high-level API | `From`, chains",
 		"surface is small: `From`, chains",
 		"`Target`, `Destination`, and `Chain` composition",
 		"direct `File`/`URIOut`/`Sink` destinations",
@@ -1871,11 +1986,85 @@ func TestReadmeFlowExampleUsesDistinctBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(body)
+	if strings.Contains(text, "Apply(voice).\n    Apply(voice)") {
+		t.Fatal("README should not show repeated direct flow application when branches are the intended split")
+	}
 	if got := strings.Count(text, `goav.Branch("voice").Apply(voice).To(voiceTarget)`); got != 1 {
 		t.Fatalf("README voice flow branch count = %d, want 1", got)
 	}
 	if got := strings.Count(text, `goav.Branch("archive").Apply(archive).To(archiveTarget)`); got != 1 {
 		t.Fatalf("README archive flow branch count = %d, want 1", got)
+	}
+}
+
+func TestDocsExplainFlowVersusBranchRule(t *testing.T) {
+	for _, file := range []string{"README.md", "docs/USE_CASES.md"} {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.Join(strings.Fields(string(body)), " ")
+		if !strings.Contains(text, "Use a direct chain when one reusable flow feeds one target") ||
+			!strings.Contains(text, "media point needs several downstream chains") {
+			t.Fatalf("%s should explain when to use a direct flow chain versus branches", file)
+		}
+	}
+}
+
+func TestDocsKeepGoAVNativeGoal(t *testing.T) {
+	var body strings.Builder
+	for _, file := range []string{"docs/PROGRESS.md", "docs/ROADMAP.md", "docs/ARCHITECTURE.md"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	text := strings.Join(strings.Fields(body.String()), " ")
+	for _, required := range []string{
+		"Input -> Chain -> Tap -> Branch -> Target/Destination -> Task",
+		"MediaShape",
+		"BranchBuffer",
+		"Observe",
+		"Watch",
+		"Snapshot",
+		"custom source",
+		"BranchSpec -> BranchPlan -> GraphPlan",
+		"BranchSpec -> BranchPlan -> GraphPatch",
+		"A flow is reusable operations",
+		"planned and runtime branches must share shape/target/buffer/lifecycle validation",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("goal docs should include %q", required)
+		}
+	}
+}
+
+func TestFrontDoorDocsAvoidGStreamerVocabulary(t *testing.T) {
+	var body strings.Builder
+	for _, file := range []string{"README.md", "docs/USE_CASES.md"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	text := body.String()
+	for _, forbidden := range []string{
+		"Element",
+		"Pad",
+		"Bin",
+		"Bus",
+		"Pipeline State",
+		"Flow.To(",
+		"To(\"",
+		"Record(",
+		"Transcode(",
+		"Runtime.Graph",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("front-door docs should not teach %q", forbidden)
+		}
 	}
 }
 

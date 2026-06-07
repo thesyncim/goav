@@ -35,7 +35,12 @@ const (
 	DomainEvent  MediaDomain = "event"
 )
 
-type StreamCaps struct {
+type Rational struct {
+	Num int
+	Den int
+}
+
+type MediaShape struct {
 	Domain       MediaDomain
 	MediaKind    av.MediaType
 	StreamID     av.StreamID
@@ -44,17 +49,23 @@ type StreamCaps struct {
 	Width        int
 	Height       int
 	PixelFormat  string
+	Framerate    Rational
 	SampleRate   int
 	Channels     int
 	SampleFormat string
 	Realtime     bool
 }
 
+type StreamCaps = MediaShape
+
+type ShapeSet []MediaShape
+
 type TapInfo struct {
 	Name      string
 	MediaKind av.MediaType
 	Domain    MediaDomain
 	After     OperationKind
+	Shape     MediaShape
 	Caps      StreamCaps
 	Node      pipeline.NodeRef
 }

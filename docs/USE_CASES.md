@@ -225,7 +225,8 @@ err = goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
 
 The same flow shape can be applied to a direct stream chain or to a runtime
 branch attached from a tap. The flow still owns only operations; the stream or
-branch owns its target.
+branch owns its target. Use a direct chain when one reusable flow feeds one
+target. Use branches when the same media point needs several downstream chains.
 
 ```go
 archiveHandle, err := task.Attach(ctx,

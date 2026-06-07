@@ -1781,7 +1781,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			},
 			outputs: []destinationSpec{fileOutput},
 			code:    "encode_missing",
-			want:    []string{"decoded frames cannot be written", ".Opus"},
+			want:    []string{"decoded frames cannot be written", "expected_shape=domain=packet", "actual_shape=domain=frame", ".Opus"},
 		},
 	}
 	pass := validateJobStreamOutputKindsPass()
@@ -1829,6 +1829,71 @@ func TestJobStreamOutputKindsPassAllowsEncodedPacketFanout(t *testing.T) {
 	}
 	if err := validateJobStreamOutputKindsPass().Apply(&state); err != nil {
 		t.Fatalf("validateJobStreamOutputKindsPass() error = %v", err)
+	}
+}
+
+func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
+	tests := []struct {
+		name  string
+		pass  recipeCompilePass
+		state recipeCompileState
+		code  string
+		want  []string
+	}{
+		{
+			name: "job resize on audio",
+			pass: validateJobIntentShapePass(),
+			state: recipeCompileState{
+				operation: "build job",
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input"}},
+					Streams: []StreamIntent{{
+						Name:       "audio",
+						Select:     StreamSelect{Type: av.MediaAudio},
+						Decode:     true,
+						Transforms: []TransformSpec{Resize(320, 180)},
+						Targets:    []string{"frames"},
+					}},
+					Targets: []TargetIntent{{Name: "frames"}},
+				},
+			},
+			code: "transform_media_mismatch",
+			want: []string{"resize applies to video streams", "expected_shape=domain=frame media=video", "actual_shape=domain=frame media=audio"},
+		},
+		{
+			name: "branch resample on video",
+			pass: validateBranchCompositionIntentShapePass(),
+			state: recipeCompileState{
+				operation: branchCompositionOperation,
+				intent: Intent{
+					Inputs: []InputIntent{{Name: "input"}},
+					Streams: []StreamIntent{{
+						Name:       "video",
+						Select:     StreamSelect{Type: av.MediaVideo},
+						Transforms: []TransformSpec{Resample(48_000, Stereo)},
+						Encode:     VP9(Bitrate(2_000_000)),
+						Targets:    []string{"web"},
+					}},
+					Targets: []TargetIntent{{Name: "web"}},
+				},
+			},
+			code: "transform_media_mismatch",
+			want: []string{"resample applies to audio branches", "expected_shape=domain=frame media=audio", "actual_shape=domain=frame media=video"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
 	}
 }
 
@@ -2505,6 +2570,44 @@ func graphPlanOperationsWithoutBranch(operations []graphPlanOperation, branch st
 			continue
 		}
 		out = append(out, operations[i])
+	}
+	return out
+}
+
+func graphPlanOperationsWithoutBranchTarget(operations []graphPlanOperation, branch string, target string) []graphPlanOperation {
+	out := make([]graphPlanOperation, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		if operation.Branch != branch || !graphPlanOperationTargetsRequired(operation.Kind) {
+			out = append(out, operation)
+			continue
+		}
+		targets := make([]string, 0, len(operation.Targets))
+		for _, next := range operation.Targets {
+			if next != target {
+				targets = append(targets, next)
+			}
+		}
+		if len(targets) == 0 {
+			continue
+		}
+		operation.Targets = targets
+		out = append(out, operation)
+	}
+	return out
+}
+
+func graphPlanOperationsWithBranchTargetNode(operations []graphPlanOperation, branch string, target string, node pipeline.NodeRef) []graphPlanOperation {
+	out := cloneGraphPlanOperations(operations)
+	for i := range out {
+		operation := out[i]
+		if operation.Branch != branch || !graphPlanOperationTargetsRequired(operation.Kind) {
+			continue
+		}
+		if !stringInSlice(target, operation.Targets) {
+			continue
+		}
+		out[i].Node = node
 	}
 	return out
 }
@@ -3217,6 +3320,139 @@ func TestPacketCopyLowererRequiresTargetOperationsBeforeSources(t *testing.T) {
 	}
 }
 
+func TestPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
+	job := From(
+		FileInput("input.ivf", strings.NewReader("")),
+	).Copy().To(fileDestination("recording.ivf", io.Discard))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpCopy)
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "packet-copy graph plan has no copy operation for branch") {
+		t.Fatalf("err = %v, want missing copy-operation graph-plan error", err)
+	}
+}
+
+func TestPacketCopyLowererRequiresTargetBranchBindingsBeforeSources(t *testing.T) {
+	job := From(
+		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("left").Codec(Opus()),
+	).And(
+		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("right").Codec(Opus()),
+	).Copy().To(Sink(&runtimeTestSink{name: "packets"}))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutBranchTarget(resolved.graphPlan.operations, "right", "packets")
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "packet-copy target operation branches do not match output branches") {
+		t.Fatalf("err = %v, want packet-copy target branch binding graph-plan error", err)
+	}
+}
+
+func TestPacketCopyLowererRequiresConsistentTargetOperationsBeforeSources(t *testing.T) {
+	job := From(
+		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("left").Codec(Opus()),
+	).And(
+		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("right").Codec(Opus()),
+	).Copy().To(Sink(&runtimeTestSink{name: "packets"}))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithBranchTargetNode(resolved.graphPlan.operations, "right", "packets", "packets-right")
+	task, err := resolved.Build(context.Background())
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "packet-copy target operation is not consistent across branches") {
+		t.Fatalf("err = %v, want duplicate target consistency graph-plan error", err)
+	}
+}
+
+func TestPacketCopyTargetStreamsUseMatchedSourceGroups(t *testing.T) {
+	left := []av.Stream{{
+		ID:   "left-audio",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			ID:   av.CodecOpus,
+			Type: av.MediaAudio,
+		},
+	}}
+	right := []av.Stream{{
+		ID:   "right-audio",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			ID:   av.CodecOpus,
+			Type: av.MediaAudio,
+		},
+	}, {
+		ID:   "right-video",
+		Type: av.MediaVideo,
+		Codec: av.CodecParameters{
+			ID:   av.CodecVP8,
+			Type: av.MediaVideo,
+		},
+	}}
+
+	streams, err := packetCopyTargetStreams(graphPlanTargetOperation{
+		Name:    "recording",
+		Matches: []int{1},
+	}, [][]av.Stream{left, right})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(streams) != 2 || streams[0].ID != "right-audio" || streams[1].ID != "right-video" {
+		t.Fatalf("streams = %+v, want only matched source group", streams)
+	}
+}
+
+func TestPacketCopyLowererPreservesAllStreamsForSingleSourceRemux(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream(), videoVP8TranscodeTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+			testFormatMuxer(av.FormatOgg, muxers),
+		),
+	)
+	task, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Copy().
+		To(fileDestination("recording.ogg", io.Discard)).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if len(muxers.muxers) != 1 || muxers.muxers[0].streamCount != 2 ||
+		!streamIDsEqual(muxers.muxers[0].openedStreams, []av.StreamID{"audio", "video"}) {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+}
+
 func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
@@ -3536,6 +3772,38 @@ func TestSelectedPacketCopyLowererRequiresSelectOperationBeforeSources(t *testin
 	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
 		!strings.Contains(err.Error(), "selected packet-copy graph plan has no select operation") {
 		t.Fatalf("err = %v, want missing select-operation graph-plan error", err)
+	}
+}
+
+func TestSelectedPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Copy().
+		To(Sink(&runtimeTestSink{name: "packets"}))
+
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpCopy)
+	task, err := resolved.Build(ctx)
+	if err == nil {
+		task.Close()
+		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+		!strings.Contains(err.Error(), "selected packet-copy graph plan has no copy operation") {
+		t.Fatalf("err = %v, want selected copy-operation graph-plan error", err)
 	}
 }
 

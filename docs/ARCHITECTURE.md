@@ -99,17 +99,33 @@ sequence for pre-mutation validation, target binding, and target node
 construction. Selected packet-copy and direct frame-stream lowering isolate one
 branch operation set before reading select/decode/filter/encode and target refs;
 selected packet-copy then lowers through branch-compose input and target routes,
-while whole-input packet copy can still preserve multiple input branches. Grouped branch-compose
-input lowering also consumes graph-plan select/decode node refs, so described
+while whole-input packet copy can still preserve multiple input branches.
+Grouped branch-compose input lowering also consumes graph-plan select/decode node refs, so described
 and built graphs stay equivalent even when operation refs are changed by later
 planning passes. Shared branch-compose transform/stage lowering consumes the
 same operation refs and validates that branches sharing one selector group also
 share the same planned step refs. Private branch transform/stage and encoder
 lowering now consume branch-local operation refs too. Branch-compose mux/sink
 target construction and branch-to-target routing now consume target operation
-records, including planned target node refs. The next architectural pressure is
-to collapse direct chains into the branch planner shape and converge runtime
-attach on the same patchable planner model.
+records, including planned target node refs. Whole-input packet copy carries
+source-owned stream groups so target stream lists follow graph-plan branch
+matches instead of ad hoc output fanout.
+
+The next architectural pressure is to introduce the explicit GoAV-native
+planning layer:
+
+```text
+BranchSpec -> BranchPlan -> GraphPlan   // initial build
+BranchSpec -> BranchPlan -> GraphPatch  // runtime attach
+```
+
+`MediaShape` is the target public contract for branch, flow, tap, target, and
+destination compatibility; current stream-cap metadata is the migration base.
+`BranchPlan` should own ordered operations, shape transitions, taps, targets,
+branch buffer policy, detach policy, and lifecycle expectations. `GraphPatch`
+should use the same branch plan as initial build, but anchor downstream of
+existing typed taps. This removes special workflow compilers from normal
+composition and keeps runtime attach from becoming a separate graph language.
 
 `Destination` is the public extension surface for byte writers, object-store
 uploads, URI-backed outputs, and sink groups. External packages can implement
