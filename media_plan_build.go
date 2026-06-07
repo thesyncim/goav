@@ -15,22 +15,16 @@ func (r recipeResolved) singleStreamIntent() (StreamIntent, bool) {
 	return r.intent.Streams[0], true
 }
 
-type mediaPlanSingleStreamGraph struct {
-	runtime *runtime
-	inputs  []InputSpec
-	outputs []destinationSpec
-	stream  StreamIntent
-	decode  decodeRequest
-	filters []filterRequest
-	encode  *encodeRequest
-}
-
-type mediaPlanPacketCopyGraph struct {
+type mediaPlanStreamGraph struct {
 	runtime        *runtime
 	inputs         []InputSpec
 	outputs        []destinationSpec
 	stream         StreamIntent
+	copyPackets    bool
 	selectedStream bool
+	decode         decodeRequest
+	filters        []filterRequest
+	encode         *encodeRequest
 }
 
 type mediaPlanBranchComposeGraph struct {
@@ -57,29 +51,31 @@ func buildMediaPlanTask(ctx context.Context, plan mediaPlanExecutable) (Task, er
 	return newTask(graph, runtime), nil
 }
 
-func (p mediaPlanPacketCopyGraph) runtimeRef() *runtime {
-	return p.runtime
-}
-
-func (p mediaPlanSingleStreamGraph) spec() (pipeline.Spec, error) {
+func (p mediaPlanStreamGraph) spec() (pipeline.Spec, error) {
+	if p.copyPackets {
+		return p.packetCopySpec()
+	}
 	if p.hasSingleSinkDestination() {
 		return p.sinkDestinationSpec()
 	}
 	return p.encodeOutputSpec()
 }
 
-func (p mediaPlanSingleStreamGraph) runtimeRef() *runtime {
+func (p mediaPlanStreamGraph) runtimeRef() *runtime {
 	return p.runtime
 }
 
-func (p mediaPlanSingleStreamGraph) compile(ctx context.Context, graph pipeline.Graph) error {
+func (p mediaPlanStreamGraph) compile(ctx context.Context, graph pipeline.Graph) error {
+	if p.copyPackets {
+		return p.compilePacketCopy(ctx, graph)
+	}
 	if p.hasSingleSinkDestination() {
 		return p.compileSinkDestination(ctx, graph)
 	}
 	return p.compileEncodeOutput(ctx, graph)
 }
 
-func (p mediaPlanSingleStreamGraph) hasSingleSinkDestination() bool {
+func (p mediaPlanStreamGraph) hasSingleSinkDestination() bool {
 	return len(p.outputs) == 1 && p.outputs[0].sink != nil
 }
 
@@ -87,16 +83,16 @@ func (p mediaPlanBranchComposeGraph) runtimeRef() *runtime {
 	return p.runtime
 }
 
-func newMediaPlanSingleStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream StreamIntent) (mediaPlanSingleStreamGraph, bool, error) {
+func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream StreamIntent) (mediaPlanStreamGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
-		return mediaPlanSingleStreamGraph{}, false, nil
+		return mediaPlanStreamGraph{}, false, nil
 	}
 	if !mediaPlanStreamInputsSupported(inputs) {
-		return mediaPlanSingleStreamGraph{}, false, nil
+		return mediaPlanStreamGraph{}, false, nil
 	}
 	selector := streamIntentSelector(stream)
-	plan := mediaPlanSingleStreamGraph{
+	plan := mediaPlanStreamGraph{
 		runtime: runtime,
 		inputs:  append([]InputSpec(nil), inputs...),
 		outputs: append([]destinationSpec(nil), outputs...),
@@ -108,7 +104,7 @@ func newMediaPlanSingleStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 	}
 	filters, err := mediaPlanStreamFilters(stream)
 	if err != nil {
-		return mediaPlanSingleStreamGraph{}, false, err
+		return mediaPlanStreamGraph{}, false, err
 	}
 	plan.filters = filters
 	if codecIntentSet(stream.Encode) && !stream.Encode.Copy {
@@ -128,24 +124,25 @@ func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
 	return allRTPInputSpecs(inputs)
 }
 
-func newMediaPlanPacketCopyGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream StreamIntent, selectedStream bool) (mediaPlanPacketCopyGraph, bool, error) {
+func newMediaPlanPacketCopyStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream StreamIntent, selectedStream bool) (mediaPlanStreamGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
-		return mediaPlanPacketCopyGraph{}, false, nil
+		return mediaPlanStreamGraph{}, false, nil
 	}
 	if len(inputs) == 0 || len(outputs) == 0 || !mediaPlanStreamInputsSupported(inputs) {
-		return mediaPlanPacketCopyGraph{}, false, nil
+		return mediaPlanStreamGraph{}, false, nil
 	}
-	return mediaPlanPacketCopyGraph{
+	return mediaPlanStreamGraph{
 		runtime:        runtime,
 		inputs:         append([]InputSpec(nil), inputs...),
 		outputs:        append([]destinationSpec(nil), outputs...),
 		stream:         stream,
+		copyPackets:    true,
 		selectedStream: selectedStream,
 	}, true, nil
 }
 
-func (p mediaPlanPacketCopyGraph) spec() (pipeline.Spec, error) {
+func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
 	nodes := make(map[string]plannedNode, len(p.inputs)+len(p.outputs)+1)
 	sourceRefs, ok, err := mediaPlanPacketCopySources(&spec, nodes, p.inputs)
@@ -288,50 +285,15 @@ func (p mediaPlanBranchComposeGraph) compileSources(ctx context.Context, graph p
 	return []pipeline.NodeRef{sourceRef}, receiver.streams, []rtpBuild{receiver}, true, nil
 }
 
-func (p mediaPlanPacketCopyGraph) compile(ctx context.Context, graph pipeline.Graph) error {
-	sourceRefs, streams, err := p.compileSources(ctx, graph)
+func (p mediaPlanStreamGraph) compilePacketCopy(ctx context.Context, graph pipeline.Graph) error {
+	sourceRefs, streams, _, _, err := p.compileSources(ctx, graph)
 	if err != nil {
 		return err
 	}
-	return p.compileTargets(ctx, graph, sourceRefs, streams)
+	return p.compilePacketCopyTargets(ctx, graph, sourceRefs, streams)
 }
 
-func (p mediaPlanPacketCopyGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, error) {
-	service := &builder{runtime: p.runtime}
-	if len(p.inputs) == 1 && p.inputs[0].rtp == nil {
-		demux, err := service.openDemuxSource(ctx, p.inputs[0].formatInput())
-		if err != nil {
-			return nil, nil, err
-		}
-		sourceRef, err := graph.AddSource(demux.source, p.runtime.buffer)
-		if err != nil {
-			demux.source.Close()
-			return nil, nil, err
-		}
-		return []pipeline.NodeRef{sourceRef}, demux.streams, nil
-	}
-	if !allRTPInputSpecs(p.inputs) {
-		return nil, nil, recipeGraphUnsupportedError("build job", Intent{Streams: []StreamIntent{p.stream}})
-	}
-	sourceRefs := make([]pipeline.NodeRef, 0, len(p.inputs))
-	streams := make([]av.Stream, 0, len(p.inputs))
-	for i := range p.inputs {
-		receiver, err := service.openRTPSource(ctx, p.inputs[i].rtpBuildInput(), i)
-		if err != nil {
-			return nil, nil, err
-		}
-		sourceRef, err := graph.AddSource(receiver.source, p.runtime.buffer)
-		if err != nil {
-			receiver.source.Close()
-			return nil, nil, err
-		}
-		sourceRefs = append(sourceRefs, sourceRef)
-		streams = append(streams, receiver.streams...)
-	}
-	return sourceRefs, streams, nil
-}
-
-func (p mediaPlanPacketCopyGraph) compileTargets(
+func (p mediaPlanStreamGraph) compilePacketCopyTargets(
 	ctx context.Context,
 	graph pipeline.Graph,
 	sourceRefs []pipeline.NodeRef,
@@ -392,7 +354,7 @@ func (p mediaPlanPacketCopyGraph) compileTargets(
 	return nil
 }
 
-func (p mediaPlanSingleStreamGraph) sinkDestinationSpec() (pipeline.Spec, error) {
+func (p mediaPlanStreamGraph) sinkDestinationSpec() (pipeline.Spec, error) {
 	spec, sourceRefs, nodes, err := p.specWithSources()
 	if err != nil {
 		return pipeline.Spec{}, err
@@ -413,7 +375,7 @@ func (p mediaPlanSingleStreamGraph) sinkDestinationSpec() (pipeline.Spec, error)
 	return spec, nil
 }
 
-func (p mediaPlanSingleStreamGraph) encodeOutputSpec() (pipeline.Spec, error) {
+func (p mediaPlanStreamGraph) encodeOutputSpec() (pipeline.Spec, error) {
 	if p.encode == nil {
 		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", Intent{Streams: []StreamIntent{p.stream}})
 	}
@@ -431,7 +393,7 @@ func (p mediaPlanSingleStreamGraph) encodeOutputSpec() (pipeline.Spec, error) {
 	return spec, nil
 }
 
-func (p mediaPlanSingleStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeRef, map[string]plannedNode, error) {
+func (p mediaPlanStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeRef, map[string]plannedNode, error) {
 	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
 	nodes := make(map[string]plannedNode, len(p.inputs)+len(p.outputs)+len(p.filters)+3)
 	sourceRefs, ok, err := mediaPlanPacketCopySources(&spec, nodes, p.inputs)
@@ -444,7 +406,7 @@ func (p mediaPlanSingleStreamGraph) specWithSources() (pipeline.Spec, []pipeline
 	return spec, sourceRefs, nodes, nil
 }
 
-func (p mediaPlanSingleStreamGraph) compileSinkDestination(ctx context.Context, graph pipeline.Graph) error {
+func (p mediaPlanStreamGraph) compileSinkDestination(ctx context.Context, graph pipeline.Graph) error {
 	sourceRefs, streams, rtpBuilds, realtime, err := p.compileSources(ctx, graph)
 	if err != nil {
 		return err
@@ -475,7 +437,7 @@ func (p mediaPlanSingleStreamGraph) compileSinkDestination(ctx context.Context, 
 	return connectRefs(graph, previousRef, sinkRef)
 }
 
-func (p mediaPlanSingleStreamGraph) compileEncodeOutput(ctx context.Context, graph pipeline.Graph) error {
+func (p mediaPlanStreamGraph) compileEncodeOutput(ctx context.Context, graph pipeline.Graph) error {
 	if p.encode == nil {
 		return recipeGraphUnsupportedError("build job", Intent{Streams: []StreamIntent{p.stream}})
 	}
@@ -502,7 +464,7 @@ func (p mediaPlanSingleStreamGraph) compileEncodeOutput(ctx context.Context, gra
 	return compileEncodeDestinationPath(ctx, p.runtime, graph, previousRef, *p.encode, encodeConfig, encodedStream, p.outputs)
 }
 
-func (p mediaPlanSingleStreamGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {
+func (p mediaPlanStreamGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {
 	if len(p.inputs) == 1 && p.inputs[0].rtp == nil {
 		demux, err := (&builder{runtime: p.runtime}).openDemuxSource(ctx, p.inputs[0].formatInput())
 		if err != nil {

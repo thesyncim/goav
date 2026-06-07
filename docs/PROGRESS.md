@@ -1570,6 +1570,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     of each owning a duplicate `build` loop, and guard coverage keeps
     `mediaPlanExecutable` from reintroducing per-plan build methods.
     Done.
+321. Collapse packet-copy and direct stream graphs:
+    packet-preserving record/fanout jobs and decoded/encoded direct stream jobs
+    now share `mediaPlanStreamGraph`. Packet copy is a stream-graph mode rather
+    than its own executable graph family, the stream graph reuses one source
+    opener for file and RTP inputs, and `mediaPlanGraph` now selects between
+    stream execution and branch composition instead of packet-copy,
+    single-stream, and branch families. Guard coverage rejects separate
+    packet-copy and single-stream graph types.
+    Done.
 
 ## First Vertical Slice
 

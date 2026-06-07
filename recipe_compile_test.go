@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -61,6 +62,24 @@ func TestMediaPlanExecutableUsesSharedBuildLifecycle(t *testing.T) {
 	for _, name := range []string{"spec", "runtimeRef", "compile"} {
 		if _, ok := executable.MethodByName(name); !ok {
 			t.Fatalf("mediaPlanExecutable is missing %s", name)
+		}
+	}
+}
+
+func TestMediaPlanStreamGraphOwnsPacketCopyAndDirectStreams(t *testing.T) {
+	if reflect.TypeOf((*mediaPlanStreamGraph)(nil)).Elem().Name() != "mediaPlanStreamGraph" {
+		t.Fatal("mediaPlanStreamGraph should remain the common stream executable")
+	}
+	body, err := os.ReadFile("media_plan_build.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"mediaPlanPacketCopyGraph",
+		"mediaPlanSingleStreamGraph",
+	} {
+		if strings.Contains(string(body), "type "+forbidden) {
+			t.Fatalf("%s should not be a separate executable graph family", forbidden)
 		}
 	}
 }
@@ -443,7 +462,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuild() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanPacketCopyGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	if len(resolved.outputAttachments) != 1 {
 		t.Fatalf("resolved output attachments = %d, want 1", len(resolved.outputAttachments))
 	}
@@ -2164,7 +2183,7 @@ func TestCompileJobRecipeCarriesIntentAndMediaPlanBuild(t *testing.T) {
 	if resolved.specOrigin != graphSpecOriginMediaPlan {
 		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginMediaPlan)
 	}
-	requireMediaGraph[mediaPlanPacketCopyGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	if resolved.intent.Name != "from" {
 		t.Fatalf("intent name = %q, want from", resolved.intent.Name)
 	}
@@ -2407,7 +2426,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanPacketCopyGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2443,7 +2462,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2479,7 +2498,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	task, err := resolved.Build(ctx)
 	if err != nil {
 		t.Fatalf("resolved.Build() error = %v", err)
@@ -2505,7 +2524,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2539,7 +2558,7 @@ func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testin
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanPacketCopyGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2580,7 +2599,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2629,9 +2648,9 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	if !ok {
 		t.Fatalf("resolved intent streams = %+v, want one stream", resolved.intent.Streams)
 	}
-	plan, ok, err := newMediaPlanSingleStreamGraph(resolved.runtime, resolved.inputAttachments, resolved.outputAttachments, stream)
+	plan, ok, err := newMediaPlanDecodeStreamGraph(resolved.runtime, resolved.inputAttachments, resolved.outputAttachments, stream)
 	if err != nil || !ok {
-		t.Fatalf("newMediaPlanSingleStreamGraph ok=%v err=%v", ok, err)
+		t.Fatalf("newMediaPlanDecodeStreamGraph ok=%v err=%v", ok, err)
 	}
 	spec, err := plan.encodeOutputSpec()
 	if err != nil {
@@ -2676,7 +2695,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2723,7 +2742,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -2766,7 +2785,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireMediaGraph[mediaPlanSingleStreamGraph](t, resolved)
+	requireMediaGraph[mediaPlanStreamGraph](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)

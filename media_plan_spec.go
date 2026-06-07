@@ -36,10 +36,7 @@ func emitMediaPlanGraphSpecPass() recipeCompilePass {
 }
 
 func mediaPlanGraph(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
-	if graph, ok, err := mediaPlanPacketCopyExecutable(state); err != nil || ok {
-		return graph, ok, err
-	}
-	if graph, ok, err := mediaPlanSingleStreamExecutableForState(state); err != nil || ok {
+	if graph, ok, err := mediaPlanStreamExecutableForState(state); err != nil || ok {
 		return graph, ok, err
 	}
 	if graph, ok, err := mediaPlanBranchComposerExecutable(state); err != nil || ok {
@@ -48,12 +45,19 @@ func mediaPlanGraph(state *recipeCompileState) (mediaPlanExecutable, bool, error
 	return nil, false, nil
 }
 
-func mediaPlanPacketCopyExecutable(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
+func mediaPlanStreamExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
+	if graph, ok, err := mediaPlanPacketCopyStreamExecutableForState(state); err != nil || ok {
+		return graph, ok, err
+	}
+	return mediaPlanDecodeStreamExecutableForState(state)
+}
+
+func mediaPlanPacketCopyStreamExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
 	stream, selectedStream, ok := mediaPlanPacketCopyStream(state)
 	if !ok {
 		return nil, false, nil
 	}
-	plan, ok, err := newMediaPlanPacketCopyGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream, selectedStream)
+	plan, ok, err := newMediaPlanPacketCopyStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream, selectedStream)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -83,22 +87,22 @@ func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent, streamSteps
 	return StreamIntent{}, false, false
 }
 
-func mediaPlanSingleStreamExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
+func mediaPlanDecodeStreamExecutableForState(state *recipeCompileState) (mediaPlanExecutable, bool, error) {
 	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
 		return nil, false, nil
 	}
 	stream := state.intent.Streams[0]
-	if !mediaPlanSingleStreamShape(stream, state.outputAttachments) {
+	if !mediaPlanDecodeStreamShape(stream, state.outputAttachments) {
 		return nil, false, nil
 	}
-	plan, ok, err := newMediaPlanSingleStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
+	plan, ok, err := newMediaPlanDecodeStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
 	return plan, true, nil
 }
 
-func mediaPlanSingleStreamShape(stream StreamIntent, outputs []destinationSpec) bool {
+func mediaPlanDecodeStreamShape(stream StreamIntent, outputs []destinationSpec) bool {
 	return mediaPlanSinkDestinationShape(stream, outputs) || mediaPlanEncodeShape(stream, outputs)
 }
 
