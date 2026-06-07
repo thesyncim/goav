@@ -1562,6 +1562,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     that common single-stream recipes share that executable path, and flow
     diagnostics are covered by the destination-vocabulary guard.
     Done.
+320. Share media-plan task execution:
+    `recipeResolved.Build` now uses one media-plan executor that opens the
+    runtime graph, asks the selected media plan to compile into it, closes the
+    graph on compile failure, and returns the task. Packet copy, single-stream,
+    and branch-composition plans expose `runtimeRef` plus `compile(...)` instead
+    of each owning a duplicate `build` loop, and guard coverage keeps
+    `mediaPlanExecutable` from reintroducing per-plan build methods.
+    Done.
 
 ## First Vertical Slice
 

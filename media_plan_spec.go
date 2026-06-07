@@ -13,7 +13,8 @@ const (
 
 type mediaPlanExecutable interface {
 	spec() (pipeline.Spec, error)
-	build(context.Context) (Task, error)
+	runtimeRef() *runtime
+	compile(context.Context, pipeline.Graph) error
 }
 
 func emitMediaPlanGraphSpecPass() recipeCompilePass {

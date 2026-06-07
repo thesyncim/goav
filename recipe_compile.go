@@ -216,7 +216,7 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 	if r.mediaGraph == nil {
 		return nil, recipeGraphUnsupportedError("build recipe", r.intent)
 	}
-	task, err := r.mediaGraph.build(ctx)
+	task, err := buildMediaPlanTask(ctx, r.mediaGraph)
 	if err != nil {
 		return nil, err
 	}

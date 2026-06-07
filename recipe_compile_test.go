@@ -53,6 +53,18 @@ func requireMediaGraph[T any](t *testing.T, resolved recipeResolved) {
 	}
 }
 
+func TestMediaPlanExecutableUsesSharedBuildLifecycle(t *testing.T) {
+	executable := reflect.TypeOf((*mediaPlanExecutable)(nil)).Elem()
+	if _, ok := executable.MethodByName("build"); ok {
+		t.Fatal("mediaPlanExecutable should not expose per-plan build; use the shared media-plan executor")
+	}
+	for _, name := range []string{"spec", "runtimeRef", "compile"} {
+		if _, ok := executable.MethodByName(name); !ok {
+			t.Fatalf("mediaPlanExecutable is missing %s", name)
+		}
+	}
+}
+
 func TestRuntimeBuilderUsesMuxVerbNotOutput(t *testing.T) {
 	builder := reflect.TypeOf((*builderAPI)(nil)).Elem()
 	if _, ok := builder.MethodByName("Output"); ok {
