@@ -2167,6 +2167,20 @@ are:
     fields remain only as lowerer bridge debt until `WorkPlan`/`WorkPatch`
     consumes operation lists directly.
     Done.
+378. Split planned branch operations into shared parent work and private branch
+    work:
+    Planned branch stream builds now preserve both a flattened operation view
+    and explicit `sharedOps`/`privateOps` metadata. The split keeps parent
+    decode/transform/tap operations only through the selected branch anchor,
+    treats parent `.Copy()` as a packet-domain anchor instead of branch work
+    when a downstream branch decodes, and keeps unchanged packet-copy fanout as
+    copy-plus-packet-tap work. Normalized branch operation reporting now inserts
+    implicit decode when a branch-local flow starts with frame operations, drops
+    parent copy before decode/transform/encode branches, and marks parent
+    operations shared while branch-local resize/encode work stays private.
+    Tests pin implicit decode, parent-copy packet anchoring, earlier frame-tap
+    slicing, and shared/private operation flags.
+    Done.
 
 ## First Vertical Slice
 

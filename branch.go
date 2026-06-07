@@ -515,16 +515,21 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			job.setErr(err)
 			return job
 		}
-		operations := append(cloneStreamOperations(stream.operations), cloneStreamOperations(branches[i].operations)...)
+		sharedOps := plannedBranchSharedOperations(stream, branches[i], parentPacket)
+		privateOps := plannedBranchPrivateOperations(stream, branches[i], parentPacket)
+		operations := append(cloneStreamOperations(sharedOps), cloneStreamOperations(privateOps)...)
 		job.branchStreams = append(job.branchStreams, streamBuild{
-			name:        branches[i].name,
-			selector:    stream.selector,
-			from:        from,
-			decode:      decode,
-			decodeCodec: mergeDecodeCodecSpec(stream.decodeCodec, branches[i].decodeCodec),
-			operations:  operations,
-			sharedSteps: sharedSteps,
-			steps:       cloneChainSteps(branches[i].steps),
+			name:           branches[i].name,
+			selector:       stream.selector,
+			from:           from,
+			decode:         decode,
+			decodeCodec:    mergeDecodeCodecSpec(stream.decodeCodec, branches[i].decodeCodec),
+			operations:     operations,
+			operationSplit: true,
+			sharedOps:      sharedOps,
+			privateOps:     privateOps,
+			sharedSteps:    sharedSteps,
+			steps:          cloneChainSteps(branches[i].steps),
 			postEncodeTaps: append(
 				append([]string(nil), stream.postEncodeTaps...),
 				branches[i].postEncodeTaps...,

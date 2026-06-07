@@ -311,6 +311,135 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	}
 }
 
+func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
+	voice := Flow("voice").Audio().
+		Resample(16_000, Mono).
+		OpusVoice()
+
+	job := From(FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Branches(Branch("voice").Apply(voice).To(File("voice.ogg", io.Discard)))
+	if job.err != nil {
+		t.Fatal(job.err)
+	}
+	if len(job.branchStreams) != 1 {
+		t.Fatalf("branch streams = %d, want 1", len(job.branchStreams))
+	}
+	stream := job.branchStreams[0]
+	if !stream.operationSplit {
+		t.Fatal("planned branch should carry split operation metadata")
+	}
+	if len(stream.sharedOps) != 0 {
+		t.Fatalf("shared operations = %+v, want none before implicit decode", stream.sharedOps)
+	}
+	if got, want := streamOperationKindsForTest(stream.privateOps), []OperationKind{OpTransform, OpEncode}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("private operations = %+v, want %+v", got, want)
+	}
+	if got, want := streamOperationKindsForTest(streamBuildOperations(stream)), []OperationKind{OpDecode, OpTransform, OpEncode}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalized operations = %+v, want %+v", got, want)
+	}
+}
+
+func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T) {
+	decodeFlow := Flow("voice").Audio().
+		Decode().
+		Resample(16_000, Mono).
+		Opus(64_000)
+
+	decodeJob := From(FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Copy().
+		Branches(Branch("voice").Apply(decodeFlow).To(File("voice.ogg", io.Discard)))
+	if decodeJob.err != nil {
+		t.Fatal(decodeJob.err)
+	}
+	if len(decodeJob.branchStreams) != 1 {
+		t.Fatalf("decode branch streams = %d, want 1", len(decodeJob.branchStreams))
+	}
+	if got, want := streamOperationKindsForTest(streamBuildOperations(decodeJob.branchStreams[0])), []OperationKind{OpDecode, OpTransform, OpEncode}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("decode branch operations = %+v, want %+v", got, want)
+	}
+
+	copyJob := From(FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Copy().
+		Tap(PacketTap("audio.packets")).
+		Branches(Branch("packets").
+			Tap(PacketTap("packets.branch")).
+			To(Sink(SinkFunc("packets", func(context.Context, Message) error {
+				return nil
+			}))))
+	if copyJob.err != nil {
+		t.Fatal(copyJob.err)
+	}
+	if len(copyJob.branchStreams) != 1 {
+		t.Fatalf("copy branch streams = %d, want 1", len(copyJob.branchStreams))
+	}
+	if got, want := streamOperationKindsForTest(streamBuildOperations(copyJob.branchStreams[0])), []OperationKind{OpCopy, OpTap}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("copy branch operations = %+v, want %+v", got, want)
+	}
+	if tap := streamBuildOperations(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != DomainPacket {
+		t.Fatalf("copy branch tap = %+v, want packet branch tap", tap)
+	}
+}
+
+func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
+	thumbnail := Sink(SinkFunc("thumbnail", func(context.Context, Message) error {
+		return nil
+	}))
+	web := File("web.ivf", io.Discard)
+
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Tap(FrameTap("video.decoded")).
+		Resize(1280, 720).
+		Tap(FrameTap("video.720p.frames")).
+		Branches(
+			Branch("raw-preview").
+				From(FrameTap("video.decoded")).
+				Resize(320, 180).
+				To(thumbnail),
+			Branch("web").
+				From(FrameTap("video.720p.frames")).
+				VP9(2_000_000).
+				To(web),
+		)
+	if job.err != nil {
+		t.Fatal(job.err)
+	}
+	if len(job.branchStreams) != 2 {
+		t.Fatalf("branch streams = %d, want 2", len(job.branchStreams))
+	}
+
+	rawOps := streamBuildOperations(job.branchStreams[0])
+	if got, want := streamOperationKindsForTest(rawOps), []OperationKind{OpDecode, OpTap, OpTransform}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("raw operations = %+v, want %+v", got, want)
+	}
+	if !rawOps[0].Shared || !rawOps[1].Shared || rawOps[2].Shared {
+		t.Fatalf("raw operation sharing = %+v, want shared decode/tap and private resize", rawOps)
+	}
+	if rawOps[1].Tap.Name != "video.decoded" {
+		t.Fatalf("raw operations = %+v, want anchor tap video.decoded", rawOps)
+	}
+
+	webOps := streamBuildOperations(job.branchStreams[1])
+	if got, want := streamOperationKindsForTest(webOps), []OperationKind{OpDecode, OpTap, OpTransform, OpTap, OpEncode}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("web operations = %+v, want %+v", got, want)
+	}
+	for i := 0; i < 4; i++ {
+		if !webOps[i].Shared {
+			t.Fatalf("web operations = %+v, want parent operation %d shared", webOps, i)
+		}
+	}
+	if webOps[4].Shared {
+		t.Fatalf("web operations = %+v, want private encode", webOps)
+	}
+	if webOps[3].Tap.Name != "video.720p.frames" {
+		t.Fatalf("web operations = %+v, want anchor tap video.720p.frames", webOps)
+	}
+}
+
 func streamOperationKindsForTest(operations []StreamOperation) []OperationKind {
 	out := make([]OperationKind, 0, len(operations))
 	for i := range operations {
