@@ -1095,7 +1095,7 @@ func TestMuxerDemuxerPreservesContentEncodings(t *testing.T) {
 		},
 		{
 			Order:         0,
-			Scope:         ContentEncodingScopeBlock | ContentEncodingScopeNext,
+			Scope:         ContentEncodingScopeNext,
 			Type:          ContentEncodingTypeEncryption,
 			EncryptionSet: true,
 			Encryption: ContentEncryption{
@@ -1156,6 +1156,236 @@ func TestMuxerDemuxerPreservesContentEncodings(t *testing.T) {
 	fresh := demuxer.Tracks()
 	if !reflect.DeepEqual(fresh[0].ContentEncodings, wantEncodings) {
 		t.Fatalf("content encoding alias was not protected: %+v", fresh[0].ContentEncodings)
+	}
+}
+
+func TestMuxerDemuxerAppliesHeaderStrippingContentEncoding(t *testing.T) {
+	settings := []byte("HS:")
+	tests := []struct {
+		name  string
+		write func(*Muxer, uint32, []byte) error
+		read  func(*Demuxer, []byte)
+	}{
+		{
+			name: "simple block",
+			write: func(muxer *Muxer, trackID uint32, data []byte) error {
+				return muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: data})
+			},
+			read: func(demuxer *Demuxer, want []byte) {
+				packet := Packet{Data: make([]byte, 0, 32)}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(packet.Data, want) {
+					t.Fatalf("packet data = %q, want %q", packet.Data, want)
+				}
+			},
+		},
+		{
+			name: "block group",
+			write: func(muxer *Muxer, trackID uint32, data []byte) error {
+				return muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, DurationNS: 20_000_000, Keyframe: true, Data: data})
+			},
+			read: func(demuxer *Demuxer, want []byte) {
+				packet := Packet{Data: make([]byte, 0, 32)}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if packet.DurationNS != 20_000_000 || !bytes.Equal(packet.Data, want) {
+					t.Fatalf("packet = %+v data=%q, want data=%q duration 20000000", packet, packet.Data, want)
+				}
+			},
+		},
+		{
+			name: "laced block",
+			write: func(muxer *Muxer, trackID uint32, data []byte) error {
+				return muxer.WriteLacedPacket(LacedPacket{
+					TrackID:  trackID,
+					TimeNS:   0,
+					Keyframe: true,
+					Lacing:   LacingXiph,
+					Frames: [][]byte{
+						data,
+						append(append([]byte(nil), settings...), []byte("second")...),
+					},
+				})
+			},
+			read: func(demuxer *Demuxer, want []byte) {
+				packet := Packet{Data: make([]byte, 0, 32)}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if packet.TimeNS != 0 || packet.DurationNS != 20_000_000 || !bytes.Equal(packet.Data, want) {
+					t.Fatalf("first packet = %+v data=%q, want data=%q duration 20000000", packet, packet.Data, want)
+				}
+				if err := demuxer.ReadPacket(&packet); err != nil {
+					t.Fatal(err)
+				}
+				if packet.TimeNS != 20_000_000 || packet.DurationNS != 20_000_000 || !bytes.Equal(packet.Data, []byte("HS:second")) {
+					t.Fatalf("second packet = %+v data=%q", packet, packet.Data)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			muxer, err := NewMuxer(&buffer, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := append(append([]byte(nil), settings...), []byte(tt.name)...)
+			trackID, err := muxer.AddTrack(Track{
+				Type:              TrackVideo,
+				Codec:             CodecVP8,
+				DefaultDurationNS: 20_000_000,
+				ContentEncodings: []ContentEncoding{{
+					Type:           ContentEncodingTypeCompression,
+					CompressionSet: true,
+					Compression: ContentCompression{
+						Algorithm: ContentCompAlgoHeaderStripping,
+						Settings:  settings,
+					},
+				}},
+				Video: VideoConfig{Width: 640, Height: 360},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tt.write(muxer, trackID, want); err != nil {
+				t.Fatal(err)
+			}
+			if err := muxer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(buffer.Bytes(), want) {
+				t.Fatalf("file still contains unstripped frame %q", want)
+			}
+
+			demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tt.read(demuxer, want)
+		})
+	}
+}
+
+func TestMuxerRejectsHeaderStrippingPacketWithoutPrefix(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		ContentEncodings: []ContentEncoding{{
+			Type:           ContentEncodingTypeCompression,
+			CompressionSet: true,
+			Compression: ContentCompression{
+				Algorithm: ContentCompAlgoHeaderStripping,
+				Settings:  []byte("HS:"),
+			},
+		}},
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte("missing")}); !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
+	}
+	if err := muxer.WriteLacedPacket(LacedPacket{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Lacing:   LacingXiph,
+		Frames:   [][]byte{[]byte("HS:first"), []byte("missing")},
+	}); !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("laced err = %v, want ErrInvalidData", err)
+	}
+}
+
+func TestMuxerRejectsUnsupportedBlockContentEncoding(t *testing.T) {
+	tests := []struct {
+		name      string
+		encoding  ContentEncoding
+		wantError error
+	}{
+		{
+			name: "zlib block compression",
+			encoding: ContentEncoding{
+				Type:           ContentEncodingTypeCompression,
+				CompressionSet: true,
+				Compression:    ContentCompression{Algorithm: ContentCompAlgoZlib},
+			},
+			wantError: ErrUnsupportedContentEncoding,
+		},
+		{
+			name: "block encryption",
+			encoding: ContentEncoding{
+				Type:          ContentEncodingTypeEncryption,
+				EncryptionSet: true,
+				Encryption: ContentEncryption{
+					Algorithm:      ContentEncAlgoAES,
+					AESSettingsSet: true,
+					AESSettings:    ContentEncAESSettings{CipherMode: ContentEncAESCipherModeCTR},
+				},
+			},
+			wantError: ErrUnsupportedContentEncoding,
+		},
+		{
+			name: "multiple header stripping encodings",
+			encoding: ContentEncoding{
+				Type:           ContentEncodingTypeCompression,
+				CompressionSet: true,
+				Compression:    ContentCompression{Algorithm: ContentCompAlgoHeaderStripping, Settings: []byte("A")},
+			},
+			wantError: ErrUnsupportedContentEncoding,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			encodings := []ContentEncoding{tt.encoding}
+			if tt.name == "multiple header stripping encodings" {
+				encodings = append(encodings, ContentEncoding{
+					Order:          1,
+					Type:           ContentEncodingTypeCompression,
+					CompressionSet: true,
+					Compression:    ContentCompression{Algorithm: ContentCompAlgoHeaderStripping, Settings: []byte("B")},
+				})
+			}
+			muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = muxer.AddTrack(Track{
+				Type:             TrackVideo,
+				Codec:            CodecVP8,
+				ContentEncodings: encodings,
+				Video:            VideoConfig{Width: 16, Height: 16},
+			})
+			if !errors.Is(err, tt.wantError) {
+				t.Fatalf("err = %v, want %v", err, tt.wantError)
+			}
+		})
+	}
+}
+
+func TestDemuxerRejectsUnsupportedBlockContentEncoding(t *testing.T) {
+	data := makeContentEncodedBlockMatroskaData(t, contentEncodingsPayload(t,
+		contentEncodingPayload(t, func(w *ebml.Writer) error {
+			return w.WriteElement(idContentCompression, contentCompressionPayload(t, ContentCompAlgoZlib, nil))
+		}),
+	), []byte("compressed"))
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, 32)}
+	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrUnsupportedContentEncoding) {
+		t.Fatalf("err = %v, want ErrUnsupportedContentEncoding", err)
 	}
 }
 
@@ -6003,6 +6233,31 @@ func makeBlockAdditionsMatroskaData(tb testing.TB, writeAdditions func(*ebml.Wri
 		tb.Fatal(err)
 	}
 	if err := muxer.ebml.WriteElement(idBlockGroup, group.Bytes()); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func makeContentEncodedBlockMatroskaData(tb testing.TB, encodings []byte, frame []byte) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	writeMatroskaSegmentPrefix(tb, muxer)
+	if err := writeTracksWithTrackExtra(muxer.ebml, func(ew *ebml.Writer) error {
+		return ew.WriteElement(idContentEncodings, encodings)
+	}); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeSimpleBlockWithTrackNumber(muxer.ebml, 1, frame); err != nil {
 		tb.Fatal(err)
 	}
 	if err := muxer.Close(); err != nil {
