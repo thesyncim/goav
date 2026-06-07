@@ -356,7 +356,7 @@ func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.G
 		return err
 	}
 
-	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, nil, realtime)
+	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, nil, nil, realtime)
 }
 
 func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
@@ -401,7 +401,7 @@ func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipelin
 		return err
 	}
 
-	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, nil, realtime)
+	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, nil, nil, realtime)
 }
 
 func compileBranchComposeInputs(
@@ -483,6 +483,7 @@ func compileBranchComposeRoutes(
 	branchInputs []pipeline.NodeRef,
 	branchStreams []av.Stream,
 	sharedStepPlan map[string][]pipeline.NodeRef,
+	branchPlan map[string]graphPlanBranchComposeBranchOperation,
 	realtime bool,
 ) error {
 	runtime := service.runtime
@@ -527,8 +528,13 @@ func compileBranchComposeRoutes(
 	for i := range branches {
 		branchRef := branchRefs[i]
 		branchStream := branchInputStreams[i]
+		planned := branchPlan[branches[i].name]
 		for j := range branches[i].steps {
-			stage, outputStream, err := service.newBranchComposeStepStage(ctx, branches[i].steps[j], branchStream, realtime)
+			stageName := ""
+			if j < len(planned.privateSteps) {
+				stageName = planned.privateSteps[j].String()
+			}
+			stage, outputStream, err := service.newBranchComposeStepStageNamed(ctx, stageName, branches[i].steps[j], branchStream, realtime)
 			if err != nil {
 				return err
 			}
@@ -549,7 +555,7 @@ func compileBranchComposeRoutes(
 			if err != nil {
 				return err
 			}
-			encodeRef, err := service.compileEncodeStage(ctx, graph, branchRef, branches[i].request, config)
+			encodeRef, err := service.compileEncodeStageNamed(ctx, graph, planned.encodeNode.String(), branchRef, branches[i].request, config)
 			if err != nil {
 				return err
 			}
