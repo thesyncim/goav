@@ -18,6 +18,8 @@ func NewVP9EncoderFactory() VP9EncoderFactory {
 	return VP9EncoderFactory{}
 }
 
+type VP9EncoderControl func(*govpxlib.VP9Encoder) error
+
 func (VP9EncoderFactory) NewEncoder(ctx context.Context, config codec.EncodeConfig) (codec.Encoder, error) {
 	if config.Parameters.ID != "" && config.Parameters.ID != av.CodecVP9 {
 		return nil, codec.ErrUnsupportedFormat
@@ -161,19 +163,77 @@ func (e *VP9Encoder) resetEncoder() error {
 	if err := e.closeEncoder(); err != nil {
 		return err
 	}
-	options := govpxlib.VP9EncoderOptions{
-		Width:              e.width,
-		Height:             e.height,
-		FPS:                encodeFPS(e.config),
-		TargetBitrateKbps:  encodeBitrateKbps(e.config, e.width, e.height),
-		RateControlModeSet: true,
-		RateControlMode:    govpxlib.RateControlCBR,
+	options, err := vp9EncoderOptions(e.config, e.width, e.height)
+	if err != nil {
+		return err
 	}
 	encoder, err := govpxlib.NewVP9Encoder(options)
 	if err != nil {
 		return mapGovpxEncodeError(err)
 	}
+	if err := applyVP9EncoderControls(encoder, e.config.Controls); err != nil {
+		_ = encoder.Close()
+		return err
+	}
 	e.encoder = encoder
+	return nil
+}
+
+func vp9EncoderOptions(config codec.EncodeConfig, width int, height int) (govpxlib.VP9EncoderOptions, error) {
+	options := govpxlib.VP9EncoderOptions{
+		RateControlModeSet: true,
+		RateControlMode:    govpxlib.RateControlCBR,
+	}
+	if config.Config != nil {
+		native, ok := config.Config.(govpxlib.VP9EncoderOptions)
+		if !ok {
+			return govpxlib.VP9EncoderOptions{}, codec.ErrUnsupportedFormat
+		}
+		options = native
+		if !options.RateControlModeSet {
+			options.RateControlModeSet = true
+			options.RateControlMode = govpxlib.RateControlCBR
+		}
+	}
+	options.Width = width
+	options.Height = height
+	if (options.FPS == 0 && options.TimebaseNum == 0 && options.TimebaseDen == 0) || config.Framerate.Value > 0 {
+		options.FPS = encodeFPS(config)
+		options.TimebaseNum = 0
+		options.TimebaseDen = 0
+	}
+	if config.Bitrate > 0 || options.TargetBitrateKbps == 0 {
+		options.TargetBitrateKbps = encodeBitrateKbps(config, width, height)
+	}
+	if config.KeyframeInterval > 0 {
+		options.MaxKeyframeInterval = config.KeyframeInterval
+	}
+	return options, nil
+}
+
+func applyVP9EncoderControls(encoder *govpxlib.VP9Encoder, controls []any) error {
+	for i := range controls {
+		control := controls[i]
+		switch c := control.(type) {
+		case nil:
+		case VP9EncoderControl:
+			if err := c(encoder); err != nil {
+				return mapGovpxEncodeError(err)
+			}
+		case func(*govpxlib.VP9Encoder) error:
+			if err := c(encoder); err != nil {
+				return mapGovpxEncodeError(err)
+			}
+		case interface {
+			ApplyVP9Encoder(*govpxlib.VP9Encoder) error
+		}:
+			if err := c.ApplyVP9Encoder(encoder); err != nil {
+				return mapGovpxEncodeError(err)
+			}
+		default:
+			return codec.ErrUnsupportedFormat
+		}
+	}
 	return nil
 }
 

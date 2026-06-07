@@ -18,6 +18,8 @@ func NewVP8EncoderFactory() VP8EncoderFactory {
 	return VP8EncoderFactory{}
 }
 
+type VP8EncoderControl func(*govpxlib.VP8Encoder) error
+
 func (VP8EncoderFactory) NewEncoder(ctx context.Context, config codec.EncodeConfig) (codec.Encoder, error) {
 	if config.Parameters.ID != "" && config.Parameters.ID != av.CodecVP8 {
 		return nil, codec.ErrUnsupportedFormat
@@ -163,17 +165,70 @@ func (e *VP8Encoder) Close() error {
 }
 
 func (e *VP8Encoder) resetEncoder(config codec.EncodeConfig) error {
-	options := govpxlib.EncoderOptions{
-		Width:             e.width,
-		Height:            e.height,
-		FPS:               encodeFPS(config),
-		TargetBitrateKbps: encodeBitrateKbps(config, e.width, e.height),
+	options, err := vp8EncoderOptions(config, e.width, e.height)
+	if err != nil {
+		return err
 	}
 	encoder, err := govpxlib.NewVP8Encoder(options)
 	if err != nil {
 		return mapGovpxEncodeError(err)
 	}
+	if err := applyVP8EncoderControls(encoder, config.Controls); err != nil {
+		_ = encoder.Close()
+		return err
+	}
 	e.encoder = encoder
+	return nil
+}
+
+func vp8EncoderOptions(config codec.EncodeConfig, width int, height int) (govpxlib.EncoderOptions, error) {
+	var options govpxlib.EncoderOptions
+	if config.Config != nil {
+		native, ok := config.Config.(govpxlib.EncoderOptions)
+		if !ok {
+			return govpxlib.EncoderOptions{}, codec.ErrUnsupportedFormat
+		}
+		options = native
+	}
+	options.Width = width
+	options.Height = height
+	if (options.FPS == 0 && options.TimebaseNum == 0 && options.TimebaseDen == 0) || config.Framerate.Value > 0 {
+		options.FPS = encodeFPS(config)
+		options.TimebaseNum = 0
+		options.TimebaseDen = 0
+	}
+	if config.Bitrate > 0 || options.TargetBitrateKbps == 0 {
+		options.TargetBitrateKbps = encodeBitrateKbps(config, width, height)
+	}
+	if config.KeyframeInterval > 0 {
+		options.KeyFrameInterval = config.KeyframeInterval
+	}
+	return options, nil
+}
+
+func applyVP8EncoderControls(encoder *govpxlib.VP8Encoder, controls []any) error {
+	for i := range controls {
+		control := controls[i]
+		switch c := control.(type) {
+		case nil:
+		case VP8EncoderControl:
+			if err := c(encoder); err != nil {
+				return mapGovpxEncodeError(err)
+			}
+		case func(*govpxlib.VP8Encoder) error:
+			if err := c(encoder); err != nil {
+				return mapGovpxEncodeError(err)
+			}
+		case interface {
+			ApplyVP8Encoder(*govpxlib.VP8Encoder) error
+		}:
+			if err := c.ApplyVP8Encoder(encoder); err != nil {
+				return mapGovpxEncodeError(err)
+			}
+		default:
+			return codec.ErrUnsupportedFormat
+		}
+	}
 	return nil
 }
 

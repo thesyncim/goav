@@ -671,7 +671,7 @@ func TestStreamRecipeEncodeToSinkDestinationRuns(t *testing.T) {
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
 		Audio().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(Sink(sink)).
 		Build(ctx)
 	if err != nil {
@@ -720,7 +720,7 @@ func TestStreamRecipeEncodeFansOutToMuxAndSinkDestinations(t *testing.T) {
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
 		Audio().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(
 			File("archive.ogg", io.Discard),
 			Sink(sink),
@@ -774,7 +774,7 @@ func TestStreamRecipeEncodeToTypedTargetRuns(t *testing.T) {
 	target := Target("archive", File("archive.ogg", io.Discard).Format(av.FormatOgg))
 	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
 		Audio().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(target)
 
 	intent := job.Intent()
@@ -1198,7 +1198,7 @@ func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
 		Audio().
 		Do(meter).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(File("archive.ogg", io.Discard)).
 		Build(ctx)
 	if err != nil {
@@ -1242,7 +1242,7 @@ func TestBranchCompositionRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 		Audio().
 		Decode().
 		Tap(FrameTap("audio.decoded")).
-		Branches(Branch("main").Opus(96_000).To(Target("archive", File("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(Target("archive", File("archive.ogg", io.Discard))))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -1286,7 +1286,7 @@ func TestBranchCompositionSharedParentOperationDescribeMatchesBuiltGraph(t *test
 		Tap(FrameTap("video.720p.frames")).
 		Branches(
 			Branch("web").
-				VP9(2_000_000).
+				Encode(VP9(Bitrate(2_000_000))).
 				To(Target("web", File("web.ivf", io.Discard).Format(av.FormatIVF))),
 			Branch("thumb").
 				Resize(320, 180).
@@ -1344,7 +1344,7 @@ func TestBranchCompositionCurrentPointDescribeMatchesBuiltGraph(t *testing.T) {
 		Resize(1280, 720).
 		Branches(
 			Branch("web").
-				VP9(2_000_000).
+				Encode(VP9(Bitrate(2_000_000))).
 				To(Target("web", File("web.ivf", io.Discard).Format(av.FormatIVF))),
 			Branch("thumb").
 				Resize(320, 180).
@@ -1411,7 +1411,7 @@ func TestBranchCompositionSharedResampleCurrentPointRuns(t *testing.T) {
 		Resample(16_000, Mono).
 		Branches(
 			Branch("voice").
-				Opus(64_000).
+				Encode(Opus(Bitrate(64_000))).
 				To(Target("voice", File("voice.ogg", io.Discard).Format(av.FormatOgg))),
 			Branch("levels").
 				To(Target("levels", Sink(levels))),
@@ -1672,7 +1672,7 @@ func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) 
 			Branch("voice").
 				Decode().
 				Resample(16_000, Mono).
-				Opus(64_000).
+				Encode(Opus(Bitrate(64_000))).
 				To(Target("voice", File("voice.ogg", io.Discard).Format(av.FormatOgg))),
 		)
 
@@ -1879,7 +1879,7 @@ func TestBranchCompositionEncodeSinkDestinationRuns(t *testing.T) {
 	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
 		Audio().
 		Decode().
-		Branches(Branch("packets").Opus(96_000).To(Target("packets", Sink(sink))))
+		Branches(Branch("packets").Encode(Opus(Bitrate(96_000))).To(Target("packets", Sink(sink))))
 
 	task, err := job.Build(ctx)
 	if err != nil {
@@ -1930,7 +1930,7 @@ func TestBranchCompositionTaskAttachesAfterEncodeTap(t *testing.T) {
 		Tap(FrameTap("audio.decoded")).
 		Branches(
 			Branch("archive").
-				Opus(96_000).
+				Encode(Opus(Bitrate(96_000))).
 				Tap(PacketTap("audio.encoded")).
 				To(Target("archive", File("archive.ogg", io.Discard))),
 		)
@@ -2013,7 +2013,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 			Branch("720p").
 				Resize(1280, 720).
 				Tap(FrameTap("video.720p.frames")).
-				VP9(2_000_000).
+				Encode(VP9(Bitrate(2_000_000))).
 				To(Target("web", File("web.ogg", io.Discard))),
 		)
 
@@ -2104,7 +2104,7 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 		Decode().
 		Do(meter).
 		Tap(FrameTap("audio.after-meter")).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		Tap(PacketTap("audio.encoded")).
 		To(File("archive.ogg", io.Discard))
 
@@ -2406,7 +2406,7 @@ func TestStreamRecipeTaskAttachesRuntimeEncodeMuxBranch(t *testing.T) {
 
 	attachment, err := task.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.decoded")).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(Target("archive", File("archive.ogg", io.Discard))))
 	if err != nil {
 		t.Fatal(err)
@@ -2470,7 +2470,7 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 
 	_, err = task.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.decoded")).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(Target("archive", File("archive.audioonly", io.Discard).Format(audioOnly))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
@@ -2589,7 +2589,7 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchTargetsBeforeMutation(t *testing
 	archive := Target("archive", File("archive.ogg", io.Discard))
 	_, err = builtTask.Attach(ctx, Branch("fanout").
 		From(FrameTap("audio.frames")).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(archive, archive))
 
 	var buildErr *BuildError
@@ -3176,7 +3176,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 		From(PacketTap("audio.packets")).
 		Decode().
 		Resample(16_000, Mono).
-		Opus(64_000).
+		Encode(Opus(Bitrate(64_000))).
 		Tap(PacketTap("audio.voice.packets")).
 		To(Target("voice", File("voice.ogg", io.Discard).Format(av.FormatOgg))))
 	if err != nil {
@@ -3415,7 +3415,7 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToTargets(t *testing.T) {
 	monitor := Target("monitor", File("monitor.ogg", io.Discard))
 	attachment, err := builtTask.Attach(ctx, Branch("fanout").
 		From(FrameTap("audio.frames")).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(archive, monitor))
 	if err != nil {
 		t.Fatal(err)

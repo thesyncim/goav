@@ -326,18 +326,6 @@ func (b *branchBuilder) Copy() *branchBuilder {
 	return b.Encode(Copy())
 }
 
-func (b *branchBuilder) Opus(bitrate int, options ...codecOption) *branchBuilder {
-	return b.Encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *branchBuilder) VP8(bitrate int, options ...codecOption) *branchBuilder {
-	return b.Encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *branchBuilder) VP9(bitrate int, options ...codecOption) *branchBuilder {
-	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
 func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
 	if b == nil {
 		return BranchSpec{err: nilBranchError()}
@@ -667,7 +655,7 @@ func branchEncodeParentOperationError(node string, encode CodecSpec) error {
 		},
 		Suggestions: []string{
 			"move .Branches(...) before the stream encoder",
-			"put .Opus(...), .VP8(...), or .VP9(...) on each goav.Branch(...) that writes a target",
+			"put .Encode(goav.Opus(goav.Bitrate(...))), .Encode(goav.VP8(goav.Bitrate(...))), or .Encode(goav.VP9(goav.Bitrate(...))) on each goav.Branch(...) that writes a target",
 			"attach post-encode packet branches at runtime with Task.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -797,7 +785,7 @@ func branchPacketEncodeUnsupportedError(stream StreamIntent, encode CodecSpec) e
 			"encoder: " + codecIntentName(encode),
 		},
 		Suggestions: []string{
-			"use .Decode().Branches(goav.Branch(name).Opus(...).To(target)) for encoded variants",
+			"use .Decode().Branches(goav.Branch(name).Encode(goav.Opus(goav.Bitrate(...))).To(target)) for encoded variants",
 			"use .Copy().Branches(goav.Branch(name).To(target)) for packet-preserving variants",
 			"attach a runtime branch from a frame Tap when late encoding is needed",
 		},
@@ -859,7 +847,7 @@ func branchMissingError(node string) error {
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
 		Suggestions: []string{
-			"pass branches with goav.Branch(name).VP9(...).To(goav.Target(name, destination))",
+			"pass branches with goav.Branch(name).Encode(goav.VP9(goav.Bitrate(...))).To(goav.Target(name, destination))",
 			"reuse the same target value from multiple branches when they should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,

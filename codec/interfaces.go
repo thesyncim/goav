@@ -105,13 +105,16 @@ type DecodeConfig struct {
 }
 
 type EncodeConfig struct {
-	Stream     av.Stream
-	Parameters av.CodecParameters
-	Realtime   bool
-	LowLatency bool
-	Bitrate    int
-	Framerate  av.Duration
-	Opaque     map[string]any
+	Stream           av.Stream
+	Parameters       av.CodecParameters
+	Realtime         bool
+	LowLatency       bool
+	Bitrate          int
+	Framerate        av.Duration
+	KeyframeInterval int
+	Config           any
+	Controls         []any
+	Opaque           map[string]any
 }
 
 type DecodeResult struct {

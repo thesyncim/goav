@@ -1435,7 +1435,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 	_, err := mediaTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(Target("archive", File("archive.ogg", io.Discard).Format(av.FormatOgg))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
@@ -1600,7 +1600,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 	_, err = builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(Target("archive", File("archive.ogg", io.Discard).Format(av.FormatOgg))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
@@ -1684,7 +1684,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 	_, err = builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(Target("archive", File("archive.ogg", io.Discard).Format(av.FormatOgg))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
@@ -2117,7 +2117,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 	attachment, err := builtTask.Attach(ctx, Branch("record").
 		From(FrameTap("audio.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(Target("record", File("recording.ogg", io.Discard))))
 	if err != nil {
 		t.Fatal(err)
@@ -2214,7 +2214,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	meter := &runtimeTestStage{name: "meter"}
-	archive := Flow("archive").Audio().Do(meter).OpusMusic()
+	archive := Flow("archive").Audio().Do(meter).Encode(OpusMusic())
 	attachment, err := builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
@@ -2315,7 +2315,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 	parent, err := builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		Tap(PacketTap("audio.encoded")).
 		To(Sink(encoded)))
 	if err != nil {
@@ -2430,7 +2430,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	parent, err := builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		Tap(PacketTap("audio.encoded")).
 		To(Sink(encoded)))
 	if err != nil {

@@ -57,7 +57,7 @@ return goav.From(goav.WebRTCTrack(track)).
 ```
 
 `Sink` receives frames at decoded points and packets after `.Copy()` or an
-encoder such as `.Opus(...)`, `.VP8(...)`, or `.VP9(...)`. Packet streams can
+encoder such as `.Encode(goav.Opus(goav.Bitrate(...)))`, `.Encode(goav.VP8(goav.Bitrate(...)))`, or `.Encode(goav.VP9(goav.Bitrate(...)))`. Packet streams can
 fan out to file targets and packet sinks from the same encoded or copied chain.
 
 Resize and encode one video stream:
@@ -67,7 +67,7 @@ return goav.From(input).
     Video().
     Decode().
     Resize(1280, 720).
-    VP9(2_000_000).
+    Encode(goav.VP9(goav.Bitrate(2_000_000))).
     To(goav.File("preview.ivf", preview)).
     Run(ctx)
 ```
@@ -100,13 +100,13 @@ return goav.From(input).
     Branches(
         goav.Branch("archive").
             Resize(1920, 1080).
-            VP9(4_000_000).
+            Encode(goav.VP9(goav.Bitrate(4_000_000))).
             To(archive),
         goav.Branch("preview").
             Resize(640, 360).
             Do(frameMeter).
             Tap(previewFrames).
-            VP8(600_000).
+            Encode(goav.VP8(goav.Bitrate(600_000))).
             To(preview),
     ).
     Run(ctx)
@@ -138,7 +138,7 @@ return goav.From(input).
             To(thumbnail),
         goav.Branch("web").
             From(frames720p).
-            VP9(2_000_000).
+            Encode(goav.VP9(goav.Bitrate(2_000_000))).
             To(web),
     ).
     Run(ctx)
@@ -155,7 +155,7 @@ return goav.From(goav.FileInput("source.webm", in)).
     Branches(
         goav.Branch("v720").
             Resize(1280, 720).
-            VP9(2_000_000).
+            Encode(goav.VP9(goav.Bitrate(2_000_000))).
             To(web),
     ).
     Audio().
@@ -163,7 +163,7 @@ return goav.From(goav.FileInput("source.webm", in)).
     Branches(
         goav.Branch("a96").
             Resample(48_000, goav.Stereo).
-            Opus(96_000).
+            Encode(goav.Opus(goav.Bitrate(96_000))).
             To(web),
     ).
     Run(ctx)
@@ -203,11 +203,11 @@ voiceFrames := goav.FrameTap("audio.voice.frames")
 voice := goav.Flow("voice").Audio().
     Resample(16_000, goav.Mono).
     Tap(voiceFrames).
-    OpusVoice()
+    Encode(goav.OpusVoice())
 
 archive := goav.Flow("archive").Audio().
     Resample(48_000, goav.Stereo).
-    OpusMusic()
+    Encode(goav.OpusMusic())
 
 voiceTarget := goav.Target("voice", goav.File("voice.ogg", voiceFile))
 archiveTarget := goav.Target("archive", goav.File("archive.ogg", archiveFile))
@@ -244,6 +244,35 @@ record, err := task.Attach(ctx,
 )
 ```
 
+### Codec Tuning
+
+Codec tuning has one home: the codec value passed to `.Encode(...)`.
+
+```go
+fastVP9 := goav.VP9(
+    goav.Bitrate(2_000_000),
+    goav.FPS(30),
+    goav.KeyframeInterval(60),
+    goav.Config(nativeVP9Options),
+    goav.Control(nativeVP9Control),
+    goav.Param("deadline", "realtime"),
+)
+
+return goav.From(input).
+    Video().
+    Decode().
+    Resize(1280, 720).
+    Encode(fastVP9).
+    To(goav.File("preview.ivf", preview)).
+    Run(ctx)
+```
+
+`Bitrate`, `FPS`, `KeyframeInterval`, `SampleRate`, and `Channels` are common
+codec options. `Config`, `Control`, and `Param` carry adapter-specific knobs
+without adding more methods to stream, branch, or flow builders. The built-in
+Opus, VP8, and VP9 adapters consume this shape directly; H264 and AV1 recipe
+encoding remain work in progress.
+
 ## Runtime Attach
 
 Build a task when the application needs graph inspection, events, stats, or late
@@ -263,7 +292,7 @@ task, err := goav.From(input).
         goav.Branch("720p").
             Resize(1280, 720).
             Tap(frames720p).
-            VP9(2_000_000).
+            Encode(goav.VP9(goav.Bitrate(2_000_000))).
             To(web),
     ).
     Build(ctx)
@@ -295,7 +324,7 @@ recording := goav.Target("recording", goav.File("recording.ogg", file))
 record, err := task.Attach(ctx,
     goav.Branch("record-audio").
         From(audioDecoded).
-        Opus(96_000).
+        Encode(goav.Opus(goav.Bitrate(96_000))).
         To(recording),
 )
 if err != nil {
@@ -408,7 +437,7 @@ removes dependent late branches anchored from its taps. `Attachment.Stats()`
 reports only the branch-owned node counters; `Task.Stats()` reports the whole
 graph. Runtime branches can share one typed sink or mux target value inside an
 atomic attach group.
-Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
+Taps declared after `.Encode(goav.Opus(goav.Bitrate(...)))`, `.Encode(goav.VP8(goav.Bitrate(...)))`, `.Encode(goav.VP9(goav.Bitrate(...)))`, or `.Copy()` are
 packet-domain taps.
 
 ## Explain And Inspect

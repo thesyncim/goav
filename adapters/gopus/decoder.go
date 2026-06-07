@@ -23,7 +23,7 @@ func Descriptor() codec.Descriptor {
 		ID:       av.CodecOpus,
 		Name:     "Opus",
 		Type:     av.MediaAudio,
-		Modes:    []codec.Mode{codec.ModeDecode},
+		Modes:    []codec.Mode{codec.ModeDecode, codec.ModeEncode},
 		Realtime: true,
 		Capabilities: codec.Capabilities{
 			SampleFormats: []string{av.SampleFormatS16},
@@ -40,6 +40,7 @@ func Descriptor() codec.Descriptor {
 
 func Register(registry *codec.SimpleRegistry) {
 	registry.RegisterDecoder(Descriptor(), NewDecoderFactory())
+	registry.RegisterEncoder(Descriptor(), NewEncoderFactory())
 }
 
 func (DecoderFactory) NewDecoder(ctx context.Context, config codec.DecodeConfig) (codec.Decoder, error) {

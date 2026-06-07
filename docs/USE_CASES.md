@@ -55,7 +55,7 @@ err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
     Decode().
     Resample(16_000, goav.Mono).
-    Opus(48_000).
+    Encode(goav.Opus(goav.Bitrate(48_000))).
     To(goav.File("preview.ogg", preview)).
     Run(ctx)
 ```
@@ -87,7 +87,7 @@ err := goav.From(input).
             Resize(1280, 720).
             Do(frameMeter).
             Tap(videoFrames720p).
-            VP9(2_000_000).
+            Encode(goav.VP9(goav.Bitrate(2_000_000))).
             To(main),
     ).
     Audio().
@@ -96,7 +96,7 @@ err := goav.From(input).
     Branches(
         goav.Branch("a96").
             Resample(48_000, goav.Stereo).
-            Opus(96_000).
+            Encode(goav.Opus(goav.Bitrate(96_000))).
             To(main),
     ).
     Run(ctx)
@@ -149,7 +149,7 @@ err := goav.From(input).
             To(thumbs),
         goav.Branch("web").
             From(videoFrames720p).
-            VP9(2_000_000).
+            Encode(goav.VP9(goav.Bitrate(2_000_000))).
             To(web),
     ).
     Run(ctx)
@@ -199,10 +199,10 @@ audioDecoded := goav.FrameTap("audio.decoded")
 voice := goav.Flow("voice").Audio().
     Resample(16_000, goav.Mono).
     Tap(voiceFrames).
-    OpusVoice()
+    Encode(goav.OpusVoice())
 archive := goav.Flow("archive").Audio().
     Resample(48_000, goav.Stereo).
-    OpusMusic()
+    Encode(goav.OpusMusic())
 voiceTarget := goav.Target("voice", goav.File("voice.ogg", voiceFile))
 archiveTarget := goav.Target("archive", goav.File("archive.ogg", archiveFile))
 
@@ -271,7 +271,7 @@ recording := goav.Target("recording", goav.File("recording.ogg", file))
 recordingHandle, err := task.Attach(ctx,
     goav.Branch("record-audio").
         From(audioDecoded).
-        Opus(96_000).
+        Encode(goav.Opus(goav.Bitrate(96_000))).
         To(recording),
 )
 if err != nil {

@@ -154,7 +154,7 @@ err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
     Audio().
     Decode().
     Do(resample).
-    Opus(96_000).
+    Encode(goav.Opus(goav.Bitrate(96_000))).
     To(
         goav.File("archive.ogg", archive),
         goav.File("preview.ogg", preview),

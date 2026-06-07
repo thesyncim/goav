@@ -137,18 +137,6 @@ func (b *audioChain) Copy() *audioChain {
 	return b.Encode(Copy())
 }
 
-func (b *audioChain) Opus(bitrate int, options ...codecOption) *audioChain {
-	return b.Encode(Opus(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *audioChain) OpusVoice() *audioChain {
-	return b.Encode(OpusVoice())
-}
-
-func (b *audioChain) OpusMusic() *audioChain {
-	return b.Encode(OpusMusic())
-}
-
 func (b *audioChain) chainSpec() chainSpec {
 	if b == nil {
 		return chainSpec{err: nilFlowError()}
@@ -198,14 +186,6 @@ func (b *videoChain) Encode(codec CodecSpec) *videoChain {
 
 func (b *videoChain) Copy() *videoChain {
 	return b.Encode(Copy())
-}
-
-func (b *videoChain) VP8(bitrate int, options ...codecOption) *videoChain {
-	return b.Encode(VP8(append([]codecOption{Bitrate(bitrate)}, options...)...))
-}
-
-func (b *videoChain) VP9(bitrate int, options ...codecOption) *videoChain {
-	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
 func (b *videoChain) chainSpec() chainSpec {
@@ -440,7 +420,7 @@ func flowCopyDomainError(operation string, node string) error {
 		Suggestions: []string{
 			"start packet-preserving reusable work with goav.Flow(name).Audio().Copy() or goav.Flow(name).Video().Copy()",
 			"declare packet taps after copy with .Copy().Tap(goav.PacketTap(name))",
-			"use .Decode().Resample(...).Opus(...) when the flow should transform frames",
+			"use .Decode().Resample(...).Encode(goav.Opus(goav.Bitrate(...))) when the flow should transform frames",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

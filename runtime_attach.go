@@ -1949,7 +1949,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 		Reason:    "muxed runtime branches need packet copy or an encoder",
 		Suggestions: []string{
 			"call .Copy() when attaching from a packet tap",
-			"call .Opus(...), .VP8(...), or .VP9(...) when attaching from a frame tap",
+			"call .Encode(goav.Opus(goav.Bitrate(...))), .Encode(goav.VP8(goav.Bitrate(...))), or .Encode(goav.VP9(goav.Bitrate(...))) when attaching from a frame tap",
 			"use .To(goav.Sink(...)) when the runtime branch should receive raw frames",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -2013,7 +2013,7 @@ func runtimeBranchCopyDomainError(branch string, caps StreamCaps) error {
 		Details:   runtimeBranchCapsDetails(caps),
 		Suggestions: []string{
 			"attach from a tap declared after Copy or Encode",
-			"encode frame taps with .Opus(...), .VP8(...), or .VP9(...) before writing a muxed destination",
+			"encode frame taps with .Encode(goav.Opus(goav.Bitrate(...))), .Encode(goav.VP8(goav.Bitrate(...))), or .Encode(goav.VP9(goav.Bitrate(...))) before writing a muxed destination",
 			"call task.Taps() and choose a tap with domain=packet",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -2029,7 +2029,7 @@ func runtimeBranchMuxCodecMissingError(branch string, caps StreamCaps) error {
 		Details:   runtimeBranchCapsDetails(caps),
 		Suggestions: []string{
 			"attach from a recipe tap with codec caps",
-			"set an explicit encoder such as .Opus(...), .VP8(...), or .VP9(...)",
+			"set an explicit encoder such as .Encode(goav.Opus(goav.Bitrate(...))), .Encode(goav.VP8(goav.Bitrate(...))), or .Encode(goav.VP9(goav.Bitrate(...)))",
 			"use .To(goav.Sink(...)) when the branch should stay raw",
 		},
 		Cause: ErrUnsupportedBuild,

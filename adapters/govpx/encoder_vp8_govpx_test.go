@@ -163,6 +163,58 @@ func TestVP8EncoderCloseIsIdempotentAndStopsUse(t *testing.T) {
 	}
 }
 
+func TestVP8EncoderOptionsUseCommonAndNativeConfig(t *testing.T) {
+	config := vp8EncodeConfig()
+	config.Bitrate = 900_000
+	config.Framerate = av.Duration{Value: 6000, Base: av.RTPTimeBase(90000)}
+	config.KeyframeInterval = 45
+	config.Config = govpxlib.EncoderOptions{
+		Threads:          2,
+		KeyFrameInterval: 120,
+	}
+
+	options, err := vp8EncoderOptions(config, 16, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.Width != 16 || options.Height != 16 {
+		t.Fatalf("size = %dx%d", options.Width, options.Height)
+	}
+	if options.FPS != 15 {
+		t.Fatalf("fps = %d, want 15", options.FPS)
+	}
+	if options.TargetBitrateKbps != 900 {
+		t.Fatalf("bitrate = %d, want 900", options.TargetBitrateKbps)
+	}
+	if options.KeyFrameInterval != 45 {
+		t.Fatalf("keyframe interval = %d, want 45", options.KeyFrameInterval)
+	}
+	if options.Threads != 2 {
+		t.Fatalf("threads = %d, want 2", options.Threads)
+	}
+}
+
+func TestVP8EncoderAppliesControls(t *testing.T) {
+	ctx := context.Background()
+	config := vp8EncodeConfig()
+	called := false
+	config.Controls = []any{
+		func(encoder *govpxlib.VP8Encoder) error {
+			called = true
+			return encoder.SetKeyFrameInterval(3)
+		},
+	}
+
+	encoder, err := NewVP8EncoderFactory().NewEncoder(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("control was not applied")
+	}
+	_ = encoder.Close()
+}
+
 func vp8EncodeConfig() codec.EncodeConfig {
 	return codec.EncodeConfig{
 		Stream: av.Stream{

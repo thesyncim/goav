@@ -634,7 +634,7 @@ func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedTargets(t *testing.T)
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(context.Background(), job)
 	if err != nil {
@@ -1319,12 +1319,12 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 				runtime:   Default(),
 				intent: Intent{Streams: []StreamIntent{{
 					Name:   "audio",
-					Encode: Opus(Bitrate(96_000)),
+					Encode: Codec("pcm", av.MediaAudio),
 				}}},
 			},
 			code:  "encode_adapter_missing",
 			cause: codec.ErrNotFound,
-			want:  []string{"no encoder adapter", "codec=opus", "Sink"},
+			want:  []string{"no encoder adapter", "codec=pcm", "Sink"},
 		},
 		{
 			name: "transcode descriptor-only encoder",
@@ -2386,7 +2386,7 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 		Branches(
 			Branch("360p").
 				Resize(640, 360).
-				VP9(600_000).
+				Encode(VP9(Bitrate(600_000))).
 				To(web),
 		)
 
@@ -2434,8 +2434,8 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	}).Name("audio").Codec(Opus())).
 		Audio().
 		Branches(
-			Branch("voice").Apply(Flow("voice").Audio().OpusVoice()).To(voice),
-			Branch("archive").Apply(Flow("archive").Audio().OpusMusic()).To(archive),
+			Branch("voice").Apply(Flow("voice").Audio().Encode(OpusVoice())).To(voice),
+			Branch("archive").Apply(Flow("archive").Audio().Encode(OpusMusic())).To(archive),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -2484,7 +2484,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 		Audio().
 		Decode().
 		Tap(FrameTap("audio.decoded")).
-		Branches(Branch("main").Opus(96_000).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(Target("archive", fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -2689,7 +2689,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 		Audio().
 		Decode().
 		Do(&runtimeTestStage{name: "meter"}).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(fileDestination("archive.ogg", io.Discard))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -2734,7 +2734,7 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 		Decode().
 		Tap(FrameTap("audio.decoded")).
 		Do(&runtimeTestStage{name: "meter"}).
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(fileDestination("archive.ogg", io.Discard))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -2785,7 +2785,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(Sink(&runtimeTestSink{name: "packets"}))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -2829,7 +2829,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(
 			fileDestination("archive.ogg", io.Discard),
 			Sink(&runtimeTestSink{name: "packets"}),
@@ -2875,7 +2875,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 	job := From(RTP(receiver).Name("audio").Codec(Opus())).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Opus(96_000).
+		Encode(Opus(Bitrate(96_000))).
 		To(fileDestination("archive.ogg", io.Discard))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)

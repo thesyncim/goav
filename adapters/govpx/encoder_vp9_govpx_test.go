@@ -163,6 +163,61 @@ func TestVP9EncoderCloseIsIdempotentAndStopsUse(t *testing.T) {
 	}
 }
 
+func TestVP9EncoderOptionsUseCommonAndNativeConfig(t *testing.T) {
+	config := vp9EncodeConfig()
+	config.Bitrate = 1_200_000
+	config.Framerate = av.Duration{Value: 4500, Base: av.RTPTimeBase(90000)}
+	config.KeyframeInterval = 90
+	config.Config = govpxlib.VP9EncoderOptions{
+		Threads:             2,
+		MaxKeyframeInterval: 128,
+	}
+
+	options, err := vp9EncoderOptions(config, 64, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.Width != 64 || options.Height != 64 {
+		t.Fatalf("size = %dx%d", options.Width, options.Height)
+	}
+	if options.FPS != 20 {
+		t.Fatalf("fps = %d, want 20", options.FPS)
+	}
+	if options.TargetBitrateKbps != 1200 {
+		t.Fatalf("bitrate = %d, want 1200", options.TargetBitrateKbps)
+	}
+	if options.MaxKeyframeInterval != 90 {
+		t.Fatalf("max keyframe interval = %d, want 90", options.MaxKeyframeInterval)
+	}
+	if options.Threads != 2 {
+		t.Fatalf("threads = %d, want 2", options.Threads)
+	}
+	if !options.RateControlModeSet || options.RateControlMode != govpxlib.RateControlCBR {
+		t.Fatalf("rate control = set:%v mode:%v, want CBR", options.RateControlModeSet, options.RateControlMode)
+	}
+}
+
+func TestVP9EncoderAppliesControls(t *testing.T) {
+	ctx := context.Background()
+	config := vp9EncodeConfig()
+	called := false
+	config.Controls = []any{
+		func(encoder *govpxlib.VP9Encoder) error {
+			called = true
+			return encoder.SetKeyFrameInterval(3)
+		},
+	}
+
+	encoder, err := NewVP9EncoderFactory().NewEncoder(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("control was not applied")
+	}
+	_ = encoder.Close()
+}
+
 func vp9EncodeConfig() codec.EncodeConfig {
 	return codec.EncodeConfig{
 		Stream: av.Stream{
