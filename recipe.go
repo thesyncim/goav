@@ -1845,6 +1845,10 @@ func streamEncodeMissingError(operation string, stream StreamIntent) error {
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
+		Details: []string{
+			"expected_shape=" + Shape(ShapeDomain(DomainPacket), ShapeMedia(stream.Select.Type)).String(),
+			"actual_shape=" + FrameShape(stream.Select.Type).String(),
+		},
 		Suggestions: []string{
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.File(...))",
 			"send decoded frames to goav.Sink(...)",
@@ -3061,7 +3065,7 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 		}
 	case spec.Resize != nil:
 		if selector.Type == av.MediaAudio {
-			return mediaTransform{}, transformMediaError(base, "resize", "video")
+			return mediaTransform{}, transformMediaError(base, "resize", av.MediaVideo, selector.Type)
 		}
 		resize := *spec.Resize
 		return mediaTransform{
@@ -3071,7 +3075,7 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 		}, nil
 	case spec.Resample != nil:
 		if selector.Type == av.MediaVideo {
-			return mediaTransform{}, transformMediaError(base, "resample", "audio")
+			return mediaTransform{}, transformMediaError(base, "resample", av.MediaAudio, selector.Type)
 		}
 		resample := *spec.Resample
 		return mediaTransform{
@@ -3140,16 +3144,21 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 	}
 }
 
-func transformMediaError(stream string, transform string, media string) error {
+func transformMediaError(stream string, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
 		Code:      "transform_media_mismatch",
 		Operation: "build stream",
 		Node:      stream,
-		Reason:    transform + " applies to " + media + " streams",
+		Reason:    transform + " applies to " + string(expected) + " streams",
+		Details: []string{
+			"expected_shape=" + FrameShape(expected).String(),
+			"actual_shape=" + FrameShape(actual).String(),
+		},
 		Suggestions: []string{
 			"use .Video().Resize(...) for video scaling",
 			"use .Audio().Resample(...) for audio sample-rate or channel conversion",
 		},
+		Cause: ErrUnsupportedBuild,
 	}
 }
 
@@ -3837,6 +3846,10 @@ func branchEncodeMissingError(stream StreamIntent) error {
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
 		Reason:    "branch needs an encoder before writing to a muxed target",
+		Details: []string{
+			"expected_shape=" + Shape(ShapeDomain(DomainPacket), ShapeMedia(stream.Select.Type)).String(),
+			"actual_shape=" + FrameShape(stream.Select.Type).String(),
+		},
 		Suggestions: []string{
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(...)",
 			"route raw frames to goav.Sink(...) when the branch should stay decoded",
@@ -4035,11 +4048,11 @@ func validateBranchTransforms(stream StreamIntent) error {
 			}
 		case transform.Resize != nil:
 			if stream.Select.Type == av.MediaAudio {
-				return branchTransformMediaError(stream, "resize", "video")
+				return branchTransformMediaError(stream, "resize", av.MediaVideo, stream.Select.Type)
 			}
 		case transform.Resample != nil:
 			if stream.Select.Type == av.MediaVideo {
-				return branchTransformMediaError(stream, "resample", "audio")
+				return branchTransformMediaError(stream, "resample", av.MediaAudio, stream.Select.Type)
 			}
 		default:
 			return &BuildError{
@@ -4067,12 +4080,16 @@ func streamHasTransformOperation(operations []StreamOperation) bool {
 	return false
 }
 
-func branchTransformMediaError(stream StreamIntent, transform string, media string) error {
+func branchTransformMediaError(stream StreamIntent, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
 		Code:      "transform_media_mismatch",
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
-		Reason:    transform + " applies to " + media + " branches",
+		Reason:    transform + " applies to " + string(expected) + " branches",
+		Details: []string{
+			"expected_shape=" + FrameShape(expected).String(),
+			"actual_shape=" + FrameShape(actual).String(),
+		},
 		Suggestions: []string{
 			"use .Video(...).Resize(...) for video ladder branches",
 			"use .Audio(...).Resample(...) for audio branches",

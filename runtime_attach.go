@@ -1767,6 +1767,7 @@ func runtimeBranchTapInfo(name string, node pipeline.NodeRef, caps StreamCaps, a
 		MediaKind: media,
 		Domain:    domain,
 		After:     after,
+		Shape:     caps,
 		Caps:      caps,
 		Node:      node,
 	}
