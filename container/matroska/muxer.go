@@ -1798,12 +1798,41 @@ func (m *Muxer) addCue(packet Packet, track Track, timecode int64, relativePosit
 		position.DurationNS = packet.DurationNS
 		position.DurationSet = true
 	}
+	m.addCuePosition(timecode*m.options.TimecodeScaleNS, position)
+}
+
+func (m *Muxer) addCuePosition(timeNS int64, position CueTrackPosition) {
+	for i := range m.cues {
+		if m.cues[i].TimeNS != timeNS {
+			continue
+		}
+		if cueHasTrackPosition(m.cues[i], position.TrackID) {
+			continue
+		}
+		if len(m.cues[i].Positions) == 0 && m.cues[i].TrackID != 0 {
+			m.cues[i].Positions = append(m.cues[i].Positions, cueTrackPositionFromLegacy(m.cues[i]))
+		}
+		m.cues[i].Positions = append(m.cues[i].Positions, position)
+		return
+	}
 	cue := CuePoint{
-		TimeNS:    timecode * m.options.TimecodeScaleNS,
+		TimeNS:    timeNS,
 		Positions: []CueTrackPosition{position},
 	}
 	applyCuePosition(&cue, position)
 	m.cues = append(m.cues, cue)
+}
+
+func cueHasTrackPosition(cue CuePoint, trackID uint32) bool {
+	if len(cue.Positions) == 0 {
+		return cue.TrackID == trackID
+	}
+	for i := range cue.Positions {
+		if cue.Positions[i].TrackID == trackID {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Muxer) shouldCuePacket(packet Packet, track Track) bool {

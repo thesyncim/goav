@@ -7719,6 +7719,89 @@ func TestSeekableMuxerCuesAudioPacketsWithoutKeyframe(t *testing.T) {
 	}
 }
 
+func TestSeekableMuxerCoalescesSameTimeCueTrackPositions(t *testing.T) {
+	ws := &memoryWriteSeeker{}
+	muxer, err := NewMuxer(ws, MuxerOptions{ClusterMaxDurationNS: 40_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioID, err := muxer.AddTrack(Track{
+		Type:              TrackAudio,
+		Codec:             CodecOpus,
+		DefaultDurationNS: 20_000_000,
+		Audio:             AudioConfig{SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	videoID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := []Packet{
+		{TrackID: audioID, TimeNS: 0, DurationNS: 20_000_000, Data: []byte{1}},
+		{TrackID: videoID, TimeNS: 0, Keyframe: true, Data: []byte{2}},
+		{TrackID: audioID, TimeNS: 20_000_000, DurationNS: 20_000_000, Data: []byte{3}},
+		{TrackID: videoID, TimeNS: 20_000_000, Keyframe: true, Data: []byte{4}},
+	}
+	for i := range packets {
+		if err := muxer.WritePacket(packets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(ws.bytes), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := demuxer.SeekToTime(0); err != nil {
+		t.Fatal(err)
+	}
+	cues := demuxer.Cues()
+	if len(cues) != 2 {
+		t.Fatalf("cues = %+v, want 2 coalesced cue points", cues)
+	}
+	for i := range cues {
+		if cues[i].TimeNS != int64(i)*20_000_000 {
+			t.Fatalf("cue %d time = %d, want %d", i, cues[i].TimeNS, int64(i)*20_000_000)
+		}
+		if len(cues[i].Positions) != 2 {
+			t.Fatalf("cue %d positions = %+v, want audio and video positions", i, cues[i].Positions)
+		}
+		audioPosition, ok := cuePositionForTrack(cues[i], audioID)
+		if !ok {
+			t.Fatalf("cue %d missing audio position: %+v", i, cues[i])
+		}
+		if !audioPosition.DurationSet || audioPosition.DurationNS != 20_000_000 {
+			t.Fatalf("cue %d audio duration = %d set=%v, want 20000000 true", i, audioPosition.DurationNS, audioPosition.DurationSet)
+		}
+		if _, ok := cuePositionForTrack(cues[i], videoID); !ok {
+			t.Fatalf("cue %d missing video position: %+v", i, cues[i])
+		}
+	}
+
+	got := Packet{Data: make([]byte, 0, 8)}
+	if err := demuxer.ReadCuedTrackPacketAtTime(videoID, 0, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != videoID || got.TimeNS != 0 || !bytes.Equal(got.Data, []byte{2}) {
+		t.Fatalf("video packet = track %d time %d data %v, want track %d time 0 data [2]", got.TrackID, got.TimeNS, got.Data, videoID)
+	}
+	if err := demuxer.ReadCuedTrackPacketAtTime(audioID, 20_000_000, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != audioID || got.TimeNS != 20_000_000 || !bytes.Equal(got.Data, []byte{3}) {
+		t.Fatalf("audio packet = track %d time %d data %v, want track %d time 20000000 data [3]", got.TrackID, got.TimeNS, got.Data, audioID)
+	}
+}
+
 func TestMuxerCuePolicyControlsIndexing(t *testing.T) {
 	tests := []struct {
 		name     string
