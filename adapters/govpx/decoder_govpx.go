@@ -1,5 +1,3 @@
-//go:build goav_govpx
-
 package govpx
 
 import (
@@ -39,12 +37,12 @@ func Register(registry *codec.SimpleRegistry) {
 }
 
 func activeVP8Descriptor(desc codec.Descriptor) codec.Descriptor {
-	desc.Backend.Status = "active-build-tagged"
+	desc.Backend.Status = "active"
 	return desc
 }
 
 func activeVP9Descriptor(desc codec.Descriptor) codec.Descriptor {
-	desc.Backend.Status = "active-build-tagged"
+	desc.Backend.Status = "active"
 	return desc
 }
 

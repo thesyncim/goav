@@ -99,8 +99,8 @@ make the implementation match the composable planner promise.
 ## Phase 2: Video receive
 
 - VP8/VP9 depacketization.
-- `govpx` VP8/VP9 decode adapters behind `goav_govpx`. First slices active.
-- `govpx` VP8/VP9 encode adapters behind `goav_govpx`. First slices active.
+- `govpx` VP8/VP9 decode adapters. First slices active.
+- `govpx` VP8/VP9 encode adapters. First slices active.
 - Keep Opus, VP8, and VP9 as the first full encode/decode recipe verticals;
   H264 and AV1 remain receive/decode-first until their encode adapters are
   equally solid.
@@ -130,15 +130,15 @@ make the implementation match the composable planner promise.
 - H264 RTP depacketization and Annex B bridge. Done.
 - Descriptor-only H264 adapter availability checks. Done.
 - Build-tagged `goh264` decoder factory. Done.
-- Allocation and lifecycle hardening for concrete video decode paths. H264 and
-  VP8/VP9 tagged adapter guards active.
+- Allocation and lifecycle hardening for concrete video decode paths. H264
+  tagged and VP8/VP9 default adapter guards active.
 - Allocation and lifecycle hardening for concrete video encode paths. VP8/VP9
-  tagged adapter guards active.
-- AV1 decode adapter validation. First low-overhead factory slice is active
-  behind `goav_goav1`; recovery can use packet keyframe markers or parsed
+  default adapter guards active.
+- AV1 decode adapter validation. First low-overhead factory slice is active;
+  recovery can use packet keyframe markers or parsed
   low-overhead sequence/key-frame payloads. The runtime can provision
   conservative decoder state for high-level AV1 receive, and
-  selected RTP decode chains have tagged receive, same-stream
+  selected RTP decode chains have receive, same-stream
   codec-change, and replacement-stream codec-change proofs for old-ID and
   replacement-ID event targets. The concrete decoder also has raw RTP payload
   runner integration with retained-fragment and after-loss tests. RTP sources

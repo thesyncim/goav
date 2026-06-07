@@ -1339,12 +1339,9 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 		ID:    av.CodecVP9,
 		Name:  "vp9",
 		Modes: []codec.Mode{codec.ModeEncode},
-		Capabilities: codec.Capabilities{
-			BuildTags: []string{"goav_govpx"},
-		},
 		Backend: codec.Backend{
 			Name:   "govpx",
-			Status: "planned-build-tagged",
+			Status: "descriptor-only",
 		},
 	})
 	descriptorRuntime := New(func(runtime *runtime) {
@@ -1365,7 +1362,7 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightEncodeAdapters: true},
-				runtime:   Default(),
+				runtime:   New(),
 				intent: Intent{Streams: []StreamIntent{{
 					Name:   "audio",
 					Encode: Opus(Bitrate(96_000)),
@@ -1389,7 +1386,7 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 			},
 			code:  "encode_adapter_unavailable",
 			cause: codec.ErrUnavailable,
-			want:  []string{"descriptor-only", "codec=vp9", "backend=govpx", "build_tags=goav_govpx"},
+			want:  []string{"descriptor-only", "codec=vp9", "backend=govpx"},
 		},
 	}
 	for _, tt := range tests {

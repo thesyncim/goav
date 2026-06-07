@@ -3454,6 +3454,7 @@ func TestStreamRecipeRejectsDuplicateSinkTargets(t *testing.T) {
 func TestStreamRecipeRejectsDuplicateTypedTargets(t *testing.T) {
 	target := goav.Target("voice", goav.File("voice.ogg", io.Discard))
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(goav.New()).
 		Audio().
 		Opus(96_000).
 		To(target, target).
@@ -4079,6 +4080,7 @@ func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
 
 func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(goav.New(goav.WithStdFormats())).
 		Audio().
 		Opus(96_000).
 		To(goav.File("archive.ivf", io.Discard)).

@@ -1,9 +1,6 @@
-//go:build !goav_govpx
-
 package govpx
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -19,21 +16,31 @@ func TestDescriptors(t *testing.T) {
 		if descriptors[i].Backend.Module != "github.com/thesyncim/govpx" {
 			t.Fatalf("descriptor = %+v", descriptors[i])
 		}
+		if len(descriptors[i].Capabilities.BuildTags) != 0 {
+			t.Fatalf("build tags = %v", descriptors[i].Capabilities.BuildTags)
+		}
+		if descriptors[i].Backend.Status != "active" {
+			t.Fatalf("backend status = %q", descriptors[i].Backend.Status)
+		}
 	}
 }
 
-func TestRegisterDescriptorsOnly(t *testing.T) {
+func TestRegisterProvidesFactories(t *testing.T) {
 	registry := codec.NewRegistry()
 	Register(registry)
 
-	found, err := registry.Find(av.CodecVP8, codec.ModeDecode)
-	if err != nil {
-		t.Fatalf("find VP8: %v", err)
-	}
-	if len(found) != 1 {
-		t.Fatalf("found = %d, want 1", len(found))
-	}
-	if _, err := registry.DecoderFactory(av.CodecVP8); !errors.Is(err, codec.ErrUnavailable) {
-		t.Fatalf("factory err = %v, want ErrUnavailable", err)
+	for _, id := range []av.CodecID{av.CodecVP8, av.CodecVP9} {
+		if _, err := registry.Find(id, codec.ModeDecode); err != nil {
+			t.Fatalf("find %s decode: %v", id, err)
+		}
+		if _, err := registry.Find(id, codec.ModeEncode); err != nil {
+			t.Fatalf("find %s encode: %v", id, err)
+		}
+		if _, err := registry.DecoderFactory(id); err != nil {
+			t.Fatalf("%s decoder factory: %v", id, err)
+		}
+		if _, err := registry.EncoderFactory(id); err != nil {
+			t.Fatalf("%s encoder factory: %v", id, err)
+		}
 	}
 }
