@@ -928,6 +928,12 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 			return state.planErr
 		}
 		if branchComposePlanReady(state.plan) {
+			fresh, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchTargetAttachments, nil)
+			if err != nil {
+				return err
+			}
+			state.plan.Input = fresh.Input
+			state.plan.Targets = fresh.Targets
 			return nil
 		}
 		plan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchTargetAttachments, nil)

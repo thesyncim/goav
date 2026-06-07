@@ -471,6 +471,35 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 	}
 }
 
+func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedTargets(t *testing.T) {
+	streams := []av.Stream{audioOpusTestStream()}
+	runtime := New(
+		withTestFormats(
+			testFormatProber(remuxTestProber{streams: streams}),
+			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: &decodeTestDemuxer{streams: streams}}),
+			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+		),
+		withTestCodecs(
+			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		),
+	)
+	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Branches(Branch("main").Opus(96_000).To(Target("archive", FileOutput("archive.ogg", io.Discard))))
+
+	resolved, err := compileJobRecipeForBuildContext(context.Background(), job)
+	if err != nil {
+		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
+	}
+	if len(resolved.plan.Targets) != 1 ||
+		resolved.plan.Targets[0].Format != "" ||
+		resolved.plan.Targets[0].OpenFormat() != av.FormatOgg {
+		t.Fatalf("resolved plan targets = %+v, want resolved Ogg open format", resolved.plan.Targets)
+	}
+}
+
 func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 	tests := []struct {
 		name  string

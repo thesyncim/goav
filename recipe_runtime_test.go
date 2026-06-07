@@ -1762,6 +1762,89 @@ func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
+	ctx := context.Background()
+	customPCM := av.CodecID("x_pcm_s16")
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	codecs := withTestCodecs(
+		testCodecEncoder(codec.Descriptor{ID: customPCM, Type: av.MediaAudio}, encoderFactory),
+	)
+	frame := av.Frame{
+		StreamID: "audio",
+		Type:     av.MediaAudio,
+		Audio: &av.AudioFrame{
+			SampleRate:   48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatS16,
+			Samples:      480,
+		},
+	}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	base := &runtimeTestSink{name: "base"}
+	graph := New(formats, codecs).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:       DomainFrame,
+			MediaKind:    av.MediaAudio,
+			StreamID:     "audio",
+			Codec:        av.CodecPCM,
+			SampleRate:   48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatS16,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	attachment, err := builtTask.Attach(ctx, Branch("record").
+		FromTap("audio.frames").
+		Encode(Codec(customPCM, av.MediaAudio, SampleRate(16_000), Channels(Mono))).
+		To(Target("record", FileOutput("recording.ogg", io.Discard))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(specText(attachment.Spec()), "record/encode-record -> record/recording.ogg") {
+		t.Fatalf("attachment spec:\n%s", specText(attachment.Spec()))
+	}
+	if err := builtTask.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if encoder.encodes != 1 {
+		t.Fatalf("encodes=%d", encoder.encodes)
+	}
+	if encoderFactory.config.Parameters.ID != customPCM ||
+		encoderFactory.config.Stream.Codec.ID != customPCM ||
+		encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
+		encoderFactory.config.Stream.Codec.Channels != Mono {
+		t.Fatalf("custom runtime encode config: %+v", encoderFactory.config)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "record" {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := builtTask.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 	ctx := context.Background()
 	customPCM := av.CodecID("x_pcm_s16")
@@ -1825,6 +1908,81 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 		t.Fatalf("encode custom codec config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "audio" {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
+	ctx := context.Background()
+	customPCM := av.CodecID("x_pcm_s16")
+	streams := []av.Stream{{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:           customPCM,
+			Type:         av.MediaAudio,
+			SampleRate:   48000,
+			ClockRate:    48000,
+			Channels:     Stereo,
+			SampleFormat: av.SampleFormatS16,
+		},
+	}}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	decoder := &recipePCMDecoder{}
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	desc := CodecDescriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
+	runtime := New(
+		formats,
+		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder}),
+		WithEncoder(desc, encoderFactory),
+		WithStdFilters(),
+	)
+	encoded := Codec(customPCM, av.MediaAudio, SampleRate(16_000), Channels(Mono))
+	archive := Target("archive", FileOutput("archive.ogg", io.Discard))
+
+	task, err := From(FileInput("input.ogg", nil)).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Branches(
+			Branch("main").
+				Resample(16_000, Mono).
+				Encode(encoded).
+				To(archive),
+		).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 || encoder.encodes != 1 || encoder.flushes != 1 {
+		t.Fatalf("decodes=%d encodes=%d flushes=%d", decoder.decodes, encoder.encodes, encoder.flushes)
+	}
+	if encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
+		encoderFactory.config.Stream.Codec.Channels != Mono ||
+		encoderFactory.config.Parameters.ID != customPCM ||
+		encoderFactory.config.Stream.Codec.ID != customPCM {
+		t.Fatalf("branch custom encode config: %+v", encoderFactory.config)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "main" {
 		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
 	}
 	if err := task.Close(); err != nil {

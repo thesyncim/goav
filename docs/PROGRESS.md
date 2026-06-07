@@ -1076,6 +1076,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     graph and verifies one shared resample feeds both an Opus mux branch and a
     raw sink branch, preserving the same `Branch`/`Target` grammar across
     custom stages, audio transforms, and video transforms. Done.
+264. Keep generic codec composition and resolved targets orthogonal:
+    pre-lowered branch-composer plans now refresh concrete input/target
+    attachments after adapter probing while preserving their shared operation
+    prefixes, so `Describe`, `Explain`, and `Build` see the same resolved target
+    formats. Custom `goav.Codec(...)` encode specs are now covered through
+    direct stream encode, planned `Branch(...).Encode(...).To(Target(...))`, and
+    runtime `Task.Attach(ctx, Branch(...).FromTap(...).Encode(...))` mux
+    branches without adding a built-in-only pathway. Done.
 
 ## First Vertical Slice
 
