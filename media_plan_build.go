@@ -72,35 +72,22 @@ func (r recipeResolved) buildMediaPlanEncodeTask(ctx context.Context) (Task, err
 }
 
 func (r recipeResolved) buildMediaPlanBranchComposerTask(ctx context.Context) (Task, error) {
-	runtime, ok := r.runtime.(*runtime)
-	if !ok || runtime == nil {
+	plan, ok, err := newMediaPlanBranchComposeGraph(r.runtime, r.branchInputAttachment, r.plan)
+	if err != nil || !ok {
+		if err != nil {
+			return nil, err
+		}
 		return nil, recipeGraphUnsupportedError("build branch composition", r.intent)
 	}
-	builder := branchComposePlanBuilder(runtime, r.branchInputAttachment)
-	graph, err := builder.newGraph(ctx)
+	graph, err := plan.newGraph(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := r.compileMediaPlanBranchComposer(ctx, builder, graph); err != nil {
+	if err := plan.compile(ctx, graph); err != nil {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, builder.runtime), nil
-}
-
-func (r recipeResolved) compileMediaPlanBranchComposer(ctx context.Context, builder *builder, graph pipeline.Graph) error {
-	if r.branchInputAttachment.rtp != nil {
-		return builder.compileRTPBranchComposePlan(ctx, graph, r.plan)
-	}
-	return builder.compileBranchComposePlan(ctx, graph, r.plan)
-}
-
-func branchComposePlanBuilder(runtime *runtime, input InputSpec) *builder {
-	builder := &builder{runtime: runtime}
-	if input.rtp != nil {
-		builder.rtpInputs = []rtpInput{input.rtpBuildInput()}
-	}
-	return builder
+	return newTask(graph, plan.runtime), nil
 }
 
 func (r recipeResolved) singleStreamIntent() (StreamIntent, bool) {
@@ -118,6 +105,14 @@ type mediaPlanSingleStreamGraph struct {
 	decode  decodeRequest
 	filters []filterRequest
 	encode  *encodeRequest
+}
+
+type mediaPlanBranchComposeGraph struct {
+	runtime  *runtime
+	input    InputSpec
+	plan     branchComposePlan
+	branches []branchComposeRoute
+	targets  []branchComposeTargetRoute
 }
 
 func newMediaPlanSingleStreamGraph(rt Runtime, inputs []InputSpec, outputs []EndpointSpec, stream StreamIntent) (mediaPlanSingleStreamGraph, bool, error) {
@@ -159,6 +154,133 @@ func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
 		return true
 	}
 	return allRTPInputSpecs(inputs)
+}
+
+func newMediaPlanBranchComposeGraph(rt Runtime, input InputSpec, plan branchComposePlan) (mediaPlanBranchComposeGraph, bool, error) {
+	runtime, ok := rt.(*runtime)
+	if !ok || runtime == nil {
+		return mediaPlanBranchComposeGraph{}, false, nil
+	}
+	if input.rtp == nil && input.formatInput().Reader == nil && input.formatInput().URI == "" && input.formatInput().Name == "" {
+		return mediaPlanBranchComposeGraph{}, false, nil
+	}
+	branches, targets, err := prepareBranchComposePlan(plan)
+	if err != nil {
+		return mediaPlanBranchComposeGraph{}, false, err
+	}
+	return mediaPlanBranchComposeGraph{
+		runtime:  runtime,
+		input:    input,
+		plan:     plan,
+		branches: branches,
+		targets:  targets,
+	}, true, nil
+}
+
+func (p mediaPlanBranchComposeGraph) newGraph(ctx context.Context) (pipeline.Graph, error) {
+	return (&builder{runtime: p.runtime}).newGraph(ctx)
+}
+
+func (p mediaPlanBranchComposeGraph) spec() (pipeline.Spec, error) {
+	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
+	nodes := make(map[string]plannedNode, p.nodeCapacity())
+	sourceRefs, ok, err := p.specSources(&spec, nodes)
+	if err != nil {
+		return pipeline.Spec{}, err
+	}
+	if !ok {
+		return pipeline.Spec{}, recipeGraphUnsupportedError("describe branch composition", Intent{Name: p.plan.Name})
+	}
+	return planBranchComposeRoutes(spec, nodes, sourceRefs, p.branches, p.targets)
+}
+
+func (p mediaPlanBranchComposeGraph) nodeCapacity() int {
+	return 1 + 3 + len(p.branches) + branchComposeStepCount(p.branches) + len(p.targets)
+}
+
+func (p mediaPlanBranchComposeGraph) specSources(spec *pipeline.Spec, nodes map[string]plannedNode) ([]pipeline.NodeRef, bool, error) {
+	if p.input.rtp == nil {
+		input := p.input.formatInput()
+		name := demuxNodeName(input)
+		ref := pipeline.NodeRef(name)
+		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, inputNodeDetail(input)); err != nil {
+			return nil, false, err
+		}
+		return []pipeline.NodeRef{ref}, true, nil
+	}
+	input := p.input.rtpBuildInput()
+	name := rtpNodeName(input, 0)
+	ref := pipeline.NodeRef(name)
+	if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, rtpInputDetail(input)); err != nil {
+		return nil, false, err
+	}
+	return []pipeline.NodeRef{ref}, true, nil
+}
+
+func (p mediaPlanBranchComposeGraph) compile(ctx context.Context, graph pipeline.Graph) error {
+	sourceRefs, streams, builds, realtime, err := p.compileSources(ctx, graph)
+	if err != nil {
+		return err
+	}
+	groups, err := resolveBranchComposeStreamGroups(streams, p.branches)
+	if err != nil {
+		return err
+	}
+	branchInputs := make([]pipeline.NodeRef, len(p.branches))
+	branchStreams := make([]av.Stream, len(p.branches))
+	for i := range groups {
+		bounds := codec.DecodeBounds{}
+		if len(builds) != 0 {
+			bounds = rtpDecodeBoundsForStream(groups[i].stream, builds)
+		}
+		previousRef, decodedStream, err := compileDecodeFilterPath(
+			ctx,
+			p.runtime,
+			graph,
+			sourceRefs,
+			decodeRequest{selector: groups[i].selector},
+			groups[i].stream,
+			realtime,
+			false,
+			bounds,
+			nil,
+		)
+		if err != nil {
+			return err
+		}
+		for _, branchIndex := range groups[i].branches {
+			branchInputs[branchIndex] = previousRef
+			branchStreams[branchIndex] = decodedStream
+		}
+	}
+	return compileBranchComposeRoutes(ctx, p.runtime, graph, p.branches, p.targets, branchInputs, branchStreams, realtime)
+}
+
+func (p mediaPlanBranchComposeGraph) compileSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, bool, error) {
+	service := &builder{runtime: p.runtime}
+	if p.input.rtp == nil {
+		input := p.input.formatInput()
+		demux, err := service.openDemuxSource(ctx, input)
+		if err != nil {
+			return nil, nil, nil, false, err
+		}
+		sourceRef, err := graph.AddSource(demux.source, p.runtime.buffer)
+		if err != nil {
+			demux.source.Close()
+			return nil, nil, nil, false, err
+		}
+		return []pipeline.NodeRef{sourceRef}, demux.streams, nil, p.runtime.realtime || input.Realtime, nil
+	}
+	receiver, err := service.openRTPSource(ctx, p.input.rtpBuildInput(), 0)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	sourceRef, err := graph.AddSource(receiver.source, p.runtime.buffer)
+	if err != nil {
+		receiver.source.Close()
+		return nil, nil, nil, false, err
+	}
+	return []pipeline.NodeRef{sourceRef}, receiver.streams, []rtpBuild{receiver}, true, nil
 }
 
 func (p mediaPlanSingleStreamGraph) newGraph(ctx context.Context) (pipeline.Graph, error) {

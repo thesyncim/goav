@@ -112,7 +112,7 @@ func (b *builder) planBranchComposePlan(spec pipeline.Spec, plan branchComposePl
 		return pipeline.Spec{}, err
 	}
 
-	return b.planBranchComposeRoutes(spec, nodes, []pipeline.NodeRef{sourceRef}, branches, outputs)
+	return planBranchComposeRoutes(spec, nodes, []pipeline.NodeRef{sourceRef}, branches, outputs)
 }
 
 func (b *builder) planRTPTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
@@ -139,10 +139,10 @@ func (b *builder) planRTPBranchComposePlan(spec pipeline.Spec, plan branchCompos
 		}
 		sourceRefs[i] = sourceRef
 	}
-	return b.planBranchComposeRoutes(spec, nodes, sourceRefs, branches, outputs)
+	return planBranchComposeRoutes(spec, nodes, sourceRefs, branches, outputs)
 }
 
-func (b *builder) planBranchComposeRoutes(
+func planBranchComposeRoutes(
 	spec pipeline.Spec,
 	nodes map[string]plannedNode,
 	sourceRefs []pipeline.NodeRef,
@@ -328,7 +328,7 @@ func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.G
 		}
 	}
 
-	return b.compileBranchComposeRoutes(ctx, graph, branches, outputs, branchInputs, branchStreams, realtime)
+	return compileBranchComposeRoutes(ctx, b.runtime, graph, branches, outputs, branchInputs, branchStreams, realtime)
 }
 
 func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
@@ -390,11 +390,12 @@ func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipelin
 		}
 	}
 
-	return b.compileBranchComposeRoutes(ctx, graph, branches, outputs, branchInputs, branchStreams, realtime)
+	return compileBranchComposeRoutes(ctx, b.runtime, graph, branches, outputs, branchInputs, branchStreams, realtime)
 }
 
-func (b *builder) compileBranchComposeRoutes(
+func compileBranchComposeRoutes(
 	ctx context.Context,
+	runtime *runtime,
 	graph pipeline.Graph,
 	branches []branchComposeRoute,
 	outputs []branchComposeTargetRoute,
@@ -402,17 +403,18 @@ func (b *builder) compileBranchComposeRoutes(
 	branchStreams []av.Stream,
 	realtime bool,
 ) error {
+	service := &builder{runtime: runtime}
 	branchOutputRefs := make([]pipeline.NodeRef, len(branches))
 	branchOutputStreams := make([]av.Stream, len(branches))
 	for i := range branches {
 		branchRef := branchInputs[i]
 		branchStream := branchStreams[i]
 		for j := range branches[i].steps {
-			stage, outputStream, err := b.newBranchComposeStepStage(ctx, branches[i].steps[j], branchStream, realtime)
+			stage, outputStream, err := service.newBranchComposeStepStage(ctx, branches[i].steps[j], branchStream, realtime)
 			if err != nil {
 				return err
 			}
-			stageRef, err := graph.AddStage(stage, b.runtime.buffer)
+			stageRef, err := graph.AddStage(stage, runtime.buffer)
 			if err != nil {
 				stage.Close()
 				return err
@@ -429,7 +431,7 @@ func (b *builder) compileBranchComposeRoutes(
 			if err != nil {
 				return err
 			}
-			encodeRef, err := b.compileEncodeStage(ctx, graph, branchRef, branches[i].request, config)
+			encodeRef, err := service.compileEncodeStage(ctx, graph, branchRef, branches[i].request, config)
 			if err != nil {
 				return err
 			}
@@ -442,7 +444,7 @@ func (b *builder) compileBranchComposeRoutes(
 
 	for i := range outputs {
 		if outputs[i].sink != nil {
-			sinkRef, err := graph.AddSink(outputs[i].sink, b.runtime.buffer)
+			sinkRef, err := graph.AddSink(outputs[i].sink, runtime.buffer)
 			if err != nil {
 				return err
 			}
@@ -458,11 +460,11 @@ func (b *builder) compileBranchComposeRoutes(
 		for _, branchIndex := range outputs[i].matches {
 			streams = append(streams, branchOutputStreams[branchIndex])
 		}
-		muxStage, err := b.openMuxStageWithFormat(ctx, outputs[i].target, i, streams, branchComposeTargetOpenFormat(outputs[i].output), outputs[i].output.Format)
+		muxStage, err := service.openMuxStageWithFormat(ctx, outputs[i].target, i, streams, branchComposeTargetOpenFormat(outputs[i].output), outputs[i].output.Format)
 		if err != nil {
 			return err
 		}
-		muxRef, err := graph.AddStage(muxStage, b.runtime.buffer)
+		muxRef, err := graph.AddStage(muxStage, runtime.buffer)
 		if err != nil {
 			muxStage.Close()
 			return err

@@ -29,8 +29,9 @@ make the implementation match the composable planner promise.
    onto direct media-plan graph construction. Branch composition now carries a
    recipe-owned branch-compose plan; the advanced `transcode.Plan` path adapts
    into that plan instead of being the recipe IR. Runtime branch-composer helpers
-   now use branch/media naming, and branch inputs stay on the resolved plan until
-   describe/build. Direct stream decode/encode recipes now keep resolved inputs,
+   now use branch/media naming, and branch inputs plus resolved targets stay on
+   the resolved plan until a media-plan branch graph emits specs or builds the
+   runtime graph. Direct stream decode/encode recipes now keep resolved inputs,
    endpoints, ordered stream attachments, codec-change policy, custom stages,
    transforms, and taps until the media-plan boundary instead of compiling from
    pre-lowered builder state; they now describe/build through a resolved

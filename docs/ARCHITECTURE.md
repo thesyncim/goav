@@ -58,14 +58,16 @@ now carries a private branch-compose plan owned by the recipe compiler; the
 advanced `transcode.Plan` path adapts into that internal shape at its boundary
 instead of being the recipe IR. Runtime branch-composer graph helpers now operate
 on branch-compose routes, target routes, selector/stream groups, and media
-transforms. Branch-composition inputs are carried by the resolved recipe and are
-turned into a minimal graph builder only at describe/build time. Direct
-selected-stream decode/encode recipes also keep their inputs, endpoints, ordered
-stream attachments, codec-change policy, custom stages, transforms, and taps on
-the resolved recipe until the media-plan boundary. Those direct stream recipes
-now build and describe through a resolved single-stream graph plan and shared
-parameterized source/decode/filter/encode/target helpers instead of a
-pre-populated runtime builder. The next architectural pressure is to move the
+transforms. Branch-composition inputs and resolved targets are carried by the
+resolved recipe into a media-plan branch graph; `Describe` and `Build` use that
+graph plan directly and only borrow runtime services for adapter-backed sources,
+filters, encoders, and muxers. Direct selected-stream decode/encode recipes also
+keep their inputs, endpoints, ordered stream attachments, codec-change policy,
+custom stages, transforms, and taps on the resolved recipe until the media-plan
+boundary. Those direct stream recipes now build and describe through a resolved
+single-stream graph plan and shared parameterized
+source/decode/filter/encode/target helpers instead of a pre-populated runtime
+builder. The next architectural pressure is to move the
 remaining media-plan helpers toward direct graph construction where it reduces
 duplication while keeping the flow `Intent -> MediaPlan -> pipeline.Spec ->
 pipeline.Graph`.

@@ -969,10 +969,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `Transcode(plan)` boundary remains isolated. Done.
 249. Keep branch-composition inputs on the resolved media plan:
     RTP/WebRTC branch compositions no longer lower their input into the recipe
-    compile builder. The resolved recipe carries the branch input, and
-    describe/build create a minimal branch-compose graph builder from the
-    runtime plus that input at the media-plan boundary. The old empty-builder
-    shape gate for branch composition is gone. Done.
+    compile builder. The resolved recipe carries the branch input through the
+    media-plan boundary instead of relying on an empty-builder shape gate for
+    branch composition. Done.
 250. Keep direct stream recipes on resolved media-plan attachments:
     selected stream decode-to-sink, encode-to-sink, and encode-to-output
     recipes no longer lower inputs, stream operations, or endpoints into the
@@ -991,6 +990,15 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     fields. Existing expert builder compilers reuse the same helpers so planned
     graph equivalence stays covered while the recipe path moves closer to
     `Intent -> MediaPlan -> pipeline.Spec -> pipeline.Graph`. Done.
+252. Move branch composition onto a resolved media-plan graph:
+    declared branch recipes now create a resolved branch-compose graph plan from
+    the concrete input, resolved targets, and private branch-compose plan.
+    `Describe` and `Build` use that plan directly; runtime adapter services are
+    still borrowed for opening demux/RTP sources, transform stages, encoders,
+    and muxers, but recipe branch composition no longer creates a temporary
+    graph builder to own the media-plan boundary. The advanced `Transcode(plan)`
+    compiler path remains as an explicit boundary adapter over the same
+    stateless branch route planning and compile helpers. Done.
 
 ## First Vertical Slice
 
@@ -1247,12 +1255,11 @@ input refs, stream selectors, ordered operations, target refs, taps, and planner
 decisions. `Describe`, `Build`, and
 `Explain(ctx)` now require a supported media-plan shape for normal recipes. The
 direct stream paths now use resolved single-stream graph plans, and branch
-composition keeps concrete attachments on the resolved recipe until the
-media-plan boundary instead of recognizing a pre-mutated recipe builder. The
-next implementation work is to broaden the same first-class requirement model
-to custom filter capability details, richer endpoint/container compatibility as
-WebM/Ogg arrive, and buffered runtime attachment without weakening the direct
-graph branch grammar.
+composition uses a resolved branch graph plan that carries concrete input and
+target attachments to spec/build time. The next implementation work is to
+broaden the same first-class requirement model to custom filter capability
+details, richer endpoint/container compatibility as WebM/Ogg arrive, and
+buffered runtime attachment without weakening the direct graph branch grammar.
 
 ## Validation Gates
 
