@@ -691,10 +691,16 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, codecID != ""
-	case "transform_adapter_missing":
+	case "transform_adapter_missing", "transform_adapter_incompatible":
 		name := details["transform"]
 		requirement := filterAdapterRequirement(nil, name, requiredBy)
 		requirement.Status = status
+		if details["actual_input"] != "" {
+			requirement.Input = av.MediaType(details["actual_input"])
+		}
+		if details["actual_output"] != "" {
+			requirement.Output = av.MediaType(details["actual_output"])
+		}
 		return requirement, name != ""
 	default:
 		if strings.HasSuffix(err.Code, "_format_unknown") {
@@ -722,6 +728,8 @@ func cloneMetadata(metadata av.Metadata) av.Metadata {
 
 func adapterRequirementStatus(code string) string {
 	switch {
+	case strings.HasSuffix(code, "_incompatible"):
+		return "incompatible"
 	case strings.HasSuffix(code, "_unavailable"):
 		return "unavailable"
 	case strings.HasSuffix(code, "_unknown"):

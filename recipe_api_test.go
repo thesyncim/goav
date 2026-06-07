@@ -713,6 +713,59 @@ func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 	}
 }
 
+func TestExplainReportsIncompatibleFilterDescriptor(t *testing.T) {
+	rt := goav.New(
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
+				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
+			}})
+			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
+		}),
+		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
+		}),
+		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+			registry.RegisterFactory(filter.Descriptor{
+				Name:   filter.FactoryResample,
+				Input:  av.MediaVideo,
+				Output: av.MediaVideo,
+			}, recipeAPIFilterFactory{})
+		}),
+	)
+
+	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Audio().
+		Decode().
+		Resample(16_000, goav.Mono).
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Explain(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_incompatible" {
+		t.Fatalf("err = %v, want transform_adapter_incompatible", err)
+	}
+	requirement, ok := adapterRequirementByKindAndOwner(report.RequiredAdapters, "filter", filter.FactoryResample, "audio")
+	if !ok {
+		t.Fatalf("requirements=%+v, want resample filter requirement", report.RequiredAdapters)
+	}
+	if requirement.Status != "incompatible" ||
+		requirement.Input != av.MediaVideo ||
+		requirement.Output != av.MediaVideo {
+		t.Fatalf("filter requirement = %+v", requirement)
+	}
+	if !hasPlanWarning(report.Warnings, "transform_adapter_incompatible") {
+		t.Fatalf("warnings=%+v, want incompatible transform warning", report.Warnings)
+	}
+	if len(report.Missing) != 1 ||
+		report.Missing[0].Kind != "filter" ||
+		report.Missing[0].Name != filter.FactoryResample ||
+		report.Missing[0].Status != "incompatible" {
+		t.Fatalf("missing=%+v, want incompatible filter requirement", report.Missing)
+	}
+}
+
 func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 	rt := goav.New(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
@@ -2916,6 +2969,54 @@ func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing
 		strings.Contains(err.Error(), "input_demuxer_missing") ||
 		strings.Contains(err.Error(), "cannot open input") {
 		t.Fatalf("err = %v, want transform adapter guidance before input diagnostics", err)
+	}
+}
+
+func TestStreamRecipeReportsIncompatibleTransformAdapterBeforeOpeningInput(t *testing.T) {
+	streams := []av.Stream{{
+		Index: 0,
+		ID:    "audio",
+		Type:  av.MediaAudio,
+		Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
+	}}
+	demuxerOpened := false
+	rt := goav.New(
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterProber(recipeAPIStreamProber{streams: streams})
+			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
+		}),
+		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
+		}),
+		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+			registry.RegisterFactory(filter.Descriptor{
+				Name:   filter.FactoryResample,
+				Input:  av.MediaVideo,
+				Output: av.MediaVideo,
+			}, recipeAPIFilterFactory{})
+		}),
+	)
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(rt).
+		Audio().
+		Decode().
+		Resample(16_000, goav.Mono).
+		To(goav.SinkEndpoint(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_incompatible" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want transform_adapter_incompatible wrapping ErrUnsupportedBuild", err)
+	}
+	if demuxerOpened {
+		t.Fatal("demuxer opened before transform adapter preflight failed")
+	}
+	if !strings.Contains(err.Error(), "transform=resample") ||
+		!strings.Contains(err.Error(), "expected_input=audio") ||
+		!strings.Contains(err.Error(), "actual_input=video") ||
+		strings.Contains(err.Error(), "cannot open input") {
+		t.Fatalf("err = %v, want transform adapter compatibility guidance before input diagnostics", err)
 	}
 }
 

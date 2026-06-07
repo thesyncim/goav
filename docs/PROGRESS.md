@@ -1159,6 +1159,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     media kind, realtime/stateless flags, and adapter metadata when available.
     Tests prove descriptor cloning, ordered branch requirements with filter
     media details, and custom resample metadata in `Explain(ctx)`. Done.
+276. Validate transform adapter descriptor compatibility:
+    recipe preflight now rejects `resize` adapters that advertise non-video
+    input/output and `resample` adapters that advertise non-audio input/output
+    before opening inputs or mutating graphs. `Explain(ctx)` reports the
+    incompatible filter requirement with status `incompatible` and the declared
+    media kinds. Compile-pass, build-path, and explanation tests pin the
+    behavior. Done.
 
 ## First Vertical Slice
 
@@ -1423,9 +1430,9 @@ direct stream paths use resolved single-stream graph plans, and branch
 composition uses a resolved branch graph plan that carries concrete input and
 target attachments to spec/build time. The next implementation work is to
 broaden the same first-class requirement model to richer endpoint/container
-compatibility as WebM/Ogg arrive, expand transform compatibility beyond
-descriptor-level details, and keep broadening buffered runtime attachment stress
-proof without weakening the direct graph branch grammar.
+compatibility as WebM/Ogg arrive, expand transform compatibility into
+config-specific media constraints, and keep broadening buffered runtime
+attachment stress proof without weakening the direct graph branch grammar.
 
 ## Validation Gates
 

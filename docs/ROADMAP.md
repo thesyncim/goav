@@ -42,7 +42,8 @@ make the implementation match the composable planner promise.
 4. Add a capability model for streams, codecs, filters, and containers so the
    planner can explain copy/decode/encode choices, missing adapters, transform
    incompatibilities, and mux-output conflicts before runtime execution. First
-   filter descriptor metadata now feeds `Explain(ctx)`.
+   filter descriptor metadata now feeds `Explain(ctx)` and descriptor media
+   mismatches fail during preflight.
 5. Keep custom composition orthogonal: application-local codecs use
    `goav.Codec`, `WithDecoder`, and `WithEncoder`; custom stages, filters,
    sinks, and targets use the same stream and runtime-attachment concepts as

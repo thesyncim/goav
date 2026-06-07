@@ -1147,6 +1147,68 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 	}
 }
 
+func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
+	tests := []struct {
+		name  string
+		pass  recipeCompilePass
+		state recipeCompileState
+		want  []string
+	}{
+		{
+			name: "job resample filter advertises video",
+			pass: validateJobTransformAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightTransformAdapters: true},
+				runtime: New(withTestFilters(testFilterFactory(filter.Descriptor{
+					Name:   filter.FactoryResample,
+					Input:  av.MediaVideo,
+					Output: av.MediaVideo,
+				}, &transcodeTestFilterFactory{}))),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:       "audio",
+					Select:     StreamSelect{Type: av.MediaAudio},
+					Transforms: []TransformSpec{Resample(16_000, Mono)},
+				}}},
+			},
+			want: []string{"resample filter adapter declares incompatible media", "expected_input=audio", "actual_input=video", "Audio().Resample"},
+		},
+		{
+			name: "branch resize filter advertises audio",
+			pass: validateBranchTransformAdaptersPass(),
+			state: recipeCompileState{
+				operation: branchCompositionOperation,
+				options:   recipeCompileOptions{preflightTransformAdapters: true},
+				runtime: New(withTestFilters(testFilterFactory(filter.Descriptor{
+					Name:   filter.FactoryResize,
+					Input:  av.MediaAudio,
+					Output: av.MediaAudio,
+				}, &transcodeTestFilterFactory{}))),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:       "720p",
+					Select:     StreamSelect{Type: av.MediaVideo},
+					Transforms: []TransformSpec{Resize(1280, 720)},
+				}}},
+			},
+			want: []string{"resize filter adapter declares incompatible media", "expected_input=video", "actual_input=audio", "Video().Resize"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.pass.Apply(&tt.state)
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_incompatible" || !errors.Is(err, ErrUnsupportedBuild) {
+				t.Fatalf("err = %v, want transform_adapter_incompatible wrapping ErrUnsupportedBuild", err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 	frameSink := SinkEndpoint(SinkFunc("frames", func(context.Context, Message) error { return nil }))
 	fileOutput := FileOutput("archive.ogg", io.Discard)

@@ -1910,6 +1910,12 @@ func validateRecipeTransformAdapters(operation string, rt Runtime, streams []Str
 			if _, err := standard.filters.Factory(name); err != nil {
 				return recipeTransformAdapterError(operation, stream, name, err)
 			}
+			desc, err := standard.filters.Descriptor(name)
+			if err == nil {
+				if err := validateTransformAdapterDescriptor(operation, stream, name, desc); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
@@ -1923,6 +1929,50 @@ func transformFactoryName(spec TransformSpec) string {
 		return filter.FactoryResample
 	default:
 		return ""
+	}
+}
+
+func validateTransformAdapterDescriptor(operation string, stream StreamIntent, name string, desc filter.Descriptor) error {
+	expectedInput, expectedOutput := transformAdapterExpectedMedia(name)
+	if expectedInput != "" && desc.Input != "" && desc.Input != expectedInput {
+		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
+	}
+	if expectedOutput != "" && desc.Output != "" && desc.Output != expectedOutput {
+		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
+	}
+	return nil
+}
+
+func transformAdapterExpectedMedia(name string) (av.MediaType, av.MediaType) {
+	switch name {
+	case filter.FactoryResize:
+		return av.MediaVideo, av.MediaVideo
+	case filter.FactoryResample:
+		return av.MediaAudio, av.MediaAudio
+	default:
+		return "", ""
+	}
+}
+
+func transformAdapterIncompatibleError(operation string, stream StreamIntent, name string, desc filter.Descriptor, expectedInput av.MediaType, expectedOutput av.MediaType) error {
+	return &BuildError{
+		Code:      "transform_adapter_incompatible",
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    name + " filter adapter declares incompatible media",
+		Details: []string{
+			"transform=" + name,
+			"expected_input=" + string(expectedInput),
+			"expected_output=" + string(expectedOutput),
+			"actual_input=" + string(desc.Input),
+			"actual_output=" + string(desc.Output),
+		},
+		Suggestions: []string{
+			"register a " + name + " filter adapter whose descriptor declares " + string(expectedInput) + " input and " + string(expectedOutput) + " output",
+			"use .Video().Resize(...) with video resize adapters and .Audio().Resample(...) with audio resample adapters",
+			"fix the adapter descriptor if the implementation already supports this transform",
+		},
+		Cause: ErrUnsupportedBuild,
 	}
 }
 
