@@ -80,7 +80,7 @@ type GraphBuilder interface {
 type Task interface {
 	Describe() pipeline.Spec
 	Explain(context.Context) (PlanReport, error)
-	Attach(context.Context, BranchSpec) (Attachment, error)
+	Attach(context.Context, ...BranchSpec) (Attachment, error)
 	Detach(context.Context, Attachment) error
 	Taps() []TapInfo
 	Run(context.Context) error

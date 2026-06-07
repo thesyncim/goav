@@ -274,6 +274,209 @@ func TestTaskDetachClosesRuntimeBranches(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRuntimeBranchGroup(t *testing.T) {
+	ctx := context.Background()
+	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{9}}}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	base := &runtimeTestSink{name: "base"}
+	leftStage := &runtimeTestStage{name: "left-stage"}
+	leftSink := &runtimeTestSink{name: "left-sink"}
+	rightStage := &runtimeTestStage{name: "right-stage"}
+	rightSink := &runtimeTestSink{name: "right-sink"}
+
+	graph := New().Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	attachment, err := task.Attach(ctx,
+		Branch("left").From("source").Do(leftStage).To(SinkEndpoint(leftSink)),
+		Branch("right").From("source").Do(rightStage).To(SinkEndpoint(rightSink)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attachment.Name() != "left+right" {
+		t.Fatalf("attachment name = %q, want left+right", attachment.Name())
+	}
+	attached := specText(attachment.Spec())
+	for _, want := range []string{
+		"source -> left/left-stage",
+		"source -> right/right-stage",
+		"left/left-stage -> left/left-sink",
+		"right/right-stage -> right/right-sink",
+	} {
+		if !strings.Contains(attached, want) {
+			t.Fatalf("attachment spec missing %q:\n%s", want, attached)
+		}
+	}
+
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 1 || leftStage.count != 1 || rightStage.count != 1 || leftSink.count != 1 || rightSink.count != 1 {
+		t.Fatalf("base=%d leftStage=%d rightStage=%d leftSink=%d rightSink=%d", base.count, leftStage.count, rightStage.count, leftSink.count, rightSink.count)
+	}
+	stats := attachment.Stats()
+	if len(stats.Nodes) != 4 || stats.Nodes["left/left-stage"].InPackets != 1 || stats.Nodes["right/right-stage"].InPackets != 1 {
+		t.Fatalf("branch stats = %+v", stats)
+	}
+	if err := task.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
+		t.Fatalf("spec:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
+	ctx := context.Background()
+	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{7}}}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	base := &runtimeTestSink{name: "base"}
+	parentStage := &runtimeTestStage{name: "sample"}
+	parentSink := &runtimeTestSink{name: "sampled"}
+	childSink := &runtimeTestSink{name: "shots"}
+
+	graph := New().Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	attachment, err := task.Attach(ctx,
+		Branch("sampler").
+			From("source").
+			Do(parentStage).
+			Tap("video.sampled").
+			To(SinkEndpoint(parentSink)),
+		Branch("screenshots").
+			FromTap("video.sampled").
+			To(SinkEndpoint(childSink)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tap, ok := findTap(task.Taps(), "video.sampled")
+	if !ok || tap.Node != "sampler/sample" {
+		t.Fatalf("tap = %+v, ok=%v, want sampler/sample", tap, ok)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 1 || parentStage.count != 1 || parentSink.count != 1 || childSink.count != 1 {
+		t.Fatalf("base=%d stage=%d parent=%d child=%d", base.count, parentStage.count, parentSink.count, childSink.count)
+	}
+	if err := task.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := findTap(task.Taps(), "video.sampled"); ok {
+		t.Fatalf("runtime tap still present after grouped detach: %+v", task.Taps())
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "sampler/") || strings.Contains(text, "screenshots/") {
+		t.Fatalf("spec:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
+	ctx := context.Background()
+	graph := newRuntimeRollbackGraph()
+	graph.failConnectAt = 2
+	task := newTask(graph, nil)
+	left := &runtimeTestSink{name: "left-sink"}
+	right := &runtimeTestSink{name: "right-sink"}
+
+	_, err := task.Attach(ctx,
+		Branch("left").From("source").To(SinkEndpoint(left)),
+		Branch("right").From("source").To(SinkEndpoint(right)),
+	)
+	if !errors.Is(err, errRuntimeRollbackConnect) {
+		t.Fatalf("err = %v, want rollback connect failure", err)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
+		t.Fatalf("spec retained failed attachment nodes:\n%s", text)
+	}
+	if !left.closed || !right.closed {
+		t.Fatalf("left closed=%v right closed=%v, want both closed", left.closed, right.closed)
+	}
+	if len(graph.removed) != 2 ||
+		graph.removed[0] != "right/right-sink" ||
+		graph.removed[1] != "left/left-sink" {
+		t.Fatalf("removed = %+v, want rollback of right then left", graph.removed)
+	}
+	if _, ok := findTap(task.Taps(), "video.sampled"); ok {
+		t.Fatalf("unexpected tap after rollback: %+v", task.Taps())
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupRejectsDuplicateTargets(t *testing.T) {
+	ctx := context.Background()
+	graph := New().Graph()
+	src := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	target := Target("shared", SinkEndpoint(&runtimeTestSink{name: "shared"}))
+
+	_, err = task.Attach(ctx,
+		Branch("left").From("source").To(target),
+		Branch("right").From("source").To(target),
+	)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "runtime branch group reuses one target name") ||
+		!strings.Contains(err.Error(), "planned Branches") {
+		t.Fatalf("err = %v, want grouped target guidance", err)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
+		t.Fatalf("spec mutated after duplicate target rejection:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupRequiresBranch(t *testing.T) {
+	ctx := context.Background()
+	graph := New().Graph()
+	src := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	_, err = task.Attach(ctx)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_invalid" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime_branch_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "no runtime branches to attach") ||
+		!strings.Contains(err.Error(), "goav.Branch") {
+		t.Fatalf("err = %v, want branch guidance", err)
+	}
+}
+
 func TestTaskCloseStopsRuntimeAttachments(t *testing.T) {
 	graph := New().Graph()
 	source := graph.Source("source", &runtimeTestSource{name: "source"})

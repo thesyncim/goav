@@ -261,6 +261,27 @@ if err != nil {
 defer recordingHandle.Close(ctx)
 ```
 
+Attach several late branches in one call when they should appear or disappear
+together. A later branch in the same call can anchor from a tap published by an
+earlier branch:
+
+```go
+group, err := task.Attach(ctx,
+    goav.Branch("analysis").
+        FromTap("audio.decoded").
+        Do(goav.FrameFunc("meter", meter)).
+        Tap("audio.metered").
+        To(goav.SinkEndpoint(goav.SinkFunc("levels", collectLevel))),
+    goav.Branch("dependent").
+        FromTap("audio.metered").
+        To(goav.SinkEndpoint(goav.SinkFunc("dependent", collectDependent))),
+)
+if err != nil {
+    return err
+}
+defer group.Close(ctx)
+```
+
 Use `.Copy()` from a packet tap when the branch should stay encoded:
 
 ```go
@@ -293,12 +314,13 @@ defer preview.Close(ctx)
 ```
 
 Use `Task.Taps()` to discover stable outlets. Use `Task.Detach(ctx, h)` when
-the caller wants the task to own detach semantics. Runtime branches can run
-custom stages, resize/resample from frame taps, publish additional taps, encode
-Opus/VP8/VP9 from frame taps, copy packet taps into endpoints, decode packet
-taps into frame branches, and feed later runtime branches from those taps. Taps
-declared after encode or copy are packet taps. Observer branches can end in a
-sink while publishing a nested tap with
+the caller wants the task to own detach semantics. Runtime branches can be
+attached one at a time or as one atomic group. They can run custom stages,
+resize/resample from frame taps, publish additional taps, encode Opus/VP8/VP9
+from frame taps, copy packet taps into endpoints, decode packet taps into frame
+branches, and feed later runtime branches from those taps. Taps declared after
+encode or copy are packet taps. Observer branches can end in a sink while
+publishing a nested tap with
 `.Do(goav.FrameFunc(...)).Tap(name).To(goav.SinkEndpoint(...))`. H264 and AV1
 recipe encoding remain work in progress. Detaching a parent runtime branch
 removes dependent late branches anchored from its taps. Direct and bounded

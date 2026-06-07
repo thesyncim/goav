@@ -1409,6 +1409,20 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `TestBranchCompositionRejectsGraphNodeSource`,
     `TestBranchCompositionRejectsStreamEncodeBeforeBranches`, and the
     packet-copy branch intent assertion pin the behavior. Done.
+305. Attach runtime branch groups without adding a second concept:
+    `Task.Attach(ctx, Branch(...), Branch(...))` now treats several runtime
+    branches as one atomic attachment. Later branches in the same call can
+    anchor from taps published by earlier branches, grouped duplicate target
+    names fail before graph mutation, and any later prepare/connect failure
+    rolls the whole group back. `Attachment.Spec()`, `Attachment.Stats()`,
+    `Attachment.Close(ctx)`, and `Task.Detach(ctx, h)` operate over the grouped
+    branch-owned nodes and taps, while parent-detach cleanup tracks every anchor
+    used by a grouped attachment.
+    `TestTaskAttachRuntimeBranchGroup`,
+    `TestTaskAttachRuntimeBranchGroupCanUsePendingTap`,
+    `TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`, and
+    `TestTaskAttachRuntimeBranchGroupRejectsDuplicateTargets` pin the behavior.
+    Done.
 
 ## First Vertical Slice
 

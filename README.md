@@ -297,6 +297,26 @@ if err != nil {
 defer record.Close(ctx)
 ```
 
+One `Attach` call can add several runtime branches atomically. Later branches
+in the same call can use taps published by earlier branches:
+
+```go
+group, err := task.Attach(ctx,
+    goav.Branch("sampler").
+        FromTap("video.720p.frames").
+        Resize(320, 180).
+        Tap("video.sampled.frames").
+        To(goav.SinkEndpoint(goav.SinkFunc("sampler", collectSample))),
+    goav.Branch("screenshots").
+        FromTap("video.sampled.frames").
+        To(goav.SinkEndpoint(goav.SinkFunc("screenshots", collectScreenshot))),
+)
+if err != nil {
+    return err
+}
+defer group.Close(ctx)
+```
+
 Packet taps can be copied into a late endpoint:
 
 ```go
@@ -328,17 +348,19 @@ if err != nil {
 defer preview.Close(ctx)
 ```
 
-`Task.Taps()` lists available attach points. `Attach` adds a downstream sink
-or endpoint branch to a running direct task graph without rebuilding upstream.
+`Task.Taps()` lists available attach points. `Attach` adds downstream sink
+or endpoint branches to a running direct task graph without rebuilding upstream.
 Late branches can apply flows, run custom `.Do(...)` stages, resize/resample
 from frame taps, encode Opus/VP8/VP9 from frame taps, copy or decode from
 packet taps, and write to one or more typed targets before exposing their own
 `.Tap(name)` outlets for later attachments. Observer branches can use
 `.Do(goav.FrameFunc(...)).Tap(name).To(goav.SinkEndpoint(...))` to both inspect
 frames and publish a downstream attach point. H264 and AV1 recipe encoding
-remain work in progress. Detaching a parent attachment also removes dependent
-late branches anchored from its taps. `Attachment.Stats()` reports only the
-branch-owned node counters; `Task.Stats()` reports the whole graph.
+remain work in progress. A grouped attach rolls back the whole group if any
+branch cannot be prepared or connected. Detaching a parent attachment also
+removes dependent late branches anchored from its taps. `Attachment.Stats()`
+reports only the branch-owned node counters; `Task.Stats()` reports the whole
+graph.
 Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
 packet-domain taps.
 
