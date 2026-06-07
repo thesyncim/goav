@@ -632,6 +632,7 @@ func cloneTrack(track Track) Track {
 	}
 	track.TrackTranslates = cloneTrackTranslates(track.TrackTranslates)
 	track.ContentEncodings = cloneContentEncodings(track.ContentEncodings)
+	track.UnknownElements = cloneUnknownElements(track.UnknownElements)
 	return track
 }
 
@@ -699,6 +700,7 @@ func cloneSegmentInfo(info SegmentInfo) SegmentInfo {
 	if len(info.NextUUID) != 0 {
 		info.NextUUID = append([]byte(nil), info.NextUUID...)
 	}
+	info.UnknownElements = cloneUnknownElements(info.UnknownElements)
 	return info
 }
 
@@ -712,6 +714,7 @@ func cloneAttachments(attachments []Attachment) []Attachment {
 		if attachments[i].Data != nil {
 			out[i].Data = append([]byte(nil), attachments[i].Data...)
 		}
+		out[i].UnknownElements = cloneUnknownElements(attachments[i].UnknownElements)
 	}
 	return out
 }
@@ -724,6 +727,7 @@ func cloneChapters(editions []ChapterEdition) []ChapterEdition {
 	for i := range editions {
 		out[i] = editions[i]
 		out[i].Chapters = cloneChapterList(editions[i].Chapters)
+		out[i].UnknownElements = cloneUnknownElements(editions[i].UnknownElements)
 	}
 	return out
 }
@@ -738,10 +742,21 @@ func cloneChapterList(chapters []Chapter) []Chapter {
 		if len(chapters[i].TrackUIDs) != 0 {
 			out[i].TrackUIDs = append([]uint64(nil), chapters[i].TrackUIDs...)
 		}
-		if len(chapters[i].Displays) != 0 {
-			out[i].Displays = append([]ChapterDisplay(nil), chapters[i].Displays...)
-		}
+		out[i].Displays = cloneChapterDisplays(chapters[i].Displays)
 		out[i].Children = cloneChapterList(chapters[i].Children)
+		out[i].UnknownElements = cloneUnknownElements(chapters[i].UnknownElements)
+	}
+	return out
+}
+
+func cloneChapterDisplays(displays []ChapterDisplay) []ChapterDisplay {
+	if len(displays) == 0 {
+		return nil
+	}
+	out := make([]ChapterDisplay, len(displays))
+	for i := range displays {
+		out[i] = displays[i]
+		out[i].UnknownElements = cloneUnknownElements(displays[i].UnknownElements)
 	}
 	return out
 }
@@ -755,6 +770,7 @@ func cloneTags(tags []Tag) []Tag {
 		out[i] = tags[i]
 		out[i].Target = cloneTagTarget(tags[i].Target)
 		out[i].Simple = cloneSimpleTags(tags[i].Simple)
+		out[i].UnknownElements = cloneUnknownElements(tags[i].UnknownElements)
 	}
 	return out
 }
@@ -820,6 +836,7 @@ func cloneTagTarget(target TagTarget) TagTarget {
 	if len(target.AttachmentUIDs) != 0 {
 		target.AttachmentUIDs = append([]uint64(nil), target.AttachmentUIDs...)
 	}
+	target.UnknownElements = cloneUnknownElements(target.UnknownElements)
 	return target
 }
 
@@ -834,6 +851,7 @@ func cloneSimpleTags(tags []SimpleTag) []SimpleTag {
 			out[i].Binary = append([]byte(nil), tags[i].Binary...)
 		}
 		out[i].Children = cloneSimpleTags(tags[i].Children)
+		out[i].UnknownElements = cloneUnknownElements(tags[i].UnknownElements)
 	}
 	return out
 }
@@ -1004,6 +1022,25 @@ func (d *Demuxer) readUnknownSegmentElement(header ebml.Header) error {
 	return nil
 }
 
+func appendUnknownChildElement(reader *ebml.Reader, header ebml.Header, isKnown func(ebml.ID) bool, elements *[]UnknownElement) error {
+	if isStructuralElement(header.ID) {
+		return skipElement(reader, header)
+	}
+	if isKnown != nil && isKnown(header.ID) {
+		return ErrInvalidData
+	}
+	element, err := readUnknownElementPayload(reader, header)
+	if err != nil {
+		return err
+	}
+	*elements = append(*elements, element)
+	return nil
+}
+
+func isStructuralElement(id ebml.ID) bool {
+	return id == idVoid || id == idCRC32
+}
+
 func (d *Demuxer) nextPacketHeader() (ebml.Header, error) {
 	if d.pendingHeaderSet {
 		header := d.pendingHeader
@@ -1040,7 +1077,7 @@ func (d *Demuxer) readPreamble() error {
 				return err
 			}
 		default:
-			if err := d.readUnknownSegmentElement(header); err != nil {
+			if err := skipElement(d.reader, header); err != nil {
 				return err
 			}
 		}
@@ -1419,7 +1456,7 @@ func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header, duratio
 		}
 		d.info.WritingApp = value
 	default:
-		if err := skipElement(reader, child); err != nil {
+		if err := appendUnknownChildElement(reader, child, isKnownInfoElement, &d.info.UnknownElements); err != nil {
 			return err
 		}
 	}
@@ -1603,7 +1640,7 @@ func (d *Demuxer) parseAttachedFile(parent io.Reader, header ebml.Header) (Attac
 				return Attachment{}, err
 			}
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownAttachedFileElement, &attachment.UnknownElements); err != nil {
 				return Attachment{}, err
 			}
 		}
@@ -1729,7 +1766,7 @@ func (d *Demuxer) parseEditionEntry(parent io.Reader, header ebml.Header) (Chapt
 			}
 			edition.Chapters = append(edition.Chapters, chapter)
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownEditionEntryElement, &edition.UnknownElements); err != nil {
 				return ChapterEdition{}, err
 			}
 		}
@@ -1738,6 +1775,9 @@ func (d *Demuxer) parseEditionEntry(parent io.Reader, header ebml.Header) (Chapt
 		return ChapterEdition{}, err
 	}
 	if len(edition.Chapters) == 0 {
+		return ChapterEdition{}, ErrInvalidData
+	}
+	if err := validateUnknownElementsFor(edition.UnknownElements, isKnownEditionEntryElement); err != nil {
 		return ChapterEdition{}, ErrInvalidData
 	}
 	return edition, nil
@@ -1818,7 +1858,7 @@ func (d *Demuxer) parseChapterAtom(parent io.Reader, header ebml.Header) (Chapte
 			}
 			chapter.Children = append(chapter.Children, childChapter)
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownChapterAtomElement, &chapter.UnknownElements); err != nil {
 				return Chapter{}, err
 			}
 		}
@@ -1907,7 +1947,7 @@ func (d *Demuxer) parseChapterDisplay(parent io.Reader, header ebml.Header) (Cha
 				return ChapterDisplay{}, err
 			}
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownChapterDisplayElement, &display.UnknownElements); err != nil {
 				return ChapterDisplay{}, err
 			}
 		}
@@ -1916,6 +1956,9 @@ func (d *Demuxer) parseChapterDisplay(parent io.Reader, header ebml.Header) (Cha
 		return ChapterDisplay{}, err
 	}
 	if display.String == "" {
+		return ChapterDisplay{}, ErrInvalidData
+	}
+	if err := validateUnknownElementsFor(display.UnknownElements, isKnownChapterDisplayElement); err != nil {
 		return ChapterDisplay{}, ErrInvalidData
 	}
 	return display, nil
@@ -1979,7 +2022,7 @@ func (d *Demuxer) parseTag(parent io.Reader, header ebml.Header) (Tag, error) {
 			}
 			tag.Simple = append(tag.Simple, simple)
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownTagElement, &tag.UnknownElements); err != nil {
 				return Tag{}, err
 			}
 		}
@@ -1990,7 +2033,8 @@ func (d *Demuxer) parseTag(parent io.Reader, header ebml.Header) (Tag, error) {
 	if !targetSeen {
 		tag.Target.TypeValue = 50
 	}
-	if len(tag.Simple) == 0 || validateTagTarget(tag.Target) != nil {
+	if len(tag.Simple) == 0 || validateTagTarget(tag.Target) != nil ||
+		validateUnknownElementsFor(tag.UnknownElements, isKnownTagElement) != nil {
 		return Tag{}, ErrInvalidData
 	}
 	return tag, nil
@@ -2042,7 +2086,7 @@ func (d *Demuxer) parseTagTargets(parent io.Reader, header ebml.Header) (TagTarg
 				return TagTarget{}, err
 			}
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownTagTargetsElement, &target.UnknownElements); err != nil {
 				return TagTarget{}, err
 			}
 		}
@@ -2118,7 +2162,7 @@ func (d *Demuxer) parseSimpleTag(parent io.Reader, header ebml.Header) (SimpleTa
 			}
 			tag.Children = append(tag.Children, childTag)
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownSimpleTagElement, &tag.UnknownElements); err != nil {
 				return SimpleTag{}, err
 			}
 		}
@@ -2601,7 +2645,7 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			}
 			track.Audio = audio
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
+			if err := appendUnknownChildElement(master.Reader(), child, isKnownTrackEntryElement, &track.UnknownElements); err != nil {
 				return Track{}, err
 			}
 		}
@@ -2655,6 +2699,9 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 		return Track{}, err
 	}
 	if err := validateContentEncodings(track.ContentEncodings); err != nil {
+		return Track{}, ErrInvalidData
+	}
+	if err := validateUnknownElementsFor(track.UnknownElements, isKnownTrackEntryElement); err != nil {
 		return Track{}, ErrInvalidData
 	}
 	return track, nil

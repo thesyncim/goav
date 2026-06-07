@@ -118,6 +118,11 @@ Current milestone:
 - Finite unknown Segment-level elements are preserved as raw EBML bytes through
   `UnknownSegmentElements` on muxer options and demuxers, allowing remuxers to
   keep vendor/application Segment metadata the package does not understand.
+- Finite unknown child elements inside known metadata records are preserved as
+  raw EBML bytes on `SegmentInfo`, `Track`, `Attachment`, `ChapterEdition`,
+  `Chapter`, `ChapterDisplay`, `Tag`, `TagTarget`, and recursive `SimpleTag`
+  values. The muxer validates these blobs against the parent schema so known
+  fields cannot be smuggled through the raw-extension path.
 - Format registry adapters for `av.Stream` and `av.Packet`.
 - Caller-owned packet data for demuxing.
 - Demux validation rejects on-disk track, cue, and block track numbers that
@@ -136,7 +141,8 @@ These are intentionally not in the first milestone:
 
 - Frame-exact random access for uncued packets or cue points that do not have
   exact `CueRelativePosition` or `CueBlockNumber` entries.
-- Nested unknown-element preservation inside known Matroska masters and unknown
+- Unknown child preservation for direct children of container-only metadata
+  masters such as `Tracks`, `Attachments`, `Chapters`, and `Tags`, plus unknown
   Cluster child preservation.
 - Full codec-private generation and parsers for every codec family.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.

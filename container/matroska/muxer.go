@@ -61,9 +61,11 @@ func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
 	if err := validateContentEncryptionOptions(opts.ContentEncryptionKeys, opts.ContentEncryptionInitialIV); err != nil {
 		return nil, err
 	}
-	if err := validateSegmentInfo(opts.Info); err != nil {
+	info, err := normalizeSegmentInfo(opts.Info)
+	if err != nil {
 		return nil, err
 	}
+	opts.Info = info
 	if err := validateCuePolicy(opts.CuePolicy); err != nil {
 		return nil, err
 	}
@@ -160,6 +162,11 @@ func (m *Muxer) AddTrack(track Track) (uint32, error) {
 	if err := normalizeTrackBlockAdditionMetadata(&track); err != nil {
 		return 0, err
 	}
+	unknownElements, err := normalizeUnknownElementsFor(track.UnknownElements, isKnownTrackEntryElement)
+	if err != nil {
+		return 0, ErrInvalidTrack
+	}
+	track.UnknownElements = unknownElements
 	if err := validateTrack(track); err != nil {
 		return 0, err
 	}
@@ -733,7 +740,10 @@ func (m *Muxer) writeInfoFields(w *ebml.Writer, includeDuration bool) error {
 	if err := w.WriteString(idMuxingApp, m.options.MuxingApp); err != nil {
 		return err
 	}
-	return w.WriteString(idWritingApp, m.options.WritingApp)
+	if err := w.WriteString(idWritingApp, m.options.WritingApp); err != nil {
+		return err
+	}
+	return writeUnknownElements(w, info.UnknownElements)
 }
 
 func writeOptionalBinary(w *ebml.Writer, id ebml.ID, value []byte) error {
@@ -766,7 +776,20 @@ func validateSegmentInfo(info SegmentInfo) error {
 	if info.DurationSet && info.DurationNS < 0 {
 		return ErrInvalidData
 	}
-	return nil
+	return validateUnknownElementsFor(info.UnknownElements, isKnownInfoElement)
+}
+
+func normalizeSegmentInfo(info SegmentInfo) (SegmentInfo, error) {
+	out := cloneSegmentInfo(info)
+	unknownElements, err := normalizeUnknownElementsFor(out.UnknownElements, isKnownInfoElement)
+	if err != nil {
+		return SegmentInfo{}, err
+	}
+	out.UnknownElements = unknownElements
+	if err := validateSegmentInfo(out); err != nil {
+		return SegmentInfo{}, err
+	}
+	return out, nil
 }
 
 func validateSegmentUUID(value []byte) error {
@@ -811,6 +834,11 @@ func normalizeAttachments(attachments []Attachment) ([]Attachment, error) {
 			out[i].UID = next
 			used[next] = struct{}{}
 		}
+		unknownElements, err := normalizeUnknownElementsFor(out[i].UnknownElements, isKnownAttachedFileElement)
+		if err != nil {
+			return nil, err
+		}
+		out[i].UnknownElements = unknownElements
 		if err := validateAttachment(out[i]); err != nil {
 			return nil, err
 		}
@@ -822,7 +850,7 @@ func validateAttachment(attachment Attachment) error {
 	if attachment.UID == 0 || attachment.Filename == "" || attachment.MIMEType == "" || attachment.Data == nil {
 		return ErrInvalidData
 	}
-	return nil
+	return validateUnknownElementsFor(attachment.UnknownElements, isKnownAttachedFileElement)
 }
 
 func normalizeChapters(editions []ChapterEdition) ([]ChapterEdition, error) {
@@ -843,6 +871,11 @@ func normalizeChapters(editions []ChapterEdition) ([]ChapterEdition, error) {
 		if len(out[i].Chapters) == 0 {
 			return nil, ErrInvalidData
 		}
+		unknownElements, err := normalizeUnknownElementsFor(out[i].UnknownElements, isKnownEditionEntryElement)
+		if err != nil {
+			return nil, err
+		}
+		out[i].UnknownElements = unknownElements
 	}
 	for i := range out {
 		if out[i].UID == 0 {
@@ -883,6 +916,18 @@ func normalizeChapterList(chapters []Chapter, nextUID *uint64, used map[uint64]s
 			chapters[i].Enabled = true
 			chapters[i].EnabledSet = true
 		}
+		unknownElements, err := normalizeUnknownElementsFor(chapters[i].UnknownElements, isKnownChapterAtomElement)
+		if err != nil {
+			return err
+		}
+		chapters[i].UnknownElements = unknownElements
+		for j := range chapters[i].Displays {
+			unknownElements, err := normalizeUnknownElementsFor(chapters[i].Displays[j].UnknownElements, isKnownChapterDisplayElement)
+			if err != nil {
+				return err
+			}
+			chapters[i].Displays[j].UnknownElements = unknownElements
+		}
 		if err := validateChapter(chapters[i]); err != nil {
 			return err
 		}
@@ -911,8 +956,11 @@ func validateChapter(chapter Chapter) error {
 		if chapter.Displays[i].String == "" {
 			return ErrInvalidData
 		}
+		if err := validateUnknownElementsFor(chapter.Displays[i].UnknownElements, isKnownChapterDisplayElement); err != nil {
+			return err
+		}
 	}
-	return nil
+	return validateUnknownElementsFor(chapter.UnknownElements, isKnownChapterAtomElement)
 }
 
 func normalizeTags(tags []Tag) ([]Tag, error) {
@@ -927,6 +975,16 @@ func normalizeTags(tags []Tag) ([]Tag, error) {
 		if out[i].Target.TypeValue == 0 {
 			out[i].Target.TypeValue = 50
 		}
+		unknownElements, err := normalizeUnknownElementsFor(out[i].UnknownElements, isKnownTagElement)
+		if err != nil {
+			return nil, err
+		}
+		out[i].UnknownElements = unknownElements
+		unknownElements, err = normalizeUnknownElementsFor(out[i].Target.UnknownElements, isKnownTagTargetsElement)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Target.UnknownElements = unknownElements
 		if err := validateTagTarget(out[i].Target); err != nil {
 			return nil, err
 		}
@@ -938,12 +996,16 @@ func normalizeTags(tags []Tag) ([]Tag, error) {
 }
 
 func normalizeUnknownElements(elements []UnknownElement) ([]UnknownElement, error) {
+	return normalizeUnknownElementsFor(elements, isKnownSegmentElement)
+}
+
+func normalizeUnknownElementsFor(elements []UnknownElement, isKnown func(ebml.ID) bool) ([]UnknownElement, error) {
 	if len(elements) == 0 {
 		return nil, nil
 	}
 	out := cloneUnknownElements(elements)
 	for i := range out {
-		id, err := validateUnknownElement(out[i])
+		id, err := validateUnknownElement(out[i], isKnown)
 		if err != nil {
 			return nil, err
 		}
@@ -952,7 +1014,16 @@ func normalizeUnknownElements(elements []UnknownElement) ([]UnknownElement, erro
 	return out, nil
 }
 
-func validateUnknownElement(element UnknownElement) (ebml.ID, error) {
+func validateUnknownElementsFor(elements []UnknownElement, isKnown func(ebml.ID) bool) error {
+	for i := range elements {
+		if _, err := validateUnknownElement(elements[i], isKnown); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateUnknownElement(element UnknownElement, isKnown func(ebml.ID) bool) (ebml.ID, error) {
 	if len(element.Raw) == 0 {
 		return 0, ErrInvalidData
 	}
@@ -967,7 +1038,7 @@ func validateUnknownElement(element UnknownElement) (ebml.ID, error) {
 	if element.ID != 0 && element.ID != uint64(header.ID) {
 		return 0, ErrInvalidData
 	}
-	if isKnownSegmentElement(header.ID) {
+	if isKnown != nil && isKnown(header.ID) {
 		return 0, ErrInvalidData
 	}
 	if header.DataOffset+int64(header.Size.Value) != int64(len(element.Raw)) {
@@ -985,11 +1056,102 @@ func isKnownSegmentElement(id ebml.ID) bool {
 	}
 }
 
+func isKnownInfoElement(id ebml.ID) bool {
+	switch id {
+	case idSegmentUUID, idSegmentFilename, idPrevUUID, idPrevFilename, idNextUUID, idNextFilename,
+		idTimestampScale, idDuration, idDateUTC, idTitle, idMuxingApp, idWritingApp, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownTrackEntryElement(id ebml.ID) bool {
+	switch id {
+	case idTrackNumber, idTrackUID, idTrackType, idFlagEnabled, idFlagDefault, idFlagForced,
+		idFlagHearingImpaired, idFlagVisualImpaired, idFlagTextDescriptions, idFlagOriginal,
+		idFlagCommentary, idFlagLacing, idName, idLanguage, idLanguageBCP, idCodecID,
+		idCodecName, idCodecPrivate, idCodecDecodeAll, idCodecDelay, idSeekPreRoll,
+		idMinCache, idMaxCache, idTrackOverlay, idTrackTranslate, idContentEncodings,
+		idVideo, idAudio, idDefaultDur, idDefaultDecodedDur, idMaxBlockAdditionID,
+		idBlockAdditionMapping, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownAttachedFileElement(id ebml.ID) bool {
+	switch id {
+	case idFileDescription, idFileName, idFileMediaType, idFileData, idFileUID, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownEditionEntryElement(id ebml.ID) bool {
+	switch id {
+	case idEditionUID, idEditionFlagHidden, idEditionFlagDefault, idEditionFlagOrdered, idChapterAtom, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownChapterAtomElement(id ebml.ID) bool {
+	switch id {
+	case idChapterUID, idChapterStringUID, idChapterTimeStart, idChapterTimeEnd, idChapterFlagHidden,
+		idChapterFlagEnabled, idChapterTrack, idChapterDisplay, idChapterAtom, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownChapterDisplayElement(id ebml.ID) bool {
+	switch id {
+	case idChapString, idChapLanguage, idChapLanguageBCP47, idChapCountry, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownTagElement(id ebml.ID) bool {
+	switch id {
+	case idTargets, idSimpleTag, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownTagTargetsElement(id ebml.ID) bool {
+	switch id {
+	case idTargetTypeValue, idTargetType, idTagTrackUID, idTagEditionUID, idTagChapterUID,
+		idTagAttachmentUID, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownSimpleTagElement(id ebml.ID) bool {
+	switch id {
+	case idTagName, idTagLanguage, idTagLanguageBCP47, idTagDefault, idTagString, idTagBinary,
+		idSimpleTag, idVoid, idCRC32:
+		return true
+	default:
+		return false
+	}
+}
+
 func validateTagTarget(target TagTarget) error {
 	if target.TypeValue > uint64(^uint32(0)) {
 		return ErrInvalidData
 	}
-	return nil
+	return validateUnknownElementsFor(target.UnknownElements, isKnownTagTargetsElement)
 }
 
 func normalizeSimpleTags(tags []SimpleTag) error {
@@ -997,6 +1159,11 @@ func normalizeSimpleTags(tags []SimpleTag) error {
 		if tags[i].Name == "" || (tags[i].StringSet && tags[i].Binary != nil) {
 			return ErrInvalidData
 		}
+		unknownElements, err := normalizeUnknownElementsFor(tags[i].UnknownElements, isKnownSimpleTagElement)
+		if err != nil {
+			return err
+		}
+		tags[i].UnknownElements = unknownElements
 		if tags[i].Language == "" {
 			tags[i].Language = "und"
 		}
@@ -1066,6 +1233,9 @@ func writeEditionEntry(w *ebml.Writer, edition ChapterEdition) error {
 			return err
 		}
 	}
+	if err := writeUnknownElements(ew, edition.UnknownElements); err != nil {
+		return err
+	}
 	return w.WriteElement(idEditionEntry, payload.Bytes())
 }
 
@@ -1109,6 +1279,9 @@ func writeChapterAtom(w *ebml.Writer, chapter Chapter) error {
 			return err
 		}
 	}
+	if err := writeUnknownElements(cw, chapter.UnknownElements); err != nil {
+		return err
+	}
 	return w.WriteElement(idChapterAtom, payload.Bytes())
 }
 
@@ -1148,6 +1321,9 @@ func writeChapterDisplay(w *ebml.Writer, display ChapterDisplay) error {
 			return err
 		}
 	}
+	if err := writeUnknownElements(dw, display.UnknownElements); err != nil {
+		return err
+	}
 	return w.WriteElement(idChapterDisplay, payload.Bytes())
 }
 
@@ -1163,8 +1339,12 @@ func (m *Muxer) writeTags() error {
 }
 
 func (m *Muxer) writeUnknownSegmentElements() error {
-	for i := range m.options.UnknownSegmentElements {
-		if _, err := m.ebml.Write(m.options.UnknownSegmentElements[i].Raw); err != nil {
+	return writeUnknownElements(m.ebml, m.options.UnknownSegmentElements)
+}
+
+func writeUnknownElements(w *ebml.Writer, elements []UnknownElement) error {
+	for i := range elements {
+		if _, err := w.Write(elements[i].Raw); err != nil {
 			return err
 		}
 	}
@@ -1181,6 +1361,9 @@ func writeTag(w *ebml.Writer, tag Tag) error {
 		if err := writeSimpleTag(tw, tag.Simple[i]); err != nil {
 			return err
 		}
+	}
+	if err := writeUnknownElements(tw, tag.UnknownElements); err != nil {
+		return err
 	}
 	return w.WriteElement(idTag, payload.Bytes())
 }
@@ -1217,6 +1400,9 @@ func writeTagTargets(w *ebml.Writer, target TagTarget) error {
 		if err := tw.WriteUInt(idTagAttachmentUID, uid); err != nil {
 			return err
 		}
+	}
+	if err := writeUnknownElements(tw, target.UnknownElements); err != nil {
+		return err
 	}
 	return w.WriteElement(idTargets, payload.Bytes())
 }
@@ -1255,6 +1441,9 @@ func writeSimpleTag(w *ebml.Writer, tag SimpleTag) error {
 			return err
 		}
 	}
+	if err := writeUnknownElements(tw, tag.UnknownElements); err != nil {
+		return err
+	}
 	return w.WriteElement(idSimpleTag, payload.Bytes())
 }
 
@@ -1283,6 +1472,9 @@ func writeAttachedFile(w *ebml.Writer, attachment Attachment) error {
 		return err
 	}
 	if err := aw.WriteUInt(idFileUID, attachment.UID); err != nil {
+		return err
+	}
+	if err := writeUnknownElements(aw, attachment.UnknownElements); err != nil {
 		return err
 	}
 	return w.WriteElement(idAttachedFile, payload.Bytes())
@@ -3060,6 +3252,9 @@ func writeTrackEntry(w *ebml.Writer, track Track, scratch *[codecPrivateScratchS
 		if err := writeAudio(tw, track.Audio); err != nil {
 			return err
 		}
+	}
+	if err := writeUnknownElements(tw, track.UnknownElements); err != nil {
+		return err
 	}
 	return w.WriteElement(idTrackEntry, payload.Bytes())
 }

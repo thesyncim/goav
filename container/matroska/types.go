@@ -163,6 +163,7 @@ type Track struct {
 	ContentEncodings              []ContentEncoding
 	Audio                         AudioConfig
 	Video                         VideoConfig
+	UnknownElements               []UnknownElement
 
 	CodecPrivate []byte
 }
@@ -373,6 +374,7 @@ type SegmentInfo struct {
 	DateUTCSet      bool
 	MuxingApp       string
 	WritingApp      string
+	UnknownElements []UnknownElement
 }
 
 type UnknownElement struct {
@@ -381,66 +383,73 @@ type UnknownElement struct {
 }
 
 type Attachment struct {
-	UID         uint64
-	Filename    string
-	MIMEType    string
-	Description string
-	Data        []byte
+	UID             uint64
+	Filename        string
+	MIMEType        string
+	Description     string
+	Data            []byte
+	UnknownElements []UnknownElement
 }
 
 type ChapterEdition struct {
-	UID      uint64
-	Hidden   bool
-	Default  bool
-	Ordered  bool
-	Chapters []Chapter
+	UID             uint64
+	Hidden          bool
+	Default         bool
+	Ordered         bool
+	Chapters        []Chapter
+	UnknownElements []UnknownElement
 }
 
 type Chapter struct {
-	UID        uint64
-	StringUID  string
-	StartNS    int64
-	EndNS      int64
-	EndSet     bool
-	Hidden     bool
-	Enabled    bool
-	EnabledSet bool
-	TrackUIDs  []uint64
-	Displays   []ChapterDisplay
-	Children   []Chapter
+	UID             uint64
+	StringUID       string
+	StartNS         int64
+	EndNS           int64
+	EndSet          bool
+	Hidden          bool
+	Enabled         bool
+	EnabledSet      bool
+	TrackUIDs       []uint64
+	Displays        []ChapterDisplay
+	Children        []Chapter
+	UnknownElements []UnknownElement
 }
 
 type ChapterDisplay struct {
-	String        string
-	Language      string
-	LanguageBCP47 string
-	Country       string
+	String          string
+	Language        string
+	LanguageBCP47   string
+	Country         string
+	UnknownElements []UnknownElement
 }
 
 type Tag struct {
-	Target TagTarget
-	Simple []SimpleTag
+	Target          TagTarget
+	Simple          []SimpleTag
+	UnknownElements []UnknownElement
 }
 
 type TagTarget struct {
-	TypeValue      uint64
-	Type           string
-	TrackUIDs      []uint64
-	EditionUIDs    []uint64
-	ChapterUIDs    []uint64
-	AttachmentUIDs []uint64
+	TypeValue       uint64
+	Type            string
+	TrackUIDs       []uint64
+	EditionUIDs     []uint64
+	ChapterUIDs     []uint64
+	AttachmentUIDs  []uint64
+	UnknownElements []UnknownElement
 }
 
 type SimpleTag struct {
-	Name          string
-	Language      string
-	LanguageBCP47 string
-	Default       bool
-	DefaultSet    bool
-	String        string
-	StringSet     bool
-	Binary        []byte
-	Children      []SimpleTag
+	Name            string
+	Language        string
+	LanguageBCP47   string
+	Default         bool
+	DefaultSet      bool
+	String          string
+	StringSet       bool
+	Binary          []byte
+	Children        []SimpleTag
+	UnknownElements []UnknownElement
 }
 
 func (p *Packet) Reset() {

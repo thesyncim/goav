@@ -233,6 +233,55 @@ func TestMuxerDemuxerPreservesUnknownSegmentElements(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesNestedUnknownElements(t *testing.T) {
+	infoUnknown := unknownWebMElementBytes(t, 0x4ffb, []byte{0x31, 0x32})
+	trackUnknown := unknownWebMElementBytes(t, 0x4ffa, []byte{0x41, 0x42, 0x43})
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{
+		Info: SegmentInfo{
+			UnknownElements: []UnknownElement{{Raw: append([]byte(nil), infoUnknown...)}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	track := Track{
+		Type:            TrackVideo,
+		Codec:           CodecVP8,
+		Video:           VideoConfig{Width: 16, Height: 16},
+		UnknownElements: []UnknownElement{{Raw: append([]byte(nil), trackUnknown...)}},
+	}
+	trackID, err := muxer.AddTrack(track)
+	if err != nil {
+		t.Fatal(err)
+	}
+	track.UnknownElements[0].Raw[0] = 0
+	if err := muxer.WritePacket(Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(buffer.Bytes(), infoUnknown) {
+		t.Fatalf("muxed data does not contain raw Info unknown element %x", infoUnknown)
+	}
+	if !bytes.Contains(buffer.Bytes(), trackUnknown) {
+		t.Fatalf("muxed data does not contain raw TrackEntry unknown element %x", trackUnknown)
+	}
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertWebMUnknownElement(t, "info", demuxer.Info().UnknownElements, 0x4ffb, infoUnknown)
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	assertWebMUnknownElement(t, "track", tracks[0].UnknownElements, 0x4ffa, trackUnknown)
+	tracks[0].UnknownElements[0].Raw[0] = 0
+	assertWebMUnknownElement(t, "fresh track", demuxer.Tracks()[0].UnknownElements, 0x4ffa, trackUnknown)
+}
+
 func TestMuxerDemuxerAppliesAESCTRContentEncryption(t *testing.T) {
 	keyID := []byte("webm-aes-key")
 	key := []byte{
@@ -1668,4 +1717,14 @@ func unknownWebMElementBytes(tb testing.TB, id ebml.ID, payload []byte) []byte {
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func assertWebMUnknownElement(tb testing.TB, name string, elements []UnknownElement, id ebml.ID, raw []byte) {
+	tb.Helper()
+	if len(elements) != 1 {
+		tb.Fatalf("%s unknown elements = %d, want 1", name, len(elements))
+	}
+	if elements[0].ID != uint64(id) || !bytes.Equal(elements[0].Raw, raw) {
+		tb.Fatalf("%s unknown element = %+v raw=%x, want id=0x%x raw=%x", name, elements[0], elements[0].Raw, uint64(id), raw)
+	}
 }
