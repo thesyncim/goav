@@ -14,7 +14,7 @@ make the implementation match the composable planner promise.
    nodes, edges, ordered operations, taps, branches, targets, decisions, and
    diagnostics as cold-path metadata; the remaining work is to make runtime
    build lower from that ordered sequence instead of workflow-specific
-   transition executables. The expert graph builder remains an escape hatch and
+   graph-plan lowerers. The expert graph builder remains an escape hatch and
    runtime substrate, not the normal user-facing way to express workflows.
 2. Treat direct chains as implicit branches. These should be equivalent plan
    shapes except for branch names:

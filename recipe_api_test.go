@@ -1819,7 +1819,7 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 	for _, required := range []string{
 		"Recipes: From, chains, taps, branches, targets",
 		"Intent graph: inputs, selected media, chain operations, targets, policies",
-		"media-plan executables",
+		"graph-plan lowerers",
 		"Chain transforms such as",
 		"Simple high-level API | recipes, chains",
 		"surface is small: `From`, chains",

@@ -48,8 +48,8 @@ packet-preserving copy/remux all become ordinary branch operations over the same
 model. `graphPlan` is now the executable cold-path boundary: recipe compilation
 must emit a graph plan before it can describe or build a normal workflow, and
 that graph plan owns planned nodes, edges, ordered operations, report inputs,
-streams, taps, branches, targets, decisions, diagnostics, plus the transition
-executable still used to build the runtime graph.
+streams, taps, branches, targets, decisions, diagnostics, plus the graph-plan
+lowerer still used to build the runtime graph.
 
 The active recipe compiler state carries public `Intent` plus concrete readers,
 writers, sinks, and stages through validation, media-plan creation, graph-plan
@@ -86,14 +86,14 @@ builder. `recipeResolved` no longer carries a parallel media-plan report copy:
 graph plan. The graph plan also carries an ordered operation sequence derived
 from branch operations and target groups, so the next architectural pressure is
 to make runtime build lower from that sequence instead of the remaining
-workflow-specific media-plan executables.
+workflow-specific graph-plan lowerers.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and
 sinks once, then connects typed handles such as `source.Stream("audio")` and
 `decode.Out()` to node inputs. The graph builder is no longer on the public
 `Runtime` interface or an exported top-level constructor. Described graphs and
-execution graphs must stay equivalent for every graph-plan executable. The graph
+execution graphs must stay equivalent for every graph-plan lowerer. The graph
 layer stays available for inspection and custom stages. Recipe `Explain(ctx)`
 returns structured workflow-report data, branch operations, planner decisions,
 and the same
