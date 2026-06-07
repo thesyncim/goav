@@ -17,11 +17,12 @@ func NewFactory() Factory {
 
 func Descriptor() filter.Descriptor {
 	return filter.Descriptor{
-		Name:      filter.FactoryResample,
-		Input:     av.MediaAudio,
-		Output:    av.MediaAudio,
-		Realtime:  true,
-		Stateless: true,
+		Name:          filter.FactoryResample,
+		Input:         av.MediaAudio,
+		Output:        av.MediaAudio,
+		SampleFormats: []string{av.SampleFormatS16},
+		Realtime:      true,
+		Stateless:     true,
 		Metadata: av.Metadata{
 			"backend":       backendName,
 			"sample_format": av.SampleFormatS16,

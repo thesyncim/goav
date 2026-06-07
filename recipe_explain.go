@@ -95,22 +95,25 @@ type Requirement struct {
 }
 
 type AdapterRequirement struct {
-	Kind       string
-	Name       string
-	Format     av.FormatID
-	Codec      av.CodecID
-	Media      []av.MediaType
-	Codecs     []av.CodecID
-	MinStreams int
-	MaxStreams int
-	Transform  string
-	Input      av.MediaType
-	Output     av.MediaType
-	Realtime   bool
-	Stateless  bool
-	Metadata   av.Metadata
-	RequiredBy string
-	Status     string
+	Kind          string
+	Name          string
+	Format        av.FormatID
+	Codec         av.CodecID
+	Media         []av.MediaType
+	Codecs        []av.CodecID
+	MinStreams    int
+	MaxStreams    int
+	Transform     string
+	Input         av.MediaType
+	Output        av.MediaType
+	PixelFormats  []string
+	SampleFormats []string
+	ResizeModes   []filter.ResizeMode
+	Realtime      bool
+	Stateless     bool
+	Metadata      av.Metadata
+	RequiredBy    string
+	Status        string
 }
 
 type PlanDiagnostic struct {
@@ -563,6 +566,9 @@ func filterAdapterRequirement(rt Runtime, name string, requiredBy string) Adapte
 	}
 	requirement.Input = desc.Input
 	requirement.Output = desc.Output
+	requirement.PixelFormats = append([]string(nil), desc.PixelFormats...)
+	requirement.SampleFormats = append([]string(nil), desc.SampleFormats...)
+	requirement.ResizeModes = append([]filter.ResizeMode(nil), desc.ResizeModes...)
 	requirement.Realtime = desc.Realtime
 	requirement.Stateless = desc.Stateless
 	requirement.Metadata = cloneMetadata(desc.Metadata)
@@ -737,6 +743,15 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 		if details["actual_output"] != "" {
 			requirement.Output = av.MediaType(details["actual_output"])
 		}
+		if details["field"] == "pixel_format" {
+			requirement.PixelFormats = splitDetailCSV(details["supported"])
+		}
+		if details["field"] == "sample_format" {
+			requirement.SampleFormats = splitDetailCSV(details["supported"])
+		}
+		if details["field"] == "resize_mode" {
+			requirement.ResizeModes = resizeModesFromStrings(splitDetailCSV(details["supported"]))
+		}
 		return requirement, name != ""
 	default:
 		if strings.HasSuffix(err.Code, "_format_unknown") {
@@ -783,6 +798,34 @@ func buildErrorDetailMap(details []string) map[string]string {
 			continue
 		}
 		out[key] = value
+	}
+	return out
+}
+
+func splitDetailCSV(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for i := range parts {
+		part := strings.TrimSpace(parts[i])
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func resizeModesFromStrings(values []string) []filter.ResizeMode {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]filter.ResizeMode, 0, len(values))
+	for i := range values {
+		if values[i] != "" {
+			out = append(out, filter.ResizeMode(values[i]))
+		}
 	}
 	return out
 }

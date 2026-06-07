@@ -1871,6 +1871,67 @@ func TestRuntimeObservationBranchPublishesTapAndDetachesSubtree(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRejectsRuntimeTransformDescriptorConfigBeforeMutation(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+	)
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+	)
+	resampleFactory := &transcodeTestFilterFactory{}
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:          filter.FactoryResample,
+		Input:         av.MediaAudio,
+		Output:        av.MediaAudio,
+		SampleFormats: []string{av.SampleFormatS16},
+	}, resampleFactory))
+	task, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(New(formats, codecs, filters)).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		To(SinkEndpoint(&runtimeTestSink{name: "frames"})).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	before := task.Describe()
+
+	branch := Branch("voice").
+		FromTap("audio.decoded").
+		Resample(16_000, Mono).
+		To(SinkEndpoint(SinkFunc("voice", func(context.Context, Message) error {
+			return nil
+		})))
+	branch.steps[0].transform.Resample.SampleFormat = av.SampleFormatF32
+	branch.transforms[0].Resample.SampleFormat = av.SampleFormatF32
+
+	_, err = task.Attach(ctx, branch)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) ||
+		buildErr.Code != "transform_adapter_incompatible" ||
+		!strings.Contains(err.Error(), "field=sample_format") ||
+		!strings.Contains(err.Error(), "requested=f32") ||
+		!strings.Contains(err.Error(), "supported=s16") {
+		t.Fatalf("err = %v, want runtime transform descriptor config error", err)
+	}
+	if resampleFactory.config.Audio != nil {
+		t.Fatalf("runtime transform opened before descriptor preflight: %+v", resampleFactory.config.Audio)
+	}
+	if after := task.Describe(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
+	}
+	for _, tap := range task.Taps() {
+		if tap.Name == "audio.16k" || strings.Contains(tap.Name, "voice") {
+			t.Fatalf("tap registered after rejected attach: %+v", tap)
+		}
+	}
+}
+
 func TestStreamRecipeTaskAttachesRuntimeEncodeMuxBranch(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}

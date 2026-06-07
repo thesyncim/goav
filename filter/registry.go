@@ -36,10 +36,19 @@ func (r *SimpleRegistry) Descriptor(name string) (Descriptor, error) {
 }
 
 func cloneDescriptor(desc Descriptor) Descriptor {
-	if desc.Metadata == nil {
-		return desc
-	}
 	cloned := desc
+	if desc.PixelFormats != nil {
+		cloned.PixelFormats = append([]string(nil), desc.PixelFormats...)
+	}
+	if desc.SampleFormats != nil {
+		cloned.SampleFormats = append([]string(nil), desc.SampleFormats...)
+	}
+	if desc.ResizeModes != nil {
+		cloned.ResizeModes = append([]ResizeMode(nil), desc.ResizeModes...)
+	}
+	if desc.Metadata == nil {
+		return cloned
+	}
 	cloned.Metadata = make(map[string]string, len(desc.Metadata))
 	for key, value := range desc.Metadata {
 		cloned.Metadata[key] = value

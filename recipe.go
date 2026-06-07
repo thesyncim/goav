@@ -1912,7 +1912,7 @@ func validateRecipeTransformAdapters(operation string, rt Runtime, streams []Str
 			}
 			desc, err := standard.filters.Descriptor(name)
 			if err == nil {
-				if err := validateTransformAdapterDescriptor(operation, stream, name, desc); err != nil {
+				if err := validateTransformAdapterDescriptor(operation, stream, stream.Transforms[j], name, desc); err != nil {
 					return err
 				}
 			}
@@ -1932,7 +1932,7 @@ func transformFactoryName(spec TransformSpec) string {
 	}
 }
 
-func validateTransformAdapterDescriptor(operation string, stream StreamIntent, name string, desc filter.Descriptor) error {
+func validateTransformAdapterDescriptor(operation string, stream StreamIntent, spec TransformSpec, name string, desc filter.Descriptor) error {
 	expectedInput, expectedOutput := transformAdapterExpectedMedia(name)
 	if expectedInput != "" && desc.Input != "" && desc.Input != expectedInput {
 		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
@@ -1940,7 +1940,55 @@ func validateTransformAdapterDescriptor(operation string, stream StreamIntent, n
 	if expectedOutput != "" && desc.Output != "" && desc.Output != expectedOutput {
 		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
 	}
+	if spec.Resize != nil {
+		if mode := resizeModeWithDefault(spec.Resize.Mode); mode != "" && len(desc.ResizeModes) != 0 && !resizeModeAllowed(desc.ResizeModes, mode) {
+			return transformAdapterCapabilityError(operation, stream, name, "resize_mode", string(mode), resizeModesToStrings(desc.ResizeModes))
+		}
+		if format := spec.Resize.PixelFormat; format != "" && len(desc.PixelFormats) != 0 && !stringAllowed(desc.PixelFormats, format) {
+			return transformAdapterCapabilityError(operation, stream, name, "pixel_format", format, desc.PixelFormats)
+		}
+	}
+	if spec.Resample != nil {
+		if format := spec.Resample.SampleFormat; format != "" && len(desc.SampleFormats) != 0 && !stringAllowed(desc.SampleFormats, format) {
+			return transformAdapterCapabilityError(operation, stream, name, "sample_format", format, desc.SampleFormats)
+		}
+	}
 	return nil
+}
+
+func resizeModeWithDefault(mode filter.ResizeMode) filter.ResizeMode {
+	if mode == "" {
+		return filter.ResizeExact
+	}
+	return mode
+}
+
+func resizeModeAllowed(allowed []filter.ResizeMode, mode filter.ResizeMode) bool {
+	for i := range allowed {
+		if allowed[i] == mode {
+			return true
+		}
+	}
+	return false
+}
+
+func stringAllowed(allowed []string, value string) bool {
+	for i := range allowed {
+		if allowed[i] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func resizeModesToStrings(modes []filter.ResizeMode) []string {
+	out := make([]string, 0, len(modes))
+	for i := range modes {
+		if modes[i] != "" {
+			out = append(out, string(modes[i]))
+		}
+	}
+	return out
 }
 
 func transformAdapterExpectedMedia(name string) (av.MediaType, av.MediaType) {
@@ -1971,6 +2019,27 @@ func transformAdapterIncompatibleError(operation string, stream StreamIntent, na
 			"register a " + name + " filter adapter whose descriptor declares " + string(expectedInput) + " input and " + string(expectedOutput) + " output",
 			"use .Video().Resize(...) with video resize adapters and .Audio().Resample(...) with audio resample adapters",
 			"fix the adapter descriptor if the implementation already supports this transform",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func transformAdapterCapabilityError(operation string, stream StreamIntent, name string, field string, requested string, supported []string) error {
+	return &BuildError{
+		Code:      "transform_adapter_incompatible",
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    name + " filter adapter does not support the requested " + strings.ReplaceAll(field, "_", " "),
+		Details: []string{
+			"transform=" + name,
+			"field=" + field,
+			"requested=" + requested,
+			"supported=" + strings.Join(supported, ","),
+		},
+		Suggestions: []string{
+			"choose one of the supported " + strings.ReplaceAll(field, "_", " ") + " values",
+			"register a " + name + " filter adapter whose descriptor supports this transform config",
+			"fix the adapter descriptor if the implementation already supports this config",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

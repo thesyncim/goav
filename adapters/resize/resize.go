@@ -18,9 +18,16 @@ func NewFactory() Factory {
 
 func Descriptor() filter.Descriptor {
 	return filter.Descriptor{
-		Name:      filter.FactoryResize,
-		Input:     av.MediaVideo,
-		Output:    av.MediaVideo,
+		Name:         filter.FactoryResize,
+		Input:        av.MediaVideo,
+		Output:       av.MediaVideo,
+		PixelFormats: []string{av.PixelFormatI420, av.PixelFormatYUV420P},
+		ResizeModes: []filter.ResizeMode{
+			filter.ResizeExact,
+			filter.ResizeFit,
+			filter.ResizeFill,
+			filter.ResizePassthrough,
+		},
 		Realtime:  true,
 		Stateless: true,
 		Metadata: av.Metadata{

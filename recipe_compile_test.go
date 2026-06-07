@@ -1192,6 +1192,80 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			},
 			want: []string{"resize filter adapter declares incompatible media", "expected_input=video", "actual_input=audio", "Video().Resize"},
 		},
+		{
+			name: "job resize mode unsupported by descriptor",
+			pass: validateJobTransformAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightTransformAdapters: true},
+				runtime: New(withTestFilters(testFilterFactory(filter.Descriptor{
+					Name:        filter.FactoryResize,
+					Input:       av.MediaVideo,
+					Output:      av.MediaVideo,
+					ResizeModes: []filter.ResizeMode{filter.ResizeFill},
+				}, &transcodeTestFilterFactory{}))),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:       "video",
+					Select:     StreamSelect{Type: av.MediaVideo},
+					Transforms: []TransformSpec{Resize(1280, 720)},
+				}}},
+			},
+			want: []string{"does not support the requested resize mode", "field=resize_mode", "requested=exact", "supported=fill"},
+		},
+		{
+			name: "branch resize pixel format unsupported by descriptor",
+			pass: validateBranchTransformAdaptersPass(),
+			state: recipeCompileState{
+				operation: branchCompositionOperation,
+				options:   recipeCompileOptions{preflightTransformAdapters: true},
+				runtime: New(withTestFilters(testFilterFactory(filter.Descriptor{
+					Name:         filter.FactoryResize,
+					Input:        av.MediaVideo,
+					Output:       av.MediaVideo,
+					PixelFormats: []string{av.PixelFormatI420},
+					ResizeModes:  []filter.ResizeMode{filter.ResizeFit},
+				}, &transcodeTestFilterFactory{}))),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:   "preview",
+					Select: StreamSelect{Type: av.MediaVideo},
+					Transforms: []TransformSpec{{
+						Resize: &filter.ResizeConfig{
+							Width:       640,
+							Height:      360,
+							Mode:        filter.ResizeFit,
+							PixelFormat: av.PixelFormatYUV420P,
+						},
+					}},
+				}}},
+			},
+			want: []string{"does not support the requested pixel format", "field=pixel_format", "requested=yuv420p", "supported=i420"},
+		},
+		{
+			name: "job resample sample format unsupported by descriptor",
+			pass: validateJobTransformAdaptersPass(),
+			state: recipeCompileState{
+				operation: "build job",
+				options:   recipeCompileOptions{preflightTransformAdapters: true},
+				runtime: New(withTestFilters(testFilterFactory(filter.Descriptor{
+					Name:          filter.FactoryResample,
+					Input:         av.MediaAudio,
+					Output:        av.MediaAudio,
+					SampleFormats: []string{av.SampleFormatS16},
+				}, &transcodeTestFilterFactory{}))),
+				intent: Intent{Streams: []StreamIntent{{
+					Name:   "audio",
+					Select: StreamSelect{Type: av.MediaAudio},
+					Transforms: []TransformSpec{{
+						Resample: &filter.ResampleConfig{
+							SampleRate:   16_000,
+							Channels:     Mono,
+							SampleFormat: av.SampleFormatF32,
+						},
+					}},
+				}}},
+			},
+			want: []string{"does not support the requested sample format", "field=sample_format", "requested=f32", "supported=s16"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

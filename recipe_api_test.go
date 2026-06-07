@@ -698,12 +698,13 @@ func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 		}),
 		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 			registry.RegisterFactory(filter.Descriptor{
-				Name:      filter.FactoryResample,
-				Input:     av.MediaAudio,
-				Output:    av.MediaAudio,
-				Realtime:  true,
-				Stateless: true,
-				Metadata:  av.Metadata{"sample_format": av.SampleFormatS16},
+				Name:          filter.FactoryResample,
+				Input:         av.MediaAudio,
+				Output:        av.MediaAudio,
+				SampleFormats: []string{av.SampleFormatS16},
+				Realtime:      true,
+				Stateless:     true,
+				Metadata:      av.Metadata{"sample_format": av.SampleFormatS16},
 			}, recipeAPIFilterFactory{})
 		}),
 	)
@@ -727,11 +728,14 @@ func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 	if requirement.Status != "available" ||
 		requirement.Input != av.MediaAudio ||
 		requirement.Output != av.MediaAudio ||
+		len(requirement.SampleFormats) != 1 ||
+		requirement.SampleFormats[0] != av.SampleFormatS16 ||
 		!requirement.Realtime ||
 		!requirement.Stateless ||
 		requirement.Metadata["sample_format"] != av.SampleFormatS16 {
 		t.Fatalf("filter requirement = %+v", requirement)
 	}
+	requirement.SampleFormats[0] = "mutated"
 	requirement.Metadata["sample_format"] = "mutated"
 	report, err = goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
@@ -746,8 +750,11 @@ func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	requirement, ok = adapterRequirementByKindAndOwner(report.RequiredAdapters, "filter", filter.FactoryResample, "audio")
-	if !ok || requirement.Metadata["sample_format"] != av.SampleFormatS16 {
-		t.Fatalf("filter requirement metadata was not cloned: %+v", requirement)
+	if !ok ||
+		len(requirement.SampleFormats) != 1 ||
+		requirement.SampleFormats[0] != av.SampleFormatS16 ||
+		requirement.Metadata["sample_format"] != av.SampleFormatS16 {
+		t.Fatalf("filter requirement capabilities were not cloned: %+v", requirement)
 	}
 }
 

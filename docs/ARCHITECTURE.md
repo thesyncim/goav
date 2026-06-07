@@ -154,9 +154,12 @@ Current graph execution covers:
 
 Resize and resample branch configs fail explicitly at build time when no matching
 filter factory is registered or when the registered descriptor advertises an
-incompatible media kind. Filter registrations retain their descriptors, so
-`Explain(ctx)` can report transform input/output media kind, realtime/stateless
-flags, and adapter metadata alongside missing/available/incompatible status.
+incompatible media kind, pixel/sample format, or resize mode. Runtime branch
+attachment applies the same descriptor preflight before mutating a running
+graph. Filter registrations retain their descriptors, so `Explain(ctx)` can
+report transform input/output media kind, supported config values,
+realtime/stateless flags, and adapter metadata alongside
+missing/available/incompatible status.
 When output geometry is known, branch filter stages receive preallocated frame
 scratch so concrete resize filters can keep plane ownership with the caller.
 
@@ -287,7 +290,7 @@ The filter package follows the codec stage model for frame transforms.
 `filter.Stage` adapts a `filter.FrameFilter` to frame and event messages,
 flushes before EOS, and uses caller-owned result scratch. Runtime transcode
 branches resolve resize and resample configs through the filter registry before
-attaching the stage ahead of each encoder.
+attaching the stage ahead of each encoder or runtime branch sink.
 The first concrete filters are `adapters/resample` for interleaved S16 audio and
 `adapters/resize` for planar 8-bit 4:2:0 video.
 

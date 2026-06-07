@@ -133,7 +133,7 @@ contract:
 | --- | --- | --- | --- |
 | `filter.Registry` | stable | filter factories | Discovers reusable frame-transform factories. |
 | `filter.FrameFilter` | stable | frames to frames/events | Concrete transform contract for resize, resample, and future filters. |
-| `filter.SimpleRegistry` | stable | filter descriptors/factories | Retains `filter.Descriptor` metadata so planning and `Explain(ctx)` can report transform input/output media kind, realtime/stateless flags, and adapter metadata. |
+| `filter.SimpleRegistry` | stable | filter descriptors/factories | Retains `filter.Descriptor` metadata so planning and `Explain(ctx)` can report transform input/output media kind, supported pixel formats, sample formats, resize modes, realtime/stateless flags, and adapter metadata. |
 | `filter.Stage` | stable | frames/events to frames/events | Adapts frame filters into pipeline stages while preserving events and flushing before EOS. |
 | `filter.Result` | stable | reusable result storage | Caller-owned frame/event slices are reset and reused. |
 

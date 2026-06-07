@@ -205,6 +205,22 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch) 
 					"attach transform branches with .FromTap(name) where name is declared after Decode, Resize, Resample, or a frame-stage Tap",
 				)
 			}
+			transformName := transformFactoryName(step.transform)
+			streamIntent := StreamIntent{
+				Name:       firstNonEmpty(branch.name, "branch"),
+				Select:     StreamSelect{Type: currentStream.Type},
+				Transforms: []TransformSpec{step.transform},
+			}
+			if _, err := t.runtime.filters.Factory(transformName); err != nil {
+				closeRuntimeBranchOwnedStages(*branch)
+				return recipeTransformAdapterError("attach runtime branch", streamIntent, transformName, err)
+			}
+			if desc, err := t.runtime.filters.Descriptor(transformName); err == nil {
+				if err := validateTransformAdapterDescriptor("attach runtime branch", streamIntent, step.transform, transformName, desc); err != nil {
+					closeRuntimeBranchOwnedStages(*branch)
+					return err
+				}
+			}
 			transform, err := runtimeBranchTransform(branch.name, currentStream, step.transform, transformIndex)
 			if err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
