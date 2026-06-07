@@ -643,17 +643,18 @@ func (s InputSpec) validateCustomSource() error {
 		}
 	}
 	shape := normalizeCustomSourceShape(node, s.source.shape)
-	if shape.Domain != DomainPacket {
+	if shape.Domain != DomainPacket && shape.Domain != DomainFrame {
 		return &BuildError{
 			Code:      "source_shape_unsupported",
 			Operation: "build input",
 			Node:      node,
-			Reason:    "custom recipe sources currently produce packet-domain media",
+			Reason:    "custom recipe sources currently produce packet-domain or frame-domain media",
 			Details: []string{
 				"actual_shape=" + shape.String(),
 			},
 			Suggestions: []string{
 				"declare the source with goav.PacketShape(media, codec, ...)",
+				"declare raw generated media with goav.FrameShape(media, ...)",
 				"use goav.Sink(...) after decode or transform when observing frame-domain media",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -2257,7 +2258,7 @@ func (s *jobStreamBuild) hasOperation() bool {
 }
 
 func streamIntentHasOperation(stream StreamIntent, steps []chainStepAttachment) bool {
-	return stream.Decode || len(steps) != 0 || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy
+	return stream.Decode || len(stream.Operations) != 0 || len(steps) != 0 || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy
 }
 
 func (s *jobStreamBuild) transformSpecs() []TransformSpec {
@@ -3604,6 +3605,77 @@ type jobStreamBuilder struct {
 	stream *jobStreamBuild
 }
 
+func (b *jobStreamBuilder) sourceStartsFrameDomain() bool {
+	shape, ok := b.sourceFrameShape()
+	return ok && shape.Domain == DomainFrame
+}
+
+func (b *jobStreamBuilder) sourceFrameShape() (MediaShape, bool) {
+	if b == nil || b.job == nil || len(b.job.inputs) != 1 {
+		return MediaShape{}, false
+	}
+	shape, ok := customSourceShape(b.job.inputs[0])
+	if !ok || shape.Domain != DomainFrame {
+		return MediaShape{}, false
+	}
+	return shape, true
+}
+
+func (b *jobStreamBuilder) ensureDecodeOperation() {
+	if b.sourceStartsFrameDomain() {
+		return
+	}
+	ensureJobStreamDecodeOperation(b.current())
+}
+
+func (b *jobStreamBuilder) ensureFrameSourceShapeOperation() {
+	stream := b.current()
+	if stream == nil || len(stream.operations) != 0 {
+		return
+	}
+	shape, ok := b.sourceFrameShape()
+	if !ok {
+		return
+	}
+	stream.operations = append(stream.operations, operationSpecForShape(shape))
+}
+
+func frameSourceDecodeError(operation string, node string) error {
+	return &BuildError{
+		Code:      "source_shape_mismatch",
+		Operation: operation,
+		Node:      node,
+		Reason:    "frame-domain custom sources are already decoded frames",
+		Details: []string{
+			"source_domain=frame",
+			"operation=decode",
+		},
+		Suggestions: []string{
+			"remove .Decode() when using goav.Source(..., goav.FrameShape(...), ...)",
+			"use goav.PacketShape(...) when the custom source pushes encoded packets",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func frameSourceCopyError(operation string, node string) error {
+	return &BuildError{
+		Code:      "source_shape_mismatch",
+		Operation: operation,
+		Node:      node,
+		Reason:    "frame-domain custom sources cannot use packet copy",
+		Details: []string{
+			"source_domain=frame",
+			"operation=copy",
+		},
+		Suggestions: []string{
+			"send frame-domain media to goav.Sink(...)",
+			"encode frames before writing to file, URI, writer, or object destinations",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
 func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 	spec, err := chainSpecFrom(flow)
 	if err != nil {
@@ -3621,6 +3693,10 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 		return b
 	}
 	if spec.decode {
+		if b.sourceStartsFrameDomain() {
+			b.job.setErr(frameSourceDecodeError("build stream", jobStreamName(stream)))
+			return b
+		}
 		if stream.decode || operationSpecsContainChainStep(stream.operations) {
 			b.job.setErr(flowDecodeDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
 			return b
@@ -3629,14 +3705,18 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 		stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, spec.decodeCodec)
 	}
 	if len(specSteps) != 0 && !spec.decode {
-		ensureJobStreamDecodeOperation(stream)
+		b.ensureDecodeOperation()
 	}
 	if codecIntentSet(spec.encode) && !spec.encode.Copy && !spec.decode {
-		ensureJobStreamDecodeOperation(stream)
+		b.ensureDecodeOperation()
 	}
 	stream.operations = append(stream.operations, cloneOperationSpecs(spec.operations)...)
 	if codecIntentSet(spec.encode) {
 		if spec.encode.Copy {
+			if b.sourceStartsFrameDomain() {
+				b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
+				return b
+			}
 			if stream.decode || operationSpecsContainChainStep(stream.operations) {
 				b.job.setErr(flowCopyDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
 				return b
@@ -3652,6 +3732,10 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 
 func (b *jobStreamBuilder) Decode(options ...CodecOption) *jobStreamBuilder {
 	stream := b.current()
+	if b.sourceStartsFrameDomain() {
+		b.job.setErr(frameSourceDecodeError("build stream", jobStreamName(stream)))
+		return b
+	}
 	stream.decode = true
 	stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, codecSpecFromOptions(options...))
 	stream.operations = append(stream.operations, operationSpecForDecode(stream.decodeCodec, string(stream.selector.Codec)))
@@ -3660,6 +3744,10 @@ func (b *jobStreamBuilder) Decode(options ...CodecOption) *jobStreamBuilder {
 
 func (b *jobStreamBuilder) Copy() *jobStreamBuilder {
 	stream := b.current()
+	if b.sourceStartsFrameDomain() {
+		b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
+		return b
+	}
 	stream.decode = false
 	stream.encode = Copy()
 	stream.operations = append(stream.operations, operationSpecForCopy(stream.encode))
@@ -3695,7 +3783,7 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 		b.job.setErr(err)
 		return b
 	}
-	ensureJobStreamDecodeOperation(stream)
+	b.ensureDecodeOperation()
 	stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, initialStepAfter(stream.decode))))
 	return b
 }
@@ -3743,7 +3831,7 @@ func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 		b.job.setErr(streamStageMissingError(StreamIntent{Name: jobStreamName(stream)}))
 		return b
 	}
-	ensureJobStreamDecodeOperation(stream)
+	b.ensureDecodeOperation()
 	stream.operations = append(stream.operations, operationSpecForStage(stage))
 	return b
 }
@@ -3764,7 +3852,7 @@ func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resize", stream.encode))
 		return b
 	}
-	ensureJobStreamDecodeOperation(stream)
+	b.ensureDecodeOperation()
 	transform := Resize(width, height, options...)
 	stream.operations = append(stream.operations, operationSpecForTransform(transform))
 	return b
@@ -3776,7 +3864,7 @@ func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resample", stream.encode))
 		return b
 	}
-	ensureJobStreamDecodeOperation(stream)
+	b.ensureDecodeOperation()
 	transform := Resample(sampleRate, channels, options...)
 	stream.operations = append(stream.operations, operationSpecForTransform(transform))
 	return b
@@ -3788,7 +3876,7 @@ func (b *jobStreamBuilder) Encode(codec CodecSpec) *jobStreamBuilder {
 		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), stream.encode, codec))
 		return b
 	}
-	ensureJobStreamDecodeOperation(stream)
+	b.ensureDecodeOperation()
 	stream.encode = cloneCodecSpec(codec)
 	stream.operations = append(stream.operations, operationSpecForEncode(stream.encode))
 	return b
@@ -3820,7 +3908,11 @@ func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 		outputs = append(outputs, output)
 	}
 	if outputsContainSinkDestination(outputs) && !codecIntentSet(stream.encode) {
-		stream.decode = true
+		if b.sourceStartsFrameDomain() {
+			b.ensureFrameSourceShapeOperation()
+		} else {
+			stream.decode = true
+		}
 	}
 	return b.job
 }

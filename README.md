@@ -613,8 +613,32 @@ return goav.From(input).
     Run(ctx)
 ```
 
-Packet-domain custom sources are active now. Frame-domain generated sources use
-custom stages or runtime branches until source-side frame planning lands.
+Frame sources use the same constructor with `FrameShape` and do not allocate a
+decoder.
+
+```go
+frames := goav.Source("pcm",
+    goav.FrameShape(av.MediaAudio,
+        goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+    ),
+    func(ctx context.Context, push goav.SourcePush) error {
+        for frame := range decoded {
+            if err := push.Frame(&frame); err != nil {
+                return err
+            }
+        }
+        return push.EOS()
+    },
+)
+
+return goav.From(frames).
+    Audio().
+    To(goav.Sink(levels)).
+    Run(ctx)
+```
+
+Packet and frame-domain custom sources participate in the same stream, branch,
+destination, explain, and runtime graph path as built-in inputs.
 
 ## Custom Destinations
 

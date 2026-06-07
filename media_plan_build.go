@@ -24,6 +24,7 @@ type mediaPlanStreamGraph struct {
 	stream         StreamIntent
 	copyPackets    bool
 	selectedStream bool
+	sourceDomain   MediaDomain
 	decode         decodeRequest
 	filters        []filterRequest
 	encode         *encodeRequest
@@ -101,10 +102,11 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 	}
 	selector := streamIntentSelector(stream)
 	plan := mediaPlanStreamGraph{
-		runtime: runtime,
-		inputs:  append([]InputSpec(nil), inputs...),
-		outputs: append([]destinationSpec(nil), outputs...),
-		stream:  stream,
+		runtime:      runtime,
+		inputs:       append([]InputSpec(nil), inputs...),
+		outputs:      append([]destinationSpec(nil), outputs...),
+		stream:       stream,
+		sourceDomain: mediaPlanInputDomain(inputs),
 		decode: decodeRequest{
 			selector:    selector,
 			codecChange: stream.CodecChange,
@@ -124,6 +126,15 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 		plan.encode = &request
 	}
 	return plan, true, nil
+}
+
+func mediaPlanInputDomain(inputs []InputSpec) MediaDomain {
+	if len(inputs) == 1 {
+		if shape, ok := customSourceShape(inputs[0]); ok && shape.Domain != "" {
+			return shape.Domain
+		}
+	}
+	return DomainPacket
 }
 
 func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
@@ -212,6 +223,10 @@ func newMediaPlanBranchComposeGraph(rt Runtime, input InputSpec, plan branchComp
 	branches, targets, err := prepareBranchComposePlan(plan)
 	if err != nil {
 		return mediaPlanBranchComposeGraph{}, false, err
+	}
+	sourceDomain := mediaPlanInputDomain([]InputSpec{input})
+	for i := range branches {
+		branches[i].sourceDomain = sourceDomain
 	}
 	return mediaPlanBranchComposeGraph{
 		runtime:  runtime,
@@ -468,7 +483,7 @@ func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branc
 			"branch=" + branch.name,
 		})
 	}
-	if !branchComposeRouteNeedsDecode(branch) && !graphPlanBranchOperationsContain(operations, OpCopy) {
+	if !branchComposeRouteNeedsDecode(branch) && branch.sourceDomain != DomainFrame && !graphPlanBranchOperationsContain(operations, OpCopy) {
 		return graphPlanInvalidError("packet branch composition graph plan has no copy operation for branch", []string{
 			"branch=" + branch.name,
 		})
@@ -1160,14 +1175,20 @@ func (p mediaPlanStreamGraph) prepareFrameOperationSpecLowering(plan graphPlan) 
 			"branch=" + branchName,
 		})
 	}
-	decodeOperation, ok := graphPlanFirstOperation(operations, OpDecode)
-	if !ok {
+	decodeOperation, hasDecode := graphPlanFirstOperation(operations, OpDecode)
+	if p.sourceDomain == DomainFrame && hasDecode {
+		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame source graph plan has an unexpected decode operation", []string{
+			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
+			"branch=" + branchName,
+		})
+	}
+	if p.sourceDomain != DomainFrame && !hasDecode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan has no decode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 			"branch=" + branchName,
 		})
 	}
-	if decodeOperation.Node == "" {
+	if hasDecode && decodeOperation.Node == "" {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan decode operation has no node", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 			"branch=" + branchName,
@@ -1345,13 +1366,14 @@ func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeR
 		branch: branchComposeBranch{
 			Name:         branchName,
 			Selector:     p.decode.selector,
-			Decode:       true,
+			Decode:       p.sourceDomain != DomainFrame,
 			DecodeConfig: cloneCodecSpec(p.decode.config),
 			CodecChange:  p.decode.codecChange,
 		},
 		decode:           cloneCodecSpec(p.decode.config),
 		codecChange:      p.decode.codecChange,
 		dropDecodeEvents: p.encode == nil,
+		sourceDomain:     p.sourceDomain,
 		request:          request,
 	}}
 	return branches, mediaPlanBranchComposeTargetRoutes(p.outputs, branchName), nil

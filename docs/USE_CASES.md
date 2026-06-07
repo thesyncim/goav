@@ -207,7 +207,28 @@ err := goav.From(input).
 
 Packet-domain custom sources participate in the same stream, branch,
 destination, explain, and runtime graph path as built-in inputs. Frame-domain
-source planning is the next symmetry slice.
+sources use `FrameShape` and skip decode.
+
+```go
+frames := goav.Source("pcm",
+    goav.FrameShape(av.MediaAudio,
+        goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+    ),
+    func(ctx context.Context, push goav.SourcePush) error {
+        for frame := range decoded {
+            if err := push.Frame(&frame); err != nil {
+                return err
+            }
+        }
+        return push.EOS()
+    },
+)
+
+err := goav.From(frames).
+    Audio().
+    To(goav.Sink(levels)).
+    Run(ctx)
+```
 
 ## Reuse
 

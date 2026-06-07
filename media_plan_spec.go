@@ -394,7 +394,7 @@ func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanL
 		return nil, false, nil
 	}
 	stream := state.intent.Streams[0]
-	if !mediaPlanDecodeStreamShape(stream, state.outputAttachments) {
+	if !mediaPlanDecodeStreamShape(stream, state.outputAttachments, mediaPlanInputDomain(state.inputAttachments) == DomainFrame) {
 		return nil, false, nil
 	}
 	plan, ok, err := newMediaPlanDecodeStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
@@ -404,20 +404,20 @@ func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanL
 	return plan, true, nil
 }
 
-func mediaPlanDecodeStreamShape(stream StreamIntent, outputs []destinationSpec) bool {
-	return mediaPlanSinkDestinationShape(stream, outputs) || mediaPlanEncodeShape(stream, outputs)
+func mediaPlanDecodeStreamShape(stream StreamIntent, outputs []destinationSpec, frameSource bool) bool {
+	return mediaPlanSinkDestinationShape(stream, outputs, frameSource) || mediaPlanEncodeShape(stream, outputs, frameSource)
 }
 
-func mediaPlanSinkDestinationShape(stream StreamIntent, outputs []destinationSpec) bool {
+func mediaPlanSinkDestinationShape(stream StreamIntent, outputs []destinationSpec, frameSource bool) bool {
 	return len(outputs) == 1 &&
 		outputs[0].sink != nil &&
-		stream.Decode &&
+		(stream.Decode || frameSource) &&
 		len(stream.Destinations) == 1 &&
 		!stream.Encode.Copy
 }
 
-func mediaPlanEncodeShape(stream StreamIntent, outputs []destinationSpec) bool {
-	if !stream.Decode || !codecIntentSet(stream.Encode) || stream.Encode.Copy || len(outputs) == 0 {
+func mediaPlanEncodeShape(stream StreamIntent, outputs []destinationSpec, frameSource bool) bool {
+	if (!stream.Decode && !frameSource) || !codecIntentSet(stream.Encode) || stream.Encode.Copy || len(outputs) == 0 {
 		return false
 	}
 	return len(stream.Destinations) == len(outputs)

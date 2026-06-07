@@ -24,6 +24,7 @@ type branchComposeRoute struct {
 	decode           CodecSpec
 	codecChange      CodecChangePolicy
 	dropDecodeEvents bool
+	sourceDomain     MediaDomain
 	sharedSteps      []mediaTransform
 	steps            []mediaTransform
 	request          encodeRequest
@@ -758,6 +759,9 @@ func resolveBranchComposeStreamGroups(streams []av.Stream, branches []branchComp
 	index := make(map[string]int, len(branches))
 	for i := range branches {
 		stream, err := selectDecodeStream(streams, branches[i].branch.Selector)
+		if branches[i].sourceDomain == DomainFrame {
+			stream, err = selectStream(streams, branches[i].branch.Selector)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -856,6 +860,9 @@ func branchComposeRouteNeedsEncode(branch branchComposeRoute) bool {
 }
 
 func branchComposeRouteNeedsDecode(branch branchComposeRoute) bool {
+	if branch.sourceDomain == DomainFrame {
+		return false
+	}
 	return !branch.copy
 }
 

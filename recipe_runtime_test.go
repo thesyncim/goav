@@ -343,6 +343,76 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 	}
 }
 
+func TestCustomFrameSourceRunsThroughRecipeWithoutDecode(t *testing.T) {
+	ctx := context.Background()
+	input := Source("pcm",
+		FrameShape(av.MediaAudio,
+			ShapeAudio(48_000, Stereo, av.SampleFormatS16),
+		),
+		func(_ context.Context, push SourcePush) error {
+			frame := av.Frame{
+				Type: av.MediaAudio,
+				Audio: &av.AudioFrame{
+					SampleRate:   48_000,
+					Channels:     Stereo,
+					SampleFormat: av.SampleFormatS16,
+					Samples:      480,
+				},
+			}
+			if err := push.Frame(&frame); err != nil {
+				return err
+			}
+			return push.EOS()
+		},
+	)
+	var frames int
+	var events int
+	var got av.Frame
+	job := From(input).Audio().To(Sink(SinkFunc("frames", func(_ context.Context, msg Message) error {
+		switch msg.Kind {
+		case pipeline.MessageFrame:
+			frames++
+			if msg.Frame != nil {
+				got = *msg.Frame
+			}
+		case pipeline.MessageEvent:
+			events++
+		}
+		return nil
+	})))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := specText(spec)
+	if !strings.Contains(text, "custom source") ||
+		!strings.Contains(text, "domain=frame") ||
+		!strings.Contains(text, "pcm -> select-audio") ||
+		strings.Contains(text, "decode-audio") {
+		t.Fatalf("spec:\n%s", text)
+	}
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if frames != 1 ||
+		got.StreamID != "pcm" ||
+		got.Audio == nil ||
+		got.Audio.SampleRate != 48_000 ||
+		got.Audio.Channels != Stereo {
+		t.Fatalf("frames=%d got=%+v, want one generated PCM frame", frames, got)
+	}
+	if events != 1 {
+		t.Fatalf("events=%d, want source EOS event", events)
+	}
+}
+
 func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{

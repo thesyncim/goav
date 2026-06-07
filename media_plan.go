@@ -182,9 +182,17 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 	for i := range state.intent.Streams {
 		stream := state.intent.Streams[i]
 		var shape MediaShape
+		sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
 		if selected, ok := planSelectedStream(state, stream); ok {
 			stream.Select = streamSelectFromStream(selected)
-			shape = mediaShapeFromPlanStream(selected, DomainPacket)
+			domain := DomainPacket
+			if sourceShapeOK && sourceShape.Domain != "" {
+				domain = sourceShape.Domain
+			}
+			shape = mediaShapeFromPlanStream(selected, domain)
+			if sourceShapeOK {
+				shape = mergeMediaShape(shape, sourceShape)
+			}
 		}
 		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
 		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
@@ -192,7 +200,7 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 		if len(state.intent.Streams) > 1 {
 			steps = nil
 		}
-		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, steps)
+		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, steps, shape)
 		operations = planOperationsWithShape(branchName, shape, operations)
 		branches = append(branches, planBranch{
 			Name:       branchName,
@@ -214,13 +222,21 @@ func planBranchesFromBranchComposePlan(state *recipeCompileState, outputs []plan
 		composeBranch := state.plan.Branches[i]
 		stream := streamIntentFromBranchComposeBranch(composeBranch)
 		var shape MediaShape
+		sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
 		if selected, ok := planSelectedStream(state, stream); ok {
 			stream.Select = streamSelectFromStream(selected)
-			shape = mediaShapeFromPlanStream(selected, DomainPacket)
+			domain := DomainPacket
+			if sourceShapeOK && sourceShape.Domain != "" {
+				domain = sourceShape.Domain
+			}
+			shape = mediaShapeFromPlanStream(selected, domain)
+			if sourceShapeOK {
+				shape = mergeMediaShape(shape, sourceShape)
+			}
 		}
 		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
 		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
-		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, nil)
+		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, nil, shape)
 		operations = planOperationsWithShape(branchName, shape, operations)
 		branches = append(branches, planBranch{
 			Name:       branchName,
@@ -316,12 +332,16 @@ func planSelectedStream(state *recipeCompileState, stream StreamIntent) (av.Stre
 	if state.branchInputProbeReady {
 		probes = []format.ProbeResult{state.branchInputProbe}
 	}
+	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
 	selector := streamIntentSelector(stream)
 	for i := range probes {
 		if len(probes[i].Streams) == 0 {
 			continue
 		}
 		selected, err := selectDecodeStream(probes[i].Streams, selector)
+		if sourceShapeOK && sourceShape.Domain == DomainFrame {
+			selected, err = selectStream(probes[i].Streams, selector)
+		}
 		if err != nil {
 			continue
 		}
@@ -368,8 +388,8 @@ func planCopyBranches(intent Intent, outputs []planOutput) ([]planBranch, []plan
 	return branches, decisions
 }
 
-func planOperationSpecs(inputs []InputIntent, stream StreamIntent, branchName string, steps []chainStepAttachment) ([]planOperation, []planDecision) {
-	operations := planInputOperations(firstInput(inputs))
+func planOperationSpecs(inputs []InputIntent, stream StreamIntent, branchName string, steps []chainStepAttachment, initial MediaShape) ([]planOperation, []planDecision) {
+	operations := planInputOperationsForShape(firstInput(inputs), initial)
 	operations = append(operations, planOperation{
 		Kind:      OpSelect,
 		Component: selectorComponent(stream.Select),
@@ -381,6 +401,30 @@ func planOperationSpecs(inputs []InputIntent, stream StreamIntent, branchName st
 		return operations, decisions
 	}
 	var decisions []planDecision
+	if initial.Domain == DomainFrame {
+		operations = append(operations, planProcessingOperations(stream, steps)...)
+		if stream.Encode.ID != "" {
+			operations = append(operations, planOperation{
+				Kind:      OpEncode,
+				Component: string(stream.Encode.ID),
+				Detail:    "frames to packets",
+				Shape:     mediaShapeFromCodecSpec(stream.Encode, DomainPacket),
+			})
+			decisions = append(decisions, planDecision{
+				Code:    "encode_required",
+				Branch:  branchName,
+				Message: "muxed stream output requires encoded packets",
+			})
+		} else {
+			decisions = append(decisions, planDecision{
+				Code:    "frame_source",
+				Branch:  branchName,
+				Message: "source already produces decoded frames",
+			})
+		}
+		operations = append(operations, planPostEncodeTapOperations(stream)...)
+		return operations, decisions
+	}
 	if streamNeedsDecode(stream) {
 		operations = append(operations, planOperation{
 			Kind:      OpDecode,
@@ -518,6 +562,13 @@ func operationSpecKindPresent(operations []OperationSpec, kind OperationKind) bo
 }
 
 func planInputOperations(input InputIntent) []planOperation {
+	return planInputOperationsForShape(input, MediaShape{Domain: DomainPacket})
+}
+
+func planInputOperationsForShape(input InputIntent, shape MediaShape) []planOperation {
+	if input.Protocol == av.ProtocolCustom {
+		return nil
+	}
 	switch {
 	case input.Protocol == av.ProtocolRTP || input.Protocol == av.ProtocolWebRTC || input.Realtime:
 		component := firstNonEmpty(string(input.Codec.ID), string(input.Protocol), "rtp")
@@ -525,14 +576,14 @@ func planInputOperations(input InputIntent) []planOperation {
 			Kind:      OpDepacketize,
 			Component: component,
 			Detail:    "receive RTP packets",
-			Shape:     mediaShapeFromInputIntent(input, DomainPacket),
+			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(shape.Domain, DomainPacket)),
 		}}
 	default:
 		return []planOperation{{
 			Kind:      OpDemux,
 			Component: "container",
 			Detail:    "read packets from input",
-			Shape:     mediaShapeFromInputIntent(input, DomainPacket),
+			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(shape.Domain, DomainPacket)),
 		}}
 	}
 }
@@ -818,6 +869,15 @@ func mediaShapeEmpty(shape MediaShape) bool {
 }
 
 func firstNonEmptyCodec(values ...av.CodecID) av.CodecID {
+	for i := range values {
+		if values[i] != "" {
+			return values[i]
+		}
+	}
+	return ""
+}
+
+func firstNonEmptyDomain(values ...MediaDomain) MediaDomain {
 	for i := range values {
 		if values[i] != "" {
 			return values[i]

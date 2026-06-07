@@ -26,6 +26,16 @@ func (p *SourcePush) Packet(packet *av.Packet) error {
 	return p.emit.Packet(packet)
 }
 
+func (p *SourcePush) Frame(frame *av.Frame) error {
+	if frame == nil {
+		return nil
+	}
+	if frame.StreamID == "" {
+		frame.StreamID = p.stream
+	}
+	return p.emit.Frame(frame)
+}
+
 func (p *SourcePush) Event(event av.Event) error {
 	if event.StreamID == "" {
 		event.StreamID = p.stream
@@ -84,6 +94,26 @@ func codecSpecFromSourceShape(shape MediaShape) CodecSpec {
 			SampleFormat: shape.SampleFormat,
 		},
 	}
+}
+
+func customSourceShape(input InputSpec) (MediaShape, bool) {
+	if input.source == nil {
+		return MediaShape{}, false
+	}
+	return normalizeCustomSourceShape(input.inputName("source"), input.source.shape), true
+}
+
+func compileStateCustomSourceShape(state *recipeCompileState) (MediaShape, bool) {
+	if state == nil {
+		return MediaShape{}, false
+	}
+	if state.branchCompositionPresent {
+		return customSourceShape(state.branchInputAttachment)
+	}
+	if len(state.inputAttachments) != 1 {
+		return MediaShape{}, false
+	}
+	return customSourceShape(state.inputAttachments[0])
 }
 
 func customSourceStreams(input InputSpec) []av.Stream {

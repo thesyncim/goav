@@ -853,7 +853,7 @@ func validateJobLiveStreamSelectionPass() recipeCompilePass {
 			return nil
 		}
 		stream, ok := jobIntentStream(state.intent)
-		if !ok || !streamNeedsDecode(stream) {
+		if !ok || !streamNeedsDecodeForState(state, stream) {
 			return nil
 		}
 		return validateLiveStreamSelection(state.intent.Inputs, stream)
@@ -863,7 +863,7 @@ func validateJobLiveStreamSelectionPass() recipeCompilePass {
 func validateJobKnownInputStreamSelectionPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job known input stream selection", fn: func(state *recipeCompileState) error {
 		stream, ok := jobIntentStream(state.intent)
-		if !ok || !streamNeedsDecode(stream) {
+		if !ok || !streamNeedsDecodeForState(state, stream) {
 			return nil
 		}
 		return validateKnownInputStreamSelection(state.inputProbes, stream)
@@ -876,16 +876,31 @@ func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
 			return nil
 		}
 		stream, ok := jobIntentStream(state.intent)
-		if !ok || !streamNeedsDecode(stream) {
+		if !ok || !streamNeedsDecodeForState(state, stream) {
 			return nil
 		}
 		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, state.inputProbes, []StreamIntent{stream})
 	}}
 }
 
+func streamNeedsDecodeForState(state *recipeCompileState, stream StreamIntent) bool {
+	if shape, ok := compileStateCustomSourceShape(state); ok && shape.Domain == DomainFrame {
+		return false
+	}
+	return streamNeedsDecode(stream)
+}
+
 func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode known input stream selection", fn: func(state *recipeCompileState) error {
 		if !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
+			return nil
+		}
+		if shape, ok := customSourceShape(state.branchInputAttachment); ok && shape.Domain == DomainFrame {
+			for i := range state.intent.Streams {
+				if _, err := selectStream(state.branchInputProbe.Streams, streamIntentSelector(state.intent.Streams[i])); err != nil {
+					return err
+				}
+			}
 			return nil
 		}
 		for i := range state.intent.Streams {
@@ -900,6 +915,9 @@ func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
 func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode known input decode adapters", fn: func(state *recipeCompileState) error {
 		if !state.options.preflightDecodeAdapters || !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
+			return nil
+		}
+		if shape, ok := customSourceShape(state.branchInputAttachment); ok && shape.Domain == DomainFrame {
 			return nil
 		}
 		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, []format.ProbeResult{state.branchInputProbe}, state.intent.Streams)
@@ -976,8 +994,16 @@ func (s *recipeCompileState) recipeDestinationSet() map[string]destinationSpec {
 
 func recipeInitialStreamShape(state *recipeCompileState, stream StreamIntent) MediaShape {
 	var shape MediaShape
+	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
 	if selected, ok := planSelectedStream(state, stream); ok {
-		shape = MediaShapeFromStream(selected, DomainPacket)
+		domain := DomainPacket
+		if sourceShapeOK && sourceShape.Domain != "" {
+			domain = sourceShape.Domain
+		}
+		shape = MediaShapeFromStream(selected, domain)
+		if sourceShapeOK {
+			shape = mergeMediaShape(shape, sourceShape)
+		}
 	}
 	if state != nil {
 		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))

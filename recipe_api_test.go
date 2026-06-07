@@ -1845,6 +1845,7 @@ func TestReadmeShowsCustomSources(t *testing.T) {
 		"goav.PacketShape(",
 		"goav.SourcePush",
 		"push.Packet(",
+		"push.Frame(",
 		"push.EOS()",
 	} {
 		if !strings.Contains(text, required) {

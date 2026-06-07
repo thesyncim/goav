@@ -392,6 +392,14 @@ func (b *builder) newFilterRequestStageNamed(ctx context.Context, name string, r
 }
 
 func selectDecodeStream(streams []av.Stream, selector av.StreamSelector) (av.Stream, error) {
+	return selectStreamWithCodecRequirement(streams, selector, true)
+}
+
+func selectStream(streams []av.Stream, selector av.StreamSelector) (av.Stream, error) {
+	return selectStreamWithCodecRequirement(streams, selector, false)
+}
+
+func selectStreamWithCodecRequirement(streams []av.Stream, selector av.StreamSelector, requireCodec bool) (av.Stream, error) {
 	var selected av.Stream
 	matches := 0
 	matched := make([]av.Stream, 0, len(streams))
@@ -409,7 +417,7 @@ func selectDecodeStream(streams []av.Stream, selector av.StreamSelector) (av.Str
 	if matches > 1 {
 		return av.Stream{}, streamSelectionError("stream_ambiguous", selector, matched)
 	}
-	if selected.Codec.ID == "" {
+	if requireCodec && selected.Codec.ID == "" {
 		return av.Stream{}, &BuildError{
 			Code:      "stream_codec_missing",
 			Operation: "select stream",
