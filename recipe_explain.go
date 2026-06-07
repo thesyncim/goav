@@ -154,13 +154,15 @@ func newPlanReport(operation string, resolved recipeResolved) (PlanReport, error
 		Intent:    cloneIntent(resolved.intent),
 		Graph:     graph,
 	}
+	plan := resolved.planIR()
 	report.Inputs = explainInputs(resolved)
 	report.Streams = explainStreams(resolved.intent.Streams)
-	report.Taps = explainTaps(resolved.mediaPlan.Taps)
-	report.Branches = explainBranches(resolved.mediaPlan.Branches)
-	report.Targets = explainTargets(resolved.intent.Targets, resolved.outputFormats, resolved.mediaPlan.Outputs)
-	report.Decisions = explainDecisions(resolved.mediaPlan.Decisions)
+	report.Taps = explainTaps(plan.Taps)
+	report.Branches = explainBranches(plan.Branches)
+	report.Targets = explainTargets(resolved.intent.Targets, resolved.outputFormats, plan.Outputs)
+	report.Decisions = explainDecisions(plan.Decisions)
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, report)
+	report.Warnings = appendPlanDiagnostics(report.Warnings, plan.Diagnostics...)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, muxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
 	report.Summary = explainSummary(report)
 	return report, nil

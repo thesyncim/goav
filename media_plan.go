@@ -835,6 +835,82 @@ func planOutputsWithBranches(outputs []planOutput, branches []planBranch) []plan
 	return outputs
 }
 
+func clonePlanInputs(inputs []planInput) []planInput {
+	if len(inputs) == 0 {
+		return nil
+	}
+	return append([]planInput(nil), inputs...)
+}
+
+func clonePlanStreams(streams []planStream) []planStream {
+	if len(streams) == 0 {
+		return nil
+	}
+	return append([]planStream(nil), streams...)
+}
+
+func clonePlanTaps(taps []planTap) []planTap {
+	if len(taps) == 0 {
+		return nil
+	}
+	return append([]planTap(nil), taps...)
+}
+
+func clonePlanBranches(branches []planBranch) []planBranch {
+	if len(branches) == 0 {
+		return nil
+	}
+	out := make([]planBranch, 0, len(branches))
+	for i := range branches {
+		branch := branches[i]
+		branch.Operations = clonePlanOperations(branch.Operations)
+		branch.Outputs = append([]string(nil), branch.Outputs...)
+		out = append(out, branch)
+	}
+	return out
+}
+
+func clonePlanOperations(operations []planOperation) []planOperation {
+	if len(operations) == 0 {
+		return nil
+	}
+	return append([]planOperation(nil), operations...)
+}
+
+func clonePlanOutputs(outputs []planOutput) []planOutput {
+	if len(outputs) == 0 {
+		return nil
+	}
+	out := make([]planOutput, 0, len(outputs))
+	for i := range outputs {
+		output := outputs[i]
+		output.BranchRefs = append([]string(nil), output.BranchRefs...)
+		out = append(out, output)
+	}
+	return out
+}
+
+func clonePlanDecisions(decisions []planDecision) []planDecision {
+	if len(decisions) == 0 {
+		return nil
+	}
+	return append([]planDecision(nil), decisions...)
+}
+
+func clonePlanDiagnostics(diagnostics []PlanDiagnostic) []PlanDiagnostic {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	out := make([]PlanDiagnostic, 0, len(diagnostics))
+	for i := range diagnostics {
+		diagnostic := diagnostics[i]
+		diagnostic.Details = append([]string(nil), diagnostic.Details...)
+		diagnostic.Suggestions = append([]string(nil), diagnostic.Suggestions...)
+		out = append(out, diagnostic)
+	}
+	return out
+}
+
 func firstInput(inputs []InputIntent) InputIntent {
 	if len(inputs) == 0 {
 		return InputIntent{}

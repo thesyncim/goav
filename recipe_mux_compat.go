@@ -40,12 +40,12 @@ func stateMuxCompatibilityIssues(state *recipeCompileState) []muxCompatibilityIs
 	if state == nil || !state.specReady || state.specOrigin != graphSpecOriginGraphPlan {
 		return nil
 	}
-	plan := buildMediaPlan(state)
+	plan := state.graphPlan.mediaPlan()
 	return muxCompatibilityIssues(plan, state.intent, state.inputProbes, state.branchInputProbe, state.branchInputProbeReady, state.runtime)
 }
 
 func resolvedMuxCompatibilityIssues(resolved recipeResolved) []muxCompatibilityIssue {
-	return muxCompatibilityIssues(resolved.mediaPlan, resolved.intent, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady, resolved.runtime)
+	return muxCompatibilityIssues(resolved.planIR(), resolved.intent, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady, resolved.runtime)
 }
 
 func muxCompatibilityIssues(

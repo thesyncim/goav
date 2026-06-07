@@ -18,9 +18,19 @@ type mediaPlanExecutable interface {
 }
 
 type graphPlan struct {
-	runtime    *runtime
-	spec       pipeline.Spec
-	executable mediaPlanExecutable
+	runtime     *runtime
+	name        string
+	realtime    bool
+	nodes       []pipeline.NodeSpec
+	edges       []pipeline.EdgeSpec
+	inputs      []planInput
+	streams     []planStream
+	taps        []planTap
+	branches    []planBranch
+	outputs     []planOutput
+	decisions   []planDecision
+	diagnostics []PlanDiagnostic
+	executable  mediaPlanExecutable
 }
 
 func (p graphPlan) ready() bool {
@@ -31,7 +41,7 @@ func (p graphPlan) Describe() (pipeline.Spec, error) {
 	if !p.ready() {
 		return pipeline.Spec{}, recipeGraphUnsupportedError("describe graph plan", Intent{})
 	}
-	return p.spec, nil
+	return p.spec(), nil
 }
 
 func (p graphPlan) Build(ctx context.Context) (Task, error) {
@@ -41,13 +51,53 @@ func (p graphPlan) Build(ctx context.Context) (Task, error) {
 	return buildGraphPlanTask(ctx, p)
 }
 
+func (p graphPlan) spec() pipeline.Spec {
+	return pipeline.Spec{
+		Name:     p.name,
+		Realtime: p.realtime,
+		Nodes:    append([]pipeline.NodeSpec(nil), p.nodes...),
+		Edges:    append([]pipeline.EdgeSpec(nil), p.edges...),
+	}
+}
+
+func (p graphPlan) mediaPlan() mediaPlan {
+	return mediaPlan{
+		Name:        p.name,
+		Inputs:      clonePlanInputs(p.inputs),
+		Streams:     clonePlanStreams(p.streams),
+		Taps:        clonePlanTaps(p.taps),
+		Branches:    clonePlanBranches(p.branches),
+		Outputs:     clonePlanOutputs(p.outputs),
+		Decisions:   clonePlanDecisions(p.decisions),
+		Diagnostics: clonePlanDiagnostics(p.diagnostics),
+	}
+}
+
+func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, executable mediaPlanExecutable) graphPlan {
+	return graphPlan{
+		runtime:     runtime,
+		name:        firstNonEmpty(spec.Name, plan.Name, "goav"),
+		realtime:    spec.Realtime,
+		nodes:       append([]pipeline.NodeSpec(nil), spec.Nodes...),
+		edges:       append([]pipeline.EdgeSpec(nil), spec.Edges...),
+		inputs:      clonePlanInputs(plan.Inputs),
+		streams:     clonePlanStreams(plan.Streams),
+		taps:        clonePlanTaps(plan.Taps),
+		branches:    clonePlanBranches(plan.Branches),
+		outputs:     clonePlanOutputs(plan.Outputs),
+		decisions:   clonePlanDecisions(plan.Decisions),
+		diagnostics: clonePlanDiagnostics(plan.Diagnostics),
+		executable:  executable,
+	}
+}
+
 func emitGraphPlanSpecPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "emit graph plan spec", fn: func(state *recipeCompileState) error {
 		plan, ok, err := graphPlanForState(state)
 		if err != nil || !ok {
 			return err
 		}
-		state.spec = plan.spec
+		state.spec = plan.spec()
 		state.specReady = true
 		state.specOrigin = graphSpecOriginGraphPlan
 		state.graphPlan = plan
@@ -64,11 +114,8 @@ func graphPlanForState(state *recipeCompileState) (graphPlan, bool, error) {
 	if err != nil {
 		return graphPlan{}, false, err
 	}
-	return graphPlan{
-		runtime:    executable.runtimeRef(),
-		spec:       spec,
-		executable: executable,
-	}, true, nil
+	plan := buildMediaPlan(state)
+	return newGraphPlan(executable.runtimeRef(), spec, plan, executable), true, nil
 }
 
 func mediaPlanGraph(state *recipeCompileState) (mediaPlanExecutable, bool, error) {

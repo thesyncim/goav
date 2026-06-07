@@ -47,7 +47,8 @@ declared branches, reusable flow branches, decode recipes, and
 packet-preserving copy/remux all become ordinary branch operations over the same
 model. `graphPlan` is now the executable cold-path boundary: recipe compilation
 must emit a graph plan before it can describe or build a normal workflow, and
-that graph plan owns the planned `pipeline.Spec` plus the transition executable
+that graph plan owns planned nodes, edges, report inputs, streams, taps,
+branches, targets, decisions, diagnostics, plus the transition executable still
 used to build the runtime graph.
 
 The active recipe compiler state carries public `Intent` plus concrete readers,
@@ -76,13 +77,15 @@ filters, encoders, and muxers. Packet-preserving copy/fanout recipes use the
 same resolved graph-plan pattern for concrete inputs, destinations, and optional
 selected streams. Direct selected-stream decode/encode recipes also keep their
 inputs, destinations, ordered stream attachments, codec-change policy, custom
-stages, transforms, and taps on the resolved recipe until the media-plan
-boundary. Those direct stream recipes now build and describe through a resolved
+stages, transforms, and taps on the resolved recipe until graph-plan emission.
+Those direct stream recipes now build and describe through a resolved
 single-stream graph plan and shared parameterized
 source/decode/filter/encode/target helpers instead of a pre-populated runtime
-builder. The next architectural pressure is to make graph plans contain the
-ordered operation nodes directly, rather than wrapping media-plan executables,
-while keeping the flow `Intent -> MediaPlan -> GraphPlan -> pipeline.Graph`.
+builder. `recipeResolved` no longer carries a parallel media-plan report copy:
+`Explain`, mux diagnostics, and task tap installation read cloned views from the
+graph plan. The next architectural pressure is to replace the remaining
+workflow-specific media-plan executables with one ordered operation lowering
+inside `GraphPlan -> pipeline.Graph`.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `goav.Expert(runtime).Graph()`. It names sources, stages, and

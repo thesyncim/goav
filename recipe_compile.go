@@ -25,7 +25,6 @@ type recipeResolved struct {
 	branchInputProbe      format.ProbeResult
 	branchInputProbeReady bool
 	outputFormats         map[string]av.FormatID
-	mediaPlan             mediaPlan
 	plan                  branchComposePlan
 }
 
@@ -161,7 +160,6 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		branchInputProbe:      state.branchInputProbe,
 		branchInputProbeReady: state.branchInputProbeReady,
 		outputFormats:         state.outputFormatMap(),
-		mediaPlan:             buildMediaPlan(&state),
 		plan:                  state.plan,
 	}, nil
 }
@@ -204,8 +202,15 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	installTaskTaps(task, r.mediaPlan.Taps)
+	installTaskTaps(task, r.planIR().Taps)
 	return task, nil
+}
+
+func (r recipeResolved) planIR() mediaPlan {
+	if r.graphPlan.ready() {
+		return r.graphPlan.mediaPlan()
+	}
+	return mediaPlan{}
 }
 
 func installTaskTaps(mediaTask Task, taps []planTap) {

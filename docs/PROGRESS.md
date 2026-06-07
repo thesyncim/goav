@@ -1747,6 +1747,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     executable directly, and tests pin `GraphPlan -> pipeline.Graph -> Task` as
     the normal recipe path.
     Done.
+344. Expand graph-plan cold-path metadata:
+    `graphPlan` now owns cloned nodes, edges, inputs, streams, taps, branches,
+    targets, decisions, and diagnostics instead of wrapping a stored
+    `pipeline.Spec` plus leaving report data on `recipeResolved`. `Describe`,
+    `Explain`, mux diagnostics, and task tap installation now read cloned views
+    from the graph plan, so the remaining transition executable is only the
+    runtime lowering bridge.
+    Done.
 
 ## First Vertical Slice
 
@@ -1957,11 +1965,11 @@ Required proof:
 
 ## Next Slices
 
-1. Expand the executable `GraphPlan` beyond its transition wrapper: one plan
-   contains inputs, ordered operation nodes, edges, taps, branches, targets,
-   diagnostics, and build policies. `MediaPlan` remains the planner/report IR
-   while `GraphPlan -> pipeline.Graph -> Task` becomes the only normal recipe
-   executable path.
+1. Replace the remaining workflow-specific transition executables with one
+   ordered operation lowering inside `GraphPlan`. The plan already owns the
+   cold-path nodes, edges, taps, branches, targets, decisions, and diagnostics;
+   the next step is to make build use those ordered operations directly instead
+   of dispatching to stream/branch executable wrappers.
 2. Make direct chains implicit branches. Packet copy, decode-to-sink,
    transform/encode-to-target, planned branch composition, and mixed
    audio/video target groups should all lower through the same branch planner
@@ -2008,9 +2016,9 @@ Required proof:
    regression tests for each planner slice.
 14. Update this tracker with the new evidence and next pressure point.
 
-Current pressure point: expand the executable `GraphPlan` from a transition
-boundary into one ordered operation graph and deepen capability planning around
-the ordered operation model. The public recipe surface is small: `From`, chains,
+Current pressure point: replace the remaining graph-plan transition executable
+wrappers with one ordered operation lowering and deepen capability planning
+around that ordered operation model. The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`,
 `File`, `URIOut`, `Sink`, `Flow`, `Codec`, and runtime `Attach`. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into

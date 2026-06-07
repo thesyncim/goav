@@ -49,8 +49,20 @@ func TestGraphPlanUsesSharedBuildLifecycle(t *testing.T) {
 	if _, ok := reflect.TypeOf(recipeResolved{}).FieldByName("mediaGraph"); ok {
 		t.Fatal("recipeResolved should not carry mediaGraph; use graphPlan as the executable boundary")
 	}
+	if _, ok := reflect.TypeOf(recipeResolved{}).FieldByName("mediaPlan"); ok {
+		t.Fatal("recipeResolved should not carry mediaPlan; graphPlan owns report metadata")
+	}
 	if _, ok := reflect.TypeOf(recipeResolved{}).FieldByName("graphPlan"); !ok {
 		t.Fatal("recipeResolved should carry graphPlan as the executable boundary")
+	}
+	graphPlanType := reflect.TypeOf(graphPlan{})
+	for _, name := range []string{"nodes", "edges", "inputs", "streams", "taps", "branches", "outputs", "decisions", "diagnostics", "executable"} {
+		if _, ok := graphPlanType.FieldByName(name); !ok {
+			t.Fatalf("graphPlan should carry %s as cold-path plan metadata", name)
+		}
+	}
+	if _, ok := graphPlanType.FieldByName("spec"); ok {
+		t.Fatal("graphPlan should own nodes and edges directly instead of wrapping a stored pipeline.Spec")
 	}
 }
 
@@ -2244,6 +2256,76 @@ func TestCompileJobRecipeCarriesIntentAndGraphPlanBuild(t *testing.T) {
 	}
 	if got, want := spec, resolved.spec; got.Name != want.Name || len(got.Nodes) != len(want.Nodes) || len(got.Edges) != len(want.Edges) {
 		t.Fatalf("resolved.Describe() = %+v, want stored spec %+v", got, want)
+	}
+}
+
+func TestGraphPlanCarriesReportMetadata(t *testing.T) {
+	web := Target("web", fileDestination("web.ivf", io.Discard).Format(av.FormatIVF))
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Tap(FrameTap("video.decoded")).
+		Branches(
+			Branch("360p").
+				Resize(640, 360).
+				VP9(600_000).
+				To(web),
+		)
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	plan := resolved.graphPlan.mediaPlan()
+	if len(resolved.graphPlan.nodes) == 0 || len(resolved.graphPlan.edges) == 0 {
+		t.Fatalf("graphPlan nodes=%+v edges=%+v, want planned operation graph", resolved.graphPlan.nodes, resolved.graphPlan.edges)
+	}
+	if len(plan.Branches) != 1 || plan.Branches[0].Name != "360p" {
+		t.Fatalf("graphPlan media plan branches = %+v, want 360p branch", plan.Branches)
+	}
+	if len(plan.Taps) != 1 || plan.Taps[0].Name != "video.decoded" {
+		t.Fatalf("graphPlan media plan taps = %+v, want video.decoded tap", plan.Taps)
+	}
+	if len(plan.Outputs) != 1 || plan.Outputs[0].Name != "web" || !reflect.DeepEqual(plan.Outputs[0].BranchRefs, []string{"360p"}) {
+		t.Fatalf("graphPlan media plan outputs = %+v, want web owned by 360p", plan.Outputs)
+	}
+	report, err := newPlanReport("build job", resolved)
+	if err != nil {
+		t.Fatalf("newPlanReport() error = %v", err)
+	}
+	if len(report.Branches) != 1 || report.Branches[0].Name != "360p" {
+		t.Fatalf("report branches = %+v, want graph-plan branch metadata", report.Branches)
+	}
+	if len(report.Taps) != 1 || report.Taps[0].Name != "video.decoded" {
+		t.Fatalf("report taps = %+v, want graph-plan tap metadata", report.Taps)
+	}
+}
+
+func TestGraphPlanViewsAreImmutable(t *testing.T) {
+	job := From(
+		FileInput("input.ivf", strings.NewReader("")),
+	).Copy().To(fileDestination("recording.ivf", io.Discard).Format(av.FormatIVF))
+
+	resolved, err := compileJobRecipe(job)
+	if err != nil {
+		t.Fatalf("compileJobRecipe() error = %v", err)
+	}
+	spec := resolved.graphPlan.spec()
+	spec.Nodes[0].Name = "mutated"
+	plan := resolved.graphPlan.mediaPlan()
+	plan.Branches[0].Operations[0].Component = "mutated"
+	plan.Outputs[0].BranchRefs[0] = "mutated"
+
+	nextSpec := resolved.graphPlan.spec()
+	if nextSpec.Nodes[0].Name == "mutated" {
+		t.Fatal("graphPlan.spec() returned aliased nodes")
+	}
+	nextPlan := resolved.graphPlan.mediaPlan()
+	if nextPlan.Branches[0].Operations[0].Component == "mutated" {
+		t.Fatal("graphPlan.mediaPlan() returned aliased branch operations")
+	}
+	if nextPlan.Outputs[0].BranchRefs[0] == "mutated" {
+		t.Fatal("graphPlan.mediaPlan() returned aliased output branch refs")
 	}
 }
 
