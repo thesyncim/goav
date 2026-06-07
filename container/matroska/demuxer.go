@@ -22,6 +22,8 @@ type Demuxer struct {
 	options               DemuxerOptions
 	docType               string
 	segmentData           int64
+	segmentSize           uint64
+	segmentUnknown        bool
 	timecodeScaleNS       int64
 	info                  SegmentInfo
 	tracks                []Track
@@ -35,8 +37,11 @@ type Demuxer struct {
 	unknownTags           []UnknownElement
 	pendingClusterUnknown []UnknownElement
 	cues                  []CuePoint
+	cuesSeen              bool
 	cuesSorted            bool
 	seekEntries           []SeekEntry
+	clusterIndex          []clusterIndexEntry
+	clusterIndexBuilt     bool
 	inSegment             bool
 	inCluster             bool
 	clusterUnknown        bool
@@ -74,6 +79,11 @@ type Demuxer struct {
 type laceFrame struct {
 	offset int
 	size   int
+}
+
+type clusterIndexEntry struct {
+	TimeNS   int64
+	Position uint64
 }
 
 const (
@@ -119,6 +129,8 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.laceBuffer = d.laceBuffer[:d.options.MaxLacePayload]
 	d.docType = ""
 	d.segmentData = 0
+	d.segmentSize = 0
+	d.segmentUnknown = false
 	d.timecodeScaleNS = defaultTimecodeScaleNS
 	d.info = SegmentInfo{}
 	d.tracks = d.tracks[:0]
@@ -132,8 +144,11 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.unknownTags = d.unknownTags[:0]
 	d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
 	d.cues = d.cues[:0]
+	d.cuesSeen = false
 	d.cuesSorted = true
 	d.seekEntries = d.seekEntries[:0]
+	d.clusterIndex = d.clusterIndex[:0]
+	d.clusterIndexBuilt = false
 	d.inSegment = false
 	d.inCluster = false
 	d.clusterUnknown = false
@@ -156,9 +171,17 @@ func (d *Demuxer) SeekToTime(timeNS int64) error {
 		return ErrInvalidData
 	}
 	if err := d.ensureCues(); err != nil {
+		if d.canUseClusterIndexAfterCueError(err) {
+			return d.seekToClusterAtTime(timeNS)
+		}
 		return err
 	}
 	cue := d.cueForTime(timeNS)
+	if cue.TimeNS > timeNS {
+		if err := d.seekToClusterAtTime(timeNS); err == nil {
+			return nil
+		}
+	}
 	position, err := firstCuePosition(cue)
 	if err != nil {
 		return err
@@ -183,11 +206,19 @@ func (d *Demuxer) SeekToTrackTime(trackID uint32, timeNS int64) error {
 		return ErrUnknownTrack
 	}
 	if err := d.ensureCues(); err != nil {
+		if d.canUseClusterIndexAfterCueError(err) {
+			return d.seekToClusterAtTime(timeNS)
+		}
 		return err
 	}
-	_, position, ok := d.cueForTrackTime(trackID, timeNS)
+	cue, position, ok := d.cueForTrackTime(trackID, timeNS)
 	if !ok {
-		return ErrInvalidData
+		return d.seekToClusterAtTime(timeNS)
+	}
+	if cue.TimeNS > timeNS {
+		if err := d.seekToClusterAtTime(timeNS); err == nil {
+			return nil
+		}
 	}
 	return d.seekToCuePosition(position)
 }
@@ -204,26 +235,22 @@ func (d *Demuxer) ensureCues() error {
 	return nil
 }
 
+func (d *Demuxer) canUseClusterIndexAfterCueError(err error) bool {
+	return errors.Is(err, ErrInvalidData) && len(d.cues) == 0 && !d.cuesSeen && !d.hasCuesSeekEntry()
+}
+
+func (d *Demuxer) hasCuesSeekEntry() bool {
+	for i := range d.seekEntries {
+		if d.seekEntries[i].ID == uint64(idCues) {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *Demuxer) seekToCuePosition(position CueTrackPosition) error {
-	if position.ClusterPosition > uint64(math.MaxInt64) ||
-		int64(position.ClusterPosition) > math.MaxInt64-d.segmentData {
-		return ErrInvalidData
-	}
-	d.pendingHeader = ebml.Header{}
-	d.pendingHeaderSet = false
-	offset := d.segmentData + int64(position.ClusterPosition)
-	if _, err := d.seeker.Seek(offset, io.SeekStart); err != nil {
-		return err
-	}
-	d.reader.Reset(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
-	header, err := d.reader.ReadHeader()
+	header, err := d.seekToClusterPosition(position.ClusterPosition)
 	if err != nil {
-		return err
-	}
-	if header.ID != idCluster {
-		return ErrInvalidData
-	}
-	if err := d.enterCluster(header); err != nil {
 		return err
 	}
 	if position.RelativePositionSet {
@@ -237,6 +264,42 @@ func (d *Demuxer) seekToCuePosition(position CueTrackPosition) error {
 	}
 	d.clearLace()
 	return nil
+}
+
+func (d *Demuxer) seekToClusterAtTime(timeNS int64) error {
+	entry, err := d.clusterForTime(timeNS)
+	if err != nil {
+		return err
+	}
+	_, err = d.seekToClusterPosition(entry.Position)
+	return err
+}
+
+func (d *Demuxer) seekToClusterPosition(position uint64) (ebml.Header, error) {
+	if position > uint64(math.MaxInt64) ||
+		int64(position) > math.MaxInt64-d.segmentData {
+		return ebml.Header{}, ErrInvalidData
+	}
+	d.pendingHeader = ebml.Header{}
+	d.pendingHeaderSet = false
+	d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
+	offset := d.segmentData + int64(position)
+	if _, err := d.seeker.Seek(offset, io.SeekStart); err != nil {
+		return ebml.Header{}, err
+	}
+	d.reader.Reset(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	header, err := d.reader.ReadHeader()
+	if err != nil {
+		return ebml.Header{}, err
+	}
+	if header.ID != idCluster {
+		return ebml.Header{}, ErrInvalidData
+	}
+	if err := d.enterCluster(header); err != nil {
+		return ebml.Header{}, err
+	}
+	d.clearLace()
+	return header, nil
 }
 
 func firstCuePosition(cue CuePoint) (CueTrackPosition, error) {
@@ -553,6 +616,258 @@ func firstCueTrackPosition(cue CuePoint) (CueTrackPosition, bool) {
 
 func cuePositionIsDirect(position CueTrackPosition) bool {
 	return position.RelativePositionSet || position.BlockNumberSet
+}
+
+func (d *Demuxer) clusterForTime(timeNS int64) (clusterIndexEntry, error) {
+	if err := d.ensureClusterIndex(); err != nil {
+		return clusterIndexEntry{}, err
+	}
+	index := sort.Search(len(d.clusterIndex), func(i int) bool {
+		return d.clusterIndex[i].TimeNS > timeNS
+	})
+	if index == 0 {
+		return d.clusterIndex[0], nil
+	}
+	return d.clusterIndex[index-1], nil
+}
+
+func (d *Demuxer) ensureClusterIndex() error {
+	if d.clusterIndexBuilt {
+		if len(d.clusterIndex) == 0 {
+			return ErrInvalidData
+		}
+		return nil
+	}
+	if d.seeker == nil {
+		return ErrNonSeekableReader
+	}
+	d.clusterIndex = d.clusterIndex[:0]
+	if _, err := d.seeker.Seek(d.segmentData, io.SeekStart); err != nil {
+		return err
+	}
+	indexReader := ebml.NewReader(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	indexReader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, 0)
+	for {
+		if d.segmentIndexDone(indexReader.Offset()) {
+			break
+		}
+		header, err := indexReader.ReadHeader()
+		if err != nil {
+			if d.segmentUnknown && isEOF(err) {
+				break
+			}
+			return err
+		}
+		if err := d.validateSegmentIndexHeader(header); err != nil {
+			return err
+		}
+		switch header.ID {
+		case idCluster:
+			entry, err := d.readClusterIndexEntry(indexReader, header)
+			if err != nil {
+				return err
+			}
+			d.clusterIndex = append(d.clusterIndex, entry)
+		default:
+			if err := d.skipSegmentIndexElement(indexReader, header); err != nil {
+				return err
+			}
+		}
+	}
+	d.clusterIndexBuilt = true
+	if len(d.clusterIndex) == 0 {
+		return ErrInvalidData
+	}
+	sort.SliceStable(d.clusterIndex, func(i, j int) bool {
+		if d.clusterIndex[i].TimeNS == d.clusterIndex[j].TimeNS {
+			return d.clusterIndex[i].Position < d.clusterIndex[j].Position
+		}
+		return d.clusterIndex[i].TimeNS < d.clusterIndex[j].TimeNS
+	})
+	return nil
+}
+
+func (d *Demuxer) segmentIndexDone(offset int64) bool {
+	return !d.segmentUnknown && offset >= 0 && uint64(offset) >= d.segmentSize
+}
+
+func (d *Demuxer) validateSegmentIndexHeader(header ebml.Header) error {
+	if header.Offset < 0 || header.DataOffset < header.Offset {
+		return ErrInvalidData
+	}
+	if !d.segmentUnknown && uint64(header.DataOffset) > d.segmentSize {
+		return ErrInvalidData
+	}
+	return nil
+}
+
+func (d *Demuxer) readClusterIndexEntry(reader *ebml.Reader, header ebml.Header) (clusterIndexEntry, error) {
+	if header.Offset < 0 {
+		return clusterIndexEntry{}, ErrInvalidData
+	}
+	entry := clusterIndexEntry{Position: uint64(header.Offset)}
+	var err error
+	if header.Size.Unknown {
+		entry.TimeNS, err = d.readUnknownClusterIndexTime(reader)
+	} else {
+		entry.TimeNS, err = d.readKnownClusterIndexTime(reader, header)
+	}
+	if err != nil {
+		return clusterIndexEntry{}, err
+	}
+	return entry, nil
+}
+
+func (d *Demuxer) readKnownClusterIndexTime(reader *ebml.Reader, header ebml.Header) (int64, error) {
+	clusterEnd, err := d.segmentIndexElementEnd(header)
+	if err != nil {
+		return 0, err
+	}
+	timeNS := int64(0)
+	for reader.Offset() < clusterEnd {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return 0, err
+		}
+		if child.ID == idCluster {
+			return 0, ErrInvalidData
+		}
+		if err := d.validateClusterIndexHeader(child, clusterEnd); err != nil {
+			return 0, err
+		}
+		if child.ID == idTimestamp {
+			timeNS, err = d.readClusterIndexTimestamp(reader, child, clusterEnd)
+			if err != nil {
+				return 0, err
+			}
+			return timeNS, d.resetSegmentIndexReader(reader, clusterEnd)
+		}
+		if err := d.skipClusterIndexElement(reader, child, clusterEnd); err != nil {
+			return 0, err
+		}
+	}
+	return timeNS, d.resetSegmentIndexReader(reader, clusterEnd)
+}
+
+func (d *Demuxer) readUnknownClusterIndexTime(reader *ebml.Reader) (int64, error) {
+	timeNS := int64(0)
+	for {
+		if d.segmentIndexDone(reader.Offset()) {
+			return timeNS, nil
+		}
+		child, err := reader.ReadHeader()
+		if err != nil {
+			if d.segmentUnknown && isEOF(err) {
+				return timeNS, nil
+			}
+			return 0, err
+		}
+		if isUnknownClusterTerminator(child.ID) {
+			return timeNS, d.resetSegmentIndexReader(reader, child.Offset)
+		}
+		if err := d.validateSegmentIndexHeader(child); err != nil {
+			return 0, err
+		}
+		if child.ID == idTimestamp {
+			var err error
+			timeNS, err = d.readClusterIndexTimestamp(reader, child, 0)
+			if err != nil {
+				return 0, err
+			}
+			continue
+		}
+		if err := d.skipSegmentIndexElement(reader, child); err != nil {
+			return 0, err
+		}
+	}
+}
+
+func isUnknownClusterTerminator(id ebml.ID) bool {
+	switch id {
+	case idCluster, idSeekHead, idInfo, idTracks, idAttachments, idChapters, idTags, idCues:
+		return true
+	default:
+		return false
+	}
+}
+
+func (d *Demuxer) readClusterIndexTimestamp(reader *ebml.Reader, header ebml.Header, clusterEnd int64) (int64, error) {
+	if header.Size.Unknown {
+		return 0, ErrInvalidData
+	}
+	end, err := d.segmentIndexElementEnd(header)
+	if err != nil {
+		return 0, err
+	}
+	if clusterEnd != 0 && end > clusterEnd {
+		return 0, ErrInvalidData
+	}
+	value, err := readUIntPayloadScratch(reader, header.Size.Value, &d.uintScratch)
+	if err != nil {
+		return 0, err
+	}
+	return scaleCueTicks(value, d.timecodeScaleNS)
+}
+
+func (d *Demuxer) validateClusterIndexHeader(header ebml.Header, clusterEnd int64) error {
+	if err := d.validateSegmentIndexHeader(header); err != nil {
+		return err
+	}
+	if clusterEnd != 0 && header.DataOffset > clusterEnd {
+		return ErrInvalidData
+	}
+	return nil
+}
+
+func (d *Demuxer) skipClusterIndexElement(reader *ebml.Reader, header ebml.Header, clusterEnd int64) error {
+	end, err := d.segmentIndexElementEnd(header)
+	if err != nil {
+		return err
+	}
+	if end > clusterEnd {
+		return ErrInvalidData
+	}
+	return d.resetSegmentIndexReader(reader, end)
+}
+
+func (d *Demuxer) skipSegmentIndexElement(reader *ebml.Reader, header ebml.Header) error {
+	end, err := d.segmentIndexElementEnd(header)
+	if err != nil {
+		return err
+	}
+	return d.resetSegmentIndexReader(reader, end)
+}
+
+func (d *Demuxer) segmentIndexElementEnd(header ebml.Header) (int64, error) {
+	if header.Size.Unknown {
+		return 0, ErrUnsupportedElement
+	}
+	if header.Size.Value > uint64(math.MaxInt64) {
+		return 0, ErrInvalidData
+	}
+	size := int64(header.Size.Value)
+	if header.DataOffset > math.MaxInt64-size {
+		return 0, ErrInvalidData
+	}
+	end := header.DataOffset + size
+	if !d.segmentUnknown && uint64(end) > d.segmentSize {
+		return 0, ErrInvalidData
+	}
+	return end, nil
+}
+
+func (d *Demuxer) resetSegmentIndexReader(reader *ebml.Reader, offset int64) error {
+	if offset < 0 || d.segmentData < 0 || offset > math.MaxInt64-d.segmentData {
+		return ErrInvalidData
+	}
+	if !d.segmentUnknown && uint64(offset) > d.segmentSize {
+		return ErrInvalidData
+	}
+	if _, err := d.seeker.Seek(d.segmentData+offset, io.SeekStart); err != nil {
+		return err
+	}
+	reader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, offset)
+	return nil
 }
 
 func (d *Demuxer) seekToCueRelativePosition(cluster ebml.Header, relativePosition uint64) error {
@@ -1165,6 +1480,11 @@ func (d *Demuxer) readPreamble() error {
 		case idSegment:
 			d.inSegment = true
 			d.segmentData = header.DataOffset
+			d.segmentUnknown = header.Size.Unknown
+			d.segmentSize = 0
+			if !header.Size.Unknown {
+				d.segmentSize = header.Size.Value
+			}
 			return d.readSegmentHeaders()
 		case idVoid, idCRC32:
 			if err := skipElement(d.reader, header); err != nil {
@@ -1615,6 +1935,7 @@ func (d *Demuxer) parseTracks(header ebml.Header) error {
 }
 
 func (d *Demuxer) parseCues(header ebml.Header) error {
+	d.cuesSeen = true
 	if header.Size.Unknown {
 		return ErrInvalidData
 	}

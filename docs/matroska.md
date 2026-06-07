@@ -68,13 +68,18 @@ Current milestone:
   absent.
 - Cue-assisted `ReadPacketAtTime` extraction for the first packet at or after
   a requested timestamp.
+- Seekable files without usable Cues fall back to a one-time finite/seekable
+  Cluster index, so `SeekToTime`, `ReadPacketAtTime`, `SeekToTrackTime`, and
+  `ReadTrackPacketAtTime` can still jump to the nearest Cluster and scan
+  forward instead of requiring a full file scan from the beginning.
 - Direct cue-backed `ReadCuedPacketAtTime` and `ReadCuedTrackPacketAtTime`
   extraction for cues at or after a requested timestamp. Exact block cues jump
   directly to `CueRelativePosition` or `CueBlockNumber`; cluster-only cues scan
   within the referenced Cluster until the cue's track/time is reached, without
   scanning uncued packets between cues.
 - Track-specific cue-assisted `SeekToTrackTime` and `ReadTrackPacketAtTime`
-  for multi-track recordings with per-track cue positions.
+  for multi-track recordings with per-track cue positions, with the same
+  Cluster-index fallback when a track has no usable cue.
 - BlockGroup reading and writing for single-frame and laced blocks with
   BlockDuration; packets may carry one or more `ReferenceBlock` offsets,
   reference priority, codec state, discard padding, and block additions.
@@ -157,7 +162,8 @@ Current milestone:
 
 These are intentionally not in the first milestone:
 
-- Frame-exact random access for packets that are not represented by Cues.
+- Direct frame-offset indexing for uncued packets beyond the finite Cluster
+  fallback.
 - Additional Matroska codec families outside the current supported set.
 - RTP, RTX, RED, ULPFEC, FlexFEC, jitter buffering, or codec depacketization.
 
@@ -212,6 +218,11 @@ positions the next read directly on the cued block. If a cue omits
 `CueRelativePosition` but has `CueBlockNumber`, the demuxer scans the Cluster to
 that block number and hands that block to the next read. A successful seek
 clears pending laced-frame state before reading from the target cluster.
+When Cues are absent, when the target is before the first cue, or when a
+specific track has no usable cue, seekable demuxers build a Cluster index from
+Segment-relative Cluster positions and Cluster timecodes. The fallback seeks to
+the nearest Cluster and scans forward, preserving laced-frame behavior without
+requiring dense Cues.
 `ReadPacketAtTime` combines that cue seek with packet reads and returns the
 first packet at or after the requested timestamp. The caller-provided packet
 buffer must be large enough for skipped packets and the returned packet.
@@ -269,6 +280,8 @@ The steady-state packet paths avoid allocations:
 - Header and track metadata may allocate before packet writing starts.
 - The demuxer reuses embedded `io.LimitedReader` and fixed scratch buffers for
   block parsing.
+- Cue-free seekable reads build the Cluster index once, then use binary search
+  and normal caller-owned packet buffers with 0 steady-state allocations.
 - H.264 AVC-to-Annex B demux conversion expands length-prefixed samples into
   caller-owned packet buffers without heap allocation.
 - `ReadPacket` writes frame bytes into caller-owned `Packet.Data` capacity.

@@ -34,6 +34,13 @@ func (r *Reader) Reset(input io.Reader, options ReaderOptions) {
 	r.options = options
 }
 
+// ResetAt resets the input and sets the logical offset reported by future reads.
+func (r *Reader) ResetAt(input io.Reader, options ReaderOptions, offset int64) {
+	r.r = input
+	r.offset = offset
+	r.options = options
+}
+
 func (r *Reader) Offset() int64 {
 	if r == nil {
 		return 0

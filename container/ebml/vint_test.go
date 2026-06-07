@@ -163,6 +163,30 @@ func TestReaderWriterHeaderAndSkip(t *testing.T) {
 	}
 }
 
+func TestReaderResetAtPreservesLogicalOffset(t *testing.T) {
+	data := []byte{0, 0, 0, 0, 0, 0, 0, 0x42, 0x82, 0x81, 'x'}
+	input := bytes.NewReader(data)
+	if _, err := input.Seek(7, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	reader := NewReader(input, ReaderOptions{})
+	reader.ResetAt(input, ReaderOptions{}, 7)
+	header, err := reader.ReadHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if header.Offset != 7 || header.DataOffset != 10 {
+		t.Fatalf("header offsets = offset %d data %d, want 7 and 10", header.Offset, header.DataOffset)
+	}
+	payload := make([]byte, header.Size.Value)
+	if err := reader.ReadFull(payload); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(payload, []byte{'x'}) {
+		t.Fatalf("payload = %v, want [120]", payload)
+	}
+}
+
 func TestReaderMaxElementSize(t *testing.T) {
 	var out bytes.Buffer
 	writer := NewWriter(&out)
