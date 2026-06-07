@@ -85,9 +85,11 @@ codec-change policy, custom stages, transforms, and taps on the resolved recipe
 until graph-plan emission. They describe through a resolved single-stream graph
 plan using the branch route planner, and build by lowering that single branch
 through the shared branch-compose input/route helpers instead of a pre-populated
-runtime builder. Branch route planning carries codec-change policy and decoded
-sink event-drop policy into planned decoder details and runtime decoder
-construction. `recipeResolved` no longer carries a parallel media-plan report
+runtime builder. Selected packet-copy recipes use the same single-branch route
+path for both planned specs and runtime builds, while whole-input packet copy
+preserves multi-input fanout. Branch route planning carries codec-change policy
+and decoded sink event-drop policy into planned decoder details and runtime
+decoder construction. `recipeResolved` no longer carries a parallel media-plan report
 copy:
 `Explain`, mux diagnostics, and task tap installation read cloned views from the
 graph plan. The graph plan also carries an ordered operation sequence derived
@@ -96,8 +98,8 @@ decode/filter/encode, and grouped branch-compose builds now consume that
 sequence for pre-mutation validation, target binding, and target node
 construction. Selected packet-copy and direct frame-stream lowering isolate one
 branch operation set before reading select/decode/filter/encode and target refs;
-whole-input packet copy can still preserve multiple input
-branches. Grouped branch-compose
+selected packet-copy then lowers through branch-compose input and target routes,
+while whole-input packet copy can still preserve multiple input branches. Grouped branch-compose
 input lowering also consumes graph-plan select/decode node refs, so described
 and built graphs stay equivalent even when operation refs are changed by later
 planning passes. Shared branch-compose transform/stage lowering consumes the

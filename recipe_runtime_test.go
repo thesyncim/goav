@@ -237,7 +237,7 @@ func TestRecordRecipeCopyToTypedTargetRuns(t *testing.T) {
 	))
 	job := From(
 		RTP(receiver).Name("audio").Codec(Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
-	).Copy().To(Target("recording", File("recording.ogg", io.Discard).Format(av.FormatOgg))).UseRuntime(runtime)
+	).Copy().To(Target("recording", File("recording.ogg", io.Discard, Format(av.FormatOgg)))).UseRuntime(runtime)
 
 	intent := job.Intent()
 	if len(intent.Targets) != 1 || intent.Targets[0].Name != "recording" {
@@ -903,7 +903,7 @@ func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
 	))
 	job := From(
 		FileInput("input.ogg", strings.NewReader("")),
-	).Copy().To(File("", io.Discard).MIME("audio/ogg")).UseRuntime(runtime)
+	).Copy().To(File("", io.Discard, MIME("audio/ogg"))).UseRuntime(runtime)
 	intent := job.Intent()
 	if len(intent.Targets) != 1 || intent.Targets[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
@@ -1234,7 +1234,7 @@ func TestStreamRecipeEncodeToTypedTargetRuns(t *testing.T) {
 		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: decoder}),
 		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder}),
 	)
-	target := Target("archive", File("archive.ogg", io.Discard).Format(av.FormatOgg))
+	target := Target("archive", File("archive.ogg", io.Discard, Format(av.FormatOgg)))
 	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs)).
 		Audio().
 		Opus(96_000).
@@ -1750,7 +1750,7 @@ func TestBranchCompositionSharedParentOperationDescribeMatchesBuiltGraph(t *test
 		Branches(
 			Branch("web").
 				VP9(2_000_000).
-				To(Target("web", File("web.ivf", io.Discard).Format(av.FormatIVF))),
+				To(Target("web", File("web.ivf", io.Discard, Format(av.FormatIVF)))),
 			Branch("thumb").
 				Resize(320, 180).
 				To(Target("thumbnail", Sink(&runtimeTestSink{name: "thumbnail"}))),
@@ -1808,7 +1808,7 @@ func TestBranchCompositionCurrentPointDescribeMatchesBuiltGraph(t *testing.T) {
 		Branches(
 			Branch("web").
 				VP9(2_000_000).
-				To(Target("web", File("web.ivf", io.Discard).Format(av.FormatIVF))),
+				To(Target("web", File("web.ivf", io.Discard, Format(av.FormatIVF)))),
 			Branch("thumb").
 				Resize(320, 180).
 				To(Target("thumbnail", Sink(&runtimeTestSink{name: "thumbnail"}))),
@@ -1875,7 +1875,7 @@ func TestBranchCompositionSharedResampleCurrentPointRuns(t *testing.T) {
 		Branches(
 			Branch("voice").
 				Opus(64_000).
-				To(Target("voice", File("voice.ogg", io.Discard).Format(av.FormatOgg))),
+				To(Target("voice", File("voice.ogg", io.Discard, Format(av.FormatOgg)))),
 			Branch("levels").
 				To(Target("levels", Sink(levels))),
 		)
@@ -2136,7 +2136,7 @@ func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) 
 				Decode().
 				Resample(16_000, Mono).
 				Opus(64_000).
-				To(Target("voice", File("voice.ogg", io.Discard).Format(av.FormatOgg))),
+				To(Target("voice", File("voice.ogg", io.Discard, Format(av.FormatOgg)))),
 		)
 
 	planned, err := job.Describe()
@@ -2934,7 +2934,7 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 	_, err = task.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.decoded")).
 		Opus(96_000).
-		To(Target("archive", File("archive.audioonly", io.Discard).Format(audioOnly))))
+		To(Target("archive", File("archive.audioonly", io.Discard, Format(audioOnly)))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "target_mux_incompatible" ||
@@ -3641,7 +3641,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 		Resample(16_000, Mono).
 		Opus(64_000).
 		Tap(PacketTap("audio.voice.packets")).
-		To(Target("voice", File("voice.ogg", io.Discard).Format(av.FormatOgg))))
+		To(Target("voice", File("voice.ogg", io.Discard, Format(av.FormatOgg)))))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -66,12 +66,6 @@ type destinationBinding struct {
 	hasDirect bool
 }
 
-type ConfigurableDestination interface {
-	Destination
-	MIME(string) ConfigurableDestination
-	Format(av.FormatID) ConfigurableDestination
-}
-
 type targetSpec struct {
 	name string
 	dest destinationSpec

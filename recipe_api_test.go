@@ -1200,7 +1200,7 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 		}),
 	)
 
-	web := goav.Target("web", goav.File("web.ivf", io.Discard).Format(av.FormatIVF))
+	web := goav.Target("web", goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video().
@@ -1248,7 +1248,7 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 		}),
 	)
 
-	target := goav.Target("audio-only", goav.File("out.mkv", io.Discard).Format(av.FormatMatroska))
+	target := goav.Target("audio-only", goav.File("out.mkv", io.Discard, goav.Format(av.FormatMatroska)))
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video().
@@ -1287,7 +1287,7 @@ func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
 		}),
 	)
 
-	web := goav.Target("web", goav.File("web.ivf", io.Discard).Format(av.FormatIVF))
+	web := goav.Target("web", goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
 	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video().
@@ -1332,7 +1332,7 @@ func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 		Video().
 		Decode().
 		VP8(600_000).
-		To(goav.File("out.h264", io.Discard).Format(av.FormatAnnexB)).
+		To(goav.File("out.h264", io.Discard, goav.Format(av.FormatAnnexB))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "target_mux_incompatible" {
@@ -1387,42 +1387,43 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"Paths":                  true,
 	}
 	legacyTypes := map[string]bool{
-		"Builder":          true,
-		"BranchBuilder":    true,
-		"JobStreamBuilder": true,
-		"FlowBuilder":      true,
-		"AudioFlowBuilder": true,
-		"VideoFlowBuilder": true,
-		"Input":            true,
-		"DestinationSpec":  true,
-		"Output":           true,
-		"OutputIntent":     true,
-		"OutputReport":     true,
-		"OutputSpec":       true,
-		"Path":             true,
-		"PathSpec":         true,
-		"PathBuilder":      true,
-		"AudioOption":      true,
-		"RecordOption":     true,
-		"ProbeRequest":     true,
-		"ProbeResult":      true,
-		"ResizeOption":     true,
-		"Source":           true,
-		"Stage":            true,
-		"Sink":             true,
-		"Metadata":         true,
-		"CodecParameters":  true,
-		"CodecOption":      true,
-		"JobOption":        true,
-		"RTPOption":        true,
-		"RTPInputOption":   true,
-		"StreamBuilder":    true,
-		"StreamOption":     true,
-		"TargetRef":        true,
-		"TargetSpec":       true,
-		"TrackOption":      true,
-		"TranscodeJob":     true,
-		"TargetOrEndpoint": true,
+		"Builder":                 true,
+		"BranchBuilder":           true,
+		"JobStreamBuilder":        true,
+		"FlowBuilder":             true,
+		"AudioFlowBuilder":        true,
+		"VideoFlowBuilder":        true,
+		"Input":                   true,
+		"DestinationSpec":         true,
+		"Output":                  true,
+		"OutputIntent":            true,
+		"OutputReport":            true,
+		"OutputSpec":              true,
+		"Path":                    true,
+		"PathSpec":                true,
+		"PathBuilder":             true,
+		"AudioOption":             true,
+		"RecordOption":            true,
+		"ProbeRequest":            true,
+		"ProbeResult":             true,
+		"ResizeOption":            true,
+		"Source":                  true,
+		"Stage":                   true,
+		"Sink":                    true,
+		"Metadata":                true,
+		"CodecParameters":         true,
+		"CodecOption":             true,
+		"ConfigurableDestination": true,
+		"JobOption":               true,
+		"RTPOption":               true,
+		"RTPInputOption":          true,
+		"StreamBuilder":           true,
+		"StreamOption":            true,
+		"TargetRef":               true,
+		"TargetSpec":              true,
+		"TrackOption":             true,
+		"TranscodeJob":            true,
+		"TargetOrEndpoint":        true,
 	}
 	for filename, file := range pkg.Files {
 		for _, decl := range file.Decls {
@@ -1885,7 +1886,7 @@ func TestReadmeThirtySecondExamplesUseDefaultFormats(t *testing.T) {
 	}
 	text := string(body)
 	start := strings.Index(text, "## 30-Second Examples")
-	end := strings.Index(text, "## Adapter-Backed Workflows")
+	end := strings.Index(text, "## Composition Patterns")
 	if start < 0 || end < 0 || end <= start {
 		t.Fatalf("README sections not found")
 	}
@@ -1897,6 +1898,35 @@ func TestReadmeThirtySecondExamplesUseDefaultFormats(t *testing.T) {
 	} {
 		if strings.Contains(frontDoor, unsupported) {
 			t.Fatalf("30-second README examples include %s without default adapter support", unsupported)
+		}
+	}
+}
+
+func TestReadmeUsesDestinationOptions(t *testing.T) {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"goav.File(\"\", out, goav.Format(av.FormatIVF))",
+		"goav.Writer(",
+		"goav.Object(",
+		"goav.Format(",
+		"goav.MIME(",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("README should keep destination option example %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		").Format(",
+		").MIME(",
+		"ConfigurableDestination",
+		"Adapter-Backed Workflows",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("README should not teach stale destination/API spelling %q", forbidden)
 		}
 	}
 }
@@ -2302,10 +2332,6 @@ func TestToAcceptsDestinationSlices(t *testing.T) {
 
 func TestTargetBindsDestinations(t *testing.T) {
 	destinationType := reflect.TypeOf((*goav.Destination)(nil)).Elem()
-	configurableType := reflect.TypeOf((*goav.ConfigurableDestination)(nil)).Elem()
-	if !configurableType.Implements(destinationType) {
-		t.Fatalf("ConfigurableDestination should satisfy Destination")
-	}
 	targetFn := reflect.TypeOf(goav.Target)
 	if targetFn.NumIn() != 2 || targetFn.In(1) != destinationType {
 		t.Fatalf("Target second parameter = %v, want Destination", targetFn.In(1))
@@ -2321,8 +2347,8 @@ func TestTargetBindsDestinations(t *testing.T) {
 		"WriteCloser": goav.WriteCloser,
 	} {
 		fnType := reflect.TypeOf(fn)
-		if fnType.NumOut() != 1 || fnType.Out(0) != configurableType {
-			t.Fatalf("%s return = %v, want ConfigurableDestination", name, fnType.Out(0))
+		if fnType.NumOut() != 1 || fnType.Out(0) != destinationType {
+			t.Fatalf("%s return = %v, want Destination", name, fnType.Out(0))
 		}
 	}
 	sinkFn := reflect.TypeOf(goav.Sink)
@@ -3368,7 +3394,7 @@ func TestRecordRecipeRejectsUnnamedFileWithoutFormat(t *testing.T) {
 func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
-		goav.URIOut("").Format(av.FormatIVF),
+		goav.URIOut("", goav.Format(av.FormatIVF)),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -4407,7 +4433,7 @@ func TestDefaultRecordRecipeRunsWithExplicitUnnamedOutputFormat(t *testing.T) {
 	var out bytes.Buffer
 	job := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
-		goav.File("", &out).Format(av.FormatIVF),
+		goav.File("", &out, goav.Format(av.FormatIVF)),
 	)
 
 	spec, err := job.Describe()

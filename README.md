@@ -76,10 +76,11 @@ return goav.From(input).
 These examples use formats available in `goav.Default()` today. WebM, Ogg, WAV,
 and Y4M belong in adapters, not hidden core magic.
 
-## Adapter-Backed Workflows
+## Composition Patterns
 
-The next examples show the shape `goav` is designed for when matching container
-adapters are registered by the application or an adapter bundle.
+These examples show the shape `goav` is designed for as workflows grow. When an
+example uses a container outside the default bundle, register the matching
+adapter in the application runtime.
 
 ### Branches And Targets
 
@@ -145,7 +146,8 @@ return goav.From(input).
     Run(ctx)
 ```
 
-Several branches can share one target when the container supports that group:
+Several branches can share one target when the container supports that group.
+This is the natural shape for WebM once a WebM adapter is registered:
 
 ```go
 web := goav.Target("web", goav.File("web.webm", webFile))
@@ -581,6 +583,14 @@ return goav.From(input).
 
 Use `Target(name, destination)` when multiple branches should feed one named
 mux or sink group.
+
+The same destination option style works for built-in destinations:
+
+```go
+return goav.From(input).
+    Copy().
+    To(goav.File("", out, goav.Format(av.FormatIVF)))
+```
 
 ## Custom Codecs
 

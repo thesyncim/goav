@@ -526,8 +526,8 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	left := Target("shared", File("left.ogg", io.Discard).Format(av.FormatOgg))
-	right := Target("shared", File("right.ogg", io.Discard).Format(av.FormatOgg))
+	left := Target("shared", File("left.ogg", io.Discard, Format(av.FormatOgg)))
+	right := Target("shared", File("right.ogg", io.Discard, Format(av.FormatOgg)))
 
 	_, err = task.Attach(ctx,
 		Branch("left").From(src).To(left),
@@ -603,7 +603,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxTarget(t *testing.T) {
 		},
 	}
 	defer builtTask.Close()
-	target := Target("recording", File("recording.ogg", io.Discard).Format(av.FormatOgg))
+	target := Target("recording", File("recording.ogg", io.Discard, Format(av.FormatOgg)))
 
 	attachment, err := builtTask.Attach(ctx,
 		Branch("audio").From(PacketTap("audio.packets")).Copy().To(target),
@@ -1436,7 +1436,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
 		Opus(96_000).
-		To(Target("archive", File("archive.ogg", io.Discard).Format(av.FormatOgg))))
+		To(Target("archive", File("archive.ogg", io.Discard, Format(av.FormatOgg)))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "runtime_branch_graph_error" ||
@@ -1601,7 +1601,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
 		Opus(96_000).
-		To(Target("archive", File("archive.ogg", io.Discard).Format(av.FormatOgg))))
+		To(Target("archive", File("archive.ogg", io.Discard, Format(av.FormatOgg)))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "runtime_branch_graph_error" ||
@@ -1685,7 +1685,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
 		Opus(96_000).
-		To(Target("archive", File("archive.ogg", io.Discard).Format(av.FormatOgg))))
+		To(Target("archive", File("archive.ogg", io.Discard, Format(av.FormatOgg)))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "runtime_branch_node_duplicate" ||

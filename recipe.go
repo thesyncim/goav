@@ -820,8 +820,14 @@ type destinationSpec struct {
 }
 
 // File creates a writer-backed destination.
-func File(name string, writer io.Writer) ConfigurableDestination {
-	return fileDestination(name, writer)
+func File(name string, writer io.Writer, opts ...DestinationOption) Destination {
+	spec := fileDestination(name, writer)
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i](&spec)
+		}
+	}
+	return spec
 }
 
 func fileDestination(name string, writer io.Writer) destinationSpec {
@@ -836,8 +842,14 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 }
 
 // URIOut creates a URI destination opened by a registered format adapter.
-func URIOut(uri string) ConfigurableDestination {
-	return uriDestination(uri)
+func URIOut(uri string, opts ...DestinationOption) Destination {
+	spec := uriDestination(uri)
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i](&spec)
+		}
+	}
+	return spec
 }
 
 func uriDestination(uri string) destinationSpec {
@@ -866,7 +878,7 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 	return destinationSpec{sink: sink, name: name}
 }
 
-func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) ConfigurableDestination {
+func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destination {
 	spec := destinationSpec{
 		custom: writerDestination{name: name, open: open},
 		output: format.Output{
@@ -883,7 +895,7 @@ func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Configu
 	return spec
 }
 
-func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) ConfigurableDestination {
+func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) Destination {
 	return Writer(name, func(context.Context, TargetInfo) (io.WriteCloser, error) {
 		if writer == nil {
 			return nil, ErrNilWriter
@@ -892,7 +904,7 @@ func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) 
 	}, opts...)
 }
 
-func Object(name string, open ObjectOpenFunc, opts ...DestinationOption) ConfigurableDestination {
+func Object(name string, open ObjectOpenFunc, opts ...DestinationOption) Destination {
 	return Writer(name, func(ctx context.Context, info TargetInfo) (io.WriteCloser, error) {
 		if open == nil {
 			return nil, ErrNilWriter
@@ -971,19 +983,9 @@ func (s destinationSpec) withName(name string) destinationSpec {
 	return s
 }
 
-// MIME sets the target MIME type used for format detection.
-func (s destinationSpec) MIME(mimeType string) ConfigurableDestination {
-	return s.withMIME(mimeType)
-}
-
 func (s destinationSpec) withMIME(mimeType string) destinationSpec {
 	s.output.MIMEType = mimeType
 	return s
-}
-
-// Format sets the target container format explicitly.
-func (s destinationSpec) Format(format av.FormatID) ConfigurableDestination {
-	return s.withFormat(format)
 }
 
 func (s destinationSpec) withFormat(format av.FormatID) destinationSpec {
@@ -1094,7 +1096,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Reason:    "writer-backed file output has no name, URI, MIME type, or explicit format",
 			Suggestions: []string{
 				"give goav.File(name, writer) a name with a container extension",
-				"call .Format(...) with a registered container when the writer has no filename",
+				"pass goav.Format(...) to goav.File(...) when the writer has no filename",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
