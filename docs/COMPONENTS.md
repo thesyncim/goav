@@ -87,9 +87,9 @@ contract:
 | fanout routing | stable | one-to-many edges | One upstream can feed several downstream stages or sinks. |
 | `MediaPlan` | experimental | recipe intent to composable branch IR | Captures inputs, stream selectors, branch operations, target groups, taps, and decisions before graph construction. Transcode is represented as ordinary branches, not as a runtime mode. |
 | `PlanReport` | experimental | recipe intent to structured explanation | `Job.Explain(ctx)` reports inputs, stream branches, branch operations, taps, planner decisions, targets, adapter requirements, warnings, and the graph without embedding a text or diagram renderer in core. |
-| runtime attach | experimental | running graph to new branch | `Task.Attach(ctx, goav.Branch(...).FromTap(...))` attaches downstream branches to future messages in direct graphs and bounded buffered graphs; late branches can run custom stages, resize/resample from frame taps, encode Opus/VP8/VP9 from frame taps into file/URI targets, copy packet taps into file/URI targets, expose nested frame or packet taps, and detach as a subtree through `Attachment.Close(ctx)` or `Task.Detach(ctx, h)`. `Task.Taps()` lists stable recipe and runtime outlets. |
+| runtime attach | experimental | running graph to new branch | `Task.Attach(ctx, goav.Branch(...).FromTap(...))` attaches downstream branches to future messages in direct graphs and bounded buffered graphs; late branches can run custom stages, resize/resample from frame taps, encode Opus/VP8/VP9 from frame taps into file/URI targets, copy packet taps into file/URI targets, expose nested frame or packet taps, report branch-owned node counters through `Attachment.Stats()`, and detach as a subtree through `Attachment.Close(ctx)` or `Task.Detach(ctx, h)`. `Task.Taps()` lists stable recipe and runtime outlets. |
 | `pipeline.BufferPolicy` | experimental | execution policy | Controls direct, buffered, backpressure, and dropping behavior where supported. |
-| graph stats | experimental | counters/events | `Task.Stats()` exposes packet, frame, event, drop, and last-event counters. |
+| graph stats | experimental | counters/events | `Task.Stats()` exposes graph packet, frame, event, drop, last-event, per-node input/output, and per-node drop counters. |
 
 ## RTP
 

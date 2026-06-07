@@ -454,6 +454,13 @@ func TestGraphBufferedDropStats(t *testing.T) {
 		stats.Dropped != 1 || stats.DropReasons[DropOldest] != 1 {
 		t.Fatalf("stats = %+v", stats)
 	}
+	if got := stats.Nodes["source"]; got.OutPackets != 3 || got.InPackets != 0 {
+		t.Fatalf("source stats = %+v", got)
+	}
+	if got := stats.Nodes["sink"]; got.InPackets != 2 || got.OutPackets != 0 ||
+		got.Dropped != 1 || got.DropReasons[DropOldest] != 1 {
+		t.Fatalf("sink stats = %+v", got)
+	}
 }
 
 func TestGraphBufferedDropNewest(t *testing.T) {

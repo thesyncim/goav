@@ -636,7 +636,7 @@ func (a *runtimeAttachment) Stats() BranchStats {
 	if a == nil || a.owner == nil {
 		return BranchStats{}
 	}
-	return a.owner.Stats()
+	return branchStatsForNodes(a.owner.Stats(), a.nodes)
 }
 
 func (a *runtimeAttachment) Close(ctx context.Context) error {
@@ -662,6 +662,55 @@ func (a *runtimeAttachment) stopLocked(graph pipeline.Graph) error {
 		}
 	}
 	return first
+}
+
+func branchStatsForNodes(stats pipeline.GraphStats, nodes []pipeline.NodeRef) pipeline.GraphStats {
+	if len(nodes) == 0 || len(stats.Nodes) == 0 {
+		return pipeline.GraphStats{}
+	}
+	out := pipeline.GraphStats{
+		DropReasons: make(map[pipeline.DropPolicy]uint64),
+		Nodes:       make(map[string]pipeline.NodeStats, len(nodes)),
+	}
+	for i := range nodes {
+		name := nodes[i].String()
+		nodeStats, ok := stats.Nodes[name]
+		if !ok {
+			continue
+		}
+		out.Nodes[name] = clonePublicNodeStats(nodeStats)
+		out.Messages += nodeStats.OutMessages
+		out.Packets += nodeStats.OutPackets
+		out.Frames += nodeStats.OutFrames
+		out.Events += nodeStats.OutEvents
+		out.Delivered += nodeStats.InMessages
+		out.Dropped += nodeStats.Dropped
+		for reason, count := range nodeStats.DropReasons {
+			out.DropReasons[reason] += count
+		}
+		if nodeStats.LastEventPresent {
+			out.LastEvent = nodeStats.LastEvent
+			out.LastEventPresent = true
+		}
+	}
+	if len(out.DropReasons) == 0 {
+		out.DropReasons = nil
+	}
+	if len(out.Nodes) == 0 {
+		out.Nodes = nil
+	}
+	return out
+}
+
+func clonePublicNodeStats(stats pipeline.NodeStats) pipeline.NodeStats {
+	cloned := stats
+	if stats.DropReasons != nil {
+		cloned.DropReasons = make(map[pipeline.DropPolicy]uint64, len(stats.DropReasons))
+		for reason, count := range stats.DropReasons {
+			cloned.DropReasons[reason] = count
+		}
+	}
+	return cloned
 }
 
 func isStoppedAttachmentError(err error) bool {

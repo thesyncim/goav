@@ -1139,6 +1139,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     the selector node, and still rejects frame transforms or encoding on packet
     branches. Runtime tests prove mux and sink targets receive packets without
     any decoder adapter. Done.
+273. Add branch-local runtime observability:
+    pipeline stats now include per-node input/output packet, frame, event, and
+    drop counters for both direct and bounded buffered graphs. `Task.Stats()`
+    exposes the whole graph, while `Attachment.Stats()` filters those counters
+    down to nodes owned by that runtime branch, so a late sink, transform, mux,
+    or observer branch can be measured without confusing it with upstream
+    traffic. Direct, buffered, and runtime attachment tests pin the behavior.
+    Done.
 
 ## First Vertical Slice
 
@@ -1387,8 +1395,9 @@ surface is small: `From`, stream builders, `Tap`, `Branch`, `Branches`,
 expand ordered stage/tap/transform/encode operations into branch intent instead
 of a parallel graph language, and
 `Task.Attach` remains the late branch control plane for running graphs,
-including custom-stage, resize/resample, dependent branches after runtime
-resize taps, post-encode packet taps feeding dependent packet-copy branches,
+including custom-stage, resize/resample, branch-local node stats, dependent
+branches after runtime resize taps, post-encode packet taps feeding dependent
+packet-copy branches,
 flow-applied Opus encode-to-target branches, late Opus/VP8/VP9
 encode-to-endpoint, packet-copy endpoint, packet-copy recording, Opus encoded
 late recording, and sink branches that can publish nested runtime taps for later

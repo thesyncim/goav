@@ -277,7 +277,8 @@ outlets for later attachments. Observer branches can use
 `.Do(goav.FrameFunc(...)).Tap(name).To(goav.SinkEndpoint(...))` to both inspect
 frames and publish a downstream attach point. H264 and AV1 recipe encoding
 remain work in progress. Detaching a parent attachment also removes dependent
-late branches anchored from its taps.
+late branches anchored from its taps. `Attachment.Stats()` reports only the
+branch-owned node counters; `Task.Stats()` reports the whole graph.
 Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
 packet-domain taps.
 

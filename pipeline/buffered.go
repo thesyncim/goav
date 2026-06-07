@@ -47,21 +47,22 @@ type bufferedMessage struct {
 }
 
 type bufferedRunner struct {
-	config   GraphConfig
-	mu       sync.RWMutex
-	index    map[string]int
-	nodes    []bufferedNode
-	sources  []int
-	events   chan av.Event
-	pending  sync.WaitGroup
-	workers  sync.WaitGroup
-	statsMu  sync.Mutex
-	stats    GraphStats
-	runCtx   context.Context
-	runErrs  chan<- error
-	running  bool
-	draining bool
-	closed   bool
+	config      GraphConfig
+	mu          sync.RWMutex
+	index       map[string]int
+	nodes       []bufferedNode
+	statsByNode []NodeStats
+	sources     []int
+	events      chan av.Event
+	pending     sync.WaitGroup
+	workers     sync.WaitGroup
+	statsMu     sync.Mutex
+	stats       GraphStats
+	runCtx      context.Context
+	runErrs     chan<- error
+	running     bool
+	draining    bool
+	closed      bool
 }
 
 type bufferedSourceRun struct {
@@ -344,9 +345,16 @@ func (g *bufferedRunner) Events() <-chan av.Event {
 }
 
 func (g *bufferedRunner) Stats() GraphStats {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	names := make([]string, len(g.nodes))
+	for i := range g.nodes {
+		names[i] = g.nodes[i].name
+	}
+
 	g.statsMu.Lock()
 	defer g.statsMu.Unlock()
-	return cloneGraphStats(g.stats)
+	return cloneGraphStatsWithNodes(g.stats, names, g.statsByNode)
 }
 
 func (g *bufferedRunner) Close() error {
@@ -463,6 +471,7 @@ func (g *bufferedRunner) addNode(node bufferedNode) (int, error) {
 	node.emitter = bufferedEmitter{graph: g, from: index}
 	g.index[node.name] = index
 	g.nodes = append(g.nodes, node)
+	g.statsByNode = append(g.statsByNode, NodeStats{})
 	return index, nil
 }
 
@@ -545,17 +554,18 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 		g.mu.RUnlock()
 		return ErrUnknownNode
 	}
-	if !g.nodes[from].active {
+	fromNode := &g.nodes[from]
+	if !fromNode.active {
 		g.mu.RUnlock()
 		return nil
 	}
-	g.observeMessage(msg)
+	g.observeMessage(from, msg)
 	if err := g.publishEvent(msg); err != nil {
 		g.mu.RUnlock()
 		return err
 	}
 
-	routes := g.nodes[from].routes
+	routes := fromNode.routes
 	for i := range routes {
 		route := &routes[i]
 		if !route.matches(msg) {
@@ -590,14 +600,14 @@ func (g *bufferedRunner) enqueue(ctx context.Context, to int, msg *Message) erro
 	case bufferAdmit:
 		return g.enqueueBound(ctx, node, msg)
 	case bufferDropIncoming:
-		g.observeDrop(node.policy.Drop)
+		g.observeDrop(to, node.policy.Drop)
 		return nil
 	case bufferDropOldest:
 		select {
 		case dropped := <-node.queue:
 			node.releaseSlot(dropped)
 			g.pending.Done()
-			g.observeDrop(node.policy.Drop)
+			g.observeDrop(to, node.policy.Drop)
 		default:
 		}
 		return g.enqueueBound(ctx, node, msg)
@@ -668,7 +678,7 @@ func (g *bufferedRunner) deliver(ctx context.Context, to int, msg *Message) erro
 	sink := g.nodes[to].sink
 	emitter := g.nodes[to].emitter
 	g.mu.RUnlock()
-	g.observeDelivered()
+	g.observeDelivered(to, msg)
 	switch kind {
 	case nodeStage:
 		return stage.Handle(ctx, msg, &emitter)
@@ -697,22 +707,31 @@ func (g *bufferedRunner) releaseSlot(index int, slot *bufferedMessage) {
 	free <- slot
 }
 
-func (g *bufferedRunner) observeMessage(msg *Message) {
+func (g *bufferedRunner) observeMessage(node int, msg *Message) {
 	g.statsMu.Lock()
 	defer g.statsMu.Unlock()
 	g.stats.observeMessage(msg)
+	if node >= 0 && node < len(g.statsByNode) {
+		g.statsByNode[node].observeOut(msg)
+	}
 }
 
-func (g *bufferedRunner) observeDrop(policy DropPolicy) {
+func (g *bufferedRunner) observeDrop(node int, policy DropPolicy) {
 	g.statsMu.Lock()
 	defer g.statsMu.Unlock()
 	g.stats.observeDrop(policy)
+	if node >= 0 && node < len(g.statsByNode) {
+		g.statsByNode[node].observeDrop(policy)
+	}
 }
 
-func (g *bufferedRunner) observeDelivered() {
+func (g *bufferedRunner) observeDelivered(node int, msg *Message) {
 	g.statsMu.Lock()
 	defer g.statsMu.Unlock()
 	g.stats.Delivered++
+	if node >= 0 && node < len(g.statsByNode) {
+		g.statsByNode[node].observeIn(msg)
+	}
 }
 
 func (g *bufferedRunner) publishEvent(msg *Message) error {

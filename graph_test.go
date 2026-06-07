@@ -171,6 +171,19 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	if base.count != 3 || stage.count != 1 || late.count != 1 || late.lastPacketValue.Payload.Bytes[0] != 2 {
 		t.Fatalf("base=%d stage=%d late=%d packet=%+v", base.count, stage.count, late.count, late.lastPacketValue)
 	}
+	branchStats := attachment.Stats()
+	if _, ok := branchStats.Nodes["base"]; ok {
+		t.Fatalf("branch stats leaked base node: %+v", branchStats.Nodes)
+	}
+	if got := branchStats.Nodes["screenshots/sample"]; got.InPackets != 1 || got.OutPackets != 1 {
+		t.Fatalf("sample branch stats = %+v", got)
+	}
+	if got := branchStats.Nodes["screenshots/out"]; got.InPackets != 1 || got.OutPackets != 0 {
+		t.Fatalf("out branch stats = %+v", got)
+	}
+	if branchStats.Delivered != 2 || branchStats.Packets != 1 {
+		t.Fatalf("branch stats = %+v", branchStats)
+	}
 	text := specText(task.Describe())
 	if strings.Contains(text, "screenshots/sample") || strings.Contains(text, "screenshots/out") {
 		t.Fatalf("spec:\n%s", text)

@@ -153,6 +153,22 @@ type GraphStats struct {
 	Delivered        uint64
 	LastEvent        av.Event
 	LastEventPresent bool
+	Nodes            map[string]NodeStats
+}
+
+type NodeStats struct {
+	InMessages       uint64
+	InPackets        uint64
+	InFrames         uint64
+	InEvents         uint64
+	OutMessages      uint64
+	OutPackets       uint64
+	OutFrames        uint64
+	OutEvents        uint64
+	Dropped          uint64
+	DropReasons      map[DropPolicy]uint64
+	LastEvent        av.Event
+	LastEventPresent bool
 }
 
 type GraphConfig struct {

@@ -59,8 +59,9 @@ make the implementation match the composable planner promise.
    keyframe request, drop-until-sync, and different-codec failure/rebuild
    choices should be visible to realtime users.
 10. Add runtime observability through task stats, traces, drop reasons, and
-   latency counters. First task stats slice active for graph message/event/drop
-   counters.
+   latency counters. Task stats now include graph and per-node counters, and
+   runtime attachments expose branch-owned node stats; traces and latency
+   counters remain future slices.
 11. Prepare v0.1 only after README examples compile/run or clearly name their
     adapter requirements, default and tagged tests pass, core stays cgo-free,
     hot-path allocation guards remain green, and one public RTP/WebRTC record
