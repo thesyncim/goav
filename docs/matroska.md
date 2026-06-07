@@ -238,12 +238,14 @@ ticks. In seekable mode, `Info.Duration` is patched on close to the maximum
 observed packet end time expressed in those same timestamp-scale ticks.
 When `ReferenceBlockTimeNS` is set, the muxer writes one `ReferenceBlock`
 element per offset. Offsets are signed nanosecond values relative to the packet
-timestamp and are stored in timestamp-scale ticks.
+timestamp and are stored in timestamp-scale ticks, so they must be exact
+multiples of `TimecodeScaleNS`.
 `WriteLacedPacket` writes a SimpleBlock by default. When `FrameDurationNS`,
 references, reference priority, codec state, discard padding, or block
 additions are set, it writes a laced BlockGroup. `FrameDurationNS` is per
 emitted frame; the stored BlockDuration is the total laced block duration so
-demuxing returns the same per-frame duration.
+demuxing returns the same per-frame duration. Non-zero `FrameDurationNS` values
+therefore must be exact multiples of `TimecodeScaleNS`.
 Negative packet durations and packet end times that overflow `int64` are
 rejected before bytes are written.
 Seekable mode also writes Cues using Segment-relative Cluster positions plus

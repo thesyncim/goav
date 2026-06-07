@@ -384,6 +384,9 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 			int64(len(packet.Frames)) > math.MaxInt64/packet.FrameDurationNS) {
 		return ErrInvalidData
 	}
+	if err := validateLacedFrameDuration(packet.FrameDurationNS, m.options.TimecodeScaleNS); err != nil {
+		return err
+	}
 	if packet.Keyframe && len(packet.ReferenceBlockTimeNS) != 0 {
 		return ErrInvalidData
 	}
@@ -2811,9 +2814,26 @@ func validateReferenceBlockTimes(references []int64, scaleNS int64) error {
 		return ErrInvalidData
 	}
 	for i := range references {
+		if !timecodeScaleAligned(references[i], scaleNS) {
+			return ErrInvalidData
+		}
 		_ = scaledReferenceBlockTicks(references[i], scaleNS)
 	}
 	return nil
+}
+
+func validateLacedFrameDuration(frameDurationNS int64, scaleNS int64) error {
+	if scaleNS <= 0 {
+		return ErrInvalidData
+	}
+	if frameDurationNS > 0 && !timecodeScaleAligned(frameDurationNS, scaleNS) {
+		return ErrInvalidData
+	}
+	return nil
+}
+
+func timecodeScaleAligned(value int64, scaleNS int64) bool {
+	return scaleNS > 0 && value%scaleNS == 0
 }
 
 func validateBlockAdditions(additions []BlockAddition) (uint64, error) {

@@ -347,6 +347,31 @@ func TestMuxerRejectsNonMonotonicTimecodes(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsUnscaledReferenceBlockTimes(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{TimecodeScaleNS: 1_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = muxer.WritePacket(Packet{
+		TrackID:              trackID,
+		TimeNS:               20_000_000,
+		ReferenceBlockTimeNS: []int64{-500_000},
+		Data:                 []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	})
+	if !errors.Is(err, matroska.ErrInvalidData) {
+		t.Fatalf("err = %v, want matroska.ErrInvalidData", err)
+	}
+}
+
 func TestMuxerAllowsCrossTrackInterleavedTimecodes(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{})

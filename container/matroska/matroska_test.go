@@ -6813,6 +6813,59 @@ func TestMuxerRejectsKeyframeReferences(t *testing.T) {
 	}
 }
 
+func TestMuxerRejectsUnscaledReferenceBlockTimes(t *testing.T) {
+	for _, reference := range []int64{-500_000, 500_000} {
+		t.Run(strconv.FormatInt(reference, 10), func(t *testing.T) {
+			muxer, err := NewMuxer(discardWriter{}, MuxerOptions{TimecodeScaleNS: 1_000_000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			trackID, err := muxer.AddTrack(Track{
+				Type:  TrackVideo,
+				Codec: CodecVP8,
+				Video: VideoConfig{Width: 640, Height: 360},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = muxer.WritePacket(Packet{
+				TrackID:              trackID,
+				TimeNS:               20_000_000,
+				ReferenceBlockTimeNS: []int64{reference},
+				Data:                 []byte{1},
+			})
+			if !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestMuxerRejectsUnscaledLacedFrameDuration(t *testing.T) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{TimecodeScaleNS: 1_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = muxer.WriteLacedPacket(LacedPacket{
+		TrackID:         trackID,
+		TimeNS:          20_000_000,
+		FrameDurationNS: 1_500_000,
+		Lacing:          LacingXiph,
+		Frames:          [][]byte{{1}, {2}},
+	})
+	if !errors.Is(err, ErrInvalidData) {
+		t.Fatalf("err = %v, want ErrInvalidData", err)
+	}
+}
+
 func TestMuxerRejectsDuplicateBlockAdditionIDs(t *testing.T) {
 	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
 	if err != nil {
