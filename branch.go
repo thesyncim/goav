@@ -356,7 +356,7 @@ func validateBranchSpec(selected av.MediaType, index int, spec BranchSpec) error
 		return transcodeEncodeMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
 	}
 	if len(spec.labels) == 0 {
-		return transcodeBranchOutputMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
+		return transcodeBranchTargetMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
 	}
 	seen := make(map[string]int, len(spec.labels))
 	for i, label := range spec.labels {
@@ -364,8 +364,8 @@ func validateBranchSpec(selected av.MediaType, index int, spec BranchSpec) error
 			return transcodeEmptyOutputLabelError(streamBuild{name: spec.name, selector: av.StreamSelector{Type: selected}}, i)
 		}
 		if firstIndex, ok := seen[label]; ok {
-			return transcodeDuplicateBranchOutputError(
-				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, RouteTo: spec.labels},
+			return transcodeDuplicateBranchTargetError(
+				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Targets: spec.labels},
 				label,
 				firstIndex,
 				i,

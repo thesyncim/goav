@@ -298,7 +298,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     Done.
 92. Add stream-scoped recipe builders on `From(input)`: selected audio/video
     streams can `Decode`, `Do` custom stages, encode with the currently ready
-    Opus/VP8/VP9 recipe targets, and route to outputs while lowering through
+    Opus/VP8/VP9 recipe targets, and route to targets while lowering through
     the existing selected-stream runtime compilers. H264 and AV1 recipe encode
     paths return an explicit work-in-progress diagnostic. Done.
 93. Add the WebRTC recipe input constructor: `WebRTCTrack(track)` adapts Pion
@@ -619,7 +619,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     from public `Intent` before readers, writers, sinks, and stage attachments
     are validated. Done.
 186. Split transcode recipe validation the same way: one input, branch presence,
-    branch names, selectors, encode targets, branch output routes, duplicate
+    branch names, selectors, encode targets, branch target refs, duplicate
     branch routes, duplicate branch names, and transform shape now fail from
     public `Intent`, while RTP rejection and mux-output attachment validation
     stay in a concrete attachment pass before plan lowering. Done.
@@ -628,7 +628,7 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     branch `.To(...)`.
     Done.
 188. Bind ordinary stream recipe routes before lowering: stream-scoped
-    `.Audio()`/`.Video()` `RouteTo` labels now check against concrete
+    `.Audio()`/`.Video()` `Targets` labels now check against concrete
     stream-local output attachments in their own compiler pass, matching the
     transcode route-binding shape. Done.
 189. Validate ordinary stream recipe transforms from intent: stream-scoped

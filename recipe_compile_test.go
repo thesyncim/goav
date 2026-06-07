@@ -148,8 +148,8 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 				intent: Intent{
 					Inputs: []InputIntent{{Name: "input.ivf"}},
 					Streams: []StreamIntent{
-						{Name: "audio", Decode: true, RouteTo: []string{"audio"}},
-						{Name: "video", Decode: true, RouteTo: []string{"video"}},
+						{Name: "audio", Decode: true, Targets: []string{"audio"}},
+						{Name: "video", Decode: true, Targets: []string{"video"}},
 					},
 					Targets: []TargetIntent{{Name: "audio"}, {Name: "video"}},
 				},
@@ -167,7 +167,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []StreamIntent{{
 						Name:    "audio",
 						Decode:  true,
-						RouteTo: []string{"frames"},
+						Targets: []string{"frames"},
 					}},
 					Targets: []TargetIntent{{Name: "archive.ivf"}, {Name: "frames"}},
 				},
@@ -183,7 +183,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Inputs: []InputIntent{{Name: "input.ivf"}},
 					Streams: []StreamIntent{{
 						Name:    "audio",
-						RouteTo: []string{"frames"},
+						Targets: []string{"frames"},
 					}},
 					Targets: []TargetIntent{{Name: "frames"}},
 				},
@@ -215,7 +215,7 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 			Streams: []StreamIntent{{
 				Name:    "audio",
 				Decode:  true,
-				RouteTo: []string{"missing"},
+				Targets: []string{"missing"},
 			}},
 			Targets: []TargetIntent{{Name: "archive.ogg"}},
 		},
@@ -447,7 +447,7 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 				Name:    "audio",
 				Select:  StreamSelect{Type: av.MediaAudio},
 				Encode:  Opus(Bitrate(96_000)),
-				RouteTo: []string{"archive"},
+				Targets: []string{"archive"},
 			}},
 			Targets: []TargetIntent{{Name: "archive"}},
 		},
@@ -929,7 +929,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 					Name:    "360p",
 					Select:  StreamSelect{Type: av.MediaVideo},
 					Encode:  VP9(Bitrate(600_000)),
-					RouteTo: []string{"web"},
+					Targets: []string{"web"},
 				}}},
 				transcodeInputProbeReady: true,
 				transcodeInputProbe: format.ProbeResult{
@@ -1130,7 +1130,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			stream: StreamIntent{
 				Name:    "audio",
 				Decode:  true,
-				RouteTo: []string{"frames", "archive.ogg"},
+				Targets: []string{"frames", "archive.ogg"},
 			},
 			outputs: []EndpointSpec{frameSink, fileOutput},
 			code:    "output_kind_mixed",
@@ -1141,7 +1141,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			stream: StreamIntent{
 				Name:    "audio",
 				Decode:  true,
-				RouteTo: []string{"archive.ogg"},
+				Targets: []string{"archive.ogg"},
 			},
 			outputs: []EndpointSpec{fileOutput},
 			code:    "encode_missing",
@@ -1153,7 +1153,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 				Name:    "audio",
 				Decode:  true,
 				Encode:  Opus(Bitrate(96_000)),
-				RouteTo: []string{"frames"},
+				Targets: []string{"frames"},
 			},
 			outputs: []EndpointSpec{frameSink},
 			code:    "encoded_sink_unsupported",
@@ -1200,7 +1200,7 @@ func TestJobStreamRuntimeCapabilitiesPassRejectsUnsupportedBuilder(t *testing.T)
 				Select:      StreamSelect{Type: av.MediaVideo},
 				Decode:      true,
 				CodecChange: RealtimeCodecChangePolicy(),
-				RouteTo:     []string{"frames"},
+				Targets:     []string{"frames"},
 			},
 			code: "codec_change_runtime_unsupported",
 			want: []string{"codec-change policy requires the standard runtime builder", "goav.Default"},
@@ -1212,7 +1212,7 @@ func TestJobStreamRuntimeCapabilitiesPassRejectsUnsupportedBuilder(t *testing.T)
 				Select:     StreamSelect{Type: av.MediaAudio},
 				Decode:     true,
 				Transforms: []TransformSpec{Resample(48_000, Stereo)},
-				RouteTo:    []string{"frames"},
+				Targets:    []string{"frames"},
 			},
 			code: "transform_runtime_unsupported",
 			want: []string{"stream transforms require the standard runtime builder", ".Do(stage)"},
@@ -1288,7 +1288,7 @@ func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 					Streams: []StreamIntent{{
 						Name:    "audio",
 						Decode:  true,
-						RouteTo: []string{"frames"},
+						Targets: []string{"frames"},
 					}},
 					Targets: []TargetIntent{{Name: "frames"}},
 				},
@@ -1309,7 +1309,7 @@ func TestJobStreamAttachmentsPassRejectsInvalidConcreteSteps(t *testing.T) {
 						Select:     StreamSelect{Type: av.MediaAudio},
 						Decode:     true,
 						Transforms: []TransformSpec{Resample(48_000, Stereo)},
-						RouteTo:    []string{"frames"},
+						Targets:    []string{"frames"},
 					}},
 					Targets: []TargetIntent{{Name: "frames"}},
 				},
@@ -1355,7 +1355,7 @@ func TestJobIntentShapePassRejectsStreamTransforms(t *testing.T) {
 				Select:     StreamSelect{Type: av.MediaVideo},
 				Decode:     true,
 				Transforms: []TransformSpec{Resize(0, 720)},
-				RouteTo:    []string{"frames"},
+				Targets:    []string{"frames"},
 			},
 			code: "transform_invalid",
 			want: "positive width and height",
@@ -1367,7 +1367,7 @@ func TestJobIntentShapePassRejectsStreamTransforms(t *testing.T) {
 				Select:     StreamSelect{Type: av.MediaAudio},
 				Decode:     true,
 				Transforms: []TransformSpec{Resize(320, 180)},
-				RouteTo:    []string{"frames"},
+				Targets:    []string{"frames"},
 			},
 			code: "transform_media_mismatch",
 			want: "resize applies to video streams",
@@ -1379,7 +1379,7 @@ func TestJobIntentShapePassRejectsStreamTransforms(t *testing.T) {
 				Select:     StreamSelect{Type: av.MediaVideo},
 				Decode:     true,
 				Transforms: []TransformSpec{{}},
-				RouteTo:    []string{"frames"},
+				Targets:    []string{"frames"},
 			},
 			code: "transform_invalid",
 			want: "empty stream transform",
@@ -1424,7 +1424,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 						Name:    "360p",
 						Select:  StreamSelect{Type: av.MediaVideo},
 						Encode:  VP9(Bitrate(600_000)),
-						RouteTo: []string{"web"},
+						Targets: []string{"web"},
 					}},
 				},
 			},
@@ -1451,7 +1451,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []StreamIntent{{
 						Select:  StreamSelect{Type: av.MediaVideo},
 						Encode:  VP9(Bitrate(600_000)),
-						RouteTo: []string{"web"},
+						Targets: []string{"web"},
 					}},
 				},
 			},
@@ -1467,7 +1467,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []StreamIntent{{
 						Name:    "360p",
 						Select:  StreamSelect{Type: av.MediaVideo},
-						RouteTo: []string{"web"},
+						Targets: []string{"web"},
 					}},
 				},
 			},
@@ -1484,7 +1484,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 						Name:    "360p",
 						Select:  StreamSelect{Type: av.MediaVideo},
 						Encode:  Auto(),
-						RouteTo: []string{"web"},
+						Targets: []string{"web"},
 					}},
 				},
 			},
@@ -1492,7 +1492,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 			want: "automatic codec selection",
 		},
 		{
-			name: "duplicate branch output",
+			name: "duplicate branch target",
 			state: recipeCompileState{
 				operation: transcodeRecipeOperation,
 				intent: Intent{
@@ -1501,7 +1501,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 						Name:    "360p",
 						Select:  StreamSelect{Type: av.MediaVideo},
 						Encode:  VP9(Bitrate(600_000)),
-						RouteTo: []string{"web", "web"},
+						Targets: []string{"web", "web"},
 					}},
 				},
 			},
@@ -1592,7 +1592,7 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 				Name:    "360p",
 				Select:  StreamSelect{Type: av.MediaVideo},
 				Encode:  VP9(Bitrate(600_000)),
-				RouteTo: []string{"missing"},
+				Targets: []string{"missing"},
 			}},
 			Targets: []TargetIntent{{Name: "web.ivf"}},
 		},
@@ -1634,7 +1634,7 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 			Name:    "720p",
 			Select:  StreamSelect{Type: av.MediaVideo},
 			Encode:  VP9(Bitrate(2_000_000)),
-			RouteTo: []string{"web"},
+			Targets: []string{"web"},
 		}}},
 		transcodeInputProbeReady: true,
 		transcodeInputProbe: format.ProbeResult{
@@ -1809,7 +1809,7 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	if len(resolved.intent.Streams) != 1 || resolved.intent.Streams[0].Name != "360p" {
 		t.Fatalf("intent streams = %+v", resolved.intent.Streams)
 	}
-	if got := resolved.intent.Streams[0].RouteTo; len(got) != 1 || got[0] != "web" {
+	if got := resolved.intent.Streams[0].Targets; len(got) != 1 || got[0] != "web" {
 		t.Fatalf("intent route targets = %+v, want [web]", got)
 	}
 	spec, err := resolved.Describe()

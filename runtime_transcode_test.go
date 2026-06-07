@@ -17,7 +17,7 @@ import (
 	"github.com/thesyncim/goav/transcode"
 )
 
-func TestRuntimeBuilderTranscodeBranchesRouteToOutputs(t *testing.T) {
+func TestRuntimeBuilderTranscodeBranchesFeedMuxOutputs(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{
 		streams: streams,

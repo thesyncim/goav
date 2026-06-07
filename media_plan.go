@@ -167,7 +167,7 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 			Input:      firstInputName(state.intent.Inputs),
 			Stream:     stream.Select,
 			Operations: operations,
-			Outputs:    planBranchOutputs(stream.RouteTo, outputs),
+			Outputs:    planBranchTargets(stream.Targets, outputs),
 		})
 		decisions = append(decisions, branchDecisions...)
 	}
@@ -478,9 +478,9 @@ func planOperationNodeName(branch string, operation planOperation, index int) st
 	}
 }
 
-func planBranchOutputs(routeTo []string, outputs []planOutput) []string {
-	if len(routeTo) != 0 {
-		return append([]string(nil), routeTo...)
+func planBranchTargets(targetRefs []string, outputs []planOutput) []string {
+	if len(targetRefs) != 0 {
+		return append([]string(nil), targetRefs...)
 	}
 	return planOutputNames(outputs)
 }

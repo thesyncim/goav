@@ -409,7 +409,7 @@ func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCoun
 	if !hasStream {
 		return nil
 	}
-	if jobOutputCount == 0 && len(intent.Targets) == len(stream.RouteTo) {
+	if jobOutputCount == 0 && len(intent.Targets) == len(stream.Targets) {
 		return nil
 	}
 	return jobOutputScopeMixedError(operation, stream)
@@ -430,7 +430,7 @@ func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
 	}
 }
 
-func jobOutputReferenceMissingError(operation string, stream StreamIntent, label string) error {
+func jobTargetReferenceMissingError(operation string, stream StreamIntent, label string) error {
 	return &BuildError{
 		Code:      "output_missing",
 		Operation: operation,

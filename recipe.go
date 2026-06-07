@@ -48,7 +48,7 @@ type StreamIntent struct {
 	Taps        []TapIntent
 	Encode      CodecSpec
 	CodecChange CodecChangePolicy
-	RouteTo     []string
+	Targets     []string
 }
 
 type StreamOperation struct {
@@ -1205,11 +1205,11 @@ func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool
 
 func validateJobOutputBindings(operation string, stream StreamIntent, outputs []EndpointSpec) error {
 	labels := jobOutputLabelSet(outputs)
-	for _, label := range stream.RouteTo {
+	for _, label := range stream.Targets {
 		if _, ok := labels[label]; ok {
 			continue
 		}
-		return jobOutputReferenceMissingError(operation, stream, label)
+		return jobTargetReferenceMissingError(operation, stream, label)
 	}
 	return nil
 }
@@ -1344,7 +1344,7 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 		Taps:        append(streamStepTapIntents(stream.steps, stream.selector.Type), postEncodeTapIntents(stream.postEncodeTaps, stream.selector.Type)...),
 		Encode:      stream.encode,
 		CodecChange: stream.codecChange,
-		RouteTo:     outputLabels(stream.outputs),
+		Targets:     endpointTargetNames(stream.outputs),
 	}
 }
 
@@ -1365,7 +1365,7 @@ func transcodeStreamIntent(stream streamBuild) StreamIntent {
 		Transforms: cloneTransformSpecs(stream.transforms),
 		Taps:       streamTapIntents(stream.taps, stream.selector.Type, stream.decode),
 		Encode:     stream.encode,
-		RouteTo:    append([]string(nil), stream.labels...),
+		Targets:    append([]string(nil), stream.labels...),
 	}
 }
 
@@ -2780,10 +2780,10 @@ func planTranscodeRecipe(intent Intent, input InputSpec, namedOutputs []namedTar
 				Parameters: stream.Encode.Parameters,
 				Bitrate:    stream.Encode.Bitrate,
 			},
-			Labels: append([]string(nil), stream.RouteTo...),
+			Labels: append([]string(nil), stream.Targets...),
 		}
 		branch.Steps = transcodeBranchSteps(stream)
-		for _, label := range stream.RouteTo {
+		for _, label := range stream.Targets {
 			outputBranches[label] = append(outputBranches[label], branchName)
 		}
 		if err := validateTranscodeBranchTransforms(stream); err != nil {
@@ -2927,10 +2927,10 @@ func validateTranscodeBranchIntentShape(stream StreamIntent, index int) error {
 	if err := validateRecipeEncode(stream.Encode, transcodeRecipeOperation, stream.Name); err != nil {
 		return err
 	}
-	if len(stream.RouteTo) == 0 {
-		return transcodeBranchOutputMissingError(stream)
+	if len(stream.Targets) == 0 {
+		return transcodeBranchTargetMissingError(stream)
 	}
-	return validateTranscodeBranchOutputLabels(stream)
+	return validateTranscodeBranchTargets(stream)
 }
 
 func validateTranscodeAttachments(input InputSpec, namedOutputs []namedTargetSpec, fromBranchSplit bool) error {
@@ -2963,11 +2963,11 @@ func validateTranscodeOutputBindings(intent Intent, namedOutputs []namedTargetSp
 	outputs := transcodeTargetLabelSet(namedOutputs)
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
-		for _, label := range stream.RouteTo {
+		for _, label := range stream.Targets {
 			if _, ok := outputs[label]; ok {
 				continue
 			}
-			return transcodeOutputReferenceMissingError(stream, label)
+			return transcodeTargetReferenceMissingError(stream, label)
 		}
 	}
 	return nil
@@ -3018,7 +3018,7 @@ func transcodeEncodeMissingError(stream StreamIntent) error {
 	}
 }
 
-func transcodeBranchOutputMissingError(stream StreamIntent) error {
+func transcodeBranchTargetMissingError(stream StreamIntent) error {
 	selector := streamIntentSelector(stream)
 	return &BuildError{
 		Code:      "target_missing",
@@ -3033,7 +3033,7 @@ func transcodeBranchOutputMissingError(stream StreamIntent) error {
 	}
 }
 
-func transcodeOutputReferenceMissingError(stream StreamIntent, label string) error {
+func transcodeTargetReferenceMissingError(stream StreamIntent, label string) error {
 	return &BuildError{
 		Code:      "target_missing",
 		Operation: transcodeRecipeOperation,
@@ -3041,7 +3041,7 @@ func transcodeOutputReferenceMissingError(stream StreamIntent, label string) err
 		Reason:    "target " + label + " is referenced but not defined",
 		Suggestions: []string{
 			"pass a goav.Target(\"" + label + "\", endpoint) value to the branch .To(...) call",
-			"reuse typed target values instead of routing by string label",
+			"reuse typed target values instead of repeating string target refs",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3159,24 +3159,24 @@ func transcodeIntentBranchNameMissingError(index int, stream StreamIntent) error
 		Suggestions: []string{
 			"call .Video(\"720p\") for video branches",
 			"call .Audio(\"main\") for audio branches",
-			"use branch names as handles for graph inspection and output routing",
+			"use branch names as handles for graph inspection and target planning",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func validateTranscodeBranchOutputLabels(stream StreamIntent) error {
-	seen := make(map[string]int, len(stream.RouteTo))
-	for i, label := range stream.RouteTo {
+func validateTranscodeBranchTargets(stream StreamIntent) error {
+	seen := make(map[string]int, len(stream.Targets))
+	for i, label := range stream.Targets {
 		if firstIndex, ok := seen[label]; ok {
-			return transcodeDuplicateBranchOutputError(stream, label, firstIndex, i)
+			return transcodeDuplicateBranchTargetError(stream, label, firstIndex, i)
 		}
 		seen[label] = i
 	}
 	return nil
 }
 
-func transcodeDuplicateBranchOutputError(stream StreamIntent, label string, firstIndex int, secondIndex int) error {
+func transcodeDuplicateBranchTargetError(stream StreamIntent, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
 		Code:      "target_duplicate",
 		Operation: transcodeRecipeOperation,
@@ -3268,7 +3268,7 @@ func transcodeBranchName(stream streamBuild) string {
 	return firstNonEmpty(stream.name, string(stream.selector.Type), "stream")
 }
 
-func outputLabels(outputs []EndpointSpec) []string {
+func endpointTargetNames(outputs []EndpointSpec) []string {
 	labels := make([]string, 0, len(outputs))
 	for i := range outputs {
 		labels = append(labels, outputs[i].label(fmt.Sprintf("output-%d", i)))

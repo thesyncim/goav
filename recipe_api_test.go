@@ -1211,7 +1211,7 @@ func TestAudioFlowAppliesToStreamRecipeIntent(t *testing.T) {
 		stream.Transforms[0].Resample.SampleRate != 16_000 ||
 		stream.Transforms[0].Resample.Channels != goav.Mono ||
 		stream.Encode.ID != av.CodecOpus || stream.Encode.Bitrate != 32_000 ||
-		len(stream.RouteTo) != 1 || stream.RouteTo[0] != "voice.ogg" {
+		len(stream.Targets) != 1 || stream.Targets[0] != "voice.ogg" {
 		t.Fatalf("stream intent: %+v", stream)
 	}
 }
@@ -1333,7 +1333,7 @@ func TestBranchesGroupSelectedStreams(t *testing.T) {
 	for i := range tests {
 		stream := intent.Streams[i]
 		if stream.Name != tests[i].name || stream.FromTap != tests[i].fromTap ||
-			stream.Encode.ID != tests[i].codec || !equalStrings(stream.RouteTo, tests[i].outputs) {
+			stream.Encode.ID != tests[i].codec || !equalStrings(stream.Targets, tests[i].outputs) {
 			t.Fatalf("stream[%d]=%+v, want %+v", i, stream, tests[i])
 		}
 	}
@@ -2848,8 +2848,8 @@ func TestTranscodeRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
 	}
 	intent := job.Intent()
 	if len(intent.Streams) != 2 ||
-		len(intent.Streams[0].RouteTo) != 1 || intent.Streams[0].RouteTo[0] != "web" ||
-		len(intent.Streams[1].RouteTo) != 1 || intent.Streams[1].RouteTo[0] != "web" ||
+		len(intent.Streams[0].Targets) != 1 || intent.Streams[0].Targets[0] != "web" ||
+		len(intent.Streams[1].Targets) != 1 || intent.Streams[1].Targets[0] != "web" ||
 		len(intent.Targets) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2870,7 +2870,7 @@ func TestTranscodeRecipeSingleBranchUsesTarget(t *testing.T) {
 		t.Fatalf("spec:\n%s", text)
 	}
 	intent := job.Intent()
-	if len(intent.Streams) != 1 || len(intent.Streams[0].RouteTo) != 1 || len(intent.Targets) != 1 {
+	if len(intent.Streams) != 1 || len(intent.Streams[0].Targets) != 1 || len(intent.Targets) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
 }
@@ -3018,7 +3018,7 @@ func TestTranscodeRecipeRequiresBranch(t *testing.T) {
 	}
 }
 
-func TestTranscodeRecipeRequiresBranchOutput(t *testing.T) {
+func TestTranscodeRecipeRequiresBranchTarget(t *testing.T) {
 	job := transcodeJob(goav.FileInput("input.webm", strings.NewReader("")))
 	job.Video("360p").VP9(600_000)
 	_, err := job.Build(context.Background())

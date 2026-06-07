@@ -48,7 +48,7 @@ type StreamReport struct {
 	Transforms  []TransformReport
 	Encode      CodecSpec
 	CodecChange CodecChangePolicy
-	RouteTo     []string
+	Targets     []string
 }
 
 type TransformReport struct {
@@ -226,7 +226,7 @@ func explainStreams(streams []StreamIntent) []StreamReport {
 			Transforms:  explainTransforms(stream.Transforms),
 			Encode:      stream.Encode,
 			CodecChange: stream.CodecChange,
-			RouteTo:     append([]string(nil), stream.RouteTo...),
+			Targets:     append([]string(nil), stream.Targets...),
 		})
 	}
 	return reports
@@ -771,7 +771,7 @@ func cloneIntent(intent Intent) Intent {
 		clone.Streams[i].Operations = cloneStreamOperations(intent.Streams[i].Operations)
 		clone.Streams[i].Transforms = cloneTransformSpecs(intent.Streams[i].Transforms)
 		clone.Streams[i].Taps = cloneTapIntents(intent.Streams[i].Taps)
-		clone.Streams[i].RouteTo = append([]string(nil), intent.Streams[i].RouteTo...)
+		clone.Streams[i].Targets = append([]string(nil), intent.Streams[i].Targets...)
 	}
 	clone.Targets = append([]TargetIntent(nil), intent.Targets...)
 	return clone
