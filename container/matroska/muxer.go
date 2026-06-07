@@ -187,6 +187,9 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if err := validateReferenceBlockTimes(packet.ReferenceBlockTimeNS, m.options.TimecodeScaleNS); err != nil {
 		return err
 	}
+	if err := validateBlockAdditions(packet.BlockAdditions); err != nil {
+		return err
+	}
 	if !m.headerWritten {
 		var err error
 		track, err = m.prepareTracksForHeader(trackIndex, [][]byte{packet.Data})
@@ -1126,7 +1129,12 @@ func (m *Muxer) writeSeekHeadPlaceholder() error {
 }
 
 func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16, track Track) error {
-	if packet.DurationNS > 0 || len(packet.ReferenceBlockTimeNS) != 0 || packet.DiscardPaddingNS != 0 {
+	if packet.DurationNS > 0 ||
+		len(packet.ReferenceBlockTimeNS) != 0 ||
+		packet.ReferencePriority != 0 ||
+		packet.DiscardPaddingNS != 0 ||
+		len(packet.CodecState) != 0 ||
+		len(packet.BlockAdditions) != 0 {
 		return m.writeBlockGroup(packet, blockTimecode, track)
 	}
 	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
@@ -1330,7 +1338,12 @@ func (m *Muxer) clusterDataOffset() int64 {
 
 func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track) error {
 	durationTicks := scaledDurationTicks(packet.DurationNS, m.options.TimecodeScaleNS)
-	if durationTicks == 0 && len(packet.ReferenceBlockTimeNS) == 0 && packet.DiscardPaddingNS == 0 {
+	if durationTicks == 0 &&
+		len(packet.ReferenceBlockTimeNS) == 0 &&
+		packet.ReferencePriority == 0 &&
+		packet.DiscardPaddingNS == 0 &&
+		len(packet.CodecState) == 0 &&
+		len(packet.BlockAdditions) == 0 {
 		return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
 	}
 	payloadSize := len(packet.Data)
@@ -1351,12 +1364,35 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 		return err
 	}
 	groupSize := blockHeaderSize + blockPayloadSize
+	if len(packet.BlockAdditions) != 0 {
+		additionsSize, err := blockAdditionsElementEncodedSize(packet.BlockAdditions)
+		if err != nil {
+			return err
+		}
+		groupSize, err = checkedAddUint64(groupSize, additionsSize)
+		if err != nil {
+			return err
+		}
+	}
 	if durationTicks != 0 {
 		durationElementSize, err := uintElementEncodedSize(idBlockDuration, durationTicks)
 		if err != nil {
 			return err
 		}
-		groupSize += durationElementSize
+		groupSize, err = checkedAddUint64(groupSize, durationElementSize)
+		if err != nil {
+			return err
+		}
+	}
+	if packet.ReferencePriority != 0 {
+		prioritySize, err := uintElementEncodedSize(idReferencePriority, packet.ReferencePriority)
+		if err != nil {
+			return err
+		}
+		groupSize, err = checkedAddUint64(groupSize, prioritySize)
+		if err != nil {
+			return err
+		}
 	}
 	writeImplicitReference := durationTicks != 0 && !packet.Keyframe && len(packet.ReferenceBlockTimeNS) == 0
 	if writeImplicitReference {
@@ -1364,7 +1400,10 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 		if err != nil {
 			return err
 		}
-		groupSize += referenceSize
+		groupSize, err = checkedAddUint64(groupSize, referenceSize)
+		if err != nil {
+			return err
+		}
 	}
 	for i := range packet.ReferenceBlockTimeNS {
 		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS)
@@ -1372,17 +1411,51 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 		if err != nil {
 			return err
 		}
-		groupSize += referenceSize
+		groupSize, err = checkedAddUint64(groupSize, referenceSize)
+		if err != nil {
+			return err
+		}
+	}
+	if len(packet.CodecState) != 0 {
+		stateSize, err := binaryElementEncodedSize(idCodecState, packet.CodecState)
+		if err != nil {
+			return err
+		}
+		groupSize, err = checkedAddUint64(groupSize, stateSize)
+		if err != nil {
+			return err
+		}
 	}
 	if packet.DiscardPaddingNS != 0 {
 		paddingSize, err := intElementEncodedSize(idDiscardPad, packet.DiscardPaddingNS)
 		if err != nil {
 			return err
 		}
-		groupSize += paddingSize
+		groupSize, err = checkedAddUint64(groupSize, paddingSize)
+		if err != nil {
+			return err
+		}
 	}
 	if err := m.ebml.WriteHeader(idBlockGroup, groupSize); err != nil {
 		return err
+	}
+	if err := m.writeBlock(idBlock, packet, blockTimecode, blockFlags(packet), track); err != nil {
+		return err
+	}
+	if len(packet.BlockAdditions) != 0 {
+		if err := writeBlockAdditions(m.ebml, packet.BlockAdditions); err != nil {
+			return err
+		}
+	}
+	if durationTicks != 0 {
+		if err := m.ebml.WriteUInt(idBlockDuration, durationTicks); err != nil {
+			return err
+		}
+	}
+	if packet.ReferencePriority != 0 {
+		if err := m.ebml.WriteUInt(idReferencePriority, packet.ReferencePriority); err != nil {
+			return err
+		}
 	}
 	if writeImplicitReference {
 		if err := m.ebml.WriteInt(idReferenceBlk, 0); err != nil {
@@ -1395,8 +1468,8 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 			return err
 		}
 	}
-	if durationTicks != 0 {
-		if err := m.ebml.WriteUInt(idBlockDuration, durationTicks); err != nil {
+	if len(packet.CodecState) != 0 {
+		if err := writeBinary(m.ebml, idCodecState, packet.CodecState); err != nil {
 			return err
 		}
 	}
@@ -1405,7 +1478,57 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 			return err
 		}
 	}
-	return m.writeBlock(idBlock, packet, blockTimecode, blockFlags(packet), track)
+	return nil
+}
+
+func writeBlockAdditions(w *ebml.Writer, additions []BlockAddition) error {
+	payloadSize := uint64(0)
+	for i := range additions {
+		size, err := blockMoreElementEncodedSize(additions[i])
+		if err != nil {
+			return err
+		}
+		payloadSize, err = checkedAddUint64(payloadSize, size)
+		if err != nil {
+			return err
+		}
+	}
+	if err := w.WriteHeader(idBlockAdditions, payloadSize); err != nil {
+		return err
+	}
+	for i := range additions {
+		if err := writeBlockMore(w, additions[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeBlockMore(w *ebml.Writer, addition BlockAddition) error {
+	payloadSize, err := binaryElementEncodedSize(idBlockAdditional, addition.Data)
+	if err != nil {
+		return err
+	}
+	id := blockAdditionID(addition.ID)
+	if id != 1 {
+		idSize, err := uintElementEncodedSize(idBlockAddID, id)
+		if err != nil {
+			return err
+		}
+		payloadSize, err = checkedAddUint64(payloadSize, idSize)
+		if err != nil {
+			return err
+		}
+	}
+	if err := w.WriteHeader(idBlockMore, payloadSize); err != nil {
+		return err
+	}
+	if id != 1 {
+		if err := w.WriteUInt(idBlockAddID, id); err != nil {
+			return err
+		}
+	}
+	return writeBinary(w, idBlockAdditional, addition.Data)
 }
 
 func (m *Muxer) writeBlock(id ebml.ID, packet Packet, blockTimecode int16, flags byte, track Track) error {
@@ -1581,6 +1704,31 @@ func validateReferenceBlockTimes(references []int64, scaleNS int64) error {
 		_ = scaledReferenceBlockTicks(references[i], scaleNS)
 	}
 	return nil
+}
+
+func validateBlockAdditions(additions []BlockAddition) error {
+	if len(additions) == 0 {
+		return nil
+	}
+	seen := make(map[uint64]struct{}, len(additions))
+	for i := range additions {
+		id := blockAdditionID(additions[i].ID)
+		if id == 0 {
+			return ErrInvalidData
+		}
+		if _, ok := seen[id]; ok {
+			return ErrInvalidData
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+func blockAdditionID(id uint64) uint64 {
+	if id == 0 {
+		return 1
+	}
+	return id
 }
 
 func scaledReferenceBlockTicks(timeNS int64, scaleNS int64) int64 {
@@ -1777,6 +1925,57 @@ func uintElementEncodedSize(id ebml.ID, value uint64) (uint64, error) {
 func intElementEncodedSize(id ebml.ID, value int64) (uint64, error) {
 	payloadSize := uint64(intPayloadWidthLocal(value))
 	headerSize, err := elementEncodedSize(id, payloadSize)
+	if err != nil {
+		return 0, err
+	}
+	return headerSize + payloadSize, nil
+}
+
+func binaryElementEncodedSize(id ebml.ID, value []byte) (uint64, error) {
+	payloadSize := uint64(len(value))
+	headerSize, err := elementEncodedSize(id, payloadSize)
+	if err != nil {
+		return 0, err
+	}
+	return headerSize + payloadSize, nil
+}
+
+func blockAdditionsElementEncodedSize(additions []BlockAddition) (uint64, error) {
+	var payloadSize uint64
+	for i := range additions {
+		size, err := blockMoreElementEncodedSize(additions[i])
+		if err != nil {
+			return 0, err
+		}
+		payloadSize, err = checkedAddUint64(payloadSize, size)
+		if err != nil {
+			return 0, err
+		}
+	}
+	headerSize, err := elementEncodedSize(idBlockAdditions, payloadSize)
+	if err != nil {
+		return 0, err
+	}
+	return headerSize + payloadSize, nil
+}
+
+func blockMoreElementEncodedSize(addition BlockAddition) (uint64, error) {
+	payloadSize, err := binaryElementEncodedSize(idBlockAdditional, addition.Data)
+	if err != nil {
+		return 0, err
+	}
+	id := blockAdditionID(addition.ID)
+	if id != 1 {
+		idSize, err := uintElementEncodedSize(idBlockAddID, id)
+		if err != nil {
+			return 0, err
+		}
+		payloadSize, err = checkedAddUint64(payloadSize, idSize)
+		if err != nil {
+			return 0, err
+		}
+	}
+	headerSize, err := elementEncodedSize(idBlockMore, payloadSize)
 	if err != nil {
 		return 0, err
 	}

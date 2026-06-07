@@ -2126,6 +2126,82 @@ func TestMuxerDemuxerPreservesBlockGroupDiscardPadding(t *testing.T) {
 	}
 }
 
+func TestMuxerDemuxerPreservesBlockGroupExtras(t *testing.T) {
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := Packet{
+		TrackID:           trackID,
+		TimeNS:            40_000_000,
+		ReferencePriority: 3,
+		CodecState:        []byte{0xaa, 0xbb, 0xcc},
+		BlockAdditions: []BlockAddition{
+			{Data: []byte{0x10, 0x11}},
+			{ID: 2, Data: []byte{0x20, 0x21, 0x22}},
+		},
+		Keyframe: true,
+		Data:     []byte{0x01, 0x02, 0x03},
+	}
+	second := Packet{
+		TrackID:  trackID,
+		TimeNS:   80_000_000,
+		Keyframe: true,
+		Data:     []byte{0x04, 0x05},
+	}
+	if err := muxer.WritePacket(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WritePacket(second); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Packet{
+		Data:           make([]byte, 0, 8),
+		CodecState:     make([]byte, 0, 4),
+		BlockAdditions: make([]BlockAddition, 0, 2),
+	}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	wantAdditions := []BlockAddition{
+		{ID: 1, Data: []byte{0x10, 0x11}},
+		{ID: 2, Data: []byte{0x20, 0x21, 0x22}},
+	}
+	if got.TrackID != first.TrackID || got.TimeNS != first.TimeNS ||
+		got.ReferencePriority != first.ReferencePriority ||
+		!bytes.Equal(got.CodecState, first.CodecState) ||
+		!equalBlockAdditions(got.BlockAdditions, wantAdditions) ||
+		!got.Keyframe || !bytes.Equal(got.Data, first.Data) {
+		t.Fatalf("packet = %+v data=%v, want extras from %+v", got, got.Data, first)
+	}
+	if err := demuxer.ReadPacket(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackID != second.TrackID || got.TimeNS != second.TimeNS ||
+		got.ReferencePriority != 0 || len(got.CodecState) != 0 ||
+		len(got.BlockAdditions) != 0 || !got.Keyframe ||
+		!bytes.Equal(got.Data, second.Data) {
+		t.Fatalf("second packet retained extras: %+v data=%v", got, got.Data)
+	}
+}
+
 func TestNanosecondTimecodeScaleRoundTrip(t *testing.T) {
 	var buffer bytes.Buffer
 	muxer, err := NewMuxer(&buffer, MuxerOptions{TimecodeScaleNS: 1})
@@ -2235,6 +2311,54 @@ func TestMuxerRejectsKeyframeReferences(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidData) {
 		t.Fatalf("err = %v, want ErrInvalidData", err)
+	}
+}
+
+func TestMuxerRejectsDuplicateBlockAdditionIDs(t *testing.T) {
+	muxer, err := NewMuxer(discardWriter{}, MuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name      string
+		additions []BlockAddition
+	}{
+		{
+			name: "default and explicit one",
+			additions: []BlockAddition{
+				{Data: []byte{1}},
+				{ID: 1, Data: []byte{2}},
+			},
+		},
+		{
+			name: "explicit duplicate",
+			additions: []BlockAddition{
+				{ID: 2, Data: []byte{1}},
+				{ID: 2, Data: []byte{2}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := muxer.WritePacket(Packet{
+				TrackID:        trackID,
+				TimeNS:         0,
+				Keyframe:       true,
+				Data:           []byte{1},
+				BlockAdditions: tt.additions,
+			})
+			if !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
 	}
 }
 
@@ -3354,6 +3478,74 @@ func TestDemuxerRejectsBlockForUnknownTrack(t *testing.T) {
 	packet := Packet{Data: make([]byte, 0, 8)}
 	if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrUnknownTrack) {
 		t.Fatalf("err = %v, want ErrUnknownTrack", err)
+	}
+}
+
+func TestDemuxerRejectsInvalidBlockAdditions(t *testing.T) {
+	tests := []struct {
+		name           string
+		writeAdditions func(*ebml.Writer) error
+	}{
+		{
+			name: "empty block additions",
+			writeAdditions: func(w *ebml.Writer) error {
+				return w.WriteElement(idBlockAdditions, nil)
+			},
+		},
+		{
+			name: "zero block add id",
+			writeAdditions: func(w *ebml.Writer) error {
+				var additions bytes.Buffer
+				aw := ebml.NewWriter(&additions)
+				if err := writeBlockMoreFixture(aw, 0, []byte{1}, true); err != nil {
+					return err
+				}
+				return w.WriteElement(idBlockAdditions, additions.Bytes())
+			},
+		},
+		{
+			name: "duplicate block add id",
+			writeAdditions: func(w *ebml.Writer) error {
+				var additions bytes.Buffer
+				aw := ebml.NewWriter(&additions)
+				if err := writeBlockMoreFixture(aw, 2, []byte{1}, true); err != nil {
+					return err
+				}
+				if err := writeBlockMoreFixture(aw, 2, []byte{2}, true); err != nil {
+					return err
+				}
+				return w.WriteElement(idBlockAdditions, additions.Bytes())
+			},
+		},
+		{
+			name: "missing block additional",
+			writeAdditions: func(w *ebml.Writer) error {
+				var more bytes.Buffer
+				mw := ebml.NewWriter(&more)
+				if err := mw.WriteUInt(idBlockAddID, 2); err != nil {
+					return err
+				}
+				var additions bytes.Buffer
+				aw := ebml.NewWriter(&additions)
+				if err := aw.WriteElement(idBlockMore, more.Bytes()); err != nil {
+					return err
+				}
+				return w.WriteElement(idBlockAdditions, additions.Bytes())
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeBlockAdditionsMatroskaData(t, tt.writeAdditions)
+			demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := Packet{Data: make([]byte, 0, 8)}
+			if err := demuxer.ReadPacket(&packet); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
 	}
 }
 
@@ -4561,6 +4753,18 @@ func equalInt64s(left []int64, right []int64) bool {
 	return true
 }
 
+func equalBlockAdditions(left []BlockAddition, right []BlockAddition) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i].ID != right[i].ID || !bytes.Equal(left[i].Data, right[i].Data) {
+			return false
+		}
+	}
+	return true
+}
+
 func expectedOpusHead(channels int, sampleRate int) []byte {
 	if channels == 0 {
 		channels = 2
@@ -4777,6 +4981,60 @@ func makeBlockTrackNumberMatroskaData(tb testing.TB, trackNumber uint64) []byte 
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func makeBlockAdditionsMatroskaData(tb testing.TB, writeAdditions func(*ebml.Writer) error) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 16, Height: 16},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.writeHeader(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.startCluster(0); err != nil {
+		tb.Fatal(err)
+	}
+	var group bytes.Buffer
+	gw := ebml.NewWriter(&group)
+	if err := writeBlockWithTrackNumber(gw, uint64(trackID), []byte{1}); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeAdditions(gw); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.ebml.WriteElement(idBlockGroup, group.Bytes()); err != nil {
+		tb.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func writeBlockMoreFixture(w *ebml.Writer, id uint64, data []byte, writeID bool) error {
+	var payload bytes.Buffer
+	pw := ebml.NewWriter(&payload)
+	if writeID {
+		if err := pw.WriteUInt(idBlockAddID, id); err != nil {
+			return err
+		}
+	}
+	if data != nil {
+		if err := writeBinary(pw, idBlockAdditional, data); err != nil {
+			return err
+		}
+	}
+	return w.WriteElement(idBlockMore, payload.Bytes())
 }
 
 func makeTrackMetadataMatroskaData(tb testing.TB, writeTracks func(*ebml.Writer) error) []byte {
@@ -5955,18 +6213,34 @@ func writeCuesWithTrackNumber(writer *ebml.Writer, trackNumber uint64) error {
 }
 
 func writeSimpleBlockWithTrackNumber(writer *ebml.Writer, trackNumber uint64, frame []byte) error {
+	payload, err := blockPayloadWithTrackNumber(trackNumber, simpleBlockKeyframe, frame)
+	if err != nil {
+		return err
+	}
+	return writer.WriteElement(idSimpleBlock, payload)
+}
+
+func writeBlockWithTrackNumber(writer *ebml.Writer, trackNumber uint64, frame []byte) error {
+	payload, err := blockPayloadWithTrackNumber(trackNumber, 0, frame)
+	if err != nil {
+		return err
+	}
+	return writer.WriteElement(idBlock, payload)
+}
+
+func blockPayloadWithTrackNumber(trackNumber uint64, flags byte, frame []byte) ([]byte, error) {
 	var payload bytes.Buffer
 	var scratch [ebml.MaxSizeWidth]byte
 	n, err := ebml.EncodeUnsignedVINT(scratch[:], trackNumber)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	payload.Write(scratch[:n])
 	var blockHeader [3]byte
-	blockHeader[2] = simpleBlockKeyframe
+	blockHeader[2] = flags
 	payload.Write(blockHeader[:])
 	payload.Write(frame)
-	return writer.WriteElement(idSimpleBlock, payload.Bytes())
+	return payload.Bytes(), nil
 }
 
 func writeLacedSimpleBlock(writer *ebml.Writer, trackID uint32, lacing byte, frames [][]byte) error {

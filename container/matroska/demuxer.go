@@ -2366,6 +2366,18 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 				return err
 			}
 			durationTicks = value
+		case idBlockAdditions:
+			additions, err := d.parseBlockAdditions(d.groupReader, child)
+			if err != nil {
+				return err
+			}
+			dst.BlockAdditions = append(dst.BlockAdditions, additions...)
+		case idReferencePriority:
+			value, err := readUIntPayloadScratch(d.groupReader, child.Size.Value, &d.uintScratch)
+			if err != nil {
+				return err
+			}
+			dst.ReferencePriority = value
 		case idReferenceBlk:
 			ticks, err := readIntPayload(d.groupReader, child.Size.Value)
 			if err != nil {
@@ -2383,6 +2395,12 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 				return err
 			}
 			dst.DiscardPaddingNS = paddingNS
+		case idCodecState:
+			state, err := readBinaryPayload(d.groupReader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			dst.CodecState = state
 		default:
 			if err := skipElement(d.groupReader, child); err != nil {
 				return err
@@ -2411,6 +2429,88 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) error {
 		return payloadErr
 	}
 	return nil
+}
+
+func (d *Demuxer) parseBlockAdditions(parent *ebml.Reader, header ebml.Header) ([]BlockAddition, error) {
+	if header.Size.Unknown {
+		return nil, ErrInvalidData
+	}
+	limit := io.LimitedReader{R: parent, N: int64(header.Size.Value)}
+	reader := ebml.NewReader(&limit, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	var additions []BlockAddition
+	seen := make(map[uint64]struct{})
+	for limit.N > 0 {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return nil, err
+		}
+		switch child.ID {
+		case idBlockMore:
+			addition, err := d.parseBlockMore(reader, child)
+			if err != nil {
+				return nil, err
+			}
+			id := blockAdditionID(addition.ID)
+			if _, ok := seen[id]; ok {
+				return nil, ErrInvalidData
+			}
+			seen[id] = struct{}{}
+			additions = append(additions, addition)
+		default:
+			if err := skipElement(reader, child); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(additions) == 0 {
+		return nil, ErrInvalidData
+	}
+	return additions, nil
+}
+
+func (d *Demuxer) parseBlockMore(parent *ebml.Reader, header ebml.Header) (BlockAddition, error) {
+	if header.Size.Unknown {
+		return BlockAddition{}, ErrInvalidData
+	}
+	limit := io.LimitedReader{R: parent, N: int64(header.Size.Value)}
+	reader := ebml.NewReader(&limit, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	addition := BlockAddition{ID: 1}
+	haveAdditional := false
+	for limit.N > 0 {
+		child, err := reader.ReadHeader()
+		if err != nil {
+			return BlockAddition{}, err
+		}
+		switch child.ID {
+		case idBlockAddID:
+			id, err := readUIntPayloadScratch(reader, child.Size.Value, &d.uintScratch)
+			if err != nil {
+				return BlockAddition{}, err
+			}
+			if id == 0 {
+				return BlockAddition{}, ErrInvalidData
+			}
+			addition.ID = id
+		case idBlockAdditional:
+			if haveAdditional {
+				return BlockAddition{}, ErrInvalidData
+			}
+			data, err := readBinaryPayload(reader, child.Size.Value)
+			if err != nil {
+				return BlockAddition{}, err
+			}
+			addition.Data = data
+			haveAdditional = true
+		default:
+			if err := skipElement(reader, child); err != nil {
+				return BlockAddition{}, err
+			}
+		}
+	}
+	if !haveAdditional {
+		return BlockAddition{}, ErrInvalidData
+	}
+	return addition, nil
 }
 
 func (d *Demuxer) readBlockPayload(r io.Reader, size uint64, dst *Packet, simple bool) error {

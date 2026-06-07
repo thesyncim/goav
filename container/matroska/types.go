@@ -155,11 +155,19 @@ type Packet struct {
 	TimeNS               int64
 	DurationNS           int64
 	ReferenceBlockTimeNS []int64
+	ReferencePriority    uint64
 	DiscardPaddingNS     int64
+	CodecState           []byte
+	BlockAdditions       []BlockAddition
 	Keyframe             bool
 	Invisible            bool
 	Discardable          bool
 	Data                 []byte
+}
+
+type BlockAddition struct {
+	ID   uint64
+	Data []byte
 }
 
 // LacingMode selects how multiple frames are packed into one laced block.
@@ -282,7 +290,14 @@ type SimpleTag struct {
 func (p *Packet) Reset() {
 	data := p.Data[:0]
 	references := p.ReferenceBlockTimeNS[:0]
-	*p = Packet{Data: data, ReferenceBlockTimeNS: references}
+	codecState := p.CodecState[:0]
+	additions := p.BlockAdditions[:0]
+	*p = Packet{
+		Data:                 data,
+		ReferenceBlockTimeNS: references,
+		CodecState:           codecState,
+		BlockAdditions:       additions,
+	}
 }
 
 type MuxerOptions struct {

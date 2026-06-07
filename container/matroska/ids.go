@@ -106,14 +106,20 @@ const (
 	idDefaultDur           ebml.ID = 0x23e383
 	idDefaultDecodedDur    ebml.ID = 0x234e7a
 
-	idCluster       ebml.ID = 0x1f43b675
-	idTimestamp     ebml.ID = 0xe7
-	idSimpleBlock   ebml.ID = 0xa3
-	idBlockGroup    ebml.ID = 0xa0
-	idBlock         ebml.ID = 0xa1
-	idBlockDuration ebml.ID = 0x9b
-	idReferenceBlk  ebml.ID = 0xfb
-	idDiscardPad    ebml.ID = 0x75a2
+	idCluster           ebml.ID = 0x1f43b675
+	idTimestamp         ebml.ID = 0xe7
+	idSimpleBlock       ebml.ID = 0xa3
+	idBlockGroup        ebml.ID = 0xa0
+	idBlock             ebml.ID = 0xa1
+	idBlockAdditions    ebml.ID = 0x75a1
+	idBlockMore         ebml.ID = 0xa6
+	idBlockAdditional   ebml.ID = 0xa5
+	idBlockAddID        ebml.ID = 0xee
+	idBlockDuration     ebml.ID = 0x9b
+	idReferencePriority ebml.ID = 0xfa
+	idReferenceBlk      ebml.ID = 0xfb
+	idCodecState        ebml.ID = 0xa4
+	idDiscardPad        ebml.ID = 0x75a2
 
 	idCues               ebml.ID = 0x1c53bb6b
 	idCuePoint           ebml.ID = 0xbb
