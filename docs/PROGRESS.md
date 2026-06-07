@@ -1350,7 +1350,9 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `BranchSpec`, so branch validation reports `flow_media_mismatch` directly
     when an `AudioFlow` is applied to a video branch or a branch mixes
     incompatible flow kinds. `TestFlowBranchMediaMismatchIsActionable` and
-    `TestBranchRejectsConflictingFlowMedia` pin the diagnostics. Done.
+    `TestBranchRejectsConflictingFlowMedia` pin planned diagnostics, while
+    `TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation` proves runtime
+    attach rejects the same mismatch before graph mutation. Done.
 
 ## First Vertical Slice
 

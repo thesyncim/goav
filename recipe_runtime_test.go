@@ -2688,6 +2688,74 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation(t *testing.T) {
+	ctx := context.Background()
+	frame := av.Frame{
+		StreamID: "video",
+		Type:     av.MediaVideo,
+		Video: &av.VideoFrame{
+			Width:       640,
+			Height:      360,
+			PixelFormat: av.PixelFormatYUV420P,
+		},
+	}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	base := &runtimeTestSink{name: "base"}
+	graph := New().Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "video.frames",
+		MediaKind: av.MediaVideo,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:      DomainFrame,
+			MediaKind:   av.MediaVideo,
+			StreamID:    "video",
+			Codec:       av.CodecVP8,
+			Width:       640,
+			Height:      360,
+			PixelFormat: av.PixelFormatYUV420P,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+	before := builtTask.Describe()
+
+	_, err = builtTask.Attach(ctx, Branch("voice").
+		FromTap("video.frames").
+		Apply(AudioFlow("voice").Resample(16_000, Mono)).
+		To(SinkEndpoint(SinkFunc("voice", func(context.Context, Message) error {
+			return nil
+		}))))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want flow_media_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if buildErr.Operation != "attach runtime branch" ||
+		!strings.Contains(err.Error(), "audio flow cannot be applied to video stream") ||
+		!strings.Contains(err.Error(), "AudioFlow") ||
+		!strings.Contains(err.Error(), "VideoFlow") {
+		t.Fatalf("err = %v, want runtime flow media guidance", err)
+	}
+	if after := builtTask.Describe(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("graph mutated after rejected runtime flow:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
+	}
+	for _, tap := range builtTask.Taps() {
+		if strings.Contains(tap.Node.String(), "voice") {
+			t.Fatalf("runtime branch tap registered after rejected attach: %+v", tap)
+		}
+	}
+}
+
 func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}

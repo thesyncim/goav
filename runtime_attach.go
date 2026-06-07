@@ -19,6 +19,7 @@ var runtimeAttachmentSeq atomic.Uint64
 // already-built task.
 type runtimeBranch struct {
 	name           string
+	media          av.MediaType
 	from           string
 	tap            string
 	anchor         TapInfo
@@ -123,6 +124,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	}
 	branch := runtimeBranch{
 		name:   spec.name,
+		media:  spec.media,
 		from:   spec.from,
 		tap:    spec.tap,
 		encode: spec.encode,
@@ -188,6 +190,11 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch) 
 		return nil
 	}
 	currentCaps := runtimeBranchAnchorCaps(branch.anchor)
+	if branch.media != "" && currentCaps.MediaKind != "" {
+		if err := validateFlowMedia("attach runtime branch", firstNonEmpty(branch.name, "branch"), currentCaps.MediaKind, streamFlowSpec{name: branch.name, media: branch.media}); err != nil {
+			return err
+		}
+	}
 	currentStream := streamFromRuntimeBranchCaps(branch.name, currentCaps)
 	transformIndex := 0
 	for i := range branch.steps {
