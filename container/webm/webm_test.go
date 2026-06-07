@@ -2737,6 +2737,88 @@ func TestReadPacketAllocs(t *testing.T) {
 	}
 }
 
+func TestDemuxerLargeWebMCorpusSeekIndex(t *testing.T) {
+	payloads := benchmarkWebMPayloads()
+	tests := []struct {
+		name          string
+		data          []byte
+		hasDirectCues bool
+	}{
+		{
+			name:          "dense cues",
+			data:          makeBenchmarkWebMSeekableCorpusData(t, largeWebMCorpusRegressionCycles, payloads, MuxerOptions{CuePolicy: CuePolicyAllPackets}),
+			hasDirectCues: true,
+		},
+		{
+			name: "no cues",
+			data: makeBenchmarkWebMSeekableCorpusData(t, largeWebMCorpusRegressionCycles, payloads, MuxerOptions{
+				CuePolicy: CuePolicyNone,
+			}),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertLargeWebMCorpusSeekIndex(t, tt.data, payloads, tt.hasDirectCues)
+		})
+	}
+}
+
+func assertLargeWebMCorpusSeekIndex(t testing.TB, data []byte, payloads benchmarkWebMPayloadSet, hasDirectCues bool) {
+	t.Helper()
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, payloads.maxPayload)}
+	for _, cycle := range []int{0, 1, 127, 511, largeWebMCorpusRegressionCycles - 1} {
+		timeNS := int64(cycle) * 20_000_000
+		if err := demuxer.ReadPacketAtTime(timeNS, &packet); err != nil {
+			t.Fatalf("read packet at cycle %d: %v", cycle, err)
+		}
+		if packet.TimeNS != timeNS || packet.DurationNS != 20_000_000 || len(packet.Data) == 0 {
+			t.Fatalf("packet at cycle %d = %+v data=%d", cycle, packet, len(packet.Data))
+		}
+		assertLargeWebMCorpusTrackPacket(t, demuxer, CodecVP8, timeNS, payloads.vp8, payloads.maxPayload)
+		assertLargeWebMCorpusTrackPacket(t, demuxer, CodecVP9, timeNS, payloads.vp9, payloads.maxPayload)
+		assertLargeWebMCorpusTrackPacket(t, demuxer, CodecAV1, timeNS, payloads.av1, payloads.maxPayload)
+		assertLargeWebMCorpusTrackPacket(t, demuxer, CodecOpus, timeNS, payloads.opus, payloads.maxPayload)
+	}
+	for _, cycle := range []int{0, 127, 511, largeWebMCorpusRegressionCycles - 2} {
+		targetNS := int64(cycle)*20_000_000 + 10_000_000
+		wantTimeNS := int64(cycle+1) * 20_000_000
+		if err := demuxer.ReadPacketAtTime(targetNS, &packet); err != nil {
+			t.Fatalf("read packet after midpoint cycle %d: %v", cycle, err)
+		}
+		if packet.TimeNS != wantTimeNS {
+			t.Fatalf("midpoint packet at cycle %d time = %d, want %d", cycle, packet.TimeNS, wantTimeNS)
+		}
+		if hasDirectCues {
+			if err := demuxer.ReadCuedPacketAtTime(targetNS, &packet); err != nil {
+				t.Fatalf("read cued packet after midpoint cycle %d: %v", cycle, err)
+			}
+			if packet.TimeNS != wantTimeNS {
+				t.Fatalf("midpoint cued packet at cycle %d time = %d, want %d", cycle, packet.TimeNS, wantTimeNS)
+			}
+		}
+	}
+}
+
+func assertLargeWebMCorpusTrackPacket(t testing.TB, demuxer *Demuxer, codec Codec, timeNS int64, wantData []byte, capacity int) {
+	t.Helper()
+	trackID := benchmarkWebMTrackIDForCodec(t, demuxer, codec)
+	packet := Packet{Data: make([]byte, 0, capacity)}
+	if err := demuxer.ReadTrackPacketAtTime(trackID, timeNS, &packet); err != nil {
+		t.Fatalf("read %v track packet at %d: %v", codec, timeNS, err)
+	}
+	if packet.TrackID != trackID ||
+		packet.TimeNS != timeNS ||
+		packet.DurationNS != 20_000_000 ||
+		!packet.Keyframe ||
+		!bytes.Equal(packet.Data, wantData) {
+		t.Fatalf("%v packet at %d = %+v data=%x, want data=%x", codec, timeNS, packet, packet.Data, wantData)
+	}
+}
+
 func BenchmarkWriteWebMCorpus(b *testing.B) {
 	muxer, err := NewMuxer(io.Discard, MuxerOptions{})
 	if err != nil {
@@ -2787,6 +2869,7 @@ func BenchmarkReadWebMCorpus(b *testing.B) {
 
 const benchmarkWebMTrackCount = 4
 const benchmarkWebMCorpusCycles = 4096
+const largeWebMCorpusRegressionCycles = 1024
 
 type benchmarkWebMTracks struct {
 	vp8  uint32
@@ -2904,6 +2987,46 @@ func makeBenchmarkWebMCorpusData(tb testing.TB, cycles int, payloads benchmarkWe
 		tb.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func makeBenchmarkWebMSeekableCorpusData(tb testing.TB, cycles int, payloads benchmarkWebMPayloadSet, opts MuxerOptions) []byte {
+	tb.Helper()
+	file, err := os.CreateTemp(tb.TempDir(), "benchmark-webm-*.webm")
+	if err != nil {
+		tb.Fatal(err)
+	}
+	muxer, err := NewMuxer(file, opts)
+	if err != nil {
+		_ = file.Close()
+		tb.Fatal(err)
+	}
+	tracks := addBenchmarkWebMTracks(tb, muxer)
+	for i := 0; i < cycles; i++ {
+		writeBenchmarkWebMCorpus(tb, muxer, tracks, payloads, i)
+	}
+	if err := muxer.Close(); err != nil {
+		_ = file.Close()
+		tb.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	data, err := os.ReadFile(file.Name())
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return data
+}
+
+func benchmarkWebMTrackIDForCodec(tb testing.TB, demuxer *Demuxer, codec Codec) uint32 {
+	tb.Helper()
+	for _, track := range demuxer.Tracks() {
+		if track.Codec == codec {
+			return track.ID
+		}
+	}
+	tb.Fatalf("benchmark track with codec %v not found", codec)
+	return 0
 }
 
 func benchmarkWebMCorpusCapacity(cycles int, payloads benchmarkWebMPayloadSet) int {

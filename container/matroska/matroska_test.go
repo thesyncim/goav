@@ -13085,6 +13085,97 @@ func BenchmarkReadH265HEVCToAnnexB(b *testing.B) {
 	}
 }
 
+func TestDemuxerLargeWebRTCCorpusSeekIndex(t *testing.T) {
+	payloads := benchmarkWebRTCPayloads()
+	tests := []struct {
+		name            string
+		data            []byte
+		hasDirectCues   bool
+		wantPacketIndex bool
+	}{
+		{
+			name:          "relative cues",
+			data:          makeBenchmarkWebRTCCorpusSeekableMatroskaData(t, largeWebRTCCorpusRegressionCycles, payloads),
+			hasDirectCues: true,
+		},
+		{
+			name:          "cluster only cues",
+			data:          makeBenchmarkWebRTCCorpusClusterOnlyCueMatroskaData(t, largeWebRTCCorpusRegressionCycles, payloads),
+			hasDirectCues: true,
+		},
+		{
+			name:            "no cues",
+			data:            makeBenchmarkWebRTCCorpusNoCueMatroskaData(t, largeWebRTCCorpusRegressionCycles, payloads),
+			wantPacketIndex: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertLargeWebRTCCorpusSeekIndex(t, tt.data, payloads, tt.hasDirectCues, tt.wantPacketIndex)
+		})
+	}
+}
+
+func assertLargeWebRTCCorpusSeekIndex(t testing.TB, data []byte, payloads benchmarkWebRTCPayloadSet, hasDirectCues bool, wantPacketIndex bool) {
+	t.Helper()
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := Packet{Data: make([]byte, 0, payloads.maxPayload)}
+	for _, cycle := range []int{0, 1, 127, 511, largeWebRTCCorpusRegressionCycles - 1} {
+		timeNS := int64(cycle) * benchmarkWebRTCCorpusFrameDurationNS
+		if err := demuxer.ReadPacketAtTime(timeNS, &packet); err != nil {
+			t.Fatalf("read packet at cycle %d: %v", cycle, err)
+		}
+		if packet.TimeNS != timeNS || packet.DurationNS != benchmarkWebRTCCorpusFrameDurationNS || len(packet.Data) == 0 {
+			t.Fatalf("packet at cycle %d = %+v data=%d", cycle, packet, len(packet.Data))
+		}
+		assertLargeWebRTCCorpusTrackPacket(t, demuxer, CodecOpus, timeNS, payloads.opus, payloads.maxPayload)
+		assertLargeWebRTCCorpusTrackPacket(t, demuxer, CodecAV1, timeNS, payloads.av1, payloads.maxPayload)
+		assertLargeWebRTCCorpusTrackPacket(t, demuxer, CodecH264, timeNS, payloads.h264, payloads.maxPayload)
+		assertLargeWebRTCCorpusTrackPacket(t, demuxer, CodecVP9, timeNS, payloads.vp9, payloads.maxPayload)
+		assertLargeWebRTCCorpusTrackPacket(t, demuxer, CodecVP8, timeNS, payloads.vp8, payloads.maxPayload)
+	}
+	for _, cycle := range []int{0, 127, 511, largeWebRTCCorpusRegressionCycles - 2} {
+		targetNS := int64(cycle)*benchmarkWebRTCCorpusFrameDurationNS + benchmarkWebRTCCorpusFrameDurationNS/2
+		wantTimeNS := int64(cycle+1) * benchmarkWebRTCCorpusFrameDurationNS
+		if err := demuxer.ReadPacketAtTime(targetNS, &packet); err != nil {
+			t.Fatalf("read packet after midpoint cycle %d: %v", cycle, err)
+		}
+		if packet.TimeNS != wantTimeNS {
+			t.Fatalf("midpoint packet at cycle %d time = %d, want %d", cycle, packet.TimeNS, wantTimeNS)
+		}
+		if hasDirectCues {
+			if err := demuxer.ReadCuedPacketAtTime(targetNS, &packet); err != nil {
+				t.Fatalf("read cued packet after midpoint cycle %d: %v", cycle, err)
+			}
+			if packet.TimeNS != wantTimeNS {
+				t.Fatalf("midpoint cued packet at cycle %d time = %d, want %d", cycle, packet.TimeNS, wantTimeNS)
+			}
+		}
+	}
+	if wantPacketIndex && !demuxer.packetIndexBuilt {
+		t.Fatal("packet index was not built for large cue-free corpus")
+	}
+}
+
+func assertLargeWebRTCCorpusTrackPacket(t testing.TB, demuxer *Demuxer, codec Codec, timeNS int64, wantData []byte, capacity int) {
+	t.Helper()
+	trackID := benchmarkTrackIDForCodec(t, demuxer, codec)
+	packet := Packet{Data: make([]byte, 0, capacity)}
+	if err := demuxer.ReadTrackPacketAtTime(trackID, timeNS, &packet); err != nil {
+		t.Fatalf("read %v track packet at %d: %v", codec, timeNS, err)
+	}
+	if packet.TrackID != trackID ||
+		packet.TimeNS != timeNS ||
+		packet.DurationNS != benchmarkWebRTCCorpusFrameDurationNS ||
+		!packet.Keyframe ||
+		!bytes.Equal(packet.Data, wantData) {
+		t.Fatalf("%v packet at %d = %+v data=%x, want data=%x", codec, timeNS, packet, packet.Data, wantData)
+	}
+}
+
 func BenchmarkReadXiphLacedSimpleBlock(b *testing.B) {
 	data := makeRepeatedLacedMatroskaData(b, simpleBlockLacingXiph, [][]byte{{1, 2}, {3, 4}, {5, 6}}, b.N/3+1)
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
@@ -13375,6 +13466,7 @@ func benchmarkReadClusterOnlyCuedPacketAtTimeWebRTCCorpus(b *testing.B, cycles i
 const benchmarkWebRTCTrackCount = 5
 const benchmarkWebRTCCorpusCycles = 256
 const benchmarkWebRTCLargeCueCorpusCycles = 4096
+const largeWebRTCCorpusRegressionCycles = 1024
 const benchmarkWebRTCCorpusFrameDurationNS = 20_000_000
 const benchmarkWebRTCCorpusClusterDurationNS = 1_000_000_000
 
