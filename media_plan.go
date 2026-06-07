@@ -426,14 +426,18 @@ func planTaps(branches []planBranch) []planTap {
 		branch := branches[i]
 		currentDomain := DomainPacket
 		media := branch.Stream.Type
+		currentStreamID := av.StreamID(firstNonEmpty(string(branch.Stream.ID), branch.Name))
 		currentNode := firstNonEmpty(branch.Input, branch.Name)
 		for j := range branch.Operations {
 			operation := branch.Operations[j]
 			switch operation.Kind {
 			case OpDecode, OpTransform, OpStage:
 				currentDomain = DomainFrame
-			case OpEncode, OpCopy:
+			case OpCopy:
 				currentDomain = DomainPacket
+			case OpEncode:
+				currentDomain = DomainPacket
+				currentStreamID = av.StreamID(firstNonEmpty(branch.Name, string(currentStreamID)))
 			}
 			if operation.Kind != OpTap {
 				currentNode = planOperationNodeName(branch.Name, operation, j)
@@ -448,6 +452,7 @@ func planTaps(branches []planBranch) []planTap {
 				Caps: StreamCaps{
 					Domain:    currentDomain,
 					MediaKind: media,
+					StreamID:  currentStreamID,
 				},
 				Shared: true,
 			})

@@ -48,7 +48,7 @@ func inferSpecTaps(spec pipeline.Spec) []TapInfo {
 				Name:      string(media) + ".decoded",
 				MediaKind: media,
 				Domain:    DomainFrame,
-				Caps:      StreamCaps{Domain: DomainFrame, MediaKind: media},
+				Caps:      StreamCaps{Domain: DomainFrame, MediaKind: media, StreamID: av.StreamID(media)},
 				Node:      pipeline.NodeRef(node.Name),
 			})
 		case strings.HasPrefix(node.Name, "select-"):
@@ -57,7 +57,7 @@ func inferSpecTaps(spec pipeline.Spec) []TapInfo {
 				Name:      string(media) + ".packets",
 				MediaKind: media,
 				Domain:    DomainPacket,
-				Caps:      StreamCaps{Domain: DomainPacket, MediaKind: media},
+				Caps:      StreamCaps{Domain: DomainPacket, MediaKind: media, StreamID: av.StreamID(media)},
 				Node:      pipeline.NodeRef(node.Name),
 			})
 		}

@@ -117,8 +117,8 @@ err := goav.From(input).
 ```
 
 Branch-local custom stages and transforms share the ordered operation model.
-Custom filter adapters and late muxed runtime targets should extend that same
-model instead of growing special-case APIs.
+Custom filter adapters and late runtime endpoint branches extend that same model
+instead of growing special-case APIs.
 
 ## Reusable Flows
 
@@ -169,14 +169,46 @@ if err != nil {
 defer levels.Close(ctx)
 ```
 
+Late branches can also record future media without rebuilding upstream:
+
+```go
+recording := goav.Target("recording", goav.FileOutput("recording.ogg", file))
+
+recordingHandle, err := task.Attach(ctx,
+    goav.Branch("record-audio").
+        FromTap("audio.decoded").
+        Opus(96_000).
+        To(recording),
+)
+if err != nil {
+    return err
+}
+defer recordingHandle.Close(ctx)
+```
+
+Use `.Copy()` from a packet tap when the branch should stay encoded:
+
+```go
+packets, err := task.Attach(ctx,
+    goav.Branch("packet-recording").
+        FromTap("audio.encoded").
+        Copy().
+        To(goav.Target("recording", goav.FileOutput("recording.ogg", file))),
+)
+if err != nil {
+    return err
+}
+defer packets.Close(ctx)
+```
+
 Use `Task.Taps()` to discover stable outlets. Use `Task.Detach(ctx, h)` when
 the caller wants the task to own detach semantics. Runtime branches can run
-custom stages, resize/resample from frame taps, publish additional taps, and
-feed later runtime branches from those taps. Detaching a parent runtime branch
-removes dependent late branches anchored from its taps. Runtime branches
-currently attach sink-oriented observation work; late muxed recording, late
-encode planning, and buffered dynamic branch mutation remain explicit roadmap
-slices.
+custom stages, resize/resample from frame taps, publish additional taps, encode
+Opus/VP8/VP9 from frame taps, copy packet taps into endpoints, and feed later
+runtime branches from those taps. H264 and AV1 recipe encoding remain work in
+progress. Detaching a parent runtime branch removes dependent late branches
+anchored from its taps. Buffered dynamic branch mutation remains an explicit
+roadmap slice.
 
 ## Generic File Or Protocol Ingest
 

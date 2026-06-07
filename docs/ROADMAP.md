@@ -18,9 +18,10 @@ make the implementation match the composable planner promise.
    decode, after resize/resample, after custom stages, after taps, and later
    after sink/output attachment where runtime support makes sense. Custom stage
    and transform steps are active, reusable flows carry ordered stage, tap,
-   transform, and terminal encode steps, runtime branches can apply non-encoding
-   flows from frame taps and publish nested taps, and custom filter adapter
-   metadata plus late muxed runtime targets remain next slices.
+   transform, and terminal encode steps, runtime branches can apply flows from
+   frame taps, publish nested taps, encode Opus/VP8/VP9 into endpoints, and copy
+   packet taps into endpoints. Buffered runtime mutation and deeper capability
+   metadata remain next slices.
 3. Move `Describe()` onto `MediaPlan.Spec()` equivalence, then move `Build(ctx)`
    for `From`, packet copy, stream decode, branch composition, and reusable flows
    onto direct media-plan graph construction.
@@ -39,7 +40,7 @@ make the implementation match the composable planner promise.
 8. Generalize flows as reusable operation sequences over stream chains, not as a
    second graph DSL. Branches own targets through `.To(goav.Target(...))`;
    runtime `Task.Attach(ctx, goav.Branch(...))` remains the late control-plane
-   tap for running direct graphs.
+   branch for running direct graphs.
 9. Promote live codec-change behavior into explicit policy: compatible rebind,
    keyframe request, drop-until-sync, and different-codec failure/rebuild
    choices should be visible to realtime users.

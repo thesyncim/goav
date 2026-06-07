@@ -38,6 +38,7 @@ const (
 type StreamCaps struct {
 	Domain       MediaDomain
 	MediaKind    av.MediaType
+	StreamID     av.StreamID
 	Codec        av.CodecID
 	Format       av.FormatID
 	Width        int

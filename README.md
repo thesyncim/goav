@@ -202,11 +202,45 @@ if err != nil {
 return task.Detach(ctx, shots)
 ```
 
+Frame taps can also grow a late encoded endpoint:
+
+```go
+recording := goav.Target("recording", goav.FileOutput("recording.ogg", file))
+
+record, err := task.Attach(ctx,
+    goav.Branch("record-audio").
+        FromTap("audio.decoded").
+        Opus(96_000).
+        To(recording),
+)
+if err != nil {
+    return err
+}
+defer record.Close(ctx)
+```
+
+Packet taps can be copied into a late endpoint:
+
+```go
+record, err := task.Attach(ctx,
+    goav.Branch("record-packets").
+        FromTap("audio.encoded").
+        Copy().
+        To(goav.Target("recording", goav.FileOutput("recording.ogg", file))),
+)
+if err != nil {
+    return err
+}
+defer record.Close(ctx)
+```
+
 `Task.Taps()` lists available attach points. `Attach` adds a downstream sink
-branch to a running direct task graph without rebuilding upstream. Late branches
-can run custom `.Do(...)` stages, resize/resample from frame taps, and expose
-their own `.Tap(name)` outlets for later attachments; detaching a parent
-attachment also removes dependent late branches anchored from its taps.
+or endpoint branch to a running direct task graph without rebuilding upstream.
+Late branches can run custom `.Do(...)` stages, resize/resample from frame taps,
+encode Opus/VP8/VP9 from frame taps, copy from packet taps, and expose their own
+`.Tap(name)` outlets for later attachments. H264 and AV1 recipe encoding remain
+work in progress. Detaching a parent attachment also removes dependent late
+branches anchored from its taps.
 
 ## Explain And Inspect
 

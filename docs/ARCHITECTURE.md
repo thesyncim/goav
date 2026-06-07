@@ -70,20 +70,21 @@ composition. A route carries all media by default, or matches one stream or
 event type.
 
 `Task.Attach` is the first runtime control-plane operation. It attaches a named
-stage/sink branch to a built direct graph and returns an attachment handle with
+downstream branch to a built direct graph and returns an attachment handle with
 `Close(ctx)`. `Task.Detach(ctx, h)` removes one live attachment, and
 `Task.Close()` stops attachments before closing the graph. Stable recipe outlets
 come from `.Tap(name)` and are listed by `Task.Taps()`; runtime branches attach
 with `goav.Branch("name").FromTap(name)`. A late branch can run custom
-`.Do(...)` stages, resize or resample from frame taps, and expose its own
-`.Tap(name)` outlets, so another late branch can attach downstream without
-rebuilding the task. Detaching a parent runtime branch also removes dependent
+`.Do(...)` stages, resize or resample from frame taps, encode Opus/VP8/VP9 from
+frame taps into a target endpoint, copy packet taps into a target endpoint, and
+expose its own `.Tap(name)` outlets, so another late branch can attach
+downstream without rebuilding the task. H264 and AV1 recipe encoding remain
+work in progress. Detaching a parent runtime branch also removes dependent
 runtime branches anchored from that parent's taps. Expert graph nodes can still
-be addressed with `From(node)` and `Task.Describe`. This is for late analysis
-taps, meters, and screenshot collectors that should observe future messages
-without rebuilding the task. Buffered runtime attachments, runtime encoders, and
-late muxed target branches remain separate slices because they need queue,
-worker, codec, and mux lifecycle management.
+be addressed with `From(node)` and `Task.Describe`. This is for late analysis,
+meters, screenshot collectors, and late recording branches that should observe
+future messages without rebuilding the task. Buffered runtime attachments remain
+a separate slice because they need queue and worker lifecycle management.
 
 Current graph execution covers:
 

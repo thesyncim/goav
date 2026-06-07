@@ -17,16 +17,18 @@ var runtimeAttachmentSeq atomic.Uint64
 // runtimeBranch is the internal graph mutation plan for a branch attached to an
 // already-built task.
 type runtimeBranch struct {
-	name   string
-	from   string
-	tap    string
-	anchor TapInfo
-	steps  []runtimeBranchStep
-	sink   pipeline.Sink
-	policy pipeline.RoutePolicy
-	label  string
-	buffer pipeline.BufferPolicy
-	err    error
+	name     string
+	from     string
+	tap      string
+	anchor   TapInfo
+	steps    []runtimeBranchStep
+	encode   CodecSpec
+	endpoint EndpointSpec
+	sink     pipeline.Sink
+	policy   pipeline.RoutePolicy
+	label    string
+	buffer   pipeline.BufferPolicy
+	err      error
 }
 
 type runtimeBranchStep struct {
@@ -107,6 +109,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		name:   spec.name,
 		from:   spec.from,
 		tap:    spec.tap,
+		encode: spec.encode,
 		policy: spec.policy,
 		label:  spec.label,
 		buffer: spec.buffer,
@@ -122,15 +125,20 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 			branch.steps = append(branch.steps, runtimeBranchStep{tap: step.tap})
 		}
 	}
-	if codecIntentSet(spec.encode) {
-		return branch, runtimeBranchInvalidError("runtime branch encoding is not dynamic yet", "plan encode branches before Build or attach a sink branch from a decoded tap")
-	}
 	if len(spec.targets) != 1 {
-		return branch, runtimeBranchInvalidError("runtime branch needs exactly one sink endpoint", "finish the branch with .To(goav.FrameSink(sink))")
+		return branch, runtimeBranchInvalidError("runtime branch needs exactly one destination", "finish the branch with one .To(goav.FrameSink(sink)) or .To(goav.Target(name, endpoint))")
 	}
-	endpoint := spec.targets[0].endpoint
+	target := cloneTargetSpec(spec.targets[0])
+	if target.err != nil {
+		return branch, target.err
+	}
+	endpoint := cloneEndpointSpec(target.endpoint)
+	if err := endpoint.validate("attach runtime branch", firstNonEmpty(target.name, spec.name, "branch")); err != nil {
+		return branch, err
+	}
+	branch.endpoint = endpoint
 	if endpoint.sink == nil {
-		return branch, runtimeBranchInvalidError("runtime branch target must be a sink endpoint", "use .To(goav.FrameSink(sink)) for runtime branches")
+		return branch, nil
 	}
 	branch.sink = endpoint.sink
 	return branch, nil
@@ -200,7 +208,123 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch) 
 			step.caps = currentCaps
 		}
 	}
+	if err := t.prepareRuntimeBranchDestination(ctx, branch, currentStream, currentCaps); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (t *task) prepareRuntimeBranchDestination(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentCaps StreamCaps) error {
+	if branch == nil {
+		return nil
+	}
+	switch {
+	case branch.sink != nil:
+		if branch.encode.Copy {
+			if currentCaps.Domain != DomainPacket {
+				closeRuntimeBranchOwnedStages(*branch)
+				return runtimeBranchCopyDomainError(branch.name, currentCaps)
+			}
+			return nil
+		}
+		if codecIntentSet(branch.encode) {
+			if _, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentCaps); err != nil {
+				closeRuntimeBranchOwnedStages(*branch)
+				return err
+			}
+		}
+		return nil
+	case endpointSpecHasOutput(branch.endpoint):
+		return t.prepareRuntimeBranchMuxEndpoint(ctx, branch, currentStream, currentCaps)
+	default:
+		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.FrameSink(sink)) or .To(goav.FileOutput(name, writer))")
+	}
+}
+
+func (t *task) prepareRuntimeBranchMuxEndpoint(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentCaps StreamCaps) error {
+	if t.runtime == nil {
+		closeRuntimeBranchOwnedStages(*branch)
+		return runtimeBranchInvalidError(
+			"runtime branch mux endpoints require the standard runtime",
+			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching file or URI branches",
+		)
+	}
+	if !codecIntentSet(branch.encode) {
+		closeRuntimeBranchOwnedStages(*branch)
+		return runtimeBranchEncodeMissingError(branch.name)
+	}
+	stream := currentStream
+	caps := currentCaps
+	if branch.encode.Copy {
+		if currentCaps.Domain != DomainPacket {
+			closeRuntimeBranchOwnedStages(*branch)
+			return runtimeBranchCopyDomainError(branch.name, currentCaps)
+		}
+	} else {
+		encodedStream, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentCaps)
+		if err != nil {
+			closeRuntimeBranchOwnedStages(*branch)
+			return err
+		}
+		stream = encodedStream
+		caps = streamPacketCapsFromRuntimeBranchStream(encodedStream, currentCaps)
+	}
+	if stream.Codec.ID == "" {
+		closeRuntimeBranchOwnedStages(*branch)
+		return runtimeBranchMuxCodecMissingError(branch.name, caps)
+	}
+	muxStage, err := (&builder{runtime: t.runtime}).openMuxStageWithFormat(
+		ctx,
+		branch.endpoint.output,
+		0,
+		[]av.Stream{stream},
+		endpointSpecOpenFormat(branch.endpoint),
+		endpointSpecGraphFormat(branch.endpoint),
+	)
+	if err != nil {
+		closeRuntimeBranchOwnedStages(*branch)
+		return err
+	}
+	branch.steps = append(branch.steps, runtimeBranchStep{
+		stage: muxStage,
+		caps:  caps,
+		owned: true,
+	})
+	return nil
+}
+
+func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentCaps StreamCaps) (av.Stream, error) {
+	if t.runtime == nil {
+		return av.Stream{}, runtimeBranchInvalidError(
+			"runtime branch encoding requires the standard runtime",
+			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching encode branches",
+		)
+	}
+	if currentCaps.Domain != DomainFrame {
+		return av.Stream{}, runtimeBranchEncodeDomainError(branch.name, currentCaps)
+	}
+	if err := validateRecipeEncode(branch.encode, "attach runtime branch", firstNonEmpty(branch.name, "branch")); err != nil {
+		return av.Stream{}, err
+	}
+	if _, err := t.runtime.codecs.EncoderFactory(branch.encode.ID); err != nil {
+		stream := StreamIntent{Name: branch.name, Encode: branch.encode}
+		return av.Stream{}, recipeEncodeAdapterError("attach runtime branch", stream, t.runtime.codecs, err)
+	}
+	request := runtimeBranchEncodeRequest(*branch, currentStream)
+	config, encodedStream, err := prepareEncodeConfig(currentStream, request, t.runtime.realtime)
+	if err != nil {
+		return av.Stream{}, err
+	}
+	stage, err := (&builder{runtime: t.runtime}).newEncodeStage(ctx, request, config)
+	if err != nil {
+		return av.Stream{}, err
+	}
+	branch.steps = append(branch.steps, runtimeBranchStep{
+		stage: stage,
+		caps:  streamPacketCapsFromRuntimeBranchStream(encodedStream, currentCaps),
+		owned: true,
+	})
+	return encodedStream, nil
 }
 
 func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]pipeline.NodeRef, []pipeline.Route, []TapInfo, error) {
@@ -242,25 +366,27 @@ func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]
 		stageIndex++
 	}
 
-	sinkName := nodeNames[len(nodeNames)-1]
-	sinkRef, err := t.graph.AddSink(namedSink{name: sinkName, sink: branch.sink}, branch.buffer)
-	if err != nil {
-		return refs, routes, taps, runtimeBranchGraphError("add sink", sinkName, err)
-	}
-	refs = append(refs, sinkRef)
-	if !connectedFromAnchor {
-		route := runtimeBranchRoute(pipeline.NodeRef(branch.from), sinkRef, branch)
+	if branch.sink != nil {
+		sinkName := nodeNames[len(nodeNames)-1]
+		sinkRef, err := t.graph.AddSink(namedSink{name: sinkName, sink: branch.sink}, branch.buffer)
+		if err != nil {
+			return refs, routes, taps, runtimeBranchGraphError("add sink", sinkName, err)
+		}
+		refs = append(refs, sinkRef)
+		if !connectedFromAnchor {
+			route := runtimeBranchRoute(pipeline.NodeRef(branch.from), sinkRef, branch)
+			if err := t.graph.Connect(route); err != nil {
+				return refs, routes, taps, runtimeBranchGraphError("connect branch", sinkName, err)
+			}
+			routes = append(routes, route)
+			return refs, routes, taps, nil
+		}
+		route := routeBetween(previous, sinkRef)
 		if err := t.graph.Connect(route); err != nil {
-			return refs, routes, taps, runtimeBranchGraphError("connect branch", sinkName, err)
+			return refs, routes, taps, runtimeBranchGraphError("connect branch sink", sinkName, err)
 		}
 		routes = append(routes, route)
-		return refs, routes, taps, nil
 	}
-	route := routeBetween(previous, sinkRef)
-	if err := t.graph.Connect(route); err != nil {
-		return refs, routes, taps, runtimeBranchGraphError("connect branch sink", sinkName, err)
-	}
-	routes = append(routes, route)
 	return refs, routes, taps, nil
 }
 
@@ -505,15 +631,27 @@ func validateRuntimeBranch(branch runtimeBranch) error {
 	if branch.from == "" && branch.tap == "" {
 		return runtimeBranchInvalidError("branch source is empty", "call .FromTap(name) with a tap from Task.Taps() or .From(node) with an expert graph node")
 	}
-	if branch.sink == nil {
-		return runtimeBranchInvalidError("branch sink is missing", "finish the branch with .To(sink)")
+	if branch.sink == nil && !endpointSpecHasOutput(branch.endpoint) {
+		return runtimeBranchInvalidError("branch endpoint is missing", "finish the branch with .To(goav.FrameSink(sink)) or .To(goav.FileOutput(name, writer))")
 	}
 	return nil
 }
 
+func endpointSpecHasOutput(endpoint EndpointSpec) bool {
+	return endpoint.output.Name != "" ||
+		endpoint.output.URI != "" ||
+		endpoint.output.Writer != nil ||
+		endpoint.format != "" ||
+		endpoint.resolvedFormat != ""
+}
+
 func runtimeBranchNodeNames(branch runtimeBranch, spec pipeline.Spec) ([]string, error) {
-	names := make([]string, 0, runtimeBranchStageCount(branch)+1)
-	seen := make(map[string]struct{}, runtimeBranchStageCount(branch)+1)
+	capacity := runtimeBranchStageCount(branch)
+	if branch.sink != nil {
+		capacity++
+	}
+	names := make([]string, 0, capacity)
+	seen := make(map[string]struct{}, capacity)
 	stageIndex := 0
 	for i := range branch.steps {
 		if branch.steps[i].stage == nil {
@@ -525,6 +663,9 @@ func runtimeBranchNodeNames(branch runtimeBranch, spec pipeline.Spec) ([]string,
 		}
 		names = append(names, name)
 		stageIndex++
+	}
+	if branch.sink == nil {
+		return names, nil
 	}
 	name := runtimeBranchNodeName(branch.name, branch.sink.Name(), "sink")
 	if err := validateRuntimeBranchNodeName(spec, seen, name); err != nil {
@@ -646,7 +787,7 @@ func runtimeBranchAnchorCaps(anchor TapInfo) StreamCaps {
 
 func streamFromRuntimeBranchCaps(name string, caps StreamCaps) av.Stream {
 	stream := av.Stream{
-		ID:   av.StreamID(firstNonEmpty(name, "runtime-branch")),
+		ID:   av.StreamID(firstNonEmpty(string(caps.StreamID), name, "runtime-branch")),
 		Name: firstNonEmpty(name, "runtime-branch"),
 		Type: caps.MediaKind,
 		Codec: av.CodecParameters{
@@ -668,11 +809,39 @@ func streamFromRuntimeBranchCaps(name string, caps StreamCaps) av.Stream {
 	return stream
 }
 
+func runtimeBranchEncodeRequest(branch runtimeBranch, stream av.Stream) encodeRequest {
+	config := encodeConfigFromSpec(branch.encode)
+	if config.Stream.ID == "" {
+		config.Stream.ID = av.StreamID(firstNonEmpty(branch.name, string(stream.ID), "branch"))
+	}
+	if config.Stream.Name == "" {
+		config.Stream.Name = firstNonEmpty(branch.name, stream.Name, string(stream.ID), "branch")
+	}
+	selector := av.StreamSelector{Type: stream.Type}
+	if selector.Type == "" {
+		selector.Type = stream.Codec.Type
+	}
+	if stream.ID != "" {
+		selector.ID = stream.ID
+	}
+	if stream.Codec.ID != "" {
+		selector.Codec = stream.Codec.ID
+	}
+	return encodeRequest{
+		name:     firstNonEmpty(branch.name, string(stream.ID), "branch"),
+		selector: selector,
+		config:   config,
+	}
+}
+
 func streamCapsFromRuntimeBranchStream(stream av.Stream, previous StreamCaps) StreamCaps {
 	caps := previous
 	caps.Domain = DomainFrame
 	if stream.Type != "" {
 		caps.MediaKind = stream.Type
+	}
+	if stream.ID != "" {
+		caps.StreamID = stream.ID
 	}
 	if stream.Codec.ID != "" {
 		caps.Codec = stream.Codec.ID
@@ -695,6 +864,12 @@ func streamCapsFromRuntimeBranchStream(stream av.Stream, previous StreamCaps) St
 	if stream.Codec.SampleFormat != "" {
 		caps.SampleFormat = stream.Codec.SampleFormat
 	}
+	return caps
+}
+
+func streamPacketCapsFromRuntimeBranchStream(stream av.Stream, previous StreamCaps) StreamCaps {
+	caps := streamCapsFromRuntimeBranchStream(stream, previous)
+	caps.Domain = DomainPacket
 	return caps
 }
 
@@ -887,6 +1062,83 @@ func runtimeBranchTransformError(node string, cause error) error {
 		},
 		Cause: cause,
 	}
+}
+
+func runtimeBranchEncodeMissingError(branch string) error {
+	return &BuildError{
+		Code:      "runtime_branch_encode_missing",
+		Operation: "attach runtime branch",
+		Node:      firstNonEmpty(branch, "branch"),
+		Reason:    "muxed runtime branches need packet copy or an encoder",
+		Suggestions: []string{
+			"call .Copy() when attaching from a packet tap",
+			"call .Opus(...), .VP8(...), or .VP9(...) when attaching from a frame tap",
+			"use .To(goav.FrameSink(...)) when the runtime branch should receive raw frames",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func runtimeBranchEncodeDomainError(branch string, caps StreamCaps) error {
+	return &BuildError{
+		Code:      "runtime_branch_encode_domain_mismatch",
+		Operation: "attach runtime branch",
+		Node:      firstNonEmpty(branch, "branch"),
+		Reason:    "runtime branch encoding requires a frame tap",
+		Details:   runtimeBranchCapsDetails(caps),
+		Suggestions: []string{
+			"attach from a tap declared after Decode, Resize, Resample, or a frame-stage .Do(...)",
+			"use .Copy() from a packet tap when no re-encode is intended",
+			"call task.Taps() and choose a tap with domain=frame",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func runtimeBranchCopyDomainError(branch string, caps StreamCaps) error {
+	return &BuildError{
+		Code:      "runtime_branch_copy_domain_mismatch",
+		Operation: "attach runtime branch",
+		Node:      firstNonEmpty(branch, "branch"),
+		Reason:    "runtime branch packet copy requires a packet tap",
+		Details:   runtimeBranchCapsDetails(caps),
+		Suggestions: []string{
+			"attach from a tap declared after Copy or Encode",
+			"encode frame taps with .Opus(...), .VP8(...), or .VP9(...) before writing a muxed endpoint",
+			"call task.Taps() and choose a tap with domain=packet",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func runtimeBranchMuxCodecMissingError(branch string, caps StreamCaps) error {
+	return &BuildError{
+		Code:      "runtime_branch_mux_codec_missing",
+		Operation: "attach runtime branch",
+		Node:      firstNonEmpty(branch, "branch"),
+		Reason:    "runtime branch mux endpoint needs codec metadata",
+		Details:   runtimeBranchCapsDetails(caps),
+		Suggestions: []string{
+			"attach from a recipe tap with codec caps",
+			"set an explicit encoder such as .Opus(...), .VP8(...), or .VP9(...)",
+			"use .To(goav.FrameSink(...)) when the branch should stay raw",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func runtimeBranchCapsDetails(caps StreamCaps) []string {
+	details := []string{
+		"domain=" + string(caps.Domain),
+		"media=" + string(caps.MediaKind),
+	}
+	if caps.Codec != "" {
+		details = append(details, "codec="+string(caps.Codec))
+	}
+	if caps.StreamID != "" {
+		details = append(details, "stream="+string(caps.StreamID))
+	}
+	return details
 }
 
 func runtimeBranchGraphError(operation string, node string, cause error) error {

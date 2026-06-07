@@ -414,6 +414,7 @@ func TestTaskAttachRuntimeResizeBranchRunsFromFrameTap(t *testing.T) {
 		Caps: StreamCaps{
 			Domain:      DomainFrame,
 			MediaKind:   av.MediaVideo,
+			StreamID:    "video",
 			Width:       1280,
 			Height:      720,
 			PixelFormat: av.PixelFormatI420,

@@ -15,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/webrtcav"
 )
@@ -917,6 +918,224 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 	}
 	if err := task.Detach(ctx, attachment); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStreamRecipeTaskAttachesRuntimeEncodeMuxBranch(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{audioOpusTestStream()}
+	demuxer := &decodeTestDemuxer{
+		streams: streams,
+		packets: []av.Packet{{
+			StreamID: "audio",
+			Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
+		}},
+	}
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	encoder := &encodeTestEncoder{}
+	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
+	)
+	task, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(New(formats, codecs)).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		To(FrameSink(&runtimeTestSink{name: "frames"})).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	attachment, err := task.Attach(ctx, Branch("archive").
+		FromTap("audio.decoded").
+		Opus(96_000).
+		To(Target("archive", FileOutput("archive.ogg", io.Discard))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachmentText := specText(attachment.Spec())
+	if !strings.Contains(attachmentText, "archive/encode-archive -> archive/archive.ogg") {
+		t.Fatalf("attachment spec:\n%s", attachmentText)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if encoder.encodes != 1 {
+		t.Fatalf("encodes=%d", encoder.encodes)
+	}
+	if encoderFactory.config.Stream.ID != "archive" ||
+		encoderFactory.config.Parameters.ID != av.CodecOpus ||
+		encoderFactory.config.Bitrate != 96_000 {
+		t.Fatalf("encode config: %+v", encoderFactory.config)
+	}
+	if len(muxers.muxers) != 1 || !muxers.muxers[0].opened ||
+		muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "archive" {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+}
+
+func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
+	ctx := context.Background()
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	packet := av.Packet{StreamID: "audio", Payload: av.Buffer{Bytes: []byte{9}}}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	graph := New(formats).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.packets",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainPacket,
+		Caps: StreamCaps{
+			Domain:     DomainPacket,
+			MediaKind:  av.MediaAudio,
+			StreamID:   "audio",
+			Codec:      av.CodecOpus,
+			SampleRate: 48000,
+			Channels:   Stereo,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	attachment, err := builtTask.Attach(ctx, Branch("record").
+		FromTap("audio.packets").
+		Copy().
+		To(Target("record", FileOutput("recording.ogg", io.Discard))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(specText(attachment.Spec()), "source -> record/recording.ogg") {
+		t.Fatalf("attachment spec:\n%s", specText(attachment.Spec()))
+	}
+	if err := builtTask.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 ||
+		muxers.muxers[0].lastStream != "audio" || muxers.muxers[0].streamCount != 1 ||
+		!streamIDsEqual(muxers.muxers[0].openedStreams, []av.StreamID{"audio"}) {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+}
+
+func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
+	ctx := context.Background()
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatOgg, muxers),
+	)
+	frame := av.Frame{StreamID: "audio", Type: av.MediaAudio}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	graph := New(formats).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    DomainFrame,
+		Caps:      StreamCaps{Domain: DomainFrame, MediaKind: av.MediaAudio, StreamID: "audio", Codec: av.CodecOpus},
+		Node:      "source",
+	}}
+	defer builtTask.Close()
+
+	_, err = builtTask.Attach(ctx, Branch("archive").
+		FromTap("audio.frames").
+		To(Target("archive", FileOutput("archive.ogg", io.Discard))))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_encode_missing" {
+		t.Fatalf("err = %v, want runtime_branch_encode_missing", err)
+	}
+	if strings.Contains(specText(builtTask.Describe()), "archive/") {
+		t.Fatalf("graph mutated after rejected attach:\n%s", specText(builtTask.Describe()))
+	}
+}
+
+func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
+	ctx := context.Background()
+	formats := withTestFormats(
+		testFormatProber(format.DefaultProber()),
+		testFormatMuxer(av.FormatAnnexB, &remuxTestMuxerFactory{}),
+		testFormatMuxer(av.FormatIVF, &remuxTestMuxerFactory{}),
+	)
+	frame := av.Frame{StreamID: "video", Type: av.MediaVideo}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	graph := New(formats).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []TapInfo{{
+		Name:      "video.frames",
+		MediaKind: av.MediaVideo,
+		Domain:    DomainFrame,
+		Caps: StreamCaps{
+			Domain:      DomainFrame,
+			MediaKind:   av.MediaVideo,
+			StreamID:    "video",
+			Codec:       av.CodecVP8,
+			Width:       1280,
+			Height:      720,
+			PixelFormat: av.PixelFormatI420,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	cases := []struct {
+		name   string
+		codec  CodecSpec
+		output EndpointSpec
+	}{
+		{name: "h264", codec: H264(Bitrate(2_000_000)), output: FileOutput("archive.h264", io.Discard)},
+		{name: "av1", codec: AV1(Bitrate(2_000_000)), output: FileOutput("archive.ivf", io.Discard)},
+	}
+	for _, tc := range cases {
+		_, err := builtTask.Attach(ctx, Branch(tc.name).
+			FromTap("video.frames").
+			Encode(tc.codec).
+			To(Target(tc.name, tc.output)))
+		var buildErr *BuildError
+		if !errors.As(err, &buildErr) || buildErr.Code != "encode_work_in_progress" {
+			t.Fatalf("%s err = %v, want encode_work_in_progress", tc.name, err)
+		}
+	}
+	if strings.Contains(specText(builtTask.Describe()), "h264/") || strings.Contains(specText(builtTask.Describe()), "av1/") {
+		t.Fatalf("graph mutated after rejected attach:\n%s", specText(builtTask.Describe()))
 	}
 }
 
