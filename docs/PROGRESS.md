@@ -2620,6 +2620,11 @@ flattened, shared, and private operation records instead of legacy
 `SharedSteps`/`Steps` fields. The remaining step bridge is now in lowerer route
 execution state and `runtimeBranch`, while the larger `branchComposePlan` model
 still needs to collapse into `WorkPlan`.
+Runtime attach now starts from the same canonical sequence too:
+`runtimeBranch` carries `[]OperationSpec` from `BranchSpec`, shape validation
+uses those operations directly, and mutable `runtimeBranchStep` values are
+derived only as preparation/execution state for opened decoders, filters,
+encoders, taps, and rollback.
 
 ## Validation Gates
 

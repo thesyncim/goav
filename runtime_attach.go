@@ -26,6 +26,7 @@ type runtimeBranch struct {
 	tap            string
 	tapDomain      MediaDomain
 	anchor         TapInfo
+	operations     []OperationSpec
 	steps          []runtimeBranchStep
 	postEncodeTaps []string
 	encode         CodecSpec
@@ -260,19 +261,21 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	if spec.err != nil {
 		return runtimeBranch{err: spec.err}, spec.err
 	}
+	operations := runtimeBranchOperationSpecsFromSpec(spec)
 	branch := runtimeBranch{
-		name:      spec.name,
-		media:     spec.media,
-		from:      spec.from,
-		tap:       spec.tap,
-		tapDomain: spec.tapDomain,
-		encode:    cloneCodecSpec(spec.encode),
-		policy:    spec.policy,
-		label:     spec.label,
-		buffer:    spec.buffer,
+		name:       spec.name,
+		media:      spec.media,
+		from:       spec.from,
+		tap:        spec.tap,
+		tapDomain:  spec.tapDomain,
+		operations: operations,
+		encode:     cloneCodecSpec(spec.encode),
+		policy:     spec.policy,
+		label:      spec.label,
+		buffer:     spec.buffer,
 	}
-	branch.steps = runtimeBranchStepsFromChain(spec.decode, spec.decodeCodec, branchSpecChainSteps(spec))
-	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
+	branch.steps = runtimeBranchStepsFromOperationSpecs(operations)
+	branch.postEncodeTaps = runtimeBranchPostEncodeTapsFromOperations(operations, spec.postEncodeTaps)
 	if len(spec.destinations) == 0 {
 		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
@@ -296,36 +299,111 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	return branch, nil
 }
 
-func runtimeBranchStepsFromChain(decode bool, decodeCodec CodecSpec, steps []chainStep) []runtimeBranchStep {
-	out := make([]runtimeBranchStep, 0, len(steps)+1)
-	if decode {
-		out = append(out, runtimeBranchStep{kind: OpDecode, decode: true, codec: cloneCodecSpec(decodeCodec)})
+func runtimeBranchOperationSpecsFromSpec(spec BranchSpec) []OperationSpec {
+	operations := cloneOperationSpecs(spec.operations)
+	if spec.decode && !operationSpecsContainKind(operations, OpDecode) {
+		operation := operationSpecForDecode(spec.decodeCodec, string(spec.decodeCodec.ID))
+		operations = append([]OperationSpec{operation}, operations...)
 	}
-	after := initialStepAfter(decode)
-	for i := range steps {
-		step, nextAfter, ok := runtimeBranchStepFromChainStep(steps[i], after)
-		if !ok {
+	switch {
+	case spec.encode.Copy && !operationSpecsContainKind(operations, OpCopy):
+		operations = append(operations, operationSpecForCopy(spec.encode))
+	case codecIntentSet(spec.encode) && !spec.encode.Copy && !operationSpecsContainKind(operations, OpEncode):
+		operations = append(operations, operationSpecForEncode(spec.encode))
+	}
+	after := OpEncode
+	if spec.encode.Copy {
+		after = OpCopy
+	}
+	for i := range spec.postEncodeTaps {
+		tapName := spec.postEncodeTaps[i]
+		if operationSpecsContainTap(operations, tapName) {
 			continue
 		}
-		out = append(out, step)
-		after = nextAfter
+		tap := PacketTap(tapName)
+		operations = append(operations, operationSpecForTap(tap, spec.media, after))
 	}
-	return out
+	return operations
 }
 
-func runtimeBranchStepFromChainStep(step chainStep, after OperationKind) (runtimeBranchStep, OperationKind, bool) {
-	switch {
-	case step.stage != nil:
-		return runtimeBranchStep{kind: OpStage, stage: step.stage}, OpStage, true
-	case !mediaShapeEmpty(step.shape):
-		return runtimeBranchStep{kind: OpShape, shapeUpdate: step.shape}, OpShape, true
-	case step.transform.Resize != nil || step.transform.Resample != nil:
-		return runtimeBranchStep{kind: OpTransform, transform: cloneTransformSpec(step.transform)}, OpTransform, true
-	case step.tap != "":
-		return runtimeBranchStep{kind: OpTap, tap: step.tap, tapDomain: step.tapDomain, after: after}, after, true
-	default:
-		return runtimeBranchStep{}, after, false
+func operationSpecsContainTap(operations []OperationSpec, name string) bool {
+	if name == "" {
+		return false
 	}
+	for i := range operations {
+		if operations[i].Kind == OpTap && (operations[i].Component == name || operations[i].Tap.Name == name) {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeBranchPostEncodeTapsFromOperations(operations []OperationSpec, explicit []string) []string {
+	if len(operations) == 0 && len(explicit) == 0 {
+		return nil
+	}
+	taps := make([]string, 0, len(explicit))
+	seen := make(map[string]struct{}, len(explicit))
+	for i := range explicit {
+		name := explicit[i]
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		taps = append(taps, name)
+	}
+	for i := range operations {
+		operation := operations[i]
+		if !operationSpecTapIsTerminalPacket(operation) || operation.Tap.Name == "" {
+			continue
+		}
+		name := operation.Tap.Name
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		taps = append(taps, name)
+	}
+	return taps
+}
+
+func runtimeBranchStepsFromOperationSpecs(operations []OperationSpec) []runtimeBranchStep {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := make([]runtimeBranchStep, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		switch operation.Kind {
+		case OpDecode:
+			out = append(out, runtimeBranchStep{kind: OpDecode, decode: true, codec: cloneCodecSpec(operation.Decode)})
+		case OpStage:
+			if operation.Stage != nil {
+				out = append(out, runtimeBranchStep{kind: OpStage, stage: operation.Stage})
+			}
+		case OpShape:
+			if !mediaShapeEmpty(operation.Shape) {
+				out = append(out, runtimeBranchStep{kind: OpShape, shapeUpdate: operation.Shape})
+			}
+		case OpTransform:
+			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
+				out = append(out, runtimeBranchStep{kind: OpTransform, transform: cloneTransformSpec(operation.Transform)})
+			}
+		case OpTap:
+			if operation.Tap.Name != "" && !operationSpecTapIsTerminalPacket(operation) {
+				out = append(out, runtimeBranchStep{
+					kind:      OpTap,
+					tap:       operation.Tap.Name,
+					tapDomain: operation.Tap.Domain,
+					after:     operation.Tap.After,
+				})
+			}
+		}
+	}
+	return out
 }
 
 func validateRuntimeBranchGroupDestinations(branches []runtimeBranch) (runtimeBranchGroupDestinations, error) {
@@ -825,34 +903,10 @@ func validateRuntimeBranchShapeContract(branch runtimeBranch, initial MediaShape
 }
 
 func runtimeBranchShapeOperationSpecs(branch runtimeBranch) []OperationSpec {
-	operations := make([]OperationSpec, 0, len(branch.steps)+1)
-	for i := range branch.steps {
-		step := branch.steps[i]
-		switch {
-		case step.decode:
-			operations = append(operations, OperationSpec{Kind: OpDecode, Decode: cloneCodecSpec(step.codec)})
-		case step.stage != nil:
-			operations = append(operations, OperationSpec{Kind: OpStage, Component: step.stage.Name(), Stage: step.stage})
-		case !mediaShapeEmpty(step.shapeUpdate):
-			operations = append(operations, OperationSpec{Kind: OpShape, Component: "shape", Shape: step.shapeUpdate})
-		case runtimeBranchStepHasTransform(step):
-			operations = append(operations, OperationSpec{Kind: OpTransform, Component: transformFactoryName(step.transform), Transform: cloneTransformSpec(step.transform)})
-		case step.tap != "":
-			operations = append(operations, OperationSpec{
-				Kind:      OpTap,
-				Component: step.tap,
-				Tap: TapIntent{
-					Name:      step.tap,
-					Domain:    step.tapDomain,
-					MediaKind: branch.media,
-					After:     step.after,
-				},
-			})
-		}
-	}
-	if branch.encode.Copy {
+	operations := cloneOperationSpecs(branch.operations)
+	if branch.encode.Copy && !operationSpecsContainKind(operations, OpCopy) {
 		operations = append(operations, OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(branch.encode)})
-	} else if codecIntentSet(branch.encode) {
+	} else if codecIntentSet(branch.encode) && !operationSpecsContainKind(operations, OpEncode) {
 		operations = append(operations, OperationSpec{Kind: OpEncode, Component: string(branch.encode.ID), Encode: cloneCodecSpec(branch.encode)})
 	}
 	return operations
