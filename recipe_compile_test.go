@@ -139,6 +139,32 @@ func TestMediaPlanStreamGraphOwnsPacketCopyAndDirectStreams(t *testing.T) {
 	}
 }
 
+func TestDirectFrameStreamSpecsUseBranchRoutePlanner(t *testing.T) {
+	body, err := os.ReadFile("media_plan_build.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"frameStreamBranchComposeSpec",
+		"planBranchComposeRoutes",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("direct frame-stream specs should use branch route planner; missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"planDecodeFilterPath(",
+		"planEncodeDestinationPath(",
+		"planEncodeSinkPath(",
+		"planSinkPath(",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("direct frame-stream specs should not use legacy per-workflow spec helper %q", forbidden)
+		}
+	}
+}
+
 func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	var body strings.Builder
 	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "runtime_transcode.go", "branch_compose_plan.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {

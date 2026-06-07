@@ -27,6 +27,7 @@ type branchComposeBranch struct {
 	Resize       *filter.ResizeConfig
 	Resample     *filter.ResampleConfig
 	DecodeConfig CodecSpec
+	CodecChange  CodecChangePolicy
 	Encode       codec.EncodeConfig
 	Labels       []string
 	Metadata     av.Metadata

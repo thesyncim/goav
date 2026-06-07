@@ -1106,42 +1106,77 @@ func graphPlanOperationCount(operations []graphPlanOperation, kind OperationKind
 }
 
 func (p mediaPlanStreamGraph) sinkDestinationSpec() (pipeline.Spec, error) {
-	spec, sourceRefs, nodes, err := p.specWithSources()
-	if err != nil {
-		return pipeline.Spec{}, err
-	}
-	previous, err := planDecodeFilterPath(nodes, &spec, sourceRefs, p.decode, p.filters)
-	if err != nil {
-		return pipeline.Spec{}, err
-	}
-	if p.encode != nil {
-		if err := planEncodeSinkPath(nodes, &spec, previous, *p.encode, p.outputs[0].sink); err != nil {
-			return pipeline.Spec{}, err
-		}
-		return spec, nil
-	}
-	if err := planSinkPath(nodes, &spec, previous, p.outputs[0].sink); err != nil {
-		return pipeline.Spec{}, err
-	}
-	return spec, nil
+	return p.frameStreamBranchComposeSpec()
 }
 
 func (p mediaPlanStreamGraph) encodeOutputSpec() (pipeline.Spec, error) {
 	if p.encode == nil {
 		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", Intent{Streams: []StreamIntent{p.stream}})
 	}
+	return p.frameStreamBranchComposeSpec()
+}
+
+func (p mediaPlanStreamGraph) frameStreamBranchComposeSpec() (pipeline.Spec, error) {
 	spec, sourceRefs, nodes, err := p.specWithSources()
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
-	previous, err := planDecodeFilterPath(nodes, &spec, sourceRefs, p.decode, p.filters)
+	branches, outputs, err := p.frameStreamBranchComposeRoutes()
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
-	if err := planEncodeDestinationPath(nodes, &spec, previous, *p.encode, p.outputs); err != nil {
-		return pipeline.Spec{}, err
+	return planBranchComposeRoutes(spec, nodes, sourceRefs, branches, outputs)
+}
+
+func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeRoute, []branchComposeTargetRoute, error) {
+	branchName := firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "branch")
+	steps, err := mediaPlanFilterRouteSteps(p.filters)
+	if err != nil {
+		return nil, nil, err
 	}
-	return spec, nil
+	request := encodeRequest{name: branchName, selector: p.decode.selector}
+	if p.encode != nil {
+		request = *p.encode
+		if request.name == "" {
+			request.name = branchName
+		}
+	}
+	branches := []branchComposeRoute{{
+		name:  branchName,
+		steps: steps,
+		branch: branchComposeBranch{
+			Name:         branchName,
+			Selector:     p.decode.selector,
+			Decode:       true,
+			DecodeConfig: cloneCodecSpec(p.decode.config),
+			CodecChange:  p.decode.codecChange,
+		},
+		decode:      cloneCodecSpec(p.decode.config),
+		codecChange: p.decode.codecChange,
+		request:     request,
+	}}
+	outputs := make([]branchComposeTargetRoute, len(p.outputs))
+	for i := range p.outputs {
+		output := p.outputs[i]
+		target := branchComposeTarget{
+			Name:        output.label("output"),
+			Destination: cloneDestinationSpec(output),
+			Target:      output.output,
+			Sink:        output.sink,
+			Format:      destinationGraphFormat(output),
+			Branches:    []string{branchName},
+		}
+		if output.resolvedFormat != "" {
+			target = resolveBranchComposeTargetFormat(target, output.resolvedFormat)
+		}
+		outputs[i] = branchComposeTargetRoute{
+			output:  target,
+			target:  branchComposeFormatTarget(branchComposePlan{}, target),
+			sink:    output.sink,
+			matches: []int{0},
+		}
+	}
+	return branches, outputs, nil
 }
 
 func (p mediaPlanStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeRef, map[string]plannedNode, error) {
@@ -1155,6 +1190,34 @@ func (p mediaPlanStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeR
 		return pipeline.Spec{}, nil, nil, recipeGraphUnsupportedError("describe job", Intent{Streams: []StreamIntent{p.stream}})
 	}
 	return spec, sourceRefs, nodes, nil
+}
+
+func mediaPlanFilterRouteSteps(filters []filterRequest) ([]mediaTransform, error) {
+	steps := make([]mediaTransform, 0, len(filters))
+	for i := range filters {
+		filter := filters[i]
+		switch {
+		case filter.stage != nil:
+			steps = append(steps, mediaTransform{name: filter.stage.Name(), stage: filter.stage})
+		case filter.transform != nil:
+			steps = append(steps, cloneMediaTransform(*filter.transform))
+		default:
+			return nil, ErrNilStage
+		}
+	}
+	return steps, nil
+}
+
+func cloneMediaTransform(transform mediaTransform) mediaTransform {
+	if transform.video != nil {
+		video := *transform.video
+		transform.video = &video
+	}
+	if transform.audio != nil {
+		audio := *transform.audio
+		transform.audio = &audio
+	}
+	return transform
 }
 
 func (p mediaPlanStreamGraph) compileSinkDestination(ctx context.Context, graph pipeline.Graph, lowering graphPlanFrameStreamLowering) error {
