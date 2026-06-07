@@ -1814,6 +1814,17 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     writer and successful task close commits and closes exactly once without an
     abort.
     Done.
+352. Lower branch-compose inputs from graph-plan operation refs:
+    branch-compose graph plans now name shared select/decode/transform
+    operations with the same selector-scoped node refs used by the described
+    graph. Build preparation groups select and decode operation refs by
+    selector, validates they are shared consistently, and passes those refs into
+    runtime input lowering. The input lowerer uses the plan refs for select and
+    decode stages while old advanced callers keep fallback naming. Tests mutate
+    planned select/decode refs and prove the built graph still equals the
+    described graph, so branch-compose input lowering is now executing from the
+    ordered operation record instead of recomputing node identity.
+    Done.
 
 ## First Vertical Slice
 
@@ -2024,10 +2035,11 @@ Required proof:
 
 ## Next Slices
 
-1. Lower branch-compose shared work from `graphPlan` ordered operations.
-   Packet-copy, direct frame-stream, and grouped branch-compose builds now
-   consume the sequence for validation and target binding; the next step is to
-   make grouped branch select/decode/shared-step lowering follow the same
+1. Lower branch-compose shared transform/stage work from `graphPlan` ordered
+   operations. Packet-copy, direct frame-stream, and grouped branch-compose
+   builds now consume the sequence for validation and target binding; grouped
+   branch-compose input lowering also consumes select/decode operation refs.
+   The next step is to make shared transform/stage lowering follow the same
    ordered operation records instead of the route structs.
 2. Make direct chains implicit branches. Packet copy, decode-to-sink,
    transform/encode-to-target, planned branch composition, and mixed
@@ -2076,9 +2088,9 @@ Required proof:
 14. Update this tracker with the new evidence and next pressure point.
 
 Current pressure point: make branch-compose graph-plan lowerers consume ordered
-operation records for shared select/decode/transform lowering, not only
-pre-source validation and target binding, and deepen capability planning around
-that ordered operation model. The public recipe surface is small: `From`, chains,
+operation records for shared transform/stage lowering, not only pre-source
+validation, select/decode input lowering, and target binding, and deepen
+capability planning around that ordered operation model. The public recipe surface is small: `From`, chains,
 `Tap`, `Branch`, `Branches`, `Target`,
 `File`, `URIOut`, `Sink`, `Flow`, `Codec`, and runtime `Attach`. Flows expand
 optional first decode plus ordered stage/tap/transform/encode operations into

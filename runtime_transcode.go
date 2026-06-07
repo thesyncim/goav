@@ -351,7 +351,7 @@ func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.G
 	if err != nil {
 		return err
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, []pipeline.NodeRef{sourceRef}, groups, nil, branches, realtime)
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, []pipeline.NodeRef{sourceRef}, groups, nil, branches, nil, realtime)
 	if err != nil {
 		return err
 	}
@@ -396,7 +396,7 @@ func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipelin
 	if err != nil {
 		return err
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, sourceRefs, groups, builds, branches, realtime)
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, sourceRefs, groups, builds, branches, nil, realtime)
 	if err != nil {
 		return err
 	}
@@ -412,6 +412,7 @@ func compileBranchComposeInputs(
 	groups []branchComposeStreamGroup,
 	builds []rtpBuild,
 	branches []branchComposeRoute,
+	inputPlan map[string]graphPlanBranchComposeInputOperation,
 	realtime bool,
 ) ([]pipeline.NodeRef, []av.Stream, error) {
 	service := &builder{runtime: runtime}
@@ -420,7 +421,9 @@ func compileBranchComposeInputs(
 	for i := range groups {
 		selector := groups[i].selector
 		selected := groups[i].stream
-		selectStage := newStreamSelectStage(selectNodeName(selector), selected, selector, selectNodeDetail(selector))
+		planned := inputPlan[branchComposeSelectorKey(selector)]
+		selectName := firstNonEmpty(planned.selectNode.String(), selectNodeName(selector))
+		selectStage := newStreamSelectStage(selectName, selected, selector, selectNodeDetail(selector))
 		selectRef, err := graph.AddStage(selectStage, runtime.buffer)
 		if err != nil {
 			selectStage.Close()
@@ -449,7 +452,8 @@ func compileBranchComposeInputs(
 		if err != nil {
 			return nil, nil, err
 		}
-		decodeStage, err := service.newDecodeStage(ctx, decodeRequest{selector: selector, config: decodeConfig}, selected, realtime, false, bounds)
+		decodeName := firstNonEmpty(planned.decodeNode.String(), decodeNodeName(selector))
+		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig}, selected, realtime, false, bounds)
 		if err != nil {
 			return nil, nil, err
 		}
