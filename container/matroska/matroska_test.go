@@ -10776,6 +10776,134 @@ func TestDemuxerRejectsInvalidSegmentInfoMetadata(t *testing.T) {
 	})
 }
 
+func TestDemuxerRejectsDuplicateKnownMetadataFields(t *testing.T) {
+	tests := []struct {
+		name string
+		data func(testing.TB) []byte
+	}{
+		{
+			name: "info title",
+			data: func(tb testing.TB) []byte {
+				return makeInfoMetadataMatroskaData(tb, func(writer *ebml.Writer) error {
+					return writeInfoWithElements(writer, func(w *ebml.Writer) error {
+						if err := w.WriteString(idTitle, "first"); err != nil {
+							return err
+						}
+						return w.WriteString(idTitle, "second")
+					})
+				})
+			},
+		},
+		{
+			name: "attached file filename",
+			data: func(tb testing.TB) []byte {
+				return makeTopLevelMetadataMatroskaData(tb, func(w *ebml.Writer) error {
+					return writeAttachmentsWithAttachedFilePayload(w, func(fw *ebml.Writer) error {
+						if err := fw.WriteString(idFileName, "one.txt"); err != nil {
+							return err
+						}
+						if err := fw.WriteString(idFileName, "two.txt"); err != nil {
+							return err
+						}
+						if err := fw.WriteString(idFileMediaType, "text/plain"); err != nil {
+							return err
+						}
+						if err := writeBinary(fw, idFileData, []byte("payload")); err != nil {
+							return err
+						}
+						return fw.WriteUInt(idFileUID, 1)
+					})
+				})
+			},
+		},
+		{
+			name: "edition flag",
+			data: func(tb testing.TB) []byte {
+				return makeTopLevelMetadataMatroskaData(tb, func(w *ebml.Writer) error {
+					return writeChaptersWithEditionPayload(w, func(ew *ebml.Writer) error {
+						if err := ew.WriteUInt(idEditionFlagDefault, 0); err != nil {
+							return err
+						}
+						if err := ew.WriteUInt(idEditionFlagDefault, 1); err != nil {
+							return err
+						}
+						return ew.WriteElement(idChapterAtom, crcChapterPayload(tb, "", nil))
+					})
+				})
+			},
+		},
+		{
+			name: "chapter time start",
+			data: func(tb testing.TB) []byte {
+				return makeTopLevelMetadataMatroskaData(tb, func(w *ebml.Writer) error {
+					return writeChaptersWithEditionPayload(w, func(ew *ebml.Writer) error {
+						return ew.WriteElement(idChapterAtom, duplicateChapterTimeStartPayload(tb))
+					})
+				})
+			},
+		},
+		{
+			name: "chapter display string",
+			data: func(tb testing.TB) []byte {
+				return makeTopLevelMetadataMatroskaData(tb, func(w *ebml.Writer) error {
+					return writeChaptersWithEditionPayload(w, func(ew *ebml.Writer) error {
+						return ew.WriteElement(idChapterAtom, duplicateChapterDisplayStringChapterPayload(tb))
+					})
+				})
+			},
+		},
+		{
+			name: "tag targets",
+			data: func(tb testing.TB) []byte {
+				return makeTopLevelMetadataMatroskaData(tb, func(w *ebml.Writer) error {
+					return writeTagsWithTagPayload(w, func(tw *ebml.Writer) error {
+						if err := tw.WriteElement(idTargets, validTagTargetsPayload(tb)); err != nil {
+							return err
+						}
+						if err := tw.WriteElement(idTargets, validTagTargetsPayload(tb)); err != nil {
+							return err
+						}
+						return tw.WriteElement(idSimpleTag, validSimpleTagPayload(tb))
+					})
+				})
+			},
+		},
+		{
+			name: "target type",
+			data: func(tb testing.TB) []byte {
+				return makeTopLevelMetadataMatroskaData(tb, func(w *ebml.Writer) error {
+					return writeTagsWithTagPayload(w, func(tw *ebml.Writer) error {
+						if err := tw.WriteElement(idTargets, duplicateTagTargetTypePayload(tb)); err != nil {
+							return err
+						}
+						return tw.WriteElement(idSimpleTag, validSimpleTagPayload(tb))
+					})
+				})
+			},
+		},
+		{
+			name: "simple tag name",
+			data: func(tb testing.TB) []byte {
+				return makeTopLevelMetadataMatroskaData(tb, func(w *ebml.Writer) error {
+					return writeTagsWithTagPayload(w, func(tw *ebml.Writer) error {
+						if err := tw.WriteElement(idTargets, validTagTargetsPayload(tb)); err != nil {
+							return err
+						}
+						return tw.WriteElement(idSimpleTag, duplicateSimpleTagNamePayload(tb))
+					})
+				})
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewDemuxer(bytes.NewReader(tt.data(t)), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
 func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	stream := av.Stream{
@@ -12886,6 +13014,19 @@ func writeAttachmentsElement(w *ebml.Writer, attachments ...Attachment) error {
 	return w.WriteElement(idAttachments, payload.Bytes())
 }
 
+func writeAttachmentsWithAttachedFilePayload(w *ebml.Writer, writeFile func(*ebml.Writer) error) error {
+	var attachments bytes.Buffer
+	aw := ebml.NewWriter(&attachments)
+	var file bytes.Buffer
+	if err := writeFile(ebml.NewWriter(&file)); err != nil {
+		return err
+	}
+	if err := aw.WriteElement(idAttachedFile, file.Bytes()); err != nil {
+		return err
+	}
+	return w.WriteElement(idAttachments, attachments.Bytes())
+}
+
 func writeChaptersElement(w *ebml.Writer, editions ...ChapterEdition) error {
 	var payload bytes.Buffer
 	cw := ebml.NewWriter(&payload)
@@ -12897,6 +13038,19 @@ func writeChaptersElement(w *ebml.Writer, editions ...ChapterEdition) error {
 	return w.WriteElement(idChapters, payload.Bytes())
 }
 
+func writeChaptersWithEditionPayload(w *ebml.Writer, writeEdition func(*ebml.Writer) error) error {
+	var chapters bytes.Buffer
+	cw := ebml.NewWriter(&chapters)
+	var edition bytes.Buffer
+	if err := writeEdition(ebml.NewWriter(&edition)); err != nil {
+		return err
+	}
+	if err := cw.WriteElement(idEditionEntry, edition.Bytes()); err != nil {
+		return err
+	}
+	return w.WriteElement(idChapters, chapters.Bytes())
+}
+
 func metadataValidationChapter(uid uint64, startNS int64) Chapter {
 	return Chapter{
 		UID:        uid,
@@ -12904,6 +13058,117 @@ func metadataValidationChapter(uid uint64, startNS int64) Chapter {
 		Enabled:    true,
 		EnabledSet: true,
 	}
+}
+
+func duplicateChapterTimeStartPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	if err := w.WriteUInt(idChapterUID, 2); err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.WriteUInt(idChapterTimeStart, 0); err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.WriteUInt(idChapterTimeStart, 1); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func duplicateChapterDisplayStringChapterPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	if err := w.WriteUInt(idChapterUID, 2); err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.WriteUInt(idChapterTimeStart, 0); err != nil {
+		tb.Fatal(err)
+	}
+	var display bytes.Buffer
+	dw := ebml.NewWriter(&display)
+	if err := dw.WriteString(idChapString, "Intro"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := dw.WriteString(idChapString, "Again"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.WriteElement(idChapterDisplay, display.Bytes()); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func writeTagsWithTagPayload(w *ebml.Writer, writeTagPayload func(*ebml.Writer) error) error {
+	var tags bytes.Buffer
+	tw := ebml.NewWriter(&tags)
+	var tag bytes.Buffer
+	if err := writeTagPayload(ebml.NewWriter(&tag)); err != nil {
+		return err
+	}
+	if err := tw.WriteElement(idTag, tag.Bytes()); err != nil {
+		return err
+	}
+	return w.WriteElement(idTags, tags.Bytes())
+}
+
+func validTagTargetsPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	if err := w.WriteUInt(idTargetTypeValue, 50); err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.WriteString(idTargetType, "MOVIE"); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func duplicateTagTargetTypePayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	if err := w.WriteUInt(idTargetTypeValue, 50); err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.WriteString(idTargetType, "MOVIE"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.WriteString(idTargetType, "EPISODE"); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func validSimpleTagPayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	if err := w.WriteString(idTagName, "TITLE"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.WriteString(idTagString, "Scene"); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
+}
+
+func duplicateSimpleTagNamePayload(tb testing.TB) []byte {
+	tb.Helper()
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	if err := w.WriteString(idTagName, "TITLE"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.WriteString(idTagName, "ALBUM"); err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.WriteString(idTagString, "Scene"); err != nil {
+		tb.Fatal(err)
+	}
+	return payload.Bytes()
 }
 
 func writeInfoWithElements(writer *ebml.Writer, writeExtra func(*ebml.Writer) error) error {

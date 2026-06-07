@@ -2630,6 +2630,7 @@ func (d *Demuxer) parseInfo(header ebml.Header) error {
 	if err != nil {
 		return err
 	}
+	var fields segmentInfoFieldState
 	durationTicks := float64(0)
 	durationSet := false
 	for !master.Done() {
@@ -2637,7 +2638,7 @@ func (d *Demuxer) parseInfo(header ebml.Header) error {
 		if err != nil {
 			return err
 		}
-		if err := d.parseInfoChild(master.Reader(), child, &durationTicks, &durationSet); err != nil {
+		if err := d.parseInfoChild(master.Reader(), child, &fields, &durationTicks, &durationSet); err != nil {
 			return err
 		}
 	}
@@ -2652,6 +2653,21 @@ func (d *Demuxer) parseInfo(header ebml.Header) error {
 		d.info.DurationSet = true
 	}
 	return validateSegmentInfo(d.info)
+}
+
+type segmentInfoFieldState struct {
+	segmentUUIDSet     bool
+	segmentFilenameSet bool
+	prevUUIDSet        bool
+	prevFilenameSet    bool
+	nextUUIDSet        bool
+	nextFilenameSet    bool
+	timestampScaleSet  bool
+	durationSet        bool
+	dateUTCSet         bool
+	titleSet           bool
+	muxingAppSet       bool
+	writingAppSet      bool
 }
 
 func (d *Demuxer) checkedMasterReader(parent io.Reader, size uint64) (*checkedMasterReader, error) {
@@ -2743,45 +2759,74 @@ func (r crc32HashReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header, durationTicks *float64, durationSet *bool) error {
+func markElementSeen(seen *bool) error {
+	if *seen {
+		return ErrInvalidData
+	}
+	*seen = true
+	return nil
+}
+
+func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header, fields *segmentInfoFieldState, durationTicks *float64, durationSet *bool) error {
 	switch child.ID {
 	case idSegmentUUID:
+		if err := markElementSeen(&fields.segmentUUIDSet); err != nil {
+			return err
+		}
 		value, err := readBinaryPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
 		}
 		d.info.SegmentUUID = value
 	case idSegmentFilename:
+		if err := markElementSeen(&fields.segmentFilenameSet); err != nil {
+			return err
+		}
 		value, err := readStringPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
 		}
 		d.info.SegmentFilename = value
 	case idPrevUUID:
+		if err := markElementSeen(&fields.prevUUIDSet); err != nil {
+			return err
+		}
 		value, err := readBinaryPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
 		}
 		d.info.PrevUUID = value
 	case idPrevFilename:
+		if err := markElementSeen(&fields.prevFilenameSet); err != nil {
+			return err
+		}
 		value, err := readStringPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
 		}
 		d.info.PrevFilename = value
 	case idNextUUID:
+		if err := markElementSeen(&fields.nextUUIDSet); err != nil {
+			return err
+		}
 		value, err := readBinaryPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
 		}
 		d.info.NextUUID = value
 	case idNextFilename:
+		if err := markElementSeen(&fields.nextFilenameSet); err != nil {
+			return err
+		}
 		value, err := readStringPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
 		}
 		d.info.NextFilename = value
 	case idTimestampScale:
+		if err := markElementSeen(&fields.timestampScaleSet); err != nil {
+			return err
+		}
 		value, err := readUIntPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
@@ -2791,6 +2836,9 @@ func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header, duratio
 		}
 		d.timecodeScaleNS = int64(value)
 	case idDuration:
+		if err := markElementSeen(&fields.durationSet); err != nil {
+			return err
+		}
 		value, err := readSegmentDurationTicksPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
@@ -2798,6 +2846,9 @@ func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header, duratio
 		*durationTicks = value
 		*durationSet = true
 	case idDateUTC:
+		if err := markElementSeen(&fields.dateUTCSet); err != nil {
+			return err
+		}
 		value, err := readDatePayload(reader, child.Size.Value)
 		if err != nil {
 			return err
@@ -2805,18 +2856,27 @@ func (d *Demuxer) parseInfoChild(reader *ebml.Reader, child ebml.Header, duratio
 		d.info.DateUTC = value
 		d.info.DateUTCSet = true
 	case idTitle:
+		if err := markElementSeen(&fields.titleSet); err != nil {
+			return err
+		}
 		value, err := readStringPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
 		}
 		d.info.Title = value
 	case idMuxingApp:
+		if err := markElementSeen(&fields.muxingAppSet); err != nil {
+			return err
+		}
 		value, err := readStringPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
 		}
 		d.info.MuxingApp = value
 	case idWritingApp:
+		if err := markElementSeen(&fields.writingAppSet); err != nil {
+			return err
+		}
 		value, err := readStringPayload(reader, child.Size.Value)
 		if err != nil {
 			return err
@@ -2974,7 +3034,11 @@ func (d *Demuxer) parseAttachedFile(parent io.Reader, header ebml.Header) (Attac
 		return Attachment{}, err
 	}
 	var attachment Attachment
-	dataSeen := false
+	var descriptionSeen bool
+	var filenameSeen bool
+	var mediaTypeSeen bool
+	var dataSeen bool
+	var uidSeen bool
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -2982,27 +3046,41 @@ func (d *Demuxer) parseAttachedFile(parent io.Reader, header ebml.Header) (Attac
 		}
 		switch child.ID {
 		case idFileDescription:
+			if err := markElementSeen(&descriptionSeen); err != nil {
+				return Attachment{}, err
+			}
 			attachment.Description, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Attachment{}, err
 			}
 		case idFileName:
+			if err := markElementSeen(&filenameSeen); err != nil {
+				return Attachment{}, err
+			}
 			attachment.Filename, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Attachment{}, err
 			}
 		case idFileMediaType:
+			if err := markElementSeen(&mediaTypeSeen); err != nil {
+				return Attachment{}, err
+			}
 			attachment.MIMEType, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Attachment{}, err
 			}
 		case idFileData:
+			if err := markElementSeen(&dataSeen); err != nil {
+				return Attachment{}, err
+			}
 			attachment.Data, err = readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Attachment{}, err
 			}
-			dataSeen = true
 		case idFileUID:
+			if err := markElementSeen(&uidSeen); err != nil {
+				return Attachment{}, err
+			}
 			attachment.UID, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Attachment{}, err
@@ -3101,6 +3179,10 @@ func (d *Demuxer) parseEditionEntry(parent io.Reader, header ebml.Header) (Chapt
 		return ChapterEdition{}, err
 	}
 	var edition ChapterEdition
+	var uidSeen bool
+	var hiddenSeen bool
+	var defaultSeen bool
+	var orderedSeen bool
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -3108,21 +3190,33 @@ func (d *Demuxer) parseEditionEntry(parent io.Reader, header ebml.Header) (Chapt
 		}
 		switch child.ID {
 		case idEditionUID:
+			if err := markElementSeen(&uidSeen); err != nil {
+				return ChapterEdition{}, err
+			}
 			edition.UID, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ChapterEdition{}, err
 			}
 		case idEditionFlagHidden:
+			if err := markElementSeen(&hiddenSeen); err != nil {
+				return ChapterEdition{}, err
+			}
 			edition.Hidden, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ChapterEdition{}, err
 			}
 		case idEditionFlagDefault:
+			if err := markElementSeen(&defaultSeen); err != nil {
+				return ChapterEdition{}, err
+			}
 			edition.Default, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ChapterEdition{}, err
 			}
 		case idEditionFlagOrdered:
+			if err := markElementSeen(&orderedSeen); err != nil {
+				return ChapterEdition{}, err
+			}
 			edition.Ordered, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ChapterEdition{}, err
@@ -3161,6 +3255,12 @@ func (d *Demuxer) parseChapterAtom(parent io.Reader, header ebml.Header) (Chapte
 	}
 	chapter := Chapter{Enabled: true}
 	startSeen := false
+	var uidSeen bool
+	var stringUIDSeen bool
+	var endSeen bool
+	var hiddenSeen bool
+	var enabledSeen bool
+	var trackSeen bool
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -3168,16 +3268,25 @@ func (d *Demuxer) parseChapterAtom(parent io.Reader, header ebml.Header) (Chapte
 		}
 		switch child.ID {
 		case idChapterUID:
+			if err := markElementSeen(&uidSeen); err != nil {
+				return Chapter{}, err
+			}
 			chapter.UID, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Chapter{}, err
 			}
 		case idChapterStringUID:
+			if err := markElementSeen(&stringUIDSeen); err != nil {
+				return Chapter{}, err
+			}
 			chapter.StringUID, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Chapter{}, err
 			}
 		case idChapterTimeStart:
+			if err := markElementSeen(&startSeen); err != nil {
+				return Chapter{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Chapter{}, err
@@ -3186,8 +3295,10 @@ func (d *Demuxer) parseChapterAtom(parent io.Reader, header ebml.Header) (Chapte
 				return Chapter{}, ErrInvalidData
 			}
 			chapter.StartNS = int64(value)
-			startSeen = true
 		case idChapterTimeEnd:
+			if err := markElementSeen(&endSeen); err != nil {
+				return Chapter{}, err
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Chapter{}, err
@@ -3198,17 +3309,26 @@ func (d *Demuxer) parseChapterAtom(parent io.Reader, header ebml.Header) (Chapte
 			chapter.EndNS = int64(value)
 			chapter.EndSet = true
 		case idChapterFlagHidden:
+			if err := markElementSeen(&hiddenSeen); err != nil {
+				return Chapter{}, err
+			}
 			chapter.Hidden, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Chapter{}, err
 			}
 		case idChapterFlagEnabled:
+			if err := markElementSeen(&enabledSeen); err != nil {
+				return Chapter{}, err
+			}
 			chapter.Enabled, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return Chapter{}, err
 			}
 			chapter.EnabledSet = true
 		case idChapterTrack:
+			if err := markElementSeen(&trackSeen); err != nil {
+				return Chapter{}, err
+			}
 			chapter.TrackUIDs, err = d.parseChapterTrack(master.Reader(), child)
 			if err != nil {
 				return Chapter{}, err
@@ -3288,6 +3408,8 @@ func (d *Demuxer) parseChapterDisplay(parent io.Reader, header ebml.Header) (Cha
 		return ChapterDisplay{}, err
 	}
 	display := ChapterDisplay{Language: "eng"}
+	var stringSeen bool
+	var languageBCP47Seen bool
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -3295,6 +3417,9 @@ func (d *Demuxer) parseChapterDisplay(parent io.Reader, header ebml.Header) (Cha
 		}
 		switch child.ID {
 		case idChapString:
+			if err := markElementSeen(&stringSeen); err != nil {
+				return ChapterDisplay{}, err
+			}
 			display.String, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ChapterDisplay{}, err
@@ -3305,6 +3430,9 @@ func (d *Demuxer) parseChapterDisplay(parent io.Reader, header ebml.Header) (Cha
 				return ChapterDisplay{}, err
 			}
 		case idChapLanguageBCP47:
+			if err := markElementSeen(&languageBCP47Seen); err != nil {
+				return ChapterDisplay{}, err
+			}
 			display.LanguageBCP47, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return ChapterDisplay{}, err
@@ -3378,11 +3506,13 @@ func (d *Demuxer) parseTag(parent io.Reader, header ebml.Header) (Tag, error) {
 		}
 		switch child.ID {
 		case idTargets:
+			if err := markElementSeen(&targetSeen); err != nil {
+				return Tag{}, err
+			}
 			tag.Target, err = d.parseTagTargets(master.Reader(), child)
 			if err != nil {
 				return Tag{}, err
 			}
-			targetSeen = true
 		case idSimpleTag:
 			simple, err := d.parseSimpleTag(master.Reader(), child)
 			if err != nil {
@@ -3417,6 +3547,8 @@ func (d *Demuxer) parseTagTargets(parent io.Reader, header ebml.Header) (TagTarg
 		return TagTarget{}, err
 	}
 	target := TagTarget{TypeValue: 50}
+	var typeValueSeen bool
+	var typeSeen bool
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -3424,11 +3556,17 @@ func (d *Demuxer) parseTagTargets(parent io.Reader, header ebml.Header) (TagTarg
 		}
 		switch child.ID {
 		case idTargetTypeValue:
+			if err := markElementSeen(&typeValueSeen); err != nil {
+				return TagTarget{}, err
+			}
 			target.TypeValue, err = readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return TagTarget{}, err
 			}
 		case idTargetType:
+			if err := markElementSeen(&typeSeen); err != nil {
+				return TagTarget{}, err
+			}
 			target.Type, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return TagTarget{}, err
@@ -3485,6 +3623,12 @@ func (d *Demuxer) parseSimpleTag(parent io.Reader, header ebml.Header) (SimpleTa
 		return SimpleTag{}, err
 	}
 	tag := SimpleTag{Language: "und", Default: true}
+	var nameSeen bool
+	var languageSeen bool
+	var languageBCP47Seen bool
+	var defaultSeen bool
+	var stringSeen bool
+	var binarySeen bool
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -3492,33 +3636,51 @@ func (d *Demuxer) parseSimpleTag(parent io.Reader, header ebml.Header) (SimpleTa
 		}
 		switch child.ID {
 		case idTagName:
+			if err := markElementSeen(&nameSeen); err != nil {
+				return SimpleTag{}, err
+			}
 			tag.Name, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return SimpleTag{}, err
 			}
 		case idTagLanguage:
+			if err := markElementSeen(&languageSeen); err != nil {
+				return SimpleTag{}, err
+			}
 			tag.Language, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return SimpleTag{}, err
 			}
 		case idTagLanguageBCP47:
+			if err := markElementSeen(&languageBCP47Seen); err != nil {
+				return SimpleTag{}, err
+			}
 			tag.LanguageBCP47, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return SimpleTag{}, err
 			}
 		case idTagDefault:
+			if err := markElementSeen(&defaultSeen); err != nil {
+				return SimpleTag{}, err
+			}
 			tag.Default, err = readBoolFlagPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return SimpleTag{}, err
 			}
 			tag.DefaultSet = true
 		case idTagString:
+			if err := markElementSeen(&stringSeen); err != nil {
+				return SimpleTag{}, err
+			}
 			tag.String, err = readStringPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return SimpleTag{}, err
 			}
 			tag.StringSet = true
 		case idTagBinary:
+			if err := markElementSeen(&binarySeen); err != nil {
+				return SimpleTag{}, err
+			}
 			tag.Binary, err = readBinaryPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return SimpleTag{}, err

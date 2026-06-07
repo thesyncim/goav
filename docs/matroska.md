@@ -169,6 +169,10 @@ Current milestone:
   required Info/Tracks masters through a pre-Cluster SeekHead when those
   masters are stored after the first Cluster, then skip the same physical
   elements during the later linear packet scan.
+- Demux validation rejects duplicate singleton child fields inside known Info,
+  AttachedFile, EditionEntry, ChapterAtom, ChapterDisplay, Tag, Targets, and
+  SimpleTag records instead of letting later values silently overwrite earlier
+  metadata.
 - Mux and demux validation rejects negative or overflowing track timing,
   audio, and video metadata before it can wrap into EBML unsigned integers or
   public `int` fields.
