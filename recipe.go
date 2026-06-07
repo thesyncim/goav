@@ -690,9 +690,8 @@ func (s InputSpec) selector(media av.MediaType) av.StreamSelector {
 	return selector
 }
 
-// EndpointSpec describes a concrete destination endpoint such as a file writer,
-// URI, or sink endpoint.
-type EndpointSpec struct {
+// DestinationSpec describes a concrete file, URI, writer, or sink destination.
+type DestinationSpec struct {
 	output         format.Output
 	sink           pipeline.Sink
 	format         av.FormatID
@@ -701,9 +700,9 @@ type EndpointSpec struct {
 	err            error
 }
 
-// FileOutput creates a writer-backed file endpoint.
-func FileOutput(name string, writer io.Writer) EndpointSpec {
-	return EndpointSpec{
+// FileOutput creates a writer-backed file destination.
+func FileOutput(name string, writer io.Writer) DestinationSpec {
+	return DestinationSpec{
 		output: format.Output{
 			Name:     name,
 			Protocol: av.ProtocolFile,
@@ -713,9 +712,9 @@ func FileOutput(name string, writer io.Writer) EndpointSpec {
 	}
 }
 
-// URIOutput creates a URI endpoint opened by a registered format adapter.
-func URIOutput(uri string) EndpointSpec {
-	return EndpointSpec{
+// URIOutput creates a URI destination opened by a registered format adapter.
+func URIOutput(uri string) DestinationSpec {
+	return DestinationSpec{
 		output: format.Output{
 			Name: uri,
 			URI:  uri,
@@ -724,21 +723,21 @@ func URIOutput(uri string) EndpointSpec {
 	}
 }
 
-// SinkEndpoint creates a decoded-frame or packet sink endpoint.
-func SinkEndpoint(sink pipeline.Sink) EndpointSpec {
+// Sink creates a sink destination for decoded frames or packets.
+func Sink(sink pipeline.Sink) DestinationSpec {
 	name := ""
 	if sink != nil {
 		name = sink.Name()
 	}
 	if sink == nil {
-		return EndpointSpec{err: ErrNilSink}
+		return DestinationSpec{err: ErrNilSink}
 	}
-	return EndpointSpec{sink: sink, name: name}
+	return DestinationSpec{sink: sink, name: name}
 }
 
-// Name overrides the endpoint name used for diagnostics and mux graph nodes.
+// Name overrides the destination name used for diagnostics and mux graph nodes.
 // Sink graph nodes use the wrapped sink's Name.
-func (s EndpointSpec) Name(name string) EndpointSpec {
+func (s DestinationSpec) Name(name string) DestinationSpec {
 	s.name = name
 	if s.sink == nil {
 		s.output.Name = name
@@ -746,24 +745,24 @@ func (s EndpointSpec) Name(name string) EndpointSpec {
 	return s
 }
 
-// MIME sets the endpoint MIME type used for format detection.
-func (s EndpointSpec) MIME(mimeType string) EndpointSpec {
+// MIME sets the destination MIME type used for format detection.
+func (s DestinationSpec) MIME(mimeType string) DestinationSpec {
 	s.output.MIMEType = mimeType
 	return s
 }
 
-// Format sets the endpoint container format explicitly.
-func (s EndpointSpec) Format(format av.FormatID) EndpointSpec {
+// Format sets the destination container format explicitly.
+func (s DestinationSpec) Format(format av.FormatID) DestinationSpec {
 	s.format = format
 	return s
 }
 
-func (s EndpointSpec) withResolvedFormat(format av.FormatID) EndpointSpec {
+func (s DestinationSpec) withResolvedFormat(format av.FormatID) DestinationSpec {
 	s.resolvedFormat = format
 	return s
 }
 
-func (s EndpointSpec) validate(operation string, fallback string) error {
+func (s DestinationSpec) validate(operation string, fallback string) error {
 	node := s.label(fallback)
 	if s.err != nil {
 		return &BuildError{
@@ -772,7 +771,7 @@ func (s EndpointSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    s.err.Error(),
 			Suggestions: []string{
-				"pass a non-nil sink to goav.SinkEndpoint(...)",
+				"pass a non-nil sink to goav.Sink(...)",
 				"use goav.FileOutput(...) or goav.URIOutput(...) for muxed output",
 			},
 			Cause: s.err,
@@ -786,10 +785,10 @@ func (s EndpointSpec) validate(operation string, fallback string) error {
 			Code:      "output_invalid",
 			Operation: operation,
 			Node:      node,
-			Reason:    "empty endpoint spec",
+			Reason:    "empty destination spec",
 			Suggestions: []string{
 				"use goav.FileOutput(name, writer) for muxed output",
-				"use goav.SinkEndpoint(sink) for decoded frames",
+				"use goav.Sink(sink) for decoded frames or packets",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -836,11 +835,11 @@ func (s EndpointSpec) validate(operation string, fallback string) error {
 	return nil
 }
 
-func (s EndpointSpec) label(fallback string) string {
+func (s DestinationSpec) label(fallback string) string {
 	return firstNonEmpty(s.name, s.output.Name, s.output.URI, fallback)
 }
 
-func (s EndpointSpec) intent() TargetIntent {
+func (s DestinationSpec) intent() TargetIntent {
 	return TargetIntent{
 		Name:     s.label("output"),
 		URI:      s.output.URI,
@@ -850,7 +849,7 @@ func (s EndpointSpec) intent() TargetIntent {
 	}
 }
 
-func (s EndpointSpec) intentWithName(name string) TargetIntent {
+func (s DestinationSpec) intentWithName(name string) TargetIntent {
 	intent := s.intent()
 	intent.Name = firstNonEmpty(name, intent.Name)
 	return intent
@@ -860,7 +859,7 @@ type Job struct {
 	name          string
 	runtime       Runtime
 	inputs        []InputSpec
-	outputs       []EndpointSpec
+	outputs       []DestinationSpec
 	outputNames   []string
 	stream        *jobStreamBuild
 	branchStreams []streamBuild
@@ -877,7 +876,7 @@ type jobStreamBuild struct {
 	postEncodeTaps []string
 	encode         CodecSpec
 	codecChange    CodecChangePolicy
-	outputs        []EndpointSpec
+	outputs        []DestinationSpec
 	outputNames    []string
 }
 
@@ -885,6 +884,7 @@ type jobStreamStep struct {
 	stage     pipeline.Stage
 	transform TransformSpec
 	tap       string
+	tapDomain MediaDomain
 }
 
 type jobStreamStepAttachment struct {
@@ -927,7 +927,7 @@ func (j *Job) setErr(err error) {
 	}
 }
 
-func (j *Job) To(destinations ...TargetOrEndpoint) *Job {
+func (j *Job) To(destinations ...Destination) *Job {
 	if len(j.branchStreams) != 0 {
 		j.setErr(branchOutputScopeError("branches"))
 		return j
@@ -938,7 +938,7 @@ func (j *Job) To(destinations ...TargetOrEndpoint) *Job {
 			j.setErr(jobDestinationInvalidError("job", "job destination is nil"))
 			return j
 		}
-		output, name, err := endpointFromTargetOrEndpoint("build job", "job", destination.targetOrEndpoint(), i)
+		output, name, err := endpointFromDestination("build job", "job", destination.destination(), i)
 		if err != nil {
 			j.setErr(err)
 			return j
@@ -1182,7 +1182,7 @@ func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool
 	return jobOutputScopeMixedError("build job", stream)
 }
 
-func validateJobOutputBindings(operation string, stream StreamIntent, outputs []EndpointSpec, targetNames []string) error {
+func validateJobOutputBindings(operation string, stream StreamIntent, outputs []DestinationSpec, targetNames []string) error {
 	labels := jobOutputLabelSet(outputs, targetNames)
 	for _, label := range stream.Targets {
 		if _, ok := labels[label]; ok {
@@ -1193,7 +1193,7 @@ func validateJobOutputBindings(operation string, stream StreamIntent, outputs []
 	return nil
 }
 
-func jobOutputLabelSet(outputs []EndpointSpec, targetNames []string) map[string]struct{} {
+func jobOutputLabelSet(outputs []DestinationSpec, targetNames []string) map[string]struct{} {
 	labels := make(map[string]struct{}, len(outputs))
 	for i := range outputs {
 		labels[jobOutputTargetName(outputs, targetNames, i)] = struct{}{}
@@ -1201,9 +1201,9 @@ func jobOutputLabelSet(outputs []EndpointSpec, targetNames []string) map[string]
 	return labels
 }
 
-func (j *Job) allOutputs() []EndpointSpec {
+func (j *Job) allOutputs() []DestinationSpec {
 	if len(j.branchTargets) != 0 {
-		outputs := make([]EndpointSpec, 0, len(j.branchTargets))
+		outputs := make([]DestinationSpec, 0, len(j.branchTargets))
 		for i := range j.branchTargets {
 			outputs = append(outputs, j.branchTargets[i].output)
 		}
@@ -1223,11 +1223,11 @@ func (j *Job) allOutputNames() []string {
 	return jobAllOutputNames(j.outputNames, jobStreamOutputNames(j.stream))
 }
 
-func jobAllOutputs(outputs []EndpointSpec, streamOutputs []EndpointSpec) []EndpointSpec {
+func jobAllOutputs(outputs []DestinationSpec, streamOutputs []DestinationSpec) []DestinationSpec {
 	if len(streamOutputs) == 0 {
-		return append([]EndpointSpec(nil), outputs...)
+		return append([]DestinationSpec(nil), outputs...)
 	}
-	all := make([]EndpointSpec, 0, len(outputs)+len(streamOutputs))
+	all := make([]DestinationSpec, 0, len(outputs)+len(streamOutputs))
 	all = append(all, outputs...)
 	all = append(all, streamOutputs...)
 	return all
@@ -1391,7 +1391,7 @@ func streamStepOperations(steps []jobStreamStep, media av.MediaType, after Opera
 			})
 			after = OpTransform
 		case step.tap != "":
-			tap := TapIntent{Name: step.tap, MediaKind: media, Domain: DomainFrame, After: after}
+			tap := TapIntent{Name: step.tap, MediaKind: media, Domain: jobStepTapDomain(step, DomainFrame), After: after}
 			operations = append(operations, StreamOperation{
 				Kind:      OpTap,
 				Component: tap.Name,
@@ -1407,7 +1407,6 @@ func streamStepTapIntents(steps []jobStreamStep, media av.MediaType, after Opera
 		return nil
 	}
 	taps := make([]TapIntent, 0)
-	domain := DomainFrame
 	for i := range steps {
 		step := steps[i]
 		switch {
@@ -1419,12 +1418,19 @@ func streamStepTapIntents(steps []jobStreamStep, media av.MediaType, after Opera
 			taps = append(taps, TapIntent{
 				Name:      step.tap,
 				MediaKind: media,
-				Domain:    domain,
+				Domain:    jobStepTapDomain(step, DomainFrame),
 				After:     after,
 			})
 		}
 	}
 	return taps
+}
+
+func jobStepTapDomain(step jobStreamStep, fallback MediaDomain) MediaDomain {
+	if step.tapDomain != "" {
+		return step.tapDomain
+	}
+	return fallback
 }
 
 func initialStepAfter(decode bool) OperationKind {
@@ -1457,11 +1463,11 @@ func streamNeedsDecodeFromBuild(stream *jobStreamBuild) bool {
 	return stream.decode || len(stream.steps) != 0 || stream.encode.ID != "" || stream.encode.Auto || stream.encode.Copy
 }
 
-func jobStreamOutputs(stream *jobStreamBuild) []EndpointSpec {
+func jobStreamOutputs(stream *jobStreamBuild) []DestinationSpec {
 	if stream == nil || len(stream.outputs) == 0 {
 		return nil
 	}
-	return append([]EndpointSpec(nil), stream.outputs...)
+	return append([]DestinationSpec(nil), stream.outputs...)
 }
 
 func jobStreamOutputNames(stream *jobStreamBuild) []string {
@@ -1516,8 +1522,8 @@ func streamStageMissingError(stream StreamIntent) error {
 	}
 }
 
-func validateJobStreamOutputKinds(operation string, stream StreamIntent, outputs []EndpointSpec) error {
-	if outputsContainSinkEndpoint(outputs) && outputsContainMuxTarget(outputs) && !codecIntentSet(stream.Encode) {
+func validateJobStreamOutputKinds(operation string, stream StreamIntent, outputs []DestinationSpec) error {
+	if outputsContainSinkDestination(outputs) && outputsContainMuxTarget(outputs) && !codecIntentSet(stream.Encode) {
 		return mixedStreamOutputError(operation, stream)
 	}
 	if stream.Encode.ID == "" && !stream.Encode.Copy && outputsContainMuxTarget(outputs) {
@@ -1531,9 +1537,9 @@ func mixedStreamOutputError(operation string, stream StreamIntent) error {
 		Code:      "output_kind_mixed",
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
-		Reason:    "stream recipes cannot mix sink endpoints and muxed outputs",
+		Reason:    "stream recipes cannot mix sinks and muxed outputs",
 		Suggestions: []string{
-			"use .To(goav.SinkEndpoint(...)) for decoded frames",
+			"use .To(goav.Sink(...)) for decoded frames",
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
 		},
@@ -1549,7 +1555,7 @@ func streamEncodeMissingError(operation string, stream StreamIntent) error {
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
 		Suggestions: []string{
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(goav.FileOutput(...))",
-			"send decoded frames to goav.SinkEndpoint(...)",
+			"send decoded frames to goav.Sink(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -1706,7 +1712,7 @@ func appendTransformSpecs(prefix []TransformSpec, branch []TransformSpec) []Tran
 	return out
 }
 
-func outputsContainMuxTarget(outputs []EndpointSpec) bool {
+func outputsContainMuxTarget(outputs []DestinationSpec) bool {
 	for i := range outputs {
 		if outputs[i].sink == nil {
 			return true
@@ -1715,7 +1721,7 @@ func outputsContainMuxTarget(outputs []EndpointSpec) bool {
 	return false
 }
 
-func outputsContainSinkEndpoint(outputs []EndpointSpec) bool {
+func outputsContainSinkDestination(outputs []DestinationSpec) bool {
 	for i := range outputs {
 		if outputs[i].sink != nil {
 			return true
@@ -1724,7 +1730,7 @@ func outputsContainSinkEndpoint(outputs []EndpointSpec) bool {
 	return false
 }
 
-func validateEndpointSpecs(operation string, outputs []EndpointSpec, targetNames ...string) error {
+func validateEndpointSpecs(operation string, outputs []DestinationSpec, targetNames ...string) error {
 	seen := make(map[string]bool, len(outputs))
 	for i := range outputs {
 		fallback := fmt.Sprintf("output-%d", i)
@@ -1767,8 +1773,8 @@ func validateInputFormatAdapters(ctx context.Context, rt Runtime, inputs []Input
 	return probes, nil
 }
 
-func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []EndpointSpec, targetNames ...string) ([]EndpointSpec, error) {
-	resolved := append([]EndpointSpec(nil), outputs...)
+func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []DestinationSpec, targetNames ...string) ([]DestinationSpec, error) {
+	resolved := append([]DestinationSpec(nil), outputs...)
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
 		return resolved, nil
@@ -2487,7 +2493,7 @@ func recipeEncodeAdapterError(operation string, stream StreamIntent, registry *c
 		Details:   details,
 		Suggestions: []string{
 			"register a codec adapter that provides a " + string(stream.Encode.ID) + " encoder",
-			"use .To(goav.SinkEndpoint(...)) to receive decoded frames without encoding",
+			"use .To(goav.Sink(...)) to receive decoded frames without encoding",
 			"use .Copy().To(output) for packet-preserving output when re-encoding is not needed",
 		},
 		Cause: cause,
@@ -2533,7 +2539,7 @@ func duplicateTargetDestinationError(operation string, name string) error {
 		Reason:    fmt.Sprintf("target %q is attached more than once", name),
 		Suggestions: []string{
 			"list each goav.Target value once in .To(...)",
-			"use distinct target names when writing to separate endpoints",
+			"use distinct target names when writing to separate destinations",
 			"reuse one target from multiple branches through .Branches(...) when outputs should be grouped",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -2660,7 +2666,7 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			Node:      node,
 			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode branches currently target opus, vp8, and vp9",
 			Suggestions: []string{
-				"decode the stream with .To(goav.SinkEndpoint(...))",
+				"decode the stream with .To(goav.Sink(...))",
 				"use .Opus(...), .VP8(...), or .VP9(...) for recipe encode branches",
 				"use the expert builder with an explicit codec.EncodeConfig when testing an experimental encoder",
 			},
@@ -2936,7 +2942,7 @@ type JobStreamBuilder struct {
 	stream *jobStreamBuild
 }
 
-func (b *JobStreamBuilder) Apply(flow Flow) *JobStreamBuilder {
+func (b *JobStreamBuilder) Apply(flow Chain) *JobStreamBuilder {
 	spec, err := flowSpecFrom(flow)
 	if err != nil {
 		b.job.setErr(err)
@@ -2963,8 +2969,17 @@ func (b *JobStreamBuilder) Apply(flow Flow) *JobStreamBuilder {
 		stream.steps = append(stream.steps, cloneJobStreamSteps(spec.steps)...)
 	}
 	if codecIntentSet(spec.encode) {
-		return b.Encode(spec.encode)
+		if spec.encode.Copy {
+			if stream.decode || len(stream.steps) != 0 {
+				b.job.setErr(flowCopyDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
+				return b
+			}
+			stream.encode = Copy()
+		} else {
+			b.Encode(spec.encode)
+		}
 	}
+	stream.postEncodeTaps = append(stream.postEncodeTaps, spec.postEncodeTaps...)
 	return b
 }
 
@@ -2981,16 +2996,16 @@ func (b *JobStreamBuilder) Copy() *JobStreamBuilder {
 	return b
 }
 
-func (b *JobStreamBuilder) Tap(name string) *JobStreamBuilder {
+func (b *JobStreamBuilder) Tap(tap TapRef) *JobStreamBuilder {
 	stream := b.current()
-	if name == "" {
+	if tap.name == "" {
 		b.job.setErr(&BuildError{
 			Code:      "tap_invalid",
 			Operation: "build stream",
 			Node:      jobStreamName(stream),
 			Reason:    "tap name is empty",
 			Suggestions: []string{
-				"call .Tap(\"video.decoded\") or another stable tap name",
+				"call .Tap(goav.FrameTap(\"video.decoded\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -2998,11 +3013,19 @@ func (b *JobStreamBuilder) Tap(name string) *JobStreamBuilder {
 		return b
 	}
 	if codecIntentSet(stream.encode) {
-		stream.postEncodeTaps = append(stream.postEncodeTaps, name)
+		if err := validateTapDomain("build stream", jobStreamName(stream), tap, DomainPacket); err != nil {
+			b.job.setErr(err)
+			return b
+		}
+		stream.postEncodeTaps = append(stream.postEncodeTaps, tap.name)
+		return b
+	}
+	if err := validateTapDomain("build stream", jobStreamName(stream), tap, DomainFrame); err != nil {
+		b.job.setErr(err)
 		return b
 	}
 	stream.decode = true
-	stream.steps = append(stream.steps, jobStreamStep{tap: name})
+	stream.steps = append(stream.steps, jobStreamStep{tap: tap.name, tapDomain: tap.domain})
 	return b
 }
 
@@ -3100,16 +3123,16 @@ func (b *JobStreamBuilder) VP9(bitrate int, options ...codecOption) *JobStreamBu
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *JobStreamBuilder) To(destinations ...TargetOrEndpoint) *Job {
+func (b *JobStreamBuilder) To(destinations ...Destination) *Job {
 	stream := b.current()
-	outputs := make([]EndpointSpec, 0, len(destinations))
+	outputs := make([]DestinationSpec, 0, len(destinations))
 	for i := range destinations {
 		destination := destinations[i]
 		if destination == nil {
 			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), "stream destination is nil"))
 			return b.job
 		}
-		output, name, err := endpointFromTargetOrEndpoint("build stream", jobStreamName(stream), destination.targetOrEndpoint(), i)
+		output, name, err := endpointFromDestination("build stream", jobStreamName(stream), destination.destination(), i)
 		if err != nil {
 			b.job.setErr(err)
 			return b.job
@@ -3118,27 +3141,27 @@ func (b *JobStreamBuilder) To(destinations ...TargetOrEndpoint) *Job {
 		stream.outputNames = append(stream.outputNames, name)
 		outputs = append(outputs, output)
 	}
-	if outputsContainSinkEndpoint(outputs) && !codecIntentSet(stream.encode) {
+	if outputsContainSinkDestination(outputs) && !codecIntentSet(stream.encode) {
 		stream.decode = true
 	}
 	return b.job
 }
 
-func endpointFromTargetOrEndpoint(operation string, node string, destination targetOrEndpointDestination, index int) (EndpointSpec, string, error) {
+func endpointFromDestination(operation string, node string, destination destinationBinding, index int) (DestinationSpec, string, error) {
 	switch {
 	case destination.hasTarget:
 		target := cloneTargetSpec(destination.target)
 		if target.err != nil {
-			return EndpointSpec{}, "", target.err
+			return DestinationSpec{}, "", target.err
 		}
 		if target.name == "" {
-			return EndpointSpec{}, "", targetNameMissingError(target.endpoint)
+			return DestinationSpec{}, "", targetNameMissingError(target.endpoint)
 		}
 		return cloneEndpointSpec(target.endpoint), target.name, nil
 	case destination.hasEndpoint:
 		return cloneEndpointSpec(destination.endpoint), "", nil
 	default:
-		return EndpointSpec{}, "", destinationInvalidError(operation, node, "unsupported destination")
+		return DestinationSpec{}, "", destinationInvalidError(operation, node, "unsupported destination")
 	}
 }
 
@@ -3166,7 +3189,7 @@ type branchCompositionJob struct {
 
 type namedTargetSpec struct {
 	name   string
-	output EndpointSpec
+	output DestinationSpec
 }
 
 func targetIdentity(target namedTargetSpec) string {
@@ -3502,16 +3525,16 @@ func validateBranchTargetBindings(intent Intent, namedOutputs []namedTargetSpec)
 	return nil
 }
 
-func branchTargetEndpointSet(namedOutputs []namedTargetSpec) map[string]EndpointSpec {
-	outputs := make(map[string]EndpointSpec, len(namedOutputs))
+func branchTargetEndpointSet(namedOutputs []namedTargetSpec) map[string]DestinationSpec {
+	outputs := make(map[string]DestinationSpec, len(namedOutputs))
 	for i := range namedOutputs {
 		outputs[namedOutputs[i].name] = namedOutputs[i].output
 	}
 	return outputs
 }
 
-func branchTargetAttachmentSet(namedOutputs []namedTargetSpec) (map[string]EndpointSpec, []string) {
-	outputs := make(map[string]EndpointSpec, len(namedOutputs))
+func branchTargetAttachmentSet(namedOutputs []namedTargetSpec) (map[string]DestinationSpec, []string) {
+	outputs := make(map[string]DestinationSpec, len(namedOutputs))
 	outputOrder := make([]string, 0, len(namedOutputs))
 	for i := range namedOutputs {
 		name := namedOutputs[i].name
@@ -3550,7 +3573,7 @@ func branchEncodeMissingError(stream StreamIntent) error {
 		Reason:    "branch needs an encoder before writing to a muxed target",
 		Suggestions: []string{
 			"call .Opus(...), .VP8(...), or .VP9(...) before .To(...)",
-			"route raw frames to goav.SinkEndpoint(...) when the branch should stay decoded",
+			"route raw frames to goav.Sink(...) when the branch should stay decoded",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3565,7 +3588,7 @@ func branchCopyUnsupportedError(stream StreamIntent) error {
 		Suggestions: []string{
 			"use goav.From(input).Copy().Branches(...) for packet-preserving planned branches",
 			"attach a runtime branch from a packet tap and call .Copy() when packet-domain fanout is needed",
-			"omit .Copy() when the branch should deliver decoded frames to goav.SinkEndpoint(...)",
+			"omit .Copy() when the branch should deliver decoded frames to goav.Sink(...)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3593,7 +3616,7 @@ func branchTargetReferenceMissingError(stream StreamIntent, label string) error 
 		Node:      stream.Name,
 		Reason:    "target " + label + " is referenced but not defined",
 		Suggestions: []string{
-			"pass a goav.Target(\"" + label + "\", endpoint) value to the branch .To(...) call",
+			"pass a goav.Target(\"" + label + "\", destination) value to the branch .To(...) call",
 			"reuse typed target values instead of repeating string target refs",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -3624,13 +3647,13 @@ func transcodeEmptyOutputLabelError(stream streamBuild, index int) error {
 		},
 		Suggestions: []string{
 			"call .To(goav.Target(\"web\", goav.FileOutput(...))) with a non-empty target name",
-			"pass an endpoint directly when a separate target name is not needed",
+			"pass a destination directly when a separate target name is not needed",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func transcodeEmptyOutputDefinitionLabelError(output EndpointSpec) error {
+func transcodeEmptyOutputDefinitionLabelError(output DestinationSpec) error {
 	err := &BuildError{
 		Code:      "target_invalid",
 		Operation: branchCompositionOperation,
@@ -3653,10 +3676,10 @@ func branchTargetDuplicateError(name string) error {
 		Code:      "target_duplicate",
 		Operation: branchCompositionOperation,
 		Node:      name,
-		Reason:    fmt.Sprintf("target %q is defined more than once with different endpoints", name),
+		Reason:    fmt.Sprintf("target %q is defined more than once with different destinations", name),
 		Suggestions: []string{
 			"reuse the same goav.Target value when multiple branches should share one mux group",
-			"use distinct target names when branches should write to different endpoints",
+			"use distinct target names when branches should write to different destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3811,7 +3834,7 @@ func branchStreamName(stream streamBuild) string {
 	return firstNonEmpty(stream.name, string(stream.selector.Type), "stream")
 }
 
-func endpointTargetNames(outputs []EndpointSpec) []string {
+func endpointTargetNames(outputs []DestinationSpec) []string {
 	labels := make([]string, 0, len(outputs))
 	for i := range outputs {
 		labels = append(labels, outputs[i].label(fmt.Sprintf("output-%d", i)))
@@ -3819,7 +3842,7 @@ func endpointTargetNames(outputs []EndpointSpec) []string {
 	return labels
 }
 
-func endpointTargetNamesWithNames(outputs []EndpointSpec, targetNames []string) []string {
+func endpointTargetNamesWithNames(outputs []DestinationSpec, targetNames []string) []string {
 	labels := make([]string, 0, len(outputs))
 	for i := range outputs {
 		labels = append(labels, jobOutputTargetName(outputs, targetNames, i))
@@ -3827,7 +3850,7 @@ func endpointTargetNamesWithNames(outputs []EndpointSpec, targetNames []string) 
 	return labels
 }
 
-func jobOutputTargetName(outputs []EndpointSpec, targetNames []string, index int) string {
+func jobOutputTargetName(outputs []DestinationSpec, targetNames []string, index int) string {
 	if index >= 0 && index < len(targetNames) && targetNames[index] != "" {
 		return targetNames[index]
 	}

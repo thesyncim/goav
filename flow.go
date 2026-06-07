@@ -7,23 +7,25 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-// Flow is a reusable stream-local recipe fragment.
+// Chain is a reusable stream-local recipe fragment.
 //
-// Build flows with AudioFlow or VideoFlow, then apply them to one stream chain
-// or to a Branch. A flow is only an operation sequence; branches own targets.
-type Flow interface {
+// Build chains with Flow(name).Audio() or Flow(name).Video(), then apply them
+// to one stream chain or to a Branch. A chain is only an operation sequence;
+// branches own targets.
+type Chain interface {
 	Name() string
 	isFlow()
 }
 
 type streamFlowSpec struct {
-	name       string
-	media      av.MediaType
-	decode     bool
-	steps      []jobStreamStep
-	transforms []TransformSpec
-	encode     CodecSpec
-	err        error
+	name           string
+	media          av.MediaType
+	decode         bool
+	steps          []jobStreamStep
+	postEncodeTaps []string
+	transforms     []TransformSpec
+	encode         CodecSpec
+	err            error
 }
 
 type flowBuilder struct {
@@ -34,13 +36,34 @@ type flowSnapshotter interface {
 	flowSpec() streamFlowSpec
 }
 
-// AudioFlow creates a reusable audio stream fragment.
-func AudioFlow(name string) *AudioFlowBuilder {
+type FlowBuilder struct {
+	name string
+}
+
+// Flow starts a reusable operation sequence.
+func Flow(name string) *FlowBuilder {
+	return &FlowBuilder{name: name}
+}
+
+func (b *FlowBuilder) Audio() *AudioFlowBuilder {
+	if b == nil {
+		return newAudioFlow("")
+	}
+	return newAudioFlow(b.name)
+}
+
+func (b *FlowBuilder) Video() *VideoFlowBuilder {
+	if b == nil {
+		return newVideoFlow("")
+	}
+	return newVideoFlow(b.name)
+}
+
+func newAudioFlow(name string) *AudioFlowBuilder {
 	return &AudioFlowBuilder{flowBuilder{spec: streamFlowSpec{name: name, media: av.MediaAudio}}}
 }
 
-// VideoFlow creates a reusable video stream fragment.
-func VideoFlow(name string) *VideoFlowBuilder {
+func newVideoFlow(name string) *VideoFlowBuilder {
 	return &VideoFlowBuilder{flowBuilder{spec: streamFlowSpec{name: name, media: av.MediaVideo}}}
 }
 
@@ -94,11 +117,11 @@ func (b *AudioFlowBuilder) Do(stage pipeline.Stage) *AudioFlowBuilder {
 	return b
 }
 
-func (b *AudioFlowBuilder) Tap(name string) *AudioFlowBuilder {
+func (b *AudioFlowBuilder) Tap(tap TapRef) *AudioFlowBuilder {
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.tap(name)
+	b.flowBuilder.tap(tap)
 	return b
 }
 
@@ -108,6 +131,10 @@ func (b *AudioFlowBuilder) Encode(codec CodecSpec) *AudioFlowBuilder {
 	}
 	b.flowBuilder.encode(codec)
 	return b
+}
+
+func (b *AudioFlowBuilder) Copy() *AudioFlowBuilder {
+	return b.Encode(Copy())
 }
 
 func (b *AudioFlowBuilder) Opus(bitrate int, options ...codecOption) *AudioFlowBuilder {
@@ -153,11 +180,11 @@ func (b *VideoFlowBuilder) Do(stage pipeline.Stage) *VideoFlowBuilder {
 	return b
 }
 
-func (b *VideoFlowBuilder) Tap(name string) *VideoFlowBuilder {
+func (b *VideoFlowBuilder) Tap(tap TapRef) *VideoFlowBuilder {
 	if b == nil {
 		return b
 	}
-	b.flowBuilder.tap(name)
+	b.flowBuilder.tap(tap)
 	return b
 }
 
@@ -167,6 +194,10 @@ func (b *VideoFlowBuilder) Encode(codec CodecSpec) *VideoFlowBuilder {
 	}
 	b.flowBuilder.encode(codec)
 	return b
+}
+
+func (b *VideoFlowBuilder) Copy() *VideoFlowBuilder {
+	return b.Encode(Copy())
 }
 
 func (b *VideoFlowBuilder) VP8(bitrate int, options ...codecOption) *VideoFlowBuilder {
@@ -238,29 +269,37 @@ func (b *flowBuilder) stage(stage pipeline.Stage) {
 	b.spec.steps = append(b.spec.steps, jobStreamStep{stage: stage})
 }
 
-func (b *flowBuilder) tap(name string) {
+func (b *flowBuilder) tap(tap TapRef) {
 	if b == nil {
 		return
 	}
-	if codecIntentSet(b.spec.encode) {
-		b.setErr(streamStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "tap", b.spec.encode))
-		return
-	}
-	if name == "" {
+	if tap.name == "" {
 		b.setErr(&BuildError{
 			Code:      "tap_invalid",
 			Operation: "build flow",
 			Node:      firstNonEmpty(b.spec.name, "flow"),
 			Reason:    "tap name is empty",
 			Suggestions: []string{
-				"call .Tap(\"audio.voice.frames\") or another stable tap name",
+				"call .Tap(goav.FrameTap(\"audio.voice.frames\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			},
 			Cause: ErrUnsupportedBuild,
 		})
 		return
 	}
-	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: name})
+	if codecIntentSet(b.spec.encode) {
+		if err := validateTapDomain("build flow", firstNonEmpty(b.spec.name, "flow"), tap, DomainPacket); err != nil {
+			b.setErr(err)
+			return
+		}
+		b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, tap.name)
+		return
+	}
+	if err := validateTapDomain("build flow", firstNonEmpty(b.spec.name, "flow"), tap, DomainFrame); err != nil {
+		b.setErr(err)
+		return
+	}
+	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: tap.name, tapDomain: tap.domain})
 }
 
 func (b *flowBuilder) encode(codec CodecSpec) {
@@ -269,6 +308,10 @@ func (b *flowBuilder) encode(codec CodecSpec) {
 	}
 	if codecIntentSet(b.spec.encode) {
 		b.setErr(duplicateFlowEncodeError(b.spec.name, b.spec.encode, codec))
+		return
+	}
+	if codec.Copy && (b.spec.decode || len(b.spec.steps) != 0) {
+		b.setErr(flowCopyDomainError("build flow", firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
 	b.spec.encode = codec
@@ -280,6 +323,7 @@ func (b *flowBuilder) snapshot() streamFlowSpec {
 	}
 	spec := b.spec
 	spec.steps = cloneJobStreamSteps(spec.steps)
+	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
 	return spec
 }
@@ -290,7 +334,7 @@ func (b *flowBuilder) setErr(err error) {
 	}
 }
 
-func flowSpecFrom(flow Flow) (streamFlowSpec, error) {
+func flowSpecFrom(flow Chain) (streamFlowSpec, error) {
 	if flow == nil {
 		return streamFlowSpec{}, nilFlowError()
 	}
@@ -365,7 +409,7 @@ func flowDecodeOrderError(node string) error {
 		Node:      node,
 		Reason:    "decode must be the first flow operation",
 		Suggestions: []string{
-			"write goav.AudioFlow(name).Decode().Resample(...)",
+			"write goav.Flow(name).Audio().Decode().Resample(...)",
 			"omit .Decode() when the flow is only applied after stream decode",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -387,13 +431,28 @@ func flowDecodeDomainError(operation string, node string) error {
 	}
 }
 
+func flowCopyDomainError(operation string, node string) error {
+	return &BuildError{
+		Code:      "flow_copy_domain_mismatch",
+		Operation: operation,
+		Node:      firstNonEmpty(node, "flow"),
+		Reason:    "flow copying requires a packet-domain stream point",
+		Suggestions: []string{
+			"start packet-preserving reusable work with goav.Flow(name).Audio().Copy() or goav.Flow(name).Video().Copy()",
+			"declare packet taps after copy with .Copy().Tap(goav.PacketTap(name))",
+			"use .Decode().Resample(...).Opus(...) when the flow should transform frames",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
 func nilFlowError() error {
 	return &BuildError{
 		Code:      "flow_invalid",
 		Operation: "build flow",
 		Reason:    "flow is nil",
 		Suggestions: []string{
-			"build flows with goav.AudioFlow(name) or goav.VideoFlow(name)",
+			"build flows with goav.Flow(name).Audio() or goav.Flow(name).Video()",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -409,8 +468,8 @@ func validateFlowMedia(operation string, node string, selected av.MediaType, spe
 		Node:      firstNonEmpty(spec.name, node, "flow"),
 		Reason:    string(spec.media) + " flow cannot be applied to " + string(selected) + " stream",
 		Suggestions: []string{
-			"use goav.AudioFlow(...) with .Audio()",
-			"use goav.VideoFlow(...) with .Video()",
+			"use goav.Flow(name).Audio() with .Audio()",
+			"use goav.Flow(name).Video() with .Video()",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

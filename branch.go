@@ -2,20 +2,23 @@ package goav
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
 
-// TargetOrEndpoint is accepted by To. Use Target for named mux/sink groups, or
-// pass an endpoint such as FileOutput, URIOutput, or SinkEndpoint directly.
-type TargetOrEndpoint interface {
-	targetOrEndpoint() targetOrEndpointDestination
+var targetSpecSeq atomic.Uint64
+
+// Destination is accepted by To. Use Target for named mux/sink groups, or pass
+// FileOutput, URIOutput, or Sink directly for one-off destinations.
+type Destination interface {
+	destination() destinationBinding
 }
 
-type targetOrEndpointDestination struct {
+type destinationBinding struct {
 	target      TargetSpec
-	endpoint    EndpointSpec
+	endpoint    DestinationSpec
 	hasTarget   bool
 	hasEndpoint bool
 }
@@ -24,24 +27,29 @@ type targetOrEndpointDestination struct {
 // target so the runtime can mux or group them as one output.
 type TargetSpec struct {
 	name     string
-	endpoint EndpointSpec
+	endpoint DestinationSpec
+	id       uint64
 	err      error
 }
 
-// Target binds a stable target name to a concrete endpoint.
-func Target(name string, endpoint EndpointSpec) TargetSpec {
+// Target binds a stable target name to a concrete destination.
+func Target(name string, endpoint DestinationSpec) TargetSpec {
 	if name == "" {
 		return TargetSpec{endpoint: endpoint, err: targetNameMissingError(endpoint)}
 	}
-	return TargetSpec{name: name, endpoint: endpoint.Name(firstNonEmpty(endpoint.name, name))}
+	return TargetSpec{
+		name:     name,
+		endpoint: endpoint.Name(firstNonEmpty(endpoint.name, name)),
+		id:       targetSpecSeq.Add(1),
+	}
 }
 
-func (t TargetSpec) targetOrEndpoint() targetOrEndpointDestination {
-	return targetOrEndpointDestination{target: t, hasTarget: true}
+func (t TargetSpec) destination() destinationBinding {
+	return destinationBinding{target: t, hasTarget: true}
 }
 
-func (s EndpointSpec) targetOrEndpoint() targetOrEndpointDestination {
-	return targetOrEndpointDestination{endpoint: s, hasEndpoint: true}
+func (s DestinationSpec) destination() destinationBinding {
+	return destinationBinding{endpoint: s, hasEndpoint: true}
 }
 
 type BranchSpec struct {
@@ -55,11 +63,12 @@ type BranchSpec struct {
 	targets        []TargetSpec
 	labels         []string
 
-	from   string
-	tap    string
-	policy pipeline.RoutePolicy
-	label  string
-	buffer pipeline.BufferPolicy
+	from      string
+	tap       string
+	tapDomain MediaDomain
+	policy    pipeline.RoutePolicy
+	label     string
+	buffer    pipeline.BufferPolicy
 
 	err error
 }
@@ -72,20 +81,29 @@ func Branch(name string) *BranchBuilder {
 	return &BranchBuilder{spec: BranchSpec{name: name}}
 }
 
-func (b *BranchBuilder) From(node string) *BranchBuilder {
+func (b *BranchBuilder) From(source any) *BranchBuilder {
 	if b == nil {
 		return b
 	}
-	b.spec.from = node
-	b.spec.tap = ""
+	switch source := source.(type) {
+	case TapRef:
+		return b.fromTap(source)
+	case string:
+		b.spec.from = source
+		b.spec.tap = ""
+		b.spec.tapDomain = ""
+	default:
+		b.setErr(branchSourceInvalidError(firstNonEmpty(b.spec.name, "branch")))
+	}
 	return b
 }
 
-func (b *BranchBuilder) FromTap(name string) *BranchBuilder {
+func (b *BranchBuilder) fromTap(tap TapRef) *BranchBuilder {
 	if b == nil {
 		return b
 	}
-	b.spec.tap = name
+	b.spec.tap = tap.name
+	b.spec.tapDomain = tap.domain
 	b.spec.from = ""
 	return b
 }
@@ -136,7 +154,7 @@ func (b *BranchBuilder) Decode() *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Apply(flow Flow) *BranchBuilder {
+func (b *BranchBuilder) Apply(flow Chain) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -171,8 +189,13 @@ func (b *BranchBuilder) Apply(flow Flow) *BranchBuilder {
 	b.spec.steps = append(b.spec.steps, cloneJobStreamSteps(spec.steps)...)
 	b.spec.transforms = append(b.spec.transforms, cloneTransformSpecs(spec.transforms)...)
 	if codecIntentSet(spec.encode) {
-		return b.Encode(spec.encode)
+		if spec.encode.Copy && (b.spec.decode || len(b.spec.steps) != 0) {
+			b.setErr(flowCopyDomainError("build branch", firstNonEmpty(spec.name, b.spec.name, "flow")))
+			return b
+		}
+		b.Encode(spec.encode)
 	}
+	b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, spec.postEncodeTaps...)
 	return b
 }
 
@@ -222,18 +245,18 @@ func (b *BranchBuilder) Resample(sampleRate int, channels int, options ...audioO
 	return b
 }
 
-func (b *BranchBuilder) Tap(name string) *BranchBuilder {
+func (b *BranchBuilder) Tap(tap TapRef) *BranchBuilder {
 	if b == nil {
 		return b
 	}
-	if name == "" {
+	if tap.name == "" {
 		b.setErr(&BuildError{
 			Code:      "tap_invalid",
 			Operation: "build branch",
 			Node:      firstNonEmpty(b.spec.name, "branch"),
 			Reason:    "tap name is empty",
 			Suggestions: []string{
-				"call .Tap(\"video.720p.frames\") or another stable tap name",
+				"call .Tap(goav.FrameTap(\"video.720p.frames\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -241,10 +264,14 @@ func (b *BranchBuilder) Tap(name string) *BranchBuilder {
 		return b
 	}
 	if codecIntentSet(b.spec.encode) {
-		b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, name)
+		if err := validateTapDomain("build branch", firstNonEmpty(b.spec.name, "branch"), tap, DomainPacket); err != nil {
+			b.setErr(err)
+			return b
+		}
+		b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, tap.name)
 		return b
 	}
-	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: name})
+	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: tap.name, tapDomain: tap.domain})
 	return b
 }
 
@@ -280,7 +307,7 @@ func (b *BranchBuilder) VP9(bitrate int, options ...codecOption) *BranchBuilder 
 	return b.Encode(VP9(append([]codecOption{Bitrate(bitrate)}, options...)...))
 }
 
-func (b *BranchBuilder) To(destinations ...TargetOrEndpoint) BranchSpec {
+func (b *BranchBuilder) To(destinations ...Destination) BranchSpec {
 	if b == nil {
 		return BranchSpec{err: nilBranchError()}
 	}
@@ -292,10 +319,10 @@ func (b *BranchBuilder) To(destinations ...TargetOrEndpoint) BranchSpec {
 	for i := range destinations {
 		destination := destinations[i]
 		if destination == nil {
-			spec.err = targetOrEndpointInvalidError(spec.name, "branch destination is nil")
+			spec.err = branchDestinationInvalidError(spec.name, "branch destination is nil")
 			return spec
 		}
-		if err := appendTargetOrEndpoint(&spec, destination.targetOrEndpoint(), i); err != nil {
+		if err := appendDestination(&spec, destination.destination(), i); err != nil {
 			spec.err = err
 			return spec
 		}
@@ -319,7 +346,7 @@ func (b *BranchBuilder) setErr(err error) {
 	}
 }
 
-func appendTargetOrEndpoint(spec *BranchSpec, destination targetOrEndpointDestination, index int) error {
+func appendDestination(spec *BranchSpec, destination destinationBinding, index int) error {
 	switch {
 	case destination.hasTarget:
 		target := cloneTargetSpec(destination.target)
@@ -344,7 +371,7 @@ func appendTargetOrEndpoint(spec *BranchSpec, destination targetOrEndpointDestin
 		spec.labels = append(spec.labels, target.name)
 		return nil
 	default:
-		return targetOrEndpointInvalidError(spec.name, "unsupported branch destination")
+		return branchDestinationInvalidError(spec.name, "unsupported branch destination")
 	}
 }
 
@@ -450,11 +477,14 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 			return branchPacketTransformUnsupportedError(stream)
 		}
 	}
+	if err := validateBranchStepTapDomains(spec, parentPacket); err != nil {
+		return err
+	}
 	effectiveEncode := spec.encode
 	if parentPacket && !spec.decode && !codecIntentSet(effectiveEncode) {
 		effectiveEncode = Copy()
 	}
-	if !codecIntentSet(effectiveEncode) && !branchTargetsAllSinkEndpoints(spec.targets) {
+	if !codecIntentSet(effectiveEncode) && !branchTargetsAllSinkDestinations(spec.targets) {
 		return branchEncodeMissingError(stream)
 	}
 	seen := make(map[string]int, len(spec.labels))
@@ -475,6 +505,23 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	return nil
 }
 
+func validateBranchStepTapDomains(spec BranchSpec, parentPacket bool) error {
+	domain := DomainFrame
+	if parentPacket && !spec.decode {
+		domain = DomainPacket
+	}
+	for i := range spec.steps {
+		step := spec.steps[i]
+		if step.tap == "" {
+			continue
+		}
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), TapRef{name: step.tap, domain: step.tapDomain}, domain); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]jobStreamStep, string, error) {
 	if spec.tap == "" {
 		if parentPacket {
@@ -487,17 +534,29 @@ func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket b
 	}
 	if parentPacket {
 		if tapIsPacketAnchor(stream, spec.tap) {
+			if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.tap, domain: spec.tapDomain}, DomainPacket); err != nil {
+				return nil, "", err
+			}
 			return nil, spec.tap, nil
 		}
 		return nil, "", plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.tap)
 	}
 	if stream.decode && spec.tap == defaultDecodedTapName(stream.selector.Type) {
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.tap, domain: spec.tapDomain}, DomainFrame); err != nil {
+			return nil, "", err
+		}
 		return nil, spec.tap, nil
 	}
 	if steps, ok := jobStreamStepsThroughTap(stream.steps, spec.tap); ok {
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.tap, domain: spec.tapDomain}, DomainFrame); err != nil {
+			return nil, "", err
+		}
 		return steps, spec.tap, nil
 	}
 	if tapIsPostEncodeAnchor(stream, spec.tap) {
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.tap, domain: spec.tapDomain}, DomainPacket); err != nil {
+			return nil, "", err
+		}
 		return nil, "", plannedBranchPostEncodeTapError(spec.name, spec.tap)
 	}
 	return nil, "", plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.tap)
@@ -574,7 +633,7 @@ func branchEncodeParentOperationError(node string, encode CodecSpec) error {
 		Suggestions: []string{
 			"move .Branches(...) before the stream encoder",
 			"put .Opus(...), .VP8(...), or .VP9(...) on each goav.Branch(...) that writes a target",
-			"attach post-encode packet branches at runtime with Task.Attach(ctx, goav.Branch(name).FromTap(name)...)",
+			"attach post-encode packet branches at runtime with Task.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -590,8 +649,8 @@ func plannedBranchNodeSourceError(name string, source string) error {
 			"source: " + source,
 		},
 		Suggestions: []string{
-			"use .FromTap(name) to branch from a stable stream tap",
-			"omit .FromTap(...) to branch from the current stream point",
+			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) to branch from a stable tap",
+			"omit .From(...) to branch from the current stream point",
 			"use Task.Attach(ctx, goav.Branch(name).From(node)...) for expert runtime graph attachment",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -609,9 +668,9 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 			"tap: " + tap,
 		},
 		Suggestions: []string{
-			"add .Tap(\"" + tap + "\") before .Branches(...) on the selected stream",
-			"use .FromTap(\"audio.decoded\") or .FromTap(\"video.decoded\") after .Decode() when branching from decoded frames",
-			"omit .FromTap(...) to branch from the current stream point",
+			"add .Tap(goav.FrameTap(\"" + tap + "\")) before .Branches(...) on the selected stream",
+			"use .From(goav.FrameTap(\"audio.decoded\")) or .From(goav.FrameTap(\"video.decoded\")) after .Decode() when branching from decoded frames",
+			"omit .From(...) to branch from the current stream point",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -627,7 +686,7 @@ func plannedBranchPostEncodeTapError(branch string, tap string) error {
 			"tap: " + tap,
 		},
 		Suggestions: []string{
-			"attach this branch at runtime with Task.Attach(ctx, goav.Branch(name).FromTap(\"" + tap + "\")...)",
+			"attach this branch at runtime with Task.Attach(ctx, goav.Branch(name).From(goav.PacketTap(\"" + tap + "\"))...)",
 			"move .Branches(...) before the encoder when the split should be planned",
 			"use .Copy().Branches(...) for packet-preserving planned branches",
 		},
@@ -686,7 +745,7 @@ func branchDecodeCopyError(node string) error {
 		Reason:    "a branch cannot decode packets and then copy the original packet payload",
 		Suggestions: []string{
 			"use .Copy() for packet-preserving branches",
-			"use .Decode().To(goav.SinkEndpoint(...)) for decoded frames",
+			"use .Decode().To(goav.Sink(...)) for decoded frames",
 			"use .Decode().Encode(codec).To(target) for re-encoded packets",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -726,7 +785,7 @@ func branchPacketTransformUnsupportedError(stream StreamIntent) error {
 	}
 }
 
-func branchTargetsAllSinkEndpoints(targets []TargetSpec) bool {
+func branchTargetsAllSinkDestinations(targets []TargetSpec) bool {
 	if len(targets) == 0 {
 		return false
 	}
@@ -754,7 +813,7 @@ func cloneTargetSpec(target TargetSpec) TargetSpec {
 	return target
 }
 
-func cloneEndpointSpec(endpoint EndpointSpec) EndpointSpec {
+func cloneEndpointSpec(endpoint DestinationSpec) DestinationSpec {
 	return endpoint
 }
 
@@ -765,7 +824,7 @@ func branchMissingError(node string) error {
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
 		Suggestions: []string{
-			"pass branches with goav.Branch(name).VP9(...).To(goav.Target(name, endpoint))",
+			"pass branches with goav.Branch(name).VP9(...).To(goav.Target(name, destination))",
 			"reuse the same target value from multiple branches when they should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -792,13 +851,13 @@ func branchTargetMissingError(name string) error {
 		Reason:    "branch has no target",
 		Suggestions: []string{
 			"finish the branch with .To(goav.Target(\"web\", goav.FileOutput(...)))",
-			"pass an endpoint directly when no shared target is needed, such as .To(goav.FileOutput(...))",
+			"pass a file, URI, or sink destination directly when no shared target is needed",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func targetOrEndpointInvalidError(name string, reason string) error {
+func branchDestinationInvalidError(name string, reason string) error {
 	return destinationInvalidError("build branch", firstNonEmpty(name, "branch"), reason)
 }
 
@@ -817,14 +876,14 @@ func destinationInvalidError(operation string, node string, reason string) error
 		Node:      node,
 		Reason:    reason,
 		Suggestions: []string{
-			"use goav.Target(name, endpoint) for named mux/sink groups",
-			"use goav.FileOutput(...), goav.URIOutput(...), or goav.SinkEndpoint(...) as endpoints",
+			"use goav.Target(name, destination) for named mux/sink groups",
+			"use goav.FileOutput(...), goav.URIOutput(...), or goav.Sink(...) for one-off destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func targetNameMissingError(endpoint EndpointSpec) error {
+func targetNameMissingError(endpoint DestinationSpec) error {
 	return &BuildError{
 		Code:      "target_invalid",
 		Operation: "build target",

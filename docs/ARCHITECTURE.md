@@ -71,9 +71,9 @@ transforms. Branch-composition inputs and resolved targets are carried by the
 resolved recipe into a media-plan branch graph; `Describe` and `Build` use that
 graph plan directly and only borrow runtime services for adapter-backed sources,
 filters, encoders, and muxers. Packet-preserving copy/fanout recipes use the
-same resolved graph-plan pattern for concrete inputs, endpoints, and optional
+same resolved graph-plan pattern for concrete inputs, destinations, and optional
 selected streams. Direct selected-stream decode/encode recipes also keep their
-inputs, endpoints, ordered stream attachments, codec-change policy, custom
+inputs, destinations, ordered stream attachments, codec-change policy, custom
 stages, transforms, and taps on the resolved recipe until the media-plan
 boundary. Those direct stream recipes now build and describe through a resolved
 single-stream graph plan and shared parameterized
@@ -100,17 +100,17 @@ downstream branch to a built graph and returns an attachment handle with
 `Close(ctx)`. Direct graphs and bounded buffered graphs both support late
 stage/sink branches for future messages. `Task.Detach(ctx, h)` removes one live
 attachment, and `Task.Close()` stops attachments before closing the graph.
-Stable recipe outlets come from `.Tap(name)` and are listed by `Task.Taps()`;
-runtime branches attach with `goav.Branch("name").FromTap(name)`. A late branch
-can run custom `.Do(...)` stages, apply reusable flows, resize or resample from
-frame taps, encode Opus/VP8/VP9 from frame taps into a target endpoint, copy
-packet taps into a target endpoint, decode packet taps into frame-domain work,
-apply flows that own the packet-to-frame boundary, and expose its own
-`.Tap(name)` outlets, so another late branch can attach downstream without
-rebuilding the task. Taps declared after encode or copy operations are
-packet-domain outlets. H264 and AV1 recipe encoding remain work in progress.
-Detaching a parent runtime branch also removes dependent runtime branches
-anchored from that parent's taps.
+Stable recipe outlets come from typed `.Tap(goav.FrameTap(name))` or
+`.Tap(goav.PacketTap(name))` calls and are listed by `Task.Taps()`; runtime
+branches attach with `goav.Branch("name").From(tap)`. A late branch can run
+custom `.Do(...)` stages, apply reusable flows, resize or resample from frame
+taps, encode Opus/VP8/VP9 from frame taps into a target destination, copy packet
+taps into a target destination, decode packet taps into frame-domain work, apply
+flows that own the packet-to-frame boundary, and expose its own typed tap
+outlets, so another late branch can attach downstream without rebuilding the
+task. Taps declared after encode or copy operations are packet-domain outlets.
+H264 and AV1 recipe encoding remain work in progress. Detaching a parent runtime
+branch also removes dependent runtime branches anchored from that parent's taps.
 Expert graph nodes can still be addressed with `From(node)` and
 `Task.Describe`. This is for late analysis,
 meters, screenshot collectors, and late recording branches that should observe
@@ -132,7 +132,7 @@ Current graph execution covers:
 - one-input/many-output remux and fanout through
   `format.DemuxSource -> format.MuxStage...` when the format registry can
   probe, demux, and mux the requested boundaries
-- one-input selected-stream decode to a sink endpoint through
+- one-input selected-stream decode to a sink through
   `format.DemuxSource -> stream select -> codec.DecoderStage -> optional filter
   stages -> Sink` when the selector resolves to one stream and the codec
   registry has a decoder factory
@@ -144,7 +144,7 @@ Current graph execution covers:
   `rtpav.Source -> format.MuxStage...` when recipe codec intent or the
   application provides depacketizers and the format registry can mux the output
   boundaries
-- one or more RTP/WebRTC packet readers to a selected sink endpoint through
+- one or more RTP/WebRTC packet readers to a selected sink through
   `rtpav.Source... -> stream select -> codec.DecoderStage -> optional filter
   stages -> Sink` when one stream matches the selector and the codec registry
   has a decoder factory
@@ -157,7 +157,7 @@ Current graph execution covers:
 - transcode recipes for one input grouped by selected stream: video branches can
   share a video decode, audio branches can share an audio decode, and one output
   target can be a mux group that receives coordinated encoded audio and video
-  branches or a sink endpoint that receives frames before encode and packets
+  branches or a sink that receives frames before encode and packets
   after encode. Resize/resample configs insert filter stages through the filter
   registry, and targets select branches by branch name.
 

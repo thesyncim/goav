@@ -167,8 +167,8 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 			withRTPMaxTimestampGap(av.SamplesDuration(960, 48000)),
 			withRTPBufferLimits(RTPBufferLimits{MaxPackets: 2, MaxEvents: 2}),
 		).
-		Output(format.Output{Name: "archive.ogg"}).
-		Output(format.Output{Name: "preview.ogg"})
+		Mux(format.Output{Name: "archive.ogg"}).
+		Mux(format.Output{Name: "preview.ogg"})
 	planned, err := builder.Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -662,8 +662,8 @@ func newBufferedRTPRecordCopyFixture(policy pipeline.BufferPolicy) (builderAPI, 
 			withRTPName("live-audio"),
 			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
 		).
-		Output(format.Output{Name: "archive.ogg"}).
-		Output(format.Output{Name: "preview.ogg"})
+		Mux(format.Output{Name: "archive.ogg"}).
+		Mux(format.Output{Name: "preview.ogg"})
 	return builder, receiver, muxers
 }
 
@@ -843,8 +843,8 @@ func TestRuntimeBuilderMultiRTPRecordFanout(t *testing.T) {
 			withRTPName("video-rtp"),
 			withRTPDepacketizers(rtpav.NewVP8Depacketizer(video)),
 		).
-		Output(format.Output{Name: "archive.ogg"}).
-		Output(format.Output{Name: "preview.ogg"})
+		Mux(format.Output{Name: "archive.ogg"}).
+		Mux(format.Output{Name: "preview.ogg"})
 	planned, err := builder.Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -905,7 +905,7 @@ func TestRuntimeBuilderMultiRTPRecordDefaultNames(t *testing.T) {
 	spec, err := newTestBuilder(t).
 		RTP(&runtimeRTPReceiver{}).
 		RTP(&runtimeRTPReceiver{}).
-		Output(format.Output{Name: "archive.ogg"}).
+		Mux(format.Output{Name: "archive.ogg"}).
 		Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -951,7 +951,7 @@ func TestRuntimeBuilderRTPVP8RecordIVF(t *testing.T) {
 
 	task, err := newTestBuilder(t, WithFormatAdapter(ivfadapter.Register)).
 		RTP(receiver, withRTPDepacketizers(rtpav.NewVP8Depacketizer(stream))).
-		Output(format.Output{Name: "recording.ivf", Writer: &recording}).
+		Mux(format.Output{Name: "recording.ivf", Writer: &recording}).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -1016,7 +1016,7 @@ func TestRuntimeBuilderRTPAV1RecordIVF(t *testing.T) {
 
 	task, err := newTestBuilder(t, WithFormatAdapter(ivfadapter.Register)).
 		RTP(receiver, withRTPDepacketizers(rtpav.NewAV1Depacketizer(stream))).
-		Output(format.Output{Name: "recording.ivf", Writer: &recording}).
+		Mux(format.Output{Name: "recording.ivf", Writer: &recording}).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -1081,7 +1081,7 @@ func TestRuntimeBuilderRTPH264RecordAnnexB(t *testing.T) {
 
 	task, err := newTestBuilder(t, WithFormatAdapter(annexbadapter.Register)).
 		RTP(receiver, withRTPDepacketizers(rtpav.NewH264Depacketizer(stream))).
-		Output(format.Output{Name: "recording.h264", Writer: &recording}).
+		Mux(format.Output{Name: "recording.h264", Writer: &recording}).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -1102,7 +1102,7 @@ func TestRuntimeBuilderRTPH264RecordAnnexB(t *testing.T) {
 func TestRuntimeBuilderRTPRecordRequiresReceiver(t *testing.T) {
 	_, err := newTestBuilder(t).
 		RTP(nil).
-		Output(format.Output{Name: "archive.ogg"}).
+		Mux(format.Output{Name: "archive.ogg"}).
 		Build(context.Background())
 	if !errors.Is(err, ErrNilSource) {
 		t.Fatalf("err = %v, want ErrNilSource", err)

@@ -713,7 +713,7 @@ func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
 	_, err := newTestBuilder(t).
 		Input(format.Input{Name: "input"}).
 		Decode(testSelectAudio()).
-		Output(format.Output{Name: "output"}).
+		Mux(format.Output{Name: "output"}).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
@@ -721,7 +721,7 @@ func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "decodes: 1") ||
 		!strings.Contains(err.Error(), "outputs: 1") ||
-		!strings.Contains(err.Error(), "SinkEndpoint") {
+		!strings.Contains(err.Error(), "Sink") {
 		t.Fatalf("err = %v, want unsupported shape guidance", err)
 	}
 }

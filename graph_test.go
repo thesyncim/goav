@@ -147,7 +147,7 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	attachment, err := task.Attach(ctx, Branch("screenshots").From("source").Do(stage).To(SinkEndpoint(late)))
+	attachment, err := task.Attach(ctx, Branch("screenshots").From("source").Do(stage).To(Sink(late)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,11 +235,11 @@ func TestTaskDetachClosesRuntimeBranches(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	left, err := task.Attach(ctx, Branch("left").From("source").Do(leftStage).To(SinkEndpoint(leftSink)))
+	left, err := task.Attach(ctx, Branch("left").From("source").Do(leftStage).To(Sink(leftSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	right, err := task.Attach(ctx, Branch("right").From("source").Do(rightStage).To(SinkEndpoint(rightSink)))
+	right, err := task.Attach(ctx, Branch("right").From("source").Do(rightStage).To(Sink(rightSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,6 +274,401 @@ func TestTaskDetachClosesRuntimeBranches(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRuntimeBranchGroup(t *testing.T) {
+	ctx := context.Background()
+	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{9}}}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	base := &runtimeTestSink{name: "base"}
+	leftStage := &runtimeTestStage{name: "left-stage"}
+	leftSink := &runtimeTestSink{name: "left-sink"}
+	rightStage := &runtimeTestStage{name: "right-stage"}
+	rightSink := &runtimeTestSink{name: "right-sink"}
+
+	graph := New().Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	attachment, err := task.Attach(ctx,
+		Branch("left").From("source").Do(leftStage).To(Sink(leftSink)),
+		Branch("right").From("source").Do(rightStage).To(Sink(rightSink)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attachment.Name() != "left+right" {
+		t.Fatalf("attachment name = %q, want left+right", attachment.Name())
+	}
+	attached := specText(attachment.Spec())
+	for _, want := range []string{
+		"source -> left/left-stage",
+		"source -> right/right-stage",
+		"left/left-stage -> left/left-sink",
+		"right/right-stage -> right/right-sink",
+	} {
+		if !strings.Contains(attached, want) {
+			t.Fatalf("attachment spec missing %q:\n%s", want, attached)
+		}
+	}
+
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 1 || leftStage.count != 1 || rightStage.count != 1 || leftSink.count != 1 || rightSink.count != 1 {
+		t.Fatalf("base=%d leftStage=%d rightStage=%d leftSink=%d rightSink=%d", base.count, leftStage.count, rightStage.count, leftSink.count, rightSink.count)
+	}
+	stats := attachment.Stats()
+	if len(stats.Nodes) != 4 || stats.Nodes["left/left-stage"].InPackets != 1 || stats.Nodes["right/right-stage"].InPackets != 1 {
+		t.Fatalf("branch stats = %+v", stats)
+	}
+	if err := task.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
+		t.Fatalf("spec:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
+	ctx := context.Background()
+	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{7}}}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+	}
+	base := &runtimeTestSink{name: "base"}
+	parentStage := &runtimeTestStage{name: "sample"}
+	parentSink := &runtimeTestSink{name: "sampled"}
+	childSink := &runtimeTestSink{name: "shots"}
+
+	graph := New().Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	attachment, err := task.Attach(ctx,
+		Branch("sampler").
+			From("source").
+			Do(parentStage).
+			Tap(PacketTap("video.sampled")).
+			To(Sink(parentSink)),
+		Branch("screenshots").
+			From(PacketTap("video.sampled")).
+			To(Sink(childSink)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tap, ok := findTap(task.Taps(), "video.sampled")
+	if !ok || tap.Node != "sampler/sample" {
+		t.Fatalf("tap = %+v, ok=%v, want sampler/sample", tap, ok)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if base.count != 1 || parentStage.count != 1 || parentSink.count != 1 || childSink.count != 1 {
+		t.Fatalf("base=%d stage=%d parent=%d child=%d", base.count, parentStage.count, parentSink.count, childSink.count)
+	}
+	if err := task.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := findTap(task.Taps(), "video.sampled"); ok {
+		t.Fatalf("runtime tap still present after grouped detach: %+v", task.Taps())
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "sampler/") || strings.Contains(text, "screenshots/") {
+		t.Fatalf("spec:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
+	ctx := context.Background()
+	graph := newRuntimeRollbackGraph()
+	graph.failConnectAt = 2
+	task := newTask(graph, nil)
+	left := &runtimeTestSink{name: "left-sink"}
+	right := &runtimeTestSink{name: "right-sink"}
+
+	_, err := task.Attach(ctx,
+		Branch("left").From("source").To(Sink(left)),
+		Branch("right").From("source").To(Sink(right)),
+	)
+	if !errors.Is(err, errRuntimeRollbackConnect) {
+		t.Fatalf("err = %v, want rollback connect failure", err)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
+		t.Fatalf("spec retained failed attachment nodes:\n%s", text)
+	}
+	if !left.closed || !right.closed {
+		t.Fatalf("left closed=%v right closed=%v, want both closed", left.closed, right.closed)
+	}
+	if len(graph.removed) != 2 ||
+		graph.removed[0] != "right/right-sink" ||
+		graph.removed[1] != "left/left-sink" {
+		t.Fatalf("removed = %+v, want rollback of right then left", graph.removed)
+	}
+	if _, ok := findTap(task.Taps(), "video.sampled"); ok {
+		t.Fatalf("unexpected tap after rollback: %+v", task.Taps())
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupSharesSinkTarget(t *testing.T) {
+	ctx := context.Background()
+	graph := New().Graph()
+	src := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	sharedCount := 0
+	shared := SinkFunc("shared", func(context.Context, Message) error {
+		sharedCount++
+		return nil
+	})
+	target := Target("shared", Sink(shared))
+
+	attachment, err := task.Attach(ctx,
+		Branch("left").From("source").To(target),
+		Branch("right").From("source").To(target),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := attachment.Spec()
+	sharedNodes := 0
+	for i := range spec.Nodes {
+		if spec.Nodes[i].Name == "shared" {
+			sharedNodes++
+		}
+		if strings.Contains(spec.Nodes[i].Name, "left/") || strings.Contains(spec.Nodes[i].Name, "right/") {
+			t.Fatalf("shared target created branch-owned sink node: %+v", spec.Nodes[i])
+		}
+	}
+	if sharedNodes != 1 {
+		t.Fatalf("shared sink nodes = %d, want 1 in %+v", sharedNodes, spec.Nodes)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if sharedCount != 2 {
+		t.Fatalf("shared sink count = %d, want one message per branch", sharedCount)
+	}
+	stats := attachment.Stats()
+	if len(stats.Nodes) != 1 || stats.Nodes["shared"].InMessages != 2 || stats.Delivered != 2 {
+		t.Fatalf("shared target stats = %+v", stats)
+	}
+	if err := task.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "shared") || strings.Contains(text, "left/") || strings.Contains(text, "right/") {
+		t.Fatalf("spec retained shared target after detach:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkTargetNames(t *testing.T) {
+	ctx := context.Background()
+	graph := New().Graph()
+	src := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	left := Target("shared", Sink(SinkFunc("left", func(context.Context, Message) error {
+		return nil
+	})))
+	right := Target("shared", Sink(SinkFunc("right", func(context.Context, Message) error {
+		return nil
+	})))
+
+	_, err = task.Attach(ctx,
+		Branch("left").From("source").To(left),
+		Branch("right").From("source").To(right),
+	)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "reuse one goav.Target") {
+		t.Fatalf("err = %v, want shared target value guidance", err)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "left/") || strings.Contains(text, "right/") || strings.Contains(text, "shared") {
+		t.Fatalf("spec mutated after duplicate target rejection:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxTargets(t *testing.T) {
+	ctx := context.Background()
+	graph := New().Graph()
+	src := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	left := Target("shared", FileOutput("left.ogg", io.Discard).Format(av.FormatOgg))
+	right := Target("shared", FileOutput("right.ogg", io.Discard).Format(av.FormatOgg))
+
+	_, err = task.Attach(ctx,
+		Branch("left").From("source").To(left),
+		Branch("right").From("source").To(right),
+	)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "target_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want target_duplicate wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "runtime branch group reuses one target name") ||
+		!strings.Contains(err.Error(), "runtime target group") ||
+		!strings.Contains(err.Error(), "mux destination") {
+		t.Fatalf("err = %v, want grouped target guidance", err)
+	}
+	text := specText(task.Describe())
+	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
+		t.Fatalf("spec mutated after duplicate target rejection:\n%s", text)
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupSharesMuxTarget(t *testing.T) {
+	ctx := context.Background()
+	muxers := &remuxTestMuxerFactory{}
+	formats := withTestFormats(testFormatMuxer(av.FormatOgg, muxers))
+	audioPacket := av.Packet{
+		StreamID: "audio",
+		Payload:  av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+	}
+	videoPacket := av.Packet{
+		StreamID: "video",
+		Payload:  av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable},
+	}
+	audioBase := &runtimeTestSink{name: "audio-base"}
+	videoBase := &runtimeTestSink{name: "video-base"}
+	graph := New(formats).Graph()
+	audioSource := graph.Source("audio-source", &runtimeTestSource{name: "audio-source", message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &audioPacket}})
+	videoSource := graph.Source("video-source", &runtimeTestSource{name: "video-source", message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &videoPacket}})
+	graph.Connect(audioSource.Out(), graph.Sink("audio-base", audioBase).In())
+	graph.Connect(videoSource.Out(), graph.Sink("video-base", videoBase).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := builtTask.(*task)
+	task.taps = []TapInfo{
+		{
+			Name:      "audio.packets",
+			MediaKind: av.MediaAudio,
+			Domain:    DomainPacket,
+			Caps: StreamCaps{
+				Domain:     DomainPacket,
+				MediaKind:  av.MediaAudio,
+				StreamID:   "audio",
+				Codec:      av.CodecOpus,
+				SampleRate: 48000,
+				Channels:   Stereo,
+			},
+			Node: "audio-source",
+		},
+		{
+			Name:      "video.packets",
+			MediaKind: av.MediaVideo,
+			Domain:    DomainPacket,
+			Caps: StreamCaps{
+				Domain:    DomainPacket,
+				MediaKind: av.MediaVideo,
+				StreamID:  "video",
+				Codec:     av.CodecVP8,
+				Width:     640,
+				Height:    360,
+			},
+			Node: "video-source",
+		},
+	}
+	defer builtTask.Close()
+	target := Target("recording", FileOutput("recording.ogg", io.Discard).Format(av.FormatOgg))
+
+	attachment, err := builtTask.Attach(ctx,
+		Branch("audio").From(PacketTap("audio.packets")).Copy().To(target),
+		Branch("video").From(PacketTap("video.packets")).Copy().To(target),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := attachment.Spec()
+	text := specText(spec)
+	if !strings.Contains(text, "audio-source -> recording") ||
+		!strings.Contains(text, "video-source -> recording") ||
+		strings.Contains(text, "audio/recording") ||
+		strings.Contains(text, "video/recording") {
+		t.Fatalf("shared mux target spec:\n%s", text)
+	}
+	if err := builtTask.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if audioBase.count != 1 || videoBase.count != 1 {
+		t.Fatalf("base counts audio=%d video=%d, want both source packets delivered", audioBase.count, videoBase.count)
+	}
+	if len(muxers.muxers) != 1 ||
+		muxers.muxers[0].writes != 2 ||
+		!streamIDsEqual(muxers.muxers[0].openedStreams, []av.StreamID{"audio", "video"}) ||
+		!streamIDsEqual(muxers.muxers[0].writtenStreams, []av.StreamID{"audio", "video"}) {
+		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
+	}
+	stats := attachment.Stats()
+	if len(stats.Nodes) != 1 || stats.Nodes["recording"].InMessages != 2 || stats.Nodes["recording"].OutMessages != 0 {
+		t.Fatalf("shared mux target stats = %+v", stats)
+	}
+	if err := builtTask.Detach(ctx, attachment); err != nil {
+		t.Fatal(err)
+	}
+	if !muxers.muxers[0].closed {
+		t.Fatal("shared runtime mux target was not closed by detach")
+	}
+	if strings.Contains(specText(builtTask.Describe()), "recording") {
+		t.Fatalf("spec retained shared mux target after detach:\n%s", specText(builtTask.Describe()))
+	}
+}
+
+func TestTaskAttachRuntimeBranchGroupRequiresBranch(t *testing.T) {
+	ctx := context.Background()
+	graph := New().Graph()
+	src := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	_, err = task.Attach(ctx)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_invalid" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime_branch_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "no runtime branches to attach") ||
+		!strings.Contains(err.Error(), "goav.Branch") {
+		t.Fatalf("err = %v, want branch guidance", err)
+	}
+}
+
 func TestTaskCloseStopsRuntimeAttachments(t *testing.T) {
 	graph := New().Graph()
 	source := graph.Source("source", &runtimeTestSource{name: "source"})
@@ -284,7 +679,7 @@ func TestTaskCloseStopsRuntimeAttachments(t *testing.T) {
 	}
 	stage := &runtimeTestStage{name: "stage"}
 	sink := &runtimeTestSink{name: "sink"}
-	attachment, err := task.Attach(context.Background(), Branch("close").From("source").Do(stage).To(SinkEndpoint(sink)))
+	attachment, err := task.Attach(context.Background(), Branch("close").From("source").Do(stage).To(Sink(sink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,8 +719,8 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 		Branch("sampler").
 			From("source").
 			Do(parentStage).
-			Tap("video.sampled").
-			To(SinkEndpoint(parentSink)),
+			Tap(PacketTap("video.sampled")).
+			To(Sink(parentSink)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -335,7 +730,7 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 		t.Fatalf("tap = %+v, ok=%v, want sampler/sample", tap, ok)
 	}
 
-	child, err := task.Attach(ctx, Branch("screenshots").FromTap("video.sampled").To(SinkEndpoint(childSink)))
+	child, err := task.Attach(ctx, Branch("screenshots").From(PacketTap("video.sampled")).To(Sink(childSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,8 +771,8 @@ func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
 		Branch("first").
 			From("source").
 			Do(&runtimeTestStage{name: "stage"}).
-			Tap("sampled").
-			To(SinkEndpoint(&runtimeTestSink{name: "first"})),
+			Tap(FrameTap("sampled")).
+			To(Sink(&runtimeTestSink{name: "first"})),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -388,8 +783,8 @@ func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
 		Branch("second").
 			From("source").
 			Do(&runtimeTestStage{name: "stage"}).
-			Tap("sampled").
-			To(SinkEndpoint(&runtimeTestSink{name: "second"})),
+			Tap(FrameTap("sampled")).
+			To(Sink(&runtimeTestSink{name: "second"})),
 	)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_tap_duplicate" {
@@ -442,9 +837,9 @@ func TestTaskAttachRuntimeResizeBranchRunsFromFrameTap(t *testing.T) {
 	defer mediaTask.Close()
 
 	attachment, err := mediaTask.Attach(ctx, Branch("small").
-		FromTap("video.frames").
+		From(FrameTap("video.frames")).
 		Resize(320, 180).
-		To(SinkEndpoint(resized)))
+		To(Sink(resized)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -518,10 +913,10 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 		t.Fatal(ctx.Err())
 	}
 	parent, err := mediaTask.Attach(ctx, Branch("thumb").
-		FromTap("video.frames").
+		From(FrameTap("video.frames")).
 		Resize(320, 180).
-		Tap("video.320.frames").
-		To(SinkEndpoint(thumbs)))
+		Tap(FrameTap("video.320.frames")).
+		To(Sink(thumbs)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,8 +935,8 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 		t.Fatalf("resized tap = %+v ok=%v, want frame video 320x180 tap on thumb/resize-thumb", resizedTap, ok)
 	}
 	child, err := mediaTask.Attach(ctx, Branch("inspect").
-		FromTap("video.320.frames").
-		To(SinkEndpoint(inspect)))
+		From(FrameTap("video.320.frames")).
+		To(Sink(inspect)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -633,11 +1028,11 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 		t.Fatal(ctx.Err())
 	}
 	parent, err := mediaTask.Attach(ctx, Branch("thumb").
-		FromTap("video.frames").
+		From(FrameTap("video.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2}).
 		Resize(320, 180).
-		Tap("video.320.frames").
-		To(SinkEndpoint(thumbs)))
+		Tap(FrameTap("video.320.frames")).
+		To(Sink(thumbs)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -651,9 +1046,9 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 		t.Fatalf("resized tap = %+v ok=%v, want frame video 320x180 tap on thumb/resize-thumb", resizedTap, ok)
 	}
 	child, err := mediaTask.Attach(ctx, Branch("inspect").
-		FromTap("video.320.frames").
+		From(FrameTap("video.320.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2}).
-		To(SinkEndpoint(inspect)))
+		To(Sink(inspect)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -769,11 +1164,11 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 		t.Fatal(ctx.Err())
 	}
 	parent, err := mediaTask.Attach(ctx, Branch("voice").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2}).
 		Resample(16_000, Mono).
-		Tap("audio.16k").
-		To(SinkEndpoint(voice)))
+		Tap(FrameTap("audio.16k")).
+		To(Sink(voice)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -788,9 +1183,9 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 		t.Fatalf("resampled tap = %+v ok=%v, want frame audio 16k mono tap on voice/resample-voice", resampledTap, ok)
 	}
 	child, err := mediaTask.Attach(ctx, Branch("monitor").
-		FromTap("audio.16k").
+		From(FrameTap("audio.16k")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2}).
-		To(SinkEndpoint(monitor)))
+		To(Sink(monitor)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -893,10 +1288,10 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 	before := mediaTask.Describe()
 
 	_, err = mediaTask.Attach(ctx, Branch("voice").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
-		Tap("audio.16k").
-		To(SinkEndpoint(SinkFunc("voice", func(context.Context, Message) error {
+		Tap(FrameTap("audio.16k")).
+		To(Sink(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
 		}))))
 	var buildErr *BuildError
@@ -961,10 +1356,10 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 	before := mediaTask.Describe()
 
 	_, err := mediaTask.Attach(ctx, Branch("voice").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
-		Tap("audio.16k").
-		To(SinkEndpoint(SinkFunc("voice", func(context.Context, Message) error {
+		Tap(FrameTap("audio.16k")).
+		To(Sink(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
 		}))))
 	var buildErr *BuildError
@@ -1038,7 +1433,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 	before := mediaTask.Describe()
 
 	_, err := mediaTask.Attach(ctx, Branch("archive").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
 		Opus(96_000).
 		To(Target("archive", FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg))))
@@ -1086,7 +1481,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 	}
 }
 
-func TestTaskAttachRollsBackRuntimeSinkEndpointWhenGraphConnectFails(t *testing.T) {
+func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testing.T) {
 	ctx := context.Background()
 	resampler := &transcodeTestFilter{}
 	resampleFactory := &transcodeTestFilterFactory{filter: resampler}
@@ -1120,9 +1515,9 @@ func TestTaskAttachRollsBackRuntimeSinkEndpointWhenGraphConnectFails(t *testing.
 	before := mediaTask.Describe()
 
 	_, err := mediaTask.Attach(ctx, Branch("monitor").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
-		To(SinkEndpoint(sink)))
+		To(Sink(sink)))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "runtime_branch_graph_error" ||
@@ -1136,10 +1531,10 @@ func TestTaskAttachRollsBackRuntimeSinkEndpointWhenGraphConnectFails(t *testing.
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before graph rollback", resampleFactory.config.Audio)
 	}
 	if !resampler.closed {
-		t.Fatal("runtime filter was not closed after sink endpoint graph rollback")
+		t.Fatal("runtime filter was not closed after sink destination graph rollback")
 	}
 	if !sink.closed {
-		t.Fatal("runtime sink endpoint was not closed after graph rollback")
+		t.Fatal("runtime sink destination was not closed after graph rollback")
 	}
 	if graph.connects != 2 {
 		t.Fatalf("connects = %d, want sink connect failure after one successful branch connect", graph.connects)
@@ -1203,7 +1598,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 	before := builtTask.Describe()
 
 	_, err = builtTask.Attach(ctx, Branch("archive").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
 		Opus(96_000).
 		To(Target("archive", FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg))))
@@ -1287,7 +1682,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 	before := builtTask.Describe()
 
 	_, err = builtTask.Attach(ctx, Branch("archive").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Resample(16_000, Mono).
 		Opus(96_000).
 		To(Target("archive", FileOutput("archive.ogg", io.Discard).Format(av.FormatOgg))))
@@ -1336,7 +1731,7 @@ func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = task.Attach(context.Background(), Branch("late").From("missing").To(SinkEndpoint(&runtimeTestSink{name: "late"})))
+	_, err = task.Attach(context.Background(), Branch("late").From("missing").To(Sink(&runtimeTestSink{name: "late"})))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_anchor_missing" || !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("err = %v, want runtime_branch_anchor_missing wrapping ErrUnknownNode", err)
@@ -1371,7 +1766,7 @@ func TestTaskAttachBranchesWhileBufferedGraphRuns(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	attachment, err := task.Attach(ctx, Branch("late").From("source").To(SinkEndpoint(late)))
+	attachment, err := task.Attach(ctx, Branch("late").From("source").To(Sink(late)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1440,7 +1835,7 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 		Branch("late").
 			From("source").
 			Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
-			To(SinkEndpoint(late)),
+			To(Sink(late)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1532,7 +1927,7 @@ func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	attachment, err := builtTask.Attach(ctx, Branch("record").
-		FromTap("audio.packets").
+		From(PacketTap("audio.packets")).
 		Copy().
 		To(Target("record", FileOutput("recording.ogg", io.Discard))))
 	if err != nil {
@@ -1615,11 +2010,11 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 		t.Fatal(ctx.Err())
 	}
 	parent, err := builtTask.Attach(ctx, Branch("copy").
-		FromTap("audio.packets").
+		From(PacketTap("audio.packets")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Copy().
-		Tap("audio.copied").
-		To(SinkEndpoint(copied)))
+		Tap(PacketTap("audio.copied")).
+		To(Sink(copied)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1632,7 +2027,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 		t.Fatalf("copied tap = %+v ok=%v, want packet Opus tap on source", copiedTap, ok)
 	}
 	child, err := builtTask.Attach(ctx, Branch("record").
-		FromTap("audio.copied").
+		From(PacketTap("audio.copied")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Copy().
 		To(Target("record", FileOutput("recording.ogg", io.Discard))))
@@ -1720,7 +2115,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	attachment, err := builtTask.Attach(ctx, Branch("record").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Opus(96_000).
 		To(Target("record", FileOutput("recording.ogg", io.Discard))))
@@ -1819,9 +2214,9 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	meter := &runtimeTestStage{name: "meter"}
-	archive := AudioFlow("archive").Do(meter).OpusMusic()
+	archive := Flow("archive").Audio().Do(meter).OpusMusic()
 	attachment, err := builtTask.Attach(ctx, Branch("archive").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Apply(archive).
 		To(Target("archive", FileOutput("archive.ogg", io.Discard))))
@@ -1918,11 +2313,11 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 		t.Fatal(ctx.Err())
 	}
 	parent, err := builtTask.Attach(ctx, Branch("archive").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Opus(96_000).
-		Tap("audio.encoded").
-		To(SinkEndpoint(encoded)))
+		Tap(PacketTap("audio.encoded")).
+		To(Sink(encoded)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1935,7 +2330,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 		t.Fatalf("encoded tap = %+v ok=%v, want packet Opus tap on archive/encode-archive", encodedTap, ok)
 	}
 	child, err := builtTask.Attach(ctx, Branch("record").
-		FromTap("audio.encoded").
+		From(PacketTap("audio.encoded")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Copy().
 		To(Target("record", FileOutput("recording.ogg", io.Discard))))
@@ -2033,19 +2428,19 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 		t.Fatal(ctx.Err())
 	}
 	parent, err := builtTask.Attach(ctx, Branch("archive").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Opus(96_000).
-		Tap("audio.encoded").
-		To(SinkEndpoint(encoded)))
+		Tap(PacketTap("audio.encoded")).
+		To(Sink(encoded)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	child, err := builtTask.Attach(ctx, Branch("copy").
-		FromTap("audio.encoded").
+		From(PacketTap("audio.encoded")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}).
 		Copy().
-		To(SinkEndpoint(copied)))
+		To(Sink(copied)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2154,18 +2549,18 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 		t.Fatal(ctx.Err())
 	}
 	parent, err := builtTask.Attach(ctx, Branch("analysis").
-		FromTap("audio.frames").
+		From(FrameTap("audio.frames")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2}).
 		Do(meter).
-		Tap("audio.metered").
-		To(SinkEndpoint(analysis)))
+		Tap(FrameTap("audio.metered")).
+		To(Sink(analysis)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	child, err := builtTask.Attach(ctx, Branch("dependent").
-		FromTap("audio.metered").
+		From(FrameTap("audio.metered")).
 		Buffer(pipeline.BufferPolicy{Capacity: 2}).
-		To(SinkEndpoint(dependent)))
+		To(Sink(dependent)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2211,11 +2606,11 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 }
 
 func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
-	audio := Branch("levels").FromTap("audio.decoded").To(SinkEndpoint(&runtimeTestSink{name: "levels"}))
+	audio := Branch("levels").From(FrameTap("audio.decoded")).To(Sink(&runtimeTestSink{name: "levels"}))
 	if audio.tap != "audio.decoded" || audio.from != "" {
 		t.Fatalf("audio anchor tap=%q from=%q, want tap only", audio.tap, audio.from)
 	}
-	expert := Branch("expert").From("decode-audio").To(SinkEndpoint(&runtimeTestSink{name: "expert"}))
+	expert := Branch("expert").From("decode-audio").To(Sink(&runtimeTestSink{name: "expert"}))
 	if expert.from != "decode-audio" || expert.tap != "" {
 		t.Fatalf("expert anchor tap=%q from=%q, want node only", expert.tap, expert.from)
 	}

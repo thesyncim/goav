@@ -1108,7 +1108,7 @@ func branchComposeTargetEndpointInvalidError(output branchComposeTarget, reason 
 		Node:      branchComposeTargetNodeName(output, "output"),
 		Reason:    reason,
 		Suggestions: []string{
-			"use goav.Target(name, goav.SinkEndpoint(sink)) for frame or packet sink endpoints",
+			"use goav.Target(name, goav.Sink(sink)) for frame or packet sink endpoints",
 			"use goav.Target(name, goav.FileOutput(...)) or goav.URIOutput(...) for muxed endpoints",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -1126,7 +1126,7 @@ func branchComposeTargetEncodeMissingError(output branchComposeTarget, target fo
 		},
 		Suggestions: []string{
 			"encode the branch before routing it to a mux target",
-			"route raw decoded branches to goav.Target(name, goav.SinkEndpoint(sink))",
+			"route raw decoded branches to goav.Target(name, goav.Sink(sink))",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

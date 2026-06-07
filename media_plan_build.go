@@ -8,94 +8,6 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func (r recipeResolved) buildMediaPlanPacketCopyTask(ctx context.Context) (Task, error) {
-	stream, selected, ok := r.packetCopyStream()
-	if !ok {
-		return nil, recipeGraphUnsupportedError("build job", r.intent)
-	}
-	plan, ok, err := newMediaPlanPacketCopyGraph(r.runtime, r.inputAttachments, r.outputAttachments, stream, selected)
-	if err != nil || !ok {
-		if err != nil {
-			return nil, err
-		}
-		return nil, recipeGraphUnsupportedError("build job", r.intent)
-	}
-	graph, err := plan.newGraph(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := plan.compile(ctx, graph); err != nil {
-		graph.Close()
-		return nil, err
-	}
-	return newTask(graph, plan.runtime), nil
-}
-
-func (r recipeResolved) buildMediaPlanSinkEndpointTask(ctx context.Context) (Task, error) {
-	stream, ok := r.singleStreamIntent()
-	if !ok || !mediaPlanSinkEndpointShape(stream, r.outputAttachments) {
-		return nil, recipeGraphUnsupportedError("build job", r.intent)
-	}
-	plan, ok, err := newMediaPlanSingleStreamGraph(r.runtime, r.inputAttachments, r.outputAttachments, stream)
-	if err != nil || !ok {
-		if err != nil {
-			return nil, err
-		}
-		return nil, recipeGraphUnsupportedError("build job", r.intent)
-	}
-	graph, err := plan.newGraph(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := plan.compileSinkEndpoint(ctx, graph); err != nil {
-		graph.Close()
-		return nil, err
-	}
-	return newTask(graph, plan.runtime), nil
-}
-
-func (r recipeResolved) buildMediaPlanEncodeTask(ctx context.Context) (Task, error) {
-	stream, ok := r.singleStreamIntent()
-	if !ok || !mediaPlanEncodeShape(stream, r.outputAttachments) {
-		return nil, recipeGraphUnsupportedError("build job", r.intent)
-	}
-	plan, ok, err := newMediaPlanSingleStreamGraph(r.runtime, r.inputAttachments, r.outputAttachments, stream)
-	if err != nil || !ok {
-		if err != nil {
-			return nil, err
-		}
-		return nil, recipeGraphUnsupportedError("build job", r.intent)
-	}
-	graph, err := plan.newGraph(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := plan.compileEncodeOutput(ctx, graph); err != nil {
-		graph.Close()
-		return nil, err
-	}
-	return newTask(graph, plan.runtime), nil
-}
-
-func (r recipeResolved) buildMediaPlanBranchComposerTask(ctx context.Context) (Task, error) {
-	plan, ok, err := newMediaPlanBranchComposeGraph(r.runtime, r.branchInputAttachment, r.plan)
-	if err != nil || !ok {
-		if err != nil {
-			return nil, err
-		}
-		return nil, recipeGraphUnsupportedError("build branch composition", r.intent)
-	}
-	graph, err := plan.newGraph(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := plan.compile(ctx, graph); err != nil {
-		graph.Close()
-		return nil, err
-	}
-	return newTask(graph, plan.runtime), nil
-}
-
 func (r recipeResolved) singleStreamIntent() (StreamIntent, bool) {
 	if len(r.intent.Streams) != 1 {
 		return StreamIntent{}, false
@@ -106,17 +18,25 @@ func (r recipeResolved) singleStreamIntent() (StreamIntent, bool) {
 type mediaPlanSingleStreamGraph struct {
 	runtime *runtime
 	inputs  []InputSpec
-	outputs []EndpointSpec
+	outputs []DestinationSpec
 	stream  StreamIntent
 	decode  decodeRequest
 	filters []filterRequest
 	encode  *encodeRequest
 }
 
+type mediaPlanSinkDestinationExecutable struct {
+	mediaPlanSingleStreamGraph
+}
+
+type mediaPlanEncodeExecutable struct {
+	mediaPlanSingleStreamGraph
+}
+
 type mediaPlanPacketCopyGraph struct {
 	runtime        *runtime
 	inputs         []InputSpec
-	outputs        []EndpointSpec
+	outputs        []DestinationSpec
 	stream         StreamIntent
 	selectedStream bool
 }
@@ -129,7 +49,63 @@ type mediaPlanBranchComposeGraph struct {
 	targets  []branchComposeTargetRoute
 }
 
-func newMediaPlanSingleStreamGraph(rt Runtime, inputs []InputSpec, outputs []EndpointSpec, stream StreamIntent) (mediaPlanSingleStreamGraph, bool, error) {
+func (p mediaPlanPacketCopyGraph) build(ctx context.Context) (Task, error) {
+	graph, err := p.newGraph(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.compile(ctx, graph); err != nil {
+		graph.Close()
+		return nil, err
+	}
+	return newTask(graph, p.runtime), nil
+}
+
+func (p mediaPlanSinkDestinationExecutable) spec() (pipeline.Spec, error) {
+	return p.sinkDestinationSpec()
+}
+
+func (p mediaPlanSinkDestinationExecutable) build(ctx context.Context) (Task, error) {
+	graph, err := p.newGraph(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.compileSinkDestination(ctx, graph); err != nil {
+		graph.Close()
+		return nil, err
+	}
+	return newTask(graph, p.runtime), nil
+}
+
+func (p mediaPlanEncodeExecutable) spec() (pipeline.Spec, error) {
+	return p.encodeOutputSpec()
+}
+
+func (p mediaPlanEncodeExecutable) build(ctx context.Context) (Task, error) {
+	graph, err := p.newGraph(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.compileEncodeOutput(ctx, graph); err != nil {
+		graph.Close()
+		return nil, err
+	}
+	return newTask(graph, p.runtime), nil
+}
+
+func (p mediaPlanBranchComposeGraph) build(ctx context.Context) (Task, error) {
+	graph, err := p.newGraph(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.compile(ctx, graph); err != nil {
+		graph.Close()
+		return nil, err
+	}
+	return newTask(graph, p.runtime), nil
+}
+
+func newMediaPlanSingleStreamGraph(rt Runtime, inputs []InputSpec, outputs []DestinationSpec, stream StreamIntent) (mediaPlanSingleStreamGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
 		return mediaPlanSingleStreamGraph{}, false, nil
@@ -141,7 +117,7 @@ func newMediaPlanSingleStreamGraph(rt Runtime, inputs []InputSpec, outputs []End
 	plan := mediaPlanSingleStreamGraph{
 		runtime: runtime,
 		inputs:  append([]InputSpec(nil), inputs...),
-		outputs: append([]EndpointSpec(nil), outputs...),
+		outputs: append([]DestinationSpec(nil), outputs...),
 		stream:  stream,
 		decode: decodeRequest{
 			selector:    selector,
@@ -170,7 +146,7 @@ func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
 	return allRTPInputSpecs(inputs)
 }
 
-func newMediaPlanPacketCopyGraph(rt Runtime, inputs []InputSpec, outputs []EndpointSpec, stream StreamIntent, selectedStream bool) (mediaPlanPacketCopyGraph, bool, error) {
+func newMediaPlanPacketCopyGraph(rt Runtime, inputs []InputSpec, outputs []DestinationSpec, stream StreamIntent, selectedStream bool) (mediaPlanPacketCopyGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
 		return mediaPlanPacketCopyGraph{}, false, nil
@@ -181,7 +157,7 @@ func newMediaPlanPacketCopyGraph(rt Runtime, inputs []InputSpec, outputs []Endpo
 	return mediaPlanPacketCopyGraph{
 		runtime:        runtime,
 		inputs:         append([]InputSpec(nil), inputs...),
-		outputs:        append([]EndpointSpec(nil), outputs...),
+		outputs:        append([]DestinationSpec(nil), outputs...),
 		stream:         stream,
 		selectedStream: selectedStream,
 	}, true, nil
@@ -446,7 +422,7 @@ func (p mediaPlanSingleStreamGraph) newGraph(ctx context.Context) (pipeline.Grap
 	return (&builder{runtime: p.runtime}).newGraph(ctx)
 }
 
-func (p mediaPlanSingleStreamGraph) sinkEndpointSpec() (pipeline.Spec, error) {
+func (p mediaPlanSingleStreamGraph) sinkDestinationSpec() (pipeline.Spec, error) {
 	spec, sourceRefs, nodes, err := p.specWithSources()
 	if err != nil {
 		return pipeline.Spec{}, err
@@ -498,7 +474,7 @@ func (p mediaPlanSingleStreamGraph) specWithSources() (pipeline.Spec, []pipeline
 	return spec, sourceRefs, nodes, nil
 }
 
-func (p mediaPlanSingleStreamGraph) compileSinkEndpoint(ctx context.Context, graph pipeline.Graph) error {
+func (p mediaPlanSingleStreamGraph) compileSinkDestination(ctx context.Context, graph pipeline.Graph) error {
 	sourceRefs, streams, rtpBuilds, realtime, err := p.compileSources(ctx, graph)
 	if err != nil {
 		return err
