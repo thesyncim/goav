@@ -243,6 +243,22 @@ Runtime branches are late control-plane work: analysis, meters, screenshot
 collectors, or temporary sinks that should attach to future messages without
 rebuilding upstream.
 
+Branch buffers are local to the downstream branch:
+
+```go
+goav.Branch("archive").
+    Buffer(goav.Blocking(128)).
+    To(archive)
+
+goav.Branch("preview").
+    Buffer(goav.DropOldest(3)).
+    To(preview)
+
+goav.Branch("latest-diagnostics").
+    Buffer(goav.Latest()).
+    To(goav.Sink(goav.SinkFunc("latest", inspect)))
+```
+
 ```go
 audioDecoded := goav.FrameTap("audio.decoded")
 

@@ -2040,6 +2040,26 @@ func TestDocsKeepGoAVNativeGoal(t *testing.T) {
 	}
 }
 
+func TestDocsShowGoAVBranchBuffers(t *testing.T) {
+	for _, file := range []string{"README.md", "docs/USE_CASES.md"} {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(body)
+		for _, required := range []string{
+			"Branch buffers",
+			"goav.Blocking(",
+			"goav.DropOldest(",
+			"goav.Latest()",
+		} {
+			if !strings.Contains(text, required) {
+				t.Fatalf("%s should show branch buffer API %q", file, required)
+			}
+		}
+	}
+}
+
 func TestFrontDoorDocsAvoidGStreamerVocabulary(t *testing.T) {
 	var body strings.Builder
 	for _, file := range []string{"README.md", "docs/USE_CASES.md"} {
@@ -2061,6 +2081,7 @@ func TestFrontDoorDocsAvoidGStreamerVocabulary(t *testing.T) {
 		"Record(",
 		"Transcode(",
 		"Runtime.Graph",
+		"pipeline.BufferPolicy",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("front-door docs should not teach %q", forbidden)
