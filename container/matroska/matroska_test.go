@@ -9523,6 +9523,249 @@ func TestDemuxerRejectsInvalidCueMetadata(t *testing.T) {
 	}
 }
 
+func TestDemuxerRejectsInvalidEBMLHeaderMetadata(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*ebmlHeaderFixture)
+	}{
+		{
+			name: "missing doc type",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DocTypeSet = false
+			},
+		},
+		{
+			name: "empty doc type",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DocType = ""
+			},
+		},
+		{
+			name: "unsupported doc type",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DocType = "notmatroska"
+			},
+		},
+		{
+			name: "duplicate ebml version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DuplicateEBMLVersion = true
+			},
+		},
+		{
+			name: "duplicate ebml read version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DuplicateEBMLReadVersion = true
+			},
+		},
+		{
+			name: "duplicate max id length",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DuplicateEBMLMaxIDLength = true
+			},
+		},
+		{
+			name: "duplicate max size length",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DuplicateEBMLMaxSizeLength = true
+			},
+		},
+		{
+			name: "duplicate doc type",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DuplicateDocType = true
+			},
+		},
+		{
+			name: "duplicate doc type version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DuplicateDocTypeVersion = true
+			},
+		},
+		{
+			name: "duplicate doc type read version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DuplicateDocTypeReadVersion = true
+			},
+		},
+		{
+			name: "zero ebml version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.EBMLVersion = 0
+			},
+		},
+		{
+			name: "zero ebml read version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.EBMLReadVersion = 0
+			},
+		},
+		{
+			name: "unsupported ebml read version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.EBMLVersion = 2
+				header.EBMLReadVersion = 2
+			},
+		},
+		{
+			name: "short max id length",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.EBMLMaxIDLength = ebml.MaxIDWidth - 1
+			},
+		},
+		{
+			name: "long max id length",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.EBMLMaxIDLength = ebml.MaxIDWidth + 1
+			},
+		},
+		{
+			name: "short max size length",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.EBMLMaxSizeLength = ebml.MaxSizeWidth - 1
+			},
+		},
+		{
+			name: "long max size length",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.EBMLMaxSizeLength = ebml.MaxSizeWidth + 1
+			},
+		},
+		{
+			name: "zero doc type version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DocTypeVersion = 0
+			},
+		},
+		{
+			name: "zero doc type read version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DocTypeReadVersion = 0
+			},
+		},
+		{
+			name: "doc type read version past document version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DocTypeVersion = 2
+				header.DocTypeReadVersion = 3
+			},
+		},
+		{
+			name: "unsupported doc type read version",
+			mutate: func(header *ebmlHeaderFixture) {
+				header.DocTypeVersion = defaultDocTypeVersion + 1
+				header.DocTypeReadVersion = defaultDocTypeVersion + 1
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			header := defaultEBMLHeaderFixture()
+			tt.mutate(&header)
+			data := makeEBMLHeaderMatroskaData(t, header)
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestDemuxerAcceptsEBMLHeaderDefaults(t *testing.T) {
+	header := defaultEBMLHeaderFixture()
+	header.EBMLVersionSet = false
+	header.EBMLReadVersionSet = false
+	header.EBMLMaxIDLengthSet = false
+	header.EBMLMaxSizeLengthSet = false
+	header.DocTypeVersionSet = false
+	header.DocTypeReadVersionSet = false
+	data := makeEBMLHeaderMatroskaData(t, header)
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := demuxer.DocType(); got != "matroska" {
+		t.Fatalf("doctype = %q, want matroska", got)
+	}
+}
+
+func TestDemuxerRejectsInvalidSeekHeadMetadata(t *testing.T) {
+	tests := []struct {
+		name      string
+		writeSeek func(*ebml.Writer) error
+	}{
+		{
+			name:      "empty seek entry",
+			writeSeek: func(*ebml.Writer) error { return nil },
+		},
+		{
+			name: "missing seek id",
+			writeSeek: func(w *ebml.Writer) error {
+				return w.WriteUInt(idSeekPosition, 0)
+			},
+		},
+		{
+			name: "missing seek position",
+			writeSeek: func(w *ebml.Writer) error {
+				return writeSeekIDElement(w, idInfo)
+			},
+		},
+		{
+			name: "duplicate seek id",
+			writeSeek: func(w *ebml.Writer) error {
+				if err := writeSeekIDElement(w, idInfo); err != nil {
+					return err
+				}
+				if err := writeSeekIDElement(w, idTracks); err != nil {
+					return err
+				}
+				return w.WriteUInt(idSeekPosition, 0)
+			},
+		},
+		{
+			name: "duplicate seek position",
+			writeSeek: func(w *ebml.Writer) error {
+				if err := writeSeekIDElement(w, idInfo); err != nil {
+					return err
+				}
+				if err := w.WriteUInt(idSeekPosition, 0); err != nil {
+					return err
+				}
+				return w.WriteUInt(idSeekPosition, 1)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeSeekHeadMetadataMatroskaData(t, func(w *ebml.Writer) error {
+				var payload bytes.Buffer
+				sw := ebml.NewWriter(&payload)
+				if err := tt.writeSeek(sw); err != nil {
+					return err
+				}
+				return w.WriteElement(idSeek, payload.Bytes())
+			})
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrInvalidData) {
+				t.Fatalf("err = %v, want ErrInvalidData", err)
+			}
+		})
+	}
+}
+
+func TestDemuxerKeepsZeroSeekPosition(t *testing.T) {
+	data := makeSeekHeadMetadataMatroskaData(t, func(w *ebml.Writer) error {
+		return writeSeekEntry(w, idInfo, 0)
+	})
+	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := demuxer.SeekEntries()
+	if len(entries) == 0 {
+		t.Fatal("missing seek entries")
+	}
+	assertSeekEntry(t, entries, idInfo, 0)
+}
+
 func TestDemuxerRejectsBlockForUnknownTrack(t *testing.T) {
 	data := makeBlockTrackNumberMatroskaData(t, 2)
 	demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{})
@@ -13276,6 +13519,168 @@ func elementPayload(tb testing.TB, id ebml.ID, writeElement func(*ebml.Writer) e
 		tb.Fatalf("payload length left reader at %d, want %d", reader.Offset(), len(buffer.Bytes()))
 	}
 	return payload
+}
+
+type ebmlHeaderFixture struct {
+	EBMLVersion                 uint64
+	EBMLReadVersion             uint64
+	EBMLMaxIDLength             uint64
+	EBMLMaxSizeLength           uint64
+	DocType                     string
+	DocTypeVersion              uint64
+	DocTypeReadVersion          uint64
+	EBMLVersionSet              bool
+	EBMLReadVersionSet          bool
+	EBMLMaxIDLengthSet          bool
+	EBMLMaxSizeLengthSet        bool
+	DocTypeSet                  bool
+	DocTypeVersionSet           bool
+	DocTypeReadVersionSet       bool
+	DuplicateEBMLVersion        bool
+	DuplicateEBMLReadVersion    bool
+	DuplicateEBMLMaxIDLength    bool
+	DuplicateEBMLMaxSizeLength  bool
+	DuplicateDocType            bool
+	DuplicateDocTypeVersion     bool
+	DuplicateDocTypeReadVersion bool
+}
+
+func defaultEBMLHeaderFixture() ebmlHeaderFixture {
+	return ebmlHeaderFixture{
+		EBMLVersion:           1,
+		EBMLReadVersion:       1,
+		EBMLMaxIDLength:       ebml.MaxIDWidth,
+		EBMLMaxSizeLength:     ebml.MaxSizeWidth,
+		DocType:               "matroska",
+		DocTypeVersion:        defaultDocTypeVersion,
+		DocTypeReadVersion:    defaultDocTypeReadVersion,
+		EBMLVersionSet:        true,
+		EBMLReadVersionSet:    true,
+		EBMLMaxIDLengthSet:    true,
+		EBMLMaxSizeLengthSet:  true,
+		DocTypeSet:            true,
+		DocTypeVersionSet:     true,
+		DocTypeReadVersionSet: true,
+	}
+}
+
+func makeEBMLHeaderMatroskaData(tb testing.TB, header ebmlHeaderFixture) []byte {
+	tb.Helper()
+	var buffer bytes.Buffer
+	writer := ebml.NewWriter(&buffer)
+	if err := writeEBMLHeaderFixture(writer, header); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeInfoWithElements(writer, nil); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writeTracksWithVideoDimensions(writer, 16, 16); err != nil {
+		tb.Fatal(err)
+	}
+	if err := writer.WriteElement(idCluster, nil); err != nil {
+		tb.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func writeEBMLHeaderFixture(writer *ebml.Writer, header ebmlHeaderFixture) error {
+	var payload bytes.Buffer
+	w := ebml.NewWriter(&payload)
+	if header.EBMLVersionSet {
+		if err := w.WriteUInt(idEBMLVersion, header.EBMLVersion); err != nil {
+			return err
+		}
+		if header.DuplicateEBMLVersion {
+			if err := w.WriteUInt(idEBMLVersion, header.EBMLVersion); err != nil {
+				return err
+			}
+		}
+	}
+	if header.EBMLReadVersionSet {
+		if err := w.WriteUInt(idEBMLReadVersion, header.EBMLReadVersion); err != nil {
+			return err
+		}
+		if header.DuplicateEBMLReadVersion {
+			if err := w.WriteUInt(idEBMLReadVersion, header.EBMLReadVersion); err != nil {
+				return err
+			}
+		}
+	}
+	if header.EBMLMaxIDLengthSet {
+		if err := w.WriteUInt(idEBMLMaxIDLength, header.EBMLMaxIDLength); err != nil {
+			return err
+		}
+		if header.DuplicateEBMLMaxIDLength {
+			if err := w.WriteUInt(idEBMLMaxIDLength, header.EBMLMaxIDLength); err != nil {
+				return err
+			}
+		}
+	}
+	if header.EBMLMaxSizeLengthSet {
+		if err := w.WriteUInt(idEBMLMaxSizeLength, header.EBMLMaxSizeLength); err != nil {
+			return err
+		}
+		if header.DuplicateEBMLMaxSizeLength {
+			if err := w.WriteUInt(idEBMLMaxSizeLength, header.EBMLMaxSizeLength); err != nil {
+				return err
+			}
+		}
+	}
+	if header.DocTypeSet {
+		if err := w.WriteString(idDocType, header.DocType); err != nil {
+			return err
+		}
+		if header.DuplicateDocType {
+			if err := w.WriteString(idDocType, header.DocType); err != nil {
+				return err
+			}
+		}
+	}
+	if header.DocTypeVersionSet {
+		if err := w.WriteUInt(idDocTypeVersion, header.DocTypeVersion); err != nil {
+			return err
+		}
+		if header.DuplicateDocTypeVersion {
+			if err := w.WriteUInt(idDocTypeVersion, header.DocTypeVersion); err != nil {
+				return err
+			}
+		}
+	}
+	if header.DocTypeReadVersionSet {
+		if err := w.WriteUInt(idDocTypeReadVersion, header.DocTypeReadVersion); err != nil {
+			return err
+		}
+		if header.DuplicateDocTypeReadVersion {
+			if err := w.WriteUInt(idDocTypeReadVersion, header.DocTypeReadVersion); err != nil {
+				return err
+			}
+		}
+	}
+	return writer.WriteElement(idEBML, payload.Bytes())
+}
+
+func makeSeekHeadMetadataMatroskaData(tb testing.TB, writeSeekHead func(*ebml.Writer) error) []byte {
+	tb.Helper()
+	return makeTopLevelMetadataMatroskaData(tb, func(writer *ebml.Writer) error {
+		var payload bytes.Buffer
+		w := ebml.NewWriter(&payload)
+		if err := writeSeekHead(w); err != nil {
+			return err
+		}
+		return writer.WriteElement(idSeekHead, payload.Bytes())
+	})
+}
+
+func writeSeekIDElement(w *ebml.Writer, id ebml.ID) error {
+	var idPayload [ebml.MaxIDWidth]byte
+	n, err := ebml.EncodeID(idPayload[:], id)
+	if err != nil {
+		return err
+	}
+	return writeBinary(w, idSeekID, idPayload[:n])
 }
 
 func writeMatroskaSegmentPrefix(tb testing.TB, muxer *Muxer) {

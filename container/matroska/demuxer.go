@@ -2173,13 +2173,15 @@ func (d *Demuxer) readPreamble() error {
 
 func (d *Demuxer) loadCuesFromSeekHead() error {
 	var cuesPosition uint64
+	var cuesPositionSet bool
 	for i := range d.seekEntries {
 		if d.seekEntries[i].ID == uint64(idCues) {
 			cuesPosition = d.seekEntries[i].Position
+			cuesPositionSet = true
 			break
 		}
 	}
-	if cuesPosition == 0 {
+	if !cuesPositionSet {
 		return ErrInvalidData
 	}
 	if _, err := d.seeker.Seek(d.segmentData+int64(cuesPosition), io.SeekStart); err != nil {
@@ -2285,6 +2287,8 @@ func (d *Demuxer) parseSeekEntry(parent io.Reader, header ebml.Header) (SeekEntr
 		return SeekEntry{}, err
 	}
 	var entry SeekEntry
+	var idSet bool
+	var positionSet bool
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
@@ -2292,17 +2296,25 @@ func (d *Demuxer) parseSeekEntry(parent io.Reader, header ebml.Header) (SeekEntr
 		}
 		switch child.ID {
 		case idSeekID:
+			if idSet {
+				return SeekEntry{}, ErrInvalidData
+			}
 			value, err := readElementIDPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return SeekEntry{}, err
 			}
 			entry.ID = uint64(value)
+			idSet = true
 		case idSeekPosition:
+			if positionSet {
+				return SeekEntry{}, ErrInvalidData
+			}
 			value, err := readUIntPayload(master.Reader(), child.Size.Value)
 			if err != nil {
 				return SeekEntry{}, err
 			}
 			entry.Position = value
+			positionSet = true
 		default:
 			if err := skipElement(master.Reader(), child); err != nil {
 				return SeekEntry{}, err
@@ -2311,6 +2323,9 @@ func (d *Demuxer) parseSeekEntry(parent io.Reader, header ebml.Header) (SeekEntr
 	}
 	if err := master.Validate(); err != nil {
 		return SeekEntry{}, err
+	}
+	if !idSet || !positionSet {
+		return SeekEntry{}, ErrInvalidData
 	}
 	return entry, nil
 }
@@ -2321,23 +2336,137 @@ func (d *Demuxer) parseEBMLHeader(header ebml.Header) error {
 	}
 	limited := d.reader.Limited(header.Size.Value)
 	reader := ebml.NewReader(limited, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	state := ebmlHeaderState{
+		ebmlVersion:        1,
+		ebmlReadVersion:    1,
+		ebmlMaxIDLength:    ebml.MaxIDWidth,
+		ebmlMaxSizeLength:  ebml.MaxSizeWidth,
+		docTypeVersion:     1,
+		docTypeReadVersion: 1,
+	}
 	for limited.N > 0 {
 		child, err := reader.ReadHeader()
 		if err != nil {
 			return err
 		}
 		switch child.ID {
+		case idEBMLVersion:
+			if state.ebmlVersionSet {
+				return ErrInvalidData
+			}
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			state.ebmlVersion = value
+			state.ebmlVersionSet = true
+		case idEBMLReadVersion:
+			if state.ebmlReadVersionSet {
+				return ErrInvalidData
+			}
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			state.ebmlReadVersion = value
+			state.ebmlReadVersionSet = true
+		case idEBMLMaxIDLength:
+			if state.ebmlMaxIDLengthSet {
+				return ErrInvalidData
+			}
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			state.ebmlMaxIDLength = value
+			state.ebmlMaxIDLengthSet = true
+		case idEBMLMaxSizeLength:
+			if state.ebmlMaxSizeLengthSet {
+				return ErrInvalidData
+			}
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			state.ebmlMaxSizeLength = value
+			state.ebmlMaxSizeLengthSet = true
 		case idDocType:
+			if state.docTypeSet {
+				return ErrInvalidData
+			}
 			value, err := readStringPayload(reader, child.Size.Value)
 			if err != nil {
 				return err
 			}
-			d.docType = value
+			state.docType = value
+			state.docTypeSet = true
+		case idDocTypeVersion:
+			if state.docTypeVersionSet {
+				return ErrInvalidData
+			}
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			state.docTypeVersion = value
+			state.docTypeVersionSet = true
+		case idDocTypeReadVersion:
+			if state.docTypeReadVersionSet {
+				return ErrInvalidData
+			}
+			value, err := readUIntPayload(reader, child.Size.Value)
+			if err != nil {
+				return err
+			}
+			state.docTypeReadVersion = value
+			state.docTypeReadVersionSet = true
 		default:
 			if err := skipElement(reader, child); err != nil {
 				return err
 			}
 		}
+	}
+	if err := validateEBMLHeaderState(state); err != nil {
+		return err
+	}
+	d.docType = state.docType
+	return nil
+}
+
+type ebmlHeaderState struct {
+	ebmlVersion           uint64
+	ebmlReadVersion       uint64
+	ebmlMaxIDLength       uint64
+	ebmlMaxSizeLength     uint64
+	docType               string
+	docTypeVersion        uint64
+	docTypeReadVersion    uint64
+	ebmlVersionSet        bool
+	ebmlReadVersionSet    bool
+	ebmlMaxIDLengthSet    bool
+	ebmlMaxSizeLengthSet  bool
+	docTypeSet            bool
+	docTypeVersionSet     bool
+	docTypeReadVersionSet bool
+}
+
+func validateEBMLHeaderState(state ebmlHeaderState) error {
+	if state.ebmlVersion == 0 || state.ebmlReadVersion == 0 || state.ebmlReadVersion > state.ebmlVersion || state.ebmlReadVersion > 1 {
+		return ErrInvalidData
+	}
+	if state.ebmlMaxIDLength != ebml.MaxIDWidth || state.ebmlMaxSizeLength != ebml.MaxSizeWidth {
+		return ErrInvalidData
+	}
+	switch state.docType {
+	case "matroska", "webm":
+	default:
+		return ErrInvalidData
+	}
+	if !state.docTypeSet || state.docTypeVersion == 0 || state.docTypeReadVersion == 0 {
+		return ErrInvalidData
+	}
+	if state.docTypeReadVersion > state.docTypeVersion || state.docTypeReadVersion > defaultDocTypeVersion {
+		return ErrInvalidData
 	}
 	return nil
 }

@@ -159,6 +159,11 @@ Current milestone:
   TrackNumber, TrackType, CodecID, or audio/video settings, duplicate singleton
   identity fields inside one TrackEntry, or reuse TrackNumber/TrackUID across
   entries.
+- Demux validation rejects malformed EBML preamble and SeekHead metadata,
+  including unsupported EBML/doctype read versions, invalid Matroska/WebM
+  length contracts, missing or unsupported DocType values, duplicate EBML
+  header singleton fields, and Seek entries without both SeekID and
+  SeekPosition.
 - Mux and demux validation rejects negative or overflowing track timing,
   audio, and video metadata before it can wrap into EBML unsigned integers or
   public `int` fields.
