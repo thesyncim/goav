@@ -640,7 +640,7 @@ func prepareBranchComposePlan(plan branchComposePlan) ([]branchComposeRoute, []b
 func branchComposePlanEmptyError(kind string) error {
 	suggestions := []string{
 		"add at least one branch with a selector and encoder",
-		"add at least one target endpoint",
+		"add at least one target destination",
 		"use goav.From(input).Video().Decode().Branches(goav.Branch(name).VP9(...).To(goav.Target(\"web\", output))) for the recipe API",
 	}
 	reason := "branch composition has no " + kind
@@ -1045,8 +1045,8 @@ func branchComposeTargets(plan branchComposePlan, branches []branchComposeRoute)
 	outputs := make([]branchComposeTargetRoute, len(plan.Targets))
 	for i := range plan.Targets {
 		output := plan.Targets[i]
-		if output.Sink != nil && branchComposeTargetHasMuxEndpoint(output) {
-			return nil, branchComposeTargetEndpointInvalidError(output, "output cannot configure both a sink and a mux target")
+		if output.Sink != nil && branchComposeTargetHasMuxDestination(output) {
+			return nil, branchComposeTargetDestinationInvalidError(output, "target cannot configure both a sink and a mux destination")
 		}
 		target := branchComposeFormatTarget(plan, output)
 		matches := branchComposeTargetMatches(output, branches)
@@ -1070,7 +1070,7 @@ func branchComposeTargets(plan branchComposePlan, branches []branchComposeRoute)
 	return outputs, nil
 }
 
-func branchComposeTargetHasMuxEndpoint(output branchComposeTarget) bool {
+func branchComposeTargetHasMuxDestination(output branchComposeTarget) bool {
 	return output.Target.Name != "" ||
 		output.Target.URI != "" ||
 		output.Target.Protocol != "" ||
@@ -1101,15 +1101,15 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, target format
 	}
 }
 
-func branchComposeTargetEndpointInvalidError(output branchComposeTarget, reason string) error {
+func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reason string) error {
 	return &BuildError{
 		Code:      "branch_target_invalid",
 		Operation: "build branch composition",
 		Node:      branchComposeTargetNodeName(output, "output"),
 		Reason:    reason,
 		Suggestions: []string{
-			"use goav.Target(name, goav.Sink(sink)) for frame or packet sink endpoints",
-			"use goav.Target(name, goav.FileOutput(...)) or goav.URIOutput(...) for muxed endpoints",
+			"use goav.Target(name, goav.Sink(sink)) for frame or packet sink targets",
+			"use goav.Target(name, goav.FileOutput(...)) or goav.Target(name, goav.URIOutput(...)) for muxed destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

@@ -135,6 +135,37 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	}
 }
 
+func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {
+	var body strings.Builder
+	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "runtime_compile.go", "runtime_plan.go", "runtime_transcode.go", "recipe_compile.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	text := body.String()
+	for _, forbidden := range []string{
+		"Record, From, Decode, or Transcode",
+		"target endpoint",
+		"sink endpoints",
+		"muxed endpoints",
+		"SinkEndpoint",
+		".FromTap(",
+		"goav.FromTap(",
+		".TapName(",
+		"goav.TapName(",
+		"goav.AudioFlow(",
+		"goav.VideoFlow(",
+		"branchComposeTargetHasMuxEndpoint",
+		"branchComposeTargetEndpointInvalidError",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("production diagnostics keep old public vocabulary %q", forbidden)
+		}
+	}
+}
+
 func TestRuntimeBuilderUsesMuxVerbNotOutput(t *testing.T) {
 	builder := reflect.TypeOf((*builderAPI)(nil)).Elem()
 	if _, ok := builder.MethodByName("Output"); ok {

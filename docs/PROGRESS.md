@@ -1603,6 +1603,13 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     at the branch-composition boundary. Guard coverage now rejects
     the deleted mirror type from production chain internals.
     Done.
+325. Keep diagnostics on the current front door:
+    production build diagnostics no longer suggest old recipe families or
+    endpoint terminology when the user should choose `From(...)`,
+    `Runtime.Graph()`, `Target`, `Sink`, `FileOutput`, or `URIOutput`.
+    Branch target validation now talks about destinations and targets, and guard
+    coverage rejects the stale diagnostic vocabulary from production files.
+    Done.
 
 ## First Vertical Slice
 
