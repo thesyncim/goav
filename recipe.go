@@ -1241,6 +1241,10 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 }
 
 func branchStreamIntent(stream streamBuild) StreamIntent {
+	afterPacketOperation := OpEncode
+	if stream.encode.Copy {
+		afterPacketOperation = OpCopy
+	}
 	return StreamIntent{
 		Name: stream.name,
 		Select: StreamSelect{
@@ -1255,7 +1259,7 @@ func branchStreamIntent(stream streamBuild) StreamIntent {
 		Decode:     stream.decode,
 		Operations: streamBuildOperations(stream),
 		Transforms: cloneTransformSpecs(stream.transforms),
-		Taps:       streamStepTapIntents(stream.steps, stream.selector.Type),
+		Taps:       append(streamStepTapIntents(stream.steps, stream.selector.Type), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
 		Encode:     stream.encode,
 		Targets:    append([]string(nil), stream.labels...),
 	}
@@ -1287,7 +1291,7 @@ func jobStreamOperations(stream *jobStreamBuild) []StreamOperation {
 }
 
 func streamBuildOperations(stream streamBuild) []StreamOperation {
-	operations := make([]StreamOperation, 0, len(stream.steps)+2)
+	operations := make([]StreamOperation, 0, len(stream.steps)+2+len(stream.postEncodeTaps))
 	if stream.decode {
 		operations = append(operations, StreamOperation{Kind: OpDecode, Component: string(stream.selector.Codec)})
 	}
@@ -1296,6 +1300,14 @@ func streamBuildOperations(stream streamBuild) []StreamOperation {
 		operations = append(operations, StreamOperation{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
 	} else if codecIntentSet(stream.encode) {
 		operations = append(operations, StreamOperation{Kind: OpEncode, Component: string(stream.encode.ID), Encode: stream.encode})
+	}
+	for i := range stream.postEncodeTaps {
+		after := OpEncode
+		if stream.encode.Copy {
+			after = OpCopy
+		}
+		tap := TapIntent{Name: stream.postEncodeTaps[i], MediaKind: stream.selector.Type, Domain: DomainPacket, After: after}
+		operations = append(operations, StreamOperation{Kind: OpTap, Component: tap.Name, Tap: tap})
 	}
 	return operations
 }
@@ -2361,14 +2373,15 @@ func newStreamSelector(media av.MediaType, options ...streamOption) av.StreamSel
 }
 
 type streamBuild struct {
-	name       string
-	selector   av.StreamSelector
-	fromTap    string
-	decode     bool
-	steps      []jobStreamStep
-	transforms []TransformSpec
-	encode     CodecSpec
-	labels     []string
+	name           string
+	selector       av.StreamSelector
+	fromTap        string
+	decode         bool
+	steps          []jobStreamStep
+	postEncodeTaps []string
+	transforms     []TransformSpec
+	encode         CodecSpec
+	labels         []string
 }
 
 func StreamID(id av.StreamID) streamOption {

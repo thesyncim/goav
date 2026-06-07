@@ -161,7 +161,8 @@ make the implementation match the composable planner promise.
   branch slices are active; runtime stage/sink attachments are active for direct
   task graphs and bounded buffered task graphs, with packet-copy late recording
   targets, Opus encoded late recording from frame taps, flow-applied Opus
-  encode-to-target branches, and dependent late branches after runtime resize
-  taps covered; deeper buffered lifecycle stress proof remains planned.
+  encode-to-target branches, post-encode packet taps, and dependent late
+  branches after runtime resize taps covered; deeper buffered lifecycle stress
+  proof remains planned.
 - Detail-aware graph introspection is active; richer stats and tracing remain
   future work.

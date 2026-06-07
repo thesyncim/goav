@@ -46,13 +46,14 @@ func (s EndpointSpec) branchDestination() branchDestination {
 }
 
 type BranchSpec struct {
-	name       string
-	media      av.MediaType
-	steps      []jobStreamStep
-	transforms []TransformSpec
-	encode     CodecSpec
-	targets    []TargetSpec
-	labels     []string
+	name           string
+	media          av.MediaType
+	steps          []jobStreamStep
+	postEncodeTaps []string
+	transforms     []TransformSpec
+	encode         CodecSpec
+	targets        []TargetSpec
+	labels         []string
 
 	from   string
 	tap    string
@@ -200,6 +201,10 @@ func (b *BranchBuilder) Tap(name string) *BranchBuilder {
 		})
 		return b
 	}
+	if codecIntentSet(b.spec.encode) {
+		b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, name)
+		return b
+	}
 	b.spec.steps = append(b.spec.steps, jobStreamStep{tap: name})
 	return b
 }
@@ -258,6 +263,7 @@ func (b *BranchBuilder) To(destinations ...BranchDestination) BranchSpec {
 func (b *BranchBuilder) snapshot() BranchSpec {
 	spec := b.spec
 	spec.steps = cloneJobStreamSteps(spec.steps)
+	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.transforms = cloneTransformSpecs(spec.transforms)
 	spec.targets = cloneTargetSpecs(spec.targets)
 	spec.labels = append([]string(nil), spec.labels...)
@@ -325,11 +331,15 @@ func (b *JobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			return job
 		}
 		job.branchStreams = append(job.branchStreams, streamBuild{
-			name:       branches[i].name,
-			selector:   stream.selector,
-			fromTap:    lastStreamTap(stream),
-			decode:     true,
-			steps:      appendBranchSteps(stream.steps, branches[i].steps),
+			name:     branches[i].name,
+			selector: stream.selector,
+			fromTap:  lastStreamTap(stream),
+			decode:   true,
+			steps:    appendBranchSteps(stream.steps, branches[i].steps),
+			postEncodeTaps: append(
+				append([]string(nil), stream.postEncodeTaps...),
+				branches[i].postEncodeTaps...,
+			),
 			transforms: appendTransformSpecs(stream.transformSpecs(), branches[i].transforms),
 			encode:     branches[i].encode,
 			labels:     append([]string(nil), branches[i].labels...),

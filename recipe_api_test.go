@@ -1468,6 +1468,48 @@ func TestBranchAfterDecodeCustomStageUsesOrderedOperations(t *testing.T) {
 	}
 }
 
+func TestBranchTapAfterEncodeIsPacketTap(t *testing.T) {
+	archive := goav.Target("archive", goav.FileOutput("archive.ogg", io.Discard))
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Tap("audio.decoded").
+		Branches(
+			goav.Branch("archive").
+				Opus(96_000).
+				Tap("audio.encoded").
+				To(archive),
+		)
+
+	intent := job.Intent()
+	if len(intent.Streams) != 1 {
+		t.Fatalf("streams: %+v", intent.Streams)
+	}
+	var encodedTap goav.TapIntent
+	for _, tap := range intent.Streams[0].Taps {
+		if tap.Name == "audio.encoded" {
+			encodedTap = tap
+			break
+		}
+	}
+	if encodedTap.Name == "" ||
+		encodedTap.Domain != goav.DomainPacket ||
+		encodedTap.MediaKind != av.MediaAudio ||
+		encodedTap.After != goav.OpEncode {
+		t.Fatalf("encoded tap = %+v, want packet tap after encode", encodedTap)
+	}
+	operations := intent.Streams[0].Operations
+	if len(operations) != 4 ||
+		operations[0].Kind != goav.OpDecode ||
+		operations[1].Kind != goav.OpTap || operations[1].Tap.Name != "audio.decoded" ||
+		operations[2].Kind != goav.OpEncode ||
+		operations[3].Kind != goav.OpTap || operations[3].Tap.Name != "audio.encoded" ||
+		operations[3].Tap.Domain != goav.DomainPacket ||
+		operations[3].Tap.After != goav.OpEncode {
+		t.Fatalf("operations: %+v", operations)
+	}
+}
+
 func TestBranchCustomStageUsesOrderedOperations(t *testing.T) {
 	meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
 		return emit.Frame(frame)

@@ -273,6 +273,8 @@ from frame taps, encode Opus/VP8/VP9 from frame taps, copy from packet taps, and
 expose their own `.Tap(name)` outlets for later attachments. H264 and AV1 recipe
 encoding remain work in progress. Detaching a parent attachment also removes
 dependent late branches anchored from its taps.
+Taps declared after `.Opus(...)`, `.VP8(...)`, `.VP9(...)`, or `.Copy()` are
+packet-domain taps.
 
 ## Explain And Inspect
 

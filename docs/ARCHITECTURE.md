@@ -96,9 +96,10 @@ runtime branches attach with `goav.Branch("name").FromTap(name)`. A late branch
 can run custom `.Do(...)` stages, apply reusable flows, resize or resample from
 frame taps, encode Opus/VP8/VP9 from frame taps into a target endpoint, copy
 packet taps into a target endpoint, and expose its own `.Tap(name)` outlets, so
-another late branch can attach downstream without rebuilding the task. H264 and
-AV1 recipe encoding remain work in progress. Detaching a parent runtime branch
-also removes dependent runtime branches anchored from that parent's taps.
+another late branch can attach downstream without rebuilding the task. Taps
+declared after encode or copy operations are packet-domain outlets. H264 and AV1
+recipe encoding remain work in progress. Detaching a parent runtime branch also
+removes dependent runtime branches anchored from that parent's taps.
 Expert graph nodes can still be addressed with `From(node)` and
 `Task.Describe`. This is for late analysis,
 meters, screenshot collectors, and late recording branches that should observe
@@ -106,9 +107,10 @@ future messages without rebuilding the task. Buffered runtime attachment owns
 queue and worker lifecycle for late nodes; packet-copy recording targets are
 covered, Opus encode-to-recording from frame taps is covered with bounded
 packet copy into the late mux target, flow-applied Opus encode-to-target
-branches are covered, and bounded buffered graphs can attach a dependent branch
-after a runtime resize tap before future frames arrive. Broader encoded mux
-capability and teardown stress coverage remain active slices.
+branches are covered, post-encode runtime branch taps can feed dependent packet
+copy branches, and bounded buffered graphs can attach a dependent branch after a
+runtime resize tap before future frames arrive. Broader encoded mux capability
+and teardown stress coverage remain active slices.
 
 Current graph execution covers:
 

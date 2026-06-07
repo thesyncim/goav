@@ -17,18 +17,19 @@ var runtimeAttachmentSeq atomic.Uint64
 // runtimeBranch is the internal graph mutation plan for a branch attached to an
 // already-built task.
 type runtimeBranch struct {
-	name     string
-	from     string
-	tap      string
-	anchor   TapInfo
-	steps    []runtimeBranchStep
-	encode   CodecSpec
-	endpoint EndpointSpec
-	sink     pipeline.Sink
-	policy   pipeline.RoutePolicy
-	label    string
-	buffer   pipeline.BufferPolicy
-	err      error
+	name           string
+	from           string
+	tap            string
+	anchor         TapInfo
+	steps          []runtimeBranchStep
+	postEncodeTaps []string
+	encode         CodecSpec
+	endpoint       EndpointSpec
+	sink           pipeline.Sink
+	policy         pipeline.RoutePolicy
+	label          string
+	buffer         pipeline.BufferPolicy
+	err            error
 }
 
 type runtimeBranchStep struct {
@@ -125,6 +126,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 			branch.steps = append(branch.steps, runtimeBranchStep{tap: step.tap})
 		}
 	}
+	branch.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	if len(spec.targets) != 1 {
 		return branch, runtimeBranchInvalidError("runtime branch needs exactly one destination", "finish the branch with one .To(goav.SinkEndpoint(sink)) or .To(goav.Target(name, endpoint))")
 	}
@@ -225,13 +227,16 @@ func (t *task) prepareRuntimeBranchDestination(ctx context.Context, branch *runt
 				closeRuntimeBranchOwnedStages(*branch)
 				return runtimeBranchCopyDomainError(branch.name, currentCaps)
 			}
+			appendRuntimeBranchPostEncodeTaps(branch, currentCaps)
 			return nil
 		}
 		if codecIntentSet(branch.encode) {
-			if _, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentCaps); err != nil {
+			encodedStream, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentCaps)
+			if err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
 				return err
 			}
+			appendRuntimeBranchPostEncodeTaps(branch, streamPacketCapsFromRuntimeBranchStream(encodedStream, currentCaps))
 		}
 		return nil
 	case endpointSpecHasOutput(branch.endpoint):
@@ -260,6 +265,7 @@ func (t *task) prepareRuntimeBranchMuxEndpoint(ctx context.Context, branch *runt
 			closeRuntimeBranchOwnedStages(*branch)
 			return runtimeBranchCopyDomainError(branch.name, currentCaps)
 		}
+		appendRuntimeBranchPostEncodeTaps(branch, caps)
 	} else {
 		encodedStream, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentCaps)
 		if err != nil {
@@ -268,6 +274,7 @@ func (t *task) prepareRuntimeBranchMuxEndpoint(ctx context.Context, branch *runt
 		}
 		stream = encodedStream
 		caps = streamPacketCapsFromRuntimeBranchStream(encodedStream, currentCaps)
+		appendRuntimeBranchPostEncodeTaps(branch, caps)
 	}
 	if stream.Codec.ID == "" {
 		closeRuntimeBranchOwnedStages(*branch)
@@ -325,6 +332,19 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 		owned: true,
 	})
 	return encodedStream, nil
+}
+
+func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, caps StreamCaps) {
+	if branch == nil || len(branch.postEncodeTaps) == 0 {
+		return
+	}
+	for i := range branch.postEncodeTaps {
+		branch.steps = append(branch.steps, runtimeBranchStep{
+			tap:  branch.postEncodeTaps[i],
+			caps: caps,
+		})
+	}
+	branch.postEncodeTaps = nil
 }
 
 func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string) ([]pipeline.NodeRef, []pipeline.Route, []TapInfo, error) {
