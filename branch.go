@@ -17,15 +17,13 @@ type Destination interface {
 }
 
 type destinationBinding struct {
-	target    TargetSpec
+	target    targetSpec
 	dest      DestinationSpec
 	hasTarget bool
 	hasDirect bool
 }
 
-// TargetSpec names a logical destination. Several branches can feed the same
-// target so the runtime can mux or group them as one output.
-type TargetSpec struct {
+type targetSpec struct {
 	name string
 	dest DestinationSpec
 	id   uint64
@@ -33,18 +31,22 @@ type TargetSpec struct {
 }
 
 // Target binds a stable target name to a concrete destination.
-func Target(name string, dest DestinationSpec) TargetSpec {
+func Target(name string, dest DestinationSpec) Destination {
+	return newTargetSpec(name, dest)
+}
+
+func newTargetSpec(name string, dest DestinationSpec) targetSpec {
 	if name == "" {
-		return TargetSpec{dest: dest, err: targetNameMissingError(dest)}
+		return targetSpec{dest: dest, err: targetNameMissingError(dest)}
 	}
-	return TargetSpec{
+	return targetSpec{
 		name: name,
 		dest: dest.Name(firstNonEmpty(dest.name, name)),
 		id:   targetSpecSeq.Add(1),
 	}
 }
 
-func (t TargetSpec) destination() destinationBinding {
+func (t targetSpec) destination() destinationBinding {
 	return destinationBinding{target: t, hasTarget: true}
 }
 
@@ -60,7 +62,7 @@ type BranchSpec struct {
 	postEncodeTaps []string
 	transforms     []TransformSpec
 	encode         CodecSpec
-	targets        []TargetSpec
+	targets        []targetSpec
 	labels         []string
 
 	from      string
@@ -363,7 +365,7 @@ func appendDestination(spec *BranchSpec, destination destinationBinding, index i
 	case destination.hasDirect:
 		destination := destination.dest
 		name := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
-		target := Target(name, destination)
+		target := newTargetSpec(name, destination)
 		if target.err != nil {
 			return target.err
 		}
@@ -789,7 +791,7 @@ func branchPacketTransformUnsupportedError(stream StreamIntent) error {
 	}
 }
 
-func branchTargetsAllSinkDestinations(targets []TargetSpec) bool {
+func branchTargetsAllSinkDestinations(targets []targetSpec) bool {
 	if len(targets) == 0 {
 		return false
 	}
@@ -801,18 +803,18 @@ func branchTargetsAllSinkDestinations(targets []TargetSpec) bool {
 	return true
 }
 
-func cloneTargetSpecs(targets []TargetSpec) []TargetSpec {
+func cloneTargetSpecs(targets []targetSpec) []targetSpec {
 	if len(targets) == 0 {
 		return nil
 	}
-	out := make([]TargetSpec, 0, len(targets))
+	out := make([]targetSpec, 0, len(targets))
 	for i := range targets {
 		out = append(out, cloneTargetSpec(targets[i]))
 	}
 	return out
 }
 
-func cloneTargetSpec(target TargetSpec) TargetSpec {
+func cloneTargetSpec(target targetSpec) targetSpec {
 	target.dest = cloneDestinationSpec(target.dest)
 	return target
 }

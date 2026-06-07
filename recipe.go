@@ -949,7 +949,7 @@ func (j *Job) To(destinations ...Destination) *Job {
 	return j
 }
 
-func (j *Job) addBranchTargets(targets ...TargetSpec) error {
+func (j *Job) addBranchTargets(targets ...targetSpec) error {
 	seen := make(map[string]string, len(j.branchTargets)+len(targets))
 	for i := range j.branchTargets {
 		seen[j.branchTargets[i].name] = targetIdentity(j.branchTargets[i])

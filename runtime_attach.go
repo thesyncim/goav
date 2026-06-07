@@ -336,7 +336,7 @@ func runtimeBranchDestinationCanShareMux(destination runtimeBranchDestination) b
 	return destination.sink == nil && destinationSpecHasOutput(destination.dest)
 }
 
-func runtimeBranchSharedTargetKey(target TargetSpec) string {
+func runtimeBranchSharedTargetKey(target targetSpec) string {
 	if target.id == 0 {
 		return ""
 	}

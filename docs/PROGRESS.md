@@ -1521,11 +1521,12 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
 315. Collapse high-level implementation naming onto destinations:
     private target bindings, branch destinations, runtime branch terminal
     preparation, mux format helpers, and encode-to-destination graph helpers now
-    use destination naming instead of endpoint naming. `TargetSpec` stores a
-    destination, direct `.To(...)` bindings are direct destinations, runtime
-    attach prepares branch destinations, and media-plan encode paths plan and
-    compile destination paths. The public `Endpoint` vocabulary remains only in
-    regression guards and historical notes, not in active composition code.
+    use destination naming instead of endpoint naming. Internal target records
+    store destinations, direct `.To(...)` bindings are direct destinations,
+    runtime attach prepares branch destinations, and media-plan encode paths
+    plan and compile destination paths. The public `Endpoint` vocabulary remains
+    only in regression guards and historical notes, not in active composition
+    code.
     Done.
 316. Hide concrete chain builder type names:
     `From(...).Audio()/Video()/Stream()`, `Branch(name)`, and
@@ -1536,6 +1537,14 @@ ready for codec adapters over `gopus`, `govpx`, `goav1`, and `goh264`.
     `BranchBuilder`, `JobStreamBuilder`, `FlowBuilder`, `AudioFlowBuilder`, and
     `VideoFlowBuilder` as exported front-door types while preserving
     `Branches(...)` as the single planned split verb.
+    Done.
+317. Hide target implementation values:
+    `Target(name, destination)` now returns the public `Destination` interface
+    instead of exporting a `TargetSpec` value. Shared target name, concrete
+    destination, and identity are still preserved internally for planned branch
+    composition and runtime attach grouping, but users only pass the target value
+    to `.To(...)` like any other destination. Guard coverage rejects
+    `TargetSpec` as an exported front-door type.
     Done.
 
 ## First Vertical Slice

@@ -316,7 +316,7 @@ type testTranscodeBranch struct {
 	flows      []goav.Chain
 	transforms []goav.TransformSpec
 	encode     goav.CodecSpec
-	targets    []goav.TargetSpec
+	targets    []goav.Destination
 }
 
 type testTranscodeBranchBuilder struct {
@@ -440,8 +440,8 @@ func (b *testTranscodeBranchBuilder) Encode(codec goav.CodecSpec) *testTranscode
 	return b
 }
 
-func (b *testTranscodeBranchBuilder) To(targets ...goav.TargetSpec) *testBranchJob {
-	b.current().targets = append([]goav.TargetSpec(nil), targets...)
+func (b *testTranscodeBranchBuilder) To(targets ...goav.Destination) *testBranchJob {
+	b.current().targets = append([]goav.Destination(nil), targets...)
 	return b.job
 }
 
@@ -1369,6 +1369,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 		"RTPInputOption":   true,
 		"StreamBuilder":    true,
 		"StreamOption":     true,
+		"TargetSpec":       true,
 		"TrackOption":      true,
 		"TranscodeJob":     true,
 		"TargetOrEndpoint": true,
