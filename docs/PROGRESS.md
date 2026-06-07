@@ -2023,6 +2023,17 @@ The missing product layer is now explicit:
     constructor lowering, invalid policies, unsupported unbounded buffers, and
     the public method signature.
     Done.
+371. Add media shape annotations:
+    `Shape(MediaShape)` is now an ordered operation on stream chains, branches,
+    audio/video flows, and runtime attachments. It updates the current media
+    shape without creating a graph node, so structural facts such as
+    framerate/FPS can be attached after decode, resize/resample, custom stages,
+    or runtime taps without adding one-off branch verbs. Planned reports show
+    the shape operation, post-encode taps inherit the annotated shape, and
+    compile-time VP8/VP9 encode config receives framerate from shape when the
+    codec spec does not override it. The WebRTC runtime ladder demo now uses
+    `Branch` vocabulary end to end.
+    Done.
 
 ## First Vertical Slice
 

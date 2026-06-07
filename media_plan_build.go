@@ -278,6 +278,7 @@ type graphPlanBranchComposeInputOperation struct {
 type graphPlanBranchComposeBranchOperation struct {
 	privateSteps []pipeline.NodeRef
 	encodeNode   pipeline.NodeRef
+	encodeShape  MediaShape
 }
 
 func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan graphPlan) (graphPlanBranchComposeLowering, error) {
@@ -425,6 +426,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branch
 			return nil, err
 		}
 		var encodeNode pipeline.NodeRef
+		var encodeShape MediaShape
 		if branchComposeRouteNeedsEncode(branch) {
 			operation, ok := graphPlanBranchOperation(operations, OpEncode)
 			if !ok {
@@ -438,10 +440,12 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branch
 				})
 			}
 			encodeNode = operation.Node
+			encodeShape = operation.Shape
 		}
 		out[branch.name] = graphPlanBranchComposeBranchOperation{
 			privateSteps: privateSteps,
 			encodeNode:   encodeNode,
+			encodeShape:  encodeShape,
 		}
 	}
 	return out, nil
@@ -1134,6 +1138,7 @@ type graphPlanFrameStreamLowering struct {
 	decodeNode  pipeline.NodeRef
 	filterNodes []pipeline.NodeRef
 	encodeNode  pipeline.NodeRef
+	encodeShape MediaShape
 	targets     []graphPlanTargetOperation
 }
 
@@ -1180,6 +1185,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan
 		})
 	}
 	var encodeNode pipeline.NodeRef
+	var encodeShape MediaShape
 	if p.encode != nil {
 		if encodeOperation.Node == "" {
 			return graphPlanFrameStreamLowering{}, graphPlanInvalidError("encoded frame stream graph plan encode operation has no node", []string{
@@ -1188,6 +1194,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan
 			})
 		}
 		encodeNode = encodeOperation.Node
+		encodeShape = encodeOperation.Shape
 	}
 	if p.encode == nil && hasEncode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("decoded frame stream graph plan has an unexpected encode operation", []string{
@@ -1204,6 +1211,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamOperationLowering(plan graphPlan
 		decodeNode:  decodeOperation.Node,
 		filterNodes: filterNodes,
 		encodeNode:  encodeNode,
+		encodeShape: encodeShape,
 		targets:     targets,
 	}, nil
 }
@@ -1453,6 +1461,7 @@ func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Contex
 		branches[0].name: {
 			privateSteps: append([]pipeline.NodeRef(nil), lowering.filterNodes...),
 			encodeNode:   lowering.encodeNode,
+			encodeShape:  lowering.encodeShape,
 		},
 	}
 	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, branches, inputPlan, sources.realtime)

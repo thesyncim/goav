@@ -1839,6 +1839,55 @@ func TestBranchCompositionCurrentPointDescribeMatchesBuiltGraph(t *testing.T) {
 	}
 }
 
+func TestBranchCompositionShapeAnnotationSetsEncodeFramerate(t *testing.T) {
+	ctx := context.Background()
+	streams := []av.Stream{videoVP8TranscodeTestStream()}
+	demuxer := &decodeTestDemuxer{streams: streams}
+	muxers := &remuxTestMuxerFactory{}
+	resizeFactory := &transcodeTestFilterFactory{}
+	formats := withTestFormats(
+		testFormatProber(remuxTestProber{streams: streams}),
+		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
+		testFormatMuxer(av.FormatIVF, muxers),
+	)
+	filters := withTestFilters(testFilterFactory(filter.Descriptor{
+		Name:   filter.FactoryResize,
+		Input:  av.MediaVideo,
+		Output: av.MediaVideo,
+	}, resizeFactory))
+	encoderFactory := &encodeTestEncoderFactory{}
+	codecs := withTestCodecs(
+		testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
+		testCodecEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, encoderFactory),
+	)
+	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs, filters)).
+		Video().
+		Decode().
+		Branches(
+			Branch("web").
+				Resize(1280, 720).
+				Shape(Shape(ShapeFramerate(30, 1))).
+				VP9(2_000_000).
+				To(Target("web", File("web.ivf", io.Discard, Format(av.FormatIVF)))),
+		)
+
+	task, err := job.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	want := av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 30}}
+	if encoderFactory.config.Framerate != want {
+		t.Fatalf("encoder framerate = %+v, want %+v", encoderFactory.config.Framerate, want)
+	}
+	if encoderFactory.config.Stream.Codec.Width != 1280 ||
+		encoderFactory.config.Stream.Codec.Height != 720 ||
+		encoderFactory.config.Stream.Codec.ID != av.CodecVP9 {
+		t.Fatalf("encoder stream shape = %+v, want VP9 1280x720", encoderFactory.config.Stream.Codec)
+	}
+}
+
 func TestBranchCompositionSharedResampleCurrentPointRuns(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
@@ -3105,7 +3154,7 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    DomainFrame,
-		Shape:      MediaShape{Domain: DomainFrame, MediaKind: av.MediaAudio, StreamID: "audio", Codec: av.CodecOpus},
+		Shape:     MediaShape{Domain: DomainFrame, MediaKind: av.MediaAudio, StreamID: "audio", Codec: av.CodecOpus},
 		Node:      "source",
 	}}
 	defer builtTask.Close()

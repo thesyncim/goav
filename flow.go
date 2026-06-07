@@ -163,6 +163,14 @@ func (b *audioChain) Do(stage pipeline.Stage) *audioChain {
 	return b
 }
 
+func (b *audioChain) Shape(shape MediaShape) *audioChain {
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.shape(shape)
+	return b
+}
+
 func (b *audioChain) Tap(tap TapRef) *audioChain {
 	if b == nil {
 		return b
@@ -223,6 +231,14 @@ func (b *videoChain) Do(stage pipeline.Stage) *videoChain {
 		return b
 	}
 	b.chainBuilder.stage(stage)
+	return b
+}
+
+func (b *videoChain) Shape(shape MediaShape) *videoChain {
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.shape(shape)
 	return b
 }
 
@@ -303,6 +319,10 @@ func (b *chainBuilder) outputShapes(input MediaShape) ShapeSet {
 	}
 	for i := range b.spec.steps {
 		step := b.spec.steps[i]
+		if !mediaShapeEmpty(step.shape) {
+			shape = mergeMediaShape(shape, step.shape)
+			continue
+		}
 		if step.transform.Resize == nil && step.transform.Resample == nil {
 			continue
 		}
@@ -384,6 +404,17 @@ func (b *chainBuilder) stage(stage pipeline.Stage) {
 		return
 	}
 	b.spec.steps = append(b.spec.steps, chainStep{stage: stage})
+}
+
+func (b *chainBuilder) shape(shape MediaShape) {
+	if b == nil {
+		return
+	}
+	if codecIntentSet(b.spec.encode) {
+		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "shape", b.spec.encode))
+		return
+	}
+	b.spec.steps = append(b.spec.steps, chainStep{shape: shape})
 }
 
 func (b *chainBuilder) tap(tap TapRef) {

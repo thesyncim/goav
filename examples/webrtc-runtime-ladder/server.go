@@ -83,16 +83,16 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		session.handleEvents(w, r)
 		return
 	}
-	if len(parts) == 2 && parts[1] == "renditions" && r.Method == http.MethodPost {
-		session.handleAddRendition(w, r)
+	if len(parts) == 2 && parts[1] == "branches" && r.Method == http.MethodPost {
+		session.handleAddBranch(w, r)
 		return
 	}
-	if len(parts) == 3 && parts[1] == "renditions" && r.Method == http.MethodPut {
-		session.handleUpdateRendition(w, r, parts[2])
+	if len(parts) == 3 && parts[1] == "branches" && r.Method == http.MethodPut {
+		session.handleUpdateBranch(w, r, parts[2])
 		return
 	}
-	if len(parts) == 3 && parts[1] == "renditions" && r.Method == http.MethodDelete {
-		session.handleDeleteRendition(w, r, parts[2])
+	if len(parts) == 3 && parts[1] == "branches" && r.Method == http.MethodDelete {
+		session.handleDeleteBranch(w, r, parts[2])
 		return
 	}
 	http.NotFound(w, r)
@@ -157,37 +157,37 @@ func (s *session) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *session) handleAddRendition(w http.ResponseWriter, r *http.Request) {
-	var spec renditionSpec
+func (s *session) handleAddBranch(w http.ResponseWriter, r *http.Request) {
+	var spec branchSpec
 	if err := decodeJSON(r, &spec); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	rendition, err := s.addRendition(r.Context(), spec)
+	branch, err := s.addBranch(r.Context(), spec)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, addRenditionResponse{Rendition: rendition.Spec, NeedsRenegotiate: true})
+	writeJSON(w, addBranchResponse{Branch: branch.Spec, NeedsRenegotiate: true})
 }
 
-func (s *session) handleUpdateRendition(w http.ResponseWriter, r *http.Request, id string) {
-	var spec renditionSpec
+func (s *session) handleUpdateBranch(w http.ResponseWriter, r *http.Request, id string) {
+	var spec branchSpec
 	if err := decodeJSON(r, &spec); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	spec.ID = id
-	updated, err := s.updateRendition(r.Context(), spec)
+	updated, err := s.updateBranch(r.Context(), spec)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, addRenditionResponse{Rendition: updated.Spec})
+	writeJSON(w, addBranchResponse{Branch: updated.Spec})
 }
 
-func (s *session) handleDeleteRendition(w http.ResponseWriter, r *http.Request, id string) {
-	if err := s.deleteRendition(r.Context(), id); err != nil {
+func (s *session) handleDeleteBranch(w http.ResponseWriter, r *http.Request, id string) {
+	if err := s.deleteBranch(r.Context(), id); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

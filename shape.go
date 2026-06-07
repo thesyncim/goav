@@ -327,6 +327,8 @@ func (operation StreamOperation) InputShapes() ShapeSet {
 			shape.Domain = DomainPacket
 		}
 		return ShapeSet{shape}
+	case OpShape:
+		return nil
 	case OpTransform:
 		return operation.Transform.InputShapes()
 	case OpEncode, OpCopy:
@@ -341,6 +343,8 @@ func (operation StreamOperation) OutputShapes(input MediaShape) ShapeSet {
 	case OpDecode:
 		input.Domain = DomainFrame
 		return ShapeSet{input}
+	case OpShape:
+		return ShapeSet{mergeMediaShape(input, operation.Shape)}
 	case OpTransform:
 		return operation.Transform.OutputShapes(input)
 	case OpEncode, OpCopy:

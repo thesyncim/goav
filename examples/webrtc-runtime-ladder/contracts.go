@@ -13,9 +13,9 @@ type signalResponse struct {
 	SDP  string `json:"sdp"`
 }
 
-type addRenditionResponse struct {
-	Rendition        renditionSpec `json:"rendition"`
-	NeedsRenegotiate bool          `json:"needsRenegotiate"`
+type addBranchResponse struct {
+	Branch           branchSpec `json:"branch"`
+	NeedsRenegotiate bool       `json:"needsRenegotiate"`
 }
 
 type stateResponse struct {
@@ -26,15 +26,15 @@ type stateResponse struct {
 	VideoCodec string           `json:"videoCodec,omitempty"`
 	AudioCodec string           `json:"audioCodec,omitempty"`
 	LastError  string           `json:"lastError,omitempty"`
-	Renditions []renditionView  `json:"renditions"`
+	Branches   []branchView     `json:"branches"`
 	VideoGraph graphView        `json:"videoGraph"`
 	AudioGraph graphView        `json:"audioGraph"`
 	Debug      runtimeDebugView `json:"debug"`
 	Events     []debugEvent     `json:"events"`
 }
 
-type renditionView struct {
-	renditionSpec
+type branchView struct {
+	branchSpec
 	Packets uint64 `json:"packets"`
 	Bytes   uint64 `json:"bytes"`
 	Bound   bool   `json:"bound"`
@@ -89,12 +89,12 @@ type debugTotals struct {
 }
 
 type debugEvent struct {
-	Seq       uint64            `json:"seq"`
-	Time      time.Time         `json:"time"`
-	Level     string            `json:"level"`
-	Kind      string            `json:"kind"`
-	Message   string            `json:"message"`
-	Stream    string            `json:"stream,omitempty"`
-	Rendition string            `json:"rendition,omitempty"`
-	Meta      map[string]string `json:"meta,omitempty"`
+	Seq     uint64            `json:"seq"`
+	Time    time.Time         `json:"time"`
+	Level   string            `json:"level"`
+	Kind    string            `json:"kind"`
+	Message string            `json:"message"`
+	Stream  string            `json:"stream,omitempty"`
+	Branch  string            `json:"branch,omitempty"`
+	Meta    map[string]string `json:"meta,omitempty"`
 }

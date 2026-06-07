@@ -8,7 +8,7 @@ import (
 	"github.com/thesyncim/goav"
 )
 
-func TestSessionPublishesStateForRenditionChanges(t *testing.T) {
+func TestSessionPublishesStateForBranchChanges(t *testing.T) {
 	session, err := newSession(context.Background(), goav.Default())
 	if err != nil {
 		t.Fatalf("newSession() error = %v", err)
@@ -22,8 +22,8 @@ func TestSessionPublishesStateForRenditionChanges(t *testing.T) {
 	if initial.ID == "" || initial.Revision == 0 {
 		t.Fatalf("initial state = %+v, want session id and revision", initial)
 	}
-	if len(initial.Renditions) != len(defaultRenditions()) {
-		t.Fatalf("renditions = %d, want defaults", len(initial.Renditions))
+	if len(initial.Branches) != len(defaultBranches()) {
+		t.Fatalf("branches = %d, want defaults", len(initial.Branches))
 	}
 	if len(initial.Debug.Tasks) != 2 {
 		t.Fatalf("debug tasks = %d, want video and audio", len(initial.Debug.Tasks))
@@ -32,7 +32,7 @@ func TestSessionPublishesStateForRenditionChanges(t *testing.T) {
 		t.Fatalf("events empty, want event history")
 	}
 
-	_, err = session.addRendition(context.Background(), renditionSpec{
+	_, err = session.addBranch(context.Background(), branchSpec{
 		Kind:    "video",
 		Codec:   "vp8",
 		Width:   160,
@@ -40,7 +40,7 @@ func TestSessionPublishesStateForRenditionChanges(t *testing.T) {
 		Bitrate: 120_000,
 	})
 	if err != nil {
-		t.Fatalf("addRendition() error = %v", err)
+		t.Fatalf("addBranch() error = %v", err)
 	}
 
 	updated := awaitState(t, updates)
@@ -50,11 +50,11 @@ func TestSessionPublishesStateForRenditionChanges(t *testing.T) {
 	if updated.Revision <= initial.Revision {
 		t.Fatalf("revision = %d, want > %d", updated.Revision, initial.Revision)
 	}
-	if len(updated.Renditions) != len(defaultRenditions())+1 {
-		t.Fatalf("renditions = %d, want added rendition", len(updated.Renditions))
+	if len(updated.Branches) != len(defaultBranches())+1 {
+		t.Fatalf("branches = %d, want added branch", len(updated.Branches))
 	}
-	if !hasEvent(updated.Events, "rendition", "rendition track added") {
-		t.Fatalf("events = %+v, want rendition add event", updated.Events)
+	if !hasEvent(updated.Events, "branch", "branch track added") {
+		t.Fatalf("events = %+v, want branch add event", updated.Events)
 	}
 }
 

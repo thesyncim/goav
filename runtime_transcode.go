@@ -568,11 +568,13 @@ func compileBranchComposeRoutes(
 		}
 
 		if branchComposeRouteNeedsEncode(branches[i]) {
-			config, encodedStream, err := prepareEncodeConfig(branchStream, branches[i].request, realtime)
+			request := branches[i].request
+			request.config = encodeConfigWithMediaShape(request.config, planned.encodeShape)
+			config, encodedStream, err := prepareEncodeConfig(branchStream, request, realtime)
 			if err != nil {
 				return err
 			}
-			encodeRef, err := service.compileEncodeStageNamed(ctx, graph, planned.encodeNode.String(), branchRef, branches[i].request, config)
+			encodeRef, err := service.compileEncodeStageNamed(ctx, graph, planned.encodeNode.String(), branchRef, request, config)
 			if err != nil {
 				return err
 			}
@@ -1008,11 +1010,14 @@ func branchComposeRouteStepsForName(name string, steps []chainStep) ([]mediaTran
 	out := make([]mediaTransform, 0, len(steps))
 	transformIndex := 0
 	for i := range steps {
+		if !mediaShapeEmpty(steps[i].shape) {
+			continue
+		}
 		step, err := branchComposeRouteStep(name, transformIndex, steps[i])
 		if err != nil {
 			return nil, err
 		}
-		if steps[i].stage == nil {
+		if steps[i].transform.Resize != nil || steps[i].transform.Resample != nil {
 			transformIndex++
 		}
 		out = append(out, step)

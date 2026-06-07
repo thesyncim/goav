@@ -627,7 +627,10 @@ decoder/encoder allocation or graph mutation. Adapter authoring details live in
 
 Opus, VP8, and VP9 are the full encode/decode recipe verticals. H264 and AV1
 receive/decode paths are active while recipe encode remains guarded as work in
-progress. Codec-specific knobs stay on the same `CodecSpec`:
+progress. Structural media facts stay on `Shape(...)`; codec behavior stays on
+the `CodecSpec`. That keeps width, height, pixel/sample format, framerate/FPS,
+sample rate, and channel layout separate from bitrate, rate control, quality,
+profiles, deadlines, adapter configs, params, and controls:
 
 ```go
 vp9 := goav.VP9(
@@ -641,6 +644,7 @@ return goav.From(input).
     Video().
     Decode(goav.Config(myVP9DecoderConfig)).
     Resize(1280, 720).
+    Shape(goav.Shape(goav.ShapeFramerate(30, 1))).
     Encode(vp9).
     To(goav.File("preview.ivf", preview)).
     Run(ctx)
@@ -658,6 +662,8 @@ Implemented now:
 - `From(input)` as the public composition front door.
 - Packet-preserving `Copy().To(...)`.
 - Stream-scoped decode, custom stages, resize/resample, and Opus/VP8/VP9 encode.
+- `Shape(...)` annotations for structural media facts such as framerate/FPS
+  without adding one-off branch verbs.
 - Packet-domain fanout from `.Copy()` or an encoder to both files and packet
   sinks.
 - Planned packet-copy branches with `.Copy().Branches(...)`, sharing one stream

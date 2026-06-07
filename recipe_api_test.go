@@ -916,6 +916,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 		Branches(
 			goav.Branch("preview").
 				Resize(1280, 720).
+				Shape(goav.Shape(goav.ShapeFramerate(30, 1))).
 				VP9(2_000_000).
 				Tap(goav.PacketTap("video.encoded")).
 				To(web),
@@ -948,6 +949,19 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 		resize.Shape.PixelFormat != av.PixelFormatYUV420P {
 		t.Fatalf("resize shape=%+v, want frame VP8 1280x720 shape", resize.Shape)
 	}
+	shape, ok := operationReportByKind(branch.Operations, goav.OpShape)
+	if !ok {
+		t.Fatalf("operations=%+v, want shape operation", branch.Operations)
+	}
+	if shape.Shape.Domain != goav.DomainFrame ||
+		shape.Shape.MediaKind != av.MediaVideo ||
+		shape.Shape.Codec != av.CodecVP8 ||
+		shape.Shape.Width != 1280 ||
+		shape.Shape.Height != 720 ||
+		shape.Shape.PixelFormat != av.PixelFormatYUV420P ||
+		shape.Shape.Framerate != (goav.Rational{Num: 30, Den: 1}) {
+		t.Fatalf("shape operation=%+v, want frame VP8 1280x720@30 shape", shape.Shape)
+	}
 	encode, ok := operationReportByKind(branch.Operations, goav.OpEncode)
 	if !ok {
 		t.Fatalf("operations=%+v, want encode operation", branch.Operations)
@@ -958,8 +972,9 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 		encode.Shape.Codec != av.CodecVP9 ||
 		encode.Shape.Width != 1280 ||
 		encode.Shape.Height != 720 ||
-		encode.Shape.PixelFormat != av.PixelFormatYUV420P {
-		t.Fatalf("encode shape=%+v, want packet VP9 1280x720 shape", encode.Shape)
+		encode.Shape.PixelFormat != av.PixelFormatYUV420P ||
+		encode.Shape.Framerate != (goav.Rational{Num: 30, Den: 1}) {
+		t.Fatalf("encode shape=%+v, want packet VP9 1280x720@30 shape", encode.Shape)
 	}
 	tap, ok := tapReportByName(report.Taps, "video.encoded")
 	if !ok {

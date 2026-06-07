@@ -351,6 +351,18 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 	return b
 }
 
+func (b *branchBuilder) Shape(shape MediaShape) *branchBuilder {
+	if b == nil {
+		return b
+	}
+	if codecIntentSet(b.spec.encode) {
+		b.setErr(chainStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "shape", b.spec.encode))
+		return b
+	}
+	b.spec.steps = append(b.spec.steps, chainStep{shape: shape})
+	return b
+}
+
 func (b *branchBuilder) Resize(width int, height int, options ...resizeOption) *branchBuilder {
 	if b == nil {
 		return b

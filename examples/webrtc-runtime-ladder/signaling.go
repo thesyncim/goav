@@ -22,15 +22,15 @@ func newSession(ctx context.Context, runtime goav.Runtime) (*session, error) {
 	}
 	sessionCtx, cancel := context.WithCancel(context.Background())
 	session := &session{
-		id:         randomID(),
-		pc:         pc,
-		runtime:    runtime,
-		ctx:        sessionCtx,
-		cancel:     cancel,
-		created:    time.Now(),
-		updated:    time.Now(),
-		renditions: make(map[string]*rendition),
-		listeners:  make(map[string]chan stateResponse),
+		id:        randomID(),
+		pc:        pc,
+		runtime:   runtime,
+		ctx:       sessionCtx,
+		cancel:    cancel,
+		created:   time.Now(),
+		updated:   time.Now(),
+		branches:  make(map[string]*branch),
+		listeners: make(map[string]chan stateResponse),
 	}
 	pc.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		go session.acceptTrack(track)
@@ -45,8 +45,8 @@ func newSession(ctx context.Context, runtime goav.Runtime) (*session, error) {
 	})
 
 	session.record("info", "session", "session created", "", "", eventMeta("id", session.id))
-	for _, spec := range defaultRenditions() {
-		if _, err := session.addRendition(ctx, spec); err != nil {
+	for _, spec := range defaultBranches() {
+		if _, err := session.addBranch(ctx, spec); err != nil {
 			cancel()
 			_ = pc.Close()
 			return nil, err

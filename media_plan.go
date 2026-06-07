@@ -16,6 +16,7 @@ const (
 	OpDepacketize OperationKind = "depacketize"
 	OpSelect      OperationKind = "select"
 	OpDecode      OperationKind = "decode"
+	OpShape       OperationKind = "shape"
 	OpTransform   OperationKind = "transform"
 	OpStage       OperationKind = "stage"
 	OpEncode      OperationKind = "encode"
@@ -348,6 +349,14 @@ func planOperationFromStreamOperation(operation StreamOperation) planOperation {
 		plan := planTransformOperation(operation.Transform)
 		plan.Shared = operation.Shared
 		return plan
+	case OpShape:
+		return planOperation{
+			Kind:      OpShape,
+			Component: "shape",
+			Detail:    "media shape annotation",
+			Shape:     operation.Shape,
+			Shared:    operation.Shared,
+		}
 	case OpTap:
 		plan := planTapOperation(operation.Tap)
 		plan.Shared = operation.Shared
@@ -442,6 +451,15 @@ func planProcessingOperations(stream StreamIntent, steps []chainStepAttachment) 
 				Kind:      OpStage,
 				Component: step.stage.Name(),
 				Detail:    "custom stage",
+			})
+			continue
+		}
+		if !mediaShapeEmpty(step.shape) {
+			operations = append(operations, planOperation{
+				Kind:      OpShape,
+				Component: "shape",
+				Detail:    "media shape annotation",
+				Shape:     step.shape,
 			})
 			continue
 		}
@@ -580,6 +598,8 @@ func planShapeAfterOperation(shape MediaShape, branch planBranch, operation plan
 		shape.Domain = DomainPacket
 	case OpDecode, OpStage:
 		shape.Domain = DomainFrame
+	case OpShape:
+		shape = mergeMediaShape(shape, operation.Shape)
 	case OpTransform:
 		shape.Domain = DomainFrame
 		shape = mergeMediaShape(shape, operation.Shape)

@@ -42,7 +42,7 @@ type graphPlanOperation struct {
 	Kind      OperationKind
 	Component string
 	Detail    string
-	Shape      MediaShape
+	Shape     MediaShape
 	Targets   []string
 	Shared    bool
 }
@@ -128,13 +128,17 @@ func graphPlanOperationsFromMediaPlan(spec pipeline.Spec, plan mediaPlan) []grap
 		branch := plan.Branches[i]
 		for j := range branch.Operations {
 			operation := branch.Operations[j]
+			node := pipeline.NodeRef(planOperationNodeName(branch, operation, j))
+			if operation.Kind == OpShape {
+				node = ""
+			}
 			operations = append(operations, graphPlanOperation{
 				Branch:    branch.Name,
-				Node:      pipeline.NodeRef(planOperationNodeName(branch, operation, j)),
+				Node:      node,
 				Kind:      operation.Kind,
 				Component: operation.Component,
 				Detail:    operation.Detail,
-				Shape:      operation.Shape,
+				Shape:     operation.Shape,
 				Shared:    operation.Shared,
 			})
 		}

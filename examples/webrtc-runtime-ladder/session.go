@@ -32,11 +32,11 @@ type session struct {
 	signalMu sync.Mutex
 	mu       sync.Mutex
 
-	renditions map[string]*rendition
-	listeners  map[string]chan stateResponse
-	events     []debugEvent
-	revision   uint64
-	eventSeq   uint64
+	branches  map[string]*branch
+	listeners map[string]chan stateResponse
+	events    []debugEvent
+	revision  uint64
+	eventSeq  uint64
 
 	videoTask  goav.Task
 	audioTask  goav.Task
@@ -83,8 +83,8 @@ func (s *session) startVideoTrack(track *webrtc.TrackRemote) {
 	s.videoTask = task
 	s.videoCodec = codecName(track.Codec().MimeType)
 	s.recordLocked("info", "track", "video decode task ready", "video", "", eventMeta("codec", s.videoCodec, "tap", videoTapName))
-	for _, r := range s.sortedRenditionsLocked("video") {
-		if err := s.attachRenditionLocked(s.ctx, r); err != nil {
+	for _, r := range s.sortedBranchesLocked("video") {
+		if err := s.attachBranchLocked(s.ctx, r); err != nil {
 			s.setErrorLocked(err.Error())
 		}
 	}
@@ -122,8 +122,8 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	s.audioTask = task
 	s.audioCodec = codecName(track.Codec().MimeType)
 	s.recordLocked("info", "track", "audio decode task ready", "audio", "", eventMeta("codec", s.audioCodec, "tap", audioTapName))
-	for _, r := range s.sortedRenditionsLocked("audio") {
-		if err := s.attachRenditionLocked(s.ctx, r); err != nil {
+	for _, r := range s.sortedBranchesLocked("audio") {
+		if err := s.attachBranchLocked(s.ctx, r); err != nil {
 			s.setErrorLocked(err.Error())
 		}
 	}
@@ -185,13 +185,13 @@ func (s *session) stateLocked() stateResponse {
 		AudioCodec: s.audioCodec,
 		LastError:  s.lastError,
 	}
-	for _, r := range s.sortedRenditionsLocked("") {
-		view := renditionView{renditionSpec: r.Spec, Bound: r.Attachment != nil}
+	for _, r := range s.sortedBranchesLocked("") {
+		view := branchView{branchSpec: r.Spec, Bound: r.Attachment != nil}
 		if r.Sink != nil {
 			view.Packets = r.Sink.packets.Load()
 			view.Bytes = r.Sink.bytes.Load()
 		}
-		out.Renditions = append(out.Renditions, view)
+		out.Branches = append(out.Branches, view)
 	}
 	if s.videoTask != nil {
 		out.VideoGraph = graphFromSpec("video", s.videoTask.Describe())
@@ -206,8 +206,8 @@ func (s *session) stateLocked() stateResponse {
 
 func (s *session) debugLocked(videoGraph, audioGraph graphView) runtimeDebugView {
 	debug := runtimeDebugView{Revision: s.revision}
-	video := s.taskDebugLocked("video", s.videoCodec, s.videoTask != nil, videoGraph, s.sortedRenditionsLocked("video"))
-	audio := s.taskDebugLocked("audio", s.audioCodec, s.audioTask != nil, audioGraph, s.sortedRenditionsLocked("audio"))
+	video := s.taskDebugLocked("video", s.videoCodec, s.videoTask != nil, videoGraph, s.sortedBranchesLocked("video"))
+	audio := s.taskDebugLocked("audio", s.audioCodec, s.audioTask != nil, audioGraph, s.sortedBranchesLocked("audio"))
 	debug.Tasks = []taskDebugView{video, audio}
 	for _, task := range debug.Tasks {
 		debug.Totals.Packets += task.Packets
@@ -216,7 +216,7 @@ func (s *session) debugLocked(videoGraph, audioGraph graphView) runtimeDebugView
 	return debug
 }
 
-func (s *session) taskDebugLocked(kind, codec string, running bool, graph graphView, renditions []*rendition) taskDebugView {
+func (s *session) taskDebugLocked(kind, codec string, running bool, graph graphView, branches []*branch) taskDebugView {
 	task := taskDebugView{
 		Kind:  kind,
 		Codec: codec,
@@ -226,7 +226,7 @@ func (s *session) taskDebugLocked(kind, codec string, running bool, graph graphV
 	if running {
 		task.State = "running"
 	}
-	for _, r := range renditions {
+	for _, r := range branches {
 		if r.Attachment != nil {
 			task.Attached = append(task.Attached, r.Spec.ID)
 		} else {
@@ -258,9 +258,9 @@ func (s *session) subscribe() (<-chan stateResponse, func()) {
 	}
 }
 
-func (s *session) sortedRenditionsLocked(kind string) []*rendition {
-	out := make([]*rendition, 0, len(s.renditions))
-	for _, r := range s.renditions {
+func (s *session) sortedBranchesLocked(kind string) []*branch {
+	out := make([]*branch, 0, len(s.branches))
+	for _, r := range s.branches {
 		if kind == "" || r.Spec.Kind == kind {
 			out = append(out, r)
 		}
@@ -286,13 +286,13 @@ func (s *session) setErrorLocked(message string) {
 	s.recordLocked("error", "error", message, "", "", nil)
 }
 
-func (s *session) record(level, kind, message, stream, rendition string, meta map[string]string) {
+func (s *session) record(level, kind, message, stream, branch string, meta map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.recordLocked(level, kind, message, stream, rendition, meta)
+	s.recordLocked(level, kind, message, stream, branch, meta)
 }
 
-func (s *session) recordLocked(level, kind, message, stream, rendition string, meta map[string]string) {
+func (s *session) recordLocked(level, kind, message, stream, branch string, meta map[string]string) {
 	now := time.Now()
 	s.revision++
 	s.eventSeq++
@@ -301,14 +301,14 @@ func (s *session) recordLocked(level, kind, message, stream, rendition string, m
 		level = "info"
 	}
 	event := debugEvent{
-		Seq:       s.eventSeq,
-		Time:      now,
-		Level:     level,
-		Kind:      kind,
-		Message:   message,
-		Stream:    stream,
-		Rendition: rendition,
-		Meta:      meta,
+		Seq:     s.eventSeq,
+		Time:    now,
+		Level:   level,
+		Kind:    kind,
+		Message: message,
+		Stream:  stream,
+		Branch:  branch,
+		Meta:    meta,
 	}
 	s.events = append(s.events, event)
 	if len(s.events) > maxEvents {

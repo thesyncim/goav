@@ -12,13 +12,13 @@ go run .
 ```
 
 Open http://localhost:8080, choose a camera upload codec, start the session, and
-add or retune output renditions while the graph is running.
+add or retune output branches while the graph is running.
 
 The example is split by responsibility:
 
 - `server.go` and `signaling.go` handle HTTP routes and WebRTC signaling.
 - `session.go` owns live task state, event history, and state streaming.
-- `renditions.go` owns runtime branch add/update/remove behavior.
+- `branches.go` owns runtime branch add/update/remove behavior.
 - `graph_debug.go` converts `goav` pipeline specs into browser-friendly graph
   and debug views.
 - `static/` contains the browser UI, styles, and client runtime code.

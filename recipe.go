@@ -55,6 +55,7 @@ type StreamOperation struct {
 	Kind      OperationKind
 	Component string
 	Stage     pipeline.Stage
+	Shape     MediaShape
 	Transform TransformSpec
 	Tap       TapIntent
 	Decode    CodecSpec
@@ -1165,6 +1166,7 @@ type jobStreamBuild struct {
 
 type chainStep struct {
 	stage     pipeline.Stage
+	shape     MediaShape
 	transform TransformSpec
 	tap       string
 	tapDomain MediaDomain
@@ -1172,6 +1174,7 @@ type chainStep struct {
 
 type chainStepAttachment struct {
 	stage          pipeline.Stage
+	shape          MediaShape
 	hasTransform   bool
 	transformIndex int
 	tap            string
@@ -1675,6 +1678,17 @@ func chainStepOperations(steps []chainStep, media av.MediaType, after OperationK
 				Stage:     step.stage,
 			})
 			after = OpStage
+		case !mediaShapeEmpty(step.shape):
+			operationShape := step.shape
+			if operationShape.MediaKind == "" {
+				operationShape.MediaKind = media
+			}
+			operations = append(operations, StreamOperation{
+				Kind:      OpShape,
+				Component: "shape",
+				Shape:     operationShape,
+			})
+			after = OpShape
 		case step.transform.Resize != nil || step.transform.Resample != nil:
 			operations = append(operations, StreamOperation{
 				Kind:      OpTransform,
@@ -1704,6 +1718,8 @@ func chainStepTapIntents(steps []chainStep, media av.MediaType, after OperationK
 		switch {
 		case step.stage != nil:
 			after = OpStage
+		case !mediaShapeEmpty(step.shape):
+			after = OpShape
 		case step.transform.Resize != nil || step.transform.Resample != nil:
 			after = OpTransform
 		case step.tap != "":
@@ -1779,6 +1795,10 @@ func chainStepAttachments(stream *jobStreamBuild) []chainStepAttachment {
 		step := stream.steps[i]
 		if step.stage != nil {
 			attachments = append(attachments, chainStepAttachment{stage: step.stage, stepIndex: i})
+			continue
+		}
+		if !mediaShapeEmpty(step.shape) {
+			attachments = append(attachments, chainStepAttachment{shape: step.shape, stepIndex: i})
 			continue
 		}
 		if step.transform.Resize != nil || step.transform.Resample != nil {
@@ -3348,6 +3368,16 @@ func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 	return b
 }
 
+func (b *jobStreamBuilder) Shape(shape MediaShape) *jobStreamBuilder {
+	stream := b.current()
+	if codecIntentSet(stream.encode) {
+		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "shape", stream.encode))
+		return b
+	}
+	stream.steps = append(stream.steps, chainStep{shape: shape})
+	return b
+}
+
 func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(stream.encode) {
@@ -3632,6 +3662,11 @@ func branchChainStepsFromOperations(operations []StreamOperation, anchorTap stri
 				step = chainStep{stage: operation.Stage}
 				hasStep = true
 			}
+		case OpShape:
+			if !mediaShapeEmpty(operation.Shape) {
+				step = chainStep{shape: operation.Shape}
+				hasStep = true
+			}
 		case OpTransform:
 			switch {
 			case operation.Transform.Resize != nil:
@@ -3668,6 +3703,8 @@ func branchChainStepsFromChain(steps []chainStep) []chainStep {
 		switch {
 		case step.stage != nil:
 			out = append(out, chainStep{stage: step.stage})
+		case !mediaShapeEmpty(step.shape):
+			out = append(out, chainStep{shape: step.shape})
 		case step.transform.Resize != nil || step.transform.Resample != nil:
 			out = append(out, chainStep{transform: cloneTransformSpec(step.transform)})
 		}

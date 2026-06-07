@@ -38,15 +38,16 @@ type runtimeBranch struct {
 }
 
 type runtimeBranchStep struct {
-	stage     pipeline.Stage
-	decode    bool
-	codec     CodecSpec
-	transform TransformSpec
-	tap       string
-	tapDomain MediaDomain
-	after     OperationKind
-	shape     MediaShape
-	owned     bool
+	stage       pipeline.Stage
+	decode      bool
+	codec       CodecSpec
+	transform   TransformSpec
+	tap         string
+	tapDomain   MediaDomain
+	after       OperationKind
+	shapeUpdate MediaShape
+	shape       MediaShape
+	owned       bool
 }
 
 type runtimeBranchDestination struct {
@@ -307,6 +308,8 @@ func runtimeBranchStepFromChainStep(step chainStep, after OperationKind) (runtim
 	switch {
 	case step.stage != nil:
 		return runtimeBranchStep{stage: step.stage}, OpStage, true
+	case !mediaShapeEmpty(step.shape):
+		return runtimeBranchStep{shapeUpdate: step.shape}, OpShape, true
 	case step.transform.Resize != nil || step.transform.Resample != nil:
 		return runtimeBranchStep{transform: cloneTransformSpec(step.transform)}, OpTransform, true
 	case step.tap != "":
@@ -714,6 +717,9 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 			step.shape = currentShape
 		case step.stage != nil:
 			step.shape = currentShape
+		case !mediaShapeEmpty(step.shapeUpdate):
+			currentShape = mergeMediaShape(currentShape, step.shapeUpdate)
+			step.shape = currentShape
 		case runtimeBranchStepHasTransform(*step):
 			if t.runtime == nil {
 				closeRuntimeBranchOwnedStages(*branch)
@@ -954,6 +960,7 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 		return av.Stream{}, recipeEncodeAdapterError("attach runtime branch", stream, t.runtime.codecs, err)
 	}
 	request := runtimeBranchEncodeRequest(*branch, currentStream)
+	request.config = encodeConfigWithMediaShape(request.config, currentShape)
 	config, encodedStream, err := prepareEncodeConfig(currentStream, request, t.runtime.realtime)
 	if err != nil {
 		return av.Stream{}, err

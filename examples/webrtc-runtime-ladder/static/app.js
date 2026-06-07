@@ -30,7 +30,7 @@ const els = {
   streamStatus: document.querySelector("#streamStatus"),
   revision: document.querySelector("#revision"),
   inboundCodec: document.querySelector("#inboundCodec"),
-  renditionCount: document.querySelector("#renditionCount"),
+  branchCount: document.querySelector("#branchCount"),
   remoteCount: document.querySelector("#remoteCount"),
   videoGraph: document.querySelector("#videoGraph"),
   audioGraph: document.querySelector("#audioGraph"),
@@ -42,7 +42,7 @@ const els = {
 
 initCodecControls();
 els.start.addEventListener("click", () => start().catch(showError));
-els.add.addEventListener("click", () => addRendition().catch(showError));
+els.add.addEventListener("click", () => addBranch().catch(showError));
 els.newKind.addEventListener("change", syncNewCodecOptions);
 
 function initCodecControls() {
@@ -224,10 +224,10 @@ function startPolling() {
   }, 1000);
 }
 
-async function addRendition() {
+async function addBranch() {
   if (!state.sessionID) return;
   const spec = readNewSpec();
-  const response = await fetch(`/api/sessions/${state.sessionID}/renditions`, {
+  const response = await fetch(`/api/sessions/${state.sessionID}/branches`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(spec)
@@ -235,13 +235,13 @@ async function addRendition() {
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "add failed");
   if (payload.needsRenegotiate) {
-    reserveReceiveSlots([payload.rendition.kind]);
+    reserveReceiveSlots([payload.branch.kind]);
     await negotiate(`/api/sessions/${state.sessionID}/offer`);
   }
   await refreshState();
 }
 
-async function updateRendition(id) {
+async function updateBranch(id) {
   const row = document.querySelector(`[data-row="${id}"]`);
   const spec = {
     id,
@@ -251,7 +251,7 @@ async function updateRendition(id) {
     height: Number(row.querySelector("[data-field=height]")?.value || 0),
     bitrate: Number(row.querySelector("[data-field=bitrate]").value)
   };
-  const response = await fetch(`/api/sessions/${state.sessionID}/renditions/${id}`, {
+  const response = await fetch(`/api/sessions/${state.sessionID}/branches/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(spec)
@@ -261,8 +261,8 @@ async function updateRendition(id) {
   await refreshState();
 }
 
-async function deleteRendition(id) {
-  const response = await fetch(`/api/sessions/${state.sessionID}/renditions/${id}`, { method: "DELETE" });
+async function deleteBranch(id) {
+  const response = await fetch(`/api/sessions/${state.sessionID}/branches/${id}`, { method: "DELETE" });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "delete failed");
   if (payload.needsRenegotiate) {
@@ -341,7 +341,7 @@ function renderState(payload) {
   els.revision.textContent = `rev ${payload.revision || 0}`;
   els.inboundCodec.textContent = [payload.videoCodec, payload.audioCodec].filter(Boolean).join(" + ") || "waiting";
   els.log.textContent = payload.lastError || "";
-  renderRuntimeList(payload.renditions || []);
+  renderRuntimeList(payload.branches || []);
   renderDebug(payload.debug || {});
   renderEvents(payload.events || []);
   renderGraph(els.videoGraph, payload.videoGraph, "video");
@@ -352,14 +352,14 @@ function renderState(payload) {
   updateRemoteCount();
 }
 
-function renderRuntimeList(renditions) {
-  els.renditionCount.textContent = `${renditions.length} renditions`;
-  if (!renditions.length) {
+function renderRuntimeList(branches) {
+  els.branchCount.textContent = `${branches.length} branches`;
+  if (!branches.length) {
     els.runtimeList.innerHTML = `<div class="empty">waiting</div>`;
     return;
   }
   els.runtimeList.innerHTML = "";
-  for (const r of renditions) {
+  for (const r of branches) {
     const row = document.createElement("div");
     row.className = "runtime-row";
     row.dataset.row = r.id;
@@ -375,8 +375,8 @@ function renderRuntimeList(renditions) {
       <button data-action="apply">Apply</button>
       <button class="danger" data-action="remove">Remove</button>
     `;
-    row.querySelector("[data-action=apply]").onclick = () => updateRendition(r.id).catch(showError);
-    row.querySelector("[data-action=remove]").onclick = () => deleteRendition(r.id).catch(showError);
+    row.querySelector("[data-action=apply]").onclick = () => updateBranch(r.id).catch(showError);
+    row.querySelector("[data-action=remove]").onclick = () => deleteBranch(r.id).catch(showError);
     els.runtimeList.append(row);
   }
 }
@@ -431,7 +431,7 @@ function renderEvents(events) {
   for (const event of visible) {
     const row = document.createElement("div");
     row.className = `event-row ${event.level || ""}`;
-    const scope = [event.stream, event.rendition].filter(Boolean).join(" / ");
+    const scope = [event.stream, event.branch].filter(Boolean).join(" / ");
     row.innerHTML = `
       <div class="metric">#${event.seq}</div>
       <div><span class="badge ${event.level === "error" ? "bad" : event.level === "debug" ? "warn" : ""}">${escapeHTML(event.kind || "event")}</span></div>

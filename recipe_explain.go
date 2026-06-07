@@ -267,6 +267,8 @@ func streamOperationShape(operation StreamOperation) MediaShape {
 	switch operation.Kind {
 	case OpTransform:
 		return mediaShapeFromTransform(operation.Transform)
+	case OpShape:
+		return operation.Shape
 	case OpEncode:
 		return mediaShapeFromCodecSpec(operation.Encode, DomainPacket)
 	default:
@@ -278,6 +280,8 @@ func streamOperationDetail(operation StreamOperation) string {
 	switch operation.Kind {
 	case OpTransform:
 		return firstNonEmpty(transformFactoryName(operation.Transform), "transform frames")
+	case OpShape:
+		return "media shape annotation"
 	case OpStage:
 		return "custom stage"
 	case OpTap:
