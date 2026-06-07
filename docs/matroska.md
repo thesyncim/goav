@@ -126,6 +126,9 @@ Current milestone:
   is written.
 - WebM-compatible muxing for VP8/VP9/AV1 plus Opus track metadata, with
   WebM demuxers requiring the `webm` EBML document type.
+- WebM tag mux/demux for profile-compatible Segment tags. The WebM wrapper
+  rejects unsupported attachments and tag targets that reference editions,
+  chapters, or attachments.
 - WebM profile validation rejects VP8 codec-private data and malformed VP9
   codec feature private data while accepting valid VP9 profile/level/bit-depth/
   chroma metadata.

@@ -27,6 +27,9 @@ func NewDemuxer(r io.Reader, opts DemuxerOptions) (*Demuxer, error) {
 		}
 		trackTimes = append(trackTimes, packetTimeState{trackID: track.ID})
 	}
+	if err := validateDemuxerMetadata(demuxer); err != nil {
+		return nil, err
+	}
 	return &Demuxer{inner: demuxer, trackTimes: trackTimes}, nil
 }
 
@@ -56,6 +59,13 @@ func (d *Demuxer) SeekEntries() []SeekEntry {
 		return nil
 	}
 	return d.inner.SeekEntries()
+}
+
+func (d *Demuxer) Tags() []Tag {
+	if d == nil || d.inner == nil {
+		return nil
+	}
+	return d.inner.Tags()
 }
 
 func (d *Demuxer) UnknownSegmentElements() []UnknownElement {

@@ -12,6 +12,9 @@ type Muxer struct {
 }
 
 func NewMuxer(w io.Writer, opts MuxerOptions) (*Muxer, error) {
+	if err := validateMuxerOptions(opts); err != nil {
+		return nil, err
+	}
 	muxer, err := matroska.NewMuxer(w, matroskaOptions(opts))
 	if err != nil {
 		return nil, err

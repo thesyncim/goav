@@ -39,6 +39,9 @@ type CuePoint = matroska.CuePoint
 type CueTrackPosition = matroska.CueTrackPosition
 type CueReference = matroska.CueReference
 type SeekEntry = matroska.SeekEntry
+type Tag = matroska.Tag
+type TagTarget = matroska.TagTarget
+type SimpleTag = matroska.SimpleTag
 type UnknownElement = matroska.UnknownElement
 
 type LacingMode = matroska.LacingMode
@@ -99,6 +102,7 @@ type MuxerOptions struct {
 	Streaming                  bool
 	CuePolicy                  CuePolicy
 	WriteCRC32                 bool
+	Tags                       []Tag
 	UnknownSegmentElements     []UnknownElement
 	UnknownTracksElements      []UnknownElement
 	ContentEncryptionKeys      []ContentEncryptionKey
@@ -139,6 +143,7 @@ func matroskaOptions(opts MuxerOptions) matroska.MuxerOptions {
 		Streaming:                  opts.Streaming,
 		CuePolicy:                  cuePolicy,
 		WriteCRC32:                 opts.WriteCRC32,
+		Tags:                       opts.Tags,
 		UnknownSegmentElements:     opts.UnknownSegmentElements,
 		UnknownTracksElements:      opts.UnknownTracksElements,
 		ContentEncryptionKeys:      opts.ContentEncryptionKeys,
@@ -167,6 +172,58 @@ func validateTrack(track Track) error {
 	}
 	if err := validateContentEncodings(track.ContentEncodings); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateMuxerOptions(opts MuxerOptions) error {
+	return validateTags(opts.Tags)
+}
+
+func validateDemuxerMetadata(demuxer *matroska.Demuxer) error {
+	if len(demuxer.Attachments()) != 0 || len(demuxer.UnknownAttachmentsElements()) != 0 {
+		return ErrUnsupportedWebMMetadata
+	}
+	return validateTags(demuxer.Tags())
+}
+
+func validateTags(tags []Tag) error {
+	for i := range tags {
+		if err := validateTag(tags[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateTag(tag Tag) error {
+	if len(tag.UnknownElements) != 0 {
+		return ErrUnsupportedWebMMetadata
+	}
+	if err := validateTagTarget(tag.Target); err != nil {
+		return err
+	}
+	for i := range tag.Simple {
+		if err := validateSimpleTag(tag.Simple[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateTagTarget(target TagTarget) error {
+	if len(target.EditionUIDs) != 0 ||
+		len(target.ChapterUIDs) != 0 ||
+		len(target.AttachmentUIDs) != 0 ||
+		len(target.UnknownElements) != 0 {
+		return ErrUnsupportedWebMMetadata
+	}
+	return nil
+}
+
+func validateSimpleTag(tag SimpleTag) error {
+	if len(tag.UnknownElements) != 0 || len(tag.Children) != 0 {
+		return ErrUnsupportedWebMMetadata
 	}
 	return nil
 }

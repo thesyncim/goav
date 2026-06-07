@@ -477,6 +477,89 @@ func TestDemuxerRejectsUnsupportedTrackMetadata(t *testing.T) {
 	}
 }
 
+func TestDemuxerRejectsUnsupportedMetadata(t *testing.T) {
+	tests := []struct {
+		name string
+		opts matroska.MuxerOptions
+	}{
+		{
+			name: "attachments",
+			opts: matroska.MuxerOptions{
+				Attachments: []matroska.Attachment{{
+					UID:      1,
+					Filename: "cover.png",
+					MIMEType: "image/png",
+					Data:     []byte{0x89, 0x50, 0x4e, 0x47},
+				}},
+			},
+		},
+		{
+			name: "tag edition target",
+			opts: matroska.MuxerOptions{
+				Tags: []matroska.Tag{{
+					Target: matroska.TagTarget{EditionUIDs: []uint64{1}},
+					Simple: []matroska.SimpleTag{{
+						Name:      "TITLE",
+						String:    "bad target",
+						StringSet: true,
+					}},
+				}},
+			},
+		},
+		{
+			name: "tag chapter target",
+			opts: matroska.MuxerOptions{
+				Tags: []matroska.Tag{{
+					Target: matroska.TagTarget{ChapterUIDs: []uint64{1}},
+					Simple: []matroska.SimpleTag{{
+						Name:      "TITLE",
+						String:    "bad target",
+						StringSet: true,
+					}},
+				}},
+			},
+		},
+		{
+			name: "tag attachment target",
+			opts: matroska.MuxerOptions{
+				Tags: []matroska.Tag{{
+					Target: matroska.TagTarget{AttachmentUIDs: []uint64{1}},
+					Simple: []matroska.SimpleTag{{
+						Name:      "TITLE",
+						String:    "bad target",
+						StringSet: true,
+					}},
+				}},
+			},
+		},
+		{
+			name: "nested simple tag",
+			opts: matroska.MuxerOptions{
+				Tags: []matroska.Tag{{
+					Simple: []matroska.SimpleTag{{
+						Name:      "TITLE",
+						String:    "bad nesting",
+						StringSet: true,
+						Children: []matroska.SimpleTag{{
+							Name:      "SORT_WITH",
+							String:    "bad",
+							StringSet: true,
+						}},
+					}},
+				}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeDocTypeWebMDataWithOptions(t, tt.opts)
+			if _, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{}); !errors.Is(err, ErrUnsupportedWebMMetadata) {
+				t.Fatalf("err = %v, want ErrUnsupportedWebMMetadata", err)
+			}
+		})
+	}
+}
+
 func TestDemuxerRejectsNonMonotonicTimecodes(t *testing.T) {
 	data := makeDocTypeWebMPacketsData(t,
 		matroska.Track{
@@ -574,6 +657,133 @@ func TestMuxerDemuxerPreservesSegmentInfoMetadata(t *testing.T) {
 	}
 	if got := demuxer.Info(); !reflect.DeepEqual(got, wantInfo) {
 		t.Fatalf("info = %+v, want %+v", got, wantInfo)
+	}
+}
+
+func TestMuxerDemuxerPreservesTags(t *testing.T) {
+	wantTags := []Tag{{
+		Target: TagTarget{
+			TypeValue: 50,
+			Type:      "MOVIE",
+			TrackUIDs: []uint64{11},
+		},
+		Simple: []SimpleTag{{
+			Name:       "TITLE",
+			Language:   "und",
+			Default:    true,
+			DefaultSet: true,
+			String:     "WebM Camera Roll",
+			StringSet:  true,
+		}},
+	}}
+	var buffer bytes.Buffer
+	muxer, err := NewMuxer(&buffer, MuxerOptions{Tags: wantTags})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackID, err := muxer.AddTrack(Track{
+		UID:   11,
+		Type:  TrackVideo,
+		Codec: CodecVP8,
+		Video: VideoConfig{Width: 640, Height: 360},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTags[0].Simple[0].String = "mutated after muxer construction"
+	if err := muxer.WritePacket(Packet{
+		TrackID:  trackID,
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	wantTags[0].Simple[0].String = "WebM Camera Roll"
+	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotTags := demuxer.Tags()
+	if !reflect.DeepEqual(gotTags, wantTags) {
+		t.Fatalf("tags = %+v, want %+v", gotTags, wantTags)
+	}
+	gotTags[0].Simple[0].String = "mutated demuxer result"
+	if got := demuxer.Tags(); !reflect.DeepEqual(got, wantTags) {
+		t.Fatalf("fresh tags = %+v, want %+v", got, wantTags)
+	}
+}
+
+func TestMuxerRejectsUnsupportedTagMetadata(t *testing.T) {
+	baseSimple := []SimpleTag{{
+		Name:       "TITLE",
+		Language:   "und",
+		Default:    true,
+		DefaultSet: true,
+		String:     "x",
+		StringSet:  true,
+	}}
+	tests := []struct {
+		name string
+		tag  Tag
+	}{
+		{
+			name: "edition target",
+			tag: Tag{
+				Target: TagTarget{EditionUIDs: []uint64{1}},
+				Simple: baseSimple,
+			},
+		},
+		{
+			name: "chapter target",
+			tag: Tag{
+				Target: TagTarget{ChapterUIDs: []uint64{1}},
+				Simple: baseSimple,
+			},
+		},
+		{
+			name: "attachment target",
+			tag: Tag{
+				Target: TagTarget{AttachmentUIDs: []uint64{1}},
+				Simple: baseSimple,
+			},
+		},
+		{
+			name: "nested simple tag",
+			tag: Tag{
+				Simple: []SimpleTag{{
+					Name:       "TITLE",
+					Language:   "und",
+					Default:    true,
+					DefaultSet: true,
+					String:     "x",
+					StringSet:  true,
+					Children: []SimpleTag{{
+						Name:      "SORT_WITH",
+						String:    "x",
+						StringSet: true,
+					}},
+				}},
+			},
+		},
+		{
+			name: "unknown tag child",
+			tag: Tag{
+				Simple:          baseSimple,
+				UnknownElements: []UnknownElement{{Raw: unknownWebMElementBytes(t, 0x4ff7, []byte{1})}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewMuxer(io.Discard, MuxerOptions{Tags: []Tag{tt.tag}}); !errors.Is(err, ErrUnsupportedWebMMetadata) {
+				t.Fatalf("err = %v, want ErrUnsupportedWebMMetadata", err)
+			}
+		})
 	}
 }
 
@@ -2560,8 +2770,27 @@ func makeDocTypeWebMData(tb testing.TB, track matroska.Track) []byte {
 
 func makeDocTypeWebMPacketsData(tb testing.TB, track matroska.Track, packets []matroska.Packet) []byte {
 	tb.Helper()
+	return makeDocTypeWebMPacketsDataWithOptions(tb, matroska.MuxerOptions{}, track, packets)
+}
+
+func makeDocTypeWebMDataWithOptions(tb testing.TB, opts matroska.MuxerOptions) []byte {
+	tb.Helper()
+	return makeDocTypeWebMPacketsDataWithOptions(tb, opts, matroska.Track{
+		Type:  matroska.TrackVideo,
+		Codec: matroska.CodecVP8,
+		Video: matroska.VideoConfig{Width: 16, Height: 16},
+	}, []matroska.Packet{{
+		TimeNS:   0,
+		Keyframe: true,
+		Data:     []byte{0x10, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00},
+	}})
+}
+
+func makeDocTypeWebMPacketsDataWithOptions(tb testing.TB, opts matroska.MuxerOptions, track matroska.Track, packets []matroska.Packet) []byte {
+	tb.Helper()
 	var buffer bytes.Buffer
-	muxer, err := matroska.NewMuxer(&buffer, matroska.MuxerOptions{DocType: "webm"})
+	opts.DocType = "webm"
+	muxer, err := matroska.NewMuxer(&buffer, opts)
 	if err != nil {
 		tb.Fatal(err)
 	}
