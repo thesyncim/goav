@@ -2500,6 +2500,9 @@ func (d *Demuxer) parseEBMLHeader(header ebml.Header) error {
 		if err != nil {
 			return err
 		}
+		if child.Size.Unknown || child.Size.Value > uint64(limited.N) {
+			return ErrInvalidData
+		}
 		switch child.ID {
 		case idEBMLVersion:
 			if state.ebmlVersionSet {
@@ -2721,13 +2724,20 @@ func (r *checkedMasterReader) Reader() *ebml.Reader {
 func (r *checkedMasterReader) ReadHeader() (ebml.Header, error) {
 	if r.hasPending {
 		r.hasPending = false
-		return r.pending, nil
+		header := r.pending
+		if !header.Size.Unknown && header.Size.Value > uint64(r.limited.N) {
+			return ebml.Header{}, ErrInvalidData
+		}
+		return header, nil
 	}
 	header, err := r.reader.ReadHeader()
 	if err != nil {
 		return ebml.Header{}, err
 	}
 	if header.ID == idCRC32 {
+		return ebml.Header{}, ErrInvalidData
+	}
+	if !header.Size.Unknown && header.Size.Value > uint64(r.limited.N) {
 		return ebml.Header{}, ErrInvalidData
 	}
 	return header, nil

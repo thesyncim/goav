@@ -300,10 +300,21 @@ func FuzzReaderHeaders(f *testing.F) {
 	writer := NewWriter(&out)
 	_ = writer.WriteElement(0x4282, []byte("matroska"))
 	f.Add(out.Bytes())
+	f.Add([]byte{})
+	f.Add([]byte{0x00})
 	f.Add([]byte{0x1a, 0x45, 0xdf, 0xa3, 0x80})
+	f.Add([]byte{0x42, 0x86, 0x81, 0x01})
+	f.Add([]byte{0xff, 0xff})
 	f.Fuzz(func(t *testing.T, data []byte) {
-		reader := NewReader(bytes.NewReader(data), ReaderOptions{MaxElementSize: 1 << 20})
-		for {
+		if len(data) != 0 {
+			_, _ = VINTWidth(data[0])
+		}
+		_, _, _ = DecodeIDVINT(data)
+		_, _, _ = DecodeUnsignedVINT(data)
+		_, _ = DecodeSizeVINT(data)
+
+		reader := NewReader(bytes.NewReader(data), ReaderOptions{MaxElementSize: 1 << 16})
+		for i := 0; i < 16; i++ {
 			header, err := reader.ReadHeader()
 			if err != nil {
 				return

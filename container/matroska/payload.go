@@ -123,25 +123,41 @@ func readFloatPayload(r io.Reader, size uint64) (float64, error) {
 }
 
 func readStringPayload(r io.Reader, size uint64) (string, error) {
-	if size > uint64(^uint(0)>>1) {
-		return "", ErrInvalidData
-	}
-	payload := make([]byte, int(size))
-	if _, err := io.ReadFull(r, payload); err != nil {
+	payload, err := readSizedPayload(r, size)
+	if err != nil {
 		return "", err
 	}
 	return string(payload), nil
 }
 
 func readBinaryPayload(r io.Reader, size uint64) ([]byte, error) {
-	if size > uint64(^uint(0)>>1) {
-		return nil, ErrInvalidData
+	return readSizedPayload(r, size)
+}
+
+func readSizedPayload(r io.Reader, size uint64) ([]byte, error) {
+	if err := validatePayloadReadSize(r, size); err != nil {
+		return nil, err
 	}
 	payload := make([]byte, int(size))
 	if _, err := io.ReadFull(r, payload); err != nil {
 		return nil, err
 	}
 	return payload, nil
+}
+
+func validatePayloadReadSize(r io.Reader, size uint64) error {
+	if size > maxIntValue {
+		return ErrInvalidData
+	}
+	reader, ok := r.(*ebml.Reader)
+	if !ok {
+		return nil
+	}
+	remaining, ok := reader.Remaining()
+	if ok && size > remaining {
+		return ErrInvalidData
+	}
+	return nil
 }
 
 func readUnknownElementPayload(r *ebml.Reader, header ebml.Header) (UnknownElement, error) {

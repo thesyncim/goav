@@ -48,6 +48,17 @@ func (r *Reader) Offset() int64 {
 	return r.offset
 }
 
+func (r *Reader) Remaining() (uint64, bool) {
+	if r == nil {
+		return 0, false
+	}
+	limited, ok := r.r.(*io.LimitedReader)
+	if !ok || limited.N < 0 {
+		return 0, false
+	}
+	return uint64(limited.N), true
+}
+
 func (r *Reader) Read(p []byte) (int, error) {
 	if r == nil || r.r == nil {
 		return 0, io.ErrUnexpectedEOF

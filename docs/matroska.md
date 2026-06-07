@@ -176,6 +176,9 @@ Current milestone:
   length contracts, missing or unsupported DocType values, duplicate EBML
   header singleton fields, and Seek entries without both SeekID and
   SeekPosition.
+- Native fuzz targets exercise bounded EBML header/VINT parsing plus
+  malformed Matroska and WebM demuxer construction/read loops with seeded
+  valid, laced, and profile-constrained corpus entries.
 - Demuxers enforce top-level Segment occurrence limits for SeekHead, Info,
   Tracks, Cues, Attachments, and Chapters. Seekable readers also resolve
   required Info/Tracks masters through a pre-Cluster SeekHead when those
@@ -423,6 +426,8 @@ Committed benchmarks cover:
 - Optional field-corpus scan benchmarks for Matroska and WebM production
   captures supplied through `GOAV_MATROSKA_FIELD_CORPUS` and
   `GOAV_WEBM_FIELD_CORPUS`.
+- Native fuzz harnesses for EBML header/VINT parsing and malformed
+  Matroska/WebM demuxer packet-read loops.
 
 Future benchmark runs should add committed results from real WebRTC production
 recordings, subsample encrypted laced-block cases, and additional Go
