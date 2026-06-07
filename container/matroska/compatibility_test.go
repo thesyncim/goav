@@ -25,6 +25,22 @@ func TestExternalFFProbeRecognizesMatroskaWebRTCCodecs(t *testing.T) {
 	}
 }
 
+func TestExternalMKVMergeIdentifiesMatroskaWebRTCTracks(t *testing.T) {
+	tool := requireExternalTool(t, "mkvmerge")
+	file := writeCompatibilityMatroska(t)
+	got := identifyMatroskaTracks(t, tool, file)
+	want := []expectedMatroskaIdentifiedTrack{
+		{Type: "audio", CodecID: "A_OPUS", AudioChannels: 2, AudioSamplingFrequency: 48000},
+		{Type: "audio", CodecID: "A_MS/ACM", AudioChannels: 1, AudioSamplingFrequency: 8000},
+		{Type: "audio", CodecID: "A_MS/ACM", AudioChannels: 1, AudioSamplingFrequency: 8000},
+		{Type: "video", CodecID: "V_AV1", PixelDimensions: "16x16"},
+		{Type: "video", CodecID: "V_MPEG4/ISO/AVC", PixelDimensions: "16x16"},
+		{Type: "video", CodecID: "V_VP9", PixelDimensions: "16x16"},
+		{Type: "video", CodecID: "V_VP8", PixelDimensions: "16x16"},
+	}
+	assertMatroskaIdentifiedTracks(t, got, want)
+}
+
 func TestExternalFFProbeRecognizesGeneratedMatroskaCodecPrivate(t *testing.T) {
 	tool := requireExternalTool(t, "ffprobe")
 	tests := []struct {
@@ -1339,7 +1355,7 @@ func identifyMatroskaAttachments(t testing.TB, tool string, file string) []ident
 	var decoded struct {
 		Attachments []identifiedMatroskaAttachment `json:"attachments"`
 	}
-	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+	if err := json.Unmarshal([]byte(matroskaJSONPayload(output)), &decoded); err != nil {
 		t.Fatalf("decode mkvmerge attachments: %v\n%s", err, output)
 	}
 	return decoded.Attachments
@@ -1350,6 +1366,87 @@ type identifiedMatroskaAttachment struct {
 	Filename string `json:"file_name"`
 	MIMEType string `json:"content_type"`
 	Size     int    `json:"size"`
+}
+
+func identifyMatroskaTracks(t testing.TB, tool string, file string) []identifiedMatroskaTrack {
+	t.Helper()
+	output := runExternalTool(t, tool, "-J", file)
+	var decoded struct {
+		Tracks []identifiedMatroskaTrack `json:"tracks"`
+	}
+	if err := json.Unmarshal([]byte(matroskaJSONPayload(output)), &decoded); err != nil {
+		t.Fatalf("decode mkvmerge tracks: %v\n%s", err, output)
+	}
+	return decoded.Tracks
+}
+
+func matroskaJSONPayload(output string) string {
+	index := strings.IndexByte(output, '{')
+	if index < 0 {
+		return output
+	}
+	return output[index:]
+}
+
+type identifiedMatroskaTrack struct {
+	Type       string `json:"type"`
+	Properties struct {
+		CodecID                string  `json:"codec_id"`
+		PixelDimensions        string  `json:"pixel_dimensions"`
+		DisplayDimensions      string  `json:"display_dimensions"`
+		AudioChannels          int     `json:"audio_channels"`
+		AudioSamplingFrequency float64 `json:"audio_sampling_frequency"`
+	} `json:"properties"`
+}
+
+type expectedMatroskaIdentifiedTrack struct {
+	Type                   string
+	CodecID                string
+	PixelDimensions        string
+	DisplayDimensions      string
+	AudioChannels          int
+	AudioSamplingFrequency float64
+}
+
+func assertMatroskaIdentifiedTracks(t testing.TB, got []identifiedMatroskaTrack, want []expectedMatroskaIdentifiedTrack) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("mkvmerge tracks = %d, want %d: %+v", len(got), len(want), got)
+	}
+	matched := make([]bool, len(got))
+	for i := range want {
+		found := false
+		for j := range got {
+			if matched[j] || !matroskaIdentifiedTrackMatches(got[j], want[i]) {
+				continue
+			}
+			matched[j] = true
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("mkvmerge missing track %+v in %+v", want[i], got)
+		}
+	}
+}
+
+func matroskaIdentifiedTrackMatches(got identifiedMatroskaTrack, want expectedMatroskaIdentifiedTrack) bool {
+	if got.Type != want.Type || got.Properties.CodecID != want.CodecID {
+		return false
+	}
+	if want.PixelDimensions != "" && got.Properties.PixelDimensions != want.PixelDimensions {
+		return false
+	}
+	if want.DisplayDimensions != "" && got.Properties.DisplayDimensions != want.DisplayDimensions {
+		return false
+	}
+	if want.AudioChannels != 0 && got.Properties.AudioChannels != want.AudioChannels {
+		return false
+	}
+	if want.AudioSamplingFrequency != 0 && got.Properties.AudioSamplingFrequency != want.AudioSamplingFrequency {
+		return false
+	}
+	return true
 }
 
 func expectedMatroskaExtractedTrackPayloads(t testing.TB, payloads []localMatroskaPacketPayload) map[int][][][]byte {

@@ -25,6 +25,19 @@ func TestExternalFFProbeRecognizesWebM(t *testing.T) {
 	}
 }
 
+func TestExternalMKVMergeIdentifiesWebMTracks(t *testing.T) {
+	tool := requireTool(t, "mkvmerge")
+	file := writeCompatibilityWebM(t)
+	got := identifyWebMTracks(t, tool, file)
+	want := []expectedWebMIdentifiedTrack{
+		{Type: "video", CodecID: "V_VP8", PixelDimensions: "16x16"},
+		{Type: "video", CodecID: "V_VP9", PixelDimensions: "16x16"},
+		{Type: "video", CodecID: "V_AV1", PixelDimensions: "16x16"},
+		{Type: "audio", CodecID: "A_OPUS", AudioChannels: 2, AudioSamplingFrequency: 48000},
+	}
+	assertWebMIdentifiedTracks(t, got, want)
+}
+
 func TestExternalFFProbeReportsSeekableDuration(t *testing.T) {
 	tool := requireTool(t, "ffprobe")
 	file := writeSeekableCompatibilityWebM(t)
@@ -929,6 +942,87 @@ func assertWebMFileContainsAll(t testing.TB, name string, file string, values []
 			t.Fatalf("%s output missing %q:\n%s", name, value, text)
 		}
 	}
+}
+
+func identifyWebMTracks(t testing.TB, tool string, file string) []identifiedWebMTrack {
+	t.Helper()
+	output := runExternal(t, tool, "-J", file)
+	var decoded struct {
+		Tracks []identifiedWebMTrack `json:"tracks"`
+	}
+	if err := json.Unmarshal([]byte(webMJSONPayload(output)), &decoded); err != nil {
+		t.Fatalf("decode mkvmerge tracks: %v\n%s", err, output)
+	}
+	return decoded.Tracks
+}
+
+func webMJSONPayload(output string) string {
+	index := strings.IndexByte(output, '{')
+	if index < 0 {
+		return output
+	}
+	return output[index:]
+}
+
+type identifiedWebMTrack struct {
+	Type       string `json:"type"`
+	Properties struct {
+		CodecID                string  `json:"codec_id"`
+		PixelDimensions        string  `json:"pixel_dimensions"`
+		DisplayDimensions      string  `json:"display_dimensions"`
+		AudioChannels          int     `json:"audio_channels"`
+		AudioSamplingFrequency float64 `json:"audio_sampling_frequency"`
+	} `json:"properties"`
+}
+
+type expectedWebMIdentifiedTrack struct {
+	Type                   string
+	CodecID                string
+	PixelDimensions        string
+	DisplayDimensions      string
+	AudioChannels          int
+	AudioSamplingFrequency float64
+}
+
+func assertWebMIdentifiedTracks(t testing.TB, got []identifiedWebMTrack, want []expectedWebMIdentifiedTrack) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("mkvmerge tracks = %d, want %d: %+v", len(got), len(want), got)
+	}
+	matched := make([]bool, len(got))
+	for i := range want {
+		found := false
+		for j := range got {
+			if matched[j] || !webMIdentifiedTrackMatches(got[j], want[i]) {
+				continue
+			}
+			matched[j] = true
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("mkvmerge missing track %+v in %+v", want[i], got)
+		}
+	}
+}
+
+func webMIdentifiedTrackMatches(got identifiedWebMTrack, want expectedWebMIdentifiedTrack) bool {
+	if got.Type != want.Type || got.Properties.CodecID != want.CodecID {
+		return false
+	}
+	if want.PixelDimensions != "" && got.Properties.PixelDimensions != want.PixelDimensions {
+		return false
+	}
+	if want.DisplayDimensions != "" && got.Properties.DisplayDimensions != want.DisplayDimensions {
+		return false
+	}
+	if want.AudioChannels != 0 && got.Properties.AudioChannels != want.AudioChannels {
+		return false
+	}
+	if want.AudioSamplingFrequency != 0 && got.Properties.AudioSamplingFrequency != want.AudioSamplingFrequency {
+		return false
+	}
+	return true
 }
 
 func expectedWebMExtractedTrackPayloads(t testing.TB, payloads []localWebMPacketPayload) map[int][][][]byte {
