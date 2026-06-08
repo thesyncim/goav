@@ -259,6 +259,7 @@ func (a *videoFrameAssembler) emitPacket(timestamp uint32, clockRate uint32, pay
 	}
 	packet := av.Packet{
 		StreamID:   a.stream.ID,
+		Type:       a.stream.Type,
 		CodecEpoch: a.stream.Epoch,
 		Payload: av.Buffer{
 			Bytes:     payload,

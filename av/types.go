@@ -303,7 +303,11 @@ type AudioGeometry struct {
 }
 
 type Packet struct {
-	StreamID      StreamID
+	StreamID StreamID
+	// Type is the typed media kind so drop/route decisions stay on the hot path
+	// without a Metadata map lookup. Producers should set it; Metadata is the
+	// cold-path fallback.
+	Type          MediaType
 	CodecEpoch    Epoch
 	Payload       Buffer
 	PTS           Timestamp
@@ -318,6 +322,7 @@ type Packet struct {
 
 func (p *Packet) Reset() {
 	p.StreamID = ""
+	p.Type = ""
 	p.CodecEpoch = 0
 	p.Payload.Reset()
 	p.PTS = Timestamp{}

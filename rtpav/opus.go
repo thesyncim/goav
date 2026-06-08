@@ -46,6 +46,7 @@ func (d *OpusDepacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payloa
 	}
 	packet := av.Packet{
 		StreamID:   d.stream.ID,
+		Type:       d.stream.Type,
 		CodecEpoch: d.stream.Epoch,
 		Payload: av.Buffer{
 			Bytes:     pkt.Payload,

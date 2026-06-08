@@ -19,6 +19,7 @@ per-message mutex). Baseline `110616b`: root **types=82**.
 | 6 | P | Buffered nodes → `[]*bufferedNode` (stable ptrs); pure refactor | fixes pre-existing `copylocks`; `go vet ./...` clean |
 | 7 | P2c | Buffered worker path lock-free: worker owns stable `*bufferedNode`, `deliver`/`releaseSlot` take no `g.mu`; teardown via `g.closing`+per-node `removed` atomics; `emit` keeps RLock | buffered **−9…20%**; per-delivery alloc **eliminated** (512→0); `-race` clean |
 | 8 | S2 | Unexport IR sub-shells `StreamIntent`→`streamIntent`, `TapIntent`→`tapIntent` (read only as read-model fields; migrated 6 test-naming sites to `OperationSpec`/inline + dropped obsolete reflect shape-guard) | types **78→76** |
+| 9 | P3a | Typed `av.Packet.Type av.MediaType`: drop/route policies (`DropNonKeyVideo`, `DropUntilSync` audio-sync) read the typed field instead of `Metadata["media_type"]` (which **no producer ever set** → policies were inert on RTP). RTP video+opus sources set `Type` from `stream.Type`; `packetMediaType` prefers the field, cold Metadata fallback (`av/types.go`, `pipeline/drop.go`, `rtpav/{video,opus}.go`) | **correctness:** RTP drop/sync policies now work; new typed-path tests + 0-alloc guard green; RTP alloc guards green |
 
 **Perf headlines** (M4 Max; A/B medians). P1 baseline showed the two bugs P2/P3
 target: direct fanout heap-spilled at N≥64 (`targetStack[8]` overflow: 896B/3 @64,

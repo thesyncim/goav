@@ -107,7 +107,14 @@ func messageIsNonKeyVideo(msg *Message) bool {
 }
 
 func packetMediaType(packet *av.Packet) av.MediaType {
-	if packet == nil || packet.Metadata == nil {
+	if packet == nil {
+		return av.MediaUnknown
+	}
+	if packet.Type != av.MediaUnknown {
+		return packet.Type
+	}
+	// Cold fallback for producers that only tagged Metadata.
+	if packet.Metadata == nil {
 		return av.MediaUnknown
 	}
 	return av.MediaType(packet.Metadata[av.MetadataMediaType])

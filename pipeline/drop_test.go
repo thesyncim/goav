@@ -104,6 +104,44 @@ func TestDropControllerNonKeyVideo(t *testing.T) {
 	}
 }
 
+// TestDropControllerNonKeyVideoViaPacketType exercises the typed av.Packet.Type
+// path with no Metadata map — the RTP source case, which was inert before the
+// typed field existed.
+func TestDropControllerNonKeyVideoViaPacketType(t *testing.T) {
+	controller := newDropController(BufferPolicy{Capacity: 1, Drop: DropNonKeyVideo})
+	nonKey := Message{Kind: MessagePacket, Packet: &av.Packet{Type: av.MediaVideo}}
+	key := Message{Kind: MessagePacket, Packet: &av.Packet{Type: av.MediaVideo, Keyframe: true}}
+	audio := Message{Kind: MessagePacket, Packet: &av.Packet{Type: av.MediaAudio}}
+
+	if action := controller.decide(1, &nonKey); action != bufferDropIncoming {
+		t.Fatalf("non-key video action = %v, want drop incoming", action)
+	}
+	if action := controller.decide(1, &key); action != bufferBackpressure {
+		t.Fatalf("key video action = %v, want backpressure", action)
+	}
+	if action := controller.decide(1, &audio); action != bufferBackpressure {
+		t.Fatalf("audio action = %v, want backpressure (audio is not non-key video)", action)
+	}
+}
+
+func TestDropControllerAudioPacketIsSyncViaPacketType(t *testing.T) {
+	controller := newDropController(BufferPolicy{Capacity: 1, Drop: DropUntilSync})
+	audio := Message{Kind: MessagePacket, Packet: &av.Packet{Type: av.MediaAudio}}
+	if action := controller.decide(1, &audio); action != bufferDropOldest {
+		t.Fatalf("action = %v, want drop oldest for typed audio packet", action)
+	}
+}
+
+func TestDropControllerDecideTypedAllocs(t *testing.T) {
+	controller := newDropController(BufferPolicy{Capacity: 1, Drop: DropNonKeyVideo})
+	msg := Message{Kind: MessagePacket, Packet: &av.Packet{Type: av.MediaVideo}}
+	if allocs := testing.AllocsPerRun(1000, func() {
+		_ = controller.decide(1, &msg)
+	}); allocs != 0 {
+		t.Fatalf("typed drop decision allocs = %v, want 0", allocs)
+	}
+}
+
 func TestDropControllerSyncEvents(t *testing.T) {
 	controller := newDropController(BufferPolicy{Capacity: 1, Drop: DropUntilSync})
 	event := av.Event{Type: av.EventCodecChanged}
