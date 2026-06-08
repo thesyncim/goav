@@ -19,7 +19,7 @@ type PlanReport struct {
 	Intent           Intent
 	Inputs           []InputReport
 	Streams          []StreamReport
-	Taps             []TapReport
+	Taps             []TapInfo
 	Branches         []BranchReport
 	Destinations     []DestinationReport
 	Decisions        []Decision
@@ -161,10 +161,10 @@ func newPlanReport(operation string, resolved recipeResolved) (PlanReport, error
 	return report, nil
 }
 
-func explainTaps(taps []planTap) []TapReport {
-	reports := make([]TapReport, 0, len(taps))
+func explainTaps(taps []planTap) []TapInfo {
+	reports := make([]TapInfo, 0, len(taps))
 	for i := range taps {
-		reports = append(reports, TapReport{
+		reports = append(reports, TapInfo{
 			Name:      taps[i].Name,
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,

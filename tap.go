@@ -15,30 +15,6 @@ type TapIntent struct {
 	After     OperationKind
 }
 
-type TapReport struct {
-	Name      string
-	MediaKind av.MediaType
-	Domain    MediaDomain
-	After     OperationKind
-	Shape     MediaShape
-	Node      pipeline.NodeRef
-}
-
-func tapReports(taps []TapInfo) []TapReport {
-	reports := make([]TapReport, 0, len(taps))
-	for i := range taps {
-		reports = append(reports, TapReport{
-			Name:      taps[i].Name,
-			MediaKind: taps[i].MediaKind,
-			Domain:    taps[i].Domain,
-			After:     taps[i].After,
-			Shape:     taps[i].Shape,
-			Node:      taps[i].Node,
-		})
-	}
-	return reports
-}
-
 func inferSpecTaps(spec pipeline.Spec) []TapInfo {
 	taps := make([]TapInfo, 0)
 	for i := range spec.Nodes {

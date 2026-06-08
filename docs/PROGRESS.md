@@ -2,6 +2,24 @@
 
 Compact tracker for the current `goav` buildout.
 
+## Improvement Loop — Slice Log
+
+Evidence-driven slices alternating Track S (simplify/shrink the public surface)
+and Track P (scale/throughput). Root-package symbol counts come from
+`go doc -all .`: `types = ^type [A-Z]`, `funcs = ^func [A-Z]`,
+`methods = ^func ([^)]+) [A-Z]`.
+
+Baseline (commit `110616b`): root **types=82**, funcs=90, methods=48.
+
+| # | Track | Slice | Surface / perf evidence |
+|---|-------|-------|-------------------------|
+| 1 | S1 | Fold `TapReport` into `TapInfo` (field-for-field identical; `PlanReport.Taps`/`Explain` and `Snapshot().Taps` now share one read type; deleted `tapReports` converter) | root types **82 → 81**; build+vet(root)+`go test ./...` green |
+
+Known pre-existing issue (Track P pressure point): `go vet ./pipeline/` reports
+`bufferedNode contains sync.Mutex` copied in `buffered.go` (append/assign/pass by
+value). This predates the loop and is exactly the per-delivery node-copy P2
+targets. Not introduced by any slice; tracked for P2.
+
 ## Mission
 
 Build `goav` as a pure-Go media runtime: simple at the edge, explicit and

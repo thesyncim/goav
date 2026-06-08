@@ -422,13 +422,13 @@ func branchByName(branches []goav.BranchReport, name string) (goav.BranchReport,
 	return goav.BranchReport{}, false
 }
 
-func tapReportByName(taps []goav.TapReport, name string) (goav.TapReport, bool) {
+func tapReportByName(taps []goav.TapInfo, name string) (goav.TapInfo, bool) {
 	for i := range taps {
 		if taps[i].Name == name {
 			return taps[i], true
 		}
 	}
-	return goav.TapReport{}, false
+	return goav.TapInfo{}, false
 }
 
 func operationReportByKind(operations []goav.OperationReport, kind goav.OperationKind) (goav.OperationReport, bool) {

@@ -448,7 +448,7 @@ func (t *task) Explain(context.Context) (PlanReport, error) {
 	return PlanReport{
 		Summary: "running media task",
 		Graph:   t.Describe(),
-		Taps:    tapReports(t.Taps()),
+		Taps:    t.Taps(),
 	}, nil
 }
 
