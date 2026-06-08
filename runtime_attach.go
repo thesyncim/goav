@@ -162,6 +162,11 @@ type Attachment interface {
 	// siblings; messages are skipped while paused. Resume restores delivery.
 	Pause(context.Context) error
 	Resume(context.Context) error
+	// Rebranch replaces this branch with new ones in place: the replacements are
+	// attached and start receiving before this branch is detached (no gap), so a
+	// live subscriber can be switched (e.g. to a different simulcast layer)
+	// without rebuilding the task. On attach failure this branch is left intact.
+	Rebranch(context.Context, ...BranchSpec) (Attachment, error)
 	Close(context.Context) error
 }
 
@@ -1549,6 +1554,25 @@ func (a *runtimeAttachment) setPaused(ctx context.Context, paused bool) error {
 		}
 	}
 	return first
+}
+
+func (a *runtimeAttachment) Rebranch(ctx context.Context, specs ...BranchSpec) (Attachment, error) {
+	if a == nil || a.owner == nil {
+		return nil, runtimeBranchInvalidError("rebranch runtime branch", "attachment has no owning task")
+	}
+	if len(specs) == 0 {
+		return nil, runtimeBranchInvalidError("rebranch runtime branch", "pass one or more replacement goav.Branch(name)...To(destination) specs")
+	}
+	// Attach the replacements first so they are live before the old branch goes
+	// away (no delivery gap); if that fails, leave the old branch untouched.
+	next, err := a.owner.Attach(ctx, specs...)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.owner.Detach(ctx, a); err != nil {
+		return next, err
+	}
+	return next, nil
 }
 
 func (a *runtimeAttachment) Close(ctx context.Context) error {
