@@ -41,6 +41,7 @@ type directNode struct {
 	routes   []directRoute
 	emitter  *directEmitter
 	counters *nodeCounters
+	paused   *atomic.Bool
 }
 
 type directRoute struct {
@@ -65,6 +66,7 @@ type directTopoNode struct {
 	sink     Sink
 	emitter  *directEmitter
 	counters *nodeCounters
+	paused   *atomic.Bool
 	routes   []directRoute
 }
 
@@ -118,6 +120,7 @@ func (g *directRunner) rebuildTopoLocked() {
 		tn.sink = n.sink
 		tn.emitter = n.emitter
 		tn.counters = n.counters
+		tn.paused = n.paused
 		if len(n.routes) == 0 {
 			continue
 		}
@@ -378,6 +381,20 @@ func (g *directRunner) Stats() GraphStats {
 	return snapshotStats(&g.cold, names, nodes)
 }
 
+// SetNodePaused pauses or resumes delivery to a single node. The lock-free
+// hot path reads the flag from the routing snapshot, so pausing one branch leaves
+// the source and sibling branches untouched.
+func (g *directRunner) SetNodePaused(ref NodeRef, paused bool) error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	index, ok := g.index[ref.String()]
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active || g.nodes[index].paused == nil {
+		return ErrUnknownNode
+	}
+	g.nodes[index].paused.Store(paused)
+	return nil
+}
+
 func (g *directRunner) Close() error {
 	g.mu.Lock()
 	if g.closed {
@@ -473,6 +490,7 @@ func (g *directRunner) addNode(node directNode) (int, error) {
 	node.active = true
 	node.emitter = &directEmitter{graph: g, from: index}
 	node.counters = &nodeCounters{}
+	node.paused = &atomic.Bool{}
 	g.index[node.name] = index
 	g.nodes = append(g.nodes, node)
 	g.rebuildTopoLocked()
@@ -527,6 +545,10 @@ func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 }
 
 func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg *Message) error {
+	if dst.paused != nil && dst.paused.Load() {
+		// Branch paused: skip this node; the source and siblings keep flowing.
+		return nil
+	}
 	observeIn(dst.counters, msg, &g.cold)
 	switch dst.kind {
 	case nodeStage:
