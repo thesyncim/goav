@@ -26,7 +26,6 @@ type chainSpec struct {
 	decode         bool
 	decodeCodec    CodecSpec
 	operations     []OperationSpec
-	postEncodeTaps []string
 	encode         CodecSpec
 	err            error
 }
@@ -399,7 +398,6 @@ func (b *chainBuilder) tap(tap TapRef) {
 			b.setErr(err)
 			return
 		}
-		b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, tap.name)
 		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, OpEncode)))
 		return
 	}
@@ -434,7 +432,6 @@ func (b *chainBuilder) snapshot() chainSpec {
 	spec.decodeCodec = cloneCodecSpec(spec.decodeCodec)
 	spec.encode = cloneCodecSpec(spec.encode)
 	spec.operations = cloneOperationSpecs(spec.operations)
-	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	return spec
 }
 

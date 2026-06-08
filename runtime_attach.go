@@ -277,7 +277,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		buffer:     spec.buffer,
 	}
 	branch.prepared = runtimeBranchOperationsFromSpecs(operations)
-	branch.postEncodeTaps = runtimeBranchPostEncodeTapsFromOperations(operations, spec.postEncodeTaps)
+	branch.postEncodeTaps = runtimeBranchPostEncodeTapsFromOperations(operations)
 	if len(spec.destinations) == 0 {
 		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
@@ -313,50 +313,15 @@ func runtimeBranchOperationSpecsFromSpec(spec BranchSpec) []OperationSpec {
 	case codecIntentSet(spec.encode) && !spec.encode.Copy && !operationSpecsContainKind(operations, OpEncode):
 		operations = append(operations, operationSpecForEncode(spec.encode))
 	}
-	after := OpEncode
-	if spec.encode.Copy {
-		after = OpCopy
-	}
-	for i := range spec.postEncodeTaps {
-		tapName := spec.postEncodeTaps[i]
-		if operationSpecsContainTap(operations, tapName) {
-			continue
-		}
-		tap := PacketTap(tapName)
-		operations = append(operations, operationSpecForTap(tap, spec.media, after))
-	}
 	return operations
 }
 
-func operationSpecsContainTap(operations []OperationSpec, name string) bool {
-	if name == "" {
-		return false
-	}
-	for i := range operations {
-		if operations[i].Kind == OpTap && (operations[i].Component == name || operations[i].Tap.Name == name) {
-			return true
-		}
-	}
-	return false
-}
-
-func runtimeBranchPostEncodeTapsFromOperations(operations []OperationSpec, explicit []string) []string {
-	if len(operations) == 0 && len(explicit) == 0 {
+func runtimeBranchPostEncodeTapsFromOperations(operations []OperationSpec) []string {
+	if len(operations) == 0 {
 		return nil
 	}
-	taps := make([]string, 0, len(explicit))
-	seen := make(map[string]struct{}, len(explicit))
-	for i := range explicit {
-		name := explicit[i]
-		if name == "" {
-			continue
-		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		taps = append(taps, name)
-	}
+	var taps []string
+	seen := make(map[string]struct{})
 	for i := range operations {
 		operation := operations[i]
 		if !operationSpecTapIsTerminalPacket(operation) || operation.Tap.Name == "" {

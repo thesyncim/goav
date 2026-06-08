@@ -83,9 +83,11 @@ Revised after investigating #2 (see Grammar #2): the plan collapse must come
 2. **Operations = single source of truth** (§1, #3): re-point readers of
    postEncodeTaps/encode/decode/decodeCodec to the OpTap/OpEncode/OpDecode
    operations; delete each field once unread. One field/slice.
-   **Taps DONE** (`operationSpecTaps`; deleted `chainStepTapIntents`/`postPacketTapIntents`).
-   Next: stop `jobOperationSpecs` building OpTaps *from* `postEncodeTaps` (use the
-   appended `stream.operations` directly), then delete the field; then encode/decode/decodeCodec.
+   **postEncodeTaps DONE** — `operationSpecTaps` reads taps from `OpTap`; deleted
+   `chainStepTapIntents`/`postPacketTapIntents` + the build/runtime fallback loops;
+   deleted the spec-level fields on `jobStreamBuild`/`streamBuild`/`BranchSpec`/`chainSpec`.
+   Only `runtimeBranch.postEncodeTaps` remains, *derived* from operations for the
+   deferred-tap-after-lazy-encode insert. Next field: encode/decode/decodeCodec.
 3. **#9/#5**: quarantine→delete `branchComposePlan` + transcode import from core
    (compat helpers live outside core, emit From/Branch specs). This removes
    `planBranchesFromBranchComposePlan` so there is one branch-plan source.

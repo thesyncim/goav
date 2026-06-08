@@ -130,7 +130,6 @@ type BranchSpec struct {
 	decode           bool
 	decodeCodec      CodecSpec
 	operations       []OperationSpec
-	postEncodeTaps   []string
 	encode           CodecSpec
 	destinations     []destinationRef
 	destinationNames []string
@@ -278,7 +277,6 @@ func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 		}
 		b.spec.encode = cloneCodecSpec(spec.encode)
 	}
-	b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, spec.postEncodeTaps...)
 	return b
 }
 
@@ -361,7 +359,6 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 			b.setErr(err)
 			return b
 		}
-		b.spec.postEncodeTaps = append(b.spec.postEncodeTaps, tap.name)
 		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, OpEncode)))
 		return b
 	}
@@ -419,7 +416,6 @@ func (b *branchBuilder) snapshot() BranchSpec {
 	spec.decodeCodec = cloneCodecSpec(spec.decodeCodec)
 	spec.encode = cloneCodecSpec(spec.encode)
 	spec.operations = cloneOperationSpecs(spec.operations)
-	spec.postEncodeTaps = append([]string(nil), spec.postEncodeTaps...)
 	spec.destinations = cloneDestinationRefs(spec.destinations)
 	spec.destinationNames = append([]string(nil), spec.destinationNames...)
 	return spec
