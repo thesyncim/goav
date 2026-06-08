@@ -62,7 +62,7 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
 
 ## Acceptance tests (definition of done) — `[x]` holds · `[~]` partial · `[ ]` todo
 
-Grammar: 1[~] README clean · 2[~] direct chain ≡ Branch("main") — **near-equivalent**: `TestNorthStarDirectChainEqualsExplicitMainBranch` shows the two `Describe()` graphs are structurally identical (same source/select/decode/mux nodes + edges + shapes); the ONLY difference is the encode node name (`encode-audio` direct vs `encode-main` branch). So the two lowering paths already converge — the collapse just needs them to share one path/naming. · 3[ ] Flow no destinations/To · 4[~] Destination reuse groups by handle.
+Grammar: 1[~] README clean · 2[~] direct chain ≡ Branch("main") — **structurally identical** `Describe()` graphs (same source/select/decode/mux + edges + shapes); ONLY the encode node name differs (`encode-audio` direct vs `encode-main` branch). **Investigated:** the difference is the implicit branch's name (direct → named by stream `audio`; explicit → `main`) feeding `"encode-"+branch.Name`. Tried unifying `planOperationNodeName` (`planBranchPrivateOwner`: map `"main"`→stream) — **reverted:** it broke `Describe()≡Build()` because branch-composition jobs resolve node names through *different plan representations* (`branchComposePlan` → `mediaPlan` → `graphPlan`) for Describe vs Build, so naming can't be unified in one spot. **→ #2 is GATED on collapsing those plans into one (steps 3–5). Do them first, then #2 falls out for free.** · 3[ ] Flow no destinations/To · 4[~] Destination reuse groups by handle.
 Planner: 5[ ] Build+Attach same planner · 6[~] Attach emits WorkPatch only downstream of taps · 7[ ] Explain from WorkPlan · 8[~] Snapshot = WorkPlan+patches · 9[ ] no transcode import in core · 10[ ] no workflow-kind dispatch.
 Shape: 11[x] Resize requires video frame · 12[x] Resample requires audio frame · 13[x] frame→File w/o Encode fails · 14[x] packet→File w/ Copy ok · 15[x] Decode→frame Sink ok · 16[~] errors include branch/op/actual/expected/fix · 17[ ] auto-insert only when enabled.
 Branches: 18[~] two branches share one decoder · 19[x] slow Latest/DropOldest doesn't stall archive · 20[x] Blocking backpressures · 21[x] per-branch drop counts · 22[~] mutable frame branch can't corrupt sibling.
@@ -76,12 +76,25 @@ Multi/Join: 41[~] From(a,v) one shared Destination · 42[~] multi-input mux vali
 
 ## Execution order (safe slices, one residue/feature per iteration)
 
-1. **Lock in `[x]` guards** (11–15,19,20,21,27,28,29) — make the spec executable; any failure reveals a real gap (skip+TODO, never weaken).
-2. **Operations = single source of truth** (§1, #3): re-point readers of postEncodeTaps/encode/decode/decodeCodec to the OpTap/OpEncode/OpDecode operations; delete each field once unread. One field/slice.
-3. **#2**: direct chain `Describe()` ≡ explicit `Branch("main")` (then WorkPlan).
-4. **#9/#5**: quarantine→delete branchComposePlan + transcode import from core (compat helpers live outside core, emit From/Branch specs).
-5. **#7/#26**: fold mediaPlan into a WorkPlan view; one plan for Explain/Describe/Build/Attach/Snapshot.
-6. **#4/Destination-by-ID**: drop destinationNames/string routing; same handle = one group; same name+different config = planning error.
+Revised after investigating #2 (see Grammar #2): the plan collapse must come
+**before** node-naming/#2, because naming diverges across the 3 plan reps.
+
+1. **DONE** Lock in `[x]` guards (#13/14/15 pass; #11/12 next).
+2. **Operations = single source of truth** (§1, #3): re-point readers of
+   postEncodeTaps/encode/decode/decodeCodec to the OpTap/OpEncode/OpDecode
+   operations; delete each field once unread. One field/slice.
+3. **#9/#5**: quarantine→delete `branchComposePlan` + transcode import from core
+   (compat helpers live outside core, emit From/Branch specs). This removes
+   `planBranchesFromBranchComposePlan` so there is one branch-plan source.
+4. **#7/#26**: fold `mediaPlan` into a `WorkPlan` view; one plan for
+   Explain/Describe/Build/Attach/Snapshot → naming resolves once.
+5. **#2 falls out**: with one plan path, direct chain and `Branch("main")` name
+   identically; the `planBranchPrivateOwner` (`"main"`→stream) tweak then closes #2
+   cleanly. Remove the Skip in `TestNorthStarDirectChainEqualsExplicitMainBranch`.
+6. **#4/Destination-by-ID**: drop destinationNames/string routing; same handle =
+   one group; same name+different config = planning error.
+7. Then features: shape solving (§3), Control plane (§10), PushResult (§14),
+   Join/multi-input (§12), dynamic streams (§11), TimeShape (§13).
 7. **Shape solving** (§3): `.Auto(AllowConvert/...)` + ShapeContract on custom components; insert safe conversions when enabled.
 8. **Control plane** (§10): typed Control(RequestKeyframe/SetBitrate) routed to capable source/encoder via existing keyframe-event machinery; SwitchAt* rebranch policies.
 9. **PushResult** (§14), **Join/multi-input** (§12), **dynamic streams** (§11), **TimeShape** (§13).
