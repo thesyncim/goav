@@ -54,6 +54,10 @@ const (
 	// drains (true backpressure), instead of erroring. Source paces to the
 	// slowest blocking consumer; no pipeline teardown.
 	DropBlock DropPolicy = "block"
+	// DropStale is the reason recorded when a buffered message is shed because it
+	// waited longer than BufferPolicy.MaxLatency (orthogonal to the drop policy:
+	// any policy can also shed stale messages when MaxLatency is set).
+	DropStale DropPolicy = "stale"
 )
 
 type BufferPolicy struct {

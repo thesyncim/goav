@@ -604,6 +604,51 @@ func TestGraphBufferedBlockingCancelUnblocks(t *testing.T) {
 	_ = graph.Close()
 }
 
+// TestGraphBufferedShedsStaleUnderMaxLatency proves MaxLatency sheds messages
+// that waited too long behind a slow consumer instead of delivering them late.
+func TestGraphBufferedShedsStaleUnderMaxLatency(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	const n = 20
+	source := &benchDrainSource{name: "src", n: n, msg: benchPacketMessage(64, true)}
+	slow := &countingSink{name: "slow", delay: 5 * time.Millisecond}
+
+	graph, err := NewGraph(GraphConfig{
+		Name:   "stale",
+		Buffer: BufferPolicy{Capacity: n, Drop: DropOldest, MaxLatency: 2 * time.Millisecond},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(slow, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: "src", To: []string{"slow"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	delivered := slow.total()
+	if delivered == 0 {
+		t.Fatal("expected at least the first fresh message to be delivered")
+	}
+	if delivered >= n {
+		t.Fatalf("delivered %d of %d; expected stale shedding to drop late messages", delivered, n)
+	}
+	stats := graph.Stats()
+	if stats.DropReasons[DropStale] == 0 {
+		t.Fatalf("expected stale drops recorded, got %+v", stats.DropReasons)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 type blockUntilSink struct {
 	name    string
 	release chan struct{}

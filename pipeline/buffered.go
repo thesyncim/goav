@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -69,6 +70,9 @@ type bufferedMessage struct {
 	planes        [bufferedMaxFramePlanes]av.Plane
 	packetBacking []byte
 	frameBacking  []byte
+	// enqueuedAt stamps when the message entered the queue, set only when the
+	// node's MaxLatency is non-zero, so the worker can shed stale messages.
+	enqueuedAt time.Time
 }
 
 type bufferedRunner struct {
@@ -768,7 +772,12 @@ func enqueueMessage(ctx context.Context, queue chan *bufferedMessage, msg *buffe
 func (g *bufferedRunner) runNode(ctx context.Context, node *bufferedNode, queue <-chan *bufferedMessage) error {
 	var first error
 	for msg := range queue {
-		if first == nil {
+		switch {
+		case first != nil:
+			// A prior delivery failed; drain without delivering.
+		case g.staleByLatency(node, msg):
+			observeDrop(node.counters, DropStale, &g.cold)
+		default:
 			if err := g.deliver(ctx, node, &msg.message); err != nil {
 				first = err
 			}
@@ -777,6 +786,14 @@ func (g *bufferedRunner) runNode(ctx context.Context, node *bufferedNode, queue 
 		g.pending.Done()
 	}
 	return first
+}
+
+// staleByLatency reports whether a queued message has waited longer than the
+// node's MaxLatency and should be shed instead of delivered late (realtime).
+func (g *bufferedRunner) staleByLatency(node *bufferedNode, msg *bufferedMessage) bool {
+	return node.policy.MaxLatency > 0 &&
+		!msg.enqueuedAt.IsZero() &&
+		time.Since(msg.enqueuedAt) > node.policy.MaxLatency
 }
 
 // deliver runs lock-free: the worker owns a stable *bufferedNode whose
@@ -844,6 +861,9 @@ func (m *bufferedMessage) init(policy BufferPolicy) {
 
 func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
 	m.Reset()
+	if policy.MaxLatency > 0 {
+		m.enqueuedAt = time.Now()
+	}
 	if src == nil {
 		return ErrNilMessage
 	}
@@ -921,6 +941,7 @@ func (m *bufferedMessage) Reset() {
 	}
 	m.packet.Payload.Bytes = m.packetBacking[:0]
 	m.frameBacking = frameBacking[:0]
+	m.enqueuedAt = time.Time{}
 }
 
 func bufferSafe(buffer av.Buffer) bool {
