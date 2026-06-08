@@ -14,11 +14,58 @@ Baseline (commit `110616b`): root **types=82**, funcs=90, methods=48.
 | # | Track | Slice | Surface / perf evidence |
 |---|-------|-------|-------------------------|
 | 1 | S1 | Fold `TapReport` into `TapInfo` (field-for-field identical; `PlanReport.Taps`/`Explain` and `Snapshot().Taps` now share one read type; deleted `tapReports` converter) | root types **82 → 81**; build+vet(root)+`go test ./...` green |
+| 2 | P1 | Add fanout + scaling benchmarks (`pipeline/fanout_bench_test.go`): direct 1→N serial & parallel, buffered 1→N (shared vs per-target copy), N∈{1,8,64,512} | Baseline recorded below; becomes the P2/P3 regression gate |
 
-Known pre-existing issue (Track P pressure point): `go vet ./pipeline/` reports
+### P1 baseline (Apple M4 Max, arm64, `go test -bench Fanout -benchmem`)
+
+Direct fanout, serial emit→deliver (immutable payload, no copy):
+
+| N | ns/op | B/op | allocs/op |
+|---|------:|-----:|----------:|
+| 1 | 30.9 | 0 | 0 |
+| 8 | 174 | 0 | 0 |
+| 64 | 966 | 896 | 3 |
+| 512 | 7558 | 8064 | 6 |
+
+Direct fanout, parallel (concurrent emitters, GOMAXPROCS sweep, N=8):
+
+| -cpu | ns/op | vs 1-core |
+|------|------:|----------:|
+| 1 | 125 | 1.0× |
+| 2 | 519 | 4.1× worse |
+| 4 | 1180 | 9.4× worse |
+| 8 | 1248 | 10.0× worse |
+| 16 | 1244 | 9.9× worse |
+
+Buffered fanout, end-to-end (DropOldest, cap 1024):
+
+| mode | N | ns/op | B/op | allocs/op |
+|------|---|------:|-----:|----------:|
+| shared | 8 | 2563 | 174 | 8 |
+| shared | 512 | 266057 | 11178 | 512 |
+| copy | 8 | 3159 | 227 | 8 |
+| copy | 512 | 229500 | 14536 | 514 |
+
+**Two findings (immediate P2/P3 pressure points):**
+
+1. **Negative parallel scaling (P2).** The direct data plane gets ~10× *slower*
+   per message at 2+ cores under concurrent emitters: the global `statsMu` taken
+   on every `observeMessage`/`observeDelivered` plus the global `g.mu.RLock` on
+   every `emit`/`deliver` serialize and cache-bounce across cores. Parallel
+   efficiency at 16 cores ≈ near-zero. P2 (per-node `atomic.Uint64` stats +
+   `atomic.Pointer` routing snapshot) must make this scale.
+2. **Hidden hot-path allocation for wide fanout (P2/invariant 4).** Direct fanout
+   is 0 allocs/op up to N=8 but allocates at N≥64 (896 B / 3 allocs at 64;
+   8064 B / 6 allocs at 512): `emit` builds a deferred `destinations []int` from
+   an 8-slot stack array (`targetStack [8]int`) and `append` spills to the heap
+   past 8 targets. An SFU fanning out to many subscribers hits this every packet.
+3. Buffered fanout allocates ~1 alloc/target — investigate under P3 (per-target
+   slot/copy path).
+
+Known pre-existing issue (also a P2 target): `go vet ./pipeline/` reports
 `bufferedNode contains sync.Mutex` copied in `buffered.go` (append/assign/pass by
-value). This predates the loop and is exactly the per-delivery node-copy P2
-targets. Not introduced by any slice; tracked for P2.
+value). Predates the loop; the per-delivery node-copy is what P2 removes. Not
+introduced by any slice.
 
 ## Mission
 
