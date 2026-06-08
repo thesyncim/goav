@@ -33,17 +33,25 @@ real concurrency is the buffered runner (per-node goroutines) — the simulcast 
 where P2a+P2c land the wins. Buffered producer `emit` still takes 1 `g.mu.RLock`/msg
 (guards dynamic topology + queue-close); a producer snapshot is a later option.
 
-**Next:** **P3** — refcounted `av.Buffer` (`Retain`/`Release`) for zero-copy 1→N;
-fix `Blocking` (currently `DropNever`→`ErrBackpressure`→teardown) to a real blocking
-send + slow-consumer test; independent fanout backpressure; typed `av.MediaType` on
-`av.Packet` (drop `Metadata["media_type"]` lookups; keep RTP loop zero-alloc).
-**Track S** — rename `Job.Intent()`→`Job.Plan()` + `Intent`→`Plan` (only `Intent`
-left of the exported `*Intent` IR; ~50 `job.Intent()` sites), then fold
-`*Report`/`*Snapshot` duplicates toward root types ~30.
+**Priority order (maintainer):** (1) simplicity → (2) correctness, esp. missing
+flow control / backpressure → (3) speed. Pick the next slice in that order; don't
+add complexity for speed; design flow control before optimizing it.
 
-All hot-path data-plane work follows the recorded mandate: **lock-free by design**
-(no per-message mutex; per-node atomics + immutable snapshots; mutex only on cold
-paths).
+**Next:**
+1. **Flow control (correctness, design-first):** fix `Blocking` — currently
+   `DropNever`→`ErrBackpressure`→pipeline teardown; must apply real backpressure to
+   a slow consumer *without* aborting siblings or the source. Entangled: `emit`
+   enqueues targets sequentially under `g.mu.RLock`, so a naive blocking send
+   head-of-line-blocks siblings. Write the per-target backpressure contract down
+   first, then implement + slow-consumer test.
+2. **Simplicity (Track S):** rename `Job.Intent()`→`Job.Plan()` + `Intent`→`Plan`
+   (last exported `*Intent`; ~50 `job.Intent()` sites), then fold `*Report`/`*Snapshot`
+   duplicates toward root types ~30.
+3. **Speed (below the above):** refcounted `av.Buffer` (`Retain`/`Release`) zero-copy
+   1→N fanout (keep copy as explicit opt-in).
+
+Data-plane work still follows **lock-free by design** (no per-message mutex), but
+that serves tier-3 scaling — apply it without adding complexity.
 
 Resolved in slice 6: the pre-existing `go vet ./pipeline/` `copylocks` failures
 (`bufferedNode contains sync.Mutex` copied on append/assign/pass-by-value) are
