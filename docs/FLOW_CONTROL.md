@@ -1,6 +1,16 @@
 # Flow control (design)
 
-Status: **design — needs one maintainer decision before implementing.**
+Status: **decided — implementing.** Maintainer: (A) `Blocking` should truly
+block with backpressure; (B) leave the bare default (`DropNever`) as
+error-on-full (unchanged).
+
+Plan: slice **FC-1** — buffered producer-side `atomic.Pointer` routing snapshot
+(mirror of P2b/direct) so `emit` reads routes→target `*bufferedNode` and enqueues
+**without `g.mu`** and without a per-message target slice (wide-fanout stays
+0-alloc); queue-close-vs-send safety moves to per-node `queueMutex` + a
+`queueClosed` flag set by Close/Remove. Then slice **FC-2** — add
+`pipeline.DropBlock`, map `goav.Blocking`→it, blocking send
+`select { case q<-slot: ; case <-ctx.Done(): }`, slow-consumer test.
 
 ## The bug
 
