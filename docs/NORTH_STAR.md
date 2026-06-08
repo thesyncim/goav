@@ -1,98 +1,87 @@
-# North Star — one grammar, one plan
+# North Star — one grammar, one planner, one task
 
-goav is a Go-native media **work planner**. Users describe
-`input + operations + taps + branches + destinations`; goav produces one
-inspectable `WorkPlan`, one runnable `Task`, late branches via `Attach`, and clear
-shape/destination errors. **One way to do one thing.**
+goav is a Go-native media **work planner** — *not GStreamer in Go*. Borrow the
+power, not the vocabulary. **No public** Element/Pad/Bin/Bus/Probe/Caps/Pipeline-State.
+
+Users describe `inputs + operations + taps + branches + destinations`; goav
+provides shape solving, branch isolation, safe runtime attach/rebranch, custom
+sources/destinations, multi-input composition, lifecycle-aware destinations,
+events/snapshots, and clear errors.
 
 ## The one grammar
 
 ```
 From(inputs...) -> select stream -> operations -> Tap -> Branches -> Destinations -> Task
 ```
+Public nouns: **Input, Chain, Shape, Tap, Branch, Destination, Flow, Source, Task**
+(`Operation` is a method on a Chain, not a headline noun). Never promote
+`Record/Transcode/Path/Target/Output(s)/To("label")/Runtime.Graph/graph handles`.
 
-Public nouns: **Input, Chain, Tap, Branch, Destination, Flow, Task**. (`Operation`
-is a *method on a Chain*, not a headline noun.)
+Core identities:
+- direct chain = implicit `Branch("main")`
+- planned branch = `BranchSpec -> WorkPlan`
+- runtime branch = `BranchSpec -> WorkPatch`
+- Flow = reusable operation list · Destination = routing handle · Shape = compatibility contract
 
-Never promote: `Record, Transcode, Decode helper, Path, Target, Output, Outputs,
-To("label"), Runtime.Graph, graph handles`.
+One planner for Build and Attach; one operation list; one branch/destination/shape
+model; no workflow dispatch; no string routing; no graph handles for normal work.
 
-Core rule: **a direct chain is just an implicit `Branch("main")`** — it lowers to
-the same internal model as the explicit `Branches(Branch("main")...)` form. No
-separate build paths for copy-to-file / decode-to-sink / encode-to-file / branch
-composition / runtime attach / transcode — all are branches with operations and
-destinations.
-
-## One internal model
+## Target shapes
 
 ```
-Composition -> WorkPlan -> pipeline.Graph -> Task          (build)
-BranchSpec + TapInfo -> WorkPatch -> apply atomically       (attach)
+type BranchSpec struct { Name string; Source BranchSource; Media av.MediaType;
+    Operations []OperationSpec; Destinations []Destination; Buffer BranchBuffer;
+    Detach DetachPolicy; Err error }
+type FlowSpec struct { Name string; Media av.MediaType; Operations []OperationSpec; Err error }
 ```
-Same planner, validation, shape checks, destination grouping, lifecycle for both.
+Every fluent method appends exactly one `OperationSpec`: Decode→OpDecode, Copy→OpCopy,
+Shape→OpShape, Resize/Resample→OpTransform, Do→OpStage, Encode→OpEncode, Tap→OpTap.
 
-Every fluent call appends exactly one `OperationSpec`: `Decode→OpDecode`,
-`Copy→OpCopy`, `Shape→OpShape`, `Resize/Resample→OpTransform`, `Do→OpStage`,
-`Encode→OpEncode`, `Tap→OpTap`. Branch, direct chain, runtime branch, and Flow all
-share this one operation representation.
+`WorkPlan{Inputs,Operations,Taps,Branches,Destinations,Edges,Diagnostics}` /
+`WorkPatch{Operations,Taps,Branches,Destinations,Edges,Rollback}` are the only
+executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
 
-Target `BranchSpec`: `{Name, Source, Media, Operations, Destinations, Buffer,
-Detach, Err}`. Target `FlowSpec`: `{Name, Media, Operations, Err}` (no To, no
-destinations, no labels, no source, no runtime state).
+## Feature areas (status)
 
-## Residues to delete (current debt)
+- **IR collapse** (§1,2,15): one operation list; delete BranchSpec's parallel fields
+  (decode/decodeCodec/encode/postEncodeTaps/destinationNames/from/tap/label/policy/buffer),
+  branchComposePlan + transcode-in-core, mediaPlan-vs-workPlan, string routing. **TODO (biggest).**
+- **Shape solving** (§3,4): upgrade validation → solving (validate order, infer facts,
+  select adapters, auto-insert safe conversions when enabled): `.Require/.Prefer/.Auto(AllowConvert/Resample/Resize/FormatConvert)`; ShapeContract on Source/Do/Sink/Destination/Flow. **TODO.**
+- **Tap** (§5): carry name/domain/kind/shape/producing-op/branch-owner/attach-policy/timebase. **partial.**
+- **Branch control plane** (§6,7,10): pause/resume/stop/rebranch + lifecycle states + Control
+  (RequestKeyframe/SetBitrate/Flush/Drain/Discontinuity). **DONE this session:** pause/resume/stop/rebranch
+  (lock-free, both runners, gapless, integration-tested). **TODO:** SwitchAt* policies, formal state enums, Control(...) typed controls.
+- **Branch isolation/ownership** (§8): isolated downstream buffers, per-branch drops/stats,
+  copy-if-mutable. **DONE (data plane):** lock-free isolation, independent fanout backpressure, per-branch atomic stats, MaxLatency shedding, Blocking. **TODO:** public CopyMode contract surfacing.
+- **Events/Snapshot/Watch** (§9): typed EventFilter Watch; richer Snapshot. **partial.**
+- **Dynamic streams** (§11): OnStream/When; late-stream attach; ambiguity lists candidates. **TODO.**
+- **Multi-input/Join** (§12): From(a,b...) one Destination; explicit Join (MixAudio etc.). **partial multi-input; Join TODO.**
+- **Time/sync** (§13): minimal TimeShape (TimeBase/Clock/Live/Latency) + Sync/Attach-at policies. **TODO.**
+- **Source backpressure** (§14): result-aware `Push.X(ctx,...) (PushResult, error)`. **TODO.**
 
-- `BranchSpec` parallel fields: `decode, decodeCodec, encode, postEncodeTaps,
-  destinationNames, from, tap, tapDomain, policy, label, buffer (pipeline.BufferPolicy)`.
-  → derive from `Operations` / `Source` / `BranchBuffer`; delete once no readers.
-- `branchComposePlan` / `branchComposeBranch` / `branchComposeTarget` and the
-  `goav/transcode` import from core (`branch_compose_plan.go`, `runtime.go`,
-  `runtime_transcode.go`). Core must not depend on transcode.
-- `mediaPlan` as a separate semantic plan → make it a view of `WorkPlan`.
-- string destination refs (`destinationNames`, `Destinations []string`) →
-  Destination identity by stable internal ID; same handle = one group; same name +
-  different config = planning error.
+## Acceptance tests (definition of done) — `[x]` holds · `[~]` partial · `[ ]` todo
 
-## Acceptance checklist (definition of done)
+Grammar: 1[~] README clean · 2[~] direct chain ≡ Branch("main") — **near-equivalent**: `TestNorthStarDirectChainEqualsExplicitMainBranch` shows the two `Describe()` graphs are structurally identical (same source/select/decode/mux nodes + edges + shapes); the ONLY difference is the encode node name (`encode-audio` direct vs `encode-main` branch). So the two lowering paths already converge — the collapse just needs them to share one path/naming. · 3[ ] Flow no destinations/To · 4[~] Destination reuse groups by handle.
+Planner: 5[ ] Build+Attach same planner · 6[~] Attach emits WorkPatch only downstream of taps · 7[ ] Explain from WorkPlan · 8[~] Snapshot = WorkPlan+patches · 9[ ] no transcode import in core · 10[ ] no workflow-kind dispatch.
+Shape: 11[x] Resize requires video frame · 12[x] Resample requires audio frame · 13[x] frame→File w/o Encode fails · 14[x] packet→File w/ Copy ok · 15[x] Decode→frame Sink ok · 16[~] errors include branch/op/actual/expected/fix · 17[ ] auto-insert only when enabled.
+Branches: 18[~] two branches share one decoder · 19[x] slow Latest/DropOldest doesn't stall archive · 20[x] Blocking backpressures · 21[x] per-branch drop counts · 22[~] mutable frame branch can't corrupt sibling.
+Runtime: 23[~] Attach opens destinations before mutation · 24[~] Attach failure rolls back+aborts · 25[~] Detach+drain commits · 26[~] Detach+abort aborts · 27[x] Rebranch starts replacement before detach · 28[x] Rebranch failure leaves old intact · 29[x] Pause/Resume only that branch.
+Events/Control: 30[~] events: attach/detach/shape-change/backpressure/commit · 31[~] Snapshot full · 32[ ] RequestKeyframe reaches adapter or fails clearly · 33[ ] SetBitrate reaches encoder or fails clearly.
+Source: 34[~] custom packet source Copy→File · 35[~] custom frame source encode→File · 36[ ] push reports drops/backpressure · 37[~] Source EOS commits destinations.
+Dynamic: 38[ ] late stream attach · 39[~] ambiguous selection lists candidates · 40[ ] stream removal detaches by policy.
+Multi/Join: 41[~] From(a,v) one shared Destination · 42[~] multi-input mux validates timebase · 43[ ] Join mixes two audio branches · 44[ ] Join shape mismatch fails before mutation.
 
-Status: `[ ]` todo · `[~]` partial · `[x]` holds today (verify with a guard test).
+(Flow-control acceptance — 19,20,21,27,28,29 — landed this session; lock them in as guards.)
 
-- [ ] 1. README uses no Record/Transcode/Path/Target/Outputs/Output(label)/To("label")/Runtime.Graph. (front-door tests partly enforce)
-- [ ] 2. Direct chain and explicit `Branch("main")` produce equivalent `WorkPlan`.
-- [ ] 3. `BranchSpec` normalizes to only operations + destinations.
-- [ ] 4. `Flow` has no destination fields and no `To`.
-- [~] 5. Flow applies to direct chain, planned branch, and runtime branch.
-- [~] 6. Same `Destination` handle (audio+video branches) creates one group.
-- [~] 7. Same destination name + different config fails during planning.
-- [ ] 8. Shape mismatch fails before graph mutation with an actionable error.
-- [x] 9. Resize requires a video frame shape. (guard TODO)
-- [x] 10. Resample requires an audio frame shape. (guard TODO)
-- [x] 11. Frame branch to File without Encode fails. (guard TODO)
-- [x] 12. Packet branch to Sink(packet) succeeds. (guard TODO)
-- [x] 13. Decode to Sink(frame) succeeds. (guard TODO)
-- [x] 14. Copy to File succeeds. (guard TODO)
-- [ ] 15. Planned branch and runtime attach use the same planner.
-- [~] 16. Runtime attach emits `WorkPatch` only downstream of an existing tap.
-- [~] 17. Two branches after one decoder share the decoder.
-- [~] 18. Detach does not close shared upstream nodes.
-- [x] 19. Branch buffers isolate slow branches unless `Blocking` is selected. (pause/backpressure done)
-- [~] 20. Transactional Object commits on clean completion.
-- [~] 21. Transactional Object aborts on failed attach.
-- [~] 22. Custom Source feeds frame sink and encode-to-file paths.
-- [~] 23. Multi-input audio/video can write one shared Destination.
-- [~] 24. Ambiguous stream selection lists candidates.
-- [ ] 25. No core composition code imports `goav/transcode`.
-- [ ] 26. Explain is generated from `WorkPlan`.
-- [~] 27. Snapshot reports branches, taps, destinations, and lifecycle state.
-- [ ] 28. A new operation needs only a constructor + shape contract + component builder — no workflow compiler.
+## Execution order (safe slices, one residue/feature per iteration)
 
-## Execution order (safe slices, one residue at a time)
-
-1. Lock in `[x]` items as guard tests (#9–14, #19) — establishes the executable spec.
-2. Make `Operations` the single source of truth; re-point readers of
-   `postEncodeTaps`/`encode`/`decode`/`decodeCodec` to the operation list; delete each
-   field once unread. (#3)
-3. Prove #2 (`Describe()` of direct chain == explicit `Branch("main")`).
-4. Quarantine then delete `branchComposePlan` + the transcode import from core. (#25, #5)
-5. Fold `mediaPlan` into a `WorkPlan` view; Explain/Describe/Build/Attach/Snapshot read one plan. (#26)
-6. Destination-by-ID; drop `destinationNames` string refs. (#7)
+1. **Lock in `[x]` guards** (11–15,19,20,21,27,28,29) — make the spec executable; any failure reveals a real gap (skip+TODO, never weaken).
+2. **Operations = single source of truth** (§1, #3): re-point readers of postEncodeTaps/encode/decode/decodeCodec to the OpTap/OpEncode/OpDecode operations; delete each field once unread. One field/slice.
+3. **#2**: direct chain `Describe()` ≡ explicit `Branch("main")` (then WorkPlan).
+4. **#9/#5**: quarantine→delete branchComposePlan + transcode import from core (compat helpers live outside core, emit From/Branch specs).
+5. **#7/#26**: fold mediaPlan into a WorkPlan view; one plan for Explain/Describe/Build/Attach/Snapshot.
+6. **#4/Destination-by-ID**: drop destinationNames/string routing; same handle = one group; same name+different config = planning error.
+7. **Shape solving** (§3): `.Auto(AllowConvert/...)` + ShapeContract on custom components; insert safe conversions when enabled.
+8. **Control plane** (§10): typed Control(RequestKeyframe/SetBitrate) routed to capable source/encoder via existing keyframe-event machinery; SwitchAt* rebranch policies.
+9. **PushResult** (§14), **Join/multi-input** (§12), **dynamic streams** (§11), **TimeShape** (§13).
