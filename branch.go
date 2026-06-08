@@ -503,13 +503,9 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			from:        from,
 			decode:      decode,
 			decodeCodec: mergeDecodeCodecSpec(stream.decodeCodec, branches[i].decodeCodec),
-			operations:  operations,
-			sharedOps:   sharedOps,
-			privateOps:  privateOps,
-			postEncodeTaps: append(
-				append([]string(nil), stream.postEncodeTaps...),
-				branches[i].postEncodeTaps...,
-			),
+			operations:       operations,
+			sharedOps:        sharedOps,
+			privateOps:       privateOps,
 			encode:           encode,
 			destinationNames: append([]string(nil), branches[i].destinationNames...),
 		})
@@ -716,8 +712,8 @@ func tapIsPostEncodeAnchor(stream *jobStreamBuild, tap string) bool {
 	if tap == "" || stream == nil {
 		return false
 	}
-	for i := range stream.postEncodeTaps {
-		if stream.postEncodeTaps[i] == tap {
+	for i := range stream.operations {
+		if stream.operations[i].Tap.Name == tap && operationSpecTapIsTerminalPacket(stream.operations[i]) {
 			return true
 		}
 	}

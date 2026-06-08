@@ -1311,7 +1311,6 @@ type jobStreamBuild struct {
 	decodeCodec    CodecSpec
 	operations     []OperationSpec
 	taps           []string
-	postEncodeTaps []string
 	encode         CodecSpec
 	codecChange    CodecChangePolicy
 	outputs        []destinationSpec
@@ -3459,7 +3458,6 @@ type streamBuild struct {
 	operations       []OperationSpec
 	sharedOps        []OperationSpec
 	privateOps       []OperationSpec
-	postEncodeTaps   []string
 	encode           CodecSpec
 	destinationNames []string
 }
@@ -3609,7 +3607,6 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 			stream.encode = cloneCodecSpec(spec.encode)
 		}
 	}
-	stream.postEncodeTaps = append(stream.postEncodeTaps, spec.postEncodeTaps...)
 	return b
 }
 
@@ -3658,7 +3655,6 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 			b.job.setErr(err)
 			return b
 		}
-		stream.postEncodeTaps = append(stream.postEncodeTaps, tap.name)
 		stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, OpEncode)))
 		return b
 	}
@@ -3686,8 +3682,10 @@ func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 	if stream == nil {
 		return TapRef{}
 	}
-	if len(stream.postEncodeTaps) != 0 {
-		return PacketTap(stream.postEncodeTaps[len(stream.postEncodeTaps)-1])
+	for i := len(stream.operations) - 1; i >= 0; i-- {
+		if operationSpecTapIsTerminalPacket(stream.operations[i]) {
+			return PacketTap(stream.operations[i].Tap.Name)
+		}
 	}
 	steps := jobStreamChainSteps(stream)
 	if stream.encode.Copy && len(steps) == 0 && stream.selector.Type != "" {
