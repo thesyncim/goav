@@ -1310,7 +1310,6 @@ type jobStreamBuild struct {
 	decode         bool
 	decodeCodec    CodecSpec
 	operations     []OperationSpec
-	taps           []string
 	encode         CodecSpec
 	codecChange    CodecChangePolicy
 	outputs        []destinationSpec
