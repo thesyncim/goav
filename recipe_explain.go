@@ -200,7 +200,7 @@ func explainInputs(resolved recipeResolved) []InputReport {
 			report.Streams = append([]av.Stream(nil), probe.Streams...)
 		}
 		if len(report.Streams) == 0 && input.Realtime && input.Codec.ID != "" {
-			report.Streams = liveIntentStreams([]InputIntent{input})
+			report.Streams = liveIntentStreams([]inputIntent{input})
 		}
 		reports = append(reports, report)
 	}
@@ -331,7 +331,7 @@ func explainDecisions(decisions []planDecision) []Decision {
 	return reports
 }
 
-func explainDestinations(destinations []DestinationIntent, outputFormats map[string]av.FormatID, planOutputs []planOutput) []DestinationReport {
+func explainDestinations(destinations []destinationIntent, outputFormats map[string]av.FormatID, planOutputs []planOutput) []DestinationReport {
 	reports := make([]DestinationReport, 0, len(destinations))
 	branchesByDestination := planOutputBranches(planOutputs)
 	for i := range destinations {
@@ -948,14 +948,14 @@ func explainSummary(report PlanReport) string {
 
 func cloneIntent(intent Intent) Intent {
 	clone := intent
-	clone.Inputs = append([]InputIntent(nil), intent.Inputs...)
+	clone.Inputs = append([]inputIntent(nil), intent.Inputs...)
 	clone.Streams = append([]StreamIntent(nil), intent.Streams...)
 	for i := range clone.Streams {
 		clone.Streams[i].Operations = cloneOperationSpecs(intent.Streams[i].Operations)
 		clone.Streams[i].Taps = cloneTapIntents(intent.Streams[i].Taps)
 		clone.Streams[i].Destinations = append([]string(nil), intent.Streams[i].Destinations...)
 	}
-	clone.Destinations = append([]DestinationIntent(nil), intent.Destinations...)
+	clone.Destinations = append([]destinationIntent(nil), intent.Destinations...)
 	return clone
 }
 

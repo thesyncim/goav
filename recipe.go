@@ -23,13 +23,13 @@ const (
 
 type Intent struct {
 	Name         string
-	Inputs       []InputIntent
+	Inputs       []inputIntent
 	Streams      []StreamIntent
-	Destinations []DestinationIntent
-	Policies     PolicyIntent
+	Destinations []destinationIntent
+	Policies     policyIntent
 }
 
-type InputIntent struct {
+type inputIntent struct {
 	Name     string
 	URI      string
 	Protocol av.ProtocolID
@@ -63,7 +63,7 @@ type OperationSpec struct {
 	Shared    bool
 }
 
-type DestinationIntent struct {
+type destinationIntent struct {
 	Name     string
 	URI      string
 	Protocol av.ProtocolID
@@ -71,7 +71,7 @@ type DestinationIntent struct {
 	Format   av.FormatID
 }
 
-type PolicyIntent struct {
+type policyIntent struct {
 	Realtime bool
 }
 
@@ -890,8 +890,8 @@ func (s InputSpec) rtpOptions() []rtpOption {
 	return options
 }
 
-func (s InputSpec) intent() InputIntent {
-	return InputIntent{
+func (s InputSpec) intent() inputIntent {
+	return inputIntent{
 		Name:     firstNonEmpty(s.name, s.input.Name),
 		URI:      s.input.URI,
 		Protocol: s.input.Protocol,
@@ -1276,8 +1276,8 @@ func (s destinationSpec) label(fallback string) string {
 	return firstNonEmpty(s.name, s.output.Name, s.output.URI, fallback)
 }
 
-func (s destinationSpec) intent() DestinationIntent {
-	return DestinationIntent{
+func (s destinationSpec) intent() destinationIntent {
+	return destinationIntent{
 		Name:     s.label("output"),
 		URI:      s.output.URI,
 		Protocol: s.output.Protocol,
@@ -1286,7 +1286,7 @@ func (s destinationSpec) intent() DestinationIntent {
 	}
 }
 
-func (s destinationSpec) intentWithName(name string) DestinationIntent {
+func (s destinationSpec) intentWithName(name string) destinationIntent {
 	intent := s.intent()
 	intent.Name = firstNonEmpty(name, intent.Name)
 	return intent
@@ -2393,7 +2393,7 @@ func validateKnownRecipeDecodeAdapters(operation string, rt Runtime, probes []fo
 	return nil
 }
 
-func validateLiveStreamSelection(inputs []InputIntent, stream StreamIntent) error {
+func validateLiveStreamSelection(inputs []inputIntent, stream StreamIntent) error {
 	streams := liveIntentStreams(inputs)
 	if len(streams) == 0 {
 		return nil
@@ -2402,7 +2402,7 @@ func validateLiveStreamSelection(inputs []InputIntent, stream StreamIntent) erro
 	return err
 }
 
-func liveIntentStreams(inputs []InputIntent) []av.Stream {
+func liveIntentStreams(inputs []inputIntent) []av.Stream {
 	streams := make([]av.Stream, 0, len(inputs))
 	for i := range inputs {
 		input := inputs[i]
@@ -2463,7 +2463,7 @@ func streamNeedsDecode(stream StreamIntent) bool {
 	return stream.Decode || len(streamIntentTransformSpecs(stream)) != 0 || stream.Encode.ID != ""
 }
 
-func liveDecodeAdapterRequest(inputs []InputIntent, stream StreamIntent) (codecAdapterRequest, bool) {
+func liveDecodeAdapterRequest(inputs []inputIntent, stream StreamIntent) (codecAdapterRequest, bool) {
 	selected, ok := liveDecodeStream(inputs, stream)
 	if !ok {
 		return codecAdapterRequest{}, false
@@ -2471,7 +2471,7 @@ func liveDecodeAdapterRequest(inputs []InputIntent, stream StreamIntent) (codecA
 	return decodeAdapterRequestFromStream(selected, stream), true
 }
 
-func liveDecodeStream(inputs []InputIntent, stream StreamIntent) (av.Stream, bool) {
+func liveDecodeStream(inputs []inputIntent, stream StreamIntent) (av.Stream, bool) {
 	streams := liveIntentStreams(inputs)
 	if len(streams) == 0 {
 		return av.Stream{}, false
@@ -2483,7 +2483,7 @@ func liveDecodeStream(inputs []InputIntent, stream StreamIntent) (av.Stream, boo
 	return selected, true
 }
 
-func liveDecodeCodec(inputs []InputIntent, stream StreamIntent) (av.CodecID, bool) {
+func liveDecodeCodec(inputs []inputIntent, stream StreamIntent) (av.CodecID, bool) {
 	selected, ok := liveDecodeStream(inputs, stream)
 	if !ok {
 		return "", false
@@ -3904,7 +3904,7 @@ func (j *branchCompositionJob) setErr(err error) {
 func (j *branchCompositionJob) Intent() Intent {
 	intent := Intent{
 		Name:   firstNonEmpty(j.name, "branch-composition"),
-		Inputs: []InputIntent{j.input.intent()},
+		Inputs: []inputIntent{j.input.intent()},
 	}
 	if runtime, ok := j.runtime.(*runtime); ok {
 		intent.Policies.Realtime = runtime.realtime

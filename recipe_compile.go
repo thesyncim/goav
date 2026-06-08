@@ -952,7 +952,7 @@ func recipeInitialStreamShape(state *recipeCompileState, stream StreamIntent) Me
 	if state != nil {
 		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
 	} else {
-		shape = normalizePlanBranchShape(shape, stream, InputIntent{})
+		shape = normalizePlanBranchShape(shape, stream, inputIntent{})
 	}
 	return shape
 }

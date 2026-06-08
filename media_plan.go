@@ -112,7 +112,7 @@ func buildMediaPlan(state *recipeCompileState) mediaPlan {
 	return plan
 }
 
-func planInputs(inputs []InputIntent) []planInput {
+func planInputs(inputs []inputIntent) []planInput {
 	out := make([]planInput, 0, len(inputs))
 	for i := range inputs {
 		input := inputs[i]
@@ -150,7 +150,7 @@ func planStreamsFromBranchComposePlan(plan branchComposePlan) []planStream {
 	return out
 }
 
-func planOutputs(outputs []DestinationIntent, formats map[string]av.FormatID) []planOutput {
+func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []planOutput {
 	out := make([]planOutput, 0, len(outputs))
 	for i := range outputs {
 		output := outputs[i]
@@ -400,7 +400,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 	return branches, decisions
 }
 
-func planOperationSpecs(inputs []InputIntent, stream StreamIntent, branchName string, initial MediaShape) ([]planOperation, []planDecision) {
+func planOperationSpecs(inputs []inputIntent, stream StreamIntent, branchName string, initial MediaShape) ([]planOperation, []planDecision) {
 	operations := planInputOperationsForShape(firstInput(inputs), initial)
 	operations = append(operations, planOperation{
 		Kind:      OpSelect,
@@ -573,11 +573,11 @@ func operationSpecKindPresent(operations []OperationSpec, kind OperationKind) bo
 	return false
 }
 
-func planInputOperations(input InputIntent) []planOperation {
+func planInputOperations(input inputIntent) []planOperation {
 	return planInputOperationsForShape(input, MediaShape{Domain: DomainPacket})
 }
 
-func planInputOperationsForShape(input InputIntent, shape MediaShape) []planOperation {
+func planInputOperationsForShape(input inputIntent, shape MediaShape) []planOperation {
 	if input.Protocol == av.ProtocolCustom {
 		return nil
 	}
@@ -760,7 +760,7 @@ func normalizeTapShape(shape MediaShape) MediaShape {
 	return shape
 }
 
-func normalizePlanBranchShape(shape MediaShape, stream StreamIntent, input InputIntent) MediaShape {
+func normalizePlanBranchShape(shape MediaShape, stream StreamIntent, input inputIntent) MediaShape {
 	if shape.Domain == "" {
 		shape.Domain = DomainPacket
 	}
@@ -783,7 +783,7 @@ func mediaShapeFromPlanStream(stream av.Stream, domain MediaDomain) MediaShape {
 	return MediaShapeFromStream(stream, domain)
 }
 
-func mediaShapeFromInputIntent(input InputIntent, domain MediaDomain) MediaShape {
+func mediaShapeFromInputIntent(input inputIntent, domain MediaDomain) MediaShape {
 	shape := MediaShape{
 		Domain:    domain,
 		MediaKind: input.Codec.Type,
@@ -1008,14 +1008,14 @@ func clonePlanDiagnostics(diagnostics []PlanDiagnostic) []PlanDiagnostic {
 	return out
 }
 
-func firstInput(inputs []InputIntent) InputIntent {
+func firstInput(inputs []inputIntent) inputIntent {
 	if len(inputs) == 0 {
-		return InputIntent{}
+		return inputIntent{}
 	}
 	return inputs[0]
 }
 
-func firstInputName(inputs []InputIntent) string {
+func firstInputName(inputs []inputIntent) string {
 	if len(inputs) == 0 {
 		return "input"
 	}

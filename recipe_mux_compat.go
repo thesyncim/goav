@@ -183,7 +183,7 @@ func copyMuxStreamCodec(
 	return probedMuxInputCodec(inputProbes, branch)
 }
 
-func liveMuxInputCodec(inputs []InputIntent, branch planBranch) (av.CodecID, av.MediaType, bool) {
+func liveMuxInputCodec(inputs []inputIntent, branch planBranch) (av.CodecID, av.MediaType, bool) {
 	for i := range inputs {
 		input := inputs[i]
 		if !input.Realtime || input.Codec.ID == "" {
