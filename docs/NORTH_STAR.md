@@ -103,6 +103,14 @@ Revised after investigating #2 (see Grammar #2): the plan collapse must come
    no round-trip); (3b) `branchComposePlan` becomes transcode-only → move the bridge
    to a compat pkg, drop the core `transcode` import; (3c) then encode/decode
    `streamIntent` collapse (the woven 51/102-read fields) + #2 fall out together.
+   **3a blocker (tested+reverted):** `buildMediaPlan` can't just use
+   `intent.Streams` instead of `streamIntentsFromBranchComposePlan(state.plan)` —
+   `branchComposeBranch` carries the **shared/private operation split**
+   (`SharedOperations`/`PrivateOperations`, from `streamBuild.sharedOps/privateOps`)
+   that plain `streamIntent` lacks; dropping it breaks
+   `TestPlannedBranchSplitOperationsRespectEarlierTapAnchors` (tap-anchor splitting).
+   So 3a must first carry the shared/private split on `streamIntent` (or recompute
+   it via `splitOperationSpecsByShared`) before the source can swap.
    **#2 layer (corrected):** `graphPlan.Describe()` returns `p.spec()` (the lowerer
    graph spec), NOT the mediaPlan — so `Describe()≡Build()` is automatic (both share
    `p.spec()`). **#2 lives purely in the lowerer spec generation:** direct chains use
