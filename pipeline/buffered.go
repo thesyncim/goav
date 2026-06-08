@@ -25,6 +25,7 @@ type bufferedNode struct {
 	emitter    bufferedEmitter
 	queueMutex sync.Mutex
 	done       chan struct{}
+	counters   *nodeCounters
 }
 
 type bufferedEmitter struct {
@@ -47,22 +48,20 @@ type bufferedMessage struct {
 }
 
 type bufferedRunner struct {
-	config      GraphConfig
-	mu          sync.RWMutex
-	index       map[string]int
-	nodes       []bufferedNode
-	statsByNode []NodeStats
-	sources     []int
-	events      chan av.Event
-	pending     sync.WaitGroup
-	workers     sync.WaitGroup
-	statsMu     sync.Mutex
-	stats       GraphStats
-	runCtx      context.Context
-	runErrs     chan<- error
-	running     bool
-	draining    bool
-	closed      bool
+	config   GraphConfig
+	mu       sync.RWMutex
+	index    map[string]int
+	nodes    []bufferedNode
+	sources  []int
+	events   chan av.Event
+	pending  sync.WaitGroup
+	workers  sync.WaitGroup
+	cold     coldStats
+	runCtx   context.Context
+	runErrs  chan<- error
+	running  bool
+	draining bool
+	closed   bool
 }
 
 type bufferedSourceRun struct {
@@ -357,13 +356,12 @@ func (g *bufferedRunner) Stats() GraphStats {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	names := make([]string, len(g.nodes))
+	nodes := make([]*nodeCounters, len(g.nodes))
 	for i := range g.nodes {
 		names[i] = g.nodes[i].name
+		nodes[i] = g.nodes[i].counters
 	}
-
-	g.statsMu.Lock()
-	defer g.statsMu.Unlock()
-	return cloneGraphStatsWithNodes(g.stats, names, g.statsByNode)
+	return snapshotStats(&g.cold, names, nodes)
 }
 
 func (g *bufferedRunner) Close() error {
@@ -478,9 +476,9 @@ func (g *bufferedRunner) addNode(node bufferedNode) (int, error) {
 	node.policy = normalizeBufferedPolicy(node.policy)
 	node.drop = newDropController(node.policy)
 	node.emitter = bufferedEmitter{graph: g, from: index}
+	node.counters = &nodeCounters{}
 	g.index[node.name] = index
 	g.nodes = append(g.nodes, node)
-	g.statsByNode = append(g.statsByNode, NodeStats{})
 	return index, nil
 }
 
@@ -568,7 +566,7 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 		g.mu.RUnlock()
 		return nil
 	}
-	g.observeMessage(from, msg)
+	observeOut(fromNode.counters, msg, &g.cold)
 	if err := g.publishEvent(msg); err != nil {
 		g.mu.RUnlock()
 		return err
@@ -609,14 +607,14 @@ func (g *bufferedRunner) enqueue(ctx context.Context, to int, msg *Message) erro
 	case bufferAdmit:
 		return g.enqueueBound(ctx, node, msg)
 	case bufferDropIncoming:
-		g.observeDrop(to, node.policy.Drop)
+		observeDrop(node.counters, node.policy.Drop, &g.cold)
 		return nil
 	case bufferDropOldest:
 		select {
 		case dropped := <-node.queue:
 			node.releaseSlot(dropped)
 			g.pending.Done()
-			g.observeDrop(to, node.policy.Drop)
+			observeDrop(node.counters, node.policy.Drop, &g.cold)
 		default:
 		}
 		return g.enqueueBound(ctx, node, msg)
@@ -686,8 +684,9 @@ func (g *bufferedRunner) deliver(ctx context.Context, to int, msg *Message) erro
 	stage := g.nodes[to].stage
 	sink := g.nodes[to].sink
 	emitter := g.nodes[to].emitter
+	counters := g.nodes[to].counters
 	g.mu.RUnlock()
-	g.observeDelivered(to, msg)
+	observeIn(counters, msg, &g.cold)
 	switch kind {
 	case nodeStage:
 		return stage.Handle(ctx, msg, &emitter)
@@ -716,32 +715,6 @@ func (g *bufferedRunner) releaseSlot(index int, slot *bufferedMessage) {
 	free <- slot
 }
 
-func (g *bufferedRunner) observeMessage(node int, msg *Message) {
-	g.statsMu.Lock()
-	defer g.statsMu.Unlock()
-	g.stats.observeMessage(msg)
-	if node >= 0 && node < len(g.statsByNode) {
-		g.statsByNode[node].observeOut(msg)
-	}
-}
-
-func (g *bufferedRunner) observeDrop(node int, policy DropPolicy) {
-	g.statsMu.Lock()
-	defer g.statsMu.Unlock()
-	g.stats.observeDrop(policy)
-	if node >= 0 && node < len(g.statsByNode) {
-		g.statsByNode[node].observeDrop(policy)
-	}
-}
-
-func (g *bufferedRunner) observeDelivered(node int, msg *Message) {
-	g.statsMu.Lock()
-	defer g.statsMu.Unlock()
-	g.stats.Delivered++
-	if node >= 0 && node < len(g.statsByNode) {
-		g.statsByNode[node].observeIn(msg)
-	}
-}
 
 func (g *bufferedRunner) publishEvent(msg *Message) error {
 	if msg.Kind != MessageEvent || msg.Event == nil {

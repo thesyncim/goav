@@ -15,6 +15,7 @@ Baseline (commit `110616b`): root **types=82**, funcs=90, methods=48.
 |---|-------|-------|-------------------------|
 | 1 | S1 | Fold `TapReport` into `TapInfo` (field-for-field identical; `PlanReport.Taps`/`Explain` and `Snapshot().Taps` now share one read type; deleted `tapReports` converter) | root types **82 → 81**; build+vet(root)+`go test ./...` green |
 | 2 | P1 | Add fanout + scaling benchmarks (`pipeline/fanout_bench_test.go`): direct 1→N serial & parallel, buffered 1→N (shared vs per-target copy), N∈{1,8,64,512} | Baseline recorded below; becomes the P2/P3 regression gate |
+| 3 | P2a | Remove the per-message global `statsMu` from **both** runners: per-node `nodeCounters` (`atomic.Uint64`) on the hot path; graph totals derived by summing per-node counters at `Stats()`; only rare event/drop detail (maps, last-event) takes a cold mutex (`stats.go`, `direct.go`, `buffered.go`) | Buffered (concurrent-branch) fanout **−22%…−34%**; direct serial **−24%**; `allocs/op` unchanged; `-race` clean; `go test ./...` green |
 
 ### P1 baseline (Apple M4 Max, arm64, `go test -bench Fanout -benchmem`)
 
@@ -61,6 +62,29 @@ Buffered fanout, end-to-end (DropOldest, cap 1024):
    past 8 targets. An SFU fanning out to many subscribers hits this every packet.
 3. Buffered fanout allocates ~1 alloc/target — investigate under P3 (per-target
    slot/copy path).
+
+### P2a result (same-machine A/B, `-count=3` medians, `-benchtime=100000x`)
+
+| path | baseline (statsMu) | P2a (atomic) | Δ | allocs/op |
+|------|------:|------:|------:|----------:|
+| buffered shared/N=64 | 28.0µs | 22.0µs | −22% | 64 (=) |
+| buffered shared/N=512 | 261.7µs | 173.0µs | −34% | 512 (=) |
+| buffered copy/N=512 | 241.3µs | 221.3µs | −8% | 517 (=) |
+| direct serial/N=8 | 153ns | 116ns | −24% | 0 (=) |
+| direct parallel/N=8 (1 shared source) | 1207ns | 1403ns | +16% | 0 (=) |
+
+The win lands on the **buffered (per-node-goroutine) fanout** — the simulcast /
+many-subscriber path — because removing `statsMu` lets N worker goroutines stop
+serializing on one lock per delivered message. The direct *parallel*
+micro-benchmark uses one shared source emitted from many goroutines and is still
+bottlenecked on `g.mu.RLock` (taken 1+N times per message via `nodeSnapshot`,
+which also copies the whole node); it does not improve here.
+
+**Next pressure point (P2b):** replace per-message topology reads with an
+atomically-swapped immutable routing snapshot (`atomic.Pointer`) so `emit`/`deliver`
+take no lock, do not copy the node, and deliver inline (which also removes the
+wide-fanout `destinations []int` heap spill seen at N≥64). Start with the direct
+runner (SFU egress hot path), then the buffered runner.
 
 Known pre-existing issue (also a P2 target): `go vet ./pipeline/` reports
 `bufferedNode contains sync.Mutex` copied in `buffered.go` (append/assign/pass by

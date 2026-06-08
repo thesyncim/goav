@@ -31,14 +31,15 @@ const (
 )
 
 type directNode struct {
-	name    string
-	kind    nodeKind
-	active  bool
-	source  Source
-	stage   Stage
-	sink    Sink
-	routes  []directRoute
-	emitter *directEmitter
+	name     string
+	kind     nodeKind
+	active   bool
+	source   Source
+	stage    Stage
+	sink     Sink
+	routes   []directRoute
+	emitter  *directEmitter
+	counters *nodeCounters
 }
 
 type directRoute struct {
@@ -66,16 +67,14 @@ func NewGraph(config GraphConfig) (Graph, error) {
 }
 
 type directRunner struct {
-	config      GraphConfig
-	mu          sync.RWMutex
-	statsMu     sync.Mutex
-	index       map[string]int
-	nodes       []directNode
-	statsByNode []NodeStats
-	sources     []int
-	events      chan av.Event
-	stats       GraphStats
-	closed      bool
+	config   GraphConfig
+	mu       sync.RWMutex
+	index    map[string]int
+	nodes    []directNode
+	sources  []int
+	events   chan av.Event
+	cold     coldStats
+	closed   bool
 }
 
 func newDirectRunner(config GraphConfig) (*directRunner, error) {
@@ -312,13 +311,12 @@ func (g *directRunner) Stats() GraphStats {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	names := make([]string, len(g.nodes))
+	nodes := make([]*nodeCounters, len(g.nodes))
 	for i := range g.nodes {
 		names[i] = g.nodes[i].name
+		nodes[i] = g.nodes[i].counters
 	}
-
-	g.statsMu.Lock()
-	defer g.statsMu.Unlock()
-	return cloneGraphStatsWithNodes(g.stats, names, g.statsByNode)
+	return snapshotStats(&g.cold, names, nodes)
 }
 
 func (g *directRunner) Close() error {
@@ -408,9 +406,9 @@ func (g *directRunner) addNode(node directNode) (int, error) {
 	index := len(g.nodes)
 	node.active = true
 	node.emitter = &directEmitter{graph: g, from: index}
+	node.counters = &nodeCounters{}
 	g.index[node.name] = index
 	g.nodes = append(g.nodes, node)
-	g.statsByNode = append(g.statsByNode, NodeStats{})
 	return index, nil
 }
 
@@ -435,7 +433,7 @@ func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 		g.mu.RUnlock()
 		return nil
 	}
-	g.observeMessage(from, msg)
+	observeOut(fromNode.counters, msg, &g.cold)
 	if err := g.publishEvent(msg); err != nil {
 		g.mu.RUnlock()
 		return err
@@ -474,7 +472,7 @@ func (g *directRunner) deliver(ctx context.Context, to int, msg *Message) error 
 		}
 		return err
 	}
-	g.observeDelivered(to, msg)
+	observeIn(node.counters, msg, &g.cold)
 	switch node.kind {
 	case nodeStage:
 		return node.stage.Handle(ctx, msg, node.emitter)
@@ -522,24 +520,6 @@ func (g *directRunner) publishEvent(msg *Message) error {
 		return nil
 	default:
 		return ErrBackpressure
-	}
-}
-
-func (g *directRunner) observeMessage(node int, msg *Message) {
-	g.statsMu.Lock()
-	defer g.statsMu.Unlock()
-	g.stats.observeMessage(msg)
-	if node >= 0 && node < len(g.statsByNode) {
-		g.statsByNode[node].observeOut(msg)
-	}
-}
-
-func (g *directRunner) observeDelivered(node int, msg *Message) {
-	g.statsMu.Lock()
-	defer g.statsMu.Unlock()
-	g.stats.Delivered++
-	if node >= 0 && node < len(g.statsByNode) {
-		g.statsByNode[node].observeIn(msg)
 	}
 }
 
