@@ -276,7 +276,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 	}
 	if job != nil {
 		state.jobPresent = true
-		state.intent = job.Intent()
+		state.intent = job.Plan()
 		state.runtime = job.runtime
 		state.recipeErr = job.err
 		state.inputAttachments = append([]InputSpec(nil), job.inputs...)
@@ -333,13 +333,13 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 	}
 	if job != nil {
 		state.branchCompositionPresent = true
-		state.intent = job.Intent()
+		state.intent = job.Plan()
 		state.runtime = job.runtime
 		state.recipeErr = job.err
 		state.branchInputAttachment = job.input
 		state.branchDestinationAttachments = append([]namedDestinationSpec(nil), job.outputs...)
 		state.branchCompositionSplit = job.fromBranchSplit
-		state.plan, state.planErr = job.Plan()
+		state.plan, state.planErr = job.composePlan()
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateBranchCompositionRecipePass(),

@@ -1553,7 +1553,7 @@ func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOp
 	return &jobStreamBuilder{job: j, stream: stream}
 }
 
-func (j *Job) Intent() Intent {
+func (j *Job) Plan() Intent {
 	intent := Intent{Name: j.name}
 	if runtime, ok := j.runtime.(*runtime); ok {
 		intent.Policies.Realtime = runtime.realtime
@@ -3916,7 +3916,7 @@ func (j *branchCompositionJob) setErr(err error) {
 	}
 }
 
-func (j *branchCompositionJob) Intent() Intent {
+func (j *branchCompositionJob) Plan() Intent {
 	intent := Intent{
 		Name:   firstNonEmpty(j.name, "branch-composition"),
 		Inputs: []inputIntent{j.input.intent()},
@@ -3933,11 +3933,11 @@ func (j *branchCompositionJob) Intent() Intent {
 	return intent
 }
 
-func (j *branchCompositionJob) Plan() (branchComposePlan, error) {
+func (j *branchCompositionJob) composePlan() (branchComposePlan, error) {
 	if j == nil {
 		return branchComposePlan{}, nil
 	}
-	return planBranchCompositionRecipe(j.Intent(), j.input, j.outputs, j.streams)
+	return planBranchCompositionRecipe(j.Plan(), j.input, j.outputs, j.streams)
 }
 
 func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []namedDestinationSpec, branchBuilds []streamBuild) (branchComposePlan, error) {

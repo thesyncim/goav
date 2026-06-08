@@ -613,7 +613,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if tap := streamBuildOperationSpecs(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != DomainPacket {
 		t.Fatalf("copy branch tap = %+v, want packet branch tap", tap)
 	}
-	copyPlan, err := planBranchCompositionRecipe(copyJob.Intent(), copyJob.inputs[0], copyJob.branchDestinations, copyJob.branchStreams)
+	copyPlan, err := planBranchCompositionRecipe(copyJob.Plan(), copyJob.inputs[0], copyJob.branchDestinations, copyJob.branchStreams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -685,7 +685,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web operations = %+v, want anchor tap video.720p.frames", webOps)
 	}
 
-	plan, err := planBranchCompositionRecipe(job.Intent(), job.inputs[0], job.branchDestinations, job.branchStreams)
+	plan, err := planBranchCompositionRecipe(job.Plan(), job.inputs[0], job.branchDestinations, job.branchStreams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -738,7 +738,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web route = %+v, want shared 720p resize from operation fields", routes[1])
 	}
 
-	intentWithoutOperations := job.Intent()
+	intentWithoutOperations := job.Plan()
 	for i := range intentWithoutOperations.Streams {
 		intentWithoutOperations.Streams[i].Operations = nil
 	}
