@@ -1789,12 +1789,7 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 	if stream == nil {
 		return streamIntent{}
 	}
-	afterPacketOperation := OpEncode
-	if stream.encode.Copy {
-		afterPacketOperation = OpCopy
-	}
-	afterStepOperation := initialStepAfter(stream.decode)
-	steps := jobStreamChainSteps(stream)
+	operations := jobOperationSpecs(stream)
 	return streamIntent{
 		Name: stream.name,
 		Select: StreamSelect{
@@ -1807,8 +1802,8 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 		},
 		Decode:       stream.decode,
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
-		Operations:   jobOperationSpecs(stream),
-		Taps:         append(chainStepTapIntents(steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
+		Operations:   operations,
+		Taps:         operationSpecTaps(operations, stream.selector.Type),
 		Encode:       cloneCodecSpec(stream.encode),
 		CodecChange:  stream.codecChange,
 		Destinations: destinationNamesWithOverrides(stream.outputs, stream.outputNames),
@@ -1816,12 +1811,7 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 }
 
 func branchStreamIntent(stream streamBuild) streamIntent {
-	afterPacketOperation := OpEncode
-	if stream.encode.Copy {
-		afterPacketOperation = OpCopy
-	}
-	afterStepOperation := initialStepAfter(stream.decode)
-	steps := branchChainStepsFromOperationSpecs(streamBuildOperationSpecs(stream))
+	operations := streamBuildOperationSpecs(stream)
 	return streamIntent{
 		Name: stream.name,
 		Select: StreamSelect{
@@ -1835,8 +1825,8 @@ func branchStreamIntent(stream streamBuild) streamIntent {
 		From:         stream.from,
 		Decode:       stream.decode,
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
-		Operations:   streamBuildOperationSpecs(stream),
-		Taps:         append(chainStepTapIntents(steps, stream.selector.Type, afterStepOperation), postPacketTapIntents(stream.postEncodeTaps, stream.selector.Type, afterPacketOperation)...),
+		Operations:   operations,
+		Taps:         operationSpecTaps(operations, stream.selector.Type),
 		Encode:       cloneCodecSpec(stream.encode),
 		Destinations: append([]string(nil), stream.destinationNames...),
 	}
@@ -2053,32 +2043,6 @@ func chainStepOperations(steps []chainStep, media av.MediaType, after OperationK
 	return operations
 }
 
-func chainStepTapIntents(steps []chainStep, media av.MediaType, after OperationKind) []tapIntent {
-	if len(steps) == 0 {
-		return nil
-	}
-	taps := make([]tapIntent, 0)
-	for i := range steps {
-		step := steps[i]
-		switch {
-		case step.stage != nil:
-			after = OpStage
-		case !mediaShapeEmpty(step.shape):
-			after = OpShape
-		case step.transform.Resize != nil || step.transform.Resample != nil:
-			after = OpTransform
-		case step.tap != "":
-			taps = append(taps, tapIntent{
-				Name:      step.tap,
-				MediaKind: media,
-				Domain:    chainStepTapDomain(step, DomainFrame),
-				After:     after,
-			})
-		}
-	}
-	return taps
-}
-
 func chainStepTapDomain(step chainStep, fallback MediaDomain) MediaDomain {
 	if step.tapDomain != "" {
 		return step.tapDomain
@@ -2086,27 +2050,30 @@ func chainStepTapDomain(step chainStep, fallback MediaDomain) MediaDomain {
 	return fallback
 }
 
+// operationSpecTaps derives a stream's exported taps from its OpTap operations —
+// the single source of truth — instead of the parallel chain-step-tap and
+// post-encode-tap projections. Each OpTap already carries the resolved tap
+// (name/domain/media/after) from operationSpecForTap.
+func operationSpecTaps(operations []OperationSpec, media av.MediaType) []tapIntent {
+	taps := make([]tapIntent, 0, len(operations))
+	for i := range operations {
+		if operations[i].Kind != OpTap {
+			continue
+		}
+		tap := operations[i].Tap
+		if tap.MediaKind == "" {
+			tap.MediaKind = media // backfill from the resolved stream selector
+		}
+		taps = append(taps, tap)
+	}
+	return taps
+}
+
 func initialStepAfter(decode bool) OperationKind {
 	if decode {
 		return OpDecode
 	}
 	return ""
-}
-
-func postPacketTapIntents(names []string, media av.MediaType, after OperationKind) []tapIntent {
-	if len(names) == 0 {
-		return nil
-	}
-	taps := make([]tapIntent, 0, len(names))
-	for i := range names {
-		taps = append(taps, tapIntent{
-			Name:      names[i],
-			MediaKind: media,
-			Domain:    DomainPacket,
-			After:     after,
-		})
-	}
-	return taps
 }
 
 func streamNeedsDecodeFromBuild(stream *jobStreamBuild) bool {
