@@ -2,6 +2,15 @@
 
 Compact tracker for the current `goav` buildout.
 
+## Driving spec
+
+The overarching goal is **`docs/NORTH_STAR.md`** — collapse goav into one public
+grammar and one internal planning model (`Composition → WorkPlan → pipeline.Graph
+→ Task`; `BranchSpec + TapInfo → WorkPatch`), deleting the parallel IR
+(`branchComposePlan`, transcode-in-core, `mediaPlan` vs `workPlan`, `BranchSpec`'s
+16 parallel fields, string destination refs). Track via its 28 acceptance tests.
+Execute as safe residue-deletions, one per iteration.
+
 ## Improvement Loop — Slice Log
 
 Evidence-driven slices, alternating Track S (shrink public surface) and Track P
