@@ -9,6 +9,7 @@ const (
 	bufferDropIncoming
 	bufferDropOldest
 	bufferBackpressure
+	bufferBlock
 )
 
 type dropController struct {
@@ -47,6 +48,8 @@ func (c *dropController) decide(used int, msg *Message) bufferAction {
 	switch c.policy.Drop {
 	case "", DropNever:
 		return bufferBackpressure
+	case DropBlock:
+		return bufferBlock
 	case DropOldest:
 		return bufferDropOldest
 	case DropNewest:

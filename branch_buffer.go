@@ -179,6 +179,8 @@ func (b BranchBuffer) pipelinePolicy() pipeline.BufferPolicy {
 		CopyFrameBytes:  b.CopyFrameBytes,
 	}
 	switch b.Mode {
+	case BufferBlocking:
+		policy.Drop = pipeline.DropBlock
 	case BufferDropOldest, BufferLatest:
 		policy.Drop = pipeline.DropOldest
 	case BufferDropNewest:

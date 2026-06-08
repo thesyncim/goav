@@ -502,6 +502,125 @@ func TestGraphBufferedBackpressure(t *testing.T) {
 	}
 }
 
+type countingSink struct {
+	name  string
+	delay time.Duration
+	mu    sync.Mutex
+	count int
+}
+
+func (s *countingSink) Name() string { return s.name }
+
+func (s *countingSink) Handle(context.Context, *Message) error {
+	if s.delay > 0 {
+		time.Sleep(s.delay)
+	}
+	s.mu.Lock()
+	s.count++
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *countingSink) Close() error { return nil }
+
+func (s *countingSink) total() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.count
+}
+
+// TestGraphBufferedBlockingAppliesBackpressure proves the DropBlock fix: a slow
+// consumer paces the source (true backpressure) without tearing the pipeline down
+// or dropping, and a fast sibling still receives every message.
+func TestGraphBufferedBlockingAppliesBackpressure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	const n = 30
+	source := &benchDrainSource{name: "src", n: n, msg: benchPacketMessage(64, true)}
+	slow := &countingSink{name: "slow", delay: time.Millisecond}
+	fast := &countingSink{name: "fast"}
+
+	graph, err := NewGraph(GraphConfig{Name: "blocking", Buffer: BufferPolicy{Capacity: 2, Drop: DropBlock}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(slow, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(fast, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: "src", To: []string{"slow", "fast"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := graph.Run(ctx); err != nil {
+		t.Fatalf("blocking pipeline tore down under backpressure: %v", err)
+	}
+	if got := slow.total(); got != n {
+		t.Fatalf("slow sink delivered %d, want all %d (blocking must not drop)", got, n)
+	}
+	if got := fast.total(); got != n {
+		t.Fatalf("fast sibling delivered %d, want all %d (slow consumer must not abort siblings)", got, n)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestGraphBufferedBlockingCancelUnblocks proves a permanently stuck Blocking
+// consumer releases the source on ctx cancellation (the accepted escape).
+func TestGraphBufferedBlockingCancelUnblocks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	source := &benchDrainSource{name: "src", n: 1000, msg: benchPacketMessage(64, true)}
+	stuck := &blockUntilSink{name: "stuck", release: make(chan struct{})}
+
+	graph, err := NewGraph(GraphConfig{Name: "stuck", Buffer: BufferPolicy{Capacity: 1, Drop: DropBlock}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(stuck, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: "src", To: []string{"stuck"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- graph.Run(ctx) }()
+	cancel() // unblock the paced source
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("blocking source did not release on ctx cancel")
+	}
+	close(stuck.release)
+	_ = graph.Close()
+}
+
+type blockUntilSink struct {
+	name    string
+	release chan struct{}
+}
+
+func (s *blockUntilSink) Name() string { return s.name }
+
+func (s *blockUntilSink) Handle(ctx context.Context, _ *Message) error {
+	select {
+	case <-s.release:
+	case <-ctx.Done():
+	}
+	return nil
+}
+
+func (s *blockUntilSink) Close() error { return nil }
+
 func runBufferedBurst(policy BufferPolicy) ([]byte, error) {
 	values, _, err := runBufferedBurstWithStats(policy)
 	return values, err

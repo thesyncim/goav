@@ -690,6 +690,8 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 	switch action {
 	case bufferAdmit:
 		return g.enqueueBound(ctx, node, msg)
+	case bufferBlock:
+		return g.enqueueBlocking(ctx, node, msg)
 	case bufferDropIncoming:
 		observeDrop(node.counters, node.policy.Drop, &g.cold)
 		return nil
@@ -704,6 +706,33 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 		return g.enqueueBound(ctx, node, msg)
 	default:
 		return ErrBackpressure
+	}
+}
+
+// enqueueBlocking implements true backpressure for DropBlock: it waits for a free
+// slot and for queue space, so a full queue paces the producer instead of
+// erroring. It holds node.queueMutex but no g.mu (FC-1), and the lock-free worker
+// drains the queue, so the wait always makes progress; ctx cancellation is the
+// only escape.
+func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode, msg *Message) error {
+	var slot *bufferedMessage
+	select {
+	case slot = <-node.free:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := slot.bind(msg, node.policy); err != nil {
+		node.releaseSlot(slot)
+		return err
+	}
+	g.pending.Add(1)
+	select {
+	case node.queue <- slot:
+		return nil
+	case <-ctx.Done():
+		g.pending.Done()
+		node.releaseSlot(slot)
+		return ctx.Err()
 	}
 }
 

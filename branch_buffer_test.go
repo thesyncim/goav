@@ -18,7 +18,7 @@ func TestBranchBufferConstructorsLowerToPipelinePolicy(t *testing.T) {
 		{
 			name:   "blocking",
 			buffer: Blocking(8),
-			want:   pipeline.BufferPolicy{Capacity: 8, Drop: pipeline.DropNever},
+			want:   pipeline.BufferPolicy{Capacity: 8, Drop: pipeline.DropBlock},
 		},
 		{
 			name:   "drop oldest",
@@ -40,7 +40,7 @@ func TestBranchBufferConstructorsLowerToPipelinePolicy(t *testing.T) {
 			buffer: Blocking(2, BufferCopyBounds(64, 1024), BufferMaxDelay(25*time.Millisecond)),
 			want: pipeline.BufferPolicy{
 				Capacity:        2,
-				Drop:            pipeline.DropNever,
+				Drop:            pipeline.DropBlock,
 				TargetLatency:   25 * time.Millisecond,
 				MaxLatency:      25 * time.Millisecond,
 				CopyPacketBytes: 64,

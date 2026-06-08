@@ -50,6 +50,10 @@ const (
 	DropNewest      DropPolicy = "newest"
 	DropUntilSync   DropPolicy = "until_sync"
 	DropNonKeyVideo DropPolicy = "non_key_video"
+	// DropBlock never drops: a full queue blocks the producer until the consumer
+	// drains (true backpressure), instead of erroring. Source paces to the
+	// slowest blocking consumer; no pipeline teardown.
+	DropBlock DropPolicy = "block"
 )
 
 type BufferPolicy struct {

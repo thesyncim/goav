@@ -1,8 +1,12 @@
 # Flow control (design)
 
-Status: **decided — implementing.** Maintainer: (A) `Blocking` should truly
-block with backpressure; (B) leave the bare default (`DropNever`) as
-error-on-full (unchanged).
+Status: **FC-1 + FC-2 done** (slices 11–12): `Blocking` truly blocks (no
+teardown, no drop, source paced; ctx-cancel escapes a stuck consumer); bare
+`DropNever` default unchanged. Remaining follow-up: **independent fanout
+backpressure** — today `emit` enqueues targets sequentially, so a slow `Blocking`
+target paces siblings (head-of-line). Acceptable for now; full independence needs
+per-target decoupling (e.g. a fan-out shim or per-edge policy). Maintainer:
+(A) `Blocking` blocks; (B) leave the bare default as error-on-full.
 
 Plan: slice **FC-1** — buffered producer-side `atomic.Pointer` routing snapshot
 (mirror of P2b/direct) so `emit` reads routes→target `*bufferedNode` and enqueues
