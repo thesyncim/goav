@@ -1840,7 +1840,7 @@ func jobOperationSpecs(stream *jobStreamBuild) []OperationSpec {
 		return cloneOperationSpecs(stream.operations)
 	}
 	steps := jobStreamChainSteps(stream)
-	operations := make([]OperationSpec, 0, len(steps)+1+len(stream.postEncodeTaps))
+	operations := make([]OperationSpec, 0, len(steps)+1)
 	if stream.decode {
 		operations = append(operations, OperationSpec{Kind: OpDecode, Component: string(stream.selector.Codec), Decode: cloneCodecSpec(stream.decodeCodec)})
 	}
@@ -1849,14 +1849,6 @@ func jobOperationSpecs(stream *jobStreamBuild) []OperationSpec {
 		operations = append(operations, OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
 	} else if codecIntentSet(stream.encode) {
 		operations = append(operations, OperationSpec{Kind: OpEncode, Component: string(stream.encode.ID), Encode: stream.encode})
-	}
-	for i := range stream.postEncodeTaps {
-		after := OpEncode
-		if stream.encode.Copy {
-			after = OpCopy
-		}
-		tap := tapIntent{Name: stream.postEncodeTaps[i], MediaKind: stream.selector.Type, Domain: DomainPacket, After: after}
-		operations = append(operations, OperationSpec{Kind: OpTap, Component: tap.Name, Tap: tap})
 	}
 	return operations
 }
@@ -1868,7 +1860,7 @@ func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
 	if len(stream.operations) != 0 {
 		return cloneOperationSpecs(stream.operations)
 	}
-	operations := make([]OperationSpec, 0, 2+len(stream.postEncodeTaps))
+	operations := make([]OperationSpec, 0, 2)
 	if stream.decode {
 		operations = append(operations, OperationSpec{
 			Kind:      OpDecode,
@@ -1881,14 +1873,6 @@ func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
 		operations = append(operations, OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
 	} else if codecIntentSet(stream.encode) {
 		operations = append(operations, OperationSpec{Kind: OpEncode, Component: string(stream.encode.ID), Encode: stream.encode})
-	}
-	for i := range stream.postEncodeTaps {
-		after := OpEncode
-		if stream.encode.Copy {
-			after = OpCopy
-		}
-		tap := tapIntent{Name: stream.postEncodeTaps[i], MediaKind: stream.selector.Type, Domain: DomainPacket, After: after}
-		operations = append(operations, OperationSpec{Kind: OpTap, Component: tap.Name, Tap: tap})
 	}
 	return operations
 }
