@@ -91,6 +91,18 @@ Revised after investigating #2 (see Grammar #2): the plan collapse must come
 3. **#9/#5**: quarantine→delete `branchComposePlan` + transcode import from core
    (compat helpers live outside core, emit From/Branch specs). This removes
    `planBranchesFromBranchComposePlan` so there is one branch-plan source.
+   **Mapped:** `branchComposePlan` has TWO sources — `composePlan()` (recipe
+   `Branches()`) and `branchComposePlanFromTranscode` (legacy transcode API). The
+   recipe path round-trips `BranchSpec → branchComposeBranch → streamIntent`
+   (`streamIntentFromBranchComposeBranch`); `branchComposeBranchOperationSpecs`
+   already derives ops from `.Operations`, so the scalar mirrors
+   (Resize/Resample/DecodeConfig/Encode/Decode/Copy) only re-materialize
+   `streamIntent.Decode/Encode` + feed the transcode compile path (`runtime_transcode.go`).
+   Collapse order: (3a) make recipe `Branches()` populate `state.intent` branch
+   `streamIntent`s so `buildMediaPlan` takes `planBranches` (one branch-plan source,
+   no round-trip); (3b) `branchComposePlan` becomes transcode-only → move the bridge
+   to a compat pkg, drop the core `transcode` import; (3c) then encode/decode
+   `streamIntent` collapse (the woven 51/102-read fields) + #2 fall out together.
 4. **#7/#26**: fold `mediaPlan` into a `WorkPlan` view; one plan for
    Explain/Describe/Build/Attach/Snapshot → naming resolves once.
 5. **#2 falls out**: with one plan path, direct chain and `Branch("main")` name
