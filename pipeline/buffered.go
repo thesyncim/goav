@@ -30,6 +30,26 @@ type bufferedNode struct {
 	// removed is set (once) when the node is torn down by Remove, so the
 	// lock-free worker can shed in-flight messages without taking g.mu.
 	removed atomic.Bool
+	// queueClosed guards the queue channel against the lock-free producer: it is
+	// set under queueMutex before the queue is closed, so enqueue (which holds
+	// queueMutex but no g.mu) never sends on a closed channel.
+	queueClosed bool
+}
+
+// bufferedTopo is an immutable producer-side routing snapshot read lock-free by
+// emit via bufferedRunner.topo (atomic.Pointer), rebuilt under g.mu on every
+// topology/queue change. It holds stable *bufferedNode pointers (their
+// queue/free/policy/counters are set under g.mu before the rebuild that
+// publishes them) plus a deep copy of each node's active flag and routes, so a
+// published snapshot is never mutated.
+type bufferedTopo struct {
+	nodes []bufferedTopoNode
+}
+
+type bufferedTopoNode struct {
+	node   *bufferedNode
+	active bool
+	routes []directRoute
 }
 
 type bufferedEmitter struct {
@@ -69,6 +89,39 @@ type bufferedRunner struct {
 	// closing is the lock-free mirror of closed, set under g.mu at Close so the
 	// lock-free worker path sheds messages once the graph is closing.
 	closing atomic.Bool
+	// topo is the immutable producer-side routing snapshot; emit reads it without
+	// g.mu. nil means closed.
+	topo atomic.Pointer[bufferedTopo]
+}
+
+// rebuildTopoLocked publishes a fresh producer-side routing snapshot. Caller must
+// hold g.mu (write). Routes are deep-copied so in-place edits by Disconnect/Remove
+// never touch an already-published snapshot.
+func (g *bufferedRunner) rebuildTopoLocked() {
+	if g.closed {
+		g.topo.Store(nil)
+		return
+	}
+	topo := &bufferedTopo{nodes: make([]bufferedTopoNode, len(g.nodes))}
+	for i := range g.nodes {
+		n := g.nodes[i]
+		tn := &topo.nodes[i]
+		tn.node = n
+		tn.active = n.active
+		if len(n.routes) == 0 {
+			continue
+		}
+		tn.routes = make([]directRoute, len(n.routes))
+		for j := range n.routes {
+			tn.routes[j] = n.routes[j]
+			if len(n.routes[j].to) > 0 {
+				to := make([]int, len(n.routes[j].to))
+				copy(to, n.routes[j].to)
+				tn.routes[j].to = to
+			}
+		}
+	}
+	g.topo.Store(topo)
 }
 
 type bufferedSourceRun struct {
@@ -116,6 +169,7 @@ func (g *bufferedRunner) AddSource(source Source, policy BufferPolicy) (NodeRef,
 		return "", err
 	}
 	g.sources = append(g.sources, index)
+	g.rebuildTopoLocked()
 	return NodeRef(g.nodes[index].name), nil
 }
 
@@ -136,6 +190,7 @@ func (g *bufferedRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, er
 		g.openQueue(g.nodes[index])
 		g.startWorkerLocked(index)
 	}
+	g.rebuildTopoLocked()
 	return NodeRef(g.nodes[index].name), nil
 }
 
@@ -156,6 +211,7 @@ func (g *bufferedRunner) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error
 		g.openQueue(g.nodes[index])
 		g.startWorkerLocked(index)
 	}
+	g.rebuildTopoLocked()
 	return NodeRef(g.nodes[index].name), nil
 }
 
@@ -196,6 +252,7 @@ func (g *bufferedRunner) Connect(route Route) error {
 		policy: policy,
 		label:  route.Label,
 	})
+	g.rebuildTopoLocked()
 	return nil
 }
 
@@ -250,6 +307,7 @@ func (g *bufferedRunner) Disconnect(route Route) error {
 	if !removed {
 		return ErrInvalidLink
 	}
+	g.rebuildTopoLocked()
 	return nil
 }
 
@@ -288,6 +346,7 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 			emitter: g.nodes[index].emitter,
 		})
 	}
+	g.rebuildTopoLocked() // publish the snapshot with queues now open
 	g.mu.Unlock()
 
 	var sources sync.WaitGroup
@@ -388,7 +447,7 @@ func (g *bufferedRunner) Close() error {
 			continue
 		}
 		if running && node.kind != nodeSource && node.queue != nil {
-			close(node.queue)
+			g.closeNodeQueue(node)
 			if node.done != nil {
 				dones = append(dones, node.done)
 			}
@@ -396,6 +455,7 @@ func (g *bufferedRunner) Close() error {
 		node.active = false
 		nodes = append(nodes, node)
 	}
+	g.rebuildTopoLocked() // g.closed is set, so this publishes nil
 	g.mu.Unlock()
 
 	for i := range dones {
@@ -463,14 +523,27 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 	}
 	closeNode := node
 	if running && node.queue != nil {
-		close(node.queue)
+		g.closeNodeQueue(node)
 	}
 	done := node.done
+	g.rebuildTopoLocked()
 	g.mu.Unlock()
 	if running && done != nil {
 		<-done
 	}
 	return closeBufferedNode(closeNode)
+}
+
+// closeNodeQueue closes a node's queue exactly once, serialized with the
+// lock-free producer via queueMutex so enqueue never sends on a closed channel.
+func (g *bufferedRunner) closeNodeQueue(node *bufferedNode) {
+	node.queueMutex.Lock()
+	defer node.queueMutex.Unlock()
+	if node.queueClosed || node.queue == nil {
+		return
+	}
+	node.queueClosed = true
+	close(node.queue)
 }
 
 func (g *bufferedRunner) addNode(node *bufferedNode) (int, error) {
@@ -518,6 +591,7 @@ func (g *bufferedRunner) openQueue(node *bufferedNode) {
 		node.free <- &node.slots[i]
 	}
 	node.drop = newDropController(node.policy)
+	node.queueClosed = false
 }
 
 func (g *bufferedRunner) startWorkerLocked(index int) {
@@ -551,7 +625,7 @@ func (g *bufferedRunner) closeQueuesLocked() {
 		if !node.active || node.kind == nodeSource || node.queue == nil {
 			continue
 		}
-		close(node.queue)
+		g.closeNodeQueue(node)
 	}
 }
 
@@ -562,55 +636,55 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	g.mu.RLock()
-	if g.closed {
-		g.mu.RUnlock()
+	// Lock-free producer: read the routing snapshot and enqueue without g.mu, so a
+	// (possibly blocking) send holds no topology lock and cannot deadlock a
+	// concurrent mutation or a re-emitting stage.
+	topo := g.topo.Load()
+	if topo == nil {
 		return ErrClosed
 	}
-	if from < 0 || from >= len(g.nodes) {
-		g.mu.RUnlock()
+	if from < 0 || from >= len(topo.nodes) {
 		return ErrUnknownNode
 	}
-	fromNode := g.nodes[from]
+	fromNode := &topo.nodes[from]
 	if !fromNode.active {
-		g.mu.RUnlock()
 		return nil
 	}
-	observeOut(fromNode.counters, msg, &g.cold)
+	observeOut(fromNode.node.counters, msg, &g.cold)
 	if err := g.publishEvent(msg); err != nil {
-		g.mu.RUnlock()
 		return err
 	}
 
-	routes := fromNode.routes
-	for i := range routes {
-		route := &routes[i]
+	for i := range fromNode.routes {
+		route := &fromNode.routes[i]
 		if !route.matches(msg) {
 			continue
 		}
 		for j := range route.to {
 			to := route.to[j]
-			if to < 0 || to >= len(g.nodes) || !g.nodes[to].active {
+			if to < 0 || to >= len(topo.nodes) || !topo.nodes[to].active {
 				continue
 			}
-			if err := g.enqueue(ctx, to, msg); err != nil {
-				g.mu.RUnlock()
+			if err := g.enqueue(ctx, topo.nodes[to].node, msg); err != nil {
 				return err
 			}
 		}
 	}
-	g.mu.RUnlock()
 	return nil
 }
 
-func (g *bufferedRunner) enqueue(ctx context.Context, to int, msg *Message) error {
-	node := g.nodes[to]
+func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message) error {
 	if err := validateBufferedMessage(msg, node.policy); err != nil {
 		return err
 	}
 
 	node.queueMutex.Lock()
 	defer node.queueMutex.Unlock()
+
+	if node.queueClosed {
+		// Queue torn down (Remove/Close) after the snapshot was read; shed.
+		return nil
+	}
 
 	action := node.drop.decide(len(node.queue), msg)
 	switch action {
