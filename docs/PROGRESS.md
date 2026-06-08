@@ -18,6 +18,7 @@ Baseline (commit `110616b`): root **types=82**, funcs=90, methods=48.
 | 3 | P2a | Remove the per-message global `statsMu` from **both** runners: per-node `nodeCounters` (`atomic.Uint64`) on the hot path; graph totals derived by summing per-node counters at `Stats()`; only rare event/drop detail (maps, last-event) takes a cold mutex (`stats.go`, `direct.go`, `buffered.go`) | Buffered (concurrent-branch) fanout **−22%…−34%**; direct serial **−24%**; `allocs/op` unchanged; `-race` clean; `go test ./...` green |
 | 4 | S1b | Unexport the recipe-IR sub-shells `InputIntent`→`inputIntent`, `DestinationIntent`→`destinationIntent`, `PolicyIntent`→`policyIntent` (compiler internals; only read as fields of the kept read-model, so field access is unchanged; zero test-naming refs) | root types **81 → 78**; `go test ./...` green. Maintainer chose: unexport IR, keep one public pre-build read model via `Job.Plan()`. Remaining: rename `Intent`→public read model + `Job.Intent()`→`Job.Plan()`, unexport `StreamIntent`/`TapIntent` (have test-naming helpers + guard tests to migrate). |
 | 5 | P2b | Direct runner: replace per-message topology reads with an atomically-swapped immutable routing snapshot (`atomic.Pointer[directTopo]`, rebuilt under `g.mu` on each mutation). `emit`/`deliver` now take no lock, copy no node, and build no per-message `destinations` slice; events publish guarded by a separate `eventsMu` so the lock-free path can't send on a closed channel (`direct.go`) | Direct serial fanout **−47%…−75%** (3–4× faster); **wide-fanout allocation eliminated** (N=64: 896B/3→**0/0**; N=512: 8064B/6→**0/0**); `-race` clean; `TestGraphDirectRunAllocs` green; `go test ./...` green |
+| 6 | P (hygiene) | Buffered runner: store nodes as `[]*bufferedNode` (stable per-node addresses) instead of `[]bufferedNode`. Pure refactor, no behavior change; sets up P2c (workers can capture a stable node pointer) and **fixes the long-standing pre-existing `copylocks` vet failures** (`bufferedNode` mutex was copied on append/assign/pass-by-value) | `go vet ./...` now **fully clean** (was 4 copylocks errors in buffered.go); `-race` + `go test ./...` green |
 
 ### P1 baseline (Apple M4 Max, arm64, `go test -bench Fanout -benchmem`)
 
@@ -104,10 +105,9 @@ this is the *real* concurrency path (simulcast branches). Apply the same routing
 snapshot there (harder: dynamic add/remove during run). Also P3: refcounted
 zero-copy fanout (`av.Buffer` Retain/Release) and the `Blocking`-doesn't-block fix.
 
-Known pre-existing issue (also a P2 target): `go vet ./pipeline/` reports
-`bufferedNode contains sync.Mutex` copied in `buffered.go` (append/assign/pass by
-value). Predates the loop; the per-delivery node-copy is what P2 removes. Not
-introduced by any slice.
+Resolved in slice 6: the pre-existing `go vet ./pipeline/` `copylocks` failures
+(`bufferedNode contains sync.Mutex` copied on append/assign/pass-by-value) are
+gone now that nodes are stored as `[]*bufferedNode`. `go vet ./...` is fully clean.
 
 ## Mission
 

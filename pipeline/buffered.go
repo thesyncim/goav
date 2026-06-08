@@ -51,7 +51,7 @@ type bufferedRunner struct {
 	config   GraphConfig
 	mu       sync.RWMutex
 	index    map[string]int
-	nodes    []bufferedNode
+	nodes    []*bufferedNode
 	sources  []int
 	events   chan av.Event
 	pending  sync.WaitGroup
@@ -104,7 +104,7 @@ func (g *bufferedRunner) AddSource(source Source, policy BufferPolicy) (NodeRef,
 	if g.running {
 		return "", ErrDynamicGraphUnsupported
 	}
-	index, err := g.addNode(bufferedNode{name: source.Name(), kind: nodeSource, source: source, policy: g.nodePolicy(policy)})
+	index, err := g.addNode(&bufferedNode{name: source.Name(), kind: nodeSource, source: source, policy: g.nodePolicy(policy)})
 	if err != nil {
 		return "", err
 	}
@@ -121,12 +121,12 @@ func (g *bufferedRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, er
 	if g.running && g.draining {
 		return "", ErrDynamicGraphUnsupported
 	}
-	index, err := g.addNode(bufferedNode{name: stage.Name(), kind: nodeStage, stage: stage, policy: g.nodePolicy(policy)})
+	index, err := g.addNode(&bufferedNode{name: stage.Name(), kind: nodeStage, stage: stage, policy: g.nodePolicy(policy)})
 	if err != nil {
 		return "", err
 	}
 	if g.running {
-		g.openQueue(&g.nodes[index])
+		g.openQueue(g.nodes[index])
 		g.startWorkerLocked(index)
 	}
 	return NodeRef(g.nodes[index].name), nil
@@ -141,12 +141,12 @@ func (g *bufferedRunner) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error
 	if g.running && g.draining {
 		return "", ErrDynamicGraphUnsupported
 	}
-	index, err := g.addNode(bufferedNode{name: sink.Name(), kind: nodeSink, sink: sink, policy: g.nodePolicy(policy)})
+	index, err := g.addNode(&bufferedNode{name: sink.Name(), kind: nodeSink, sink: sink, policy: g.nodePolicy(policy)})
 	if err != nil {
 		return "", err
 	}
 	if g.running {
-		g.openQueue(&g.nodes[index])
+		g.openQueue(g.nodes[index])
 		g.startWorkerLocked(index)
 	}
 	return NodeRef(g.nodes[index].name), nil
@@ -324,7 +324,7 @@ func (g *bufferedRunner) Spec() Spec {
 		Realtime: g.config.Realtime,
 	}
 	for i := range g.nodes {
-		node := &g.nodes[i]
+		node := g.nodes[i]
 		if !node.active {
 			continue
 		}
@@ -332,7 +332,7 @@ func (g *bufferedRunner) Spec() Spec {
 		for j := range node.routes {
 			route := &node.routes[j]
 			for k := range route.to {
-				to := &g.nodes[route.to[k]]
+				to := g.nodes[route.to[k]]
 				if !to.active {
 					continue
 				}
@@ -372,10 +372,10 @@ func (g *bufferedRunner) Close() error {
 	}
 	g.closed = true
 	running := g.running
-	nodes := make([]bufferedNode, 0, len(g.nodes))
+	nodes := make([]*bufferedNode, 0, len(g.nodes))
 	dones := make([]chan struct{}, 0, len(g.nodes))
 	for i := range g.nodes {
-		node := &g.nodes[i]
+		node := g.nodes[i]
 		if !node.active {
 			continue
 		}
@@ -386,7 +386,7 @@ func (g *bufferedRunner) Close() error {
 			}
 		}
 		node.active = false
-		nodes = append(nodes, *node)
+		nodes = append(nodes, node)
 	}
 	g.mu.Unlock()
 
@@ -395,7 +395,7 @@ func (g *bufferedRunner) Close() error {
 	}
 	var first error
 	for i := range nodes {
-		err := closeBufferedNode(&nodes[i])
+		err := closeBufferedNode(nodes[i])
 		if first == nil && err != nil {
 			first = err
 		}
@@ -424,7 +424,7 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 		g.mu.Unlock()
 		return ErrInvalidLink
 	}
-	node := &g.nodes[index]
+	node := g.nodes[index]
 	node.active = false
 	node.routes = nil
 	delete(g.index, ref.String())
@@ -452,7 +452,7 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 		}
 		g.nodes[i].routes = routes
 	}
-	closeNode := *node
+	closeNode := node
 	if running && node.queue != nil {
 		close(node.queue)
 	}
@@ -461,10 +461,10 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 	if running && done != nil {
 		<-done
 	}
-	return closeBufferedNode(&closeNode)
+	return closeBufferedNode(closeNode)
 }
 
-func (g *bufferedRunner) addNode(node bufferedNode) (int, error) {
+func (g *bufferedRunner) addNode(node *bufferedNode) (int, error) {
 	if node.name == "" {
 		return 0, ErrUnknownNode
 	}
@@ -491,7 +491,7 @@ func (g *bufferedRunner) nodePolicy(policy BufferPolicy) BufferPolicy {
 
 func (g *bufferedRunner) openQueuesLocked() {
 	for i := range g.nodes {
-		node := &g.nodes[i]
+		node := g.nodes[i]
 		if !node.active || node.kind == nodeSource {
 			continue
 		}
@@ -537,7 +537,7 @@ func reportBufferedError(errs chan<- error, err error) {
 
 func (g *bufferedRunner) closeQueuesLocked() {
 	for i := range g.nodes {
-		node := &g.nodes[i]
+		node := g.nodes[i]
 		if !node.active || node.kind == nodeSource || node.queue == nil {
 			continue
 		}
@@ -561,7 +561,7 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 		g.mu.RUnlock()
 		return ErrUnknownNode
 	}
-	fromNode := &g.nodes[from]
+	fromNode := g.nodes[from]
 	if !fromNode.active {
 		g.mu.RUnlock()
 		return nil
@@ -594,7 +594,7 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 }
 
 func (g *bufferedRunner) enqueue(ctx context.Context, to int, msg *Message) error {
-	node := &g.nodes[to]
+	node := g.nodes[to]
 	if err := validateBufferedMessage(msg, node.policy); err != nil {
 		return err
 	}
