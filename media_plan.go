@@ -173,6 +173,40 @@ func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []
 	return out
 }
 
+// planBranchFromStreamIntent plans one branch from a resolved stream intent —
+// the single per-branch planning body shared by the direct-stream path
+// (planBranches) and the branch-composition path
+// (planBranchesFromBranchComposePlan). They differ only in where the
+// streamIntent comes from; collapsing them onto one body is the prerequisite
+// for retiring the parallel branchComposePlan source (NORTH_STAR step 3).
+func planBranchFromStreamIntent(state *recipeCompileState, stream streamIntent, index int, outputs []planOutput) (planBranch, []planDecision) {
+	var shape MediaShape
+	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
+	if selected, ok := planSelectedStream(state, stream); ok {
+		stream.Select = streamSelectFromStream(selected)
+		domain := DomainPacket
+		if sourceShapeOK && sourceShape.Domain != "" {
+			domain = sourceShape.Domain
+		}
+		shape = mediaShapeFromPlanStream(selected, domain)
+		if sourceShapeOK {
+			shape = mergeMediaShape(shape, sourceShape)
+		}
+	}
+	shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
+	branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", index))
+	operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, shape)
+	operations = planOperationsWithShape(branchName, shape, operations)
+	return planBranch{
+		Name:       branchName,
+		Input:      firstInputName(state.intent.Inputs),
+		Stream:     stream.Select,
+		Shape:      shape,
+		Operations: operations,
+		Outputs:    planBranchDestinations(stream.Destinations, outputs),
+	}, branchDecisions
+}
+
 func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch, []planDecision) {
 	if len(state.intent.Streams) == 0 {
 		return planCopyBranches(state, outputs)
@@ -180,32 +214,8 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 	branches := make([]planBranch, 0, len(state.intent.Streams))
 	decisions := make([]planDecision, 0, len(state.intent.Streams))
 	for i := range state.intent.Streams {
-		stream := state.intent.Streams[i]
-		var shape MediaShape
-		sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
-		if selected, ok := planSelectedStream(state, stream); ok {
-			stream.Select = streamSelectFromStream(selected)
-			domain := DomainPacket
-			if sourceShapeOK && sourceShape.Domain != "" {
-				domain = sourceShape.Domain
-			}
-			shape = mediaShapeFromPlanStream(selected, domain)
-			if sourceShapeOK {
-				shape = mergeMediaShape(shape, sourceShape)
-			}
-		}
-		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
-		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
-		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, shape)
-		operations = planOperationsWithShape(branchName, shape, operations)
-		branches = append(branches, planBranch{
-			Name:       branchName,
-			Input:      firstInputName(state.intent.Inputs),
-			Stream:     stream.Select,
-			Shape:      shape,
-			Operations: operations,
-			Outputs:    planBranchDestinations(stream.Destinations, outputs),
-		})
+		branch, branchDecisions := planBranchFromStreamIntent(state, state.intent.Streams[i], i, outputs)
+		branches = append(branches, branch)
 		decisions = append(decisions, branchDecisions...)
 	}
 	return branches, decisions
@@ -215,33 +225,9 @@ func planBranchesFromBranchComposePlan(state *recipeCompileState, outputs []plan
 	branches := make([]planBranch, 0, len(state.plan.Branches))
 	decisions := make([]planDecision, 0, len(state.plan.Branches))
 	for i := range state.plan.Branches {
-		composeBranch := state.plan.Branches[i]
-		stream := streamIntentFromBranchComposeBranch(composeBranch)
-		var shape MediaShape
-		sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
-		if selected, ok := planSelectedStream(state, stream); ok {
-			stream.Select = streamSelectFromStream(selected)
-			domain := DomainPacket
-			if sourceShapeOK && sourceShape.Domain != "" {
-				domain = sourceShape.Domain
-			}
-			shape = mediaShapeFromPlanStream(selected, domain)
-			if sourceShapeOK {
-				shape = mergeMediaShape(shape, sourceShape)
-			}
-		}
-		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
-		branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", i))
-		operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, shape)
-		operations = planOperationsWithShape(branchName, shape, operations)
-		branches = append(branches, planBranch{
-			Name:       branchName,
-			Input:      firstInputName(state.intent.Inputs),
-			Stream:     stream.Select,
-			Shape:      shape,
-			Operations: operations,
-			Outputs:    planBranchDestinations(stream.Destinations, outputs),
-		})
+		stream := streamIntentFromBranchComposeBranch(state.plan.Branches[i])
+		branch, branchDecisions := planBranchFromStreamIntent(state, stream, i, outputs)
+		branches = append(branches, branch)
 		decisions = append(decisions, branchDecisions...)
 	}
 	return branches, decisions
