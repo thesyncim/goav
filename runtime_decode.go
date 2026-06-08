@@ -99,7 +99,7 @@ func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request 
 		return nil, err
 	}
 	name = firstNonEmpty(name, decodeNodeName(request.selector))
-	intent := StreamIntent{
+	intent := streamIntent{
 		Name: name,
 		Select: StreamSelect{
 			ID:       request.selector.ID,

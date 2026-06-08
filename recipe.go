@@ -24,7 +24,7 @@ const (
 type Intent struct {
 	Name         string
 	Inputs       []inputIntent
-	Streams      []StreamIntent
+	Streams      []streamIntent
 	Destinations []destinationIntent
 	Policies     policyIntent
 }
@@ -38,14 +38,14 @@ type inputIntent struct {
 	Realtime bool
 }
 
-type StreamIntent struct {
+type streamIntent struct {
 	Name         string
 	Select       StreamSelect
 	From         TapRef
 	Decode       bool
 	DecodeCodec  CodecSpec
 	Operations   []OperationSpec
-	Taps         []TapIntent
+	Taps         []tapIntent
 	Encode       CodecSpec
 	CodecChange  CodecChangePolicy
 	Destinations []string
@@ -57,7 +57,7 @@ type OperationSpec struct {
 	Stage     pipeline.Stage
 	Shape     MediaShape
 	Transform TransformSpec
-	Tap       TapIntent
+	Tap       tapIntent
 	Decode    CodecSpec
 	Encode    CodecSpec
 	Shared    bool
@@ -1362,7 +1362,7 @@ func operationSpecForTransform(transform TransformSpec) OperationSpec {
 }
 
 func operationSpecForTap(tap TapRef, media av.MediaType, after OperationKind) OperationSpec {
-	intent := TapIntent{Name: tap.name, MediaKind: media, Domain: tap.domain, After: after}
+	intent := tapIntent{Name: tap.name, MediaKind: media, Domain: tap.domain, After: after}
 	return OperationSpec{Kind: OpTap, Component: tap.name, Tap: intent}
 }
 
@@ -1684,14 +1684,14 @@ func (j *Job) validateOutputScope() error {
 	return validateJobOutputScope(len(j.outputs), stream, ok)
 }
 
-func validateJobOutputScope(outputCount int, stream StreamIntent, hasStream bool) error {
+func validateJobOutputScope(outputCount int, stream streamIntent, hasStream bool) error {
 	if !hasStream || outputCount == 0 {
 		return nil
 	}
 	return jobOutputScopeMixedError("build job", stream)
 }
 
-func validateJobOutputBindings(operation string, stream StreamIntent, outputs []destinationSpec, destinationNames []string) error {
+func validateJobOutputBindings(operation string, stream streamIntent, outputs []destinationSpec, destinationNames []string) error {
 	destinations := jobOutputDestinationSet(outputs, destinationNames)
 	for _, destinationName := range stream.Destinations {
 		if _, ok := destinations[destinationName]; ok {
@@ -1752,9 +1752,9 @@ func jobAllOutputNames(outputNames []string, streamOutputNames []string) []strin
 	return all
 }
 
-func jobStreamIntentIfPresent(stream *jobStreamBuild) (StreamIntent, bool) {
+func jobStreamIntentIfPresent(stream *jobStreamBuild) (streamIntent, bool) {
 	if stream == nil {
-		return StreamIntent{}, false
+		return streamIntent{}, false
 	}
 	return jobStreamIntent(stream), true
 }
@@ -1763,16 +1763,16 @@ func jobIntentHasStream(intent Intent) bool {
 	return len(intent.Streams) != 0
 }
 
-func jobIntentStream(intent Intent) (StreamIntent, bool) {
+func jobIntentStream(intent Intent) (streamIntent, bool) {
 	if len(intent.Streams) == 0 {
-		return StreamIntent{}, false
+		return streamIntent{}, false
 	}
 	return intent.Streams[0], true
 }
 
-func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
+func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 	if stream == nil {
-		return StreamIntent{}
+		return streamIntent{}
 	}
 	afterPacketOperation := OpEncode
 	if stream.encode.Copy {
@@ -1780,7 +1780,7 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 	}
 	afterStepOperation := initialStepAfter(stream.decode)
 	steps := jobStreamChainSteps(stream)
-	return StreamIntent{
+	return streamIntent{
 		Name: stream.name,
 		Select: StreamSelect{
 			ID:       stream.selector.ID,
@@ -1800,14 +1800,14 @@ func jobStreamIntent(stream *jobStreamBuild) StreamIntent {
 	}
 }
 
-func branchStreamIntent(stream streamBuild) StreamIntent {
+func branchStreamIntent(stream streamBuild) streamIntent {
 	afterPacketOperation := OpEncode
 	if stream.encode.Copy {
 		afterPacketOperation = OpCopy
 	}
 	afterStepOperation := initialStepAfter(stream.decode)
 	steps := branchChainStepsFromOperationSpecs(streamBuildOperationSpecs(stream))
-	return StreamIntent{
+	return streamIntent{
 		Name: stream.name,
 		Select: StreamSelect{
 			ID:       stream.selector.ID,
@@ -1850,7 +1850,7 @@ func jobOperationSpecs(stream *jobStreamBuild) []OperationSpec {
 		if stream.encode.Copy {
 			after = OpCopy
 		}
-		tap := TapIntent{Name: stream.postEncodeTaps[i], MediaKind: stream.selector.Type, Domain: DomainPacket, After: after}
+		tap := tapIntent{Name: stream.postEncodeTaps[i], MediaKind: stream.selector.Type, Domain: DomainPacket, After: after}
 		operations = append(operations, OperationSpec{Kind: OpTap, Component: tap.Name, Tap: tap})
 	}
 	return operations
@@ -1882,7 +1882,7 @@ func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
 		if stream.encode.Copy {
 			after = OpCopy
 		}
-		tap := TapIntent{Name: stream.postEncodeTaps[i], MediaKind: stream.selector.Type, Domain: DomainPacket, After: after}
+		tap := tapIntent{Name: stream.postEncodeTaps[i], MediaKind: stream.selector.Type, Domain: DomainPacket, After: after}
 		operations = append(operations, OperationSpec{Kind: OpTap, Component: tap.Name, Tap: tap})
 	}
 	return operations
@@ -2027,7 +2027,7 @@ func chainStepOperations(steps []chainStep, media av.MediaType, after OperationK
 			})
 			after = OpTransform
 		case step.tap != "":
-			tap := TapIntent{Name: step.tap, MediaKind: media, Domain: chainStepTapDomain(step, DomainFrame), After: after}
+			tap := tapIntent{Name: step.tap, MediaKind: media, Domain: chainStepTapDomain(step, DomainFrame), After: after}
 			operations = append(operations, OperationSpec{
 				Kind:      OpTap,
 				Component: tap.Name,
@@ -2038,11 +2038,11 @@ func chainStepOperations(steps []chainStep, media av.MediaType, after OperationK
 	return operations
 }
 
-func chainStepTapIntents(steps []chainStep, media av.MediaType, after OperationKind) []TapIntent {
+func chainStepTapIntents(steps []chainStep, media av.MediaType, after OperationKind) []tapIntent {
 	if len(steps) == 0 {
 		return nil
 	}
-	taps := make([]TapIntent, 0)
+	taps := make([]tapIntent, 0)
 	for i := range steps {
 		step := steps[i]
 		switch {
@@ -2053,7 +2053,7 @@ func chainStepTapIntents(steps []chainStep, media av.MediaType, after OperationK
 		case step.transform.Resize != nil || step.transform.Resample != nil:
 			after = OpTransform
 		case step.tap != "":
-			taps = append(taps, TapIntent{
+			taps = append(taps, tapIntent{
 				Name:      step.tap,
 				MediaKind: media,
 				Domain:    chainStepTapDomain(step, DomainFrame),
@@ -2078,13 +2078,13 @@ func initialStepAfter(decode bool) OperationKind {
 	return ""
 }
 
-func postPacketTapIntents(names []string, media av.MediaType, after OperationKind) []TapIntent {
+func postPacketTapIntents(names []string, media av.MediaType, after OperationKind) []tapIntent {
 	if len(names) == 0 {
 		return nil
 	}
-	taps := make([]TapIntent, 0, len(names))
+	taps := make([]tapIntent, 0, len(names))
 	for i := range names {
-		taps = append(taps, TapIntent{
+		taps = append(taps, tapIntent{
 			Name:      names[i],
 			MediaKind: media,
 			Domain:    DomainPacket,
@@ -2115,7 +2115,7 @@ func jobStreamOutputNames(stream *jobStreamBuild) []string {
 	return append([]string(nil), stream.outputNames...)
 }
 
-func streamStageMissingError(stream StreamIntent) error {
+func streamStageMissingError(stream streamIntent) error {
 	return &BuildError{
 		Code:      "stage_missing",
 		Operation: "build stream",
@@ -2130,7 +2130,7 @@ func streamStageMissingError(stream StreamIntent) error {
 	}
 }
 
-func validateJobStreamOutputKinds(operation string, stream StreamIntent, outputs []destinationSpec) error {
+func validateJobStreamOutputKinds(operation string, stream streamIntent, outputs []destinationSpec) error {
 	if outputsContainSinkDestination(outputs) && outputsContainMuxDestination(outputs) && !codecIntentSet(stream.Encode) {
 		return mixedStreamOutputError(operation, stream)
 	}
@@ -2140,7 +2140,7 @@ func validateJobStreamOutputKinds(operation string, stream StreamIntent, outputs
 	return nil
 }
 
-func mixedStreamOutputError(operation string, stream StreamIntent) error {
+func mixedStreamOutputError(operation string, stream streamIntent) error {
 	return &BuildError{
 		Code:      "output_kind_mixed",
 		Operation: operation,
@@ -2155,7 +2155,7 @@ func mixedStreamOutputError(operation string, stream StreamIntent) error {
 	}
 }
 
-func streamEncodeMissingError(operation string, stream StreamIntent) error {
+func streamEncodeMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
 		Code:      "encode_missing",
 		Operation: operation,
@@ -2188,7 +2188,7 @@ func recipeRuntimeUnsupportedError(operation string) error {
 	}
 }
 
-func jobStreamIntentName(stream StreamIntent) string {
+func jobStreamIntentName(stream streamIntent) string {
 	return firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
 }
 
@@ -2222,7 +2222,7 @@ func (s *jobStreamBuild) hasOperation() bool {
 	return s.decode || operationSpecsContainChainStep(s.operations) || s.encode.ID != "" || s.encode.Auto || s.encode.Copy
 }
 
-func streamIntentHasOperation(stream StreamIntent) bool {
+func streamIntentHasOperation(stream streamIntent) bool {
 	return stream.Decode || len(stream.Operations) != 0 || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy
 }
 
@@ -2368,7 +2368,7 @@ func validateRecipeDecodeAdapters(operation string, rt Runtime, intent Intent) e
 	return nil
 }
 
-func validateKnownRecipeDecodeAdapters(operation string, rt Runtime, probes []format.ProbeResult, streams []StreamIntent) error {
+func validateKnownRecipeDecodeAdapters(operation string, rt Runtime, probes []format.ProbeResult, streams []streamIntent) error {
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
 		return nil
@@ -2393,7 +2393,7 @@ func validateKnownRecipeDecodeAdapters(operation string, rt Runtime, probes []fo
 	return nil
 }
 
-func validateLiveStreamSelection(inputs []inputIntent, stream StreamIntent) error {
+func validateLiveStreamSelection(inputs []inputIntent, stream streamIntent) error {
 	streams := liveIntentStreams(inputs)
 	if len(streams) == 0 {
 		return nil
@@ -2432,7 +2432,7 @@ func liveIntentStreams(inputs []inputIntent) []av.Stream {
 	return streams
 }
 
-func knownProbeDecodeStream(probes []format.ProbeResult, stream StreamIntent) (av.Stream, bool) {
+func knownProbeDecodeStream(probes []format.ProbeResult, stream streamIntent) (av.Stream, bool) {
 	candidates := make([]av.Stream, 0, len(probes))
 	selector := streamIntentSelector(stream)
 	for i := range probes {
@@ -2451,7 +2451,7 @@ func knownProbeDecodeStream(probes []format.ProbeResult, stream StreamIntent) (a
 	return candidates[0], true
 }
 
-func knownProbeDecodeCodec(probes []format.ProbeResult, stream StreamIntent) (av.CodecID, bool) {
+func knownProbeDecodeCodec(probes []format.ProbeResult, stream streamIntent) (av.CodecID, bool) {
 	selected, ok := knownProbeDecodeStream(probes, stream)
 	if !ok {
 		return "", false
@@ -2459,11 +2459,11 @@ func knownProbeDecodeCodec(probes []format.ProbeResult, stream StreamIntent) (av
 	return selected.Codec.ID, true
 }
 
-func streamNeedsDecode(stream StreamIntent) bool {
+func streamNeedsDecode(stream streamIntent) bool {
 	return stream.Decode || len(streamIntentTransformSpecs(stream)) != 0 || stream.Encode.ID != ""
 }
 
-func liveDecodeAdapterRequest(inputs []inputIntent, stream StreamIntent) (codecAdapterRequest, bool) {
+func liveDecodeAdapterRequest(inputs []inputIntent, stream streamIntent) (codecAdapterRequest, bool) {
 	selected, ok := liveDecodeStream(inputs, stream)
 	if !ok {
 		return codecAdapterRequest{}, false
@@ -2471,7 +2471,7 @@ func liveDecodeAdapterRequest(inputs []inputIntent, stream StreamIntent) (codecA
 	return decodeAdapterRequestFromStream(selected, stream), true
 }
 
-func liveDecodeStream(inputs []inputIntent, stream StreamIntent) (av.Stream, bool) {
+func liveDecodeStream(inputs []inputIntent, stream streamIntent) (av.Stream, bool) {
 	streams := liveIntentStreams(inputs)
 	if len(streams) == 0 {
 		return av.Stream{}, false
@@ -2483,7 +2483,7 @@ func liveDecodeStream(inputs []inputIntent, stream StreamIntent) (av.Stream, boo
 	return selected, true
 }
 
-func liveDecodeCodec(inputs []inputIntent, stream StreamIntent) (av.CodecID, bool) {
+func liveDecodeCodec(inputs []inputIntent, stream streamIntent) (av.CodecID, bool) {
 	selected, ok := liveDecodeStream(inputs, stream)
 	if !ok {
 		return "", false
@@ -2491,7 +2491,7 @@ func liveDecodeCodec(inputs []inputIntent, stream StreamIntent) (av.CodecID, boo
 	return selected.Codec.ID, true
 }
 
-func recipeDecodeAdapterError(operation string, stream StreamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
+func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
 	code := "decode_adapter_missing"
 	reason := "no decoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
@@ -2520,7 +2520,7 @@ func recipeDecodeAdapterError(operation string, stream StreamIntent, codecID av.
 	}
 }
 
-func validateDecodeAdapterDescriptors(operation string, stream StreamIntent, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
+func validateDecodeAdapterDescriptors(operation string, stream streamIntent, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
 	if registry == nil || request.Codec == "" {
 		return nil
 	}
@@ -2536,7 +2536,7 @@ func validateDecodeAdapterDescriptors(operation string, stream StreamIntent, reg
 	return decodeAdapterIncompatibleError(operation, stream, request, descriptors)
 }
 
-func decodeAdapterRequestFromStream(stream av.Stream, intent StreamIntent) codecAdapterRequest {
+func decodeAdapterRequestFromStream(stream av.Stream, intent streamIntent) codecAdapterRequest {
 	return codecAdapterRequest{
 		Codec:        stream.Codec.ID,
 		Media:        firstNonEmptyMedia(stream.Codec.Type, stream.Type, intent.Select.Type, codecMedia(stream.Codec.ID)),
@@ -2545,7 +2545,7 @@ func decodeAdapterRequestFromStream(stream av.Stream, intent StreamIntent) codec
 	}
 }
 
-func decodeAdapterIncompatibleError(operation string, stream StreamIntent, request codecAdapterRequest, descriptors []codec.Descriptor) error {
+func decodeAdapterIncompatibleError(operation string, stream streamIntent, request codecAdapterRequest, descriptors []codec.Descriptor) error {
 	field, requested, supported := codecAdapterIncompatibilityField(request, descriptors)
 	label := strings.ReplaceAll(field, "_", " ")
 	details := []string{
@@ -2581,7 +2581,7 @@ func decodeAdapterIncompatibleError(operation string, stream StreamIntent, reque
 	}
 }
 
-func validateRecipeEncodeAdapters(operation string, rt Runtime, streams []StreamIntent) error {
+func validateRecipeEncodeAdapters(operation string, rt Runtime, streams []streamIntent) error {
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
 		return nil
@@ -2610,7 +2610,7 @@ type codecAdapterRequest struct {
 	PixelFormat  string
 }
 
-func encodeAdapterRequestFromStreamIntent(stream StreamIntent) codecAdapterRequest {
+func encodeAdapterRequestFromStreamIntent(stream streamIntent) codecAdapterRequest {
 	return codecAdapterRequest{
 		Codec:        stream.Encode.ID,
 		Media:        firstNonEmptyMedia(stream.Encode.Type, stream.Encode.Parameters.Type, stream.Select.Type, codecMedia(stream.Encode.ID)),
@@ -2628,7 +2628,7 @@ func encodeAdapterRequestFromPreparedStream(spec CodecSpec, stream av.Stream) co
 	}
 }
 
-func streamIntentSampleFormat(stream StreamIntent) string {
+func streamIntentSampleFormat(stream streamIntent) string {
 	transforms := streamIntentTransformSpecs(stream)
 	for i := len(transforms) - 1; i >= 0; i-- {
 		if transforms[i].Resample != nil && transforms[i].Resample.SampleFormat != "" {
@@ -2638,7 +2638,7 @@ func streamIntentSampleFormat(stream StreamIntent) string {
 	return ""
 }
 
-func streamIntentPixelFormat(stream StreamIntent) string {
+func streamIntentPixelFormat(stream streamIntent) string {
 	transforms := streamIntentTransformSpecs(stream)
 	for i := len(transforms) - 1; i >= 0; i-- {
 		if transforms[i].Resize != nil && transforms[i].Resize.PixelFormat != "" {
@@ -2648,7 +2648,7 @@ func streamIntentPixelFormat(stream StreamIntent) string {
 	return ""
 }
 
-func validateEncodeAdapterDescriptors(operation string, stream StreamIntent, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
+func validateEncodeAdapterDescriptors(operation string, stream streamIntent, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
 	if registry == nil || request.Codec == "" {
 		return nil
 	}
@@ -2677,7 +2677,7 @@ func codecDescriptorSupports(desc codec.Descriptor, request codecAdapterRequest)
 	return true
 }
 
-func encodeAdapterIncompatibleError(operation string, stream StreamIntent, request codecAdapterRequest, descriptors []codec.Descriptor) error {
+func encodeAdapterIncompatibleError(operation string, stream streamIntent, request codecAdapterRequest, descriptors []codec.Descriptor) error {
 	field, requested, supported := codecAdapterIncompatibilityField(request, descriptors)
 	label := strings.ReplaceAll(field, "_", " ")
 	details := []string{
@@ -2817,7 +2817,7 @@ func mergeStringList(existing []string, next []string) []string {
 	return existing
 }
 
-func validateRecipeTransformAdapters(operation string, rt Runtime, streams []StreamIntent) error {
+func validateRecipeTransformAdapters(operation string, rt Runtime, streams []streamIntent) error {
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
 		return nil
@@ -2855,7 +2855,7 @@ func transformFactoryName(spec TransformSpec) string {
 	}
 }
 
-func validateTransformAdapterDescriptor(operation string, stream StreamIntent, spec TransformSpec, name string, desc filter.Descriptor) error {
+func validateTransformAdapterDescriptor(operation string, stream streamIntent, spec TransformSpec, name string, desc filter.Descriptor) error {
 	expectedInput, expectedOutput := transformAdapterExpectedMedia(name)
 	if expectedInput != "" && desc.Input != "" && desc.Input != expectedInput {
 		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
@@ -2925,7 +2925,7 @@ func transformAdapterExpectedMedia(name string) (av.MediaType, av.MediaType) {
 	}
 }
 
-func transformAdapterIncompatibleError(operation string, stream StreamIntent, name string, desc filter.Descriptor, expectedInput av.MediaType, expectedOutput av.MediaType) error {
+func transformAdapterIncompatibleError(operation string, stream streamIntent, name string, desc filter.Descriptor, expectedInput av.MediaType, expectedOutput av.MediaType) error {
 	return &BuildError{
 		Code:      "transform_adapter_incompatible",
 		Operation: operation,
@@ -2947,7 +2947,7 @@ func transformAdapterIncompatibleError(operation string, stream StreamIntent, na
 	}
 }
 
-func transformAdapterCapabilityError(operation string, stream StreamIntent, name string, field string, requested string, supported []string) error {
+func transformAdapterCapabilityError(operation string, stream streamIntent, name string, field string, requested string, supported []string) error {
 	return &BuildError{
 		Code:      "transform_adapter_incompatible",
 		Operation: operation,
@@ -2968,7 +2968,7 @@ func transformAdapterCapabilityError(operation string, stream StreamIntent, name
 	}
 }
 
-func recipeTransformAdapterError(operation string, stream StreamIntent, name string, cause error) error {
+func recipeTransformAdapterError(operation string, stream streamIntent, name string, cause error) error {
 	if !errors.Is(cause, filter.ErrNotFound) {
 		return cause
 	}
@@ -3000,7 +3000,7 @@ func transformMethodName(name string) string {
 	}
 }
 
-func recipeEncodeAdapterError(operation string, stream StreamIntent, registry *codec.SimpleRegistry, cause error) error {
+func recipeEncodeAdapterError(operation string, stream streamIntent, registry *codec.SimpleRegistry, cause error) error {
 	code := "encode_adapter_missing"
 	reason := "no encoder adapter is registered for " + string(stream.Encode.ID)
 	if errors.Is(cause, codec.ErrUnavailable) {
@@ -3745,7 +3745,7 @@ func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 		return b
 	}
 	if stage == nil {
-		b.job.setErr(streamStageMissingError(StreamIntent{Name: jobStreamName(stream)}))
+		b.job.setErr(streamStageMissingError(streamIntent{Name: jobStreamName(stream)}))
 		return b
 	}
 	b.ensureDecodeOperation()
@@ -4167,7 +4167,7 @@ func validateBranchCompositionIntentShape(operation string, intent Intent) error
 	return nil
 }
 
-func validateBranchIntentShape(stream StreamIntent, index int) error {
+func validateBranchIntentShape(stream streamIntent, index int) error {
 	selector := streamIntentSelector(stream)
 	if stream.Name == "" {
 		return branchIntentNameMissingError(index, stream)
@@ -4291,7 +4291,7 @@ func branchStreamMissingError() error {
 	}
 }
 
-func branchEncodeMissingError(stream StreamIntent) error {
+func branchEncodeMissingError(stream streamIntent) error {
 	return &BuildError{
 		Code:      "encode_missing",
 		Operation: branchCompositionOperation,
@@ -4309,7 +4309,7 @@ func branchEncodeMissingError(stream StreamIntent) error {
 	}
 }
 
-func branchCopyUnsupportedError(stream StreamIntent) error {
+func branchCopyUnsupportedError(stream streamIntent) error {
 	return &BuildError{
 		Code:      "copy_unsupported",
 		Operation: branchCompositionOperation,
@@ -4324,7 +4324,7 @@ func branchCopyUnsupportedError(stream StreamIntent) error {
 	}
 }
 
-func branchIntentDestinationMissingError(stream StreamIntent) error {
+func branchIntentDestinationMissingError(stream streamIntent) error {
 	selector := streamIntentSelector(stream)
 	return &BuildError{
 		Code:      "destination_missing",
@@ -4339,7 +4339,7 @@ func branchIntentDestinationMissingError(stream StreamIntent) error {
 	}
 }
 
-func branchDestinationReferenceMissingError(stream StreamIntent, label string) error {
+func branchDestinationReferenceMissingError(stream streamIntent, label string) error {
 	return &BuildError{
 		Code:      "destination_missing",
 		Operation: branchCompositionOperation,
@@ -4434,7 +4434,7 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 	}
 }
 
-func branchIntentNameMissingError(index int, stream StreamIntent) error {
+func branchIntentNameMissingError(index int, stream streamIntent) error {
 	return &BuildError{
 		Code:      "stream_name_missing",
 		Operation: branchCompositionOperation,
@@ -4452,7 +4452,7 @@ func branchIntentNameMissingError(index int, stream StreamIntent) error {
 	}
 }
 
-func validateBranchDestinations(stream StreamIntent) error {
+func validateBranchDestinations(stream streamIntent) error {
 	seen := make(map[string]int, len(stream.Destinations))
 	for i, target := range stream.Destinations {
 		if firstIndex, ok := seen[target]; ok {
@@ -4463,7 +4463,7 @@ func validateBranchDestinations(stream StreamIntent) error {
 	return nil
 }
 
-func duplicateBranchDestinationError(stream StreamIntent, target string, firstIndex int, secondIndex int) error {
+func duplicateBranchDestinationError(stream streamIntent, target string, firstIndex int, secondIndex int) error {
 	return &BuildError{
 		Code:      "destination_duplicate",
 		Operation: branchCompositionOperation,
@@ -4482,7 +4482,7 @@ func duplicateBranchDestinationError(stream StreamIntent, target string, firstIn
 	}
 }
 
-func validateBranchTransforms(stream StreamIntent) error {
+func validateBranchTransforms(stream streamIntent) error {
 	transforms := streamIntentTransformSpecs(stream)
 	for i := range transforms {
 		transform := transforms[i]
@@ -4523,7 +4523,7 @@ func validateBranchTransforms(stream StreamIntent) error {
 	return nil
 }
 
-func streamIntentTransformSpecs(stream StreamIntent) []TransformSpec {
+func streamIntentTransformSpecs(stream streamIntent) []TransformSpec {
 	return transformSpecsFromOperationSpecs(stream.Operations)
 }
 
@@ -4551,7 +4551,7 @@ func streamHasTransformOperation(operations []OperationSpec) bool {
 	return false
 }
 
-func branchTransformMediaError(stream StreamIntent, transform string, expected av.MediaType, actual av.MediaType) error {
+func branchTransformMediaError(stream streamIntent, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
 		Code:      "transform_media_mismatch",
 		Operation: branchCompositionOperation,
@@ -4569,7 +4569,7 @@ func branchTransformMediaError(stream StreamIntent, transform string, expected a
 	}
 }
 
-func streamIntentSelector(stream StreamIntent) av.StreamSelector {
+func streamIntentSelector(stream streamIntent) av.StreamSelector {
 	return av.StreamSelector{
 		ID:       stream.Select.ID,
 		Index:    stream.Select.Index,
@@ -4580,7 +4580,7 @@ func streamIntentSelector(stream StreamIntent) av.StreamSelector {
 	}
 }
 
-func branchIntentName(stream StreamIntent) string {
+func branchIntentName(stream streamIntent) string {
 	return firstNonEmpty(stream.Name, string(stream.Select.Type), "stream")
 }
 

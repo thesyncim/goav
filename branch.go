@@ -292,7 +292,7 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 			return b
 		}
 		if stages[i] == nil {
-			b.setErr(streamStageMissingError(StreamIntent{Name: firstNonEmpty(b.spec.name, "branch")}))
+			b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "branch")}))
 			return b
 		}
 		b.spec.operations = append(b.spec.operations, operationSpecForStage(stages[i]))
@@ -528,12 +528,12 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		return err
 	}
 	if spec.name == "" {
-		return branchIntentNameMissingError(index, StreamIntent{Select: StreamSelect{Type: selected}})
+		return branchIntentNameMissingError(index, streamIntent{Select: StreamSelect{Type: selected}})
 	}
 	if len(spec.destinationNames) == 0 {
-		return branchIntentDestinationMissingError(StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
+		return branchIntentDestinationMissingError(streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
 	}
-	stream := StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
+	stream := streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
 	if spec.decode && !parentPacket {
 		return branchDecodeDomainError(stream.Name)
 	}
@@ -573,7 +573,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		}
 		if firstIndex, ok := seen[destinationName]; ok {
 			return duplicateBranchDestinationError(
-				StreamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Destinations: spec.destinationNames},
+				streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Destinations: spec.destinationNames},
 				destinationName,
 				firstIndex,
 				i,
@@ -879,7 +879,7 @@ func branchDecodeCopyError(node string) error {
 	}
 }
 
-func branchPacketEncodeUnsupportedError(stream StreamIntent, encode CodecSpec) error {
+func branchPacketEncodeUnsupportedError(stream streamIntent, encode CodecSpec) error {
 	return &BuildError{
 		Code:      "packet_branch_encode_unsupported",
 		Operation: "build branches",
@@ -897,7 +897,7 @@ func branchPacketEncodeUnsupportedError(stream StreamIntent, encode CodecSpec) e
 	}
 }
 
-func branchPacketTransformUnsupportedError(stream StreamIntent) error {
+func branchPacketTransformUnsupportedError(stream streamIntent) error {
 	return &BuildError{
 		Code:      "packet_branch_transform_unsupported",
 		Operation: "build branches",

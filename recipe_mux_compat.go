@@ -114,7 +114,7 @@ func planBranchIndex(branches []planBranch, name string) int {
 	return -1
 }
 
-func planStreamForBranch(streams []StreamIntent, branch planBranch, index int) (StreamIntent, bool) {
+func planStreamForBranch(streams []streamIntent, branch planBranch, index int) (streamIntent, bool) {
 	for i := range streams {
 		if reportBranchNameForStream(streams[i], i) == branch.Name {
 			return streams[i], true
@@ -123,13 +123,13 @@ func planStreamForBranch(streams []StreamIntent, branch planBranch, index int) (
 	if index >= 0 && index < len(streams) {
 		return streams[index], true
 	}
-	return StreamIntent{}, false
+	return streamIntent{}, false
 }
 
 func muxStreamForBranch(
 	branch planBranch,
 	branchIndex int,
-	stream StreamIntent,
+	stream streamIntent,
 	streamOK bool,
 	intent Intent,
 	inputProbes []format.ProbeResult,
@@ -160,7 +160,7 @@ func muxStreamForBranch(
 
 func copyMuxStreamCodec(
 	branch planBranch,
-	stream StreamIntent,
+	stream streamIntent,
 	streamOK bool,
 	intent Intent,
 	inputProbes []format.ProbeResult,

@@ -10,9 +10,9 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func (r recipeResolved) singleStreamIntent() (StreamIntent, bool) {
+func (r recipeResolved) singleStreamIntent() (streamIntent, bool) {
 	if len(r.intent.Streams) != 1 {
-		return StreamIntent{}, false
+		return streamIntent{}, false
 	}
 	return r.intent.Streams[0], true
 }
@@ -21,7 +21,7 @@ type mediaPlanStreamGraph struct {
 	runtime        *runtime
 	inputs         []InputSpec
 	outputs        []destinationSpec
-	stream         StreamIntent
+	stream         streamIntent
 	copyPackets    bool
 	selectedStream bool
 	sourceDomain   MediaDomain
@@ -92,7 +92,7 @@ func (p mediaPlanStreamGraph) hasSingleSinkDestination() bool {
 	return len(p.outputs) == 1 && p.outputs[0].sink != nil
 }
 
-func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream StreamIntent) (mediaPlanStreamGraph, bool, error) {
+func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent) (mediaPlanStreamGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
 		return mediaPlanStreamGraph{}, false, nil
@@ -144,7 +144,7 @@ func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
 	return allRTPInputSpecs(inputs)
 }
 
-func newMediaPlanPacketCopyStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream StreamIntent, selectedStream bool) (mediaPlanStreamGraph, bool, error) {
+func newMediaPlanPacketCopyStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent, selectedStream bool) (mediaPlanStreamGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
 		return mediaPlanStreamGraph{}, false, nil
@@ -170,7 +170,7 @@ func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 		return pipeline.Spec{}, err
 	}
 	if !ok {
-		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", Intent{Streams: []StreamIntent{p.stream}})
+		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", Intent{Streams: []streamIntent{p.stream}})
 	}
 	if p.selectedStream {
 		branches, outputs := p.selectedPacketCopyBranchComposeRoutes()
@@ -813,7 +813,7 @@ func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, plan graphPla
 	if p.selectedStream {
 		return p.compileSelectedPacketCopyBranchCompose(ctx, graph, service, selectOperation, destinations)
 	}
-	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []StreamIntent{p.stream}})
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []streamIntent{p.stream}})
 	if err != nil {
 		return err
 	}
@@ -821,7 +821,7 @@ func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, plan graphPla
 }
 
 func (p mediaPlanStreamGraph) compileSelectedPacketCopyBranchCompose(ctx context.Context, graph pipeline.Graph, service *builder, selectOperation graphPlanOperation, destinations []graphPlanDestinationOperation) error {
-	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build packet copy", Intent{Streams: []StreamIntent{p.stream}})
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build packet copy", Intent{Streams: []streamIntent{p.stream}})
 	if err != nil {
 		return err
 	}
@@ -1364,7 +1364,7 @@ func (p mediaPlanStreamGraph) sinkDestinationSpec() (pipeline.Spec, error) {
 
 func (p mediaPlanStreamGraph) encodeOutputSpec() (pipeline.Spec, error) {
 	if p.encode == nil {
-		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", Intent{Streams: []StreamIntent{p.stream}})
+		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", Intent{Streams: []streamIntent{p.stream}})
 	}
 	return p.frameStreamBranchComposeSpec()
 }
@@ -1446,7 +1446,7 @@ func (p mediaPlanStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeR
 		return pipeline.Spec{}, nil, nil, err
 	}
 	if !ok {
-		return pipeline.Spec{}, nil, nil, recipeGraphUnsupportedError("describe job", Intent{Streams: []StreamIntent{p.stream}})
+		return pipeline.Spec{}, nil, nil, recipeGraphUnsupportedError("describe job", Intent{Streams: []streamIntent{p.stream}})
 	}
 	return spec, sourceRefs, nodes, nil
 }
@@ -1493,7 +1493,7 @@ func cloneMediaTransform(transform mediaTransform) mediaTransform {
 }
 
 func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Context, graph pipeline.Graph, service *builder, lowering graphPlanFrameStreamLowering) error {
-	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []StreamIntent{p.stream}})
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []streamIntent{p.stream}})
 	if err != nil {
 		return err
 	}
@@ -1619,7 +1619,7 @@ func compileMediaPlanSources(
 	}, nil
 }
 
-func mediaPlanStreamFilters(stream StreamIntent) ([]filterRequest, error) {
+func mediaPlanStreamFilters(stream streamIntent) ([]filterRequest, error) {
 	selector := streamIntentSelector(stream)
 	if len(stream.Operations) == 0 {
 		return mediaPlanStreamTransformFilters(stream, selector)
@@ -1651,7 +1651,7 @@ func mediaPlanStreamFilters(stream StreamIntent) ([]filterRequest, error) {
 	return filters, nil
 }
 
-func mediaPlanStreamTransformFilters(stream StreamIntent, selector av.StreamSelector) ([]filterRequest, error) {
+func mediaPlanStreamTransformFilters(stream streamIntent, selector av.StreamSelector) ([]filterRequest, error) {
 	transforms := streamIntentTransformSpecs(stream)
 	filters := make([]filterRequest, 0, len(transforms))
 	for i := range transforms {
@@ -1664,6 +1664,6 @@ func mediaPlanStreamTransformFilters(stream StreamIntent, selector av.StreamSele
 	return filters, nil
 }
 
-func (r recipeResolved) packetCopyStream() (StreamIntent, bool, bool) {
+func (r recipeResolved) packetCopyStream() (streamIntent, bool, bool) {
 	return mediaPlanPacketCopyIntentStream(true, r.intent)
 }

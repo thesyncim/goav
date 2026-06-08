@@ -264,11 +264,11 @@ func equalOperationKinds(a []goav.OperationKind, b []goav.OperationKind) bool {
 	return true
 }
 
-func transformOperationsForTest(stream goav.StreamIntent) []goav.TransformSpec {
+func transformOperationsForTest(operations []goav.OperationSpec) []goav.TransformSpec {
 	transforms := make([]goav.TransformSpec, 0)
-	for i := range stream.Operations {
-		if stream.Operations[i].Kind == goav.OpTransform {
-			transforms = append(transforms, stream.Operations[i].Transform)
+	for i := range operations {
+		if operations[i].Kind == goav.OpTransform {
+			transforms = append(transforms, operations[i].Transform)
 		}
 	}
 	return transforms
@@ -402,15 +402,6 @@ func TestFlowReportsShapeContractAndTaps(t *testing.T) {
 	if len(taps) != 1 || taps[0].Name() != "voice.frames" || taps[0].Domain() != goav.DomainFrame {
 		t.Fatalf("flow taps=%+v, want frame tap voice.frames", taps)
 	}
-}
-
-func tapIntentNamesContain(taps []goav.TapIntent, name string) bool {
-	for i := range taps {
-		if taps[i].Name == name {
-			return true
-		}
-	}
-	return false
 }
 
 func branchByName(branches []goav.BranchReport, name string) (goav.BranchReport, bool) {
@@ -2418,27 +2409,12 @@ func TestRootAPIUsesFromCompositionInsteadOfWorkflowHelpers(t *testing.T) {
 	}
 }
 
-func TestStreamIntentUsesTypedTapAnchor(t *testing.T) {
-	stream := reflect.TypeOf(goav.StreamIntent{})
-	if _, ok := stream.FieldByName("FromTap"); ok {
-		t.Fatal("StreamIntent exposes FromTap; use typed TapRef field From")
-	}
-	field, ok := stream.FieldByName("From")
-	if !ok {
-		t.Fatal("StreamIntent should expose typed tap anchor field From")
-	}
-	if field.Type != reflect.TypeOf(goav.TapRef{}) {
-		t.Fatalf("StreamIntent.From type = %s, want goav.TapRef", field.Type)
-	}
-}
-
 func TestPublicIntentAndReportsUseDestinations(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		typ  reflect.Type
 	}{
 		{name: "Intent", typ: reflect.TypeOf(goav.Intent{})},
-		{name: "StreamIntent", typ: reflect.TypeOf(goav.StreamIntent{})},
 		{name: "PlanReport", typ: reflect.TypeOf(goav.PlanReport{})},
 		{name: "BranchReport", typ: reflect.TypeOf(goav.BranchReport{})},
 	} {
@@ -2672,9 +2648,9 @@ func TestAudioChainAppliesToStreamRecipeIntent(t *testing.T) {
 	}
 	stream := intent.Streams[0]
 	if stream.Select.Type != av.MediaAudio || !stream.Decode ||
-		len(transformOperationsForTest(stream)) != 1 || transformOperationsForTest(stream)[0].Resample == nil ||
-		transformOperationsForTest(stream)[0].Resample.SampleRate != 16_000 ||
-		transformOperationsForTest(stream)[0].Resample.Channels != goav.Mono ||
+		len(transformOperationsForTest(stream.Operations)) != 1 || transformOperationsForTest(stream.Operations)[0].Resample == nil ||
+		transformOperationsForTest(stream.Operations)[0].Resample.SampleRate != 16_000 ||
+		transformOperationsForTest(stream.Operations)[0].Resample.Channels != goav.Mono ||
 		stream.Encode.ID != av.CodecOpus || stream.Encode.Settings.Bitrate != 32_000 ||
 		len(stream.Destinations) != 1 || stream.Destinations[0] != "voice.ogg" {
 		t.Fatalf("stream intent: %+v", stream)
@@ -2979,8 +2955,8 @@ func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 	if intent.Streams[0].Name != "voice" || intent.Streams[1].Name != "archive" ||
 		!intent.Streams[0].Select.UseIndex || intent.Streams[0].Select.Index != 0 ||
 		intent.Streams[0].Encode.ID != av.CodecOpus || intent.Streams[1].Encode.ID != av.CodecOpus ||
-		transformOperationsForTest(intent.Streams[0])[0].Resample.SampleRate != 16_000 ||
-		transformOperationsForTest(intent.Streams[1])[0].Resample.SampleRate != 48_000 {
+		transformOperationsForTest(intent.Streams[0].Operations)[0].Resample.SampleRate != 16_000 ||
+		transformOperationsForTest(intent.Streams[1].Operations)[0].Resample.SampleRate != 48_000 {
 		t.Fatalf("streams: %+v", intent.Streams)
 	}
 
@@ -3018,24 +2994,21 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 
 	intent := job.Intent()
 	if len(intent.Streams) != 1 || intent.Streams[0].Name != "preview" ||
-		len(transformOperationsForTest(intent.Streams[0])) != 1 ||
-		transformOperationsForTest(intent.Streams[0])[0].Resize.Width != 640 ||
-		transformOperationsForTest(intent.Streams[0])[0].Resize.Height != 360 ||
+		len(transformOperationsForTest(intent.Streams[0].Operations)) != 1 ||
+		transformOperationsForTest(intent.Streams[0].Operations)[0].Resize.Width != 640 ||
+		transformOperationsForTest(intent.Streams[0].Operations)[0].Resize.Height != 360 ||
 		intent.Streams[0].Encode.ID != av.CodecVP9 ||
 		intent.Streams[0].Encode.Settings.Bitrate != 600_000 {
 		t.Fatalf("intent: %+v", intent)
 	}
-	if !tapIntentNamesContain(intent.Streams[0].Taps, "preview.frames") {
-		t.Fatalf("taps: %+v, want preview.frames", intent.Streams[0].Taps)
-	}
-	var previewTap goav.TapIntent
+	foundPreview := false
 	for _, tap := range intent.Streams[0].Taps {
-		if tap.Name == "preview.frames" {
-			previewTap = tap
+		if tap.Name == "preview.frames" && tap.After == goav.OpTransform {
+			foundPreview = true
 			break
 		}
 	}
-	if previewTap.Name == "" || previewTap.After != goav.OpTransform {
+	if !foundPreview {
 		t.Fatalf("taps: %+v, want preview.frames after transform", intent.Streams[0].Taps)
 	}
 	operations := intent.Streams[0].Operations
@@ -3098,9 +3071,9 @@ func TestBranchesGroupSelectedStreams(t *testing.T) {
 			t.Fatalf("stream[%d]=%+v, want %+v", i, stream, tests[i])
 		}
 	}
-	if transformOperationsForTest(intent.Streams[0])[0].Resize.Width != 1920 ||
-		transformOperationsForTest(intent.Streams[1])[0].Resize.Width != 640 ||
-		transformOperationsForTest(intent.Streams[2])[0].Resample.SampleRate != 48_000 {
+	if transformOperationsForTest(intent.Streams[0].Operations)[0].Resize.Width != 1920 ||
+		transformOperationsForTest(intent.Streams[1].Operations)[0].Resize.Width != 640 ||
+		transformOperationsForTest(intent.Streams[2].Operations)[0].Resample.SampleRate != 48_000 {
 		t.Fatalf("branch transforms: %+v", intent.Streams)
 	}
 
@@ -3186,18 +3159,17 @@ func TestBranchTapAfterEncodeIsPacketTap(t *testing.T) {
 	if len(intent.Streams) != 1 {
 		t.Fatalf("streams: %+v", intent.Streams)
 	}
-	var encodedTap goav.TapIntent
+	foundEncoded := false
 	for _, tap := range intent.Streams[0].Taps {
 		if tap.Name == "audio.encoded" {
-			encodedTap = tap
+			foundEncoded = tap.Domain == goav.DomainPacket &&
+				tap.MediaKind == av.MediaAudio &&
+				tap.After == goav.OpEncode
 			break
 		}
 	}
-	if encodedTap.Name == "" ||
-		encodedTap.Domain != goav.DomainPacket ||
-		encodedTap.MediaKind != av.MediaAudio ||
-		encodedTap.After != goav.OpEncode {
-		t.Fatalf("encoded tap = %+v, want packet tap after encode", encodedTap)
+	if !foundEncoded {
+		t.Fatalf("encoded tap, want packet tap after encode in %+v", intent.Streams[0].Taps)
 	}
 	operations := intent.Streams[0].Operations
 	if len(operations) != 4 ||
@@ -3328,8 +3300,8 @@ func TestFlowBranchSnapshotsBuilderState(t *testing.T) {
 
 	intent := job.Intent()
 	if len(intent.Streams) != 1 ||
-		len(transformOperationsForTest(intent.Streams[0])) != 1 ||
-		transformOperationsForTest(intent.Streams[0])[0].Resample.SampleRate != 16_000 {
+		len(transformOperationsForTest(intent.Streams[0].Operations)) != 1 ||
+		transformOperationsForTest(intent.Streams[0].Operations)[0].Resample.SampleRate != 16_000 {
 		t.Fatalf("intent after mutating flow: %+v", intent)
 	}
 }
@@ -3356,8 +3328,8 @@ func TestFlowDecodeAppliesToPacketBranchIntent(t *testing.T) {
 	stream := intent.Streams[0]
 	if stream.Name != "voice" ||
 		!stream.Decode ||
-		len(transformOperationsForTest(stream)) != 1 ||
-		transformOperationsForTest(stream)[0].Resample.SampleRate != 16_000 ||
+		len(transformOperationsForTest(stream.Operations)) != 1 ||
+		transformOperationsForTest(stream.Operations)[0].Resample.SampleRate != 16_000 ||
 		stream.Encode.ID != av.CodecOpus ||
 		stream.Encode.Settings.Bitrate != 64_000 ||
 		len(stream.Destinations) != 1 ||
@@ -3391,7 +3363,7 @@ func TestFlowDecodeAppliesToStreamRecipeIntent(t *testing.T) {
 	if stream.Name != "audio" ||
 		!stream.Decode ||
 		stream.Encode.ID != "" ||
-		len(transformOperationsForTest(stream)) != 0 ||
+		len(transformOperationsForTest(stream.Operations)) != 0 ||
 		len(stream.Destinations) != 1 ||
 		stream.Destinations[0] != "frames" {
 		t.Fatalf("stream intent: %+v", stream)
@@ -4144,7 +4116,7 @@ func TestReadmeAudioResampleEncodeRecipeIsSmall(t *testing.T) {
 		t.Fatalf("spec:\n%s", text)
 	}
 	intent := job.Intent()
-	if len(intent.Streams) != 1 || len(transformOperationsForTest(intent.Streams[0])) != 1 || transformOperationsForTest(intent.Streams[0])[0].Resample == nil {
+	if len(intent.Streams) != 1 || len(transformOperationsForTest(intent.Streams[0].Operations)) != 1 || transformOperationsForTest(intent.Streams[0].Operations)[0].Resample == nil {
 		t.Fatalf("intent: %+v", intent)
 	}
 }
@@ -4167,7 +4139,7 @@ func TestReadmeVideoResizeEncodeRecipeIsSmall(t *testing.T) {
 		t.Fatalf("spec:\n%s", text)
 	}
 	intent := job.Intent()
-	if len(intent.Streams) != 1 || len(transformOperationsForTest(intent.Streams[0])) != 1 || transformOperationsForTest(intent.Streams[0])[0].Resize == nil {
+	if len(intent.Streams) != 1 || len(transformOperationsForTest(intent.Streams[0].Operations)) != 1 || transformOperationsForTest(intent.Streams[0].Operations)[0].Resize == nil {
 		t.Fatalf("intent: %+v", intent)
 	}
 }
@@ -5334,14 +5306,14 @@ func TestBranchCompositionCanSplitFromEarlierTap(t *testing.T) {
 	}
 	if intent.Streams[0].From.Name() != "video.decoded" ||
 		intent.Streams[0].From.Domain() != goav.DomainFrame ||
-		len(transformOperationsForTest(intent.Streams[0])) != 1 ||
-		transformOperationsForTest(intent.Streams[0])[0].Resize.Width != 320 {
+		len(transformOperationsForTest(intent.Streams[0].Operations)) != 1 ||
+		transformOperationsForTest(intent.Streams[0].Operations)[0].Resize.Width != 320 {
 		t.Fatalf("raw branch intent = %+v, want branch from decoded tap with only thumbnail resize", intent.Streams[0])
 	}
 	if intent.Streams[1].From.Name() != "video.720p.frames" ||
 		intent.Streams[1].From.Domain() != goav.DomainFrame ||
-		len(transformOperationsForTest(intent.Streams[1])) != 1 ||
-		transformOperationsForTest(intent.Streams[1])[0].Resize.Width != 1280 {
+		len(transformOperationsForTest(intent.Streams[1].Operations)) != 1 ||
+		transformOperationsForTest(intent.Streams[1].Operations)[0].Resize.Width != 1280 {
 		t.Fatalf("web branch intent = %+v, want branch from 720p tap with shared resize", intent.Streams[1])
 	}
 

@@ -814,17 +814,17 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 				)
 			}
 			transformName := transformFactoryName(operation.spec.Transform)
-			streamIntent := StreamIntent{
+			branchIntent := streamIntent{
 				Name:       firstNonEmpty(branch.name, "branch"),
 				Select:     StreamSelect{Type: currentStream.Type},
 				Operations: []OperationSpec{operation.spec},
 			}
 			if _, err := t.runtime.filters.Factory(transformName); err != nil {
 				closeRuntimeBranchOwnedStages(*branch)
-				return recipeTransformAdapterError("attach runtime branch", streamIntent, transformName, err)
+				return recipeTransformAdapterError("attach runtime branch", branchIntent, transformName, err)
 			}
 			if desc, err := t.runtime.filters.Descriptor(transformName); err == nil {
-				if err := validateTransformAdapterDescriptor("attach runtime branch", streamIntent, operation.spec.Transform, transformName, desc); err != nil {
+				if err := validateTransformAdapterDescriptor("attach runtime branch", branchIntent, operation.spec.Transform, transformName, desc); err != nil {
 					closeRuntimeBranchOwnedStages(*branch)
 					return err
 				}
@@ -860,7 +860,7 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 }
 
 func validateRuntimeBranchShapeContract(branch runtimeBranch, initial MediaShape) error {
-	stream := StreamIntent{
+	stream := streamIntent{
 		Name: branch.name,
 		Select: StreamSelect{
 			Type:  firstNonEmptyMedia(branch.media, initial.MediaKind),
@@ -1040,10 +1040,10 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string
 	}
 	request := runtimeBranchDecodeRequest(branchName, currentStream, spec)
 	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
-		stream := StreamIntent{Name: branchName, Decode: true}
+		stream := streamIntent{Name: branchName, Decode: true}
 		return nil, recipeDecodeAdapterError("attach runtime branch", stream, currentStream.Codec.ID, t.runtime.codecs, err)
 	}
-	stream := StreamIntent{
+	stream := streamIntent{
 		Name:   branchName,
 		Select: streamSelectFromAV(request.selector),
 		Decode: true,
@@ -1081,7 +1081,7 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 		return av.Stream{}, err
 	}
 	if _, err := t.runtime.codecs.EncoderFactory(branch.encode.ID); err != nil {
-		stream := StreamIntent{Name: branch.name, Encode: branch.encode}
+		stream := streamIntent{Name: branch.name, Encode: branch.encode}
 		return av.Stream{}, recipeEncodeAdapterError("attach runtime branch", stream, t.runtime.codecs, err)
 	}
 	request := runtimeBranchEncodeRequest(*branch, currentStream)
@@ -1089,7 +1089,7 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 	if err != nil {
 		return av.Stream{}, err
 	}
-	stream := StreamIntent{Name: branch.name, Select: StreamSelect{Type: currentStream.Type}, Encode: branch.encode}
+	stream := streamIntent{Name: branch.name, Select: StreamSelect{Type: currentStream.Type}, Encode: branch.encode}
 	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(branch.encode, encodedStream)); err != nil {
 		return av.Stream{}, err
 	}

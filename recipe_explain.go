@@ -224,7 +224,7 @@ func (r recipeResolved) inputProbe(index int) (format.ProbeResult, bool) {
 	return probe, true
 }
 
-func explainStreams(streams []StreamIntent) []StreamReport {
+func explainStreams(streams []streamIntent) []StreamReport {
 	reports := make([]StreamReport, 0, len(streams))
 	for i := range streams {
 		stream := streams[i]
@@ -414,7 +414,7 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 	return requirements, warnings
 }
 
-func appendBranchOperationRequirements(requirements []AdapterRequirement, resolved recipeResolved, branch BranchReport, stream StreamIntent, streamOK bool) ([]AdapterRequirement, []PlanDiagnostic) {
+func appendBranchOperationRequirements(requirements []AdapterRequirement, resolved recipeResolved, branch BranchReport, stream streamIntent, streamOK bool) ([]AdapterRequirement, []PlanDiagnostic) {
 	var warnings []PlanDiagnostic
 	requiredBy := firstNonEmpty(branch.Name, "branch")
 	for i := range branch.Operations {
@@ -452,7 +452,7 @@ func appendBranchOperationRequirements(requirements []AdapterRequirement, resolv
 	return requirements, warnings
 }
 
-func reportStreamForBranch(streams []StreamIntent, branch BranchReport, index int) (StreamIntent, bool) {
+func reportStreamForBranch(streams []streamIntent, branch BranchReport, index int) (streamIntent, bool) {
 	for i := range streams {
 		if reportBranchNameForStream(streams[i], i) == branch.Name {
 			return streams[i], true
@@ -461,14 +461,14 @@ func reportStreamForBranch(streams []StreamIntent, branch BranchReport, index in
 	if index >= 0 && index < len(streams) {
 		return streams[index], true
 	}
-	return StreamIntent{}, false
+	return streamIntent{}, false
 }
 
-func reportBranchNameForStream(stream StreamIntent, index int) string {
+func reportBranchNameForStream(stream streamIntent, index int) string {
 	return firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", index))
 }
 
-func operationDecodeCodec(resolved recipeResolved, stream StreamIntent, streamOK bool, operation OperationReport) (av.CodecID, bool) {
+func operationDecodeCodec(resolved recipeResolved, stream streamIntent, streamOK bool, operation OperationReport) (av.CodecID, bool) {
 	if streamOK {
 		if codecID, ok := reportDecodeCodec(resolved, stream); ok {
 			return codecID, true
@@ -481,7 +481,7 @@ func operationDecodeCodec(resolved recipeResolved, stream StreamIntent, streamOK
 	return codecID, true
 }
 
-func operationEncodeCodec(stream StreamIntent, streamOK bool, operation OperationReport) av.CodecID {
+func operationEncodeCodec(stream streamIntent, streamOK bool, operation OperationReport) av.CodecID {
 	if streamOK && stream.Encode.ID != "" {
 		return stream.Encode.ID
 	}
@@ -644,7 +644,7 @@ func applyCodecDescriptorRequirement(requirement AdapterRequirement, descriptors
 	return requirement
 }
 
-func reportDecodeCodec(resolved recipeResolved, stream StreamIntent) (av.CodecID, bool) {
+func reportDecodeCodec(resolved recipeResolved, stream streamIntent) (av.CodecID, bool) {
 	if codecID, ok := liveDecodeCodec(resolved.intent.Inputs, stream); ok {
 		return codecID, true
 	}
@@ -949,7 +949,7 @@ func explainSummary(report PlanReport) string {
 func cloneIntent(intent Intent) Intent {
 	clone := intent
 	clone.Inputs = append([]inputIntent(nil), intent.Inputs...)
-	clone.Streams = append([]StreamIntent(nil), intent.Streams...)
+	clone.Streams = append([]streamIntent(nil), intent.Streams...)
 	for i := range clone.Streams {
 		clone.Streams[i].Operations = cloneOperationSpecs(intent.Streams[i].Operations)
 		clone.Streams[i].Taps = cloneTapIntents(intent.Streams[i].Taps)
@@ -972,9 +972,9 @@ func cloneOperationSpecs(operations []OperationSpec) []OperationSpec {
 	return out
 }
 
-func cloneTapIntents(taps []TapIntent) []TapIntent {
+func cloneTapIntents(taps []tapIntent) []tapIntent {
 	if len(taps) == 0 {
 		return nil
 	}
-	return append([]TapIntent(nil), taps...)
+	return append([]tapIntent(nil), taps...)
 }

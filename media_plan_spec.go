@@ -366,30 +366,30 @@ func mediaPlanPacketCopyStreamLowererForState(state *recipeCompileState) (graphP
 	return plan, true, nil
 }
 
-func mediaPlanPacketCopyStream(state *recipeCompileState) (StreamIntent, bool, bool) {
+func mediaPlanPacketCopyStream(state *recipeCompileState) (streamIntent, bool, bool) {
 	if state == nil {
-		return StreamIntent{}, false, false
+		return streamIntent{}, false, false
 	}
 	return mediaPlanPacketCopyIntentStream(state.jobPresent, state.intent)
 }
 
-func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent) (StreamIntent, bool, bool) {
+func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent) (streamIntent, bool, bool) {
 	if !jobPresent {
-		return StreamIntent{}, false, false
+		return streamIntent{}, false, false
 	}
 	switch len(intent.Streams) {
 	case 0:
-		return StreamIntent{}, false, true
+		return streamIntent{}, false, true
 	case 1:
 		stream := intent.Streams[0]
 		if streamIntentPacketCopyOnly(stream) {
 			return stream, true, true
 		}
 	}
-	return StreamIntent{}, false, false
+	return streamIntent{}, false, false
 }
 
-func streamIntentPacketCopyOnly(stream StreamIntent) bool {
+func streamIntentPacketCopyOnly(stream streamIntent) bool {
 	if !stream.Encode.Copy || stream.Decode || stream.Encode.ID != "" || stream.Encode.Auto {
 		return false
 	}
@@ -431,11 +431,11 @@ func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanL
 	return plan, true, nil
 }
 
-func mediaPlanDecodeStreamShape(stream StreamIntent, outputs []destinationSpec, frameSource bool) bool {
+func mediaPlanDecodeStreamShape(stream streamIntent, outputs []destinationSpec, frameSource bool) bool {
 	return mediaPlanSinkDestinationShape(stream, outputs, frameSource) || mediaPlanEncodeShape(stream, outputs, frameSource)
 }
 
-func mediaPlanSinkDestinationShape(stream StreamIntent, outputs []destinationSpec, frameSource bool) bool {
+func mediaPlanSinkDestinationShape(stream streamIntent, outputs []destinationSpec, frameSource bool) bool {
 	return len(outputs) == 1 &&
 		outputs[0].sink != nil &&
 		(stream.Decode || frameSource) &&
@@ -443,7 +443,7 @@ func mediaPlanSinkDestinationShape(stream StreamIntent, outputs []destinationSpe
 		!stream.Encode.Copy
 }
 
-func mediaPlanEncodeShape(stream StreamIntent, outputs []destinationSpec, frameSource bool) bool {
+func mediaPlanEncodeShape(stream streamIntent, outputs []destinationSpec, frameSource bool) bool {
 	if (!stream.Decode && !frameSource) || !codecIntentSet(stream.Encode) || stream.Encode.Copy || len(outputs) == 0 {
 		return false
 	}

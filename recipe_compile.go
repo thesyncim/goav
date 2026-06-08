@@ -419,7 +419,7 @@ func validateJobIntentShape(operation string, intent Intent, jobOutputCount int)
 	return validateJobStreamIntentShape(operation, stream)
 }
 
-func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCount int, stream StreamIntent, hasStream bool) error {
+func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCount int, stream streamIntent, hasStream bool) error {
 	if !hasStream {
 		return nil
 	}
@@ -429,7 +429,7 @@ func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCoun
 	return jobOutputScopeMixedError(operation, stream)
 }
 
-func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
+func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 	return &BuildError{
 		Code:      "output_scope_mixed",
 		Operation: operation,
@@ -444,7 +444,7 @@ func jobOutputScopeMixedError(operation string, stream StreamIntent) error {
 	}
 }
 
-func jobDestinationReferenceMissingError(operation string, stream StreamIntent, label string) error {
+func jobDestinationReferenceMissingError(operation string, stream streamIntent, label string) error {
 	return &BuildError{
 		Code:      "output_missing",
 		Operation: operation,
@@ -459,7 +459,7 @@ func jobDestinationReferenceMissingError(operation string, stream StreamIntent, 
 	}
 }
 
-func jobIntentTooManyStreamsError(operation string, streams []StreamIntent) error {
+func jobIntentTooManyStreamsError(operation string, streams []streamIntent) error {
 	err := &BuildError{
 		Code:      "stream_duplicate",
 		Operation: operation,
@@ -481,7 +481,7 @@ func jobIntentTooManyStreamsError(operation string, streams []StreamIntent) erro
 	return err
 }
 
-func validateJobStreamIntentShape(operation string, stream StreamIntent) error {
+func validateJobStreamIntentShape(operation string, stream streamIntent) error {
 	selector := streamIntentSelector(stream)
 	node := jobStreamIntentName(stream)
 	if !streamIntentHasOperation(stream) {
@@ -499,7 +499,7 @@ func validateJobStreamIntentShape(operation string, stream StreamIntent) error {
 	return validateJobStreamTransformIntentShape(operation, stream)
 }
 
-func validateJobStreamTransformIntentShape(operation string, stream StreamIntent) error {
+func validateJobStreamTransformIntentShape(operation string, stream streamIntent) error {
 	selector := streamIntentSelector(stream)
 	node := jobStreamIntentName(stream)
 	transforms := streamIntentTransformSpecs(stream)
@@ -823,11 +823,11 @@ func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
 		if !ok || !streamNeedsDecodeForState(state, stream) {
 			return nil
 		}
-		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, state.inputProbes, []StreamIntent{stream})
+		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, state.inputProbes, []streamIntent{stream})
 	}}
 }
 
-func streamNeedsDecodeForState(state *recipeCompileState, stream StreamIntent) bool {
+func streamNeedsDecodeForState(state *recipeCompileState, stream streamIntent) bool {
 	if shape, ok := compileStateCustomSourceShape(state); ok && shape.Domain == DomainFrame {
 		return false
 	}
@@ -868,7 +868,7 @@ func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 	}}
 }
 
-func validateKnownInputStreamSelection(probes []format.ProbeResult, stream StreamIntent) error {
+func validateKnownInputStreamSelection(probes []format.ProbeResult, stream streamIntent) error {
 	for i := range probes {
 		if err := validateKnownProbeStreamSelection(probes[i], stream); err != nil {
 			return err
@@ -877,7 +877,7 @@ func validateKnownInputStreamSelection(probes []format.ProbeResult, stream Strea
 	return nil
 }
 
-func validateKnownProbeStreamSelection(probe format.ProbeResult, stream StreamIntent) error {
+func validateKnownProbeStreamSelection(probe format.ProbeResult, stream streamIntent) error {
 	if len(probe.Streams) == 0 {
 		return nil
 	}
@@ -936,7 +936,7 @@ func (s *recipeCompileState) recipeDestinationSet() map[string]destinationSpec {
 	return outputs
 }
 
-func recipeInitialStreamShape(state *recipeCompileState, stream StreamIntent) MediaShape {
+func recipeInitialStreamShape(state *recipeCompileState, stream streamIntent) MediaShape {
 	var shape MediaShape
 	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
 	if selected, ok := planSelectedStream(state, stream); ok {
@@ -957,7 +957,7 @@ func recipeInitialStreamShape(state *recipeCompileState, stream StreamIntent) Me
 	return shape
 }
 
-func recipeFinalStreamShape(state *recipeCompileState, stream StreamIntent) MediaShape {
+func recipeFinalStreamShape(state *recipeCompileState, stream streamIntent) MediaShape {
 	shape := recipeInitialStreamShape(state, stream)
 	shape = normalizeTapShape(shape)
 	if shape.MediaKind == "" {
@@ -1006,7 +1006,7 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 	}
 }
 
-func validateOperationSpecShapes(operation string, stream StreamIntent, initial MediaShape) error {
+func validateOperationSpecShapes(operation string, stream streamIntent, initial MediaShape) error {
 	shape := normalizeTapShape(initial)
 	if shape.MediaKind == "" {
 		shape.MediaKind = stream.Select.Type

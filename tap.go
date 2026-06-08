@@ -8,7 +8,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-type TapIntent struct {
+type tapIntent struct {
 	Name      string
 	MediaKind av.MediaType
 	Domain    MediaDomain

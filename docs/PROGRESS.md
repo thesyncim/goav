@@ -18,6 +18,7 @@ per-message mutex). Baseline `110616b`: root **types=82**.
 | 5 | P2b | Direct runner `atomic.Pointer[directTopo]` routing snapshot; `emit`/`deliver` lock-free, no node copy, no `destinations` slice; events behind `eventsMu` | direct serial **3–4×**; wide-fanout alloc **eliminated** (N=512 8064B/6→0/0) |
 | 6 | P | Buffered nodes → `[]*bufferedNode` (stable ptrs); pure refactor | fixes pre-existing `copylocks`; `go vet ./...` clean |
 | 7 | P2c | Buffered worker path lock-free: worker owns stable `*bufferedNode`, `deliver`/`releaseSlot` take no `g.mu`; teardown via `g.closing`+per-node `removed` atomics; `emit` keeps RLock | buffered **−9…20%**; per-delivery alloc **eliminated** (512→0); `-race` clean |
+| 8 | S2 | Unexport IR sub-shells `StreamIntent`→`streamIntent`, `TapIntent`→`tapIntent` (read only as read-model fields; migrated 6 test-naming sites to `OperationSpec`/inline + dropped obsolete reflect shape-guard) | types **78→76** |
 
 **Perf headlines** (M4 Max; A/B medians). P1 baseline showed the two bugs P2/P3
 target: direct fanout heap-spilled at N≥64 (`targetStack[8]` overflow: 896B/3 @64,
@@ -35,7 +36,8 @@ where P2a+P2c land the wins. Buffered producer `emit` still takes 1 `g.mu.RLock`
 fix `Blocking` (currently `DropNever`→`ErrBackpressure`→teardown) to a real blocking
 send + slow-consumer test; independent fanout backpressure; typed `av.MediaType` on
 `av.Packet` (drop `Metadata["media_type"]` lookups; keep RTP loop zero-alloc).
-**Track S** — `Job.Intent()`→`Job.Plan()`, unexport `StreamIntent`/`TapIntent`, fold
+**Track S** — rename `Job.Intent()`→`Job.Plan()` + `Intent`→`Plan` (only `Intent`
+left of the exported `*Intent` IR; ~50 `job.Intent()` sites), then fold
 `*Report`/`*Snapshot` duplicates toward root types ~30.
 
 All hot-path data-plane work follows the recorded mandate: **lock-free by design**

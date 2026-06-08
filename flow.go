@@ -359,7 +359,7 @@ func (b *chainBuilder) stage(stage pipeline.Stage) {
 		return
 	}
 	if stage == nil {
-		b.setErr(streamStageMissingError(StreamIntent{Name: firstNonEmpty(b.spec.name, "flow")}))
+		b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "flow")}))
 		return
 	}
 	b.spec.operations = append(b.spec.operations, operationSpecForStage(stage))

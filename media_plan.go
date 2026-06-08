@@ -126,7 +126,7 @@ func planInputs(inputs []inputIntent) []planInput {
 	return out
 }
 
-func planStreams(streams []StreamIntent) []planStream {
+func planStreams(streams []streamIntent) []planStream {
 	out := make([]planStream, 0, len(streams))
 	for i := range streams {
 		stream := streams[i]
@@ -247,8 +247,8 @@ func planBranchesFromBranchComposePlan(state *recipeCompileState, outputs []plan
 	return branches, decisions
 }
 
-func streamIntentFromBranchComposeBranch(branch branchComposeBranch) StreamIntent {
-	stream := StreamIntent{
+func streamIntentFromBranchComposeBranch(branch branchComposeBranch) streamIntent {
+	stream := streamIntent{
 		Name:         branch.Name,
 		Select:       streamSelectFromAV(branch.Selector),
 		Decode:       branch.Decode,
@@ -315,7 +315,7 @@ func streamSelectFromStream(stream av.Stream) StreamSelect {
 	}
 }
 
-func planSelectedStream(state *recipeCompileState, stream StreamIntent) (av.Stream, bool) {
+func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stream, bool) {
 	if state == nil {
 		return av.Stream{}, false
 	}
@@ -400,7 +400,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 	return branches, decisions
 }
 
-func planOperationSpecs(inputs []inputIntent, stream StreamIntent, branchName string, initial MediaShape) ([]planOperation, []planDecision) {
+func planOperationSpecs(inputs []inputIntent, stream streamIntent, branchName string, initial MediaShape) ([]planOperation, []planDecision) {
 	operations := planInputOperationsForShape(firstInput(inputs), initial)
 	operations = append(operations, planOperation{
 		Kind:      OpSelect,
@@ -478,7 +478,7 @@ func planOperationSpecs(inputs []inputIntent, stream StreamIntent, branchName st
 	return operations, decisions
 }
 
-func planStreamIntentOperations(stream StreamIntent, branchName string) ([]planOperation, []planDecision) {
+func planStreamIntentOperations(stream streamIntent, branchName string) ([]planOperation, []planDecision) {
 	operations := make([]planOperation, 0, len(stream.Operations))
 	var decisions []planDecision
 	for i := range stream.Operations {
@@ -600,7 +600,7 @@ func planInputOperationsForShape(input inputIntent, shape MediaShape) []planOper
 	}
 }
 
-func planProcessingOperations(stream StreamIntent) []planOperation {
+func planProcessingOperations(stream streamIntent) []planOperation {
 	transforms := streamIntentTransformSpecs(stream)
 	operations := make([]planOperation, 0, len(transforms)+len(stream.Taps))
 	for i := range transforms {
@@ -625,7 +625,7 @@ func planTransformOperation(transform TransformSpec) planOperation {
 	}
 }
 
-func planTapOperation(tap TapIntent) planOperation {
+func planTapOperation(tap tapIntent) planOperation {
 	return planOperation{
 		Kind:      OpTap,
 		Component: firstNonEmpty(tap.Name, "tap"),
@@ -634,7 +634,7 @@ func planTapOperation(tap TapIntent) planOperation {
 	}
 }
 
-func planPostEncodeTapOperations(stream StreamIntent) []planOperation {
+func planPostEncodeTapOperations(stream streamIntent) []planOperation {
 	operations := make([]planOperation, 0)
 	for i := range stream.Taps {
 		if stream.Taps[i].After != OpEncode {
@@ -760,7 +760,7 @@ func normalizeTapShape(shape MediaShape) MediaShape {
 	return shape
 }
 
-func normalizePlanBranchShape(shape MediaShape, stream StreamIntent, input inputIntent) MediaShape {
+func normalizePlanBranchShape(shape MediaShape, stream streamIntent, input inputIntent) MediaShape {
 	if shape.Domain == "" {
 		shape.Domain = DomainPacket
 	}
