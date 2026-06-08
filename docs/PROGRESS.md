@@ -4,119 +4,39 @@ Compact tracker for the current `goav` buildout.
 
 ## Improvement Loop — Slice Log
 
-Evidence-driven slices alternating Track S (simplify/shrink the public surface)
-and Track P (scale/throughput). Root-package symbol counts come from
-`go doc -all .`: `types = ^type [A-Z]`, `funcs = ^func [A-Z]`,
-`methods = ^func ([^)]+) [A-Z]`.
+Evidence-driven slices, alternating Track S (shrink public surface) and Track P
+(scale). Root symbol counts via `go doc -all .` (`^type/func [A-Z]`). Keep this
+log terse (one line/slice). Hot-path rule: **lock-free by design** (no
+per-message mutex). Baseline `110616b`: root **types=82**.
 
-Baseline (commit `110616b`): root **types=82**, funcs=90, methods=48.
+| # | Track | Slice | Evidence |
+|---|-------|-------|----------|
+| 1 | S1 | Fold `TapReport` into `TapInfo` (identical; `Explain`/`Snapshot` share one read type) | types **82→81** |
+| 2 | P1 | Add fanout+scaling benchmarks (`pipeline/fanout_bench_test.go`); P2/P3 regression gate | baseline below |
+| 3 | P2a | Drop per-message `statsMu` (both runners): per-node `atomic.Uint64`, graph totals summed at `Stats()` | buffered fanout **−22…34%**, direct serial **−24%**; allocs = |
+| 4 | S1b | Unexport IR sub-shells `InputIntent`/`DestinationIntent`/`PolicyIntent` (only read as read-model fields) | types **81→78** |
+| 5 | P2b | Direct runner `atomic.Pointer[directTopo]` routing snapshot; `emit`/`deliver` lock-free, no node copy, no `destinations` slice; events behind `eventsMu` | direct serial **3–4×**; wide-fanout alloc **eliminated** (N=512 8064B/6→0/0) |
+| 6 | P | Buffered nodes → `[]*bufferedNode` (stable ptrs); pure refactor | fixes pre-existing `copylocks`; `go vet ./...` clean |
+| 7 | P2c | Buffered worker path lock-free: worker owns stable `*bufferedNode`, `deliver`/`releaseSlot` take no `g.mu`; teardown via `g.closing`+per-node `removed` atomics; `emit` keeps RLock | buffered **−9…20%**; per-delivery alloc **eliminated** (512→0); `-race` clean |
 
-| # | Track | Slice | Surface / perf evidence |
-|---|-------|-------|-------------------------|
-| 1 | S1 | Fold `TapReport` into `TapInfo` (field-for-field identical; `PlanReport.Taps`/`Explain` and `Snapshot().Taps` now share one read type; deleted `tapReports` converter) | root types **82 → 81**; build+vet(root)+`go test ./...` green |
-| 2 | P1 | Add fanout + scaling benchmarks (`pipeline/fanout_bench_test.go`): direct 1→N serial & parallel, buffered 1→N (shared vs per-target copy), N∈{1,8,64,512} | Baseline recorded below; becomes the P2/P3 regression gate |
-| 3 | P2a | Remove the per-message global `statsMu` from **both** runners: per-node `nodeCounters` (`atomic.Uint64`) on the hot path; graph totals derived by summing per-node counters at `Stats()`; only rare event/drop detail (maps, last-event) takes a cold mutex (`stats.go`, `direct.go`, `buffered.go`) | Buffered (concurrent-branch) fanout **−22%…−34%**; direct serial **−24%**; `allocs/op` unchanged; `-race` clean; `go test ./...` green |
-| 4 | S1b | Unexport the recipe-IR sub-shells `InputIntent`→`inputIntent`, `DestinationIntent`→`destinationIntent`, `PolicyIntent`→`policyIntent` (compiler internals; only read as fields of the kept read-model, so field access is unchanged; zero test-naming refs) | root types **81 → 78**; `go test ./...` green. Maintainer chose: unexport IR, keep one public pre-build read model via `Job.Plan()`. Remaining: rename `Intent`→public read model + `Job.Intent()`→`Job.Plan()`, unexport `StreamIntent`/`TapIntent` (have test-naming helpers + guard tests to migrate). |
-| 5 | P2b | Direct runner: replace per-message topology reads with an atomically-swapped immutable routing snapshot (`atomic.Pointer[directTopo]`, rebuilt under `g.mu` on each mutation). `emit`/`deliver` now take no lock, copy no node, and build no per-message `destinations` slice; events publish guarded by a separate `eventsMu` so the lock-free path can't send on a closed channel (`direct.go`) | Direct serial fanout **−47%…−75%** (3–4× faster); **wide-fanout allocation eliminated** (N=64: 896B/3→**0/0**; N=512: 8064B/6→**0/0**); `-race` clean; `TestGraphDirectRunAllocs` green; `go test ./...` green |
-| 6 | P (hygiene) | Buffered runner: store nodes as `[]*bufferedNode` (stable per-node addresses) instead of `[]bufferedNode`. Pure refactor, no behavior change; sets up P2c (workers can capture a stable node pointer) and **fixes the long-standing pre-existing `copylocks` vet failures** (`bufferedNode` mutex was copied on append/assign/pass-by-value) | `go vet ./...` now **fully clean** (was 4 copylocks errors in buffered.go); `-race` + `go test ./...` green |
-| 7 | P2c | Buffered runner worker path goes lock-free: each worker captures its stable `*bufferedNode` and `deliver`/`releaseSlot` take **no `g.mu`** (immutable kind/stage/sink/emitter/counters/free read directly). Teardown shed via two atomics — `g.closing` (Close→`ErrClosed`) and per-node `removed` (Remove→silent) — preserving the prior drop semantics exactly. Producer `emit` keeps `g.mu.RLock` (dynamic topology + queue-close safety). Removes the 2N per-message worker RLocks of a 1→N fanout (the real simulcast path) | Buffered fanout **−9%…−20% ns/op**; **per-delivery allocation eliminated** (shared N=64/512: 64/512 allocs → **0/0**; copy N=512: 517→5) — the old worker's `&emitter` local escape is gone; `-race` (incl. root attach/detach Remove-during-run) clean; `go test ./...` green |
+**Perf headlines** (M4 Max; A/B medians). P1 baseline showed the two bugs P2/P3
+target: direct fanout heap-spilled at N≥64 (`targetStack[8]` overflow: 896B/3 @64,
+8064B/6 @512) and the direct data plane scaled ~10× *negatively* under concurrent
+emitters (global `statsMu`+`g.mu.RLock`). After P2a–P2c: direct serial fanout
+16ns(N=1)…2µs(N=512) at **0 allocs**; direct parallel N=8 1244→172ns @16c; buffered
+shared/N=512 266→158µs at **0 allocs/delivery**.
 
-### P1 baseline (Apple M4 Max, arm64, `go test -bench Fanout -benchmem`)
+Direct graphs are single-threaded in practice (`Run` drives sources sequentially);
+real concurrency is the buffered runner (per-node goroutines) — the simulcast path,
+where P2a+P2c land the wins. Buffered producer `emit` still takes 1 `g.mu.RLock`/msg
+(guards dynamic topology + queue-close); a producer snapshot is a later option.
 
-Direct fanout, serial emit→deliver (immutable payload, no copy):
-
-| N | ns/op | B/op | allocs/op |
-|---|------:|-----:|----------:|
-| 1 | 30.9 | 0 | 0 |
-| 8 | 174 | 0 | 0 |
-| 64 | 966 | 896 | 3 |
-| 512 | 7558 | 8064 | 6 |
-
-Direct fanout, parallel (concurrent emitters, GOMAXPROCS sweep, N=8):
-
-| -cpu | ns/op | vs 1-core |
-|------|------:|----------:|
-| 1 | 125 | 1.0× |
-| 2 | 519 | 4.1× worse |
-| 4 | 1180 | 9.4× worse |
-| 8 | 1248 | 10.0× worse |
-| 16 | 1244 | 9.9× worse |
-
-Buffered fanout, end-to-end (DropOldest, cap 1024):
-
-| mode | N | ns/op | B/op | allocs/op |
-|------|---|------:|-----:|----------:|
-| shared | 8 | 2563 | 174 | 8 |
-| shared | 512 | 266057 | 11178 | 512 |
-| copy | 8 | 3159 | 227 | 8 |
-| copy | 512 | 229500 | 14536 | 514 |
-
-**Two findings (immediate P2/P3 pressure points):**
-
-1. **Negative parallel scaling (P2).** The direct data plane gets ~10× *slower*
-   per message at 2+ cores under concurrent emitters: the global `statsMu` taken
-   on every `observeMessage`/`observeDelivered` plus the global `g.mu.RLock` on
-   every `emit`/`deliver` serialize and cache-bounce across cores. Parallel
-   efficiency at 16 cores ≈ near-zero. P2 (per-node `atomic.Uint64` stats +
-   `atomic.Pointer` routing snapshot) must make this scale.
-2. **Hidden hot-path allocation for wide fanout (P2/invariant 4).** Direct fanout
-   is 0 allocs/op up to N=8 but allocates at N≥64 (896 B / 3 allocs at 64;
-   8064 B / 6 allocs at 512): `emit` builds a deferred `destinations []int` from
-   an 8-slot stack array (`targetStack [8]int`) and `append` spills to the heap
-   past 8 targets. An SFU fanning out to many subscribers hits this every packet.
-3. Buffered fanout allocates ~1 alloc/target — investigate under P3 (per-target
-   slot/copy path).
-
-### P2a result (same-machine A/B, `-count=3` medians, `-benchtime=100000x`)
-
-| path | baseline (statsMu) | P2a (atomic) | Δ | allocs/op |
-|------|------:|------:|------:|----------:|
-| buffered shared/N=64 | 28.0µs | 22.0µs | −22% | 64 (=) |
-| buffered shared/N=512 | 261.7µs | 173.0µs | −34% | 512 (=) |
-| buffered copy/N=512 | 241.3µs | 221.3µs | −8% | 517 (=) |
-| direct serial/N=8 | 153ns | 116ns | −24% | 0 (=) |
-| direct parallel/N=8 (1 shared source) | 1207ns | 1403ns | +16% | 0 (=) |
-
-The win lands on the **buffered (per-node-goroutine) fanout** — the simulcast /
-many-subscriber path — because removing `statsMu` lets N worker goroutines stop
-serializing on one lock per delivered message. The direct *parallel*
-micro-benchmark uses one shared source emitted from many goroutines and is still
-bottlenecked on `g.mu.RLock` (taken 1+N times per message via `nodeSnapshot`,
-which also copies the whole node); it does not improve here.
-
-### P2b result (direct routing snapshot, `-benchtime=200000x -count=2` medians)
-
-| N | baseline ns/op (allocs) | P2b ns/op (allocs) | Δ ns/op |
-|---|------:|------:|------:|
-| 1 | 30.9 (0) | 16.5 (0) | −47% |
-| 8 | 174 (0) | 48 (0) | −72% |
-| 64 | 966 (**896B/3**) | 238 (**0/0**) | −75% |
-| 512 | 7558 (**8064B/6**) | 2000 (**0/0**) | −74% |
-
-Direct parallel (artificial single-shared-source multi-emitter, N=8): 1244 ns @16
-cores → **172 ns** (−86%); negative scaling cut from ~10× to ~3.6× (residual is the
-shared source/sink atomic counters in this one-source bench; real SFU ingress uses
-distinct sources). Note: a direct graph is single-threaded in practice (`Run`
-drives sources sequentially, stages handle synchronously), so the headline direct
-wins are the eliminated allocation and the 3–4× serial speedup.
-
-**Done (P2c):** buffered worker path (`deliver`/`releaseSlot`) is now lock-free;
-only the producer `emit` still takes `g.mu.RLock` (1 per source message, not the
-2N worker RLocks). That single producer RLock is acceptable for now (it guards
-dynamic topology + queue-close); a producer-side snapshot is a later option.
-
-**Next pressure points:**
-- **P3 (zero-copy + correctness):** refcounted `av.Buffer` (`Retain`/`Release`)
-  so 1→N shares payload bytes with N refs instead of N copies (the `copy` mode
-  cost); fix `Blocking` (maps to `DropNever`→`ErrBackpressure`→tears down the
-  pipeline) into a true blocking send `select { case q<-m: ; case <-ctx.Done(): }`
-  with a slow-consumer backpressure test; independent fanout backpressure (one
-  full target must not abort siblings/source); typed `av.MediaType` on `av.Packet`
-  so drop/route policies stop doing `Metadata["media_type"]` map lookups (guard
-  RTP loop stays zero-alloc).
-- **Track S:** rename `Job.Intent()`→`Job.Plan()` + unexport `StreamIntent`/`TapIntent`
-  (fix the ~6 test-naming helper/guard sites), continue folding duplicate
-  `*Report`/`*Snapshot` read models toward root types ~30.
+**Next:** **P3** — refcounted `av.Buffer` (`Retain`/`Release`) for zero-copy 1→N;
+fix `Blocking` (currently `DropNever`→`ErrBackpressure`→teardown) to a real blocking
+send + slow-consumer test; independent fanout backpressure; typed `av.MediaType` on
+`av.Packet` (drop `Metadata["media_type"]` lookups; keep RTP loop zero-alloc).
+**Track S** — `Job.Intent()`→`Job.Plan()`, unexport `StreamIntent`/`TapIntent`, fold
+`*Report`/`*Snapshot` duplicates toward root types ~30.
 
 All hot-path data-plane work follows the recorded mandate: **lock-free by design**
 (no per-message mutex; per-node atomics + immutable snapshots; mutex only on cold
