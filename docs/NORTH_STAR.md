@@ -103,13 +103,19 @@ Revised after investigating #2 (see Grammar #2): the plan collapse must come
    no round-trip); (3b) `branchComposePlan` becomes transcode-only → move the bridge
    to a compat pkg, drop the core `transcode` import; (3c) then encode/decode
    `streamIntent` collapse (the woven 51/102-read fields) + #2 fall out together.
-   **#2 dual path (exact):** Build's graph = `lowerer.spec()` where the branch
-   lowerer is `mediaPlanBranchComposerLowerer` (from `branchComposePlan`); Describe's
-   mediaPlan = `buildMediaPlan`→`planBranchesFromBranchComposePlan`. Both derive from
-   `branchComposePlan` via *different code* → node names can diverge (that's #2).
-   The flip must fold branch lowering into the stream lowerer path
-   (`mediaPlanStreamLowererForState`, multi-branch) so there is ONE lowering from
-   streamIntents feeding both `lowerer.spec()` and `buildMediaPlan`.
+   **#2 layer (corrected):** `graphPlan.Describe()` returns `p.spec()` (the lowerer
+   graph spec), NOT the mediaPlan — so `Describe()≡Build()` is automatic (both share
+   `p.spec()`). **#2 lives purely in the lowerer spec generation:** direct chains use
+   the stream lowerer (`mediaPlanStreamLowererForState`); `Branch("main")` uses
+   `mediaPlanBranchComposerLowerer`→`newMediaPlanBranchComposeGraph`→`planBranchComposeRoutes`
+   (a *separate* graph-building subsystem from `branchComposePlan`), which names the
+   encode node differently. `buildMediaPlan`/`planBranches`/`planOperationNodeName` are
+   the **Explain/operationPlan/workPlan side only** (step 4, slice 26 prep) and do NOT
+   feed Describe. So: #2 = unify the two lowerer spec subsystems (stream vs
+   branch-compose), so a 1-branch composition lowers identically to a direct chain.
+   The `branchComposePlan` retirement = re-point `newMediaPlanBranchComposeGraph` off
+   `branchComposePlan` onto the stream-lowerer path. (Earlier "Describe's mediaPlan"
+   claim was wrong — corrected here.)
 4. **#7/#26**: fold `mediaPlan` into a `WorkPlan` view; one plan for
    Explain/Describe/Build/Attach/Snapshot → naming resolves once.
 5. **#2 falls out**: with one plan path, direct chain and `Branch("main")` name

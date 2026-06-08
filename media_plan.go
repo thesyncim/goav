@@ -102,8 +102,9 @@ func buildMediaPlan(state *recipeCompileState) mediaPlan {
 	plan.Streams = planStreams(intent.Streams)
 	plan.Outputs = planOutputs(intent.Destinations, state.outputFormatMap())
 	if state.branchCompositionPresent && branchComposePlanReady(state.plan) && branchComposePlanHasOperations(state.plan) {
-		plan.Streams = planStreamsFromBranchComposePlan(state.plan)
-		plan.Branches, plan.Decisions = planBranchesFromBranchComposePlan(state, plan.Outputs)
+		streams := streamIntentsFromBranchComposePlan(state.plan)
+		plan.Streams = planStreams(streams)
+		plan.Branches, plan.Decisions = planBranchesFromStreamIntents(state, streams, plan.Outputs)
 	} else {
 		plan.Branches, plan.Decisions = planBranches(state, plan.Outputs)
 	}
@@ -138,16 +139,16 @@ func planStreams(streams []streamIntent) []planStream {
 	return out
 }
 
-func planStreamsFromBranchComposePlan(plan branchComposePlan) []planStream {
-	out := make([]planStream, 0, len(plan.Branches))
+// streamIntentsFromBranchComposePlan converts a branchComposePlan to the
+// streamIntent list the Explain-side planners consume — the single point where
+// the parallel branchComposePlan feeds the streamIntent-based mediaPlan, so
+// stream and branch planning both run through the same code as the direct path.
+func streamIntentsFromBranchComposePlan(plan branchComposePlan) []streamIntent {
+	streams := make([]streamIntent, 0, len(plan.Branches))
 	for i := range plan.Branches {
-		branch := plan.Branches[i]
-		out = append(out, planStream{
-			Name:   firstNonEmpty(branch.Name, string(branch.Selector.Type), fmt.Sprintf("stream-%d", i)),
-			Select: streamSelectFromAV(branch.Selector),
-		})
+		streams = append(streams, streamIntentFromBranchComposeBranch(plan.Branches[i]))
 	}
-	return out
+	return streams
 }
 
 func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []planOutput {
@@ -174,11 +175,10 @@ func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []
 }
 
 // planBranchFromStreamIntent plans one branch from a resolved stream intent —
-// the single per-branch planning body shared by the direct-stream path
-// (planBranches) and the branch-composition path
-// (planBranchesFromBranchComposePlan). They differ only in where the
-// streamIntent comes from; collapsing them onto one body is the prerequisite
-// for retiring the parallel branchComposePlan source (NORTH_STAR step 3).
+// the single per-branch planning body. Both planning sources (direct streams
+// and a branchComposePlan converted via streamIntentsFromBranchComposePlan)
+// reach it through planBranchesFromStreamIntents, so the Explain-side mediaPlan
+// has one branch planner (NORTH_STAR step 3).
 func planBranchFromStreamIntent(state *recipeCompileState, stream streamIntent, index int, outputs []planOutput) (planBranch, []planDecision) {
 	var shape MediaShape
 	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
@@ -211,22 +211,18 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 	if len(state.intent.Streams) == 0 {
 		return planCopyBranches(state, outputs)
 	}
-	branches := make([]planBranch, 0, len(state.intent.Streams))
-	decisions := make([]planDecision, 0, len(state.intent.Streams))
-	for i := range state.intent.Streams {
-		branch, branchDecisions := planBranchFromStreamIntent(state, state.intent.Streams[i], i, outputs)
-		branches = append(branches, branch)
-		decisions = append(decisions, branchDecisions...)
-	}
-	return branches, decisions
+	return planBranchesFromStreamIntents(state, state.intent.Streams, outputs)
 }
 
-func planBranchesFromBranchComposePlan(state *recipeCompileState, outputs []planOutput) ([]planBranch, []planDecision) {
-	branches := make([]planBranch, 0, len(state.plan.Branches))
-	decisions := make([]planDecision, 0, len(state.plan.Branches))
-	for i := range state.plan.Branches {
-		stream := streamIntentFromBranchComposeBranch(state.plan.Branches[i])
-		branch, branchDecisions := planBranchFromStreamIntent(state, stream, i, outputs)
+// planBranchesFromStreamIntents plans every branch from a resolved streamIntent
+// list — shared by the direct-stream path (planBranches, source
+// state.intent.Streams) and the branch-composition path (buildMediaPlan, source
+// streamIntentsFromBranchComposePlan). One planner, two sources.
+func planBranchesFromStreamIntents(state *recipeCompileState, streams []streamIntent, outputs []planOutput) ([]planBranch, []planDecision) {
+	branches := make([]planBranch, 0, len(streams))
+	decisions := make([]planDecision, 0, len(streams))
+	for i := range streams {
+		branch, branchDecisions := planBranchFromStreamIntent(state, streams[i], i, outputs)
 		branches = append(branches, branch)
 		decisions = append(decisions, branchDecisions...)
 	}
