@@ -15,7 +15,7 @@ from the same few concepts.
 - `Input`: where media comes from.
 - `Stream`: which media stream is selected.
 - `Operation`: decode, resize, resample, custom stage, encode, or copy.
-- `Tap`: a typed attach point created with `FrameTap` or `PacketTap`.
+- `Tap`: an attach point created with `Tap` (domain inferred from the chain point) — or `FrameTap`/`PacketTap` to assert the domain early.
 - `Branch`: downstream operations from a stream point or tap.
 - `Destination`: a file, URI, writer, object upload, media sink, or shared mux/sink group.
 - `Flow`: a reusable operation sequence.
@@ -91,8 +91,8 @@ destinations. Destinations are typed values, so normal recipes do not route by
 string labels. Reusing one destination value creates a mux group or sink group.
 
 ```go
-decoded := goav.FrameTap("video.decoded")
-previewFrames := goav.FrameTap("video.preview.frames")
+decoded := goav.Tap("video.decoded")              // domain inferred from the chain point
+previewFrames := goav.Tap("video.preview.frames") // (use FrameTap/PacketTap to assert it)
 
 archive := goav.File("archive.ivf", archiveFile)
 preview := goav.File("preview.ivf", previewFile)

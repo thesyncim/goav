@@ -1362,8 +1362,23 @@ func operationSpecForTransform(transform TransformSpec) OperationSpec {
 }
 
 func operationSpecForTap(tap TapRef, media av.MediaType, after OperationKind) OperationSpec {
-	intent := tapIntent{Name: tap.name, MediaKind: media, Domain: tap.domain, After: after}
+	domain := tap.domain
+	if domain == "" {
+		domain = tapDomainForAfter(after)
+	}
+	intent := tapIntent{Name: tap.name, MediaKind: media, Domain: domain, After: after}
 	return OperationSpec{Kind: OpTap, Component: tap.name, Tap: intent}
+}
+
+// tapDomainForAfter infers a domain-less tap's media domain from the operation it
+// follows: packets after select/copy/encode, frames otherwise.
+func tapDomainForAfter(after OperationKind) MediaDomain {
+	switch after {
+	case OpSelect, OpCopy, OpEncode:
+		return DomainPacket
+	default:
+		return DomainFrame
+	}
 }
 
 func operationSpecAfter(operations []OperationSpec, fallback OperationKind) OperationKind {

@@ -10,7 +10,16 @@ func (t TapRef) branchSource() branchSourceBinding {
 	return branchSourceBinding{tap: t.name, tapDomain: t.domain}
 }
 
-// FrameTap names a frame-domain attach point.
+// Tap names an attach point whose media domain is inferred from where it is
+// declared in the chain: frame after decode/resize/resample/custom frame stages,
+// packet after .Copy() or an encoder. Prefer Tap for everyday use; reach for
+// FrameTap/PacketTap only to assert the domain early.
+func Tap(name string) TapRef {
+	return TapRef{name: name}
+}
+
+// FrameTap names a frame-domain attach point. It is Tap with an early
+// frame-domain assertion.
 func FrameTap(name string) TapRef {
 	return TapRef{name: name, domain: DomainFrame}
 }

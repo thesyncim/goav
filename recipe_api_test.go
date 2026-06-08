@@ -2577,6 +2577,47 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	}
 }
 
+// TestInferredTapAdoptsChainDomain proves goav.Tap infers its domain from the
+// chain point (frame before encode, packet after encode) with no domain mismatch.
+func TestInferredTapAdoptsChainDomain(t *testing.T) {
+	frameJob := goav.From(goav.FileInput("in.webm", strings.NewReader(""))).
+		Video().
+		Resize(640, 360).
+		Tap(goav.Tap("preview")).
+		Encode(goav.VP9(goav.Bitrate(600_000))).
+		To(goav.File("out.webm", io.Discard))
+	frameDomain := goav.MediaDomain("")
+	for _, tap := range frameJob.Intent().Streams[0].Taps {
+		if tap.Name == "preview" {
+			frameDomain = tap.Domain
+			break
+		}
+	}
+	if frameDomain != goav.DomainFrame {
+		t.Fatalf("inferred preview tap domain = %q, want frame", frameDomain)
+	}
+
+	pktJob := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Branches(
+			goav.Branch("archive").
+				Encode(goav.Opus(goav.Bitrate(96_000))).
+				Tap(goav.Tap("encoded")).
+				To(goav.File("archive.ogg", io.Discard)),
+		)
+	pktDomain := goav.MediaDomain("")
+	for _, tap := range pktJob.Intent().Streams[0].Taps {
+		if tap.Name == "encoded" {
+			pktDomain = tap.Domain
+			break
+		}
+	}
+	if pktDomain != goav.DomainPacket {
+		t.Fatalf("inferred encoded tap domain = %q, want packet", pktDomain)
+	}
+}
+
 func TestReadmeCustomStageToCustomSinkRecipeIsSmall(t *testing.T) {
 	meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
 		return emit.Frame(frame)
