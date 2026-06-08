@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -26,6 +27,9 @@ type bufferedNode struct {
 	queueMutex sync.Mutex
 	done       chan struct{}
 	counters   *nodeCounters
+	// removed is set (once) when the node is torn down by Remove, so the
+	// lock-free worker can shed in-flight messages without taking g.mu.
+	removed atomic.Bool
 }
 
 type bufferedEmitter struct {
@@ -62,6 +66,9 @@ type bufferedRunner struct {
 	running  bool
 	draining bool
 	closed   bool
+	// closing is the lock-free mirror of closed, set under g.mu at Close so the
+	// lock-free worker path sheds messages once the graph is closing.
+	closing atomic.Bool
 }
 
 type bufferedSourceRun struct {
@@ -371,6 +378,7 @@ func (g *bufferedRunner) Close() error {
 		return nil
 	}
 	g.closed = true
+	g.closing.Store(true)
 	running := g.running
 	nodes := make([]*bufferedNode, 0, len(g.nodes))
 	dones := make([]chan struct{}, 0, len(g.nodes))
@@ -426,6 +434,7 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 	}
 	node := g.nodes[index]
 	node.active = false
+	node.removed.Store(true)
 	node.routes = nil
 	delete(g.index, ref.String())
 	for i := range g.nodes {
@@ -512,16 +521,17 @@ func (g *bufferedRunner) openQueue(node *bufferedNode) {
 }
 
 func (g *bufferedRunner) startWorkerLocked(index int) {
-	queue := g.nodes[index].queue
+	node := g.nodes[index]
+	queue := node.queue
 	done := make(chan struct{})
-	g.nodes[index].done = done
+	node.done = done
 	ctx := g.runCtx
 	errs := g.runErrs
 	g.workers.Add(1)
 	go func() {
 		defer g.workers.Done()
 		defer close(done)
-		reportBufferedError(errs, g.runNode(ctx, index, queue))
+		reportBufferedError(errs, g.runNode(ctx, node, queue))
 	}()
 }
 
@@ -652,67 +662,41 @@ func enqueueMessage(ctx context.Context, queue chan *bufferedMessage, msg *buffe
 	}
 }
 
-func (g *bufferedRunner) runNode(ctx context.Context, index int, queue <-chan *bufferedMessage) error {
+func (g *bufferedRunner) runNode(ctx context.Context, node *bufferedNode, queue <-chan *bufferedMessage) error {
 	var first error
 	for msg := range queue {
 		if first == nil {
-			if err := g.deliver(ctx, index, &msg.message); err != nil {
+			if err := g.deliver(ctx, node, &msg.message); err != nil {
 				first = err
 			}
 		}
-		g.releaseSlot(index, msg)
+		node.releaseSlot(msg)
 		g.pending.Done()
 	}
 	return first
 }
 
-func (g *bufferedRunner) deliver(ctx context.Context, to int, msg *Message) error {
-	g.mu.RLock()
-	if g.closed {
-		g.mu.RUnlock()
+// deliver runs lock-free: the worker owns a stable *bufferedNode whose
+// kind/stage/sink/emitter/counters/free are immutable after the queue opens, so
+// no g.mu is taken per delivered message. Teardown is observed via two atomics:
+// g.closing (graph Close) sheds with ErrClosed; node.removed (Remove) sheds
+// silently — matching the prior locked behavior exactly.
+func (g *bufferedRunner) deliver(ctx context.Context, node *bufferedNode, msg *Message) error {
+	if g.closing.Load() {
 		return ErrClosed
 	}
-	if to < 0 || to >= len(g.nodes) {
-		g.mu.RUnlock()
-		return ErrUnknownNode
-	}
-	if !g.nodes[to].active {
-		g.mu.RUnlock()
+	if node.removed.Load() {
 		return nil
 	}
-	kind := g.nodes[to].kind
-	stage := g.nodes[to].stage
-	sink := g.nodes[to].sink
-	emitter := g.nodes[to].emitter
-	counters := g.nodes[to].counters
-	g.mu.RUnlock()
-	observeIn(counters, msg, &g.cold)
-	switch kind {
+	observeIn(node.counters, msg, &g.cold)
+	switch node.kind {
 	case nodeStage:
-		return stage.Handle(ctx, msg, &emitter)
+		return node.stage.Handle(ctx, msg, &node.emitter)
 	case nodeSink:
-		return sink.Handle(ctx, msg)
+		return node.sink.Handle(ctx, msg)
 	default:
 		return ErrInvalidLink
 	}
-}
-
-func (g *bufferedRunner) releaseSlot(index int, slot *bufferedMessage) {
-	if slot == nil {
-		return
-	}
-	g.mu.RLock()
-	var free chan *bufferedMessage
-	if index >= 0 && index < len(g.nodes) {
-		free = g.nodes[index].free
-	}
-	g.mu.RUnlock()
-	if free == nil {
-		slot.Reset()
-		return
-	}
-	slot.Reset()
-	free <- slot
 }
 
 

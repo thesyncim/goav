@@ -19,6 +19,7 @@ Baseline (commit `110616b`): root **types=82**, funcs=90, methods=48.
 | 4 | S1b | Unexport the recipe-IR sub-shells `InputIntent`→`inputIntent`, `DestinationIntent`→`destinationIntent`, `PolicyIntent`→`policyIntent` (compiler internals; only read as fields of the kept read-model, so field access is unchanged; zero test-naming refs) | root types **81 → 78**; `go test ./...` green. Maintainer chose: unexport IR, keep one public pre-build read model via `Job.Plan()`. Remaining: rename `Intent`→public read model + `Job.Intent()`→`Job.Plan()`, unexport `StreamIntent`/`TapIntent` (have test-naming helpers + guard tests to migrate). |
 | 5 | P2b | Direct runner: replace per-message topology reads with an atomically-swapped immutable routing snapshot (`atomic.Pointer[directTopo]`, rebuilt under `g.mu` on each mutation). `emit`/`deliver` now take no lock, copy no node, and build no per-message `destinations` slice; events publish guarded by a separate `eventsMu` so the lock-free path can't send on a closed channel (`direct.go`) | Direct serial fanout **−47%…−75%** (3–4× faster); **wide-fanout allocation eliminated** (N=64: 896B/3→**0/0**; N=512: 8064B/6→**0/0**); `-race` clean; `TestGraphDirectRunAllocs` green; `go test ./...` green |
 | 6 | P (hygiene) | Buffered runner: store nodes as `[]*bufferedNode` (stable per-node addresses) instead of `[]bufferedNode`. Pure refactor, no behavior change; sets up P2c (workers can capture a stable node pointer) and **fixes the long-standing pre-existing `copylocks` vet failures** (`bufferedNode` mutex was copied on append/assign/pass-by-value) | `go vet ./...` now **fully clean** (was 4 copylocks errors in buffered.go); `-race` + `go test ./...` green |
+| 7 | P2c | Buffered runner worker path goes lock-free: each worker captures its stable `*bufferedNode` and `deliver`/`releaseSlot` take **no `g.mu`** (immutable kind/stage/sink/emitter/counters/free read directly). Teardown shed via two atomics — `g.closing` (Close→`ErrClosed`) and per-node `removed` (Remove→silent) — preserving the prior drop semantics exactly. Producer `emit` keeps `g.mu.RLock` (dynamic topology + queue-close safety). Removes the 2N per-message worker RLocks of a 1→N fanout (the real simulcast path) | Buffered fanout **−9%…−20% ns/op**; **per-delivery allocation eliminated** (shared N=64/512: 64/512 allocs → **0/0**; copy N=512: 517→5) — the old worker's `&emitter` local escape is gone; `-race` (incl. root attach/detach Remove-during-run) clean; `go test ./...` green |
 
 ### P1 baseline (Apple M4 Max, arm64, `go test -bench Fanout -benchmem`)
 
@@ -99,11 +100,27 @@ distinct sources). Note: a direct graph is single-threaded in practice (`Run`
 drives sources sequentially, stages handle synchronously), so the headline direct
 wins are the eliminated allocation and the 3–4× serial speedup.
 
-**Next pressure point (P2c):** the buffered runner still takes `g.mu.RLock` in
-`emit`/`deliver`/`releaseSlot` per message across its per-node worker goroutines —
-this is the *real* concurrency path (simulcast branches). Apply the same routing
-snapshot there (harder: dynamic add/remove during run). Also P3: refcounted
-zero-copy fanout (`av.Buffer` Retain/Release) and the `Blocking`-doesn't-block fix.
+**Done (P2c):** buffered worker path (`deliver`/`releaseSlot`) is now lock-free;
+only the producer `emit` still takes `g.mu.RLock` (1 per source message, not the
+2N worker RLocks). That single producer RLock is acceptable for now (it guards
+dynamic topology + queue-close); a producer-side snapshot is a later option.
+
+**Next pressure points:**
+- **P3 (zero-copy + correctness):** refcounted `av.Buffer` (`Retain`/`Release`)
+  so 1→N shares payload bytes with N refs instead of N copies (the `copy` mode
+  cost); fix `Blocking` (maps to `DropNever`→`ErrBackpressure`→tears down the
+  pipeline) into a true blocking send `select { case q<-m: ; case <-ctx.Done(): }`
+  with a slow-consumer backpressure test; independent fanout backpressure (one
+  full target must not abort siblings/source); typed `av.MediaType` on `av.Packet`
+  so drop/route policies stop doing `Metadata["media_type"]` map lookups (guard
+  RTP loop stays zero-alloc).
+- **Track S:** rename `Job.Intent()`→`Job.Plan()` + unexport `StreamIntent`/`TapIntent`
+  (fix the ~6 test-naming helper/guard sites), continue folding duplicate
+  `*Report`/`*Snapshot` read models toward root types ~30.
+
+All hot-path data-plane work follows the recorded mandate: **lock-free by design**
+(no per-message mutex; per-node atomics + immutable snapshots; mutex only on cold
+paths).
 
 Resolved in slice 6: the pre-existing `go vet ./pipeline/` `copylocks` failures
 (`bufferedNode contains sync.Mutex` copied on append/assign/pass-by-value) are
