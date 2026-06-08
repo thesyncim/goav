@@ -159,20 +159,46 @@ func (e *VP9Encoder) resetEncoder() error {
 	if err := e.closeEncoder(); err != nil {
 		return err
 	}
-	options := govpxlib.VP9EncoderOptions{
-		Width:              e.width,
-		Height:             e.height,
-		FPS:                encodeFPS(e.config),
-		TargetBitrateKbps:  encodeBitrateKbps(e.config, e.width, e.height),
-		RateControlModeSet: true,
-		RateControlMode:    govpxlib.RateControlCBR,
-	}
-	encoder, err := govpxlib.NewVP9Encoder(options)
+	encoder, err := govpxlib.NewVP9Encoder(vp9EncoderOptions(e.config, e.width, e.height))
 	if err != nil {
 		return mapGovpxEncodeError(err)
 	}
 	e.encoder = encoder
 	return nil
+}
+
+// vp9EncoderOptions builds the libvpx VP9 options. A realtime config selects the
+// low-latency CBR/realtime preset from the govpx RTC reference; otherwise the
+// encoder keeps plain CBR. Bitrate, fps, and keyframe cadence come from CodecSettings.
+func vp9EncoderOptions(config codec.EncodeConfig, width, height int) govpxlib.VP9EncoderOptions {
+	options := govpxlib.VP9EncoderOptions{
+		Width:              width,
+		Height:             height,
+		FPS:                encodeFPS(config),
+		TargetBitrateKbps:  encodeBitrateKbps(config, width, height),
+		RateControlModeSet: true,
+		RateControlMode:    govpxlib.RateControlCBR,
+	}
+	if !config.Realtime {
+		return options
+	}
+	options.Threads = 1
+	options.CpuUsed = 8
+	options.Deadline = govpxlib.DeadlineRealtime
+	options.MinQuantizer = 2
+	options.MaxQuantizer = 56
+	options.MaxKeyframeInterval = encodeKeyframeInterval(config, 3000)
+	options.BufferSizeMs = 1000
+	options.BufferInitialSizeMs = 500
+	options.BufferOptimalSizeMs = 600
+	options.UndershootPct = 100
+	options.OvershootPct = 15
+	options.MaxIntraBitratePct = 900
+	options.DropFrameAllowed = true
+	options.DropFrameWaterMark = 30
+	options.NoiseSensitivity = 4
+	options.StaticThreshold = 1
+	return options
 }
 
 func (e *VP9Encoder) closeEncoder() error {

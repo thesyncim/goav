@@ -161,18 +161,54 @@ func (e *VP8Encoder) Close() error {
 }
 
 func (e *VP8Encoder) resetEncoder(config codec.EncodeConfig) error {
-	options := govpxlib.EncoderOptions{
-		Width:             e.width,
-		Height:            e.height,
-		FPS:               encodeFPS(config),
-		TargetBitrateKbps: encodeBitrateKbps(config, e.width, e.height),
-	}
-	encoder, err := govpxlib.NewVP8Encoder(options)
+	encoder, err := govpxlib.NewVP8Encoder(vp8EncoderOptions(config, e.width, e.height))
 	if err != nil {
 		return mapGovpxEncodeError(err)
 	}
 	e.encoder = encoder
 	return nil
+}
+
+// vp8EncoderOptions builds the libvpx options for a VP8 encode. A realtime config
+// (RTP/WebRTC ingress, or an explicit realtime flow) selects the low-latency
+// CBR/realtime preset used by the govpx RTC reference, instead of the default
+// VBR good-quality mode. Bitrate, fps, and keyframe cadence come from CodecSettings.
+func vp8EncoderOptions(config codec.EncodeConfig, width, height int) govpxlib.EncoderOptions {
+	options := govpxlib.EncoderOptions{
+		Width:             width,
+		Height:            height,
+		FPS:               encodeFPS(config),
+		TargetBitrateKbps: encodeBitrateKbps(config, width, height),
+	}
+	if !config.Realtime {
+		return options
+	}
+	options.RateControlMode = govpxlib.RateControlCBR
+	options.Deadline = govpxlib.DeadlineRealtime
+	options.CpuUsed = -3
+	options.Tuning = govpxlib.TunePSNR
+	options.MinQuantizer = 4
+	options.MaxQuantizer = 56
+	options.ErrorResilient = true
+	options.BufferSizeMs = 1000
+	options.BufferInitialSizeMs = 500
+	options.BufferOptimalSizeMs = 600
+	options.UndershootPct = 100
+	options.OvershootPct = 15
+	options.MaxIntraBitratePct = 900
+	options.DropFrameAllowed = true
+	options.DropFrameWaterMark = 30
+	options.KeyFrameInterval = encodeKeyframeInterval(config, 999)
+	return options
+}
+
+// encodeKeyframeInterval resolves the max GOP distance: an explicit
+// CodecSettings.KeyframeInterval wins, else the realtime default.
+func encodeKeyframeInterval(config codec.EncodeConfig, def int) int {
+	if config.Settings.KeyframeInterval > 0 {
+		return config.Settings.KeyframeInterval
+	}
+	return def
 }
 
 func (e *VP8Encoder) frameDuration(frame *av.Frame) uint64 {
