@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -675,6 +676,11 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 		return err
 	}
 
+	// A real fanout (more than one matching target) isolates a failing target so
+	// it cannot abort siblings or the source; a simple one-target chain keeps the
+	// strict behavior (e.g. DropNever propagates ErrBackpressure to tear down).
+	fanout := countTargets(topo, fromNode, msg) > 1
+
 	for i := range fromNode.routes {
 		route := &fromNode.routes[i]
 		if !route.matches(msg) {
@@ -685,12 +691,44 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 			if to < 0 || to >= len(topo.nodes) || !topo.nodes[to].active {
 				continue
 			}
-			if err := g.enqueue(ctx, topo.nodes[to].node, msg); err != nil {
-				return err
+			target := topo.nodes[to].node
+			if err := g.enqueue(ctx, target, msg); err != nil {
+				// Independent fanout backpressure: a full target on a real fanout
+				// drops for itself and keeps delivering to its siblings, so one slow
+				// subscriber cannot tear down the source. Everything else —
+				// cancellation, config/validation errors, and simple-chain
+				// backpressure (the strict DropNever contract) — still propagates.
+				if fanout && errors.Is(err, ErrBackpressure) {
+					observeDrop(target.counters, target.policy.Drop, &g.cold)
+				} else {
+					return err
+				}
 			}
 		}
 	}
 	return nil
+}
+
+// countTargets counts the matching, active delivery targets for a message; it
+// stops at two since only "one vs many" matters (simple chain vs fanout).
+func countTargets(topo *bufferedTopo, fromNode *bufferedTopoNode, msg *Message) int {
+	count := 0
+	for i := range fromNode.routes {
+		route := &fromNode.routes[i]
+		if !route.matches(msg) {
+			continue
+		}
+		for j := range route.to {
+			to := route.to[j]
+			if to >= 0 && to < len(topo.nodes) && topo.nodes[to].active {
+				count++
+				if count > 1 {
+					return count
+				}
+			}
+		}
+	}
+	return count
 }
 
 func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message) error {

@@ -736,6 +736,53 @@ func TestGraphBufferedPauseAndResumeBranch(t *testing.T) {
 	}
 }
 
+// TestGraphBufferedFanoutIsolatesFullTarget proves a full DropNever target no
+// longer tears down the source: it drops for itself while the fast sibling keeps
+// receiving every message and Run completes without error.
+func TestGraphBufferedFanoutIsolatesFullTarget(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	const n = 20
+	source := &benchDrainSource{name: "src", n: n, msg: benchPacketMessage(64, true)}
+	slow := &countingSink{name: "slow", delay: 2 * time.Millisecond}
+	fast := &countingSink{name: "fast"}
+
+	graph, err := NewGraph(GraphConfig{Name: "isolate", Buffer: BufferPolicy{Capacity: 1, Drop: DropNever}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	// slow keeps the strict DropNever default and a tiny queue, so it backs up.
+	if _, err := graph.AddSink(slow, BufferPolicy{Capacity: 1, Drop: DropNever}); err != nil {
+		t.Fatal(err)
+	}
+	// fast has room and drops-oldest, so it never blocks.
+	if _, err := graph.AddSink(fast, BufferPolicy{Capacity: 4 * n, Drop: DropOldest}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: "src", To: []string{"slow", "fast"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := graph.Run(ctx); err != nil {
+		t.Fatalf("a full DropNever fanout target must not tear down the source: %v", err)
+	}
+	if got := fast.total(); got != n {
+		t.Fatalf("fast sibling received %d, want %d (isolated from slow's backpressure)", got, n)
+	}
+	if got := slow.total(); got >= n {
+		t.Fatalf("slow DropNever target received %d; expected it to drop under load", got)
+	}
+	if stats := graph.Stats(); stats.Dropped == 0 {
+		t.Fatal("expected drops recorded for the backed-up target")
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 type blockUntilSink struct {
 	name    string
 	release chan struct{}
