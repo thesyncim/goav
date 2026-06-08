@@ -35,6 +35,9 @@ type bufferedNode struct {
 	// set under queueMutex before the queue is closed, so enqueue (which holds
 	// queueMutex but no g.mu) never sends on a closed channel.
 	queueClosed bool
+	// paused, when set, makes the lock-free producer skip this node so a single
+	// branch can be paused without touching the source or its siblings.
+	paused atomic.Bool
 }
 
 // bufferedTopo is an immutable producer-side routing snapshot read lock-free by
@@ -422,6 +425,19 @@ func (g *bufferedRunner) Events() <-chan av.Event {
 	return g.events
 }
 
+// SetNodePaused pauses or resumes delivery to a single node. While paused the
+// lock-free producer skips it, so the source and sibling branches are unaffected.
+func (g *bufferedRunner) SetNodePaused(ref NodeRef, paused bool) error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	index, ok := g.index[ref.String()]
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
+		return ErrUnknownNode
+	}
+	g.nodes[index].paused.Store(paused)
+	return nil
+}
+
 func (g *bufferedRunner) Stats() GraphStats {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -678,6 +694,10 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 }
 
 func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message) error {
+	if node.paused.Load() {
+		// Branch paused: skip this node without touching the source or siblings.
+		return nil
+	}
 	if err := validateBufferedMessage(msg, node.policy); err != nil {
 		return err
 	}

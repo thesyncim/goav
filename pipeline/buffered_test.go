@@ -649,6 +649,93 @@ func TestGraphBufferedShedsStaleUnderMaxLatency(t *testing.T) {
 	}
 }
 
+type twoPhaseSource struct {
+	name   string
+	msg    *Message
+	n      int
+	phase1 chan struct{}
+	resume chan struct{}
+}
+
+func (s *twoPhaseSource) Name() string { return s.name }
+
+func (s *twoPhaseSource) Start(ctx context.Context, e Emitter) error {
+	for i := 0; i < s.n; i++ {
+		if err := e.Emit(ctx, s.msg); err != nil {
+			return err
+		}
+	}
+	close(s.phase1)
+	<-s.resume
+	for i := 0; i < s.n; i++ {
+		if err := e.Emit(ctx, s.msg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *twoPhaseSource) Close() error { return nil }
+
+// TestGraphBufferedPauseAndResumeBranch proves SetNodePaused stops delivery to one
+// branch without affecting the source or a sibling, and that resume restores it.
+func TestGraphBufferedPauseAndResumeBranch(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	const n = 5
+	src := &twoPhaseSource{name: "src", msg: benchPacketMessage(64, true), n: n, phase1: make(chan struct{}), resume: make(chan struct{})}
+	a := &countingSink{name: "a"}
+	b := &countingSink{name: "b"}
+
+	graph, err := NewGraph(GraphConfig{Name: "pause", Buffer: BufferPolicy{Capacity: 4 * n, Drop: DropOldest}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, add := range []func() error{
+		func() error { _, e := graph.AddSource(src, BufferPolicy{}); return e },
+		func() error { _, e := graph.AddSink(a, BufferPolicy{}); return e },
+		func() error { _, e := graph.AddSink(b, BufferPolicy{}); return e },
+		func() error { return graph.Connect(Route{From: "src", To: []string{"a", "b"}}) },
+	} {
+		if err := add(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pauser, ok := graph.(NodePauser)
+	if !ok {
+		t.Fatal("buffered graph should implement NodePauser")
+	}
+	if err := pauser.SetNodePaused("a", true); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- graph.Run(ctx) }()
+
+	select {
+	case <-src.phase1:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := pauser.SetNodePaused("a", false); err != nil {
+		t.Fatal(err)
+	}
+	close(src.resume)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+
+	if got := a.total(); got != n {
+		t.Fatalf("paused branch a delivered %d, want %d (phase-1 skipped, phase-2 resumed)", got, n)
+	}
+	if got := b.total(); got != 2*n {
+		t.Fatalf("sibling b delivered %d, want %d (unaffected by a's pause)", got, 2*n)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 type blockUntilSink struct {
 	name    string
 	release chan struct{}

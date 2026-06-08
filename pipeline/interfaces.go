@@ -136,6 +136,13 @@ func (r Route) ByEvent(event av.EventType) Route {
 	return r
 }
 
+// NodePauser is implemented by graphs that can pause/resume delivery to a single
+// node (the buffered runner). It is an optional capability discovered by type
+// assertion, so it does not widen the Graph interface for every implementer.
+type NodePauser interface {
+	SetNodePaused(ref NodeRef, paused bool) error
+}
+
 type Graph interface {
 	AddSource(Source, BufferPolicy) (NodeRef, error)
 	AddStage(Stage, BufferPolicy) (NodeRef, error)

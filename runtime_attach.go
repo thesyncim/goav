@@ -158,6 +158,10 @@ type Attachment interface {
 	Spec() pipeline.Spec
 	Stats() BranchStats
 	Snapshot() BranchSnapshot
+	// Pause stops delivery to this branch without touching the source or its
+	// siblings; messages are skipped while paused. Resume restores delivery.
+	Pause(context.Context) error
+	Resume(context.Context) error
 	Close(context.Context) error
 }
 
@@ -1509,6 +1513,42 @@ func (a *runtimeAttachment) branchSnapshotLocked(taskStats TaskStats) BranchSnap
 		Spec:         spec,
 		Stats:        branchStatsForNodes(taskStats, a.nodes),
 	}
+}
+
+func (a *runtimeAttachment) Pause(ctx context.Context) error {
+	return a.setPaused(ctx, true)
+}
+
+func (a *runtimeAttachment) Resume(ctx context.Context) error {
+	return a.setPaused(ctx, false)
+}
+
+func (a *runtimeAttachment) setPaused(ctx context.Context, paused bool) error {
+	if a == nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	a.stopMu.Lock()
+	defer a.stopMu.Unlock()
+	if a.stopped {
+		return runtimeBranchInvalidError("pause runtime branch", "branch is already detached")
+	}
+	if a.owner == nil {
+		return nil
+	}
+	pauser, ok := a.owner.graph.(pipeline.NodePauser)
+	if !ok {
+		return runtimeBranchInvalidError("pause runtime branch", "this task graph does not support pausing branches")
+	}
+	var first error
+	for i := range a.nodes {
+		if err := pauser.SetNodePaused(a.nodes[i], paused); err != nil && !isStoppedAttachmentError(err) && first == nil {
+			first = err
+		}
+	}
+	return first
 }
 
 func (a *runtimeAttachment) Close(ctx context.Context) error {
