@@ -17,6 +17,7 @@ Baseline (commit `110616b`): root **types=82**, funcs=90, methods=48.
 | 2 | P1 | Add fanout + scaling benchmarks (`pipeline/fanout_bench_test.go`): direct 1→N serial & parallel, buffered 1→N (shared vs per-target copy), N∈{1,8,64,512} | Baseline recorded below; becomes the P2/P3 regression gate |
 | 3 | P2a | Remove the per-message global `statsMu` from **both** runners: per-node `nodeCounters` (`atomic.Uint64`) on the hot path; graph totals derived by summing per-node counters at `Stats()`; only rare event/drop detail (maps, last-event) takes a cold mutex (`stats.go`, `direct.go`, `buffered.go`) | Buffered (concurrent-branch) fanout **−22%…−34%**; direct serial **−24%**; `allocs/op` unchanged; `-race` clean; `go test ./...` green |
 | 4 | S1b | Unexport the recipe-IR sub-shells `InputIntent`→`inputIntent`, `DestinationIntent`→`destinationIntent`, `PolicyIntent`→`policyIntent` (compiler internals; only read as fields of the kept read-model, so field access is unchanged; zero test-naming refs) | root types **81 → 78**; `go test ./...` green. Maintainer chose: unexport IR, keep one public pre-build read model via `Job.Plan()`. Remaining: rename `Intent`→public read model + `Job.Intent()`→`Job.Plan()`, unexport `StreamIntent`/`TapIntent` (have test-naming helpers + guard tests to migrate). |
+| 5 | P2b | Direct runner: replace per-message topology reads with an atomically-swapped immutable routing snapshot (`atomic.Pointer[directTopo]`, rebuilt under `g.mu` on each mutation). `emit`/`deliver` now take no lock, copy no node, and build no per-message `destinations` slice; events publish guarded by a separate `eventsMu` so the lock-free path can't send on a closed channel (`direct.go`) | Direct serial fanout **−47%…−75%** (3–4× faster); **wide-fanout allocation eliminated** (N=64: 896B/3→**0/0**; N=512: 8064B/6→**0/0**); `-race` clean; `TestGraphDirectRunAllocs` green; `go test ./...` green |
 
 ### P1 baseline (Apple M4 Max, arm64, `go test -bench Fanout -benchmem`)
 
@@ -81,11 +82,27 @@ micro-benchmark uses one shared source emitted from many goroutines and is still
 bottlenecked on `g.mu.RLock` (taken 1+N times per message via `nodeSnapshot`,
 which also copies the whole node); it does not improve here.
 
-**Next pressure point (P2b):** replace per-message topology reads with an
-atomically-swapped immutable routing snapshot (`atomic.Pointer`) so `emit`/`deliver`
-take no lock, do not copy the node, and deliver inline (which also removes the
-wide-fanout `destinations []int` heap spill seen at N≥64). Start with the direct
-runner (SFU egress hot path), then the buffered runner.
+### P2b result (direct routing snapshot, `-benchtime=200000x -count=2` medians)
+
+| N | baseline ns/op (allocs) | P2b ns/op (allocs) | Δ ns/op |
+|---|------:|------:|------:|
+| 1 | 30.9 (0) | 16.5 (0) | −47% |
+| 8 | 174 (0) | 48 (0) | −72% |
+| 64 | 966 (**896B/3**) | 238 (**0/0**) | −75% |
+| 512 | 7558 (**8064B/6**) | 2000 (**0/0**) | −74% |
+
+Direct parallel (artificial single-shared-source multi-emitter, N=8): 1244 ns @16
+cores → **172 ns** (−86%); negative scaling cut from ~10× to ~3.6× (residual is the
+shared source/sink atomic counters in this one-source bench; real SFU ingress uses
+distinct sources). Note: a direct graph is single-threaded in practice (`Run`
+drives sources sequentially, stages handle synchronously), so the headline direct
+wins are the eliminated allocation and the 3–4× serial speedup.
+
+**Next pressure point (P2c):** the buffered runner still takes `g.mu.RLock` in
+`emit`/`deliver`/`releaseSlot` per message across its per-node worker goroutines —
+this is the *real* concurrency path (simulcast branches). Apply the same routing
+snapshot there (harder: dynamic add/remove during run). Also P3: refcounted
+zero-copy fanout (`av.Buffer` Retain/Release) and the `Blocking`-doesn't-block fix.
 
 Known pre-existing issue (also a P2 target): `go vet ./pipeline/` reports
 `bufferedNode contains sync.Mutex` copied in `buffered.go` (append/assign/pass by

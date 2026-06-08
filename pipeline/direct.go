@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -48,6 +49,25 @@ type directRoute struct {
 	label  string
 }
 
+// directTopo is an immutable routing snapshot read lock-free on the hot path via
+// directRunner.topo (atomic.Pointer). It is rebuilt under g.mu on every topology
+// mutation and atomically swapped, so emit/deliver take no lock, copy no node,
+// and build no per-message destination slice. A published directTopo (and its
+// route slices) is never mutated, so concurrent readers stay race-free.
+type directTopo struct {
+	nodes []directTopoNode
+}
+
+type directTopoNode struct {
+	active   bool
+	kind     nodeKind
+	stage    Stage
+	sink     Sink
+	emitter  *directEmitter
+	counters *nodeCounters
+	routes   []directRoute
+}
+
 type directEmitter struct {
 	graph *directRunner
 	from  int
@@ -67,14 +87,51 @@ func NewGraph(config GraphConfig) (Graph, error) {
 }
 
 type directRunner struct {
-	config   GraphConfig
-	mu       sync.RWMutex
-	index    map[string]int
-	nodes    []directNode
-	sources  []int
-	events   chan av.Event
-	cold     coldStats
-	closed   bool
+	config       GraphConfig
+	mu           sync.RWMutex
+	index        map[string]int
+	nodes        []directNode
+	sources      []int
+	topo         atomic.Pointer[directTopo]
+	events       chan av.Event
+	eventsMu     sync.Mutex
+	eventsClosed bool
+	cold         coldStats
+	closed       bool
+}
+
+// rebuildTopoLocked publishes a fresh immutable routing snapshot from the current
+// node set. Caller must hold g.mu (write). Route target slices are deep-copied so
+// in-place edits by Disconnect/Remove never touch an already-published snapshot.
+func (g *directRunner) rebuildTopoLocked() {
+	if g.closed {
+		g.topo.Store(nil)
+		return
+	}
+	topo := &directTopo{nodes: make([]directTopoNode, len(g.nodes))}
+	for i := range g.nodes {
+		n := &g.nodes[i]
+		tn := &topo.nodes[i]
+		tn.active = n.active
+		tn.kind = n.kind
+		tn.stage = n.stage
+		tn.sink = n.sink
+		tn.emitter = n.emitter
+		tn.counters = n.counters
+		if len(n.routes) == 0 {
+			continue
+		}
+		tn.routes = make([]directRoute, len(n.routes))
+		for j := range n.routes {
+			tn.routes[j] = n.routes[j]
+			if len(n.routes[j].to) > 0 {
+				to := make([]int, len(n.routes[j].to))
+				copy(to, n.routes[j].to)
+				tn.routes[j].to = to
+			}
+		}
+	}
+	g.topo.Store(topo)
 }
 
 func newDirectRunner(config GraphConfig) (*directRunner, error) {
@@ -175,6 +232,7 @@ func (g *directRunner) Connect(route Route) error {
 		policy: policy,
 		label:  route.Label,
 	})
+	g.rebuildTopoLocked()
 	return nil
 }
 
@@ -226,6 +284,7 @@ func (g *directRunner) Disconnect(route Route) error {
 	if !removed {
 		return ErrInvalidLink
 	}
+	g.rebuildTopoLocked()
 	return nil
 }
 
@@ -326,6 +385,7 @@ func (g *directRunner) Close() error {
 		return nil
 	}
 	g.closed = true
+	g.topo.Store(nil)
 	nodes := make([]directNode, 0, len(g.nodes))
 	for i := range g.nodes {
 		node := &g.nodes[i]
@@ -344,7 +404,12 @@ func (g *directRunner) Close() error {
 			first = err
 		}
 	}
+	// Close events under eventsMu so a concurrent lock-free emit cannot send on
+	// the channel after it is closed.
+	g.eventsMu.Lock()
+	g.eventsClosed = true
 	close(g.events)
+	g.eventsMu.Unlock()
 	return first
 }
 
@@ -391,6 +456,7 @@ func (g *directRunner) Remove(ref NodeRef) error {
 		}
 		g.nodes[i].routes = routes
 	}
+	g.rebuildTopoLocked()
 	closeNode := *node
 	g.mu.Unlock()
 	return closeDirectNode(&closeNode)
@@ -409,6 +475,7 @@ func (g *directRunner) addNode(node directNode) (int, error) {
 	node.counters = &nodeCounters{}
 	g.index[node.name] = index
 	g.nodes = append(g.nodes, node)
+	g.rebuildTopoLocked()
 	return index, nil
 }
 
@@ -419,65 +486,53 @@ func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	g.mu.RLock()
-	if g.closed {
-		g.mu.RUnlock()
+	// Lock-free hot path: read an immutable routing snapshot, deliver inline. No
+	// mutex, no per-node copy, and no per-message destination slice (so wide
+	// fanout stays allocation-free).
+	topo := g.topo.Load()
+	if topo == nil {
 		return ErrClosed
 	}
-	if from < 0 || from >= len(g.nodes) {
-		g.mu.RUnlock()
+	if from < 0 || from >= len(topo.nodes) {
 		return ErrUnknownNode
 	}
-	fromNode := &g.nodes[from]
+	fromNode := &topo.nodes[from]
 	if !fromNode.active {
-		g.mu.RUnlock()
 		return nil
 	}
 	observeOut(fromNode.counters, msg, &g.cold)
 	if err := g.publishEvent(msg); err != nil {
-		g.mu.RUnlock()
 		return err
 	}
-
-	var targetStack [8]int
-	destinations := targetStack[:0]
-	routes := fromNode.routes
-	for i := range routes {
-		route := &routes[i]
+	for i := range fromNode.routes {
+		route := &fromNode.routes[i]
 		if !route.matches(msg) {
 			continue
 		}
 		for j := range route.to {
-			if len(destinations) < cap(destinations) {
-				destinations = append(destinations, route.to[j])
+			to := route.to[j]
+			if to < 0 || to >= len(topo.nodes) {
 				continue
 			}
-			destinations = append(destinations, route.to[j])
-		}
-	}
-	g.mu.RUnlock()
-	for i := range destinations {
-		if err := g.deliver(ctx, destinations[i], msg); err != nil {
-			return err
+			dst := &topo.nodes[to]
+			if !dst.active {
+				continue
+			}
+			if err := g.deliverTopo(ctx, dst, msg); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func (g *directRunner) deliver(ctx context.Context, to int, msg *Message) error {
-	node, err := g.nodeSnapshot(to)
-	if err != nil {
-		if errors.Is(err, ErrUnknownNode) {
-			return nil
-		}
-		return err
-	}
-	observeIn(node.counters, msg, &g.cold)
-	switch node.kind {
+func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg *Message) error {
+	observeIn(dst.counters, msg, &g.cold)
+	switch dst.kind {
 	case nodeStage:
-		return node.stage.Handle(ctx, msg, node.emitter)
+		return dst.stage.Handle(ctx, msg, dst.emitter)
 	case nodeSink:
-		return node.sink.Handle(ctx, msg)
+		return dst.sink.Handle(ctx, msg)
 	default:
 		return ErrInvalidLink
 	}
@@ -513,6 +568,11 @@ func closeDirectNode(node *directNode) error {
 
 func (g *directRunner) publishEvent(msg *Message) error {
 	if msg.Kind != MessageEvent || msg.Event == nil {
+		return nil
+	}
+	g.eventsMu.Lock()
+	defer g.eventsMu.Unlock()
+	if g.eventsClosed {
 		return nil
 	}
 	select {
