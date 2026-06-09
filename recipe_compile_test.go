@@ -339,7 +339,6 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	for _, required := range []string{
 		"type chainStep struct",
 		"func chainStepOperations",
-		"func branchOperationSpecsFromTranscodeSteps",
 		"func runtimeBranchOperationSpecsFromSpec",
 		"func runtimeBranchOperationsFromSpecs",
 		"type chainSpec struct",

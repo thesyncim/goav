@@ -13,9 +13,6 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-type transcodeGraphCompiler struct{}
-type rtpTranscodeGraphCompiler struct{}
-
 type branchComposeRoute struct {
 	name              string
 	branch            branchComposeBranch
@@ -59,91 +56,6 @@ type branchComposeStreamGroup struct {
 type branchComposeSharedStepGroup struct {
 	operations []OperationSpec
 	branches   []int
-}
-
-func (transcodeGraphCompiler) match(b *builder) bool {
-	return len(b.transcodes) == 1 &&
-		len(b.inputs) == 0 &&
-		len(b.rtpInputs) == 0 &&
-		len(b.outputs) == 0 &&
-		len(b.decodes) == 0 &&
-		len(b.encodes) == 0 &&
-		len(b.filters) == 0 &&
-		len(b.sources) == 0 &&
-		len(b.stages) == 0 &&
-		len(b.sinks) == 0
-}
-
-func (rtpTranscodeGraphCompiler) match(b *builder) bool {
-	return len(b.transcodes) == 1 &&
-		len(b.rtpInputs) > 0 &&
-		len(b.inputs) == 0 &&
-		len(b.outputs) == 0 &&
-		len(b.decodes) == 0 &&
-		len(b.encodes) == 0 &&
-		len(b.filters) == 0 &&
-		len(b.sources) == 0 &&
-		len(b.stages) == 0 &&
-		len(b.sinks) == 0
-}
-
-func (transcodeGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
-	return b.planTranscode(spec)
-}
-
-func (rtpTranscodeGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
-	return b.planRTPTranscode(spec)
-}
-
-func (transcodeGraphCompiler) build(ctx context.Context, b *builder) (Task, error) {
-	return b.buildTranscode(ctx)
-}
-
-func (rtpTranscodeGraphCompiler) build(ctx context.Context, b *builder) (Task, error) {
-	return b.buildRTPTranscode(ctx)
-}
-
-func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
-	return b.planBranchComposePlan(spec, branchComposePlanFromTranscode(b.transcodes[0]))
-}
-
-func (b *builder) planBranchComposePlan(spec pipeline.Spec, plan branchComposePlan) (pipeline.Spec, error) {
-	branches, outputs, err := prepareBranchComposePlan(plan)
-	if err != nil {
-		return pipeline.Spec{}, err
-	}
-
-	nodes := make(map[string]plannedNode, 3+len(branches)+branchComposeOperationStageCount(branches)+len(outputs))
-	sourceName := demuxNodeName(plan.Input)
-	sourceRef := pipeline.NodeRef(sourceName)
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(plan.Input)); err != nil {
-		return pipeline.Spec{}, err
-	}
-
-	return planBranchComposeRoutes(spec, nodes, []pipeline.NodeRef{sourceRef}, branches, outputs)
-}
-
-func (b *builder) planRTPTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
-	return b.planRTPBranchComposePlan(spec, branchComposePlanFromTranscode(b.transcodes[0]))
-}
-
-func (b *builder) planRTPBranchComposePlan(spec pipeline.Spec, plan branchComposePlan) (pipeline.Spec, error) {
-	branches, outputs, err := prepareBranchComposePlan(plan)
-	if err != nil {
-		return pipeline.Spec{}, err
-	}
-
-	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3+len(branches)+branchComposeOperationStageCount(branches)+len(outputs))
-	sourceRefs := make([]pipeline.NodeRef, len(b.rtpInputs))
-	for i := range b.rtpInputs {
-		sourceName := rtpNodeName(b.rtpInputs[i], i)
-		sourceRef := pipeline.NodeRef(sourceName)
-		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, rtpInputDetail(b.rtpInputs[i])); err != nil {
-			return pipeline.Spec{}, err
-		}
-		sourceRefs[i] = sourceRef
-	}
-	return planBranchComposeRoutes(spec, nodes, sourceRefs, branches, outputs)
 }
 
 func planBranchComposeRoutes(
@@ -312,104 +224,6 @@ func planBranchComposeRoutes(
 		spec.Edges = append(spec.Edges, outgoing[branchNodeOrder[i]]...)
 	}
 	return spec, nil
-}
-
-func (b *builder) buildTranscode(ctx context.Context) (Task, error) {
-	graph, err := b.newGraph(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := b.compileTranscode(ctx, graph); err != nil {
-		graph.Close()
-		return nil, err
-	}
-	return newTask(graph, b.runtime, b.destinationTxs...), nil
-}
-
-func (b *builder) buildRTPTranscode(ctx context.Context) (Task, error) {
-	graph, err := b.newGraph(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := b.compileRTPTranscode(ctx, graph); err != nil {
-		graph.Close()
-		return nil, err
-	}
-	return newTask(graph, b.runtime, b.destinationTxs...), nil
-}
-
-func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) error {
-	return b.compileBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(b.transcodes[0]))
-}
-
-func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.Graph, plan branchComposePlan) error {
-	branches, outputs, err := prepareBranchComposePlan(plan)
-	if err != nil {
-		return err
-	}
-
-	demux, err := b.openDemuxSource(ctx, plan.Input)
-	if err != nil {
-		return err
-	}
-	sourceRef, err := graph.AddSource(demux.source, b.runtime.buffer)
-	if err != nil {
-		demux.source.Close()
-		return err
-	}
-
-	realtime := b.runtime.realtime || plan.Input.Realtime
-	groups, err := resolveBranchComposeStreamGroups(demux.streams, branches)
-	if err != nil {
-		return err
-	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, []pipeline.NodeRef{sourceRef}, groups, nil, branches, nil, realtime)
-	if err != nil {
-		return err
-	}
-
-	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, nil, nil, realtime)
-}
-
-func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
-	return b.compileRTPBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(b.transcodes[0]))
-}
-
-func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipeline.Graph, plan branchComposePlan) error {
-	branches, outputs, err := prepareBranchComposePlan(plan)
-	if err != nil {
-		return err
-	}
-
-	sourceRefs := make([]pipeline.NodeRef, 0, len(b.rtpInputs))
-	streams := make([]av.Stream, 0, len(b.rtpInputs))
-	builds := make([]rtpBuild, 0, len(b.rtpInputs))
-	for i := range b.rtpInputs {
-		receiver, err := b.openRTPSource(ctx, b.rtpInputs[i], i)
-		if err != nil {
-			return err
-		}
-		sourceRef, err := graph.AddSource(receiver.source, b.runtime.buffer)
-		if err != nil {
-			receiver.source.Close()
-			return err
-		}
-		sourceRefs = append(sourceRefs, sourceRef)
-		streams = append(streams, receiver.streams...)
-		builds = append(builds, receiver)
-	}
-
-	realtime := true
-	groups, err := resolveBranchComposeStreamGroups(streams, branches)
-	if err != nil {
-		return err
-	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, b.runtime, graph, sourceRefs, groups, builds, branches, nil, realtime)
-	if err != nil {
-		return err
-	}
-
-	return compileBranchComposeRoutes(ctx, b, graph, branches, outputs, branchInputs, branchStreams, nil, nil, realtime)
 }
 
 func compileBranchComposeInputs(

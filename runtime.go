@@ -11,7 +11,6 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
-	"github.com/thesyncim/goav/transcode"
 )
 
 var (
@@ -115,7 +114,6 @@ type builderAPI interface {
 	Decode(av.StreamSelector) builderAPI
 	Encode(av.StreamSelector, codec.EncodeConfig) builderAPI
 	Filter(av.StreamSelector, pipeline.Stage) builderAPI
-	Transcode(transcode.Plan) builderAPI
 	Source(pipeline.Source) builderAPI
 	Stage(pipeline.Stage) builderAPI
 	Sink(pipeline.Sink) builderAPI
@@ -144,7 +142,6 @@ type builder struct {
 	decodes         []decodeRequest
 	encodes         []encodeRequest
 	filters         []filterRequest
-	transcodes      []transcode.Plan
 	sources         []pipeline.Source
 	stages          []pipeline.Stage
 	sinks           []pipeline.Sink
@@ -250,11 +247,6 @@ func (b *builder) Filter(selector av.StreamSelector, stage pipeline.Stage) build
 	return b
 }
 
-func (b *builder) Transcode(plan transcode.Plan) builderAPI {
-	b.transcodes = append(b.transcodes, plan)
-	return b
-}
-
 func (b *builder) Source(source pipeline.Source) builderAPI {
 	b.sources = append(b.sources, source)
 	return b
@@ -287,7 +279,7 @@ func (b *builder) Build(ctx context.Context) (Task, error) {
 
 func (b *builder) hasHighLevelRequests() bool {
 	return len(b.inputs) != 0 || len(b.rtpInputs) != 0 || len(b.outputs) != 0 || len(b.decodes) != 0 ||
-		len(b.encodes) != 0 || len(b.filters) != 0 || len(b.transcodes) != 0
+		len(b.encodes) != 0 || len(b.filters) != 0
 }
 
 func (b *builder) hasExplicitGraph() bool {

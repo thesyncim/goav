@@ -18,7 +18,6 @@ func (decodeEncodeToOutputGraphCompiler) match(b *builder) bool {
 		len(b.encodes) == 1 &&
 		len(b.outputs) > 0 &&
 		len(b.sinks) == 0 &&
-		len(b.transcodes) == 0 &&
 		len(b.sources) == 0 &&
 		len(b.stages) == 0 &&
 		len(b.rtpInputs) == 0
@@ -39,7 +38,6 @@ func (rtpDecodeEncodeToOutputGraphCompiler) match(b *builder) bool {
 		len(b.outputs) > 0 &&
 		len(b.inputs) == 0 &&
 		len(b.sinks) == 0 &&
-		len(b.transcodes) == 0 &&
 		len(b.sources) == 0 &&
 		len(b.stages) == 0
 }

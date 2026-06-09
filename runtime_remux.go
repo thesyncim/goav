@@ -14,8 +14,7 @@ func (b *builder) canBuildRemux() bool {
 		len(b.outputs) > 0 &&
 		len(b.decodes) == 0 &&
 		len(b.encodes) == 0 &&
-		len(b.filters) == 0 &&
-		len(b.transcodes) == 0
+		len(b.filters) == 0
 }
 
 func (b *builder) buildRemux(ctx context.Context) (Task, error) {

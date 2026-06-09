@@ -16,7 +16,6 @@ func (rtpDecodeToSinkGraphCompiler) match(b *builder) bool {
 		len(b.inputs) == 0 &&
 		len(b.outputs) == 0 &&
 		len(b.encodes) == 0 &&
-		len(b.transcodes) == 0 &&
 		len(b.sources) == 0 &&
 		len(b.stages) == 0
 }

@@ -79,7 +79,6 @@ func (rtpRecordGraphCompiler) match(b *builder) bool {
 		len(b.decodes) == 0 &&
 		len(b.encodes) == 0 &&
 		len(b.filters) == 0 &&
-		len(b.transcodes) == 0 &&
 		!b.hasExplicitGraph()
 }
 
