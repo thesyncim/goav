@@ -51,12 +51,12 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
 - **Tap** (§5): carry name/domain/kind/shape/producing-op/branch-owner/attach-policy/timebase. **partial.**
 - **Branch control plane** (§6,7,10): pause/resume/stop/rebranch + lifecycle states + Control
   (RequestKeyframe/SetBitrate/Flush/Drain/Discontinuity). **DONE this session:** pause/resume/stop/rebranch
-  (lock-free, both runners, gapless, integration-tested). **TODO:** SwitchAt* policies, formal state enums, Control(...) typed controls.
+  (lock-free, both runners, gapless, integration-tested). **DONE (2026-06):** typed `Task.Control` (Keyframe/Deliver via `pipeline.NodeInjector`, serial-worker delivery, race-clean; control-target nodes need a non-lossy buffer). **TODO:** SwitchAt* policies; formal state enums *(in flight)*; tap-targeted controls (`.At(node)` → expert).
 - **Branch isolation/ownership** (§8): isolated downstream buffers, per-branch drops/stats,
   copy-if-mutable. **DONE (data plane):** lock-free isolation, independent fanout backpressure, per-branch atomic stats, MaxLatency shedding, Blocking. **TODO:** public CopyMode contract surfacing.
 - **Events/Snapshot/Watch** (§9): typed EventFilter Watch; richer Snapshot. **partial.**
 - **Dynamic streams** (§11): OnStream/When; late-stream attach; ambiguity lists candidates. **TODO.**
-- **Multi-input/Join** (§12): From(a,b...) one Destination; explicit Join (MixAudio etc.). **partial multi-input; Join TODO.**
+- **Multi-input/Join** (§12): From(a,b...) one Destination; explicit Join (MixAudio etc.). **Mix/Composite/Select grammars DONE (2026-06)** over lock-free stages + `task.Control` live switch; **JoinSpec lowering (one build path) in flight**; From(a,b…) multi-input TODO.
 - **Time/sync** (§13): minimal TimeShape (TimeBase/Clock/Live/Latency) + Sync/Attach-at policies. **TODO.**
 - **Source backpressure** (§14): result-aware `Push.X(ctx,...) (PushResult, error)`. **TODO.**
 
@@ -73,6 +73,30 @@ Dynamic: 38[ ] late stream attach · 39[~] ambiguous selection lists candidates 
 Multi/Join: 41[~] From(a,v) one shared Destination · 42[~] multi-input mux validates timebase · 43[ ] Join mixes two audio branches · 44[ ] Join shape mismatch fails before mutation.
 
 (Flow-control acceptance — 19,20,21,27,28,29 — landed this session; lock them in as guards.)
+
+## Attack plan (2026-06-09, decided): internal path unity
+
+Themes A (graph shape) and B (control plane: `task.Control` + `pipeline.NodeInjector`,
+keyframe/event injection, live Select switch) are closed at the surface. The next big
+thing is NOT more API — it is making all power flow through one internal path.
+Measured residue: `runtimeBranch` 251 refs (runtime_attach.go 2,298 lines),
+`mediaPlan` 113 refs (2,567 lines of parallel plan), three join builders 700
+near-mirror lines, `branchComposePlan` 23 refs, `destinationNames` 25 refs;
+`work_plan.go`+`work_patch.go` exist (875 lines) but are not yet the truth.
+
+Stages (each green, in dependency order):
+1. **JoinSpec** — Mix/Composite/Select lower through ONE join builder (profile
+   table for per-kind deltas); `Job` gets one `join` field. *(in flight)*
+2. **Typed lifecycle states** — TaskState/BranchState/DestinationState reported
+   by Snapshot. *(in flight, parallel — disjoint files)*
+3. **runtimeBranch → WorkPatch** — Attach compiles `BranchSpec` with the same
+   planner as Build; delete the separate runtimeBranch* model (the 251 refs).
+4. **mediaPlan → WorkPlan-primary** — Explain/Describe/Build/Snapshot read
+   WorkPlan; mediaPlan becomes a rendered view, then dies. String routing
+   (destinationNames) dies here too (destination-handle IDs).
+5. Then: shape solver centralization (join arm-solving moves into it),
+   From(inputs...) multi-input, Control targeting taps (`.At(node)` demoted to
+   expert), time/clock/seek (theme C — pull scheduling is the keystone).
 
 ## Execution order (safe slices, one residue/feature per iteration)
 
