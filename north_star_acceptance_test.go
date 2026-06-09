@@ -49,7 +49,7 @@ func TestNorthStarDirectChainEqualsExplicitMainBranch(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(direct, branched) {
-		t.Skipf("NORTH_STAR #2 GAP: direct chain != Branch(\"main\") yet.\ndirect:\n%s\nbranched:\n%s", specText(direct), specText(branched))
+		t.Fatalf("NORTH_STAR #2: a direct chain must lower to the same graph as Branch(\"main\").\ndirect:\n%s\nbranched:\n%s", specText(direct), specText(branched))
 	}
 }
 

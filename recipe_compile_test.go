@@ -3693,7 +3693,9 @@ func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testi
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
 	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "resample-main", "resample-plan-main")
-	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "encode-main", "encode-plan-main")
+	// The implicit "main" branch names its encode node from the selector (#2), so
+	// it is encode-audio here, not encode-main.
+	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, "encode-audio", "encode-plan-main")
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)

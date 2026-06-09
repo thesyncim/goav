@@ -779,7 +779,7 @@ func planOperationNodeName(branch planBranch, operation planOperation, index int
 	case OpStage:
 		return operation.Component
 	case OpEncode:
-		return "encode-" + branch.Name
+		return "encode-" + branchEncodeOwnerName(branch)
 	case OpSelect:
 		return "select-" + firstNonEmpty(operation.Component, planBranchOperationScopeName(branch))
 	case OpDepacketize, OpDemux:
@@ -801,6 +801,18 @@ func planBranchOperationScopeName(branch planBranch) string {
 		branch.Name,
 		"stream",
 	)
+}
+
+// branchEncodeOwnerName names the owner of a branch's encode node. The implicit
+// branch name "main" maps to the stream scope so a single Branch("main")
+// composition lowers identically to a direct chain — a direct chain is an
+// implicit Branch("main") (NORTH_STAR #2). Explicitly named branches keep their
+// name so multiple encode variants of one stream stay disambiguated.
+func branchEncodeOwnerName(branch planBranch) string {
+	if branch.Name == "main" {
+		return planBranchOperationScopeName(branch)
+	}
+	return branch.Name
 }
 
 func planBranchDestinations(targetRefs []string, outputs []planOutput) []string {

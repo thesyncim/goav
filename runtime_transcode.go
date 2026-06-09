@@ -824,6 +824,14 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 		if config.Stream.Metadata == nil && branch.Metadata != nil {
 			config.Stream.Metadata = branch.Metadata
 		}
+		// The implicit branch name "main" names its encode node from the selector
+		// (empty request name), so a single Branch("main") composition lowers
+		// identically to a direct chain (NORTH_STAR #2); explicit names stay for
+		// multi-branch disambiguation.
+		encodeName := name
+		if encodeName == "main" {
+			encodeName = ""
+		}
 		branches[i] = branchComposeRoute{
 			name:              name,
 			branch:            branch,
@@ -834,7 +842,7 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 			sharedOperations:  cloneOperationSpecs(sharedOperations),
 			privateOperations: cloneOperationSpecs(privateOperations),
 			request: encodeRequest{
-				name:     name,
+				name:     encodeName,
 				selector: branch.Selector,
 				config:   config,
 			},
