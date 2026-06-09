@@ -282,7 +282,8 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		state.recipeErr = job.err
 		state.inputAttachments = append([]InputSpec(nil), job.inputs...)
 		state.jobOutputCount = len(job.outputs)
-		state.outputAttachments = jobAllOutputs(job.outputs, jobStreamOutputs(job.stream))
+		streamOutputs, _ := job.streamOutputsAndNames()
+		state.outputAttachments = jobAllOutputs(job.outputs, streamOutputs)
 		state.outputDestinationNames = job.allOutputNames()
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
@@ -405,11 +406,11 @@ func validateJobIntentShape(operation string, intent Intent, jobOutputCount int)
 		return &BuildError{Code: "input_missing", Operation: operation, Reason: "no input is configured", Cause: ErrUnsupportedBuild}
 	}
 	stream, hasStream := jobIntentStream(intent)
-	if len(intent.Streams) > 1 {
-		return jobIntentTooManyStreamsError(operation, intent.Streams)
-	}
 	if len(intent.Destinations) == 0 {
 		return &BuildError{Code: "output_missing", Operation: operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
+	}
+	if len(intent.Streams) > 1 {
+		return validateMultiStreamJobIntentShape(operation, intent, jobOutputCount)
 	}
 	if err := validateJobIntentOutputScope(operation, intent, jobOutputCount, stream, hasStream); err != nil {
 		return err
@@ -418,6 +419,39 @@ func validateJobIntentShape(operation string, intent Intent, jobOutputCount int)
 		return nil
 	}
 	return validateJobStreamIntentShape(operation, stream)
+}
+
+// validateMultiStreamJobIntentShape checks a job with several stream chains:
+// every chain carries its own operations and stream-local destinations, and
+// the job-level output scope stays empty (the chains own the routing).
+func validateMultiStreamJobIntentShape(operation string, intent Intent, jobOutputCount int) error {
+	if jobOutputCount != 0 {
+		return jobOutputScopeMixedError(operation, intent.Streams[0])
+	}
+	for i := range intent.Streams {
+		stream := intent.Streams[i]
+		if len(stream.Destinations) == 0 {
+			return jobStreamDestinationMissingError(operation, stream)
+		}
+		if err := validateJobStreamIntentShape(operation, stream); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func jobStreamDestinationMissingError(operation string, stream streamIntent) error {
+	return &BuildError{
+		Code:      "output_missing",
+		Operation: operation,
+		Node:      jobStreamIntentName(stream),
+		Reason:    "stream chain has no destination",
+		Suggestions: []string{
+			"finish each chain with .To(destination) before starting the next .Audio()/.Video()/.Stream()",
+			"share one destination handle across chains to mux them together",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCount int, stream streamIntent, hasStream bool) error {
@@ -458,28 +492,6 @@ func jobDestinationReferenceMissingError(operation string, stream streamIntent, 
 		},
 		Cause: ErrUnsupportedBuild,
 	}
-}
-
-func jobIntentTooManyStreamsError(operation string, streams []streamIntent) error {
-	err := &BuildError{
-		Code:      "stream_duplicate",
-		Operation: operation,
-		Reason:    "ordinary stream recipes select one audio or video stream",
-		Suggestions: []string{
-			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
-			"use goav.From(input).Video().Decode().Branches(...) for multiple branches from one stream",
-			"use the expert graph API for custom multi-stream routing",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-	if len(streams) > 0 {
-		err.Details = append(err.Details, "first stream: "+jobStreamIntentName(streams[0]))
-	}
-	if len(streams) > 1 {
-		err.Node = jobStreamIntentName(streams[1])
-		err.Details = append(err.Details, "second stream: "+jobStreamIntentName(streams[1]))
-	}
-	return err
 }
 
 func validateJobStreamIntentShape(operation string, stream streamIntent) error {
@@ -624,22 +636,42 @@ func validateJobTransformAdaptersPass() recipeCompilePass {
 
 func validateJobOutputBindingsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job output bindings", fn: func(state *recipeCompileState) error {
-		stream, ok := jobIntentStream(state.intent)
-		if !ok {
-			return nil
+		for i := range state.intent.Streams {
+			if err := validateJobOutputBindings(state.operation, state.intent.Streams[i], state.outputAttachments, state.outputDestinationNames); err != nil {
+				return err
+			}
 		}
-		return validateJobOutputBindings(state.operation, stream, state.outputAttachments, state.outputDestinationNames)
+		return nil
 	}}
 }
 
 func validateJobStreamOutputKindsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job stream output kinds", fn: func(state *recipeCompileState) error {
-		stream, ok := jobIntentStream(state.intent)
-		if !ok {
-			return nil
+		if len(state.intent.Streams) == 1 {
+			return validateJobStreamOutputKinds(state.operation, state.intent.Streams[0], state.outputAttachments)
 		}
-		return validateJobStreamOutputKinds(state.operation, stream, state.outputAttachments)
+		// Multiple chains may mix kinds across destinations (one chain to a
+		// mux file, another to a sink); each chain is checked against the
+		// destinations it actually routes to.
+		for i := range state.intent.Streams {
+			stream := state.intent.Streams[i]
+			if err := validateJobStreamOutputKinds(state.operation, stream, jobStreamDestinationSubset(state, stream)); err != nil {
+				return err
+			}
+		}
+		return nil
 	}}
+}
+
+func jobStreamDestinationSubset(state *recipeCompileState, stream streamIntent) []destinationSpec {
+	outputs := make([]destinationSpec, 0, len(stream.Destinations))
+	for i := range state.outputAttachments {
+		name := jobOutputDestinationName(state.outputAttachments, state.outputDestinationNames, i)
+		if stringInSlice(name, stream.Destinations) {
+			outputs = append(outputs, state.outputAttachments[i])
+		}
+	}
+	return outputs
 }
 
 func validateBranchCompositionRecipePass() recipeCompilePass {
@@ -797,22 +829,64 @@ func validateJobLiveStreamSelectionPass() recipeCompilePass {
 		if !state.options.preflightLiveStreams {
 			return nil
 		}
-		stream, ok := jobIntentStream(state.intent)
-		if !ok || !streamNeedsDecodeForState(state, stream) {
-			return nil
+		for i := range state.intent.Streams {
+			stream := state.intent.Streams[i]
+			if jobStreamSelectionNeedsUnion(state, stream) {
+				if err := validateJobStreamSelectionAcrossInputs(state, stream); err != nil {
+					return err
+				}
+				continue
+			}
+			if !streamNeedsDecodeForState(state, stream) {
+				continue
+			}
+			if err := validateLiveStreamSelection(state.intent.Inputs, stream); err != nil {
+				return err
+			}
 		}
-		return validateLiveStreamSelection(state.intent.Inputs, stream)
+		return nil
 	}}
 }
 
 func validateJobKnownInputStreamSelectionPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job known input stream selection", fn: func(state *recipeCompileState) error {
-		stream, ok := jobIntentStream(state.intent)
-		if !ok || !streamNeedsDecodeForState(state, stream) {
-			return nil
+		for i := range state.intent.Streams {
+			stream := state.intent.Streams[i]
+			if jobStreamSelectionNeedsUnion(state, stream) {
+				if err := validateJobStreamSelectionAcrossInputs(state, stream); err != nil {
+					return err
+				}
+				continue
+			}
+			if !streamNeedsDecodeForState(state, stream) {
+				continue
+			}
+			if err := validateKnownInputStreamSelection(state.inputProbes, stream); err != nil {
+				return err
+			}
 		}
-		return validateKnownInputStreamSelection(state.inputProbes, stream)
+		return nil
 	}}
+}
+
+// jobStreamSelectionNeedsUnion reports whether a stream chain selects across
+// the union of several inputs (or was explicitly narrowed with InputName),
+// which replaces the legacy per-probe selection checks.
+func jobStreamSelectionNeedsUnion(state *recipeCompileState, stream streamIntent) bool {
+	if state == nil || !state.jobPresent {
+		return false
+	}
+	return len(state.intent.Inputs) > 1 || stream.Select.Input != ""
+}
+
+// validateJobStreamSelectionAcrossInputs resolves one stream chain against the
+// union of all input streams. Exactly one match is required; several matches
+// fail with the candidate list (input + stream id + media kind) and
+// InputName/StreamID narrowing suggestions.
+func validateJobStreamSelectionAcrossInputs(state *recipeCompileState, stream streamIntent) error {
+	sets := jobInputStreamSets(state.intent.Inputs, state.inputAttachments, state.inputProbes)
+	_, _, err := selectStreamAcrossInputSets(sets, streamIntentSelector(stream), stream.Select.Input)
+	return err
 }
 
 func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
@@ -820,19 +894,43 @@ func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightDecodeAdapters {
 			return nil
 		}
-		stream, ok := jobIntentStream(state.intent)
-		if !ok || !streamNeedsDecodeForState(state, stream) {
+		streams := make([]streamIntent, 0, len(state.intent.Streams))
+		for i := range state.intent.Streams {
+			if !streamNeedsDecodeForState(state, state.intent.Streams[i]) {
+				continue
+			}
+			streams = append(streams, state.intent.Streams[i])
+		}
+		if len(streams) == 0 {
 			return nil
 		}
-		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, state.inputProbes, []streamIntent{stream})
+		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, state.inputProbes, streams)
 	}}
 }
 
 func streamNeedsDecodeForState(state *recipeCompileState, stream streamIntent) bool {
-	if spec, ok := compileStateCustomSourceShape(state); ok && spec.Domain == shape.DomainFrame {
+	if spec, ok := jobStreamCustomSourceShape(state, stream); ok && spec.Domain == shape.DomainFrame {
 		return false
 	}
 	return streamNeedsDecode(stream)
+}
+
+// jobStreamCustomSourceShape resolves the custom-source shape feeding one
+// stream chain: the single input's shape on single-input jobs (legacy), or the
+// shape of the input the chain's selector binds to on multi-input jobs.
+func jobStreamCustomSourceShape(state *recipeCompileState, stream streamIntent) (shape.Spec, bool) {
+	if state == nil {
+		return shape.Spec{}, false
+	}
+	if state.branchCompositionPresent || len(state.inputAttachments) <= 1 {
+		return compileStateCustomSourceShape(state)
+	}
+	sets := jobInputStreamSets(state.intent.Inputs, state.inputAttachments, state.inputProbes)
+	index, ok := resolveInputSetIndex(sets, streamIntentSelector(stream), stream.Select.Input)
+	if !ok || index >= len(state.inputAttachments) {
+		return shape.Spec{}, false
+	}
+	return customSourceShape(state.inputAttachments[index])
 }
 
 func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
@@ -939,7 +1037,7 @@ func (s *recipeCompileState) recipeDestinationSet() map[string]destinationSpec {
 
 func recipeInitialStreamShape(state *recipeCompileState, stream streamIntent) shape.Spec {
 	var spec shape.Spec
-	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
+	sourceShape, sourceShapeOK := jobStreamCustomSourceShape(state, stream)
 	if selected, ok := planSelectedStream(state, stream); ok {
 		domain := shape.DomainPacket
 		if sourceShapeOK && sourceShape.Domain != "" {
@@ -951,7 +1049,7 @@ func recipeInitialStreamShape(state *recipeCompileState, stream streamIntent) sh
 		}
 	}
 	if state != nil {
-		spec = normalizePlanBranchShape(spec, stream, firstInput(state.intent.Inputs))
+		spec = normalizePlanBranchShape(spec, stream, planStreamInput(state, stream))
 	} else {
 		spec = normalizePlanBranchShape(spec, stream, inputIntent{})
 	}

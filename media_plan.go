@@ -167,9 +167,12 @@ func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []
 // has one branch planner (NORTH_STAR step 3).
 func planBranchFromStreamIntent(state *recipeCompileState, stream streamIntent, index int, outputs []planOutput) (planBranch, []planDecision) {
 	var spec shape.Spec
-	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
+	sourceShape, sourceShapeOK := jobStreamCustomSourceShape(state, stream)
+	input, inputName := planStreamInputBinding(state, stream)
 	if selected, ok := planSelectedStream(state, stream); ok {
-		stream.Select = streamSelectFromStream(selected)
+		resolved := streamSelectFromStream(selected)
+		resolved.Input = stream.Select.Input
+		stream.Select = resolved
 		domain := shape.DomainPacket
 		if sourceShapeOK && sourceShape.Domain != "" {
 			domain = sourceShape.Domain
@@ -179,18 +182,43 @@ func planBranchFromStreamIntent(state *recipeCompileState, stream streamIntent, 
 			spec = shape.Merge(spec, sourceShape)
 		}
 	}
-	spec = normalizePlanBranchShape(spec, stream, firstInput(state.intent.Inputs))
+	spec = normalizePlanBranchShape(spec, stream, input)
 	branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", index))
-	operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, spec)
+	operations, branchDecisions := planOperationSpecs(input, stream, branchName, spec)
 	operations = planOperationsWithShape(branchName, spec, operations)
 	return planBranch{
 		Name:       branchName,
-		Input:      firstInputName(state.intent.Inputs),
+		Input:      inputName,
 		Stream:     stream.Select,
 		Shape:      spec,
 		Operations: operations,
 		Outputs:    planBranchDestinations(stream.Destinations, outputs),
 	}, branchDecisions
+}
+
+// planStreamInputBinding resolves which job input feeds one stream chain: the
+// first (and only) input on single-input recipes, or the input the chain's
+// selector binds to — honoring goav.InputName narrowing — on multi-input jobs.
+func planStreamInputBinding(state *recipeCompileState, stream streamIntent) (inputIntent, string) {
+	if state == nil {
+		return inputIntent{}, "input"
+	}
+	inputs := state.intent.Inputs
+	if len(inputs) <= 1 {
+		return firstInput(inputs), firstInputName(inputs)
+	}
+	sets := jobInputStreamSets(inputs, state.inputAttachments, state.inputProbes)
+	if index, ok := resolveInputSetIndex(sets, streamIntentSelector(stream), stream.Select.Input); ok && index < len(inputs) {
+		return inputs[index], sets[index].name
+	}
+	return firstInput(inputs), firstInputName(inputs)
+}
+
+// planStreamInput keeps the single-value form for callers that only need the
+// resolved input intent.
+func planStreamInput(state *recipeCompileState, stream streamIntent) inputIntent {
+	input, _ := planStreamInputBinding(state, stream)
+	return input
 }
 
 func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch, []planDecision) {
@@ -228,6 +256,14 @@ func streamSelectFromStream(stream av.Stream) StreamSelect {
 func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stream, bool) {
 	if state == nil {
 		return av.Stream{}, false
+	}
+	if jobStreamSelectionNeedsUnion(state, stream) {
+		sets := jobInputStreamSets(state.intent.Inputs, state.inputAttachments, state.inputProbes)
+		selected, ok, err := selectStreamAcrossInputSets(sets, streamIntentSelector(stream), stream.Select.Input)
+		if err != nil || !ok {
+			return av.Stream{}, false
+		}
+		return selected.stream, true
 	}
 	probes := state.inputProbes
 	if state.branchInputProbeReady {
@@ -310,8 +346,8 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 	return branches, decisions
 }
 
-func planOperationSpecs(inputs []inputIntent, stream streamIntent, branchName string, initial shape.Spec) ([]planOperation, []planDecision) {
-	operations := planInputOperationsForShape(firstInput(inputs), initial)
+func planOperationSpecs(input inputIntent, stream streamIntent, branchName string, initial shape.Spec) ([]planOperation, []planDecision) {
+	operations := planInputOperationsForShape(input, initial)
 	operations = append(operations, planOperation{
 		Kind:      OpSelect,
 		Component: selectorComponent(stream.Select),

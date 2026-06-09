@@ -17,8 +17,11 @@ type branchComposePlan struct {
 }
 
 type branchComposeBranch struct {
-	Name              string
-	Selector          av.StreamSelector
+	Name     string
+	Selector av.StreamSelector
+	// Input narrows the branch's stream selection to the named job input
+	// (goav.InputName); empty means select across all inputs.
+	Input             string
 	Copy              bool
 	Operations        []OperationSpec
 	SharedOperations  []OperationSpec

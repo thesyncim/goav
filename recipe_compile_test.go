@@ -546,10 +546,10 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	if job.err != nil {
 		t.Fatal(job.err)
 	}
-	if job.stream == nil {
+	if job.currentStream() == nil {
 		t.Fatal("job stream is nil")
 	}
-	if got, want := operationSpecKindsForTest(job.stream.operations), []OperationKind{OpDecode, OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(job.currentStream().operations), []OperationKind{OpDecode, OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("recipe chain stored operations = %+v, want %+v", got, want)
 	}
 
@@ -980,20 +980,20 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 			want: "no input is configured",
 		},
 		{
-			name: "duplicate stream intent",
+			name: "multi stream chain without destination",
 			state: recipeCompileState{
 				operation: "build job",
 				intent: Intent{
 					Inputs: []inputIntent{{Name: "input.ivf"}},
 					Streams: []streamIntent{
 						{Name: "audio", Decode: true, Destinations: []string{"audio"}},
-						{Name: "video", Decode: true, Destinations: []string{"video"}},
+						{Name: "video", Decode: true},
 					},
 					Destinations: []destinationIntent{{Name: "audio"}, {Name: "video"}},
 				},
 			},
-			code: "stream_duplicate",
-			want: "ordinary stream recipes select one audio or video stream",
+			code: "output_missing",
+			want: "stream chain has no destination",
 		},
 		{
 			name: "mixed output scope",

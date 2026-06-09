@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -45,11 +46,13 @@ type branchComposeTargetRoute struct {
 
 type branchComposeSelectorGroup struct {
 	selector av.StreamSelector
+	input    string
 	branches []int
 }
 
 type branchComposeStreamGroup struct {
 	selector av.StreamSelector
+	input    string
 	stream   av.Stream
 	branches []int
 }
@@ -72,7 +75,7 @@ func planBranchComposeRoutes(
 	sourceEdges := make([]pipeline.EdgeSpec, 0, len(groups)*len(sourceRefs))
 	groupEdges := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(groups))
 	for i := range groups {
-		selectName := selectNodeName(groups[i].selector)
+		selectName := branchComposeInputNodeName(selectNodeName(groups[i].selector), groups[i].input)
 		selectRef := pipeline.NodeRef(selectName)
 		if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef, selectNodeDetail(groups[i].selector)); err != nil {
 			return pipeline.Spec{}, err
@@ -102,7 +105,7 @@ func planBranchComposeRoutes(
 		if err != nil {
 			return pipeline.Spec{}, err
 		}
-		decodeName := decodeNodeName(groups[i].selector)
+		decodeName := branchComposeInputNodeName(decodeNodeName(groups[i].selector), groups[i].input)
 		decodeRef := pipeline.NodeRef(decodeName)
 		decodeDetail := decodeRequestDetail(decodeRequest{selector: groups[i].selector, config: decodeConfig, codecChange: codecChange})
 		if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef, decodeDetail); err != nil {
@@ -244,8 +247,11 @@ func compileBranchComposeInputs(
 	for i := range groups {
 		selector := groups[i].selector
 		selected := groups[i].stream
-		planned := inputPlan[branchComposeSelectorKey(selector)]
-		selectName := firstNonEmpty(planned.selectNode.String(), selectNodeName(selector))
+		planned, ok := inputPlan[branchComposeSelectorGroupKey(selector, groups[i].input)]
+		if !ok {
+			planned = inputPlan[branchComposeSelectorKey(selector)]
+		}
+		selectName := firstNonEmpty(planned.selectNode.String(), branchComposeInputNodeName(selectNodeName(selector), groups[i].input))
 		selectStage := newStreamSelectStage(selectName, selected, selector, selectNodeDetail(selector))
 		selectRef, err := graph.AddStage(selectStage, runtime.buffer)
 		if err != nil {
@@ -555,12 +561,15 @@ func branchComposeSelectorGroups(branches []branchComposeRoute) []branchComposeS
 	groups := make([]branchComposeSelectorGroup, 0, len(branches))
 	index := make(map[string]int, len(branches))
 	for i := range branches {
-		key := branchComposeSelectorKey(branches[i].branch.Selector)
+		key := branchComposeSelectorGroupKey(branches[i].branch.Selector, branches[i].branch.Input)
 		groupIndex, ok := index[key]
 		if !ok {
 			groupIndex = len(groups)
 			index[key] = groupIndex
-			groups = append(groups, branchComposeSelectorGroup{selector: branches[i].branch.Selector})
+			groups = append(groups, branchComposeSelectorGroup{
+				selector: branches[i].branch.Selector,
+				input:    branches[i].branch.Input,
+			})
 		}
 		groups[groupIndex].branches = append(groups[groupIndex].branches, i)
 	}
@@ -568,29 +577,90 @@ func branchComposeSelectorGroups(branches []branchComposeRoute) []branchComposeS
 }
 
 func resolveBranchComposeStreamGroups(streams []av.Stream, branches []branchComposeRoute) ([]branchComposeStreamGroup, error) {
+	return resolveBranchComposeStreamGroupsForInputs(mediaPlanCompiledSources{
+		streams:      streams,
+		streamGroups: [][]av.Stream{streams},
+	}, nil, branches)
+}
+
+// resolveBranchComposeStreamGroupsForInputs binds every branch to one concrete
+// stream. A single input keeps the legacy flat selection; with several inputs
+// the branch selects across the union of all input streams — narrowed to one
+// input by goav.InputName — and ambiguity fails with the candidate list.
+func resolveBranchComposeStreamGroupsForInputs(sources mediaPlanCompiledSources, inputs []InputSpec, branches []branchComposeRoute) ([]branchComposeStreamGroup, error) {
+	multi := len(sources.streamGroups) > 1
+	var sets []inputStreamSet
+	if multi || branchComposeRoutesNarrowed(branches) {
+		sets = runtimeInputStreamSets(inputs, sources.streamGroups)
+	}
 	groups := make([]branchComposeStreamGroup, 0, len(branches))
 	index := make(map[string]int, len(branches))
 	for i := range branches {
-		stream, err := selectDecodeStream(streams, branches[i].branch.Selector)
-		if branches[i].sourceDomain == shape.DomainFrame {
-			stream, err = selectStream(streams, branches[i].branch.Selector)
+		var stream av.Stream
+		var err error
+		if sets != nil {
+			selected, ok, selectErr := selectStreamAcrossInputSets(sets, branches[i].branch.Selector, branches[i].branch.Input)
+			if selectErr != nil {
+				return nil, selectErr
+			}
+			if !ok {
+				return nil, streamSelectionError("stream_missing", branches[i].branch.Selector, sources.streams)
+			}
+			stream = selected.stream
+		} else {
+			stream, err = selectDecodeStream(sources.streams, branches[i].branch.Selector)
+			if branches[i].sourceDomain == shape.DomainFrame {
+				stream, err = selectStream(sources.streams, branches[i].branch.Selector)
+			}
+			if err != nil {
+				return nil, err
+			}
 		}
-		if err != nil {
-			return nil, err
-		}
-		key := branchComposeStreamKey(stream)
+		key := branchComposeStreamKey(stream) + "\x00@" + branches[i].branch.Input
 		groupIndex, ok := index[key]
 		if !ok {
 			groupIndex = len(groups)
 			index[key] = groupIndex
 			groups = append(groups, branchComposeStreamGroup{
 				selector: branches[i].branch.Selector,
+				input:    branches[i].branch.Input,
 				stream:   stream,
 			})
 		}
 		groups[groupIndex].branches = append(groups[groupIndex].branches, i)
 	}
 	return groups, nil
+}
+
+func branchComposeRoutesNarrowed(branches []branchComposeRoute) bool {
+	for i := range branches {
+		if branches[i].branch.Input != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// runtimeInputStreamSets attributes the compiled per-input stream groups with
+// the input names and media domains, for union selection at lowering time.
+func runtimeInputStreamSets(inputs []InputSpec, groups [][]av.Stream) []inputStreamSet {
+	sets := make([]inputStreamSet, 0, len(groups))
+	for i := range groups {
+		set := inputStreamSet{
+			name:    fmt.Sprintf("input-%d", i),
+			domain:  shape.DomainPacket,
+			streams: groups[i],
+			known:   true,
+		}
+		if i < len(inputs) {
+			set.name = inputs[i].inputName(fmt.Sprintf("input-%d", i))
+			if spec, ok := customSourceShape(inputs[i]); ok && spec.Domain != "" {
+				set.domain = spec.Domain
+			}
+		}
+		sets = append(sets, set)
+	}
+	return sets
 }
 
 func branchComposeSelectorKey(selector av.StreamSelector) string {
@@ -602,6 +672,22 @@ func branchComposeSelectorKey(selector av.StreamSelector) string {
 		string(selector.Codec),
 		selector.Name,
 	}, "\x00")
+}
+
+// branchComposeSelectorGroupKey keys input nodes by selector AND input
+// narrowing so two same-selector chains narrowed to different inputs get their
+// own select/decode nodes.
+func branchComposeSelectorGroupKey(selector av.StreamSelector, input string) string {
+	return branchComposeSelectorKey(selector) + "\x00@" + input
+}
+
+// branchComposeInputNodeName suffixes a select/decode node name with the input
+// narrowing so same-selector chains on different inputs stay distinct nodes.
+func branchComposeInputNodeName(name string, input string) string {
+	if input == "" {
+		return name
+	}
+	return name + "@" + input
 }
 
 func branchComposeStreamKey(stream av.Stream) string {

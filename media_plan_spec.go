@@ -342,10 +342,43 @@ func graphPlanLowererForState(state *recipeCompileState) (graphPlanLowerer, bool
 	if graph, ok, err := mediaPlanStreamLowererForState(state); err != nil || ok {
 		return graph, ok, err
 	}
+	if graph, ok, err := mediaPlanMultiStreamJobLowererForState(state); err != nil || ok {
+		return graph, ok, err
+	}
 	if graph, ok, err := mediaPlanBranchComposerLowerer(state); err != nil || ok {
 		return graph, ok, err
 	}
 	return nil, false, nil
+}
+
+// mediaPlanMultiStreamJobLowererForState lowers a job with several direct
+// stream chains (goav.From(camera, mic).Video()...To(out).Audio()...To(out))
+// through the branch-compose machinery: each chain is one branch and shared
+// Destination handles collapse into one mux group.
+func mediaPlanMultiStreamJobLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
+	if state == nil || !state.jobPresent || len(state.intent.Streams) < 2 {
+		return nil, false, nil
+	}
+	namedOutputs := make([]namedDestinationSpec, 0, len(state.outputAttachments))
+	for i := range state.outputAttachments {
+		namedOutputs = append(namedOutputs, namedDestinationSpec{
+			name:   jobOutputDestinationName(state.outputAttachments, state.outputDestinationNames, i),
+			output: state.outputAttachments[i],
+		})
+	}
+	input := InputSpec{}
+	if len(state.inputAttachments) != 0 {
+		input = state.inputAttachments[0]
+	}
+	plan, err := planBranchCompositionRecipe(state.intent, input, namedOutputs, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	graph, ok, err := newMediaPlanBranchComposeGraph(state.runtime, state.inputAttachments, plan)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	return graph, true, nil
 }
 
 func mediaPlanStreamLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
@@ -422,7 +455,7 @@ func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanL
 		return nil, false, nil
 	}
 	stream := state.intent.Streams[0]
-	if !mediaPlanDecodeStreamShape(stream, state.outputAttachments, mediaPlanInputDomain(state.inputAttachments) == shape.DomainFrame) {
+	if !mediaPlanDecodeStreamShape(stream, state.outputAttachments, mediaPlanStreamInputDomain(state.inputAttachments, stream) == shape.DomainFrame) {
 		return nil, false, nil
 	}
 	plan, ok, err := newMediaPlanDecodeStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
@@ -455,7 +488,7 @@ func mediaPlanBranchComposerLowerer(state *recipeCompileState) (graphPlanLowerer
 	if state == nil || !state.branchCompositionPresent {
 		return nil, false, nil
 	}
-	plan, ok, err := newMediaPlanBranchComposeGraph(state.runtime, state.branchInputAttachment, state.plan)
+	plan, ok, err := newMediaPlanBranchComposeGraph(state.runtime, []InputSpec{state.branchInputAttachment}, state.plan)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -500,18 +533,6 @@ func mediaPlanPacketCopyDestinations(spec *pipeline.Spec, nodes map[string]plann
 		refs = append(refs, ref)
 	}
 	return refs, nil
-}
-
-func allRTPInputSpecs(inputs []InputSpec) bool {
-	if len(inputs) == 0 {
-		return false
-	}
-	for i := range inputs {
-		if inputs[i].rtp == nil {
-			return false
-		}
-	}
-	return true
 }
 
 func destinationGraphFormat(output destinationSpec) av.FormatID {

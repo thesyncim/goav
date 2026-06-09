@@ -94,6 +94,8 @@ type StreamSelect struct {
 	Type     av.MediaType
 	Codec    av.CodecID
 	Name     string
+	// Input narrows the selection to the named job input (goav.InputName).
+	Input string
 }
 
 type BuildError struct {
@@ -1077,7 +1079,7 @@ type Job struct {
 	inputs             []InputSpec
 	outputs            []destinationSpec
 	outputNames        []string
-	stream             *jobStreamBuild
+	streams            []*jobStreamBuild
 	branchStreams      []streamBuild
 	branchDestinations []namedDestinationSpec
 	join               *joinSpec
@@ -1087,6 +1089,7 @@ type Job struct {
 type jobStreamBuild struct {
 	name        string
 	selector    av.StreamSelector
+	input       string
 	operations  []OperationSpec
 	codecChange CodecChangePolicy
 	outputs     []destinationSpec
@@ -1212,9 +1215,12 @@ func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
 	stream.operations = append([]OperationSpec{operation}, stream.operations...)
 }
 
-func From(input InputSpec) *Job {
+// From starts a recipe from one or more inputs. With several inputs each
+// stream chain selects across all of them: an unambiguous .Audio()/.Video()
+// match just works, and goav.InputName(...) narrows a chain to one input.
+func From(inputs ...InputSpec) *Job {
 	job := newJob("from")
-	job.inputs = append(job.inputs, input)
+	job.inputs = append(job.inputs, inputs...)
 	return job
 }
 
@@ -1308,20 +1314,61 @@ func (j *Job) Stream(options ...streamOption) *jobStreamBuilder {
 }
 
 func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOption) *jobStreamBuilder {
+	config := newStreamSelectConfig(media, options...)
 	stream := &jobStreamBuild{
 		name:     name,
-		selector: newStreamSelector(media, options...),
+		selector: config.selector,
+		input:    config.input,
 	}
-	if j.stream != nil {
+	if last := j.currentStream(); last != nil {
 		if len(j.branchStreams) != 0 {
-			j.stream = stream
+			j.streams = []*jobStreamBuild{stream}
 			return &jobStreamBuilder{job: j, stream: stream}
 		}
-		j.err = duplicateJobStreamError(j.stream, stream)
-		return &jobStreamBuilder{job: j, stream: stream}
+		if len(last.outputs) == 0 {
+			// A new chain may only start once the previous one is routed; an
+			// unfinished chain followed by another selection is still an error.
+			j.err = duplicateJobStreamError(last, stream)
+			return &jobStreamBuilder{job: j, stream: stream}
+		}
 	}
-	j.stream = stream
+	j.streams = append(j.streams, stream)
 	return &jobStreamBuilder{job: j, stream: stream}
+}
+
+func (j *Job) currentStream() *jobStreamBuild {
+	if j == nil || len(j.streams) == 0 {
+		return nil
+	}
+	return j.streams[len(j.streams)-1]
+}
+
+// checkSharedStreamDestination lets several chains share ONE Destination handle
+// (one mux group) while rejecting two different handles that would collide on
+// the same destination label.
+func (j *Job) checkSharedStreamDestination(current *jobStreamBuild, output destinationSpec, name string) error {
+	label := firstNonEmpty(name, output.label(""))
+	if label == "" {
+		return nil
+	}
+	for i := range j.streams {
+		stream := j.streams[i]
+		if stream == nil || stream == current {
+			continue
+		}
+		for k := range stream.outputs {
+			existingLabel := jobOutputDestinationName(stream.outputs, stream.outputNames, k)
+			if existingLabel != label {
+				continue
+			}
+			existing := destinationIdentity(namedDestinationSpec{name: existingLabel, output: stream.outputs[k]})
+			next := destinationIdentity(namedDestinationSpec{name: label, output: output})
+			if existing != next {
+				return duplicateDestinationHandleError("build stream", label)
+			}
+		}
+	}
+	return nil
 }
 
 func (j *Job) Plan() Intent {
@@ -1340,8 +1387,9 @@ func (j *Job) Plan() Intent {
 			intent.Destinations = append(intent.Destinations, j.branchDestinations[i].output.intentWithName(j.branchDestinations[i].name))
 		}
 		return intent
-	} else if j.stream != nil {
-		intent.Streams = append(intent.Streams, jobStreamIntent(j.stream))
+	} else if len(j.streams) == 1 {
+		stream := j.streams[0]
+		intent.Streams = append(intent.Streams, jobStreamIntent(stream))
 		for i := range j.outputs {
 			name := ""
 			if i < len(j.outputNames) {
@@ -1349,12 +1397,31 @@ func (j *Job) Plan() Intent {
 			}
 			intent.Destinations = append(intent.Destinations, j.outputs[i].intentWithName(name))
 		}
-		for i := range j.stream.outputs {
+		for i := range stream.outputs {
 			name := ""
-			if i < len(j.stream.outputNames) {
-				name = j.stream.outputNames[i]
+			if i < len(stream.outputNames) {
+				name = stream.outputNames[i]
 			}
-			intent.Destinations = append(intent.Destinations, j.stream.outputs[i].intentWithName(name))
+			intent.Destinations = append(intent.Destinations, stream.outputs[i].intentWithName(name))
+		}
+		return intent
+	} else if len(j.streams) > 1 {
+		names := uniqueJobStreamNames(j.streams)
+		for i := range j.streams {
+			stream := jobStreamIntent(j.streams[i])
+			stream.Name = names[i]
+			intent.Streams = append(intent.Streams, stream)
+		}
+		for i := range j.outputs {
+			name := ""
+			if i < len(j.outputNames) {
+				name = j.outputNames[i]
+			}
+			intent.Destinations = append(intent.Destinations, j.outputs[i].intentWithName(name))
+		}
+		outputs, outputNames := dedupedJobStreamOutputs(j.streams)
+		for i := range outputs {
+			intent.Destinations = append(intent.Destinations, outputs[i].intentWithName(outputNames[i]))
 		}
 		return intent
 	}
@@ -1491,7 +1558,8 @@ func (j *Job) allOutputs() []destinationSpec {
 		}
 		return outputs
 	}
-	return jobAllOutputs(j.outputs, jobStreamOutputs(j.stream))
+	streamOutputs, _ := j.streamOutputsAndNames()
+	return jobAllOutputs(j.outputs, streamOutputs)
 }
 
 func (j *Job) allOutputNames() []string {
@@ -1502,7 +1570,56 @@ func (j *Job) allOutputNames() []string {
 		}
 		return names
 	}
-	return jobAllOutputNames(j.outputNames, jobStreamOutputNames(j.stream))
+	_, streamOutputNames := j.streamOutputsAndNames()
+	return jobAllOutputNames(j.outputNames, streamOutputNames)
+}
+
+// streamOutputsAndNames collects the stream-chain destinations: verbatim for a
+// single chain (today's behavior) and deduplicated by destination label for
+// several chains so one shared Destination handle lowers to one mux group.
+func (j *Job) streamOutputsAndNames() ([]destinationSpec, []string) {
+	if len(j.streams) > 1 {
+		return dedupedJobStreamOutputs(j.streams)
+	}
+	return jobStreamOutputs(j.currentStream()), jobStreamOutputNames(j.currentStream())
+}
+
+func dedupedJobStreamOutputs(streams []*jobStreamBuild) ([]destinationSpec, []string) {
+	outputs := make([]destinationSpec, 0, len(streams))
+	names := make([]string, 0, len(streams))
+	seen := make(map[string]struct{}, len(streams))
+	for i := range streams {
+		stream := streams[i]
+		if stream == nil {
+			continue
+		}
+		for k := range stream.outputs {
+			label := jobOutputDestinationName(stream.outputs, stream.outputNames, k)
+			if _, ok := seen[label]; ok {
+				continue
+			}
+			seen[label] = struct{}{}
+			outputs = append(outputs, stream.outputs[k])
+			names = append(names, label)
+		}
+	}
+	return outputs, names
+}
+
+// uniqueJobStreamNames keeps chain names stable ("video", "audio") and only
+// suffixes repeats ("video-2") so each stream lowers to a uniquely named branch.
+func uniqueJobStreamNames(streams []*jobStreamBuild) []string {
+	names := make([]string, 0, len(streams))
+	counts := make(map[string]int, len(streams))
+	for i := range streams {
+		name := jobStreamName(streams[i])
+		counts[name]++
+		if counts[name] > 1 {
+			name = fmt.Sprintf("%s-%d", name, counts[name])
+		}
+		names = append(names, name)
+	}
+	return names
 }
 
 func jobAllOutputs(outputs []destinationSpec, streamOutputs []destinationSpec) []destinationSpec {
@@ -1537,9 +1654,11 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 		return streamIntent{}
 	}
 	operations := jobOperationSpecs(stream)
+	selected := streamSelectFromAV(stream.selector)
+	selected.Input = stream.input
 	return streamIntent{
 		Name:         stream.name,
-		Select:       streamSelectFromAV(stream.selector),
+		Select:       selected,
 		Decode:       chainHasDecode(operations),
 		DecodeCodec:  cloneCodecSpec(chainDecodeCodec(operations)),
 		Operations:   operations,
@@ -2024,31 +2143,38 @@ func validateLiveStreamSelection(inputs []inputIntent, stream streamIntent) erro
 func liveIntentStreams(inputs []inputIntent) []av.Stream {
 	streams := make([]av.Stream, 0, len(inputs))
 	for i := range inputs {
-		input := inputs[i]
-		if !input.Realtime || input.Codec.ID == "" {
+		stream, ok := liveIntentStream(inputs[i], i)
+		if !ok {
 			continue
-		}
-		stream := av.Stream{
-			Index: i,
-			Type:  input.Codec.Type,
-			Codec: input.Codec.Parameters,
-		}
-		if input.Name != "" {
-			stream.ID = av.StreamID(input.Name)
-			stream.Name = input.Name
-		}
-		if stream.Codec.ID == "" {
-			stream.Codec.ID = input.Codec.ID
-		}
-		if stream.Codec.Type == "" {
-			stream.Codec.Type = stream.Type
-		}
-		if stream.Type == "" {
-			stream.Type = stream.Codec.Type
 		}
 		streams = append(streams, stream)
 	}
 	return streams
+}
+
+func liveIntentStream(input inputIntent, index int) (av.Stream, bool) {
+	if !input.Realtime || input.Codec.ID == "" {
+		return av.Stream{}, false
+	}
+	stream := av.Stream{
+		Index: index,
+		Type:  input.Codec.Type,
+		Codec: input.Codec.Parameters,
+	}
+	if input.Name != "" {
+		stream.ID = av.StreamID(input.Name)
+		stream.Name = input.Name
+	}
+	if stream.Codec.ID == "" {
+		stream.Codec.ID = input.Codec.ID
+	}
+	if stream.Codec.Type == "" {
+		stream.Codec.Type = stream.Type
+	}
+	if stream.Type == "" {
+		stream.Type = stream.Codec.Type
+	}
+	return stream, true
 }
 
 func knownProbeDecodeStream(probes []format.ProbeResult, stream streamIntent) (av.Stream, bool) {
@@ -3091,16 +3217,17 @@ type streamOption func(*streamSelectConfig)
 
 type streamSelectConfig struct {
 	selector av.StreamSelector
+	input    string
 }
 
-func newStreamSelector(media av.MediaType, options ...streamOption) av.StreamSelector {
+func newStreamSelectConfig(media av.MediaType, options ...streamOption) streamSelectConfig {
 	config := streamSelectConfig{selector: av.StreamSelector{Type: media}}
 	for i := range options {
 		if options[i] != nil {
 			options[i](&config)
 		}
 	}
-	return config.selector
+	return config
 }
 
 type streamBuild struct {
@@ -3134,6 +3261,16 @@ func StreamIndex(index int) streamOption {
 	}
 }
 
+// InputName narrows a stream selection to the named input of a multi-input
+// job: goav.From(camera, mic).Video(goav.InputName("camera")). Names come from
+// the input constructors (goav.Source(name, ...), goav.FileInput(name, ...))
+// or InputSpec.Name(...).
+func InputName(name string) streamOption {
+	return func(config *streamSelectConfig) {
+		config.input = name
+	}
+}
+
 type jobStreamBuilder struct {
 	job    *Job
 	stream *jobStreamBuild
@@ -3153,10 +3290,26 @@ func (b *jobStreamBuilder) sourceStartsFrameDomain() bool {
 }
 
 func (b *jobStreamBuilder) sourceFrameShape() (shape.Spec, bool) {
-	if b == nil || b.job == nil || len(b.job.inputs) != 1 {
+	if b == nil || b.job == nil || len(b.job.inputs) == 0 {
 		return shape.Spec{}, false
 	}
-	spec, ok := customSourceShape(b.job.inputs[0])
+	if len(b.job.inputs) == 1 {
+		spec, ok := customSourceShape(b.job.inputs[0])
+		if !ok || spec.Domain != shape.DomainFrame {
+			return shape.Spec{}, false
+		}
+		return spec, true
+	}
+	// Multi-input: resolve which input this chain selects (declared custom
+	// source/live streams plus any goav.InputName narrowing) so frame-domain
+	// sources keep their no-decode contract per chain.
+	stream := b.current()
+	sets := inputSpecStreamSets(b.job.inputs)
+	index, ok := resolveInputSetIndex(sets, stream.selector, stream.input)
+	if !ok {
+		return shape.Spec{}, false
+	}
+	spec, ok := customSourceShape(b.job.inputs[index])
 	if !ok || spec.Domain != shape.DomainFrame {
 		return shape.Spec{}, false
 	}
@@ -3435,6 +3588,10 @@ func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 			b.job.setErr(err)
 			return b.job
 		}
+		if err := b.job.checkSharedStreamDestination(stream, output, name); err != nil {
+			b.job.setErr(err)
+			return b.job
+		}
 		stream.outputs = append(stream.outputs, output)
 		stream.outputNames = append(stream.outputNames, name)
 		outputs = append(outputs, output)
@@ -3463,8 +3620,8 @@ func (b *jobStreamBuilder) current() *jobStreamBuild {
 		return b.stream
 	}
 	b.stream = &jobStreamBuild{}
-	if b.job.stream == nil {
-		b.job.stream = b.stream
+	if b.job.currentStream() == nil {
+		b.job.streams = append(b.job.streams, b.stream)
 	}
 	return b.stream
 }
@@ -3561,6 +3718,7 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		branch := branchComposeBranch{
 			Name:              branchName,
 			Selector:          selector,
+			Input:             stream.Select.Input,
 			Copy:              stream.Encode.Copy,
 			Operations:        cloneOperationSpecs(operations),
 			SharedOperations:  sharedOperations,

@@ -33,7 +33,7 @@ type mediaPlanStreamGraph struct {
 
 type mediaPlanBranchComposeGraph struct {
 	runtime      *runtime
-	input        InputSpec
+	inputs       []InputSpec
 	plan         branchComposePlan
 	branches     []branchComposeRoute
 	destinations []branchComposeTargetRoute
@@ -107,7 +107,7 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 		inputs:       append([]InputSpec(nil), inputs...),
 		outputs:      append([]destinationSpec(nil), outputs...),
 		stream:       stream,
-		sourceDomain: mediaPlanInputDomain(inputs),
+		sourceDomain: mediaPlanStreamInputDomain(inputs, stream),
 		decode: decodeRequest{
 			selector:    selector,
 			codecChange: stream.CodecChange,
@@ -138,11 +138,35 @@ func mediaPlanInputDomain(inputs []InputSpec) shape.MediaDomain {
 	return shape.DomainPacket
 }
 
+// mediaPlanStreamInputDomain resolves the media domain feeding one stream
+// chain: the single input's domain (legacy) or, with several inputs, the
+// domain of the input the chain's selector binds to.
+func mediaPlanStreamInputDomain(inputs []InputSpec, stream streamIntent) shape.MediaDomain {
+	if len(inputs) <= 1 {
+		return mediaPlanInputDomain(inputs)
+	}
+	sets := inputSpecStreamSets(inputs)
+	if index, ok := resolveInputSetIndex(sets, streamIntentSelector(stream), stream.Select.Input); ok && sets[index].domain != "" {
+		return sets[index].domain
+	}
+	return shape.DomainPacket
+}
+
 func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
-	if len(inputs) == 1 && inputs[0].rtp == nil {
+	if len(inputs) == 1 {
 		return true
 	}
-	return allRTPInputSpecs(inputs)
+	if len(inputs) == 0 {
+		return false
+	}
+	// Several inputs converge on one job only for independently-running
+	// realtime readers and custom sources (mirrors validateJobInputs).
+	for i := range inputs {
+		if inputs[i].rtp == nil && inputs[i].source == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func newMediaPlanPacketCopyStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent, selectedStream bool) (mediaPlanStreamGraph, bool, error) {
@@ -214,6 +238,7 @@ func (p mediaPlanStreamGraph) selectedPacketCopyBranchComposeRoutes() ([]branchC
 		branch: branchComposeBranch{
 			Name:     branchName,
 			Selector: selector,
+			Input:    p.stream.Select.Input,
 			Copy:     true,
 		},
 		copy: true,
@@ -225,25 +250,44 @@ func (p mediaPlanStreamGraph) selectedPacketCopyBranchComposeRoutes() ([]branchC
 	return branches, mediaPlanBranchComposeTargetRoutes(p.outputs, branchName)
 }
 
-func newMediaPlanBranchComposeGraph(rt Runtime, input InputSpec, plan branchComposePlan) (mediaPlanBranchComposeGraph, bool, error) {
+func newMediaPlanBranchComposeGraph(rt Runtime, inputs []InputSpec, plan branchComposePlan) (mediaPlanBranchComposeGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
 		return mediaPlanBranchComposeGraph{}, false, nil
 	}
-	if input.rtp == nil && input.source == nil && input.formatInput().Reader == nil && input.formatInput().URI == "" && input.formatInput().Name == "" {
+	if len(inputs) == 0 {
 		return mediaPlanBranchComposeGraph{}, false, nil
+	}
+	for i := range inputs {
+		input := inputs[i]
+		if input.rtp == nil && input.source == nil && input.formatInput().Reader == nil && input.formatInput().URI == "" && input.formatInput().Name == "" {
+			return mediaPlanBranchComposeGraph{}, false, nil
+		}
 	}
 	branches, destinations, err := prepareBranchComposePlan(plan)
 	if err != nil {
 		return mediaPlanBranchComposeGraph{}, false, err
 	}
-	sourceDomain := mediaPlanInputDomain([]InputSpec{input})
-	for i := range branches {
-		branches[i].sourceDomain = sourceDomain
+	if len(inputs) == 1 {
+		sourceDomain := mediaPlanInputDomain(inputs)
+		for i := range branches {
+			branches[i].sourceDomain = sourceDomain
+		}
+	} else {
+		// Each branch keeps the media domain of the input it binds to, so
+		// frame-domain custom sources keep their no-decode contract while
+		// packet sources still decode.
+		sets := inputSpecStreamSets(inputs)
+		for i := range branches {
+			branches[i].sourceDomain = shape.DomainPacket
+			if index, ok := resolveInputSetIndex(sets, branches[i].branch.Selector, branches[i].branch.Input); ok {
+				branches[i].sourceDomain = sets[index].domain
+			}
+		}
 	}
 	return mediaPlanBranchComposeGraph{
 		runtime:      runtime,
-		input:        input,
+		inputs:       append([]InputSpec(nil), inputs...),
 		plan:         plan,
 		branches:     branches,
 		destinations: destinations,
@@ -253,7 +297,7 @@ func newMediaPlanBranchComposeGraph(rt Runtime, input InputSpec, plan branchComp
 func (p mediaPlanBranchComposeGraph) spec() (pipeline.Spec, error) {
 	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
 	nodes := make(map[string]plannedNode, p.nodeCapacity())
-	sourceRefs, ok, err := mediaPlanSourceSpecs(&spec, nodes, []InputSpec{p.input})
+	sourceRefs, ok, err := mediaPlanSourceSpecs(&spec, nodes, p.inputs)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
@@ -264,7 +308,7 @@ func (p mediaPlanBranchComposeGraph) spec() (pipeline.Spec, error) {
 }
 
 func (p mediaPlanBranchComposeGraph) nodeCapacity() int {
-	return 1 + 3 + len(p.branches) + branchComposeOperationStageCount(p.branches) + len(p.destinations)
+	return len(p.inputs) + 3 + len(p.branches) + branchComposeOperationStageCount(p.branches) + len(p.destinations)
 }
 
 func (p mediaPlanBranchComposeGraph) runtimeRef() *runtime {
@@ -276,11 +320,11 @@ func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, plan graphPlan, 
 	if err != nil {
 		return err
 	}
-	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, []InputSpec{p.input}, "build branch composition", Intent{Name: p.plan.Name})
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build branch composition", Intent{Name: p.plan.Name})
 	if err != nil {
 		return err
 	}
-	groups, err := resolveBranchComposeStreamGroups(sources.streams, p.branches)
+	groups, err := resolveBranchComposeStreamGroupsForInputs(sources, p.inputs, p.branches)
 	if err != nil {
 		return err
 	}
@@ -375,7 +419,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeInputOperations(branchO
 				return nil, err
 			}
 		}
-		inputs[branchComposeSelectorKey(groups[i].selector)] = input
+		inputs[branchComposeSelectorGroupKey(groups[i].selector, groups[i].input)] = input
 	}
 	return inputs, nil
 }
@@ -842,12 +886,12 @@ func (p mediaPlanStreamGraph) compileSelectedPacketCopyBranchCompose(ctx context
 		}
 		outputs[target.OutputIndex].node = target.Node
 	}
-	groups, err := resolveBranchComposeStreamGroups(sources.streams, branches)
+	groups, err := resolveBranchComposeStreamGroupsForInputs(sources, p.inputs, branches)
 	if err != nil {
 		return err
 	}
 	inputPlan := map[string]graphPlanBranchComposeInputOperation{
-		branchComposeSelectorKey(streamIntentSelector(p.stream)): {
+		branchComposeSelectorGroupKey(streamIntentSelector(p.stream), p.stream.Select.Input): {
 			selectNode: selectOperation.Node,
 		},
 	}
@@ -1396,6 +1440,7 @@ func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeR
 		branch: branchComposeBranch{
 			Name:         branchName,
 			Selector:     p.decode.selector,
+			Input:        p.stream.Select.Input,
 			DecodeConfig: cloneCodecSpec(p.decode.config),
 			CodecChange:  p.decode.codecChange,
 		},
@@ -1499,12 +1544,12 @@ func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Contex
 		}
 		outputs[target.OutputIndex].node = target.Node
 	}
-	groups, err := resolveBranchComposeStreamGroups(sources.streams, branches)
+	groups, err := resolveBranchComposeStreamGroupsForInputs(sources, p.inputs, branches)
 	if err != nil {
 		return err
 	}
 	inputPlan := map[string]graphPlanBranchComposeInputOperation{
-		branchComposeSelectorKey(p.decode.selector): {
+		branchComposeSelectorGroupKey(p.decode.selector, p.stream.Select.Input): {
 			selectNode: lowering.selectNode,
 			decodeNode: lowering.decodeNode,
 		},

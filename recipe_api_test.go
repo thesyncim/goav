@@ -2459,11 +2459,11 @@ func TestRecipeConstructorsDoNotExposeRuntimeOptions(t *testing.T) {
 		in   []reflect.Type
 		out  reflect.Type
 	}{
-		{name: "From", fn: goav.From, in: []reflect.Type{inputType}, out: jobType},
+		{name: "From", fn: goav.From, in: []reflect.Type{reflect.SliceOf(inputType)}, out: jobType},
 	}
 	for _, tc := range cases {
 		typ := reflect.TypeOf(tc.fn)
-		if typ.IsVariadic() || typ.NumIn() != len(tc.in) || typ.NumOut() != 1 || typ.Out(0) != tc.out {
+		if !typ.IsVariadic() || typ.NumIn() != len(tc.in) || typ.NumOut() != 1 || typ.Out(0) != tc.out {
 			t.Fatalf("%s type = %s", tc.name, typ)
 		}
 		for i := range tc.in {
@@ -4292,17 +4292,13 @@ func TestStreamRecipeRejectsJobLevelOutput(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeRejectsSecondStreamSelection(t *testing.T) {
-	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
-		Audio().
-		To(goav.Sink(goav.SinkFunc("audio", func(context.Context, goav.Message) error {
-			return nil
-		}))).
-		Video().
-		To(goav.Sink(goav.SinkFunc("video", func(context.Context, goav.Message) error {
-			return nil
-		}))).
-		Build(context.Background())
+func TestStreamRecipeRejectsSecondStreamSelectionBeforeRouting(t *testing.T) {
+	// A new chain may only start once the previous one is routed with .To(...);
+	// routed chains may stack (multi-stream jobs share one destination).
+	job := goav.From(goav.FileInput("input.webm", strings.NewReader("")))
+	job.Audio()
+	job.Video()
+	_, err := job.Build(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
