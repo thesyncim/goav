@@ -49,12 +49,13 @@ func (s *selectorStream) To(dest Destination) *Job {
 	return newJoinJob(joinSelect, joinSpec{arms: s.arms, dest: dest, taps: s.taps})
 }
 
-// SelectActive switches a running Select to forward the arm identified by id. It
-// is the public control-plane switch: task.Control(ctx, goav.SelectActive("select",
-// "cam2")) flips the live output without restarting the task. The event rides the
-// selector node's serial worker and is interpreted by selectorStage.Handle.
-func SelectActive(node pipeline.NodeRef, id av.StreamID) Control {
-	return Deliver(av.Event{Type: av.EventStats, StreamID: id, Reason: selectorActiveReason}).At(node)
+// SelectActive switches a running Select to forward the arm identified by id —
+// task.Control(ctx, goav.SelectActive("cam2")) flips the live output without
+// restarting the task and without naming any graph node: the switch enters at
+// the source boundary and rides the data path to the selector, which consumes
+// it. For a graph with several selectors, narrow with .At(node) (expert).
+func SelectActive(id av.StreamID) Control {
+	return Control{Type: ControlSelect, StreamID: id}
 }
 
 // selectJoinProfile is Select's entry in the join table: media-agnostic

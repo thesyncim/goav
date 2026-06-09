@@ -121,7 +121,7 @@ func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
 
 	// Switch live to arm "b" (sample 200) through the control plane.
 	sink.resetSeen()
-	if err := controlUntilAccepted(ctx, tk.(*task), SelectActive("select", "b")); err != nil {
+	if err := controlUntilAccepted(ctx, tk.(*task), SelectActive("b")); err != nil {
 		t.Fatalf("SelectActive to b: %v", err)
 	}
 	if err := sink.waitFor(ctx, 200); err != nil {
@@ -130,7 +130,7 @@ func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
 
 	// Switch back to "a" to prove the control plane drives the switch both ways.
 	sink.resetSeen()
-	if err := tk.Control(ctx, SelectActive("select", "a")); err != nil {
+	if err := tk.Control(ctx, SelectActive("a")); err != nil {
 		t.Fatalf("SelectActive back to a: %v", err)
 	}
 	if err := sink.waitFor(ctx, 100); err != nil {

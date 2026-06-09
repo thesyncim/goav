@@ -20,6 +20,10 @@ const (
 	// event a decoder emits from a ControlRequestKeyframe — so an encoder reacts to
 	// a live request exactly as it would to one routed through the graph.
 	ControlKeyframe ControlType = "keyframe"
+	// ControlSelect switches a live Select to the input named by StreamID. Like a
+	// keyframe request it needs no target: untargeted, it enters at the graph's
+	// source boundary and rides the data path to the selector, which consumes it.
+	ControlSelect ControlType = "select"
 	// ControlEvent delivers a caller-supplied av.Event verbatim to the target node.
 	// It is the escape hatch for node-interpreted controls (a selector switch, a
 	// flush marker) that a stage recognises in its Handle.
@@ -108,6 +112,12 @@ func (c Control) message() (*pipeline.Message, error) {
 			StreamID: c.StreamID,
 			Reason:   c.Reason,
 		}}, nil
+	case ControlSelect:
+		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
+			Type:     av.EventStats,
+			StreamID: c.StreamID,
+			Reason:   selectorActiveReason,
+		}}, nil
 	case ControlEvent:
 		event := c.Event
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}, nil
@@ -173,7 +183,7 @@ func (t *task) controlTargets(control Control) ([]pipeline.NodeRef, error) {
 		}
 		return nil, fmt.Errorf("goav: control targets unknown tap %q: %w", control.Tap, pipeline.ErrUnknownNode)
 	}
-	if control.Type == ControlKeyframe {
+	if control.Type == ControlKeyframe || control.Type == ControlSelect {
 		targets := t.controlEntryNodes()
 		if len(targets) == 0 {
 			return nil, pipeline.ErrUnknownNode

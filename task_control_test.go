@@ -155,7 +155,7 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 	// Switch the live selector to "b" via the control plane; "b" (sample 200) must
 	// start arriving. Retry until accepted so the test does not race graph startup.
 	sink.resetSeen()
-	if err := controlUntilAccepted(ctx, task, SelectActive("select", "b")); err != nil {
+	if err := controlUntilAccepted(ctx, task, SelectActive("b")); err != nil {
 		t.Fatalf("Control switch to b: %v", err)
 	}
 	if err := sink.waitFor(ctx, 200); err != nil {
@@ -167,7 +167,7 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 
 	// Switch back to "a" to prove the control plane drives the switch both ways.
 	sink.resetSeen()
-	if err := task.Control(ctx, SelectActive("select", "a")); err != nil {
+	if err := task.Control(ctx, SelectActive("a")); err != nil {
 		t.Fatalf("Control switch to a: %v", err)
 	}
 	if err := sink.waitFor(ctx, 100); err != nil {
