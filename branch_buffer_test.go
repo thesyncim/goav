@@ -41,7 +41,6 @@ func TestBranchBufferConstructorsLowerToPipelinePolicy(t *testing.T) {
 			want: pipeline.BufferPolicy{
 				Capacity:        2,
 				Drop:            pipeline.DropBlock,
-				TargetLatency:   25 * time.Millisecond,
 				MaxLatency:      25 * time.Millisecond,
 				CopyPacketBytes: 64,
 				CopyFrameBytes:  1024,

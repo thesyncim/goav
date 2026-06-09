@@ -65,10 +65,9 @@ const (
 )
 
 type BufferPolicy struct {
-	Capacity      int
-	Drop          DropPolicy
-	TargetLatency time.Duration
-	MaxLatency    time.Duration
+	Capacity   int
+	Drop       DropPolicy
+	MaxLatency time.Duration
 	// MaxBytes caps the total queued payload bytes for a buffered node; admitting
 	// a message that would exceed it sheds the message (DropOverflow) instead of
 	// queuing. Zero disables byte-budget shedding (the default — no per-message

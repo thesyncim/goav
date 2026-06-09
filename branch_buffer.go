@@ -173,7 +173,6 @@ func (b BranchBuffer) pipelinePolicy() pipeline.BufferPolicy {
 	}
 	policy := pipeline.BufferPolicy{
 		Capacity:        b.Capacity,
-		TargetLatency:   b.MaxDelay,
 		MaxLatency:      b.MaxDelay,
 		MaxBytes:        b.MaxBytes,
 		CopyPacketBytes: b.CopyPacketBytes,
