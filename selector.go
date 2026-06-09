@@ -23,6 +23,10 @@ import (
 // EOS is forwarded like the mixer: one output EOS is emitted only after every
 // input has ended. Non-EOS events are forwarded only from the currently active
 // input so the downstream sees a single coherent stream.
+//
+// A switch is driven live through the control plane: an injected event carrying
+// selectorActiveReason names the target input in Event.StreamID, calls SetActive,
+// and is consumed (not forwarded). SelectActive builds that control.
 type selectorStage struct {
 	name   string
 	inputs []av.StreamID
@@ -30,6 +34,11 @@ type selectorStage struct {
 	active atomic.Pointer[av.StreamID]
 	eos    map[av.StreamID]struct{}
 }
+
+// selectorActiveReason marks an injected control event as a live switch request:
+// the selector reads Event.StreamID as the input to make active and consumes the
+// event instead of forwarding it. SelectActive stamps this reason.
+const selectorActiveReason = "select.active"
 
 func newSelectorStage(name string, inputs []av.StreamID, out av.StreamID) *selectorStage {
 	s := &selectorStage{
@@ -93,6 +102,11 @@ func (s *selectorStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 	case pipeline.MessageEvent:
 		if msg.Event == nil {
 			return nil
+		}
+		// A live switch request (injected via the control plane) names the input to
+		// make active in Event.StreamID. It is consumed here, never forwarded.
+		if msg.Event.Reason == selectorActiveReason {
+			return s.SetActive(msg.Event.StreamID)
 		}
 		if msg.Event.Type == av.EventEndOfStream {
 			s.eos[msg.Event.StreamID] = struct{}{}

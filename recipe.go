@@ -1087,6 +1087,7 @@ type Job struct {
 	branchDestinations []namedDestinationSpec
 	mix                *mixSpec
 	composite          *compositeSpec
+	selectJob          *selectSpec
 	err                error
 }
 
@@ -1390,6 +1391,9 @@ func (j *Job) Build(ctx context.Context) (Task, error) {
 	}
 	if j.composite != nil {
 		return j.buildComposite(ctx)
+	}
+	if j.selectJob != nil {
+		return j.buildSelect(ctx)
 	}
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err != nil {

@@ -11,34 +11,6 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-// controlSelectorSwitch is the reason marker an injected ControlEvent carries to
-// drive a selectorStage's SetActive mid-run. The wrapper below interprets an event
-// with this reason as "switch the active input to Event.StreamID"; every other
-// message is delegated verbatim to the real selectorStage.
-const controlSelectorSwitch = "select.switch"
-
-// controlSelector wraps the real selectorStage so an out-of-band ControlEvent can
-// drive SetActive on the node's own serial worker — proving Task.Control reaches a
-// running node and the genuine selector forwarding switches. The data-plane
-// behaviour (frame forwarding, EOS bookkeeping) is the real selectorStage; only
-// the switch event is intercepted.
-type controlSelector struct {
-	*selectorStage
-}
-
-func (s *controlSelector) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
-	if msg != nil && msg.Kind == pipeline.MessageEvent && msg.Event != nil &&
-		msg.Event.Type == av.EventStats && msg.Event.Reason == controlSelectorSwitch {
-		return s.SetActive(msg.Event.StreamID)
-	}
-	return s.selectorStage.Handle(ctx, msg, emitter)
-}
-
-// selectControl builds the Control that switches a selector node to stream id.
-func selectControl(node pipeline.NodeRef, id av.StreamID) Control {
-	return Deliver(av.Event{Type: av.EventStats, StreamID: id, Reason: controlSelectorSwitch}).At(node)
-}
-
 // controlFrameSource emits frames for two interleaved input streams until its
 // context is cancelled, so the selector always has live traffic on both arms while
 // a test flips the active input.
@@ -143,7 +115,7 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 	}
 
 	source := &controlFrameSource{name: "source", a: "a", b: "b"}
-	selector := &controlSelector{selectorStage: newSelectorStage("select", []av.StreamID{"a", "b"}, "out")}
+	selector := newSelectorStage("select", []av.StreamID{"a", "b"}, "out")
 	sink := newControlSink("sink")
 
 	if _, err := graph.AddSource(source, pipeline.BufferPolicy{}); err != nil {
@@ -180,7 +152,7 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 	// Switch the live selector to "b" via the control plane; "b" (sample 200) must
 	// start arriving. Retry until accepted so the test does not race graph startup.
 	sink.resetSeen()
-	if err := controlUntilAccepted(ctx, task, selectControl("select", "b")); err != nil {
+	if err := controlUntilAccepted(ctx, task, SelectActive("select", "b")); err != nil {
 		t.Fatalf("Control switch to b: %v", err)
 	}
 	if err := sink.waitFor(ctx, 200); err != nil {
@@ -192,7 +164,7 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 
 	// Switch back to "a" to prove the control plane drives the switch both ways.
 	sink.resetSeen()
-	if err := task.Control(ctx, selectControl("select", "a")); err != nil {
+	if err := task.Control(ctx, SelectActive("select", "a")); err != nil {
 		t.Fatalf("Control switch to a: %v", err)
 	}
 	if err := sink.waitFor(ctx, 100); err != nil {
