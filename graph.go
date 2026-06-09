@@ -54,7 +54,7 @@ func (n GraphNode) branchSource() branchSourceBinding {
 }
 
 func (n GraphNode) In() GraphInlet {
-	return GraphInlet{name: n.name}
+	return GraphInlet(n)
 }
 
 func (n GraphNode) Out() GraphOutlet {

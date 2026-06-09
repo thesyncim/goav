@@ -321,12 +321,7 @@ func explainOperations(operations []planOperation) []OperationReport {
 func explainDecisions(decisions []planDecision) []Decision {
 	reports := make([]Decision, 0, len(decisions))
 	for i := range decisions {
-		decision := decisions[i]
-		reports = append(reports, Decision{
-			Code:    decision.Code,
-			Branch:  decision.Branch,
-			Message: decision.Message,
-		})
+		reports = append(reports, Decision(decisions[i]))
 	}
 	return reports
 }

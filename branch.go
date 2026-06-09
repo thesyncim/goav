@@ -545,6 +545,8 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 			if err := validateTransformSpec("build branches", spec.name, transforms[i]); err != nil {
 				return err
 			}
+		}
+		if len(transforms) > 0 {
 			return branchPacketTransformUnsupportedError(stream)
 		}
 	}
