@@ -541,6 +541,14 @@ type task struct {
 	branchTaps   []TapInfo
 	attachMu     sync.Mutex
 	attachments  map[*runtimeAttachment]struct{}
+
+	// lifecycleMu guards the recorded run/close progress below, which exists
+	// only so Snapshot can report typed lifecycle states.
+	lifecycleMu sync.Mutex
+	started     bool
+	finished    bool
+	runErr      error
+	closed      bool
 }
 
 func newTask(graph pipeline.Graph, runtime *runtime, destinations ...*destinationTransaction) *task {
@@ -560,8 +568,15 @@ func (t *task) Explain(context.Context) (PlanReport, error) {
 }
 
 func (t *task) Run(ctx context.Context) error {
+	t.lifecycleMu.Lock()
+	t.started = true
+	t.lifecycleMu.Unlock()
 	err := t.graph.Run(ctx)
 	t.finishDestinations(err == nil)
+	t.lifecycleMu.Lock()
+	t.finished = true
+	t.runErr = err
+	t.lifecycleMu.Unlock()
 	return err
 }
 
@@ -583,6 +598,7 @@ func (t *task) Snapshot() TaskSnapshot {
 	if t == nil {
 		return TaskSnapshot{}
 	}
+	state, _ := t.lifecycleStates()
 	stats := t.Stats()
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
@@ -595,11 +611,33 @@ func (t *task) Snapshot() TaskSnapshot {
 		branches = append(branches, state)
 	}
 	return TaskSnapshot{
+		State:        state,
 		Spec:         t.Describe(),
 		Stats:        stats,
 		Taps:         t.tapsLocked(),
 		Branches:     branches,
 		Destinations: taskSnapshotDestinations(branches),
+	}
+}
+
+// lifecycleStates derives the typed task state and the matching state of the
+// task's still-open destinations from the recorded run/close progress. The
+// destination outcome mirrors finishDestinations: a run that completes without
+// error commits destinations, a failed run aborts them.
+func (t *task) lifecycleStates() (TaskState, DestinationState) {
+	t.lifecycleMu.Lock()
+	defer t.lifecycleMu.Unlock()
+	switch {
+	case t.finished && t.runErr != nil:
+		return TaskFailed, DestinationAborted
+	case t.finished:
+		return TaskClosed, DestinationCommitted
+	case t.closed:
+		return TaskClosed, DestinationClosed
+	case t.started:
+		return TaskRunning, DestinationOpen
+	default:
+		return TaskBuilt, DestinationOpen
 	}
 }
 
@@ -652,6 +690,9 @@ func (t *task) stopAttachments(ctx context.Context) error {
 }
 
 func (t *task) Close() error {
+	t.lifecycleMu.Lock()
+	t.closed = true
+	t.lifecycleMu.Unlock()
 	first := t.stopAttachments(context.Background())
 	if err := t.graph.Close(); first == nil && err != nil {
 		first = err

@@ -497,7 +497,7 @@ func cloneWorkPatch(patch workPatch) workPatch {
 	return clone
 }
 
-func destinationSnapshotsFromWork(destinations []workDestination, open bool) []DestinationSnapshot {
+func destinationSnapshotsFromWork(destinations []workDestination, state DestinationState) []DestinationSnapshot {
 	if len(destinations) == 0 {
 		return nil
 	}
@@ -509,7 +509,8 @@ func destinationSnapshotsFromWork(destinations []workDestination, open bool) []D
 			Component: destinations[i].Component,
 			Format:    destinations[i].Format,
 			Branches:  append([]string(nil), destinations[i].Branches...),
-			Open:      open,
+			State:     state,
+			Open:      state == DestinationOpen,
 		})
 	}
 	return out

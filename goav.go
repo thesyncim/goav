@@ -44,6 +44,7 @@ type TapInfo struct {
 // TaskSnapshot is an immutable point-in-time view of a task's graph, taps, active
 // runtime branches, and counters.
 type TaskSnapshot struct {
+	State        TaskState
 	Spec         pipeline.Spec
 	Stats        TaskStats
 	Taps         []TapInfo
@@ -56,7 +57,7 @@ type TaskSnapshot struct {
 type BranchSnapshot struct {
 	ID           string
 	Name         string
-	State        string
+	State        BranchState
 	AnchorTaps   []string
 	AnchorNodes  []string
 	Nodes        []pipeline.NodeRef
@@ -74,7 +75,10 @@ type DestinationSnapshot struct {
 	Component string
 	Format    av.FormatID
 	Branches  []string
-	Open      bool
+	State     DestinationState
+	// Open is derived from State and kept for compatibility: it mirrors
+	// State == DestinationOpen.
+	Open bool
 }
 
 // Runtime is the composition root for applications embedding goav.

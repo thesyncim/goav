@@ -1450,13 +1450,16 @@ func (a *runtimeAttachment) branchSnapshotLocked(taskStats TaskStats) BranchSnap
 	if a == nil {
 		return BranchSnapshot{}
 	}
-	state := "attached"
-	if a.stopped {
-		state = "detached"
-	}
+	state := BranchAttached
+	destinationState := DestinationOpen
 	spec := pipeline.Spec{}
 	if a.owner != nil {
+		_, destinationState = a.owner.lifecycleStates()
 		spec = a.specFromGraph(a.owner.Describe())
+	}
+	if a.stopped {
+		state = BranchDetached
+		destinationState = DestinationClosed
 	}
 	return BranchSnapshot{
 		ID:           a.id,
@@ -1466,7 +1469,7 @@ func (a *runtimeAttachment) branchSnapshotLocked(taskStats TaskStats) BranchSnap
 		AnchorNodes:  append([]string(nil), a.allAnchorNodes()...),
 		Nodes:        append([]pipeline.NodeRef(nil), a.nodes...),
 		Taps:         append([]TapInfo(nil), a.taps...),
-		Destinations: destinationSnapshotsFromWork(a.work.Destinations, !a.stopped),
+		Destinations: destinationSnapshotsFromWork(a.work.Destinations, destinationState),
 		Spec:         spec,
 		Stats:        branchStatsForNodes(taskStats, a.nodes),
 	}
