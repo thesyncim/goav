@@ -79,6 +79,12 @@ type BufferPolicy struct {
 	// CopyFrameBytes bounds graph-owned frame plane copies for buffered
 	// execution when frame plane buffers are not immutable.
 	CopyFrameBytes int
+	// CopyAlways makes buffered execution copy every non-empty payload into
+	// graph-owned backing, including payloads declared av.BufferImmutable
+	// (which are otherwise shared by reference). Copies still require
+	// CopyPacketBytes/CopyFrameBytes capacity: a payload that cannot be copied
+	// is refused with ErrBufferedMessageUnsafe instead of shared.
+	CopyAlways bool
 }
 
 func (p BufferPolicy) IsDirect() bool {

@@ -1014,7 +1014,7 @@ func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
 		}
 		packetBacking := m.packetBacking
 		m.packet = *src.Packet
-		if !bufferSafe(src.Packet.Payload) {
+		if !bufferSafe(src.Packet.Payload, policy) {
 			if policy.CopyPacketBytes <= 0 {
 				return ErrBufferedMessageUnsafe
 			}
@@ -1039,7 +1039,7 @@ func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
 		offset := 0
 		for i := range src.Frame.Planes {
 			plane := src.Frame.Planes[i]
-			if !bufferSafe(plane.Buffer) {
+			if !bufferSafe(plane.Buffer, policy) {
 				if policy.CopyFrameBytes <= 0 {
 					return ErrBufferedMessageUnsafe
 				}
@@ -1084,9 +1084,19 @@ func (m *bufferedMessage) Reset() {
 	m.bytes = 0
 }
 
-func bufferSafe(buffer av.Buffer) bool {
+// bufferSafe reports whether a payload may be queued by reference without a
+// graph-owned copy: empty payloads always, and av.BufferImmutable payloads
+// unless the policy demands defensive copies of everything (CopyAlways).
+// Everything else is mutable from the graph's point of view and must be copied
+// into the target node's slot backing — or refused — before queueing, so a
+// consumer that mutates its delivered bytes can never reach bytes the producer
+// or a sibling branch still sees.
+func bufferSafe(buffer av.Buffer, policy BufferPolicy) bool {
 	if len(buffer.Bytes) == 0 {
 		return true
+	}
+	if policy.CopyAlways {
+		return false
 	}
 	return buffer.Ownership == av.BufferImmutable
 }
@@ -1100,7 +1110,7 @@ func validateBufferedMessage(msg *Message, policy BufferPolicy) error {
 		if msg.Packet == nil {
 			return nil
 		}
-		if bufferSafe(msg.Packet.Payload) {
+		if bufferSafe(msg.Packet.Payload, policy) {
 			return nil
 		}
 		if policy.CopyPacketBytes <= 0 {
@@ -1119,7 +1129,7 @@ func validateBufferedMessage(msg *Message, policy BufferPolicy) error {
 		needed := 0
 		for i := range msg.Frame.Planes {
 			buffer := msg.Frame.Planes[i].Buffer
-			if bufferSafe(buffer) {
+			if bufferSafe(buffer, policy) {
 				continue
 			}
 			if policy.CopyFrameBytes <= 0 {

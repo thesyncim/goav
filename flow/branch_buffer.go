@@ -22,13 +22,41 @@ const (
 	BufferUnbounded  BranchBufferMode = "unbounded"
 )
 
-// CopyMode controls whether a branch buffer copies messages before queueing.
+// CopyMode declares when a branch buffer copies a queued message's payload
+// bytes into branch-owned backing before queueing. This is the ownership
+// contract for buffered fanout: every buffered branch binds messages into its
+// own preallocated slots, so a payload that is copied belongs to that branch
+// alone — a consumer that mutates its delivered bytes can never corrupt the
+// producer's bytes or a sibling branch's view. Payloads that are shared by
+// reference instead of copied must never be written by any consumer.
+//
+// Copying is bounded, never allocated per message: BufferCopyBounds sizes the
+// per-slot backing, and a payload that needs a copy but cannot get one (bounds
+// unset or too small) is refused with pipeline.ErrBufferedMessageUnsafe or
+// pipeline.ErrMessageTooLarge rather than silently shared.
 type CopyMode string
 
 const (
+	// CopyIfMutable (the default) copies every payload not declared
+	// av.BufferImmutable and shares immutable payloads by reference. Mutable
+	// payloads (av.BufferOwned, av.BufferBorrowed, or undeclared) are either
+	// copied into branch-owned backing or refused — never shared — so a branch
+	// that mutates its delivered frame cannot corrupt a sibling.
 	CopyIfMutable CopyMode = "if_mutable"
-	CopyAlways    CopyMode = "always"
-	CopyNever     CopyMode = "never"
+	// CopyAlways copies every payload, including ones declared
+	// av.BufferImmutable: defensive isolation for producers whose immutable
+	// declaration is not trusted. BufferCopyBounds must cover every payload;
+	// without bounds nothing can be copied, so every non-empty payload is
+	// refused with pipeline.ErrBufferedMessageUnsafe.
+	CopyAlways CopyMode = "always"
+	// CopyNever shares every payload by reference and never copies. It is
+	// safe-only: combining it with BufferCopyBounds is a build error, and only
+	// payloads declared av.BufferImmutable are admitted — a mutable payload is
+	// refused with pipeline.ErrBufferedMessageUnsafe at delivery time. By
+	// choosing CopyNever the caller declares that every consumer on the branch
+	// treats shared payloads as read-only; that declaration itself is not
+	// enforceable at runtime.
+	CopyNever CopyMode = "never"
 )
 
 // BranchBuffer describes how a branch queues, copies, drops, or backpressures
@@ -91,6 +119,8 @@ func BufferMaxDelay(maxDelay time.Duration) BranchBufferOption {
 }
 
 // BufferCopyMode sets when the branch buffer copies messages before queueing.
+// The default is CopyIfMutable; see CopyMode for the ownership contract each
+// mode guarantees.
 func BufferCopyMode(mode CopyMode) BranchBufferOption {
 	return func(buffer *BranchBuffer) {
 		if buffer != nil {
@@ -99,7 +129,12 @@ func BufferCopyMode(mode CopyMode) BranchBufferOption {
 	}
 }
 
-// BufferCopyBounds bounds the per-message copy sizes for packets and frames.
+// BufferCopyBounds bounds the per-message copy sizes for packets and frames:
+// each branch slot preallocates packetBytes of packet backing and frameBytes
+// of frame-plane backing, so copies never allocate on the hot path. A payload
+// that needs a copy (see CopyMode) but exceeds its bound is refused with
+// pipeline.ErrMessageTooLarge; with a zero bound it is refused with
+// pipeline.ErrBufferedMessageUnsafe. Bounds cannot be combined with CopyNever.
 func BufferCopyBounds(packetBytes int, frameBytes int) BranchBufferOption {
 	return func(buffer *BranchBuffer) {
 		if buffer == nil {
@@ -136,6 +171,7 @@ func (b BranchBuffer) PipelinePolicy() pipeline.BufferPolicy {
 		MaxBytes:        b.MaxBytes,
 		CopyPacketBytes: b.CopyPacketBytes,
 		CopyFrameBytes:  b.CopyFrameBytes,
+		CopyAlways:      b.CopyMode == CopyAlways,
 	}
 	switch b.Mode {
 	case BufferBlocking:

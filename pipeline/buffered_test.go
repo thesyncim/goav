@@ -451,6 +451,209 @@ func TestGraphBufferedCopiesBorrowedFramePlane(t *testing.T) {
 	}
 }
 
+// TestGraphBufferedCopyAlwaysCopiesImmutablePacketPayload proves CopyAlways is
+// defensive: even a payload declared av.BufferImmutable is copied into
+// graph-owned backing, so a producer that lies about immutability and mutates
+// its bytes after Emit cannot reach the delivered copy.
+func TestGraphBufferedCopyAlwaysCopiesImmutablePacketPayload(t *testing.T) {
+	release := make(chan struct{})
+	source := &bufferedPacketSource{
+		name: "source",
+		packets: []av.Packet{{
+			Payload: av.Buffer{
+				Bytes:     []byte{7},
+				Ownership: av.BufferImmutable,
+			},
+		}},
+		done: make(chan struct{}),
+	}
+	sink := &bufferedBlockingSink{
+		name:    "sink",
+		started: make(chan struct{}),
+		release: release,
+	}
+
+	graph, err := NewGraph(GraphConfig{
+		Name: "copy-always-packet",
+		Buffer: BufferPolicy{
+			Capacity:        1,
+			Drop:            DropOldest,
+			CopyPacketBytes: 1,
+			CopyAlways:      true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "sink")); err != nil {
+		t.Fatal(err)
+	}
+
+	errs := make(chan error, 1)
+	go func() {
+		errs <- graph.Run(context.Background())
+	}()
+	<-sink.started
+	<-source.done
+	source.packets[0].Payload.Bytes[0] = 9
+	close(release)
+	if err := <-errs; err != nil {
+		t.Fatal(err)
+	}
+	if !equalBytes(sink.values, []byte{7}) {
+		t.Fatalf("values = %v, want defensively copied payload 7", sink.values)
+	}
+}
+
+// TestGraphBufferedCopyAlwaysWithoutBoundsRejectsImmutablePayload pins the
+// fail-closed half of CopyAlways: without copy backing nothing can be copied,
+// so even immutable payloads are refused instead of shared by reference.
+func TestGraphBufferedCopyAlwaysWithoutBoundsRejectsImmutablePayload(t *testing.T) {
+	source := &bufferedPacketSource{
+		name:    "source",
+		packets: []av.Packet{immutablePacket(1)},
+		done:    make(chan struct{}),
+	}
+	sink := &bufferedBlockingSink{name: "sink", started: make(chan struct{})}
+
+	graph, err := NewGraph(GraphConfig{
+		Name:   "copy-always-unbounded",
+		Buffer: BufferPolicy{Capacity: 1, Drop: DropOldest, CopyAlways: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "sink")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := graph.Run(context.Background()); !errors.Is(err, ErrBufferedMessageUnsafe) {
+		t.Fatalf("err = %v, want ErrBufferedMessageUnsafe", err)
+	}
+}
+
+type bufferedMutatingFrameSink struct {
+	name    string
+	mutated chan struct{}
+}
+
+func (s *bufferedMutatingFrameSink) Name() string {
+	return s.name
+}
+
+func (s *bufferedMutatingFrameSink) Handle(_ context.Context, msg *Message) error {
+	if msg == nil || msg.Kind != MessageFrame || msg.Frame == nil {
+		return nil
+	}
+	for i := range msg.Frame.Planes {
+		bytes := msg.Frame.Planes[i].Buffer.Bytes
+		for j := range bytes {
+			bytes[j] = 0xEE
+		}
+	}
+	close(s.mutated)
+	return nil
+}
+
+func (s *bufferedMutatingFrameSink) Close() error {
+	return nil
+}
+
+type bufferedObservingFrameSink struct {
+	name  string
+	wait  <-chan struct{}
+	bytes []byte
+}
+
+func (s *bufferedObservingFrameSink) Name() string {
+	return s.name
+}
+
+func (s *bufferedObservingFrameSink) Handle(ctx context.Context, msg *Message) error {
+	select {
+	case <-s.wait:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if msg != nil && msg.Frame != nil && len(msg.Frame.Planes) != 0 {
+		s.bytes = append([]byte(nil), msg.Frame.Planes[0].Buffer.Bytes...)
+	}
+	return nil
+}
+
+func (s *bufferedObservingFrameSink) Close() error {
+	return nil
+}
+
+// TestGraphBufferedFanoutMutatingSinkCannotCorruptSibling is the runner-level
+// proof of north-star acceptance #22: a mutable (av.BufferOwned) frame fans out
+// to two nodes, each of which binds its own slot copy, so one consumer
+// mutating its delivered plane bytes can corrupt neither the sibling's copy
+// nor the producer's backing array.
+func TestGraphBufferedFanoutMutatingSinkCannotCorruptSibling(t *testing.T) {
+	source := &bufferedFrameSource{
+		name: "source",
+		frame: av.Frame{
+			Type: av.MediaVideo,
+			Planes: []av.Plane{{
+				Buffer: av.Buffer{
+					Bytes:     []byte{1, 2, 3, 4},
+					Ownership: av.BufferOwned,
+				},
+				Stride: 4,
+			}},
+		},
+		done: make(chan struct{}),
+	}
+	mutator := &bufferedMutatingFrameSink{name: "mutator", mutated: make(chan struct{})}
+	observer := &bufferedObservingFrameSink{name: "observer", wait: mutator.mutated}
+
+	graph, err := NewGraph(GraphConfig{
+		Name: "fanout-isolation",
+		Buffer: BufferPolicy{
+			Capacity:       2,
+			Drop:           DropOldest,
+			CopyFrameBytes: 16,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(mutator, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(observer, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "mutator", "observer")); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !equalBytes(observer.bytes, []byte{1, 2, 3, 4}) {
+		t.Fatalf("sibling frame bytes = %v, want original 1 2 3 4 after mutator wrote 0xEE", observer.bytes)
+	}
+	if !equalBytes(source.frame.Planes[0].Buffer.Bytes, []byte{1, 2, 3, 4}) {
+		t.Fatalf("source backing = %v, want untouched original", source.frame.Planes[0].Buffer.Bytes)
+	}
+}
+
 func TestGraphBufferedDropOldest(t *testing.T) {
 	values, err := runBufferedBurst(BufferPolicy{Capacity: 1, Drop: DropOldest})
 	if err != nil {

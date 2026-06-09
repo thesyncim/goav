@@ -228,17 +228,32 @@ func RescaleValue(value int64, from TimeBase, to TimeBase) (int64, bool) {
 	return value, true
 }
 
+// BufferOwnership declares who may write a Buffer's bytes and how long they
+// stay valid. The pipeline's buffered execution reads this declaration to
+// decide whether a payload may be shared by reference across branches: only
+// BufferImmutable is shareable; everything else counts as mutable and is
+// copied into branch-owned backing (or refused) before queueing, so a consumer
+// that mutates its delivered bytes can never corrupt a sibling branch.
 type BufferOwnership string
 
 const (
-	// BufferBorrowed is valid only until the producer's next Read, Decode,
-	// Encode, Filter, or Depacketize call unless the producer documents a
-	// longer lifetime.
+	// BufferBorrowed bytes still belong to the producer and are valid only
+	// until the producer's next Read, Decode, Encode, Filter, or Depacketize
+	// call unless the producer documents a longer lifetime. Consumers must not
+	// retain the bytes past that window; buffered execution copies borrowed
+	// payloads before queueing them.
 	BufferBorrowed BufferOwnership = "borrowed"
-	// BufferOwned belongs to the caller and may be returned to Owner when the
-	// caller is done with it.
+	// BufferOwned bytes belong to the receiver, which may mutate them and may
+	// return them to Owner when done. Because an owned payload has exactly one
+	// writer, buffered execution copies it per branch before fanning it out.
 	BufferOwned BufferOwnership = "owned"
-	// BufferImmutable may be shared and must never be mutated by consumers.
+	// BufferImmutable bytes may be shared by reference indefinitely and must
+	// never be written by anyone — producer included — once published. This is
+	// the only ownership buffered execution forwards without copying (unless
+	// the branch demands defensive copies via flow.CopyAlways). The
+	// declaration is trusted, not checked: a producer that marks bytes
+	// immutable and then writes them breaks every consumer sharing the
+	// backing array.
 	BufferImmutable BufferOwnership = "immutable"
 )
 
@@ -246,6 +261,9 @@ type BufferOwner interface {
 	ReleaseBuffer(*Buffer)
 }
 
+// Buffer is one byte payload plus the ownership declaration consumers and the
+// pipeline copy machinery rely on. See BufferOwnership for who may mutate the
+// bytes and when the pipeline copies them.
 type Buffer struct {
 	Bytes     []byte
 	Ownership BufferOwnership
