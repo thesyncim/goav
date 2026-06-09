@@ -102,6 +102,10 @@ type Task interface {
 	Taps() []TapInfo
 	// Snapshot returns a point-in-time diagnostic view without exposing graph handles.
 	Snapshot() TaskSnapshot
+	// Control injects an out-of-band control into the running graph, delivered to a
+	// target node on its serial worker — the control-plane entry point for live
+	// switching (a selector), keyframe requests, and flushes.
+	Control(context.Context, Control) error
 	Run(context.Context) error
 	Events() <-chan av.Event
 	Stats() TaskStats
