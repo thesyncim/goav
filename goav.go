@@ -28,6 +28,29 @@ type EncoderFactory = codec.EncoderFactory
 type TaskStats = pipeline.GraphStats
 type BranchStats = pipeline.GraphStats
 
+// NodeStats is the per-node counter view found in TaskStats.Nodes.
+type NodeStats = pipeline.NodeStats
+
+// DropReason keys TaskStats.DropReasons / NodeStats.DropReasons: why the runtime
+// shed a message. Use the DropReason* constants to read those maps without
+// importing the pipeline package.
+type DropReason = pipeline.DropPolicy
+
+const (
+	// DropReasonOldest: a DropOldest branch dropped the queued head to admit a newer message.
+	DropReasonOldest DropReason = pipeline.DropOldest
+	// DropReasonNewest: a DropNewest branch refused the incoming message and kept the queue.
+	DropReasonNewest DropReason = pipeline.DropNewest
+	// DropReasonStale: a message older than the branch BufferMaxDelay was shed.
+	DropReasonStale DropReason = pipeline.DropStale
+	// DropReasonOverflow: a message that would exceed the branch BufferMaxBytes budget was shed.
+	DropReasonOverflow DropReason = pipeline.DropOverflow
+	// DropReasonUntilSync: messages dropped until the next keyframe/sync point.
+	DropReasonUntilSync DropReason = pipeline.DropUntilSync
+	// DropReasonNonKeyVideo: a non-keyframe video message was dropped.
+	DropReasonNonKeyVideo DropReason = pipeline.DropNonKeyVideo
+)
+
 type MediaDomain string
 
 const (

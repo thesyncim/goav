@@ -94,3 +94,19 @@ func TestBranchBufferIsNormalBranchAPI(t *testing.T) {
 		t.Fatalf("Branch.Buffer must not expose pipeline.BufferPolicy")
 	}
 }
+
+// TestFrontDoorDropReasonsReadableWithoutPipeline proves a consumer can classify
+// dropped messages from TaskStats/NodeStats using the public DropReason* vocabulary
+// — note this test body imports no pipeline symbols to read the counters.
+func TestFrontDoorDropReasonsReadableWithoutPipeline(t *testing.T) {
+	var stats TaskStats
+	stats.DropReasons = map[DropReason]uint64{DropReasonStale: 3, DropReasonOverflow: 1}
+	if stats.DropReasons[DropReasonStale] != 3 || stats.DropReasons[DropReasonOverflow] != 1 {
+		t.Fatalf("task drop reasons not readable via public constants: %+v", stats.DropReasons)
+	}
+	var node NodeStats
+	node.DropReasons = map[DropReason]uint64{DropReasonNonKeyVideo: 2, DropReasonOldest: 5}
+	if node.DropReasons[DropReasonNonKeyVideo] != 2 || node.DropReasons[DropReasonOldest] != 5 {
+		t.Fatalf("node drop reasons not readable via public constants: %+v", node.DropReasons)
+	}
+}
