@@ -1916,11 +1916,10 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	}
 	readmeText := string(readme)
 	for _, required := range []string{
-		"goav.Config(",
-		"goav.Param(",
 		"goav.Control(",
 		"Opus, VP8, and VP9 are the full encode/decode recipe verticals",
-		"behavior stays in `CodecSpec.Settings`, backed by `codec.CodecSettings`",
+		"behavior is a two-tier ladder",
+		"a single raw callback handed the adapter's concrete",
 		"public grammar stays Input, Stream, Operation, Tap, Branch, Destination, Flow,",
 		"workflows should be expressible through declarative recipes",
 	} {

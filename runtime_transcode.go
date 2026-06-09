@@ -767,9 +767,7 @@ func codecSpecHasDecodeIntent(spec CodecSpec) bool {
 		spec.Settings.KeyframeInterval != 0 ||
 		spec.Settings.Profile != "" ||
 		spec.Settings.Level != "" ||
-		spec.Settings.Config != nil ||
-		len(spec.Settings.Opaque) != 0 ||
-		len(spec.Settings.Controls) != 0
+		spec.Settings.Control != nil
 }
 
 func branchComposeDecodeConfigConflictError(first string, second string) error {

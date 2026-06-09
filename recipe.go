@@ -315,31 +315,15 @@ func Parameters(parameters av.CodecParameters) CodecOption {
 	}
 }
 
-// Config attaches one adapter-specific typed codec configuration value.
-func Config(config any) CodecOption {
+// Control is the raw codec escape hatch: at encoder/decoder open the adapter
+// invokes fn with its concrete native encoder/decoder, so you can type-assert to
+// the real type and apply anything the underlying library exposes. A non-nil
+// error from fn fails the open. This one callback covers every codec-specific
+// knob the common typed settings do not — nothing is ever unreachable.
+func Control(fn func(any) error) CodecOption {
 	return func(spec *CodecSpec) {
-		spec.Settings.Config = config
-	}
-}
-
-// Param attaches a named adapter-specific codec parameter.
-func Param(name string, value any) CodecOption {
-	return func(spec *CodecSpec) {
-		if name == "" {
-			return
-		}
-		if spec.Settings.Opaque == nil {
-			spec.Settings.Opaque = make(map[string]any, 1)
-		}
-		spec.Settings.Opaque[name] = value
-	}
-}
-
-// Control attaches an adapter-specific codec control value.
-func Control(control any) CodecOption {
-	return func(spec *CodecSpec) {
-		if control != nil {
-			spec.Settings.Controls = append(spec.Settings.Controls, control)
+		if fn != nil {
+			spec.Settings.Control = fn
 		}
 	}
 }
@@ -383,20 +367,9 @@ func cloneCodecSpec(spec CodecSpec) CodecSpec {
 	return spec
 }
 
-func cloneAnyMap(values map[string]any) map[string]any {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(values))
-	for key, value := range values {
-		out[key] = value
-	}
-	return out
-}
-
 func cloneCodecSettings(settings codec.CodecSettings) codec.CodecSettings {
-	settings.Opaque = cloneAnyMap(settings.Opaque)
-	settings.Controls = append([]any(nil), settings.Controls...)
+	// Config (Tier 2) and Control (Tier 3) are reference values owned by the
+	// caller; copy the reference, not the target.
 	return settings
 }
 
@@ -416,18 +389,9 @@ func mergeCodecSettings(base codec.CodecSettings, override codec.CodecSettings) 
 	if override.Level != "" {
 		base.Level = override.Level
 	}
-	if override.Config != nil {
-		base.Config = override.Config
+	if override.Control != nil {
+		base.Control = override.Control
 	}
-	if len(override.Opaque) != 0 {
-		if base.Opaque == nil {
-			base.Opaque = make(map[string]any, len(override.Opaque))
-		}
-		for key, value := range override.Opaque {
-			base.Opaque[key] = value
-		}
-	}
-	base.Controls = append(base.Controls, override.Controls...)
 	return base
 }
 

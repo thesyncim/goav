@@ -111,13 +111,13 @@ type CodecSettings struct {
 	// or preserve the selected input level when copying compatible stream
 	// metadata.
 	Level string
-	// Config carries one adapter-specific typed config value. Adapter packages
-	// must document the concrete type before reading it.
-	Config any
-	// Opaque carries named adapter-specific codec parameters.
-	Opaque map[string]any
-	// Controls carries adapter-specific control values applied at open.
-	Controls []any
+	// Control is the raw escape hatch: at encoder/decoder open the adapter invokes
+	// it with its *concrete* native encoder/decoder (or, for construction-only
+	// knobs, its options builder — the adapter documents which), so the caller can
+	// type-assert to the real type and apply anything the library exposes. Nothing
+	// is ever unreachable. A non-nil error from Control fails the open. This single
+	// callback replaces a separate typed-config blob — it is strictly more capable.
+	Control func(any) error
 }
 
 type DecodeConfig struct {

@@ -166,6 +166,12 @@ func (e *VP8Encoder) resetEncoder(config codec.EncodeConfig) error {
 		return mapGovpxEncodeError(err)
 	}
 	e.encoder = encoder
+	// Tier-3 raw control: hand the caller the concrete *govpxlib.VP8Encoder.
+	if control := config.Settings.Control; control != nil {
+		if err := control(encoder); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

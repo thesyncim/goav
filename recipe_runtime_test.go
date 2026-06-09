@@ -4498,10 +4498,6 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		WithEncoder(desc, encoderFactory),
 		WithStdFilters(),
 	)
-	decodeConfig := codecControlTestConfig{Name: "decode"}
-	decodeControl := codecControlTestControl{Name: "decode-control"}
-	encodeConfig := codecControlTestConfig{Name: "encode"}
-	encodeControl := codecControlTestControl{Name: "encode-control"}
 	encoded := Codec(
 		customPCM,
 		av.MediaAudio,
@@ -4512,18 +4508,14 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		KeyframeInterval(100),
 		Profile("low-delay"),
 		Level("1"),
-		Config(encodeConfig),
-		Param("speed", "fast"),
-		Control(encodeControl),
+		Control(func(any) error { return nil }),
 	)
 	archive := File("archive.ogg", io.Discard)
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(runtime).
 		Audio().
 		Decode(
-			Config(decodeConfig),
-			Param("concealment", "on"),
-			Control(decodeControl),
+			Control(func(any) error { return nil }),
 		).
 		Branches(
 			Branch("main").
@@ -4541,10 +4533,8 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 	if decoder.decodes != 1 || encoder.encodes != 1 || encoder.flushes != 1 {
 		t.Fatalf("decodes=%d encodes=%d flushes=%d", decoder.decodes, encoder.encodes, encoder.flushes)
 	}
-	if !reflect.DeepEqual(decoderConfig.Settings.Config, decodeConfig) ||
-		decoderConfig.Settings.Opaque["concealment"] != "on" ||
-		!reflect.DeepEqual(decoderConfig.Settings.Controls, []any{decodeControl}) {
-		t.Fatalf("decoder config: %+v", decoderConfig)
+	if decoderConfig.Settings.Control == nil {
+		t.Fatalf("decoder control callback not plumbed: %+v", decoderConfig)
 	}
 	if encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
 		encoderFactory.config.Stream.Codec.Channels != Mono ||
@@ -4559,10 +4549,8 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		encoderFactory.config.Settings.Level != "1" {
 		t.Fatalf("branch custom encode config: %+v", encoderFactory.config)
 	}
-	if !reflect.DeepEqual(encoderFactory.config.Settings.Config, encodeConfig) ||
-		encoderFactory.config.Settings.Opaque["speed"] != "fast" ||
-		!reflect.DeepEqual(encoderFactory.config.Settings.Controls, []any{encodeControl}) {
-		t.Fatalf("encoder config: %+v", encoderFactory.config)
+	if encoderFactory.config.Settings.Control == nil {
+		t.Fatalf("encoder control callback not plumbed: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "main" {
 		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
@@ -4604,12 +4592,12 @@ func TestBranchCompositionRejectsConflictingDecodeConfigs(t *testing.T) {
 		Copy().
 		Branches(
 			Branch("left").
-				Decode(Config(codecControlTestConfig{Name: "left"})).
+				Decode(Profile("left")).
 				To(Sink(SinkFunc("left", func(context.Context, Message) error {
 					return nil
 				}))),
 			Branch("right").
-				Decode(Config(codecControlTestConfig{Name: "right"})).
+				Decode(Profile("right")).
 				To(Sink(SinkFunc("right", func(context.Context, Message) error {
 					return nil
 				}))),
@@ -4625,14 +4613,6 @@ func TestBranchCompositionRejectsConflictingDecodeConfigs(t *testing.T) {
 	if decoder.decodes != 0 {
 		t.Fatalf("decoder ran before conflict was reported: %d", decoder.decodes)
 	}
-}
-
-type codecControlTestConfig struct {
-	Name string
-}
-
-type codecControlTestControl struct {
-	Name string
 }
 
 type recipePCMDecoderFactory struct {

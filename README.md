@@ -714,10 +714,11 @@ decoder/encoder allocation or graph mutation. Adapter authoring details live in
 Opus, VP8, and VP9 are the full encode/decode recipe verticals. H264 and AV1
 receive/decode paths are active while recipe encode remains guarded as work in
 progress. `Shape(...)` describes structural media compatibility only; encoder
-behavior stays in `CodecSpec.Settings`, backed by `codec.CodecSettings`. The
-public way to set it is the codec option list, giving one home for bitrate, FPS,
-keyframe cadence, rate control, quality, profiles, deadlines, adapter configs,
-params, and controls:
+behavior is a two-tier ladder. Tier 1 is the common typed settings (bitrate, FPS,
+keyframe cadence, profile, level, and — in progress — grouped rate control / GOP /
+audio). Tier 2 is `Control`: a single raw callback handed the adapter's concrete
+encoder/decoder, so you type-assert and apply anything the library exposes —
+nothing is ever unreachable, and there is no separate config blob to learn:
 
 ```go
 vp9 := goav.VP9(
@@ -725,14 +726,18 @@ vp9 := goav.VP9(
     goav.FPS(30),
     goav.KeyframeInterval(60),
     goav.Profile("0"),
-    goav.Config(myVP9EncoderConfig),
-    goav.Param("deadline", "realtime"),
-    goav.Control(myVP9Control),
+    goav.Control(func(enc any) error {       // raw escape hatch
+        e, ok := enc.(*govpx.VP9Encoder)     // the concrete native encoder
+        if ok {
+            e.SetNoiseSensitivity(1)
+        }
+        return nil
+    }),
 )
 
 return goav.From(input).
     Video().
-    Decode(goav.Config(myVP9DecoderConfig)).
+    Decode().
     Resize(1280, 720).
     Encode(vp9).
     To(goav.File("preview.ivf", preview)).
@@ -745,7 +750,7 @@ must consume frames, `Copy()` must consume packets, and resize/resample must
 consume matching decoded media. File, URI, writer, and object destinations consume
 packet-domain media; use `goav.Sink(...)` when a branch should end as frames.
 
-Adapters decide which concrete config and control types they understand; the
+Each adapter documents the concrete encoder/decoder type it hands `Control`; the
 public grammar stays Input, Stream, Operation, Tap, Branch, Destination, Flow,
 and Task.
 The reusable component catalog and allocation proof map live in

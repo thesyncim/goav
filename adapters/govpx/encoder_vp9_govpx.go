@@ -164,6 +164,13 @@ func (e *VP9Encoder) resetEncoder() error {
 		return mapGovpxEncodeError(err)
 	}
 	e.encoder = encoder
+	// Tier-3 raw control: hand the caller the concrete *govpxlib.VP9Encoder so it
+	// can apply anything the library exposes beyond the common typed settings.
+	if control := e.config.Settings.Control; control != nil {
+		if err := control(encoder); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

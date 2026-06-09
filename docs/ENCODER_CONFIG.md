@@ -77,15 +77,14 @@ options by concern + shortcuts:
 - `Audio(Audio{Mode, Complexity, Application, FEC, DTX, PacketLoss, FrameDuration, Bandwidth})` — Mode ∈ {CBR,VBR,ConstrainedVBR}
 - `Color(Color{Range, Primaries, Transfer, Matrix})`, `Threading(Threading{Threads, RowMT, Tiles})`
 
-**Tier 2 — codec-specific typed `Config(any)`.** One typed config struct the
-adapter documents and type-asserts (e.g. `govpx.VP9Config`). For knobs that are
-real but codec-unique (ScreenContentMode, NoiseSensitivity, Opus CELT internals).
-
-**Tier 3 — raw low-level `Control(func(enc any) error)`.** Invoked by the adapter
-at encoder/decoder open with the *concrete* native encoder; the caller
-type-asserts and applies anything. Nothing is ever unreachable. The ultimate
-escape hatch — replaces the old `Controls []any` with a callback that actually
-receives the live encoder.
+**Tier 2 — raw `Control(func(enc any) error)`.** Invoked by the adapter at
+encoder/decoder open with the *concrete* native encoder; the caller type-asserts
+and applies anything. Nothing is ever unreachable. This single callback
+**subsumes a typed `Config` blob** (decided): instead of passing data the adapter
+must define + document + type-assert, you get the encoder and apply directly —
+strictly more capable, one fewer concept. (A separate `Config any` tier was
+considered and dropped for this reason.) For the rare construction-only knob, an
+adapter may hand the callback its options builder instead — its documented choice.
 
 **Caps = Shape.** Structural identity only (codec/resolution/format/channels);
 settings reference it, never duplicate it. Removes the Width/Height/FPS/Channels

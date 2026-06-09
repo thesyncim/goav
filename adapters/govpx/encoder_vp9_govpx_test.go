@@ -47,6 +47,35 @@ func TestEncodeVP9IntoCallerOwnedPacket(t *testing.T) {
 	}
 }
 
+func TestVP9EncoderControlReceivesNativeEncoder(t *testing.T) {
+	ctx := context.Background()
+	var got any
+	config := vp9EncodeConfig()
+	config.Settings.Control = func(enc any) error {
+		got = enc
+		return nil
+	}
+	encoder, err := NewVP9EncoderFactory().NewEncoder(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer encoder.Close()
+	native, ok := got.(*govpxlib.VP9Encoder)
+	if !ok || native == nil {
+		t.Fatalf("Control received %T, want non-nil *govpxlib.VP9Encoder", got)
+	}
+}
+
+func TestVP9EncoderControlErrorFailsOpen(t *testing.T) {
+	ctx := context.Background()
+	sentinel := errors.New("control boom")
+	config := vp9EncodeConfig()
+	config.Settings.Control = func(any) error { return sentinel }
+	if _, err := NewVP9EncoderFactory().NewEncoder(ctx, config); !errors.Is(err, sentinel) {
+		t.Fatalf("open error = %v, want control sentinel", err)
+	}
+}
+
 func TestEncodeVP9RequiresPacketCapacity(t *testing.T) {
 	ctx := context.Background()
 	encoder, err := NewVP9EncoderFactory().NewEncoder(ctx, vp9EncodeConfig())

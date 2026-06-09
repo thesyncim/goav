@@ -57,6 +57,13 @@ func (e *Encoder) Open(ctx context.Context, config codec.EncodeConfig) error {
 			return mapEncodeError(err)
 		}
 	}
+	// Tier-3 raw control: hand the caller the concrete *gopuslib.Encoder so it can
+	// apply any Opus setting (FEC, DTX, complexity, …) the library exposes.
+	if control := config.Settings.Control; control != nil {
+		if err := control(encoder); err != nil {
+			return mapEncodeError(err)
+		}
+	}
 	e.encoder = encoder
 	e.stream = stream
 	e.sampleRate = sampleRate
