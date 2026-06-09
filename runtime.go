@@ -542,6 +542,9 @@ type task struct {
 	attachMu     sync.Mutex
 	attachments  map[*runtimeAttachment]struct{}
 
+	// watch fans the graph's event stream out to filtered Watch subscribers.
+	watch eventWatch
+
 	// lifecycleMu guards the recorded run/close progress below, which exists
 	// only so Snapshot can report typed lifecycle states.
 	lifecycleMu sync.Mutex
