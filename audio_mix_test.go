@@ -329,3 +329,15 @@ func TestMixResamplesMismatchedArms(t *testing.T) {
 		t.Fatalf("mixed frames at sink = %d, want >=1 (24kHz arm auto-resampled to 48kHz, then mixed)", frames)
 	}
 }
+
+func TestMixRejectsRTPArmsClearly(t *testing.T) {
+	_, err := Mix(
+		From(mixTestAudioSource("a", 1)).Audio(),
+		From(RTP(&runtimeRTPReceiver{})).Audio(),
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
+		Build(context.Background())
+	var buildErr *BuildError
+	if !errorsAsMix(err, &buildErr) || buildErr.Code != "mix_arm" {
+		t.Fatalf("err = %v, want mix_arm rejecting RTP arms", err)
+	}
+}

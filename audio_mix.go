@@ -202,6 +202,39 @@ func (m *mixStream) To(dest Destination) *Job {
 	return job
 }
 
+// openMixArmSource opens a mix arm's input as a graph source and returns the
+// selected audio stream plus its media domain — so the arm loop is input-type
+// agnostic. A custom Source keeps its declared domain (frame or packet); a file
+// input is demuxed to packets. RTP arms are not supported yet.
+func openMixArmSource(ctx context.Context, service *builder, input InputSpec) (pipeline.Source, av.Stream, MediaDomain, error) {
+	switch {
+	case input.source != nil:
+		source, streams, err := newCustomSource(input)
+		if err != nil {
+			return nil, av.Stream{}, "", err
+		}
+		if len(streams) == 0 {
+			source.Close()
+			return nil, av.Stream{}, "", ErrNilSource
+		}
+		shape, _ := customSourceShape(input)
+		return source, streams[0], shape.Domain, nil
+	case input.rtp != nil:
+		return nil, av.Stream{}, "", &BuildError{Code: "mix_arm", Operation: "build mix", Node: "rtp", Reason: "RTP mix arms are not supported yet; use a custom Source or a file input", Cause: ErrUnsupportedBuild}
+	default:
+		build, err := service.openDemuxSource(ctx, input.input)
+		if err != nil {
+			return nil, av.Stream{}, "", err
+		}
+		stream, err := selectStream(build.streams, av.StreamSelector{Type: av.MediaAudio})
+		if err != nil {
+			build.source.Close()
+			return nil, av.Stream{}, "", err
+		}
+		return build.source, stream, DomainPacket, nil
+	}
+}
+
 func (j *Job) buildMix(ctx context.Context) (Task, error) {
 	if j.err != nil {
 		return nil, j.err
@@ -225,17 +258,12 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 			graph.Close()
 			return nil, &BuildError{Code: "mix_arm", Operation: "build mix", Node: "mix", Reason: "each mix arm must be a single-input source chain", Cause: ErrUnsupportedBuild}
 		}
-		source, streams, err := newCustomSource(arm.job.inputs[0])
+		source, stream, domain, err := openMixArmSource(ctx, service, arm.job.inputs[0])
 		if err != nil {
 			graph.Close()
 			return nil, err
 		}
-		if len(streams) == 0 {
-			source.Close()
-			graph.Close()
-			return nil, ErrNilSource
-		}
-		id := streams[0].ID
+		id := stream.ID
 		if _, dup := seen[id]; dup {
 			source.Close()
 			graph.Close()
@@ -249,12 +277,11 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 			return nil, err
 		}
 		upstream := string(srcRef)
-		shape, hasShape := customSourceShape(arm.job.inputs[0])
 		// Packet-domain arms decode to frames before the mix (auto-inserted —
 		// the mixer sums decoded audio). Frame-domain arms feed it directly.
-		if hasShape && shape.Domain == DomainPacket {
-			request := decodeRequest{selector: av.StreamSelector{Type: streams[0].Type}}
-			decodeStage, err := service.newDecodeStageNamed(ctx, "mix-decode-"+string(id), request, streams[0], rt.realtime, true, codec.DecodeBounds{})
+		if domain == DomainPacket {
+			request := decodeRequest{selector: av.StreamSelector{Type: stream.Type}}
+			decodeStage, err := service.newDecodeStageNamed(ctx, "mix-decode-"+string(id), request, stream, rt.realtime, true, codec.DecodeBounds{})
 			if err != nil {
 				graph.Close()
 				return nil, err
@@ -273,14 +300,14 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 		// Join shape-solving: the first arm's audio format is the mix target;
 		// later arms that differ get an auto-inserted resample so the mixer sees
 		// one format. No new API — the arms just declare their own shape.
-		if hasShape && shape.SampleRate > 0 {
-			channels := maxInt(shape.Channels, 1)
+		if stream.Codec.SampleRate > 0 {
+			channels := maxInt(stream.Codec.Channels, 1)
 			if targetRate == 0 {
-				targetRate, targetChannels = shape.SampleRate, channels
-			} else if shape.SampleRate != targetRate || channels != targetChannels {
+				targetRate, targetChannels = stream.Codec.SampleRate, channels
+			} else if stream.Codec.SampleRate != targetRate || channels != targetChannels {
 				armStream := av.Stream{ID: id, Type: av.MediaAudio, Codec: av.CodecParameters{
-					Type: av.MediaAudio, SampleRate: shape.SampleRate, Channels: channels,
-					SampleFormat: av.SampleFormatS16, ClockRate: uint32(shape.SampleRate),
+					Type: av.MediaAudio, SampleRate: stream.Codec.SampleRate, Channels: channels,
+					SampleFormat: av.SampleFormatS16, ClockRate: uint32(stream.Codec.SampleRate),
 				}}
 				transform := mediaTransform{
 					name:    "mix-resample-" + string(id),

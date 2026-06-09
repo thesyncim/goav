@@ -90,10 +90,19 @@ auto-inserted resample (`mediaTransform{factory: FactoryResample}` →
 format. Tested (48kHz + 24kHz arms → resample → mix). The arms just declare their
 own shape — no negotiation API.
 
+**Slice 7 — DONE (input-agnostic arms):** `buildMix` no longer assumes custom
+sources. `openMixArmSource` dispatches per input type and the arm loop keys off
+the selected `av.Stream` (id, codec format, domain) for all of them: custom
+`Source` (keeps its declared frame/packet domain) and **file inputs** (demuxed to
+packets, then decoded) both work; RTP arms get a clear `mix_arm` error (the
+`rtpInputSpec`→`rtpInput` conversion is the follow-up). Tested (RTP rejection;
+custom-source behavior preserved). Coherent with `From` — Mix takes the same
+inputs.
+
 **Next slices:**
-1. `Composite` (video) + `Select` (one-of-N) on the same `buildMix` mechanism.
-2. Extend shape-solving to channel/sample-format mismatches + packet-arm decoded
-   formats (today keys off the declared source shape).
+1. RTP arms (reuse the recipe's `rtpInputSpec`→`rtpInput` conversion) — the
+   canonical "mix two WebRTC tracks" case.
+2. `Composite` (video) + `Select` (one-of-N) on the same `buildMix`.
 2. Join shape-solving (theme A / gap #2): negotiate arm formats, insert
    resample/convert so the mixer's same-format precondition is guaranteed.
 3. `Composite` (video) + `Join(stage,…)` (custom N-input) on the same mechanism.
