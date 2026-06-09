@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
@@ -28,6 +29,12 @@ const (
 	// It is the escape hatch for node-interpreted controls (a selector switch, a
 	// flush marker) that a stage recognises in its Handle.
 	ControlEvent ControlType = "event"
+	// ControlSeek asks the task's sources to reposition. Unlike the other
+	// controls it does not ride a stage queue: it is handed to each source's
+	// Control method (pipeline.ControllableSource) as an av.EventSeek, because
+	// sources have no inbound queue — they run a Start loop. Untargeted, it
+	// broadcasts to every source node.
+	ControlSeek ControlType = "seek"
 )
 
 var (
@@ -69,6 +76,9 @@ type Control struct {
 	// Event is the verbatim event delivered when Type is ControlEvent. Ignored
 	// otherwise.
 	Event av.Event
+	// Position is the target media position for ControlSeek, measured from the
+	// start of the media. Ignored otherwise.
+	Position time.Duration
 }
 
 // At returns a copy of the control targeting a graph node directly. This is the
@@ -103,6 +113,22 @@ func Deliver(event av.Event) Control {
 	return Control{Type: ControlEvent, Event: event}
 }
 
+// Seek builds a control that asks the task's sources to reposition to pos,
+// measured from the start of the media. Untargeted, it broadcasts to every
+// source node; each source that implements pipeline.ControllableSource has its
+// Control method called with an av.EventSeek whose Timestamp carries pos in a
+// nanosecond timebase. Errors are collected per source, so a source that cannot
+// reposition (it does not implement live control) reports clearly without
+// stopping a seekable sibling. Narrow it to one source with At (expert).
+//
+// After repositioning, the source emits av.EventDiscontinuity before the first
+// message at the new position (the ControllableSource contract), which is the
+// signal downstream decoders already reset on — Seek adds no flush machinery.
+// This is the foundation rate/segment/trick-mode controls build on.
+func Seek(pos time.Duration) Control {
+	return Control{Type: ControlSeek, Position: pos}
+}
+
 // message lowers the control into the pipeline message delivered to the node.
 func (c Control) message() (*pipeline.Message, error) {
 	switch c.Type {
@@ -118,6 +144,13 @@ func (c Control) message() (*pipeline.Message, error) {
 			StreamID: c.StreamID,
 			Reason:   selectorActiveReason,
 		}}, nil
+	case ControlSeek:
+		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
+			Type:      av.EventSeek,
+			StreamID:  c.StreamID,
+			Reason:    c.Reason,
+			Timestamp: av.Timestamp{Value: int64(c.Position), Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
+		}}, nil
 	case ControlEvent:
 		event := c.Event
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}, nil
@@ -130,11 +163,14 @@ func (c Control) message() (*pipeline.Message, error) {
 // it to the node named by control.Node on that node's serial worker. It is safe to
 // call concurrently with Run: the control rides the target node's normal queue, so
 // the node's Handle still sees one message at a time and needs no extra locking —
-// the injection is race-safe by construction.
+// the injection is race-safe by construction. A ControlSeek is the exception:
+// sources have no queue, so it is handed to each source's Control method
+// (pipeline.ControllableSource) synchronously instead.
 //
 // Control returns ErrControlUnsupported when the task graph has no per-node worker
-// to deliver on (a direct, non-buffered graph), ErrControlNotRunning before Run
-// has started a node worker, and pipeline.ErrUnknownNode for an unknown target.
+// to deliver on (a direct, non-buffered graph — except ControlSeek, which a direct
+// graph delivers too), ErrControlNotRunning before Run has started a node worker,
+// and pipeline.ErrUnknownNode for an unknown target.
 func (t *task) Control(ctx context.Context, control Control) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -150,15 +186,19 @@ func (t *task) Control(ctx context.Context, control Control) error {
 	if msg == nil || msg.Event == nil {
 		return ErrNilControl
 	}
-	injector, ok := t.graph.(pipeline.NodeInjector)
-	if !ok {
-		return ErrControlUnsupported
+	deliver, err := t.controlDeliver(control)
+	if err != nil {
+		return err
 	}
 	var errs []error
 	for _, node := range targets {
-		if err := injector.Inject(ctx, node, msg); err != nil {
+		if err := deliver(ctx, node, msg); err != nil {
 			if errors.Is(err, pipeline.ErrDynamicGraphUnsupported) {
 				return ErrControlNotRunning
+			}
+			if control.Type == ControlSeek && errors.Is(err, pipeline.ErrInvalidLink) {
+				errs = append(errs, fmt.Errorf("goav: control to %q: source does not accept live control (implement pipeline.ControllableSource): %w", node, err))
+				continue
 			}
 			errs = append(errs, fmt.Errorf("goav: control to %q: %w", node, err))
 		}
@@ -166,11 +206,32 @@ func (t *task) Control(ctx context.Context, control Control) error {
 	return errors.Join(errs...)
 }
 
+// controlDeliver picks the delivery seam for a control. A seek targets SOURCE
+// nodes, which have no queue or serial worker, so it goes through the graph's
+// SourceInjector (the source's Control method, called synchronously — see
+// pipeline.ControllableSource for the contract). Everything else rides the
+// target node's queue through NodeInjector.
+func (t *task) controlDeliver(control Control) (func(context.Context, pipeline.NodeRef, *pipeline.Message) error, error) {
+	if control.Type == ControlSeek {
+		injector, ok := t.graph.(pipeline.SourceInjector)
+		if !ok {
+			return nil, ErrControlUnsupported
+		}
+		return injector.InjectSource, nil
+	}
+	injector, ok := t.graph.(pipeline.NodeInjector)
+	if !ok {
+		return nil, ErrControlUnsupported
+	}
+	return injector.Inject, nil
+}
+
 // controlTargets resolves where a control is delivered, in grammar terms first:
 // an explicit node wins; a tap name resolves through Taps(); an untargeted
 // keyframe broadcasts to the graph's entry row (the nodes fed directly by
-// sources) so it rides the data path to every downstream encoder. Anything else
-// untargeted is an error — the caller must say where.
+// sources) so it rides the data path to every downstream encoder; an untargeted
+// seek broadcasts to every source node. Anything else untargeted is an error —
+// the caller must say where.
 func (t *task) controlTargets(control Control) ([]pipeline.NodeRef, error) {
 	if control.Node != "" {
 		return []pipeline.NodeRef{control.Node}, nil
@@ -190,7 +251,28 @@ func (t *task) controlTargets(control Control) ([]pipeline.NodeRef, error) {
 		}
 		return targets, nil
 	}
+	if control.Type == ControlSeek {
+		targets := t.controlSourceNodes()
+		if len(targets) == 0 {
+			return nil, pipeline.ErrUnknownNode
+		}
+		return targets, nil
+	}
 	return nil, fmt.Errorf("goav: control needs a target: use AtTap(tap) or At(node): %w", pipeline.ErrUnknownNode)
+}
+
+// controlSourceNodes returns every source node in the graph, in spec order.
+// These are the targets a seek broadcasts to — controls for sources are handed
+// to the source implementation itself, not enqueued.
+func (t *task) controlSourceNodes() []pipeline.NodeRef {
+	spec := t.Describe()
+	var targets []pipeline.NodeRef
+	for _, node := range spec.Nodes {
+		if node.Kind == pipeline.NodeSource {
+			targets = append(targets, pipeline.NodeRef(node.Name))
+		}
+	}
+	return targets
 }
 
 // controlEntryNodes returns the graph's entry row: every node fed directly by a

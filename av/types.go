@@ -400,6 +400,12 @@ const (
 	EventBackpressure     EventType = "backpressure"
 	EventStats            EventType = "stats"
 	EventEndOfStream      EventType = "end_of_stream"
+	// EventSeek asks a source to reposition to the media position carried in
+	// Event.Timestamp (measured from the start of the media). It is delivered
+	// out-of-band to a source's control seam, not routed downstream; the source
+	// acknowledges by emitting EventDiscontinuity before the first message at
+	// the new position.
+	EventSeek EventType = "seek"
 )
 
 type Event struct {
