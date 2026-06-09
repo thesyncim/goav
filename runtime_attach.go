@@ -64,6 +64,7 @@ type runtimeGraphPatch struct {
 	taps        []TapInfo
 	anchorTaps  []string
 	anchorNodes []string
+	stages      []pipeline.Stage
 	work        workPatch
 }
 
@@ -112,6 +113,7 @@ func (p runtimeGraphPatch) attachment(owner *task, name string) *runtimeAttachme
 		nodes:       append([]pipeline.NodeRef(nil), p.nodes...),
 		routes:      append([]pipeline.Route(nil), p.routes...),
 		taps:        append([]TapInfo(nil), p.taps...),
+		stages:      append([]pipeline.Stage(nil), p.stages...),
 		work:        cloneWorkPatch(p.work),
 	}
 }
@@ -130,8 +132,14 @@ type Attachment interface {
 	// Rebranch replaces this branch with new ones in place: the replacements are
 	// attached and start receiving before this branch is detached (no gap), so a
 	// live subscriber can be switched (e.g. to a different simulcast layer)
-	// without rebuilding the task. On attach failure this branch is left intact.
-	Rebranch(context.Context, ...BranchSpec) (Attachment, error)
+	// without rebuilding the task. On attach failure this branch is left intact
+	// (KeepOldOnFailure is the explicit spelling). Pass replacement BranchSpec
+	// values plus policies: SwitchAt(NextFrame()/NextKeyframe()) delays the
+	// switch to that stream boundary — the replacements shed media until the
+	// boundary and this branch detaches at it — and DrainOldBranch/AbortOldBranch
+	// select whether this branch's destinations commit or abort on detach.
+	// Without options the switch is immediate, exactly like Detach after Attach.
+	Rebranch(context.Context, ...RebranchOption) (Attachment, error)
 	Close(context.Context) error
 }
 
@@ -215,10 +223,39 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		return rollback(err)
 	}
 	patch.addApplied(sharedRefs, sharedRoutes, nil)
+	patch.stages = attachmentStages(plan, group, patch.nodes)
 	attachment := patch.attachment(t, name)
 	t.trackAttachmentLocked(attachment)
 	t.addAttachmentTapsLocked(patch.taps)
 	return attachment, nil
+}
+
+// attachmentStages binds the applied nodes back to their prepared stages so a
+// later disposition detach (DrainOldBranch/AbortOldBranch) can finalize the
+// branch's destinations explicitly instead of relying on the default close.
+func attachmentStages(plan *attachPlan, group *runtimeAttachGroup, nodes []pipeline.NodeRef) []pipeline.Stage {
+	if plan == nil {
+		return nil
+	}
+	out := make([]pipeline.Stage, 0, len(nodes))
+	for _, node := range nodes {
+		if component, ok := plan.components[node]; ok && component.stage != nil {
+			out = append(out, component.stage)
+			continue
+		}
+		if group == nil {
+			continue
+		}
+		if key, ok := group.sharedMuxKeyForNode(node); ok {
+			if target := group.sharedMuxes[key]; target != nil && target.stage != nil {
+				out = append(out, target.stage)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // attachBranchDestinations validates and clones the branch's destinations,
@@ -990,9 +1027,14 @@ type runtimeAttachment struct {
 	nodes       []pipeline.NodeRef
 	routes      []pipeline.Route
 	taps        []TapInfo
+	stages      []pipeline.Stage
 	work        workPatch
 	stopMu      sync.Mutex
 	stopped     bool
+	// detachOutcome records the DestinationState a disposition detach
+	// (DrainOldBranch/AbortOldBranch) chose for this branch's destinations;
+	// snapshots report it instead of the plain DestinationClosed.
+	detachOutcome atomic.Value
 }
 
 func (a *runtimeAttachment) allAnchorTaps() []string {
@@ -1099,6 +1141,9 @@ func (a *runtimeAttachment) branchSnapshotLocked(taskStats TaskStats) BranchSnap
 	if a.stopped {
 		state = BranchDetached
 		destinationState = DestinationClosed
+		if outcome, ok := a.detachOutcome.Load().(DestinationState); ok && outcome != "" {
+			destinationState = outcome
+		}
 	}
 	return BranchSnapshot{
 		ID:           a.id,
@@ -1150,12 +1195,19 @@ func (a *runtimeAttachment) setPaused(ctx context.Context, paused bool) error {
 	return first
 }
 
-func (a *runtimeAttachment) Rebranch(ctx context.Context, specs ...BranchSpec) (Attachment, error) {
+func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...RebranchOption) (Attachment, error) {
 	if a == nil || a.owner == nil {
 		return nil, runtimeBranchInvalidError("rebranch runtime branch", "attachment has no owning task")
 	}
-	if len(specs) == 0 {
+	policy := rebranchPolicyFromOptions(options)
+	if len(policy.specs) == 0 {
 		return nil, runtimeBranchInvalidError("rebranch runtime branch", "pass one or more replacement goav.Branch(name)...To(destination) specs")
+	}
+	specs := policy.specs
+	var group *switchGroup
+	if policy.boundary != switchImmediate {
+		group = newSwitchGroup(policy.boundary)
+		specs = gatedBranchSpecs(specs, group)
 	}
 	// Attach the replacements first so they are live before the old branch goes
 	// away (no delivery gap); if that fails, leave the old branch untouched.
@@ -1163,10 +1215,49 @@ func (a *runtimeAttachment) Rebranch(ctx context.Context, specs ...BranchSpec) (
 	if err != nil {
 		return nil, err
 	}
-	if err := a.owner.Detach(ctx, a); err != nil {
-		return next, err
+	if group == nil {
+		if err := a.detachReplaced(ctx, policy.disposition); err != nil {
+			return next, err
+		}
+		return next, nil
 	}
+	go a.detachReplacedAtBoundary(group, policy.disposition)
 	return next, nil
+}
+
+// detachReplacedAtBoundary waits for the switch boundary — the first
+// replacement gate opening — and detaches this branch with the chosen
+// disposition. When every gate closes before any opened (teardown reached the
+// replacements first), the switch never happened and this branch's own
+// teardown finalizes it instead.
+func (a *runtimeAttachment) detachReplacedAtBoundary(group *switchGroup, disposition oldBranchDisposition) {
+	select {
+	case <-group.opened:
+	case <-group.abandoned:
+		select {
+		case <-group.opened:
+		default:
+			return
+		}
+	}
+	_ = a.detachReplaced(context.Background(), disposition)
+}
+
+// detachReplaced detaches this branch as the replaced side of a rebranch:
+// drain commits its destinations, abort marks its prepared stages failed so
+// closing aborts them, and the default stays a plain detach.
+func (a *runtimeAttachment) detachReplaced(ctx context.Context, disposition oldBranchDisposition) error {
+	switch disposition {
+	case oldBranchDrain:
+		a.detachOutcome.Store(DestinationCommitted)
+	case oldBranchAbort:
+		for _, stage := range a.stages {
+			markPipelineStageFailed(stage)
+		}
+		a.detachOutcome.Store(DestinationAborted)
+	case oldBranchDetach:
+	}
+	return a.owner.Detach(ctx, a)
 }
 
 func (a *runtimeAttachment) Close(ctx context.Context) error {
