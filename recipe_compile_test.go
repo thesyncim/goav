@@ -360,6 +360,27 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	}
 }
 
+// TestBranchPacketTransformWithoutDecodeFails covers
+// branchPacketTransformUnsupportedError: a packet-domain planned branch (the
+// parent is Copy, the branch does not Decode) cannot resize or resample.
+func TestBranchPacketTransformWithoutDecodeFails(t *testing.T) {
+	_, err := From(FileInput("input.ogg", strings.NewReader(""))).
+		UseRuntime(northStarTranscodeRuntime()).
+		Audio().
+		Copy().
+		Branches(Branch("resampled").
+			Resample(48_000, 2).
+			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
+		Build(context.Background())
+	if err == nil {
+		t.Fatal("expected a packet branch with a transform (no decode) to be rejected")
+	}
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "packet_branch_transform_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("error = %v, want packet_branch_transform_unsupported BuildError", err)
+	}
+}
+
 func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 	flowBody, err := os.ReadFile("flow.go")
 	if err != nil {
