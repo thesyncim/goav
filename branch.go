@@ -449,13 +449,13 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 	}
 
 	streamSteps := jobStreamChainSteps(stream)
-	parentPacket := stream.encode.Copy && !stream.decode && len(streamSteps) == 0
-	if stream.encode.Copy && !parentPacket {
+	parentPacket := chainEncodeSpec(stream.operations).Copy && !stream.decode && len(streamSteps) == 0
+	if chainEncodeSpec(stream.operations).Copy && !parentPacket {
 		job.setErr(branchCopyParentOperationError(jobStreamName(stream)))
 		return job
 	}
-	if codecIntentSet(stream.encode) && !stream.encode.Copy {
-		job.setErr(branchEncodeParentOperationError(jobStreamName(stream), stream.encode))
+	if codecIntentSet(chainEncodeSpec(stream.operations)) && !chainEncodeSpec(stream.operations).Copy {
+		job.setErr(branchEncodeParentOperationError(jobStreamName(stream), chainEncodeSpec(stream.operations)))
 		return job
 	}
 

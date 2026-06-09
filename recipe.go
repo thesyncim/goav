@@ -1299,7 +1299,6 @@ type jobStreamBuild struct {
 	decode      bool
 	decodeCodec CodecSpec
 	operations  []OperationSpec
-	encode      CodecSpec
 	codecChange CodecChangePolicy
 	outputs     []destinationSpec
 	outputNames []string
@@ -1752,7 +1751,7 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
 		Operations:   operations,
 		Taps:         operationSpecTaps(operations, stream.selector.Type),
-		Encode:       cloneCodecSpec(stream.encode),
+		Encode:       cloneCodecSpec(chainEncodeSpec(operations)),
 		CodecChange:  stream.codecChange,
 		Destinations: destinationNamesWithOverrides(stream.outputs, stream.outputNames),
 	}
@@ -1786,11 +1785,10 @@ func jobOperationSpecs(stream *jobStreamBuild) []OperationSpec {
 		operations = append(operations, OperationSpec{Kind: OpDecode, Component: string(stream.selector.Codec), Decode: cloneCodecSpec(stream.decodeCodec)})
 	}
 	operations = append(operations, chainStepOperations(steps, stream.selector.Type, initialStepAfter(stream.decode))...)
-	if stream.encode.Copy {
-		operations = append(operations, OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
-	} else if codecIntentSet(stream.encode) {
-		operations = append(operations, OperationSpec{Kind: OpEncode, Component: string(stream.encode.ID), Encode: stream.encode})
-	}
+	// The encode op (OpEncode/OpCopy) is co-appended by the builder, so it is
+	// always already in stream.operations — there is nothing to reconstruct here
+	// (this empty-operations path is only reached for the implicit decode-for-sink
+	// case, which sets no encode).
 	return operations
 }
 
@@ -3500,8 +3498,8 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 		return b
 	}
 	specSteps := chainStepsFromChainOperations(spec.operations)
-	if codecIntentSet(stream.encode) && (chainHasDecode(spec.operations) || len(specSteps) != 0 || codecIntentSet(chainEncodeSpec(spec.operations))) {
-		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "flow", stream.encode))
+	if codecIntentSet(chainEncodeSpec(stream.operations)) && (chainHasDecode(spec.operations) || len(specSteps) != 0 || codecIntentSet(chainEncodeSpec(spec.operations))) {
+		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "flow", chainEncodeSpec(stream.operations)))
 		return b
 	}
 	if chainHasDecode(spec.operations) {
@@ -3523,19 +3521,14 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 		b.ensureDecodeOperation()
 	}
 	stream.operations = append(stream.operations, cloneOperationSpecs(spec.operations)...)
-	if codecIntentSet(chainEncodeSpec(spec.operations)) {
-		if chainEncodeSpec(spec.operations).Copy {
-			if b.sourceStartsFrameDomain() {
-				b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
-				return b
-			}
-			if stream.decode || operationSpecsContainChainStep(stream.operations) {
-				b.job.setErr(flowCopyDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
-				return b
-			}
-			stream.encode = Copy()
-		} else {
-			stream.encode = cloneCodecSpec(chainEncodeSpec(spec.operations))
+	if codecIntentSet(chainEncodeSpec(spec.operations)) && chainEncodeSpec(spec.operations).Copy {
+		if b.sourceStartsFrameDomain() {
+			b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
+			return b
+		}
+		if stream.decode || operationSpecsContainChainStep(stream.operations) {
+			b.job.setErr(flowCopyDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
+			return b
 		}
 	}
 	return b
@@ -3560,8 +3553,7 @@ func (b *jobStreamBuilder) Copy() *jobStreamBuilder {
 		return b
 	}
 	stream.decode = false
-	stream.encode = Copy()
-	stream.operations = append(stream.operations, operationSpecForCopy(stream.encode))
+	stream.operations = append(stream.operations, operationSpecForCopy(Copy()))
 	return b
 }
 
@@ -3581,7 +3573,7 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 		})
 		return b
 	}
-	if codecIntentSet(stream.encode) {
+	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		if err := validateTapDomain("build stream", jobStreamName(stream), tap, DomainPacket); err != nil {
 			b.job.setErr(err)
 			return b
@@ -3619,7 +3611,7 @@ func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 		}
 	}
 	steps := jobStreamChainSteps(stream)
-	if stream.encode.Copy && len(steps) == 0 && stream.selector.Type != "" {
+	if chainEncodeSpec(stream.operations).Copy && len(steps) == 0 && stream.selector.Type != "" {
 		return PacketTap(defaultPacketTapName(stream.selector.Type, 0))
 	}
 	for i := len(steps) - 1; i >= 0; i-- {
@@ -3635,8 +3627,8 @@ func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 
 func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 	stream := b.current()
-	if codecIntentSet(stream.encode) {
-		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", stream.encode))
+	if codecIntentSet(chainEncodeSpec(stream.operations)) {
+		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", chainEncodeSpec(stream.operations)))
 		return b
 	}
 	if stage == nil {
@@ -3650,8 +3642,8 @@ func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 
 func (b *jobStreamBuilder) Shape(shape MediaShape) *jobStreamBuilder {
 	stream := b.current()
-	if codecIntentSet(stream.encode) {
-		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "shape", stream.encode))
+	if codecIntentSet(chainEncodeSpec(stream.operations)) {
+		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "shape", chainEncodeSpec(stream.operations)))
 		return b
 	}
 	stream.operations = append(stream.operations, operationSpecForShape(shape))
@@ -3660,8 +3652,8 @@ func (b *jobStreamBuilder) Shape(shape MediaShape) *jobStreamBuilder {
 
 func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption) *jobStreamBuilder {
 	stream := b.current()
-	if codecIntentSet(stream.encode) {
-		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resize", stream.encode))
+	if codecIntentSet(chainEncodeSpec(stream.operations)) {
+		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resize", chainEncodeSpec(stream.operations)))
 		return b
 	}
 	b.ensureDecodeOperation()
@@ -3672,8 +3664,8 @@ func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption
 
 func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...audioOption) *jobStreamBuilder {
 	stream := b.current()
-	if codecIntentSet(stream.encode) {
-		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resample", stream.encode))
+	if codecIntentSet(chainEncodeSpec(stream.operations)) {
+		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resample", chainEncodeSpec(stream.operations)))
 		return b
 	}
 	b.ensureDecodeOperation()
@@ -3684,13 +3676,12 @@ func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 
 func (b *jobStreamBuilder) Encode(codec CodecSpec) *jobStreamBuilder {
 	stream := b.current()
-	if codecIntentSet(stream.encode) {
-		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), stream.encode, codec))
+	if codecIntentSet(chainEncodeSpec(stream.operations)) {
+		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), chainEncodeSpec(stream.operations), codec))
 		return b
 	}
 	b.ensureDecodeOperation()
-	stream.encode = cloneCodecSpec(codec)
-	stream.operations = append(stream.operations, operationSpecForEncode(stream.encode))
+	stream.operations = append(stream.operations, operationSpecForEncode(cloneCodecSpec(codec)))
 	return b
 }
 
@@ -3719,7 +3710,7 @@ func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 		stream.outputNames = append(stream.outputNames, name)
 		outputs = append(outputs, output)
 	}
-	if outputsContainSinkDestination(outputs) && !codecIntentSet(stream.encode) {
+	if outputsContainSinkDestination(outputs) && !codecIntentSet(chainEncodeSpec(stream.operations)) {
 		if b.sourceStartsFrameDomain() {
 			b.ensureFrameSourceShapeOperation()
 		} else {
