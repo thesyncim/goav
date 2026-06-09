@@ -214,12 +214,12 @@ func (m *mixStream) To(dest Destination) *Job {
 var mixJoinProfile = joinProfile{
 	media:      av.MediaAudio,
 	decodeArms: true,
-	armStage:   mixArmResample,
-	newStage: func(b *joinBuild, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
+	planArm:    mixPlanArmResample,
+	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
 		return newAudioMixStage("mix", armIDs, av.StreamID("mix")), nil
 	},
-	joinedStream: func(b *joinBuild) av.Stream {
-		shape, _ := customSourceShape(b.spec.arms[0].job.inputs[0])
+	joinedStream: func(p *joinPlan) av.Stream {
+		shape, _ := customSourceShape(p.join.arms[0].job.inputs[0])
 		return av.Stream{
 			ID:   av.StreamID("mix"),
 			Type: av.MediaAudio,
@@ -235,20 +235,21 @@ var mixJoinProfile = joinProfile{
 	sinkOnlyReason: "mix to a non-Sink destination requires .Encode(...)",
 }
 
-// mixArmResample is the mix join's shape-solving: the first arm's audio format
-// is the mix target; later arms that differ get an auto-inserted resample so the
-// mixer sees one format. No new API — the arms just declare their own shape.
-func mixArmResample(b *joinBuild, _ *jobStreamBuilder, stream av.Stream, upstream string) (string, error) {
+// mixPlanArmResample is the mix join's shape-solving: the first arm's audio
+// format is the mix target; later arms that differ get an auto-planned resample
+// so the mixer sees one format. No new API — the arms just declare their own
+// shape.
+func mixPlanArmResample(p *joinPlan, _ *jobStreamBuilder, stream av.Stream) (*joinArmStagePlan, error) {
 	if stream.Codec.SampleRate <= 0 {
-		return upstream, nil
+		return nil, nil
 	}
 	channels := maxInt(stream.Codec.Channels, 1)
-	if b.targetRate == 0 {
-		b.targetRate, b.targetChannels = stream.Codec.SampleRate, channels
-		return upstream, nil
+	if p.targetRate == 0 {
+		p.targetRate, p.targetChannels = stream.Codec.SampleRate, channels
+		return nil, nil
 	}
-	if stream.Codec.SampleRate == b.targetRate && channels == b.targetChannels {
-		return upstream, nil
+	if stream.Codec.SampleRate == p.targetRate && channels == p.targetChannels {
+		return nil, nil
 	}
 	id := stream.ID
 	armStream := av.Stream{ID: id, Type: av.MediaAudio, Codec: av.CodecParameters{
@@ -258,11 +259,7 @@ func mixArmResample(b *joinBuild, _ *jobStreamBuilder, stream av.Stream, upstrea
 	transform := mediaTransform{
 		name:    "mix-resample-" + string(id),
 		factory: filter.FactoryResample,
-		audio:   &filter.ResampleConfig{SampleRate: b.targetRate, Channels: b.targetChannels, SampleFormat: av.SampleFormatS16},
+		audio:   &filter.ResampleConfig{SampleRate: p.targetRate, Channels: p.targetChannels, SampleFormat: av.SampleFormatS16},
 	}
-	stage, _, err := b.service.newMediaTransformStageNamed(b.ctx, transform.name, transform, armStream, b.rt.realtime)
-	if err != nil {
-		return "", err
-	}
-	return b.insertArmStage(stage, upstream)
+	return &joinArmStagePlan{transform: transform, stream: armStream}, nil
 }

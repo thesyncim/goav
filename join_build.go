@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -11,8 +12,8 @@ import (
 )
 
 // joinKind names a convergence workflow. Public sugar (Mix, Composite, Select)
-// lowers to one joinSpec and one buildJoin path; no composition code dispatches
-// on the kind outside the joinProfiles table.
+// lowers to one joinSpec and one planned join lowering; no composition code
+// dispatches on the kind outside the joinProfiles table.
 type joinKind string
 
 const (
@@ -38,10 +39,10 @@ type joinSpec struct {
 	branches []BranchSpec
 }
 
-// joinProfile is the per-kind configuration consulted by buildJoin. Everything
-// that differs between Mix, Composite and Select lives here — the build
-// skeleton is written once. The profile name is the joinKind: it doubles as the
-// node name, graph-name suffix and error-code prefix.
+// joinProfile is the per-kind configuration consulted by the join planner.
+// Everything that differs between Mix, Composite and Select lives here — the
+// plan skeleton is written once. The profile name is the joinKind: it doubles
+// as the join node name, graph-name suffix and error-code prefix.
 type joinProfile struct {
 	// media selects each arm's stream; the zero value picks the arm's single
 	// stream regardless of type (Select is media-agnostic passthrough).
@@ -52,16 +53,17 @@ type joinProfile struct {
 	// graphBuffer, when non-nil, replaces a direct runtime buffer so the graph
 	// gets per-node serial workers for control-plane injection (Select).
 	graphBuffer *pipeline.BufferPolicy
-	// armStage runs per arm after the optional decode; it may insert per-arm
-	// stages (mix resample shape-solving) or record arm state (composite
-	// layouts) and returns the arm's new upstream node.
-	armStage func(b *joinBuild, arm *jobStreamBuilder, stream av.Stream, upstream string) (string, error)
-	// newStage builds the convergence stage. A non-nil buffer pins the stage's
-	// input queue (Select: non-lossy DropBlock so injected controls survive).
-	newStage func(b *joinBuild, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy)
+	// planArm runs per arm at plan time after the optional decode decision; it
+	// may plan a per-arm stage (mix resample shape-solving) or record arm state
+	// (composite layouts). The returned stage plan is lowered generically.
+	planArm func(p *joinPlan, arm *jobStreamBuilder, stream av.Stream) (*joinArmStagePlan, error)
+	// newStage builds the convergence stage at lowering time. A non-nil buffer
+	// pins the stage's input queue (Select: non-lossy DropBlock so injected
+	// controls survive).
+	newStage func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy)
 	// joinedStream derives the join's output stream — the normal stream point
 	// that taps, branches, and the optional encoder all compose against.
-	joinedStream func(b *joinBuild) av.Stream
+	joinedStream func(p *joinPlan) av.Stream
 	// sinkOnlyReason is the destination error when dest is not a frame Sink and
 	// no encode applies.
 	sinkOnlyReason string
@@ -112,211 +114,246 @@ func newJoinBranchesJob(kind joinKind, spec joinSpec, branches []BranchSpec) *Jo
 	return job
 }
 
-// joinBuild carries the in-flight build state shared between the buildJoin
-// skeleton and the profile hooks.
-type joinBuild struct {
-	ctx     context.Context
-	spec    *joinSpec
-	rt      *runtime
-	graph   pipeline.Graph
-	service *builder
+// joinArmStagePlan is one planned per-arm stage: the transform to lower and the
+// arm stream the transform stage is constructed against.
+type joinArmStagePlan struct {
+	transform mediaTransform
+	stream    av.Stream
+}
 
-	// armStreams/armDomains record each arm's selected stream and media domain
-	// in arm order, so joined-output derivation (taps, branches, select
-	// passthrough) reads resolved arm state instead of re-opening inputs.
-	armStreams []av.Stream
-	armDomains []shape.MediaDomain
+// joinArmPlan is one planned arm: its input, the statically selected stream,
+// and the planned per-arm nodes (optional decode, optional arm stage).
+type joinArmPlan struct {
+	input     InputSpec
+	inputName string
+	stream    av.Stream
+	domain    shape.MediaDomain
+	// decodeNode is the planned decode node name; empty means the arm feeds the
+	// join directly (frame arms, passthrough kinds).
+	decodeNode string
+	stage      *joinArmStagePlan
+}
+
+// joinPlan is the planned multi-upstream join: N arm sub-chains (input +
+// optional decode + arm stage) converging into ONE join node, with the
+// downstream chain (encode/taps/branches/destination) hanging off it exactly
+// like a chain hangs off any node. It is a normal graphPlanLowerer: spec()
+// emits the planned nodes/edges, lower() executes them against the graph, and
+// buildJoinWorkPlan renders the same plan into the workPlan IR — so Describe()
+// and Build() come from the one plan.
+type joinPlan struct {
+	runtime *runtime
+	join    *joinSpec
+	profile joinProfile
+	name    string
+
+	arms         []joinArmPlan
+	joined       av.Stream
+	joinedDomain shape.MediaDomain
+	taps         []workTap
 
 	// mix: the first arm's audio format is the join target; later arms that
-	// differ get a resample inserted by the mix armStage hook.
+	// differ get a resample planned by the mix planArm hook.
 	targetRate     int
 	targetChannels int
-	// composite: per-arm canvas placement collected by its armStage hook.
+	// composite: per-arm canvas placement collected by its planArm hook.
 	layouts []compositeLayout
+
+	// single-destination delivery (optionally through one encoder).
+	encode        *encodeRequest
+	encodeConfig  codec.EncodeConfig
+	encodedStream av.Stream
+	destination   destinationSpec
+
+	// planned branch fanout off the joined stream.
+	branchRoutes  []branchComposeRoute
+	branchTargets []branchComposeTargetRoute
 }
 
-// joinedDomain reports the media domain of the join's output: kinds that decode
-// their arms always converge frames; passthrough kinds forward the first arm's
-// domain unchanged.
-func (b *joinBuild) joinedDomain() shape.MediaDomain {
-	if joinProfiles[b.spec.kind].decodeArms {
-		return shape.DomainFrame
-	}
-	if len(b.armDomains) != 0 && b.armDomains[0] != "" {
-		return b.armDomains[0]
-	}
-	return shape.DomainFrame
+func joinArmError(name string, node string, reason string) error {
+	return &BuildError{Code: name + "_arm", Operation: "build " + name, Node: node, Reason: reason, Cause: ErrUnsupportedBuild}
 }
 
-// insertArmStage appends a per-arm stage after upstream and returns its ref.
-func (b *joinBuild) insertArmStage(stage pipeline.Stage, upstream string) (string, error) {
-	ref, err := b.graph.AddStage(stage, b.rt.buffer)
-	if err != nil {
-		return "", err
-	}
-	if err := b.graph.Connect(pipeline.Route{From: upstream, To: []string{string(ref)}, Policy: pipeline.RouteAll}); err != nil {
-		return "", err
-	}
-	return string(ref), nil
-}
-
-// buildJoin compiles a joinSpec: open each arm through the input seam, select
-// its stream, optionally decode, run the per-kind arm hook, converge into the
-// kind's stage, then deliver through one shared output path (encode→destination
-// or frame Sink). Per-kind behavior comes only from the joinProfiles table.
-func (j *Job) buildJoin(ctx context.Context) (Task, error) {
-	if j.err != nil {
-		return nil, j.err
-	}
-	rt, ok := j.runtime.(*runtime)
-	if !ok {
-		return nil, ErrExpertRuntimeRequired
-	}
-	spec := j.join
+// newJoinPlan plans a joinSpec from the compile state: arms are validated and
+// resolved statically (custom-source shapes, probes, live codec intent), the
+// per-kind profile plans arm stages and the joined stream, and the downstream
+// chain (taps + branches or encode/destination) is planned against the joined
+// stream — all before any source opens.
+func newJoinPlan(rt *runtime, state *recipeCompileState) (*joinPlan, error) {
+	spec := state.joinAttachment
 	name := string(spec.kind)
 	profile, ok := joinProfiles[spec.kind]
 	if !ok {
 		return nil, &BuildError{Code: name + "_kind", Operation: "build " + name, Node: name, Reason: "unknown join kind", Cause: ErrUnsupportedBuild}
 	}
-	graphBuffer := rt.buffer
-	if profile.graphBuffer != nil && graphBuffer.IsDirect() {
-		graphBuffer = *profile.graphBuffer
-	}
-	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "goav-" + name, Buffer: graphBuffer, Realtime: rt.realtime})
-	if err != nil {
-		return nil, err
-	}
-	service := &builder{runtime: rt}
-	b := &joinBuild{ctx: ctx, spec: spec, rt: rt, graph: graph, service: service}
-	armRefs := make([]string, 0, len(spec.arms))
-	armIDs := make([]av.StreamID, 0, len(spec.arms))
+	p := &joinPlan{runtime: rt, join: spec, profile: profile, name: name}
+	sets := jobInputStreamSets(state.intent.Inputs, state.inputAttachments, state.inputProbes)
 	seen := make(map[av.StreamID]struct{}, len(spec.arms))
 	for i := range spec.arms {
 		arm := spec.arms[i]
 		if arm == nil || arm.job == nil || len(arm.job.inputs) != 1 {
-			graph.Close()
-			return nil, &BuildError{Code: name + "_arm", Operation: "build " + name, Node: name, Reason: "each " + name + " arm must be a single-input source chain", Cause: ErrUnsupportedBuild}
+			return nil, joinArmError(name, name, "each "+name+" arm must be a single-input source chain")
 		}
-		source, streams, domain, err := arm.job.inputs[0].openGraphSource(ctx, service, i)
+		if i >= len(sets) || !sets[i].known || len(sets[i].streams) == 0 {
+			return nil, recipeGraphUnsupportedError(state.operation, state.intent)
+		}
+		stream, err := selectStream(sets[i].streams, av.StreamSelector{Type: profile.media})
 		if err != nil {
-			graph.Close()
 			return nil, err
 		}
-		stream, err := selectStream(streams, av.StreamSelector{Type: profile.media})
-		if err != nil {
-			source.Close()
-			graph.Close()
-			return nil, err
+		if _, dup := seen[stream.ID]; dup {
+			return nil, joinArmError(name, string(stream.ID), name+" arms must have distinct stream ids")
 		}
-		id := stream.ID
-		if _, dup := seen[id]; dup {
-			source.Close()
-			graph.Close()
-			return nil, &BuildError{Code: name + "_arm", Operation: "build " + name, Node: string(id), Reason: name + " arms must have distinct stream ids", Cause: ErrUnsupportedBuild}
+		seen[stream.ID] = struct{}{}
+		armPlan := joinArmPlan{
+			input:     arm.job.inputs[0],
+			inputName: sets[i].name,
+			stream:    stream,
+			domain:    sets[i].domain,
 		}
-		seen[id] = struct{}{}
-		srcRef, err := graph.AddSource(source, rt.buffer)
-		if err != nil {
-			source.Close()
-			graph.Close()
-			return nil, err
-		}
-		upstream := string(srcRef)
 		// Packet-domain arms decode to frames before the join (auto-inserted —
 		// the join stage works on decoded media). Frame-domain arms feed it
 		// directly. Passthrough kinds skip this and forward packets as-is.
-		if profile.decodeArms && domain == shape.DomainPacket {
-			request := decodeRequest{selector: av.StreamSelector{Type: stream.Type}}
-			decodeStage, err := service.newDecodeStageNamed(ctx, name+"-decode-"+string(id), request, stream, rt.realtime, true, codec.DecodeBounds{})
+		if profile.decodeArms && armPlan.domain == shape.DomainPacket {
+			armPlan.decodeNode = name + "-decode-" + string(stream.ID)
+		}
+		if profile.planArm != nil {
+			stagePlan, err := profile.planArm(p, arm, stream)
 			if err != nil {
-				graph.Close()
 				return nil, err
 			}
-			if upstream, err = b.insertArmStage(decodeStage, upstream); err != nil {
-				graph.Close()
-				return nil, err
-			}
+			armPlan.stage = stagePlan
 		}
-		if profile.armStage != nil {
-			if upstream, err = profile.armStage(b, arm, stream, upstream); err != nil {
-				graph.Close()
-				return nil, err
-			}
-		}
-		armRefs = append(armRefs, upstream)
-		armIDs = append(armIDs, id)
-		b.armStreams = append(b.armStreams, stream)
-		b.armDomains = append(b.armDomains, domain)
-	}
-	stage, pinned := profile.newStage(b, armIDs)
-	stageBuffer := rt.buffer
-	if pinned != nil {
-		stageBuffer = *pinned
-	}
-	joinRef, err := graph.AddStage(stage, stageBuffer)
-	if err != nil {
-		graph.Close()
-		return nil, err
-	}
-	for i := range armRefs {
-		if err := graph.Connect(pipeline.Route{From: armRefs[i], To: []string{string(joinRef)}, Policy: pipeline.RouteAll}); err != nil {
-			graph.Close()
-			return nil, err
-		}
+		p.arms = append(p.arms, armPlan)
 	}
 	// The join's output is a normal stream point from here on: derive the joined
 	// stream once and let taps, branches, the optional encoder, and the sink all
 	// compose against it.
-	joined := profile.joinedStream(b)
-	joinedDomain := b.joinedDomain()
-	taps, err := joinPlanTaps(spec, name, joined, joinedDomain, joinRef)
+	p.joined = profile.joinedStream(p)
+	p.joinedDomain = p.deriveJoinedDomain()
+	taps, err := joinPlanTaps(spec, name, p.joined, p.joinedDomain, pipeline.NodeRef(name))
 	if err != nil {
-		graph.Close()
 		return nil, err
 	}
-	if len(spec.branches) != 0 {
-		if err := b.compileJoinBranches(joinRef, joined, joinedDomain); err != nil {
-			graph.Close()
+	p.taps = taps
+	switch {
+	case len(spec.branches) != 0:
+		if err := p.planJoinBranches(); err != nil {
 			return nil, err
 		}
-		joinTask := newTask(graph, rt, service.destinationTxs...)
-		installTaskTaps(joinTask, taps)
-		return joinTask, nil
-	}
-	if spec.encode != nil {
+	case spec.encode != nil:
 		request := encodeRequest{name: name + "-encode", selector: av.StreamSelector{Type: profile.media}, config: encodeConfigFromSpec(*spec.encode)}
-		config, encodedStream, err := prepareEncodeConfig(joined, request, rt.realtime)
+		config, encodedStream, err := prepareEncodeConfig(p.joined, request, rt.realtime)
 		if err != nil {
-			graph.Close()
 			return nil, err
 		}
-		if err := compileEncodeDestinationPath(ctx, service, graph, joinRef, request, config, encodedStream, []destinationSpec{spec.dest.spec}); err != nil {
-			graph.Close()
-			return nil, err
+		p.encode = &request
+		p.encodeConfig = config
+		p.encodedStream = encodedStream
+		p.destination = spec.dest.spec
+	default:
+		if spec.dest.spec.sink == nil {
+			return nil, &BuildError{Code: name + "_destination", Operation: "build " + name, Node: name, Reason: profile.sinkOnlyReason, Cause: ErrUnsupportedBuild}
 		}
-		// openMuxDestinationStage records the destination transaction (file
-		// commit/abort) on service; carry it to the task so the file finalizes.
-		joinTask := newTask(graph, rt, service.destinationTxs...)
-		installTaskTaps(joinTask, taps)
-		return joinTask, nil
+		p.destination = spec.dest.spec
 	}
-	sink := spec.dest.spec.sink
-	if sink == nil {
-		graph.Close()
-		return nil, &BuildError{Code: name + "_destination", Operation: "build " + name, Node: name, Reason: profile.sinkOnlyReason, Cause: ErrUnsupportedBuild}
+	return p, nil
+}
+
+// deriveJoinedDomain reports the media domain of the join's output: kinds that
+// decode their arms always converge frames; passthrough kinds forward the first
+// arm's domain unchanged.
+func (p *joinPlan) deriveJoinedDomain() shape.MediaDomain {
+	if p.profile.decodeArms {
+		return shape.DomainFrame
 	}
-	sinkRef, err := graph.AddSink(sink, rt.buffer)
+	if len(p.arms) != 0 && p.arms[0].domain != "" {
+		return p.arms[0].domain
+	}
+	return shape.DomainFrame
+}
+
+// planJoinBranches plans the joined stream's fanout through the same
+// branch-composition planner the recipe path uses: each BranchSpec is validated
+// with validateBranchSpec, lowered to a streamBuild, planned with
+// planBranchCompositionRecipe, and prepared with prepareBranchComposePlan —
+// anchored at the join node instead of a demuxed source, with no second fanout
+// implementation.
+func (p *joinPlan) planJoinBranches() error {
+	name := p.name
+	parentPacket := p.joinedDomain == shape.DomainPacket
+	// The synthesized parent stream stands in for the joined stream point: frame
+	// joins read like a decoded stream, packet joins like a .Copy() point, so the
+	// shared planned-branch helpers see the shapes they already know.
+	parent := &jobStreamBuild{name: name, selector: av.StreamSelector{Type: p.joined.Type}}
+	if parentPacket {
+		parent.operations = []OperationSpec{operationSpecForCopy(codec.Copy())}
+	}
+	destinations := &Job{name: name}
+	builds := make([]streamBuild, 0, len(p.join.branches))
+	for i := range p.join.branches {
+		branch := p.join.branches[i]
+		if err := validateBranchSpec(p.joined.Type, parentPacket, i, branch); err != nil {
+			return err
+		}
+		if err := p.validateJoinBranchAnchor(branch); err != nil {
+			return err
+		}
+		if err := destinations.addBranchDestinations(branch.destinations...); err != nil {
+			return err
+		}
+		operations := plannedBranchPrivateOperationSpecs(parent, branch, parentPacket)
+		builds = append(builds, streamBuild{
+			name:             branch.name,
+			selector:         av.StreamSelector{Type: p.joined.Type},
+			decode:           !parentPacket || chainHasDecode(branch.operations),
+			decodeCodec:      chainDecodeCodec(branch.operations),
+			operations:       operations,
+			privateOps:       operations,
+			destinationNames: append([]string(nil), branchDestinationNames(branch.destinations)...),
+		})
+	}
+	for i := range destinations.branchDestinations {
+		if err := destinations.branchDestinations[i].output.validate("build "+name, fmt.Sprintf("output-%d", i)); err != nil {
+			return err
+		}
+	}
+	intent := Intent{Name: name}
+	for i := range builds {
+		intent.Streams = append(intent.Streams, branchStreamIntent(builds[i]))
+	}
+	plan, err := planBranchCompositionRecipe(intent, InputSpec{}, destinations.branchDestinations, builds)
 	if err != nil {
-		graph.Close()
-		return nil, err
+		return err
 	}
-	if err := graph.Connect(pipeline.Route{From: string(joinRef), To: []string{string(sinkRef)}, Policy: pipeline.RouteAll}); err != nil {
-		graph.Close()
-		return nil, err
+	routes, targets, err := prepareBranchComposePlan(plan)
+	if err != nil {
+		return err
 	}
-	joinTask := newTask(graph, rt)
-	installTaskTaps(joinTask, taps)
-	return joinTask, nil
+	for i := range routes {
+		routes[i].sourceDomain = p.joinedDomain
+	}
+	p.branchRoutes = routes
+	p.branchTargets = targets
+	return nil
+}
+
+// validateJoinBranchAnchor resolves a branch's .From(...) against the join: the
+// joined stream is the only planned anchor a join offers, so an explicit tap
+// must name one of the join-level taps (which alias the join node); anything
+// else raises the same branch_tap_missing error the chain path raises.
+func (p *joinPlan) validateJoinBranchAnchor(branch BranchSpec) error {
+	if branch.source.tap == "" {
+		return nil
+	}
+	for _, tap := range p.join.taps {
+		if tap.name != branch.source.tap {
+			continue
+		}
+		from := TapRef{name: branch.source.tap, domain: branch.source.tapDomain}
+		return validateTapDomain("build branches", firstNonEmpty(branch.name, "branch"), from, p.joinedDomain)
+	}
+	return plannedBranchTapMissingError(p.name, branch.name, branch.source.tap)
 }
 
 // joinPlanTaps validates the join-level taps and converts them into the same
@@ -358,91 +395,608 @@ func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.Me
 	return taps, nil
 }
 
-// compileJoinBranches fans the joined stream out to planned branches through the
-// same branch-composition lowering the recipe path uses: each BranchSpec is
-// validated with validateBranchSpec, lowered to a streamBuild, planned with
-// planBranchCompositionRecipe, and compiled with compileBranchComposeInputs and
-// compileBranchComposeRoutes — anchored at the join node instead of a demuxed
-// source, with no second fanout implementation.
-func (b *joinBuild) compileJoinBranches(joinRef pipeline.NodeRef, joined av.Stream, domain shape.MediaDomain) error {
-	name := string(b.spec.kind)
-	parentPacket := domain == shape.DomainPacket
-	// The synthesized parent stream stands in for the joined stream point: frame
-	// joins read like a decoded stream, packet joins like a .Copy() point, so the
-	// shared planned-branch helpers see the shapes they already know.
-	parent := &jobStreamBuild{name: name, selector: av.StreamSelector{Type: joined.Type}}
-	if parentPacket {
-		parent.operations = []OperationSpec{operationSpecForCopy(codec.Copy())}
-	}
-	destinations := &Job{name: name}
-	builds := make([]streamBuild, 0, len(b.spec.branches))
-	for i := range b.spec.branches {
-		branch := b.spec.branches[i]
-		if err := validateBranchSpec(joined.Type, parentPacket, i, branch); err != nil {
-			return err
-		}
-		if err := b.validateJoinBranchAnchor(branch, domain); err != nil {
-			return err
-		}
-		if err := destinations.addBranchDestinations(branch.destinations...); err != nil {
-			return err
-		}
-		operations := plannedBranchPrivateOperationSpecs(parent, branch, parentPacket)
-		builds = append(builds, streamBuild{
-			name:             branch.name,
-			selector:         av.StreamSelector{Type: joined.Type},
-			decode:           !parentPacket || chainHasDecode(branch.operations),
-			decodeCodec:      chainDecodeCodec(branch.operations),
-			operations:       operations,
-			privateOps:       operations,
-			destinationNames: append([]string(nil), branchDestinationNames(branch.destinations)...),
-		})
-	}
-	for i := range destinations.branchDestinations {
-		if err := destinations.branchDestinations[i].output.validate("build "+name, fmt.Sprintf("output-%d", i)); err != nil {
-			return err
-		}
-	}
-	intent := Intent{Name: name}
-	for i := range builds {
-		intent.Streams = append(intent.Streams, branchStreamIntent(builds[i]))
-	}
-	plan, err := planBranchCompositionRecipe(intent, InputSpec{}, destinations.branchDestinations, builds)
-	if err != nil {
-		return err
-	}
-	routes, targets, err := prepareBranchComposePlan(plan)
-	if err != nil {
-		return err
-	}
-	for i := range routes {
-		routes[i].sourceDomain = domain
-	}
-	groups, err := resolveBranchComposeStreamGroups([]av.Stream{joined}, routes)
-	if err != nil {
-		return err
-	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(b.ctx, b.rt, b.graph, []pipeline.NodeRef{joinRef}, groups, nil, routes, nil, b.rt.realtime)
-	if err != nil {
-		return err
-	}
-	return compileBranchComposeRoutes(b.ctx, b.service, b.graph, routes, targets, branchInputs, branchStreams, nil, nil, b.rt.realtime)
+// --- graphPlanLowerer ---
+
+func (p *joinPlan) runtimeRef() *runtime {
+	return p.runtime
 }
 
-// validateJoinBranchAnchor resolves a branch's .From(...) against the join: the
-// joined stream is the only planned anchor a join offers, so an explicit tap
-// must name one of the join-level taps (which alias the join node); anything
-// else raises the same branch_tap_missing error the chain path raises.
-func (b *joinBuild) validateJoinBranchAnchor(branch BranchSpec, domain shape.MediaDomain) error {
-	if branch.source.tap == "" {
-		return nil
+// graphConfig keeps the join graph's identity and buffer policy: the graph is
+// named after the kind and a direct runtime buffer is replaced by the profile's
+// buffered policy so control-plane injection works (Select).
+func (p *joinPlan) graphConfig() pipeline.GraphConfig {
+	buffer := p.runtime.buffer
+	if p.profile.graphBuffer != nil && buffer.IsDirect() {
+		buffer = *p.profile.graphBuffer
 	}
-	for _, tap := range b.spec.taps {
-		if tap.name != branch.source.tap {
-			continue
+	return pipeline.GraphConfig{Name: "goav-" + p.name, Buffer: buffer, Realtime: p.runtime.realtime}
+}
+
+// spec emits the planned join graph: per-arm source (+ optional decode + arm
+// stage) sub-chains, the N-to-1 convergence into the join node, and the
+// downstream chain — encode→destination, sink, or the planned branch fanout
+// through the shared branch-compose planner. The lowering follows the same
+// order, so Describe() equals the built graph.
+func (p *joinPlan) spec() (pipeline.Spec, error) {
+	spec := pipeline.Spec{Name: "goav-" + p.name, Realtime: p.runtime.realtime}
+	nodes := make(map[string]plannedNode, len(p.arms)*3+4)
+	joinRef := pipeline.NodeRef(p.name)
+	for i := range p.arms {
+		arm := p.arms[i]
+		sourceName := arm.input.graphSourceNodeName(i)
+		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, pipeline.NodeRef(sourceName), arm.input.graphSourceNodeDetail(i)); err != nil {
+			return pipeline.Spec{}, err
 		}
-		from := TapRef{name: branch.source.tap, domain: branch.source.tapDomain}
-		return validateTapDomain("build branches", firstNonEmpty(branch.name, "branch"), from, domain)
+		upstream := pipeline.NodeRef(sourceName)
+		if arm.decodeNode != "" {
+			detail := decodeRequestDetail(decodeRequest{selector: av.StreamSelector{Type: arm.stream.Type}})
+			if err := addPlannedNode(nodes, &spec, arm.decodeNode, pipeline.NodeStage, pipeline.NodeRef(arm.decodeNode), detail); err != nil {
+				return pipeline.Spec{}, err
+			}
+			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: upstream, To: pipeline.NodeRef(arm.decodeNode), Policy: pipeline.RouteAll})
+			upstream = pipeline.NodeRef(arm.decodeNode)
+		}
+		if arm.stage != nil {
+			stageName := arm.stage.transform.name
+			if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, pipeline.NodeRef(stageName), mediaTransformDetail(arm.stage.transform)); err != nil {
+				return pipeline.Spec{}, err
+			}
+			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: upstream, To: pipeline.NodeRef(stageName), Policy: pipeline.RouteAll})
+			upstream = pipeline.NodeRef(stageName)
+		}
+		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: upstream, To: joinRef, Policy: pipeline.RouteAll})
 	}
-	return plannedBranchTapMissingError(string(b.spec.kind), branch.name, branch.source.tap)
+	if err := addPlannedNode(nodes, &spec, p.name, pipeline.NodeStage, joinRef); err != nil {
+		return pipeline.Spec{}, err
+	}
+	switch {
+	case len(p.branchRoutes) != 0:
+		return planBranchComposeRoutes(spec, nodes, []pipeline.NodeRef{joinRef}, p.branchRoutes, p.branchTargets)
+	case p.encode != nil:
+		encodeName := encodeNodeName(*p.encode)
+		if err := addPlannedNode(nodes, &spec, encodeName, pipeline.NodeStage, pipeline.NodeRef(encodeName), encodeNodeDetail(*p.encode)); err != nil {
+			return pipeline.Spec{}, err
+		}
+		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: joinRef, To: pipeline.NodeRef(encodeName), Policy: pipeline.RouteAll})
+		destRef, err := p.planDestinationNode(&spec, nodes)
+		if err != nil {
+			return pipeline.Spec{}, err
+		}
+		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: pipeline.NodeRef(encodeName), To: destRef, Policy: pipeline.RouteAll})
+		return spec, nil
+	default:
+		destRef, err := p.planDestinationNode(&spec, nodes)
+		if err != nil {
+			return pipeline.Spec{}, err
+		}
+		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: joinRef, To: destRef, Policy: pipeline.RouteAll})
+		return spec, nil
+	}
+}
+
+// joinDestinationNodeName names the single-destination node exactly as the
+// lowering does: sinks keep their own name, mux destinations use muxNodeName.
+func (p *joinPlan) joinDestinationNodeName() string {
+	if p.destination.sink != nil {
+		return firstNonEmpty(p.destination.sink.Name(), p.destination.label("sink"))
+	}
+	return muxNodeName(p.destination.output, 0)
+}
+
+func (p *joinPlan) planDestinationNode(spec *pipeline.Spec, nodes map[string]plannedNode) (pipeline.NodeRef, error) {
+	name := p.joinDestinationNodeName()
+	ref := pipeline.NodeRef(name)
+	if p.destination.sink != nil {
+		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSink, ref, describedNodeDetail(p.destination.sink)); err != nil {
+			return "", err
+		}
+		return ref, nil
+	}
+	detail := outputNodeDetailWithFormat(p.destination.output, destinationGraphFormat(p.destination))
+	if err := addPlannedNode(nodes, spec, name, pipeline.NodeStage, ref, detail); err != nil {
+		return "", err
+	}
+	return ref, nil
+}
+
+// lower executes the planned join against the graph: open each arm through the
+// input seam, decode/stage per plan, converge into the kind's stage, then
+// deliver through the shared downstream path. Node names come from the plan, so
+// the built graph equals the planned spec.
+func (p *joinPlan) lower(ctx context.Context, _ graphPlan, graph pipeline.Graph, service *builder) error {
+	rt := p.runtime
+	armRefs := make([]string, 0, len(p.arms))
+	armIDs := make([]av.StreamID, 0, len(p.arms))
+	seen := make(map[av.StreamID]struct{}, len(p.arms))
+	for i := range p.arms {
+		arm := p.arms[i]
+		source, streams, _, err := arm.input.openGraphSource(ctx, service, i)
+		if err != nil {
+			return err
+		}
+		stream, err := selectStream(streams, av.StreamSelector{Type: p.profile.media})
+		if err != nil {
+			source.Close()
+			return err
+		}
+		if _, dup := seen[stream.ID]; dup {
+			source.Close()
+			return joinArmError(p.name, string(stream.ID), p.name+" arms must have distinct stream ids")
+		}
+		seen[stream.ID] = struct{}{}
+		srcRef, err := graph.AddSource(source, rt.buffer)
+		if err != nil {
+			source.Close()
+			return err
+		}
+		upstream := string(srcRef)
+		if arm.decodeNode != "" {
+			request := decodeRequest{selector: av.StreamSelector{Type: stream.Type}}
+			decodeStage, err := service.newDecodeStageNamed(ctx, arm.decodeNode, request, stream, rt.realtime, true, codec.DecodeBounds{})
+			if err != nil {
+				return err
+			}
+			if upstream, err = insertJoinArmStage(graph, rt, decodeStage, upstream); err != nil {
+				return err
+			}
+		}
+		if arm.stage != nil {
+			stage, _, err := service.newMediaTransformStageNamed(ctx, arm.stage.transform.name, arm.stage.transform, arm.stage.stream, rt.realtime)
+			if err != nil {
+				return err
+			}
+			if upstream, err = insertJoinArmStage(graph, rt, stage, upstream); err != nil {
+				return err
+			}
+		}
+		armRefs = append(armRefs, upstream)
+		armIDs = append(armIDs, stream.ID)
+	}
+	stage, pinned := p.profile.newStage(p, armIDs)
+	stageBuffer := rt.buffer
+	if pinned != nil {
+		stageBuffer = *pinned
+	}
+	joinRef, err := graph.AddStage(stage, stageBuffer)
+	if err != nil {
+		return err
+	}
+	for i := range armRefs {
+		if err := graph.Connect(pipeline.Route{From: armRefs[i], To: []string{string(joinRef)}, Policy: pipeline.RouteAll}); err != nil {
+			return err
+		}
+	}
+	switch {
+	case len(p.branchRoutes) != 0:
+		groups, err := resolveBranchComposeStreamGroups([]av.Stream{p.joined}, p.branchRoutes)
+		if err != nil {
+			return err
+		}
+		branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, rt, graph, []pipeline.NodeRef{joinRef}, groups, nil, p.branchRoutes, nil, rt.realtime)
+		if err != nil {
+			return err
+		}
+		return compileBranchComposeRoutes(ctx, service, graph, p.branchRoutes, p.branchTargets, branchInputs, branchStreams, nil, nil, rt.realtime)
+	case p.encode != nil:
+		// openMuxDestinationStage records the destination transaction (file
+		// commit/abort) on service; buildGraphPlanTask carries it to the task so
+		// the file finalizes.
+		return compileEncodeDestinationPath(ctx, service, graph, joinRef, *p.encode, p.encodeConfig, p.encodedStream, []destinationSpec{p.destination})
+	default:
+		sinkRef, err := graph.AddSink(p.destination.sink, rt.buffer)
+		if err != nil {
+			return err
+		}
+		return graph.Connect(pipeline.Route{From: string(joinRef), To: []string{string(sinkRef)}, Policy: pipeline.RouteAll})
+	}
+}
+
+// insertJoinArmStage appends a per-arm stage after upstream and returns its ref.
+func insertJoinArmStage(graph pipeline.Graph, rt *runtime, stage pipeline.Stage, upstream string) (string, error) {
+	ref, err := graph.AddStage(stage, rt.buffer)
+	if err != nil {
+		return "", err
+	}
+	if err := graph.Connect(pipeline.Route{From: upstream, To: []string{string(ref)}, Policy: pipeline.RouteAll}); err != nil {
+		return "", err
+	}
+	return string(ref), nil
+}
+
+// --- work plan ---
+
+// buildJoinWorkPlan renders the planned join into the workPlan IR: one branch
+// per arm (its decode/stage operations), one joined branch anchored on the
+// OpJoin node carrying the downstream chain, and — for fanouts — one branch per
+// planned branch route. The N-to-1 convergence rides workPlan.Edges, copied
+// from the planned spec.
+func (p *joinPlan) buildJoinWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
+	intent := state.intent
+	outputs := planOutputs(intent.Destinations, state.outputFormatMap())
+	work := workPlan{
+		Name:         firstNonEmpty(spec.Name, "goav-"+p.name),
+		Realtime:     spec.Realtime,
+		Inputs:       workInputsFromIntent(intent.Inputs),
+		Taps:         append([]workTap(nil), p.taps...),
+		Destinations: workDestinationsFromPlan(outputs),
+	}
+	ids := workDestinationIDsByName(work.Destinations)
+	work.Operations, work.Branches = p.joinWorkBranches(ids, outputs)
+	work.Destinations = joinWorkDestinationBranches(work.Destinations, work.Branches)
+	work.Edges = workEdgesFromSpec(spec, work.Operations)
+	return work
+}
+
+// joinWorkDestinationBranches fills each destination's branch refs from the
+// branches that route into it, mirroring planOutputsWithBranches.
+func joinWorkDestinationBranches(destinations []workDestination, branches []workBranch) []workDestination {
+	for i := range destinations {
+		for j := range branches {
+			if stringInSlice(destinations[i].ID, branches[j].Destinations) {
+				destinations[i].Branches = append(destinations[i].Branches, branches[j].Name)
+			}
+		}
+	}
+	return destinations
+}
+
+func (p *joinPlan) joinWorkBranches(ids map[string]string, outputs []planOutput) ([]workOperation, []workBranch) {
+	var operations []workOperation
+	var branches []workBranch
+	joinedShape := normalizeTapShape(shape.FromStream(p.joined, p.joinedDomain))
+	armShape := joinedShape
+	for i := range p.arms {
+		arm := p.arms[i]
+		branchName := firstNonEmpty(arm.inputName, fmt.Sprintf("arm-%d", i))
+		current := normalizeTapShape(shape.FromStream(arm.stream, arm.domain))
+		sourceShape := current
+		index := 0
+		var ops []string
+		if arm.decodeNode != "" {
+			out := current
+			out.Domain = shape.DomainFrame
+			operation := workOperation{
+				ID:        workOperationIDForKind(branchName, index, OpDecode),
+				Name:      arm.decodeNode,
+				Kind:      OpDecode,
+				Branch:    branchName,
+				Node:      pipeline.NodeRef(arm.decodeNode),
+				Component: codecComponent(arm.stream.Codec.ID),
+				Detail:    "packets to frames",
+				ShapeIn:   current,
+				ShapeOut:  out,
+			}
+			operations = append(operations, operation)
+			ops = append(ops, operation.ID)
+			index++
+			current = out
+		}
+		if arm.stage != nil {
+			out := shape.Merge(current, mediaShapeFromTransform(transformSpecFromMediaTransform(arm.stage.transform)))
+			out.Domain = shape.DomainFrame
+			operation := workOperation{
+				ID:        workOperationIDForKind(branchName, index, OpTransform),
+				Name:      arm.stage.transform.name,
+				Kind:      OpTransform,
+				Branch:    branchName,
+				Node:      pipeline.NodeRef(arm.stage.transform.name),
+				Component: firstNonEmpty(arm.stage.transform.factory, arm.stage.transform.name, "transform"),
+				Detail:    "transform frames",
+				ShapeIn:   current,
+				ShapeOut:  out,
+			}
+			operations = append(operations, operation)
+			ops = append(ops, operation.ID)
+			index++
+			current = out
+		}
+		if i == 0 {
+			armShape = current
+		}
+		branches = append(branches, workBranch{
+			ID:          workBranchID(branchName, len(branches)),
+			Name:        branchName,
+			Input:       branchName,
+			Stream:      streamSelectFromStream(arm.stream),
+			SourceShape: sourceShape,
+			Operations:  ops,
+		})
+	}
+	joinOperations, joinBranch := p.joinedWorkBranch(ids, outputs, armShape, joinedShape, len(branches))
+	operations = append(operations, joinOperations...)
+	branches = append(branches, joinBranch)
+	if len(p.branchRoutes) != 0 {
+		fanOperations, fanBranches := p.joinFanoutWorkBranches(ids, outputs, joinedShape, len(branches))
+		operations = append(operations, fanOperations...)
+		branches = append(branches, fanBranches...)
+	}
+	return operations, branches
+}
+
+// joinedWorkBranch renders the joined stream's branch: the OpJoin convergence
+// node plus — in single-destination mode — the optional encode and the terminal
+// destination operation.
+func (p *joinPlan) joinedWorkBranch(ids map[string]string, outputs []planOutput, armShape shape.Spec, joinedShape shape.Spec, branchIndex int) ([]workOperation, workBranch) {
+	branchName := p.name
+	operations := []workOperation{{
+		ID:        workOperationIDForKind(branchName, 0, OpJoin),
+		Name:      p.name,
+		Kind:      OpJoin,
+		Branch:    branchName,
+		Node:      pipeline.NodeRef(p.name),
+		Component: p.name,
+		Detail:    "converge " + strconv.Itoa(len(p.arms)) + " arms",
+		ShapeIn:   armShape,
+		ShapeOut:  joinedShape,
+	}}
+	branch := workBranch{
+		ID:          workBranchID(branchName, branchIndex),
+		Name:        branchName,
+		Stream:      streamSelectFromStream(p.joined),
+		SourceShape: joinedShape,
+	}
+	current := joinedShape
+	index := 1
+	if len(p.branchRoutes) == 0 {
+		if p.encode != nil {
+			encoded := normalizeTapShape(shape.FromStream(p.encodedStream, shape.DomainPacket))
+			operations = append(operations, workOperation{
+				ID:        workOperationIDForKind(branchName, index, OpEncode),
+				Name:      encodeNodeName(*p.encode),
+				Kind:      OpEncode,
+				Branch:    branchName,
+				Node:      pipeline.NodeRef(encodeNodeName(*p.encode)),
+				Component: string(p.encodeConfig.Parameters.ID),
+				Detail:    "frames to packets",
+				ShapeIn:   current,
+				ShapeOut:  encoded,
+			})
+			index++
+			current = encoded
+		}
+		if len(outputs) != 0 {
+			output := outputs[0]
+			node := pipeline.NodeRef(p.joinDestinationNodeName())
+			operations = append(operations, workOperation{
+				ID:           workOperationIDForKind(branchName, index, output.Operation),
+				Name:         workOperationName(node, output.Component, "destination", index),
+				Kind:         output.Operation,
+				Branch:       branchName,
+				Node:         node,
+				Component:    output.Component,
+				Detail:       "destination",
+				ShapeIn:      current,
+				ShapeOut:     current,
+				Destinations: []string{workDestinationIDForName(ids, output.Name)},
+			})
+			branch.Destinations = append(branch.Destinations, workDestinationIDForName(ids, output.Name))
+		}
+	}
+	for i := range operations {
+		branch.Operations = append(branch.Operations, operations[i].ID)
+	}
+	return operations, branch
+}
+
+// joinFanoutWorkBranches renders the planned branch fanout exactly along the
+// branch-compose routes the spec and the lowering share, so the operation node
+// names match the planned graph.
+func (p *joinPlan) joinFanoutWorkBranches(ids map[string]string, outputs []planOutput, joinedShape shape.Spec, branchIndexBase int) ([]workOperation, []workBranch) {
+	outputsByName := planOutputsByName(outputs)
+	var operations []workOperation
+	var branches []workBranch
+	for i := range p.branchRoutes {
+		route := p.branchRoutes[i]
+		branchName := route.name
+		current := joinedShape
+		index := 0
+		var ops []string
+		appendOperation := func(operation workOperation) {
+			operations = append(operations, operation)
+			ops = append(ops, operation.ID)
+			index++
+		}
+		selectNode := branchComposeInputNodeName(selectNodeName(route.branch.Selector), route.branch.Input)
+		appendOperation(workOperation{
+			ID:        workOperationIDForKind(branchName, index, OpSelect),
+			Name:      selectNode,
+			Kind:      OpSelect,
+			Branch:    branchName,
+			Node:      pipeline.NodeRef(selectNode),
+			Component: selectorComponent(streamSelectFromStream(p.joined)),
+			Detail:    "select stream",
+			ShapeIn:   current,
+			ShapeOut:  current,
+		})
+		switch {
+		case branchComposeRouteNeedsDecode(route):
+			decodeNode := branchComposeInputNodeName(decodeNodeName(route.branch.Selector), route.branch.Input)
+			out := current
+			out.Domain = shape.DomainFrame
+			appendOperation(workOperation{
+				ID:        workOperationIDForKind(branchName, index, OpDecode),
+				Name:      decodeNode,
+				Kind:      OpDecode,
+				Branch:    branchName,
+				Node:      pipeline.NodeRef(decodeNode),
+				Component: codecComponent(p.joined.Codec.ID),
+				Detail:    "packets to frames",
+				ShapeIn:   current,
+				ShapeOut:  out,
+			})
+			current = out
+		case route.copy && p.joinedDomain == shape.DomainPacket:
+			appendOperation(workOperation{
+				ID:        workOperationIDForKind(branchName, index, OpCopy),
+				Name:      "packet-copy",
+				Kind:      OpCopy,
+				Branch:    branchName,
+				Component: "packet-copy",
+				Detail:    "preserve encoded packets",
+				ShapeIn:   current,
+				ShapeOut:  current,
+			})
+		}
+		if transforms, err := branchComposePrivateOperationTransforms(route); err == nil {
+			for j := range transforms {
+				kind := OpTransform
+				if transforms[j].stage != nil {
+					kind = OpStage
+				}
+				out := shape.Merge(current, mediaShapeFromTransform(transformSpecFromMediaTransform(transforms[j])))
+				out.Domain = shape.DomainFrame
+				appendOperation(workOperation{
+					ID:        workOperationIDForKind(branchName, index, kind),
+					Name:      transforms[j].name,
+					Kind:      kind,
+					Branch:    branchName,
+					Node:      pipeline.NodeRef(transforms[j].name),
+					Component: firstNonEmpty(transforms[j].factory, transforms[j].name),
+					Detail:    "transform frames",
+					ShapeIn:   current,
+					ShapeOut:  out,
+				})
+				current = out
+			}
+		}
+		if branchComposeRouteNeedsEncode(route) {
+			encodeNode := encodeNodeName(route.request)
+			out := current
+			out.Domain = shape.DomainPacket
+			out.Codec = route.request.config.Parameters.ID
+			appendOperation(workOperation{
+				ID:        workOperationIDForKind(branchName, index, OpEncode),
+				Name:      encodeNode,
+				Kind:      OpEncode,
+				Branch:    branchName,
+				Node:      pipeline.NodeRef(encodeNode),
+				Component: string(route.request.config.Parameters.ID),
+				Detail:    "frames to packets",
+				ShapeIn:   current,
+				ShapeOut:  out,
+			})
+			current = out
+		}
+		var destinationIDs []string
+		for j := range p.branchTargets {
+			target := p.branchTargets[j]
+			if !intInSlice(i, target.matches) {
+				continue
+			}
+			targetName := branchComposeTargetRouteName(target)
+			output := outputsByName[targetName]
+			node := pipeline.NodeRef(joinFanoutTargetNodeName(target, j))
+			id := workDestinationIDForName(ids, firstNonEmpty(output.Name, targetName))
+			appendOperation(workOperation{
+				ID:           workOperationIDForKind(branchName, index, output.Operation),
+				Name:         workOperationName(node, output.Component, "destination", index),
+				Kind:         output.Operation,
+				Branch:       branchName,
+				Node:         node,
+				Component:    output.Component,
+				Detail:       "destination",
+				ShapeIn:      current,
+				ShapeOut:     current,
+				Destinations: []string{id},
+			})
+			destinationIDs = append(destinationIDs, id)
+		}
+		branches = append(branches, workBranch{
+			ID:           workBranchID(branchName, branchIndexBase+i),
+			Name:         branchName,
+			Input:        p.name,
+			Stream:       streamSelectFromStream(p.joined),
+			SourceShape:  joinedShape,
+			Operations:   ops,
+			Destinations: destinationIDs,
+		})
+	}
+	return operations, branches
+}
+
+// joinFanoutTargetNodeName names a fanout destination node exactly as
+// planBranchComposeRoutes and compileBranchComposeRoutes do.
+func joinFanoutTargetNodeName(target branchComposeTargetRoute, index int) string {
+	if target.sink != nil {
+		return branchComposeTargetSinkNodeName(target, index)
+	}
+	return muxNodeName(target.target, index)
+}
+
+func intInSlice(needle int, haystack []int) bool {
+	for i := range haystack {
+		if haystack[i] == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// --- compile-state normalization ---
+
+// joinIntent renders the joinSpec as the recipe Intent the one compile carries:
+// one input per arm and the join's destinations. Arm and destination validation
+// stays in newJoinPlan; this is the descriptive surface only.
+func joinIntent(job *Job) Intent {
+	spec := job.join
+	intent := Intent{Name: string(spec.kind)}
+	if rt, ok := job.runtime.(*runtime); ok {
+		intent.Policies.Realtime = rt.realtime
+	}
+	for _, arm := range spec.arms {
+		if arm == nil || arm.job == nil || len(arm.job.inputs) != 1 {
+			break
+		}
+		intent.Inputs = append(intent.Inputs, arm.job.inputs[0].intent())
+	}
+	if len(spec.branches) != 0 {
+		named, _ := joinBranchNamedDestinations(string(spec.kind), spec.branches)
+		for i := range named {
+			intent.Destinations = append(intent.Destinations, named[i].output.intentWithName(named[i].name))
+		}
+		return intent
+	}
+	intent.Destinations = append(intent.Destinations, spec.dest.spec.intentWithName(""))
+	return intent
+}
+
+// joinArmInputs captures the arm input attachments aligned with the intent's
+// inputs (stopping at the first malformed arm, which newJoinPlan rejects).
+func joinArmInputs(spec *joinSpec) []InputSpec {
+	inputs := make([]InputSpec, 0, len(spec.arms))
+	for _, arm := range spec.arms {
+		if arm == nil || arm.job == nil || len(arm.job.inputs) != 1 {
+			break
+		}
+		inputs = append(inputs, arm.job.inputs[0])
+	}
+	return inputs
+}
+
+// joinOutputAttachments captures the join's destination attachments for the
+// compile state (format resolution); newJoinPlan re-validates them.
+func joinOutputAttachments(spec *joinSpec) ([]destinationSpec, []string) {
+	if len(spec.branches) == 0 {
+		return []destinationSpec{spec.dest.spec}, []string{""}
+	}
+	named, _ := joinBranchNamedDestinations(string(spec.kind), spec.branches)
+	outputs := make([]destinationSpec, 0, len(named))
+	names := make([]string, 0, len(named))
+	for i := range named {
+		outputs = append(outputs, named[i].output)
+		names = append(names, named[i].name)
+	}
+	return outputs, names
+}
+
+// joinBranchNamedDestinations collects the branch destinations through the same
+// dedupe the planned-branch path uses.
+func joinBranchNamedDestinations(name string, branches []BranchSpec) ([]namedDestinationSpec, error) {
+	destinations := &Job{name: name}
+	for i := range branches {
+		if err := destinations.addBranchDestinations(branches[i].destinations...); err != nil {
+			return nil, err
+		}
+	}
+	return destinations.branchDestinations, nil
 }

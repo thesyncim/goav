@@ -63,9 +63,9 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   stages + `task.Control` live switch; variadic `From(a, b...)` with `InputName`
   narrowing and one shared Destination **DONE**; JoinSpec lowering through ONE join
   builder (profile tables, `Job.join` single route) **DONE**; join outputs compose
-  (`.Tap`/`.Branches` via the shared chain lowering) **DONE**. TODO: planned join
-  node in the IR (stage 4 stretch) so `Describe()` shows joins and the `j.join`
-  route dies.
+  (`.Tap`/`.Branches` via the shared chain lowering) **DONE**; planned `OpJoin`
+  node in the IR — joins compile through the one recipe compile, `Describe()` ≡
+  `Build()` guarded, the `buildJoin` graph-assembly route deleted **DONE**.
 - **Time/sync** (§13): minimal TimeShape (TimeBase/Clock/Live/Latency) + Sync/Attach-at policies. **TODO.**
 - **Source backpressure** (§14): result-aware `push.X(...) (PushResult, error)` —
   Accepted/Dropped per push, sheds stay nil-error. **DONE.**
@@ -124,10 +124,13 @@ Stages (each green, in dependency order):
    lowering / mux-compat / taps all read workPlan; destinations route by stable
    handle IDs (`destination/<label>`), not name strings; the opaque
    `Job.Plan()` is off the public surface.
-5. Remaining: planned multi-upstream JOIN node in the IR (kills the `j.join`
-   route, Describe shows joins — the one residual special route); shape solver
-   centralization (join arm-solving moves into it); SwitchAt* policies;
-   time/clock/seek (theme C — pull scheduling is the keystone).
+5. **Planned JOIN node** — **DONE.** Joins compile through the one recipe
+   compile: `joinPlan` plans N arm sub-chains converging into an `OpJoin` node,
+   `Describe()` ≡ `Build()` is guard-tested per kind, and the hand-assembled
+   `buildJoin` route is deleted (`Job.join` survives only as captured intent).
+6. Remaining: shape solver centralization (join arm-solving moves into it);
+   SwitchAt* policies; time/clock/seek (theme C — pull scheduling is the
+   keystone).
 
 ## Execution order (condensed)
 

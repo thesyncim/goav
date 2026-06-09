@@ -69,7 +69,7 @@ var selectJoinProfile = joinProfile{
 	// to a non-lossy buffered policy. An explicitly configured buffer is
 	// honoured as-is.
 	graphBuffer: &pipeline.BufferPolicy{Capacity: selectBufferCapacity, Drop: pipeline.DropBlock},
-	newStage: func(b *joinBuild, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
+	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
 		// The selector is the control target: an injected SelectActive shares its
 		// input queue with the flooding arms, so a lossy queue could evict the
 		// control before the worker applies it. The pinned non-lossy DropBlock
@@ -81,8 +81,8 @@ var selectJoinProfile = joinProfile{
 	// The switched output is the first arm's stream forwarded as-is under the
 	// selector's output id — Select is passthrough, so the arm's codec and
 	// format facts describe the joined stream.
-	joinedStream: func(b *joinBuild) av.Stream {
-		stream := b.armStreams[0]
+	joinedStream: func(p *joinPlan) av.Stream {
+		stream := p.arms[0].stream
 		stream.ID = av.StreamID("select")
 		return stream
 	},

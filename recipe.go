@@ -1446,9 +1446,6 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 }
 
 func (j *Job) Build(ctx context.Context) (Task, error) {
-	if j.join != nil {
-		return j.buildJoin(ctx)
-	}
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err != nil {
 		return nil, err

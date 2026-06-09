@@ -68,19 +68,19 @@ var compositeJoinProfile = joinProfile{
 	decodeArms: true,
 	// Each arm places its frame on the canvas at its declared Region; an arm
 	// without one defaults to the top-left corner {0,0}.
-	armStage: func(b *joinBuild, arm *jobStreamBuilder, _ av.Stream, upstream string) (string, error) {
+	planArm: func(p *joinPlan, arm *jobStreamBuilder, _ av.Stream) (*joinArmStagePlan, error) {
 		layout := compositeLayout{}
 		if arm.region != nil {
 			layout = compositeLayout{X: arm.region.x, Y: arm.region.y}
 		}
-		b.layouts = append(b.layouts, layout)
-		return upstream, nil
+		p.layouts = append(p.layouts, layout)
+		return nil, nil
 	},
-	newStage: func(b *joinBuild, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newVideoCompositeStage("composite", armIDs, av.StreamID("composite"), b.layouts), nil
+	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
+		return newVideoCompositeStage("composite", armIDs, av.StreamID("composite"), p.layouts), nil
 	},
-	joinedStream: func(b *joinBuild) av.Stream {
-		shape, _ := customSourceShape(b.spec.arms[0].job.inputs[0])
+	joinedStream: func(p *joinPlan) av.Stream {
+		shape, _ := customSourceShape(p.join.arms[0].job.inputs[0])
 		return av.Stream{
 			ID:   av.StreamID("composite"),
 			Type: av.MediaVideo,

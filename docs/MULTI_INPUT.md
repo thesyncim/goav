@@ -20,7 +20,9 @@ thin faces over one join operation with N input arms. The pipeline already
 supported N input edges per node, and each buffered node has a single serial
 worker, so join stages need no internal locking — lock-free by design holds.
 
-All three lower through one JoinSpec builder (per-kind profile tables, a single
-`Job.join` route). Remaining: move join arm shape-solving into the central
-solver, and a planned multi-upstream join node so `Describe()` shows joins
-(north-star stage-4 stretch).
+All three plan through the ONE recipe compile: the joinSpec normalizes into the
+compile state, `joinPlan` plans N arm sub-chains converging into an `OpJoin`
+node (workPlan edges carry the N-to-1), and `Describe()` ≡ `Build()` is
+guard-tested per kind. Per-kind behavior lives only in the joinProfiles table.
+Remaining: move join arm shape-solving into the central solver; joins as arms
+of joins (nesting) needs an arm-shaped join handle.

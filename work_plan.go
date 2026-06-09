@@ -102,6 +102,11 @@ type workEdge struct {
 // lower the intent into per-branch operation lists, and one flattening walk
 // emits the ordered operations, taps, branches, destinations, and edges.
 func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
+	if state.joinPlan != nil {
+		// Joins plan multi-upstream convergence: the joinPlan renders its arms,
+		// the OpJoin node, and the downstream chain into the same workPlan IR.
+		return state.joinPlan.buildJoinWorkPlan(state, spec)
+	}
 	intent := state.intent
 	outputs := planOutputs(intent.Destinations, state.outputFormatMap())
 	// The work plan plans every branch straight from intent.Streams:

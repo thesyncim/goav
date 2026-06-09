@@ -51,6 +51,12 @@ type recipeCompileState struct {
 	branchInputProbeReady        bool
 	branchCompositionSplit       bool
 
+	// joinAttachment is the captured joinSpec for a Mix/Composite/Select job;
+	// joinPlan is the planned multi-upstream join the lowerer pass produced,
+	// the source buildWorkPlan renders the join work plan from.
+	joinAttachment *joinSpec
+	joinPlan       *joinPlan
+
 	plan    branchComposePlan
 	planErr error
 
@@ -269,6 +275,9 @@ func compileJobRecipeForBuildContext(ctx context.Context, job *Job) (recipeResol
 }
 
 func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
+	if job != nil && job.join != nil {
+		return compileJobJoinRecipeWithOptions(job, options)
+	}
 	if job != nil && len(job.branchStreams) != 0 {
 		return compileJobBranchRecipeWithOptions(job, options)
 	}
@@ -310,6 +319,53 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateMuxCompatibilityPass(),
 		requireGraphPlanSpecPass(),
 	}}.Compile(state)
+}
+
+// compileJobJoinRecipeWithOptions lowers a join job (Mix/Composite/Select)
+// through the same recipe compiler as every other job: the joinSpec is
+// normalized into the compile state, the join lowerer plans the N-to-1 graph,
+// and the shared passes emit and validate the one plan Describe and Build run
+// from. No separate graph assembly exists for joins.
+func compileJobJoinRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
+	spec := job.join
+	state := recipeCompileState{
+		operation:      "build " + string(spec.kind),
+		options:        options,
+		intent:         joinIntent(job),
+		runtime:        job.runtime,
+		recipeErr:      job.err,
+		joinAttachment: spec,
+	}
+	state.inputAttachments = joinArmInputs(spec)
+	state.outputAttachments, state.outputDestinationNames = joinOutputAttachments(spec)
+	return recipeIntentCompiler{passes: []recipeCompilePass{
+		validateJoinRecipePass(),
+		validateJobInputFormatAdaptersPass(),
+		validateRecipeRuntimePass(),
+		emitGraphPlanSpecPass(),
+		validateMuxCompatibilityPass(),
+		requireGraphPlanSpecPass(),
+	}}.Compile(state)
+}
+
+func validateJoinRecipePass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate join recipe", fn: func(state *recipeCompileState) error {
+		if state.joinAttachment == nil {
+			return &BuildError{
+				Code:      "job_invalid",
+				Operation: state.operation,
+				Reason:    "nil join",
+				Cause:     ErrUnsupportedBuild,
+			}
+		}
+		if state.runtime == nil {
+			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
+		}
+		if state.recipeErr != nil {
+			return state.recipeErr
+		}
+		return nil
+	}}
 }
 
 func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {

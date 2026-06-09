@@ -20,12 +20,16 @@ const (
 	OpShape       OperationKind = "shape"
 	OpTransform   OperationKind = "transform"
 	OpStage       OperationKind = "stage"
-	OpEncode      OperationKind = "encode"
-	OpCopy        OperationKind = "copy"
-	OpMux         OperationKind = "mux"
-	OpWrite       OperationKind = "write"
-	OpSink        OperationKind = "sink"
-	OpTap         OperationKind = "tap"
+	// OpJoin is the planned N-to-1 convergence node (Mix/Composite/Select): N
+	// arm chains feed one join operation and the downstream chain hangs off it
+	// like any other stream point. The N-to-1 edges live in workPlan.Edges.
+	OpJoin   OperationKind = "join"
+	OpEncode OperationKind = "encode"
+	OpCopy   OperationKind = "copy"
+	OpMux    OperationKind = "mux"
+	OpWrite  OperationKind = "write"
+	OpSink   OperationKind = "sink"
+	OpTap    OperationKind = "tap"
 )
 
 // planBranch, planOperation, and planOutput are the planner's per-branch

@@ -47,13 +47,26 @@ type mediaPlanCompiledSources struct {
 	realtime     bool
 }
 
+// graphPlanGraphConfigurer lets a lowerer pin its graph identity and buffer
+// policy (a join names its graph after the kind and may require a buffered
+// graph for control-plane injection).
+type graphPlanGraphConfigurer interface {
+	graphConfig() pipeline.GraphConfig
+}
+
 func buildGraphPlanTask(ctx context.Context, plan graphPlan) (Task, error) {
 	runtime := plan.runtime
 	if runtime == nil {
 		return nil, recipeGraphUnsupportedError("build recipe", Intent{})
 	}
 	service := &builder{runtime: runtime, requireRunOK: true}
-	graph, err := service.newGraph(ctx)
+	var graph pipeline.Graph
+	var err error
+	if configurer, ok := plan.lowerer.(graphPlanGraphConfigurer); ok {
+		graph, err = pipeline.NewGraph(configurer.graphConfig())
+	} else {
+		graph, err = service.newGraph(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
