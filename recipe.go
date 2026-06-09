@@ -1086,6 +1086,7 @@ type Job struct {
 	branchStreams      []streamBuild
 	branchDestinations []namedDestinationSpec
 	mix                *mixSpec
+	composite          *compositeSpec
 	err                error
 }
 
@@ -1386,6 +1387,9 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 func (j *Job) Build(ctx context.Context) (Task, error) {
 	if j.mix != nil {
 		return j.buildMix(ctx)
+	}
+	if j.composite != nil {
+		return j.buildComposite(ctx)
 	}
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err != nil {
@@ -3142,6 +3146,14 @@ func StreamIndex(index int) streamOption {
 type jobStreamBuilder struct {
 	job    *Job
 	stream *jobStreamBuild
+	region *compositeRegion
+}
+
+// Region places this arm's frame at (x, y) on the composite canvas. It is
+// composite-only — it has no effect on arms outside a Composite.
+func (b *jobStreamBuilder) Region(x, y int) *jobStreamBuilder {
+	b.region = &compositeRegion{x: x, y: y}
+	return b
 }
 
 func (b *jobStreamBuilder) sourceStartsFrameDomain() bool {
