@@ -70,6 +70,12 @@ func (e *bufferedEmitter) Emit(ctx context.Context, msg *Message) error {
 	return e.graph.emit(ctx, e.from, msg)
 }
 
+// EmitDelivery implements the optional DeliveryEmitter capability: Emit plus a
+// per-message report of delivered vs deliberately-shed targets.
+func (e *bufferedEmitter) EmitDelivery(ctx context.Context, msg *Message) (Delivery, error) {
+	return e.graph.emitDelivery(ctx, e.from, msg)
+}
+
 type bufferedMessage struct {
 	message       Message
 	packet        av.Packet
@@ -659,29 +665,38 @@ func (g *bufferedRunner) closeQueuesLocked() {
 }
 
 func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error {
+	_, err := g.emitDelivery(ctx, from, msg)
+	return err
+}
+
+// emitDelivery is emit with per-message delivery accounting: it additionally
+// reports how many matching targets queued the message and how many shed it,
+// powering the optional DeliveryEmitter capability.
+func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, msg *Message) (Delivery, error) {
+	var delivery Delivery
 	if msg == nil {
-		return ErrNilMessage
+		return delivery, ErrNilMessage
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return delivery, err
 	}
 	// Lock-free producer: read the routing snapshot and enqueue without g.mu, so a
 	// (possibly blocking) send holds no topology lock and cannot deadlock a
 	// concurrent mutation or a re-emitting stage.
 	topo := g.topo.Load()
 	if topo == nil {
-		return ErrClosed
+		return delivery, ErrClosed
 	}
 	if from < 0 || from >= len(topo.nodes) {
-		return ErrUnknownNode
+		return delivery, ErrUnknownNode
 	}
 	fromNode := &topo.nodes[from]
 	if !fromNode.active {
-		return nil
+		return delivery, nil
 	}
 	observeOut(fromNode.node.counters, msg, &g.cold)
 	if err := g.publishEvent(msg); err != nil {
-		return err
+		return delivery, err
 	}
 
 	// A real fanout (more than one matching target) isolates a failing target so
@@ -700,7 +715,8 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 				continue
 			}
 			target := topo.nodes[to].node
-			if err := g.enqueue(ctx, target, msg); err != nil {
+			delivered, err := g.enqueue(ctx, target, msg)
+			if err != nil {
 				// Independent fanout backpressure: a full target on a real fanout
 				// drops for itself and keeps delivering to its siblings, so one slow
 				// subscriber cannot tear down the source. Everything else —
@@ -708,13 +724,18 @@ func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error
 				// backpressure (the strict DropNever contract) — still propagates.
 				if fanout && errors.Is(err, ErrBackpressure) {
 					observeDrop(target.counters, target.policy.Drop, &g.cold)
+					delivery.Shed++
 				} else {
-					return err
+					return delivery, err
 				}
+			} else if delivered {
+				delivery.Delivered++
+			} else {
+				delivery.Shed++
 			}
 		}
 	}
-	return nil
+	return delivery, nil
 }
 
 // countTargets counts the matching, active delivery targets for a message; it
@@ -739,13 +760,17 @@ func countTargets(topo *bufferedTopo, fromNode *bufferedTopoNode, msg *Message) 
 	return count
 }
 
-func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message) error {
+// enqueue queues msg on node and reports whether THIS message was delivered:
+// (false, nil) is a deliberate shed (paused branch, torn-down queue, byte
+// budget, dropping policy) — counted where applicable, silent to the producer
+// on the plain Emit path, surfaced through Delivery on the EmitDelivery path.
+func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message) (bool, error) {
 	if node.paused.Load() {
 		// Branch paused: skip this node without touching the source or siblings.
-		return nil
+		return false, nil
 	}
 	if err := validateBufferedMessage(msg, node.policy); err != nil {
-		return err
+		return false, err
 	}
 
 	node.queueMutex.Lock()
@@ -753,24 +778,30 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 
 	if node.queueClosed {
 		// Queue torn down (Remove/Close) after the snapshot was read; shed.
-		return nil
+		return false, nil
 	}
 
 	if node.policy.MaxBytes > 0 && node.queuedBytes.Load()+messageBytes(msg) > node.policy.MaxBytes {
 		// Byte budget exhausted: shed rather than queue past the bound.
 		observeDrop(node.counters, DropOverflow, &g.cold)
-		return nil
+		return false, nil
 	}
 
 	action := node.drop.decide(len(node.queue), msg)
 	switch action {
 	case bufferAdmit:
-		return g.enqueueBound(ctx, node, msg)
+		if err := g.enqueueBound(ctx, node, msg); err != nil {
+			return false, err
+		}
+		return true, nil
 	case bufferBlock:
-		return g.enqueueBlocking(ctx, node, msg)
+		if err := g.enqueueBlocking(ctx, node, msg); err != nil {
+			return false, err
+		}
+		return true, nil
 	case bufferDropIncoming:
 		observeDrop(node.counters, node.policy.Drop, &g.cold)
-		return nil
+		return false, nil
 	case bufferDropOldest:
 		select {
 		case dropped := <-node.queue:
@@ -779,9 +810,12 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 			observeDrop(node.counters, node.policy.Drop, &g.cold)
 		default:
 		}
-		return g.enqueueBound(ctx, node, msg)
+		if err := g.enqueueBound(ctx, node, msg); err != nil {
+			return false, err
+		}
+		return true, nil
 	default:
-		return ErrBackpressure
+		return false, ErrBackpressure
 	}
 }
 

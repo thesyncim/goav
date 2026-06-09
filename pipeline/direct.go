@@ -79,6 +79,16 @@ func (e *directEmitter) Emit(ctx context.Context, msg *Message) error {
 	return e.graph.emit(ctx, e.from, msg)
 }
 
+// EmitDelivery implements the optional DeliveryEmitter capability. Direct
+// execution is synchronous — a nil error means the whole downstream chain
+// processed the message — so success is one delivery and nothing is ever shed.
+func (e *directEmitter) EmitDelivery(ctx context.Context, msg *Message) (Delivery, error) {
+	if err := e.Emit(ctx, msg); err != nil {
+		return Delivery{}, err
+	}
+	return Delivery{Delivered: 1}, nil
+}
+
 // NewGraph creates the single public pipeline graph. Direct execution is used
 // for direct buffer policy; bounded buffered execution is selected otherwise.
 func NewGraph(config GraphConfig) (Graph, error) {

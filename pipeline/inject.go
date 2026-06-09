@@ -57,5 +57,15 @@ func (g *bufferedRunner) Inject(ctx context.Context, ref NodeRef, msg *Message) 
 	// message is counted as inbound on the target by deliver's observeIn, exactly
 	// like routed traffic; there is no upstream node, so nothing counts it as out.
 	g.mu.RUnlock()
-	return g.enqueue(ctx, node, msg)
+	delivered, err := g.enqueue(ctx, node, msg)
+	if err != nil {
+		return err
+	}
+	if !delivered {
+		// A control silently swallowed by a full lossy queue is the worst outcome
+		// for a caller who believes the switch/keyframe landed — surface the shed
+		// as backpressure so the caller can retry.
+		return ErrBackpressure
+	}
+	return nil
 }
