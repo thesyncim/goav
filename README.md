@@ -721,15 +721,15 @@ encoder/decoder, so you type-assert and apply anything the library exposes —
 nothing is ever unreachable, and there is no separate config blob to learn:
 
 ```go
+// govpx is the libvpx encoder package, github.com/thesyncim/govpx
 vp9 := goav.VP9(
     goav.Bitrate(2_000_000),
     goav.FPS(30),
     goav.KeyframeInterval(60),
     goav.Profile("0"),
     goav.Control(func(enc any) error {       // raw escape hatch
-        e, ok := enc.(*govpx.VP9Encoder)     // the concrete native encoder
-        if ok {
-            e.SetNoiseSensitivity(1)
+        if e, ok := enc.(*govpx.VP9Encoder); ok {
+            return e.SetCQLevel(20)          // any native libvpx control
         }
         return nil
     }),
