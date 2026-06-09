@@ -6,10 +6,8 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/shape"
 )
 
 // audioMixStage sums N synchronized audio inputs into one output stream — the
@@ -178,12 +176,6 @@ type mixStream struct {
 	encode *CodecSpec
 }
 
-type mixSpec struct {
-	arms   []*jobStreamBuilder
-	dest   Destination
-	encode *CodecSpec
-}
-
 // Encode encodes the mixed stream before the destination, so a Mix can record to
 // a File/mux (not only a frame Sink). Without it the mix delivers frames.
 func (m *mixStream) Encode(spec CodecSpec) *mixStream {
@@ -192,136 +184,25 @@ func (m *mixStream) Encode(spec CodecSpec) *mixStream {
 }
 
 // To delivers the mixed stream to a destination and returns a Job, so the mix
-// runs through the same Build/Run as every other recipe.
+// runs through the same Build/Run as every other recipe. It lowers to the one
+// joinSpec shared by every convergence builder.
 func (m *mixStream) To(dest Destination) *Job {
-	job := &Job{name: "mix", runtime: Default()}
-	if len(m.arms) < 2 {
-		job.setErr(&BuildError{Code: "mix_inputs", Operation: "build mix", Node: "mix", Reason: "mix requires at least two source arms", Cause: ErrUnsupportedBuild})
-		return job
-	}
-	job.mix = &mixSpec{arms: m.arms, dest: dest, encode: m.encode}
-	return job
+	return newJoinJob(joinMix, m.arms, dest, m.encode)
 }
 
-func (j *Job) buildMix(ctx context.Context) (Task, error) {
-	if j.err != nil {
-		return nil, j.err
-	}
-	rt, ok := j.runtime.(*runtime)
-	if !ok {
-		return nil, ErrExpertRuntimeRequired
-	}
-	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "goav-mix", Buffer: rt.buffer, Realtime: rt.realtime})
-	if err != nil {
-		return nil, err
-	}
-	armRefs := make([]string, 0, len(j.mix.arms))
-	armIDs := make([]av.StreamID, 0, len(j.mix.arms))
-	seen := make(map[av.StreamID]struct{}, len(j.mix.arms))
-	service := &builder{runtime: rt}
-	var targetRate, targetChannels int
-	for i := range j.mix.arms {
-		arm := j.mix.arms[i]
-		if arm == nil || arm.job == nil || len(arm.job.inputs) != 1 {
-			graph.Close()
-			return nil, &BuildError{Code: "mix_arm", Operation: "build mix", Node: "mix", Reason: "each mix arm must be a single-input source chain", Cause: ErrUnsupportedBuild}
-		}
-		source, streams, domain, err := arm.job.inputs[0].openGraphSource(ctx, service, i)
-		if err != nil {
-			graph.Close()
-			return nil, err
-		}
-		stream, err := selectStream(streams, av.StreamSelector{Type: av.MediaAudio})
-		if err != nil {
-			source.Close()
-			graph.Close()
-			return nil, err
-		}
-		id := stream.ID
-		if _, dup := seen[id]; dup {
-			source.Close()
-			graph.Close()
-			return nil, &BuildError{Code: "mix_arm", Operation: "build mix", Node: string(id), Reason: "mix arms must have distinct stream ids", Cause: ErrUnsupportedBuild}
-		}
-		seen[id] = struct{}{}
-		srcRef, err := graph.AddSource(source, rt.buffer)
-		if err != nil {
-			source.Close()
-			graph.Close()
-			return nil, err
-		}
-		upstream := string(srcRef)
-		// Packet-domain arms decode to frames before the mix (auto-inserted —
-		// the mixer sums decoded audio). Frame-domain arms feed it directly.
-		if domain == shape.DomainPacket {
-			request := decodeRequest{selector: av.StreamSelector{Type: stream.Type}}
-			decodeStage, err := service.newDecodeStageNamed(ctx, "mix-decode-"+string(id), request, stream, rt.realtime, true, codec.DecodeBounds{})
-			if err != nil {
-				graph.Close()
-				return nil, err
-			}
-			decodeRef, err := graph.AddStage(decodeStage, rt.buffer)
-			if err != nil {
-				graph.Close()
-				return nil, err
-			}
-			if err := graph.Connect(pipeline.Route{From: upstream, To: []string{string(decodeRef)}, Policy: pipeline.RouteAll}); err != nil {
-				graph.Close()
-				return nil, err
-			}
-			upstream = string(decodeRef)
-		}
-		// Join shape-solving: the first arm's audio format is the mix target;
-		// later arms that differ get an auto-inserted resample so the mixer sees
-		// one format. No new API — the arms just declare their own shape.
-		if stream.Codec.SampleRate > 0 {
-			channels := maxInt(stream.Codec.Channels, 1)
-			if targetRate == 0 {
-				targetRate, targetChannels = stream.Codec.SampleRate, channels
-			} else if stream.Codec.SampleRate != targetRate || channels != targetChannels {
-				armStream := av.Stream{ID: id, Type: av.MediaAudio, Codec: av.CodecParameters{
-					Type: av.MediaAudio, SampleRate: stream.Codec.SampleRate, Channels: channels,
-					SampleFormat: av.SampleFormatS16, ClockRate: uint32(stream.Codec.SampleRate),
-				}}
-				transform := mediaTransform{
-					name:    "mix-resample-" + string(id),
-					factory: filter.FactoryResample,
-					audio:   &filter.ResampleConfig{SampleRate: targetRate, Channels: targetChannels, SampleFormat: av.SampleFormatS16},
-				}
-				stage, _, err := service.newMediaTransformStageNamed(ctx, transform.name, transform, armStream, rt.realtime)
-				if err != nil {
-					graph.Close()
-					return nil, err
-				}
-				resampleRef, err := graph.AddStage(stage, rt.buffer)
-				if err != nil {
-					graph.Close()
-					return nil, err
-				}
-				if err := graph.Connect(pipeline.Route{From: upstream, To: []string{string(resampleRef)}, Policy: pipeline.RouteAll}); err != nil {
-					graph.Close()
-					return nil, err
-				}
-				upstream = string(resampleRef)
-			}
-		}
-		armRefs = append(armRefs, upstream)
-		armIDs = append(armIDs, id)
-	}
-	mixRef, err := graph.AddStage(newAudioMixStage("mix", armIDs, av.StreamID("mix")), rt.buffer)
-	if err != nil {
-		graph.Close()
-		return nil, err
-	}
-	for i := range armRefs {
-		if err := graph.Connect(pipeline.Route{From: armRefs[i], To: []string{string(mixRef)}, Policy: pipeline.RouteAll}); err != nil {
-			graph.Close()
-			return nil, err
-		}
-	}
-	if j.mix.encode != nil {
-		shape, _ := customSourceShape(j.mix.arms[0].job.inputs[0])
-		mixedStream := av.Stream{
+// mixJoinProfile is Mix's entry in the join table: audio arms, auto-decode for
+// packet arms, first-arm-wins resample shape-solving, audioMixStage convergence,
+// and an encodable S16 output stream derived from the first arm's shape.
+var mixJoinProfile = joinProfile{
+	media:      av.MediaAudio,
+	decodeArms: true,
+	armStage:   mixArmResample,
+	newStage: func(b *joinBuild, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
+		return newAudioMixStage("mix", armIDs, av.StreamID("mix")), nil
+	},
+	encodeStream: func(b *joinBuild) av.Stream {
+		shape, _ := customSourceShape(b.spec.arms[0].job.inputs[0])
+		return av.Stream{
 			ID:   av.StreamID("mix"),
 			Type: av.MediaAudio,
 			Codec: av.CodecParameters{
@@ -332,34 +213,38 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 				ClockRate:    uint32(shape.SampleRate),
 			},
 		}
-		request := encodeRequest{name: "mix-encode", selector: av.StreamSelector{Type: av.MediaAudio}, config: encodeConfigFromSpec(*j.mix.encode)}
-		config, encodedStream, err := prepareEncodeConfig(mixedStream, request, rt.realtime)
-		if err != nil {
-			graph.Close()
-			return nil, err
-		}
-		service := &builder{runtime: rt}
-		if err := compileEncodeDestinationPath(ctx, service, graph, mixRef, request, config, encodedStream, []destinationSpec{j.mix.dest.spec}); err != nil {
-			graph.Close()
-			return nil, err
-		}
-		// openMuxDestinationStage records the destination transaction (file commit/
-		// abort) on service; carry it to the task so the mix file finalizes.
-		return newTask(graph, rt, service.destinationTxs...), nil
+	},
+	sinkOnlyReason: "mix to a non-Sink destination requires .Encode(...)",
+}
+
+// mixArmResample is the mix join's shape-solving: the first arm's audio format
+// is the mix target; later arms that differ get an auto-inserted resample so the
+// mixer sees one format. No new API — the arms just declare their own shape.
+func mixArmResample(b *joinBuild, _ *jobStreamBuilder, stream av.Stream, upstream string) (string, error) {
+	if stream.Codec.SampleRate <= 0 {
+		return upstream, nil
 	}
-	sink := j.mix.dest.spec.sink
-	if sink == nil {
-		graph.Close()
-		return nil, &BuildError{Code: "mix_destination", Operation: "build mix", Node: "mix", Reason: "mix to a non-Sink destination requires .Encode(...)", Cause: ErrUnsupportedBuild}
+	channels := maxInt(stream.Codec.Channels, 1)
+	if b.targetRate == 0 {
+		b.targetRate, b.targetChannels = stream.Codec.SampleRate, channels
+		return upstream, nil
 	}
-	sinkRef, err := graph.AddSink(sink, rt.buffer)
+	if stream.Codec.SampleRate == b.targetRate && channels == b.targetChannels {
+		return upstream, nil
+	}
+	id := stream.ID
+	armStream := av.Stream{ID: id, Type: av.MediaAudio, Codec: av.CodecParameters{
+		Type: av.MediaAudio, SampleRate: stream.Codec.SampleRate, Channels: channels,
+		SampleFormat: av.SampleFormatS16, ClockRate: uint32(stream.Codec.SampleRate),
+	}}
+	transform := mediaTransform{
+		name:    "mix-resample-" + string(id),
+		factory: filter.FactoryResample,
+		audio:   &filter.ResampleConfig{SampleRate: b.targetRate, Channels: b.targetChannels, SampleFormat: av.SampleFormatS16},
+	}
+	stage, _, err := b.service.newMediaTransformStageNamed(b.ctx, transform.name, transform, armStream, b.rt.realtime)
 	if err != nil {
-		graph.Close()
-		return nil, err
+		return "", err
 	}
-	if err := graph.Connect(pipeline.Route{From: string(mixRef), To: []string{string(sinkRef)}, Policy: pipeline.RouteAll}); err != nil {
-		graph.Close()
-		return nil, err
-	}
-	return newTask(graph, rt), nil
+	return b.insertArmStage(stage, upstream)
 }
