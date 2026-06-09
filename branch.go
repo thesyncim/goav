@@ -144,11 +144,7 @@ type BranchSpec struct {
 	operations   []OperationSpec
 	destinations []destinationRef
 
-	from         string
-	tap          string
-	tapDomain    MediaDomain
-	policy       pipeline.RoutePolicy
-	label        string
+	source       branchSourceBinding
 	branchBuffer BranchBuffer
 
 	err error
@@ -182,12 +178,7 @@ func (b *branchBuilder) From(source branchSource) *branchBuilder {
 		b.setErr(branchSourceInvalidError(firstNonEmpty(b.spec.name, "branch")))
 		return b
 	}
-	binding := source.branchSource()
-	b.spec.from = binding.from
-	b.spec.tap = binding.tap
-	b.spec.tapDomain = binding.tapDomain
-	b.spec.policy = binding.policy
-	b.spec.label = binding.label
+	b.spec.source = source.branchSource()
 	return b
 }
 
@@ -195,8 +186,8 @@ func (b *branchBuilder) Stream(stream av.StreamID) *branchBuilder {
 	if b == nil {
 		return b
 	}
-	b.spec.policy = pipeline.RouteByStream
-	b.spec.label = string(stream)
+	b.spec.source.policy = pipeline.RouteByStream
+	b.spec.source.label = string(stream)
 	return b
 }
 
@@ -204,8 +195,8 @@ func (b *branchBuilder) Event(event av.EventType) *branchBuilder {
 	if b == nil {
 		return b
 	}
-	b.spec.policy = pipeline.RouteByEvent
-	b.spec.label = string(event)
+	b.spec.source.policy = pipeline.RouteByEvent
+	b.spec.source.label = string(event)
 	return b
 }
 
@@ -510,8 +501,8 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	if spec.err != nil {
 		return spec.err
 	}
-	if spec.from != "" {
-		return plannedBranchNodeSourceError(spec.name, spec.from)
+	if spec.source.from != "" {
+		return plannedBranchNodeSourceError(spec.name, spec.source.from)
 	}
 	if err := validateChainMedia("build branches", firstNonEmpty(spec.name, "branch"), selected, chainSpec{name: spec.name, media: spec.media}); err != nil {
 		return err
@@ -650,47 +641,47 @@ func operationSpecTapIsTerminalPacket(operation OperationSpec) bool {
 
 func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]chainStep, TapRef, error) {
 	streamSteps := jobStreamChainSteps(stream)
-	if spec.tap == "" {
+	if spec.source.tap == "" {
 		if parentPacket {
 			return nil, lastStreamTapRef(stream), nil
 		}
 		return cloneChainSteps(streamSteps), lastStreamTapRef(stream), nil
 	}
 	if stream == nil {
-		return nil, TapRef{}, plannedBranchTapMissingError("", spec.name, spec.tap)
+		return nil, TapRef{}, plannedBranchTapMissingError("", spec.name, spec.source.tap)
 	}
 	if parentPacket {
-		if tapIsPacketAnchor(stream, spec.tap) {
-			from := TapRef{name: spec.tap, domain: spec.tapDomain}
+		if tapIsPacketAnchor(stream, spec.source.tap) {
+			from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
 			if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainPacket); err != nil {
 				return nil, TapRef{}, err
 			}
 			return nil, tapWithDomain(from, DomainPacket), nil
 		}
-		return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.tap)
+		return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.source.tap)
 	}
-	if stream.decode && spec.tap == defaultDecodedTapName(stream.selector.Type) {
-		from := TapRef{name: spec.tap, domain: spec.tapDomain}
+	if stream.decode && spec.source.tap == defaultDecodedTapName(stream.selector.Type) {
+		from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
 		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainFrame); err != nil {
 			return nil, TapRef{}, err
 		}
 		return nil, tapWithDomain(from, DomainFrame), nil
 	}
-	if steps, ok := chainStepsThroughTap(streamSteps, spec.tap); ok {
-		from := TapRef{name: spec.tap, domain: spec.tapDomain}
+	if steps, ok := chainStepsThroughTap(streamSteps, spec.source.tap); ok {
+		from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
 		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainFrame); err != nil {
 			return nil, TapRef{}, err
 		}
 		return steps, tapWithDomain(from, DomainFrame), nil
 	}
-	if tapIsPostEncodeAnchor(stream, spec.tap) {
-		from := TapRef{name: spec.tap, domain: spec.tapDomain}
+	if tapIsPostEncodeAnchor(stream, spec.source.tap) {
+		from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
 		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainPacket); err != nil {
 			return nil, TapRef{}, err
 		}
-		return nil, TapRef{}, plannedBranchPostEncodeTapError(spec.name, spec.tap)
+		return nil, TapRef{}, plannedBranchPostEncodeTapError(spec.name, spec.source.tap)
 	}
-	return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.tap)
+	return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.source.tap)
 }
 
 func tapIsPacketAnchor(stream *jobStreamBuild, tap string) bool {

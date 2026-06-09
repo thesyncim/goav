@@ -2715,12 +2715,12 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 
 func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
 	audio := Branch("levels").From(FrameTap("audio.decoded")).To(Sink(&runtimeTestSink{name: "levels"}))
-	if audio.tap != "audio.decoded" || audio.from != "" {
-		t.Fatalf("audio anchor tap=%q from=%q, want tap only", audio.tap, audio.from)
+	if audio.source.tap != "audio.decoded" || audio.source.from != "" {
+		t.Fatalf("audio anchor tap=%q from=%q, want tap only", audio.source.tap, audio.source.from)
 	}
 	expert := Branch("expert").From(GraphNode{name: "decode-audio"}).To(Sink(&runtimeTestSink{name: "expert"}))
-	if expert.from != "decode-audio" || expert.tap != "" {
-		t.Fatalf("expert anchor tap=%q from=%q, want node only", expert.tap, expert.from)
+	if expert.source.from != "decode-audio" || expert.source.tap != "" {
+		t.Fatalf("expert anchor tap=%q from=%q, want node only", expert.source.tap, expert.source.from)
 	}
 }
 

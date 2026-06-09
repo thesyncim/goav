@@ -1844,13 +1844,13 @@ func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, 
 	if len(parentOperations) == 0 {
 		return nil
 	}
-	if spec.tap == "" {
+	if spec.source.tap == "" {
 		return sharedOperationSpecs(parentOperations)
 	}
-	if prefix, ok := operationSpecsThroughTap(parentOperations, spec.tap); ok {
+	if prefix, ok := operationSpecsThroughTap(parentOperations, spec.source.tap); ok {
 		return sharedOperationSpecs(prefix)
 	}
-	if stream.decode && spec.tap == defaultDecodedTapName(stream.selector.Type) {
+	if stream.decode && spec.source.tap == defaultDecodedTapName(stream.selector.Type) {
 		if prefix, ok := operationSpecsThroughKind(parentOperations, OpDecode); ok {
 			return sharedOperationSpecs(prefix)
 		}
@@ -1879,8 +1879,8 @@ func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec,
 		out = append(out, cloneOperationSpecs(spec.operations)...)
 		return out
 	}
-	if spec.tap != "" {
-		if prefix, ok := operationSpecsThroughTap(stream.operations, spec.tap); ok {
+	if spec.source.tap != "" {
+		if prefix, ok := operationSpecsThroughTap(stream.operations, spec.source.tap); ok {
 			return prefix
 		}
 	}

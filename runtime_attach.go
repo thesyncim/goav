@@ -267,13 +267,13 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	branch := runtimeBranch{
 		name:       spec.name,
 		media:      spec.media,
-		from:       spec.from,
-		tap:        spec.tap,
-		tapDomain:  spec.tapDomain,
+		from:       spec.source.from,
+		tap:        spec.source.tap,
+		tapDomain:  spec.source.tapDomain,
 		operations: operations,
 		encode:     cloneCodecSpec(chainEncodeSpec(spec.operations)),
-		policy:     spec.policy,
-		label:      spec.label,
+		policy:     spec.source.policy,
+		label:      spec.source.label,
 		buffer:     spec.branchBuffer.pipelinePolicy(),
 	}
 	branch.prepared = runtimeBranchOperationsFromSpecs(operations)
