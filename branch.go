@@ -95,6 +95,20 @@ func newDirectDestinationRef(name string, dest destinationSpec) destinationRef {
 	}
 }
 
+// branchDestinationNames derives a branch's destination names from its
+// destination handles, so BranchSpec keeps no parallel name list — the
+// destinationRef handles are the single source of truth.
+func branchDestinationNames(destinations []destinationRef) []string {
+	if len(destinations) == 0 {
+		return nil
+	}
+	names := make([]string, len(destinations))
+	for i := range destinations {
+		names[i] = destinations[i].name
+	}
+	return names
+}
+
 func destinationBindingFromDestination(dest Destination) (destinationBinding, error) {
 	direct, err := destinationSpecFromDestination(dest)
 	if err != nil {
@@ -125,11 +139,10 @@ func destinationSpecEmpty(dest destinationSpec) bool {
 }
 
 type BranchSpec struct {
-	name             string
-	media            av.MediaType
-	operations       []OperationSpec
-	destinations     []destinationRef
-	destinationNames []string
+	name         string
+	media        av.MediaType
+	operations   []OperationSpec
+	destinations []destinationRef
 
 	from         string
 	tap          string
@@ -403,7 +416,6 @@ func (b *branchBuilder) snapshot() BranchSpec {
 	spec := b.spec
 	spec.operations = cloneOperationSpecs(spec.operations)
 	spec.destinations = cloneDestinationRefs(spec.destinations)
-	spec.destinationNames = append([]string(nil), spec.destinationNames...)
 	return spec
 }
 
@@ -423,7 +435,6 @@ func appendDestination(spec *BranchSpec, destination destinationBinding, index i
 			return ref.err
 		}
 		spec.destinations = append(spec.destinations, ref)
-		spec.destinationNames = append(spec.destinationNames, ref.name)
 		return nil
 	default:
 		return branchDestinationInvalidError(spec.name, "unsupported branch destination")
@@ -489,7 +500,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			sharedOps:        sharedOps,
 			privateOps:       privateOps,
 			encode:           encode,
-			destinationNames: append([]string(nil), branches[i].destinationNames...),
+			destinationNames: append([]string(nil), branchDestinationNames(branches[i].destinations)...),
 		})
 	}
 	return job
@@ -508,7 +519,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	if spec.name == "" {
 		return branchIntentNameMissingError(index, streamIntent{Select: StreamSelect{Type: selected}})
 	}
-	if len(spec.destinationNames) == 0 {
+	if len(spec.destinations) == 0 {
 		return branchIntentDestinationMissingError(streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
 	}
 	stream := streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
@@ -546,14 +557,14 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	if !codecIntentSet(effectiveEncode) && !branchDestinationsAllSinkDestinations(spec.destinations) {
 		return branchEncodeMissingError(stream)
 	}
-	seen := make(map[string]int, len(spec.destinationNames))
-	for i, destinationName := range spec.destinationNames {
+	seen := make(map[string]int, len(spec.destinations))
+	for i, destinationName := range branchDestinationNames(spec.destinations) {
 		if destinationName == "" {
 			return branchDestinationNameEmptyError(streamBuild{name: spec.name, selector: av.StreamSelector{Type: selected}}, i)
 		}
 		if firstIndex, ok := seen[destinationName]; ok {
 			return duplicateBranchDestinationError(
-				streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Destinations: spec.destinationNames},
+				streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Destinations: branchDestinationNames(spec.destinations)},
 				destinationName,
 				firstIndex,
 				i,
