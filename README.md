@@ -419,7 +419,7 @@ defer levels.Close(ctx)
 
 state := task.Snapshot()
 for _, branch := range state.Branches {
-    if branch.State == goav.BranchAttached && branch.Name == "levels" {
+    if branch.State == info.BranchAttached && branch.Name == "levels" {
         log.Printf("goav levels frames=%d", branch.Stats.Frames)
     }
 }
@@ -428,8 +428,9 @@ log.Printf("goav stats packets=%d frames=%d dropped=%d",
 ```
 
 `Task.Snapshot()` returns one point-in-time view with typed lifecycle states
-(`TaskState`, `BranchState`, `DestinationState`), graph stats, stable taps, and
-active runtime branches. `Attachment.Snapshot()` reports the branch-owned view.
+(`info.TaskState`, `info.BranchState`, `info.DestinationState`), graph stats,
+stable taps, and active runtime branches. `Attachment.Snapshot()` reports the
+branch-owned view.
 This works the same for video probes, screenshot collectors, packet loss
 diagnostics, late recording branches, and temporary preview sinks.
 

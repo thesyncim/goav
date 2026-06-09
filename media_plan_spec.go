@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -142,9 +143,9 @@ func validateGraphPlanEdges(plan graphPlan) error {
 	return nil
 }
 
-func graphPlanOperationDestinationsRequired(kind OperationKind) bool {
+func graphPlanOperationDestinationsRequired(kind info.OperationKind) bool {
 	switch kind {
-	case OpMux, OpSink, OpWrite:
+	case info.OpMux, info.OpSink, info.OpWrite:
 		return true
 	default:
 		return false
@@ -311,13 +312,13 @@ func streamIntentPacketCopyOnly(stream streamIntent) bool {
 	for i := range stream.Operations {
 		op := stream.Operations[i]
 		switch op.Kind {
-		case OpCopy:
+		case info.OpCopy:
 			if !op.Encode.Copy {
 				return false
 			}
 			hasCopy = true
-		case OpTap:
-			if op.Tap.Domain != shape.DomainPacket || op.Tap.After != OpCopy {
+		case info.OpTap:
+			if op.Tap.Domain != shape.DomainPacket || op.Tap.After != info.OpCopy {
 				return false
 			}
 		default:

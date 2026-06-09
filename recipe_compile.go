@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -230,8 +231,8 @@ func installTaskTaps(mediaTask Task, taps []workTap) {
 	runtimeTask.taps = tapInfosFromPlan(taps)
 }
 
-func tapInfosFromPlan(taps []workTap) []TapInfo {
-	out := make([]TapInfo, 0, len(taps))
+func tapInfosFromPlan(taps []workTap) []info.Tap {
+	out := make([]info.Tap, 0, len(taps))
 	seen := make(map[string]struct{}, len(taps))
 	for i := range taps {
 		if taps[i].Name == "" {
@@ -241,7 +242,7 @@ func tapInfosFromPlan(taps []workTap) []TapInfo {
 			continue
 		}
 		seen[taps[i].Name] = struct{}{}
-		out = append(out, TapInfo{
+		out = append(out, info.Tap{
 			Name:      taps[i].Name,
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,
@@ -1173,7 +1174,7 @@ func validateOperationSpecShapes(operation string, stream streamIntent, initial 
 	node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
 	for i := range stream.Operations {
 		next := stream.Operations[i]
-		if next.Kind == OpTap || next.Kind == OpShape {
+		if next.Kind == info.OpTap || next.Kind == info.OpShape {
 			shape = operationSpecOutputShape(shape, next)
 			continue
 		}
@@ -1214,13 +1215,13 @@ func operationShapeMismatchError(operation string, node string, index int, step 
 
 func operationSpecComponent(operation OperationSpec) string {
 	switch operation.Kind {
-	case OpDecode:
+	case info.OpDecode:
 		return firstNonEmpty(string(operation.Decode.ID), operation.Component, "decode")
-	case OpTransform:
+	case info.OpTransform:
 		return firstNonEmpty(transformFactoryName(operation.Transform), "transform")
-	case OpEncode:
+	case info.OpEncode:
 		return firstNonEmpty(string(operation.Encode.ID), operation.Component, "encode")
-	case OpCopy:
+	case info.OpCopy:
 		return "packet-copy"
 	default:
 		return operation.Component
@@ -1240,25 +1241,25 @@ func shapeSetString(shapes shape.Set) string {
 
 func operationShapeMismatchSuggestions(operation OperationSpec) []string {
 	switch operation.Kind {
-	case OpDecode:
+	case info.OpDecode:
 		return []string{
 			"decode only consumes packet-domain media",
 			"remove duplicate .Decode() calls after a frame tap",
 			"start from goav.PacketTap(name) when a runtime branch should decode",
 		}
-	case OpTransform:
+	case info.OpTransform:
 		return []string{
 			"call .Decode() before frame transforms when starting from packets",
 			"use .Video().Resize(...) for video frames",
 			"use .Audio().Resample(...) for audio frames",
 		}
-	case OpEncode:
+	case info.OpEncode:
 		return []string{
 			"call .Decode() before encoding when starting from packets",
 			"keep .Shape(...) annotations in the frame domain before encoders",
 			"use .Copy() instead of an encoder for packet-preserving fanout",
 		}
-	case OpCopy:
+	case info.OpCopy:
 		return []string{
 			"copy only consumes packet-domain media",
 			"move .Copy() before decode or start from goav.PacketTap(name)",

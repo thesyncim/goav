@@ -3,6 +3,7 @@ package goav
 import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -82,15 +83,15 @@ func (spec TransformSpec) OutputShapes(input shape.Spec) shape.Set {
 
 func (operation OperationSpec) InputShapes() shape.Set {
 	switch operation.Kind {
-	case OpDecode:
+	case info.OpDecode:
 		codecID := firstNonEmptyCodec(operation.Decode.ID, av.CodecID(operation.Component))
 		media := firstNonEmptyMedia(operation.Decode.Type, operation.Decode.Parameters.Type, codecMedia(codecID))
 		return shape.Set{shape.Packet(media, codecID)}
-	case OpShape:
+	case info.OpShape:
 		return nil
-	case OpTransform:
+	case info.OpTransform:
 		return operation.Transform.InputShapes()
-	case OpEncode, OpCopy:
+	case info.OpEncode, info.OpCopy:
 		return codecSpecInputShapes(operation.Encode)
 	default:
 		return nil
@@ -99,14 +100,14 @@ func (operation OperationSpec) InputShapes() shape.Set {
 
 func (operation OperationSpec) OutputShapes(input shape.Spec) shape.Set {
 	switch operation.Kind {
-	case OpDecode:
+	case info.OpDecode:
 		input.Domain = shape.DomainFrame
 		return shape.Set{input}
-	case OpShape:
+	case info.OpShape:
 		return shape.Set{shape.Merge(input, operation.Shape)}
-	case OpTransform:
+	case info.OpTransform:
 		return operation.Transform.OutputShapes(input)
-	case OpEncode, OpCopy:
+	case info.OpEncode, info.OpCopy:
 		return codecSpecOutputShapes(operation.Encode, input)
 	default:
 		return shape.Set{input}

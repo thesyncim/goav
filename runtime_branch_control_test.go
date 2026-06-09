@@ -9,6 +9,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -337,7 +338,7 @@ func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
 		t.Fatalf("new branch first message payload=%d keyframe=%v, want the phase-3 keyframe", firstPayload, firstKeyframe)
 	}
 	waitForCondition(t, "old branch detached at boundary", func() bool {
-		return attA.Snapshot().State == BranchDetached
+		return attA.Snapshot().State == info.BranchDetached
 	})
 	aBefore := aCount.Load()
 
@@ -442,7 +443,7 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 		t.Fatalf("new branch first frame payload = %d, want 2 (the next frame after the rebranch)", got)
 	}
 	waitForCondition(t, "old branch detached at boundary", func() bool {
-		return attA.Snapshot().State == BranchDetached
+		return attA.Snapshot().State == info.BranchDetached
 	})
 	aBefore := aCount.Load()
 
@@ -503,8 +504,8 @@ func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 	if next != nil {
 		t.Fatalf("failed rebranch returned attachment %v, want nil", next.ID())
 	}
-	if got := attA.Snapshot().State; got != BranchAttached {
-		t.Fatalf("old branch state after failed rebranch = %v, want %v", got, BranchAttached)
+	if got := attA.Snapshot().State; got != info.BranchAttached {
+		t.Fatalf("old branch state after failed rebranch = %v, want %v", got, info.BranchAttached)
 	}
 
 	// The old branch keeps receiving after the failed rebranch.
@@ -541,11 +542,11 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	destinationState := func(att Attachment, label string) DestinationState {
+	destinationState := func(att Attachment, label string) info.DestinationState {
 		t.Helper()
 		snapshot := att.Snapshot()
-		if snapshot.State != BranchDetached {
-			t.Fatalf("%s: state = %v, want %v", label, snapshot.State, BranchDetached)
+		if snapshot.State != info.BranchDetached {
+			t.Fatalf("%s: state = %v, want %v", label, snapshot.State, info.BranchDetached)
 		}
 		if len(snapshot.Destinations) != 1 {
 			t.Fatalf("%s: destinations = %d, want 1", label, len(snapshot.Destinations))
@@ -564,8 +565,8 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := destinationState(attA, "drained branch a"); got != DestinationCommitted {
-		t.Fatalf("drained branch destination state = %v, want %v", got, DestinationCommitted)
+	if got := destinationState(attA, "drained branch a"); got != info.DestinationCommitted {
+		t.Fatalf("drained branch destination state = %v, want %v", got, info.DestinationCommitted)
 	}
 
 	// Abort: the replaced branch's destination aborts.
@@ -576,16 +577,16 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := destinationState(attB, "aborted branch b"); got != DestinationAborted {
-		t.Fatalf("aborted branch destination state = %v, want %v", got, DestinationAborted)
+	if got := destinationState(attB, "aborted branch b"); got != info.DestinationAborted {
+		t.Fatalf("aborted branch destination state = %v, want %v", got, info.DestinationAborted)
 	}
 
 	// Default: a plain detach keeps reporting closed.
 	if err := task.Detach(ctx, attC); err != nil {
 		t.Fatal(err)
 	}
-	if got := destinationState(attC, "detached branch c"); got != DestinationClosed {
-		t.Fatalf("plain detached branch destination state = %v, want %v", got, DestinationClosed)
+	if got := destinationState(attC, "detached branch c"); got != info.DestinationClosed {
+		t.Fatalf("plain detached branch destination state = %v, want %v", got, info.DestinationClosed)
 	}
 
 	release <- struct{}{}

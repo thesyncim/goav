@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -35,7 +36,7 @@ type inputIntent struct {
 
 type streamIntent struct {
 	Name         string
-	Select       StreamSelect
+	Select       info.StreamSelect
 	From         TapRef
 	Decode       bool
 	DecodeCodec  codec.CodecSpec
@@ -47,7 +48,7 @@ type streamIntent struct {
 }
 
 type OperationSpec struct {
-	Kind      OperationKind
+	Kind      info.OperationKind
 	Component string
 	Stage     pipeline.Stage
 	Shape     shape.Spec
@@ -84,17 +85,6 @@ func RealtimeCodecChangePolicy() CodecChangePolicy {
 		DropUntilSync:        true,
 		FailOnDifferentCodec: true,
 	}
-}
-
-type StreamSelect struct {
-	ID       av.StreamID
-	Index    int
-	UseIndex bool
-	Type     av.MediaType
-	Codec    av.CodecID
-	Name     string
-	// Input narrows the selection to the named job input (goav.InputName).
-	Input string
 }
 
 type BuildError struct {
@@ -868,18 +858,18 @@ type chainStep struct {
 }
 
 func operationSpecForDecode(codec codec.CodecSpec, component string) OperationSpec {
-	return OperationSpec{Kind: OpDecode, Component: component, Decode: cloneCodecSpec(codec)}
+	return OperationSpec{Kind: info.OpDecode, Component: component, Decode: cloneCodecSpec(codec)}
 }
 
 func operationSpecForCopy(codec codec.CodecSpec) OperationSpec {
-	return OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(codec)}
+	return OperationSpec{Kind: info.OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(codec)}
 }
 
 func operationSpecForEncode(codec codec.CodecSpec) OperationSpec {
 	if codec.Copy {
 		return operationSpecForCopy(codec)
 	}
-	return OperationSpec{Kind: OpEncode, Component: string(codec.ID), Encode: cloneCodecSpec(codec)}
+	return OperationSpec{Kind: info.OpEncode, Component: string(codec.ID), Encode: cloneCodecSpec(codec)}
 }
 
 func operationSpecForStage(stage pipeline.Stage) OperationSpec {
@@ -887,46 +877,46 @@ func operationSpecForStage(stage pipeline.Stage) OperationSpec {
 	if stage != nil {
 		name = stage.Name()
 	}
-	return OperationSpec{Kind: OpStage, Component: name, Stage: stage}
+	return OperationSpec{Kind: info.OpStage, Component: name, Stage: stage}
 }
 
 func operationSpecForShape(shape shape.Spec) OperationSpec {
-	return OperationSpec{Kind: OpShape, Component: "shape", Shape: shape}
+	return OperationSpec{Kind: info.OpShape, Component: "shape", Shape: shape}
 }
 
 func operationSpecForTransform(transform TransformSpec) OperationSpec {
 	return OperationSpec{
-		Kind:      OpTransform,
+		Kind:      info.OpTransform,
 		Component: transformFactoryName(transform),
 		Transform: cloneTransformSpec(transform),
 	}
 }
 
-func operationSpecForTap(tap TapRef, media av.MediaType, after OperationKind) OperationSpec {
+func operationSpecForTap(tap TapRef, media av.MediaType, after info.OperationKind) OperationSpec {
 	domain := tap.domain
 	if domain == "" {
 		domain = tapDomainForAfter(after)
 	}
 	intent := tapIntent{Name: tap.name, MediaKind: media, Domain: domain, After: after}
-	return OperationSpec{Kind: OpTap, Component: tap.name, Tap: intent}
+	return OperationSpec{Kind: info.OpTap, Component: tap.name, Tap: intent}
 }
 
 // tapDomainForAfter infers a domain-less tap's media domain from the operation it
 // follows: packets after select/copy/encode, frames otherwise.
-func tapDomainForAfter(after OperationKind) shape.MediaDomain {
+func tapDomainForAfter(after info.OperationKind) shape.MediaDomain {
 	switch after {
-	case OpSelect, OpCopy, OpEncode:
+	case info.OpSelect, info.OpCopy, info.OpEncode:
 		return shape.DomainPacket
 	default:
 		return shape.DomainFrame
 	}
 }
 
-func operationSpecAfter(operations []OperationSpec, fallback OperationKind) OperationKind {
+func operationSpecAfter(operations []OperationSpec, fallback info.OperationKind) info.OperationKind {
 	after := fallback
 	for i := range operations {
 		switch operations[i].Kind {
-		case OpTap:
+		case info.OpTap:
 			continue
 		default:
 			after = operations[i].Kind
@@ -935,7 +925,7 @@ func operationSpecAfter(operations []OperationSpec, fallback OperationKind) Oper
 	return after
 }
 
-func operationSpecsContainKind(operations []OperationSpec, kind OperationKind) bool {
+func operationSpecsContainKind(operations []OperationSpec, kind info.OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true
@@ -947,9 +937,9 @@ func operationSpecsContainKind(operations []OperationSpec, kind OperationKind) b
 func operationSpecsContainChainStep(operations []OperationSpec) bool {
 	for i := range operations {
 		switch operations[i].Kind {
-		case OpStage, OpShape, OpTransform:
+		case info.OpStage, info.OpShape, info.OpTransform:
 			return true
-		case OpTap:
+		case info.OpTap:
 			if operations[i].Tap.Domain != shape.DomainPacket {
 				return true
 			}
@@ -962,7 +952,7 @@ func jobStreamHasDecodeOperation(stream *jobStreamBuild) bool {
 	if stream == nil {
 		return false
 	}
-	return operationSpecsContainKind(stream.operations, OpDecode)
+	return operationSpecsContainKind(stream.operations, info.OpDecode)
 }
 
 func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
@@ -973,7 +963,7 @@ func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
 		return
 	}
 	// Reached only when no decode op exists yet (so no codec options were given);
-	// an explicit Decode(opts) always appends its own OpDecode.
+	// an explicit Decode(opts) always appends its own info.OpDecode.
 	operation := operationSpecForDecode(codec.CodecSpec{}, string(stream.selector.Codec))
 	stream.operations = append([]OperationSpec{operation}, stream.operations...)
 }
@@ -1462,7 +1452,7 @@ func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
 	operations := make([]OperationSpec, 0, 2)
 	if stream.decode {
 		operations = append(operations, OperationSpec{
-			Kind:      OpDecode,
+			Kind:      info.OpDecode,
 			Component: string(stream.selector.Codec),
 			Decode:    cloneCodecSpec(stream.decodeCodec),
 			Shared:    stream.from.Domain() == shape.DomainFrame,
@@ -1478,12 +1468,12 @@ func streamBuildSplitOperationSpecs(stream streamBuild) []OperationSpec {
 	operations := make([]OperationSpec, 0, len(stream.sharedOps)+len(stream.privateOps)+2)
 	operations = append(operations, cloneOperationSpecs(stream.sharedOps)...)
 	operations = append(operations, cloneOperationSpecs(stream.privateOps)...)
-	if stream.decode && !operationSpecsContainKind(operations, OpDecode) {
+	if stream.decode && !operationSpecsContainKind(operations, info.OpDecode) {
 		operation := operationSpecForDecode(stream.decodeCodec, string(stream.selector.Codec))
 		operation.Shared = stream.from.Domain() == shape.DomainFrame && len(stream.sharedOps) != 0
 		operations = append([]OperationSpec{operation}, operations...)
 	}
-	// The encode op (OpEncode/OpCopy) is always already in sharedOps/privateOps,
+	// The encode op (info.OpEncode/info.OpCopy) is always already in sharedOps/privateOps,
 	// so there is nothing to re-add.
 	return operations
 }
@@ -1503,7 +1493,7 @@ func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, 
 		return sharedOperationSpecs(prefix)
 	}
 	if chainHasDecode(parentOperations) && spec.source.tap == defaultDecodedTapName(stream.selector.Type) {
-		if prefix, ok := operationSpecsThroughKind(parentOperations, OpDecode); ok {
+		if prefix, ok := operationSpecsThroughKind(parentOperations, info.OpDecode); ok {
 			return sharedOperationSpecs(prefix)
 		}
 		return sharedOperationSpecs([]OperationSpec{operationSpecForDecode(chainDecodeCodec(parentOperations), string(stream.selector.Codec))})
@@ -1519,10 +1509,10 @@ func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec,
 		return cloneOperationSpecs(spec.operations)
 	}
 	if len(spec.operations) != 0 {
-		if operationSpecsContainKind(spec.operations, OpCopy) {
+		if operationSpecsContainKind(spec.operations, info.OpCopy) {
 			return cloneOperationSpecs(spec.operations)
 		}
-		if prefix, ok := operationSpecsThroughKind(stream.operations, OpCopy); ok {
+		if prefix, ok := operationSpecsThroughKind(stream.operations, info.OpCopy); ok {
 			out := cloneOperationSpecs(prefix)
 			out = append(out, cloneOperationSpecs(spec.operations)...)
 			return out
@@ -1550,7 +1540,7 @@ func sharedOperationSpecs(operations []OperationSpec) []OperationSpec {
 	return out
 }
 
-func operationSpecsThroughKind(operations []OperationSpec, kind OperationKind) ([]OperationSpec, bool) {
+func operationSpecsThroughKind(operations []OperationSpec, kind info.OperationKind) ([]OperationSpec, bool) {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return cloneOperationSpecs(operations[:i+1]), true
@@ -1565,7 +1555,7 @@ func operationSpecsThroughTap(operations []OperationSpec, tap string) ([]Operati
 	}
 	for i := range operations {
 		operation := operations[i]
-		if operation.Kind != OpTap {
+		if operation.Kind != info.OpTap {
 			continue
 		}
 		if operation.Component == tap || operation.Tap.Name == tap {
@@ -1575,14 +1565,14 @@ func operationSpecsThroughTap(operations []OperationSpec, tap string) ([]Operati
 	return nil, false
 }
 
-// operationSpecTaps derives a stream's exported taps from its OpTap operations —
+// operationSpecTaps derives a stream's exported taps from its info.OpTap operations —
 // the single source of truth — instead of the parallel chain-step-tap and
-// post-encode-tap projections. Each OpTap already carries the resolved tap
+// post-encode-tap projections. Each info.OpTap already carries the resolved tap
 // (name/domain/media/after) from operationSpecForTap.
 func operationSpecTaps(operations []OperationSpec, media av.MediaType) []tapIntent {
 	taps := make([]tapIntent, 0, len(operations))
 	for i := range operations {
-		if operations[i].Kind != OpTap {
+		if operations[i].Kind != info.OpTap {
 			continue
 		}
 		tap := operations[i].Tap
@@ -1594,9 +1584,9 @@ func operationSpecTaps(operations []OperationSpec, media av.MediaType) []tapInte
 	return taps
 }
 
-func initialStepAfter(decode bool) OperationKind {
+func initialStepAfter(decode bool) info.OperationKind {
 	if decode {
-		return OpDecode
+		return info.OpDecode
 	}
 	return ""
 }
@@ -3154,7 +3144,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 			b.job.setErr(flowDecodeDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
 			return b
 		}
-		// The flow's OpDecode is appended below with the rest of spec.operations.
+		// The flow's info.OpDecode is appended below with the rest of spec.operations.
 	}
 	if len(specSteps) != 0 && !chainHasDecode(spec.operations) {
 		b.ensureDecodeOperation()
@@ -3218,7 +3208,7 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 			b.job.setErr(err)
 			return b
 		}
-		stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, OpEncode)))
+		stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, info.OpEncode)))
 		return b
 	}
 	if err := validateTapDomain("build stream", jobStreamName(stream), tap, shape.DomainFrame); err != nil {
@@ -3230,8 +3220,8 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 	return b
 }
 
-func streamSelectFromAV(selector av.StreamSelector) StreamSelect {
-	return StreamSelect{
+func streamSelectFromAV(selector av.StreamSelector) info.StreamSelect {
+	return info.StreamSelect{
 		ID:       selector.ID,
 		Index:    selector.Index,
 		UseIndex: selector.UseIndex,
@@ -3549,19 +3539,19 @@ func chainStepsFromChainOperations(operations []OperationSpec) []chainStep {
 	for i := range operations {
 		operation := operations[i]
 		switch operation.Kind {
-		case OpStage:
+		case info.OpStage:
 			if operation.Stage != nil {
 				steps = append(steps, chainStep{stage: operation.Stage})
 			}
-		case OpShape:
+		case info.OpShape:
 			if !mediaShapeEmpty(operation.Shape) {
 				steps = append(steps, chainStep{shape: operation.Shape})
 			}
-		case OpTransform:
+		case info.OpTransform:
 			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
 				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
 			}
-		case OpTap:
+		case info.OpTap:
 			if operation.Tap.Name != "" && operation.Tap.Domain != shape.DomainPacket {
 				steps = append(steps, chainStep{tap: operation.Tap.Name, tapDomain: operation.Tap.Domain})
 			}
@@ -3959,7 +3949,7 @@ func transformSpecsFromOperationSpecs(operations []OperationSpec) []TransformSpe
 	}
 	transforms := make([]TransformSpec, 0)
 	for i := range operations {
-		if operations[i].Kind != OpTransform {
+		if operations[i].Kind != info.OpTransform {
 			continue
 		}
 		transform := cloneTransformSpec(operations[i].Transform)

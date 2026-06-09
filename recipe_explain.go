@@ -10,142 +10,34 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/shape"
 )
 
-type PlanReport struct {
-	Summary          string
-	Operation        string
-	Intent           Intent
-	Inputs           []InputReport
-	Streams          []StreamReport
-	Taps             []TapInfo
-	Branches         []BranchReport
-	Destinations     []DestinationReport
-	Decisions        []Decision
-	Missing          []Requirement
-	RequiredAdapters []AdapterRequirement
-	Warnings         []PlanDiagnostic
-	Graph            pipeline.Spec
-}
-
-type InputReport struct {
-	Name     string
-	URI      string
-	Protocol av.ProtocolID
-	MIMEType string
-	Realtime bool
-	Format   av.FormatID
-	Codec    av.CodecID
-	Streams  []av.Stream
-}
-
-type StreamReport struct {
-	Name         string
-	Select       StreamSelect
-	Decode       bool
-	Operations   []OperationReport
-	Encode       codec.CodecSpec
-	CodecChange  CodecChangePolicy
-	Destinations []string
-}
-
-type DestinationReport struct {
-	Name     string
-	URI      string
-	Protocol av.ProtocolID
-	MIMEType string
-	Format   av.FormatID
-	Kind     string
-	Branches []string
-}
-
-type BranchReport struct {
-	Name         string
-	Input        string
-	Stream       StreamSelect
-	Shape        shape.Spec
-	Operations   []OperationReport
-	Destinations []string
-}
-
-type OperationReport struct {
-	Kind      OperationKind
-	Component string
-	Detail    string
-	Shape     shape.Spec
-	Shared    bool
-}
-
-type Decision struct {
-	Code    string
-	Branch  string
-	Message string
-}
-
-type Requirement struct {
-	Kind       string
-	Name       string
-	RequiredBy string
-	Status     string
-}
-
-type AdapterRequirement struct {
-	Kind          string
-	Name          string
-	Format        av.FormatID
-	Codec         av.CodecID
-	Media         []av.MediaType
-	Codecs        []av.CodecID
-	MinStreams    int
-	MaxStreams    int
-	Transform     string
-	Input         av.MediaType
-	Output        av.MediaType
-	PixelFormats  []string
-	SampleFormats []string
-	ResizeModes   []filter.ResizeMode
-	Realtime      bool
-	Stateless     bool
-	Metadata      av.Metadata
-	RequiredBy    string
-	Status        string
-}
-
-type PlanDiagnostic struct {
-	Code        string
-	Node        string
-	Message     string
-	Details     []string
-	Suggestions []string
-}
-
-func (j *Job) Explain(ctx context.Context) (PlanReport, error) {
+func (j *Job) Explain(ctx context.Context) (info.Plan, error) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err == nil {
 		return newPlanReport("build job", resolved)
 	}
 	fallback, fallbackErr := compileJobRecipe(j)
 	if fallbackErr != nil {
-		return PlanReport{}, err
+		return info.Plan{}, err
 	}
 	report, reportErr := newPlanReport("build job", fallback)
 	if reportErr != nil {
-		return PlanReport{}, err
+		return info.Plan{}, err
 	}
 	annotatePlanReportError(&report, err)
 	return report, err
 }
 
-func newPlanReport(operation string, resolved recipeResolved) (PlanReport, error) {
+func newPlanReport(operation string, resolved recipeResolved) (info.Plan, error) {
 	graph, err := resolved.Describe()
 	if err != nil {
-		return PlanReport{}, err
+		return info.Plan{}, err
 	}
-	report := PlanReport{
+	report := info.Plan{
 		Operation: operation,
-		Intent:    cloneIntent(resolved.intent),
 		Graph:     graph,
 	}
 	work := resolved.workIR()
@@ -158,14 +50,14 @@ func newPlanReport(operation string, resolved recipeResolved) (PlanReport, error
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, report)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, work.Diagnostics...)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, muxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
-	report.Summary = explainSummary(report)
+	report.Summary = explainSummary(resolved.intent.Name, report)
 	return report, nil
 }
 
-func explainTaps(taps []workTap) []TapInfo {
-	reports := make([]TapInfo, 0, len(taps))
+func explainTaps(taps []workTap) []info.Tap {
+	reports := make([]info.Tap, 0, len(taps))
 	for i := range taps {
-		reports = append(reports, TapInfo{
+		reports = append(reports, info.Tap{
 			Name:      taps[i].Name,
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,
@@ -176,12 +68,12 @@ func explainTaps(taps []workTap) []TapInfo {
 	return reports
 }
 
-func explainInputs(resolved recipeResolved) []InputReport {
+func explainInputs(resolved recipeResolved) []info.Input {
 	inputs := resolved.intent.Inputs
-	reports := make([]InputReport, 0, len(inputs))
+	reports := make([]info.Input, 0, len(inputs))
 	for i := range inputs {
 		input := inputs[i]
-		report := InputReport{
+		report := info.Input{
 			Name:     input.Name,
 			URI:      input.URI,
 			Protocol: input.Protocol,
@@ -219,27 +111,26 @@ func (r recipeResolved) inputProbe(index int) (format.ProbeResult, bool) {
 	return probe, true
 }
 
-func explainStreams(streams []streamIntent) []StreamReport {
-	reports := make([]StreamReport, 0, len(streams))
+func explainStreams(streams []streamIntent) []info.Stream {
+	reports := make([]info.Stream, 0, len(streams))
 	for i := range streams {
 		stream := streams[i]
-		reports = append(reports, StreamReport{
+		reports = append(reports, info.Stream{
 			Name:         stream.Name,
 			Select:       stream.Select,
 			Decode:       stream.Decode,
 			Operations:   explainOperationSpecs(stream.Operations),
 			Encode:       stream.Encode,
-			CodecChange:  stream.CodecChange,
 			Destinations: append([]string(nil), stream.Destinations...),
 		})
 	}
 	return reports
 }
 
-func explainOperationSpecs(operations []OperationSpec) []OperationReport {
-	reports := make([]OperationReport, 0, len(operations))
+func explainOperationSpecs(operations []OperationSpec) []info.Operation {
+	reports := make([]info.Operation, 0, len(operations))
 	for i := range operations {
-		reports = append(reports, OperationReport{
+		reports = append(reports, info.Operation{
 			Kind:      operations[i].Kind,
 			Component: operations[i].Component,
 			Detail:    operationSpecDetail(operations[i]),
@@ -252,11 +143,11 @@ func explainOperationSpecs(operations []OperationSpec) []OperationReport {
 
 func operationSpecShape(operation OperationSpec) shape.Spec {
 	switch operation.Kind {
-	case OpTransform:
+	case info.OpTransform:
 		return mediaShapeFromTransform(operation.Transform)
-	case OpShape:
+	case info.OpShape:
 		return operation.Shape
-	case OpEncode:
+	case info.OpEncode:
 		return mediaShapeFromCodecSpec(operation.Encode, shape.DomainPacket)
 	default:
 		return shape.Spec{}
@@ -265,33 +156,33 @@ func operationSpecShape(operation OperationSpec) shape.Spec {
 
 func operationSpecDetail(operation OperationSpec) string {
 	switch operation.Kind {
-	case OpTransform:
+	case info.OpTransform:
 		return firstNonEmpty(transformFactoryName(operation.Transform), "transform frames")
-	case OpShape:
+	case info.OpShape:
 		return "media shape annotation"
-	case OpStage:
+	case info.OpStage:
 		return "custom stage"
-	case OpTap:
+	case info.OpTap:
 		return "named media outlet"
-	case OpEncode:
+	case info.OpEncode:
 		return "frames to packets"
-	case OpDecode:
+	case info.OpDecode:
 		return "packets to frames"
 	default:
 		return ""
 	}
 }
 
-func explainBranches(work workPlan) []BranchReport {
+func explainBranches(work workPlan) []info.Branch {
 	operations := workOperationsByID(work.Operations)
-	reports := make([]BranchReport, 0, len(work.Branches))
+	reports := make([]info.Branch, 0, len(work.Branches))
 	for i := range work.Branches {
 		branch := work.Branches[i]
 		destinations := make([]string, 0, len(branch.Destinations))
 		for _, id := range branch.Destinations {
 			destinations = append(destinations, workDestinationNameByID(work.Destinations, id))
 		}
-		reports = append(reports, BranchReport{
+		reports = append(reports, info.Branch{
 			Name:         branch.Name,
 			Input:        branch.Input,
 			Stream:       branch.Stream,
@@ -306,14 +197,14 @@ func explainBranches(work workPlan) []BranchReport {
 // explainBranchOperations renders a branch's operation rows from the work
 // plan; the terminal destination operations are reported as destinations, not
 // branch operations.
-func explainBranchOperations(branch workBranch, operations map[string]workOperation) []OperationReport {
-	reports := make([]OperationReport, 0, len(branch.Operations))
+func explainBranchOperations(branch workBranch, operations map[string]workOperation) []info.Operation {
+	reports := make([]info.Operation, 0, len(branch.Operations))
 	for _, id := range branch.Operations {
 		operation, ok := operations[id]
 		if !ok || workOperationTerminal(operation.Kind) {
 			continue
 		}
-		reports = append(reports, OperationReport{
+		reports = append(reports, info.Operation{
 			Kind:      operation.Kind,
 			Component: operation.Component,
 			Detail:    operation.Detail,
@@ -324,16 +215,16 @@ func explainBranchOperations(branch workBranch, operations map[string]workOperat
 	return reports
 }
 
-func explainDecisions(decisions []planDecision) []Decision {
-	reports := make([]Decision, 0, len(decisions))
+func explainDecisions(decisions []planDecision) []info.Decision {
+	reports := make([]info.Decision, 0, len(decisions))
 	for i := range decisions {
-		reports = append(reports, Decision(decisions[i]))
+		reports = append(reports, info.Decision(decisions[i]))
 	}
 	return reports
 }
 
-func explainDestinations(destinations []destinationIntent, outputFormats map[string]av.FormatID, workDestinations []workDestination) []DestinationReport {
-	reports := make([]DestinationReport, 0, len(destinations))
+func explainDestinations(destinations []destinationIntent, outputFormats map[string]av.FormatID, workDestinations []workDestination) []info.Destination {
+	reports := make([]info.Destination, 0, len(destinations))
 	branchesByDestination := workDestinationBranches(workDestinations)
 	for i := range destinations {
 		destination := destinations[i]
@@ -346,7 +237,7 @@ func explainDestinations(destinations []destinationIntent, outputFormats map[str
 		if destination.URI != "" || destination.Protocol != "" || destination.MIMEType != "" || formatID != "" {
 			kind = "mux"
 		}
-		reports = append(reports, DestinationReport{
+		reports = append(reports, info.Destination{
 			Name:     name,
 			URI:      destination.URI,
 			Protocol: destination.Protocol,
@@ -370,9 +261,9 @@ func workDestinationBranches(destinations []workDestination) map[string][]string
 	return branches
 }
 
-func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterRequirement, []PlanDiagnostic) {
-	var requirements []AdapterRequirement
-	var warnings []PlanDiagnostic
+func explainRequirements(resolved recipeResolved, report info.Plan) ([]info.AdapterRequirement, []info.Diagnostic) {
+	var requirements []info.AdapterRequirement
+	var warnings []info.Diagnostic
 	for i := range report.Inputs {
 		input := report.Inputs[i]
 		switch {
@@ -384,7 +275,7 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 				firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
 			))
 		case input.Realtime && input.Codec != "":
-			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
+			requirements = appendAdapterRequirement(requirements, info.AdapterRequirement{
 				Kind:       "depacketizer",
 				Name:       string(input.Codec),
 				Codec:      input.Codec,
@@ -408,23 +299,23 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 	for i := range report.Branches {
 		branch := report.Branches[i]
 		stream, streamOK := reportStreamForBranch(resolved.intent.Streams, branch, i)
-		var branchWarnings []PlanDiagnostic
+		var branchWarnings []info.Diagnostic
 		requirements, branchWarnings = appendBranchOperationRequirements(requirements, resolved, branch, stream, streamOK)
 		warnings = append(warnings, branchWarnings...)
 	}
 	return requirements, warnings
 }
 
-func appendBranchOperationRequirements(requirements []AdapterRequirement, resolved recipeResolved, branch BranchReport, stream streamIntent, streamOK bool) ([]AdapterRequirement, []PlanDiagnostic) {
-	var warnings []PlanDiagnostic
+func appendBranchOperationRequirements(requirements []info.AdapterRequirement, resolved recipeResolved, branch info.Branch, stream streamIntent, streamOK bool) ([]info.AdapterRequirement, []info.Diagnostic) {
+	var warnings []info.Diagnostic
 	requiredBy := firstNonEmpty(branch.Name, "branch")
 	for i := range branch.Operations {
 		operation := branch.Operations[i]
 		switch operation.Kind {
-		case OpDecode:
+		case info.OpDecode:
 			codecID, ok := operationDecodeCodec(resolved, stream, streamOK, operation)
 			if !ok || codecID == "" {
-				warnings = append(warnings, PlanDiagnostic{
+				warnings = append(warnings, info.Diagnostic{
 					Code:    "decode_codec_deferred",
 					Node:    requiredBy,
 					Message: "decode codec will be resolved when the input opens",
@@ -436,13 +327,13 @@ func appendBranchOperationRequirements(requirements []AdapterRequirement, resolv
 				continue
 			}
 			requirements = appendAdapterRequirement(requirements, codecAdapterRequirement(resolved.runtime, "decoder", codecID, requiredBy))
-		case OpTransform:
+		case info.OpTransform:
 			name := operation.Component
 			if name == "" || name == "transform" {
 				continue
 			}
 			requirements = appendAdapterRequirement(requirements, filterAdapterRequirement(resolved.runtime, name, requiredBy))
-		case OpEncode:
+		case info.OpEncode:
 			codecID := operationEncodeCodec(stream, streamOK, operation)
 			if codecID == "" {
 				continue
@@ -453,7 +344,7 @@ func appendBranchOperationRequirements(requirements []AdapterRequirement, resolv
 	return requirements, warnings
 }
 
-func reportStreamForBranch(streams []streamIntent, branch BranchReport, index int) (streamIntent, bool) {
+func reportStreamForBranch(streams []streamIntent, branch info.Branch, index int) (streamIntent, bool) {
 	for i := range streams {
 		if reportBranchNameForStream(streams[i], i) == branch.Name {
 			return streams[i], true
@@ -469,7 +360,7 @@ func reportBranchNameForStream(stream streamIntent, index int) string {
 	return firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", index))
 }
 
-func operationDecodeCodec(resolved recipeResolved, stream streamIntent, streamOK bool, operation OperationReport) (av.CodecID, bool) {
+func operationDecodeCodec(resolved recipeResolved, stream streamIntent, streamOK bool, operation info.Operation) (av.CodecID, bool) {
 	if streamOK {
 		if codecID, ok := reportDecodeCodec(resolved, stream); ok {
 			return codecID, true
@@ -482,7 +373,7 @@ func operationDecodeCodec(resolved recipeResolved, stream streamIntent, streamOK
 	return codecID, true
 }
 
-func operationEncodeCodec(stream streamIntent, streamOK bool, operation OperationReport) av.CodecID {
+func operationEncodeCodec(stream streamIntent, streamOK bool, operation info.Operation) av.CodecID {
 	if streamOK && stream.Encode.ID != "" {
 		return stream.Encode.ID
 	}
@@ -534,8 +425,8 @@ func adapterRequirementRuntimeStatus(rt Runtime, kind string, formatID av.Format
 	}
 }
 
-func filterAdapterRequirement(rt Runtime, name string, requiredBy string) AdapterRequirement {
-	requirement := AdapterRequirement{
+func filterAdapterRequirement(rt Runtime, name string, requiredBy string) info.AdapterRequirement {
+	requirement := info.AdapterRequirement{
 		Kind:       "filter",
 		Name:       name,
 		Transform:  name,
@@ -561,8 +452,8 @@ func filterAdapterRequirement(rt Runtime, name string, requiredBy string) Adapte
 	return requirement
 }
 
-func formatAdapterRequirement(rt Runtime, kind string, formatID av.FormatID, requiredBy string) AdapterRequirement {
-	requirement := AdapterRequirement{
+func formatAdapterRequirement(rt Runtime, kind string, formatID av.FormatID, requiredBy string) info.AdapterRequirement {
+	requirement := info.AdapterRequirement{
 		Kind:       kind,
 		Name:       string(formatID),
 		Format:     formatID,
@@ -605,8 +496,8 @@ func codecFactoryStatus(err error) string {
 	return "missing"
 }
 
-func codecAdapterRequirement(rt Runtime, kind string, codecID av.CodecID, requiredBy string) AdapterRequirement {
-	requirement := AdapterRequirement{
+func codecAdapterRequirement(rt Runtime, kind string, codecID av.CodecID, requiredBy string) info.AdapterRequirement {
+	requirement := info.AdapterRequirement{
 		Kind:       kind,
 		Name:       string(codecID),
 		Codec:      codecID,
@@ -633,7 +524,7 @@ func codecDescriptorsForRequirement(rt Runtime, kind string, codecID av.CodecID)
 	return descriptors
 }
 
-func applyCodecDescriptorRequirement(requirement AdapterRequirement, descriptors []codec.Descriptor) AdapterRequirement {
+func applyCodecDescriptorRequirement(requirement info.AdapterRequirement, descriptors []codec.Descriptor) info.AdapterRequirement {
 	for i := range descriptors {
 		if descriptors[i].Type != "" && !mediaAllowed(requirement.Media, descriptors[i].Type) {
 			requirement.Media = append(requirement.Media, descriptors[i].Type)
@@ -655,7 +546,7 @@ func reportDecodeCodec(resolved recipeResolved, stream streamIntent) (av.CodecID
 	return knownProbeDecodeCodec(resolved.inputProbes, stream)
 }
 
-func appendAdapterRequirement(requirements []AdapterRequirement, requirement AdapterRequirement) []AdapterRequirement {
+func appendAdapterRequirement(requirements []info.AdapterRequirement, requirement info.AdapterRequirement) []info.AdapterRequirement {
 	key := adapterRequirementKey(requirement)
 	for i := range requirements {
 		if adapterRequirementKey(requirements[i]) == key {
@@ -665,7 +556,7 @@ func appendAdapterRequirement(requirements []AdapterRequirement, requirement Ada
 	return append(requirements, requirement)
 }
 
-func upsertAdapterRequirement(requirements []AdapterRequirement, requirement AdapterRequirement) []AdapterRequirement {
+func upsertAdapterRequirement(requirements []info.AdapterRequirement, requirement info.AdapterRequirement) []info.AdapterRequirement {
 	key := adapterRequirementKey(requirement)
 	for i := range requirements {
 		if adapterRequirementKey(requirements[i]) == key {
@@ -676,20 +567,20 @@ func upsertAdapterRequirement(requirements []AdapterRequirement, requirement Ada
 	return append(requirements, requirement)
 }
 
-func adapterRequirementKey(requirement AdapterRequirement) string {
+func adapterRequirementKey(requirement info.AdapterRequirement) string {
 	return requirement.Kind + "|" + string(requirement.Format) + "|" + string(requirement.Codec) + "|" + requirement.Transform + "|" + requirement.RequiredBy
 }
 
-func annotatePlanReportError(report *PlanReport, err error) {
+func annotatePlanReportError(report *info.Plan, err error) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr == nil {
-		report.Warnings = appendPlanDiagnostics(report.Warnings, PlanDiagnostic{
+		report.Warnings = appendPlanDiagnostics(report.Warnings, info.Diagnostic{
 			Code:    "explain_preflight_error",
 			Message: err.Error(),
 		})
 		return
 	}
-	report.Warnings = appendPlanDiagnostics(report.Warnings, PlanDiagnostic{
+	report.Warnings = appendPlanDiagnostics(report.Warnings, info.Diagnostic{
 		Code:        buildErr.Code,
 		Node:        buildErr.Node,
 		Message:     buildErr.Reason,
@@ -701,7 +592,7 @@ func annotatePlanReportError(report *PlanReport, err error) {
 		if buildErr.Code == "destination_mux_incompatible" {
 			return
 		}
-		report.Missing = append(report.Missing, Requirement{
+		report.Missing = append(report.Missing, info.Requirement{
 			Kind:       firstNonEmpty(buildErr.Code, "requirement"),
 			Name:       firstNonEmpty(buildErr.Node, buildErr.Reason),
 			RequiredBy: buildErr.Node,
@@ -710,7 +601,7 @@ func annotatePlanReportError(report *PlanReport, err error) {
 		return
 	}
 	report.RequiredAdapters = upsertAdapterRequirement(report.RequiredAdapters, requirement)
-	report.Missing = appendMissingRequirement(report.Missing, Requirement{
+	report.Missing = appendMissingRequirement(report.Missing, info.Requirement{
 		Kind:       requirement.Kind,
 		Name:       firstNonEmpty(requirement.Name, string(requirement.Format), string(requirement.Codec), requirement.Transform),
 		RequiredBy: requirement.RequiredBy,
@@ -718,14 +609,14 @@ func annotatePlanReportError(report *PlanReport, err error) {
 	})
 }
 
-func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool) {
+func adapterRequirementFromBuildError(err *BuildError) (info.AdapterRequirement, bool) {
 	details := buildErrorDetailMap(err.Details)
 	status := adapterRequirementStatus(err.Code)
 	requiredBy := firstNonEmpty(err.Node, err.Operation)
 	switch err.Code {
 	case "input_demuxer_missing":
 		formatID := av.FormatID(details["format"])
-		return AdapterRequirement{
+		return info.AdapterRequirement{
 			Kind:       "demuxer",
 			Name:       string(formatID),
 			Format:     formatID,
@@ -734,7 +625,7 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 		}, formatID != ""
 	case "output_muxer_missing", "destination_muxer_missing":
 		formatID := av.FormatID(details["format"])
-		return AdapterRequirement{
+		return info.AdapterRequirement{
 			Kind:       "muxer",
 			Name:       string(formatID),
 			Format:     formatID,
@@ -743,7 +634,7 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 		}, formatID != ""
 	case "decode_adapter_missing", "decode_adapter_unavailable", "decode_adapter_incompatible":
 		codecID := av.CodecID(details["codec"])
-		requirement := AdapterRequirement{
+		requirement := info.AdapterRequirement{
 			Kind:       "decoder",
 			Name:       string(codecID),
 			Codec:      codecID,
@@ -754,7 +645,7 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 		return requirement, codecID != ""
 	case "encode_adapter_missing", "encode_adapter_unavailable", "encode_adapter_incompatible":
 		codecID := av.CodecID(details["codec"])
-		requirement := AdapterRequirement{
+		requirement := info.AdapterRequirement{
 			Kind:       "encoder",
 			Name:       string(codecID),
 			Codec:      codecID,
@@ -785,18 +676,18 @@ func adapterRequirementFromBuildError(err *BuildError) (AdapterRequirement, bool
 		return requirement, name != ""
 	default:
 		if strings.HasSuffix(err.Code, "_format_unknown") {
-			return AdapterRequirement{
+			return info.AdapterRequirement{
 				Kind:       "format-prober",
 				Name:       firstNonEmpty(err.Node, "format"),
 				RequiredBy: requiredBy,
 				Status:     "unknown",
 			}, true
 		}
-		return AdapterRequirement{}, false
+		return info.AdapterRequirement{}, false
 	}
 }
 
-func applyCodecDetailsFromBuildError(requirement *AdapterRequirement, details map[string]string) {
+func applyCodecDetailsFromBuildError(requirement *info.AdapterRequirement, details map[string]string) {
 	if requirement == nil {
 		return
 	}
@@ -897,7 +788,7 @@ func mediaTypesFromStrings(values []string) []av.MediaType {
 	return out
 }
 
-func appendMissingRequirement(requirements []Requirement, requirement Requirement) []Requirement {
+func appendMissingRequirement(requirements []info.Requirement, requirement info.Requirement) []info.Requirement {
 	for i := range requirements {
 		if requirements[i].Kind == requirement.Kind &&
 			requirements[i].Name == requirement.Name &&
@@ -909,7 +800,7 @@ func appendMissingRequirement(requirements []Requirement, requirement Requiremen
 	return append(requirements, requirement)
 }
 
-func appendPlanDiagnostics(diagnostics []PlanDiagnostic, next ...PlanDiagnostic) []PlanDiagnostic {
+func appendPlanDiagnostics(diagnostics []info.Diagnostic, next ...info.Diagnostic) []info.Diagnostic {
 	for i := range next {
 		found := false
 		for j := range diagnostics {
@@ -927,8 +818,8 @@ func appendPlanDiagnostics(diagnostics []PlanDiagnostic, next ...PlanDiagnostic)
 	return diagnostics
 }
 
-func explainSummary(report PlanReport) string {
-	name := firstNonEmpty(report.Intent.Name, "job")
+func explainSummary(intentName string, report info.Plan) string {
+	name := firstNonEmpty(intentName, "job")
 	input := "input"
 	if len(report.Inputs) == 1 {
 		input = firstNonEmpty(report.Inputs[0].Name, report.Inputs[0].URI, input)
@@ -947,19 +838,6 @@ func explainSummary(report PlanReport) string {
 	return fmt.Sprintf("%s %s through %d stream branch(es) to %s", name, input, len(report.Streams), target)
 }
 
-func cloneIntent(intent Intent) Intent {
-	clone := intent
-	clone.Inputs = append([]inputIntent(nil), intent.Inputs...)
-	clone.Streams = append([]streamIntent(nil), intent.Streams...)
-	for i := range clone.Streams {
-		clone.Streams[i].Operations = cloneOperationSpecs(intent.Streams[i].Operations)
-		clone.Streams[i].Taps = cloneTapIntents(intent.Streams[i].Taps)
-		clone.Streams[i].Destinations = append([]string(nil), intent.Streams[i].Destinations...)
-	}
-	clone.Destinations = append([]destinationIntent(nil), intent.Destinations...)
-	return clone
-}
-
 func cloneOperationSpecs(operations []OperationSpec) []OperationSpec {
 	if len(operations) == 0 {
 		return nil
@@ -971,11 +849,4 @@ func cloneOperationSpecs(operations []OperationSpec) []OperationSpec {
 		out = append(out, operation)
 	}
 	return out
-}
-
-func cloneTapIntents(taps []tapIntent) []tapIntent {
-	if len(taps) == 0 {
-		return nil
-	}
-	return append([]tapIntent(nil), taps...)
 }

@@ -194,7 +194,7 @@ func (b BranchBuffer) String() string {
 	return fmt.Sprintf("%s(capacity=%d)", mode, b.Capacity)
 }
 
-// DropReason keys TaskStats.DropReasons / NodeStats.DropReasons: why the runtime
+// DropReason keys GraphStats.DropReasons / NodeStats.DropReasons: why the runtime
 // shed a message. Use the DropReason* constants to read those maps without
 // importing the pipeline package.
 type DropReason = pipeline.DropPolicy

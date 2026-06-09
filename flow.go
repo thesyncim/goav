@@ -5,6 +5,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -307,7 +308,7 @@ func (b *chainBuilder) taps() []TapRef {
 	out := make([]TapRef, 0, len(b.spec.operations))
 	for i := range b.spec.operations {
 		operation := b.spec.operations[i]
-		if operation.Kind != OpTap || operation.Tap.Name == "" {
+		if operation.Kind != info.OpTap || operation.Tap.Name == "" {
 			continue
 		}
 		out = append(out, TapRef{name: operation.Tap.Name, domain: operation.Tap.Domain})
@@ -396,7 +397,7 @@ func (b *chainBuilder) tap(tap TapRef) {
 			b.setErr(err)
 			return
 		}
-		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, OpEncode)))
+		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, info.OpEncode)))
 		return
 	}
 	if err := validateTapDomain("build flow", firstNonEmpty(b.spec.name, "flow"), tap, shape.DomainFrame); err != nil {
@@ -454,15 +455,15 @@ func chainSpecFrom(flow Chain) (chainSpec, error) {
 // chainHasDecode / chainDecodeCodec / chainEncodeSpec derive a chain's decode and
 // encode facts from its operation list, so chainSpec keeps no parallel decode/
 // encode state — the operations are the single source of truth (one operation
-// list). The OpDecode operation carries the decode codec; the terminal
-// OpEncode/OpCopy carries the encode codec.
+// list). The info.OpDecode operation carries the decode codec; the terminal
+// info.OpEncode/info.OpCopy carries the encode codec.
 func chainHasDecode(operations []OperationSpec) bool {
-	return operationSpecsContainKind(operations, OpDecode)
+	return operationSpecsContainKind(operations, info.OpDecode)
 }
 
 func chainDecodeCodec(operations []OperationSpec) codec.CodecSpec {
 	for i := range operations {
-		if operations[i].Kind == OpDecode {
+		if operations[i].Kind == info.OpDecode {
 			return operations[i].Decode
 		}
 	}
@@ -471,7 +472,7 @@ func chainDecodeCodec(operations []OperationSpec) codec.CodecSpec {
 
 func chainEncodeSpec(operations []OperationSpec) codec.CodecSpec {
 	for i := range operations {
-		if operations[i].Kind == OpEncode || operations[i].Kind == OpCopy {
+		if operations[i].Kind == info.OpEncode || operations[i].Kind == info.OpCopy {
 			return operations[i].Encode
 		}
 	}

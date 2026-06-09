@@ -12,7 +12,7 @@ import (
 // distinct stream ids and I420 video format, and each may declare its canvas
 // position with .Region(x, y). This reuses the existing Job, so .To/Build/Run are
 // unchanged. (First slice: frame sources to a Sink; decode/encode arms build on
-// the same OpJoin mechanism as Mix — see docs/MULTI_INPUT.md.)
+// the same info.OpJoin mechanism as Mix — see docs/MULTI_INPUT.md.)
 func Composite(arms ...*jobStreamBuilder) *compositeStream {
 	return &compositeStream{arms: arms}
 }

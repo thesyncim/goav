@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -924,7 +925,7 @@ func branchComposeRouteOperationTransformsForName(name string, operations []Oper
 		if err != nil {
 			return nil, err
 		}
-		if operations[i].Kind == OpTransform && (operations[i].Transform.Resize != nil || operations[i].Transform.Resample != nil) {
+		if operations[i].Kind == info.OpTransform && (operations[i].Transform.Resize != nil || operations[i].Transform.Resample != nil) {
 			transformIndex++
 		}
 		if !mediaTransformEmpty(step) {
@@ -954,7 +955,7 @@ func branchComposeRouteOperationTransform(branchName string, transformIndex int,
 		suffix = "-" + strconv.Itoa(transformIndex+1)
 	}
 	switch operation.Kind {
-	case OpStage:
+	case info.OpStage:
 		if operation.Stage == nil {
 			return mediaTransform{}, branchChainStepError(branchName, "branch stage operation has no stage")
 		}
@@ -962,7 +963,7 @@ func branchComposeRouteOperationTransform(branchName string, transformIndex int,
 			name:  operation.Stage.Name(),
 			stage: operation.Stage,
 		}, nil
-	case OpTransform:
+	case info.OpTransform:
 		if operation.Transform.Resize != nil && operation.Transform.Resample != nil {
 			return mediaTransform{}, branchChainStepError(branchName, "branch transform operation cannot combine resize and resample")
 		}
@@ -1000,11 +1001,11 @@ func branchComposeRouteStageOperationCount(operations []OperationSpec) int {
 	count := 0
 	for i := range operations {
 		switch operations[i].Kind {
-		case OpStage:
+		case info.OpStage:
 			if operations[i].Stage != nil {
 				count++
 			}
-		case OpTransform:
+		case info.OpTransform:
 			if operations[i].Transform.Resize != nil || operations[i].Transform.Resample != nil {
 				count++
 			}
@@ -1021,11 +1022,11 @@ func branchComposeRouteStageOperations(operations []OperationSpec) []OperationSp
 	for i := range operations {
 		operation := operations[i]
 		switch operation.Kind {
-		case OpStage:
+		case info.OpStage:
 			if operation.Stage != nil {
 				out = append(out, operation)
 			}
-		case OpTransform:
+		case info.OpTransform:
 			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
 				out = append(out, operation)
 			}

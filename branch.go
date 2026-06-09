@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -355,7 +356,7 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 			b.setErr(err)
 			return b
 		}
-		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, OpEncode)))
+		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, info.OpEncode)))
 		return b
 	}
 	b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, initialStepAfter(chainHasDecode(b.spec.operations)))))
@@ -481,7 +482,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 		privateOps := plannedBranchPrivateOperationSpecs(stream, branches[i], parentPacket)
 		operations := append(cloneOperationSpecs(sharedOps), cloneOperationSpecs(privateOps)...)
 		// encode is derived from operations (chainEncodeSpec) at every reader —
-		// plannedBranchPrivateOperationSpecs already injects the OpCopy for the
+		// plannedBranchPrivateOperationSpecs already injects the info.OpCopy for the
 		// parentPacket passthrough case, so the op list is the single source.
 		job.branchStreams = append(job.branchStreams, streamBuild{
 			name:             branches[i].name,
@@ -509,12 +510,12 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		return err
 	}
 	if spec.name == "" {
-		return branchIntentNameMissingError(index, streamIntent{Select: StreamSelect{Type: selected}})
+		return branchIntentNameMissingError(index, streamIntent{Select: info.StreamSelect{Type: selected}})
 	}
 	if len(spec.destinations) == 0 {
-		return branchIntentDestinationMissingError(streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
+		return branchIntentDestinationMissingError(streamIntent{Name: spec.name, Select: info.StreamSelect{Type: selected}})
 	}
-	stream := streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
+	stream := streamIntent{Name: spec.name, Select: info.StreamSelect{Type: selected}}
 	if chainHasDecode(spec.operations) && !parentPacket {
 		return branchDecodeDomainError(stream.Name)
 	}
@@ -556,7 +557,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		}
 		if firstIndex, ok := seen[destinationName]; ok {
 			return duplicateBranchDestinationError(
-				streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}, Destinations: branchDestinationNames(spec.destinations)},
+				streamIntent{Name: spec.name, Select: info.StreamSelect{Type: selected}, Destinations: branchDestinationNames(spec.destinations)},
 				destinationName,
 				firstIndex,
 				i,
@@ -592,9 +593,9 @@ func branchSpecChainSteps(spec BranchSpec) []chainStep {
 func branchOperationSpecsContainStep(operations []OperationSpec) bool {
 	for i := range operations {
 		switch operations[i].Kind {
-		case OpStage, OpShape, OpTransform:
+		case info.OpStage, info.OpShape, info.OpTransform:
 			return true
-		case OpTap:
+		case info.OpTap:
 			if !operationSpecTapIsTerminalPacket(operations[i]) {
 				return true
 			}
@@ -611,19 +612,19 @@ func branchChainStepsFromOperationSpecs(operations []OperationSpec) []chainStep 
 	for i := range operations {
 		operation := operations[i]
 		switch operation.Kind {
-		case OpStage:
+		case info.OpStage:
 			if operation.Stage != nil {
 				steps = append(steps, chainStep{stage: operation.Stage})
 			}
-		case OpShape:
+		case info.OpShape:
 			if !mediaShapeEmpty(operation.Shape) {
 				steps = append(steps, chainStep{shape: operation.Shape})
 			}
-		case OpTransform:
+		case info.OpTransform:
 			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
 				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
 			}
-		case OpTap:
+		case info.OpTap:
 			if operation.Tap.Name != "" && !operationSpecTapIsTerminalPacket(operation) {
 				steps = append(steps, chainStep{tap: operation.Tap.Name, tapDomain: operation.Tap.Domain})
 			}
@@ -633,11 +634,11 @@ func branchChainStepsFromOperationSpecs(operations []OperationSpec) []chainStep 
 }
 
 func operationSpecTapIsTerminalPacket(operation OperationSpec) bool {
-	if operation.Kind != OpTap {
+	if operation.Kind != info.OpTap {
 		return false
 	}
 	return operation.Tap.Domain == shape.DomainPacket &&
-		(operation.Tap.After == OpEncode || operation.Tap.After == OpCopy)
+		(operation.Tap.After == info.OpEncode || operation.Tap.After == info.OpCopy)
 }
 
 func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]chainStep, TapRef, error) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -43,29 +44,29 @@ func TestTaskSnapshotReportsTypedTaskLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state := task.Snapshot().State; state != TaskBuilt {
-		t.Fatalf("built state = %q, want %q", state, TaskBuilt)
+	if state := task.Snapshot().State; state != info.TaskBuilt {
+		t.Fatalf("built state = %q, want %q", state, info.TaskBuilt)
 	}
 
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 	<-started
-	if state := task.Snapshot().State; state != TaskRunning {
-		t.Fatalf("running state = %q, want %q", state, TaskRunning)
+	if state := task.Snapshot().State; state != info.TaskRunning {
+		t.Fatalf("running state = %q, want %q", state, info.TaskRunning)
 	}
 	close(release)
 	if err := <-runErr; err != nil {
 		t.Fatal(err)
 	}
-	if state := task.Snapshot().State; state != TaskClosed {
-		t.Fatalf("finished state = %q, want %q", state, TaskClosed)
+	if state := task.Snapshot().State; state != info.TaskClosed {
+		t.Fatalf("finished state = %q, want %q", state, info.TaskClosed)
 	}
 
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if state := task.Snapshot().State; state != TaskClosed {
-		t.Fatalf("closed state = %q, want %q", state, TaskClosed)
+	if state := task.Snapshot().State; state != info.TaskClosed {
+		t.Fatalf("closed state = %q, want %q", state, info.TaskClosed)
 	}
 }
 
@@ -80,8 +81,8 @@ func TestTaskSnapshotReportsClosedStateWithoutRun(t *testing.T) {
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if state := task.Snapshot().State; state != TaskClosed {
-		t.Fatalf("closed-before-run state = %q, want %q", state, TaskClosed)
+	if state := task.Snapshot().State; state != info.TaskClosed {
+		t.Fatalf("closed-before-run state = %q, want %q", state, info.TaskClosed)
 	}
 }
 
@@ -104,7 +105,7 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, ok := destinationSnapshotByName(task.Snapshot().Destinations, "rec")
-	if !ok || before.State != DestinationOpen || !before.Open {
+	if !ok || before.State != info.DestinationOpen || !before.Open {
 		t.Fatalf("destination before run = %+v, want open rec destination", before)
 	}
 
@@ -112,15 +113,15 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := task.Snapshot()
-	if snapshot.State != TaskClosed {
-		t.Fatalf("task state = %q, want %q", snapshot.State, TaskClosed)
+	if snapshot.State != info.TaskClosed {
+		t.Fatalf("task state = %q, want %q", snapshot.State, info.TaskClosed)
 	}
 	branch, ok := branchSnapshotByName(snapshot.Branches, "rec")
-	if !ok || branch.State != BranchAttached {
+	if !ok || branch.State != info.BranchAttached {
 		t.Fatalf("branch = %+v, want attached rec branch", branch)
 	}
 	committed, ok := destinationSnapshotByName(snapshot.Destinations, "rec")
-	if !ok || committed.State != DestinationCommitted || committed.Open {
+	if !ok || committed.State != info.DestinationCommitted || committed.Open {
 		t.Fatalf("destination after run = %+v, want committed rec destination", committed)
 	}
 
@@ -128,11 +129,11 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	detached := attachment.Snapshot()
-	if detached.State != BranchDetached {
-		t.Fatalf("detached branch state = %q, want %q", detached.State, BranchDetached)
+	if detached.State != info.BranchDetached {
+		t.Fatalf("detached branch state = %q, want %q", detached.State, info.BranchDetached)
 	}
 	closed, ok := destinationSnapshotByName(detached.Destinations, "rec")
-	if !ok || closed.State != DestinationClosed || closed.Open {
+	if !ok || closed.State != info.DestinationClosed || closed.Open {
 		t.Fatalf("destination after detach = %+v, want closed rec destination", closed)
 	}
 }
@@ -163,11 +164,11 @@ func TestTaskSnapshotReportsFailedTaskAndAbortedDestination(t *testing.T) {
 		t.Fatalf("run err = %v, want %v", err, sourceErr)
 	}
 	snapshot := task.Snapshot()
-	if snapshot.State != TaskFailed {
-		t.Fatalf("task state = %q, want %q", snapshot.State, TaskFailed)
+	if snapshot.State != info.TaskFailed {
+		t.Fatalf("task state = %q, want %q", snapshot.State, info.TaskFailed)
 	}
 	aborted, ok := destinationSnapshotByName(snapshot.Destinations, "rec")
-	if !ok || aborted.State != DestinationAborted || aborted.Open {
+	if !ok || aborted.State != info.DestinationAborted || aborted.Open {
 		t.Fatalf("destination after failed run = %+v, want aborted rec destination", aborted)
 	}
 }

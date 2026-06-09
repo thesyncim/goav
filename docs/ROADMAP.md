@@ -28,7 +28,7 @@ runtime attach. Public vocabulary stays `Input`, `Stream`, `Tap`, `Branch`,
    encode-to-destination, branch composition, and mixed audio/video destinations
    are branch plans over one ordered operation list, not workflow modes.
 4. Make runtime attachment a patch of the same plan model. `Task.Attach`
-   compiles `Branch(...)` plus existing `TapInfo` into `WorkPatch`, validates
+   compiles `Branch(...)` plus existing `info.Tap` into `WorkPatch`, validates
    before graph mutation, allocates only downstream nodes, reuses upstream work
    from taps, and detaches only branch-owned nodes.
 5. Upgrade shape validation to shape solving: `shape.Spec` contracts for

@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -61,7 +62,7 @@ type runtimeSharedMuxDestination struct {
 type runtimeGraphPatch struct {
 	nodes       []pipeline.NodeRef
 	routes      []pipeline.Route
-	taps        []TapInfo
+	taps        []info.Tap
 	anchorTaps  []string
 	anchorNodes []string
 	stages      []pipeline.Stage
@@ -77,13 +78,13 @@ func (p *runtimeGraphPatch) addAnchor(tap string, from string) {
 	}
 }
 
-func (p *runtimeGraphPatch) addApplied(nodes []pipeline.NodeRef, routes []pipeline.Route, taps []TapInfo) {
+func (p *runtimeGraphPatch) addApplied(nodes []pipeline.NodeRef, routes []pipeline.Route, taps []info.Tap) {
 	p.nodes = append(p.nodes, nodes...)
 	p.routes = append(p.routes, routes...)
 	p.taps = append(p.taps, taps...)
 }
 
-func (p *runtimeGraphPatch) addPlannedTaps(taps []TapInfo) {
+func (p *runtimeGraphPatch) addPlannedTaps(taps []info.Tap) {
 	p.taps = append(p.taps, taps...)
 }
 
@@ -112,7 +113,7 @@ func (p runtimeGraphPatch) attachment(owner *task, name string) *runtimeAttachme
 		anchorNodes: uniqueStrings(p.anchorNodes),
 		nodes:       append([]pipeline.NodeRef(nil), p.nodes...),
 		routes:      append([]pipeline.Route(nil), p.routes...),
-		taps:        append([]TapInfo(nil), p.taps...),
+		taps:        append([]info.Tap(nil), p.taps...),
 		stages:      append([]pipeline.Stage(nil), p.stages...),
 		work:        cloneWorkPatch(p.work),
 	}
@@ -123,8 +124,8 @@ type Attachment interface {
 	ID() string
 	Name() string
 	Spec() pipeline.Spec
-	Stats() BranchStats
-	Snapshot() BranchSnapshot
+	Stats() pipeline.GraphStats
+	Snapshot() info.BranchSnapshot
 	// Pause stops delivery to this branch without touching the source or its
 	// siblings; messages are skipped while paused. Resume restores delivery.
 	Pause(context.Context) error
@@ -626,7 +627,7 @@ func runtimeMuxDestinationFormat(ctx context.Context, rt *runtime, dest destinat
 func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, branches []string, streams []av.Stream, rt Runtime) (muxCompatibilityIssue, bool) {
 	output := workDestination{
 		Name:      destinationName,
-		Operation: OpMux,
+		Operation: info.OpMux,
 		Format:    formatID,
 		Branches:  append([]string(nil), branches...),
 	}
@@ -682,24 +683,24 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-func (t *task) resolveRuntimeBranchAnchor(spec BranchSpec, graphSpec pipeline.Spec, pending []TapInfo) (string, TapInfo, error) {
+func (t *task) resolveRuntimeBranchAnchor(spec BranchSpec, graphSpec pipeline.Spec, pending []info.Tap) (string, info.Tap, error) {
 	if spec.source.tap != "" {
-		taps := append([]TapInfo(nil), t.tapsLocked()...)
+		taps := append([]info.Tap(nil), t.tapsLocked()...)
 		taps = append(taps, pending...)
 		for _, tap := range taps {
 			if tap.Name == spec.source.tap {
 				if err := validateTapDomain("attach runtime branch", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.source.tap, domain: spec.source.tapDomain}, tap.Domain); err != nil {
-					return "", TapInfo{}, err
+					return "", info.Tap{}, err
 				}
 				return tap.Node.String(), tap, nil
 			}
 		}
-		return "", TapInfo{}, runtimeBranchTapMissingError(spec.source.tap, taps)
+		return "", info.Tap{}, runtimeBranchTapMissingError(spec.source.tap, taps)
 	}
 	if !specHasNode(graphSpec, spec.source.from) {
-		return "", TapInfo{}, runtimeBranchAnchorMissingError(spec.source.from)
+		return "", info.Tap{}, runtimeBranchAnchorMissingError(spec.source.from)
 	}
-	return spec.source.from, TapInfo{Node: pipeline.NodeRef(spec.source.from)}, nil
+	return spec.source.from, info.Tap{Node: pipeline.NodeRef(spec.source.from)}, nil
 }
 
 // validateAttachBranchShapeContract validates the branch's operation list
@@ -708,7 +709,7 @@ func (t *task) resolveRuntimeBranchAnchor(spec BranchSpec, graphSpec pipeline.Sp
 func validateAttachBranchShapeContract(spec BranchSpec, destinations []attachDestination, initial shape.Spec) error {
 	stream := streamIntent{
 		Name: spec.name,
-		Select: StreamSelect{
+		Select: info.StreamSelect{
 			Type:  firstNonEmptyMedia(spec.media, initial.MediaKind),
 			Codec: initial.Codec,
 		},
@@ -738,9 +739,9 @@ func validateAttachBranchShapeContract(spec BranchSpec, destinations []attachDes
 	return nil
 }
 
-func (t *task) validateAttachBranchTapsLocked(steps []attachStep, pending []TapInfo) error {
+func (t *task) validateAttachBranchTapsLocked(steps []attachStep, pending []info.Tap) error {
 	seen := make(map[string]struct{}, len(steps))
-	current := append([]TapInfo(nil), t.tapsLocked()...)
+	current := append([]info.Tap(nil), t.tapsLocked()...)
 	current = append(current, pending...)
 	existing := make(map[string]struct{}, len(current))
 	for i := range current {
@@ -770,10 +771,10 @@ func (t *task) validateAttachBranchTapsLocked(steps []attachStep, pending []TapI
 // connected along its planned edge, with shared destinations resolved through
 // the attach group. The returned refs/routes/taps feed the graph patch for
 // bookkeeping and rollback.
-func (t *task) applyAttachBranch(plan *attachPlan, branch attachPlanBranch, group *runtimeAttachGroup) ([]pipeline.NodeRef, []pipeline.Route, []TapInfo, error) {
+func (t *task) applyAttachBranch(plan *attachPlan, branch attachPlanBranch, group *runtimeAttachGroup) ([]pipeline.NodeRef, []pipeline.Route, []info.Tap, error) {
 	refs := make([]pipeline.NodeRef, 0, branch.operations[1]-branch.operations[0])
 	routes := make([]pipeline.Route, 0, branch.edges[1]-branch.edges[0])
-	taps := append([]TapInfo(nil), branch.taps...)
+	taps := append([]info.Tap(nil), branch.taps...)
 	edgeIndex := branch.edges[0]
 	nextRoute := func() (pipeline.Route, bool) {
 		if edgeIndex >= branch.edges[1] {
@@ -790,7 +791,7 @@ func (t *task) applyAttachBranch(plan *attachPlan, branch attachPlanBranch, grou
 	}
 	for i := branch.operations[0]; i < branch.operations[1]; i++ {
 		operation := plan.work.Operations[i]
-		if operation.Kind == OpTap || operation.Node == "" {
+		if operation.Kind == info.OpTap || operation.Node == "" {
 			continue
 		}
 		if key, ok := group.sharedSinkKeyForNode(operation.Node); ok {
@@ -863,7 +864,7 @@ func attachConnectOperation(operation workOperation, route pipeline.Route, from 
 	if route.From == from.String() {
 		return "connect branch"
 	}
-	if operation.Kind == OpSink || operation.Kind == OpMux {
+	if operation.Kind == info.OpSink || operation.Kind == info.OpMux {
 		return "connect branch target"
 	}
 	return "connect branch stage"
@@ -882,16 +883,16 @@ func (t *task) trackAttachmentLocked(attachment *runtimeAttachment) {
 	t.attachments[attachment] = struct{}{}
 }
 
-func (t *task) tapsLocked() []TapInfo {
-	var base []TapInfo
+func (t *task) tapsLocked() []info.Tap {
+	var base []info.Tap
 	if len(t.taps) != 0 {
 		base = t.taps
 	} else {
 		base = inferSpecTaps(t.graph.Spec())
 	}
-	out := make([]TapInfo, 0, len(base)+len(t.branchTaps))
+	out := make([]info.Tap, 0, len(base)+len(t.branchTaps))
 	seen := make(map[string]struct{}, len(base)+len(t.branchTaps))
-	appendTap := func(tap TapInfo) {
+	appendTap := func(tap info.Tap) {
 		if tap.Name == "" {
 			return
 		}
@@ -910,7 +911,7 @@ func (t *task) tapsLocked() []TapInfo {
 	return out
 }
 
-func (t *task) addAttachmentTapsLocked(taps []TapInfo) {
+func (t *task) addAttachmentTapsLocked(taps []info.Tap) {
 	if len(taps) == 0 {
 		return
 	}
@@ -1026,14 +1027,14 @@ type runtimeAttachment struct {
 	anchorNodes []string
 	nodes       []pipeline.NodeRef
 	routes      []pipeline.Route
-	taps        []TapInfo
+	taps        []info.Tap
 	stages      []pipeline.Stage
 	work        workPatch
 	stopMu      sync.Mutex
 	stopped     bool
-	// detachOutcome records the DestinationState a disposition detach
+	// detachOutcome records the info.DestinationState a disposition detach
 	// (DrainOldBranch/AbortOldBranch) chose for this branch's destinations;
-	// snapshots report it instead of the plain DestinationClosed.
+	// snapshots report it instead of the plain info.DestinationClosed.
 	detachOutcome atomic.Value
 }
 
@@ -1106,18 +1107,18 @@ func (a *runtimeAttachment) specFromGraph(graph pipeline.Spec) pipeline.Spec {
 	return spec
 }
 
-func (a *runtimeAttachment) Stats() BranchStats {
+func (a *runtimeAttachment) Stats() pipeline.GraphStats {
 	if a == nil || a.owner == nil {
-		return BranchStats{}
+		return pipeline.GraphStats{}
 	}
 	return branchStatsForNodes(a.owner.Stats(), a.nodes)
 }
 
-func (a *runtimeAttachment) Snapshot() BranchSnapshot {
+func (a *runtimeAttachment) Snapshot() info.BranchSnapshot {
 	if a == nil {
-		return BranchSnapshot{}
+		return info.BranchSnapshot{}
 	}
-	stats := TaskStats{}
+	stats := pipeline.GraphStats{}
 	if a.owner == nil {
 		return a.branchSnapshotLocked(stats)
 	}
@@ -1127,32 +1128,32 @@ func (a *runtimeAttachment) Snapshot() BranchSnapshot {
 	return a.branchSnapshotLocked(stats)
 }
 
-func (a *runtimeAttachment) branchSnapshotLocked(taskStats TaskStats) BranchSnapshot {
+func (a *runtimeAttachment) branchSnapshotLocked(taskStats pipeline.GraphStats) info.BranchSnapshot {
 	if a == nil {
-		return BranchSnapshot{}
+		return info.BranchSnapshot{}
 	}
-	state := BranchAttached
-	destinationState := DestinationOpen
+	state := info.BranchAttached
+	destinationState := info.DestinationOpen
 	spec := pipeline.Spec{}
 	if a.owner != nil {
 		_, destinationState = a.owner.lifecycleStates()
 		spec = a.specFromGraph(a.owner.Describe())
 	}
 	if a.stopped {
-		state = BranchDetached
-		destinationState = DestinationClosed
-		if outcome, ok := a.detachOutcome.Load().(DestinationState); ok && outcome != "" {
+		state = info.BranchDetached
+		destinationState = info.DestinationClosed
+		if outcome, ok := a.detachOutcome.Load().(info.DestinationState); ok && outcome != "" {
 			destinationState = outcome
 		}
 	}
-	return BranchSnapshot{
+	return info.BranchSnapshot{
 		ID:           a.id,
 		Name:         a.name,
 		State:        state,
 		AnchorTaps:   append([]string(nil), a.allAnchorTaps()...),
 		AnchorNodes:  append([]string(nil), a.allAnchorNodes()...),
 		Nodes:        append([]pipeline.NodeRef(nil), a.nodes...),
-		Taps:         append([]TapInfo(nil), a.taps...),
+		Taps:         append([]info.Tap(nil), a.taps...),
 		Destinations: destinationSnapshotsFromWork(a.work.Destinations, destinationState),
 		Spec:         spec,
 		Stats:        branchStatsForNodes(taskStats, a.nodes),
@@ -1249,12 +1250,12 @@ func (a *runtimeAttachment) detachReplacedAtBoundary(group *switchGroup, disposi
 func (a *runtimeAttachment) detachReplaced(ctx context.Context, disposition oldBranchDisposition) error {
 	switch disposition {
 	case oldBranchDrain:
-		a.detachOutcome.Store(DestinationCommitted)
+		a.detachOutcome.Store(info.DestinationCommitted)
 	case oldBranchAbort:
 		for _, stage := range a.stages {
 			markPipelineStageFailed(stage)
 		}
-		a.detachOutcome.Store(DestinationAborted)
+		a.detachOutcome.Store(info.DestinationAborted)
 	case oldBranchDetach:
 	}
 	return a.owner.Detach(ctx, a)
@@ -1434,7 +1435,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 	}
 }
 
-func runtimeBranchAnchorShape(anchor TapInfo) shape.Spec {
+func runtimeBranchAnchorShape(anchor info.Tap) shape.Spec {
 	shape := anchor.Shape
 	if shape.Domain == "" {
 		shape.Domain = anchor.Domain
@@ -1546,7 +1547,7 @@ func streamPacketShapeFromRuntimeBranchStream(stream av.Stream, previous shape.S
 	return spec
 }
 
-func runtimeBranchTapInfo(name string, node pipeline.NodeRef, spec shape.Spec, after OperationKind) TapInfo {
+func runtimeBranchTap(name string, node pipeline.NodeRef, spec shape.Spec, after info.OperationKind) info.Tap {
 	domain := spec.Domain
 	if domain == "" {
 		domain = shape.DomainPacket
@@ -1558,7 +1559,7 @@ func runtimeBranchTapInfo(name string, node pipeline.NodeRef, spec shape.Spec, a
 	if spec.MediaKind == "" {
 		spec.MediaKind = media
 	}
-	return TapInfo{
+	return info.Tap{
 		Name:      name,
 		MediaKind: media,
 		Domain:    domain,
@@ -1628,7 +1629,7 @@ func runtimeBranchAnchorMissingError(node string) error {
 	}
 }
 
-func runtimeBranchTapMissingError(name string, taps []TapInfo) error {
+func runtimeBranchTapMissingError(name string, taps []info.Tap) error {
 	details := make([]string, 0, len(taps))
 	for i := range taps {
 		details = append(details, taps[i].Name+": "+string(taps[i].Domain)+" "+string(taps[i].MediaKind))

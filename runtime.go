@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -506,8 +507,8 @@ type task struct {
 	graph        pipeline.Graph
 	runtime      *runtime
 	destinations []*destinationTransaction
-	taps         []TapInfo
-	branchTaps   []TapInfo
+	taps         []info.Tap
+	branchTaps   []info.Tap
 	attachMu     sync.Mutex
 	attachments  map[*runtimeAttachment]struct{}
 
@@ -531,8 +532,8 @@ func (t *task) Describe() pipeline.Spec {
 	return t.graph.Spec()
 }
 
-func (t *task) Explain(context.Context) (PlanReport, error) {
-	return PlanReport{
+func (t *task) Explain(context.Context) (info.Plan, error) {
+	return info.Plan{
 		Summary: "running media task",
 		Graph:   t.Describe(),
 		Taps:    t.Taps(),
@@ -556,25 +557,25 @@ func (t *task) Events() <-chan av.Event {
 	return t.graph.Events()
 }
 
-func (t *task) Stats() TaskStats {
+func (t *task) Stats() pipeline.GraphStats {
 	return t.graph.Stats()
 }
 
-func (t *task) Taps() []TapInfo {
+func (t *task) Taps() []info.Tap {
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 	return t.tapsLocked()
 }
 
-func (t *task) Snapshot() TaskSnapshot {
+func (t *task) Snapshot() info.TaskSnapshot {
 	if t == nil {
-		return TaskSnapshot{}
+		return info.TaskSnapshot{}
 	}
 	state, _ := t.lifecycleStates()
 	stats := t.Stats()
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
-	branches := make([]BranchSnapshot, 0, len(t.attachments))
+	branches := make([]info.BranchSnapshot, 0, len(t.attachments))
 	for attachment := range t.attachments {
 		state := attachment.branchSnapshotLocked(stats)
 		if state.ID == "" && state.Name == "" {
@@ -582,7 +583,7 @@ func (t *task) Snapshot() TaskSnapshot {
 		}
 		branches = append(branches, state)
 	}
-	return TaskSnapshot{
+	return info.TaskSnapshot{
 		State:        state,
 		Spec:         t.Describe(),
 		Stats:        stats,
@@ -596,28 +597,28 @@ func (t *task) Snapshot() TaskSnapshot {
 // task's still-open destinations from the recorded run/close progress. The
 // destination outcome mirrors finishDestinations: a run that completes without
 // error commits destinations, a failed run aborts them.
-func (t *task) lifecycleStates() (TaskState, DestinationState) {
+func (t *task) lifecycleStates() (info.TaskState, info.DestinationState) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
 	switch {
 	case t.finished && t.runErr != nil:
-		return TaskFailed, DestinationAborted
+		return info.TaskFailed, info.DestinationAborted
 	case t.finished:
-		return TaskClosed, DestinationCommitted
+		return info.TaskClosed, info.DestinationCommitted
 	case t.closed:
-		return TaskClosed, DestinationClosed
+		return info.TaskClosed, info.DestinationClosed
 	case t.started:
-		return TaskRunning, DestinationOpen
+		return info.TaskRunning, info.DestinationOpen
 	default:
-		return TaskBuilt, DestinationOpen
+		return info.TaskBuilt, info.DestinationOpen
 	}
 }
 
-func taskSnapshotDestinations(branches []BranchSnapshot) []DestinationSnapshot {
+func taskSnapshotDestinations(branches []info.BranchSnapshot) []info.DestinationSnapshot {
 	if len(branches) == 0 {
 		return nil
 	}
-	out := make([]DestinationSnapshot, 0)
+	out := make([]info.DestinationSnapshot, 0)
 	seen := make(map[string]struct{})
 	for i := range branches {
 		for j := range branches[i].Destinations {

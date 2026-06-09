@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -23,7 +24,7 @@ type workPatch struct {
 	Destinations []workDestination
 	Edges        []workEdge
 	Rollback     []workRollbackStep
-	Diagnostics  []PlanDiagnostic
+	Diagnostics  []info.Diagnostic
 }
 
 type workRollbackStep struct {
@@ -75,7 +76,7 @@ type attachPlanBranch struct {
 	buffer     pipeline.BufferPolicy
 	operations [2]int
 	edges      [2]int
-	taps       []TapInfo
+	taps       []info.Tap
 	owned      []pipeline.Stage
 }
 
@@ -122,7 +123,7 @@ func (p *attachPlan) closeOwned() {
 // build path compiles — opening the stages and destinations each step needs
 // against the live anchor shape. Destinations open before any graph mutation;
 // on failure every stage the walk owned is closed.
-func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, destinations []attachDestination, anchor TapInfo, group *runtimeAttachGroup) ([]attachStep, error) {
+func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, destinations []attachDestination, anchor info.Tap, group *runtimeAttachGroup) ([]attachStep, error) {
 	branchName := firstNonEmpty(spec.name, "branch")
 	currentShape := runtimeBranchAnchorShape(anchor)
 	if spec.media != "" && currentShape.MediaKind != "" {
@@ -160,7 +161,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 		}}
 		out := patchShape
 		switch operation.Kind {
-		case OpDecode:
+		case info.OpDecode:
 			stage, err := t.prepareRuntimeBranchDecode(ctx, spec.name, currentStream, currentShape, operation.Decode)
 			if err != nil {
 				return fail(err)
@@ -168,21 +169,21 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 			currentShape.Domain = shape.DomainFrame
 			step.component = attachComponent{stage: stage, owned: true}
 			out = attachStepShape(currentShape, patchShape)
-		case OpStage:
+		case info.OpStage:
 			if operation.Stage == nil {
 				out = operationSpecOutputShape(patchShape, operation)
 				break
 			}
 			step.component = attachComponent{stage: operation.Stage}
 			out = attachStepShape(currentShape, patchShape)
-		case OpShape:
+		case info.OpShape:
 			if mediaShapeEmpty(operation.Shape) {
 				out = operationSpecOutputShape(patchShape, operation)
 				break
 			}
 			currentShape = shape.Merge(currentShape, operation.Shape)
 			out = attachStepShape(currentShape, patchShape)
-		case OpTransform:
+		case info.OpTransform:
 			if operation.Transform.Resize == nil && operation.Transform.Resample == nil {
 				out = operationSpecOutputShape(patchShape, operation)
 				break
@@ -202,7 +203,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 			transformName := transformFactoryName(operation.Transform)
 			branchIntent := streamIntent{
 				Name:       branchName,
-				Select:     StreamSelect{Type: currentStream.Type},
+				Select:     info.StreamSelect{Type: currentStream.Type},
 				Operations: []OperationSpec{operation},
 			}
 			if _, err := t.runtime.filters.Factory(transformName); err != nil {
@@ -226,7 +227,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 			currentShape = mediaShapeFromRuntimeBranchStream(outputStream, currentShape)
 			out = attachStepShape(currentShape, patchShape)
 			transformIndex++
-		case OpTap:
+		case info.OpTap:
 			tapName := firstNonEmpty(operation.Tap.Name, operation.Component)
 			if tapName == "" {
 				out = operationSpecOutputShape(patchShape, operation)
@@ -251,7 +252,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 				Shape:     out,
 			}
 			step.install = operation.Tap.Name != "" && (!terminal || encoded || copied)
-		case OpEncode:
+		case info.OpEncode:
 			stage, encodedStream, err := t.planAttachEncode(ctx, spec.name, operation.Encode, currentStream, currentShape)
 			if err != nil {
 				return fail(err)
@@ -261,7 +262,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 			currentShape = streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape)
 			out = attachStepShape(currentShape, patchShape)
 			encoded = true
-		case OpCopy:
+		case info.OpCopy:
 			if currentShape.Domain != shape.DomainPacket {
 				return fail(runtimeBranchCopyDomainError(spec.name, currentShape))
 			}
@@ -337,7 +338,7 @@ func (t *task) planAttachEncode(ctx context.Context, branchName string, encode c
 	if err != nil {
 		return nil, av.Stream{}, err
 	}
-	stream := streamIntent{Name: branchName, Select: StreamSelect{Type: currentStream.Type}, Encode: encode}
+	stream := streamIntent{Name: branchName, Select: info.StreamSelect{Type: currentStream.Type}, Encode: encode}
 	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(encode, encodedStream)); err != nil {
 		return nil, av.Stream{}, err
 	}
@@ -426,7 +427,7 @@ func (t *task) planAttachMuxDestinationStep(ctx context.Context, branchName stri
 // and the attach group, then emits the branch's slice of the patch: its
 // operations, taps, destinations, and edges, with the prepared components
 // registered under their planned nodes.
-func (p *attachPlan) finalizeBranch(index int, spec BranchSpec, destinations []attachDestination, anchor TapInfo, graphSpec pipeline.Spec, group *runtimeAttachGroup, steps []attachStep) error {
+func (p *attachPlan) finalizeBranch(index int, spec BranchSpec, destinations []attachDestination, anchor info.Tap, graphSpec pipeline.Spec, group *runtimeAttachGroup, steps []attachStep) error {
 	branch := &p.branches[index]
 	name := branch.name
 	opStart := len(p.work.Operations)
@@ -437,7 +438,7 @@ func (p *attachPlan) finalizeBranch(index int, spec BranchSpec, destinations []a
 	terminalIndex := 0
 	operationIndex := 0
 	ids := make([]string, 0, len(steps))
-	var taps []TapInfo
+	var taps []info.Tap
 
 	emit := func(operation workOperation) {
 		operation.ID = workOperationIDForKind(name, operationIndex, operation.Kind)
@@ -463,7 +464,7 @@ func (p *attachPlan) finalizeBranch(index int, spec BranchSpec, destinations []a
 			tap.Node = previous
 			p.work.Taps = append(p.work.Taps, tap)
 			if step.install {
-				taps = append(taps, runtimeBranchTapInfo(tap.Name, previous, tap.Shape, tap.After))
+				taps = append(taps, runtimeBranchTap(tap.Name, previous, tap.Shape, tap.After))
 			}
 			operation.Node = previous
 			operation.Name = tap.Name
@@ -573,21 +574,21 @@ func attachStepShape(current shape.Spec, patch shape.Spec) shape.Spec {
 	return current
 }
 
-func attachOperationDetail(kind OperationKind) string {
+func attachOperationDetail(kind info.OperationKind) string {
 	switch kind {
-	case OpDecode:
+	case info.OpDecode:
 		return "decode"
-	case OpTransform:
+	case info.OpTransform:
 		return "transform"
-	case OpShape:
+	case info.OpShape:
 		return "shape"
-	case OpTap:
+	case info.OpTap:
 		return "tap"
-	case OpEncode:
+	case info.OpEncode:
 		return "encode"
-	case OpCopy:
+	case info.OpCopy:
 		return "copy"
-	case OpStage:
+	case info.OpStage:
 		return "stage"
 	default:
 		return "operation"
@@ -601,20 +602,20 @@ func attachOperationComponent(operation OperationSpec, stage pipeline.Stage) str
 	if stage != nil {
 		return stage.Name()
 	}
-	if operation.Kind == OpShape && !mediaShapeEmpty(operation.Shape) {
+	if operation.Kind == info.OpShape && !mediaShapeEmpty(operation.Shape) {
 		return "shape"
 	}
 	return ""
 }
 
-func attachDestinationOperationKind(destination attachDestination) OperationKind {
+func attachDestinationOperationKind(destination attachDestination) info.OperationKind {
 	if destination.sink != nil {
-		return OpSink
+		return info.OpSink
 	}
 	if destinationSpecHasOutput(destination.dest) {
-		return OpMux
+		return info.OpMux
 	}
-	return OpSink
+	return info.OpSink
 }
 
 func attachDestinationComponent(destination attachDestination) string {
@@ -678,20 +679,20 @@ func cloneWorkPatch(patch workPatch) workPatch {
 	return clone
 }
 
-func destinationSnapshotsFromWork(destinations []workDestination, state DestinationState) []DestinationSnapshot {
+func destinationSnapshotsFromWork(destinations []workDestination, state info.DestinationState) []info.DestinationSnapshot {
 	if len(destinations) == 0 {
 		return nil
 	}
-	out := make([]DestinationSnapshot, 0, len(destinations))
+	out := make([]info.DestinationSnapshot, 0, len(destinations))
 	for i := range destinations {
-		out = append(out, DestinationSnapshot{
+		out = append(out, info.DestinationSnapshot{
 			Name:      destinations[i].Name,
 			Operation: destinations[i].Operation,
 			Component: destinations[i].Component,
 			Format:    destinations[i].Format,
 			Branches:  append([]string(nil), destinations[i].Branches...),
 			State:     state,
-			Open:      state == DestinationOpen,
+			Open:      state == info.DestinationOpen,
 		})
 	}
 	return out

@@ -166,7 +166,7 @@ func cloneMixFrame(frame *av.Frame) *av.Frame {
 // as From(frameSource).Audio(); arms must have distinct stream ids and matching
 // S16 audio format. This is the thinnest multi-input entry: one symbol that
 // reuses the existing Job, so .To/Build/Run are unchanged. (First slice: frame
-// sources to a Sink; decode/encode arms and Composite build on the same OpJoin
+// sources to a Sink; decode/encode arms and Composite build on the same info.OpJoin
 // mechanism next — see docs/MULTI_INPUT.md.)
 func Mix(arms ...*jobStreamBuilder) *mixStream {
 	return &mixStream{arms: arms}

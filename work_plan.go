@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -24,7 +25,7 @@ type workPlan struct {
 	Destinations []workDestination
 	Edges        []workEdge
 	Decisions    []planDecision
-	Diagnostics  []PlanDiagnostic
+	Diagnostics  []info.Diagnostic
 }
 
 type workInput struct {
@@ -36,7 +37,7 @@ type workInput struct {
 
 type workStream struct {
 	Name   string
-	Select StreamSelect
+	Select info.StreamSelect
 }
 
 // workOperation is one planned operation. Destinations carries the stable
@@ -45,7 +46,7 @@ type workStream struct {
 type workOperation struct {
 	ID           string
 	Name         string
-	Kind         OperationKind
+	Kind         info.OperationKind
 	Branch       string
 	Node         pipeline.NodeRef
 	Component    string
@@ -61,7 +62,7 @@ type workTap struct {
 	Node      pipeline.NodeRef
 	Domain    shape.MediaDomain
 	MediaKind av.MediaType
-	After     OperationKind
+	After     info.OperationKind
 	Shape     shape.Spec
 	Shared    bool
 }
@@ -72,7 +73,7 @@ type workBranch struct {
 	ID           string
 	Name         string
 	Input        string
-	Stream       StreamSelect
+	Stream       info.StreamSelect
 	SourceShape  shape.Spec
 	Operations   []string
 	Destinations []string
@@ -84,7 +85,7 @@ type workBranch struct {
 type workDestination struct {
 	ID        string
 	Name      string
-	Operation OperationKind
+	Operation info.OperationKind
 	Component string
 	Format    av.FormatID
 	Branches  []string
@@ -104,7 +105,7 @@ type workEdge struct {
 func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
 	if state.joinPlan != nil {
 		// Joins plan multi-upstream convergence: the joinPlan renders its arms,
-		// the OpJoin node, and the downstream chain into the same workPlan IR.
+		// the info.OpJoin node, and the downstream chain into the same workPlan IR.
 		return state.joinPlan.buildJoinWorkPlan(state, spec)
 	}
 	intent := state.intent
@@ -241,7 +242,7 @@ func workOperationsFromBranches(spec pipeline.Spec, branches []planBranch, outpu
 		for j := range branch.Operations {
 			operation := branch.Operations[j]
 			node := pipeline.NodeRef(planOperationNodeName(branch, operation, j))
-			if operation.Kind == OpShape {
+			if operation.Kind == info.OpShape {
 				node = ""
 			}
 			shapeOut := operation.Shape
@@ -314,9 +315,9 @@ func workPlanOutputNodesByName(spec pipeline.Spec, outputs []planOutput) map[str
 
 func workPlanNodeMatchesOutput(node pipeline.NodeSpec, output planOutput) bool {
 	switch output.Operation {
-	case OpSink:
+	case info.OpSink:
 		return node.Kind == pipeline.NodeSink
-	case OpMux, OpWrite:
+	case info.OpMux, info.OpWrite:
 		return node.Kind == pipeline.NodeStage && strings.HasPrefix(node.Detail, "mux")
 	default:
 		return false
@@ -396,7 +397,7 @@ func workEdgeBranch(edge pipeline.EdgeSpec, branchByNode map[pipeline.NodeRef]st
 	return firstNonEmpty(toBranch, fromBranch)
 }
 
-func workOperationIDForKind(branch string, index int, kind OperationKind) string {
+func workOperationIDForKind(branch string, index int, kind info.OperationKind) string {
 	return fmt.Sprintf("%s/%03d/%s", firstNonEmpty(branch, "branch"), index, kind)
 }
 
@@ -419,9 +420,9 @@ func workDestinationID(name string) string {
 	return "destination/" + firstNonEmpty(name, "unnamed")
 }
 
-func workOperationTerminal(kind OperationKind) bool {
+func workOperationTerminal(kind info.OperationKind) bool {
 	switch kind {
-	case OpMux, OpSink, OpWrite:
+	case info.OpMux, info.OpSink, info.OpWrite:
 		return true
 	default:
 		return false

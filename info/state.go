@@ -1,4 +1,4 @@
-package goav
+package info
 
 // TaskState is the typed lifecycle state a TaskSnapshot reports for a task.
 // It is derived from the task's recorded run/close progress; it is reporting

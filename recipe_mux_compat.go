@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/info"
 )
 
 type muxCompatibilityIssue struct {
@@ -60,7 +61,7 @@ func muxCompatibilityIssues(
 	operations := workOperationsByID(work.Operations)
 	for i := range work.Destinations {
 		output := work.Destinations[i]
-		if output.Operation != OpMux || output.Format == "" {
+		if output.Operation != info.OpMux || output.Format == "" {
 			continue
 		}
 		streams := muxOutputStreams(output, branches, work.Branches, operations, intent, inputProbes, transcodeProbe, transcodeProbeReady)
@@ -130,7 +131,7 @@ func muxStreamForBranch(
 	out := plannedMuxStream{Branch: firstNonEmpty(branch.Name, fmt.Sprintf("branch-%d", branchIndex))}
 	for _, id := range branch.Operations {
 		operation, ok := operations[id]
-		if !ok || operation.Kind != OpEncode {
+		if !ok || operation.Kind != info.OpEncode {
 			continue
 		}
 		if streamOK && stream.Encode.ID != "" {
@@ -428,10 +429,10 @@ func muxCompatibilityBuildError(operation string, issue muxCompatibilityIssue) e
 	}
 }
 
-func muxCompatibilityDiagnostics(issues []muxCompatibilityIssue) []PlanDiagnostic {
-	diagnostics := make([]PlanDiagnostic, 0, len(issues))
+func muxCompatibilityDiagnostics(issues []muxCompatibilityIssue) []info.Diagnostic {
+	diagnostics := make([]info.Diagnostic, 0, len(issues))
 	for i := range issues {
-		diagnostics = append(diagnostics, PlanDiagnostic{
+		diagnostics = append(diagnostics, info.Diagnostic{
 			Code:        issues[i].Code,
 			Node:        issues[i].Destination,
 			Message:     issues[i].Reason,
