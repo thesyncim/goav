@@ -103,21 +103,18 @@ Revised after investigating #2 (see Grammar #2): the plan collapse must come
    no round-trip); (3b) `branchComposePlan` becomes transcode-only → move the bridge
    to a compat pkg, drop the core `transcode` import; (3c) then encode/decode
    `streamIntent` collapse (the woven 51/102-read fields) + #2 fall out together.
-   **3a blocker (verified observation):** `buildMediaPlan` can't use
-   `intent.Streams` instead of `streamIntentsFromBranchComposePlan(state.plan)`. The
-   re-run probe fails ONLY at `recipe_compile_test.go:757`: the raw-preview branch's
-   mediaPlan ops come out `[demux select decode]` but must be `[demux select decode
-   tap transform]` — the inherited shared `tap` + private `transform` are dropped on
-   the `intent.Streams` path but present on the `state.plan` path. So the gap is the
-   **branch operation list** (shared-op inheritance / #18 "two branches share one
-   decoder"), NOT converter field fidelity (the earlier From/Taps/Encode diagnosis
-   was a red herring). Puzzle to resolve before the fix: `branchCompositionJob.streams`
-   is a copy of the split-applied `job.branchStreams` (whose `streamBuildOperationSpecs`
-   the test shows = `[decode tap transform]`), yet `branchStreamIntent(j.streams[i])`
-   →`planOperationSpecs` yields only `[decode]` — so either `planOperationSpecs`
-   rebuilds from `Decode`/`Encode` (ignoring `stream.Operations`), or the intent-side
-   stream loses the split. Pin that, then make both paths share one split-applied
-   stream source. Dedicated reconciliation — not a loop slice.
+   **3a DONE (slice 35):** `buildMediaPlan` now plans branches straight from
+   `intent.Streams` (which `branchCompositionJob.Plan()` already populates with the
+   full shared-op-inherited operation list). The apparent blocker was a *synthetic*
+   test that deliberately nil'd `intent.Streams[].Operations` to force a plan-recovery
+   fallback real builds never hit; updated it to use real intent. Deleted
+   `streamIntentsFromBranchComposePlan` / `streamIntentFromBranchComposeBranch` /
+   `branchComposePlanHasOperations` / `branchComposeBranchOperationSpecs` /
+   `codecSpecFromEncodeConfig`. **`branchComposePlan` is now Build-lowerer-only** —
+   the Explain/mediaPlan side is fully off it. Remaining step-3: (3b) the Build-side
+   `mediaPlanBranchComposerLowerer`/`newMediaPlanBranchComposeGraph` is now the sole
+   `branchComposePlan` consumer (+ the transcode bridge) — fold it into the stream
+   lowerer (this is also #2), then `branchComposePlan` + the core `transcode` import go.
    **#2 layer (corrected):** `graphPlan.Describe()` returns `p.spec()` (the lowerer
    graph spec), NOT the mediaPlan — so `Describe()≡Build()` is automatic (both share
    `p.spec()`). **#2 lives purely in the lowerer spec generation:** direct chains use

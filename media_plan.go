@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -101,13 +100,11 @@ func buildMediaPlan(state *recipeCompileState) mediaPlan {
 	plan.Inputs = planInputs(intent.Inputs)
 	plan.Streams = planStreams(intent.Streams)
 	plan.Outputs = planOutputs(intent.Destinations, state.outputFormatMap())
-	if state.branchCompositionPresent && branchComposePlanReady(state.plan) && branchComposePlanHasOperations(state.plan) {
-		streams := streamIntentsFromBranchComposePlan(state.plan)
-		plan.Streams = planStreams(streams)
-		plan.Branches, plan.Decisions = planBranchesFromStreamIntents(state, streams, plan.Outputs)
-	} else {
-		plan.Branches, plan.Decisions = planBranches(state, plan.Outputs)
-	}
+	// The Explain-side mediaPlan plans every branch straight from intent.Streams:
+	// branchCompositionJob.Plan() populates each branch streamIntent with its full
+	// (shared-op-inherited) operation list, so the parallel branchComposePlan is no
+	// longer a source here — it remains only the Build-side lowerer input.
+	plan.Branches, plan.Decisions = planBranches(state, plan.Outputs)
 	plan.Taps = planTaps(plan.Branches)
 	plan.Outputs = planOutputsWithBranches(plan.Outputs, plan.Branches)
 	return plan
@@ -137,18 +134,6 @@ func planStreams(streams []streamIntent) []planStream {
 		})
 	}
 	return out
-}
-
-// streamIntentsFromBranchComposePlan converts a branchComposePlan to the
-// streamIntent list the Explain-side planners consume — the single point where
-// the parallel branchComposePlan feeds the streamIntent-based mediaPlan, so
-// stream and branch planning both run through the same code as the direct path.
-func streamIntentsFromBranchComposePlan(plan branchComposePlan) []streamIntent {
-	streams := make([]streamIntent, 0, len(plan.Branches))
-	for i := range plan.Branches {
-		streams = append(streams, streamIntentFromBranchComposeBranch(plan.Branches[i]))
-	}
-	return streams
 }
 
 func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []planOutput {
@@ -229,63 +214,6 @@ func planBranchesFromStreamIntents(state *recipeCompileState, streams []streamIn
 	return branches, decisions
 }
 
-func streamIntentFromBranchComposeBranch(branch branchComposeBranch) streamIntent {
-	stream := streamIntent{
-		Name:         branch.Name,
-		Select:       streamSelectFromAV(branch.Selector),
-		Decode:       branch.Decode,
-		DecodeCodec:  cloneCodecSpec(branch.DecodeConfig),
-		Operations:   branchComposeBranchOperationSpecs(branch),
-		CodecChange:  branch.CodecChange,
-		Destinations: append([]string(nil), branch.Labels...),
-	}
-	if branch.Copy {
-		stream.Encode = Copy()
-	} else {
-		stream.Encode = codecSpecFromEncodeConfig(branch.Encode)
-	}
-	return stream
-}
-
-func codecSpecFromEncodeConfig(config codec.EncodeConfig) CodecSpec {
-	spec := CodecSpec{
-		ID:         config.Parameters.ID,
-		Type:       config.Parameters.Type,
-		Parameters: config.Parameters,
-		Settings:   cloneCodecSettings(config.Settings),
-	}
-	if spec.ID == "" {
-		spec.ID = config.Stream.Codec.ID
-	}
-	if spec.Type == "" {
-		spec.Type = firstNonEmptyMedia(config.Parameters.Type, config.Stream.Type, config.Stream.Codec.Type, codecMedia(spec.ID))
-	}
-	if spec.Parameters.ID == "" {
-		spec.Parameters.ID = spec.ID
-	}
-	if spec.Parameters.Type == "" {
-		spec.Parameters.Type = spec.Type
-	}
-	return spec
-}
-
-func branchComposeBranchOperationSpecs(branch branchComposeBranch) []OperationSpec {
-	if len(branch.Operations) != 0 {
-		return cloneOperationSpecs(branch.Operations)
-	}
-	operations := append(cloneOperationSpecs(branch.SharedOperations), cloneOperationSpecs(branch.PrivateOperations)...)
-	return operations
-}
-
-func branchComposePlanHasOperations(plan branchComposePlan) bool {
-	for i := range plan.Branches {
-		branch := plan.Branches[i]
-		if len(branchComposeBranchOperationSpecs(branch)) != 0 {
-			return true
-		}
-	}
-	return false
-}
 
 func streamSelectFromStream(stream av.Stream) StreamSelect {
 	return StreamSelect{

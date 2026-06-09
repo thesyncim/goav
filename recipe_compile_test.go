@@ -738,14 +738,10 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web route = %+v, want shared 720p resize from operation fields", routes[1])
 	}
 
-	intentWithoutOperations := job.Plan()
-	for i := range intentWithoutOperations.Streams {
-		intentWithoutOperations.Streams[i].Operations = nil
-	}
 	media := buildMediaPlan(&recipeCompileState{
 		operation:                    branchCompositionOperation,
 		branchCompositionPresent:     true,
-		intent:                       intentWithoutOperations,
+		intent:                       job.Plan(),
 		branchInputAttachment:        job.inputs[0],
 		branchDestinationAttachments: job.branchDestinations,
 		plan:                         plan,
