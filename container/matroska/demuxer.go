@@ -6583,20 +6583,6 @@ func (d *Demuxer) applyLaceGroupMetadata(dst *Packet) {
 	}
 }
 
-func (d *Demuxer) finishLacedCodecPayload(dst *Packet) error {
-	if d.laceH264Length != 0 {
-		outSize, err := h264AVCToAnnexBSize(dst.Data, d.laceH264Length)
-		if err != nil {
-			return err
-		}
-		dst.Data, err = h264AVCToAnnexBInPlace(dst.Data, outSize, d.laceH264Length)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (d *Demuxer) clearLace() {
 	d.laceTrackID = 0
 	d.laceH264Length = 0
@@ -6656,16 +6642,6 @@ func (d *Demuxer) trackIndex(id uint32) (int, bool) {
 		}
 	}
 	return 0, false
-}
-
-func (d *Demuxer) upsertTrack(track Track) {
-	for i := range d.tracks {
-		if d.tracks[i].ID == track.ID {
-			d.tracks[i] = track
-			return
-		}
-	}
-	d.tracks = append(d.tracks, track)
 }
 
 func isEOF(err error) bool {

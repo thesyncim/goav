@@ -586,11 +586,6 @@ func (m *Muxer) Close() error {
 	return nil
 }
 
-func (m *Muxer) hasTrack(id uint32) bool {
-	_, ok := m.track(id)
-	return ok
-}
-
 func (m *Muxer) track(id uint32) (Track, bool) {
 	index, ok := m.trackIndex(id)
 	if !ok {
@@ -1540,10 +1535,6 @@ func writeEditionEntryWithOptions(w *ebml.Writer, edition ChapterEdition, option
 	return w.WriteElement(idEditionEntry, payload.Bytes())
 }
 
-func writeChapterAtom(w *ebml.Writer, chapter Chapter) error {
-	return writeChapterAtomWithOptions(w, chapter, chapterWriteOptions{})
-}
-
 func writeChapterAtomWithOptions(w *ebml.Writer, chapter Chapter, options chapterWriteOptions) error {
 	var payload bytes.Buffer
 	cw := ebml.NewWriter(&payload)
@@ -1606,10 +1597,6 @@ func writeChapterTrack(w *ebml.Writer, trackUIDs []uint64) error {
 		}
 	}
 	return w.WriteElement(idChapterTrack, payload.Bytes())
-}
-
-func writeChapterDisplay(w *ebml.Writer, display ChapterDisplay) error {
-	return writeChapterDisplayWithOptions(w, display, chapterWriteOptions{})
 }
 
 func writeChapterDisplayWithOptions(w *ebml.Writer, display ChapterDisplay, options chapterWriteOptions) error {
