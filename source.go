@@ -186,23 +186,24 @@ func customSourceStream(input InputSpec) av.Stream {
 
 // graphSourceBuild is the unified result of opening one input as a graph source:
 // the running pipeline source, the streams it carries, its media domain, the
-// realtime contribution of that input, and the optional RTP build metadata (decode
-// bounds) that only RTP inputs provide. Carrying everything in one value lets the
+// realtime contribution of that input, and the optional decode-bounds capability
+// that provider inputs may declare. Carrying everything in one value lets the
 // recipe build path iterate inputs without branching on the input kind.
 type graphSourceBuild struct {
 	source   pipeline.Source
 	streams  []av.Stream
 	domain   shape.MediaDomain
 	realtime bool
-	rtp      *rtpBuild
+	bounds   decodeBoundsProvider
 }
 
 // openGraphSourceBuild is the single source-opening seam: every input kind (custom
-// Source, file/URI, RTP) resolves to a running pipeline source + its streams +
-// media domain + realtime + optional RTP metadata through here, so callers never
-// branch on the input kind. Returning all streams keeps it composable — the caller
-// selects what it needs.
-func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, index int) (graphSourceBuild, error) {
+// Source, file/URI, source provider) resolves to a running pipeline source + its
+// streams + media domain + realtime + optional decode bounds through here, so
+// callers never branch on the input kind. The node name is resolved by the caller
+// (graphSourceNodeNames) so repeated provider names stay disambiguated. Returning
+// all streams keeps it composable — the caller selects what it needs.
+func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, name string) (graphSourceBuild, error) {
 	switch {
 	case s.source != nil:
 		source, streams, err := newCustomSource(s)
@@ -216,18 +217,8 @@ func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, i
 			domain:   shapeSpec.Domain,
 			realtime: shapeSpec.Realtime,
 		}, nil
-	case s.rtp != nil:
-		build, err := service.openRTPSource(ctx, s.rtpBuildInput(), index)
-		if err != nil {
-			return graphSourceBuild{}, err
-		}
-		rtp := build
-		return graphSourceBuild{
-			source:  build.source,
-			streams: build.streams,
-			domain:  shape.DomainPacket,
-			rtp:     &rtp,
-		}, nil
+	case s.provider != nil:
+		return openProviderSource(ctx, s.provider, name)
 	default:
 		input := s.formatInput()
 		build, err := service.openDemuxSource(ctx, input)
@@ -246,35 +237,49 @@ func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, i
 // openGraphSource keeps the streams/domain 4-tuple shape used by the Mix and
 // Composite arms; it delegates to openGraphSourceBuild so all opening goes through
 // one seam.
-func (s InputSpec) openGraphSource(ctx context.Context, service *builder, index int) (pipeline.Source, []av.Stream, shape.MediaDomain, error) {
-	build, err := s.openGraphSourceBuild(ctx, service, index)
+func (s InputSpec) openGraphSource(ctx context.Context, service *builder, name string) (pipeline.Source, []av.Stream, shape.MediaDomain, error) {
+	build, err := s.openGraphSourceBuild(ctx, service, name)
 	if err != nil {
 		return nil, nil, "", err
 	}
 	return build.source, build.streams, build.domain, nil
 }
 
-// graphSourceNodeName returns the planner node name for this input, matching the
-// running source's node name for every input kind so describe and build agree.
-func (s InputSpec) graphSourceNodeName(index int) string {
+// graphSourceNodeName returns the base planner node name for this input. Callers
+// iterating several inputs resolve names through graphSourceNodeNames so repeated
+// provider names get the index-suffix disambiguation.
+func (s InputSpec) graphSourceNodeName() string {
 	switch {
 	case s.source != nil:
 		return customSourceNodeName(s)
-	case s.rtp != nil:
-		return rtpNodeName(s.rtpBuildInput(), index)
+	case s.provider != nil:
+		return firstNonEmpty(s.name, providerNodeName(s.provider))
 	default:
 		return demuxNodeName(s.formatInput())
 	}
 }
 
+// graphSourceNodeNames resolves one planner/build node name per input, matching
+// the running source's node name for every input kind so describe and build
+// agree. Provider inputs repeating an earlier input's name get an index suffix
+// ("rtp", "rtp-1", ...).
+func graphSourceNodeNames(inputs []InputSpec) []string {
+	names := make([]string, len(inputs))
+	seen := make(map[string]struct{}, len(inputs))
+	for i := range inputs {
+		names[i] = disambiguateSourceNodeName(seen, inputs[i].graphSourceNodeName(), inputs[i].provider != nil, i)
+	}
+	return names
+}
+
 // graphSourceNodeDetail returns the planner node detail for this input, matching
 // the running source's detail for every input kind.
-func (s InputSpec) graphSourceNodeDetail(index int) string {
+func (s InputSpec) graphSourceNodeDetail() string {
 	switch {
 	case s.source != nil:
 		return customSourceDetail(s)
-	case s.rtp != nil:
-		return rtpInputDetail(s.rtpBuildInput())
+	case s.provider != nil:
+		return providerNodeDetail(s.provider)
 	default:
 		return inputNodeDetail(s.formatInput())
 	}

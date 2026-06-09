@@ -229,10 +229,10 @@ func TestRuntimeBuilderRTPDecodeFilterEncodeOutput(t *testing.T) {
 	filter := &runtimeTestStage{name: "meter"}
 
 	builder := newTestBuilder(t, formats, codecs).
-		RTP(receiver,
-			withRTPName("live-audio"),
-			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
-		).
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("live-audio"),
+			rtpav.WithDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+		)).
 		Decode(testSelectAudio()).
 		Filter(testSelectAudio(), filter).
 		Encode(testSelectAudio(), pcmEncodeConfig()).

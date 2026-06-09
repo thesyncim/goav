@@ -12,6 +12,8 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/rtpav"
+	"github.com/thesyncim/goav/webrtcav"
 )
 
 const (
@@ -62,7 +64,7 @@ func (s *session) startVideoTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := goav.From(goav.WebRTCTrack(track).Feedback(peerFeedback{s.pc})).
+	task, err := goav.From(goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc})))).
 		UseRuntime(s.runtime).
 		Video().
 		Decode().
@@ -101,7 +103,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := goav.From(goav.WebRTCTrack(track).Feedback(peerFeedback{s.pc})).
+	task, err := goav.From(goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc})))).
 		UseRuntime(s.runtime).
 		Audio().
 		Decode().

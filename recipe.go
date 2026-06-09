@@ -13,7 +13,6 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -285,20 +284,12 @@ func Resample(sampleRate int, channels int, options ...audioOption) TransformSpe
 
 type InputSpec struct {
 	input    format.Input
-	rtp      *rtpInputSpec
+	provider SourceProvider
 	source   *sourceInputSpec
 	codec    codec.CodecSpec
 	name     string
 	realtime bool
 	err      error
-}
-
-type rtpInputSpec struct {
-	receiver rtpav.PacketReader
-	feedback rtpav.FeedbackWriter
-	jitter   rtpav.JitterBuffer
-	limits   RTPBufferLimits
-	maxTSGap av.Duration
 }
 
 func FileInput(name string, reader io.Reader) InputSpec {
@@ -322,13 +313,6 @@ func URI(uri string) InputSpec {
 	}
 }
 
-func RTP(receiver rtpav.PacketReader) InputSpec {
-	return InputSpec{
-		input: format.Input{Protocol: av.ProtocolRTP, Realtime: true},
-		rtp:   &rtpInputSpec{receiver: receiver},
-	}
-}
-
 func (s InputSpec) Name(name string) InputSpec {
 	s.name = name
 	s.input.Name = name
@@ -345,55 +329,9 @@ func (s InputSpec) Codec(codec codec.CodecSpec) InputSpec {
 	return s
 }
 
-func (s InputSpec) Jitter(jitter rtpav.JitterBuffer) InputSpec {
-	if s.rtp == nil {
-		s.rtp = &rtpInputSpec{}
-	}
-	s.rtp.jitter = jitter
-	return s
-}
-
-func (s InputSpec) Feedback(feedback rtpav.FeedbackWriter) InputSpec {
-	if s.rtp == nil {
-		s.rtp = &rtpInputSpec{}
-	}
-	s.rtp.feedback = feedback
-	return s
-}
-
-func (s InputSpec) RTPBuffer(limits RTPBufferLimits) InputSpec {
-	if s.rtp == nil {
-		s.rtp = &rtpInputSpec{}
-	}
-	s.rtp.limits = limits
-	return s
-}
-
-func (s InputSpec) MaxTimestampGap(gap av.Duration) InputSpec {
-	if s.rtp == nil {
-		s.rtp = &rtpInputSpec{}
-	}
-	s.rtp.maxTSGap = gap
-	return s
-}
-
 func (s InputSpec) formatInput() format.Input {
 	input := s.input
 	input.Realtime = input.Realtime || s.realtime
-	return input
-}
-
-func (s InputSpec) rtpBuildInput() rtpInput {
-	input := rtpInput{}
-	if s.rtp != nil {
-		input.receiver = s.rtp.receiver
-	}
-	options := s.rtpOptions()
-	for i := range options {
-		if options[i] != nil {
-			options[i](&input)
-		}
-	}
 	return input
 }
 
@@ -406,7 +344,7 @@ func (s InputSpec) validate() error {
 			Reason:    s.err.Error(),
 			Suggestions: []string{
 				"check the input constructor arguments",
-				"use goav.RTP(reader) when you already have an RTP packet reader",
+				"pass a non-nil provider to goav.Input(provider)",
 			},
 			Cause: s.err,
 		}
@@ -414,16 +352,7 @@ func (s InputSpec) validate() error {
 	if err := s.validateCustomSource(); err != nil {
 		return err
 	}
-	if err := s.validateRTPReceiver(); err != nil {
-		return err
-	}
-	if err := s.validatePlainInput(); err != nil {
-		return err
-	}
-	if err := s.validateRTPPolicy(); err != nil {
-		return err
-	}
-	return s.validateRTPCodec()
+	return s.validatePlainInput()
 }
 
 func (s InputSpec) validateCustomSource() error {
@@ -439,7 +368,7 @@ func (s InputSpec) validateCustomSource() error {
 			Reason:    "custom source has no push callback",
 			Suggestions: []string{
 				"pass a non-nil callback to goav.Source(name, shape, fn)",
-				"use goav.FileInput, goav.RTP, or goav.WebRTCTrack for built-in source adapters",
+				"use goav.FileInput or goav.Input(provider) for built-in source adapters",
 			},
 			Cause: ErrNilSource,
 		}
@@ -480,7 +409,7 @@ func (s InputSpec) validateCustomSource() error {
 }
 
 func (s InputSpec) validatePlainInput() error {
-	if s.rtp != nil {
+	if s.provider != nil {
 		return nil
 	}
 	if s.source != nil {
@@ -498,203 +427,37 @@ func (s InputSpec) validatePlainInput() error {
 			"use goav.FileInput(name, reader) for file-like input",
 			"use goav.URI(uri) for URI-backed input",
 			"use goav.Source(name, shape, fn) for application-pushed packets",
-			"use goav.RTP(reader) or goav.WebRTCTrack(track) for realtime receive",
+			"use goav.Input(provider) for realtime receive through a source provider",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
 }
 
-func (s InputSpec) validateRTPReceiver() error {
-	if s.rtp == nil || s.rtp.receiver != nil {
-		return nil
+// providerName returns the provider's node name capability ("" without one) so
+// recipe naming, narrowing, and duplicate detection see provider-named inputs.
+func (s InputSpec) providerName() string {
+	if s.provider == nil {
+		return ""
 	}
-	return &BuildError{
-		Code:      "rtp_reader_missing",
-		Operation: "build input",
-		Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
-		Reason:    "RTP input has no packet reader",
-		Suggestions: []string{
-			"pass a non-nil rtpav.PacketReader to goav.RTP(reader)",
-			"use goav.WebRTCTrack(track) for Pion WebRTC receive",
-		},
-		Cause: ErrNilSource,
+	if named, ok := s.provider.(sourceProviderNamer); ok {
+		return named.Name()
 	}
-}
-
-func (s InputSpec) validateRTPPolicy() error {
-	if s.rtp == nil {
-		return nil
-	}
-	limits := s.rtp.limits
-	switch {
-	case limits.MaxReady < 0:
-		return s.invalidRTPBufferLimitError("MaxReady", limits.MaxReady)
-	case limits.MaxEvents < 0:
-		return s.invalidRTPBufferLimitError("MaxEvents", limits.MaxEvents)
-	case limits.MaxFeedback < 0:
-		return s.invalidRTPBufferLimitError("MaxFeedback", limits.MaxFeedback)
-	case limits.MaxPackets < 0:
-		return s.invalidRTPBufferLimitError("MaxPackets", limits.MaxPackets)
-	}
-
-	gap := s.rtp.maxTSGap
-	if gap == (av.Duration{}) {
-		return nil
-	}
-	if gap.Value < 0 {
-		return s.invalidRTPTimestampGapError("negative timestamp gap", gap)
-	}
-	if gap.Value > 0 && !gap.Base.Valid() {
-		return s.invalidRTPTimestampGapError("timestamp gap has an invalid timebase", gap)
-	}
-	return nil
-}
-
-func (s InputSpec) invalidRTPBufferLimitError(field string, value int) error {
-	return &BuildError{
-		Code:      "rtp_buffer_invalid",
-		Operation: "build input",
-		Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
-		Reason:    "RTP buffer limits must be positive when set",
-		Details: []string{
-			fmt.Sprintf("%s=%d", field, value),
-		},
-		Suggestions: []string{
-			"use positive RTP buffer limits or leave fields zero for defaults",
-			"set MaxPackets, MaxEvents, MaxReady, or MaxFeedback only when tightening realtime buffering",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func (s InputSpec) invalidRTPTimestampGapError(reason string, gap av.Duration) error {
-	return &BuildError{
-		Code:      "rtp_timestamp_gap_invalid",
-		Operation: "build input",
-		Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
-		Reason:    reason,
-		Details: []string{
-			fmt.Sprintf("gap=%d base=%d/%d", gap.Value, gap.Base.Num, gap.Base.Den),
-		},
-		Suggestions: []string{
-			"use goav.SamplesDuration(samples, clockRate) or a positive av.Duration with a valid timebase",
-			"omit .MaxTimestampGap(...) when no gap threshold is needed",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func (s InputSpec) validateRTPCodec() error {
-	if s.rtp == nil {
-		return nil
-	}
-	if s.codec.Auto {
-		return &BuildError{
-			Code:      "rtp_codec_auto_unresolved",
-			Operation: "build input",
-			Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
-			Reason:    "automatic RTP codec detection is not implemented for recipe inputs yet",
-			Suggestions: []string{
-				"set RTP receive intent with .Codec(codec.Opus()), .Codec(codec.VP8()), .Codec(codec.VP9()), .Codec(codec.H264()), or .Codec(codec.AV1())",
-				"for custom RTP payloads, add an advanced receive adapter before using the recipe",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	}
-	if s.codec.Copy {
-		return &BuildError{
-			Code:      "rtp_codec_copy_invalid",
-			Operation: "build input",
-			Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
-			Reason:    "RTP input codec intent describes depacketization, not output copying",
-			Suggestions: []string{
-				"use goav.From(goav.RTP(reader).Codec(...)).Copy().To(output) for packet-preserving receive",
-				"omit .Codec(codec.Copy()) on RTP inputs",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	}
-	if s.codec.ID == "" {
-		if s.input.Protocol == av.ProtocolWebRTC {
-			return &BuildError{
-				Code:      "webrtc_codec_unknown",
-				Operation: "build input",
-				Node:      firstNonEmpty(s.name, s.input.Name, "webrtc"),
-				Reason:    "WebRTC track codec is unknown or unsupported by built-in receive recipes",
-				Suggestions: []string{
-					"verify the Pion TrackRemote codec is Opus, VP8, VP9, H264, or AV1",
-					"use goav.RTP(reader).Codec(...) when adapting an RTP reader outside WebRTCTrack",
-					"add an advanced RTP receive adapter for custom payloads before using recipes",
-				},
-				Cause: ErrUnsupportedBuild,
-			}
-		}
-		return &BuildError{
-			Code:      "rtp_codec_missing",
-			Operation: "build input",
-			Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
-			Reason:    "RTP input needs an explicit receive codec intent",
-			Suggestions: []string{
-				"call .Codec(codec.Opus()), .Codec(codec.VP8()), .Codec(codec.VP9()), .Codec(codec.H264()), or .Codec(codec.AV1()) on goav.RTP(reader)",
-				"use goav.WebRTCTrack(track) when Pion track metadata should provide the codec intent",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	}
-	switch s.codec.ID {
-	case av.CodecOpus, av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1:
-		return nil
-	default:
-		return &BuildError{
-			Code:      "rtp_codec_unsupported",
-			Operation: "build input",
-			Node:      firstNonEmpty(s.name, s.input.Name, string(s.codec.ID), "rtp"),
-			Reason:    string(s.codec.ID) + " has no built-in RTP depacketizer",
-			Suggestions: []string{
-				"use a built-in receive codec: codec.Opus(), codec.VP8(), codec.VP9(), codec.H264(), or codec.AV1()",
-				"for custom RTP payloads, add an advanced receive adapter before using the recipe",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	}
-}
-
-func (s InputSpec) rtpOptions() []rtpOption {
-	options := make([]rtpOption, 0, 6)
-	if s.name != "" {
-		options = append(options, withRTPName(s.name))
-	}
-	if s.rtp.feedback != nil {
-		options = append(options, withRTPFeedback(s.rtp.feedback))
-	}
-	if s.rtp.jitter != nil {
-		options = append(options, withRTPJitter(s.rtp.jitter))
-	}
-	if s.codec.ID != "" {
-		options = append(options, withRTPCodec(s.codec))
-	}
-	if s.rtp.limits != (RTPBufferLimits{}) {
-		options = append(options, withRTPBufferLimits(s.rtp.limits))
-	}
-	if s.rtp.maxTSGap != (av.Duration{}) {
-		options = append(options, withRTPMaxTimestampGap(s.rtp.maxTSGap))
-	}
-	return options
+	return ""
 }
 
 func (s InputSpec) intent() inputIntent {
 	return inputIntent{
-		Name:     firstNonEmpty(s.name, s.input.Name),
+		Name:     firstNonEmpty(s.name, s.input.Name, s.providerName()),
 		URI:      s.input.URI,
 		Protocol: s.input.Protocol,
 		MIMEType: s.input.MIMEType,
 		Codec:    cloneCodecSpec(s.codec),
-		Realtime: s.input.Realtime || s.rtp != nil || (s.source != nil && s.source.shape.Realtime),
+		Realtime: s.input.Realtime || (s.source != nil && s.source.shape.Realtime),
 	}
 }
 
 func (s InputSpec) inputName(fallback string) string {
-	return firstNonEmpty(s.name, s.input.Name, s.input.URI, fallback)
+	return firstNonEmpty(s.name, s.input.Name, s.input.URI, s.providerName(), fallback)
 }
 
 // destinationSpec describes a concrete file, URI, writer, or sink destination.
@@ -1472,17 +1235,16 @@ func validateJobInputs(inputs []InputSpec) error {
 		return nil
 	}
 	for i := range inputs {
-		if inputs[i].rtp != nil || inputs[i].source != nil {
+		if inputs[i].provider != nil || inputs[i].source != nil {
 			continue
 		}
 		return &BuildError{
 			Code:      "multi_input_unsupported",
 			Operation: "build job",
 			Node:      firstNonEmpty(inputs[i].name, inputs[i].input.Name, inputs[i].input.URI, fmt.Sprintf("input-%d", i)),
-			Reason:    "multiple recipe inputs currently require realtime RTP/WebRTC packet readers",
+			Reason:    "multiple recipe inputs currently require realtime source providers or custom sources",
 			Suggestions: []string{
-				"use goav.From(goav.RTP(...)).And(goav.RTP(...)) for repeated live inputs",
-				"use goav.WebRTCTrack(...) for Pion WebRTC tracks",
+				"use goav.From(goav.Input(...)).And(goav.Input(...)) for repeated live inputs",
 				"build an explicit graph when combining multiple file or protocol sources",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -1521,8 +1283,7 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 		},
 		Suggestions: []string{
 			"give each repeated realtime input a distinct .Name(...)",
-			"use stable names such as \"audio\" and \"video\" for separate RTP/WebRTC streams",
-			"use goav.WebRTCTrack(track).Name(...) when track metadata is not enough",
+			"use stable names such as \"audio\" and \"video\" for separate live streams",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -2026,7 +1787,7 @@ func validateInputFormatAdapters(ctx context.Context, rt Runtime, inputs []Input
 	}
 	probes := make([]format.ProbeResult, len(inputs))
 	for i := range inputs {
-		if inputs[i].rtp != nil {
+		if inputs[i].provider != nil {
 			continue
 		}
 		if inputs[i].source != nil {
@@ -3879,9 +3640,9 @@ func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedD
 	if err := input.validate(); err != nil {
 		return err
 	}
-	if input.rtp != nil {
+	if input.provider != nil {
 		if !fromBranchSplit {
-			return transcodeUnsupportedRTPInputError()
+			return transcodeUnsupportedLiveInputError()
 		}
 	}
 	seen := make(map[string]struct{}, len(namedOutputs))
@@ -4036,14 +3797,14 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 	}
 }
 
-func transcodeUnsupportedRTPInputError() error {
+func transcodeUnsupportedLiveInputError() error {
 	return &BuildError{
 		Code:      "unsupported_input",
 		Operation: branchCompositionOperation,
-		Reason:    "RTP transcode recipes are not supported by the transcode recipe compiler yet",
+		Reason:    "live provider transcode recipes are not supported by the transcode recipe compiler yet",
 		Suggestions: []string{
 			"use From(...).Copy().To(...) for packet recording",
-			"use From(...).Audio().Decode() or From(...).Video().Decode() for one selected RTP receive path",
+			"use From(...).Audio().Decode() or From(...).Video().Decode() for one selected receive path",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -338,7 +339,7 @@ func TestMixAcceptsRTPArmsViaUnifiedOpener(t *testing.T) {
 	// case in the opener).
 	_, err := Mix(
 		From(mixTestAudioSource("a", 1)).Audio(),
-		From(RTP(&runtimeRTPReceiver{streams: []av.Stream{{ID: "rtp-b", Type: av.MediaAudio}}})).Audio(),
+		From(Input(rtpav.Receive(&runtimeRTPReceiver{streams: []av.Stream{{ID: "rtp-b", Type: av.MediaAudio}}}))).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError

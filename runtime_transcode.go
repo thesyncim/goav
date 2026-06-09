@@ -236,7 +236,7 @@ func compileBranchComposeInputs(
 	graph pipeline.Graph,
 	sourceRefs []pipeline.NodeRef,
 	groups []branchComposeStreamGroup,
-	builds []rtpBuild,
+	bounds []decodeBoundsProvider,
 	branches []branchComposeRoute,
 	inputPlan map[string]graphPlanBranchComposeInputOperation,
 	realtime bool,
@@ -273,9 +273,9 @@ func compileBranchComposeInputs(
 		if len(decodedBranches) == 0 {
 			continue
 		}
-		bounds := codec.DecodeBounds{}
-		if len(builds) != 0 {
-			bounds = rtpDecodeBoundsForStream(selected, builds)
+		decodeBounds := codec.DecodeBounds{}
+		if len(bounds) != 0 {
+			decodeBounds = providerDecodeBoundsForStream(selected, bounds)
 		}
 		decodeConfig, err := branchComposeGroupDecodeConfig(decodedBranches, branches)
 		if err != nil {
@@ -287,7 +287,7 @@ func compileBranchComposeInputs(
 		}
 		dropDecodeEvents := branchComposeGroupDropDecodeEvents(decodedBranches, branches)
 		decodeName := firstNonEmpty(planned.decodeNode.String(), decodeNodeName(selector))
-		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig, codecChange: codecChange}, selected, realtime, dropDecodeEvents, bounds)
+		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig, codecChange: codecChange}, selected, realtime, dropDecodeEvents, decodeBounds)
 		if err != nil {
 			return nil, nil, err
 		}

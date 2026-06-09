@@ -14,29 +14,30 @@ type demuxBuild struct {
 }
 
 // builderSources is the result of opening every builder input into the graph: the
-// source node refs (one per input), the union of their streams, the per-input RTP
-// build metadata (only RTP inputs populate decode bounds), and the realtime
+// source node refs (one per input), the union of their streams, the per-input
+// decode-bounds capabilities (only provider inputs declare them), and the realtime
 // contribution folded in from the inputs. The merged compilers iterate every input
 // through this one loop, kind-agnostic.
 type builderSources struct {
 	refs     []pipeline.NodeRef
 	streams  []av.Stream
-	rtp      []rtpBuild
+	bounds   []decodeBoundsProvider
 	realtime bool
 }
 
-// addBuilderSources opens every builder input (demux or RTP) through the unified
-// source-opening seam, adds each as a graph source, and collects the refs, the
-// stream union, the RTP build metadata, and the realtime contribution. Decode
-// bounds for RTP inputs are surfaced via the returned rtp builds.
+// addBuilderSources opens every builder input (demux or provider) through the
+// unified source-opening seam, adds each as a graph source, and collects the
+// refs, the stream union, the decode-bounds capabilities, and the realtime
+// contribution.
 func (b *builder) addBuilderSources(ctx context.Context, graph pipeline.Graph) (builderSources, error) {
 	out := builderSources{
 		refs:     make([]pipeline.NodeRef, 0, len(b.inputs)),
 		streams:  make([]av.Stream, 0, len(b.inputs)),
 		realtime: b.runtime.realtime,
 	}
+	names := b.inputNodeNames()
 	for i := range b.inputs {
-		build, err := b.inputs[i].open(ctx, b, i)
+		build, err := b.inputs[i].open(ctx, b, names[i])
 		if err != nil {
 			return builderSources{}, err
 		}
@@ -47,9 +48,9 @@ func (b *builder) addBuilderSources(ctx context.Context, graph pipeline.Graph) (
 		}
 		out.refs = append(out.refs, sourceRef)
 		out.streams = append(out.streams, build.streams...)
-		out.realtime = b.inputs[i].realtimeWith(out.realtime)
-		if build.rtp != nil {
-			out.rtp = append(out.rtp, *build.rtp)
+		out.realtime = out.realtime || build.realtime
+		if build.bounds != nil {
+			out.bounds = append(out.bounds, build.bounds)
 		}
 	}
 	return out, nil

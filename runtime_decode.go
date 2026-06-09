@@ -79,7 +79,7 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 	if err != nil {
 		return err
 	}
-	return b.compileDecodeFramePath(ctx, graph, sources.refs, request, stream, sources.realtime, rtpDecodeBoundsForStream(stream, sources.rtp))
+	return b.compileDecodeFramePath(ctx, graph, sources.refs, request, stream, sources.realtime, providerDecodeBoundsForStream(stream, sources.bounds))
 }
 
 func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
@@ -402,7 +402,7 @@ func selectStreamWithCodecRequirement(streams []av.Stream, selector av.StreamSel
 			Details:   []string{streamDiagnostic(selected, 0)},
 			Suggestions: []string{
 				"provide codec metadata on the input stream",
-				"use goav.RTP(reader).Codec(...) for raw RTP receive",
+				"declare the receive codec on the source provider (e.g. a codec intent option)",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -613,7 +613,7 @@ func decodeStreamWithSpec(stream av.Stream, spec codec.CodecSpec) av.Stream {
 	}
 	stream.Codec = parameters
 	if stream.TimeBase == (av.TimeBase{}) && parameters.ClockRate != 0 {
-		stream.TimeBase = av.RTPTimeBase(parameters.ClockRate)
+		stream.TimeBase = av.TimeBase{Num: 1, Den: int64(parameters.ClockRate)}
 	}
 	return stream
 }

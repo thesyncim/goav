@@ -46,28 +46,6 @@ func outputNodeDetailWithFormat(output format.Output, formatID av.FormatID) stri
 	return joinSpecDetail(parts...)
 }
 
-func rtpInputDetail(input rtpInput) string {
-	parts := []string{"rtp receive"}
-	if input.jitter != nil {
-		parts = append(parts, "jitter")
-	}
-	if input.codec.ID != "" {
-		parts = append(parts, "codec="+string(input.codec.ID))
-	} else if len(input.depacketizers) != 0 {
-		parts = append(parts, "custom payloads")
-	}
-	if input.feedback != nil {
-		parts = append(parts, "feedback")
-	}
-	if rtpDecodeBoundsConfigured(input.decodeBounds) {
-		parts = append(parts, "decode bounds")
-	}
-	if input.maxTSGap.Value > 0 && input.maxTSGap.Base.Valid() {
-		parts = append(parts, "timestamp gap")
-	}
-	return joinSpecDetail(parts...)
-}
-
 func customSourceDetail(input InputSpec) string {
 	parts := []string{"custom source"}
 	if input.source != nil {

@@ -628,7 +628,7 @@ func TestRecipesExposeStructuredExplain(t *testing.T) {
 
 func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 	report, err := recordJob(
-		goav.RTP(recipeAPIVideoRTPReader{}).Name("video").Codec(codec.VP8()),
+		goav.Input(rtpav.Receive(recipeAPIVideoRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()))),
 		goav.File("recording.ivf", io.Discard),
 	).Explain(context.Background())
 	if err != nil {
@@ -641,7 +641,7 @@ func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 		t.Fatalf("empty graph: %+v", report.Graph)
 	}
 	if len(report.Inputs) != 1 || report.Inputs[0].Name != "video" ||
-		report.Inputs[0].Format != av.FormatRTP || report.Inputs[0].Codec != av.CodecVP8 ||
+		report.Inputs[0].Format != "" || report.Inputs[0].Codec != av.CodecVP8 ||
 		!report.Inputs[0].Realtime {
 		t.Fatalf("inputs=%+v", report.Inputs)
 	}
@@ -656,7 +656,7 @@ func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 		!equalOperationKinds(operationKinds(report.Branches[0].Operations), []goav.OperationKind{goav.OpDepacketize, goav.OpCopy}) {
 		t.Fatalf("branches=%+v", report.Branches)
 	}
-	if !hasRequirement(report.RequiredAdapters, "rtp-depacketizer", av.CodecVP8, "") ||
+	if !hasRequirement(report.RequiredAdapters, "depacketizer", av.CodecVP8, "") ||
 		!hasRequirement(report.RequiredAdapters, "muxer", "", av.FormatIVF) {
 		t.Fatalf("requirements=%+v", report.RequiredAdapters)
 	}
@@ -859,7 +859,7 @@ func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
 		registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 	}))
 
-	report, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(codec.Opus())).
+	report, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
 		UseRuntime(rt).
 		Audio().
 		Decode().
@@ -2820,7 +2820,7 @@ func TestExternalCustomDestinationCanBeDestined(t *testing.T) {
 	dest := recipeAPICustomDestination{}
 	target := goav.Custom("custom", dest)
 
-	job := goav.From(goav.RTP(recipeAPIVideoRTPReader{}).Name("video").Codec(codec.VP8())).
+	job := goav.From(goav.Input(rtpav.Receive(recipeAPIVideoRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
 		Video().
 		Copy().
 		To(target)
@@ -3612,7 +3612,7 @@ func TestFlowBranchesDescribeLiveInputBranches(t *testing.T) {
 	voiceOut := goav.File("voice.ogg", io.Discard)
 	archiveOut := goav.File("archive.ogg", io.Discard)
 
-	job := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(codec.Opus())).
+	job := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
 		Audio().
 		Branches(
 			goav.Branch("voice").Apply(voice).To(voiceOut),
@@ -3670,7 +3670,7 @@ func TestReadmeDecodeShortcutUsesSinkDestination(t *testing.T) {
 		return nil
 	})
 	job := decodeJob(
-		goav.RTP(recipeAPIRTPReader{}).Codec(codec.Opus()),
+		goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithCodec(codec.Opus()))),
 		goav.Sink(sink),
 	)
 
@@ -3691,13 +3691,14 @@ func TestReadmeDecodeShortcutUsesSinkDestination(t *testing.T) {
 }
 
 func TestWebRTCTrackRecipeReportsNilTrack(t *testing.T) {
+	// Track adaptation errors are the provider's: they surface when the
+	// source opens at build time.
 	_, err := recordJob(
-		goav.WebRTCTrack(nil),
+		goav.Input(webrtcav.Track(nil)),
 		goav.File("recording.ivf", io.Discard),
 	).Build(context.Background())
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" || !errors.Is(err, webrtcav.ErrNilTrack) {
-		t.Fatalf("err = %v, want input_invalid wrapping ErrNilTrack", err)
+	if !errors.Is(err, webrtcav.ErrNilTrack) {
+		t.Fatalf("err = %v, want webrtcav.ErrNilTrack", err)
 	}
 }
 
@@ -3713,8 +3714,8 @@ func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
 }
 
 func TestRecipeAndRejectsDuplicateRealtimeInputNames(t *testing.T) {
-	_, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("media").Codec(codec.Opus())).
-		And(goav.RTP(recipeAPIRTPReader{}).Name("media").Codec(codec.VP8())).
+	_, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("media"), rtpav.WithCodec(codec.Opus())))).
+		And(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("media"), rtpav.WithCodec(codec.VP8())))).
 		To(goav.File("recording.webm", io.Discard)).
 		Build(context.Background())
 
@@ -3788,7 +3789,7 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 }
 
 func TestPacketCopyRecipeAcceptsSinkDestination(t *testing.T) {
-	spec, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(codec.Opus())).
+	spec, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
 		Copy().
 		To(goav.Sink(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
 			return nil
@@ -3966,153 +3967,26 @@ func TestStreamRecipeRejectsDuplicateTypedDestinations(t *testing.T) {
 	}
 }
 
-func TestRTPRecipeRejectsNilReader(t *testing.T) {
+func TestProviderRecipeSurfacesOpenSourceError(t *testing.T) {
+	// Provider inputs validate themselves: a nil reader is the provider's
+	// error, surfaced when the source opens at build time.
 	_, err := recordJob(
-		goav.RTP(nil).Name("audio"),
+		goav.Input(rtpav.Receive(nil, rtpav.WithName("audio"))),
+		goav.File("recording.ivf", io.Discard),
+	).Build(context.Background())
+	if !errors.Is(err, rtpav.ErrNilReceiver) {
+		t.Fatalf("err = %v, want rtpav.ErrNilReceiver", err)
+	}
+}
+
+func TestProviderRecipeRejectsNilProvider(t *testing.T) {
+	_, err := recordJob(
+		goav.Input(nil),
 		goav.File("recording.ogg", io.Discard),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "rtp_reader_missing" || !errors.Is(err, goav.ErrNilSource) {
-		t.Fatalf("err = %v, want rtp_reader_missing wrapping ErrNilSource", err)
-	}
-	if !strings.Contains(err.Error(), "non-nil rtpav.PacketReader") {
-		t.Fatalf("err = %v, want RTP reader guidance", err)
-	}
-}
-
-func TestRTPRecipeRequiresCodecIntent(t *testing.T) {
-	_, err := recordJob(
-		goav.RTP(recipeAPIRTPReader{}).Name("audio"),
-		goav.File("recording.ogg", io.Discard),
-	).Build(context.Background())
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "rtp_codec_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want rtp_codec_missing wrapping ErrUnsupportedBuild", err)
-	}
-	if !strings.Contains(err.Error(), ".Codec(codec.Opus())") ||
-		!strings.Contains(err.Error(), "goav.WebRTCTrack") {
-		t.Fatalf("err = %v, want RTP codec guidance", err)
-	}
-}
-
-func TestRTPRecipeRejectsNegativeBufferLimits(t *testing.T) {
-	tests := []struct {
-		name  string
-		field string
-		limit goav.RTPBufferLimits
-	}{
-		{name: "max ready", field: "MaxReady", limit: goav.RTPBufferLimits{MaxReady: -1}},
-		{name: "max events", field: "MaxEvents", limit: goav.RTPBufferLimits{MaxEvents: -1}},
-		{name: "max feedback", field: "MaxFeedback", limit: goav.RTPBufferLimits{MaxFeedback: -1}},
-		{name: "max packets", field: "MaxPackets", limit: goav.RTPBufferLimits{MaxPackets: -1}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := recordJob(
-				goav.RTP(recipeAPIRTPReader{}).
-					Name("audio").
-					Codec(codec.Opus()).
-					RTPBuffer(tt.limit),
-				goav.File("recording.ogg", io.Discard),
-			).Build(context.Background())
-			var buildErr *goav.BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "rtp_buffer_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want rtp_buffer_invalid wrapping ErrUnsupportedBuild", err)
-			}
-			if !strings.Contains(err.Error(), tt.field+"=-1") ||
-				!strings.Contains(err.Error(), "zero for defaults") {
-				t.Fatalf("err = %v, want RTP buffer guidance", err)
-			}
-		})
-	}
-}
-
-func TestRTPRecipeRejectsInvalidTimestampGap(t *testing.T) {
-	tests := []struct {
-		name string
-		gap  av.Duration
-		want string
-	}{
-		{
-			name: "negative",
-			gap:  av.Duration{Value: -1, Base: av.RTPTimeBase(48000)},
-			want: "negative timestamp gap",
-		},
-		{
-			name: "missing timebase",
-			gap:  av.Duration{Value: 960},
-			want: "invalid timebase",
-		},
-		{
-			name: "invalid denominator",
-			gap:  av.Duration{Value: 960, Base: av.TimeBase{Num: 1}},
-			want: "invalid timebase",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := recordJob(
-				goav.RTP(recipeAPIRTPReader{}).
-					Name("audio").
-					Codec(codec.Opus()).
-					MaxTimestampGap(tt.gap),
-				goav.File("recording.ogg", io.Discard),
-			).Build(context.Background())
-			var buildErr *goav.BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "rtp_timestamp_gap_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want rtp_timestamp_gap_invalid wrapping ErrUnsupportedBuild", err)
-			}
-			if !strings.Contains(err.Error(), tt.want) ||
-				!strings.Contains(err.Error(), "MaxTimestampGap") {
-				t.Fatalf("err = %v, want RTP timestamp-gap guidance", err)
-			}
-		})
-	}
-}
-
-func TestRTPRecipeRejectsUnsupportedCodecIntent(t *testing.T) {
-	_, err := recordJob(
-		goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(codec.CodecSpec{ID: "pcm"}),
-		goav.File("recording.ogg", io.Discard),
-	).Build(context.Background())
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "rtp_codec_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want rtp_codec_unsupported wrapping ErrUnsupportedBuild", err)
-	}
-	if !strings.Contains(err.Error(), "pcm has no built-in RTP depacketizer") ||
-		!strings.Contains(err.Error(), "codec.Opus()") ||
-		!strings.Contains(err.Error(), "advanced receive adapter") ||
-		strings.Contains(err.Error(), ".Depacketize") {
-		t.Fatalf("err = %v, want RTP codec guidance", err)
-	}
-}
-
-func TestRTPRecipeRejectsUnresolvedCodecIntents(t *testing.T) {
-	tests := []struct {
-		name string
-		spec codec.CodecSpec
-		code string
-	}{
-		{name: "auto", spec: codec.Auto(), code: "rtp_codec_auto_unresolved"},
-		{name: "copy", spec: codec.Copy(), code: "rtp_codec_copy_invalid"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := recordJob(
-				goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(tt.spec),
-				goav.File("recording.ogg", io.Discard),
-			).Build(context.Background())
-			var buildErr *goav.BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, goav.ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
-			}
-			if tt.code == "rtp_codec_auto_unresolved" &&
-				(!strings.Contains(err.Error(), "set RTP receive intent") ||
-					!strings.Contains(err.Error(), "advanced receive adapter") ||
-					strings.Contains(err.Error(), ".Depacketize")) {
-				t.Fatalf("err = %v, want recipe-first RTP codec guidance", err)
-			}
-		})
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" || !errors.Is(err, goav.ErrNilSource) {
+		t.Fatalf("err = %v, want input_invalid wrapping ErrNilSource", err)
 	}
 }
 
@@ -4642,7 +4516,7 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 			},
 		})
 	}))
-	_, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("video").Codec(codec.H264())).
+	_, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.H264())))).
 		UseRuntime(rt).
 		Video().
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
@@ -4662,8 +4536,8 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 }
 
 func TestStreamRecipeReportsAmbiguousLiveSelectionBeforeDecoderAdapter(t *testing.T) {
-	_, err := goav.From(goav.RTP(recipeAPIRTPReader{}).Name("front").Codec(codec.VP8())).
-		And(goav.RTP(recipeAPIRTPReader{}).Name("screen").Codec(codec.VP8())).
+	_, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("front"), rtpav.WithCodec(codec.VP8())))).
+		And(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("screen"), rtpav.WithCodec(codec.VP8())))).
 		Video().
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
@@ -5128,7 +5002,7 @@ func TestBranchRecipeRejectsInvalidDestination(t *testing.T) {
 }
 
 func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
-	_, err := branchJob(goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(codec.Opus())).
+	_, err := branchJob(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
 		Audio("main").Encode(codec.Opus(codec.Bitrate(96_000))).To(goav.File("archive.ogg", io.Discard)).
 		Build(context.Background())
 

@@ -32,7 +32,7 @@ The session-level shape is:
 session, err := webrtcav.NewSession(ctx, webrtcav.SessionConfig{})
 answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
-err := goav.From(goav.WebRTCTrack(remote.Track)).
+err := goav.From(goav.Input(webrtcav.Track(remote.Track))).
     Copy().
     To(goav.File("recording.ivf", file)).
     Run(ctx)
@@ -45,7 +45,7 @@ one container requires a muxer adapter for that container:
 tracks, err := webrtcav.NewTrackSet(webrtcav.TrackSetConfig{Session: session})
 audio, err := tracks.Accept(ctx)
 video, err := tracks.Accept(ctx)
-err := goav.From(goav.RTP(audio.Reader), goav.RTP(video.Reader)).
+err := goav.From(goav.Input(rtpav.Receive(audio.Reader)), goav.Input(rtpav.Receive(video.Reader))).
     To(goav.File("recording.webm", file)).
     Run(ctx)
 ```
@@ -54,11 +54,14 @@ When a later accepted track has the same stream ID, `TrackSet` calls
 `UpdateTrack` on the existing reader and returns `TrackReplaced`, so existing
 RTP sources observe the codec-change event without rebuilding the graph.
 
-The recipe layer also accepts raw RTP packet readers directly. RTP inputs need
-codec intent so the runtime can choose the depacketizer:
+The recipe layer also accepts raw RTP packet readers directly through the
+generic provider seam: `goav.Input(provider)` adapts any source provider —
+`rtpav.Receive` and `webrtcav.Track` are the built-in ones, and external
+transports (SRT, NDI, ...) plug in the same way with zero goav changes. Declare
+codec intent on the provider so it can choose the depacketizer:
 
 ```go
-err := goav.From(goav.RTP(video).Name("video").Codec(codec.VP8())).
+err := goav.From(goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
     Copy().
     To(goav.File("recording.ivf", file)).
     Run(ctx)
@@ -66,23 +69,24 @@ err := goav.From(goav.RTP(video).Name("video").Codec(codec.VP8())).
 
 Each reader can be a raw RTP receiver or a `webrtcav.TrackReader`. A track
 reader produced from a session routes RTCP feedback back through the peer
-connection. `.Name(...)` gives the graph a stable label; explicit realtime
-input names must be distinct. Selected live streams decode to sinks, continue
+connection. `rtpav.WithName(...)` gives the graph a stable label; explicit
+realtime input names must be distinct. Selected live streams decode to sinks, continue
 into encoders and mux outputs, and accept filter stages — the same stages used
 by file inputs. Single-stream RTP sources stamp EOS with the stream ID so
 unrelated inputs do not flush a shared decoder. Decoder factories can provide
-adapter-specific reusable state for this path; `WithRTPDecodeBounds(...)` seeds
-payload, retained-fragment, output-count, and geometry limits (used by the AV1
-adapter for conservative scratch sizing).
+adapter-specific reusable state for this path; `rtpav.WithDecodeBounds(...)`
+seeds payload, retained-fragment, output-count, and geometry limits (used by the
+AV1 adapter for conservative scratch sizing).
 
 ## Loss
 
 Loss is visible data, not just an error return: `av.EventPacketLoss`,
 `av.EventDiscontinuity`, packet `LossBefore`/`Discontinuous`, and RTCP feedback
 requests. Timestamp regressions and configured gaps become
-`av.EventDiscontinuity` before the affected packet is delivered. `RTPBuffer(...)`
-limits use zero for defaults; `MaxTimestampGap(...)` needs a positive duration
-with a valid timebase.
+`av.EventDiscontinuity` before the affected packet is delivered.
+`rtpav.WithBufferLimits(...)` limits use zero for defaults;
+`rtpav.WithMaxTimestampGap(...)` needs a positive duration with a valid
+timebase.
 
 ## Codec switches
 
@@ -100,7 +104,7 @@ decoder factory; dynamic rebind is a future policy.
 Stream recipes name the supported live policy explicitly:
 
 ```go
-err := goav.From(goav.WebRTCTrack(track)).
+err := goav.From(goav.Input(webrtcav.Track(track))).
     Video().
     OnCodecChange(goav.RealtimeCodecChangePolicy()).
     To(goav.Sink(frames)).

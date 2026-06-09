@@ -1784,7 +1784,7 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error
 		Details:   runtimeBranchShapeDetails(shape),
 		Suggestions: []string{
 			"attach from a recipe tap with codec shape",
-			"declare the RTP/WebRTC/File input codec before building the task",
+			"declare the input codec (provider codec intent or file metadata) before building the task",
 			"call task.Taps() and choose a packet tap that reports codec=...",
 		},
 		Cause: ErrUnsupportedBuild,

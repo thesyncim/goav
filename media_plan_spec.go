@@ -377,10 +377,11 @@ func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inp
 		return nil, false, nil
 	}
 	refs := make([]pipeline.NodeRef, 0, len(inputs))
+	names := graphSourceNodeNames(inputs)
 	for i := range inputs {
-		name := inputs[i].graphSourceNodeName(i)
+		name := names[i]
 		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, inputs[i].graphSourceNodeDetail(i)); err != nil {
+		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, inputs[i].graphSourceNodeDetail()); err != nil {
 			return nil, false, err
 		}
 		refs = append(refs, ref)

@@ -455,12 +455,12 @@ func planInputOperationsForShape(input inputIntent, spec shape.Spec) []planOpera
 		return nil
 	}
 	switch {
-	case input.Protocol == av.ProtocolRTP || input.Protocol == av.ProtocolWebRTC || input.Realtime:
-		component := firstNonEmpty(string(input.Codec.ID), string(input.Protocol), "rtp")
+	case input.Realtime:
+		component := firstNonEmpty(string(input.Codec.ID), string(input.Protocol), "receive")
 		return []planOperation{{
 			Kind:      OpDepacketize,
 			Component: component,
-			Detail:    "receive RTP packets",
+			Detail:    "receive live packets",
 			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(spec.Domain, shape.DomainPacket)),
 		}}
 	default:
@@ -646,7 +646,7 @@ func normalizePlanBranchShape(spec shape.Spec, stream streamIntent, input inputI
 	if spec.Codec == "" {
 		spec.Codec = firstNonEmptyCodec(stream.Select.Codec, input.Codec.ID)
 	}
-	if input.Realtime || input.Protocol == av.ProtocolRTP || input.Protocol == av.ProtocolWebRTC {
+	if input.Realtime {
 		spec.Realtime = true
 	}
 	return spec
@@ -662,7 +662,7 @@ func mediaShapeFromInputIntent(input inputIntent, domain shape.MediaDomain) shap
 		MediaKind: input.Codec.Type,
 		StreamID:  av.StreamID(input.Name),
 		Codec:     input.Codec.ID,
-		Realtime:  input.Realtime || input.Protocol == av.ProtocolRTP || input.Protocol == av.ProtocolWebRTC,
+		Realtime:  input.Realtime,
 	}
 	spec = shape.Merge(spec, shape.FromCodecParameters(input.Codec.Parameters))
 	if spec.MediaKind == "" {

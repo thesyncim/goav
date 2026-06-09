@@ -43,7 +43,7 @@ type mediaPlanCompiledSources struct {
 	refs         []pipeline.NodeRef
 	streams      []av.Stream
 	streamGroups [][]av.Stream
-	rtpBuilds    []rtpBuild
+	bounds       []decodeBoundsProvider
 	realtime     bool
 }
 
@@ -173,9 +173,9 @@ func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
 		return false
 	}
 	// Several inputs converge on one job only for independently-running
-	// realtime readers and custom sources (mirrors validateJobInputs).
+	// realtime providers and custom sources (mirrors validateJobInputs).
 	for i := range inputs {
-		if inputs[i].rtp == nil && inputs[i].source == nil {
+		if inputs[i].provider == nil && inputs[i].source == nil {
 			return false
 		}
 	}
@@ -273,7 +273,7 @@ func newMediaPlanBranchComposeGraph(rt Runtime, inputs []InputSpec, plan branchC
 	}
 	for i := range inputs {
 		input := inputs[i]
-		if input.rtp == nil && input.source == nil && input.formatInput().Reader == nil && input.formatInput().URI == "" && input.formatInput().Name == "" {
+		if input.provider == nil && input.source == nil && input.formatInput().Reader == nil && input.formatInput().URI == "" && input.formatInput().Name == "" {
 			return mediaPlanBranchComposeGraph{}, false, nil
 		}
 	}
@@ -341,7 +341,7 @@ func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, plan graphPlan, 
 	if err != nil {
 		return err
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, p.branches, lowering.inputs, sources.realtime)
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.bounds, p.branches, lowering.inputs, sources.realtime)
 	if err != nil {
 		return err
 	}
@@ -908,7 +908,7 @@ func (p mediaPlanStreamGraph) compileSelectedPacketCopyBranchCompose(ctx context
 			selectNode: selectOperation.Node,
 		},
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, branches, inputPlan, sources.realtime)
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.bounds, branches, inputPlan, sources.realtime)
 	if err != nil {
 		return err
 	}
@@ -1571,7 +1571,7 @@ func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Contex
 			encodeShape:       lowering.encodeShape,
 		},
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.rtpBuilds, branches, inputPlan, sources.realtime)
+	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.bounds, branches, inputPlan, sources.realtime)
 	if err != nil {
 		return err
 	}
@@ -1596,10 +1596,11 @@ func compileMediaPlanSources(
 	sourceRefs := make([]pipeline.NodeRef, 0, len(inputs))
 	streams := make([]av.Stream, 0, len(inputs))
 	streamGroups := make([][]av.Stream, 0, len(inputs))
-	var builds []rtpBuild
+	var bounds []decodeBoundsProvider
 	realtime := runtime.realtime
+	names := graphSourceNodeNames(inputs)
 	for i := range inputs {
-		build, err := inputs[i].openGraphSourceBuild(ctx, service, i)
+		build, err := inputs[i].openGraphSourceBuild(ctx, service, names[i])
 		if err != nil {
 			return mediaPlanCompiledSources{}, err
 		}
@@ -1613,15 +1614,15 @@ func compileMediaPlanSources(
 		streams = append(streams, sourceStreams...)
 		streamGroups = append(streamGroups, sourceStreams)
 		realtime = realtime || build.realtime
-		if build.rtp != nil {
-			builds = append(builds, *build.rtp)
+		if build.bounds != nil {
+			bounds = append(bounds, build.bounds)
 		}
 	}
 	return mediaPlanCompiledSources{
 		refs:         sourceRefs,
 		streams:      streams,
 		streamGroups: streamGroups,
-		rtpBuilds:    builds,
+		bounds:       bounds,
 		realtime:     realtime,
 	}, nil
 }

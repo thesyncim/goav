@@ -421,10 +421,11 @@ func (p *joinPlan) spec() (pipeline.Spec, error) {
 	spec := pipeline.Spec{Name: "goav-" + p.name, Realtime: p.runtime.realtime}
 	nodes := make(map[string]plannedNode, len(p.arms)*3+4)
 	joinRef := pipeline.NodeRef(p.name)
+	sourceNames := p.armSourceNames()
 	for i := range p.arms {
 		arm := p.arms[i]
-		sourceName := arm.input.graphSourceNodeName(i)
-		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, pipeline.NodeRef(sourceName), arm.input.graphSourceNodeDetail(i)); err != nil {
+		sourceName := sourceNames[i]
+		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, pipeline.NodeRef(sourceName), arm.input.graphSourceNodeDetail()); err != nil {
 			return pipeline.Spec{}, err
 		}
 		upstream := pipeline.NodeRef(sourceName)
@@ -474,6 +475,16 @@ func (p *joinPlan) spec() (pipeline.Spec, error) {
 	}
 }
 
+// armSourceNames resolves the per-arm source node names through the shared
+// input-name disambiguation, so the planned spec and the lowering agree.
+func (p *joinPlan) armSourceNames() []string {
+	inputs := make([]InputSpec, len(p.arms))
+	for i := range p.arms {
+		inputs[i] = p.arms[i].input
+	}
+	return graphSourceNodeNames(inputs)
+}
+
 // joinDestinationNodeName names the single-destination node exactly as the
 // lowering does: sinks keep their own name, mux destinations use muxNodeName.
 func (p *joinPlan) joinDestinationNodeName() string {
@@ -508,9 +519,10 @@ func (p *joinPlan) lower(ctx context.Context, _ graphPlan, graph pipeline.Graph,
 	armRefs := make([]string, 0, len(p.arms))
 	armIDs := make([]av.StreamID, 0, len(p.arms))
 	seen := make(map[av.StreamID]struct{}, len(p.arms))
+	sourceNames := p.armSourceNames()
 	for i := range p.arms {
 		arm := p.arms[i]
-		source, streams, _, err := arm.input.openGraphSource(ctx, service, i)
+		source, streams, _, err := arm.input.openGraphSource(ctx, service, sourceNames[i])
 		if err != nil {
 			return err
 		}

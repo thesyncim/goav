@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -1229,7 +1230,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 		),
 	)
 	job := From(
-		RTP(&runtimeRTPReceiver{
+		Input(rtpav.Receive(&runtimeRTPReceiver{
 			streams: []Stream{{
 				ID:   "audio",
 				Type: av.MediaAudio,
@@ -1238,7 +1239,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 					Type: av.MediaAudio,
 				},
 			}},
-		}).Name("audio").Codec(codec.Opus()),
+		}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))),
 	).Copy().To(destinationHandle(fileDestination("recording.ogg", io.Discard))).UseRuntime(runtime)
 
 	resolved, err := compileJobRecipeForBuild(job)
@@ -1379,7 +1380,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 				},
 			},
 			code: "input_format_unknown",
-			want: []string{"could not be detected", "name=input.unknown", "goav.RTP"},
+			want: []string{"could not be detected", "name=input.unknown", "goav.Input"},
 		},
 	}
 	for _, tt := range tests {
@@ -1404,7 +1405,7 @@ func TestInputFormatAdapterPassSkipsLiveReceiveInputs(t *testing.T) {
 		options:   recipeCompileOptions{preflightInputAdapters: true},
 		runtime:   Default(),
 		inputAttachments: []InputSpec{
-			RTP(nil).Codec(codec.Opus()),
+			Input(rtpav.Receive(nil, rtpav.WithCodec(codec.Opus()))),
 		},
 	}
 	if err := validateJobInputFormatAdaptersPass().Apply(&state); err != nil {
@@ -2930,16 +2931,16 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 		want  string
 	}{
 		{
-			name: "rtp input",
+			name: "live provider input",
 			state: recipeCompileState{
-				branchInputAttachment: RTP(&runtimeRTPReceiver{}).Name("video").Codec(codec.VP8()),
+				branchInputAttachment: Input(rtpav.Receive(&runtimeRTPReceiver{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()))),
 				branchDestinationAttachments: []namedDestinationSpec{{
 					name:   "web",
 					output: fileDestination("web.ivf", io.Discard),
 				}},
 			},
 			code: "unsupported_input",
-			want: "RTP transcode recipes",
+			want: "live provider transcode recipes",
 		},
 		{
 			name: "duplicate destinations",
@@ -3378,14 +3379,14 @@ func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
 
 func TestGraphPlanSpecPassPlansRTPCopy(t *testing.T) {
 	job := From(
-		RTP(&runtimeRTPReceiver{streams: []Stream{{
+		Input(rtpav.Receive(&runtimeRTPReceiver{streams: []Stream{{
 			ID:   "video",
 			Type: av.MediaVideo,
 			Codec: av.CodecParameters{
 				ID:   av.CodecVP8,
 				Type: av.MediaVideo,
 			},
-		}}}).Name("video").Codec(codec.VP8()),
+		}}}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()))),
 	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF)))
 
 	resolved, err := compileJobRecipe(job)
@@ -3462,9 +3463,9 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) {
 	voice := destinationHandle(fileDestination("voice.ogg", io.Discard).withFormat(av.FormatOgg))
 	archive := destinationHandle(fileDestination("archive.ogg", io.Discard).withFormat(av.FormatOgg))
-	job := From(RTP(&runtimeRTPReceiver{
+	job := From(Input(rtpav.Receive(&runtimeRTPReceiver{
 		streams: []Stream{audioOpusTestStream()},
-	}).Name("audio").Codec(codec.Opus())).
+	}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
 		Audio().
 		Branches(
 			Branch("voice").Apply(Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).To(voice),
@@ -3475,8 +3476,8 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	if resolved.branchInputAttachment.rtp == nil {
-		t.Fatal("resolved branch input = nil RTP, want live branch composer input carried on resolved plan")
+	if resolved.branchInputAttachment.provider == nil {
+		t.Fatal("resolved branch input = nil provider, want live branch composer input carried on resolved plan")
 	}
 	if len(resolved.plan.Branches) != 2 {
 		t.Fatalf("resolved plan branches = %+v, want two live flow branches", resolved.plan.Branches)
@@ -3921,7 +3922,7 @@ func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testi
 
 func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	job := From(
-		RTP(&runtimeRTPReceiver{
+		Input(rtpav.Receive(&runtimeRTPReceiver{
 			streams: []Stream{{
 				ID:   "video",
 				Type: av.MediaVideo,
@@ -3930,7 +3931,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 					Type: av.MediaVideo,
 				},
 			}},
-		}).Name("video").Codec(codec.VP8()),
+		}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()))),
 	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
 
 	resolved, err := compileJobRecipe(job)
@@ -4078,9 +4079,9 @@ func TestPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
 
 func TestPacketCopyLowererRequiresTargetBranchBindingsBeforeSources(t *testing.T) {
 	job := From(
-		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("left").Codec(codec.Opus()),
+		Input(rtpav.Receive(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}, rtpav.WithName("left"), rtpav.WithCodec(codec.Opus()))),
 	).And(
-		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("right").Codec(codec.Opus()),
+		Input(rtpav.Receive(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}, rtpav.WithName("right"), rtpav.WithCodec(codec.Opus()))),
 	).Copy().To(Sink(&runtimeTestSink{name: "packets"}))
 
 	resolved, err := compileJobRecipe(job)
@@ -4102,9 +4103,9 @@ func TestPacketCopyLowererRequiresTargetBranchBindingsBeforeSources(t *testing.T
 
 func TestPacketCopyLowererRequiresConsistentDestinationOperationsBeforeSources(t *testing.T) {
 	job := From(
-		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("left").Codec(codec.Opus()),
+		Input(rtpav.Receive(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}, rtpav.WithName("left"), rtpav.WithCodec(codec.Opus()))),
 	).And(
-		RTP(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}).Name("right").Codec(codec.Opus()),
+		Input(rtpav.Receive(&runtimeRTPReceiver{streams: []Stream{audioOpusTestStream()}}, rtpav.WithName("right"), rtpav.WithCodec(codec.Opus()))),
 	).Copy().To(Sink(&runtimeTestSink{name: "packets"}))
 
 	resolved, err := compileJobRecipe(job)
@@ -4419,7 +4420,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	stream := audioOpusTestStream()
 	receiver := &runtimeRTPReceiver{streams: []Stream{stream}}
 	runtime := New(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})))
-	job := From(RTP(receiver).Name("audio").Codec(codec.Opus())).UseRuntime(runtime).
+	job := From(Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).UseRuntime(runtime).
 		Audio().
 		Decode().
 		To(Sink(&runtimeTestSink{name: "frames"}))
@@ -4895,7 +4896,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := From(RTP(receiver).Name("audio").Codec(codec.Opus())).UseRuntime(runtime).
+	job := From(Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).UseRuntime(runtime).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).

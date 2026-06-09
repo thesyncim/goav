@@ -161,12 +161,12 @@ func TestRuntimeBuilderRTPRecordFanout(t *testing.T) {
 	)
 
 	builder := newTestBuilder(t, formats).
-		RTP(receiver,
-			withRTPName("remote-audio"),
-			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
-			withRTPMaxTimestampGap(av.SamplesDuration(960, 48000)),
-			withRTPBufferLimits(RTPBufferLimits{MaxPackets: 2, MaxEvents: 2}),
-		).
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("remote-audio"),
+			rtpav.WithDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+			rtpav.WithMaxTimestampGap(av.SamplesDuration(960, 48000)),
+			rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2, MaxEvents: 2}),
+		)).
 		Mux(format.Output{Name: "archive.ogg"}).
 		Mux(format.Output{Name: "preview.ogg"})
 	planned, err := builder.Describe()
@@ -331,10 +331,10 @@ func TestRuntimeBuilderRTPDecodeSink(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := newTestBuilder(t, codecs).
-		RTP(receiver,
-			withRTPName("live-audio"),
-			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
-		).
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("live-audio"),
+			rtpav.WithDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+		)).
 		Decode(testSelectAudio()).
 		Sink(sink)
 	planned, err := builder.Describe()
@@ -422,11 +422,11 @@ func TestRuntimeBuilderRTPDecodeUsesRTPDecodeBounds(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := newTestBuilder(t, codecs).
-		RTP(receiver,
-			withRTPName("video-rtp"),
-			withRTPDepacketizers(rtpav.NewVP8Depacketizer(stream, rtpav.WithMaxVideoFrameSize(4096))),
-			withRTPDecodeBounds(requested),
-		).
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("video-rtp"),
+			rtpav.WithDepacketizers(rtpav.NewVP8Depacketizer(stream, rtpav.WithMaxVideoFrameSize(4096))),
+			rtpav.WithDecodeBounds(requested),
+		)).
 		Decode(testSelectVideo()).
 		Sink(sink)
 	planned, err := builder.Describe()
@@ -464,18 +464,19 @@ func TestRuntimeBuilderRTPDecodeUsesRTPDecodeBounds(t *testing.T) {
 	}
 }
 
-func TestRTPDecodeBoundsForStreamUsesMatchingInput(t *testing.T) {
-	audio := av.Stream{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}}
+// testBoundsProvider is a minimal decode-bounds capability fixture: per-stream
+// bounds keyed by stream id, like rtpav.Input.DecodeBounds after OpenSource.
+type testBoundsProvider map[av.StreamID]codec.DecodeBounds
+
+func (p testBoundsProvider) DecodeBounds(id av.StreamID) codec.DecodeBounds {
+	return p[id]
+}
+
+func TestProviderDecodeBoundsForStreamUsesMatchingInput(t *testing.T) {
 	video := av.Stream{ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}}
-	bounds := rtpDecodeBoundsForStream(video, []rtpBuild{
-		{
-			streams:      []av.Stream{audio},
-			decodeBounds: codec.DecodeBounds{MaxPayloadBytes: 1024},
-		},
-		{
-			streams:      []av.Stream{video},
-			decodeBounds: codec.DecodeBounds{MaxFramesPerInput: 2, MaxPayloadBytes: 4096},
-		},
+	bounds := providerDecodeBoundsForStream(video, []decodeBoundsProvider{
+		testBoundsProvider{"audio": {MaxPayloadBytes: 1024}},
+		testBoundsProvider{"video": {MaxFramesPerInput: 2, MaxPayloadBytes: 4096}},
 	})
 	if bounds.MaxFramesPerInput != 2 || bounds.MaxPayloadBytes != 4096 {
 		t.Fatalf("bounds = %+v", bounds)
@@ -521,14 +522,14 @@ func TestRuntimeBuilderRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	task, err := newTestBuilder(t, codecs).
-		RTP(receiver,
-			withRTPName("video-rtp"),
-			withRTPDepacketizers(
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("video-rtp"),
+			rtpav.WithDepacketizers(
 				rtpav.NewVP8Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16)),
 				rtpav.NewH264Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16)),
 			),
-			withRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
-		).
+			rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
+		)).
 		Decode(testSelectVideo()).
 		Sink(sink).
 		Build(ctx)
@@ -584,10 +585,10 @@ func TestRuntimeBuilderRTPDecodeFilterSink(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := newTestBuilder(t, codecs).
-		RTP(receiver,
-			withRTPName("live-audio"),
-			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
-		).
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("live-audio"),
+			rtpav.WithDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+		)).
 		Decode(testSelectAudio()).
 		Filter(testSelectAudio(), filter).
 		Sink(sink)
@@ -658,10 +659,10 @@ func newBufferedRTPRecordCopyFixture(policy pipeline.BufferPolicy) (builderAPI, 
 		testFormatMuxer(av.FormatOgg, muxers),
 	)
 	builder := New(formats, WithBufferPolicy(policy)).(*runtime).New().
-		RTP(receiver,
-			withRTPName("live-audio"),
-			withRTPDepacketizers(rtpav.NewOpusDepacketizer(stream)),
-		).
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("live-audio"),
+			rtpav.WithDepacketizers(rtpav.NewOpusDepacketizer(stream)),
+		)).
 		Mux(format.Output{Name: "archive.ogg"}).
 		Mux(format.Output{Name: "preview.ogg"})
 	return builder, receiver, muxers
@@ -727,14 +728,14 @@ func TestRuntimeBuilderMultiRTPDecodeSelectsOneStream(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := newTestBuilder(t, codecs).
-		RTP(audioReceiver,
-			withRTPName("audio-rtp"),
-			withRTPDepacketizers(rtpav.NewOpusDepacketizer(audio)),
-		).
-		RTP(videoReceiver,
-			withRTPName("video-rtp"),
-			withRTPDepacketizers(rtpav.NewVP8Depacketizer(video)),
-		).
+		Provider(rtpav.Receive(audioReceiver,
+			rtpav.WithName("audio-rtp"),
+			rtpav.WithDepacketizers(rtpav.NewOpusDepacketizer(audio)),
+		)).
+		Provider(rtpav.Receive(videoReceiver,
+			rtpav.WithName("video-rtp"),
+			rtpav.WithDepacketizers(rtpav.NewVP8Depacketizer(video)),
+		)).
 		Decode(testSelectAudio()).
 		Sink(sink)
 	planned, err := builder.Describe()
@@ -835,14 +836,14 @@ func TestRuntimeBuilderMultiRTPRecordFanout(t *testing.T) {
 	)
 
 	builder := newTestBuilder(t, formats).
-		RTP(audioReceiver,
-			withRTPName("audio-rtp"),
-			withRTPDepacketizers(rtpav.NewOpusDepacketizer(audio)),
-		).
-		RTP(videoReceiver,
-			withRTPName("video-rtp"),
-			withRTPDepacketizers(rtpav.NewVP8Depacketizer(video)),
-		).
+		Provider(rtpav.Receive(audioReceiver,
+			rtpav.WithName("audio-rtp"),
+			rtpav.WithDepacketizers(rtpav.NewOpusDepacketizer(audio)),
+		)).
+		Provider(rtpav.Receive(videoReceiver,
+			rtpav.WithName("video-rtp"),
+			rtpav.WithDepacketizers(rtpav.NewVP8Depacketizer(video)),
+		)).
 		Mux(format.Output{Name: "archive.ogg"}).
 		Mux(format.Output{Name: "preview.ogg"})
 	planned, err := builder.Describe()
@@ -903,8 +904,8 @@ func TestRuntimeBuilderMultiRTPRecordFanout(t *testing.T) {
 
 func TestRuntimeBuilderMultiRTPRecordDefaultNames(t *testing.T) {
 	spec, err := newTestBuilder(t).
-		RTP(&runtimeRTPReceiver{}).
-		RTP(&runtimeRTPReceiver{}).
+		Provider(rtpav.Receive(&runtimeRTPReceiver{})).
+		Provider(rtpav.Receive(&runtimeRTPReceiver{})).
 		Mux(format.Output{Name: "archive.ogg"}).
 		Describe()
 	if err != nil {
@@ -950,7 +951,7 @@ func TestRuntimeBuilderRTPVP8RecordIVF(t *testing.T) {
 	var recording bytes.Buffer
 
 	task, err := newTestBuilder(t, WithFormatAdapter(ivfadapter.Register)).
-		RTP(receiver, withRTPDepacketizers(rtpav.NewVP8Depacketizer(stream))).
+		Provider(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewVP8Depacketizer(stream)))).
 		Mux(format.Output{Name: "recording.ivf", Writer: &recording}).
 		Build(ctx)
 	if err != nil {
@@ -1015,7 +1016,7 @@ func TestRuntimeBuilderRTPAV1RecordIVF(t *testing.T) {
 	var recording bytes.Buffer
 
 	task, err := newTestBuilder(t, WithFormatAdapter(ivfadapter.Register)).
-		RTP(receiver, withRTPDepacketizers(rtpav.NewAV1Depacketizer(stream))).
+		Provider(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream)))).
 		Mux(format.Output{Name: "recording.ivf", Writer: &recording}).
 		Build(ctx)
 	if err != nil {
@@ -1080,7 +1081,7 @@ func TestRuntimeBuilderRTPH264RecordAnnexB(t *testing.T) {
 	var recording bytes.Buffer
 
 	task, err := newTestBuilder(t, WithFormatAdapter(annexbadapter.Register)).
-		RTP(receiver, withRTPDepacketizers(rtpav.NewH264Depacketizer(stream))).
+		Provider(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewH264Depacketizer(stream)))).
 		Mux(format.Output{Name: "recording.h264", Writer: &recording}).
 		Build(ctx)
 	if err != nil {
@@ -1101,11 +1102,11 @@ func TestRuntimeBuilderRTPH264RecordAnnexB(t *testing.T) {
 
 func TestRuntimeBuilderRTPRecordRequiresReceiver(t *testing.T) {
 	_, err := newTestBuilder(t).
-		RTP(nil).
+		Provider(rtpav.Receive(nil)).
 		Mux(format.Output{Name: "archive.ogg"}).
 		Build(context.Background())
-	if !errors.Is(err, ErrNilSource) {
-		t.Fatalf("err = %v, want ErrNilSource", err)
+	if !errors.Is(err, rtpav.ErrNilReceiver) {
+		t.Fatalf("err = %v, want rtpav.ErrNilReceiver", err)
 	}
 }
 

@@ -189,12 +189,6 @@ func explainInputs(resolved recipeResolved) []InputReport {
 			Realtime: input.Realtime,
 			Codec:    input.Codec.ID,
 		}
-		if input.Protocol == av.ProtocolRTP {
-			report.Format = av.FormatRTP
-		}
-		if input.Protocol == av.ProtocolWebRTC {
-			report.Format = av.FormatWebRTC
-		}
 		probe, ok := resolved.inputProbe(i)
 		if ok {
 			report.Format = probe.Format
@@ -382,7 +376,7 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 	for i := range report.Inputs {
 		input := report.Inputs[i]
 		switch {
-		case input.Format != "" && input.Format != av.FormatRTP && input.Format != av.FormatWebRTC:
+		case input.Format != "":
 			requirements = appendAdapterRequirement(requirements, formatAdapterRequirement(
 				resolved.runtime,
 				"demuxer",
@@ -391,7 +385,7 @@ func explainRequirements(resolved recipeResolved, report PlanReport) ([]AdapterR
 			))
 		case input.Realtime && input.Codec != "":
 			requirements = appendAdapterRequirement(requirements, AdapterRequirement{
-				Kind:       "rtp-depacketizer",
+				Kind:       "depacketizer",
 				Name:       string(input.Codec),
 				Codec:      input.Codec,
 				RequiredBy: firstNonEmpty(input.Name, fmt.Sprintf("input-%d", i)),
@@ -435,7 +429,7 @@ func appendBranchOperationRequirements(requirements []AdapterRequirement, resolv
 					Node:    requiredBy,
 					Message: "decode codec will be resolved when the input opens",
 					Suggestions: []string{
-						"use RTP/WebRTC codec intent when the receive codec is already known",
+						"declare the provider codec intent when the receive codec is already known",
 						"use input metadata or a format adapter that reports streams during probing",
 					},
 				})

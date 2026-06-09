@@ -21,6 +21,85 @@ import (
 	"github.com/thesyncim/goav/webrtcav"
 )
 
+// webRTCRemote adapts a fixture RemoteTrack into a provider input the way
+// webrtcav.Track does for live tracks: the source name and codec intent are
+// derived from the adapted track stream, then handed to rtpav.Receive.
+func webRTCRemote(remote webrtcav.RemoteTrack) InputSpec {
+	reader, err := webrtcav.NewTrackRemoteAdapter().AdaptTrack(context.Background(), remote)
+	if err != nil {
+		return InputSpec{err: err}
+	}
+	streams, err := reader.Streams(context.Background())
+	if err != nil {
+		return InputSpec{err: err}
+	}
+	if len(streams) == 0 {
+		return InputSpec{err: webrtcav.ErrUnknownStream}
+	}
+	stream := streams[0]
+	options := make([]rtpav.ReceiveOption, 0, 2)
+	if name := firstNonEmpty(string(stream.ID), stream.Name); name != "" {
+		options = append(options, rtpav.WithName(name))
+	}
+	if stream.Codec.ID != "" {
+		spec := codec.CodecSpec{
+			ID:         stream.Codec.ID,
+			Type:       stream.Codec.Type,
+			Parameters: stream.Codec,
+		}
+		if spec.Type == "" {
+			spec.Type = stream.Type
+		}
+		if spec.Parameters.Type == "" {
+			spec.Parameters.Type = spec.Type
+		}
+		options = append(options, rtpav.WithCodec(spec))
+	}
+	return Input(rtpav.Receive(reader, options...))
+}
+
+// TestProviderRTPDescribePinsLegacyConstructorStrings pins the Describe()
+// node name and detail strings the deleted goav.RTP constructor path produced,
+// so an RTP job through the provider seam stays byte-identical: the node is
+// named by rtpav.WithName and the detail is the rtpav receive summary.
+func TestProviderRTPDescribePinsLegacyConstructorStrings(t *testing.T) {
+	job := From(Input(rtpav.Receive(&runtimeRTPReceiver{
+		streams: []av.Stream{{
+			ID:   "audio",
+			Type: av.MediaAudio,
+			Codec: av.CodecParameters{
+				ID:   av.CodecOpus,
+				Type: av.MediaAudio,
+			},
+		}},
+	},
+		rtpav.WithName("audio"),
+		rtpav.WithCodec(codec.Opus()),
+		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}),
+		rtpav.WithMaxTimestampGap(av.SamplesDuration(960, 48000)),
+	))).Copy().To(File("recording.ogg", io.Discard, Format(av.FormatOgg)))
+
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var source *pipeline.NodeSpec
+	for i := range spec.Nodes {
+		if spec.Nodes[i].Kind == pipeline.NodeSource {
+			source = &spec.Nodes[i]
+		}
+	}
+	if source == nil {
+		t.Fatalf("spec has no source node:\n%s", specText(spec))
+	}
+	if source.Name != "audio" {
+		t.Fatalf("source name = %q, want %q (legacy goav.RTP naming)", source.Name, "audio")
+	}
+	if source.Detail != "rtp receive, codec=opus, timestamp gap" {
+		t.Fatalf("source detail = %q, want %q", source.Detail, "rtp receive, codec=opus, timestamp gap")
+	}
+}
+
 func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 	job := From(
 		webRTCRemote(webrtcav.RemoteTrack{
@@ -51,7 +130,7 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 	}
 	intent := job.plan()
 	if len(intent.Inputs) != 1 ||
-		intent.Inputs[0].Protocol != av.ProtocolWebRTC ||
+		!intent.Inputs[0].Realtime ||
 		intent.Inputs[0].Codec.ID != av.CodecVP8 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -66,32 +145,30 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 	}
 }
 
-func TestWebRTCTrackRecipeRejectsUnknownCodecMetadata(t *testing.T) {
-	_, err := From(
-		webRTCRemote(webrtcav.RemoteTrack{
-			Track: &webrtc.TrackRemote{},
-			Codec: webrtc.RTPCodecParameters{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					MimeType:  "audio/telephone-event",
-					ClockRate: 8000,
-				},
-				PayloadType: 101,
+func TestWebRTCTrackUnknownCodecMetadataYieldsNoCodecIntent(t *testing.T) {
+	// Unknown track codecs are the provider's concern now: the derived input
+	// carries no codec intent, and depacketization fails inside the provider
+	// at run time (rtpav.ErrDepacketizerNotFound) instead of at the root.
+	input := webRTCRemote(webrtcav.RemoteTrack{
+		Track: &webrtc.TrackRemote{},
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  "audio/telephone-event",
+				ClockRate: 8000,
 			},
-			Stream: av.Stream{
-				ID:   "dtmf",
-				Type: av.MediaAudio,
-			},
-		}),
-	).Copy().To(File("recording.ogg", io.Discard)).Build(context.Background())
-
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "webrtc_codec_unknown" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want webrtc_codec_unknown wrapping ErrUnsupportedBuild", err)
+			PayloadType: 101,
+		},
+		Stream: av.Stream{
+			ID:   "dtmf",
+			Type: av.MediaAudio,
+		},
+	})
+	intent := input.intent()
+	if intent.Codec.ID != "" {
+		t.Fatalf("codec = %q, want no codec intent for an unknown track codec", intent.Codec.ID)
 	}
-	if !strings.Contains(err.Error(), "Pion TrackRemote codec") ||
-		!strings.Contains(err.Error(), "goav.RTP(reader).Codec") ||
-		strings.Contains(err.Error(), "missing") {
-		t.Fatalf("err = %v, want WebRTC codec guidance", err)
+	if !intent.Realtime || intent.Name != "dtmf" {
+		t.Fatalf("intent = %+v, want realtime input named after the track stream", intent)
 	}
 }
 
@@ -183,7 +260,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 	))
 
 	task, err := From(
-		RTP(receiver).Name("audio").Codec(codec.Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+		Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 	).Copy().To(File("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +314,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
 	job := From(
-		RTP(receiver).Name("audio").Codec(codec.Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+		Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 	).Copy().To(File("recording.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(runtime)
 
 	intent := job.plan()
@@ -553,7 +630,7 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 	}, Format(av.FormatOgg), MIME("audio/ogg"))
 
 	task, err := From(
-		RTP(receiver).Name("audio").Codec(codec.Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+		Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 	).Copy().To(target).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -620,7 +697,7 @@ func TestRecordRecipeCopyToCustomObjectDestinationRuns(t *testing.T) {
 	}, Format(av.FormatOgg), MIME("audio/ogg"), Metadata(metadata))
 
 	task, err := From(
-		RTP(receiver).Name("audio").Codec(codec.Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+		Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 	).Copy().To(target).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -692,7 +769,7 @@ func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
 	))
 
 	task, err := From(
-		RTP(receiver).Name("audio").Codec(codec.Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+		Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 	).Copy().To(Writer(
 		"s3://bucket/call.ogg",
 		func(context.Context, DestinationInfo) (io.WriteCloser, error) {
@@ -754,7 +831,7 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 	runtime := New(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
-	task, err := From(RTP(receiver).Name("audio").Codec(codec.Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2})).
+	task, err := From(Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2})))).
 		UseRuntime(runtime).
 		Audio().
 		Copy().
@@ -846,7 +923,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
-	task, err := From(RTP(receiver).Name("audio").Codec(codec.Opus())).
+	task, err := From(Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
 		UseRuntime(runtime).
 		Audio().
 		Copy().
@@ -1011,7 +1088,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 	))
 
 	task, err := From(
-		RTP(receiver).Codec(codec.Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+		Input(rtpav.Receive(receiver, rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 	).Copy().To(File("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -1060,7 +1137,7 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	}
 	var out bytes.Buffer
 	job := From(
-		RTP(receiver).Name("video").Codec(codec.VP8()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+		Input(rtpav.Receive(receiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 	).Copy().To(File("recording.ivf", &out))
 
 	planned, err := job.Describe()
@@ -1235,9 +1312,9 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 	))
 
 	task, err := From(
-		RTP(audioReceiver).Name("audio").Codec(codec.Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
+		Input(rtpav.Receive(audioReceiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 	).UseRuntime(runtime).
-		And(RTP(videoReceiver).Name("video").Codec(codec.VP8()).RTPBuffer(RTPBufferLimits{MaxPackets: 2})).
+		And(Input(rtpav.Receive(videoReceiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2})))).
 		To(File("recording.ogg", io.Discard)).
 		Build(ctx)
 	if err != nil {
@@ -1798,7 +1875,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
 
-	task, err := From(RTP(receiver).Name("audio").Codec(codec.Opus())).
+	task, err := From(Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
 		UseRuntime(runtime).
 		Audio().
 		Copy().

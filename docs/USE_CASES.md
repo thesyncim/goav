@@ -10,7 +10,7 @@ and codec changes, then record, decode, transform, or attach analysis.
 Packet-preserving receive:
 
 ```go
-err := goav.From(goav.WebRTCTrack(track)).
+err := goav.From(goav.Input(webrtcav.Track(track))).
     Copy().
     To(goav.File("recording.ivf", file)).
     Run(ctx)
@@ -22,7 +22,7 @@ several branches should feed one mux or sink group.
 Decoded preview:
 
 ```go
-err := goav.From(goav.WebRTCTrack(track)).
+err := goav.From(goav.Input(webrtcav.Track(track))).
     Video().
     Decode().
     To(goav.Sink(preview)).
@@ -39,7 +39,7 @@ Raw RTP uses Pion RTP packet types through `rtpav.PacketReader`. RTP inputs need
 codec intent so the runtime can choose the depacketizer.
 
 ```go
-err := goav.From(goav.RTP(video).Name("video").Codec(codec.VP8())).
+err := goav.From(goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
     Copy().
     To(
         goav.File("recording.ivf", file),
@@ -51,7 +51,7 @@ err := goav.From(goav.RTP(video).Name("video").Codec(codec.VP8())).
 Decode and transform one selected stream:
 
 ```go
-err := goav.From(goav.RTP(audio).Name("audio").Codec(codec.Opus())).
+err := goav.From(goav.Input(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
     Audio().
     Decode().
     Resample(16_000, codec.Mono).
@@ -200,7 +200,7 @@ archive := goav.Flow("archive").Audio().
 voiceOut := goav.File("voice.ogg", voiceFile)
 archiveOut := goav.File("archive.ogg", archiveFile)
 
-err := goav.From(goav.RTP(audio).Name("audio").Codec(codec.Opus())).
+err := goav.From(goav.Input(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
     Audio().
     Decode().
     Branches(
@@ -293,7 +293,7 @@ lifecycle states.
 ```go
 audioDecoded := goav.FrameTap("audio.decoded")
 
-job := goav.From(goav.WebRTCTrack(track)).
+job := goav.From(goav.Input(webrtcav.Track(track))).
     Audio().
     Decode().
     Tap(audioDecoded).

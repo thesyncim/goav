@@ -30,8 +30,9 @@ func (b *builder) describeWithCompiler(compiler builderCompiler) (pipeline.Spec,
 // the running source nodes addBuilderSources produces.
 func (b *builder) planBuilderSources(nodes map[string]plannedNode, spec *pipeline.Spec) ([]pipeline.NodeRef, error) {
 	sourceRefs := make([]pipeline.NodeRef, len(b.inputs))
+	names := b.inputNodeNames()
 	for i := range b.inputs {
-		sourceName := b.inputs[i].nodeName(i)
+		sourceName := names[i]
 		sourceRef := pipeline.NodeRef(sourceName)
 		if err := addPlannedNode(nodes, spec, sourceName, pipeline.NodeSource, sourceRef, b.inputs[i].detail()); err != nil {
 			return nil, err

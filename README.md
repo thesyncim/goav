@@ -11,7 +11,9 @@ from the same few concepts.
 
 ## Vocabulary
 
-- `Input`: where media comes from (file, URI, RTP, WebRTC track, custom source).
+- `Input`: where media comes from (file, URI, custom source, or any source
+  provider via `goav.Input(...)` — `rtpav.Receive` for RTP, `webrtcav.Track`
+  for WebRTC, or an external transport package).
 - `Stream`: which media stream is selected (`.Audio()`, `.Video()`).
 - `Tap`: a named attach point (`Tap`, or `FrameTap`/`PacketTap` to assert the domain).
 - `Branch`: downstream operations from a stream point or tap.
@@ -27,7 +29,7 @@ Operations are not a separate noun: they are methods on the chain —
 Packet-preserving RTP/WebRTC record:
 
 ```go
-return goav.From(goav.RTP(video).Name("video").Codec(codec.VP8())).
+return goav.From(goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
     Copy().
     To(goav.File("recording.ivf", file)).
     Run(ctx)
@@ -51,7 +53,7 @@ sink group.
 Decode one WebRTC audio track to frames:
 
 ```go
-return goav.From(goav.WebRTCTrack(track)).
+return goav.From(goav.Input(webrtcav.Track(track))).
     Audio().
     Decode().
     To(goav.Sink(frames)).
@@ -203,7 +205,7 @@ archive := goav.Flow("archive").Audio().
 voiceOut := goav.File("voice.ogg", voiceFile)
 archiveOut := goav.File("archive.ogg", archiveFile)
 
-return goav.From(goav.WebRTCTrack(audio)).
+return goav.From(goav.Input(webrtcav.Track(audio))).
     Audio().
     Apply(voice).
     To(voiceOut).
@@ -214,7 +216,7 @@ Use a direct stream when one reusable flow feeds one destination. Branch when th
 same media point needs several downstream operation sequences:
 
 ```go
-return goav.From(goav.WebRTCTrack(audio)).
+return goav.From(goav.Input(webrtcav.Track(audio))).
     Audio().
     Decode().
     Branches(
@@ -233,8 +235,8 @@ input with `goav.InputName(...)`, and reusing one destination value muxes both
 encoded streams into one shared container:
 
 ```go
-camera := goav.WebRTCTrack(videoTrack).Name("camera")
-mic := goav.WebRTCTrack(audioTrack).Name("mic")
+camera := goav.Input(webrtcav.Track(videoTrack, rtpav.WithName("camera")))
+mic := goav.Input(webrtcav.Track(audioTrack, rtpav.WithName("mic")))
 out := goav.File("call.webm", file)
 
 return goav.From(camera, mic).
@@ -369,7 +371,7 @@ while the task is running.
 ```go
 decoded := goav.FrameTap("audio.decoded")
 
-job := goav.From(goav.WebRTCTrack(audio)).
+job := goav.From(goav.Input(webrtcav.Track(audio))).
     Audio().
     Decode().
     Tap(decoded).

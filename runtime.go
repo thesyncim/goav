@@ -10,7 +10,6 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/rtpav"
 )
 
 var (
@@ -158,7 +157,7 @@ type runtime struct {
 
 type builderAPI interface {
 	Input(format.Input) builderAPI
-	RTP(rtpav.PacketReader, ...rtpOption) builderAPI
+	Provider(SourceProvider) builderAPI
 	Mux(format.Output) builderAPI
 	Decode(av.StreamSelector) builderAPI
 	Encode(av.StreamSelector, codec.EncodeConfig) builderAPI
@@ -197,29 +196,22 @@ type builder struct {
 }
 
 // builderInput is the single builder input model: exactly one of demux (file/URI)
-// or rtp (live RTP receive) is set. It lets the runtime compilers iterate every
-// input through one loop and one source-opening seam, with RTP-only build metadata
-// (decode bounds, depacketizers) surfaced through graphSourceBuild only when present.
+// or provider (an external source provider, e.g. rtpav.Receive) is set. It lets
+// the runtime compilers iterate every input through one loop and one
+// source-opening seam, with provider-only build metadata (decode bounds) surfaced
+// through graphSourceBuild only when present.
 type builderInput struct {
-	demux *format.Input
-	rtp   *rtpInput
+	demux    *format.Input
+	provider SourceProvider
 }
 
 // open resolves this input to a running pipeline source plus its streams, domain,
-// realtime contribution, and (for RTP inputs) the rtpBuild decode-bounds metadata,
-// without the caller branching on the input kind.
-func (in builderInput) open(ctx context.Context, b *builder, index int) (graphSourceBuild, error) {
-	if in.rtp != nil {
-		build, err := b.openRTPSource(ctx, *in.rtp, index)
-		if err != nil {
-			return graphSourceBuild{}, err
-		}
-		rtp := build
-		return graphSourceBuild{
-			source:  build.source,
-			streams: build.streams,
-			rtp:     &rtp,
-		}, nil
+// realtime contribution, and (for provider inputs) the decode-bounds capability,
+// without the caller branching on the input kind. The node name comes from the
+// caller (builder.inputNodeNames) so repeated provider names stay disambiguated.
+func (in builderInput) open(ctx context.Context, b *builder, name string) (graphSourceBuild, error) {
+	if in.provider != nil {
+		return openProviderSource(ctx, in.provider, name)
 	}
 	build, err := b.openDemuxSource(ctx, in.demuxInput())
 	if err != nil {
@@ -239,21 +231,12 @@ func (in builderInput) demuxInput() format.Input {
 	return *in.demux
 }
 
-// realtimeWith folds this input's realtime contribution into base, matching the
-// per-kind realtime each compiler used before the merge (demux inputs honor their
-// own Realtime flag; RTP inputs leave the runtime default untouched).
-func (in builderInput) realtimeWith(base bool) bool {
-	if in.rtp != nil {
-		return base
-	}
-	return base || in.demuxInput().Realtime
-}
-
-// nodeName returns the planner/source node name for this input, matching the
-// running source's name for both input kinds so describe and build agree.
-func (in builderInput) nodeName(index int) string {
-	if in.rtp != nil {
-		return rtpNodeName(*in.rtp, index)
+// nodeName returns the base planner/source node name for this input; the
+// builder resolves the final names through inputNodeNames so describe and build
+// agree.
+func (in builderInput) nodeName() string {
+	if in.provider != nil {
+		return providerNodeName(in.provider)
 	}
 	return demuxNodeName(in.demuxInput())
 }
@@ -261,10 +244,21 @@ func (in builderInput) nodeName(index int) string {
 // detail returns the planner node detail for this input, matching the running
 // source's detail for both input kinds.
 func (in builderInput) detail() string {
-	if in.rtp != nil {
-		return rtpInputDetail(*in.rtp)
+	if in.provider != nil {
+		return providerNodeDetail(in.provider)
 	}
 	return inputNodeDetail(in.demuxInput())
+}
+
+// inputNodeNames resolves one node name per builder input, applying the index
+// suffix that disambiguates repeated provider names ("rtp", "rtp-1", ...).
+func (b *builder) inputNodeNames() []string {
+	names := make([]string, len(b.inputs))
+	seen := make(map[string]struct{}, len(b.inputs))
+	for i := range b.inputs {
+		names[i] = disambiguateSourceNodeName(seen, b.inputs[i].nodeName(), b.inputs[i].provider != nil, i)
+	}
+	return names
 }
 
 type encodeRequest struct {
@@ -285,41 +279,16 @@ type filterRequest struct {
 	transform *mediaTransform
 }
 
-type rtpOption func(*rtpInput)
-
-type RTPBufferLimits struct {
-	MaxReady    int
-	MaxEvents   int
-	MaxFeedback int
-	MaxPackets  int
-}
-
-type rtpInput struct {
-	name          string
-	receiver      rtpav.PacketReader
-	feedback      rtpav.FeedbackWriter
-	jitter        rtpav.JitterBuffer
-	depacketizers []rtpav.Depacketizer
-	codec         codec.CodecSpec
-	limits        RTPBufferLimits
-	decodeBounds  codec.DecodeBounds
-	maxTSGap      av.Duration
-}
-
 func (b *builder) Input(input format.Input) builderAPI {
 	in := input
 	b.inputs = append(b.inputs, builderInput{demux: &in})
 	return b
 }
 
-func (b *builder) RTP(receiver rtpav.PacketReader, options ...rtpOption) builderAPI {
-	input := rtpInput{receiver: receiver}
-	for i := range options {
-		if options[i] != nil {
-			options[i](&input)
-		}
-	}
-	b.inputs = append(b.inputs, builderInput{rtp: &input})
+// Provider adds an external source provider (e.g. rtpav.Receive) as a builder
+// input, opened through the same seam as file/URI inputs.
+func (b *builder) Provider(provider SourceProvider) builderAPI {
+	b.inputs = append(b.inputs, builderInput{provider: provider})
 	return b
 }
 

@@ -21,7 +21,7 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		Suggestions: []string{
 			"give file or URI inputs a name, URI, or MIME type a registered prober can recognize",
 			"register a format adapter with goav.New(goav.WithFormatAdapter(...))",
-			"use goav.RTP(...) or goav.WebRTCTrack(...) for realtime packet receive",
+			"use goav.Input(provider) for realtime packet receive",
 		},
 		Cause: cause,
 	}

@@ -111,7 +111,7 @@ func (b *builder) compileDecodeEncodeToOutput(ctx context.Context, graph pipelin
 		return err
 	}
 	realtime := sources.realtime
-	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, sources.refs, request, stream, realtime, false, rtpDecodeBoundsForStream(stream, sources.rtp))
+	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, sources.refs, request, stream, realtime, false, providerDecodeBoundsForStream(stream, sources.bounds))
 	if err != nil {
 		return err
 	}
@@ -259,7 +259,7 @@ func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) 
 		stream.ID = input.ID
 	}
 	if stream.TimeBase == (av.TimeBase{}) && parameters.ClockRate != 0 {
-		stream.TimeBase = av.RTPTimeBase(parameters.ClockRate)
+		stream.TimeBase = av.TimeBase{Num: 1, Den: int64(parameters.ClockRate)}
 	}
 	stream.Codec = parameters
 

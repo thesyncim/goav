@@ -46,10 +46,10 @@ func TestRuntimeBuilderRTPAV1DecodeSink(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	builder := newTestBuilder(t, WithCodecAdapter(goav1adapter.Register)).
-		RTP(receiver,
-			withRTPName("av1-rtp"),
-			withRTPDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
-		).
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("av1-rtp"),
+			rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
+		)).
 		Decode(testSelectVideo()).
 		Sink(sink)
 	planned, err := builder.Describe()
@@ -129,10 +129,10 @@ func testRuntimeBuilderRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 	sink := &runtimeAV1SinkDestination{name: "frames"}
 
 	task, err := newTestBuilder(t, WithCodecAdapter(goav1adapter.Register)).
-		RTP(receiver,
-			withRTPName("av1-rtp"),
-			withRTPDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
-		).
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("av1-rtp"),
+			rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
+		)).
 		Decode(testSelectVideo()).
 		Sink(sink).
 		Build(ctx)
@@ -196,11 +196,11 @@ func TestRuntimeBuilderRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	task, err := newTestBuilder(t, WithCodecAdapter(goav1adapter.Register)).
-		RTP(receiver,
-			withRTPName("av1-rtp"),
-			withRTPDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
-			withRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
-		).
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("av1-rtp"),
+			rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
+			rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
+		)).
 		Decode(testSelectVideo()).
 		Sink(sink).
 		Build(ctx)
@@ -284,11 +284,11 @@ func testRuntimeBuilderRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTa
 	sink := &runtimeTestSink{name: "frames"}
 
 	task, err := newTestBuilder(t, WithCodecAdapter(goav1adapter.Register)).
-		RTP(receiver,
-			withRTPName("av1-rtp"),
-			withRTPDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
-			withRTPBufferLimits(RTPBufferLimits{MaxPackets: 1, MaxEvents: 2}),
-		).
+		Provider(rtpav.Receive(receiver,
+			rtpav.WithName("av1-rtp"),
+			rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
+			rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
+		)).
 		Decode(testSelectVideo()).
 		Sink(sink).
 		Build(ctx)
