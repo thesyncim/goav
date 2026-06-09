@@ -337,7 +337,7 @@ func TestMixRejectsRTPArmsClearly(t *testing.T) {
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errorsAsMix(err, &buildErr) || buildErr.Code != "mix_arm" {
-		t.Fatalf("err = %v, want mix_arm rejecting RTP arms", err)
+	if !errorsAsMix(err, &buildErr) || buildErr.Code != "source_unsupported" {
+		t.Fatalf("err = %v, want source_unsupported rejecting RTP arms", err)
 	}
 }

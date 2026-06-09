@@ -158,6 +158,31 @@ func customSourceStream(input InputSpec) av.Stream {
 	}
 }
 
+// openGraphSource is the single source-opening seam: every input kind (custom
+// Source, file, RTP) resolves to a running pipeline source + its streams + media
+// domain through here, so callers never branch on the input kind. Returning all
+// streams keeps it composable — the caller selects what it needs. (RTP is the
+// remaining kind to fold in; until then it returns a clear error.)
+func (s InputSpec) openGraphSource(ctx context.Context, service *builder) (pipeline.Source, []av.Stream, MediaDomain, error) {
+	switch {
+	case s.source != nil:
+		source, streams, err := newCustomSource(s)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		shape, _ := customSourceShape(s)
+		return source, streams, shape.Domain, nil
+	case s.rtp != nil:
+		return nil, nil, "", &BuildError{Code: "source_unsupported", Operation: "open source", Node: firstNonEmpty(s.name, "rtp"), Reason: "RTP source is not yet folded into the unified source opener; use a custom Source or a file input for now", Cause: ErrUnsupportedBuild}
+	default:
+		build, err := service.openDemuxSource(ctx, s.input)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		return build.source, build.streams, DomainPacket, nil
+	}
+}
+
 func newCustomSource(input InputSpec) (pipeline.Source, []av.Stream, error) {
 	if input.source == nil {
 		return nil, nil, ErrNilSource
