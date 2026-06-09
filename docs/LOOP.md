@@ -1,10 +1,6 @@
 # Working Loop
 
-`goav` should grow by recursive, evidence-driven slices. Each slice starts with
-the simplest user-facing expression, compiles it to an explicit graph, proves the
-hot path, then folds the lesson back into the tracker.
-
-The loop is intentionally small:
+`goav` grows by recursive, evidence-driven slices:
 
 1. Name the user workflow in one sentence.
 2. Express it with the shortest fluent API that should feel natural.
@@ -15,72 +11,38 @@ The loop is intentionally small:
 7. Remove any abstraction that does not make the next slice simpler.
 8. Update `docs/PROGRESS.md` with evidence and the next pressure point.
 
-Graph descriptions should stay at the workflow level: named nodes connected by
-named routes, with short node details when they make the workflow easier to
-read. Stream and event matching are options on a route. Lower-level executor
-vocabulary should not leak into fluent APIs or graph specs unless a future
-advanced stage truly needs it.
+Graph descriptions stay at the workflow level: named nodes, named routes, short
+node details. Executor vocabulary must not leak into fluent APIs or graph specs.
 
 ## Compiler Rule
 
-High-level features must lower through recipe intent first. The desired path is:
+High-level features lower through recipe intent:
 
 ```text
-Recipe API
-  -> Intent
-  -> compiler passes
-  -> pipeline.Spec
-  -> pipeline.Graph
+Recipe API -> Intent -> compiler passes -> pipeline.Spec -> pipeline.Graph
 ```
 
-The pass chain should stay explicit and boring:
-
-- validate intent
-- probe inputs
-- resolve stream selectors
-- resolve formats and codecs
-- insert demux or depacketize boundaries
-- insert decode, transforms, encode, and mux
-- assign routes and buffer policy
-- emit `pipeline.Spec`
-- build the runnable graph from the same plan
-
-Normal recipes must be accepted by the media-plan path before they can describe
-or build. A new workflow should add planner data or a compiler pass, not another
-fixed matcher.
-
-`Describe` and `Build` must use the same resolved plan so the described graph
-and runnable graph stay equivalent. Unsupported combinations should fail early
-with actionable diagnostics. Do not guess across codec, format, or protocol
-boundaries.
+The pass chain stays explicit and boring: validate intent, probe inputs,
+resolve stream selectors, resolve formats/codecs, insert demux or depacketize
+boundaries, insert decode/transforms/encode/mux, assign routes and buffer
+policy, emit `pipeline.Spec`, build the graph from the same plan. A new
+workflow adds planner data or a compiler pass, not another fixed matcher.
+`Describe` and `Build` use the same resolved plan so the described and runnable
+graphs stay equivalent. Fail early with actionable diagnostics; do not guess
+across codec, format, or protocol boundaries.
 
 ## Growth Rule
 
-Prefer one reusable contract over many parallel helpers:
-
-- One result struct per hot path.
-- One explicit registry per capability family.
-- One intent compiler path for recipe workflows.
-- One adapter package per codec/container integration.
-- One generic `Codec` spec for built-in and custom codec intent.
-- One test fixture per boundary when possible.
-
-Complex workflows should become compositions of existing compiler/stage pieces,
-not new special cases.
-
-Reusable flows/subflows are allowed when they name a repeated stream chain and
-make a complex recipe shorter. They should expand into the same recipe intent as
-hand-written stream steps, not create a parallel graph API.
+Prefer one reusable contract over many parallel helpers: one result struct per
+hot path, one registry per capability family, one intent compiler path, one
+adapter package per integration, one generic `Codec` spec. Complex workflows
+become compositions of existing pieces, not new special cases. Reusable flows
+expand into the same recipe intent as hand-written steps, never a parallel
+graph API.
 
 ## Stop Conditions
 
-Pause a slice before adding code when any of these are unclear:
-
-- Which package owns the behavior.
-- Who owns the buffer lifetime.
-- How loss, discontinuity, codec change, or backpressure is represented.
-- How the graph will be described and inspected.
-- Which allocation guard proves the hot path.
-
-The next useful action is then to clarify the contract, not to add another
-implementation path.
+Pause a slice when any of these are unclear: which package owns the behavior;
+who owns buffer lifetime; how loss/discontinuity/codec change/backpressure is
+represented; how the graph is described and inspected; which allocation guard
+proves the hot path. Clarify the contract before adding another implementation.

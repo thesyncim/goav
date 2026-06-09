@@ -1,248 +1,59 @@
 # Adapters
 
 Adapters keep codec, container, and filter implementations out of the core
-import graph.
-
-Core packages such as `av`, `codec`, `format`, `filter`, `pipeline`, `rtpav`,
-and `webrtcav` should not import sibling codec modules directly. Concrete
-integrations belong under `adapters/...`.
+import graph. Core packages (`av`, `codec`, `format`, `filter`, `pipeline`,
+`rtpav`, `webrtcav`) do not import sibling codec modules; concrete integrations
+live under `adapters/...` and `container/...`.
 
 ## Rules
 
 - Implement `codec.DecoderFactory`, `codec.EncoderFactory`,
   `format.DemuxerFactory`, `format.MuxerFactory`, or `filter.Factory`.
-- Application-local codec factories can be registered with `goav.WithDecoder`
-  and `goav.WithEncoder`. Adapter packages should still expose an explicit
-  `Register(*codec.SimpleRegistry)` hook for runtime bundles.
-- Allocate only during construction or `Open`.
-- Hot-path methods must use caller-owned result structs and preallocated output
-  buffers.
-- Do not register encode/decode factories until the path is real.
-- Optional or unavailable modules should stay behind build tags or compile-safe
-  descriptor packages.
+- Application-local factories register with `goav.WithDecoder`, `WithEncoder`,
+  `WithFilter`, `WithMuxer`, `WithDemuxer`, and `WithProber`. Adapter packages
+  should still expose an explicit `Register(...)` hook for runtime bundles.
+- Allocate only during construction or `Open`. Hot-path methods use
+  caller-owned result structs and preallocated output buffers.
+- Do not register encode/decode factories until the path is real. Optional
+  modules stay behind build tags or compile-safe descriptor packages.
 - Descriptors own codec identity, media type, modes, realtime, and experimental
-  status. Capability fields are for concrete sample format, pixel format, RTP
-  payload, and build-tag lists.
-- Adapter discovery comes from descriptors registered by adapters, not from a
-  central planned-backend list in the core codec package.
-- Descriptor-only registrations may advertise planned media compatibility, but
-  factory lookup must fail with `codec.ErrUnavailable` until a concrete factory
-  is registered.
+  status; capability fields list concrete sample/pixel formats, RTP payloads,
+  and build tags. Discovery comes from registered descriptors, not a central
+  list. Descriptor-only registrations return `codec.ErrUnavailable` from
+  factory lookup until a concrete factory is registered (not `ErrNotFound`);
+  once registered, descriptor capabilities become preflight constraints for
+  recipe and runtime decode/encode.
 - Realtime decoders that need large internal arenas should honor
-  `codec.DecodeConfig.Bounds` and document any adapter-specific
-  `OpaqueState` type they accept.
-- Decoder factories may implement `codec.DecodeStateFactory` so high-level
-  runtimes can provision adapter state while low-level callers still pass exact
-  `OpaqueState` values explicitly.
+  `codec.DecodeConfig.Bounds` and document any `OpaqueState` type they accept;
+  factories may implement `codec.DecodeStateFactory` so high-level runtimes can
+  provision adapter state.
 
 For codecs outside the built-in Opus, VP8, VP9, H264, and AV1 specs, use
-`codec.Codec(id, media, ...)` in recipes. The planner treats custom specs the
-same way as built-ins; availability comes from the decoder and encoder
-factories registered on the selected runtime.
+`codec.Codec(id, media, ...)` in recipes; the planner treats custom specs the
+same as built-ins.
 
 ## Current Adapters
 
 | Adapter | Status |
 | --- | --- |
-| `adapters/ivf` | IVF VP8/VP9/AV1 packet demux/mux |
-| `adapters/annexb` | H264 Annex B packet mux |
-| `adapters/resample` | pure-Go S16 audio resample and channel conversion filter |
-| `adapters/resize` | pure-Go I420/YUV420P video resize filter |
-| `adapters/gopus` | Opus decode and encode with caller-owned `s16` frames/packet buffers, PLC on packet-loss events |
-| `adapters/govpx` | VP8/VP9 decode and encode |
-| `adapters/goav1` | AV1 low-overhead and concrete raw RTP payload decode |
-| `adapters/goh264` | descriptor-only by default; `goav_goh264` enables H264 decode |
+| `adapters/ivf` | IVF VP8/VP9/AV1 packet demux/mux; magic/extension probing; zero-alloc read/write. Single video stream, no indexing or codec conversion. |
+| `adapters/annexb` | H264 Annex B packet mux (mux-only) for packet-preserving recording after RTP depacketization; start-code probing; zero-alloc write. |
+| `container/matroska`, `container/webm` | Matroska/WebM mux/demux (see `docs/matroska.md`). |
+| `adapters/gopus` | Opus decode/encode over `thesyncim/gopus`: depacketized packet ↔ PCM frames, PLC via `EventPacketLoss`, caller-owned buffers. |
+| `adapters/govpx` | VP8/VP9 decode into caller-owned I420 frames and encode into caller-owned packet buffers; drop-until-keyframe on loss/corruption/discontinuity; keyframe requests via `codec.ControlRequest`; encode honors keyframe-request and codec-change events; zero-alloc hot paths; idempotent close. |
+| `adapters/goav1` | AV1 low-overhead decode over `thesyncim/goav1`: `DecoderState` as documented `OpaqueState`, optional state factory with RTP decode bounds, borrowed gray8/I420/I422/I444 output (yuv* aliases normalized), loss/sync recovery from keyframe markers or parsed payloads, concrete `DecodeRTPPayloadInto` for raw RTP payload callers, runner reuse, allocation/lifecycle guards. The exact frame format matters: the backend frame pool must match the accepted sequence format. |
+| `adapters/goh264` | Descriptor-only by default; the `goav_goh264` tag enables H264 decode (8-bit planar borrowed frames, keyframe requests on loss, zero-alloc mapping, idempotent close). Decode-only. |
+| `adapters/resample` | Interleaved S16 PCM sample-rate (linear) and mono/stereo channel conversion; descriptor metadata for `Explain(ctx)`; caller-owned output; zero-alloc hot path. |
+| `adapters/resize` | Planar 8-bit 4:2:0 (`i420`/`yuv420p`) exact/fit/fill/passthrough nearest-neighbor resize; descriptor metadata; caller-owned planes; zero-alloc hot path. |
 
-## `ivf`
+All adapters are intentionally narrow; richer features (SVC controls, color
+metadata, high bit depth, floating-point PCM, higher-quality scalers, H264
+parsing/demux/encode) are future slices.
 
-The `ivf` adapter is the first concrete format adapter. It supports one video
-stream with VP8, VP9, or AV1 packet payloads.
+## Descriptor-only boundaries
 
-Current surface:
-
-- explicit registry registration through `ivf.Register`
-- IVF magic and extension probing
-- stream metadata from IVF headers
-- demux into caller-owned `av.Packet` payload buffers
-- mux from packet payloads without rewriting codec data
-- zero-allocation read/write hot-path tests
-
-It is intentionally narrow: no indexing, no frame parsing, no multi-stream
-container behavior, and no codec conversion.
-
-## `annexb`
-
-The `annexb` adapter supports packet-preserving H264 recording after RTP
-depacketization has produced Annex B access-unit payloads.
-
-Current surface:
-
-- explicit registry registration through `annexb.Register`
-- `.h264`, `.264`, `.annexb`, and start-code probing
-- mux from one H264 video packet stream
-- zero-allocation write hot-path tests
-
-It is mux-only for now. H264 parsing, demuxing, and codec decode belong in later
-adapter slices.
-
-## `gopus`
-
-The `gopus` adapter wraps `github.com/thesyncim/gopus`.
-
-Current surface:
-
-- descriptor for Opus decode and encode
-- explicit registry registration
-- RTP Opus depacketized packet to PCM frame path
-- PCM frame to Opus packet encode path
-- packet-loss concealment through `EventPacketLoss`
-- caller-owned frame and plane buffer output
-- caller-owned packet buffer output
-
-## `govpx`
-
-The `govpx` adapter wraps `github.com/thesyncim/govpx` in normal builds.
-
-Current surface:
-
-- explicit registry registration through `govpx.Register`
-- VP8 and VP9 packet decode through `DecodeIntoWithPTS`
-- decoded I420 planes are written into caller-owned `av.Frame` buffers
-- VP8 and VP9 encode write packet payloads into caller-owned
-  `codec.EncodeResult` buffers
-- startup, packet-loss, corrupt-packet, and discontinuity paths drop until the
-  next VP8 or VP9 keyframe
-- packet-loss paths request keyframes through `codec.ControlRequest`
-- codec-change and discontinuity events reset decoder state and update stream
-  identity
-- encode keyframe request, codec-change, and discontinuity events force the next
-  VP8 or VP9 packet to be a keyframe
-- adapter-owned output preparation and keyframe request emission have
-  zero-allocation hot-path tests
-- close is idempotent and later decode, flush, or event calls return
-  `codec.ErrClosed`
-
-It has VP8/VP9 decode and encode for now. SVC controls, color metadata, and
-format conversion remain future slices.
-
-## `goav1`
-
-The `goav1` adapter wraps `github.com/thesyncim/goav1` in normal builds and
-registers a first AV1 decoder factory.
-
-Current surface:
-
-- explicit registry registration through `goav1.Register`
-- `DecoderState` as the documented `codec.DecodeConfig.OpaqueState`
-- optional `codec.DecodeStateFactory` support for high-level runtime decode
-  builders, with RTP decode bounds feeding a conservative first-slice realtime
-  scratch arena
-- exact-format frame pools, retained RTP scratch, event/parser scratch,
-  reference/output slots, and backend runtime handles owned by `DecoderState`
-- depacketized low-overhead OBU payload decode through the backend runner
-- concrete `DecodeRTPPayloadInto` for callers that intentionally own raw AV1
-  RTP aggregation payload bytes, including retained fragments and after-loss
-  recovery that preserves known sequence state
-- borrowed decoded frame-plane mapping for 8-bit monochrome `gray8`, 4:2:0
-  I420, 4:2:2 I422, and 4:4:4 I444; `yuv420p`, `yuv422p`, and `yuv444p`
-  stream declarations are accepted as aliases and normalized to canonical
-  `i420`, `i422`, and `i444` output
-- packet-loss, corrupt-packet, and discontinuity paths reset runner state,
-  request keyframes, and drop packets until sync
-- codec-change and discontinuity events update stream identity, reset state,
-  and drop until a packet keyframe marker or parseable low-overhead
-  sequence-header/key-frame payload
-- steady decode reuses a bound runner when the next plan fits the existing
-  arena
-- result-capacity, allocation, sync-recovery, raw RTP retained-fragment,
-  runtime RTP decode for gray8 and 4:2:0, same-stream and replacement-stream
-  RTP codec-change recovery for old-ID and replacement-ID event targets, and
-  close-lifecycle tests
-- selected runtime decode graphs now report unsupported different-codec live
-  switches explicitly instead of sending new-codec packets into the old decoder
-
-The generic `codec.Decoder` path still expects packets produced by `rtpav`'s AV1
-depacketizer. Lower-level applications that bypass that depacketizer can type
-assert the concrete decoder and call `DecodeRTPPayloadInto`. The frame format
-passed to `DecoderState` is exact, not merely a maximum envelope, because the
-backend frame pool must match the accepted sequence/frame format. Applications
-that know their stream shape should still pass a tuned `DecoderState`; the
-runtime state provider is a conservative convenience path for simple receive
-graphs.
-
-It is intentionally narrow for now. Richer automatic scratch sizing policy, high
-bit-depth output, color metadata, film grain policy, high-level raw-RTP policy,
-and runtime stream fixtures for 4:2:2 and 4:4:4 remain future slices.
-
-## `resample`
-
-The `resample` adapter is the first concrete audio filter adapter. It supports
-interleaved signed 16-bit PCM audio frames.
-
-Current surface:
-
-- explicit registry registration through `resample.Register`
-- descriptor metadata for planner and `Explain(ctx)` filter requirements,
-  including supported sample formats
-- sample-rate conversion with linear interpolation
-- channel conversion for mono/stereo and simple channel count changes
-- caller-owned output frame and plane buffers
-- zero-allocation hot-path test
-
-It is intentionally narrow: no floating-point PCM, no dithering, and no
-streaming phase carry yet.
-
-## `resize`
-
-The `resize` adapter is the first concrete video filter adapter. It supports
-planar 8-bit 4:2:0 frames with `i420` or `yuv420p` layout.
-
-Current surface:
-
-- explicit registry registration through `resize.Register`
-- descriptor metadata for planner and `Explain(ctx)` filter requirements,
-  including supported pixel formats and resize modes
-- exact, fit, fill, and passthrough geometry modes
-- deterministic nearest-neighbor scaling
-- caller-owned output frame and plane buffers
-- zero-allocation hot-path test
-
-It is intentionally narrow: no RGB, NV12, high bit-depth, color conversion,
-interlaced handling, or high-quality scaler yet.
-
-## `goh264`
-
-The `goh264` adapter wraps `github.com/thesyncim/goh264` only when built with
-`goav_goh264`. Normal builds keep the descriptor visible without importing the
-module.
-
-Current tagged surface:
-
-- explicit registry registration through `goh264.Register`
-- H264 auto packet decode via the sibling module
-- codec-change and discontinuity events reset decoder state
-- packet-loss paths request keyframes through `codec.ControlRequest`
-- decoded 8-bit Y/Cb/Cr planes are exposed as borrowed `av.Frame` planes
-- adapter-owned borrowed-frame mapping and keyframe request emission have
-  zero-allocation hot-path tests
-- close is idempotent and later decode, flush, or event calls return
-  `codec.ErrClosed`
-
-It is decode-only and intentionally narrow for now: no high bit-depth output,
-no color conversion and no encode adapter.
-
-## Descriptor-only Boundaries
-
-Default-build `govpx`, `goav1`, and default-build `goh264` expose descriptors
-without importing concrete decoder/encoder implementations. This lets
-applications see planned media compatibility and build registries without
-breaking the default build or forcing heavier tagged code paths. When a
-descriptor exists but no factory is registered,
-`DecoderFactory` or `EncoderFactory` returns `codec.ErrUnavailable`, not
-`codec.ErrNotFound`.
-When a factory is registered, descriptor media and sample/pixel format
-capabilities become preflight constraints for known recipe decodes, runtime
-decoder construction, and recipe/runtime branch encodes.
-
-Concrete factories should replace these descriptor-only registrations once each
-codec path has caller-owned output buffers and allocation tests.
+Default-build `govpx`, `goav1`, and `goh264` expose descriptors without
+importing concrete implementations, so applications can see planned media
+compatibility and build registries without forcing tagged code paths. Concrete
+factories replace descriptor-only registrations once each path has caller-owned
+output buffers and allocation tests.

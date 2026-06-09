@@ -43,36 +43,58 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
 
 ## Feature areas (status)
 
-- **IR collapse** (§1,2,15): one operation list; delete BranchSpec's parallel fields
-  (decode/decodeCodec/encode/postEncodeTaps/destinationNames/from/tap/label/policy/buffer),
-  branchComposePlan + transcode-in-core, mediaPlan-vs-workPlan, string routing. **TODO (biggest).**
+- **IR collapse** (§1,2,15): one operation list; delete BranchSpec's parallel fields,
+  branchComposePlan, mediaPlan-vs-workPlan, string routing. **TODO (biggest).**
 - **Shape solving** (§3,4): upgrade validation → solving (validate order, infer facts,
-  select adapters, auto-insert safe conversions when enabled): `.Require/.Prefer/.Auto(AllowConvert/Resample/Resize/FormatConvert)`; shape.Contract on Source/Do/Sink/Destination/Flow. **TODO.**
+  select adapters, auto-insert safe conversions when enabled): `.Require/.Prefer/.Auto(...)`;
+  shape.Contract on Source/Do/Sink/Destination/Flow. **TODO.**
 - **Tap** (§5): carry name/domain/kind/shape/producing-op/branch-owner/attach-policy/timebase. **partial.**
-- **Branch control plane** (§6,7,10): pause/resume/stop/rebranch + lifecycle states + Control
-  (RequestKeyframe/SetBitrate/Flush/Drain/Discontinuity). **DONE this session:** pause/resume/stop/rebranch
-  (lock-free, both runners, gapless, integration-tested). **DONE (2026-06):** typed `Task.Control` (Keyframe/Deliver via `pipeline.NodeInjector`, serial-worker delivery, race-clean; control-target nodes need a non-lossy buffer). **TODO:** SwitchAt* policies; formal state enums *(in flight)*; tap-targeted controls (`.At(node)` → expert).
-- **Branch isolation/ownership** (§8): isolated downstream buffers, per-branch drops/stats,
-  copy-if-mutable. **DONE (data plane):** lock-free isolation, independent fanout backpressure, per-branch atomic stats, MaxLatency shedding, Blocking. **TODO:** public CopyMode contract surfacing.
+- **Branch control plane** (§6,7,10): pause/resume/stop/rebranch **DONE** (lock-free,
+  both runners, gapless); typed `Task.Control` (Keyframe/Deliver/SelectActive via
+  `pipeline.NodeInjector`, untargeted rides the data path, `.AtTap` by tap name) **DONE**;
+  typed TaskState/BranchState/DestinationState in Snapshot **DONE**. TODO: SwitchAt*
+  policies; `.At(node)` stays expert-only.
+- **Branch isolation/ownership** (§8): lock-free isolation, independent fanout
+  backpressure, per-branch atomic stats, MaxLatency/MaxBytes shedding, Blocking —
+  **DONE (data plane)**. TODO: public CopyMode contract surfacing.
 - **Events/Snapshot/Watch** (§9): typed EventFilter Watch; richer Snapshot. **partial.**
 - **Dynamic streams** (§11): OnStream/When; late-stream attach; ambiguity lists candidates. **TODO.**
-- **Multi-input/Join** (§12): From(a,b...) one Destination; explicit Join (MixAudio etc.). **Mix/Composite/Select grammars DONE (2026-06)** over lock-free stages + `task.Control` live switch; **JoinSpec lowering (one build path) in flight**; From(a,b…) multi-input TODO.
+- **Multi-input/Join** (§12): Mix/Composite/Select grammars **DONE** over lock-free
+  stages + `task.Control` live switch; variadic `From(a, b...)` with `InputName`
+  narrowing and one shared Destination **DONE**. TODO: JoinSpec lowering through ONE
+  join builder.
 - **Time/sync** (§13): minimal TimeShape (TimeBase/Clock/Live/Latency) + Sync/Attach-at policies. **TODO.**
-- **Source backpressure** (§14): result-aware `Push.X(ctx,...) (PushResult, error)`. **TODO.**
+- **Source backpressure** (§14): result-aware `push.X(...) (PushResult, error)` —
+  Accepted/Dropped per push, sheds stay nil-error. **DONE.**
 
 ## Acceptance tests (definition of done) — `[x]` holds · `[~]` partial · `[ ]` todo
 
-Grammar: 1[~] README clean · 2[x] **DONE (slices 42–43)** direct chain ≡ Branch("main") — the implicit name `"main"` names its encode AND transform nodes from the selector scope (`branchEncodeOwnerName` / `branchComposeSharedStepName`), matching a direct chain, in BOTH naming paths (spec `branchComposeRoutes`/`branchComposePrivateOperationTransforms` + lower `planOperationNodeName`); explicit names stay for multi-branch disambiguation. Hard guards now (`TestNorthStarDirectChainEqualsExplicitMainBranch` + `…WithTransform`, no Skip). · 3[ ] Flow no destinations/To · 4[~] Destination reuse groups by handle.
-Planner: 5[ ] Build+Attach same planner · 6[~] Attach emits WorkPatch only downstream of taps · 7[ ] Explain from WorkPlan · 8[~] Snapshot = WorkPlan+patches · 9[x] **DONE (slice 44)** no transcode import in core — the whole `transcode` expert API was production-unreachable dead code (`Transcode` on the unexported `builderAPI`, never surfaced by `Runtime`/`GraphBuilder`); removed it + the `goav/transcode` package (−1291 LOC), keeping the shared branch-compose lowerer that recipe `Branches()` uses. · 10[ ] no workflow-kind dispatch.
-Shape: 11[x] Resize requires video frame · 12[x] Resample requires audio frame · 13[x] frame→File w/o Encode fails · 14[x] packet→File w/ Copy ok · 15[x] Decode→frame Sink ok · 16[~] errors include branch/op/actual/expected/fix · 17[ ] auto-insert only when enabled.
-Branches: 18[~] two branches share one decoder · 19[x] slow Latest/DropOldest doesn't stall archive · 20[x] Blocking backpressures · 21[x] per-branch drop counts · 22[~] mutable frame branch can't corrupt sibling.
-Runtime: 23[~] Attach opens destinations before mutation · 24[~] Attach failure rolls back+aborts · 25[~] Detach+drain commits · 26[~] Detach+abort aborts · 27[x] Rebranch starts replacement before detach · 28[x] Rebranch failure leaves old intact · 29[x] Pause/Resume only that branch.
-Events/Control: 30[~] events: attach/detach/shape-change/backpressure/commit · 31[~] Snapshot full · 32[ ] RequestKeyframe reaches adapter or fails clearly · 33[ ] SetBitrate reaches encoder or fails clearly.
-Source: 34[~] custom packet source Copy→File · 35[~] custom frame source encode→File · 36[ ] push reports drops/backpressure · 37[~] Source EOS commits destinations.
-Dynamic: 38[ ] late stream attach · 39[~] ambiguous selection lists candidates · 40[ ] stream removal detaches by policy.
-Multi/Join: 41[~] From(a,v) one shared Destination · 42[~] multi-input mux validates timebase · 43[ ] Join mixes two audio branches · 44[ ] Join shape mismatch fails before mutation.
-
-(Flow-control acceptance — 19,20,21,27,28,29 — landed this session; lock them in as guards.)
+Grammar: 1[~] README clean · 2[x] direct chain ≡ Branch("main") (both naming paths,
+hard guards) · 3[ ] Flow no destinations/To · 4[~] Destination reuse groups by handle.
+Planner: 5[ ] Build+Attach same planner · 6[~] Attach emits WorkPatch only downstream
+of taps · 7[ ] Explain from WorkPlan · 8[~] Snapshot = WorkPlan+patches · 9[x] no
+transcode import in core (package deleted) · 10[ ] no workflow-kind dispatch.
+Shape: 11[x] Resize requires video frame · 12[x] Resample requires audio frame ·
+13[x] frame→File w/o Encode fails · 14[x] packet→File w/ Copy ok · 15[x] Decode→frame
+Sink ok · 16[~] errors include branch/op/actual/expected/fix · 17[ ] auto-insert only
+when enabled.
+Branches: 18[~] two branches share one decoder · 19[x] slow Latest/DropOldest doesn't
+stall archive · 20[x] Blocking backpressures · 21[x] per-branch drop counts · 22[~]
+mutable frame branch can't corrupt sibling.
+Runtime: 23[~] Attach opens destinations before mutation · 24[~] Attach failure rolls
+back+aborts · 25[~] Detach+drain commits · 26[~] Detach+abort aborts · 27[x] Rebranch
+starts replacement before detach · 28[x] Rebranch failure leaves old intact · 29[x]
+Pause/Resume only that branch.
+Events/Control: 30[~] events: attach/detach/shape-change/backpressure/commit · 31[~]
+Snapshot full · 32[~] RequestKeyframe reaches adapter or fails clearly · 33[ ]
+SetBitrate reaches encoder or fails clearly.
+Source: 34[~] custom packet source Copy→File · 35[~] custom frame source encode→File ·
+36[x] push reports drops/backpressure · 37[~] Source EOS commits destinations.
+Dynamic: 38[ ] late stream attach · 39[~] ambiguous selection lists candidates ·
+40[ ] stream removal detaches by policy.
+Multi/Join: 41[x] From(a,v) one shared Destination · 42[~] multi-input mux validates
+timebase · 43[x] Join mixes two audio branches · 44[~] Join shape mismatch
+auto-resamples or fails before mutation.
 
 ## Attack plan (2026-06-09, decided): internal path unity
 
@@ -95,83 +117,16 @@ Stages (each green, in dependency order):
    WorkPlan; mediaPlan becomes a rendered view, then dies. String routing
    (destinationNames) dies here too (destination-handle IDs).
 5. Then: shape solver centralization (join arm-solving moves into it),
-   From(inputs...) multi-input, Control targeting taps (`.At(node)` demoted to
-   expert), time/clock/seek (theme C — pull scheduling is the keystone).
+   Control targeting taps (`.At(node)` demoted to expert), time/clock/seek
+   (theme C — pull scheduling is the keystone).
 
-## Execution order (safe slices, one residue/feature per iteration)
+## Execution order (condensed)
 
-Revised after investigating #2 (see Grammar #2): the plan collapse must come
-**before** node-naming/#2, because naming diverges across the 3 plan reps.
-
-1. **DONE** Lock in `[x]` guards (#13/14/15 pass; #11/12 next).
-2. **Operations = single source of truth** (§1, #3): re-point readers of
-   postEncodeTaps/encode/decode/decodeCodec to the OpTap/OpEncode/OpDecode
-   operations; delete each field once unread. One field/slice.
-   **postEncodeTaps DONE** — `operationSpecTaps` reads taps from `OpTap`; deleted
-   `chainStepTapIntents`/`postPacketTapIntents` + the build/runtime fallback loops;
-   deleted the spec-level fields on `jobStreamBuild`/`streamBuild`/`BranchSpec`/`chainSpec`.
-   Only `runtimeBranch.postEncodeTaps` remains, *derived* from operations for the
-   deferred-tap-after-lazy-encode insert. Next field: encode/decode/decodeCodec.
-3. **#9/#5**: quarantine→delete `branchComposePlan` + transcode import from core
-   (compat helpers live outside core, emit From/Branch specs). This removes
-   `planBranchesFromBranchComposePlan` so there is one branch-plan source.
-   **Mapped:** `branchComposePlan` has TWO sources — `composePlan()` (recipe
-   `Branches()`) and `branchComposePlanFromTranscode` (legacy transcode API). The
-   recipe path round-trips `BranchSpec → branchComposeBranch → streamIntent`
-   (`streamIntentFromBranchComposeBranch`); `branchComposeBranchOperationSpecs`
-   already derives ops from `.Operations`, so the scalar mirrors
-   (Resize/Resample/DecodeConfig/Encode/Decode/Copy) only re-materialize
-   `streamIntent.Decode/Encode` + feed the transcode compile path (`runtime_transcode.go`).
-   Collapse order: (3a) make recipe `Branches()` populate `state.intent` branch
-   `streamIntent`s so `buildMediaPlan` takes `planBranches` (one branch-plan source,
-   no round-trip); (3b) `branchComposePlan` becomes transcode-only → move the bridge
-   to a compat pkg, drop the core `transcode` import; (3c) then encode/decode
-   `streamIntent` collapse (the woven 51/102-read fields) + #2 fall out together.
-   **3a DONE (slice 35):** `buildMediaPlan` now plans branches straight from
-   `intent.Streams` (which `branchCompositionJob.Plan()` already populates with the
-   full shared-op-inherited operation list). The apparent blocker was a *synthetic*
-   test that deliberately nil'd `intent.Streams[].Operations` to force a plan-recovery
-   fallback real builds never hit; updated it to use real intent. Deleted
-   `streamIntentsFromBranchComposePlan` / `streamIntentFromBranchComposeBranch` /
-   `branchComposePlanHasOperations` / `branchComposeBranchOperationSpecs` /
-   `codecSpecFromEncodeConfig`. **`branchComposePlan` is now Build-lowerer-only** —
-   the Explain/mediaPlan side is fully off it. Remaining step-3: (3b) the Build-side
-   `mediaPlanBranchComposerLowerer`/`newMediaPlanBranchComposeGraph` is now the sole
-   `branchComposePlan` consumer (+ the transcode bridge) — fold it into the stream
-   lowerer (this is also #2), then `branchComposePlan` + the core `transcode` import go.
-   **#2 layer (corrected):** `graphPlan.Describe()` returns `p.spec()` (the lowerer
-   graph spec), NOT the mediaPlan — so `Describe()≡Build()` is automatic (both share
-   `p.spec()`). **#2 lives purely in the lowerer spec generation:** direct chains use
-   the stream lowerer (`mediaPlanStreamLowererForState`); `Branch("main")` uses
-   `mediaPlanBranchComposerLowerer`→`newMediaPlanBranchComposeGraph`→`planBranchComposeRoutes`
-   (a *separate* graph-building subsystem from `branchComposePlan`), which names the
-   encode node differently. `buildMediaPlan`/`planBranches`/`planOperationNodeName` are
-   the **Explain/operationPlan/workPlan side only** (step 4, slice 26 prep) and do NOT
-   feed Describe. So: #2 = unify the two lowerer spec subsystems (stream vs
-   branch-compose), so a 1-branch composition lowers identically to a direct chain.
-   The `branchComposePlan` retirement = re-point `newMediaPlanBranchComposeGraph` off
-   `branchComposePlan` onto the stream-lowerer path. (Earlier "Describe's mediaPlan"
-   claim was wrong — corrected here.)
-   **#2 mechanism (tested+reverted, slice 38):** the diff is ONE node — direct
-   `encode-audio` (`encodeNodeName` falls through to `selector.Type` when
-   `request.name==""`) vs branch `encode-main` (`request.name=branchName`, set in
-   `branchComposeRoutes` runtime_transcode.go:858). BUT the branch-composer's `spec()`
-   and `lower()` name the encode node through TWO independent paths —
-   `spec()`←`branchComposeRoutes` (route.request) and `lower()`←`prepareBranchComposeOperationLowering`.
-   Setting `encodeName=""` for `len==1` in `branchComposeRoutes` alone closes #2's
-   Describe but breaks `Describe()≡Build()` (built stays `encode-main`) + 10 single-branch
-   tests asserting `encode-<branchname>`. So #2 = apply single-branch→selector naming to
-   BOTH paths + ~11 test updates, and it's a real design call (all single named branches
-   selector-named, or only the implicit "main"?). Contested → maintainer decision, not a loop slice.
-4. **#7/#26**: fold `mediaPlan` into a `WorkPlan` view; one plan for
-   Explain/Describe/Build/Attach/Snapshot → naming resolves once.
-5. **#2 falls out**: with one plan path, direct chain and `Branch("main")` name
-   identically; the `planBranchPrivateOwner` (`"main"`→stream) tweak then closes #2
-   cleanly. Remove the Skip in `TestNorthStarDirectChainEqualsExplicitMainBranch`.
-6. **#4/Destination-by-ID**: drop destinationNames/string routing; same handle =
-   one group; same name+different config = planning error.
-7. Then features: shape solving (§3), Control plane (§10), PushResult (§14),
-   Join/multi-input (§12), dynamic streams (§11), TimeShape (§13).
-7. **Shape solving** (§3): `.Auto(AllowConvert/...)` + shape.Contract on custom components; insert safe conversions when enabled.
-8. **Control plane** (§10): typed Control(RequestKeyframe/SetBitrate) routed to capable source/encoder via existing keyframe-event machinery; SwitchAt* rebranch policies.
-9. **PushResult** (§14), **Join/multi-input** (§12), **dynamic streams** (§11), **TimeShape** (§13).
+Work residue-by-residue, one deletion per slice, each slice green: operations as
+the single source of truth (parallel BranchSpec/streamIntent fields die as their
+readers re-point to `OperationSpec`), then `branchComposePlan` + the lowerer
+unification, then `mediaPlan` → `WorkPlan`, then destination-by-handle routing
+(`destinationNames` dies). Naming unification for single-branch compositions
+(direct chain ≡ named branch encode nodes) is a maintainer design call recorded
+in git history. After the collapse: shape solving, SwitchAt* policies,
+dynamic streams, TimeShape.

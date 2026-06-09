@@ -1921,7 +1921,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"Opus, VP8, and VP9 are the full encode/decode recipe verticals",
 		"behavior is a two-tier ladder",
 		"a single raw callback handed",
-		"public grammar stays Input, Stream, Operation, Tap, Branch, Destination, Flow,",
+		"public grammar stays Input, Stream, Tap, Branch, Destination, Flow,",
 		"workflows should be expressible through declarative recipes",
 	} {
 		if !strings.Contains(readmeText, required) {
