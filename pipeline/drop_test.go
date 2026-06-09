@@ -142,6 +142,44 @@ func TestDropControllerDecideTypedAllocs(t *testing.T) {
 	}
 }
 
+// TestDropControllerNonKeyVideoFrame covers the frame-domain DropNonKeyVideo
+// branch: a decoded video frame is droppable (frames carry no keyframe flag, so
+// any video frame is shed), while an audio frame is not non-key video.
+func TestDropControllerNonKeyVideoFrame(t *testing.T) {
+	controller := newDropController(BufferPolicy{Capacity: 1, Drop: DropNonKeyVideo})
+	video := Message{Kind: MessageFrame, Frame: &av.Frame{Type: av.MediaVideo}}
+	audio := Message{Kind: MessageFrame, Frame: &av.Frame{Type: av.MediaAudio}}
+
+	if action := controller.decide(1, &video); action != bufferDropIncoming {
+		t.Fatalf("video frame action = %v, want drop incoming", action)
+	}
+	if action := controller.decide(1, &audio); action != bufferBackpressure {
+		t.Fatalf("audio frame action = %v, want backpressure (audio is not non-key video)", action)
+	}
+}
+
+// TestDropControllerUntilSyncFrame covers the frame-domain DropUntilSync branch:
+// an audio (non-video) frame counts as a sync point, while a video frame does
+// not, so the controller keeps shedding video frames until a non-video frame.
+func TestDropControllerUntilSyncFrame(t *testing.T) {
+	controller := newDropController(BufferPolicy{Capacity: 1, Drop: DropUntilSync})
+	video := Message{Kind: MessageFrame, Frame: &av.Frame{Type: av.MediaVideo}}
+	audio := Message{Kind: MessageFrame, Frame: &av.Frame{Type: av.MediaAudio}}
+
+	if action := controller.decide(1, &video); action != bufferDropIncoming {
+		t.Fatalf("video frame action = %v, want drop incoming (not a sync point)", action)
+	}
+	if !controller.droppingUntilSync {
+		t.Fatal("controller should wait for sync after a non-sync video frame")
+	}
+	if action := controller.decide(0, &audio); action != bufferAdmit {
+		t.Fatalf("audio frame action = %v, want admit (audio frame is a sync point)", action)
+	}
+	if controller.droppingUntilSync {
+		t.Fatal("controller should leave wait-for-sync state on a sync frame")
+	}
+}
+
 func TestDropControllerSyncEvents(t *testing.T) {
 	controller := newDropController(BufferPolicy{Capacity: 1, Drop: DropUntilSync})
 	event := av.Event{Type: av.EventCodecChanged}
