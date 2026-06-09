@@ -771,7 +771,7 @@ func planOperationNodeName(branch planBranch, operation planOperation, index int
 	case OpDecode:
 		return "decode-" + planBranchOperationScopeName(branch)
 	case OpTransform:
-		name := branch.Name
+		name := branchEncodeOwnerName(branch)
 		if operation.Shared {
 			name = planBranchOperationScopeName(branch)
 		}

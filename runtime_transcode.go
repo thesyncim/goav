@@ -1155,7 +1155,14 @@ func branchComposeSharedOperationName(branch branchComposeRoute) string {
 }
 
 func branchComposePrivateOperationTransforms(branch branchComposeRoute) ([]mediaTransform, error) {
-	return branchComposeRouteOperationTransformsForName(branch.name, branch.privateOperations)
+	// The implicit "main" branch names its private transform nodes from the
+	// selector scope, matching a direct chain (NORTH_STAR #2); explicit names keep
+	// their name for multi-branch disambiguation.
+	name := branch.name
+	if name == "main" {
+		name = branchComposeSharedStepName(branch.branch)
+	}
+	return branchComposeRouteOperationTransformsForName(name, branch.privateOperations)
 }
 
 func branchChainStepError(name string, reason string) error {
