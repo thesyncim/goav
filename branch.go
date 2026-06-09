@@ -468,10 +468,6 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			job.setErr(err)
 			return job
 		}
-		encode := cloneCodecSpec(chainEncodeSpec(branches[i].operations))
-		if parentPacket && !chainHasDecode(branches[i].operations) && !codecIntentSet(encode) {
-			encode = Copy()
-		}
 		decode := !parentPacket || chainHasDecode(branches[i].operations)
 		_, from, err := plannedBranchAnchor(stream, branches[i], parentPacket)
 		if err != nil {
@@ -481,6 +477,9 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 		sharedOps := plannedBranchSharedOperationSpecs(stream, branches[i], parentPacket)
 		privateOps := plannedBranchPrivateOperationSpecs(stream, branches[i], parentPacket)
 		operations := append(cloneOperationSpecs(sharedOps), cloneOperationSpecs(privateOps)...)
+		// encode is derived from operations (chainEncodeSpec) at every reader —
+		// plannedBranchPrivateOperationSpecs already injects the OpCopy for the
+		// parentPacket passthrough case, so the op list is the single source.
 		job.branchStreams = append(job.branchStreams, streamBuild{
 			name:             branches[i].name,
 			selector:         stream.selector,
@@ -490,7 +489,6 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			operations:       operations,
 			sharedOps:        sharedOps,
 			privateOps:       privateOps,
-			encode:           encode,
 			destinationNames: append([]string(nil), branchDestinationNames(branches[i].destinations)...),
 		})
 	}

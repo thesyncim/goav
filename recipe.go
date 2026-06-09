@@ -1767,7 +1767,7 @@ func branchStreamIntent(stream streamBuild) streamIntent {
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
 		Operations:   operations,
 		Taps:         operationSpecTaps(operations, stream.selector.Type),
-		Encode:       cloneCodecSpec(stream.encode),
+		Encode:       cloneCodecSpec(chainEncodeSpec(operations)),
 		Destinations: append([]string(nil), stream.destinationNames...),
 	}
 }
@@ -1808,11 +1808,9 @@ func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
 			Shared:    stream.from.Domain() == DomainFrame,
 		})
 	}
-	if stream.encode.Copy {
-		operations = append(operations, OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: stream.encode})
-	} else if codecIntentSet(stream.encode) {
-		operations = append(operations, OperationSpec{Kind: OpEncode, Component: string(stream.encode.ID), Encode: stream.encode})
-	}
+	// The encode op is carried by stream.operations (or sharedOps/privateOps in
+	// the split path) — plannedBranchPrivateOperationSpecs injects the copy for
+	// the parentPacket passthrough — so there is no encode to reconstruct here.
 	return operations
 }
 
@@ -1825,12 +1823,8 @@ func streamBuildSplitOperationSpecs(stream streamBuild) []OperationSpec {
 		operation.Shared = stream.from.Domain() == DomainFrame && len(stream.sharedOps) != 0
 		operations = append([]OperationSpec{operation}, operations...)
 	}
-	switch {
-	case stream.encode.Copy && !operationSpecsContainKind(operations, OpCopy):
-		operations = append(operations, operationSpecForCopy(stream.encode))
-	case codecIntentSet(stream.encode) && !stream.encode.Copy && !operationSpecsContainKind(operations, OpEncode):
-		operations = append(operations, operationSpecForEncode(stream.encode))
-	}
+	// The encode op (OpEncode/OpCopy) is always already in sharedOps/privateOps,
+	// so there is nothing to re-add.
 	return operations
 }
 
@@ -3387,7 +3381,6 @@ type streamBuild struct {
 	operations       []OperationSpec
 	sharedOps        []OperationSpec
 	privateOps       []OperationSpec
-	encode           CodecSpec
 	destinationNames []string
 }
 
