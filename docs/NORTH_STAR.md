@@ -128,6 +128,17 @@ Revised after investigating #2 (see Grammar #2): the plan collapse must come
    The `branchComposePlan` retirement = re-point `newMediaPlanBranchComposeGraph` off
    `branchComposePlan` onto the stream-lowerer path. (Earlier "Describe's mediaPlan"
    claim was wrong — corrected here.)
+   **#2 mechanism (tested+reverted, slice 38):** the diff is ONE node — direct
+   `encode-audio` (`encodeNodeName` falls through to `selector.Type` when
+   `request.name==""`) vs branch `encode-main` (`request.name=branchName`, set in
+   `branchComposeRoutes` runtime_transcode.go:858). BUT the branch-composer's `spec()`
+   and `lower()` name the encode node through TWO independent paths —
+   `spec()`←`branchComposeRoutes` (route.request) and `lower()`←`prepareBranchComposeOperationLowering`.
+   Setting `encodeName=""` for `len==1` in `branchComposeRoutes` alone closes #2's
+   Describe but breaks `Describe()≡Build()` (built stays `encode-main`) + 10 single-branch
+   tests asserting `encode-<branchname>`. So #2 = apply single-branch→selector naming to
+   BOTH paths + ~11 test updates, and it's a real design call (all single named branches
+   selector-named, or only the implicit "main"?). Contested → maintainer decision, not a loop slice.
 4. **#7/#26**: fold `mediaPlan` into a `WorkPlan` view; one plan for
    Explain/Describe/Build/Attach/Snapshot → naming resolves once.
 5. **#2 falls out**: with one plan path, direct chain and `Branch("main")` name
