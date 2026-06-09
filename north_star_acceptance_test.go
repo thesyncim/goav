@@ -63,7 +63,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 			Audio().Decode().To(File("out.ogg", io.Discard)).
 			Build(context.Background())
 		if err == nil {
-			t.Skip("NORTH_STAR #13 GAP: frame branch to File without Encode should fail")
+			t.Fatal("NORTH_STAR #13: a frame branch to File without Encode must fail (File needs packets)")
 		}
 	})
 
@@ -73,7 +73,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 			Audio().Decode().To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))).
 			Build(context.Background())
 		if err != nil {
-			t.Skipf("NORTH_STAR #15 GAP: decode-to-frame-Sink should succeed: %v", err)
+			t.Fatalf("NORTH_STAR #15: decode to a frame Sink must succeed: %v", err)
 		}
 	})
 
@@ -83,7 +83,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 			Audio().Copy().To(File("out.ogg", io.Discard)).
 			Build(context.Background())
 		if err != nil {
-			t.Skipf("NORTH_STAR #14 GAP: packet-copy-to-File should succeed: %v", err)
+			t.Fatalf("NORTH_STAR #14: a packet branch to File with Copy must succeed: %v", err)
 		}
 	})
 }
