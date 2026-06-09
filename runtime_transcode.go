@@ -711,10 +711,7 @@ func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
 		}
 		names[name] = struct{}{}
 		sharedOperations := branchComposeSharedRouteOperations(branch)
-		privateOperations, err := branchComposeRouteOperations(name, branch)
-		if err != nil {
-			return nil, err
-		}
+		privateOperations := branchComposeRouteOperations(branch)
 
 		config := cloneEncodeConfig(branch.Encode)
 		if config.Stream.ID == "" {
@@ -910,11 +907,12 @@ func branchComposeDuplicateBranchError(name string, index int) error {
 	}
 }
 
-func branchComposeRouteOperations(name string, branch branchComposeBranch) ([]OperationSpec, error) {
-	if len(branch.PrivateOperations) != 0 {
-		return cloneOperationSpecs(branch.PrivateOperations), nil
-	}
-	return branchComposeInlineTransformOperations(name, branch)
+// branchComposeRouteOperations returns the branch's private operations — the
+// canonical operation list is the only source of branch transforms; the legacy
+// ad-hoc resize/resample synthesis from parallel plan fields is gone (the
+// shape solver inserts conversions as real operations upstream).
+func branchComposeRouteOperations(branch branchComposeBranch) []OperationSpec {
+	return cloneOperationSpecs(branch.PrivateOperations)
 }
 
 func branchComposeRouteOperationTransformsForName(name string, operations []OperationSpec) ([]mediaTransform, error) {
@@ -933,20 +931,6 @@ func branchComposeRouteOperationTransformsForName(name string, operations []Oper
 		}
 	}
 	return out, nil
-}
-
-func branchComposeInlineTransformOperations(name string, branch branchComposeBranch) ([]OperationSpec, error) {
-	if branch.Resize != nil && branch.Resample != nil {
-		return nil, branchChainStepError(name, "branch cannot combine resize and resample in one step")
-	}
-	switch {
-	case branch.Resize != nil:
-		return []OperationSpec{operationSpecForTransform(TransformSpec{Resize: branch.Resize})}, nil
-	case branch.Resample != nil:
-		return []OperationSpec{operationSpecForTransform(TransformSpec{Resample: branch.Resample})}, nil
-	default:
-		return nil, nil
-	}
 }
 
 func branchComposeRouteOperationTransform(branchName string, transformIndex int, operation OperationSpec) (mediaTransform, error) {
@@ -969,17 +953,19 @@ func branchComposeRouteOperationTransform(branchName string, transformIndex int,
 		}
 		if operation.Transform.Resize != nil {
 			resize := *operation.Transform.Resize
+			factory := firstNonEmpty(operation.Component, filter.FactoryResize)
 			return mediaTransform{
-				name:    "resize-" + branchName + suffix,
-				factory: filter.FactoryResize,
+				name:    factory + "-" + branchName + suffix,
+				factory: factory,
 				video:   &resize,
 			}, nil
 		}
 		if operation.Transform.Resample != nil {
 			resample := *operation.Transform.Resample
+			factory := firstNonEmpty(operation.Component, filter.FactoryResample)
 			return mediaTransform{
-				name:    "resample-" + branchName + suffix,
-				factory: filter.FactoryResample,
+				name:    factory + "-" + branchName + suffix,
+				factory: factory,
 				audio:   &resample,
 			}, nil
 		}

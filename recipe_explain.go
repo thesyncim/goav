@@ -159,6 +159,9 @@ func operationSpecDetail(operation OperationSpec) string {
 	case info.OpTransform:
 		return firstNonEmpty(transformFactoryName(operation.Transform), "transform frames")
 	case info.OpShape:
+		if operation.Auto != nil {
+			return "shape solver policy"
+		}
 		return "media shape annotation"
 	case info.OpStage:
 		return "custom stage"
@@ -846,6 +849,10 @@ func cloneOperationSpecs(operations []OperationSpec) []OperationSpec {
 	for i := range operations {
 		operation := operations[i]
 		operation.Transform = cloneTransformSpec(operation.Transform)
+		if operation.Auto != nil {
+			policy := *operation.Auto
+			operation.Auto = &policy
+		}
 		out = append(out, operation)
 	}
 	return out

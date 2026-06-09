@@ -116,7 +116,7 @@ func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
 	// branchComposePlan is only the Build-side lowerer input.
 	branches, decisions := planBranches(state, outputs)
 	outputs = planOutputsWithBranches(outputs, branches)
-	return composeWorkPlan(
+	work := composeWorkPlan(
 		spec,
 		firstNonEmpty(intent.Name, state.operation, "job"),
 		workInputsFromIntent(intent.Inputs),
@@ -125,6 +125,8 @@ func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
 		outputs,
 		decisions,
 	)
+	work.Diagnostics = clonePlanDiagnostics(state.shapeDiagnostics)
+	return work
 }
 
 // composeWorkPlan flattens the planner's per-branch working set into the work

@@ -54,10 +54,17 @@ type joinProfile struct {
 	// graphBuffer, when non-nil, replaces a direct runtime buffer so the graph
 	// gets per-node serial workers for control-plane injection (Select).
 	graphBuffer *pipeline.BufferPolicy
-	// planArm runs per arm at plan time after the optional decode decision; it
-	// may plan a per-arm stage (mix resample shape-solving) or record arm state
-	// (composite layouts). The returned stage plan is lowered generically.
+	// planArm runs per arm at plan time after the optional decode decision to
+	// record arm state (composite layouts). Format solving does NOT live here —
+	// it goes through the shape solver via armExpected/armPolicy.
 	planArm func(p *joinPlan, arm *jobStreamBuilder, stream av.Stream) (*joinArmStagePlan, error)
+	// armExpected derives the format facts every arm must satisfy before the
+	// join stage (mix: the first arm's audio format is the target). A zero Spec
+	// skips solving for that arm. The needed conversions are planned through the
+	// one shape solver under armPolicy — the join's implicit always-on policy —
+	// and lowered as real per-arm transform stages.
+	armExpected func(p *joinPlan, stream av.Stream) shape.Spec
+	armPolicy   shape.Policy
 	// newStage builds the convergence stage at lowering time. A non-nil buffer
 	// pins the stage's input queue (Select: non-lossy DropBlock so injected
 	// controls survive).
@@ -152,6 +159,9 @@ type joinPlan struct {
 	joined       av.Stream
 	joinedDomain shape.MediaDomain
 	taps         []workTap
+	// diagnostics records the arm conversions the shape solver inserted, so
+	// Explain reports them exactly like chain insertions.
+	diagnostics []info.Diagnostic
 
 	// mix: the first arm's audio format is the join target; later arms that
 	// differ get a resample planned by the mix planArm hook.
@@ -225,6 +235,13 @@ func newJoinPlan(rt *runtime, state *recipeCompileState) (*joinPlan, error) {
 			}
 			armPlan.stage = stagePlan
 		}
+		if armPlan.stage == nil && profile.armExpected != nil {
+			stagePlan, err := p.solveArmConversion(rt, stream, sets[i].name)
+			if err != nil {
+				return nil, err
+			}
+			armPlan.stage = stagePlan
+		}
 		p.arms = append(p.arms, armPlan)
 	}
 	// The join's output is a normal stream point from here on: derive the joined
@@ -259,6 +276,74 @@ func newJoinPlan(rt *runtime, state *recipeCompileState) (*joinPlan, error) {
 		p.destination = spec.dest.spec
 	}
 	return p, nil
+}
+
+// solveArmConversion runs one arm through the shape solver: the profile's
+// armExpected derives the target format, the implicit armPolicy stands in for
+// a user .Auto(...), and an allowed delta plans a real per-arm transform stage
+// (named <join>-<adapter>-<stream>, e.g. mix-resample-b) plus a diagnostic.
+func (p *joinPlan) solveArmConversion(rt *runtime, stream av.Stream, armName string) (*joinArmStagePlan, error) {
+	expected := p.profile.armExpected(p, stream)
+	if mediaShapeEmpty(expected) {
+		return nil, nil
+	}
+	actual := shape.FromStream(stream, shape.DomainFrame)
+	if actual.MediaKind == av.MediaAudio {
+		actual.Channels = maxInt(actual.Channels, 1)
+	}
+	if shape.Conversions(actual, expected).Empty() {
+		return nil, nil
+	}
+	plan, planned, err := planShapeConversion(rt, actual, expected, rt.realtime)
+	if err != nil {
+		step := OperationSpec{Kind: info.OpTransform, Component: p.name}
+		return nil, shapeSolverAdapterError("build "+p.name, firstNonEmpty(armName, string(stream.ID)), 0, step, actual, expected, err)
+	}
+	if !planned || !p.profile.armPolicy.Covers(plan.needed) {
+		return nil, joinArmError(p.name, firstNonEmpty(armName, string(stream.ID)),
+			fmt.Sprintf("%s arm %q cannot be converted to the join format (%s -> %s)", p.name, firstNonEmpty(armName, string(stream.ID)), humanizeShape(actual), humanizeShape(expected)))
+	}
+	p.diagnostics = append(p.diagnostics, info.Diagnostic{
+		Code: "shape_conversion_inserted",
+		Node: firstNonEmpty(armName, string(stream.ID)),
+		Message: fmt.Sprintf("inserted %s on %s arm %q (join arm policy)",
+			plan.detail, p.name, firstNonEmpty(armName, string(stream.ID))),
+		Details: []string{
+			"adapter=" + plan.factory,
+			"source=" + humanizeShape(actual),
+			"actual_shape=" + actual.String(),
+			"expected_shape=" + expected.String(),
+		},
+	})
+	return &joinArmStagePlan{
+		transform: mediaTransform{
+			name:    p.name + "-" + plan.factory + "-" + string(stream.ID),
+			factory: plan.factory,
+			video:   plan.operation.Transform.Resize,
+			audio:   plan.operation.Transform.Resample,
+		},
+		stream: joinArmTransformStream(stream, actual.MediaKind),
+	}, nil
+}
+
+// joinArmTransformStream is the input stream description the per-arm transform
+// stage opens against: the arm's selected stream with audio facts normalized
+// (at least one channel, S16 when the arm declared no sample format).
+func joinArmTransformStream(stream av.Stream, media av.MediaType) av.Stream {
+	if media != av.MediaAudio {
+		return stream
+	}
+	return av.Stream{
+		ID:   stream.ID,
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			Type:         av.MediaAudio,
+			SampleRate:   stream.Codec.SampleRate,
+			Channels:     maxInt(stream.Codec.Channels, 1),
+			SampleFormat: firstNonEmpty(stream.Codec.SampleFormat, av.SampleFormatS16),
+			ClockRate:    uint32(stream.Codec.SampleRate),
+		},
+	}
 }
 
 // deriveJoinedDomain reports the media domain of the join's output: kinds that
@@ -632,6 +717,7 @@ func (p *joinPlan) buildJoinWorkPlan(state *recipeCompileState, spec pipeline.Sp
 		Inputs:       workInputsFromIntent(intent.Inputs),
 		Taps:         append([]workTap(nil), p.taps...),
 		Destinations: workDestinationsFromPlan(outputs),
+		Diagnostics:  clonePlanDiagnostics(p.diagnostics),
 	}
 	ids := workDestinationIDsByName(work.Destinations)
 	work.Operations, work.Branches = p.joinWorkBranches(ids, outputs)

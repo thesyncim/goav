@@ -7,8 +7,8 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 // audioMixStage sums N synchronized audio inputs into one output stream — the
@@ -17,10 +17,11 @@ import (
 // serially per node, so the per-input queues need no locking (lock-free by
 // design — the hot path takes no mutex).
 //
-// First-slice contract: inputs are same-format S16 interleaved and frame-aligned
-// (one frame per arm advances one mix step). The shape solver will later
-// negotiate/insert conversion so this precondition is guaranteed; for now a
-// format mismatch fails the open of the first mismatched frame.
+// Contract: inputs are same-format S16 interleaved and frame-aligned (one frame
+// per arm advances one mix step). The shape solver plans per-arm conversions at
+// compile time (joinProfile.armExpected under the implicit arm policy), so
+// mismatched arms are resampled before they reach this stage; a residual
+// format mismatch still fails the first mismatched frame defensively.
 type audioMixStage struct {
 	name    string
 	inputs  []av.StreamID
@@ -209,12 +210,27 @@ func (m *mixStream) To(dest Destination) *Job {
 }
 
 // mixJoinProfile is Mix's entry in the join table: audio arms, auto-decode for
-// packet arms, first-arm-wins resample shape-solving, audioMixStage convergence,
-// and an encodable S16 output stream derived from the first arm's shape.
+// packet arms, first-arm-wins format solving through the shared shape solver
+// (the implicit always-on arm policy — no user opt-in needed), audioMixStage
+// convergence, and an encodable S16 output stream derived from the first arm's
+// shape.
 var mixJoinProfile = joinProfile{
 	media:      av.MediaAudio,
 	decodeArms: true,
-	planArm:    mixPlanArmResample,
+	// The first arm's audio format is the mix target; later arms that differ
+	// get a conversion planned by the shape solver under the arm policy.
+	armExpected: func(p *joinPlan, stream av.Stream) shape.Spec {
+		if stream.Codec.SampleRate <= 0 {
+			return shape.Spec{}
+		}
+		channels := maxInt(stream.Codec.Channels, 1)
+		if p.targetRate == 0 {
+			p.targetRate, p.targetChannels = stream.Codec.SampleRate, channels
+			return shape.Spec{}
+		}
+		return shape.Frame(av.MediaAudio, shape.Audio(p.targetRate, p.targetChannels, ""))
+	},
+	armPolicy: shape.AllowResample().Union(shape.AllowConvert()),
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
 		return newAudioMixStage("mix", armIDs, av.StreamID("mix")), nil
 	},
@@ -233,33 +249,4 @@ var mixJoinProfile = joinProfile{
 		}
 	},
 	sinkOnlyReason: "mix to a non-Sink destination requires .Encode(...)",
-}
-
-// mixPlanArmResample is the mix join's shape-solving: the first arm's audio
-// format is the mix target; later arms that differ get an auto-planned resample
-// so the mixer sees one format. No new API — the arms just declare their own
-// shape.
-func mixPlanArmResample(p *joinPlan, _ *jobStreamBuilder, stream av.Stream) (*joinArmStagePlan, error) {
-	if stream.Codec.SampleRate <= 0 {
-		return nil, nil
-	}
-	channels := maxInt(stream.Codec.Channels, 1)
-	if p.targetRate == 0 {
-		p.targetRate, p.targetChannels = stream.Codec.SampleRate, channels
-		return nil, nil
-	}
-	if stream.Codec.SampleRate == p.targetRate && channels == p.targetChannels {
-		return nil, nil
-	}
-	id := stream.ID
-	armStream := av.Stream{ID: id, Type: av.MediaAudio, Codec: av.CodecParameters{
-		Type: av.MediaAudio, SampleRate: stream.Codec.SampleRate, Channels: channels,
-		SampleFormat: av.SampleFormatS16, ClockRate: uint32(stream.Codec.SampleRate),
-	}}
-	transform := mediaTransform{
-		name:    "mix-resample-" + string(id),
-		factory: filter.FactoryResample,
-		audio:   &filter.ResampleConfig{SampleRate: p.targetRate, Channels: p.targetChannels, SampleFormat: av.SampleFormatS16},
-	}
-	return &joinArmStagePlan{transform: transform, stream: armStream}, nil
 }

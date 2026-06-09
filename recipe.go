@@ -57,6 +57,10 @@ type OperationSpec struct {
 	Decode    codec.CodecSpec
 	Encode    codec.CodecSpec
 	Shared    bool
+	// Auto carries the chain's shape-solving policy: .Auto(policies...) appends
+	// one info.OpShape operation with Auto set, and the solver unions every Auto
+	// operation on the chain. Nil means the operation carries no policy.
+	Auto *shape.Policy
 }
 
 type destinationIntent struct {
@@ -884,6 +888,39 @@ func operationSpecForShape(shape shape.Spec) OperationSpec {
 	return OperationSpec{Kind: info.OpShape, Component: "shape", Shape: shape}
 }
 
+// operationSpecForAutoPolicy is the policy-carrying operation .Auto(...)
+// appends: an info.OpShape annotation with no shape facts (it never changes the
+// media) whose Auto field opts the chain into shape solving.
+func operationSpecForAutoPolicy(policies []shape.Policy) OperationSpec {
+	var policy shape.Policy
+	for i := range policies {
+		policy = policy.Union(policies[i])
+	}
+	return OperationSpec{Kind: info.OpShape, Component: "auto", Auto: &policy}
+}
+
+// chainAutoPolicy unions the chain's .Auto(...) policies. The second result
+// reports whether any policy operation is present — an empty .Auto() activates
+// solving while allowing nothing, so refusals name the exact policy to add.
+func chainAutoPolicy(operations []OperationSpec) (shape.Policy, bool) {
+	var policy shape.Policy
+	active := false
+	for i := range operations {
+		if operations[i].Auto == nil {
+			continue
+		}
+		active = true
+		policy = policy.Union(*operations[i].Auto)
+	}
+	return policy, active
+}
+
+// operationSpecIsAutoPolicy reports whether the operation is a pure policy
+// carrier (no shape facts) that lowers to no runtime node.
+func operationSpecIsAutoPolicy(operation OperationSpec) bool {
+	return operation.Kind == info.OpShape && operation.Auto != nil && mediaShapeEmpty(operation.Shape)
+}
+
 func operationSpecForTransform(transform TransformSpec) OperationSpec {
 	return OperationSpec{
 		Kind:      info.OpTransform,
@@ -937,8 +974,14 @@ func operationSpecsContainKind(operations []OperationSpec, kind info.OperationKi
 func operationSpecsContainChainStep(operations []OperationSpec) bool {
 	for i := range operations {
 		switch operations[i].Kind {
-		case info.OpStage, info.OpShape, info.OpTransform:
+		case info.OpStage, info.OpTransform:
 			return true
+		case info.OpShape:
+			// Shape annotations with facts are steps; empty annotations (the
+			// .Auto(...) policy carrier) lower to nothing and constrain nothing.
+			if !mediaShapeEmpty(operations[i].Shape) {
+				return true
+			}
 		case info.OpTap:
 			if operations[i].Tap.Domain != shape.DomainPacket {
 				return true
@@ -1709,7 +1752,17 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 }
 
 func streamIntentHasOperation(stream streamIntent) bool {
-	return stream.Decode || len(stream.Operations) != 0 || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy
+	if stream.Decode || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy {
+		return true
+	}
+	for i := range stream.Operations {
+		// The .Auto(...) policy carrier opts into solving but does no work; a
+		// chain holding only the policy still has no operation.
+		if !operationSpecIsAutoPolicy(stream.Operations[i]) {
+			return true
+		}
+	}
+	return false
 }
 
 func jobStreamChainSteps(stream *jobStreamBuild) []chainStep {
@@ -3267,6 +3320,19 @@ func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 	}
 	b.ensureDecodeOperation()
 	stream.operations = append(stream.operations, operationSpecForStage(stage))
+	return b
+}
+
+// Auto opts the chain into shape solving with the given conversion policies:
+// when a downstream operation pins format facts (an encoder's sample rate, a
+// stage contract's geometry) the current media does not satisfy, the planner
+// inserts the matching conversion from the runtime's filter registry as a real
+// planned operation — visible in Describe and reported as an Explain
+// diagnostic. The policy applies to the whole chain; zero policies allow
+// nothing, so every needed conversion is refused with the exact policy to add.
+func (b *jobStreamBuilder) Auto(policies ...shape.Policy) *jobStreamBuilder {
+	stream := b.current()
+	stream.operations = append(stream.operations, operationSpecForAutoPolicy(policies))
 	return b
 }
 

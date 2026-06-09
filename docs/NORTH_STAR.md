@@ -45,9 +45,13 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
 
 - **IR collapse** (§1,2,15): one operation list; delete BranchSpec's parallel fields,
   branchComposePlan, mediaPlan-vs-workPlan, string routing. **TODO (biggest).**
-- **Shape solving** (§3,4): upgrade validation → solving (validate order, infer facts,
-  select adapters, auto-insert safe conversions when enabled): `.Require/.Prefer/.Auto(...)`;
-  shape.Contract on Source/Do/Sink/Destination/Flow. **TODO.**
+- **Shape solving** (§3,4): validation upgraded to SOLVING — the one compile walk
+  propagates shapes, selects converting adapters from the filter registry by
+  capability delta, and inserts them as real planned operations under
+  `.Auto(shape.AllowResample()/AllowResize()/AllowConvert())` (default OFF;
+  refusals carry the exact policy to add; joins use an implicit arm policy);
+  shape.Contract honored on Do stages. **DONE.** TODO: `.Require/.Prefer`,
+  contracts on Source/Sink/Destination/Flow.
 - **Tap** (§5): carry name/domain/kind/shape/producing-op/branch-owner/attach-policy/timebase. **partial.**
 - **Branch control plane** (§6,7,10): pause/resume/stop/rebranch **DONE** (lock-free,
   both runners, gapless); typed `Task.Control` (Keyframe/Deliver/SelectActive via
@@ -80,7 +84,7 @@ WorkPlan+patches · 9[x] no
 transcode import in core (package deleted) · 10[ ] no workflow-kind dispatch.
 Shape: 11[x] Resize requires video frame · 12[x] Resample requires audio frame ·
 13[x] frame→File w/o Encode fails · 14[x] packet→File w/ Copy ok · 15[x] Decode→frame
-Sink ok · 16[~] errors include branch/op/actual/expected/fix · 17[ ] auto-insert only
+Sink ok · 16[x] errors include branch/op/actual/expected/fix · 17[x] auto-insert only
 when enabled.
 Branches: 18[~] two branches share one decoder · 19[x] slow Latest/DropOldest doesn't
 stall archive · 20[x] Blocking backpressures · 21[x] per-branch drop counts · 22[~]
@@ -97,7 +101,7 @@ Source: 34[~] custom packet source Copy→File · 35[~] custom frame source enco
 Dynamic: 38[ ] late stream attach · 39[~] ambiguous selection lists candidates ·
 40[ ] stream removal detaches by policy.
 Multi/Join: 41[x] From(a,v) one shared Destination · 42[~] multi-input mux validates
-timebase · 43[x] Join mixes two audio branches · 44[~] Join shape mismatch
+timebase · 43[x] Join mixes two audio branches · 44[x] Join shape mismatch
 auto-resamples or fails before mutation.
 
 ## Attack plan (2026-06-09, decided): internal path unity
@@ -128,9 +132,11 @@ Stages (each green, in dependency order):
    compile: `joinPlan` plans N arm sub-chains converging into an `OpJoin` node,
    `Describe()` ≡ `Build()` is guard-tested per kind, and the hand-assembled
    `buildJoin` route is deleted (`Job.join` survives only as captured intent).
-6. Remaining: shape solver centralization (join arm-solving moves into it);
-   SwitchAt* policies; time/clock/seek (theme C — pull scheduling is the
-   keystone).
+6. **Shape solver** — **DONE.** Validation became solving in the one compile
+   walk; the mix arm-resample hook and the branch-compose inline resize/
+   resample synthesis are absorbed (deleted) into it.
+7. Remaining: SwitchAt* policies; time/clock/seek (theme C — pull scheduling
+   is the keystone).
 
 ## Execution order (condensed)
 

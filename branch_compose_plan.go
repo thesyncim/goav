@@ -3,7 +3,6 @@ package goav
 import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -26,8 +25,6 @@ type branchComposeBranch struct {
 	Operations        []OperationSpec
 	SharedOperations  []OperationSpec
 	PrivateOperations []OperationSpec
-	Resize            *filter.ResizeConfig
-	Resample          *filter.ResampleConfig
 	DecodeConfig      codec.CodecSpec
 	CodecChange       CodecChangePolicy
 	Encode            codec.EncodeConfig

@@ -91,6 +91,13 @@ func (operation OperationSpec) InputShapes() shape.Set {
 		return nil
 	case info.OpTransform:
 		return operation.Transform.InputShapes()
+	case info.OpStage:
+		// Custom stages may declare their compatibility contract; stages without
+		// one accept anything (the historical behavior).
+		if contract, ok := operation.Stage.(shape.Contract); ok {
+			return contract.InputShapes()
+		}
+		return nil
 	case info.OpEncode, info.OpCopy:
 		return codecSpecInputShapes(operation.Encode)
 	default:
@@ -107,6 +114,13 @@ func (operation OperationSpec) OutputShapes(input shape.Spec) shape.Set {
 		return shape.Set{shape.Merge(input, operation.Shape)}
 	case info.OpTransform:
 		return operation.Transform.OutputShapes(input)
+	case info.OpStage:
+		if contract, ok := operation.Stage.(shape.Contract); ok {
+			if out := contract.OutputShapes(input); len(out) != 0 {
+				return out
+			}
+		}
+		return shape.Set{input}
 	case info.OpEncode, info.OpCopy:
 		return codecSpecOutputShapes(operation.Encode, input)
 	default:

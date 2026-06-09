@@ -321,6 +321,12 @@ func streamIntentPacketCopyOnly(stream streamIntent) bool {
 			if op.Tap.Domain != shape.DomainPacket || op.Tap.After != info.OpCopy {
 				return false
 			}
+		case info.OpShape:
+			// The .Auto(...) policy carrier lowers to nothing; it does not change
+			// a packet-copy-only chain.
+			if !operationSpecIsAutoPolicy(op) {
+				return false
+			}
 		default:
 			return false
 		}

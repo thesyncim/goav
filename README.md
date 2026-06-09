@@ -149,6 +149,30 @@ shapes, and concrete fixes — encode before a byte destination, copy from a
 packet-domain point, or end in a sink. `Shape(...)` annotates the current media
 point; it is not an escape hatch around operation contracts.
 
+Format mismatches a conversion would fix can be solved instead of refused:
+`.Auto(...)` opts the chain into the shape solver with an explicit policy. When
+a downstream operation pins format facts the current media does not satisfy —
+an Opus encoder wants 48kHz but the source is 44.1kHz — the planner inserts the
+matching conversion from the runtime's filter registry as a real planned
+operation, visible in `Describe` and reported by `Explain` as a diagnostic such
+as `inserted resample 44.1kHz→48kHz before encode-opus (AllowResample)`:
+
+```go
+return goav.From(mic).
+    Audio().
+    Auto(shape.AllowResample()).
+    Encode(codec.Opus(codec.Bitrate(96_000))).
+    To(goav.File("voice.webm", out)).
+    Run(ctx)
+```
+
+Nothing is inserted without a policy: `shape.AllowResample()` permits
+sample-rate and channel conversion, `shape.AllowResize()` video geometry, and
+`shape.AllowConvert()` pixel/sample formats. A needed conversion the policy
+does not allow fails before any resource opens with the exact policy to add,
+and join arms (Mix) keep their implicit always-on arm policy — mismatched arms
+auto-resample with zero opt-in.
+
 ### Typed Taps
 
 Omit `From(...)` when every branch starts from the current stream point. Use a

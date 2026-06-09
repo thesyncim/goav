@@ -1,5 +1,7 @@
 package filter
 
+import "sort"
+
 type SimpleRegistry struct {
 	factories   map[string]Factory
 	descriptors map[string]Descriptor
@@ -25,6 +27,17 @@ func (r *SimpleRegistry) Factory(name string) (Factory, error) {
 		return nil, ErrNotFound
 	}
 	return factory, nil
+}
+
+// Descriptors lists every registered filter descriptor sorted by name, so
+// capability-driven selection (the shape solver) is deterministic.
+func (r *SimpleRegistry) Descriptors() []Descriptor {
+	out := make([]Descriptor, 0, len(r.descriptors))
+	for name := range r.descriptors {
+		out = append(out, cloneDescriptor(r.descriptors[name]))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 func (r *SimpleRegistry) Descriptor(name string) (Descriptor, error) {

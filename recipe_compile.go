@@ -61,6 +61,10 @@ type recipeCompileState struct {
 	plan    branchComposePlan
 	planErr error
 
+	// shapeDiagnostics records the shape solver's automatic insertions; the
+	// work plan carries them so Explain reports every inserted conversion.
+	shapeDiagnostics []info.Diagnostic
+
 	spec       pipeline.Spec
 	specReady  bool
 	specOrigin string
@@ -1042,17 +1046,49 @@ func validateKnownProbeStreamSelection(probe format.ProbeResult, stream streamIn
 	return err
 }
 
+// validateRecipeOperationShapesPass is the shape SOLVER pass: it propagates
+// each chain's media shape across the canonical operation list, validates
+// every operation contract, and — under an active .Auto(...) policy — inserts
+// the allowed conversions as real planned operations on the intent (so every
+// view, Describe, Explain, and the lowering, sees them).
 func validateRecipeOperationShapesPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe operation shapes", fn: func(state *recipeCompileState) error {
+		rt, _ := state.runtime.(*runtime)
 		for i := range state.intent.Streams {
 			stream := state.intent.Streams[i]
-			shape := recipeInitialStreamShape(state, stream)
-			if err := validateOperationSpecShapes(state.operation, stream, shape); err != nil {
+			initial := recipeInitialStreamShape(state, stream)
+			solved, diagnostics, err := solveOperationSpecShapes(state.operation, rt, stream, initial)
+			if err != nil {
 				return err
 			}
+			if solved == nil {
+				continue
+			}
+			state.intent.Streams[i].Operations = solved
+			state.shapeDiagnostics = append(state.shapeDiagnostics, diagnostics...)
+			state.patchBranchComposeOperations(stream.Name, solved)
 		}
 		return nil
 	}}
+}
+
+// patchBranchComposeOperations re-points a pre-planned branch composition at
+// the solved operation list, so the Build-side lowerer executes exactly the
+// operations the solver planned (Describe ≡ Build).
+func (s *recipeCompileState) patchBranchComposeOperations(name string, solved []OperationSpec) {
+	if s == nil || !branchComposePlanReady(s.plan) {
+		return
+	}
+	for i := range s.plan.Branches {
+		if s.plan.Branches[i].Name != name {
+			continue
+		}
+		shared, private := splitOperationSpecsByShared(solved)
+		s.plan.Branches[i].Operations = cloneOperationSpecs(solved)
+		s.plan.Branches[i].SharedOperations = shared
+		s.plan.Branches[i].PrivateOperations = private
+		return
+	}
 }
 
 func validateRecipeDestinationShapesPass() recipeCompilePass {

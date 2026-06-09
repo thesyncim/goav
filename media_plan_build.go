@@ -1510,12 +1510,30 @@ func mediaPlanFilterRouteOperations(filters []filterRequest) ([]OperationSpec, e
 		case filter.stage != nil:
 			operations = append(operations, operationSpecForStage(filter.stage))
 		case filter.transform != nil:
-			operations = append(operations, operationSpecForTransform(transformSpecFromMediaTransform(*filter.transform)))
+			operation := operationSpecForTransform(transformSpecFromMediaTransform(*filter.transform))
+			// Keep the (possibly solver-selected) adapter as the component, so
+			// the route operations name and instantiate the same filter.
+			operation.Component = firstNonEmpty(filter.transform.factory, operation.Component)
+			operations = append(operations, operation)
 		default:
 			return nil, ErrNilStage
 		}
 	}
 	return operations, nil
+}
+
+// applyTransformComponentOverride re-points a lowered transform at the
+// solver-selected adapter when the operation's component differs from the
+// standard factory: the component is both the node-name prefix and the filter
+// registry key, so the planned spec and the built graph stay identical.
+func applyTransformComponentOverride(transform mediaTransform, operation OperationSpec) mediaTransform {
+	factory := operation.Component
+	if operation.Kind != info.OpTransform || factory == "" || factory == transform.factory {
+		return transform
+	}
+	transform.name = factory + strings.TrimPrefix(transform.name, transform.factory)
+	transform.factory = factory
+	return transform
 }
 
 func transformSpecFromMediaTransform(transform mediaTransform) TransformSpec {
@@ -1649,6 +1667,7 @@ func mediaPlanStreamFilters(stream streamIntent) ([]filterRequest, error) {
 			if err != nil {
 				return nil, err
 			}
+			transform = applyTransformComponentOverride(transform, operation)
 			filters = append(filters, filterRequest{selector: selector, transform: &transform})
 			frameStepIndex++
 		case info.OpTap:

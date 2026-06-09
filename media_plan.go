@@ -78,6 +78,10 @@ func planBranchFromStreamIntent(state *recipeCompileState, stream streamIntent, 
 	var spec shape.Spec
 	sourceShape, sourceShapeOK := jobStreamCustomSourceShape(state, stream)
 	input, inputName := planStreamInputBinding(state, stream)
+	// The select node is named from the DECLARED selector (the chain's scope,
+	// e.g. select-audio), exactly like the planned graph spec — stream
+	// resolution below enriches shapes and reports, never node names.
+	selectComponent := selectorComponent(stream.Select)
 	if selected, ok := planSelectedStream(state, stream); ok {
 		resolved := streamSelectFromStream(selected)
 		resolved.Input = stream.Select.Input
@@ -93,7 +97,7 @@ func planBranchFromStreamIntent(state *recipeCompileState, stream streamIntent, 
 	}
 	spec = normalizePlanBranchShape(spec, stream, input)
 	branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", index))
-	operations, branchDecisions := planOperationSpecs(input, stream, branchName, spec)
+	operations, branchDecisions := planOperationSpecs(input, stream, branchName, spec, selectComponent)
 	operations = planOperationsWithShape(branchName, spec, operations)
 	return planBranch{
 		Name:       branchName,
@@ -200,6 +204,23 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 			return selected, true
 		}
 	}
+	// Custom sources declare their stream shape statically. Compiles without
+	// preflight probes (Describe-time) resolve from the declaration, so the
+	// shape solver sees the same facts in Describe and Build.
+	attachments := state.inputAttachments
+	if state.branchCompositionPresent {
+		attachments = []InputSpec{state.branchInputAttachment}
+	}
+	for i := range attachments {
+		declared := customSourceStreams(attachments[i])
+		if len(declared) == 0 {
+			continue
+		}
+		selected, err := selectStream(declared, selector)
+		if err == nil {
+			return selected, true
+		}
+	}
 	return av.Stream{}, false
 }
 
@@ -255,11 +276,11 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 	return branches, decisions
 }
 
-func planOperationSpecs(input inputIntent, stream streamIntent, branchName string, initial shape.Spec) ([]planOperation, []planDecision) {
+func planOperationSpecs(input inputIntent, stream streamIntent, branchName string, initial shape.Spec, selectComponent string) ([]planOperation, []planDecision) {
 	operations := planInputOperationsForShape(input, initial)
 	operations = append(operations, planOperation{
 		Kind:      info.OpSelect,
-		Component: selectorComponent(stream.Select),
+		Component: firstNonEmpty(selectComponent, selectorComponent(stream.Select)),
 		Detail:    "select stream",
 	})
 	if len(stream.Operations) != 0 {
@@ -368,12 +389,19 @@ func planOperationFromOperationSpec(operation OperationSpec) planOperation {
 	case info.OpTransform:
 		plan := planTransformOperation(operation.Transform)
 		plan.Shared = operation.Shared
+		// The operation may carry a solver-selected adapter that differs from
+		// the standard factory; the component names the node and the registry key.
+		plan.Component = firstNonEmpty(operation.Component, plan.Component)
 		return plan
 	case info.OpShape:
+		detail := "media shape annotation"
+		if operation.Auto != nil {
+			detail = "shape solver policy"
+		}
 		return planOperation{
 			Kind:      info.OpShape,
-			Component: "shape",
-			Detail:    "media shape annotation",
+			Component: firstNonEmpty(operation.Component, "shape"),
+			Detail:    detail,
 			Shape:     operation.Shape,
 			Shared:    operation.Shared,
 		}
@@ -516,7 +544,9 @@ func planTaps(branches []planBranch) []workTap {
 		currentNode := firstNonEmpty(branch.Input, branch.Name)
 		for j := range branch.Operations {
 			operation := branch.Operations[j]
-			if operation.Kind == info.OpCopy {
+			// Copy and shape annotations lower to no dedicated node: they advance
+			// the shape but never move the tap anchor.
+			if operation.Kind == info.OpCopy || operation.Kind == info.OpShape {
 				currentShape = planShapeForOperation(currentShape, branch, operation)
 				continue
 			}
@@ -727,7 +757,9 @@ func planOperationNodeName(branch planBranch, operation planOperation, index int
 	case info.OpEncode:
 		return "encode-" + branchEncodeOwnerName(branch)
 	case info.OpSelect:
-		return "select-" + firstNonEmpty(operation.Component, planBranchOperationScopeName(branch))
+		// Qualified exactly like the planned-spec select node: the declared
+		// selector scope plus any goav.InputName narrowing.
+		return branchComposeInputNodeName("select-"+firstNonEmpty(operation.Component, planBranchOperationScopeName(branch)), branch.Stream.Input)
 	case info.OpDepacketize, info.OpDemux:
 		return branch.Name
 	default:

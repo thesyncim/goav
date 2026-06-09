@@ -295,6 +295,18 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 	return b
 }
 
+// Auto opts the branch into shape solving with the given conversion policies —
+// the branch-side twin of the stream chain's .Auto(...): needed conversions an
+// active policy allows are inserted from the runtime's filter registry as real
+// planned operations; everything else is refused with the exact policy to add.
+func (b *branchBuilder) Auto(policies ...shape.Policy) *branchBuilder {
+	if b == nil {
+		return b
+	}
+	b.spec.operations = append(b.spec.operations, operationSpecForAutoPolicy(policies))
+	return b
+}
+
 func (b *branchBuilder) Shape(shape shape.Spec) *branchBuilder {
 	if b == nil {
 		return b
@@ -593,8 +605,14 @@ func branchSpecChainSteps(spec BranchSpec) []chainStep {
 func branchOperationSpecsContainStep(operations []OperationSpec) bool {
 	for i := range operations {
 		switch operations[i].Kind {
-		case info.OpStage, info.OpShape, info.OpTransform:
+		case info.OpStage, info.OpTransform:
 			return true
+		case info.OpShape:
+			// Empty shape annotations (the .Auto(...) policy carrier) lower to
+			// nothing and never constrain operation order.
+			if !mediaShapeEmpty(operations[i].Shape) {
+				return true
+			}
 		case info.OpTap:
 			if !operationSpecTapIsTerminalPacket(operations[i]) {
 				return true
