@@ -190,7 +190,7 @@ input := goav.Source("generated",
     ),
     func(ctx context.Context, push goav.SourcePush) error {
         for packet := range packets {
-            if err := push.Packet(&packet); err != nil {
+            if _, err := push.Packet(&packet); err != nil {
                 return err
             }
         }
@@ -216,7 +216,7 @@ frames := goav.Source("pcm",
     ),
     func(ctx context.Context, push goav.SourcePush) error {
         for frame := range decoded {
-            if err := push.Frame(&frame); err != nil {
+            if _, err := push.Frame(&frame); err != nil {
                 return err
             }
         }
@@ -236,7 +236,7 @@ Event-only custom sources use `shape.Event` and route straight to sinks.
 events := goav.Source("diagnostics",
     shape.Event(),
     func(ctx context.Context, push goav.SourcePush) error {
-        if err := push.Event(goav.Event{Type: av.EventStats}); err != nil {
+        if _, err := push.Event(goav.Event{Type: av.EventStats}); err != nil {
             return err
         }
         return push.EOS()

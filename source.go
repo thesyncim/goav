@@ -13,54 +13,68 @@ import (
 
 type SourceFunc func(context.Context, SourcePush) error
 
+// PushResult reports what happened to one push across its matching downstream
+// targets. On a fan-out a single push can be both Accepted and Dropped: one
+// branch queued the message while another shed it.
+type PushResult struct {
+	// Accepted is true when at least one downstream target queued the message.
+	Accepted bool
+	// Dropped is true when at least one target deliberately shed the message:
+	// a full queue under a dropping policy (DropNewest/DropOldest/Latest), an
+	// exhausted byte budget, or a paused branch. Shedding is normal realtime
+	// behavior, not failure — the push error stays nil.
+	Dropped bool
+}
+
 // SourcePush is how a custom Source delivers packets, frames, and events into
-// the pipeline. The Packet/Frame/Event methods return a flow-control error:
+// the pipeline. The Packet/Frame/Event methods return a PushResult for
+// per-push delivery visibility plus a flow-control error:
 //
-//   - nil: the push was handled. Under a dropping policy (DropNewest/DropOldest/
-//     Latest) this does NOT guarantee delivery — a full queue sheds deliberately
-//     and silently, and the shed is counted in the branch's drop counters
-//     (Stats), not surfaced on the push. Shedding is normal realtime behavior,
-//     not failure.
+//   - err == nil: the push was handled. The PushResult says what happened:
+//     Accepted means at least one downstream target queued the message; Dropped
+//     means at least one target deliberately shed it. A dropping policy sheds
+//     without error — the shed is reported on the PushResult and counted in the
+//     branch's drop counters (Stats).
 //   - errors.Is(err, ErrBackpressure): the strict paths refused the message
 //     (a Blocking buffer that could not pace, DropNever). A source that can
 //     pace itself should slow down.
 //   - errors.Is(err, ErrClosed): the task has stopped; return cleanly.
 //
-// On a fan-out, one slow branch never fails the push: its shed is counted on
-// that branch and delivery continues to siblings. Any other error is fatal to
-// the push.
+// On a fan-out, one slow branch never fails the push: its shed is reported on
+// the PushResult (and counted on that branch) while delivery continues to
+// siblings. Any other error is fatal to the push.
 type SourcePush struct {
 	emit   Emit
 	stream av.StreamID
 }
 
-// Packet delivers one packet. See SourcePush for the ErrBackpressure/ErrClosed
-// flow-control contract on the returned error.
-func (p *SourcePush) Packet(packet *av.Packet) error {
+// Packet delivers one packet. See SourcePush for the PushResult and
+// ErrBackpressure/ErrClosed flow-control contract.
+func (p *SourcePush) Packet(packet *av.Packet) (PushResult, error) {
 	if packet == nil {
-		return nil
+		return PushResult{}, nil
 	}
 	if packet.StreamID == "" {
 		packet.StreamID = p.stream
 	}
-	return p.emit.Packet(packet)
+	return p.emit.packetDelivery(packet)
 }
 
-func (p *SourcePush) Frame(frame *av.Frame) error {
+func (p *SourcePush) Frame(frame *av.Frame) (PushResult, error) {
 	if frame == nil {
-		return nil
+		return PushResult{}, nil
 	}
 	if frame.StreamID == "" {
 		frame.StreamID = p.stream
 	}
-	return p.emit.Frame(frame)
+	return p.emit.frameDelivery(frame)
 }
 
-func (p *SourcePush) Event(event av.Event) error {
+func (p *SourcePush) Event(event av.Event) (PushResult, error) {
 	if event.StreamID == "" {
 		event.StreamID = p.stream
 	}
-	return p.emit.Event(event)
+	return p.emit.eventDelivery(event)
 }
 
 func (p *SourcePush) EOS(streams ...av.StreamID) error {

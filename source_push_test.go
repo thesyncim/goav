@@ -13,13 +13,13 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// TestSourcePushShedsSilentlyUnderDropPolicies pins the CURRENT per-push
-// contract documented on SourcePush: a dropping policy sheds a full queue
-// deliberately and silently — every push returns nil even while messages are
-// shed (the sheds land in the drop counters, not on the push). This is the
-// observability gap a future result-aware push (PushResult) will close; when
-// it does, this test must be updated to assert the shed is reported.
-func TestSourcePushShedsSilentlyUnderDropPolicies(t *testing.T) {
+// TestSourcePushReportsShedsPerPush pins the result-aware push contract on
+// SourcePush: a dropping policy still sheds a full queue deliberately and
+// without error, but the shed is no longer silent — the PushResult reports
+// Dropped for the shed pushes and Accepted for the delivered ones, so every
+// push is accounted for. The error keeps its old meaning (flow control or
+// fatal); shedding is normal realtime behavior, not failure.
+func TestSourcePushReportsShedsPerPush(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -39,13 +39,15 @@ func TestSourcePushShedsSilentlyUnderDropPolicies(t *testing.T) {
 		return nil
 	}))
 
+	const pushes = 64
 	var backpressured atomic.Int64
 	var accepted atomic.Int64
+	var dropped atomic.Int64
 	src := Source("push",
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream("push")),
 		func(ctx context.Context, push SourcePush) error {
 			payload := []byte{1, 0}
-			for i := 0; i < 64; i++ {
+			for i := 0; i < pushes; i++ {
 				if ctx.Err() != nil {
 					return nil
 				}
@@ -54,10 +56,15 @@ func TestSourcePushShedsSilentlyUnderDropPolicies(t *testing.T) {
 					Audio:  &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
 					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
 				}
-				err := push.Frame(frame)
+				result, err := push.Frame(frame)
 				switch {
 				case err == nil:
-					accepted.Add(1)
+					if result.Accepted {
+						accepted.Add(1)
+					}
+					if result.Dropped {
+						dropped.Add(1)
+					}
 				case errors.Is(err, ErrBackpressure):
 					backpressured.Add(1)
 				case errors.Is(err, ErrClosed):
@@ -80,14 +87,18 @@ func TestSourcePushShedsSilentlyUnderDropPolicies(t *testing.T) {
 		t.Fatalf("Run err = %v", err)
 	}
 
-	if accepted.Load() == 0 {
-		t.Fatal("no push was accepted")
-	}
 	if backpressured.Load() != 0 {
-		t.Fatal("a dropping policy reported ErrBackpressure on a push — sheds are silent today; if this changed deliberately (PushResult), update this pin")
+		t.Fatal("a dropping policy reported ErrBackpressure on a push — sheds must stay nil-error, reported via PushResult")
 	}
-	if accepted.Load() != 64 {
-		t.Fatalf("accepted = %d, want all 64 pushes nil under a dropping policy", accepted.Load())
+	if accepted.Load() == 0 {
+		t.Fatal("no push reported Accepted")
+	}
+	if dropped.Load() == 0 {
+		t.Fatal("no push reported Dropped despite a gated sink behind a capacity-1 DropNewest queue")
+	}
+	if got := accepted.Load() + dropped.Load(); got != pushes {
+		t.Fatalf("accepted(%d)+dropped(%d) = %d, want %d (every push accounted on a single-target route)",
+			accepted.Load(), dropped.Load(), got, pushes)
 	}
 	if sank.Load() == 0 {
 		t.Fatal("sink saw no frames")

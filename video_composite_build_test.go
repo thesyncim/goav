@@ -17,7 +17,7 @@ func compositeTestVideoSource(id av.StreamID, w, h int, y, u, v byte) InputSpec 
 	return Source(string(id),
 		shape.Frame(av.MediaVideo, shape.Video(w, h, av.PixelFormatI420), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
-			if err := push.Frame(compositeTestI420Frame(id, w, h, y, u, v)); err != nil {
+			if _, err := push.Frame(compositeTestI420Frame(id, w, h, y, u, v)); err != nil {
 				return err
 			}
 			return push.EOS()

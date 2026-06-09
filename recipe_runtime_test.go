@@ -287,7 +287,7 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 					Ownership: av.BufferImmutable,
 				},
 			}
-			if err := push.Packet(&packet); err != nil {
+			if _, err := push.Packet(&packet); err != nil {
 				return err
 			}
 			return push.EOS()
@@ -355,7 +355,7 @@ func TestFrontDoorFlowControlSentinelsClassifyRuntimeErrors(t *testing.T) {
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(_ context.Context, push SourcePush) error {
 			packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
-			if err := push.Packet(&packet); err != nil {
+			if _, err := push.Packet(&packet); err != nil {
 				return err
 			}
 			return push.EOS()
@@ -392,7 +392,7 @@ func TestCustomFrameSourceRunsThroughRecipeWithoutDecode(t *testing.T) {
 					Samples:      480,
 				},
 			}
-			if err := push.Frame(&frame); err != nil {
+			if _, err := push.Frame(&frame); err != nil {
 				return err
 			}
 			return push.EOS()
@@ -451,7 +451,7 @@ func TestCustomEventSourceRunsThroughRecipeToSink(t *testing.T) {
 	input := Source("diagnostics",
 		shape.Event(),
 		func(_ context.Context, push SourcePush) error {
-			if err := push.Event(av.Event{Type: av.EventStats}); err != nil {
+			if _, err := push.Event(av.Event{Type: av.EventStats}); err != nil {
 				return err
 			}
 			return push.EOS()

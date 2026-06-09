@@ -21,7 +21,7 @@ func lifecycleTestSource(fn SourceFunc) InputSpec {
 
 func lifecycleTestPush(push SourcePush) error {
 	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
-	if err := push.Packet(&packet); err != nil {
+	if _, err := push.Packet(&packet); err != nil {
 		return err
 	}
 	return push.EOS()
@@ -142,7 +142,7 @@ func TestTaskSnapshotReportsFailedTaskAndAbortedDestination(t *testing.T) {
 	sourceErr := errors.New("source failed")
 	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
-		if err := push.Packet(&packet); err != nil {
+		if _, err := push.Packet(&packet); err != nil {
 			return err
 		}
 		return sourceErr

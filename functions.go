@@ -24,30 +24,67 @@ func (e *Emit) Packet(packet *av.Packet) error {
 	if packet == nil {
 		return nil
 	}
-	e.message.Kind = pipeline.MessagePacket
-	e.message.Packet = packet
-	e.message.Frame = nil
-	e.message.Event = nil
-	return e.emitter.Emit(e.ctx, &e.message)
+	return e.emitter.Emit(e.ctx, e.packetMessage(packet))
 }
 
 func (e *Emit) Frame(frame *av.Frame) error {
 	if frame == nil {
 		return nil
 	}
+	return e.emitter.Emit(e.ctx, e.frameMessage(frame))
+}
+
+func (e *Emit) Event(event av.Event) error {
+	return e.emitter.Emit(e.ctx, e.eventMessage(event))
+}
+
+func (e *Emit) packetMessage(packet *av.Packet) *pipeline.Message {
+	e.message.Kind = pipeline.MessagePacket
+	e.message.Packet = packet
+	e.message.Frame = nil
+	e.message.Event = nil
+	return &e.message
+}
+
+func (e *Emit) frameMessage(frame *av.Frame) *pipeline.Message {
 	e.message.Kind = pipeline.MessageFrame
 	e.message.Packet = nil
 	e.message.Frame = frame
 	e.message.Event = nil
-	return e.emitter.Emit(e.ctx, &e.message)
+	return &e.message
 }
 
-func (e *Emit) Event(event av.Event) error {
+func (e *Emit) eventMessage(event av.Event) *pipeline.Message {
 	e.message.Kind = pipeline.MessageEvent
 	e.message.Packet = nil
 	e.message.Frame = nil
 	e.message.Event = &event
-	return e.emitter.Emit(e.ctx, &e.message)
+	return &e.message
+}
+
+// packetDelivery/frameDelivery/eventDelivery are the source-push seam: they
+// emit like Packet/Frame/Event but additionally report per-push delivery via
+// the runner's optional pipeline.DeliveryEmitter capability. When the emitter
+// lacks the capability, they fall back to Accepted = (err == nil).
+func (e *Emit) packetDelivery(packet *av.Packet) (PushResult, error) {
+	return e.emitDelivery(e.packetMessage(packet))
+}
+
+func (e *Emit) frameDelivery(frame *av.Frame) (PushResult, error) {
+	return e.emitDelivery(e.frameMessage(frame))
+}
+
+func (e *Emit) eventDelivery(event av.Event) (PushResult, error) {
+	return e.emitDelivery(e.eventMessage(event))
+}
+
+func (e *Emit) emitDelivery(msg *pipeline.Message) (PushResult, error) {
+	if de, ok := e.emitter.(pipeline.DeliveryEmitter); ok {
+		delivery, err := de.EmitDelivery(e.ctx, msg)
+		return PushResult{Accepted: delivery.Delivered > 0, Dropped: delivery.Shed > 0}, err
+	}
+	err := e.emitter.Emit(e.ctx, msg)
+	return PushResult{Accepted: err == nil}, err
 }
 
 func (e *Emit) EOS(streams ...av.StreamID) error {

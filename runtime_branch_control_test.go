@@ -35,7 +35,7 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 					StreamID: "generated",
 					Payload:  av.Buffer{Bytes: []byte{byte(i + 1)}, Ownership: av.BufferImmutable},
 				}
-				if err := push.Packet(&p); err != nil {
+				if _, err := push.Packet(&p); err != nil {
 					return err
 				}
 			}
@@ -133,7 +133,7 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 					return sctx.Err()
 				}
 				p := av.Packet{StreamID: "generated", Payload: av.Buffer{Bytes: []byte{byte(i + 1)}, Ownership: av.BufferImmutable}}
-				if err := push.Packet(&p); err != nil {
+				if _, err := push.Packet(&p); err != nil {
 					return err
 				}
 			}
