@@ -14,11 +14,21 @@ import (
 type SourceFunc func(context.Context, SourcePush) error
 
 // SourcePush is how a custom Source delivers packets, frames, and events into
-// the pipeline. The Packet/Frame/Event methods return a flow-control error the
-// source can react to: errors.Is(err, ErrBackpressure) means a downstream buffer
-// was full (slow down or expect a shed message), and errors.Is(err, ErrClosed)
-// means the task has stopped and the source should return. Any other error is
-// fatal to the push.
+// the pipeline. The Packet/Frame/Event methods return a flow-control error:
+//
+//   - nil: the push was handled. Under a dropping policy (DropNewest/DropOldest/
+//     Latest) this does NOT guarantee delivery — a full queue sheds deliberately
+//     and silently, and the shed is counted in the branch's drop counters
+//     (Stats), not surfaced on the push. Shedding is normal realtime behavior,
+//     not failure.
+//   - errors.Is(err, ErrBackpressure): the strict paths refused the message
+//     (a Blocking buffer that could not pace, DropNever). A source that can
+//     pace itself should slow down.
+//   - errors.Is(err, ErrClosed): the task has stopped; return cleanly.
+//
+// On a fan-out, one slow branch never fails the push: its shed is counted on
+// that branch and delivery continues to siblings. Any other error is fatal to
+// the push.
 type SourcePush struct {
 	emit   Emit
 	stream av.StreamID
