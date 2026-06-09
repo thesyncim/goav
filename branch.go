@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -376,7 +377,7 @@ func (b *branchBuilder) Encode(codec CodecSpec) *branchBuilder {
 }
 
 func (b *branchBuilder) Copy() *branchBuilder {
-	return b.Encode(Copy())
+	return b.Encode(codec.Copy())
 }
 
 func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
@@ -541,7 +542,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	}
 	effectiveEncode := chainEncodeSpec(spec.operations)
 	if parentPacket && !chainHasDecode(spec.operations) && !codecIntentSet(effectiveEncode) {
-		effectiveEncode = Copy()
+		effectiveEncode = codec.Copy()
 	}
 	if !codecIntentSet(effectiveEncode) && !branchDestinationsAllSinkDestinations(spec.destinations) {
 		return branchEncodeMissingError(stream)
@@ -739,7 +740,7 @@ func branchEncodeParentOperationError(node string, encode CodecSpec) error {
 		},
 		Suggestions: []string{
 			"move .Branches(...) before the stream encoder",
-			"put .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) on each goav.Branch(...) that writes a destination",
+			"put .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) on each goav.Branch(...) that writes a destination",
 			"attach post-encode packet branches at runtime with Task.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -869,7 +870,7 @@ func branchPacketEncodeUnsupportedError(stream streamIntent, encode CodecSpec) e
 			"encoder: " + codecIntentName(encode),
 		},
 		Suggestions: []string{
-			"use .Decode().Branches(goav.Branch(name).Encode(goav.Opus(...)).To(destination)) for encoded variants",
+			"use .Decode().Branches(goav.Branch(name).Encode(codec.Opus(...)).To(destination)) for encoded variants",
 			"use .Copy().Branches(goav.Branch(name).To(destination)) for packet-preserving variants",
 			"attach a runtime branch from a frame Tap when late encoding is needed",
 		},
@@ -931,7 +932,7 @@ func branchMissingError(node string) error {
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
 		Suggestions: []string{
-			"pass branches with goav.Branch(name).Encode(goav.VP9(...)).To(goav.File(name, writer))",
+			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.File(name, writer))",
 			"reuse the same destination value from multiple branches when they should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,

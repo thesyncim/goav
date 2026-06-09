@@ -26,7 +26,7 @@ from the same few concepts.
 Packet-preserving RTP/WebRTC record:
 
 ```go
-return goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
+return goav.From(goav.RTP(video).Name("video").Codec(codec.VP8())).
     Copy().
     To(goav.File("recording.ivf", file)).
     Run(ctx)
@@ -58,8 +58,8 @@ return goav.From(goav.WebRTCTrack(track)).
 ```
 
 `Sink` receives frames at decoded points and packets after `.Copy()` or
-`.Encode(goav.Opus(...))`, `.Encode(goav.VP8(...))`, or
-`.Encode(goav.VP9(...))`. Packet streams can
+`.Encode(codec.Opus(...))`, `.Encode(codec.VP8(...))`, or
+`.Encode(codec.VP9(...))`. Packet streams can
 fan out to file destinations and packet sinks from the same encoded or copied
 stream point.
 
@@ -70,7 +70,7 @@ return goav.From(input).
     Video().
     Decode().
     Resize(1280, 720).
-    Encode(goav.VP9(codec.Bitrate(2_000_000))).
+    Encode(codec.VP9(codec.Bitrate(2_000_000))).
     To(goav.File("preview.ivf", preview)).
     Run(ctx)
 ```
@@ -104,13 +104,13 @@ return goav.From(input).
     Branches(
         goav.Branch("archive").
             Resize(1920, 1080).
-            Encode(goav.VP9(codec.Bitrate(4_000_000))).
+            Encode(codec.VP9(codec.Bitrate(4_000_000))).
             To(archive),
         goav.Branch("preview").
             Resize(640, 360).
             Do(frameMeter).
             Tap(previewFrames).
-            Encode(goav.VP8(codec.Bitrate(600_000))).
+            Encode(codec.VP8(codec.Bitrate(600_000))).
             To(preview),
     ).
     Run(ctx)
@@ -140,7 +140,7 @@ return goav.From(input).
             To(thumbnail),
         goav.Branch("web").
             From(frames720p).
-            Encode(goav.VP9(codec.Bitrate(2_000_000))).
+            Encode(codec.VP9(codec.Bitrate(2_000_000))).
             To(web),
     ).
     Run(ctx)
@@ -158,7 +158,7 @@ return goav.From(goav.FileInput("source.webm", in)).
     Branches(
         goav.Branch("v720").
             Resize(1280, 720).
-            Encode(goav.VP9(codec.Bitrate(2_000_000))).
+            Encode(codec.VP9(codec.Bitrate(2_000_000))).
             To(web),
     ).
     Audio().
@@ -166,7 +166,7 @@ return goav.From(goav.FileInput("source.webm", in)).
     Branches(
         goav.Branch("a96").
             Resample(48_000, codec.Stereo).
-            Encode(goav.Opus(codec.Bitrate(96_000))).
+            Encode(codec.Opus(codec.Bitrate(96_000))).
             To(web),
     ).
     Run(ctx)
@@ -199,7 +199,7 @@ return goav.From(input).
     Branches(
         goav.Branch("archive").
             Buffer(goav.Blocking(128)).
-            Encode(goav.VP9(codec.Bitrate(4_000_000))).
+            Encode(codec.VP9(codec.Bitrate(4_000_000))).
             To(archive),
         goav.Branch("preview").
             Buffer(goav.DropOldest(3)).
@@ -224,11 +224,11 @@ operations. A branch owns the destination.
 ```go
 voiceFrames := goav.FrameTap("audio.voice.frames")
 
-voiceCodec := goav.Opus(
+voiceCodec := codec.Opus(
     codec.Bitrate(32_000),
     codec.Channels(codec.Mono),
 )
-archiveCodec := goav.Opus(
+archiveCodec := codec.Opus(
     codec.Bitrate(128_000),
     codec.Channels(codec.Stereo),
 )
@@ -297,7 +297,7 @@ task, err := goav.From(input).
         goav.Branch("720p").
             Resize(1280, 720).
             Tap(frames720p).
-            Encode(goav.VP9(codec.Bitrate(2_000_000))).
+            Encode(codec.VP9(codec.Bitrate(2_000_000))).
             To(web),
     ).
     Build(ctx)
@@ -329,7 +329,7 @@ recording := goav.File("recording.ogg", file)
 record, err := task.Attach(ctx,
     goav.Branch("record-audio").
         From(audioDecoded).
-        Encode(goav.Opus(codec.Bitrate(96_000))).
+        Encode(codec.Opus(codec.Bitrate(96_000))).
         To(recording),
 )
 if err != nil {
@@ -724,7 +724,7 @@ blob to learn:
 
 ```go
 // codec is github.com/thesyncim/goav/codec; govpx is github.com/thesyncim/govpx
-vp9 := goav.VP9(
+vp9 := codec.VP9(
     codec.Bitrate(2_000_000),
     codec.FPS(30),
     codec.KeyframeInterval(60),

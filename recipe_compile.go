@@ -438,7 +438,7 @@ func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 		Suggestions: []string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
-			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(goav.VP9(...)).To(output)) for named branches",
+			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -550,7 +550,7 @@ func operationSpecMissingError(operation string, node string) error {
 		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
 		Suggestions: []string{
 			"call .To(goav.Sink(...)) to receive decoded frames",
-			"call .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) before writing to a file output",
+			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing to a file output",
 			"use .Copy().To(output) for packet-preserving record or remux",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -998,7 +998,7 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 			"actual_shape=" + shape.String(),
 		},
 		Suggestions: []string{
-			"call .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) before writing to file, URI, writer, or object destinations",
+			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing to file, URI, writer, or object destinations",
 			"use .Copy() from a packet-domain stream point for packet-preserving output",
 			"send frame-domain media to goav.Sink(...) instead of a byte destination",
 		},
@@ -1154,7 +1154,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		Suggestions: []string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
 			"use goav.From(input).Audio().To(goav.Sink(...)) or .Video().To(...) for decoded frames",
-			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(goav.VP9(...)).To(output)) for named branches",
+			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for named branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

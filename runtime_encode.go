@@ -378,7 +378,7 @@ func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 		stream,
 		[]string{
 			"use the same stream selector for Decode and Encode in the expert builder",
-			"use .Audio().Encode(goav.Opus(...)) for audio streams or .Video().Encode(goav.VP8(...))/.Encode(goav.VP9(...)) for video streams in recipes",
+			"use .Audio().Encode(codec.Opus(...)) for audio streams or .Video().Encode(codec.VP8(...))/.Encode(codec.VP9(...)) for video streams in recipes",
 			"narrow ambiguous inputs with StreamID, StreamName, or StreamIndex(0)",
 		},
 	)
@@ -392,9 +392,9 @@ func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 		Reason:    "no target codec was provided",
 		Details:   []string{"selected: " + streamDiagnostic(stream, 0)},
 		Suggestions: []string{
-			"use .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) in recipe encode paths",
+			"use .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) in recipe encode paths",
 			"set codec.EncodeConfig.Parameters.ID in the expert builder",
-			"use goav.Copy() or .Copy().To(...) when no encode step is intended",
+			"use codec.Copy() or .Copy().To(...) when no encode step is intended",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

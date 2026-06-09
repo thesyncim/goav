@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -183,7 +184,7 @@ func (b *audioChain) Encode(codec CodecSpec) *audioChain {
 }
 
 func (b *audioChain) Copy() *audioChain {
-	return b.Encode(Copy())
+	return b.Encode(codec.Copy())
 }
 
 func (b *audioChain) chainSpec() chainSpec {
@@ -242,7 +243,7 @@ func (b *videoChain) Encode(codec CodecSpec) *videoChain {
 }
 
 func (b *videoChain) Copy() *videoChain {
-	return b.Encode(Copy())
+	return b.Encode(codec.Copy())
 }
 
 func (b *videoChain) chainSpec() chainSpec {
@@ -556,7 +557,7 @@ func flowCopyDomainError(operation string, node string) error {
 		Suggestions: []string{
 			"start packet-preserving reusable work with goav.Flow(name).Audio().Copy() or goav.Flow(name).Video().Copy()",
 			"declare packet taps after copy with .Copy().Tap(goav.PacketTap(name))",
-			"use .Decode().Resample(...).Encode(goav.Opus(...)) when the flow should transform frames",
+			"use .Decode().Resample(...).Encode(codec.Opus(...)) when the flow should transform frames",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

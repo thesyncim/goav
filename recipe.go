@@ -163,126 +163,19 @@ func Default() Runtime {
 // the goav grammar stays small; this alias lets the constructors accept them.
 type CodecOption = codec.Option
 
-type CodecSpec struct {
-	ID            av.CodecID
-	Type          av.MediaType
-	Parameters    av.CodecParameters
-	Settings      codec.CodecSettings
-	Copy          bool
-	Auto          bool
-	sampleRateSet bool
-	channelsSet   bool
-}
+// CodecSpec is re-exported from the codec package, which now owns the type and
+// the constructors (codec.VP9, codec.Opus, codec.Codec, codec.Copy, …). The
+// alias keeps goav's build layer and external callers using goav.CodecSpec.
+type CodecSpec = codec.CodecSpec
 
-func Auto() CodecSpec {
-	return CodecSpec{Auto: true}
-}
-
-func Copy() CodecSpec {
-	return CodecSpec{Copy: true}
-}
-
-func Codec(id av.CodecID, media av.MediaType, options ...CodecOption) CodecSpec {
-	return codecSpec(id, media, av.CodecParameters{
-		ID:   id,
-		Type: media,
-	}, options...)
-}
-
-func Opus(options ...CodecOption) CodecSpec {
-	return codecSpec(av.CodecOpus, av.MediaAudio, av.CodecParameters{
-		ID:            av.CodecOpus,
-		Type:          av.MediaAudio,
-		ClockRate:     48000,
-		SampleRate:    48000,
-		Channels:      Stereo,
-		ChannelLayout: "stereo",
-	}, options...)
-}
-
-func VP8(options ...CodecOption) CodecSpec {
-	return codecSpec(av.CodecVP8, av.MediaVideo, av.CodecParameters{
-		ID:        av.CodecVP8,
-		Type:      av.MediaVideo,
-		ClockRate: 90000,
-	}, options...)
-}
-
-func VP9(options ...CodecOption) CodecSpec {
-	return codecSpec(av.CodecVP9, av.MediaVideo, av.CodecParameters{
-		ID:        av.CodecVP9,
-		Type:      av.MediaVideo,
-		ClockRate: 90000,
-	}, options...)
-}
-
-func H264(options ...CodecOption) CodecSpec {
-	return codecSpec(av.CodecH264, av.MediaVideo, av.CodecParameters{
-		ID:        av.CodecH264,
-		Type:      av.MediaVideo,
-		ClockRate: 90000,
-	}, options...)
-}
-
-func AV1(options ...CodecOption) CodecSpec {
-	return codecSpec(av.CodecAV1, av.MediaVideo, av.CodecParameters{
-		ID:        av.CodecAV1,
-		Type:      av.MediaVideo,
-		ClockRate: 90000,
-	}, options...)
-}
-
-// applyEncodeCaps maps the audio caps set through codec options (Channels /
-// SampleRate / ClockRate, which live on CodecSettings) onto the structural
-// Parameters the rest of the pipeline reads, and records that they were set.
-func applyEncodeCaps(spec *CodecSpec) {
-	s := spec.Settings
-	if s.ChannelsSet {
-		spec.Parameters.Channels = s.Channels
-		spec.channelsSet = true
-		if s.ChannelLayout != "" {
-			spec.Parameters.ChannelLayout = s.ChannelLayout
-		}
-	}
-	if s.SampleRateSet {
-		spec.Parameters.SampleRate = s.SampleRate
-		spec.sampleRateSet = true
-	}
-	if s.ClockRate != 0 {
-		spec.Parameters.ClockRate = s.ClockRate
-	}
-}
-
-func codecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, options ...CodecOption) CodecSpec {
-	spec := CodecSpec{ID: id, Type: media, Parameters: params}
-	for i := range options {
-		if options[i] != nil {
-			options[i](&spec.Settings)
-		}
-	}
-	applyEncodeCaps(&spec)
-	if spec.Parameters.ID == "" {
-		spec.Parameters.ID = id
-	}
-	if spec.Parameters.Type == "" {
-		spec.Parameters.Type = media
-	}
-	return spec
-}
-
+// codecSpecFromOptions builds a spec carrying only the Settings configured by
+// decode options (decode does not set output caps).
 func codecSpecFromOptions(options ...CodecOption) CodecSpec {
 	var spec CodecSpec
 	for i := range options {
 		if options[i] != nil {
 			options[i](&spec.Settings)
 		}
-	}
-	applyEncodeCaps(&spec)
-	if spec.Parameters.ID != "" && spec.ID == "" {
-		spec.ID = spec.Parameters.ID
-	}
-	if spec.Parameters.Type != "" && spec.Type == "" {
-		spec.Type = spec.Parameters.Type
 	}
 	return spec
 }
@@ -343,8 +236,6 @@ func mergeDecodeCodecSpec(base CodecSpec, override CodecSpec) CodecSpec {
 	}
 	base.Parameters = mergeCodecParameters(base.Parameters, override.Parameters)
 	base.Settings = mergeCodecSettings(base.Settings, override.Settings)
-	base.sampleRateSet = base.sampleRateSet || override.sampleRateSet
-	base.channelsSet = base.channelsSet || override.channelsSet
 	return base
 }
 
@@ -706,7 +597,7 @@ func (s InputSpec) validateRTPCodec() error {
 			Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
 			Reason:    "automatic RTP codec detection is not implemented for recipe inputs yet",
 			Suggestions: []string{
-				"set RTP receive intent with .Codec(goav.Opus()), .Codec(goav.VP8()), .Codec(goav.VP9()), .Codec(goav.H264()), or .Codec(goav.AV1())",
+				"set RTP receive intent with .Codec(codec.Opus()), .Codec(codec.VP8()), .Codec(codec.VP9()), .Codec(codec.H264()), or .Codec(codec.AV1())",
 				"for custom RTP payloads, add an advanced receive adapter before using the recipe",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -720,7 +611,7 @@ func (s InputSpec) validateRTPCodec() error {
 			Reason:    "RTP input codec intent describes depacketization, not output copying",
 			Suggestions: []string{
 				"use goav.From(goav.RTP(reader).Codec(...)).Copy().To(output) for packet-preserving receive",
-				"omit .Codec(goav.Copy()) on RTP inputs",
+				"omit .Codec(codec.Copy()) on RTP inputs",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -746,7 +637,7 @@ func (s InputSpec) validateRTPCodec() error {
 			Node:      firstNonEmpty(s.name, s.input.Name, "rtp"),
 			Reason:    "RTP input needs an explicit receive codec intent",
 			Suggestions: []string{
-				"call .Codec(goav.Opus()), .Codec(goav.VP8()), .Codec(goav.VP9()), .Codec(goav.H264()), or .Codec(goav.AV1()) on goav.RTP(reader)",
+				"call .Codec(codec.Opus()), .Codec(codec.VP8()), .Codec(codec.VP9()), .Codec(codec.H264()), or .Codec(codec.AV1()) on goav.RTP(reader)",
 				"use goav.WebRTCTrack(track) when Pion track metadata should provide the codec intent",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -762,7 +653,7 @@ func (s InputSpec) validateRTPCodec() error {
 			Node:      firstNonEmpty(s.name, s.input.Name, string(s.codec.ID), "rtp"),
 			Reason:    string(s.codec.ID) + " has no built-in RTP depacketizer",
 			Suggestions: []string{
-				"use a built-in receive codec: goav.Opus(), goav.VP8(), goav.VP9(), goav.H264(), or goav.AV1()",
+				"use a built-in receive codec: codec.Opus(), codec.VP8(), codec.VP9(), codec.H264(), or codec.AV1()",
 				"for custom RTP payloads, add an advanced receive adapter before using the recipe",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -1759,7 +1650,7 @@ func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec,
 			out = append(out, cloneOperationSpecs(spec.operations)...)
 			return out
 		}
-		out := []OperationSpec{operationSpecForCopy(Copy())}
+		out := []OperationSpec{operationSpecForCopy(codec.Copy())}
 		out = append(out, cloneOperationSpecs(spec.operations)...)
 		return out
 	}
@@ -1880,7 +1771,7 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
 		Suggestions: []string{
 			"use .To(goav.Sink(...)) for decoded frames",
-			"call .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) before .To(goav.File(...)) for encoded output",
+			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.File(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -1898,7 +1789,7 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 			"actual_shape=" + FrameShape(stream.Select.Type).String(),
 		},
 		Suggestions: []string{
-			"call .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) before .To(goav.File(...))",
+			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.File(...))",
 			"send decoded frames to goav.Sink(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
 		},
@@ -2879,11 +2770,11 @@ func codecIntentName(spec CodecSpec) string {
 func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
 	parameters := spec.Parameters
 	if spec.ID == av.CodecOpus {
-		if !spec.sampleRateSet {
+		if !spec.Settings.SampleRateSet {
 			parameters.SampleRate = 0
 			parameters.ClockRate = 0
 		}
-		if !spec.channelsSet {
+		if !spec.Settings.ChannelsSet {
 			parameters.Channels = 0
 			parameters.ChannelLayout = ""
 		}
@@ -2917,7 +2808,7 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			Node:      node,
 			Reason:    "automatic codec selection is not implemented for stream recipes yet",
 			Suggestions: []string{
-				"choose an explicit recipe encoder with .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...))",
+				"choose an explicit recipe encoder with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...))",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -2939,7 +2830,7 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode branches currently support opus, vp8, and vp9",
 			Suggestions: []string{
 				"decode the stream with .To(goav.Sink(...))",
-				"use .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) for recipe encode branches",
+				"use .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) for recipe encode branches",
 				"use the expert builder with an explicit codec.EncodeConfig when testing an experimental encoder",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -2996,7 +2887,7 @@ func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) e
 			},
 			Cause: ErrUnsupportedBuild,
 		}
-	case spec.sampleRateSet && spec.Parameters.SampleRate <= 0:
+	case spec.Settings.SampleRateSet && spec.Parameters.SampleRate <= 0:
 		return &BuildError{
 			Code:      "encode_parameter_invalid",
 			Operation: operation,
@@ -3011,7 +2902,7 @@ func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) e
 			},
 			Cause: ErrUnsupportedBuild,
 		}
-	case spec.channelsSet && spec.Parameters.Channels <= 0:
+	case spec.Settings.ChannelsSet && spec.Parameters.Channels <= 0:
 		return &BuildError{
 			Code:      "encode_parameter_invalid",
 			Operation: operation,
@@ -3383,7 +3274,7 @@ func (b *jobStreamBuilder) Copy() *jobStreamBuilder {
 		b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
 		return b
 	}
-	stream.operations = append(stream.operations, operationSpecForCopy(Copy()))
+	stream.operations = append(stream.operations, operationSpecForCopy(codec.Copy()))
 	return b
 }
 
@@ -3913,8 +3804,8 @@ func branchStreamMissingError() error {
 		Operation: branchCompositionOperation,
 		Reason:    "no audio or video branches are configured",
 		Suggestions: []string{
-			"add a video branch such as .Video(\"720p\").Resize(...).Encode(goav.VP9(...)).To(...)",
-			"add an audio branch such as .Audio(\"main\").Resample(...).Encode(goav.Opus(...)).To(...)",
+			"add a video branch such as .Video(\"720p\").Resize(...).Encode(codec.VP9(...)).To(...)",
+			"add an audio branch such as .Audio(\"main\").Resample(...).Encode(codec.Opus(...)).To(...)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3931,7 +3822,7 @@ func branchEncodeMissingError(stream streamIntent) error {
 			"actual_shape=" + FrameShape(stream.Select.Type).String(),
 		},
 		Suggestions: []string{
-			"call .Encode(goav.Opus(...)), .Encode(goav.VP8(...)), or .Encode(goav.VP9(...)) before .To(...)",
+			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(...)",
 			"route raw frames to goav.Sink(...) when the branch should stay decoded",
 		},
 		Cause: ErrUnsupportedBuild,

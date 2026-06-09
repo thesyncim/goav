@@ -241,7 +241,10 @@ func mediaShapeFromCodecSpec(spec CodecSpec, domain MediaDomain) MediaShape {
 	return shape
 }
 
-func (spec CodecSpec) InputShapes() ShapeSet {
+// codecSpecInputShapes is the Shape view of a codec spec. It is a goav function
+// (not a method) because CodecSpec's data now lives in the codec package, and
+// ShapeSet is a goav type — a method there would be an import cycle.
+func codecSpecInputShapes(spec CodecSpec) ShapeSet {
 	if spec.Copy {
 		return ShapeSet{Shape(ShapeDomain(DomainPacket))}
 	}
@@ -252,7 +255,7 @@ func (spec CodecSpec) InputShapes() ShapeSet {
 	return ShapeSet{FrameShape(media)}
 }
 
-func (spec CodecSpec) OutputShapes(input MediaShape) ShapeSet {
+func codecSpecOutputShapes(spec CodecSpec, input MediaShape) ShapeSet {
 	if spec.Copy {
 		input.Domain = DomainPacket
 		return ShapeSet{input}
@@ -308,7 +311,7 @@ func (operation OperationSpec) InputShapes() ShapeSet {
 	case OpTransform:
 		return operation.Transform.InputShapes()
 	case OpEncode, OpCopy:
-		return operation.Encode.InputShapes()
+		return codecSpecInputShapes(operation.Encode)
 	default:
 		return nil
 	}
@@ -324,7 +327,7 @@ func (operation OperationSpec) OutputShapes(input MediaShape) ShapeSet {
 	case OpTransform:
 		return operation.Transform.OutputShapes(input)
 	case OpEncode, OpCopy:
-		return operation.Encode.OutputShapes(input)
+		return codecSpecOutputShapes(operation.Encode, input)
 	default:
 		return ShapeSet{input}
 	}
