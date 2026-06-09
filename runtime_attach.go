@@ -271,7 +271,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		tap:        spec.tap,
 		tapDomain:  spec.tapDomain,
 		operations: operations,
-		encode:     cloneCodecSpec(spec.encode),
+		encode:     cloneCodecSpec(chainEncodeSpec(spec.operations)),
 		policy:     spec.policy,
 		label:      spec.label,
 		buffer:     spec.buffer,
@@ -301,19 +301,11 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 	return branch, nil
 }
 
+// runtimeBranchOperationSpecsFromSpec returns the branch's operation list. The
+// branch builder already appends the OpDecode/OpEncode/OpCopy operations, so the
+// list is complete — decode/encode are no longer separate spec fields.
 func runtimeBranchOperationSpecsFromSpec(spec BranchSpec) []OperationSpec {
-	operations := cloneOperationSpecs(spec.operations)
-	if spec.decode && !operationSpecsContainKind(operations, OpDecode) {
-		operation := operationSpecForDecode(spec.decodeCodec, string(spec.decodeCodec.ID))
-		operations = append([]OperationSpec{operation}, operations...)
-	}
-	switch {
-	case spec.encode.Copy && !operationSpecsContainKind(operations, OpCopy):
-		operations = append(operations, operationSpecForCopy(spec.encode))
-	case codecIntentSet(spec.encode) && !spec.encode.Copy && !operationSpecsContainKind(operations, OpEncode):
-		operations = append(operations, operationSpecForEncode(spec.encode))
-	}
-	return operations
+	return cloneOperationSpecs(spec.operations)
 }
 
 func runtimeBranchPostEncodeTapsFromOperations(operations []OperationSpec) []string {
