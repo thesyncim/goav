@@ -172,12 +172,21 @@ func Mix(arms ...*jobStreamBuilder) *mixStream {
 }
 
 type mixStream struct {
-	arms []*jobStreamBuilder
+	arms   []*jobStreamBuilder
+	encode *CodecSpec
 }
 
 type mixSpec struct {
-	arms []*jobStreamBuilder
-	dest Destination
+	arms   []*jobStreamBuilder
+	dest   Destination
+	encode *CodecSpec
+}
+
+// Encode encodes the mixed stream before the destination, so a Mix can record to
+// a File/mux (not only a frame Sink). Without it the mix delivers frames.
+func (m *mixStream) Encode(spec CodecSpec) *mixStream {
+	m.encode = &spec
+	return m
 }
 
 // To delivers the mixed stream to a destination and returns a Job, so the mix
@@ -188,7 +197,7 @@ func (m *mixStream) To(dest Destination) *Job {
 		job.setErr(&BuildError{Code: "mix_inputs", Operation: "build mix", Node: "mix", Reason: "mix requires at least two source arms", Cause: ErrUnsupportedBuild})
 		return job
 	}
-	job.mix = &mixSpec{arms: m.arms, dest: dest}
+	job.mix = &mixSpec{arms: m.arms, dest: dest, encode: m.encode}
 	return job
 }
 
@@ -271,10 +280,35 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 			return nil, err
 		}
 	}
+	if j.mix.encode != nil {
+		shape, _ := customSourceShape(j.mix.arms[0].job.inputs[0])
+		mixedStream := av.Stream{
+			ID:   av.StreamID("mix"),
+			Type: av.MediaAudio,
+			Codec: av.CodecParameters{
+				Type:         av.MediaAudio,
+				SampleRate:   shape.SampleRate,
+				Channels:     shape.Channels,
+				SampleFormat: shape.SampleFormat,
+				ClockRate:    uint32(shape.SampleRate),
+			},
+		}
+		request := encodeRequest{name: "mix-encode", selector: av.StreamSelector{Type: av.MediaAudio}, config: encodeConfigFromSpec(*j.mix.encode)}
+		config, encodedStream, err := prepareEncodeConfig(mixedStream, request, rt.realtime)
+		if err != nil {
+			graph.Close()
+			return nil, err
+		}
+		if err := compileEncodeDestinationPath(ctx, &builder{runtime: rt}, graph, mixRef, request, config, encodedStream, []destinationSpec{j.mix.dest.spec}); err != nil {
+			graph.Close()
+			return nil, err
+		}
+		return newTask(graph, rt), nil
+	}
 	sink := j.mix.dest.spec.sink
 	if sink == nil {
 		graph.Close()
-		return nil, &BuildError{Code: "mix_destination", Operation: "build mix", Node: "mix", Reason: "mix destination must be a goav.Sink", Cause: ErrUnsupportedBuild}
+		return nil, &BuildError{Code: "mix_destination", Operation: "build mix", Node: "mix", Reason: "mix to a non-Sink destination requires .Encode(...)", Cause: ErrUnsupportedBuild}
 	}
 	sinkRef, err := graph.AddSink(sink, rt.buffer)
 	if err != nil {

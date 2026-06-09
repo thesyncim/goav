@@ -70,10 +70,15 @@ each arm to frames, then mixes. Reuses `builder.newDecodeStageNamed`; per-arm
 unique decode node names. Tested (PCM packet arms → decode → mix → sink frame).
 No public symbol added — the mixer just sees decoded frames.
 
+**Slice 4 — DONE (encode the mixed output):** `Mix(...).Encode(codec.Opus()).To(dest)`
+— `.Encode()` (method on the mix builder, no new top-level symbol) routes the
+mixer through `compileEncodeDestinationPath` (build mixed input stream from the
+arm shape → `prepareEncodeConfig` → encode stage → destination). Tested
+(frame arms → mix → encode → packet sink). Together: `Mix(packetArms…).Encode(…).To(…)`
+now decodes each arm, mixes, and re-encodes — a real audio mixer.
+
 **Next slices:**
-1. Encode the mixed output: `Mix(...).Encode(codec.Opus()).To(File(...))` — add
-   `.Encode()` to the mix builder; reuse `compileEncodeDestinationPath` from the
-   mixer node so the mix records to a file/mux, not only a Sink.
+1. `Mix(...).Encode().To(File(...))` mux + destination-transaction wiring (commit/abort).
 2. `Composite` (video) + `Select` (one-of-N) on the same `buildMix` mechanism.
 2. Join shape-solving (theme A / gap #2): negotiate arm formats, insert
    resample/convert so the mixer's same-format precondition is guaranteed.

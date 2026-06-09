@@ -227,3 +227,31 @@ func TestMixDecodesPacketArmsBeforeMixing(t *testing.T) {
 		t.Fatalf("mixed frames at sink = %d, want 1 (packet arms auto-decoded then mixed)", frames)
 	}
 }
+
+func TestMixEncodesMixedOutput(t *testing.T) {
+	ctx := context.Background()
+	rt := New(WithEncoder(CodecDescriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))
+
+	var packets int
+	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
+		if m.Kind == pipeline.MessagePacket && m.Packet != nil {
+			packets++
+		}
+		return nil
+	}))
+
+	task, err := Mix(
+		From(mixTestAudioSource("a", 100, 200)).Audio(),
+		From(mixTestAudioSource("b", 50, -50)).Audio(),
+	).Encode(codec.Opus()).To(sink).UseRuntime(rt).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if packets < 1 {
+		t.Fatalf("encoded packets at sink = %d, want >=1 (mix -> encode -> sink)", packets)
+	}
+}
