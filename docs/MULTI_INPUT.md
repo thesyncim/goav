@@ -20,5 +20,7 @@ thin faces over one join operation with N input arms. The pipeline already
 supported N input edges per node, and each buffered node has a single serial
 worker, so join stages need no internal locking — lock-free by design holds.
 
-Remaining: lower Mix/Composite/Select through ONE JoinSpec builder (north-star
-attack-plan stage 1) and move join arm shape-solving into the central solver.
+All three lower through one JoinSpec builder (per-kind profile tables, a single
+`Job.join` route). Remaining: move join arm shape-solving into the central
+solver, and a planned multi-upstream join node so `Describe()` shows joins
+(north-star stage-4 stretch).

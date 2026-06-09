@@ -61,8 +61,11 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
 - **Dynamic streams** (§11): OnStream/When; late-stream attach; ambiguity lists candidates. **TODO.**
 - **Multi-input/Join** (§12): Mix/Composite/Select grammars **DONE** over lock-free
   stages + `task.Control` live switch; variadic `From(a, b...)` with `InputName`
-  narrowing and one shared Destination **DONE**. TODO: JoinSpec lowering through ONE
-  join builder.
+  narrowing and one shared Destination **DONE**; JoinSpec lowering through ONE join
+  builder (profile tables, `Job.join` single route) **DONE**; join outputs compose
+  (`.Tap`/`.Branches` via the shared chain lowering) **DONE**. TODO: planned join
+  node in the IR (stage 4 stretch) so `Describe()` shows joins and the `j.join`
+  route dies.
 - **Time/sync** (§13): minimal TimeShape (TimeBase/Clock/Live/Latency) + Sync/Attach-at policies. **TODO.**
 - **Source backpressure** (§14): result-aware `push.X(...) (PushResult, error)` —
   Accepted/Dropped per push, sheds stay nil-error. **DONE.**
@@ -107,18 +110,21 @@ near-mirror lines, `branchComposePlan` 23 refs, `destinationNames` 25 refs;
 `work_plan.go`+`work_patch.go` exist (875 lines) but are not yet the truth.
 
 Stages (each green, in dependency order):
-1. **JoinSpec** — Mix/Composite/Select lower through ONE join builder (profile
-   table for per-kind deltas); `Job` gets one `join` field. *(in flight)*
-2. **Typed lifecycle states** — TaskState/BranchState/DestinationState reported
-   by Snapshot. *(in flight, parallel — disjoint files)*
+1. **JoinSpec** — Mix/Composite/Select lower through ONE join builder. **DONE**
+   (+ join outputs compose: `.Tap`/`.Branches` through the shared chain lowering).
+2. **Typed lifecycle states** — TaskState/BranchState/DestinationState in
+   Snapshot. **DONE.**
 3. **runtimeBranch → WorkPatch** — Attach compiles `BranchSpec` with the same
    planner as Build; delete the separate runtimeBranch* model (the 251 refs).
+   *(in flight)*
 4. **mediaPlan → WorkPlan-primary** — Explain/Describe/Build/Snapshot read
    WorkPlan; mediaPlan becomes a rendered view, then dies. String routing
-   (destinationNames) dies here too (destination-handle IDs).
+   (destinationNames → destination-handle IDs) dies here too; stretch: planned
+   multi-upstream join node (kills the `j.join` route, Describe shows joins);
+   includes unexporting the opaque `Job.Plan() Intent` leak.
 5. Then: shape solver centralization (join arm-solving moves into it),
-   Control targeting taps (`.At(node)` demoted to expert), time/clock/seek
-   (theme C — pull scheduling is the keystone).
+   SwitchAt* policies, time/clock/seek (theme C — pull scheduling is the
+   keystone).
 
 ## Execution order (condensed)
 
