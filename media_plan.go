@@ -214,7 +214,6 @@ func planBranchesFromStreamIntents(state *recipeCompileState, streams []streamIn
 	return branches, decisions
 }
 
-
 func streamSelectFromStream(stream av.Stream) StreamSelect {
 	return StreamSelect{
 		ID:    stream.ID,
@@ -481,10 +480,6 @@ func operationSpecKindPresent(operations []OperationSpec, kind OperationKind) bo
 		}
 	}
 	return false
-}
-
-func planInputOperations(input inputIntent) []planOperation {
-	return planInputOperationsForShape(input, MediaShape{Domain: DomainPacket})
 }
 
 func planInputOperationsForShape(input inputIntent, shape MediaShape) []planOperation {

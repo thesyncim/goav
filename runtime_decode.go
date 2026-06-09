@@ -171,10 +171,6 @@ func (b *builder) planDecodeFramePath(nodes map[string]plannedNode, spec *pipeli
 	return nil
 }
 
-func (b *builder) planDecodeFilterPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, request decodeRequest) (pipeline.NodeRef, error) {
-	return planDecodeFilterPath(nodes, spec, upstream, request, b.filters)
-}
-
 func planDecodeFilterPath(nodes map[string]plannedNode, spec *pipeline.Spec, upstream []pipeline.NodeRef, request decodeRequest, filters []filterRequest) (pipeline.NodeRef, error) {
 	selector := request.selector
 	selectName := selectNodeName(selector)
@@ -359,10 +355,6 @@ func filterRequestPlanNode(request filterRequest) (string, string, error) {
 		return request.transform.name, mediaTransformDetail(*request.transform), nil
 	}
 	return "", "", ErrNilStage
-}
-
-func (b *builder) newFilterRequestStage(ctx context.Context, request filterRequest, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
-	return b.newFilterRequestStageNamed(ctx, "", request, stream, realtime)
 }
 
 func (b *builder) newFilterRequestStageNamed(ctx context.Context, name string, request filterRequest, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {

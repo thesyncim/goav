@@ -26,10 +26,6 @@ func inputNodeDetail(input format.Input) string {
 	return joinSpecDetail(parts...)
 }
 
-func outputNodeDetail(output format.Output) string {
-	return outputNodeDetailWithFormat(output, "")
-}
-
 func outputNodeDetailWithFormat(output format.Output, formatID av.FormatID) string {
 	parts := []string{"mux"}
 	if output.URI != "" && output.URI != output.Name {

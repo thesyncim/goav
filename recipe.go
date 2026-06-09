@@ -905,17 +905,6 @@ func (s InputSpec) inputName(fallback string) string {
 	return firstNonEmpty(s.name, s.input.Name, s.input.URI, fallback)
 }
 
-func (s InputSpec) selector(media av.MediaType) av.StreamSelector {
-	selector := av.StreamSelector{Type: media}
-	if selector.Type == "" {
-		selector.Type = s.codec.Type
-	}
-	if s.codec.ID != "" {
-		selector.Codec = s.codec.ID
-	}
-	return selector
-}
-
 // destinationSpec describes a concrete file, URI, writer, or sink destination.
 type destinationSpec struct {
 	id             uint64
@@ -1448,11 +1437,6 @@ func newJob(name string) *Job {
 	return &Job{name: name, runtime: Default()}
 }
 
-func (j *Job) named(name string) *Job {
-	j.name = name
-	return j
-}
-
 func (j *Job) UseRuntime(runtime Runtime) *Job {
 	if j != nil {
 		j.runtime = runtime
@@ -1622,10 +1606,6 @@ func (j *Job) Run(ctx context.Context) error {
 	return task.Run(ctx)
 }
 
-func (j *Job) validateInputs() error {
-	return validateJobInputs(j.inputs)
-}
-
 func validateJobInputs(inputs []InputSpec) error {
 	for i := range inputs {
 		if err := inputs[i].validate(); err != nil {
@@ -1692,18 +1672,6 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 	}
 }
 
-func (j *Job) validateOutputScope() error {
-	stream, ok := jobStreamIntentIfPresent(j.stream)
-	return validateJobOutputScope(len(j.outputs), stream, ok)
-}
-
-func validateJobOutputScope(outputCount int, stream streamIntent, hasStream bool) error {
-	if !hasStream || outputCount == 0 {
-		return nil
-	}
-	return jobOutputScopeMixedError("build job", stream)
-}
-
 func validateJobOutputBindings(operation string, stream streamIntent, outputs []destinationSpec, destinationNames []string) error {
 	destinations := jobOutputDestinationSet(outputs, destinationNames)
 	for _, destinationName := range stream.Destinations {
@@ -1763,17 +1731,6 @@ func jobAllOutputNames(outputNames []string, streamOutputNames []string) []strin
 	all = append(all, outputNames...)
 	all = append(all, streamOutputNames...)
 	return all
-}
-
-func jobStreamIntentIfPresent(stream *jobStreamBuild) (streamIntent, bool) {
-	if stream == nil {
-		return streamIntent{}, false
-	}
-	return jobStreamIntent(stream), true
-}
-
-func jobIntentHasStream(intent Intent) bool {
-	return len(intent.Streams) != 0
 }
 
 func jobIntentStream(intent Intent) (streamIntent, bool) {
@@ -2044,13 +2001,6 @@ func initialStepAfter(decode bool) OperationKind {
 	return ""
 }
 
-func streamNeedsDecodeFromBuild(stream *jobStreamBuild) bool {
-	if stream == nil {
-		return false
-	}
-	return stream.decode || operationSpecsContainChainStep(stream.operations) || stream.encode.ID != "" || stream.encode.Auto || stream.encode.Copy
-}
-
 func jobStreamOutputs(stream *jobStreamBuild) []destinationSpec {
 	if stream == nil || len(stream.outputs) == 0 {
 		return nil
@@ -2166,10 +2116,6 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 		},
 		Cause: ErrUnsupportedBuild,
 	}
-}
-
-func (s *jobStreamBuild) hasOperation() bool {
-	return s.decode || operationSpecsContainChainStep(s.operations) || s.encode.ID != "" || s.encode.Auto || s.encode.Copy
 }
 
 func streamIntentHasOperation(stream streamIntent) bool {
@@ -3844,12 +3790,6 @@ func destinationIdentity(destination namedDestinationSpec) string {
 
 const branchCompositionOperation = "build branch composition"
 
-func (j *branchCompositionJob) setErr(err error) {
-	if j.err == nil {
-		j.err = err
-	}
-}
-
 func (j *branchCompositionJob) Plan() Intent {
 	intent := Intent{
 		Name:   firstNonEmpty(j.name, "branch-composition"),
@@ -3963,86 +3903,6 @@ func splitOperationSpecsByShared(operations []OperationSpec) ([]OperationSpec, [
 		private = append(private, operation)
 	}
 	return cloneOperationSpecs(shared), cloneOperationSpecs(private)
-}
-
-func branchChainStepsFromOperationSpecsAroundTap(operations []OperationSpec, anchorTap string) ([]chainStep, []chainStep) {
-	if len(operations) == 0 {
-		return nil, nil
-	}
-	steps := make([]chainStep, 0, len(operations))
-	shared := make([]chainStep, 0)
-	branch := make([]chainStep, 0)
-	split := anchorTap == ""
-	foundSplit := anchorTap == ""
-	for i := range operations {
-		operation := operations[i]
-		if operation.Kind == OpTap && operation.Component == anchorTap {
-			split = true
-			foundSplit = true
-			continue
-		}
-		var step chainStep
-		hasStep := false
-		switch operation.Kind {
-		case OpStage:
-			if operation.Stage != nil {
-				step = chainStep{stage: operation.Stage}
-				hasStep = true
-			}
-		case OpShape:
-			if !mediaShapeEmpty(operation.Shape) {
-				step = chainStep{shape: operation.Shape}
-				hasStep = true
-			}
-		case OpTransform:
-			switch {
-			case operation.Transform.Resize != nil:
-				step = chainStep{transform: cloneTransformSpec(operation.Transform)}
-				hasStep = true
-			case operation.Transform.Resample != nil:
-				step = chainStep{transform: cloneTransformSpec(operation.Transform)}
-				hasStep = true
-			}
-		}
-		if !hasStep {
-			continue
-		}
-		steps = append(steps, step)
-		if split {
-			branch = append(branch, step)
-		} else {
-			shared = append(shared, step)
-		}
-	}
-	if !foundSplit {
-		return nil, steps
-	}
-	return shared, branch
-}
-
-func chainStepsFromOperationSpecs(operations []OperationSpec) []chainStep {
-	if len(operations) == 0 {
-		return nil
-	}
-	steps := make([]chainStep, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
-		switch operation.Kind {
-		case OpStage:
-			if operation.Stage != nil {
-				steps = append(steps, chainStep{stage: operation.Stage})
-			}
-		case OpShape:
-			if !mediaShapeEmpty(operation.Shape) {
-				steps = append(steps, chainStep{shape: operation.Shape})
-			}
-		case OpTransform:
-			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
-				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
-			}
-		}
-	}
-	return steps
 }
 
 func chainStepsFromChainOperations(operations []OperationSpec) []chainStep {
@@ -4331,24 +4191,6 @@ func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 	}
 }
 
-func branchDestinationDefinitionNameEmptyError(output destinationSpec) error {
-	err := &BuildError{
-		Code:      "destination_invalid",
-		Operation: branchCompositionOperation,
-		Node:      output.label("output"),
-		Reason:    "destination name is empty",
-		Suggestions: []string{
-			"pass a named destination such as goav.File(\"web.ivf\", writer)",
-			"pass goav.Sink(goav.SinkFunc(name, fn)) for sink destinations",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-	if output.name != "" {
-		err.Details = append(err.Details, "output name: "+output.name)
-	}
-	return err
-}
-
 func branchDestinationDuplicateError(name string) error {
 	return &BuildError{
 		Code:      "destination_duplicate",
@@ -4490,15 +4332,6 @@ func transformSpecsFromOperationSpecs(operations []OperationSpec) []TransformSpe
 	return transforms
 }
 
-func streamHasTransformOperation(operations []OperationSpec) bool {
-	for i := range operations {
-		if operations[i].Kind == OpTransform {
-			return true
-		}
-	}
-	return false
-}
-
 func branchTransformMediaError(stream streamIntent, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
 		Code:      "transform_media_mismatch",
@@ -4530,18 +4363,6 @@ func streamIntentSelector(stream streamIntent) av.StreamSelector {
 
 func branchIntentName(stream streamIntent) string {
 	return firstNonEmpty(stream.Name, string(stream.Select.Type), "stream")
-}
-
-func branchStreamName(stream streamBuild) string {
-	return firstNonEmpty(stream.name, string(stream.selector.Type), "stream")
-}
-
-func destinationNamesFromSpecs(outputs []destinationSpec) []string {
-	names := make([]string, 0, len(outputs))
-	for i := range outputs {
-		names = append(names, outputs[i].label(fmt.Sprintf("output-%d", i)))
-	}
-	return names
 }
 
 func destinationNamesWithOverrides(outputs []destinationSpec, destinationNames []string) []string {

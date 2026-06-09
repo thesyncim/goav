@@ -1125,11 +1125,6 @@ func namedStageForGraphPlanDestination(target graphPlanDestinationOperation, sta
 	return namedStage{name: target.Node.String(), stage: stage}
 }
 
-func graphPlanDestinationOperations(operations []graphPlanOperation) []graphPlanDestinationOperation {
-	destinations, _ := graphPlanUniqueDestinationOperations(operations, "")
-	return destinations
-}
-
 func graphPlanUniqueDestinationOperations(operations []graphPlanOperation, scope string) ([]graphPlanDestinationOperation, error) {
 	destinations := make([]graphPlanDestinationOperation, 0)
 	seen := make(map[string]int)
@@ -1479,18 +1474,6 @@ func transformSpecFromMediaTransform(transform mediaTransform) TransformSpec {
 	return spec
 }
 
-func cloneMediaTransform(transform mediaTransform) mediaTransform {
-	if transform.video != nil {
-		video := *transform.video
-		transform.video = &video
-	}
-	if transform.audio != nil {
-		audio := *transform.audio
-		transform.audio = &audio
-	}
-	return transform
-}
-
 func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Context, graph pipeline.Graph, service *builder, lowering graphPlanFrameStreamLowering) error {
 	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []streamIntent{p.stream}})
 	if err != nil {
@@ -1661,8 +1644,4 @@ func mediaPlanStreamTransformFilters(stream streamIntent, selector av.StreamSele
 		filters = append(filters, filterRequest{selector: selector, transform: &transform})
 	}
 	return filters, nil
-}
-
-func (r recipeResolved) packetCopyStream() (streamIntent, bool, bool) {
-	return mediaPlanPacketCopyIntentStream(true, r.intent)
 }

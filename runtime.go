@@ -250,11 +250,6 @@ func (b *builder) Filter(selector av.StreamSelector, stage pipeline.Stage) build
 	return b
 }
 
-func (b *builder) transform(selector av.StreamSelector, transform mediaTransform) builderAPI {
-	b.filters = append(b.filters, filterRequest{selector: selector, transform: &transform})
-	return b
-}
-
 func (b *builder) Transcode(plan transcode.Plan) builderAPI {
 	b.transcodes = append(b.transcodes, plan)
 	return b

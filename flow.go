@@ -21,13 +21,13 @@ type Chain interface {
 }
 
 type chainSpec struct {
-	name           string
-	media          av.MediaType
-	decode         bool
-	decodeCodec    CodecSpec
-	operations     []OperationSpec
-	encode         CodecSpec
-	err            error
+	name        string
+	media       av.MediaType
+	decode      bool
+	decodeCodec CodecSpec
+	operations  []OperationSpec
+	encode      CodecSpec
+	err         error
 }
 
 type chainBuilder struct {
@@ -454,17 +454,6 @@ func chainSpecFrom(flow Chain) (chainSpec, error) {
 		return spec, spec.err
 	}
 	return spec, nil
-}
-
-func cloneTransformSpecs(specs []TransformSpec) []TransformSpec {
-	if len(specs) == 0 {
-		return nil
-	}
-	out := make([]TransformSpec, 0, len(specs))
-	for i := range specs {
-		out = append(out, cloneTransformSpec(specs[i]))
-	}
-	return out
 }
 
 func cloneTransformSpec(spec TransformSpec) TransformSpec {

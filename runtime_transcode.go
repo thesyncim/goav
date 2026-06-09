@@ -11,7 +11,6 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/transcode"
 )
 
 type transcodeGraphCompiler struct{}
@@ -108,10 +107,6 @@ func (b *builder) planTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 	return b.planBranchComposePlan(spec, branchComposePlanFromTranscode(b.transcodes[0]))
 }
 
-func (b *builder) planTranscodePlan(spec pipeline.Spec, plan transcode.Plan) (pipeline.Spec, error) {
-	return b.planBranchComposePlan(spec, branchComposePlanFromTranscode(plan))
-}
-
 func (b *builder) planBranchComposePlan(spec pipeline.Spec, plan branchComposePlan) (pipeline.Spec, error) {
 	branches, outputs, err := prepareBranchComposePlan(plan)
 	if err != nil {
@@ -130,10 +125,6 @@ func (b *builder) planBranchComposePlan(spec pipeline.Spec, plan branchComposePl
 
 func (b *builder) planRTPTranscode(spec pipeline.Spec) (pipeline.Spec, error) {
 	return b.planRTPBranchComposePlan(spec, branchComposePlanFromTranscode(b.transcodes[0]))
-}
-
-func (b *builder) planRTPTranscodePlan(spec pipeline.Spec, plan transcode.Plan) (pipeline.Spec, error) {
-	return b.planRTPBranchComposePlan(spec, branchComposePlanFromTranscode(plan))
 }
 
 func (b *builder) planRTPBranchComposePlan(spec pipeline.Spec, plan branchComposePlan) (pipeline.Spec, error) {
@@ -351,10 +342,6 @@ func (b *builder) compileTranscode(ctx context.Context, graph pipeline.Graph) er
 	return b.compileBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(b.transcodes[0]))
 }
 
-func (b *builder) compileTranscodePlan(ctx context.Context, graph pipeline.Graph, plan transcode.Plan) error {
-	return b.compileBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(plan))
-}
-
 func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.Graph, plan branchComposePlan) error {
 	branches, outputs, err := prepareBranchComposePlan(plan)
 	if err != nil {
@@ -386,10 +373,6 @@ func (b *builder) compileBranchComposePlan(ctx context.Context, graph pipeline.G
 
 func (b *builder) compileRTPTranscode(ctx context.Context, graph pipeline.Graph) error {
 	return b.compileRTPBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(b.transcodes[0]))
-}
-
-func (b *builder) compileRTPTranscodePlan(ctx context.Context, graph pipeline.Graph, plan transcode.Plan) error {
-	return b.compileRTPBranchComposePlan(ctx, graph, branchComposePlanFromTranscode(plan))
 }
 
 func (b *builder) compileRTPBranchComposePlan(ctx context.Context, graph pipeline.Graph, plan branchComposePlan) error {
@@ -669,10 +652,6 @@ func branchComposeSharedStepPlanRefs(sharedStepPlan map[string][]pipeline.NodeRe
 		}
 	}
 	return nil
-}
-
-func (b *builder) newBranchComposeStepStage(ctx context.Context, transform mediaTransform, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
-	return b.newBranchComposeStepStageNamed(ctx, "", transform, stream, realtime)
 }
 
 func (b *builder) newBranchComposeStepStageNamed(ctx context.Context, name string, transform mediaTransform, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
