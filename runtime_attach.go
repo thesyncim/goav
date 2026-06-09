@@ -274,7 +274,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		encode:     cloneCodecSpec(chainEncodeSpec(spec.operations)),
 		policy:     spec.policy,
 		label:      spec.label,
-		buffer:     spec.buffer,
+		buffer:     spec.branchBuffer.pipelinePolicy(),
 	}
 	branch.prepared = runtimeBranchOperationsFromSpecs(operations)
 	branch.postEncodeTaps = runtimeBranchPostEncodeTapsFromOperations(operations)

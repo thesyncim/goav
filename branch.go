@@ -137,7 +137,6 @@ type BranchSpec struct {
 	policy       pipeline.RoutePolicy
 	label        string
 	branchBuffer BranchBuffer
-	buffer       pipeline.BufferPolicy
 
 	err error
 }
@@ -206,7 +205,6 @@ func (b *branchBuilder) Buffer(buffer BranchBuffer) *branchBuilder {
 		return b
 	}
 	b.spec.branchBuffer = buffer
-	b.spec.buffer = buffer.pipelinePolicy()
 	return b
 }
 
