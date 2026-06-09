@@ -343,6 +343,38 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 	}
 }
 
+// TestFrontDoorFlowControlSentinelsClassifyRuntimeErrors proves a front-door
+// source/stage author can classify runtime flow-control errors with the public
+// goav sentinels (errors.Is) without importing the pipeline package: a real
+// runtime shutdown surfaces as ErrClosed, and ErrBackpressure is the same value
+// the buffered runner returns when a downstream is full.
+func TestFrontDoorFlowControlSentinelsClassifyRuntimeErrors(t *testing.T) {
+	ctx := context.Background()
+	input := Source("gen",
+		PacketShape(av.MediaAudio, av.CodecOpus, ShapeAudio(48_000, Stereo, av.SampleFormatS16)),
+		func(_ context.Context, push SourcePush) error {
+			packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+			if err := push.Packet(&packet); err != nil {
+				return err
+			}
+			return push.EOS()
+		},
+	)
+	task, err := From(input).Audio().Copy().
+		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task.Close()
+	if runErr := task.Run(ctx); !errors.Is(runErr, ErrClosed) {
+		t.Fatalf("run after close = %v, want errors.Is(ErrClosed)", runErr)
+	}
+	if !errors.Is(ErrBackpressure, ErrBackpressure) || ErrBackpressure == nil {
+		t.Fatal("ErrBackpressure must be a usable front-door sentinel")
+	}
+}
+
 func TestCustomFrameSourceRunsThroughRecipeWithoutDecode(t *testing.T) {
 	ctx := context.Background()
 	input := Source("pcm",

@@ -11,11 +11,19 @@ import (
 
 type SourceFunc func(context.Context, SourcePush) error
 
+// SourcePush is how a custom Source delivers packets, frames, and events into
+// the pipeline. The Packet/Frame/Event methods return a flow-control error the
+// source can react to: errors.Is(err, ErrBackpressure) means a downstream buffer
+// was full (slow down or expect a shed message), and errors.Is(err, ErrClosed)
+// means the task has stopped and the source should return. Any other error is
+// fatal to the push.
 type SourcePush struct {
 	emit   Emit
 	stream av.StreamID
 }
 
+// Packet delivers one packet. See SourcePush for the ErrBackpressure/ErrClosed
+// flow-control contract on the returned error.
 func (p *SourcePush) Packet(packet *av.Packet) error {
 	if packet == nil {
 		return nil

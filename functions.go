@@ -9,6 +9,11 @@ import (
 
 type Message = pipeline.Message
 
+// Emit is how a custom stage (PacketFunc/FrameFunc/EventFunc) forwards output
+// downstream. Packet/Frame/Event return the same flow-control errors as a
+// source push: errors.Is(err, ErrBackpressure) for a full downstream buffer and
+// errors.Is(err, ErrClosed) once the task has stopped. A stage should propagate
+// these rather than treat them as fatal.
 type Emit struct {
 	ctx     context.Context
 	emitter pipeline.Emitter
