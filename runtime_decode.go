@@ -18,7 +18,7 @@ const (
 type decodeToSinkGraphCompiler struct{}
 
 func (decodeToSinkGraphCompiler) match(b *builder) bool {
-	return len(b.inputs) == 1 &&
+	return len(b.inputs) > 0 &&
 		len(b.decodes) == 1 &&
 		len(b.sinks) == 1 &&
 		len(b.outputs) == 0 &&
@@ -40,14 +40,13 @@ func (b *builder) planDecodeToSink(spec pipeline.Spec) (pipeline.Spec, error) {
 		return pipeline.Spec{}, ErrNilSink
 	}
 
-	nodes := make(map[string]plannedNode, 4+len(b.filters))
-	sourceName := demuxNodeName(b.inputs[0])
-	sourceRef := pipeline.NodeRef(sourceName)
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(b.inputs[0])); err != nil {
+	nodes := make(map[string]plannedNode, len(b.inputs)+3+len(b.filters))
+	sourceRefs, err := b.planBuilderSources(nodes, &spec)
+	if err != nil {
 		return pipeline.Spec{}, err
 	}
 
-	if err := b.planDecodeFramePath(nodes, &spec, []pipeline.NodeRef{sourceRef}, b.decodes[0]); err != nil {
+	if err := b.planDecodeFramePath(nodes, &spec, sourceRefs, b.decodes[0]); err != nil {
 		return pipeline.Spec{}, err
 	}
 	return spec, nil
@@ -70,22 +69,17 @@ func (b *builder) compileDecodeToSink(ctx context.Context, graph pipeline.Graph)
 		return ErrNilSink
 	}
 
-	demux, err := b.openDemuxSource(ctx, b.inputs[0])
+	sources, err := b.addBuilderSources(ctx, graph)
 	if err != nil {
-		return err
-	}
-	sourceRef, err := graph.AddSource(demux.source, b.runtime.buffer)
-	if err != nil {
-		demux.source.Close()
 		return err
 	}
 
 	request := b.decodes[0]
-	stream, err := selectDecodeStream(demux.streams, request.selector)
+	stream, err := selectDecodeStream(sources.streams, request.selector)
 	if err != nil {
 		return err
 	}
-	return b.compileDecodeFramePath(ctx, graph, []pipeline.NodeRef{sourceRef}, request, stream, b.runtime.realtime || b.inputs[0].Realtime, codec.DecodeBounds{})
+	return b.compileDecodeFramePath(ctx, graph, sources.refs, request, stream, sources.realtime, rtpDecodeBoundsForStream(stream, sources.rtp))
 }
 
 func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {

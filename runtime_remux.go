@@ -10,7 +10,7 @@ import (
 )
 
 func (b *builder) canBuildRemux() bool {
-	return len(b.inputs) == 1 &&
+	return len(b.inputs) > 0 &&
 		len(b.outputs) > 0 &&
 		len(b.decodes) == 0 &&
 		len(b.encodes) == 0 &&
@@ -30,18 +30,13 @@ func (b *builder) buildRemux(ctx context.Context) (Task, error) {
 }
 
 func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error {
-	demux, err := b.openDemuxSource(ctx, b.inputs[0])
+	sources, err := b.addBuilderSources(ctx, graph)
 	if err != nil {
-		return err
-	}
-	sourceRef, err := graph.AddSource(demux.source, b.runtime.buffer)
-	if err != nil {
-		demux.source.Close()
 		return err
 	}
 
 	for i := range b.outputs {
-		stage, err := b.openMuxStage(ctx, b.outputs[i], i, demux.streams)
+		stage, err := b.openMuxStage(ctx, b.outputs[i], i, sources.streams)
 		if err != nil {
 			return err
 		}
@@ -50,8 +45,10 @@ func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error 
 			stage.Close()
 			return err
 		}
-		if err := connectRefs(graph, sourceRef, stageRef); err != nil {
-			return err
+		for j := range sources.refs {
+			if err := connectRefs(graph, sources.refs[j], stageRef); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

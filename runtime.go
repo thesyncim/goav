@@ -148,8 +148,7 @@ func (r *runtime) New() builderAPI {
 
 type builder struct {
 	runtime         *runtime
-	inputs          []format.Input
-	rtpInputs       []rtpInput
+	inputs          []builderInput
 	outputs         []format.Output
 	outputFmts      []av.FormatID
 	outputGraphFmts []av.FormatID
@@ -162,6 +161,77 @@ type builder struct {
 	stages          []pipeline.Stage
 	sinks           []pipeline.Sink
 	routes          []pipeline.Route
+}
+
+// builderInput is the single builder input model: exactly one of demux (file/URI)
+// or rtp (live RTP receive) is set. It lets the runtime compilers iterate every
+// input through one loop and one source-opening seam, with RTP-only build metadata
+// (decode bounds, depacketizers) surfaced through graphSourceBuild only when present.
+type builderInput struct {
+	demux *format.Input
+	rtp   *rtpInput
+}
+
+// open resolves this input to a running pipeline source plus its streams, domain,
+// realtime contribution, and (for RTP inputs) the rtpBuild decode-bounds metadata,
+// without the caller branching on the input kind.
+func (in builderInput) open(ctx context.Context, b *builder, index int) (graphSourceBuild, error) {
+	if in.rtp != nil {
+		build, err := b.openRTPSource(ctx, *in.rtp, index)
+		if err != nil {
+			return graphSourceBuild{}, err
+		}
+		rtp := build
+		return graphSourceBuild{
+			source:  build.source,
+			streams: build.streams,
+			rtp:     &rtp,
+		}, nil
+	}
+	build, err := b.openDemuxSource(ctx, in.demuxInput())
+	if err != nil {
+		return graphSourceBuild{}, err
+	}
+	return graphSourceBuild{
+		source:   build.source,
+		streams:  build.streams,
+		realtime: in.demuxInput().Realtime,
+	}, nil
+}
+
+func (in builderInput) demuxInput() format.Input {
+	if in.demux == nil {
+		return format.Input{}
+	}
+	return *in.demux
+}
+
+// realtimeWith folds this input's realtime contribution into base, matching the
+// per-kind realtime each compiler used before the merge (demux inputs honor their
+// own Realtime flag; RTP inputs leave the runtime default untouched).
+func (in builderInput) realtimeWith(base bool) bool {
+	if in.rtp != nil {
+		return base
+	}
+	return base || in.demuxInput().Realtime
+}
+
+// nodeName returns the planner/source node name for this input, matching the
+// running source's name for both input kinds so describe and build agree.
+func (in builderInput) nodeName(index int) string {
+	if in.rtp != nil {
+		return rtpNodeName(*in.rtp, index)
+	}
+	return demuxNodeName(in.demuxInput())
+}
+
+// detail returns the planner node detail for this input, matching the running
+// source's detail for both input kinds.
+func (in builderInput) detail() string {
+	if in.rtp != nil {
+		return rtpInputDetail(*in.rtp)
+	}
+	return inputNodeDetail(in.demuxInput())
 }
 
 type encodeRequest struct {
@@ -204,7 +274,8 @@ type rtpInput struct {
 }
 
 func (b *builder) Input(input format.Input) builderAPI {
-	b.inputs = append(b.inputs, input)
+	in := input
+	b.inputs = append(b.inputs, builderInput{demux: &in})
 	return b
 }
 
@@ -215,7 +286,7 @@ func (b *builder) RTP(receiver rtpav.PacketReader, options ...rtpOption) builder
 			options[i](&input)
 		}
 	}
-	b.rtpInputs = append(b.rtpInputs, input)
+	b.inputs = append(b.inputs, builderInput{rtp: &input})
 	return b
 }
 
@@ -294,7 +365,7 @@ func (b *builder) Build(ctx context.Context) (Task, error) {
 }
 
 func (b *builder) hasHighLevelRequests() bool {
-	return len(b.inputs) != 0 || len(b.rtpInputs) != 0 || len(b.outputs) != 0 || len(b.decodes) != 0 ||
+	return len(b.inputs) != 0 || len(b.outputs) != 0 || len(b.decodes) != 0 ||
 		len(b.encodes) != 0 || len(b.filters) != 0
 }
 

@@ -19,9 +19,6 @@ var builderCompilers = [...]builderCompiler{
 	remuxGraphCompiler{},
 	decodeEncodeToOutputGraphCompiler{},
 	decodeToSinkGraphCompiler{},
-	rtpDecodeEncodeToOutputGraphCompiler{},
-	rtpDecodeToSinkGraphCompiler{},
-	rtpRecordGraphCompiler{},
 }
 
 func (b *builder) selectCompiler() (builderCompiler, error) {
@@ -36,7 +33,6 @@ func (b *builder) selectCompiler() (builderCompiler, error) {
 func unsupportedRuntimeGraphError(b *builder) error {
 	details := []string{
 		"inputs: " + strconv.Itoa(len(b.inputs)),
-		"rtp inputs: " + strconv.Itoa(len(b.rtpInputs)),
 		"outputs: " + strconv.Itoa(len(b.outputs)),
 		"decodes: " + strconv.Itoa(len(b.decodes)),
 		"encodes: " + strconv.Itoa(len(b.encodes)),

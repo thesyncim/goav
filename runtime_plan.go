@@ -25,24 +25,45 @@ func (b *builder) describeWithCompiler(compiler builderCompiler) (pipeline.Spec,
 	})
 }
 
+// planBuilderSources adds one planner source node per builder input (kind-agnostic,
+// using the input's own node name and detail) and returns the source refs, matching
+// the running source nodes addBuilderSources produces.
+func (b *builder) planBuilderSources(nodes map[string]plannedNode, spec *pipeline.Spec) ([]pipeline.NodeRef, error) {
+	sourceRefs := make([]pipeline.NodeRef, len(b.inputs))
+	for i := range b.inputs {
+		sourceName := b.inputs[i].nodeName(i)
+		sourceRef := pipeline.NodeRef(sourceName)
+		if err := addPlannedNode(nodes, spec, sourceName, pipeline.NodeSource, sourceRef, b.inputs[i].detail()); err != nil {
+			return nil, err
+		}
+		sourceRefs[i] = sourceRef
+	}
+	return sourceRefs, nil
+}
+
 func (b *builder) planRemux(spec pipeline.Spec) (pipeline.Spec, error) {
-	nodes := make(map[string]plannedNode, 1+len(b.outputs))
-	sourceName := demuxNodeName(b.inputs[0])
-	sourceRef := pipeline.NodeRef(sourceName)
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(b.inputs[0])); err != nil {
+	nodes := make(map[string]plannedNode, len(b.inputs)+len(b.outputs))
+	sourceRefs, err := b.planBuilderSources(nodes, &spec)
+	if err != nil {
 		return pipeline.Spec{}, err
 	}
+	stageRefs := make([]pipeline.NodeRef, len(b.outputs))
 	for i := range b.outputs {
 		stageName := muxNodeName(b.outputs[i], i)
 		stageRef := pipeline.NodeRef(stageName)
 		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef, outputNodeDetailWithFormat(b.outputs[i], b.outputFormat(i))); err != nil {
 			return pipeline.Spec{}, err
 		}
-		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-			From:   sourceRef,
-			To:     stageRef,
-			Policy: pipeline.RouteAll,
-		})
+		stageRefs[i] = stageRef
+	}
+	for i := range sourceRefs {
+		for j := range stageRefs {
+			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
+				From:   sourceRefs[i],
+				To:     stageRefs[j],
+				Policy: pipeline.RouteAll,
+			})
+		}
 	}
 	return spec, nil
 }

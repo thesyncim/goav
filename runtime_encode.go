@@ -10,17 +10,15 @@ import (
 )
 
 type decodeEncodeToOutputGraphCompiler struct{}
-type rtpDecodeEncodeToOutputGraphCompiler struct{}
 
 func (decodeEncodeToOutputGraphCompiler) match(b *builder) bool {
-	return len(b.inputs) == 1 &&
+	return len(b.inputs) > 0 &&
 		len(b.decodes) == 1 &&
 		len(b.encodes) == 1 &&
 		len(b.outputs) > 0 &&
 		len(b.sinks) == 0 &&
 		len(b.sources) == 0 &&
-		len(b.stages) == 0 &&
-		len(b.rtpInputs) == 0
+		len(b.stages) == 0
 }
 
 func (decodeEncodeToOutputGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
@@ -31,53 +29,11 @@ func (decodeEncodeToOutputGraphCompiler) build(ctx context.Context, b *builder) 
 	return b.buildDecodeEncodeToOutput(ctx)
 }
 
-func (rtpDecodeEncodeToOutputGraphCompiler) match(b *builder) bool {
-	return len(b.rtpInputs) > 0 &&
-		len(b.decodes) == 1 &&
-		len(b.encodes) == 1 &&
-		len(b.outputs) > 0 &&
-		len(b.inputs) == 0 &&
-		len(b.sinks) == 0 &&
-		len(b.sources) == 0 &&
-		len(b.stages) == 0
-}
-
-func (rtpDecodeEncodeToOutputGraphCompiler) describe(b *builder, spec pipeline.Spec) (pipeline.Spec, error) {
-	return b.planRTPDecodeEncodeToOutput(spec)
-}
-
-func (rtpDecodeEncodeToOutputGraphCompiler) build(ctx context.Context, b *builder) (Task, error) {
-	return b.buildRTPDecodeEncodeToOutput(ctx)
-}
-
 func (b *builder) planDecodeEncodeToOutput(spec pipeline.Spec) (pipeline.Spec, error) {
-	nodes := make(map[string]plannedNode, 4+len(b.filters)+len(b.outputs))
-	sourceName := demuxNodeName(b.inputs[0])
-	sourceRef := pipeline.NodeRef(sourceName)
-	if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, inputNodeDetail(b.inputs[0])); err != nil {
-		return pipeline.Spec{}, err
-	}
-
-	previous, err := planDecodeFilterPath(nodes, &spec, []pipeline.NodeRef{sourceRef}, b.decodes[0], b.filters)
+	nodes := make(map[string]plannedNode, len(b.inputs)+3+len(b.filters)+len(b.outputs))
+	sourceRefs, err := b.planBuilderSources(nodes, &spec)
 	if err != nil {
 		return pipeline.Spec{}, err
-	}
-	if err := b.planEncodeOutputPath(nodes, &spec, previous, b.encodes[0]); err != nil {
-		return pipeline.Spec{}, err
-	}
-	return spec, nil
-}
-
-func (b *builder) planRTPDecodeEncodeToOutput(spec pipeline.Spec) (pipeline.Spec, error) {
-	nodes := make(map[string]plannedNode, len(b.rtpInputs)+3+len(b.filters)+len(b.outputs))
-	sourceRefs := make([]pipeline.NodeRef, len(b.rtpInputs))
-	for i := range b.rtpInputs {
-		sourceName := rtpNodeName(b.rtpInputs[i], i)
-		sourceRef := pipeline.NodeRef(sourceName)
-		if err := addPlannedNode(nodes, &spec, sourceName, pipeline.NodeSource, sourceRef, rtpInputDetail(b.rtpInputs[i])); err != nil {
-			return pipeline.Spec{}, err
-		}
-		sourceRefs[i] = sourceRef
 	}
 
 	previous, err := planDecodeFilterPath(nodes, &spec, sourceRefs, b.decodes[0], b.filters)
@@ -143,63 +99,23 @@ func (b *builder) buildDecodeEncodeToOutput(ctx context.Context) (Task, error) {
 	return newTask(graph, b.runtime, b.destinationTxs...), nil
 }
 
-func (b *builder) buildRTPDecodeEncodeToOutput(ctx context.Context) (Task, error) {
-	graph, err := b.newGraph(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := b.compileRTPDecodeEncodeToOutput(ctx, graph); err != nil {
-		graph.Close()
-		return nil, err
-	}
-	return newTask(graph, b.runtime, b.destinationTxs...), nil
-}
-
 func (b *builder) compileDecodeEncodeToOutput(ctx context.Context, graph pipeline.Graph) error {
-	demux, err := b.openDemuxSource(ctx, b.inputs[0])
+	sources, err := b.addBuilderSources(ctx, graph)
 	if err != nil {
-		return err
-	}
-	sourceRef, err := graph.AddSource(demux.source, b.runtime.buffer)
-	if err != nil {
-		demux.source.Close()
 		return err
 	}
 
 	request := b.decodes[0]
-	stream, err := selectDecodeStream(demux.streams, request.selector)
+	stream, err := selectDecodeStream(sources.streams, request.selector)
 	if err != nil {
 		return err
 	}
-	realtime := b.runtime.realtime || b.inputs[0].Realtime
-	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, []pipeline.NodeRef{sourceRef}, request, stream, realtime, false, codec.DecodeBounds{})
+	realtime := sources.realtime
+	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, sources.refs, request, stream, realtime, false, rtpDecodeBoundsForStream(stream, sources.rtp))
 	if err != nil {
 		return err
 	}
 	encodeConfig, encodedStream, err := prepareEncodeConfig(filteredStream, b.encodes[0], realtime)
-	if err != nil {
-		return err
-	}
-	return b.compileEncodeOutputPath(ctx, graph, previousRef, b.encodes[0], encodeConfig, encodedStream)
-}
-
-func (b *builder) compileRTPDecodeEncodeToOutput(ctx context.Context, graph pipeline.Graph) error {
-	sourceRefs, streams, builds, err := b.addRTPSources(ctx, graph)
-	if err != nil {
-		return err
-	}
-
-	request := b.decodes[0]
-	selector := request.selector
-	stream, err := selectDecodeStream(streams, selector)
-	if err != nil {
-		return err
-	}
-	previousRef, filteredStream, err := b.compileDecodeFilterPath(ctx, graph, sourceRefs, request, stream, b.runtime.realtime, false, rtpDecodeBoundsForStream(stream, builds))
-	if err != nil {
-		return err
-	}
-	encodeConfig, encodedStream, err := prepareEncodeConfig(filteredStream, b.encodes[0], b.runtime.realtime)
 	if err != nil {
 		return err
 	}
