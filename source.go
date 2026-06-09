@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
@@ -88,8 +89,8 @@ func normalizeCustomSourceShape(name string, spec shape.Spec) shape.Spec {
 	return spec
 }
 
-func codecSpecFromSourceShape(shape shape.Spec) CodecSpec {
-	return CodecSpec{
+func codecSpecFromSourceShape(shape shape.Spec) codec.CodecSpec {
+	return codec.CodecSpec{
 		ID:   shape.Codec,
 		Type: shape.MediaKind,
 		Parameters: av.CodecParameters{

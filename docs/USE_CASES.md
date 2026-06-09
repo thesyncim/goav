@@ -38,7 +38,7 @@ Raw RTP uses Pion RTP packet types through `rtpav.PacketReader`. RTP inputs need
 codec intent so the runtime can choose the depacketizer.
 
 ```go
-err := goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
+err := goav.From(goav.RTP(video).Name("video").Codec(codec.VP8())).
     Copy().
     To(
         goav.File("recording.ivf", file),
@@ -50,11 +50,11 @@ err := goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
 Decode and transform one selected stream:
 
 ```go
-err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+err := goav.From(goav.RTP(audio).Name("audio").Codec(codec.Opus())).
     Audio().
     Decode().
-    Resample(16_000, goav.Mono).
-    Encode(goav.Opus(goav.Bitrate(48_000))).
+    Resample(16_000, codec.Mono).
+    Encode(codec.Opus(codec.Bitrate(48_000))).
     To(goav.File("preview.ogg", preview)).
     Run(ctx)
 ```
@@ -86,7 +86,7 @@ err := goav.From(input).
             Resize(1280, 720).
             Do(frameMeter).
             Tap(videoFrames720p).
-            Encode(goav.VP9(goav.Bitrate(2_000_000))).
+            Encode(codec.VP9(codec.Bitrate(2_000_000))).
             To(main),
     ).
     Audio().
@@ -94,8 +94,8 @@ err := goav.From(input).
     Tap(audioDecoded).
     Branches(
         goav.Branch("a96").
-            Resample(48_000, goav.Stereo).
-            Encode(goav.Opus(goav.Bitrate(96_000))).
+            Resample(48_000, codec.Stereo).
+            Encode(codec.Opus(codec.Bitrate(96_000))).
             To(main),
     ).
     Run(ctx)
@@ -144,7 +144,7 @@ err := goav.From(input).
             To(thumbs),
         goav.Branch("web").
             From(videoFrames720p).
-            Encode(goav.VP9(goav.Bitrate(2_000_000))).
+            Encode(codec.VP9(codec.Bitrate(2_000_000))).
             To(web),
     ).
     Run(ctx)
@@ -186,7 +186,7 @@ packet production.
 ```go
 input := goav.Source("generated",
     shape.Packet(av.MediaAudio, av.CodecOpus,
-        shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
+        shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
     ),
     func(ctx context.Context, push goav.SourcePush) error {
         for packet := range packets {
@@ -212,7 +212,7 @@ sources use `shape.Frame` and skip decode.
 ```go
 frames := goav.Source("pcm",
     shape.Frame(av.MediaAudio,
-        shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
+        shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
     ),
     func(ctx context.Context, push goav.SourcePush) error {
         for frame := range decoded {
@@ -259,32 +259,32 @@ splits use the same API.
 voiceFrames := goav.FrameTap("audio.voice.frames")
 audioDecoded := goav.FrameTap("audio.decoded")
 
-voiceCodec := goav.Opus(
-    goav.Bitrate(32_000),
-    goav.Channels(goav.Mono),
+voiceCodec := codec.Opus(
+    codec.Bitrate(32_000),
+    codec.Channels(codec.Mono),
 )
-archiveCodec := goav.Opus(
-    goav.Bitrate(128_000),
-    goav.Channels(goav.Stereo),
+archiveCodec := codec.Opus(
+    codec.Bitrate(128_000),
+    codec.Channels(codec.Stereo),
 )
 
 voice := goav.Flow("voice").Audio().
-    Resample(16_000, goav.Mono).
+    Resample(16_000, codec.Mono).
     Tap(voiceFrames).
     Encode(voiceCodec)
 archive := goav.Flow("archive").Audio().
-    Resample(48_000, goav.Stereo).
+    Resample(48_000, codec.Stereo).
     Encode(archiveCodec)
 voiceOut := goav.File("voice.ogg", voiceFile)
 archiveOut := goav.File("archive.ogg", archiveFile)
 
-err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+err := goav.From(goav.RTP(audio).Name("audio").Codec(codec.Opus())).
     Audio().
     Apply(voice).
     To(voiceOut).
     Run(ctx)
 
-err = goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+err = goav.From(goav.RTP(audio).Name("audio").Codec(codec.Opus())).
     Audio().
     Decode().
     Tap(audioDecoded).
@@ -361,7 +361,7 @@ recording := goav.File("recording.ogg", file)
 recordingHandle, err := task.Attach(ctx,
     goav.Branch("record-audio").
         From(audioDecoded).
-        Encode(goav.Opus(goav.Bitrate(96_000))).
+        Encode(codec.Opus(codec.Bitrate(96_000))).
         To(recording),
 )
 if err != nil {

@@ -1112,7 +1112,7 @@ func operationShapeMismatchSuggestions(operation OperationSpec) []string {
 	default:
 		return []string{
 			"inspect Explain(ctx) to see operation shapes",
-			"keep structural facts in goav.Shape(...) and codec behavior in CodecSpec options",
+			"keep structural facts in goav.Shape(...) and codec behavior in codec.CodecSpec options",
 		}
 	}
 }

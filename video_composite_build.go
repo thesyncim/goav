@@ -2,6 +2,7 @@ package goav
 
 import (
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -18,7 +19,7 @@ func Composite(arms ...*jobStreamBuilder) *compositeStream {
 
 type compositeStream struct {
 	arms   []*jobStreamBuilder
-	encode *CodecSpec
+	encode *codec.CodecSpec
 	taps   []TapRef
 }
 
@@ -31,7 +32,7 @@ type compositeRegion struct {
 // Encode encodes the composited stream before the destination, so a Composite can
 // record to a File/mux (not only a frame Sink). Without it the composite delivers
 // frames.
-func (c *compositeStream) Encode(spec CodecSpec) *compositeStream {
+func (c *compositeStream) Encode(spec codec.CodecSpec) *compositeStream {
 	c.encode = &spec
 	return c
 }

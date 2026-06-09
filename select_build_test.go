@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -18,7 +19,7 @@ import (
 // static test can assert exactly which arm's frame reaches the sink.
 func selectTestOneShotSource(id av.StreamID, samples ...int16) InputSpec {
 	return Source(string(id),
-		shape.Frame(av.MediaAudio, shape.Audio(48000, Mono, av.SampleFormatS16), shape.Stream(id)),
+		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
 			b := make([]byte, len(samples)*2)
 			for i := range samples {
@@ -40,7 +41,7 @@ func selectTestOneShotSource(id av.StreamID, samples ...int16) InputSpec {
 // cancelled, so both arms always have live traffic while a test flips the switch.
 func selectTestLiveSource(id av.StreamID, sample int16) InputSpec {
 	return Source(string(id),
-		shape.Frame(av.MediaAudio, shape.Audio(48000, Mono, av.SampleFormatS16), shape.Stream(id)),
+		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(ctx context.Context, push SourcePush) error {
 			for {
 				if err := ctx.Err(); err != nil {

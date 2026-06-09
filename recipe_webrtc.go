@@ -5,6 +5,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/webrtcav"
 )
@@ -45,7 +46,7 @@ func webRTCRemote(remote webrtcav.RemoteTrack) InputSpec {
 func (s *InputSpec) applyWebRTCStream(stream av.Stream) {
 	s.name = firstNonEmpty(string(stream.ID), stream.Name)
 	s.input.Name = s.name
-	s.codec = CodecSpec{
+	s.codec = codec.CodecSpec{
 		ID:         stream.Codec.ID,
 		Type:       firstMediaType(stream.Codec.Type, stream.Type),
 		Parameters: stream.Codec,

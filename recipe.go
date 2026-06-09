@@ -17,11 +17,6 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-const (
-	Mono   = codec.Mono
-	Stereo = codec.Stereo
-)
-
 type Intent struct {
 	Name         string
 	Inputs       []inputIntent
@@ -35,7 +30,7 @@ type inputIntent struct {
 	URI      string
 	Protocol av.ProtocolID
 	MIMEType string
-	Codec    CodecSpec
+	Codec    codec.CodecSpec
 	Realtime bool
 }
 
@@ -44,10 +39,10 @@ type streamIntent struct {
 	Select       StreamSelect
 	From         TapRef
 	Decode       bool
-	DecodeCodec  CodecSpec
+	DecodeCodec  codec.CodecSpec
 	Operations   []OperationSpec
 	Taps         []tapIntent
-	Encode       CodecSpec
+	Encode       codec.CodecSpec
 	CodecChange  CodecChangePolicy
 	Destinations []string
 }
@@ -59,8 +54,8 @@ type OperationSpec struct {
 	Shape     shape.Spec
 	Transform TransformSpec
 	Tap       tapIntent
-	Decode    CodecSpec
-	Encode    CodecSpec
+	Decode    codec.CodecSpec
+	Encode    codec.CodecSpec
 	Shared    bool
 }
 
@@ -169,20 +164,10 @@ func Default(opts ...Option) Runtime {
 	return New(append([]Option{WithDefaults()}, opts...)...)
 }
 
-// CodecOption configures a codec spec's encoder/decoder settings. The options
-// themselves live in the codec package (codec.Bitrate, codec.RateControl, …) so
-// the goav grammar stays small; this alias lets the constructors accept them.
-type CodecOption = codec.Option
-
-// CodecSpec is re-exported from the codec package, which now owns the type and
-// the constructors (codec.VP9, codec.Opus, codec.Codec, codec.Copy, …). The
-// alias keeps goav's build layer and external callers using goav.CodecSpec.
-type CodecSpec = codec.CodecSpec
-
 // codecSpecFromOptions builds a spec carrying only the Settings configured by
 // decode options (decode does not set output caps).
-func codecSpecFromOptions(options ...CodecOption) CodecSpec {
-	var spec CodecSpec
+func codecSpecFromOptions(options ...codec.Option) codec.CodecSpec {
+	var spec codec.CodecSpec
 	for i := range options {
 		if options[i] != nil {
 			options[i](&spec.Settings)
@@ -191,7 +176,7 @@ func codecSpecFromOptions(options ...CodecOption) CodecSpec {
 	return spec
 }
 
-func cloneCodecSpec(spec CodecSpec) CodecSpec {
+func cloneCodecSpec(spec codec.CodecSpec) codec.CodecSpec {
 	spec.Parameters.Attributes = cloneMetadata(spec.Parameters.Attributes)
 	spec.Parameters.ExtraData = cloneBuffer(spec.Parameters.ExtraData)
 	spec.Settings = cloneCodecSettings(spec.Settings)
@@ -238,7 +223,7 @@ func mergeCodecSettings(base codec.CodecSettings, override codec.CodecSettings) 
 	return base
 }
 
-func mergeDecodeCodecSpec(base CodecSpec, override CodecSpec) CodecSpec {
+func mergeDecodeCodecSpec(base codec.CodecSpec, override codec.CodecSpec) codec.CodecSpec {
 	if override.ID != "" {
 		base.ID = override.ID
 	}
@@ -250,7 +235,7 @@ func mergeDecodeCodecSpec(base CodecSpec, override CodecSpec) CodecSpec {
 	return base
 }
 
-func codecSpecHasParameters(spec CodecSpec) bool {
+func codecSpecHasParameters(spec codec.CodecSpec) bool {
 	parameters := spec.Parameters
 	return parameters.ID != "" ||
 		parameters.Type != "" ||
@@ -300,7 +285,7 @@ type InputSpec struct {
 	input    format.Input
 	rtp      *rtpInputSpec
 	source   *sourceInputSpec
-	codec    CodecSpec
+	codec    codec.CodecSpec
 	name     string
 	realtime bool
 	err      error
@@ -353,7 +338,7 @@ func (s InputSpec) MIME(mimeType string) InputSpec {
 	return s
 }
 
-func (s InputSpec) Codec(codec CodecSpec) InputSpec {
+func (s InputSpec) Codec(codec codec.CodecSpec) InputSpec {
 	s.codec = cloneCodecSpec(codec)
 	return s
 }
@@ -1116,15 +1101,15 @@ type chainStep struct {
 	tapDomain shape.MediaDomain
 }
 
-func operationSpecForDecode(codec CodecSpec, component string) OperationSpec {
+func operationSpecForDecode(codec codec.CodecSpec, component string) OperationSpec {
 	return OperationSpec{Kind: OpDecode, Component: component, Decode: cloneCodecSpec(codec)}
 }
 
-func operationSpecForCopy(codec CodecSpec) OperationSpec {
+func operationSpecForCopy(codec codec.CodecSpec) OperationSpec {
 	return OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(codec)}
 }
 
-func operationSpecForEncode(codec CodecSpec) OperationSpec {
+func operationSpecForEncode(codec codec.CodecSpec) OperationSpec {
 	if codec.Copy {
 		return operationSpecForCopy(codec)
 	}
@@ -1223,7 +1208,7 @@ func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
 	}
 	// Reached only when no decode op exists yet (so no codec options were given);
 	// an explicit Decode(opts) always appends its own OpDecode.
-	operation := operationSpecForDecode(CodecSpec{}, string(stream.selector.Codec))
+	operation := operationSpecForDecode(codec.CodecSpec{}, string(stream.selector.Codec))
 	stream.operations = append([]OperationSpec{operation}, stream.operations...)
 }
 
@@ -2253,7 +2238,7 @@ func encodeAdapterRequestFromStreamIntent(stream streamIntent) codecAdapterReque
 	}
 }
 
-func encodeAdapterRequestFromPreparedStream(spec CodecSpec, stream av.Stream) codecAdapterRequest {
+func encodeAdapterRequestFromPreparedStream(spec codec.CodecSpec, stream av.Stream) codecAdapterRequest {
 	return codecAdapterRequest{
 		Codec:        spec.ID,
 		Media:        firstNonEmptyMedia(spec.Type, spec.Parameters.Type, stream.Type, stream.Codec.Type, codecMedia(spec.ID)),
@@ -2729,11 +2714,11 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 	}
 }
 
-func codecIntentSet(spec CodecSpec) bool {
+func codecIntentSet(spec codec.CodecSpec) bool {
 	return spec.ID != "" || spec.Auto || spec.Copy
 }
 
-func chainStepAfterEncodeError(operation string, node string, step string, encode CodecSpec) error {
+func chainStepAfterEncodeError(operation string, node string, step string, encode codec.CodecSpec) error {
 	return &BuildError{
 		Code:      "stream_step_after_encode",
 		Operation: operation,
@@ -2751,7 +2736,7 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 	}
 }
 
-func duplicateStreamEncodeError(operation string, node string, first CodecSpec, second CodecSpec) error {
+func duplicateStreamEncodeError(operation string, node string, first codec.CodecSpec, second codec.CodecSpec) error {
 	return &BuildError{
 		Code:      "encode_duplicate",
 		Operation: operation,
@@ -2769,7 +2754,7 @@ func duplicateStreamEncodeError(operation string, node string, first CodecSpec, 
 	}
 }
 
-func codecIntentName(spec CodecSpec) string {
+func codecIntentName(spec codec.CodecSpec) string {
 	switch {
 	case spec.Auto:
 		return "auto"
@@ -2782,7 +2767,7 @@ func codecIntentName(spec CodecSpec) string {
 	}
 }
 
-func encodeConfigFromSpec(spec CodecSpec) codec.EncodeConfig {
+func encodeConfigFromSpec(spec codec.CodecSpec) codec.EncodeConfig {
 	parameters := spec.Parameters
 	if spec.ID == av.CodecOpus {
 		if !spec.Settings.SampleRateSet {
@@ -2815,7 +2800,7 @@ func cloneBuffer(buffer av.Buffer) av.Buffer {
 	return buffer
 }
 
-func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
+func validateRecipeEncode(spec codec.CodecSpec, operation string, node string) error {
 	if spec.Auto {
 		return &BuildError{
 			Code:      "encode_auto_unresolved",
@@ -2855,7 +2840,7 @@ func validateRecipeEncode(spec CodecSpec, operation string, node string) error {
 	}
 }
 
-func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) error {
+func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node string) error {
 	switch {
 	case spec.Settings.Bitrate < 0:
 		return &BuildError{
@@ -2867,8 +2852,8 @@ func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) e
 				fmt.Sprintf("bitrate=%d", spec.Settings.Bitrate),
 			},
 			Suggestions: []string{
-				"pass a positive value to goav.Bitrate(...)",
-				"omit goav.Bitrate(...) when the encoder should choose its default",
+				"pass a positive value to codec.Bitrate(...)",
+				"omit codec.Bitrate(...) when the encoder should choose its default",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -2912,8 +2897,8 @@ func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) e
 				fmt.Sprintf("sample_rate=%d", spec.Parameters.SampleRate),
 			},
 			Suggestions: []string{
-				"use goav.SampleRate(rate) with a positive rate",
-				"omit goav.SampleRate(...) to use the selected stream rate",
+				"use codec.SampleRate(rate) with a positive rate",
+				"omit codec.SampleRate(...) to use the selected stream rate",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -2927,8 +2912,8 @@ func validateRecipeEncodeValues(spec CodecSpec, operation string, node string) e
 				fmt.Sprintf("channels=%d", spec.Parameters.Channels),
 			},
 			Suggestions: []string{
-				"use goav.Channels(goav.Mono), goav.Channels(goav.Stereo), or another positive channel count",
-				"omit goav.Channels(...) to use the selected stream channel count",
+				"use codec.Channels(codec.Mono), codec.Channels(codec.Stereo), or another positive channel count",
+				"omit codec.Channels(...) to use the selected stream channel count",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -3123,7 +3108,7 @@ type streamBuild struct {
 	selector         av.StreamSelector
 	from             TapRef
 	decode           bool
-	decodeCodec      CodecSpec
+	decodeCodec      codec.CodecSpec
 	operations       []OperationSpec
 	sharedOps        []OperationSpec
 	privateOps       []OperationSpec
@@ -3280,7 +3265,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) Decode(options ...CodecOption) *jobStreamBuilder {
+func (b *jobStreamBuilder) Decode(options ...codec.Option) *jobStreamBuilder {
 	stream := b.current()
 	if b.sourceStartsFrameDomain() {
 		b.job.setErr(frameSourceDecodeError("build stream", jobStreamName(stream)))
@@ -3418,7 +3403,7 @@ func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 	return b
 }
 
-func (b *jobStreamBuilder) Encode(codec CodecSpec) *jobStreamBuilder {
+func (b *jobStreamBuilder) Encode(codec codec.CodecSpec) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), chainEncodeSpec(stream.operations), codec))

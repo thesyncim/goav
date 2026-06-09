@@ -25,7 +25,7 @@ type branchComposeBranch struct {
 	PrivateOperations []OperationSpec
 	Resize            *filter.ResizeConfig
 	Resample          *filter.ResampleConfig
-	DecodeConfig      CodecSpec
+	DecodeConfig      codec.CodecSpec
 	CodecChange       CodecChangePolicy
 	Encode            codec.EncodeConfig
 	Labels            []string

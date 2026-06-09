@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/shape"
 )
 
 func lifecycleTestSource(fn SourceFunc) InputSpec {
 	return Source("gen",
 		shape.Packet(av.MediaAudio, av.CodecOpus,
-			shape.Audio(48_000, Stereo, av.SampleFormatS16),
+			shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
 		),
 		fn,
 	)

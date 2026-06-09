@@ -693,7 +693,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 				StreamID:   "audio",
 				Codec:      av.CodecOpus,
 				SampleRate: 48000,
-				Channels:   Stereo,
+				Channels:   codec.Stereo,
 			},
 			Node: "audio-source",
 		},
@@ -1214,9 +1214,9 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 		Output: av.MediaAudio,
 	}, resampleFactory))
 	frames := []av.Frame{
-		{StreamID: "audio", Type: av.MediaAudio, Audio: &av.AudioFrame{SampleRate: 48000, Channels: Stereo, SampleFormat: av.SampleFormatS16}},
-		{StreamID: "audio", Type: av.MediaAudio, Audio: &av.AudioFrame{SampleRate: 48000, Channels: Stereo, SampleFormat: av.SampleFormatS16}},
-		{StreamID: "audio", Type: av.MediaAudio, Audio: &av.AudioFrame{SampleRate: 48000, Channels: Stereo, SampleFormat: av.SampleFormatS16}},
+		{StreamID: "audio", Type: av.MediaAudio, Audio: &av.AudioFrame{SampleRate: 48000, Channels: codec.Stereo, SampleFormat: av.SampleFormatS16}},
+		{StreamID: "audio", Type: av.MediaAudio, Audio: &av.AudioFrame{SampleRate: 48000, Channels: codec.Stereo, SampleFormat: av.SampleFormatS16}},
+		{StreamID: "audio", Type: av.MediaAudio, Audio: &av.AudioFrame{SampleRate: 48000, Channels: codec.Stereo, SampleFormat: av.SampleFormatS16}},
 	}
 	source := &runtimeBranchStepSource{
 		name: "source",
@@ -1257,7 +1257,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 			StreamID:     "audio",
 			Codec:        av.CodecOpus,
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 		},
 		Node: "source",
@@ -1276,7 +1276,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 	parent, err := mediaTask.Attach(ctx, Branch("voice").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2)).
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Tap(FrameTap("audio.16k")).
 		To(Sink(voice)))
 	if err != nil {
@@ -1287,7 +1287,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 		resampledTap.Domain != shape.DomainFrame ||
 		resampledTap.MediaKind != av.MediaAudio ||
 		resampledTap.Shape.SampleRate != 16_000 ||
-		resampledTap.Shape.Channels != Mono ||
+		resampledTap.Shape.Channels != codec.Mono ||
 		resampledTap.Shape.SampleFormat != av.SampleFormatS16 ||
 		resampledTap.Node != "voice/resample-voice" {
 		t.Fatalf("resampled tap = %+v ok=%v, want frame audio 16k mono tap on voice/resample-voice", resampledTap, ok)
@@ -1354,7 +1354,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &av.Frame{
 			StreamID: "audio",
 			Type:     av.MediaAudio,
-			Audio:    &av.AudioFrame{SampleRate: 48000, Channels: Stereo, SampleFormat: av.SampleFormatS16},
+			Audio:    &av.AudioFrame{SampleRate: 48000, Channels: codec.Stereo, SampleFormat: av.SampleFormatS16},
 		}},
 	}
 	graph := Expert(New(filters)).Graph()
@@ -1375,7 +1375,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 			StreamID:     "audio",
 			Codec:        av.CodecOpus,
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 		},
 		Node: "source",
@@ -1389,7 +1389,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 			StreamID:     "audio",
 			Codec:        av.CodecOpus,
 			SampleRate:   16000,
-			Channels:     Mono,
+			Channels:     codec.Mono,
 			SampleFormat: av.SampleFormatS16,
 		},
 		Node: "source",
@@ -1399,7 +1399,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 
 	_, err = mediaTask.Attach(ctx, Branch("voice").
 		From(FrameTap("audio.frames")).
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Tap(FrameTap("audio.16k")).
 		To(Sink(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
@@ -1410,7 +1410,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 	}
 	if resampleFactory.config.Audio == nil ||
 		resampleFactory.config.Audio.SampleRate != 16_000 ||
-		resampleFactory.config.Audio.Channels != Mono {
+		resampleFactory.config.Audio.Channels != codec.Mono {
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before duplicate-tap rejection", resampleFactory.config.Audio)
 	}
 	if !resampler.closed {
@@ -1457,7 +1457,7 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 				StreamID:     "audio",
 				Codec:        av.CodecOpus,
 				SampleRate:   48000,
-				Channels:     Stereo,
+				Channels:     codec.Stereo,
 				SampleFormat: av.SampleFormatS16,
 			},
 			Node: "source",
@@ -1467,7 +1467,7 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 
 	_, err := mediaTask.Attach(ctx, Branch("voice").
 		From(FrameTap("audio.frames")).
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Tap(FrameTap("audio.16k")).
 		To(Sink(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
@@ -1481,7 +1481,7 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 	}
 	if resampleFactory.config.Audio == nil ||
 		resampleFactory.config.Audio.SampleRate != 16_000 ||
-		resampleFactory.config.Audio.Channels != Mono {
+		resampleFactory.config.Audio.Channels != codec.Mono {
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before graph rollback", resampleFactory.config.Audio)
 	}
 	if !resampler.closed {
@@ -1534,7 +1534,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 				StreamID:     "audio",
 				Codec:        av.CodecOpus,
 				SampleRate:   48000,
-				Channels:     Stereo,
+				Channels:     codec.Stereo,
 				SampleFormat: av.SampleFormatS16,
 			},
 			Node: "source",
@@ -1544,7 +1544,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 
 	_, err := mediaTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(File("archive.ogg", io.Discard, Format(av.FormatOgg))))
 	var buildErr *BuildError
@@ -1556,7 +1556,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 	}
 	if resampleFactory.config.Audio == nil ||
 		resampleFactory.config.Audio.SampleRate != 16_000 ||
-		resampleFactory.config.Audio.Channels != Mono {
+		resampleFactory.config.Audio.Channels != codec.Mono {
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before graph rollback", resampleFactory.config.Audio)
 	}
 	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Settings.Bitrate != 96_000 {
@@ -1616,7 +1616,7 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 				StreamID:     "audio",
 				Codec:        av.CodecOpus,
 				SampleRate:   48000,
-				Channels:     Stereo,
+				Channels:     codec.Stereo,
 				SampleFormat: av.SampleFormatS16,
 			},
 			Node: "source",
@@ -1626,7 +1626,7 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 
 	_, err := mediaTask.Attach(ctx, Branch("monitor").
 		From(FrameTap("audio.frames")).
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		To(Sink(sink)))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
@@ -1637,7 +1637,7 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 	}
 	if resampleFactory.config.Audio == nil ||
 		resampleFactory.config.Audio.SampleRate != 16_000 ||
-		resampleFactory.config.Audio.Channels != Mono {
+		resampleFactory.config.Audio.Channels != codec.Mono {
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before graph rollback", resampleFactory.config.Audio)
 	}
 	if !resampler.closed {
@@ -1697,7 +1697,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 			StreamID:     "audio",
 			Codec:        av.CodecOpus,
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 		},
 		Node: "source",
@@ -1709,7 +1709,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 
 	_, err = builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(File("archive.ogg", io.Discard, Format(av.FormatOgg))))
 	var buildErr *BuildError
@@ -1721,7 +1721,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 	}
 	if resampleFactory.config.Audio == nil ||
 		resampleFactory.config.Audio.SampleRate != 16_000 ||
-		resampleFactory.config.Audio.Channels != Mono {
+		resampleFactory.config.Audio.Channels != codec.Mono {
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before closed-graph rejection", resampleFactory.config.Audio)
 	}
 	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Settings.Bitrate != 96_000 {
@@ -1784,7 +1784,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 			StreamID:     "audio",
 			Codec:        av.CodecOpus,
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 		},
 		Node: "source",
@@ -1793,7 +1793,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 
 	_, err = builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(File("archive.ogg", io.Discard, Format(av.FormatOgg))))
 	var buildErr *BuildError
@@ -1805,7 +1805,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 	}
 	if resampleFactory.config.Audio == nil ||
 		resampleFactory.config.Audio.SampleRate != 16_000 ||
-		resampleFactory.config.Audio.Channels != Mono {
+		resampleFactory.config.Audio.Channels != codec.Mono {
 		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before duplicate-node rejection", resampleFactory.config.Audio)
 	}
 	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Settings.Bitrate != 96_000 {
@@ -2021,7 +2021,7 @@ func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -2104,7 +2104,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -2209,7 +2209,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -2308,7 +2308,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -2324,7 +2324,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	meter := &runtimeTestStage{name: "meter"}
-	archive := Flow("archive").Audio().Do(meter).Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(Stereo)))
+	archive := Flow("archive").Audio().Do(meter).Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))
 	attachment, err := builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
@@ -2347,7 +2347,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 	}
 	if encoderFactory.config.Stream.ID != "archive" ||
 		encoderFactory.config.Parameters.ID != av.CodecOpus ||
-		encoderFactory.config.Parameters.Channels != Stereo ||
+		encoderFactory.config.Parameters.Channels != codec.Stereo ||
 		encoderFactory.config.Settings.Bitrate != 128_000 {
 		t.Fatalf("encode config: %+v", encoderFactory.config)
 	}
@@ -2407,7 +2407,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -2522,7 +2522,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -2643,7 +2643,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}

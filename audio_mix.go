@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -173,13 +174,13 @@ func Mix(arms ...*jobStreamBuilder) *mixStream {
 
 type mixStream struct {
 	arms   []*jobStreamBuilder
-	encode *CodecSpec
+	encode *codec.CodecSpec
 	taps   []TapRef
 }
 
 // Encode encodes the mixed stream before the destination, so a Mix can record to
 // a File/mux (not only a frame Sink). Without it the mix delivers frames.
-func (m *mixStream) Encode(spec CodecSpec) *mixStream {
+func (m *mixStream) Encode(spec codec.CodecSpec) *mixStream {
 	m.encode = &spec
 	return m
 }

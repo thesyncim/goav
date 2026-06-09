@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -345,7 +346,7 @@ func TestTaskControlUntargetedDeliverNeedsTarget(t *testing.T) {
 // until the task stops, so a control can land while the graph is live.
 func controlLiveAudioSource(id av.StreamID) InputSpec {
 	return Source(string(id),
-		shape.Frame(av.MediaAudio, shape.Audio(48000, Mono, av.SampleFormatS16), shape.Stream(id)),
+		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(ctx context.Context, push SourcePush) error {
 			payload := []byte{1, 0}
 			for {

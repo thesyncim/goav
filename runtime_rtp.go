@@ -43,7 +43,7 @@ func withRTPDepacketizers(depacketizers ...rtpav.Depacketizer) rtpOption {
 	}
 }
 
-func withRTPCodec(codec CodecSpec) rtpOption {
+func withRTPCodec(codec codec.CodecSpec) rtpOption {
 	return func(input *rtpInput) {
 		input.codec = cloneCodecSpec(codec)
 	}

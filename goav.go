@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
@@ -16,16 +15,6 @@ type Packet = av.Packet
 type Frame = av.Frame
 type Event = av.Event
 type Stream = av.Stream
-type CodecDescriptor = codec.Descriptor
-type CodecSettings = codec.CodecSettings
-type DecodeConfig = codec.DecodeConfig
-type EncodeConfig = codec.EncodeConfig
-type DecodeResult = codec.DecodeResult
-type EncodeResult = codec.EncodeResult
-type Decoder = codec.Decoder
-type Encoder = codec.Encoder
-type DecoderFactory = codec.DecoderFactory
-type EncoderFactory = codec.EncoderFactory
 type TaskStats = pipeline.GraphStats
 type BranchStats = pipeline.GraphStats
 

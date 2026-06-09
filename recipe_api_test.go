@@ -292,14 +292,14 @@ func TestMediaShapePublicContract(t *testing.T) {
 		av.MediaAudio,
 		av.CodecOpus,
 		shape.Stream("audio"),
-		shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
+		shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
 		shape.Realtime(true),
 	)
 	if packet.Domain != shape.DomainPacket ||
 		packet.MediaKind != av.MediaAudio ||
 		packet.Codec != av.CodecOpus ||
 		packet.SampleRate != 48_000 ||
-		packet.Channels != goav.Stereo ||
+		packet.Channels != codec.Stereo ||
 		!packet.Realtime {
 		t.Fatalf("packet shape=%+v, want opus audio packet shape", packet)
 	}
@@ -335,15 +335,15 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("copied shape=%+v, want preserved packet %+v", copied, packet)
 	}
 
-	var operationContract shape.Contract = goav.OperationSpec{Kind: goav.OpTransform, Transform: goav.Resample(16_000, goav.Mono)}
+	var operationContract shape.Contract = goav.OperationSpec{Kind: goav.OpTransform, Transform: goav.Resample(16_000, codec.Mono)}
 	resampled := operationContract.OutputShapes(shape.Frame(
 		av.MediaAudio,
-		shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
+		shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
 	))[0]
 	if resampled.Domain != shape.DomainFrame ||
 		resampled.MediaKind != av.MediaAudio ||
 		resampled.SampleRate != 16_000 ||
-		resampled.Channels != goav.Mono ||
+		resampled.Channels != codec.Mono ||
 		resampled.SampleFormat != av.SampleFormatS16 {
 		t.Fatalf("resampled shape=%+v, want 16k mono audio frame", resampled)
 	}
@@ -352,7 +352,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 func TestSourceInputIntentUsesCustomProtocol(t *testing.T) {
 	input := goav.Source("generated",
 		shape.Packet(av.MediaAudio, av.CodecOpus,
-			shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
+			shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
 		),
 		func(context.Context, goav.SourcePush) error {
 			return nil
@@ -371,7 +371,7 @@ func TestSourceInputIntentUsesCustomProtocol(t *testing.T) {
 		intent.Inputs[0].Protocol != av.ProtocolCustom ||
 		intent.Inputs[0].Codec.ID != av.CodecOpus ||
 		intent.Inputs[0].Codec.Parameters.SampleRate != 48_000 ||
-		intent.Inputs[0].Codec.Parameters.Channels != goav.Stereo {
+		intent.Inputs[0].Codec.Parameters.Channels != codec.Stereo {
 		t.Fatalf("intent inputs: %+v", intent.Inputs)
 	}
 }
@@ -379,7 +379,7 @@ func TestSourceInputIntentUsesCustomProtocol(t *testing.T) {
 func TestFlowReportsShapeContractAndTaps(t *testing.T) {
 	flow := goav.Flow("voice").Audio().
 		Decode().
-		Resample(16_000, goav.Mono).
+		Resample(16_000, codec.Mono).
 		Tap(goav.FrameTap("voice.frames"))
 
 	inputs := flow.InputShapes()
@@ -389,13 +389,13 @@ func TestFlowReportsShapeContractAndTaps(t *testing.T) {
 	outputs := flow.OutputShapes(shape.Packet(
 		av.MediaAudio,
 		av.CodecOpus,
-		shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
+		shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
 	))
 	if len(outputs) != 1 ||
 		outputs[0].Domain != shape.DomainFrame ||
 		outputs[0].MediaKind != av.MediaAudio ||
 		outputs[0].SampleRate != 16_000 ||
-		outputs[0].Channels != goav.Mono ||
+		outputs[0].Channels != codec.Mono ||
 		outputs[0].SampleFormat != av.SampleFormatS16 {
 		t.Fatalf("flow output shapes=%+v, want 16k mono audio frame", outputs)
 	}
@@ -465,7 +465,7 @@ type testTranscodeBranch struct {
 	media        av.MediaType
 	flows        []goav.Chain
 	transforms   []goav.TransformSpec
-	encode       goav.CodecSpec
+	encode       codec.CodecSpec
 	destinations []goav.Destination
 }
 
@@ -573,8 +573,8 @@ func (b *testTranscodeBranchBuilder) Resample(sampleRate int, channels int) *tes
 	return b
 }
 
-func (b *testTranscodeBranchBuilder) Encode(codec goav.CodecSpec) *testTranscodeBranchBuilder {
-	b.current().encode = codec
+func (b *testTranscodeBranchBuilder) Encode(spec codec.CodecSpec) *testTranscodeBranchBuilder {
+	b.current().encode = spec
 	return b
 }
 
@@ -708,7 +708,7 @@ func TestExplainReturnsPartialReportForMissingTransformAdapter(t *testing.T) {
 	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(goav.New(goav.WithStdCodecs())).
 		Audio().
-		Resample(16_000, goav.Mono).
+		Resample(16_000, codec.Mono).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
@@ -755,7 +755,7 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 	report, err := branchJob(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video("v").Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
-		Audio("a").Resample(48_000, goav.Stereo).Encode(codec.Opus(codec.Bitrate(96_000))).To(web).
+		Audio("a").Resample(48_000, codec.Stereo).Encode(codec.Opus(codec.Bitrate(96_000))).To(web).
 		Explain(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -803,7 +803,7 @@ func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 					ID:           av.CodecOpus,
 					Type:         av.MediaAudio,
 					SampleRate:   48000,
-					Channels:     goav.Stereo,
+					Channels:     codec.Stereo,
 					SampleFormat: av.SampleFormatS16,
 				},
 			}}})
@@ -835,7 +835,7 @@ func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 		branch.Shape.StreamID != "audio" ||
 		branch.Shape.Codec != av.CodecOpus ||
 		branch.Shape.SampleRate != 48000 ||
-		branch.Shape.Channels != goav.Stereo ||
+		branch.Shape.Channels != codec.Stereo ||
 		branch.Shape.SampleFormat != av.SampleFormatS16 {
 		t.Fatalf("branch shape=%+v, want probed audio packet shape", branch.Shape)
 	}
@@ -848,7 +848,7 @@ func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 		tap.Shape.StreamID != "audio" ||
 		tap.Shape.Codec != av.CodecOpus ||
 		tap.Shape.SampleRate != 48000 ||
-		tap.Shape.Channels != goav.Stereo ||
+		tap.Shape.Channels != codec.Stereo ||
 		tap.Shape.SampleFormat != av.SampleFormatS16 {
 		t.Fatalf("tap shape=%+v, want decoded audio frame shape", tap.Shape)
 	}
@@ -880,7 +880,7 @@ func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
 		branch.Shape.StreamID != "audio" ||
 		branch.Shape.Codec != av.CodecOpus ||
 		branch.Shape.SampleRate != 48000 ||
-		branch.Shape.Channels != goav.Stereo ||
+		branch.Shape.Channels != codec.Stereo ||
 		!branch.Shape.Realtime {
 		t.Fatalf("branch shape=%+v, want live Opus packet shape", branch.Shape)
 	}
@@ -892,7 +892,7 @@ func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
 		tap.Shape.MediaKind != av.MediaAudio ||
 		tap.Shape.Codec != av.CodecOpus ||
 		tap.Shape.SampleRate != 48000 ||
-		tap.Shape.Channels != goav.Stereo ||
+		tap.Shape.Channels != codec.Stereo ||
 		!tap.Shape.Realtime {
 		t.Fatalf("tap shape=%+v, want live decoded audio frame shape", tap.Shape)
 	}
@@ -1113,7 +1113,7 @@ func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 		UseRuntime(rt).
 		Audio().
 		Decode().
-		Resample(16_000, goav.Mono).
+		Resample(16_000, codec.Mono).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
@@ -1141,7 +1141,7 @@ func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 		UseRuntime(rt).
 		Audio().
 		Decode().
-		Resample(16_000, goav.Mono).
+		Resample(16_000, codec.Mono).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
@@ -1182,7 +1182,7 @@ func TestExplainReportsIncompatibleFilterDescriptor(t *testing.T) {
 		UseRuntime(rt).
 		Audio().
 		Decode().
-		Resample(16_000, goav.Mono).
+		Resample(16_000, codec.Mono).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
@@ -2005,7 +2005,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 }
 
 func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
-	codecSpec := reflect.TypeOf(goav.CodecSpec{})
+	codecSpec := reflect.TypeOf(codec.CodecSpec{})
 	settingsType := reflect.TypeOf(codec.CodecSettings{})
 	if field, ok := codecSpec.FieldByName("Settings"); !ok || field.Type != settingsType {
 		t.Fatalf("CodecSpec.Settings = %v %v, want codec.CodecSettings", field.Type, ok)
@@ -2675,8 +2675,8 @@ func TestStreamRecipeNamesCodecChangePolicy(t *testing.T) {
 func TestAudioChainAppliesToStreamRecipeIntent(t *testing.T) {
 	voice := goav.Flow("voice").
 		Audio().
-		Resample(16_000, goav.Mono).
-		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono)))
+		Resample(16_000, codec.Mono).
+		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -2691,7 +2691,7 @@ func TestAudioChainAppliesToStreamRecipeIntent(t *testing.T) {
 	if stream.Select.Type != av.MediaAudio || !stream.Decode ||
 		len(transformOperationsForTest(stream.Operations)) != 1 || transformOperationsForTest(stream.Operations)[0].Resample == nil ||
 		transformOperationsForTest(stream.Operations)[0].Resample.SampleRate != 16_000 ||
-		transformOperationsForTest(stream.Operations)[0].Resample.Channels != goav.Mono ||
+		transformOperationsForTest(stream.Operations)[0].Resample.Channels != codec.Mono ||
 		stream.Encode.ID != av.CodecOpus || stream.Encode.Settings.Bitrate != 32_000 ||
 		len(stream.Destinations) != 1 || stream.Destinations[0] != "voice.ogg" {
 		t.Fatalf("stream intent: %+v", stream)
@@ -2701,8 +2701,8 @@ func TestAudioChainAppliesToStreamRecipeIntent(t *testing.T) {
 func TestStreamRecipeCanWriteToTypedDestination(t *testing.T) {
 	voice := goav.Flow("voice").
 		Audio().
-		Resample(16_000, goav.Mono).
-		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono)))
+		Resample(16_000, codec.Mono).
+		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 	voiceOut := goav.File("voice.ogg", io.Discard)
 
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
@@ -2874,8 +2874,8 @@ func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
 		Audio().
 		Do(meter).
 		Tap(goav.FrameTap("audio.after-meter")).
-		Resample(16_000, goav.Mono).
-		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono)))
+		Resample(16_000, codec.Mono).
+		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -2903,7 +2903,7 @@ func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
 func TestFlowTapAfterEncodeIsPacketTap(t *testing.T) {
 	voice := goav.Flow("voice").
 		Audio().
-		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono))).
+		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono))).
 		Tap(goav.PacketTap("audio.voice.packets"))
 
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
@@ -2970,12 +2970,12 @@ func TestFlowCopyAppliesToStreamRecipeIntent(t *testing.T) {
 func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 	voice := goav.Flow("voice").
 		Audio().
-		Resample(16_000, goav.Mono).
-		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono)))
+		Resample(16_000, codec.Mono).
+		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 	archive := goav.Flow("archive").
 		Audio().
-		Resample(48_000, goav.Stereo).
-		Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(goav.Stereo)))
+		Resample(48_000, codec.Stereo).
+		Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))
 	voiceOut := goav.File("voice.ogg", io.Discard)
 	archiveOut := goav.File("archive.ogg", io.Discard)
 
@@ -3085,7 +3085,7 @@ func TestBranchesGroupSelectedStreams(t *testing.T) {
 		Tap(goav.FrameTap("audio.decoded")).
 		Branches(
 			goav.Branch("a96").
-				Resample(48_000, goav.Stereo).
+				Resample(48_000, codec.Stereo).
 				Encode(codec.Opus(codec.Bitrate(96_000))).
 				To(watch, mobile),
 		)
@@ -3269,7 +3269,7 @@ func TestBranchCustomStageUsesOrderedOperations(t *testing.T) {
 func TestFlowMediaMismatchIsActionable(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video().
-		Apply(goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono)))).
+		Apply(goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).
 		To(goav.File("voice.webm", io.Discard)).
 		Describe()
 
@@ -3287,7 +3287,7 @@ func TestFlowBranchMediaMismatchIsActionable(t *testing.T) {
 		Video().
 		Branches(
 			goav.Branch("voice").
-				Apply(goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono)))).
+				Apply(goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).
 				To(goav.File("voice.webm", io.Discard)),
 		).
 		Describe()
@@ -3308,7 +3308,7 @@ func TestBranchRejectsConflictingFlowMedia(t *testing.T) {
 		Audio().
 		Branches(
 			goav.Branch("mixed").
-				Apply(goav.Flow("voice").Audio().Resample(16_000, goav.Mono)).
+				Apply(goav.Flow("voice").Audio().Resample(16_000, codec.Mono)).
 				Apply(goav.Flow("preview").Video().Resize(640, 360)).
 				To(goav.File("mixed.webm", io.Discard)),
 		).
@@ -3328,13 +3328,13 @@ func TestBranchRejectsConflictingFlowMedia(t *testing.T) {
 func TestFlowBranchSnapshotsBuilderState(t *testing.T) {
 	flow := goav.Flow("voice").
 		Audio().
-		Resample(16_000, goav.Mono).
-		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono)))
+		Resample(16_000, codec.Mono).
+		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 	branch := goav.Branch("voice").
 		Apply(flow).
 		To(goav.File("voice.ogg", io.Discard))
 
-	flow.Resample(8_000, goav.Mono)
+	flow.Resample(8_000, codec.Mono)
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio().
 		Branches(branch)
@@ -3351,7 +3351,7 @@ func TestFlowDecodeAppliesToPacketBranchIntent(t *testing.T) {
 	flow := goav.Flow("voice").
 		Audio().
 		Decode().
-		Resample(16_000, goav.Mono).
+		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(64_000)))
 	target := goav.Sink(goav.SinkFunc("voice", func(context.Context, goav.Message) error {
 		return nil
@@ -3447,7 +3447,7 @@ func TestFlowDecodeMustBeFirstOperation(t *testing.T) {
 		Audio().
 		Apply(goav.Flow("voice").
 			Audio().
-			Resample(16_000, goav.Mono).
+			Resample(16_000, codec.Mono).
 			Decode()).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
@@ -3475,7 +3475,7 @@ func TestFlowCopyRequiresPacketDomain(t *testing.T) {
 				Audio().
 				Apply(goav.Flow("packets").
 					Audio().
-					Resample(16_000, goav.Mono).
+					Resample(16_000, codec.Mono).
 					Copy()).
 				To(goav.File("copy.ogg", io.Discard)),
 		},
@@ -3540,7 +3540,7 @@ func TestNilFlowBranchIsActionable(t *testing.T) {
 }
 
 func TestBranchesRejectOuterOutputsAndDuplicateDestinations(t *testing.T) {
-	voice := goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono)))
+	voice := goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 	voiceOut := goav.File("voice.ogg", io.Discard)
 
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
@@ -3572,15 +3572,15 @@ func TestFlowRejectsNonTapOperationsAfterEncode(t *testing.T) {
 			name: "transform",
 			flow: goav.Flow("voice").
 				Audio().
-				Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono))).
-				Resample(16_000, goav.Mono),
+				Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono))).
+				Resample(16_000, codec.Mono),
 			want: "resample",
 		},
 		{
 			name: "stage",
 			flow: goav.Flow("voice").
 				Audio().
-				Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono))).
+				Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono))).
 				Do(goav.FrameFunc("meter", func(context.Context, *av.Frame, goav.Emit) error {
 					return nil
 				})),
@@ -3607,8 +3607,8 @@ func TestFlowRejectsNonTapOperationsAfterEncode(t *testing.T) {
 }
 
 func TestFlowBranchesDescribeLiveInputBranches(t *testing.T) {
-	voice := goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(goav.Mono)))
-	archive := goav.Flow("archive").Audio().Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(goav.Stereo)))
+	voice := goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
+	archive := goav.Flow("archive").Audio().Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))
 	voiceOut := goav.File("voice.ogg", io.Discard)
 	archiveOut := goav.File("archive.ogg", io.Discard)
 
@@ -4072,7 +4072,7 @@ func TestRTPRecipeRejectsInvalidTimestampGap(t *testing.T) {
 
 func TestRTPRecipeRejectsUnsupportedCodecIntent(t *testing.T) {
 	_, err := recordJob(
-		goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(goav.CodecSpec{ID: "pcm"}),
+		goav.RTP(recipeAPIRTPReader{}).Name("audio").Codec(codec.CodecSpec{ID: "pcm"}),
 		goav.File("recording.ogg", io.Discard),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
@@ -4090,7 +4090,7 @@ func TestRTPRecipeRejectsUnsupportedCodecIntent(t *testing.T) {
 func TestRTPRecipeRejectsUnresolvedCodecIntents(t *testing.T) {
 	tests := []struct {
 		name string
-		spec goav.CodecSpec
+		spec codec.CodecSpec
 		code string
 	}{
 		{name: "auto", spec: codec.Auto(), code: "rtp_codec_auto_unresolved"},
@@ -4141,7 +4141,7 @@ func TestReadmeAudioEncodeRecipeIsSmall(t *testing.T) {
 func TestReadmeAudioResampleEncodeRecipeIsSmall(t *testing.T) {
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Resample(16_000, goav.Mono).
+		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(48_000))).
 		To(goav.File("preview.ogg", io.Discard))
 
@@ -4214,7 +4214,7 @@ func TestStreamRecipeIntentOperationsImplyDecode(t *testing.T) {
 			name: "resample",
 			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 				Audio().
-				Resample(16_000, goav.Mono).
+				Resample(16_000, codec.Mono).
 				Encode(codec.Opus(codec.Bitrate(48_000))).
 				To(goav.File("preview.ogg", io.Discard)),
 		},
@@ -4386,7 +4386,7 @@ func TestStreamRecipeRejectsInvalidResize(t *testing.T) {
 func TestStreamRecipeRequiresEncoderForFile(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Resample(48_000, goav.Stereo).
+		Resample(48_000, codec.Stereo).
 		To(goav.File("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
@@ -4460,7 +4460,7 @@ func TestStreamRecipeRejectsProcessingAfterEncoder(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		Resample(16_000, goav.Mono).
+		Resample(16_000, codec.Mono).
 		To(goav.File("archive.ogg", io.Discard)).
 		Build(context.Background())
 
@@ -4499,7 +4499,7 @@ func TestStreamRecipeRejectsWorkInProgressRecipeEncoder(t *testing.T) {
 		name   string
 		input  string
 		output string
-		codec  goav.CodecSpec
+		codec  codec.CodecSpec
 	}{
 		{name: "h264", input: "input.h264", output: "archive.h264", codec: codec.H264(codec.Bitrate(2_000_000))},
 		{name: "av1", input: "input.ivf", output: "archive.ivf", codec: codec.AV1(codec.Bitrate(2_000_000))},
@@ -4769,7 +4769,7 @@ func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(goav.New(goav.WithStdCodecs())).
 		Audio().
-		Resample(16_000, goav.Mono).
+		Resample(16_000, codec.Mono).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
@@ -4814,7 +4814,7 @@ func TestStreamRecipeReportsIncompatibleTransformAdapterBeforeOpeningInput(t *te
 		UseRuntime(rt).
 		Audio().
 		Decode().
-		Resample(16_000, goav.Mono).
+		Resample(16_000, codec.Mono).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
 			return nil
 		}))).
@@ -4837,7 +4837,7 @@ func TestStreamRecipeReportsIncompatibleTransformAdapterBeforeOpeningInput(t *te
 func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 	tests := []struct {
 		name string
-		spec goav.CodecSpec
+		spec codec.CodecSpec
 		code string
 	}{
 		{name: "auto", spec: codec.Auto(), code: "encode_auto_unresolved"},
@@ -4996,7 +4996,7 @@ func TestBranchRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
 	web := goav.File("out.webm", io.Discard)
 	job := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("v360").Resize(640, 360).Encode(codec.VP9(codec.Bitrate(600_000))).To(web).
-		Audio("a96").Resample(48_000, goav.Stereo).Encode(codec.Opus(codec.Bitrate(96_000))).To(web)
+		Audio("a96").Resample(48_000, codec.Stereo).Encode(codec.Opus(codec.Bitrate(96_000))).To(web)
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -5713,7 +5713,7 @@ func TestBranchRecipeRejectsNegativeStreamIndex(t *testing.T) {
 
 func TestBranchRecipeRejectsWrongMediaTransform(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
-		Video("bad").Resample(16_000, goav.Mono).Encode(codec.VP9(codec.Bitrate(600_000))).
+		Video("bad").Resample(16_000, codec.Mono).Encode(codec.VP9(codec.Bitrate(600_000))).
 		To(goav.File("bad.webm", io.Discard)).
 		Build(context.Background())
 
@@ -5729,7 +5729,7 @@ func TestBranchRecipeRejectsWrongMediaTransform(t *testing.T) {
 
 func TestBranchRecipeRejectsInvalidResample(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
-		Audio("bad").Resample(0, goav.Mono).Encode(codec.Opus(codec.Bitrate(64_000))).
+		Audio("bad").Resample(0, codec.Mono).Encode(codec.Opus(codec.Bitrate(64_000))).
 		To(goav.File("bad.ogg", io.Discard)).
 		Build(context.Background())
 

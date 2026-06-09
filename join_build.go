@@ -29,7 +29,7 @@ type joinSpec struct {
 	kind   joinKind
 	arms   []*jobStreamBuilder
 	dest   Destination
-	encode *CodecSpec // mix/composite only; nil delivers the raw join output
+	encode *codec.CodecSpec // mix/composite only; nil delivers the raw join output
 	// taps name the joined stream as stable attach points, installed on the task
 	// exactly like chain taps (visible in task.Taps(), runtime-attachable).
 	taps []TapRef

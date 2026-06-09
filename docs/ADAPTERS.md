@@ -36,7 +36,7 @@ integrations belong under `adapters/...`.
   `OpaqueState` values explicitly.
 
 For codecs outside the built-in Opus, VP8, VP9, H264, and AV1 specs, use
-`goav.Codec(id, media, ...)` in recipes. The planner treats custom specs the
+`codec.Codec(id, media, ...)` in recipes. The planner treats custom specs the
 same way as built-ins; availability comes from the decoder and encoder
 factories registered on the selected runtime.
 

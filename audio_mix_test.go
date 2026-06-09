@@ -107,7 +107,7 @@ func TestAudioMixStageEmitsEOSWhenAllInputsEnd(t *testing.T) {
 
 func mixTestAudioSource(id av.StreamID, samples ...int16) InputSpec {
 	return Source(string(id),
-		shape.Frame(av.MediaAudio, shape.Audio(48000, Mono, av.SampleFormatS16), shape.Stream(id)),
+		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
 			b := make([]byte, len(samples)*2)
 			for i := range samples {
@@ -192,12 +192,12 @@ func errorsAsMix(err error, target **BuildError) bool { return errors.As(err, ta
 func TestMixDecodesPacketArmsBeforeMixing(t *testing.T) {
 	ctx := context.Background()
 	pcm := av.CodecID("x_pcm_s16")
-	desc := CodecDescriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
+	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
 	rt := New(WithDecoder(desc, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}))
 
 	packetSrc := func(id av.StreamID) InputSpec {
 		return Source(string(id),
-			shape.Packet(av.MediaAudio, pcm, shape.Audio(48000, Stereo, av.SampleFormatS16), shape.Stream(id)),
+			shape.Packet(av.MediaAudio, pcm, shape.Audio(48000, codec.Stereo, av.SampleFormatS16), shape.Stream(id)),
 			func(_ context.Context, push SourcePush) error {
 				if err := push.Packet(&av.Packet{StreamID: id, Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
 					return err
@@ -232,7 +232,7 @@ func TestMixDecodesPacketArmsBeforeMixing(t *testing.T) {
 
 func TestMixEncodesMixedOutput(t *testing.T) {
 	ctx := context.Background()
-	rt := New(WithEncoder(CodecDescriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))
+	rt := New(WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))
 
 	var packets int
 	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
@@ -263,7 +263,7 @@ func TestMixEncodesToFile(t *testing.T) {
 	muxers := &remuxTestMuxerFactory{}
 	rt := New(
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
-		WithEncoder(CodecDescriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
 	task, err := Mix(
@@ -284,7 +284,7 @@ func TestMixEncodesToFile(t *testing.T) {
 
 func mixTestAudioSourceRate(id av.StreamID, rate int) InputSpec {
 	return Source(string(id),
-		shape.Frame(av.MediaAudio, shape.Audio(rate, Mono, av.SampleFormatS16), shape.Stream(id)),
+		shape.Frame(av.MediaAudio, shape.Audio(rate, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
 			b := make([]byte, 960*2) // 960 mono S16 samples
 			for i := 0; i < 960; i++ {

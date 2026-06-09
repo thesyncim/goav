@@ -215,7 +215,7 @@ func (b *branchBuilder) Buffer(buffer flow.BranchBuffer) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Decode(options ...CodecOption) *branchBuilder {
+func (b *branchBuilder) Decode(options ...codec.Option) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -231,7 +231,7 @@ func (b *branchBuilder) Decode(options ...CodecOption) *branchBuilder {
 		b.setErr(branchDecodeOrderError(firstNonEmpty(b.spec.name, "branch")))
 		return b
 	}
-	decodeCodec := mergeDecodeCodecSpec(CodecSpec{}, codecSpecFromOptions(options...))
+	decodeCodec := mergeDecodeCodecSpec(codec.CodecSpec{}, codecSpecFromOptions(options...))
 	b.spec.operations = append(b.spec.operations, operationSpecForDecode(decodeCodec, string(decodeCodec.ID)))
 	return b
 }
@@ -362,7 +362,7 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Encode(codec CodecSpec) *branchBuilder {
+func (b *branchBuilder) Encode(codec codec.CodecSpec) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -731,7 +731,7 @@ func branchCopyParentOperationError(node string) error {
 	}
 }
 
-func branchEncodeParentOperationError(node string, encode CodecSpec) error {
+func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error {
 	return &BuildError{
 		Code:      "encode_branch_source_invalid",
 		Operation: "build branches",
@@ -862,7 +862,7 @@ func branchDecodeCopyError(node string) error {
 	}
 }
 
-func branchPacketEncodeUnsupportedError(stream streamIntent, encode CodecSpec) error {
+func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecSpec) error {
 	return &BuildError{
 		Code:      "packet_branch_encode_unsupported",
 		Operation: "build branches",

@@ -124,7 +124,7 @@ func TestMixBranchesEncodeAndMonitorIndependently(t *testing.T) {
 	muxers := &remuxTestMuxerFactory{}
 	rt := New(
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
-		WithEncoder(CodecDescriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
 	var monitor [][]int16

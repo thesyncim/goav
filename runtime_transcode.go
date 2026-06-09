@@ -18,7 +18,7 @@ type branchComposeRoute struct {
 	name              string
 	branch            branchComposeBranch
 	copy              bool
-	decode            CodecSpec
+	decode            codec.CodecSpec
 	codecChange       CodecChangePolicy
 	dropDecodeEvents  bool
 	sourceDomain      shape.MediaDomain
@@ -694,8 +694,8 @@ func branchComposeDecodedBranchIndices(indices []int, branches []branchComposeRo
 	return decoded
 }
 
-func branchComposeGroupDecodeConfig(indices []int, branches []branchComposeRoute) (CodecSpec, error) {
-	var config CodecSpec
+func branchComposeGroupDecodeConfig(indices []int, branches []branchComposeRoute) (codec.CodecSpec, error) {
+	var config codec.CodecSpec
 	var owner string
 	haveConfig := false
 	for _, index := range indices {
@@ -713,7 +713,7 @@ func branchComposeGroupDecodeConfig(indices []int, branches []branchComposeRoute
 			continue
 		}
 		if !reflect.DeepEqual(config, candidate) {
-			return CodecSpec{}, branchComposeDecodeConfigConflictError(owner, branches[index].name)
+			return codec.CodecSpec{}, branchComposeDecodeConfigConflictError(owner, branches[index].name)
 		}
 	}
 	return config, nil
@@ -759,7 +759,7 @@ func branchComposeGroupDropDecodeEvents(indices []int, branches []branchComposeR
 	return true
 }
 
-func codecSpecHasDecodeIntent(spec CodecSpec) bool {
+func codecSpecHasDecodeIntent(spec codec.CodecSpec) bool {
 	return spec.ID != "" ||
 		spec.Type != "" ||
 		codecSpecHasParameters(spec) ||

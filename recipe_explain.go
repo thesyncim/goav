@@ -46,7 +46,7 @@ type StreamReport struct {
 	Select       StreamSelect
 	Decode       bool
 	Operations   []OperationReport
-	Encode       CodecSpec
+	Encode       codec.CodecSpec
 	CodecChange  CodecChangePolicy
 	Destinations []string
 }

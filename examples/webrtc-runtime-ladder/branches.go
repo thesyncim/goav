@@ -158,8 +158,8 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 		}
 		spec := goav.Branch(r.Spec.ID).
 			From(goav.FrameTap(audioTapName)).
-			Resample(48_000, goav.Stereo).
-			Encode(codec.Opus(codec.Bitrate(r.Spec.Bitrate), codec.Channels(goav.Stereo))).
+			Resample(48_000, codec.Stereo).
+			Encode(codec.Opus(codec.Bitrate(r.Spec.Bitrate), codec.Channels(codec.Stereo))).
 			To(goav.Sink(r.Sink))
 		attachment, err := s.audioTask.Attach(ctx, spec)
 		if err != nil {

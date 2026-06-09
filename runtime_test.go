@@ -258,7 +258,7 @@ func TestRuntimeWithCodecAdapter(t *testing.T) {
 }
 
 func TestRuntimeWithCustomCodecHooks(t *testing.T) {
-	desc := CodecDescriptor{
+	desc := codec.Descriptor{
 		ID:    av.CodecID("x_pcm"),
 		Name:  "X PCM",
 		Type:  av.MediaAudio,
@@ -286,10 +286,10 @@ func TestRuntimeWithCustomCodecHooks(t *testing.T) {
 		t.Fatalf("encoder factory = %T err=%v, want registered custom factory", got, err)
 	}
 
-	spec := codec.Codec(desc.ID, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(Mono), codec.ClockRate(48_000))
+	spec := codec.Codec(desc.ID, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono), codec.ClockRate(48_000))
 	if spec.ID != desc.ID || spec.Type != av.MediaAudio || spec.Parameters.ID != desc.ID ||
 		spec.Parameters.Type != av.MediaAudio || spec.Parameters.SampleRate != 16_000 ||
-		spec.Parameters.Channels != Mono || spec.Parameters.ClockRate != 48_000 {
+		spec.Parameters.Channels != codec.Mono || spec.Parameters.ClockRate != 48_000 {
 		t.Fatalf("codec spec = %+v, want custom audio codec parameters", spec)
 	}
 }

@@ -986,7 +986,7 @@ func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch ru
 	}, nil
 }
 
-func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentShape shape.Spec, spec CodecSpec) (pipeline.Stage, error) {
+func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentShape shape.Spec, spec codec.CodecSpec) (pipeline.Stage, error) {
 	if t.runtime == nil {
 		return nil, runtimeBranchInvalidError(
 			"runtime branch decoding requires the standard runtime",
@@ -1906,7 +1906,7 @@ func runtimeBranchEncodeRequest(branch runtimeBranch, stream av.Stream) encodeRe
 	}
 }
 
-func runtimeBranchDecodeRequest(branchName string, stream av.Stream, spec CodecSpec) decodeRequest {
+func runtimeBranchDecodeRequest(branchName string, stream av.Stream, spec codec.CodecSpec) decodeRequest {
 	selector := av.StreamSelector{
 		Name:  firstNonEmpty(branchName, stream.Name),
 		Type:  stream.Type,

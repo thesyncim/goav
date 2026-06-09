@@ -103,7 +103,7 @@ application graph.
 The recipe layer can also accept raw RTP packet readers directly:
 
 ```go
-err := goav.From(goav.RTP(video).Name("video").Codec(goav.VP8())).
+err := goav.From(goav.RTP(video).Name("video").Codec(codec.VP8())).
     Copy().
     To(goav.File("recording.ivf", file)).
     Run(ctx)
@@ -150,11 +150,11 @@ The same selected live stream can continue into an encoder and one or more mux
 outputs when the output codec is explicit:
 
 ```go
-err := goav.From(goav.RTP(audio).Name("audio").Codec(goav.Opus())).
+err := goav.From(goav.RTP(audio).Name("audio").Codec(codec.Opus())).
     Audio().
     Decode().
     Do(resample).
-    Encode(goav.Opus(goav.Bitrate(96_000))).
+    Encode(codec.Opus(codec.Bitrate(96_000))).
     To(
         goav.File("archive.ogg", archive),
         goav.File("preview.ogg", preview),

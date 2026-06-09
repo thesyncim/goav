@@ -136,7 +136,7 @@ func (b *videoChain) Taps() []TapRef {
 	return b.chainBuilder.taps()
 }
 
-func (b *audioChain) Decode(options ...CodecOption) *audioChain {
+func (b *audioChain) Decode(options ...codec.Option) *audioChain {
 	if b == nil {
 		return b
 	}
@@ -176,7 +176,7 @@ func (b *audioChain) Tap(tap TapRef) *audioChain {
 	return b
 }
 
-func (b *audioChain) Encode(codec CodecSpec) *audioChain {
+func (b *audioChain) Encode(codec codec.CodecSpec) *audioChain {
 	if b == nil {
 		return b
 	}
@@ -195,7 +195,7 @@ func (b *audioChain) chainSpec() chainSpec {
 	return b.chainBuilder.snapshot()
 }
 
-func (b *videoChain) Decode(options ...CodecOption) *videoChain {
+func (b *videoChain) Decode(options ...codec.Option) *videoChain {
 	if b == nil {
 		return b
 	}
@@ -235,7 +235,7 @@ func (b *videoChain) Tap(tap TapRef) *videoChain {
 	return b
 }
 
-func (b *videoChain) Encode(codec CodecSpec) *videoChain {
+func (b *videoChain) Encode(codec codec.CodecSpec) *videoChain {
 	if b == nil {
 		return b
 	}
@@ -315,7 +315,7 @@ func (b *chainBuilder) taps() []TapRef {
 	return out
 }
 
-func (b *chainBuilder) decode(options ...CodecOption) {
+func (b *chainBuilder) decode(options ...codec.Option) {
 	if b == nil {
 		return
 	}
@@ -331,7 +331,7 @@ func (b *chainBuilder) decode(options ...CodecOption) {
 		b.setErr(flowDecodeOrderError(firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
-	decodeCodec := mergeDecodeCodecSpec(CodecSpec{}, codecSpecFromOptions(options...))
+	decodeCodec := mergeDecodeCodecSpec(codec.CodecSpec{}, codecSpecFromOptions(options...))
 	b.spec.operations = append(b.spec.operations, operationSpecForDecode(decodeCodec, string(decodeCodec.ID)))
 }
 
@@ -406,7 +406,7 @@ func (b *chainBuilder) tap(tap TapRef) {
 	b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, initialStepAfter(chainHasDecode(b.spec.operations)))))
 }
 
-func (b *chainBuilder) encode(codec CodecSpec) {
+func (b *chainBuilder) encode(codec codec.CodecSpec) {
 	if b == nil {
 		return
 	}
@@ -460,22 +460,22 @@ func chainHasDecode(operations []OperationSpec) bool {
 	return operationSpecsContainKind(operations, OpDecode)
 }
 
-func chainDecodeCodec(operations []OperationSpec) CodecSpec {
+func chainDecodeCodec(operations []OperationSpec) codec.CodecSpec {
 	for i := range operations {
 		if operations[i].Kind == OpDecode {
 			return operations[i].Decode
 		}
 	}
-	return CodecSpec{}
+	return codec.CodecSpec{}
 }
 
-func chainEncodeSpec(operations []OperationSpec) CodecSpec {
+func chainEncodeSpec(operations []OperationSpec) codec.CodecSpec {
 	for i := range operations {
 		if operations[i].Kind == OpEncode || operations[i].Kind == OpCopy {
 			return operations[i].Encode
 		}
 	}
-	return CodecSpec{}
+	return codec.CodecSpec{}
 }
 
 func cloneTransformSpec(spec TransformSpec) TransformSpec {
@@ -502,7 +502,7 @@ func chainTransformStepName(spec TransformSpec) string {
 	}
 }
 
-func duplicateFlowEncodeError(name string, first CodecSpec, second CodecSpec) error {
+func duplicateFlowEncodeError(name string, first codec.CodecSpec, second codec.CodecSpec) error {
 	return duplicateStreamEncodeError("build flow", firstNonEmpty(name, "flow"), first, second)
 }
 

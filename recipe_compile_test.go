@@ -511,9 +511,9 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 
 func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	voice := Flow("voice").Audio().
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Tap(FrameTap("audio.voice.frames")).
-		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(Mono))).
+		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono))).
 		Tap(PacketTap("audio.voice.packets"))
 
 	flowSpec, err := chainSpecFrom(voice)
@@ -525,7 +525,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	}
 	flowOutputs := voice.OutputShapes(shape.Frame(
 		av.MediaAudio,
-		shape.Audio(48_000, Stereo, av.SampleFormatS16),
+		shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
 	))
 	if len(flowOutputs) != 1 || flowOutputs[0].Domain != shape.DomainPacket || flowOutputs[0].MediaKind != av.MediaAudio || flowOutputs[0].Codec != av.CodecOpus {
 		t.Fatalf("flow output shapes = %+v, want Opus packets", flowOutputs)
@@ -566,8 +566,8 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 
 func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 	voice := Flow("voice").Audio().
-		Resample(16_000, Mono).
-		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(Mono)))
+		Resample(16_000, codec.Mono).
+		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 
 	job := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -593,7 +593,7 @@ func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T) {
 	decodeFlow := Flow("voice").Audio().
 		Decode().
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(64_000)))
 
 	decodeJob := From(FileInput("input.ogg", strings.NewReader(""))).
@@ -2091,7 +2091,7 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: Intent{Streams: []streamIntent{{
 					Name:   "voice",
 					Select: StreamSelect{Type: av.MediaAudio},
-					Encode: CodecSpec{ID: audioCodec, Type: av.MediaAudio, Parameters: av.CodecParameters{
+					Encode: codec.CodecSpec{ID: audioCodec, Type: av.MediaAudio, Parameters: av.CodecParameters{
 						ID:           audioCodec,
 						Type:         av.MediaAudio,
 						SampleFormat: av.SampleFormatF32,
@@ -2162,7 +2162,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "audio",
 					Select:     StreamSelect{Type: av.MediaAudio},
-					Operations: []OperationSpec{operationSpecForTransform(Resample(16_000, Mono))},
+					Operations: []OperationSpec{operationSpecForTransform(Resample(16_000, codec.Mono))},
 				}}},
 			},
 			want: []string{"no resample filter adapter", "transform=resample", "goav.Default", ".Resample"},
@@ -2220,7 +2220,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "audio",
 					Select:     StreamSelect{Type: av.MediaAudio},
-					Operations: []OperationSpec{operationSpecForTransform(Resample(16_000, Mono))},
+					Operations: []OperationSpec{operationSpecForTransform(Resample(16_000, codec.Mono))},
 				}}},
 			},
 			want: []string{"resample filter adapter declares incompatible media", "expected_input=audio", "actual_input=video", "Audio().Resample"},
@@ -2310,7 +2310,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 					Operations: []OperationSpec{operationSpecForTransform(TransformSpec{
 						Resample: &filter.ResampleConfig{
 							SampleRate:   16_000,
-							Channels:     Mono,
+							Channels:     codec.Mono,
 							SampleFormat: av.SampleFormatF32,
 						},
 					})},
@@ -2454,7 +2454,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 					Streams: []streamIntent{{
 						Name:         "video",
 						Select:       StreamSelect{Type: av.MediaVideo},
-						Operations:   []OperationSpec{operationSpecForTransform(Resample(48_000, Stereo))},
+						Operations:   []OperationSpec{operationSpecForTransform(Resample(48_000, codec.Stereo))},
 						Encode:       codec.VP9(codec.Bitrate(2_000_000)),
 						Destinations: []string{"web"},
 					}},
@@ -3472,8 +3472,8 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	}).Name("audio").Codec(codec.Opus())).
 		Audio().
 		Branches(
-			Branch("voice").Apply(Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(Mono)))).To(voice),
-			Branch("archive").Apply(Flow("archive").Audio().Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(Stereo)))).To(archive),
+			Branch("voice").Apply(Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).To(voice),
+			Branch("archive").Apply(Flow("archive").Audio().Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))).To(archive),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -3634,7 +3634,7 @@ func TestBranchComposeLowererUsesPlanSharedStepOperationNodes(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Resample(48_000, Stereo).
+		Resample(48_000, codec.Stereo).
 		Branches(Branch("main").Encode(codec.Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -3683,7 +3683,7 @@ func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testi
 		Audio().
 		Decode().
 		Branches(Branch("main").
-			Resample(16_000, Mono).
+			Resample(16_000, codec.Mono).
 			Encode(codec.Opus(codec.Bitrate(96_000))).
 			To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
@@ -4283,7 +4283,7 @@ func TestStreamGraphLowererUsesPlanSelectDecodeFilterOperationNodes(t *testing.T
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		To(Sink(&runtimeTestSink{name: "frames"}))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)

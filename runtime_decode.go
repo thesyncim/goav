@@ -597,7 +597,7 @@ func videoDecodeGeometry(stream av.Stream, bounds codec.DecodeBounds) (int, int)
 	return width, height
 }
 
-func decodeStreamWithSpec(stream av.Stream, spec CodecSpec) av.Stream {
+func decodeStreamWithSpec(stream av.Stream, spec codec.CodecSpec) av.Stream {
 	if spec.ID == "" && spec.Type == "" && !codecSpecHasParameters(spec) {
 		return stream
 	}

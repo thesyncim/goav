@@ -158,7 +158,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 			Type:       av.MediaAudio,
 			ClockRate:  48000,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 	}
 	receiver := &runtimeRTPReceiver{
@@ -168,7 +168,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 			Parameters:  stream.Codec,
 			MIMEType:    rtpav.MIMEOpus,
 			ClockRate:   48000,
-			Channels:    Stereo,
+			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
 			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
@@ -213,7 +213,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 			Type:       av.MediaAudio,
 			ClockRate:  48000,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 	}
 	receiver := &runtimeRTPReceiver{
@@ -223,7 +223,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 			Parameters:  stream.Codec,
 			MIMEType:    rtpav.MIMEOpus,
 			ClockRate:   48000,
-			Channels:    Stereo,
+			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
 			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
@@ -278,7 +278,7 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 	ctx := context.Background()
 	input := Source("generated",
 		shape.Packet(av.MediaAudio, av.CodecOpus,
-			shape.Audio(48_000, Stereo, av.SampleFormatS16),
+			shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
 		),
 		func(_ context.Context, push SourcePush) error {
 			packet := av.Packet{
@@ -352,7 +352,7 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 func TestFrontDoorFlowControlSentinelsClassifyRuntimeErrors(t *testing.T) {
 	ctx := context.Background()
 	input := Source("gen",
-		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, Stereo, av.SampleFormatS16)),
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(_ context.Context, push SourcePush) error {
 			packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
 			if err := push.Packet(&packet); err != nil {
@@ -380,14 +380,14 @@ func TestCustomFrameSourceRunsThroughRecipeWithoutDecode(t *testing.T) {
 	ctx := context.Background()
 	input := Source("pcm",
 		shape.Frame(av.MediaAudio,
-			shape.Audio(48_000, Stereo, av.SampleFormatS16),
+			shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
 		),
 		func(_ context.Context, push SourcePush) error {
 			frame := av.Frame{
 				Type: av.MediaAudio,
 				Audio: &av.AudioFrame{
 					SampleRate:   48_000,
-					Channels:     Stereo,
+					Channels:     codec.Stereo,
 					SampleFormat: av.SampleFormatS16,
 					Samples:      480,
 				},
@@ -438,7 +438,7 @@ func TestCustomFrameSourceRunsThroughRecipeWithoutDecode(t *testing.T) {
 		got.StreamID != "pcm" ||
 		got.Audio == nil ||
 		got.Audio.SampleRate != 48_000 ||
-		got.Audio.Channels != Stereo {
+		got.Audio.Channels != codec.Stereo {
 		t.Fatalf("frames=%d got=%+v, want one generated PCM frame", frames, got)
 	}
 	if events != 1 {
@@ -523,7 +523,7 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 			Type:       av.MediaAudio,
 			ClockRate:  48000,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 	}
 	receiver := &runtimeRTPReceiver{
@@ -533,7 +533,7 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 			Parameters:  stream.Codec,
 			MIMEType:    rtpav.MIMEOpus,
 			ClockRate:   48000,
-			Channels:    Stereo,
+			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
 			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
@@ -599,7 +599,7 @@ func TestRecordRecipeCopyToCustomObjectDestinationRuns(t *testing.T) {
 			Parameters:  stream.Codec,
 			MIMEType:    rtpav.MIMEOpus,
 			ClockRate:   48000,
-			Channels:    Stereo,
+			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
 			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
@@ -662,7 +662,7 @@ func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
 			Type:       av.MediaAudio,
 			ClockRate:  48000,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 	}
 	runErr := errors.New("rtp read failed")
@@ -674,7 +674,7 @@ func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
 				Parameters:  stream.Codec,
 				MIMEType:    rtpav.MIMEOpus,
 				ClockRate:   48000,
-				Channels:    Stereo,
+				Channels:    codec.Stereo,
 			}}),
 			packets: []*rtp.Packet{{
 				Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
@@ -731,7 +731,7 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 			Type:       av.MediaAudio,
 			ClockRate:  48000,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 	}
 	receiver := &runtimeRTPReceiver{
@@ -741,7 +741,7 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 			Parameters:  stream.Codec,
 			MIMEType:    rtpav.MIMEOpus,
 			ClockRate:   48000,
-			Channels:    Stereo,
+			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
 			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
@@ -826,7 +826,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 			Type:       av.MediaAudio,
 			ClockRate:  48000,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 	}
 	receiver := &runtimeRTPReceiver{
@@ -836,7 +836,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 			Parameters:  stream.Codec,
 			MIMEType:    rtpav.MIMEOpus,
 			ClockRate:   48000,
-			Channels:    Stereo,
+			Channels:    codec.Stereo,
 		}}),
 		events: make(chan av.Event),
 	}
@@ -986,7 +986,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 			Type:       av.MediaAudio,
 			ClockRate:  48000,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 	}
 	receiver := &runtimeRTPReceiver{
@@ -996,7 +996,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 			Parameters:  stream.Codec,
 			MIMEType:    rtpav.MIMEOpus,
 			ClockRate:   48000,
-			Channels:    Stereo,
+			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
 			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
@@ -1184,7 +1184,7 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 			Type:       av.MediaAudio,
 			ClockRate:  48000,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 	}
 	video := av.Stream{
@@ -1206,7 +1206,7 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 			Parameters:  audio.Codec,
 			MIMEType:    rtpav.MIMEOpus,
 			ClockRate:   48000,
-			Channels:    Stereo,
+			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
 			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
@@ -1774,7 +1774,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 			Type:       av.MediaAudio,
 			ClockRate:  48000,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 	}
 	receiver := &runtimeRTPReceiver{
@@ -1784,7 +1784,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 			Parameters:  stream.Codec,
 			MIMEType:    rtpav.MIMEOpus,
 			ClockRate:   48000,
-			Channels:    Stereo,
+			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
 			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
@@ -2165,7 +2165,7 @@ func TestBranchCompositionSharedResampleCurrentPointRuns(t *testing.T) {
 	job := From(FileInput("input.ogg", nil)).UseRuntime(New(formats, codecs, filters)).
 		Audio().
 		Decode().
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Branches(
 			Branch("voice").
 				Encode(codec.Opus(codec.Bitrate(64_000))).
@@ -2375,7 +2375,7 @@ func TestStreamRecipeFlowDecodeSinkRuns(t *testing.T) {
 		decodedTap.After != OpDecode ||
 		decodedTap.Shape.Codec != av.CodecOpus ||
 		decodedTap.Shape.SampleRate != 48000 ||
-		decodedTap.Shape.Channels != Stereo ||
+		decodedTap.Shape.Channels != codec.Stereo ||
 		decodedTap.Node != "decode-audio" {
 		t.Fatalf("decoded tap = %+v ok=%v, want frame Opus tap on stream decoder", decodedTap, ok)
 	}
@@ -2428,7 +2428,7 @@ func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) 
 		Branches(
 			Branch("voice").
 				Decode().
-				Resample(16_000, Mono).
+				Resample(16_000, codec.Mono).
 				Encode(codec.Opus(codec.Bitrate(64_000))).
 				To(File("voice.ogg", io.Discard, Format(av.FormatOgg))),
 		)
@@ -2469,7 +2469,7 @@ func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) 
 	}
 	if resampleFactory.config.Audio == nil ||
 		resampleFactory.config.Audio.SampleRate != 16_000 ||
-		resampleFactory.config.Audio.Channels != Mono {
+		resampleFactory.config.Audio.Channels != codec.Mono {
 		t.Fatalf("resample config = %+v, want 16k mono", resampleFactory.config.Audio)
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "voice" {
@@ -3102,7 +3102,7 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 	voice := Flow("voice").
 		Audio().
 		Do(meter).
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Tap(FrameTap("audio.16k"))
 	attachment, err := task.Attach(ctx, Branch("voice").
 		From(FrameTap("audio.decoded")).
@@ -3120,7 +3120,7 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 	}
 	if resampleFactory.config.Audio == nil ||
 		resampleFactory.config.Audio.SampleRate != 16_000 ||
-		resampleFactory.config.Audio.Channels != Mono {
+		resampleFactory.config.Audio.Channels != codec.Mono {
 		t.Fatalf("runtime resample config = %+v, want 16k mono", resampleFactory.config.Audio)
 	}
 	var resampledTap TapInfo
@@ -3134,7 +3134,7 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 		resampledTap.Domain != shape.DomainFrame ||
 		resampledTap.MediaKind != av.MediaAudio ||
 		resampledTap.Shape.SampleRate != 16_000 ||
-		resampledTap.Shape.Channels != Mono ||
+		resampledTap.Shape.Channels != codec.Mono ||
 		resampledTap.Node != "voice/resample-voice" {
 		t.Fatalf("resampled tap = %+v, want frame audio 16k mono tap on voice/resample-voice", resampledTap)
 	}
@@ -3262,7 +3262,7 @@ func TestTaskAttachRejectsRuntimeTransformDescriptorConfigBeforeMutation(t *test
 
 	branch := Branch("voice").
 		From(FrameTap("audio.decoded")).
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		To(Sink(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
 		})))
@@ -3437,7 +3437,7 @@ func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -3497,7 +3497,7 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchDestinationsBeforeMutation(t *te
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -3627,7 +3627,7 @@ func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
 
 	cases := []struct {
 		name   string
-		codec  CodecSpec
+		codec  codec.CodecSpec
 		output Destination
 	}{
 		{name: "h264", codec: codec.H264(codec.Bitrate(2_000_000)), output: destinationHandle(fileDestination("archive.h264", io.Discard))},
@@ -3666,7 +3666,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 		Type:     av.MediaAudio,
 		Audio: &av.AudioFrame{
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatF32,
 			Samples:      480,
 		},
@@ -3694,7 +3694,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 			StreamID:     "audio",
 			Codec:        av.CodecPCM,
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatF32,
 		},
 		Node: "source",
@@ -3742,7 +3742,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 		Type:     av.MediaAudio,
 		Audio: &av.AudioFrame{
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 			Samples:      480,
 		},
@@ -3770,7 +3770,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 			StreamID:     "audio",
 			Codec:        av.CodecPCM,
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 		},
 		Node: "source",
@@ -3779,7 +3779,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 
 	attachment, err := builtTask.Attach(ctx, Branch("record").
 		From(FrameTap("audio.frames")).
-		Encode(codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(Mono))).
+		Encode(codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))).
 		To(File("recording.ogg", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
@@ -3796,7 +3796,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 	if encoderFactory.config.Parameters.ID != customPCM ||
 		encoderFactory.config.Stream.Codec.ID != customPCM ||
 		encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
-		encoderFactory.config.Stream.Codec.Channels != Mono {
+		encoderFactory.config.Stream.Codec.Channels != codec.Mono {
 		t.Fatalf("custom runtime encode config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes != 1 || muxers.muxers[0].lastStream != "record" {
@@ -3841,7 +3841,7 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -3929,7 +3929,7 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -4022,7 +4022,7 @@ func TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation(t *testing.T) {
 
 	_, err = builtTask.Attach(ctx, Branch("voice").
 		From(FrameTap("video.frames")).
-		Apply(Flow("voice").Audio().Resample(16_000, Mono)).
+		Apply(Flow("voice").Audio().Resample(16_000, codec.Mono)).
 		To(Sink(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
 		}))))
@@ -4094,7 +4094,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 			StreamID:     "audio",
 			Codec:        av.CodecOpus,
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 		},
 		Node: "source",
@@ -4104,7 +4104,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 	attachment, err := builtTask.Attach(ctx, Branch("voice").
 		From(PacketTap("audio.packets")).
 		Decode().
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(64_000))).
 		Tap(PacketTap("audio.voice.packets")).
 		To(File("voice.ogg", io.Discard, Format(av.FormatOgg))))
@@ -4134,7 +4134,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 		packetTap.MediaKind != av.MediaAudio ||
 		packetTap.Shape.Codec != av.CodecOpus ||
 		packetTap.Shape.SampleRate != 16_000 ||
-		packetTap.Shape.Channels != Mono ||
+		packetTap.Shape.Channels != codec.Mono ||
 		packetTap.Node != "voice/encode-voice" {
 		t.Fatalf("packet tap = %+v ok=%v, want Opus 16k mono packet tap on voice encoder", packetTap, ok)
 	}
@@ -4153,13 +4153,13 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 	}
 	if resampleFactory.config.Audio == nil ||
 		resampleFactory.config.Audio.SampleRate != 16_000 ||
-		resampleFactory.config.Audio.Channels != Mono {
+		resampleFactory.config.Audio.Channels != codec.Mono {
 		t.Fatalf("runtime resample config = %+v, want 16k mono", resampleFactory.config.Audio)
 	}
 	if encoderFactory.config.Stream.ID != "voice" ||
 		encoderFactory.config.Stream.Codec.ID != av.CodecOpus ||
 		encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
-		encoderFactory.config.Stream.Codec.Channels != Mono ||
+		encoderFactory.config.Stream.Codec.Channels != codec.Mono ||
 		encoderFactory.config.Settings.Bitrate != 64_000 {
 		t.Fatalf("encode config: %+v", encoderFactory.config)
 	}
@@ -4195,7 +4195,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 		Type:     av.MediaAudio,
 		Audio: &av.AudioFrame{
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 			Samples:      480,
 		},
@@ -4223,7 +4223,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 			StreamID:     "audio",
 			Codec:        av.CodecPCM,
 			SampleRate:   48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 		},
 		Node: "source",
@@ -4232,7 +4232,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 
 	flow := Flow("voice").
 		Audio().
-		Encode(codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(Mono))).
+		Encode(codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))).
 		Tap(PacketTap("audio.voice.packets"))
 	attachment, err := builtTask.Attach(ctx, Branch("record").
 		From(FrameTap("audio.frames")).
@@ -4252,7 +4252,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 		packetTap.Node != "record/encode-record" ||
 		packetTap.Shape.Codec != customPCM ||
 		packetTap.Shape.SampleRate != 16_000 ||
-		packetTap.Shape.Channels != Mono {
+		packetTap.Shape.Channels != codec.Mono {
 		t.Fatalf("packet tap = %+v ok=%v, want custom PCM packet tap on flow encoder", packetTap, ok)
 	}
 	packetMessages := 0
@@ -4277,7 +4277,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 	if encoderFactory.config.Parameters.ID != customPCM ||
 		encoderFactory.config.Stream.Codec.ID != customPCM ||
 		encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
-		encoderFactory.config.Stream.Codec.Channels != Mono {
+		encoderFactory.config.Stream.Codec.Channels != codec.Mono {
 		t.Fatalf("flow custom runtime encode config: %+v", encoderFactory.config)
 	}
 	if len(muxers.muxers) != 1 ||
@@ -4314,7 +4314,7 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToDestinations(t *testing.T) {
 		Type:     av.MediaAudio,
 		Audio: &av.AudioFrame{
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 			Samples:    480,
 		},
 	}
@@ -4341,7 +4341,7 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToDestinations(t *testing.T) {
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
 			SampleRate: 48000,
-			Channels:   Stereo,
+			Channels:   codec.Stereo,
 		},
 		Node: "source",
 	}}
@@ -4400,7 +4400,7 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 			Type:         av.MediaAudio,
 			SampleRate:   48000,
 			ClockRate:    48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 		},
 	}}
@@ -4421,18 +4421,18 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 	var decoderConfig codec.DecodeConfig
 	encoder := &encodeTestEncoder{}
 	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
-	desc := CodecDescriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
+	desc := codec.Descriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
 	runtime := New(
 		formats,
 		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder, config: &decoderConfig}),
 		WithEncoder(desc, encoderFactory),
 		WithStdFilters(),
 	)
-	encoded := codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(Mono))
+	encoded := codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(runtime).
 		Audio().
-		Resample(16_000, Mono).
+		Resample(16_000, codec.Mono).
 		Encode(encoded).
 		To(File("preview.ogg", io.Discard)).
 		Build(ctx)
@@ -4445,7 +4445,7 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 	if decoder.decodes != 1 || encoder.encodes != 1 || encoder.flushes != 1 {
 		t.Fatalf("decodes=%d encodes=%d flushes=%d", decoder.decodes, encoder.encodes, encoder.flushes)
 	}
-	if encoderFactory.config.Stream.Codec.SampleRate != 16_000 || encoderFactory.config.Stream.Codec.Channels != Mono {
+	if encoderFactory.config.Stream.Codec.SampleRate != 16_000 || encoderFactory.config.Stream.Codec.Channels != codec.Mono {
 		t.Fatalf("encode stream after resample: %+v", encoderFactory.config.Stream)
 	}
 	if encoderFactory.config.Parameters.ID != customPCM || encoderFactory.config.Stream.Codec.ID != customPCM {
@@ -4471,7 +4471,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 			Type:         av.MediaAudio,
 			SampleRate:   48000,
 			ClockRate:    48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 		},
 	}}
@@ -4492,7 +4492,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 	var decoderConfig codec.DecodeConfig
 	encoder := &encodeTestEncoder{}
 	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
-	desc := CodecDescriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
+	desc := codec.Descriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
 	runtime := New(
 		formats,
 		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder, config: &decoderConfig}),
@@ -4503,7 +4503,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		customPCM,
 		av.MediaAudio,
 		codec.SampleRate(16_000),
-		codec.Channels(Mono),
+		codec.Channels(codec.Mono),
 		codec.Bitrate(128_000),
 		codec.FPS(50),
 		codec.KeyframeInterval(100),
@@ -4520,7 +4520,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		).
 		Branches(
 			Branch("main").
-				Resample(16_000, Mono).
+				Resample(16_000, codec.Mono).
 				Encode(encoded).
 				To(archive),
 		).
@@ -4538,7 +4538,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		t.Fatalf("decoder control callback not plumbed: %+v", decoderConfig)
 	}
 	if encoderFactory.config.Stream.Codec.SampleRate != 16_000 ||
-		encoderFactory.config.Stream.Codec.Channels != Mono ||
+		encoderFactory.config.Stream.Codec.Channels != codec.Mono ||
 		encoderFactory.config.Parameters.ID != customPCM ||
 		encoderFactory.config.Stream.Codec.ID != customPCM ||
 		encoderFactory.config.Stream.Codec.Profile != "low-delay" ||
@@ -4573,7 +4573,7 @@ func TestBranchCompositionRejectsConflictingDecodeConfigs(t *testing.T) {
 			Type:         av.MediaAudio,
 			SampleRate:   48000,
 			ClockRate:    48000,
-			Channels:     Stereo,
+			Channels:     codec.Stereo,
 			SampleFormat: av.SampleFormatS16,
 		},
 	}}
@@ -4582,7 +4582,7 @@ func TestBranchCompositionRejectsConflictingDecodeConfigs(t *testing.T) {
 		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: &decodeTestDemuxer{streams: streams}}),
 	)
 	decoder := &recipePCMDecoder{}
-	desc := CodecDescriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
+	desc := codec.Descriptor{ID: customPCM, Name: "X PCM S16", Type: av.MediaAudio}
 	runtime := New(
 		formats,
 		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder}),
@@ -4657,7 +4657,7 @@ func (d *recipePCMDecoder) DecodeInto(_ context.Context, packet *av.Packet, out 
 	frame.Type = av.MediaAudio
 	frame.Audio = &av.AudioFrame{
 		SampleRate:   48000,
-		Channels:     Stereo,
+		Channels:     codec.Stereo,
 		SampleFormat: av.SampleFormatS16,
 		Samples:      480,
 	}
@@ -4666,8 +4666,8 @@ func (d *recipePCMDecoder) DecodeInto(_ context.Context, packet *av.Packet, out 
 	} else {
 		frame.Planes = frame.Planes[:1]
 	}
-	frame.Planes[0].Buffer.Bytes = append(frame.Planes[0].Buffer.Bytes[:0], make([]byte, 480*Stereo*2)...)
-	frame.Planes[0].Stride = Stereo * 2
+	frame.Planes[0].Buffer.Bytes = append(frame.Planes[0].Buffer.Bytes[:0], make([]byte, 480*codec.Stereo*2)...)
+	frame.Planes[0].Stride = codec.Stereo * 2
 	d.decodes++
 	return nil
 }

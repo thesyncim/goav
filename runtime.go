@@ -62,19 +62,19 @@ func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
 	}
 }
 
-func WithCodecDescriptor(desc CodecDescriptor) Option {
+func WithCodecDescriptor(desc codec.Descriptor) Option {
 	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDescriptor(desc)
 	})
 }
 
-func WithDecoder(desc CodecDescriptor, factory DecoderFactory) Option {
+func WithDecoder(desc codec.Descriptor, factory codec.DecoderFactory) Option {
 	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDecoder(desc, factory)
 	})
 }
 
-func WithEncoder(desc CodecDescriptor, factory EncoderFactory) Option {
+func WithEncoder(desc codec.Descriptor, factory codec.EncoderFactory) Option {
 	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterEncoder(desc, factory)
 	})
@@ -276,7 +276,7 @@ type encodeRequest struct {
 type decodeRequest struct {
 	selector    av.StreamSelector
 	codecChange CodecChangePolicy
-	config      CodecSpec
+	config      codec.CodecSpec
 }
 
 type filterRequest struct {
@@ -300,7 +300,7 @@ type rtpInput struct {
 	feedback      rtpav.FeedbackWriter
 	jitter        rtpav.JitterBuffer
 	depacketizers []rtpav.Depacketizer
-	codec         CodecSpec
+	codec         codec.CodecSpec
 	limits        RTPBufferLimits
 	decodeBounds  codec.DecodeBounds
 	maxTSGap      av.Duration
