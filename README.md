@@ -198,15 +198,15 @@ return goav.From(input).
     Decode().
     Branches(
         goav.Branch("archive").
-            Buffer(goav.Blocking(128)).
+            Buffer(flow.Blocking(128)).
             Encode(codec.VP9(codec.Bitrate(4_000_000))).
             To(archive),
         goav.Branch("preview").
-            Buffer(goav.DropOldest(3)).
+            Buffer(flow.DropOldest(3)).
             Resize(640, 360).
             To(preview),
         goav.Branch("latest").
-            Buffer(goav.Latest()).
+            Buffer(flow.Latest()).
             To(goav.Sink(goav.SinkFunc("latest", inspect))),
     ).
     Run(ctx)

@@ -2219,9 +2219,9 @@ func TestDocsShowGoAVBranchBuffers(t *testing.T) {
 		text := string(body)
 		for _, required := range []string{
 			"Branch buffers",
-			"goav.Blocking(",
-			"goav.DropOldest(",
-			"goav.Latest()",
+			"flow.Blocking(",
+			"flow.DropOldest(",
+			"flow.Latest()",
 		} {
 			if !strings.Contains(text, required) {
 				t.Fatalf("%s should show branch buffer API %q", file, required)

@@ -272,7 +272,7 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		operations: operations,
 		policy:     spec.source.policy,
 		label:      spec.source.label,
-		buffer:     spec.branchBuffer.pipelinePolicy(),
+		buffer:     spec.branchBuffer.PipelinePolicy(),
 	}
 	branch.prepared = runtimeBranchOperationsFromSpecs(operations)
 	branch.postEncodeTaps = runtimeBranchPostEncodeTapsFromOperations(operations)

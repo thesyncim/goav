@@ -922,7 +922,6 @@ func (g *bufferedRunner) deliver(ctx context.Context, node *bufferedNode, msg *M
 	}
 }
 
-
 func (g *bufferedRunner) publishEvent(msg *Message) error {
 	if msg.Kind != MessageEvent || msg.Event == nil {
 		return nil

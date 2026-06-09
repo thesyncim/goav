@@ -320,15 +320,15 @@ Branch buffers are local to the downstream branch:
 
 ```go
 goav.Branch("archive").
-    Buffer(goav.Blocking(128)).
+    Buffer(flow.Blocking(128)).
     To(archive)
 
 goav.Branch("preview").
-    Buffer(goav.DropOldest(3)).
+    Buffer(flow.DropOldest(3)).
     To(preview)
 
 goav.Branch("latest-diagnostics").
-    Buffer(goav.Latest()).
+    Buffer(flow.Latest()).
     To(goav.Sink(goav.SinkFunc("latest", inspect)))
 ```
 

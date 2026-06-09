@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -1137,7 +1138,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 	}
 	parent, err := mediaTask.Attach(ctx, Branch("thumb").
 		From(FrameTap("video.frames")).
-		Buffer(Blocking(2)).
+		Buffer(flow.Blocking(2)).
 		Resize(320, 180).
 		Tap(FrameTap("video.320.frames")).
 		To(Sink(thumbs)))
@@ -1155,7 +1156,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 	}
 	child, err := mediaTask.Attach(ctx, Branch("inspect").
 		From(FrameTap("video.320.frames")).
-		Buffer(Blocking(2)).
+		Buffer(flow.Blocking(2)).
 		To(Sink(inspect)))
 	if err != nil {
 		t.Fatal(err)
@@ -1273,7 +1274,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 	}
 	parent, err := mediaTask.Attach(ctx, Branch("voice").
 		From(FrameTap("audio.frames")).
-		Buffer(Blocking(2)).
+		Buffer(flow.Blocking(2)).
 		Resample(16_000, Mono).
 		Tap(FrameTap("audio.16k")).
 		To(Sink(voice)))
@@ -1292,7 +1293,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 	}
 	child, err := mediaTask.Attach(ctx, Branch("monitor").
 		From(FrameTap("audio.16k")).
-		Buffer(Blocking(2)).
+		Buffer(flow.Blocking(2)).
 		To(Sink(monitor)))
 	if err != nil {
 		t.Fatal(err)
@@ -1942,7 +1943,7 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 	attachment, err := task.Attach(ctx,
 		Branch("late").
 			From(src).
-			Buffer(Blocking(2, BufferCopyBounds(1, 0))).
+			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 			To(Sink(late)),
 	)
 	if err != nil {
@@ -2119,7 +2120,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 	}
 	parent, err := builtTask.Attach(ctx, Branch("copy").
 		From(PacketTap("audio.packets")).
-		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
+		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Copy().
 		Tap(PacketTap("audio.copied")).
 		To(Sink(copied)))
@@ -2136,7 +2137,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 	}
 	child, err := builtTask.Attach(ctx, Branch("record").
 		From(PacketTap("audio.copied")).
-		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
+		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Copy().
 		To(File("recording.ogg", io.Discard)))
 	if err != nil {
@@ -2224,7 +2225,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 	}
 	attachment, err := builtTask.Attach(ctx, Branch("record").
 		From(FrameTap("audio.frames")).
-		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
+		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(File("recording.ogg", io.Discard)))
 	if err != nil {
@@ -2325,7 +2326,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 	archive := Flow("archive").Audio().Do(meter).Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(Stereo)))
 	attachment, err := builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
-		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
+		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Apply(archive).
 		To(File("archive.ogg", io.Discard)))
 	if err != nil {
@@ -2422,7 +2423,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 	}
 	parent, err := builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
-		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
+		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		Tap(PacketTap("audio.encoded")).
 		To(Sink(encoded)))
@@ -2439,7 +2440,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 	}
 	child, err := builtTask.Attach(ctx, Branch("record").
 		From(PacketTap("audio.encoded")).
-		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
+		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Copy().
 		To(File("recording.ogg", io.Discard)))
 	if err != nil {
@@ -2537,7 +2538,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	}
 	parent, err := builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
-		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
+		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		Tap(PacketTap("audio.encoded")).
 		To(Sink(encoded)))
@@ -2546,7 +2547,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	}
 	child, err := builtTask.Attach(ctx, Branch("copy").
 		From(PacketTap("audio.encoded")).
-		Buffer(Blocking(2, BufferCopyBounds(1, 0))).
+		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Copy().
 		To(Sink(copied)))
 	if err != nil {
@@ -2658,7 +2659,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 	}
 	parent, err := builtTask.Attach(ctx, Branch("analysis").
 		From(FrameTap("audio.frames")).
-		Buffer(Blocking(2)).
+		Buffer(flow.Blocking(2)).
 		Do(meter).
 		Tap(FrameTap("audio.metered")).
 		To(Sink(analysis)))
@@ -2667,7 +2668,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 	}
 	child, err := builtTask.Attach(ctx, Branch("dependent").
 		From(FrameTap("audio.metered")).
-		Buffer(Blocking(2)).
+		Buffer(flow.Blocking(2)).
 		To(Sink(dependent)))
 	if err != nil {
 		t.Fatal(err)

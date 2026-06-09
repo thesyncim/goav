@@ -13,12 +13,12 @@ Plan: slice **FC-1** — buffered producer-side `atomic.Pointer` routing snapsho
 **without `g.mu`** and without a per-message target slice (wide-fanout stays
 0-alloc); queue-close-vs-send safety moves to per-node `queueMutex` + a
 `queueClosed` flag set by Close/Remove. Then slice **FC-2** — add
-`pipeline.DropBlock`, map `goav.Blocking`→it, blocking send
+`pipeline.DropBlock`, map `flow.Blocking`→it, blocking send
 `select { case q<-slot: ; case <-ctx.Done(): }`, slow-consumer test.
 
 ## The bug
 
-`goav.Blocking(capacity)` is documented as "intentional backpressure … when slow
+`flow.Blocking(capacity)` is documented as "intentional backpressure … when slow
 branches should apply backpressure" (`branch_buffer.go`). But it maps to
 `pipeline.DropNever`, and a full `DropNever` queue returns `ErrBackpressure`
 (`drop.go` → `enqueue` `default`), which propagates up through `emit` →
@@ -47,7 +47,7 @@ others (acceptable for pure backpressure, wrong when siblings use drop policies)
 ## Design
 
 1. **Distinct `Block` policy.** Add `pipeline.DropBlock` (or a `Block bool` on
-   `BufferPolicy`); map `goav.Blocking` to it. Leave the bare default
+   `BufferPolicy`); map `flow.Blocking` to it. Leave the bare default
    (`""`→`DropNever`) and its tested `ErrBackpressure`-on-full behavior untouched
    (`TestGraphBufferedBackpressure`). This isolates the change to users who
    explicitly asked for backpressure.

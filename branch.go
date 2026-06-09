@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -146,7 +147,7 @@ type BranchSpec struct {
 	destinations []destinationRef
 
 	source       branchSourceBinding
-	branchBuffer BranchBuffer
+	branchBuffer flow.BranchBuffer
 
 	err error
 }
@@ -201,11 +202,11 @@ func (b *branchBuilder) Event(event av.EventType) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Buffer(buffer BranchBuffer) *branchBuilder {
+func (b *branchBuilder) Buffer(buffer flow.BranchBuffer) *branchBuilder {
 	if b == nil {
 		return b
 	}
-	if err := buffer.validate("build branch", firstNonEmpty(b.spec.name, "branch")); err != nil {
+	if err := validateBranchBuffer(buffer, "build branch", firstNonEmpty(b.spec.name, "branch")); err != nil {
 		b.setErr(err)
 		return b
 	}

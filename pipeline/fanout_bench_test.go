@@ -60,7 +60,7 @@ func (s *benchDrainSource) Close() error { return nil }
 // (routing, stats, locking, copies) rather than sink work.
 type benchSink struct{ name string }
 
-func (s *benchSink) Name() string                          { return s.name }
+func (s *benchSink) Name() string                           { return s.name }
 func (s *benchSink) Handle(context.Context, *Message) error { return nil }
 func (s *benchSink) Close() error                           { return nil }
 
