@@ -23,13 +23,30 @@ const selectBufferCapacity = 32
 
 type selectorStream struct {
 	arms []*jobStreamBuilder
+	taps []TapRef
+}
+
+// Tap names the switched stream as a stable attach point — the same tap a
+// normal chain declares: it appears in task.Taps() and runtime branches can
+// Attach from it later. Its domain follows the arms (frame arms switch frames,
+// packet arms switch packets).
+func (s *selectorStream) Tap(tap TapRef) *selectorStream {
+	s.taps = append(s.taps, tap)
+	return s
+}
+
+// Branches fans the switched stream out to planned branch chains, each with its
+// own destinations — the same goav.Branch specs an ordinary stream chain
+// accepts at this stream point.
+func (s *selectorStream) Branches(branches ...BranchSpec) *Job {
+	return newJoinBranchesJob(joinSelect, joinSpec{arms: s.arms, taps: s.taps}, branches)
 }
 
 // To delivers the switched stream to a destination and returns a Job, so the
 // select runs through the same Build/Run as every other recipe. It lowers to the
 // one joinSpec shared by every convergence builder.
 func (s *selectorStream) To(dest Destination) *Job {
-	return newJoinJob(joinSelect, s.arms, dest, nil)
+	return newJoinJob(joinSelect, joinSpec{arms: s.arms, dest: dest, taps: s.taps})
 }
 
 // SelectActive switches a running Select to forward the arm identified by id. It
@@ -59,6 +76,14 @@ var selectJoinProfile = joinProfile{
 		// DropBlock control-plane lesson).
 		return newSelectorStage("select", armIDs, av.StreamID("select")),
 			&pipeline.BufferPolicy{Capacity: selectBufferCapacity, Drop: pipeline.DropBlock}
+	},
+	// The switched output is the first arm's stream forwarded as-is under the
+	// selector's output id — Select is passthrough, so the arm's codec and
+	// format facts describe the joined stream.
+	joinedStream: func(b *joinBuild) av.Stream {
+		stream := b.armStreams[0]
+		stream.ID = av.StreamID("select")
+		return stream
 	},
 	sinkOnlyReason: "select to a non-Sink destination is not supported yet",
 }

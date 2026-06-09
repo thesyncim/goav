@@ -174,6 +174,7 @@ func Mix(arms ...*jobStreamBuilder) *mixStream {
 type mixStream struct {
 	arms   []*jobStreamBuilder
 	encode *CodecSpec
+	taps   []TapRef
 }
 
 // Encode encodes the mixed stream before the destination, so a Mix can record to
@@ -183,11 +184,27 @@ func (m *mixStream) Encode(spec CodecSpec) *mixStream {
 	return m
 }
 
+// Tap names the mixed stream as a stable frame-domain attach point — the same
+// tap a normal chain declares: it appears in task.Taps() and runtime branches
+// can Attach from it later.
+func (m *mixStream) Tap(tap TapRef) *mixStream {
+	m.taps = append(m.taps, tap)
+	return m
+}
+
+// Branches fans the mixed stream out to planned branch chains, each with its
+// own destinations — the same goav.Branch specs an ordinary stream chain
+// accepts after decode. The mix output is a normal stream point: branches may
+// transform, encode, tap, and deliver independently.
+func (m *mixStream) Branches(branches ...BranchSpec) *Job {
+	return newJoinBranchesJob(joinMix, joinSpec{arms: m.arms, encode: m.encode, taps: m.taps}, branches)
+}
+
 // To delivers the mixed stream to a destination and returns a Job, so the mix
 // runs through the same Build/Run as every other recipe. It lowers to the one
 // joinSpec shared by every convergence builder.
 func (m *mixStream) To(dest Destination) *Job {
-	return newJoinJob(joinMix, m.arms, dest, m.encode)
+	return newJoinJob(joinMix, joinSpec{arms: m.arms, dest: dest, encode: m.encode, taps: m.taps})
 }
 
 // mixJoinProfile is Mix's entry in the join table: audio arms, auto-decode for
@@ -200,7 +217,7 @@ var mixJoinProfile = joinProfile{
 	newStage: func(b *joinBuild, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
 		return newAudioMixStage("mix", armIDs, av.StreamID("mix")), nil
 	},
-	encodeStream: func(b *joinBuild) av.Stream {
+	joinedStream: func(b *joinBuild) av.Stream {
 		shape, _ := customSourceShape(b.spec.arms[0].job.inputs[0])
 		return av.Stream{
 			ID:   av.StreamID("mix"),

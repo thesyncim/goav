@@ -19,6 +19,7 @@ func Composite(arms ...*jobStreamBuilder) *compositeStream {
 type compositeStream struct {
 	arms   []*jobStreamBuilder
 	encode *CodecSpec
+	taps   []TapRef
 }
 
 // compositeRegion is an arm's top-left placement on the composite canvas. It is
@@ -35,11 +36,26 @@ func (c *compositeStream) Encode(spec CodecSpec) *compositeStream {
 	return c
 }
 
+// Tap names the composited stream as a stable frame-domain attach point — the
+// same tap a normal chain declares: it appears in task.Taps() and runtime
+// branches can Attach from it later.
+func (c *compositeStream) Tap(tap TapRef) *compositeStream {
+	c.taps = append(c.taps, tap)
+	return c
+}
+
+// Branches fans the composited stream out to planned branch chains, each with
+// its own destinations — the same goav.Branch specs an ordinary stream chain
+// accepts after decode.
+func (c *compositeStream) Branches(branches ...BranchSpec) *Job {
+	return newJoinBranchesJob(joinComposite, joinSpec{arms: c.arms, encode: c.encode, taps: c.taps}, branches)
+}
+
 // To delivers the composited stream to a destination and returns a Job, so the
 // composite runs through the same Build/Run as every other recipe. It lowers to
 // the one joinSpec shared by every convergence builder.
 func (c *compositeStream) To(dest Destination) *Job {
-	return newJoinJob(joinComposite, c.arms, dest, c.encode)
+	return newJoinJob(joinComposite, joinSpec{arms: c.arms, dest: dest, encode: c.encode, taps: c.taps})
 }
 
 // compositeJoinProfile is Composite's entry in the join table: video arms,
@@ -62,7 +78,7 @@ var compositeJoinProfile = joinProfile{
 	newStage: func(b *joinBuild, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
 		return newVideoCompositeStage("composite", armIDs, av.StreamID("composite"), b.layouts), nil
 	},
-	encodeStream: func(b *joinBuild) av.Stream {
+	joinedStream: func(b *joinBuild) av.Stream {
 		shape, _ := customSourceShape(b.spec.arms[0].job.inputs[0])
 		return av.Stream{
 			ID:   av.StreamID("composite"),

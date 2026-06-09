@@ -1255,7 +1255,7 @@ func (j *Job) setErr(err error) {
 }
 
 func (j *Job) To(destinations ...Destination) *Job {
-	if len(j.branchStreams) != 0 {
+	if len(j.branchStreams) != 0 || (j.join != nil && len(j.join.branches) != 0) {
 		j.setErr(branchOutputScopeError("branches"))
 		return j
 	}

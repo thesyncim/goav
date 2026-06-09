@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -21,13 +22,20 @@ const (
 )
 
 // joinSpec is the one internal N→1 model behind Mix/Composite/Select: N source
-// arms converge into one stage and continue to a single destination, optionally
-// through an encoder.
+// arms converge into one stage and continue like any other stream point — to a
+// single destination (optionally through an encoder), out to planned branches,
+// and past named taps on the joined stream.
 type joinSpec struct {
 	kind   joinKind
 	arms   []*jobStreamBuilder
 	dest   Destination
 	encode *CodecSpec // mix/composite only; nil delivers the raw join output
+	// taps name the joined stream as stable attach points, installed on the task
+	// exactly like chain taps (visible in task.Taps(), runtime-attachable).
+	taps []TapRef
+	// branches fan the joined stream out to planned branch chains, each carrying
+	// its own destinations; when set, dest/encode are unused.
+	branches []BranchSpec
 }
 
 // joinProfile is the per-kind configuration consulted by buildJoin. Everything
@@ -51,9 +59,9 @@ type joinProfile struct {
 	// newStage builds the convergence stage. A non-nil buffer pins the stage's
 	// input queue (Select: non-lossy DropBlock so injected controls survive).
 	newStage func(b *joinBuild, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy)
-	// encodeStream derives the joined stream fed to the encoder when the spec
-	// carries a CodecSpec; nil marks the kind sink-only (no .Encode support).
-	encodeStream func(b *joinBuild) av.Stream
+	// joinedStream derives the join's output stream — the normal stream point
+	// that taps, branches, and the optional encoder all compose against.
+	joinedStream func(b *joinBuild) av.Stream
 	// sinkOnlyReason is the destination error when dest is not a frame Sink and
 	// no encode applies.
 	sinkOnlyReason string
@@ -69,14 +77,38 @@ var joinProfiles = map[joinKind]joinProfile{
 
 // newJoinJob lowers public convergence sugar into the one joinSpec carried by
 // Job, so .To/Build/Run are shared by every join kind.
-func newJoinJob(kind joinKind, arms []*jobStreamBuilder, dest Destination, encode *CodecSpec) *Job {
+func newJoinJob(kind joinKind, spec joinSpec) *Job {
 	name := string(kind)
 	job := &Job{name: name, runtime: Default()}
-	if len(arms) < 2 {
+	if len(spec.arms) < 2 {
 		job.setErr(&BuildError{Code: name + "_inputs", Operation: "build " + name, Node: name, Reason: name + " requires at least two source arms", Cause: ErrUnsupportedBuild})
 		return job
 	}
-	job.join = &joinSpec{kind: kind, arms: arms, dest: dest, encode: encode}
+	spec.kind = kind
+	job.join = &spec
+	return job
+}
+
+// newJoinBranchesJob lowers a join that fans out to planned branches instead of
+// a single destination. The branch specs are the same goav.Branch values an
+// ordinary stream chain accepts; each carries its own destinations, so the Job
+// needs no .To. A join-level encoder is terminal exactly like a stream encoder,
+// so .Encode(...).Branches(...) is rejected with the chain's error.
+func newJoinBranchesJob(kind joinKind, spec joinSpec, branches []BranchSpec) *Job {
+	name := string(kind)
+	job := newJoinJob(kind, spec)
+	if job.err != nil {
+		return job
+	}
+	if len(branches) == 0 {
+		job.setErr(branchMissingError(name))
+		return job
+	}
+	if spec.encode != nil {
+		job.setErr(branchEncodeParentOperationError(name, *spec.encode))
+		return job
+	}
+	job.join.branches = branches
 	return job
 }
 
@@ -89,12 +121,31 @@ type joinBuild struct {
 	graph   pipeline.Graph
 	service *builder
 
+	// armStreams/armDomains record each arm's selected stream and media domain
+	// in arm order, so joined-output derivation (taps, branches, select
+	// passthrough) reads resolved arm state instead of re-opening inputs.
+	armStreams []av.Stream
+	armDomains []shape.MediaDomain
+
 	// mix: the first arm's audio format is the join target; later arms that
 	// differ get a resample inserted by the mix armStage hook.
 	targetRate     int
 	targetChannels int
 	// composite: per-arm canvas placement collected by its armStage hook.
 	layouts []compositeLayout
+}
+
+// joinedDomain reports the media domain of the join's output: kinds that decode
+// their arms always converge frames; passthrough kinds forward the first arm's
+// domain unchanged.
+func (b *joinBuild) joinedDomain() shape.MediaDomain {
+	if joinProfiles[b.spec.kind].decodeArms {
+		return shape.DomainFrame
+	}
+	if len(b.armDomains) != 0 && b.armDomains[0] != "" {
+		return b.armDomains[0]
+	}
+	return shape.DomainFrame
 }
 
 // insertArmStage appends a per-arm stage after upstream and returns its ref.
@@ -194,6 +245,8 @@ func (j *Job) buildJoin(ctx context.Context) (Task, error) {
 		}
 		armRefs = append(armRefs, upstream)
 		armIDs = append(armIDs, id)
+		b.armStreams = append(b.armStreams, stream)
+		b.armDomains = append(b.armDomains, domain)
 	}
 	stage, pinned := profile.newStage(b, armIDs)
 	stageBuffer := rt.buffer
@@ -211,9 +264,28 @@ func (j *Job) buildJoin(ctx context.Context) (Task, error) {
 			return nil, err
 		}
 	}
-	if spec.encode != nil && profile.encodeStream != nil {
+	// The join's output is a normal stream point from here on: derive the joined
+	// stream once and let taps, branches, the optional encoder, and the sink all
+	// compose against it.
+	joined := profile.joinedStream(b)
+	joinedDomain := b.joinedDomain()
+	taps, err := joinPlanTaps(spec, name, joined, joinedDomain, joinRef)
+	if err != nil {
+		graph.Close()
+		return nil, err
+	}
+	if len(spec.branches) != 0 {
+		if err := b.compileJoinBranches(joinRef, joined, joinedDomain); err != nil {
+			graph.Close()
+			return nil, err
+		}
+		joinTask := newTask(graph, rt, service.destinationTxs...)
+		installTaskTaps(joinTask, taps)
+		return joinTask, nil
+	}
+	if spec.encode != nil {
 		request := encodeRequest{name: name + "-encode", selector: av.StreamSelector{Type: profile.media}, config: encodeConfigFromSpec(*spec.encode)}
-		config, encodedStream, err := prepareEncodeConfig(profile.encodeStream(b), request, rt.realtime)
+		config, encodedStream, err := prepareEncodeConfig(joined, request, rt.realtime)
 		if err != nil {
 			graph.Close()
 			return nil, err
@@ -224,7 +296,9 @@ func (j *Job) buildJoin(ctx context.Context) (Task, error) {
 		}
 		// openMuxDestinationStage records the destination transaction (file
 		// commit/abort) on service; carry it to the task so the file finalizes.
-		return newTask(graph, rt, service.destinationTxs...), nil
+		joinTask := newTask(graph, rt, service.destinationTxs...)
+		installTaskTaps(joinTask, taps)
+		return joinTask, nil
 	}
 	sink := spec.dest.spec.sink
 	if sink == nil {
@@ -240,5 +314,135 @@ func (j *Job) buildJoin(ctx context.Context) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, rt), nil
+	joinTask := newTask(graph, rt)
+	installTaskTaps(joinTask, taps)
+	return joinTask, nil
+}
+
+// joinPlanTaps validates the join-level taps and converts them into the same
+// planTap records the recipe compiler installs on its tasks, anchored at the
+// join node — so a join tap shows up in task.Taps() and anchors runtime
+// branches exactly like a tap declared on an ordinary stream chain.
+func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.MediaDomain, node pipeline.NodeRef) ([]planTap, error) {
+	if len(spec.taps) == 0 {
+		return nil, nil
+	}
+	taps := make([]planTap, 0, len(spec.taps))
+	for _, tap := range spec.taps {
+		if tap.name == "" {
+			return nil, &BuildError{
+				Code:      "tap_invalid",
+				Operation: "build " + name,
+				Node:      name,
+				Reason:    "tap name is empty",
+				Suggestions: []string{
+					"call .Tap(goav.FrameTap(\"" + name + ".out\")) or another stable tap ref",
+					"omit .Tap(...) when no runtime branch should attach at that point",
+				},
+				Cause: ErrUnsupportedBuild,
+			}
+		}
+		if err := validateTapDomain("build "+name, name, tap, domain); err != nil {
+			return nil, err
+		}
+		taps = append(taps, planTap{
+			Name:      tap.name,
+			Node:      node,
+			Domain:    domain,
+			MediaKind: joined.Type,
+			After:     OpStage,
+			Shape:     shape.FromStream(joined, domain),
+			Shared:    true,
+		})
+	}
+	return taps, nil
+}
+
+// compileJoinBranches fans the joined stream out to planned branches through the
+// same branch-composition lowering the recipe path uses: each BranchSpec is
+// validated with validateBranchSpec, lowered to a streamBuild, planned with
+// planBranchCompositionRecipe, and compiled with compileBranchComposeInputs and
+// compileBranchComposeRoutes — anchored at the join node instead of a demuxed
+// source, with no second fanout implementation.
+func (b *joinBuild) compileJoinBranches(joinRef pipeline.NodeRef, joined av.Stream, domain shape.MediaDomain) error {
+	name := string(b.spec.kind)
+	parentPacket := domain == shape.DomainPacket
+	// The synthesized parent stream stands in for the joined stream point: frame
+	// joins read like a decoded stream, packet joins like a .Copy() point, so the
+	// shared planned-branch helpers see the shapes they already know.
+	parent := &jobStreamBuild{name: name, selector: av.StreamSelector{Type: joined.Type}}
+	if parentPacket {
+		parent.operations = []OperationSpec{operationSpecForCopy(codec.Copy())}
+	}
+	destinations := &Job{name: name}
+	builds := make([]streamBuild, 0, len(b.spec.branches))
+	for i := range b.spec.branches {
+		branch := b.spec.branches[i]
+		if err := validateBranchSpec(joined.Type, parentPacket, i, branch); err != nil {
+			return err
+		}
+		if err := b.validateJoinBranchAnchor(branch, domain); err != nil {
+			return err
+		}
+		if err := destinations.addBranchDestinations(branch.destinations...); err != nil {
+			return err
+		}
+		operations := plannedBranchPrivateOperationSpecs(parent, branch, parentPacket)
+		builds = append(builds, streamBuild{
+			name:             branch.name,
+			selector:         av.StreamSelector{Type: joined.Type},
+			decode:           !parentPacket || chainHasDecode(branch.operations),
+			decodeCodec:      chainDecodeCodec(branch.operations),
+			operations:       operations,
+			privateOps:       operations,
+			destinationNames: append([]string(nil), branchDestinationNames(branch.destinations)...),
+		})
+	}
+	for i := range destinations.branchDestinations {
+		if err := destinations.branchDestinations[i].output.validate("build "+name, fmt.Sprintf("output-%d", i)); err != nil {
+			return err
+		}
+	}
+	intent := Intent{Name: name}
+	for i := range builds {
+		intent.Streams = append(intent.Streams, branchStreamIntent(builds[i]))
+	}
+	plan, err := planBranchCompositionRecipe(intent, InputSpec{}, destinations.branchDestinations, builds)
+	if err != nil {
+		return err
+	}
+	routes, targets, err := prepareBranchComposePlan(plan)
+	if err != nil {
+		return err
+	}
+	for i := range routes {
+		routes[i].sourceDomain = domain
+	}
+	groups, err := resolveBranchComposeStreamGroups([]av.Stream{joined}, routes)
+	if err != nil {
+		return err
+	}
+	branchInputs, branchStreams, err := compileBranchComposeInputs(b.ctx, b.rt, b.graph, []pipeline.NodeRef{joinRef}, groups, nil, routes, nil, b.rt.realtime)
+	if err != nil {
+		return err
+	}
+	return compileBranchComposeRoutes(b.ctx, b.service, b.graph, routes, targets, branchInputs, branchStreams, nil, nil, b.rt.realtime)
+}
+
+// validateJoinBranchAnchor resolves a branch's .From(...) against the join: the
+// joined stream is the only planned anchor a join offers, so an explicit tap
+// must name one of the join-level taps (which alias the join node); anything
+// else raises the same branch_tap_missing error the chain path raises.
+func (b *joinBuild) validateJoinBranchAnchor(branch BranchSpec, domain shape.MediaDomain) error {
+	if branch.source.tap == "" {
+		return nil
+	}
+	for _, tap := range b.spec.taps {
+		if tap.name != branch.source.tap {
+			continue
+		}
+		from := TapRef{name: branch.source.tap, domain: branch.source.tapDomain}
+		return validateTapDomain("build branches", firstNonEmpty(branch.name, "branch"), from, domain)
+	}
+	return plannedBranchTapMissingError(string(b.spec.kind), branch.name, branch.source.tap)
 }
