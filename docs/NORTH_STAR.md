@@ -74,8 +74,9 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
 
 Grammar: 1[~] README clean · 2[x] direct chain ≡ Branch("main") (both naming paths,
 hard guards) · 3[ ] Flow no destinations/To · 4[~] Destination reuse groups by handle.
-Planner: 5[ ] Build+Attach same planner · 6[~] Attach emits WorkPatch only downstream
-of taps · 7[ ] Explain from WorkPlan · 8[~] Snapshot = WorkPlan+patches · 9[x] no
+Planner: 5[x] Build+Attach share the canonical operation lowering · 6[x] Attach emits
+WorkPatch only downstream of taps · 7[x] Explain from WorkPlan · 8[x] Snapshot =
+WorkPlan+patches · 9[x] no
 transcode import in core (package deleted) · 10[ ] no workflow-kind dispatch.
 Shape: 11[x] Resize requires video frame · 12[x] Resample requires audio frame ·
 13[x] frame→File w/o Encode fails · 14[x] packet→File w/ Copy ok · 15[x] Decode→frame
@@ -114,17 +115,19 @@ Stages (each green, in dependency order):
    (+ join outputs compose: `.Tap`/`.Branches` through the shared chain lowering).
 2. **Typed lifecycle states** — TaskState/BranchState/DestinationState in
    Snapshot. **DONE.**
-3. **runtimeBranch → WorkPatch** — Attach compiles `BranchSpec` with the same
-   planner as Build; delete the separate runtimeBranch* model (the 251 refs).
-   *(in flight)*
-4. **mediaPlan → WorkPlan-primary** — Explain/Describe/Build/Snapshot read
-   WorkPlan; mediaPlan becomes a rendered view, then dies. String routing
-   (destinationNames → destination-handle IDs) dies here too; stretch: planned
-   multi-upstream join node (kills the `j.join` route, Describe shows joins);
-   includes unexporting the opaque `Job.Plan() Intent` leak.
-5. Then: shape solver centralization (join arm-solving moves into it),
-   SwitchAt* policies, time/clock/seek (theme C — pull scheduling is the
-   keystone).
+3. **runtimeBranch → WorkPatch** — **DONE.** The attach-side parallel IR is
+   deleted; Attach walks the same canonical OperationSpec chain as Build
+   (shared shape algebra + stage/destination constructors) and emits the
+   workPatch as THE plan; snapshots render from it.
+4. **mediaPlan → WorkPlan-primary** — **DONE.** The `mediaPlan` aggregate is
+   deleted; `buildWorkPlan` builds the plan once inside the compile; Explain /
+   lowering / mux-compat / taps all read workPlan; destinations route by stable
+   handle IDs (`destination/<label>`), not name strings; the opaque
+   `Job.Plan()` is off the public surface.
+5. Remaining: planned multi-upstream JOIN node in the IR (kills the `j.join`
+   route, Describe shows joins — the one residual special route); shape solver
+   centralization (join arm-solving moves into it); SwitchAt* policies;
+   time/clock/seek (theme C — pull scheduling is the keystone).
 
 ## Execution order (condensed)
 
