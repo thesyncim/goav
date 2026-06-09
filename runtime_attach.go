@@ -29,7 +29,6 @@ type runtimeBranch struct {
 	operations     []OperationSpec
 	prepared       []runtimeBranchOperation
 	postEncodeTaps []string
-	encode         CodecSpec
 	destinations   []runtimeBranchDestination
 	terminals      []runtimeBranchTerminal
 	policy         pipeline.RoutePolicy
@@ -271,7 +270,6 @@ func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
 		tap:        spec.source.tap,
 		tapDomain:  spec.source.tapDomain,
 		operations: operations,
-		encode:     cloneCodecSpec(chainEncodeSpec(spec.operations)),
 		policy:     spec.source.policy,
 		label:      spec.source.label,
 		buffer:     spec.branchBuffer.pipelinePolicy(),
@@ -856,13 +854,9 @@ func validateRuntimeBranchShapeContract(branch runtimeBranch, initial MediaShape
 }
 
 func runtimeBranchShapeOperationSpecs(branch runtimeBranch) []OperationSpec {
-	operations := cloneOperationSpecs(branch.operations)
-	if branch.encode.Copy && !operationSpecsContainKind(operations, OpCopy) {
-		operations = append(operations, OperationSpec{Kind: OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(branch.encode)})
-	} else if codecIntentSet(branch.encode) && !branch.encode.Copy && !operationSpecsContainKind(operations, OpEncode) {
-		operations = append(operations, OperationSpec{Kind: OpEncode, Component: string(branch.encode.ID), Encode: cloneCodecSpec(branch.encode)})
-	}
-	return operations
+	// The branch builder co-appends the OpEncode/OpCopy operation, so the
+	// operation list already carries the encode step — no fallback insert.
+	return cloneOperationSpecs(branch.operations)
 }
 
 func runtimeBranchFinalShape(branch runtimeBranch, initial MediaShape) MediaShape {
@@ -883,13 +877,13 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 	stream := currentStream
 	shape := currentShape
 	hasMuxDestination := runtimeBranchHasMuxDestination(*branch)
-	if branch.encode.Copy {
+	if chainEncodeSpec(branch.operations).Copy {
 		if currentShape.Domain != DomainPacket {
 			closeRuntimeBranchOwnedStages(*branch)
 			return runtimeBranchCopyDomainError(branch.name, currentShape)
 		}
 		appendRuntimeBranchPostEncodeTaps(branch, shape, OpCopy)
-	} else if codecIntentSet(branch.encode) {
+	} else if codecIntentSet(chainEncodeSpec(branch.operations)) {
 		encodedStream, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentShape)
 		if err != nil {
 			closeRuntimeBranchOwnedStages(*branch)
@@ -1043,11 +1037,11 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 	if currentShape.Domain != DomainFrame {
 		return av.Stream{}, runtimeBranchEncodeDomainError(branch.name, currentShape)
 	}
-	if err := validateRecipeEncode(branch.encode, "attach runtime branch", firstNonEmpty(branch.name, "branch")); err != nil {
+	if err := validateRecipeEncode(chainEncodeSpec(branch.operations), "attach runtime branch", firstNonEmpty(branch.name, "branch")); err != nil {
 		return av.Stream{}, err
 	}
-	if _, err := t.runtime.codecs.EncoderFactory(branch.encode.ID); err != nil {
-		stream := streamIntent{Name: branch.name, Encode: branch.encode}
+	if _, err := t.runtime.codecs.EncoderFactory(chainEncodeSpec(branch.operations).ID); err != nil {
+		stream := streamIntent{Name: branch.name, Encode: chainEncodeSpec(branch.operations)}
 		return av.Stream{}, recipeEncodeAdapterError("attach runtime branch", stream, t.runtime.codecs, err)
 	}
 	request := runtimeBranchEncodeRequest(*branch, currentStream)
@@ -1055,8 +1049,8 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 	if err != nil {
 		return av.Stream{}, err
 	}
-	stream := streamIntent{Name: branch.name, Select: StreamSelect{Type: currentStream.Type}, Encode: branch.encode}
-	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(branch.encode, encodedStream)); err != nil {
+	stream := streamIntent{Name: branch.name, Select: StreamSelect{Type: currentStream.Type}, Encode: chainEncodeSpec(branch.operations)}
+	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(chainEncodeSpec(branch.operations), encodedStream)); err != nil {
 		return av.Stream{}, err
 	}
 	stage, err := (&builder{runtime: t.runtime}).newEncodeStage(ctx, request, config)
@@ -1064,7 +1058,7 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 		return av.Stream{}, err
 	}
 	branch.prepared = append(branch.prepared, runtimeBranchOperation{
-		spec:  operationSpecForEncode(branch.encode),
+		spec:  operationSpecForEncode(chainEncodeSpec(branch.operations)),
 		stage: stage,
 		shape: streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape),
 		owned: true,
@@ -1884,7 +1878,7 @@ func streamFromRuntimeBranchShape(name string, shape MediaShape) av.Stream {
 }
 
 func runtimeBranchEncodeRequest(branch runtimeBranch, stream av.Stream) encodeRequest {
-	config := encodeConfigFromSpec(branch.encode)
+	config := encodeConfigFromSpec(chainEncodeSpec(branch.operations))
 	if config.Stream.ID == "" {
 		config.Stream.ID = av.StreamID(firstNonEmpty(branch.name, string(stream.ID), "branch"))
 	}
