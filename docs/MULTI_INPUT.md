@@ -64,11 +64,17 @@ Sink — a real running `Task`. `Describe` shows the convergence; tested
 end-to-end (two audio sources → mixed `[150,150]` at a sink), `-race` clean.
 First-slice scope: frame-source arms → Sink.
 
+**Slice 3 — DONE (decode arms, zero new API):** packet-domain arms auto-insert a
+decode stage before the mix — `Mix(From(opusSrc).Audio(), …).To(sink)` decodes
+each arm to frames, then mixes. Reuses `builder.newDecodeStageNamed`; per-arm
+unique decode node names. Tested (PCM packet arms → decode → mix → sink frame).
+No public symbol added — the mixer just sees decoded frames.
+
 **Next slices:**
-1. Decode/encode arms: `Mix(From(rtp1).Audio().Decode(), …).Encode(Opus).To(file)`
-   — extend the lowering to per-arm decode + post-mix encode (reuse the recipe
-   encode/destination path). Lift `len(job.inputs)!=1`/`multi_input_unsupported`
-   for the join case.
+1. Encode the mixed output: `Mix(...).Encode(codec.Opus()).To(File(...))` — add
+   `.Encode()` to the mix builder; reuse `compileEncodeDestinationPath` from the
+   mixer node so the mix records to a file/mux, not only a Sink.
+2. `Composite` (video) + `Select` (one-of-N) on the same `buildMix` mechanism.
 2. Join shape-solving (theme A / gap #2): negotiate arm formats, insert
    resample/convert so the mixer's same-format precondition is guaranteed.
 3. `Composite` (video) + `Join(stage,…)` (custom N-input) on the same mechanism.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -229,13 +230,34 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 			return nil, &BuildError{Code: "mix_arm", Operation: "build mix", Node: string(id), Reason: "mix arms must have distinct stream ids", Cause: ErrUnsupportedBuild}
 		}
 		seen[id] = struct{}{}
-		ref, err := graph.AddSource(source, rt.buffer)
+		srcRef, err := graph.AddSource(source, rt.buffer)
 		if err != nil {
 			source.Close()
 			graph.Close()
 			return nil, err
 		}
-		armRefs = append(armRefs, string(ref))
+		upstream := string(srcRef)
+		// Packet-domain arms decode to frames before the mix (auto-inserted —
+		// the mixer sums decoded audio). Frame-domain arms feed it directly.
+		if shape, ok := customSourceShape(arm.job.inputs[0]); ok && shape.Domain == DomainPacket {
+			request := decodeRequest{selector: av.StreamSelector{Type: streams[0].Type}}
+			decodeStage, err := (&builder{runtime: rt}).newDecodeStageNamed(ctx, "mix-decode-"+string(id), request, streams[0], rt.realtime, true, codec.DecodeBounds{})
+			if err != nil {
+				graph.Close()
+				return nil, err
+			}
+			decodeRef, err := graph.AddStage(decodeStage, rt.buffer)
+			if err != nil {
+				graph.Close()
+				return nil, err
+			}
+			if err := graph.Connect(pipeline.Route{From: upstream, To: []string{string(decodeRef)}, Policy: pipeline.RouteAll}); err != nil {
+				graph.Close()
+				return nil, err
+			}
+			upstream = string(decodeRef)
+		}
+		armRefs = append(armRefs, upstream)
 		armIDs = append(armIDs, id)
 	}
 	mixRef, err := graph.AddStage(newAudioMixStage("mix", armIDs, av.StreamID("mix")), rt.buffer)

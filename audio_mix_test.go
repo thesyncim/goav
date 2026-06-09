@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -185,3 +186,44 @@ func TestMixRequiresTwoArms(t *testing.T) {
 	}
 }
 func errorsAsMix(err error, target **BuildError) bool { return errors.As(err, target) }
+
+func TestMixDecodesPacketArmsBeforeMixing(t *testing.T) {
+	ctx := context.Background()
+	pcm := av.CodecID("x_pcm_s16")
+	desc := CodecDescriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
+	rt := New(WithDecoder(desc, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}))
+
+	packetSrc := func(id av.StreamID) InputSpec {
+		return Source(string(id),
+			PacketShape(av.MediaAudio, pcm, ShapeAudio(48000, Stereo, av.SampleFormatS16), ShapeStream(id)),
+			func(_ context.Context, push SourcePush) error {
+				if err := push.Packet(&av.Packet{StreamID: id, Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
+					return err
+				}
+				return push.EOS()
+			})
+	}
+
+	var frames int
+	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
+		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Audio != nil {
+			frames++
+		}
+		return nil
+	}))
+
+	task, err := Mix(
+		From(packetSrc("a")).Audio(),
+		From(packetSrc("b")).Audio(),
+	).To(sink).UseRuntime(rt).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if frames != 1 {
+		t.Fatalf("mixed frames at sink = %d, want 1 (packet arms auto-decoded then mixed)", frames)
+	}
+}
