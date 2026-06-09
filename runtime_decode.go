@@ -100,15 +100,8 @@ func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request 
 	}
 	name = firstNonEmpty(name, decodeNodeName(request.selector))
 	intent := streamIntent{
-		Name: name,
-		Select: StreamSelect{
-			ID:       request.selector.ID,
-			Index:    request.selector.Index,
-			UseIndex: request.selector.UseIndex,
-			Type:     request.selector.Type,
-			Codec:    request.selector.Codec,
-			Name:     request.selector.Name,
-		},
+		Name:   name,
+		Select: streamSelectFromAV(request.selector),
 	}
 	if err := validateDecodeAdapterDescriptors("build decode stage", intent, b.runtime.codecs, decodeAdapterRequestFromStream(stream, intent)); err != nil {
 		return nil, err

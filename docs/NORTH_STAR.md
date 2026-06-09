@@ -103,14 +103,17 @@ Revised after investigating #2 (see Grammar #2): the plan collapse must come
    no round-trip); (3b) `branchComposePlan` becomes transcode-only → move the bridge
    to a compat pkg, drop the core `transcode` import; (3c) then encode/decode
    `streamIntent` collapse (the woven 51/102-read fields) + #2 fall out together.
-   **3a blocker (tested+reverted):** `buildMediaPlan` can't just use
-   `intent.Streams` instead of `streamIntentsFromBranchComposePlan(state.plan)` —
-   `branchComposeBranch` carries the **shared/private operation split**
-   (`SharedOperations`/`PrivateOperations`, from `streamBuild.sharedOps/privateOps`)
-   that plain `streamIntent` lacks; dropping it breaks
-   `TestPlannedBranchSplitOperationsRespectEarlierTapAnchors` (tap-anchor splitting).
-   So 3a must first carry the shared/private split on `streamIntent` (or recompute
-   it via `splitOperationSpecsByShared`) before the source can swap.
+   **3a blockers (tested+reverted, then diagnosed):** `buildMediaPlan` can't just
+   use `intent.Streams` instead of `streamIntentsFromBranchComposePlan(state.plan)`.
+   The two streamIntent converters diverge on ≥4 fields — `branchStreamIntent`
+   (intent source) sets `From` (the branch tap-anchor), `Taps`, and a **lossless**
+   `Encode`; `streamIntentFromBranchComposeBranch` (plan source) sets `CodecChange`
+   but leaves `From`/`Taps` empty and uses the **lossy** `codecSpecFromEncodeConfig`.
+   The reverted probe broke `TestPlannedBranchSplitOperationsRespectEarlierTapAnchors`
+   via `From` (the anchor drives split tap-anchor planning), not the split itself.
+   So 3a = reconcile the two converters into one (carry From/Taps + a faithful
+   Encode on the compose path, or recompute split via `splitOperationSpecsByShared`),
+   a dedicated multi-field reconciliation — not a loop-sized slice.
    **#2 layer (corrected):** `graphPlan.Describe()` returns `p.spec()` (the lowerer
    graph spec), NOT the mediaPlan — so `Describe()≡Build()` is automatic (both share
    `p.spec()`). **#2 lives purely in the lowerer spec generation:** direct chains use

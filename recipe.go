@@ -1305,15 +1305,15 @@ type Job struct {
 }
 
 type jobStreamBuild struct {
-	name           string
-	selector       av.StreamSelector
-	decode         bool
-	decodeCodec    CodecSpec
-	operations     []OperationSpec
-	encode         CodecSpec
-	codecChange    CodecChangePolicy
-	outputs        []destinationSpec
-	outputNames    []string
+	name        string
+	selector    av.StreamSelector
+	decode      bool
+	decodeCodec CodecSpec
+	operations  []OperationSpec
+	encode      CodecSpec
+	codecChange CodecChangePolicy
+	outputs     []destinationSpec
+	outputNames []string
 }
 
 type chainStep struct {
@@ -1789,15 +1789,8 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 	}
 	operations := jobOperationSpecs(stream)
 	return streamIntent{
-		Name: stream.name,
-		Select: StreamSelect{
-			ID:       stream.selector.ID,
-			Index:    stream.selector.Index,
-			UseIndex: stream.selector.UseIndex,
-			Type:     stream.selector.Type,
-			Codec:    stream.selector.Codec,
-			Name:     stream.selector.Name,
-		},
+		Name:         stream.name,
+		Select:       streamSelectFromAV(stream.selector),
 		Decode:       stream.decode,
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
 		Operations:   operations,
@@ -1811,15 +1804,8 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 func branchStreamIntent(stream streamBuild) streamIntent {
 	operations := streamBuildOperationSpecs(stream)
 	return streamIntent{
-		Name: stream.name,
-		Select: StreamSelect{
-			ID:       stream.selector.ID,
-			Index:    stream.selector.Index,
-			UseIndex: stream.selector.UseIndex,
-			Type:     stream.selector.Type,
-			Codec:    stream.selector.Codec,
-			Name:     stream.selector.Name,
-		},
+		Name:         stream.name,
+		Select:       streamSelectFromAV(stream.selector),
 		From:         stream.from,
 		Decode:       stream.decode,
 		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
