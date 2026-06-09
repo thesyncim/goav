@@ -122,7 +122,7 @@ BranchSpec -> WorkPlan   // initial build
 BranchSpec -> WorkPatch  // runtime attach
 ```
 
-`MediaShape` is the target public contract for branch, flow, tap, sink, byte
+`shape.Spec` is the target public contract for branch, flow, tap, sink, byte
 destination, shared destination, and custom source compatibility; current
 stream-cap metadata is the migration base. `WorkPlan` should own ordered
 operations, shape transitions, taps, destinations, branch buffer policy, detach

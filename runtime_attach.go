@@ -13,6 +13,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 var runtimeAttachmentSeq atomic.Uint64
@@ -24,7 +25,7 @@ type runtimeBranch struct {
 	media          av.MediaType
 	from           string
 	tap            string
-	tapDomain      MediaDomain
+	tapDomain      shape.MediaDomain
 	anchor         TapInfo
 	operations     []OperationSpec
 	prepared       []runtimeBranchOperation
@@ -40,7 +41,7 @@ type runtimeBranch struct {
 type runtimeBranchOperation struct {
 	spec  OperationSpec
 	stage pipeline.Stage
-	shape MediaShape
+	shape shape.Spec
 	owned bool
 }
 
@@ -58,7 +59,7 @@ type runtimeBranchTerminal struct {
 	stream   av.Stream
 	stage    pipeline.Stage
 	sink     pipeline.Sink
-	shape    MediaShape
+	shape    shape.Spec
 	owned    bool
 }
 
@@ -755,12 +756,12 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 			}
 			operation.stage = decodedStage
 			operation.owned = true
-			currentShape.Domain = DomainFrame
+			currentShape.Domain = shape.DomainFrame
 			operation.shape = currentShape
 		case OpStage:
 			operation.shape = currentShape
 		case OpShape:
-			currentShape = mergeMediaShape(currentShape, operation.spec.Shape)
+			currentShape = shape.Merge(currentShape, operation.spec.Shape)
 			operation.shape = currentShape
 		case OpTransform:
 			if t.runtime == nil {
@@ -770,7 +771,7 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 					"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching resize/resample branches",
 				)
 			}
-			if currentShape.Domain != DomainFrame {
+			if currentShape.Domain != shape.DomainFrame {
 				closeRuntimeBranchOwnedStages(*branch)
 				return runtimeBranchInvalidError(
 					"runtime branch transforms require a frame tap",
@@ -823,7 +824,7 @@ func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, 
 	return nil
 }
 
-func validateRuntimeBranchShapeContract(branch runtimeBranch, initial MediaShape) error {
+func validateRuntimeBranchShapeContract(branch runtimeBranch, initial shape.Spec) error {
 	stream := streamIntent{
 		Name: branch.name,
 		Select: StreamSelect{
@@ -835,7 +836,7 @@ func validateRuntimeBranchShapeContract(branch runtimeBranch, initial MediaShape
 	if err := validateOperationSpecShapes("attach runtime branch", stream, initial); err != nil {
 		return err
 	}
-	shape := runtimeBranchFinalShape(branch, initial)
+	spec := runtimeBranchFinalShape(branch, initial)
 	for i := range branch.destinations {
 		destination := branch.destinations[i]
 		if destination.sink != nil {
@@ -844,11 +845,11 @@ func validateRuntimeBranchShapeContract(branch runtimeBranch, initial MediaShape
 		if !destinationSpecHasOutput(destination.dest) {
 			continue
 		}
-		if shape.Domain == DomainPacket {
+		if spec.Domain == shape.DomainPacket {
 			continue
 		}
 		destinationName := firstNonEmpty(destination.name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
-		return destinationShapeMismatchError("attach runtime branch", branch.name, destinationName, destination.dest, shape)
+		return destinationShapeMismatchError("attach runtime branch", branch.name, destinationName, destination.dest, spec)
 	}
 	return nil
 }
@@ -859,7 +860,7 @@ func runtimeBranchShapeOperationSpecs(branch runtimeBranch) []OperationSpec {
 	return cloneOperationSpecs(branch.operations)
 }
 
-func runtimeBranchFinalShape(branch runtimeBranch, initial MediaShape) MediaShape {
+func runtimeBranchFinalShape(branch runtimeBranch, initial shape.Spec) shape.Spec {
 	shape := normalizeTapShape(initial)
 	for _, operation := range runtimeBranchShapeOperationSpecs(branch) {
 		shape = operationSpecOutputShape(shape, operation)
@@ -867,7 +868,7 @@ func runtimeBranchFinalShape(branch runtimeBranch, initial MediaShape) MediaShap
 	return shape
 }
 
-func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentShape MediaShape, group *runtimeAttachGroup) error {
+func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentShape shape.Spec, group *runtimeAttachGroup) error {
 	if branch == nil {
 		return nil
 	}
@@ -875,14 +876,14 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
 	stream := currentStream
-	shape := currentShape
+	spec := currentShape
 	hasMuxDestination := runtimeBranchHasMuxDestination(*branch)
 	if chainEncodeSpec(branch.operations).Copy {
-		if currentShape.Domain != DomainPacket {
+		if currentShape.Domain != shape.DomainPacket {
 			closeRuntimeBranchOwnedStages(*branch)
 			return runtimeBranchCopyDomainError(branch.name, currentShape)
 		}
-		appendRuntimeBranchPostEncodeTaps(branch, shape, OpCopy)
+		appendRuntimeBranchPostEncodeTaps(branch, spec, OpCopy)
 	} else if codecIntentSet(chainEncodeSpec(branch.operations)) {
 		encodedStream, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentShape)
 		if err != nil {
@@ -890,15 +891,15 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 			return err
 		}
 		stream = encodedStream
-		shape = streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape)
-		appendRuntimeBranchPostEncodeTaps(branch, shape, OpEncode)
+		spec = streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape)
+		appendRuntimeBranchPostEncodeTaps(branch, spec, OpEncode)
 	} else if hasMuxDestination {
 		closeRuntimeBranchOwnedStages(*branch)
 		return runtimeBranchEncodeMissingError(branch.name)
 	}
 	if !hasMuxDestination {
 		for i := range branch.destinations {
-			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(branch.destinations[i], stream, shape))
+			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(branch.destinations[i], stream, spec))
 		}
 		return nil
 	}
@@ -911,19 +912,19 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 	}
 	if stream.Codec.ID == "" {
 		closeRuntimeBranchOwnedStages(*branch)
-		return runtimeBranchMuxCodecMissingError(branch.name, shape)
+		return runtimeBranchMuxCodecMissingError(branch.name, spec)
 	}
 	for i := range branch.destinations {
 		destination := branch.destinations[i]
 		if destination.sink != nil {
-			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(destination, stream, shape))
+			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(destination, stream, spec))
 			continue
 		}
 		if group != nil && group.isSharedMux(destination.shareKey) {
-			branch.terminals = append(branch.terminals, runtimeBranchSharedMuxTerminal(destination, stream, shape))
+			branch.terminals = append(branch.terminals, runtimeBranchSharedMuxTerminal(destination, stream, spec))
 			continue
 		}
-		terminal, err := prepareRuntimeBranchMuxTerminal(ctx, t.runtime, *branch, destination, stream, shape, i)
+		terminal, err := prepareRuntimeBranchMuxTerminal(ctx, t.runtime, *branch, destination, stream, spec, i)
 		if err != nil {
 			closeRuntimeBranchOwnedStages(*branch)
 			return err
@@ -933,7 +934,7 @@ func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *run
 	return nil
 }
 
-func runtimeBranchSinkTerminal(destination runtimeBranchDestination, stream av.Stream, shape MediaShape) runtimeBranchTerminal {
+func runtimeBranchSinkTerminal(destination runtimeBranchDestination, stream av.Stream, shape shape.Spec) runtimeBranchTerminal {
 	return runtimeBranchTerminal{
 		name:     destination.name,
 		shareKey: destination.shareKey,
@@ -944,7 +945,7 @@ func runtimeBranchSinkTerminal(destination runtimeBranchDestination, stream av.S
 	}
 }
 
-func runtimeBranchSharedMuxTerminal(destination runtimeBranchDestination, stream av.Stream, shape MediaShape) runtimeBranchTerminal {
+func runtimeBranchSharedMuxTerminal(destination runtimeBranchDestination, stream av.Stream, shape shape.Spec) runtimeBranchTerminal {
 	return runtimeBranchTerminal{
 		name:     destination.name,
 		shareKey: destination.shareKey,
@@ -954,7 +955,7 @@ func runtimeBranchSharedMuxTerminal(destination runtimeBranchDestination, stream
 	}
 }
 
-func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, shape MediaShape, index int) (runtimeBranchTerminal, error) {
+func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, shape shape.Spec, index int) (runtimeBranchTerminal, error) {
 	formatID, err := runtimeMuxDestinationFormat(ctx, rt, destination.dest, index)
 	if err != nil {
 		return runtimeBranchTerminal{}, err
@@ -985,14 +986,14 @@ func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch ru
 	}, nil
 }
 
-func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentShape MediaShape, spec CodecSpec) (pipeline.Stage, error) {
+func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentShape shape.Spec, spec CodecSpec) (pipeline.Stage, error) {
 	if t.runtime == nil {
 		return nil, runtimeBranchInvalidError(
 			"runtime branch decoding requires the standard runtime",
 			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching decode branches",
 		)
 	}
-	if currentShape.Domain != DomainPacket {
+	if currentShape.Domain != shape.DomainPacket {
 		return nil, runtimeBranchDecodeDomainError(branchName, currentShape)
 	}
 	if currentStream.Codec.ID == "" {
@@ -1027,14 +1028,14 @@ func runtimeBranchHasMuxDestination(branch runtimeBranch) bool {
 	return false
 }
 
-func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentShape MediaShape) (av.Stream, error) {
+func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentShape shape.Spec) (av.Stream, error) {
 	if t.runtime == nil {
 		return av.Stream{}, runtimeBranchInvalidError(
 			"runtime branch encoding requires the standard runtime",
 			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching encode branches",
 		)
 	}
-	if currentShape.Domain != DomainFrame {
+	if currentShape.Domain != shape.DomainFrame {
 		return av.Stream{}, runtimeBranchEncodeDomainError(branch.name, currentShape)
 	}
 	if err := validateRecipeEncode(chainEncodeSpec(branch.operations), "attach runtime branch", firstNonEmpty(branch.name, "branch")); err != nil {
@@ -1066,7 +1067,7 @@ func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBr
 	return encodedStream, nil
 }
 
-func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, shape MediaShape, after OperationKind) {
+func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, shape shape.Spec, after OperationKind) {
 	if branch == nil || len(branch.postEncodeTaps) == 0 {
 		return
 	}
@@ -1842,7 +1843,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 	}
 }
 
-func runtimeBranchAnchorShape(anchor TapInfo) MediaShape {
+func runtimeBranchAnchorShape(anchor TapInfo) shape.Spec {
 	shape := anchor.Shape
 	if shape.Domain == "" {
 		shape.Domain = anchor.Domain
@@ -1853,7 +1854,7 @@ func runtimeBranchAnchorShape(anchor TapInfo) MediaShape {
 	return shape
 }
 
-func streamFromRuntimeBranchShape(name string, shape MediaShape) av.Stream {
+func streamFromRuntimeBranchShape(name string, shape shape.Spec) av.Stream {
 	stream := av.Stream{
 		ID:   av.StreamID(firstNonEmpty(string(shape.StreamID), name, "runtime-branch")),
 		Name: firstNonEmpty(name, "runtime-branch"),
@@ -1915,63 +1916,63 @@ func runtimeBranchDecodeRequest(branchName string, stream av.Stream, spec CodecS
 	return decodeRequest{selector: selector, config: cloneCodecSpec(spec)}
 }
 
-func mediaShapeFromRuntimeBranchStream(stream av.Stream, previous MediaShape) MediaShape {
-	shape := previous
-	shape.Domain = DomainFrame
+func mediaShapeFromRuntimeBranchStream(stream av.Stream, previous shape.Spec) shape.Spec {
+	spec := previous
+	spec.Domain = shape.DomainFrame
 	if stream.Type != "" {
-		shape.MediaKind = stream.Type
+		spec.MediaKind = stream.Type
 	}
 	if stream.ID != "" {
-		shape.StreamID = stream.ID
+		spec.StreamID = stream.ID
 	}
 	if stream.Codec.ID != "" {
-		shape.Codec = stream.Codec.ID
+		spec.Codec = stream.Codec.ID
 	}
 	if stream.Codec.Width != 0 {
-		shape.Width = stream.Codec.Width
+		spec.Width = stream.Codec.Width
 	}
 	if stream.Codec.Height != 0 {
-		shape.Height = stream.Codec.Height
+		spec.Height = stream.Codec.Height
 	}
 	if stream.Codec.PixelFormat != "" {
-		shape.PixelFormat = stream.Codec.PixelFormat
+		spec.PixelFormat = stream.Codec.PixelFormat
 	}
 	if stream.Codec.SampleRate != 0 {
-		shape.SampleRate = stream.Codec.SampleRate
+		spec.SampleRate = stream.Codec.SampleRate
 	}
 	if stream.Codec.Channels != 0 {
-		shape.Channels = stream.Codec.Channels
+		spec.Channels = stream.Codec.Channels
 	}
 	if stream.Codec.SampleFormat != "" {
-		shape.SampleFormat = stream.Codec.SampleFormat
+		spec.SampleFormat = stream.Codec.SampleFormat
 	}
-	return shape
+	return spec
 }
 
-func streamPacketShapeFromRuntimeBranchStream(stream av.Stream, previous MediaShape) MediaShape {
-	shape := mediaShapeFromRuntimeBranchStream(stream, previous)
-	shape.Domain = DomainPacket
-	return shape
+func streamPacketShapeFromRuntimeBranchStream(stream av.Stream, previous shape.Spec) shape.Spec {
+	spec := mediaShapeFromRuntimeBranchStream(stream, previous)
+	spec.Domain = shape.DomainPacket
+	return spec
 }
 
-func runtimeBranchTapInfo(name string, node pipeline.NodeRef, shape MediaShape, after OperationKind) TapInfo {
-	domain := shape.Domain
+func runtimeBranchTapInfo(name string, node pipeline.NodeRef, spec shape.Spec, after OperationKind) TapInfo {
+	domain := spec.Domain
 	if domain == "" {
-		domain = DomainPacket
+		domain = shape.DomainPacket
 	}
-	media := shape.MediaKind
-	if shape.Domain == "" {
-		shape.Domain = domain
+	media := spec.MediaKind
+	if spec.Domain == "" {
+		spec.Domain = domain
 	}
-	if shape.MediaKind == "" {
-		shape.MediaKind = media
+	if spec.MediaKind == "" {
+		spec.MediaKind = media
 	}
 	return TapInfo{
 		Name:      name,
 		MediaKind: media,
 		Domain:    domain,
 		After:     after,
-		Shape:     shape,
+		Shape:     spec,
 		Node:      node,
 	}
 }
@@ -2187,7 +2188,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 	}
 }
 
-func runtimeBranchEncodeDomainError(branch string, shape MediaShape) error {
+func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
 		Code:      "runtime_branch_encode_domain_mismatch",
 		Operation: "attach runtime branch",
@@ -2203,7 +2204,7 @@ func runtimeBranchEncodeDomainError(branch string, shape MediaShape) error {
 	}
 }
 
-func runtimeBranchDecodeDomainError(branch string, shape MediaShape) error {
+func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
 		Code:      "runtime_branch_decode_domain_mismatch",
 		Operation: "attach runtime branch",
@@ -2219,7 +2220,7 @@ func runtimeBranchDecodeDomainError(branch string, shape MediaShape) error {
 	}
 }
 
-func runtimeBranchDecodeCodecMissingError(branch string, shape MediaShape) error {
+func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
 		Code:      "runtime_branch_decode_codec_missing",
 		Operation: "attach runtime branch",
@@ -2235,7 +2236,7 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape MediaShape) error
 	}
 }
 
-func runtimeBranchCopyDomainError(branch string, shape MediaShape) error {
+func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
 		Code:      "runtime_branch_copy_domain_mismatch",
 		Operation: "attach runtime branch",
@@ -2251,7 +2252,7 @@ func runtimeBranchCopyDomainError(branch string, shape MediaShape) error {
 	}
 }
 
-func runtimeBranchMuxCodecMissingError(branch string, shape MediaShape) error {
+func runtimeBranchMuxCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
 		Code:      "runtime_branch_mux_codec_missing",
 		Operation: "attach runtime branch",
@@ -2267,7 +2268,7 @@ func runtimeBranchMuxCodecMissingError(branch string, shape MediaShape) error {
 	}
 }
 
-func runtimeBranchShapeDetails(shape MediaShape) []string {
+func runtimeBranchShapeDetails(shape shape.Spec) []string {
 	details := []string{
 		"domain=" + string(shape.Domain),
 		"media=" + string(shape.MediaKind),

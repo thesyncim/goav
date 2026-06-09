@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
+	"github.com/thesyncim/goav/shape"
 )
 
 const (
@@ -55,7 +56,7 @@ type OperationSpec struct {
 	Kind      OperationKind
 	Component string
 	Stage     pipeline.Stage
-	Shape     MediaShape
+	Shape     shape.Spec
 	Transform TransformSpec
 	Tap       tapIntent
 	Decode    CodecSpec
@@ -446,34 +447,34 @@ func (s InputSpec) validateCustomSource() error {
 			Cause: ErrNilSource,
 		}
 	}
-	shape := normalizeCustomSourceShape(node, s.source.shape)
-	if shape.Domain != DomainPacket && shape.Domain != DomainFrame && shape.Domain != DomainEvent {
+	spec := normalizeCustomSourceShape(node, s.source.shape)
+	if spec.Domain != shape.DomainPacket && spec.Domain != shape.DomainFrame && spec.Domain != shape.DomainEvent {
 		return &BuildError{
 			Code:      "source_shape_unsupported",
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom recipe sources currently produce packet-domain, frame-domain, or event-domain media",
 			Details: []string{
-				"actual_shape=" + shape.String(),
+				"actual_shape=" + spec.String(),
 			},
 			Suggestions: []string{
-				"declare the source with goav.PacketShape(media, codec, ...)",
-				"declare raw generated media with goav.FrameShape(media, ...)",
-				"declare diagnostic or lifecycle sources with goav.EventShape(...)",
+				"declare the source with shape.Packet(media, codec, ...)",
+				"declare raw generated media with shape.Frame(media, ...)",
+				"declare diagnostic or lifecycle sources with shape.Event(...)",
 				"use goav.Sink(...) after decode or transform when observing frame-domain media",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
 	}
-	if shape.Domain != DomainEvent && shape.MediaKind == "" {
+	if spec.Domain != shape.DomainEvent && spec.MediaKind == "" {
 		return &BuildError{
 			Code:      "source_shape_invalid",
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom source shape needs a media kind",
 			Suggestions: []string{
-				"use goav.PacketShape(av.MediaAudio, codec) or goav.PacketShape(av.MediaVideo, codec)",
-				"add goav.ShapeMedia(...) when constructing a custom shape",
+				"use shape.Packet(av.MediaAudio, codec) or shape.Packet(av.MediaVideo, codec)",
+				"add shape.Media(...) when constructing a custom shape",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -1099,10 +1100,10 @@ type jobStreamBuild struct {
 
 type chainStep struct {
 	stage     pipeline.Stage
-	shape     MediaShape
+	shape     shape.Spec
 	transform TransformSpec
 	tap       string
-	tapDomain MediaDomain
+	tapDomain shape.MediaDomain
 }
 
 func operationSpecForDecode(codec CodecSpec, component string) OperationSpec {
@@ -1128,7 +1129,7 @@ func operationSpecForStage(stage pipeline.Stage) OperationSpec {
 	return OperationSpec{Kind: OpStage, Component: name, Stage: stage}
 }
 
-func operationSpecForShape(shape MediaShape) OperationSpec {
+func operationSpecForShape(shape shape.Spec) OperationSpec {
 	return OperationSpec{Kind: OpShape, Component: "shape", Shape: shape}
 }
 
@@ -1151,12 +1152,12 @@ func operationSpecForTap(tap TapRef, media av.MediaType, after OperationKind) Op
 
 // tapDomainForAfter infers a domain-less tap's media domain from the operation it
 // follows: packets after select/copy/encode, frames otherwise.
-func tapDomainForAfter(after OperationKind) MediaDomain {
+func tapDomainForAfter(after OperationKind) shape.MediaDomain {
 	switch after {
 	case OpSelect, OpCopy, OpEncode:
-		return DomainPacket
+		return shape.DomainPacket
 	default:
-		return DomainFrame
+		return shape.DomainFrame
 	}
 }
 
@@ -1188,7 +1189,7 @@ func operationSpecsContainChainStep(operations []OperationSpec) bool {
 		case OpStage, OpShape, OpTransform:
 			return true
 		case OpTap:
-			if operations[i].Tap.Domain != DomainPacket {
+			if operations[i].Tap.Domain != shape.DomainPacket {
 				return true
 			}
 		}
@@ -1592,7 +1593,7 @@ func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
 			Kind:      OpDecode,
 			Component: string(stream.selector.Codec),
 			Decode:    cloneCodecSpec(stream.decodeCodec),
-			Shared:    stream.from.Domain() == DomainFrame,
+			Shared:    stream.from.Domain() == shape.DomainFrame,
 		})
 	}
 	// The encode op is carried by stream.operations (or sharedOps/privateOps in
@@ -1607,7 +1608,7 @@ func streamBuildSplitOperationSpecs(stream streamBuild) []OperationSpec {
 	operations = append(operations, cloneOperationSpecs(stream.privateOps)...)
 	if stream.decode && !operationSpecsContainKind(operations, OpDecode) {
 		operation := operationSpecForDecode(stream.decodeCodec, string(stream.selector.Codec))
-		operation.Shared = stream.from.Domain() == DomainFrame && len(stream.sharedOps) != 0
+		operation.Shared = stream.from.Domain() == shape.DomainFrame && len(stream.sharedOps) != 0
 		operations = append([]OperationSpec{operation}, operations...)
 	}
 	// The encode op (OpEncode/OpCopy) is always already in sharedOps/privateOps,
@@ -1789,8 +1790,8 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 		Node:      jobStreamIntentName(stream),
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
 		Details: []string{
-			"expected_shape=" + Shape(ShapeDomain(DomainPacket), ShapeMedia(stream.Select.Type)).String(),
-			"actual_shape=" + FrameShape(stream.Select.Type).String(),
+			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String(),
+			"actual_shape=" + shape.Frame(stream.Select.Type).String(),
 		},
 		Suggestions: []string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.File(...))",
@@ -3080,8 +3081,8 @@ func transformMediaError(stream string, transform string, expected av.MediaType,
 		Node:      stream,
 		Reason:    transform + " applies to " + string(expected) + " streams",
 		Details: []string{
-			"expected_shape=" + FrameShape(expected).String(),
-			"actual_shape=" + FrameShape(actual).String(),
+			"expected_shape=" + shape.Frame(expected).String(),
+			"actual_shape=" + shape.Frame(actual).String(),
 		},
 		Suggestions: []string{
 			"use .Video().Resize(...) for video scaling",
@@ -3144,19 +3145,19 @@ type jobStreamBuilder struct {
 }
 
 func (b *jobStreamBuilder) sourceStartsFrameDomain() bool {
-	shape, ok := b.sourceFrameShape()
-	return ok && shape.Domain == DomainFrame
+	spec, ok := b.sourceFrameShape()
+	return ok && spec.Domain == shape.DomainFrame
 }
 
-func (b *jobStreamBuilder) sourceFrameShape() (MediaShape, bool) {
+func (b *jobStreamBuilder) sourceFrameShape() (shape.Spec, bool) {
 	if b == nil || b.job == nil || len(b.job.inputs) != 1 {
-		return MediaShape{}, false
+		return shape.Spec{}, false
 	}
-	shape, ok := customSourceShape(b.job.inputs[0])
-	if !ok || shape.Domain != DomainFrame {
-		return MediaShape{}, false
+	spec, ok := customSourceShape(b.job.inputs[0])
+	if !ok || spec.Domain != shape.DomainFrame {
+		return shape.Spec{}, false
 	}
-	return shape, true
+	return spec, true
 }
 
 func (b *jobStreamBuilder) ensureDecodeOperation() {
@@ -3189,8 +3190,8 @@ func frameSourceDecodeError(operation string, node string) error {
 			"operation=decode",
 		},
 		Suggestions: []string{
-			"remove .Decode() when using goav.Source(..., goav.FrameShape(...), ...)",
-			"use goav.PacketShape(...) when the custom source pushes encoded packets",
+			"remove .Decode() when using goav.Source(..., shape.Frame(...), ...)",
+			"use shape.Packet(...) when the custom source pushes encoded packets",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -3299,14 +3300,14 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 		return b
 	}
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
-		if err := validateTapDomain("build stream", jobStreamName(stream), tap, DomainPacket); err != nil {
+		if err := validateTapDomain("build stream", jobStreamName(stream), tap, shape.DomainPacket); err != nil {
 			b.job.setErr(err)
 			return b
 		}
 		stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, OpEncode)))
 		return b
 	}
-	if err := validateTapDomain("build stream", jobStreamName(stream), tap, DomainFrame); err != nil {
+	if err := validateTapDomain("build stream", jobStreamName(stream), tap, shape.DomainFrame); err != nil {
 		b.job.setErr(err)
 		return b
 	}
@@ -3341,7 +3342,7 @@ func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 	}
 	for i := len(steps) - 1; i >= 0; i-- {
 		if steps[i].tap != "" {
-			return tapWithDomain(TapRef{name: steps[i].tap, domain: steps[i].tapDomain}, DomainFrame)
+			return tapWithDomain(TapRef{name: steps[i].tap, domain: steps[i].tapDomain}, shape.DomainFrame)
 		}
 	}
 	if len(steps) == 0 && stream.selector.Type != "" && chainHasDecode(stream.operations) {
@@ -3365,7 +3366,7 @@ func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) Shape(shape MediaShape) *jobStreamBuilder {
+func (b *jobStreamBuilder) Shape(shape shape.Spec) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "shape", chainEncodeSpec(stream.operations)))
@@ -3642,7 +3643,7 @@ func chainStepsFromChainOperations(operations []OperationSpec) []chainStep {
 				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
 			}
 		case OpTap:
-			if operation.Tap.Name != "" && operation.Tap.Domain != DomainPacket {
+			if operation.Tap.Name != "" && operation.Tap.Domain != shape.DomainPacket {
 				steps = append(steps, chainStep{tap: operation.Tap.Name, tapDomain: operation.Tap.Domain})
 			}
 		}
@@ -3822,8 +3823,8 @@ func branchEncodeMissingError(stream streamIntent) error {
 		Node:      stream.Name,
 		Reason:    "branch needs an encoder before writing to a muxed destination",
 		Details: []string{
-			"expected_shape=" + Shape(ShapeDomain(DomainPacket), ShapeMedia(stream.Select.Type)).String(),
-			"actual_shape=" + FrameShape(stream.Select.Type).String(),
+			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String(),
+			"actual_shape=" + shape.Frame(stream.Select.Type).String(),
 		},
 		Suggestions: []string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(...)",
@@ -4055,8 +4056,8 @@ func branchTransformMediaError(stream streamIntent, transform string, expected a
 		Node:      branchIntentName(stream),
 		Reason:    transform + " applies to " + string(expected) + " branches",
 		Details: []string{
-			"expected_shape=" + FrameShape(expected).String(),
-			"actual_shape=" + FrameShape(actual).String(),
+			"expected_shape=" + shape.Frame(expected).String(),
+			"actual_shape=" + shape.Frame(actual).String(),
 		},
 		Suggestions: []string{
 			"use .Video(...).Resize(...) for video ladder branches",

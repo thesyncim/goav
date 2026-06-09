@@ -47,7 +47,7 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   (decode/decodeCodec/encode/postEncodeTaps/destinationNames/from/tap/label/policy/buffer),
   branchComposePlan + transcode-in-core, mediaPlan-vs-workPlan, string routing. **TODO (biggest).**
 - **Shape solving** (§3,4): upgrade validation → solving (validate order, infer facts,
-  select adapters, auto-insert safe conversions when enabled): `.Require/.Prefer/.Auto(AllowConvert/Resample/Resize/FormatConvert)`; ShapeContract on Source/Do/Sink/Destination/Flow. **TODO.**
+  select adapters, auto-insert safe conversions when enabled): `.Require/.Prefer/.Auto(AllowConvert/Resample/Resize/FormatConvert)`; shape.Contract on Source/Do/Sink/Destination/Flow. **TODO.**
 - **Tap** (§5): carry name/domain/kind/shape/producing-op/branch-owner/attach-policy/timebase. **partial.**
 - **Branch control plane** (§6,7,10): pause/resume/stop/rebranch + lifecycle states + Control
   (RequestKeyframe/SetBitrate/Flush/Drain/Discontinuity). **DONE this session:** pause/resume/stop/rebranch
@@ -148,6 +148,6 @@ Revised after investigating #2 (see Grammar #2): the plan collapse must come
    one group; same name+different config = planning error.
 7. Then features: shape solving (§3), Control plane (§10), PushResult (§14),
    Join/multi-input (§12), dynamic streams (§11), TimeShape (§13).
-7. **Shape solving** (§3): `.Auto(AllowConvert/...)` + ShapeContract on custom components; insert safe conversions when enabled.
+7. **Shape solving** (§3): `.Auto(AllowConvert/...)` + shape.Contract on custom components; insert safe conversions when enabled.
 8. **Control plane** (§10): typed Control(RequestKeyframe/SetBitrate) routed to capable source/encoder via existing keyframe-event machinery; SwitchAt* rebranch policies.
 9. **PushResult** (§14), **Join/multi-input** (§12), **dynamic streams** (§11), **TimeShape** (§13).

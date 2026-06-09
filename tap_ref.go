@@ -1,9 +1,11 @@
 package goav
 
+import "github.com/thesyncim/goav/shape"
+
 // TapRef is a typed handle to a stable media attach point.
 type TapRef struct {
 	name   string
-	domain MediaDomain
+	domain shape.MediaDomain
 }
 
 func (t TapRef) branchSource() branchSourceBinding {
@@ -21,30 +23,30 @@ func Tap(name string) TapRef {
 // FrameTap names a frame-domain attach point. It is Tap with an early
 // frame-domain assertion.
 func FrameTap(name string) TapRef {
-	return TapRef{name: name, domain: DomainFrame}
+	return TapRef{name: name, domain: shape.DomainFrame}
 }
 
 // PacketTap names a packet-domain attach point.
 func PacketTap(name string) TapRef {
-	return TapRef{name: name, domain: DomainPacket}
+	return TapRef{name: name, domain: shape.DomainPacket}
 }
 
 func (t TapRef) Name() string {
 	return t.name
 }
 
-func (t TapRef) Domain() MediaDomain {
+func (t TapRef) Domain() shape.MediaDomain {
 	return t.domain
 }
 
-func tapWithDomain(tap TapRef, domain MediaDomain) TapRef {
+func tapWithDomain(tap TapRef, domain shape.MediaDomain) TapRef {
 	if tap.domain == "" {
 		tap.domain = domain
 	}
 	return tap
 }
 
-func validateTapDomain(operation string, node string, tap TapRef, actual MediaDomain) error {
+func validateTapDomain(operation string, node string, tap TapRef, actual shape.MediaDomain) error {
 	if tap.domain == "" || actual == "" || tap.domain == actual {
 		return nil
 	}

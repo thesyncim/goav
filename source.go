@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type SourceFunc func(context.Context, SourcePush) error
@@ -59,35 +60,35 @@ func (p *SourcePush) EOS(streams ...av.StreamID) error {
 }
 
 type sourceInputSpec struct {
-	shape MediaShape
+	shape shape.Spec
 	fn    SourceFunc
 }
 
-func Source(name string, shape MediaShape, fn SourceFunc) InputSpec {
-	shape = normalizeCustomSourceShape(name, shape)
+func Source(name string, spec shape.Spec, fn SourceFunc) InputSpec {
+	spec = normalizeCustomSourceShape(name, spec)
 	return InputSpec{
 		input: format.Input{
 			Name:     name,
 			Protocol: av.ProtocolCustom,
-			Realtime: shape.Realtime,
+			Realtime: spec.Realtime,
 		},
-		source: &sourceInputSpec{shape: shape, fn: fn},
-		codec:  codecSpecFromSourceShape(shape),
+		source: &sourceInputSpec{shape: spec, fn: fn},
+		codec:  codecSpecFromSourceShape(spec),
 		name:   name,
 	}
 }
 
-func normalizeCustomSourceShape(name string, shape MediaShape) MediaShape {
-	if shape.Domain == "" {
-		shape.Domain = DomainPacket
+func normalizeCustomSourceShape(name string, spec shape.Spec) shape.Spec {
+	if spec.Domain == "" {
+		spec.Domain = shape.DomainPacket
 	}
-	if shape.StreamID == "" {
-		shape.StreamID = av.StreamID(firstNonEmpty(name, string(shape.MediaKind), "stream"))
+	if spec.StreamID == "" {
+		spec.StreamID = av.StreamID(firstNonEmpty(name, string(spec.MediaKind), "stream"))
 	}
-	return shape
+	return spec
 }
 
-func codecSpecFromSourceShape(shape MediaShape) CodecSpec {
+func codecSpecFromSourceShape(shape shape.Spec) CodecSpec {
 	return CodecSpec{
 		ID:   shape.Codec,
 		Type: shape.MediaKind,
@@ -104,22 +105,22 @@ func codecSpecFromSourceShape(shape MediaShape) CodecSpec {
 	}
 }
 
-func customSourceShape(input InputSpec) (MediaShape, bool) {
+func customSourceShape(input InputSpec) (shape.Spec, bool) {
 	if input.source == nil {
-		return MediaShape{}, false
+		return shape.Spec{}, false
 	}
 	return normalizeCustomSourceShape(input.inputName("source"), input.source.shape), true
 }
 
-func compileStateCustomSourceShape(state *recipeCompileState) (MediaShape, bool) {
+func compileStateCustomSourceShape(state *recipeCompileState) (shape.Spec, bool) {
 	if state == nil {
-		return MediaShape{}, false
+		return shape.Spec{}, false
 	}
 	if state.branchCompositionPresent {
 		return customSourceShape(state.branchInputAttachment)
 	}
 	if len(state.inputAttachments) != 1 {
-		return MediaShape{}, false
+		return shape.Spec{}, false
 	}
 	return customSourceShape(state.inputAttachments[0])
 }
@@ -163,7 +164,7 @@ func customSourceStream(input InputSpec) av.Stream {
 // domain through here, so callers never branch on the input kind. Returning all
 // streams keeps it composable — the caller selects what it needs. (RTP is the
 // remaining kind to fold in; until then it returns a clear error.)
-func (s InputSpec) openGraphSource(ctx context.Context, service *builder, index int) (pipeline.Source, []av.Stream, MediaDomain, error) {
+func (s InputSpec) openGraphSource(ctx context.Context, service *builder, index int) (pipeline.Source, []av.Stream, shape.MediaDomain, error) {
 	switch {
 	case s.source != nil:
 		source, streams, err := newCustomSource(s)
@@ -177,13 +178,13 @@ func (s InputSpec) openGraphSource(ctx context.Context, service *builder, index 
 		if err != nil {
 			return nil, nil, "", err
 		}
-		return build.source, build.streams, DomainPacket, nil
+		return build.source, build.streams, shape.DomainPacket, nil
 	default:
 		build, err := service.openDemuxSource(ctx, s.input)
 		if err != nil {
 			return nil, nil, "", err
 		}
-		return build.source, build.streams, DomainPacket, nil
+		return build.source, build.streams, shape.DomainPacket, nil
 	}
 }
 

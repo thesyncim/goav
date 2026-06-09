@@ -23,7 +23,7 @@ same way, and the public surface shrinks to the contract + a few constructors.
 ## Migration (incremental, each slice green)
 
 1. **DONE — single source-opening seam.** `InputSpec.openGraphSource(ctx,
-   *builder) (pipeline.Source, []av.Stream, MediaDomain, error)` — every input
+   *builder) (pipeline.Source, []av.Stream, shape.MediaDomain, error)` — every input
    kind resolves through one method; callers (Mix today) never branch on kind.
    Returns *all* streams so the caller selects what it needs (composable). RTP
    returns a clear `source_unsupported` until folded in (step 2).

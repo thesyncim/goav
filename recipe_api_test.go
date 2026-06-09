@@ -23,6 +23,7 @@ import (
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
+	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/webrtcav"
 )
 
@@ -287,14 +288,14 @@ func equalStrings(a []string, b []string) bool {
 }
 
 func TestMediaShapePublicContract(t *testing.T) {
-	packet := goav.PacketShape(
+	packet := shape.Packet(
 		av.MediaAudio,
 		av.CodecOpus,
-		goav.ShapeStream("audio"),
-		goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
-		goav.ShapeRealtime(true),
+		shape.Stream("audio"),
+		shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
+		shape.Realtime(true),
 	)
-	if packet.Domain != goav.DomainPacket ||
+	if packet.Domain != shape.DomainPacket ||
 		packet.MediaKind != av.MediaAudio ||
 		packet.Codec != av.CodecOpus ||
 		packet.SampleRate != 48_000 ||
@@ -302,22 +303,22 @@ func TestMediaShapePublicContract(t *testing.T) {
 		!packet.Realtime {
 		t.Fatalf("packet shape=%+v, want opus audio packet shape", packet)
 	}
-	if !packet.CompatibleWith(goav.Shape(goav.ShapeDomain(goav.DomainPacket), goav.ShapeMedia(av.MediaAudio))) {
+	if !packet.CompatibleWith(shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaAudio))) {
 		t.Fatalf("packet shape should satisfy packet audio contract: %s", packet)
 	}
-	if (goav.ShapeSet{goav.FrameShape(av.MediaAudio)}).Accepts(packet) {
+	if (shape.Set{shape.Frame(av.MediaAudio)}).Accepts(packet) {
 		t.Fatalf("frame shape set accepted packet shape: %s", packet)
 	}
 
-	var resizeContract goav.ShapeContract = goav.Resize(1280, 720)
-	if !resizeContract.InputShapes().Accepts(goav.FrameShape(av.MediaVideo)) {
+	var resizeContract shape.Contract = goav.Resize(1280, 720)
+	if !resizeContract.InputShapes().Accepts(shape.Frame(av.MediaVideo)) {
 		t.Fatalf("resize input shapes=%+v, want video frame", resizeContract.InputShapes())
 	}
-	resized := resizeContract.OutputShapes(goav.FrameShape(
+	resized := resizeContract.OutputShapes(shape.Frame(
 		av.MediaVideo,
-		goav.ShapeVideo(1920, 1080, av.PixelFormatYUV420P),
+		shape.Video(1920, 1080, av.PixelFormatYUV420P),
 	))[0]
-	if resized.Domain != goav.DomainFrame ||
+	if resized.Domain != shape.DomainFrame ||
 		resized.MediaKind != av.MediaVideo ||
 		resized.Width != 1280 ||
 		resized.Height != 720 ||
@@ -325,7 +326,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("resized shape=%+v, want 1280x720 video frame", resized)
 	}
 
-	var copyContract goav.ShapeContract = goav.OperationSpec{Kind: goav.OpCopy, Encode: codec.Copy()}
+	var copyContract shape.Contract = goav.OperationSpec{Kind: goav.OpCopy, Encode: codec.Copy()}
 	if !copyContract.InputShapes().Accepts(packet) {
 		t.Fatalf("copy input shapes=%+v, want packet domain", copyContract.InputShapes())
 	}
@@ -334,12 +335,12 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("copied shape=%+v, want preserved packet %+v", copied, packet)
 	}
 
-	var operationContract goav.ShapeContract = goav.OperationSpec{Kind: goav.OpTransform, Transform: goav.Resample(16_000, goav.Mono)}
-	resampled := operationContract.OutputShapes(goav.FrameShape(
+	var operationContract shape.Contract = goav.OperationSpec{Kind: goav.OpTransform, Transform: goav.Resample(16_000, goav.Mono)}
+	resampled := operationContract.OutputShapes(shape.Frame(
 		av.MediaAudio,
-		goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+		shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
 	))[0]
-	if resampled.Domain != goav.DomainFrame ||
+	if resampled.Domain != shape.DomainFrame ||
 		resampled.MediaKind != av.MediaAudio ||
 		resampled.SampleRate != 16_000 ||
 		resampled.Channels != goav.Mono ||
@@ -350,8 +351,8 @@ func TestMediaShapePublicContract(t *testing.T) {
 
 func TestSourceInputIntentUsesCustomProtocol(t *testing.T) {
 	input := goav.Source("generated",
-		goav.PacketShape(av.MediaAudio, av.CodecOpus,
-			goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+		shape.Packet(av.MediaAudio, av.CodecOpus,
+			shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
 		),
 		func(context.Context, goav.SourcePush) error {
 			return nil
@@ -382,16 +383,16 @@ func TestFlowReportsShapeContractAndTaps(t *testing.T) {
 		Tap(goav.FrameTap("voice.frames"))
 
 	inputs := flow.InputShapes()
-	if len(inputs) != 1 || !inputs.Accepts(goav.PacketShape(av.MediaAudio, av.CodecOpus)) {
+	if len(inputs) != 1 || !inputs.Accepts(shape.Packet(av.MediaAudio, av.CodecOpus)) {
 		t.Fatalf("flow input shapes=%+v, want audio packet", inputs)
 	}
-	outputs := flow.OutputShapes(goav.PacketShape(
+	outputs := flow.OutputShapes(shape.Packet(
 		av.MediaAudio,
 		av.CodecOpus,
-		goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+		shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
 	))
 	if len(outputs) != 1 ||
-		outputs[0].Domain != goav.DomainFrame ||
+		outputs[0].Domain != shape.DomainFrame ||
 		outputs[0].MediaKind != av.MediaAudio ||
 		outputs[0].SampleRate != 16_000 ||
 		outputs[0].Channels != goav.Mono ||
@@ -399,7 +400,7 @@ func TestFlowReportsShapeContractAndTaps(t *testing.T) {
 		t.Fatalf("flow output shapes=%+v, want 16k mono audio frame", outputs)
 	}
 	taps := flow.Taps()
-	if len(taps) != 1 || taps[0].Name() != "voice.frames" || taps[0].Domain() != goav.DomainFrame {
+	if len(taps) != 1 || taps[0].Name() != "voice.frames" || taps[0].Domain() != shape.DomainFrame {
 		t.Fatalf("flow taps=%+v, want frame tap voice.frames", taps)
 	}
 }
@@ -829,7 +830,7 @@ func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 	if !ok {
 		t.Fatalf("branches=%+v, want audio", report.Branches)
 	}
-	if branch.Shape.Domain != goav.DomainPacket ||
+	if branch.Shape.Domain != shape.DomainPacket ||
 		branch.Shape.MediaKind != av.MediaAudio ||
 		branch.Shape.StreamID != "audio" ||
 		branch.Shape.Codec != av.CodecOpus ||
@@ -842,7 +843,7 @@ func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 	if !ok {
 		t.Fatalf("taps=%+v, want audio.decoded", report.Taps)
 	}
-	if tap.Shape.Domain != goav.DomainFrame ||
+	if tap.Shape.Domain != shape.DomainFrame ||
 		tap.Shape.MediaKind != av.MediaAudio ||
 		tap.Shape.StreamID != "audio" ||
 		tap.Shape.Codec != av.CodecOpus ||
@@ -874,7 +875,7 @@ func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
 	if !ok {
 		t.Fatalf("branches=%+v, want audio", report.Branches)
 	}
-	if branch.Shape.Domain != goav.DomainPacket ||
+	if branch.Shape.Domain != shape.DomainPacket ||
 		branch.Shape.MediaKind != av.MediaAudio ||
 		branch.Shape.StreamID != "audio" ||
 		branch.Shape.Codec != av.CodecOpus ||
@@ -887,7 +888,7 @@ func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
 	if !ok {
 		t.Fatalf("taps=%+v, want audio.decoded", report.Taps)
 	}
-	if tap.Shape.Domain != goav.DomainFrame ||
+	if tap.Shape.Domain != shape.DomainFrame ||
 		tap.Shape.MediaKind != av.MediaAudio ||
 		tap.Shape.Codec != av.CodecOpus ||
 		tap.Shape.SampleRate != 48000 ||
@@ -944,7 +945,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 	if !ok {
 		t.Fatalf("branches=%+v, want preview", report.Branches)
 	}
-	if branch.Shape.Domain != goav.DomainPacket ||
+	if branch.Shape.Domain != shape.DomainPacket ||
 		branch.Shape.MediaKind != av.MediaVideo ||
 		branch.Shape.Codec != av.CodecVP8 ||
 		branch.Shape.Width != 1920 ||
@@ -956,7 +957,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 	if !ok {
 		t.Fatalf("operations=%+v, want resize operation", branch.Operations)
 	}
-	if resize.Shape.Domain != goav.DomainFrame ||
+	if resize.Shape.Domain != shape.DomainFrame ||
 		resize.Shape.MediaKind != av.MediaVideo ||
 		resize.Shape.Codec != av.CodecVP8 ||
 		resize.Shape.Width != 1280 ||
@@ -968,7 +969,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 	if !ok {
 		t.Fatalf("operations=%+v, want encode operation", branch.Operations)
 	}
-	if encode.Shape.Domain != goav.DomainPacket ||
+	if encode.Shape.Domain != shape.DomainPacket ||
 		encode.Shape.MediaKind != av.MediaVideo ||
 		encode.Shape.StreamID != "preview" ||
 		encode.Shape.Codec != av.CodecVP9 ||
@@ -991,7 +992,7 @@ func TestShapeAnnotationCannotBreakOperationContract(t *testing.T) {
 		UseRuntime(goav.Default()).
 		Video().
 		Decode().
-		Shape(goav.Shape(goav.ShapeDomain(goav.DomainPacket), goav.ShapeMedia(av.MediaVideo))).
+		Shape(shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaVideo))).
 		Encode(codec.VP9(codec.Bitrate(2_000_000))).
 		To(goav.File("preview.ivf", io.Discard)).
 		Describe()
@@ -1677,10 +1678,10 @@ func TestTypedTapRefsDriveStreamIntent(t *testing.T) {
 	taps := intent.Streams[0].Taps
 	if len(taps) != 2 ||
 		taps[0].Name != decoded.Name() ||
-		taps[0].Domain != goav.DomainFrame ||
+		taps[0].Domain != shape.DomainFrame ||
 		taps[0].After != goav.OpDecode ||
 		taps[1].Name != encoded.Name() ||
-		taps[1].Domain != goav.DomainPacket ||
+		taps[1].Domain != shape.DomainPacket ||
 		taps[1].After != goav.OpEncode {
 		t.Fatalf("taps: %+v", taps)
 	}
@@ -1868,8 +1869,8 @@ func TestReadmeShowsCustomSources(t *testing.T) {
 	text := string(body)
 	for _, required := range []string{
 		"goav.Source(",
-		"goav.PacketShape(",
-		"goav.EventShape(",
+		"shape.Packet(",
+		"shape.Event(",
 		"goav.SourcePush",
 		"push.Packet(",
 		"push.Frame(",
@@ -2193,7 +2194,7 @@ func TestDocsKeepGoAVNativeGoal(t *testing.T) {
 	text := strings.Join(strings.Fields(body.String()), " ")
 	for _, required := range []string{
 		"From(input) -> Chain -> operations -> Tap -> Branch -> Destination -> Task",
-		"MediaShape",
+		"shape.Spec",
 		"BranchBuffer",
 		"Branch + Do + Sink",
 		"Events",
@@ -2585,14 +2586,14 @@ func TestInferredTapAdoptsChainDomain(t *testing.T) {
 		Tap(goav.Tap("preview")).
 		Encode(codec.VP9(codec.Bitrate(600_000))).
 		To(goav.File("out.webm", io.Discard))
-	frameDomain := goav.MediaDomain("")
+	frameDomain := shape.MediaDomain("")
 	for _, tap := range frameJob.Plan().Streams[0].Taps {
 		if tap.Name == "preview" {
 			frameDomain = tap.Domain
 			break
 		}
 	}
-	if frameDomain != goav.DomainFrame {
+	if frameDomain != shape.DomainFrame {
 		t.Fatalf("inferred preview tap domain = %q, want frame", frameDomain)
 	}
 
@@ -2605,14 +2606,14 @@ func TestInferredTapAdoptsChainDomain(t *testing.T) {
 				Tap(goav.Tap("encoded")).
 				To(goav.File("archive.ogg", io.Discard)),
 		)
-	pktDomain := goav.MediaDomain("")
+	pktDomain := shape.MediaDomain("")
 	for _, tap := range pktJob.Plan().Streams[0].Taps {
 		if tap.Name == "encoded" {
 			pktDomain = tap.Domain
 			break
 		}
 	}
-	if pktDomain != goav.DomainPacket {
+	if pktDomain != shape.DomainPacket {
 		t.Fatalf("inferred encoded tap domain = %q, want packet", pktDomain)
 	}
 }
@@ -2920,13 +2921,13 @@ func TestFlowTapAfterEncodeIsPacketTap(t *testing.T) {
 		operations[1].Kind != goav.OpEncode ||
 		operations[2].Kind != goav.OpTap ||
 		operations[2].Tap.Name != "audio.voice.packets" ||
-		operations[2].Tap.Domain != goav.DomainPacket ||
+		operations[2].Tap.Domain != shape.DomainPacket ||
 		operations[2].Tap.After != goav.OpEncode {
 		t.Fatalf("operations: %+v", operations)
 	}
 	if len(intent.Streams[0].Taps) != 1 ||
 		intent.Streams[0].Taps[0].Name != "audio.voice.packets" ||
-		intent.Streams[0].Taps[0].Domain != goav.DomainPacket ||
+		intent.Streams[0].Taps[0].Domain != shape.DomainPacket ||
 		intent.Streams[0].Taps[0].After != goav.OpEncode {
 		t.Fatalf("taps: %+v", intent.Streams[0].Taps)
 	}
@@ -2954,13 +2955,13 @@ func TestFlowCopyAppliesToStreamRecipeIntent(t *testing.T) {
 		stream.Operations[0].Kind != goav.OpCopy ||
 		stream.Operations[1].Kind != goav.OpTap ||
 		stream.Operations[1].Tap.Name != "audio.copied" ||
-		stream.Operations[1].Tap.Domain != goav.DomainPacket ||
+		stream.Operations[1].Tap.Domain != shape.DomainPacket ||
 		stream.Operations[1].Tap.After != goav.OpCopy {
 		t.Fatalf("stream intent: %+v", stream)
 	}
 	if len(stream.Taps) != 1 ||
 		stream.Taps[0].Name != "audio.copied" ||
-		stream.Taps[0].Domain != goav.DomainPacket ||
+		stream.Taps[0].Domain != shape.DomainPacket ||
 		stream.Taps[0].After != goav.OpCopy {
 		t.Fatalf("taps: %+v", stream.Taps)
 	}
@@ -3096,13 +3097,13 @@ func TestBranchesGroupSelectedStreams(t *testing.T) {
 	tests := []struct {
 		name       string
 		from       string
-		fromDomain goav.MediaDomain
+		fromDomain shape.MediaDomain
 		codec      av.CodecID
 		outputs    []string
 	}{
-		{name: "v1080", from: "video.decoded", fromDomain: goav.DomainFrame, codec: av.CodecVP9, outputs: []string{"watch.webm"}},
-		{name: "v360", from: "video.decoded", fromDomain: goav.DomainFrame, codec: av.CodecVP8, outputs: []string{"mobile.webm"}},
-		{name: "a96", from: "audio.decoded", fromDomain: goav.DomainFrame, codec: av.CodecOpus, outputs: []string{"watch.webm", "mobile.webm"}},
+		{name: "v1080", from: "video.decoded", fromDomain: shape.DomainFrame, codec: av.CodecVP9, outputs: []string{"watch.webm"}},
+		{name: "v360", from: "video.decoded", fromDomain: shape.DomainFrame, codec: av.CodecVP8, outputs: []string{"mobile.webm"}},
+		{name: "a96", from: "audio.decoded", fromDomain: shape.DomainFrame, codec: av.CodecOpus, outputs: []string{"watch.webm", "mobile.webm"}},
 	}
 	for i := range tests {
 		stream := intent.Streams[i]
@@ -3202,7 +3203,7 @@ func TestBranchTapAfterEncodeIsPacketTap(t *testing.T) {
 	foundEncoded := false
 	for _, tap := range intent.Streams[0].Taps {
 		if tap.Name == "audio.encoded" {
-			foundEncoded = tap.Domain == goav.DomainPacket &&
+			foundEncoded = tap.Domain == shape.DomainPacket &&
 				tap.MediaKind == av.MediaAudio &&
 				tap.After == goav.OpEncode
 			break
@@ -3217,7 +3218,7 @@ func TestBranchTapAfterEncodeIsPacketTap(t *testing.T) {
 		operations[1].Kind != goav.OpTap || operations[1].Tap.Name != "audio.decoded" ||
 		operations[2].Kind != goav.OpEncode ||
 		operations[3].Kind != goav.OpTap || operations[3].Tap.Name != "audio.encoded" ||
-		operations[3].Tap.Domain != goav.DomainPacket ||
+		operations[3].Tap.Domain != shape.DomainPacket ||
 		operations[3].Tap.After != goav.OpEncode {
 		t.Fatalf("operations: %+v", operations)
 	}
@@ -3414,7 +3415,7 @@ func TestFlowDecodeAppliesToStreamRecipeIntent(t *testing.T) {
 	}
 	if len(stream.Taps) != 1 ||
 		stream.Taps[0].Name != "audio.flow.decoded" ||
-		stream.Taps[0].Domain != goav.DomainFrame ||
+		stream.Taps[0].Domain != shape.DomainFrame ||
 		stream.Taps[0].MediaKind != av.MediaAudio ||
 		stream.Taps[0].After != goav.OpDecode {
 		t.Fatalf("taps: %+v", stream.Taps)
@@ -5345,13 +5346,13 @@ func TestBranchCompositionCanSplitFromEarlierTap(t *testing.T) {
 		t.Fatalf("intent streams = %+v, want 2", intent.Streams)
 	}
 	if intent.Streams[0].From.Name() != "video.decoded" ||
-		intent.Streams[0].From.Domain() != goav.DomainFrame ||
+		intent.Streams[0].From.Domain() != shape.DomainFrame ||
 		len(transformOperationsForTest(intent.Streams[0].Operations)) != 1 ||
 		transformOperationsForTest(intent.Streams[0].Operations)[0].Resize.Width != 320 {
 		t.Fatalf("raw branch intent = %+v, want branch from decoded tap with only thumbnail resize", intent.Streams[0])
 	}
 	if intent.Streams[1].From.Name() != "video.720p.frames" ||
-		intent.Streams[1].From.Domain() != goav.DomainFrame ||
+		intent.Streams[1].From.Domain() != shape.DomainFrame ||
 		len(transformOperationsForTest(intent.Streams[1].Operations)) != 1 ||
 		transformOperationsForTest(intent.Streams[1].Operations)[0].Resize.Width != 1280 {
 		t.Fatalf("web branch intent = %+v, want branch from 720p tap with shared resize", intent.Streams[1])
@@ -5567,9 +5568,9 @@ func TestBranchCompositionAllowsPacketCopyBranches(t *testing.T) {
 	intent := job.Plan()
 	if len(intent.Streams) != 2 ||
 		intent.Streams[0].From.Name() != "video.packets" ||
-		intent.Streams[0].From.Domain() != goav.DomainPacket ||
+		intent.Streams[0].From.Domain() != shape.DomainPacket ||
 		intent.Streams[1].From.Name() != "video.packets" ||
-		intent.Streams[1].From.Domain() != goav.DomainPacket {
+		intent.Streams[1].From.Domain() != shape.DomainPacket {
 		t.Fatalf("intent streams = %+v, want packet branches from video.packets", intent.Streams)
 	}
 

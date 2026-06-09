@@ -6,12 +6,13 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type tapIntent struct {
 	Name      string
 	MediaKind av.MediaType
-	Domain    MediaDomain
+	Domain    shape.MediaDomain
 	After     OperationKind
 }
 
@@ -25,9 +26,9 @@ func inferSpecTaps(spec pipeline.Spec) []TapInfo {
 			taps = append(taps, TapInfo{
 				Name:      string(media) + ".decoded",
 				MediaKind: media,
-				Domain:    DomainFrame,
+				Domain:    shape.DomainFrame,
 				After:     OpDecode,
-				Shape:     FrameShape(media, ShapeStream(av.StreamID(media))),
+				Shape:     shape.Frame(media, shape.Stream(av.StreamID(media))),
 				Node:      pipeline.NodeRef(node.Name),
 			})
 		case strings.HasPrefix(node.Name, "select-"):
@@ -35,9 +36,9 @@ func inferSpecTaps(spec pipeline.Spec) []TapInfo {
 			taps = append(taps, TapInfo{
 				Name:      string(media) + ".packets",
 				MediaKind: media,
-				Domain:    DomainPacket,
+				Domain:    shape.DomainPacket,
 				After:     OpSelect,
-				Shape:     PacketShape(media, "", ShapeStream(av.StreamID(media))),
+				Shape:     shape.Packet(media, "", shape.Stream(av.StreamID(media))),
 				Node:      pipeline.NodeRef(node.Name),
 			})
 		}

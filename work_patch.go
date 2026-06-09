@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type workPatch struct {
@@ -302,7 +303,7 @@ func runtimeBranchWorkStepDetail(work runtimeBranchWorkStep) string {
 	}
 }
 
-func runtimeBranchWorkStepShapeOut(work runtimeBranchWorkStep, current MediaShape) MediaShape {
+func runtimeBranchWorkStepShapeOut(work runtimeBranchWorkStep, current shape.Spec) shape.Spec {
 	if work.hasPrepared {
 		if shape := firstNonEmptyShape(work.prepared.shape, current); !mediaShapeEmpty(shape) {
 			return shape
@@ -454,13 +455,13 @@ func runtimeBranchDestinationNames(branch runtimeBranch) []string {
 	return out
 }
 
-func firstNonEmptyShape(values ...MediaShape) MediaShape {
+func firstNonEmptyShape(values ...shape.Spec) shape.Spec {
 	for i := range values {
 		if !mediaShapeEmpty(values[i]) {
 			return values[i]
 		}
 	}
-	return MediaShape{}
+	return shape.Spec{}
 }
 
 func workOperationIDForKind(branch string, index int, kind OperationKind) string {

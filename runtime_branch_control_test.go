@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 // TestRuntimeBranchControlPlaneOnLiveTask drives a phase-gated custom source on a
@@ -21,7 +22,7 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 	const phases = 3
 	release := make(chan struct{}, phases)
 	input := Source("generated",
-		PacketShape(av.MediaAudio, av.CodecOpus, ShapeAudio(48_000, Stereo, av.SampleFormatS16)),
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, Stereo, av.SampleFormatS16)),
 		func(sctx context.Context, push SourcePush) error {
 			for i := 0; i < phases; i++ {
 				select {
@@ -122,7 +123,7 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 	const phases = 2
 	release := make(chan struct{}, phases)
 	input := Source("generated",
-		PacketShape(av.MediaAudio, av.CodecOpus, ShapeAudio(48_000, Stereo, av.SampleFormatS16)),
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, Stereo, av.SampleFormatS16)),
 		func(sctx context.Context, push SourcePush) error {
 			for i := 0; i < phases; i++ {
 				select {

@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type recipeResolved struct {
@@ -828,7 +829,7 @@ func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
 }
 
 func streamNeedsDecodeForState(state *recipeCompileState, stream streamIntent) bool {
-	if shape, ok := compileStateCustomSourceShape(state); ok && shape.Domain == DomainFrame {
+	if spec, ok := compileStateCustomSourceShape(state); ok && spec.Domain == shape.DomainFrame {
 		return false
 	}
 	return streamNeedsDecode(stream)
@@ -839,7 +840,7 @@ func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
 		if !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
-		if shape, ok := customSourceShape(state.branchInputAttachment); ok && shape.Domain == DomainFrame {
+		if spec, ok := customSourceShape(state.branchInputAttachment); ok && spec.Domain == shape.DomainFrame {
 			for i := range state.intent.Streams {
 				if _, err := selectStream(state.branchInputProbe.Streams, streamIntentSelector(state.intent.Streams[i])); err != nil {
 					return err
@@ -861,7 +862,7 @@ func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightDecodeAdapters || !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
-		if shape, ok := customSourceShape(state.branchInputAttachment); ok && shape.Domain == DomainFrame {
+		if spec, ok := customSourceShape(state.branchInputAttachment); ok && spec.Domain == shape.DomainFrame {
 			return nil
 		}
 		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, []format.ProbeResult{state.branchInputProbe}, state.intent.Streams)
@@ -936,28 +937,28 @@ func (s *recipeCompileState) recipeDestinationSet() map[string]destinationSpec {
 	return outputs
 }
 
-func recipeInitialStreamShape(state *recipeCompileState, stream streamIntent) MediaShape {
-	var shape MediaShape
+func recipeInitialStreamShape(state *recipeCompileState, stream streamIntent) shape.Spec {
+	var spec shape.Spec
 	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
 	if selected, ok := planSelectedStream(state, stream); ok {
-		domain := DomainPacket
+		domain := shape.DomainPacket
 		if sourceShapeOK && sourceShape.Domain != "" {
 			domain = sourceShape.Domain
 		}
-		shape = mediaShapeFromStream(selected, domain)
+		spec = shape.FromStream(selected, domain)
 		if sourceShapeOK {
-			shape = mergeMediaShape(shape, sourceShape)
+			spec = shape.Merge(spec, sourceShape)
 		}
 	}
 	if state != nil {
-		shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
+		spec = normalizePlanBranchShape(spec, stream, firstInput(state.intent.Inputs))
 	} else {
-		shape = normalizePlanBranchShape(shape, stream, inputIntent{})
+		spec = normalizePlanBranchShape(spec, stream, inputIntent{})
 	}
-	return shape
+	return spec
 }
 
-func recipeFinalStreamShape(state *recipeCompileState, stream streamIntent) MediaShape {
+func recipeFinalStreamShape(state *recipeCompileState, stream streamIntent) shape.Spec {
 	shape := recipeInitialStreamShape(state, stream)
 	shape = normalizeTapShape(shape)
 	if shape.MediaKind == "" {
@@ -972,20 +973,20 @@ func recipeFinalStreamShape(state *recipeCompileState, stream streamIntent) Medi
 	return shape
 }
 
-func validateRecipeDestinationShape(operation string, node string, destinationName string, destination destinationSpec, shape MediaShape) error {
+func validateRecipeDestinationShape(operation string, node string, destinationName string, destination destinationSpec, spec shape.Spec) error {
 	if destination.sink != nil {
 		return nil
 	}
 	if !destinationSpecHasOutput(destination) {
 		return nil
 	}
-	if shape.Domain == DomainPacket {
+	if spec.Domain == shape.DomainPacket {
 		return nil
 	}
-	return destinationShapeMismatchError(operation, node, destinationName, destination, shape)
+	return destinationShapeMismatchError(operation, node, destinationName, destination, spec)
 }
 
-func destinationShapeMismatchError(operation string, node string, destinationName string, destination destinationSpec, shape MediaShape) error {
+func destinationShapeMismatchError(operation string, node string, destinationName string, destination destinationSpec, spec shape.Spec) error {
 	label := firstNonEmpty(destinationName, destination.label("destination"))
 	return &BuildError{
 		Code:      "destination_shape_mismatch",
@@ -994,8 +995,8 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 		Reason:    "byte or mux destination requires packet-domain media",
 		Details: []string{
 			"destination=" + label,
-			"expected_shape=" + Shape(ShapeDomain(DomainPacket), ShapeMedia(shape.MediaKind)).String(),
-			"actual_shape=" + shape.String(),
+			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(spec.MediaKind)).String(),
+			"actual_shape=" + spec.String(),
 		},
 		Suggestions: []string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing to file, URI, writer, or object destinations",
@@ -1006,7 +1007,7 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 	}
 }
 
-func validateOperationSpecShapes(operation string, stream streamIntent, initial MediaShape) error {
+func validateOperationSpecShapes(operation string, stream streamIntent, initial shape.Spec) error {
 	shape := normalizeTapShape(initial)
 	if shape.MediaKind == "" {
 		shape.MediaKind = stream.Select.Type
@@ -1030,7 +1031,7 @@ func validateOperationSpecShapes(operation string, stream streamIntent, initial 
 	return nil
 }
 
-func operationSpecOutputShape(input MediaShape, operation OperationSpec) MediaShape {
+func operationSpecOutputShape(input shape.Spec, operation OperationSpec) shape.Spec {
 	out := operation.OutputShapes(input)
 	if len(out) == 0 {
 		return input
@@ -1038,7 +1039,7 @@ func operationSpecOutputShape(input MediaShape, operation OperationSpec) MediaSh
 	return out[0]
 }
 
-func operationShapeMismatchError(operation string, node string, index int, step OperationSpec, expected ShapeSet, actual MediaShape) error {
+func operationShapeMismatchError(operation string, node string, index int, step OperationSpec, expected shape.Set, actual shape.Spec) error {
 	component := firstNonEmpty(step.Component, operationSpecComponent(step), string(step.Kind), "operation")
 	return &BuildError{
 		Code:      "operation_shape_mismatch",
@@ -1071,7 +1072,7 @@ func operationSpecComponent(operation OperationSpec) string {
 	}
 }
 
-func shapeSetString(shapes ShapeSet) string {
+func shapeSetString(shapes shape.Set) string {
 	if len(shapes) == 0 {
 		return "any"
 	}

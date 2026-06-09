@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 func (r recipeResolved) singleStreamIntent() (streamIntent, bool) {
@@ -24,7 +25,7 @@ type mediaPlanStreamGraph struct {
 	stream         streamIntent
 	copyPackets    bool
 	selectedStream bool
-	sourceDomain   MediaDomain
+	sourceDomain   shape.MediaDomain
 	decode         decodeRequest
 	filters        []filterRequest
 	encode         *encodeRequest
@@ -128,13 +129,13 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 	return plan, true, nil
 }
 
-func mediaPlanInputDomain(inputs []InputSpec) MediaDomain {
+func mediaPlanInputDomain(inputs []InputSpec) shape.MediaDomain {
 	if len(inputs) == 1 {
 		if shape, ok := customSourceShape(inputs[0]); ok && shape.Domain != "" {
 			return shape.Domain
 		}
 	}
-	return DomainPacket
+	return shape.DomainPacket
 }
 
 func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
@@ -176,7 +177,7 @@ func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 		branches, outputs := p.selectedPacketCopyBranchComposeRoutes()
 		return planBranchComposeRoutes(spec, nodes, sourceRefs, branches, outputs)
 	}
-	if mediaPlanInputsContainDomain(p.inputs, DomainEvent) && outputsContainMuxDestination(p.outputs) {
+	if mediaPlanInputsContainDomain(p.inputs, shape.DomainEvent) && outputsContainMuxDestination(p.outputs) {
 		return pipeline.Spec{}, graphPlanInvalidError("event source destination must be a sink", nil)
 	}
 	upstreamRefs := sourceRefs
@@ -196,7 +197,7 @@ func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 	return spec, nil
 }
 
-func mediaPlanInputsContainDomain(inputs []InputSpec, domain MediaDomain) bool {
+func mediaPlanInputsContainDomain(inputs []InputSpec, domain shape.MediaDomain) bool {
 	for i := range inputs {
 		if shape, ok := customSourceShape(inputs[i]); ok && shape.Domain == domain {
 			return true
@@ -305,7 +306,7 @@ type graphPlanBranchComposeInputOperation struct {
 type graphPlanBranchComposeBranchOperation struct {
 	privateStageNodes []pipeline.NodeRef
 	encodeNode        pipeline.NodeRef
-	encodeShape       MediaShape
+	encodeShape       shape.Spec
 }
 
 func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan graphPlan) (graphPlanBranchComposeLowering, error) {
@@ -453,7 +454,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branch
 			return nil, err
 		}
 		var encodeNode pipeline.NodeRef
-		var encodeShape MediaShape
+		var encodeShape shape.Spec
 		if branchComposeRouteNeedsEncode(branch) {
 			operation, ok := graphPlanBranchOperation(operations, OpEncode)
 			if !ok {
@@ -495,7 +496,7 @@ func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branc
 			"branch=" + branch.name,
 		})
 	}
-	if !branchComposeRouteNeedsDecode(branch) && branch.sourceDomain != DomainFrame && !graphPlanBranchOperationsContain(operations, OpCopy) {
+	if !branchComposeRouteNeedsDecode(branch) && branch.sourceDomain != shape.DomainFrame && !graphPlanBranchOperationsContain(operations, OpCopy) {
 		return graphPlanInvalidError("packet branch composition graph plan has no copy operation for branch", []string{
 			"branch=" + branch.name,
 		})
@@ -919,7 +920,7 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 			target.Matches = matches
 		}
 		output := p.outputs[outputIndex]
-		if !p.selectedStream && packetCopyTargetMatchesDomain(plan.branches, target.Matches, DomainEvent) && output.sink == nil {
+		if !p.selectedStream && packetCopyTargetMatchesDomain(plan.branches, target.Matches, shape.DomainEvent) && output.sink == nil {
 			return nil, graphPlanInvalidError("event source destination must be a sink", []string{
 				"destination=" + target.Name,
 			})
@@ -945,7 +946,7 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 	return destinations, nil
 }
 
-func packetCopyTargetMatchesDomain(branches []planBranch, matches []int, domain MediaDomain) bool {
+func packetCopyTargetMatchesDomain(branches []planBranch, matches []int, domain shape.MediaDomain) bool {
 	for _, index := range matches {
 		if index < 0 || index >= len(branches) {
 			continue
@@ -978,7 +979,7 @@ func (p mediaPlanStreamGraph) validatePacketCopyOperationRecords(plan graphPlan,
 				"branch=" + branch.Name,
 			})
 		}
-		if branch.Shape.Domain == DomainEvent {
+		if branch.Shape.Domain == shape.DomainEvent {
 			continue
 		}
 		if !graphPlanBranchOperationsContain(branchOperations, OpCopy) {
@@ -1182,7 +1183,7 @@ type graphPlanFrameStreamLowering struct {
 	decodeNode   pipeline.NodeRef
 	filterNodes  []pipeline.NodeRef
 	encodeNode   pipeline.NodeRef
-	encodeShape  MediaShape
+	encodeShape  shape.Spec
 	destinations []graphPlanDestinationOperation
 }
 
@@ -1205,13 +1206,13 @@ func (p mediaPlanStreamGraph) prepareFrameOperationSpecLowering(plan graphPlan) 
 		})
 	}
 	decodeOperation, hasDecode := graphPlanFirstOperation(operations, OpDecode)
-	if p.sourceDomain == DomainFrame && hasDecode {
+	if p.sourceDomain == shape.DomainFrame && hasDecode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame source graph plan has an unexpected decode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 			"branch=" + branchName,
 		})
 	}
-	if p.sourceDomain != DomainFrame && !hasDecode {
+	if p.sourceDomain != shape.DomainFrame && !hasDecode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan has no decode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 			"branch=" + branchName,
@@ -1235,7 +1236,7 @@ func (p mediaPlanStreamGraph) prepareFrameOperationSpecLowering(plan graphPlan) 
 		})
 	}
 	var encodeNode pipeline.NodeRef
-	var encodeShape MediaShape
+	var encodeShape shape.Spec
 	if p.encode != nil {
 		if encodeOperation.Node == "" {
 			return graphPlanFrameStreamLowering{}, graphPlanInvalidError("encoded frame stream graph plan encode operation has no node", []string{

@@ -49,7 +49,7 @@ runtime attach. Public vocabulary stays `Input`, `Stream`, `Operation`, `Tap`,
    flows, taps, branches, sinks, byte destinations, and custom sources. The
    current descriptor and
    report capability work is the migration base, but the public direction is
-   `MediaShape`/shape contracts with useful expected-vs-actual diagnostics
+   `shape.Spec`/shape contracts with useful expected-vs-actual diagnostics
    before decoder, encoder, filter, muxer, or graph mutation.
 7. Add branch-local buffering, ownership, and lifecycle policies. Branches need
    explicit buffer modes, drop counters/reasons, safe shared frame ownership,

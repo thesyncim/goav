@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 func mixTestS16Frame(id av.StreamID, samples ...int16) *av.Frame {
@@ -106,7 +107,7 @@ func TestAudioMixStageEmitsEOSWhenAllInputsEnd(t *testing.T) {
 
 func mixTestAudioSource(id av.StreamID, samples ...int16) InputSpec {
 	return Source(string(id),
-		FrameShape(av.MediaAudio, ShapeAudio(48000, Mono, av.SampleFormatS16), ShapeStream(id)),
+		shape.Frame(av.MediaAudio, shape.Audio(48000, Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
 			b := make([]byte, len(samples)*2)
 			for i := range samples {
@@ -196,7 +197,7 @@ func TestMixDecodesPacketArmsBeforeMixing(t *testing.T) {
 
 	packetSrc := func(id av.StreamID) InputSpec {
 		return Source(string(id),
-			PacketShape(av.MediaAudio, pcm, ShapeAudio(48000, Stereo, av.SampleFormatS16), ShapeStream(id)),
+			shape.Packet(av.MediaAudio, pcm, shape.Audio(48000, Stereo, av.SampleFormatS16), shape.Stream(id)),
 			func(_ context.Context, push SourcePush) error {
 				if err := push.Packet(&av.Packet{StreamID: id, Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
 					return err
@@ -283,7 +284,7 @@ func TestMixEncodesToFile(t *testing.T) {
 
 func mixTestAudioSourceRate(id av.StreamID, rate int) InputSpec {
 	return Source(string(id),
-		FrameShape(av.MediaAudio, ShapeAudio(rate, Mono, av.SampleFormatS16), ShapeStream(id)),
+		shape.Frame(av.MediaAudio, shape.Audio(rate, Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
 			b := make([]byte, 960*2) // 960 mono S16 samples
 			for i := 0; i < 960; i++ {

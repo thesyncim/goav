@@ -5,6 +5,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type workPlan struct {
@@ -42,18 +43,18 @@ type workOperation struct {
 	Component    string
 	Detail       string
 	Shared       bool
-	ShapeIn      MediaShape
-	ShapeOut     MediaShape
+	ShapeIn      shape.Spec
+	ShapeOut     shape.Spec
 	Destinations []string
 }
 
 type workTap struct {
 	Name      string
 	Node      pipeline.NodeRef
-	Domain    MediaDomain
+	Domain    shape.MediaDomain
 	MediaKind av.MediaType
 	After     OperationKind
-	Shape     MediaShape
+	Shape     shape.Spec
 	Shared    bool
 }
 
@@ -62,7 +63,7 @@ type workBranch struct {
 	Name         string
 	Input        string
 	Stream       StreamSelect
-	SourceShape  MediaShape
+	SourceShape  shape.Spec
 	Operations   []string
 	Destinations []string
 }
@@ -208,8 +209,8 @@ func workOperationsFromGraphPlan(plan mediaPlan, operations []graphPlanOperation
 	return out
 }
 
-func workBranchShapes(branches []planBranch) map[string]MediaShape {
-	out := make(map[string]MediaShape, len(branches))
+func workBranchShapes(branches []planBranch) map[string]shape.Spec {
+	out := make(map[string]shape.Spec, len(branches))
 	for i := range branches {
 		out[branches[i].Name] = normalizeTapShape(branches[i].Shape)
 	}

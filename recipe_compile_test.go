@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type stubRuntime struct{}
@@ -130,10 +131,10 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 		Taps: []planTap{{
 			Name:      "video.decoded",
 			Node:      "decode",
-			Domain:    DomainFrame,
+			Domain:    shape.DomainFrame,
 			MediaKind: av.MediaVideo,
 			After:     OpDecode,
-			Shape:     FrameShape(av.MediaVideo, ShapeVideo(640, 360, "i420")),
+			Shape:     shape.Frame(av.MediaVideo, shape.Video(640, 360, "i420")),
 		}},
 		Branches: []planBranch{{
 			Name:  "preview",
@@ -142,15 +143,15 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 				Type:  av.MediaVideo,
 				Codec: av.CodecVP8,
 			},
-			Shape: PacketShape(av.MediaVideo, av.CodecVP8),
+			Shape: shape.Packet(av.MediaVideo, av.CodecVP8),
 			Operations: []planOperation{{
 				Kind:      OpDecode,
 				Component: string(av.CodecVP8),
-				Shape:     FrameShape(av.MediaVideo, ShapeVideo(640, 360, "i420")),
+				Shape:     shape.Frame(av.MediaVideo, shape.Video(640, 360, "i420")),
 			}, {
 				Kind:  OpTap,
 				After: OpDecode,
-				Shape: FrameShape(av.MediaVideo, ShapeVideo(640, 360, "i420")),
+				Shape: shape.Frame(av.MediaVideo, shape.Video(640, 360, "i420")),
 			}},
 			Outputs: []string{"frames"},
 		}},
@@ -522,19 +523,19 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	if got, want := operationSpecKindsForTest(flowSpec.operations), []OperationKind{OpTransform, OpTap, OpEncode, OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("flow operations = %+v, want %+v", got, want)
 	}
-	flowOutputs := voice.OutputShapes(FrameShape(
+	flowOutputs := voice.OutputShapes(shape.Frame(
 		av.MediaAudio,
-		ShapeAudio(48_000, Stereo, av.SampleFormatS16),
+		shape.Audio(48_000, Stereo, av.SampleFormatS16),
 	))
-	if len(flowOutputs) != 1 || flowOutputs[0].Domain != DomainPacket || flowOutputs[0].MediaKind != av.MediaAudio || flowOutputs[0].Codec != av.CodecOpus {
+	if len(flowOutputs) != 1 || flowOutputs[0].Domain != shape.DomainPacket || flowOutputs[0].MediaKind != av.MediaAudio || flowOutputs[0].Codec != av.CodecOpus {
 		t.Fatalf("flow output shapes = %+v, want Opus packets", flowOutputs)
 	}
 	flowTaps := voice.Taps()
 	if len(flowTaps) != 2 ||
 		flowTaps[0].Name() != "audio.voice.frames" ||
-		flowTaps[0].Domain() != DomainFrame ||
+		flowTaps[0].Domain() != shape.DomainFrame ||
 		flowTaps[1].Name() != "audio.voice.packets" ||
-		flowTaps[1].Domain() != DomainPacket {
+		flowTaps[1].Domain() != shape.DomainPacket {
 		t.Fatalf("flow taps = %+v, want frame then packet taps", flowTaps)
 	}
 
@@ -627,7 +628,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(copyJob.branchStreams[0])), []OperationKind{OpCopy, OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("copy branch operations = %+v, want %+v", got, want)
 	}
-	if tap := streamBuildOperationSpecs(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != DomainPacket {
+	if tap := streamBuildOperationSpecs(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != shape.DomainPacket {
 		t.Fatalf("copy branch tap = %+v, want packet branch tap", tap)
 	}
 	copyPlan, err := planBranchCompositionRecipe(copyJob.Plan(), copyJob.inputs[0], copyJob.branchDestinations, copyJob.branchStreams)
@@ -2494,7 +2495,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 				Select: StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
 				Operations: []OperationSpec{
 					{Kind: OpDecode, Decode: codec.VP8()},
-					{Kind: OpShape, Component: "shape", Shape: Shape(ShapeDomain(DomainPacket), ShapeMedia(av.MediaVideo))},
+					{Kind: OpShape, Component: "shape", Shape: shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaVideo))},
 					{Kind: OpEncode, Component: string(av.CodecVP9), Encode: codec.VP9(codec.Bitrate(2_000_000))},
 				},
 				Destinations: []string{"web"},
@@ -2515,7 +2516,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 				Select: StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
 				Operations: []OperationSpec{
 					{Kind: OpDecode, Decode: codec.VP8()},
-					{Kind: OpShape, Component: "shape", Shape: Shape(ShapeMedia(av.MediaAudio))},
+					{Kind: OpShape, Component: "shape", Shape: shape.New(shape.Media(av.MediaAudio))},
 					{Kind: OpTransform, Component: filter.FactoryResize, Transform: Resize(640, 360)},
 				},
 				Destinations: []string{"frames"},
@@ -2586,7 +2587,7 @@ func TestRecipeOperationShapePassAllowsCustomStageShapeDeclaration(t *testing.T)
 				Operations: []OperationSpec{
 					{Kind: OpDecode, Decode: codec.Opus()},
 					{Kind: OpStage, Component: "visualizer", Stage: &runtimeTestStage{name: "visualizer"}},
-					{Kind: OpShape, Component: "shape", Shape: FrameShape(av.MediaVideo, ShapeVideo(640, 360, av.PixelFormatYUV420P))},
+					{Kind: OpShape, Component: "shape", Shape: shape.Frame(av.MediaVideo, shape.Video(640, 360, av.PixelFormatYUV420P))},
 					{Kind: OpEncode, Component: string(av.CodecVP9), Encode: codec.VP9(codec.Bitrate(600_000))},
 				},
 				Destinations: []string{"web"},

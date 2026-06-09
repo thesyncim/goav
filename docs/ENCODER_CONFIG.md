@@ -53,11 +53,11 @@ three unwired custom blobs.**
 
 ## 2. Caps (Shape) overlap
 
-goav's caps equivalent is `MediaShape` (Domain, MediaKind, Codec, Format, Width,
-Height, PixelFormat, SampleRate, Channels, SampleFormat, Realtime) + `ShapeSet`
+goav's caps equivalent is `shape.Spec` (Domain, MediaKind, Codec, Format, Width,
+Height, PixelFormat, SampleRate, Channels, SampleFormat, Realtime) + `shape.Set`
 with `Accepts`/`CompatibleWith`/`Input/OutputShapes` negotiation. **It works, but
 it overlaps three places:** Width/Height/FPS/Channels/SampleRate/PixelFormat live
-in `MediaShape` *and* `av.CodecParameters` *and* are set via codec options
+in `shape.Spec` *and* `av.CodecParameters` *and* are set via codec options
 (`Channels`/`SampleRate`/`FPS`). Unification rule to adopt: **Shape = structural
 identity (what the media *is*); EncoderSettings = encoder *behavior* (how to
 produce it).** Structural fields stop being encoder settings; FPS is the one

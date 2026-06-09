@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 // audioMixStage sums N synchronized audio inputs into one output stream — the
@@ -252,7 +253,7 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 		upstream := string(srcRef)
 		// Packet-domain arms decode to frames before the mix (auto-inserted —
 		// the mixer sums decoded audio). Frame-domain arms feed it directly.
-		if domain == DomainPacket {
+		if domain == shape.DomainPacket {
 			request := decodeRequest{selector: av.StreamSelector{Type: stream.Type}}
 			decodeStage, err := service.newDecodeStageNamed(ctx, "mix-decode-"+string(id), request, stream, rt.realtime, true, codec.DecodeBounds{})
 			if err != nil {

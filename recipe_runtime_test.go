@@ -17,6 +17,7 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
+	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/webrtcav"
 )
 
@@ -276,8 +277,8 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 	ctx := context.Background()
 	input := Source("generated",
-		PacketShape(av.MediaAudio, av.CodecOpus,
-			ShapeAudio(48_000, Stereo, av.SampleFormatS16),
+		shape.Packet(av.MediaAudio, av.CodecOpus,
+			shape.Audio(48_000, Stereo, av.SampleFormatS16),
 		),
 		func(_ context.Context, push SourcePush) error {
 			packet := av.Packet{
@@ -351,7 +352,7 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 func TestFrontDoorFlowControlSentinelsClassifyRuntimeErrors(t *testing.T) {
 	ctx := context.Background()
 	input := Source("gen",
-		PacketShape(av.MediaAudio, av.CodecOpus, ShapeAudio(48_000, Stereo, av.SampleFormatS16)),
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, Stereo, av.SampleFormatS16)),
 		func(_ context.Context, push SourcePush) error {
 			packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
 			if err := push.Packet(&packet); err != nil {
@@ -378,8 +379,8 @@ func TestFrontDoorFlowControlSentinelsClassifyRuntimeErrors(t *testing.T) {
 func TestCustomFrameSourceRunsThroughRecipeWithoutDecode(t *testing.T) {
 	ctx := context.Background()
 	input := Source("pcm",
-		FrameShape(av.MediaAudio,
-			ShapeAudio(48_000, Stereo, av.SampleFormatS16),
+		shape.Frame(av.MediaAudio,
+			shape.Audio(48_000, Stereo, av.SampleFormatS16),
 		),
 		func(_ context.Context, push SourcePush) error {
 			frame := av.Frame{
@@ -448,7 +449,7 @@ func TestCustomFrameSourceRunsThroughRecipeWithoutDecode(t *testing.T) {
 func TestCustomEventSourceRunsThroughRecipeToSink(t *testing.T) {
 	ctx := context.Background()
 	input := Source("diagnostics",
-		EventShape(),
+		shape.Event(),
 		func(_ context.Context, push SourcePush) error {
 			if err := push.Event(av.Event{Type: av.EventStats}); err != nil {
 				return err
@@ -496,7 +497,7 @@ func TestCustomEventSourceRunsThroughRecipeToSink(t *testing.T) {
 
 func TestCustomEventSourceRejectsMuxDestination(t *testing.T) {
 	input := Source("diagnostics",
-		EventShape(),
+		shape.Event(),
 		func(context.Context, SourcePush) error {
 			return nil
 		},
@@ -1544,7 +1545,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeSink(t *testing.T) {
 		t.Fatal(err)
 	}
 	taps := task.Taps()
-	if len(taps) != 1 || taps[0].Name != "audio.packets" || taps[0].Domain != DomainPacket || taps[0].Node.String() != "select-audio" {
+	if len(taps) != 1 || taps[0].Name != "audio.packets" || taps[0].Domain != shape.DomainPacket || taps[0].Node.String() != "select-audio" {
 		t.Fatalf("taps = %+v", taps)
 	}
 	late := &runtimeTestSink{name: "late-packets"}
@@ -1656,7 +1657,7 @@ func TestTaskAttachRuntimeFlowCopyBranchFromPacketTap(t *testing.T) {
 	}
 	lateTap, ok := findTap(task.Taps(), "audio.late.packets")
 	if !ok ||
-		lateTap.Domain != DomainPacket ||
+		lateTap.Domain != shape.DomainPacket ||
 		lateTap.MediaKind != av.MediaAudio ||
 		lateTap.After != OpCopy ||
 		lateTap.Shape.Codec != av.CodecOpus ||
@@ -1731,7 +1732,7 @@ func TestBranchCompositionCopyBranchesFanOutPackets(t *testing.T) {
 		}
 	}
 	if packetTap.Name == "" ||
-		packetTap.Domain != DomainPacket ||
+		packetTap.Domain != shape.DomainPacket ||
 		packetTap.MediaKind != av.MediaAudio ||
 		packetTap.Shape.Codec != av.CodecOpus ||
 		packetTap.Node != "select-audio" {
@@ -1817,7 +1818,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 		}
 	}
 	if copiedTap.Name == "" ||
-		copiedTap.Domain != DomainPacket ||
+		copiedTap.Domain != shape.DomainPacket ||
 		copiedTap.MediaKind != av.MediaAudio ||
 		copiedTap.Shape.Codec != av.CodecOpus ||
 		copiedTap.Shape.StreamID != "audio" ||
@@ -2369,7 +2370,7 @@ func TestStreamRecipeFlowDecodeSinkRuns(t *testing.T) {
 	}
 	decodedTap, ok := findTap(task.Taps(), "audio.flow.decoded")
 	if !ok ||
-		decodedTap.Domain != DomainFrame ||
+		decodedTap.Domain != shape.DomainFrame ||
 		decodedTap.MediaKind != av.MediaAudio ||
 		decodedTap.After != OpDecode ||
 		decodedTap.Shape.Codec != av.CodecOpus ||
@@ -2705,7 +2706,7 @@ func TestBranchCompositionTaskAttachesAfterEncodeTap(t *testing.T) {
 		}
 	}
 	if encodedTap.Name == "" ||
-		encodedTap.Domain != DomainPacket ||
+		encodedTap.Domain != shape.DomainPacket ||
 		encodedTap.MediaKind != av.MediaAudio ||
 		encodedTap.Shape.Codec != av.CodecOpus ||
 		encodedTap.Shape.StreamID != "archive" ||
@@ -2787,7 +2788,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 		}
 	}
 	if resizeTap.Name == "" ||
-		resizeTap.Domain != DomainFrame ||
+		resizeTap.Domain != shape.DomainFrame ||
 		resizeTap.MediaKind != av.MediaVideo ||
 		resizeTap.After != OpTransform ||
 		resizeTap.Shape.Width != 1280 ||
@@ -2818,7 +2819,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 		}
 	}
 	if resizedTap.Name == "" ||
-		resizedTap.Domain != DomainFrame ||
+		resizedTap.Domain != shape.DomainFrame ||
 		resizedTap.MediaKind != av.MediaVideo ||
 		resizedTap.After != OpTransform ||
 		resizedTap.Shape.Width != 320 ||
@@ -2879,10 +2880,10 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 			encodedTap = tap
 		}
 	}
-	if customTap.Name == "" || customTap.Domain != DomainFrame || customTap.MediaKind != av.MediaAudio || customTap.After != OpStage || customTap.Node != "meter" {
+	if customTap.Name == "" || customTap.Domain != shape.DomainFrame || customTap.MediaKind != av.MediaAudio || customTap.After != OpStage || customTap.Node != "meter" {
 		t.Fatalf("custom tap = %+v, want frame audio tap on meter", customTap)
 	}
-	if encodedTap.Name == "" || encodedTap.Domain != DomainPacket || encodedTap.MediaKind != av.MediaAudio || encodedTap.After != OpEncode || encodedTap.Node != "encode-audio" {
+	if encodedTap.Name == "" || encodedTap.Domain != shape.DomainPacket || encodedTap.MediaKind != av.MediaAudio || encodedTap.After != OpEncode || encodedTap.Node != "encode-audio" {
 		t.Fatalf("encoded tap = %+v, want packet audio tap on encode-audio", encodedTap)
 	}
 
@@ -3050,7 +3051,7 @@ func TestRuntimeAttachShapeAnnotationCannotBreakOperationContract(t *testing.T) 
 
 	_, err = task.Attach(ctx, Branch("bad").
 		From(FrameTap("audio.frames")).
-		Shape(Shape(ShapeDomain(DomainPacket), ShapeMedia(av.MediaAudio))).
+		Shape(shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaAudio))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(File("bad.ogg", io.Discard)))
 	var buildErr *BuildError
@@ -3130,7 +3131,7 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 		}
 	}
 	if resampledTap.Name == "" ||
-		resampledTap.Domain != DomainFrame ||
+		resampledTap.Domain != shape.DomainFrame ||
 		resampledTap.MediaKind != av.MediaAudio ||
 		resampledTap.Shape.SampleRate != 16_000 ||
 		resampledTap.Shape.Channels != Mono ||
@@ -3199,7 +3200,7 @@ func TestRuntimeObservationBranchPublishesTapAndDetachesSubtree(t *testing.T) {
 		}
 	}
 	if observedTap.Name == "" ||
-		observedTap.Domain != DomainFrame ||
+		observedTap.Domain != shape.DomainFrame ||
 		observedTap.MediaKind != av.MediaAudio ||
 		observedTap.Node != "analysis/observer" {
 		t.Fatalf("observed tap = %+v, want frame audio tap on analysis/observer", observedTap)
@@ -3429,9 +3430,9 @@ func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 	runtimeTask.taps = []TapInfo{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
-		Domain:    DomainPacket,
-		Shape: MediaShape{
-			Domain:     DomainPacket,
+		Domain:    shape.DomainPacket,
+		Shape: shape.Spec{
+			Domain:     shape.DomainPacket,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
@@ -3489,9 +3490,9 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchDestinationsBeforeMutation(t *te
 	runtimeTask.taps = []TapInfo{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
-		Domain:    DomainFrame,
-		Shape: MediaShape{
-			Domain:     DomainFrame,
+		Domain:    shape.DomainFrame,
+		Shape: shape.Spec{
+			Domain:     shape.DomainFrame,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
@@ -3559,8 +3560,8 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 	runtimeTask.taps = []TapInfo{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
-		Domain:    DomainFrame,
-		Shape:     MediaShape{Domain: DomainFrame, MediaKind: av.MediaAudio, StreamID: "audio", Codec: av.CodecOpus},
+		Domain:    shape.DomainFrame,
+		Shape:     shape.Spec{Domain: shape.DomainFrame, MediaKind: av.MediaAudio, StreamID: "audio", Codec: av.CodecOpus},
 		Node:      "source",
 	}}
 	defer builtTask.Close()
@@ -3610,9 +3611,9 @@ func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
 	runtimeTask.taps = []TapInfo{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
-		Domain:    DomainFrame,
-		Shape: MediaShape{
-			Domain:      DomainFrame,
+		Domain:    shape.DomainFrame,
+		Shape: shape.Spec{
+			Domain:      shape.DomainFrame,
 			MediaKind:   av.MediaVideo,
 			StreamID:    "video",
 			Codec:       av.CodecVP8,
@@ -3686,9 +3687,9 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 	runtimeTask.taps = []TapInfo{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
-		Domain:    DomainFrame,
-		Shape: MediaShape{
-			Domain:       DomainFrame,
+		Domain:    shape.DomainFrame,
+		Shape: shape.Spec{
+			Domain:       shape.DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
 			Codec:        av.CodecPCM,
@@ -3762,9 +3763,9 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 	runtimeTask.taps = []TapInfo{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
-		Domain:    DomainFrame,
-		Shape: MediaShape{
-			Domain:       DomainFrame,
+		Domain:    shape.DomainFrame,
+		Shape: shape.Spec{
+			Domain:       shape.DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
 			Codec:        av.CodecPCM,
@@ -3833,9 +3834,9 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 	runtimeTask.taps = []TapInfo{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
-		Domain:    DomainPacket,
-		Shape: MediaShape{
-			Domain:     DomainPacket,
+		Domain:    shape.DomainPacket,
+		Shape: shape.Spec{
+			Domain:     shape.DomainPacket,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
@@ -3857,7 +3858,7 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 	}
 	decodedTap, ok := findTap(builtTask.Taps(), "audio.decoded.late")
 	if !ok ||
-		decodedTap.Domain != DomainFrame ||
+		decodedTap.Domain != shape.DomainFrame ||
 		decodedTap.MediaKind != av.MediaAudio ||
 		decodedTap.Shape.Codec != av.CodecOpus ||
 		decodedTap.Shape.SampleRate != 48000 ||
@@ -3921,9 +3922,9 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 	runtimeTask.taps = []TapInfo{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
-		Domain:    DomainPacket,
-		Shape: MediaShape{
-			Domain:     DomainPacket,
+		Domain:    shape.DomainPacket,
+		Shape: shape.Spec{
+			Domain:     shape.DomainPacket,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,
@@ -3952,7 +3953,7 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 	}
 	decodedTap, ok := findTap(builtTask.Taps(), "audio.flow.decoded")
 	if !ok ||
-		decodedTap.Domain != DomainFrame ||
+		decodedTap.Domain != shape.DomainFrame ||
 		decodedTap.MediaKind != av.MediaAudio ||
 		decodedTap.After != OpDecode ||
 		decodedTap.Node != "preview/decode-preview" {
@@ -4004,9 +4005,9 @@ func TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation(t *testing.T) {
 	runtimeTask.taps = []TapInfo{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
-		Domain:    DomainFrame,
-		Shape: MediaShape{
-			Domain:      DomainFrame,
+		Domain:    shape.DomainFrame,
+		Shape: shape.Spec{
+			Domain:      shape.DomainFrame,
 			MediaKind:   av.MediaVideo,
 			StreamID:    "video",
 			Codec:       av.CodecVP8,
@@ -4086,9 +4087,9 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 	runtimeTask.taps = []TapInfo{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
-		Domain:    DomainPacket,
-		Shape: MediaShape{
-			Domain:       DomainPacket,
+		Domain:    shape.DomainPacket,
+		Shape: shape.Spec{
+			Domain:       shape.DomainPacket,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
 			Codec:        av.CodecOpus,
@@ -4129,7 +4130,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 	}
 	packetTap, ok := findTap(builtTask.Taps(), "audio.voice.packets")
 	if !ok ||
-		packetTap.Domain != DomainPacket ||
+		packetTap.Domain != shape.DomainPacket ||
 		packetTap.MediaKind != av.MediaAudio ||
 		packetTap.Shape.Codec != av.CodecOpus ||
 		packetTap.Shape.SampleRate != 16_000 ||
@@ -4215,9 +4216,9 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 	runtimeTask.taps = []TapInfo{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
-		Domain:    DomainFrame,
-		Shape: MediaShape{
-			Domain:       DomainFrame,
+		Domain:    shape.DomainFrame,
+		Shape: shape.Spec{
+			Domain:       shape.DomainFrame,
 			MediaKind:    av.MediaAudio,
 			StreamID:     "audio",
 			Codec:        av.CodecPCM,
@@ -4245,7 +4246,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 	}
 	packetTap, ok := findTap(builtTask.Taps(), "audio.voice.packets")
 	if !ok ||
-		packetTap.Domain != DomainPacket ||
+		packetTap.Domain != shape.DomainPacket ||
 		packetTap.MediaKind != av.MediaAudio ||
 		packetTap.After != OpEncode ||
 		packetTap.Node != "record/encode-record" ||
@@ -4333,9 +4334,9 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToDestinations(t *testing.T) {
 	runtimeTask.taps = []TapInfo{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
-		Domain:    DomainFrame,
-		Shape: MediaShape{
-			Domain:     DomainFrame,
+		Domain:    shape.DomainFrame,
+		Shape: shape.Spec{
+			Domain:     shape.DomainFrame,
 			MediaKind:  av.MediaAudio,
 			StreamID:   "audio",
 			Codec:      av.CodecOpus,

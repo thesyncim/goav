@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 const (
@@ -43,7 +44,7 @@ type graphPlanOperation struct {
 	Kind         OperationKind
 	Component    string
 	Detail       string
-	Shape        MediaShape
+	Shape        shape.Spec
 	Destinations []string
 	Shared       bool
 }
@@ -406,7 +407,7 @@ func streamIntentPacketCopyOnly(stream streamIntent) bool {
 			}
 			hasCopy = true
 		case OpTap:
-			if op.Tap.Domain != DomainPacket || op.Tap.After != OpCopy {
+			if op.Tap.Domain != shape.DomainPacket || op.Tap.After != OpCopy {
 				return false
 			}
 		default:
@@ -421,7 +422,7 @@ func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanL
 		return nil, false, nil
 	}
 	stream := state.intent.Streams[0]
-	if !mediaPlanDecodeStreamShape(stream, state.outputAttachments, mediaPlanInputDomain(state.inputAttachments) == DomainFrame) {
+	if !mediaPlanDecodeStreamShape(stream, state.outputAttachments, mediaPlanInputDomain(state.inputAttachments) == shape.DomainFrame) {
 		return nil, false, nil
 	}
 	plan, ok, err := newMediaPlanDecodeStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)

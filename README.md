@@ -593,8 +593,8 @@ enter the same recipe grammar as files, RTP, and WebRTC.
 
 ```go
 input := goav.Source("generated",
-    goav.PacketShape(av.MediaAudio, av.CodecOpus,
-        goav.ShapeAudio(48_000, codec.Stereo, av.SampleFormatS16),
+    shape.Packet(av.MediaAudio, av.CodecOpus,
+        shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
     ),
     func(ctx context.Context, push goav.SourcePush) error {
         for packet := range packets {
@@ -613,13 +613,13 @@ return goav.From(input).
     Run(ctx)
 ```
 
-Frame sources use the same constructor with `FrameShape` and do not allocate a
+Frame sources use the same constructor with `shape.Frame` and do not allocate a
 decoder.
 
 ```go
 frames := goav.Source("pcm",
-    goav.FrameShape(av.MediaAudio,
-        goav.ShapeAudio(48_000, codec.Stereo, av.SampleFormatS16),
+    shape.Frame(av.MediaAudio,
+        shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
     ),
     func(ctx context.Context, push goav.SourcePush) error {
         for frame := range decoded {
@@ -644,7 +644,7 @@ Event-only sources route directly to sinks.
 
 ```go
 events := goav.Source("diagnostics",
-    goav.EventShape(),
+    shape.Event(),
     func(ctx context.Context, push goav.SourcePush) error {
         if err := push.Event(goav.Event{Type: av.EventStats}); err != nil {
             return err

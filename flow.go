@@ -6,6 +6,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 // Chain is a reusable stream-local recipe fragment.
@@ -15,8 +16,8 @@ import (
 // branches own destinations.
 type Chain interface {
 	Name() string
-	InputShapes() ShapeSet
-	OutputShapes(MediaShape) ShapeSet
+	InputShapes() shape.Set
+	OutputShapes(shape.Spec) shape.Set
 	Taps() []TapRef
 	isChain()
 }
@@ -93,28 +94,28 @@ func (b *audioChain) isChain() {}
 
 func (b *videoChain) isChain() {}
 
-func (b *audioChain) InputShapes() ShapeSet {
+func (b *audioChain) InputShapes() shape.Set {
 	if b == nil {
 		return nil
 	}
 	return b.chainBuilder.inputShapes()
 }
 
-func (b *videoChain) InputShapes() ShapeSet {
+func (b *videoChain) InputShapes() shape.Set {
 	if b == nil {
 		return nil
 	}
 	return b.chainBuilder.inputShapes()
 }
 
-func (b *audioChain) OutputShapes(input MediaShape) ShapeSet {
+func (b *audioChain) OutputShapes(input shape.Spec) shape.Set {
 	if b == nil {
 		return nil
 	}
 	return b.chainBuilder.outputShapes(input)
 }
 
-func (b *videoChain) OutputShapes(input MediaShape) ShapeSet {
+func (b *videoChain) OutputShapes(input shape.Spec) shape.Set {
 	if b == nil {
 		return nil
 	}
@@ -159,7 +160,7 @@ func (b *audioChain) Do(stage pipeline.Stage) *audioChain {
 	return b
 }
 
-func (b *audioChain) Shape(shape MediaShape) *audioChain {
+func (b *audioChain) Shape(shape shape.Spec) *audioChain {
 	if b == nil {
 		return b
 	}
@@ -218,7 +219,7 @@ func (b *videoChain) Do(stage pipeline.Stage) *videoChain {
 	return b
 }
 
-func (b *videoChain) Shape(shape MediaShape) *videoChain {
+func (b *videoChain) Shape(shape shape.Spec) *videoChain {
 	if b == nil {
 		return b
 	}
@@ -260,43 +261,43 @@ func (b *chainBuilder) name() string {
 	return b.spec.name
 }
 
-func (b *chainBuilder) inputShapes() ShapeSet {
+func (b *chainBuilder) inputShapes() shape.Set {
 	if b == nil {
 		return nil
 	}
 	switch {
 	case chainHasDecode(b.spec.operations):
-		return ShapeSet{PacketShape(b.spec.media, chainDecodeCodec(b.spec.operations).ID)}
+		return shape.Set{shape.Packet(b.spec.media, chainDecodeCodec(b.spec.operations).ID)}
 	case chainEncodeSpec(b.spec.operations).Copy:
-		return ShapeSet{PacketShape(b.spec.media, "")}
+		return shape.Set{shape.Packet(b.spec.media, "")}
 	default:
-		return ShapeSet{FrameShape(b.spec.media)}
+		return shape.Set{shape.Frame(b.spec.media)}
 	}
 }
 
-func (b *chainBuilder) outputShapes(input MediaShape) ShapeSet {
+func (b *chainBuilder) outputShapes(input shape.Spec) shape.Set {
 	if b == nil {
 		return nil
 	}
-	shape := input
-	if shape.MediaKind == "" {
-		shape.MediaKind = b.spec.media
+	spec := input
+	if spec.MediaKind == "" {
+		spec.MediaKind = b.spec.media
 	}
-	if shape.Domain == "" {
+	if spec.Domain == "" {
 		switch {
 		case chainHasDecode(b.spec.operations) || chainEncodeSpec(b.spec.operations).Copy:
-			shape.Domain = DomainPacket
+			spec.Domain = shape.DomainPacket
 		default:
-			shape.Domain = DomainFrame
+			spec.Domain = shape.DomainFrame
 		}
 	}
 	for i := range b.spec.operations {
-		shapes := b.spec.operations[i].OutputShapes(shape)
+		shapes := b.spec.operations[i].OutputShapes(spec)
 		if len(shapes) != 0 {
-			shape = shapes[0]
+			spec = shapes[0]
 		}
 	}
-	return ShapeSet{shape}
+	return shape.Set{spec}
 }
 
 func (b *chainBuilder) taps() []TapRef {
@@ -361,7 +362,7 @@ func (b *chainBuilder) stage(stage pipeline.Stage) {
 	b.spec.operations = append(b.spec.operations, operationSpecForStage(stage))
 }
 
-func (b *chainBuilder) shape(shape MediaShape) {
+func (b *chainBuilder) shape(shape shape.Spec) {
 	if b == nil {
 		return
 	}
@@ -391,14 +392,14 @@ func (b *chainBuilder) tap(tap TapRef) {
 		return
 	}
 	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
-		if err := validateTapDomain("build flow", firstNonEmpty(b.spec.name, "flow"), tap, DomainPacket); err != nil {
+		if err := validateTapDomain("build flow", firstNonEmpty(b.spec.name, "flow"), tap, shape.DomainPacket); err != nil {
 			b.setErr(err)
 			return
 		}
 		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, OpEncode)))
 		return
 	}
-	if err := validateTapDomain("build flow", firstNonEmpty(b.spec.name, "flow"), tap, DomainFrame); err != nil {
+	if err := validateTapDomain("build flow", firstNonEmpty(b.spec.name, "flow"), tap, shape.DomainFrame); err != nil {
 		b.setErr(err)
 		return
 	}

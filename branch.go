@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 var destinationRefSeq atomic.Uint64
@@ -159,7 +160,7 @@ type branchBuilder struct {
 type branchSourceBinding struct {
 	from      string
 	tap       string
-	tapDomain MediaDomain
+	tapDomain shape.MediaDomain
 	policy    pipeline.RoutePolicy
 	label     string
 }
@@ -293,7 +294,7 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Shape(shape MediaShape) *branchBuilder {
+func (b *branchBuilder) Shape(shape shape.Spec) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -350,7 +351,7 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 		return b
 	}
 	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
-		if err := validateTapDomain("build branch", firstNonEmpty(b.spec.name, "branch"), tap, DomainPacket); err != nil {
+		if err := validateTapDomain("build branch", firstNonEmpty(b.spec.name, "branch"), tap, shape.DomainPacket); err != nil {
 			b.setErr(err)
 			return b
 		}
@@ -567,9 +568,9 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 }
 
 func validateBranchStepTapDomains(spec BranchSpec, parentPacket bool) error {
-	domain := DomainFrame
+	domain := shape.DomainFrame
 	if parentPacket && !chainHasDecode(spec.operations) {
-		domain = DomainPacket
+		domain = shape.DomainPacket
 	}
 	steps := branchSpecChainSteps(spec)
 	for i := range steps {
@@ -635,7 +636,7 @@ func operationSpecTapIsTerminalPacket(operation OperationSpec) bool {
 	if operation.Kind != OpTap {
 		return false
 	}
-	return operation.Tap.Domain == DomainPacket &&
+	return operation.Tap.Domain == shape.DomainPacket &&
 		(operation.Tap.After == OpEncode || operation.Tap.After == OpCopy)
 }
 
@@ -653,30 +654,30 @@ func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket b
 	if parentPacket {
 		if tapIsPacketAnchor(stream, spec.source.tap) {
 			from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
-			if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainPacket); err != nil {
+			if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, shape.DomainPacket); err != nil {
 				return nil, TapRef{}, err
 			}
-			return nil, tapWithDomain(from, DomainPacket), nil
+			return nil, tapWithDomain(from, shape.DomainPacket), nil
 		}
 		return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.source.tap)
 	}
 	if chainHasDecode(stream.operations) && spec.source.tap == defaultDecodedTapName(stream.selector.Type) {
 		from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
-		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainFrame); err != nil {
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, shape.DomainFrame); err != nil {
 			return nil, TapRef{}, err
 		}
-		return nil, tapWithDomain(from, DomainFrame), nil
+		return nil, tapWithDomain(from, shape.DomainFrame), nil
 	}
 	if steps, ok := chainStepsThroughTap(streamSteps, spec.source.tap); ok {
 		from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
-		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainFrame); err != nil {
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, shape.DomainFrame); err != nil {
 			return nil, TapRef{}, err
 		}
-		return steps, tapWithDomain(from, DomainFrame), nil
+		return steps, tapWithDomain(from, shape.DomainFrame), nil
 	}
 	if tapIsPostEncodeAnchor(stream, spec.source.tap) {
 		from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
-		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainPacket); err != nil {
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, shape.DomainPacket); err != nil {
 			return nil, TapRef{}, err
 		}
 		return nil, TapRef{}, plannedBranchPostEncodeTapError(spec.name, spec.source.tap)

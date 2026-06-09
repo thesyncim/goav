@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type branchComposeRoute struct {
@@ -20,7 +21,7 @@ type branchComposeRoute struct {
 	decode            CodecSpec
 	codecChange       CodecChangePolicy
 	dropDecodeEvents  bool
-	sourceDomain      MediaDomain
+	sourceDomain      shape.MediaDomain
 	sharedOperations  []OperationSpec
 	privateOperations []OperationSpec
 	request           encodeRequest
@@ -571,7 +572,7 @@ func resolveBranchComposeStreamGroups(streams []av.Stream, branches []branchComp
 	index := make(map[string]int, len(branches))
 	for i := range branches {
 		stream, err := selectDecodeStream(streams, branches[i].branch.Selector)
-		if branches[i].sourceDomain == DomainFrame {
+		if branches[i].sourceDomain == shape.DomainFrame {
 			stream, err = selectStream(streams, branches[i].branch.Selector)
 		}
 		if err != nil {
@@ -674,7 +675,7 @@ func branchComposeRouteNeedsEncode(branch branchComposeRoute) bool {
 }
 
 func branchComposeRouteNeedsDecode(branch branchComposeRoute) bool {
-	if branch.sourceDomain == DomainFrame {
+	if branch.sourceDomain == shape.DomainFrame {
 		return false
 	}
 	return !branch.copy

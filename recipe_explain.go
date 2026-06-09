@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type PlanReport struct {
@@ -64,7 +65,7 @@ type BranchReport struct {
 	Name         string
 	Input        string
 	Stream       StreamSelect
-	Shape        MediaShape
+	Shape        shape.Spec
 	Operations   []OperationReport
 	Destinations []string
 }
@@ -73,7 +74,7 @@ type OperationReport struct {
 	Kind      OperationKind
 	Component string
 	Detail    string
-	Shape     MediaShape
+	Shape     shape.Spec
 	Shared    bool
 }
 
@@ -255,16 +256,16 @@ func explainOperationSpecs(operations []OperationSpec) []OperationReport {
 	return reports
 }
 
-func operationSpecShape(operation OperationSpec) MediaShape {
+func operationSpecShape(operation OperationSpec) shape.Spec {
 	switch operation.Kind {
 	case OpTransform:
 		return mediaShapeFromTransform(operation.Transform)
 	case OpShape:
 		return operation.Shape
 	case OpEncode:
-		return mediaShapeFromCodecSpec(operation.Encode, DomainPacket)
+		return mediaShapeFromCodecSpec(operation.Encode, shape.DomainPacket)
 	default:
-		return MediaShape{}
+		return shape.Spec{}
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type OperationKind string
@@ -41,10 +42,10 @@ type mediaPlan struct {
 type planTap struct {
 	Name      string
 	Node      pipeline.NodeRef
-	Domain    MediaDomain
+	Domain    shape.MediaDomain
 	MediaKind av.MediaType
 	After     OperationKind
-	Shape     MediaShape
+	Shape     shape.Spec
 	Shared    bool
 }
 
@@ -64,7 +65,7 @@ type planBranch struct {
 	Name       string
 	Input      string
 	Stream     StreamSelect
-	Shape      MediaShape
+	Shape      shape.Spec
 	Operations []planOperation
 	Outputs    []string
 }
@@ -74,7 +75,7 @@ type planOperation struct {
 	Component string
 	Detail    string
 	After     OperationKind
-	Shape     MediaShape
+	Shape     shape.Spec
 	Shared    bool
 }
 
@@ -165,28 +166,28 @@ func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []
 // reach it through planBranchesFromStreamIntents, so the Explain-side mediaPlan
 // has one branch planner (NORTH_STAR step 3).
 func planBranchFromStreamIntent(state *recipeCompileState, stream streamIntent, index int, outputs []planOutput) (planBranch, []planDecision) {
-	var shape MediaShape
+	var spec shape.Spec
 	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
 	if selected, ok := planSelectedStream(state, stream); ok {
 		stream.Select = streamSelectFromStream(selected)
-		domain := DomainPacket
+		domain := shape.DomainPacket
 		if sourceShapeOK && sourceShape.Domain != "" {
 			domain = sourceShape.Domain
 		}
-		shape = mediaShapeFromPlanStream(selected, domain)
+		spec = mediaShapeFromPlanStream(selected, domain)
 		if sourceShapeOK {
-			shape = mergeMediaShape(shape, sourceShape)
+			spec = shape.Merge(spec, sourceShape)
 		}
 	}
-	shape = normalizePlanBranchShape(shape, stream, firstInput(state.intent.Inputs))
+	spec = normalizePlanBranchShape(spec, stream, firstInput(state.intent.Inputs))
 	branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", index))
-	operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, shape)
-	operations = planOperationsWithShape(branchName, shape, operations)
+	operations, branchDecisions := planOperationSpecs(state.intent.Inputs, stream, branchName, spec)
+	operations = planOperationsWithShape(branchName, spec, operations)
 	return planBranch{
 		Name:       branchName,
 		Input:      firstInputName(state.intent.Inputs),
 		Stream:     stream.Select,
-		Shape:      shape,
+		Shape:      spec,
 		Operations: operations,
 		Outputs:    planBranchDestinations(stream.Destinations, outputs),
 	}, branchDecisions
@@ -239,7 +240,7 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 			continue
 		}
 		selected, err := selectDecodeStream(probes[i].Streams, selector)
-		if sourceShapeOK && sourceShape.Domain == DomainFrame {
+		if sourceShapeOK && sourceShape.Domain == shape.DomainFrame {
 			selected, err = selectStream(probes[i].Streams, selector)
 		}
 		if err != nil {
@@ -265,24 +266,24 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 	for i := range intent.Inputs {
 		input := intent.Inputs[i]
 		name := firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i))
-		shape := mediaShapeFromInputIntent(input, DomainPacket)
+		spec := mediaShapeFromInputIntent(input, shape.DomainPacket)
 		if i < len(state.inputAttachments) {
 			if sourceShape, ok := customSourceShape(state.inputAttachments[i]); ok {
-				shape = mergeMediaShape(shape, sourceShape)
+				spec = shape.Merge(spec, sourceShape)
 			}
 		}
-		operations := planInputOperationsForShape(input, shape)
+		operations := planInputOperationsForShape(input, spec)
 		decision := planDecision{
 			Code:    "packet_copy",
 			Branch:  name,
 			Message: "no decode, transform, or encode requested; packets are copied to outputs",
 		}
-		if shape.Domain == DomainEvent {
+		if spec.Domain == shape.DomainEvent {
 			operations = append(operations, planOperation{
 				Kind:      OpShape,
 				Component: "shape",
 				Detail:    "event source",
-				Shape:     shape,
+				Shape:     spec,
 			})
 			decision = planDecision{
 				Code:    "event_source",
@@ -296,11 +297,11 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 				Detail:    "preserve encoded packets",
 			})
 		}
-		operations = planOperationsWithShape(name, shape, operations)
+		operations = planOperationsWithShape(name, spec, operations)
 		branches = append(branches, planBranch{
 			Name:       firstNonEmpty(name, fmt.Sprintf("copy-%d", i)),
 			Input:      name,
-			Shape:      shape,
+			Shape:      spec,
 			Operations: operations,
 			Outputs:    append([]string(nil), outputNames...),
 		})
@@ -309,7 +310,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 	return branches, decisions
 }
 
-func planOperationSpecs(inputs []inputIntent, stream streamIntent, branchName string, initial MediaShape) ([]planOperation, []planDecision) {
+func planOperationSpecs(inputs []inputIntent, stream streamIntent, branchName string, initial shape.Spec) ([]planOperation, []planDecision) {
 	operations := planInputOperationsForShape(firstInput(inputs), initial)
 	operations = append(operations, planOperation{
 		Kind:      OpSelect,
@@ -322,14 +323,14 @@ func planOperationSpecs(inputs []inputIntent, stream streamIntent, branchName st
 		return operations, decisions
 	}
 	var decisions []planDecision
-	if initial.Domain == DomainFrame {
+	if initial.Domain == shape.DomainFrame {
 		operations = append(operations, planProcessingOperations(stream)...)
 		if stream.Encode.ID != "" {
 			operations = append(operations, planOperation{
 				Kind:      OpEncode,
 				Component: string(stream.Encode.ID),
 				Detail:    "frames to packets",
-				Shape:     mediaShapeFromCodecSpec(stream.Encode, DomainPacket),
+				Shape:     mediaShapeFromCodecSpec(stream.Encode, shape.DomainPacket),
 			})
 			decisions = append(decisions, planDecision{
 				Code:    "encode_required",
@@ -375,7 +376,7 @@ func planOperationSpecs(inputs []inputIntent, stream streamIntent, branchName st
 			Kind:      OpEncode,
 			Component: string(stream.Encode.ID),
 			Detail:    "frames to packets",
-			Shape:     mediaShapeFromCodecSpec(stream.Encode, DomainPacket),
+			Shape:     mediaShapeFromCodecSpec(stream.Encode, shape.DomainPacket),
 		})
 		decisions = append(decisions, planDecision{
 			Code:    "encode_required",
@@ -440,7 +441,7 @@ func planOperationFromOperationSpec(operation OperationSpec) planOperation {
 			Kind:      OpEncode,
 			Component: string(operation.Encode.ID),
 			Detail:    "frames to packets",
-			Shape:     mediaShapeFromCodecSpec(operation.Encode, DomainPacket),
+			Shape:     mediaShapeFromCodecSpec(operation.Encode, shape.DomainPacket),
 			Shared:    operation.Shared,
 		}
 	case OpDecode:
@@ -482,7 +483,7 @@ func operationSpecKindPresent(operations []OperationSpec, kind OperationKind) bo
 	return false
 }
 
-func planInputOperationsForShape(input inputIntent, shape MediaShape) []planOperation {
+func planInputOperationsForShape(input inputIntent, spec shape.Spec) []planOperation {
 	if input.Protocol == av.ProtocolCustom {
 		return nil
 	}
@@ -493,14 +494,14 @@ func planInputOperationsForShape(input inputIntent, shape MediaShape) []planOper
 			Kind:      OpDepacketize,
 			Component: component,
 			Detail:    "receive RTP packets",
-			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(shape.Domain, DomainPacket)),
+			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(spec.Domain, shape.DomainPacket)),
 		}}
 	default:
 		return []planOperation{{
 			Kind:      OpDemux,
 			Component: "container",
 			Detail:    "read packets from input",
-			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(shape.Domain, DomainPacket)),
+			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(spec.Domain, shape.DomainPacket)),
 		}}
 	}
 }
@@ -556,7 +557,7 @@ func planTaps(branches []planBranch) []planTap {
 		branch := branches[i]
 		currentShape := branch.Shape
 		if currentShape.Domain == "" {
-			currentShape.Domain = DomainPacket
+			currentShape.Domain = shape.DomainPacket
 		}
 		if currentShape.MediaKind == "" {
 			currentShape.MediaKind = branch.Stream.Type
@@ -599,114 +600,114 @@ func planTaps(branches []planBranch) []planTap {
 	return taps
 }
 
-func planOperationsWithShape(branchName string, baseShape MediaShape, operations []planOperation) []planOperation {
+func planOperationsWithShape(branchName string, baseShape shape.Spec, operations []planOperation) []planOperation {
 	if len(operations) == 0 {
 		return nil
 	}
 	out := append([]planOperation(nil), operations...)
-	shape := normalizeTapShape(baseShape)
+	spec := normalizeTapShape(baseShape)
 	branch := planBranch{Name: branchName}
 	for i := range out {
 		operation := out[i]
 		if operation.Kind == OpTap {
 			if mediaShapeEmpty(operation.Shape) {
-				operation.Shape = shape
+				operation.Shape = spec
 			}
 			out[i] = operation
 			continue
 		}
-		shape = planShapeAfterOperation(shape, branch, operation)
-		operation.Shape = shape
+		spec = planShapeAfterOperation(spec, branch, operation)
+		operation.Shape = spec
 		out[i] = operation
 	}
 	return out
 }
 
-func planShapeForOperation(current MediaShape, branch planBranch, operation planOperation) MediaShape {
+func planShapeForOperation(current shape.Spec, branch planBranch, operation planOperation) shape.Spec {
 	if !mediaShapeEmpty(operation.Shape) {
 		return operation.Shape
 	}
 	return planShapeAfterOperation(current, branch, operation)
 }
 
-func planShapeAfterOperation(shape MediaShape, branch planBranch, operation planOperation) MediaShape {
+func planShapeAfterOperation(spec shape.Spec, branch planBranch, operation planOperation) shape.Spec {
 	switch operation.Kind {
 	case OpDepacketize:
 		if codecID := knownPlanCodec(operation.Component); codecID != "" {
-			shape.Codec = codecID
-			shape.MediaKind = firstNonEmptyMedia(shape.MediaKind, codecMedia(codecID))
+			spec.Codec = codecID
+			spec.MediaKind = firstNonEmptyMedia(spec.MediaKind, codecMedia(codecID))
 		}
-		shape.Domain = DomainPacket
+		spec.Domain = shape.DomainPacket
 	case OpDecode, OpStage:
-		shape.Domain = DomainFrame
+		spec.Domain = shape.DomainFrame
 	case OpShape:
-		shape = mergeMediaShape(shape, operation.Shape)
+		spec = shape.Merge(spec, operation.Shape)
 	case OpTransform:
-		shape.Domain = DomainFrame
-		shape = mergeMediaShape(shape, operation.Shape)
+		spec.Domain = shape.DomainFrame
+		spec = shape.Merge(spec, operation.Shape)
 	case OpCopy:
-		shape.Domain = DomainPacket
+		spec.Domain = shape.DomainPacket
 	case OpEncode:
-		shape.Domain = DomainPacket
-		shape.StreamID = av.StreamID(firstNonEmpty(branch.Name, string(shape.StreamID)))
-		shape.Codec = av.CodecID(operation.Component)
-		if media := codecMedia(shape.Codec); media != "" {
-			shape.MediaKind = media
+		spec.Domain = shape.DomainPacket
+		spec.StreamID = av.StreamID(firstNonEmpty(branch.Name, string(spec.StreamID)))
+		spec.Codec = av.CodecID(operation.Component)
+		if media := codecMedia(spec.Codec); media != "" {
+			spec.MediaKind = media
 		}
-		shape = mergeMediaShape(shape, operation.Shape)
+		spec = shape.Merge(spec, operation.Shape)
 	}
-	return shape
+	return spec
 }
 
-func normalizeTapShape(shape MediaShape) MediaShape {
-	if shape.Domain == "" {
-		shape.Domain = DomainPacket
+func normalizeTapShape(spec shape.Spec) shape.Spec {
+	if spec.Domain == "" {
+		spec.Domain = shape.DomainPacket
 	}
-	return shape
+	return spec
 }
 
-func normalizePlanBranchShape(shape MediaShape, stream streamIntent, input inputIntent) MediaShape {
-	if shape.Domain == "" {
-		shape.Domain = DomainPacket
+func normalizePlanBranchShape(spec shape.Spec, stream streamIntent, input inputIntent) shape.Spec {
+	if spec.Domain == "" {
+		spec.Domain = shape.DomainPacket
 	}
-	if shape.MediaKind == "" {
-		shape.MediaKind = firstNonEmptyMedia(stream.Select.Type, stream.Encode.Type, input.Codec.Type)
+	if spec.MediaKind == "" {
+		spec.MediaKind = firstNonEmptyMedia(stream.Select.Type, stream.Encode.Type, input.Codec.Type)
 	}
-	if shape.StreamID == "" {
-		shape.StreamID = stream.Select.ID
+	if spec.StreamID == "" {
+		spec.StreamID = stream.Select.ID
 	}
-	if shape.Codec == "" {
-		shape.Codec = firstNonEmptyCodec(stream.Select.Codec, input.Codec.ID)
+	if spec.Codec == "" {
+		spec.Codec = firstNonEmptyCodec(stream.Select.Codec, input.Codec.ID)
 	}
 	if input.Realtime || input.Protocol == av.ProtocolRTP || input.Protocol == av.ProtocolWebRTC {
-		shape.Realtime = true
+		spec.Realtime = true
 	}
-	return shape
+	return spec
 }
 
-func mediaShapeFromPlanStream(stream av.Stream, domain MediaDomain) MediaShape {
-	return mediaShapeFromStream(stream, domain)
+func mediaShapeFromPlanStream(stream av.Stream, domain shape.MediaDomain) shape.Spec {
+	return shape.FromStream(stream, domain)
 }
 
-func mediaShapeFromInputIntent(input inputIntent, domain MediaDomain) MediaShape {
-	shape := MediaShape{
+func mediaShapeFromInputIntent(input inputIntent, domain shape.MediaDomain) shape.Spec {
+	spec := shape.Spec{
 		Domain:    domain,
 		MediaKind: input.Codec.Type,
 		StreamID:  av.StreamID(input.Name),
 		Codec:     input.Codec.ID,
 		Realtime:  input.Realtime || input.Protocol == av.ProtocolRTP || input.Protocol == av.ProtocolWebRTC,
 	}
-	shape = mergeMediaShape(shape, mediaShapeFromCodecParameters(input.Codec.Parameters))
-	if shape.MediaKind == "" {
-		shape.MediaKind = codecMedia(shape.Codec)
+	spec = shape.Merge(spec, shape.FromCodecParameters(input.Codec.Parameters))
+	if spec.MediaKind == "" {
+		spec.MediaKind = codecMedia(spec.Codec)
 	}
-	return shape
+	return spec
 }
 
-func mediaShapeFromTransform(transform TransformSpec) MediaShape {
+func mediaShapeFromTransform(transform TransformSpec) shape.Spec {
 	if transform.Resize != nil {
-		return MediaShape{
-			Domain:      DomainFrame,
+		return shape.Spec{
+			Domain:      shape.DomainFrame,
 			MediaKind:   av.MediaVideo,
 			Width:       transform.Resize.Width,
 			Height:      transform.Resize.Height,
@@ -714,18 +715,18 @@ func mediaShapeFromTransform(transform TransformSpec) MediaShape {
 		}
 	}
 	if transform.Resample != nil {
-		return MediaShape{
-			Domain:       DomainFrame,
+		return shape.Spec{
+			Domain:       shape.DomainFrame,
 			MediaKind:    av.MediaAudio,
 			SampleRate:   transform.Resample.SampleRate,
 			Channels:     transform.Resample.Channels,
 			SampleFormat: transform.Resample.SampleFormat,
 		}
 	}
-	return MediaShape{}
+	return shape.Spec{}
 }
 
-func mediaShapeEmpty(shape MediaShape) bool {
+func mediaShapeEmpty(shape shape.Spec) bool {
 	return shape.Domain == "" &&
 		shape.MediaKind == "" &&
 		shape.StreamID == "" &&
@@ -749,7 +750,7 @@ func firstNonEmptyCodec(values ...av.CodecID) av.CodecID {
 	return ""
 }
 
-func firstNonEmptyDomain(values ...MediaDomain) MediaDomain {
+func firstNonEmptyDomain(values ...shape.MediaDomain) shape.MediaDomain {
 	for i := range values {
 		if values[i] != "" {
 			return values[i]

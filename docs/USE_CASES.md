@@ -185,8 +185,8 @@ packet production.
 
 ```go
 input := goav.Source("generated",
-    goav.PacketShape(av.MediaAudio, av.CodecOpus,
-        goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+    shape.Packet(av.MediaAudio, av.CodecOpus,
+        shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
     ),
     func(ctx context.Context, push goav.SourcePush) error {
         for packet := range packets {
@@ -207,12 +207,12 @@ err := goav.From(input).
 
 Packet-domain custom sources participate in the same stream, branch,
 destination, explain, and runtime graph path as built-in inputs. Frame-domain
-sources use `FrameShape` and skip decode.
+sources use `shape.Frame` and skip decode.
 
 ```go
 frames := goav.Source("pcm",
-    goav.FrameShape(av.MediaAudio,
-        goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+    shape.Frame(av.MediaAudio,
+        shape.Audio(48_000, goav.Stereo, av.SampleFormatS16),
     ),
     func(ctx context.Context, push goav.SourcePush) error {
         for frame := range decoded {
@@ -230,11 +230,11 @@ err := goav.From(frames).
     Run(ctx)
 ```
 
-Event-only custom sources use `EventShape` and route straight to sinks.
+Event-only custom sources use `shape.Event` and route straight to sinks.
 
 ```go
 events := goav.Source("diagnostics",
-    goav.EventShape(),
+    shape.Event(),
     func(ctx context.Context, push goav.SourcePush) error {
         if err := push.Event(goav.Event{Type: av.EventStats}); err != nil {
             return err

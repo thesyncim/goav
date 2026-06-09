@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type Packet = av.Packet
@@ -31,37 +32,12 @@ type BranchStats = pipeline.GraphStats
 // NodeStats is the per-node counter view found in TaskStats.Nodes.
 type NodeStats = pipeline.NodeStats
 
-type MediaDomain string
-
-const (
-	DomainPacket MediaDomain = "packet"
-	DomainFrame  MediaDomain = "frame"
-	DomainEvent  MediaDomain = "event"
-)
-
-type MediaShape struct {
-	Domain       MediaDomain
-	MediaKind    av.MediaType
-	StreamID     av.StreamID
-	Codec        av.CodecID
-	Format       av.FormatID
-	Width        int
-	Height       int
-	PixelFormat  string
-	SampleRate   int
-	Channels     int
-	SampleFormat string
-	Realtime     bool
-}
-
-type ShapeSet []MediaShape
-
 type TapInfo struct {
 	Name      string
 	MediaKind av.MediaType
-	Domain    MediaDomain
+	Domain    shape.MediaDomain
 	After     OperationKind
-	Shape     MediaShape
+	Shape     shape.Spec
 	Node      pipeline.NodeRef
 }
 
