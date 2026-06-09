@@ -20,7 +20,6 @@ type branchComposePlan struct {
 type branchComposeBranch struct {
 	Name              string
 	Selector          av.StreamSelector
-	Decode            bool
 	Copy              bool
 	Operations        []OperationSpec
 	SharedOperations  []OperationSpec
@@ -65,7 +64,6 @@ func branchComposePlanFromTranscode(plan transcode.Plan) branchComposePlan {
 		branches = append(branches, branchComposeBranch{
 			Name:              branch.Name,
 			Selector:          branch.Selector,
-			Decode:            branch.Decode,
 			Copy:              false,
 			Operations:        cloneOperationSpecs(operations),
 			PrivateOperations: operations,

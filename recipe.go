@@ -3901,7 +3901,6 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		branch := branchComposeBranch{
 			Name:              branchName,
 			Selector:          selector,
-			Decode:            stream.Decode,
 			Copy:              stream.Encode.Copy,
 			Operations:        cloneOperationSpecs(operations),
 			SharedOperations:  sharedOperations,

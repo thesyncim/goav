@@ -1400,7 +1400,6 @@ func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeR
 		branch: branchComposeBranch{
 			Name:         branchName,
 			Selector:     p.decode.selector,
-			Decode:       p.sourceDomain != DomainFrame,
 			DecodeConfig: cloneCodecSpec(p.decode.config),
 			CodecChange:  p.decode.codecChange,
 		},
