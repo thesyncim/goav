@@ -447,9 +447,10 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"func (p runtimeGraphPatch) rollback",
 		"func (p runtimeGraphPatch) attachment",
 		"type workPatch struct",
-		"workPatchFromRuntimeBranches",
-		"runtimeBranchWorkSteps",
-		"branch.operations",
+		"func (t *task) planAttachBranchSteps",
+		"func (p *attachPlan) finalizeBranch",
+		"func (t *task) applyAttachBranch",
+		"range spec.operations",
 		"operationSpecOutputShape",
 		"patch.resetPlannedTaps()",
 		"patch.setWork(",
@@ -457,6 +458,15 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("runtime attach should lower through runtimeGraphPatch; missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"type runtimeBranch struct",
+		"workPatchFromRuntimeBranches",
+		"runtimeBranchWorkSteps",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("runtime attach should plan the workPatch directly from BranchSpec, not a parallel %q model", forbidden)
 		}
 	}
 }
@@ -472,20 +482,24 @@ func workPatchOperationKindsForBranch(operations []workOperation, branch string)
 }
 
 func TestRuntimeAttachUsesSharedMuxDestinationPreparation(t *testing.T) {
-	body, err := os.ReadFile("runtime_attach.go")
-	if err != nil {
-		t.Fatal(err)
+	var body strings.Builder
+	for _, file := range []string{"runtime_attach.go", "work_patch.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
 	}
-	text := string(body)
+	text := body.String()
 	for _, required := range []string{
 		"func runtimeMuxDestinationFormat",
 		"func runtimeMuxCompatibilityIssue",
-		"func prepareRuntimeBranchMuxTerminal",
-		"func runtimeBranchSinkTerminal",
-		"func runtimeBranchSharedMuxTerminal",
+		"func (t *task) planAttachMuxDestinationStep",
+		"func attachSinkDestinationStep",
+		"func attachSharedMuxDestinationStep",
 		"runtimeMuxDestinationFormat(ctx, rt, target.dest, i)",
 		"runtimeMuxCompatibilityIssue(target.name",
-		"prepareRuntimeBranchMuxTerminal(ctx, t.runtime",
+		"runtimeMuxDestinationFormat(ctx, t.runtime, destination.dest, index)",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("runtime attach target prep should share mux helpers; missing %q", required)

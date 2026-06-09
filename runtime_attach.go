@@ -18,49 +18,14 @@ import (
 
 var runtimeAttachmentSeq atomic.Uint64
 
-// runtimeBranch is the internal graph mutation plan for a branch attached to an
-// already-built task.
-type runtimeBranch struct {
-	name           string
-	media          av.MediaType
-	from           string
-	tap            string
-	tapDomain      shape.MediaDomain
-	anchor         TapInfo
-	operations     []OperationSpec
-	prepared       []runtimeBranchOperation
-	postEncodeTaps []string
-	destinations   []runtimeBranchDestination
-	terminals      []runtimeBranchTerminal
-	policy         pipeline.RoutePolicy
-	label          string
-	buffer         pipeline.BufferPolicy
-	err            error
-}
-
-type runtimeBranchOperation struct {
-	spec  OperationSpec
-	stage pipeline.Stage
-	shape shape.Spec
-	owned bool
-}
-
-type runtimeBranchDestination struct {
+// attachDestination is one validated destination of an attaching branch: the
+// cloned spec, its sink, and the share key that groups reused destination
+// values inside one Task.Attach call.
+type attachDestination struct {
 	name     string
 	dest     destinationSpec
 	sink     pipeline.Sink
 	shareKey string
-}
-
-type runtimeBranchTerminal struct {
-	name     string
-	shareKey string
-	dest     destinationSpec
-	stream   av.Stream
-	stage    pipeline.Stage
-	sink     pipeline.Sink
-	shape    shape.Spec
-	owned    bool
 }
 
 type runtimeBranchGroupDestinations struct {
@@ -102,12 +67,12 @@ type runtimeGraphPatch struct {
 	work        workPatch
 }
 
-func (p *runtimeGraphPatch) addAnchor(branch runtimeBranch) {
-	if branch.tap != "" {
-		p.anchorTaps = append(p.anchorTaps, branch.tap)
+func (p *runtimeGraphPatch) addAnchor(tap string, from string) {
+	if tap != "" {
+		p.anchorTaps = append(p.anchorTaps, tap)
 	}
-	if branch.from != "" {
-		p.anchorNodes = append(p.anchorNodes, branch.from)
+	if from != "" {
+		p.anchorNodes = append(p.anchorNodes, from)
 	}
 }
 
@@ -170,6 +135,10 @@ type Attachment interface {
 	Close(context.Context) error
 }
 
+// Attach compiles each BranchSpec through the shared operation-chain lowering
+// into a workPatch — the plan — opens its destinations, and then applies the
+// patch atomically to the running graph: a failed attach rolls every applied
+// node back and leaves the task unchanged.
 func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -177,70 +146,63 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 	if len(specs) == 0 {
 		return nil, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more goav.Branch(name)...To(destination) values")
 	}
-	branches := make([]runtimeBranch, len(specs))
+	destinations := make([][]attachDestination, len(specs))
 	for i := range specs {
-		branch, err := runtimeBranchFromSpec(specs[i])
+		branchDestinations, err := attachBranchDestinations(specs[i])
 		if err != nil {
 			return nil, err
 		}
-		if err := validateRuntimeBranch(branch); err != nil {
+		if err := validateAttachBranchSpec(specs[i], branchDestinations); err != nil {
 			return nil, err
 		}
-		branches[i] = branch
+		destinations[i] = branchDestinations
 	}
-	destinations, err := validateRuntimeBranchGroupDestinations(branches)
+	groupDestinations, err := validateRuntimeBranchGroupDestinations(specs, destinations)
 	if err != nil {
 		return nil, err
 	}
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
-	group := newRuntimeAttachGroup(destinations)
+	group := newRuntimeAttachGroup(groupDestinations)
+	plan := newAttachPlan()
 	var patch runtimeGraphPatch
-	nodeNamesByBranch := make([][]string, len(branches))
-	preparedBranches := 0
 	rollback := func(err error) (Attachment, error) {
-		for i := 0; i < preparedBranches; i++ {
-			closeRuntimeBranchOwnedStages(branches[i])
-		}
+		plan.closeOwned()
 		group.failSharedMuxStages()
 		group.closeSharedMuxStages()
 		patch.rollback(t)
 		return nil, err
 	}
-	for i := range branches {
-		branch := &branches[i]
+	for i := range specs {
 		graphSpec := t.graph.Spec()
-		var err error
-		branch.from, branch.anchor, err = t.resolveRuntimeBranchAnchor(branch, graphSpec, patch.taps)
+		from, anchor, err := t.resolveRuntimeBranchAnchor(specs[i], graphSpec, patch.taps)
 		if err != nil {
 			return rollback(err)
 		}
-		patch.addAnchor(*branch)
-		if err := t.prepareRuntimeBranch(ctx, branch, group); err != nil {
-			preparedBranches = i + 1
-			return rollback(err)
-		}
-		preparedBranches = i + 1
-		if err := t.validateRuntimeBranchTapsLocked(*branch, patch.taps); err != nil {
-			return rollback(err)
-		}
-		nodeNames, err := runtimeBranchNodeNames(*branch, graphSpec, group)
+		patch.addAnchor(specs[i].source.tap, from)
+		steps, err := t.planAttachBranchSteps(ctx, specs[i], destinations[i], anchor, group)
 		if err != nil {
 			return rollback(err)
 		}
-		nodeNamesByBranch[i] = nodeNames
-		patch.addPlannedTaps(runtimeBranchPlannedTaps(*branch, nodeNames))
+		index := plan.registerBranch(specs[i], from, steps)
+		if err := t.validateAttachBranchTapsLocked(steps, patch.taps); err != nil {
+			return rollback(err)
+		}
+		if err := plan.finalizeBranch(index, specs[i], destinations[i], anchor, graphSpec, group, steps); err != nil {
+			return rollback(err)
+		}
+		patch.addPlannedTaps(plan.branches[index].taps)
 	}
 	if err := group.prepareSharedMuxStages(ctx, t.runtime); err != nil {
 		return rollback(err)
 	}
-	name := runtimeAttachmentName(branches)
-	patch.setWork(workPatchFromRuntimeBranches(name, branches, nodeNamesByBranch, group))
+	name := runtimeAttachmentName(specs)
+	plan.work.Name = firstNonEmpty(name, "runtime-attach")
+	plan.work.Rollback = workPatchRollbackFromBranches(plan.work.Operations, plan.work.Destinations)
+	patch.setWork(plan.work)
 	patch.resetPlannedTaps()
-	for i := range branches {
-		branch := &branches[i]
-		nodeNames := nodeNamesByBranch[i]
-		branchRefs, branchRoutes, branchTaps, err := t.attachRuntimeBranch(*branch, nodeNames, group)
+	for i := range plan.branches {
+		branchRefs, branchRoutes, branchTaps, err := t.applyAttachBranch(plan, plan.branches[i], group)
 		if err != nil {
 			patch.addApplied(branchRefs, nil, nil)
 			return rollback(err)
@@ -259,144 +221,92 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 	return attachment, nil
 }
 
-func runtimeBranchFromSpec(spec BranchSpec) (runtimeBranch, error) {
+// attachBranchDestinations validates and clones the branch's destinations,
+// carrying the share keys that group reused destination values.
+func attachBranchDestinations(spec BranchSpec) ([]attachDestination, error) {
 	if spec.err != nil {
-		return runtimeBranch{err: spec.err}, spec.err
+		return nil, spec.err
 	}
-	operations := runtimeBranchOperationSpecsFromSpec(spec)
-	branch := runtimeBranch{
-		name:       spec.name,
-		media:      spec.media,
-		from:       spec.source.from,
-		tap:        spec.source.tap,
-		tapDomain:  spec.source.tapDomain,
-		operations: operations,
-		policy:     spec.source.policy,
-		label:      spec.source.label,
-		buffer:     spec.branchBuffer.PipelinePolicy(),
-	}
-	branch.prepared = runtimeBranchOperationsFromSpecs(operations)
-	branch.postEncodeTaps = runtimeBranchPostEncodeTapsFromOperations(operations)
 	if len(spec.destinations) == 0 {
-		return branch, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
+		return nil, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
 	}
+	destinations := make([]attachDestination, 0, len(spec.destinations))
 	for i := range spec.destinations {
 		ref := cloneDestinationRef(spec.destinations[i])
 		if ref.err != nil {
-			return branch, ref.err
+			return nil, ref.err
 		}
 		destination := cloneDestinationSpec(ref.dest)
 		name := firstNonEmpty(ref.name, spec.name, "branch")
 		if err := destination.validate("attach runtime branch", name); err != nil {
-			return branch, err
+			return nil, err
 		}
-		branch.destinations = append(branch.destinations, runtimeBranchDestination{
+		destinations = append(destinations, attachDestination{
 			name:     name,
 			dest:     destination,
 			sink:     destination.sink,
 			shareKey: runtimeBranchSharedDestinationKey(ref),
 		})
 	}
-	return branch, nil
+	return destinations, nil
 }
 
-// runtimeBranchOperationSpecsFromSpec returns the branch's operation list. The
-// branch builder already appends the OpDecode/OpEncode/OpCopy operations, so the
-// list is complete — decode/encode are no longer separate spec fields.
-func runtimeBranchOperationSpecsFromSpec(spec BranchSpec) []OperationSpec {
-	return cloneOperationSpecs(spec.operations)
-}
-
-func runtimeBranchPostEncodeTapsFromOperations(operations []OperationSpec) []string {
-	if len(operations) == 0 {
-		return nil
+func validateAttachBranchSpec(spec BranchSpec, destinations []attachDestination) error {
+	if spec.name == "" {
+		return runtimeBranchInvalidError("branch name is empty", "start with goav.Branch(\"name\")")
 	}
-	var taps []string
-	seen := make(map[string]struct{})
-	for i := range operations {
-		operation := operations[i]
-		if !operationSpecTapIsTerminalPacket(operation) || operation.Tap.Name == "" {
-			continue
+	if spec.source.from == "" && spec.source.tap == "" {
+		return runtimeBranchInvalidError("branch source is empty", "call .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(graphNode) with an expert graph handle")
+	}
+	seen := make(map[string]int, len(destinations))
+	for i := range destinations {
+		name := firstNonEmpty(destinations[i].name, destinations[i].dest.label(fmt.Sprintf("target%d", i+1)))
+		if firstIndex, ok := seen[name]; ok {
+			return duplicateRuntimeBranchDestinationRefError(spec.name, name, firstIndex, i)
 		}
-		name := operation.Tap.Name
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		taps = append(taps, name)
+		seen[name] = i
 	}
-	return taps
+	return nil
 }
 
-func runtimeBranchOperationsFromSpecs(operations []OperationSpec) []runtimeBranchOperation {
-	if len(operations) == 0 {
-		return nil
-	}
-	operations = cloneOperationSpecs(operations)
-	out := make([]runtimeBranchOperation, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
-		switch operation.Kind {
-		case OpDecode:
-			out = append(out, runtimeBranchOperation{spec: operation})
-		case OpStage:
-			if operation.Stage != nil {
-				out = append(out, runtimeBranchOperation{spec: operation})
-			}
-		case OpShape:
-			if !mediaShapeEmpty(operation.Shape) {
-				out = append(out, runtimeBranchOperation{spec: operation})
-			}
-		case OpTransform:
-			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
-				out = append(out, runtimeBranchOperation{spec: operation})
-			}
-		case OpTap:
-			if operation.Tap.Name != "" && !operationSpecTapIsTerminalPacket(operation) {
-				out = append(out, runtimeBranchOperation{spec: operation})
-			}
-		}
-	}
-	return out
-}
-
-func validateRuntimeBranchGroupDestinations(branches []runtimeBranch) (runtimeBranchGroupDestinations, error) {
-	var destinations runtimeBranchGroupDestinations
-	seen := make(map[string]runtimeBranchDestination)
+func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][]attachDestination) (runtimeBranchGroupDestinations, error) {
+	var group runtimeBranchGroupDestinations
+	seen := make(map[string]attachDestination)
 	seenBranch := make(map[string]string)
-	for i := range branches {
-		branch := branches[i]
-		for j := range branch.destinations {
-			label := branch.destinations[j].name
+	for i := range destinations {
+		branchName := firstNonEmpty(specs[i].name, fmt.Sprintf("branch-%d", i+1))
+		for j := range destinations[i] {
+			destination := destinations[i][j]
+			label := destination.name
 			if label == "" {
 				continue
 			}
 			if first, ok := seen[label]; ok {
-				if first.shareKey != "" && first.shareKey == branch.destinations[j].shareKey {
+				if first.shareKey != "" && first.shareKey == destination.shareKey {
 					switch {
-					case runtimeBranchDestinationCanShareSink(first) && runtimeBranchDestinationCanShareSink(branch.destinations[j]):
-						if destinations.sharedSinkKeys == nil {
-							destinations.sharedSinkKeys = make(map[string]struct{})
+					case runtimeBranchDestinationCanShareSink(first) && runtimeBranchDestinationCanShareSink(destination):
+						if group.sharedSinkKeys == nil {
+							group.sharedSinkKeys = make(map[string]struct{})
 						}
-						destinations.sharedSinkKeys[first.shareKey] = struct{}{}
+						group.sharedSinkKeys[first.shareKey] = struct{}{}
 						continue
-					case runtimeBranchDestinationCanShareMux(first) && runtimeBranchDestinationCanShareMux(branch.destinations[j]):
-						if destinations.sharedMuxKeys == nil {
-							destinations.sharedMuxKeys = make(map[string]struct{})
+					case runtimeBranchDestinationCanShareMux(first) && runtimeBranchDestinationCanShareMux(destination):
+						if group.sharedMuxKeys == nil {
+							group.sharedMuxKeys = make(map[string]struct{})
 						}
-						destinations.sharedMuxKeys[first.shareKey] = struct{}{}
+						group.sharedMuxKeys[first.shareKey] = struct{}{}
 						continue
 					}
 				}
-				return destinations, &BuildError{
+				return group, &BuildError{
 					Code:      "destination_duplicate",
 					Operation: "attach runtime branches",
-					Node:      firstNonEmpty(branch.name, "branch"),
+					Node:      firstNonEmpty(specs[i].name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
 					Details: []string{
 						"destination: " + label,
 						"first branch: " + seenBranch[label],
-						"second branch: " + firstNonEmpty(branch.name, fmt.Sprintf("branch-%d", i+1)),
+						"second branch: " + branchName,
 					},
 					Suggestions: []string{
 						"reuse one destination value when branches should share a runtime destination group",
@@ -406,18 +316,18 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeBranch) (runtimeBr
 					Cause: ErrUnsupportedBuild,
 				}
 			}
-			seen[label] = branch.destinations[j]
-			seenBranch[label] = firstNonEmpty(branch.name, fmt.Sprintf("branch-%d", i+1))
+			seen[label] = destination
+			seenBranch[label] = branchName
 		}
 	}
-	return destinations, nil
+	return group, nil
 }
 
-func runtimeBranchDestinationCanShareSink(destination runtimeBranchDestination) bool {
+func runtimeBranchDestinationCanShareSink(destination attachDestination) bool {
 	return destination.sink != nil && !destinationSpecHasOutput(destination.dest)
 }
 
-func runtimeBranchDestinationCanShareMux(destination runtimeBranchDestination) bool {
+func runtimeBranchDestinationCanShareMux(destination attachDestination) bool {
 	return destination.sink == nil && destinationSpecHasOutput(destination.dest)
 }
 
@@ -467,26 +377,30 @@ func (g *runtimeAttachGroup) reserveNode(spec pipeline.Spec, name string) error 
 	return nil
 }
 
-func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, terminal runtimeBranchTerminal) error {
-	if g == nil || !g.isSharedSink(terminal.shareKey) {
+func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, key string, destName string, sink pipeline.Sink) error {
+	if g == nil || !g.isSharedSink(key) {
 		return nil
 	}
-	if _, ok := g.sharedSinks[terminal.shareKey]; ok {
+	if _, ok := g.sharedSinks[key]; ok {
 		return nil
 	}
-	name := firstNonEmpty(terminal.name, terminal.sink.Name(), "sink")
+	name := destName
+	if name == "" && sink != nil {
+		name = sink.Name()
+	}
+	name = firstNonEmpty(name, "sink")
 	if err := g.reserveNode(spec, name); err != nil {
 		return err
 	}
-	g.sharedSinks[terminal.shareKey] = &runtimeSharedSinkDestination{name: name, sink: terminal.sink}
+	g.sharedSinks[key] = &runtimeSharedSinkDestination{name: name, sink: sink}
 	return nil
 }
 
-func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, terminal runtimeBranchTerminal, buffer pipeline.BufferPolicy) (pipeline.NodeRef, bool, error) {
-	if g == nil || !g.isSharedSink(terminal.shareKey) {
+func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, key string, buffer pipeline.BufferPolicy) (pipeline.NodeRef, bool, error) {
+	if g == nil || !g.isSharedSink(key) {
 		return "", false, runtimeBranchInvalidError("shared sink destination is not registered", "reuse one goav.Sink(sink) destination value inside one Task.Attach call")
 	}
-	target := g.sharedSinks[terminal.shareKey]
+	target := g.sharedSinks[key]
 	if target == nil {
 		return "", false, runtimeBranchInvalidError("shared sink destination is not reserved", "reuse one goav.Sink(sink) destination value inside one Task.Attach call")
 	}
@@ -501,27 +415,51 @@ func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, terminal runtim
 	return ref, true, nil
 }
 
-func (g *runtimeAttachGroup) reserveSharedMux(spec pipeline.Spec, branch runtimeBranch, terminal runtimeBranchTerminal) error {
-	if g == nil || !g.isSharedMux(terminal.shareKey) {
+func (g *runtimeAttachGroup) reserveSharedMux(spec pipeline.Spec, branchName string, buffer pipeline.BufferPolicy, key string, destName string, dest destinationSpec, stream av.Stream) error {
+	if g == nil || !g.isSharedMux(key) {
 		return nil
 	}
-	target, ok := g.sharedMuxes[terminal.shareKey]
+	target, ok := g.sharedMuxes[key]
 	if !ok {
-		name := firstNonEmpty(terminal.name, terminal.dest.label(firstNonEmpty(branch.name, "target")), "target")
+		name := firstNonEmpty(destName, dest.label(firstNonEmpty(branchName, "target")), "target")
 		if err := g.reserveNode(spec, name); err != nil {
 			return err
 		}
 		target = &runtimeSharedMuxDestination{
 			name:   name,
-			dest:   terminal.dest,
-			buffer: branch.buffer,
+			dest:   dest,
+			buffer: buffer,
 		}
-		g.sharedMuxes[terminal.shareKey] = target
-		g.muxOrder = append(g.muxOrder, terminal.shareKey)
+		g.sharedMuxes[key] = target
+		g.muxOrder = append(g.muxOrder, key)
 	}
-	target.streams = append(target.streams, terminal.stream)
-	target.branches = append(target.branches, firstNonEmpty(branch.name, "branch"))
+	target.streams = append(target.streams, stream)
+	target.branches = append(target.branches, firstNonEmpty(branchName, "branch"))
 	return nil
+}
+
+func (g *runtimeAttachGroup) sharedSinkKeyForNode(node pipeline.NodeRef) (string, bool) {
+	if g == nil {
+		return "", false
+	}
+	for key, destination := range g.sharedSinks {
+		if destination != nil && destination.name == node.String() {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+func (g *runtimeAttachGroup) sharedMuxKeyForNode(node pipeline.NodeRef) (string, bool) {
+	if g == nil {
+		return "", false
+	}
+	for key, destination := range g.sharedMuxes {
+		if destination != nil && destination.name == node.String() {
+			return key, true
+		}
+	}
+	return "", false
 }
 
 func (g *runtimeAttachGroup) addSharedMuxRoute(key string, route pipeline.Route) error {
@@ -671,14 +609,14 @@ func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, 
 	return checkKnownMuxCompatibility(output, plannedStreams, rt)
 }
 
-func runtimeAttachmentName(branches []runtimeBranch) string {
-	if len(branches) == 1 {
-		return branches[0].name
+func runtimeAttachmentName(specs []BranchSpec) string {
+	if len(specs) == 1 {
+		return specs[0].name
 	}
-	names := make([]string, 0, len(branches))
-	for i := range branches {
-		if branches[i].name != "" {
-			names = append(names, branches[i].name)
+	names := make([]string, 0, len(specs))
+	for i := range specs {
+		if specs[i].name != "" {
+			names = append(names, specs[i].name)
 		}
 	}
 	if len(names) == 0 {
@@ -707,435 +645,128 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-func (t *task) resolveRuntimeBranchAnchor(branch *runtimeBranch, spec pipeline.Spec, pending []TapInfo) (string, TapInfo, error) {
-	if branch == nil {
-		return "", TapInfo{}, runtimeBranchInvalidError("branch is nil", "build branches with goav.Branch(name)")
-	}
-	if branch.tap != "" {
+func (t *task) resolveRuntimeBranchAnchor(spec BranchSpec, graphSpec pipeline.Spec, pending []TapInfo) (string, TapInfo, error) {
+	if spec.source.tap != "" {
 		taps := append([]TapInfo(nil), t.tapsLocked()...)
 		taps = append(taps, pending...)
 		for _, tap := range taps {
-			if tap.Name == branch.tap {
-				if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.name, "branch"), TapRef{name: branch.tap, domain: branch.tapDomain}, tap.Domain); err != nil {
+			if tap.Name == spec.source.tap {
+				if err := validateTapDomain("attach runtime branch", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.source.tap, domain: spec.source.tapDomain}, tap.Domain); err != nil {
 					return "", TapInfo{}, err
 				}
 				return tap.Node.String(), tap, nil
 			}
 		}
-		return "", TapInfo{}, runtimeBranchTapMissingError(branch.tap, taps)
+		return "", TapInfo{}, runtimeBranchTapMissingError(spec.source.tap, taps)
 	}
-	if !specHasNode(spec, branch.from) {
-		return "", TapInfo{}, runtimeBranchAnchorMissingError(branch.from)
+	if !specHasNode(graphSpec, spec.source.from) {
+		return "", TapInfo{}, runtimeBranchAnchorMissingError(spec.source.from)
 	}
-	return branch.from, TapInfo{Node: pipeline.NodeRef(branch.from)}, nil
+	return spec.source.from, TapInfo{Node: pipeline.NodeRef(spec.source.from)}, nil
 }
 
-func (t *task) prepareRuntimeBranch(ctx context.Context, branch *runtimeBranch, group *runtimeAttachGroup) error {
-	if branch == nil {
-		return nil
-	}
-	currentShape := runtimeBranchAnchorShape(branch.anchor)
-	if branch.media != "" && currentShape.MediaKind != "" {
-		if err := validateChainMedia("attach runtime branch", firstNonEmpty(branch.name, "branch"), currentShape.MediaKind, chainSpec{name: branch.name, media: branch.media}); err != nil {
-			return err
-		}
-	}
-	if err := validateRuntimeBranchShapeContract(*branch, currentShape); err != nil {
-		return err
-	}
-	currentStream := streamFromRuntimeBranchShape(branch.name, currentShape)
-	transformIndex := 0
-	for i := range branch.prepared {
-		operation := &branch.prepared[i]
-		switch operation.spec.Kind {
-		case OpDecode:
-			decodedStage, err := t.prepareRuntimeBranchDecode(ctx, branch.name, currentStream, currentShape, operation.spec.Decode)
-			if err != nil {
-				closeRuntimeBranchOwnedStages(*branch)
-				return err
-			}
-			operation.stage = decodedStage
-			operation.owned = true
-			currentShape.Domain = shape.DomainFrame
-			operation.shape = currentShape
-		case OpStage:
-			operation.shape = currentShape
-		case OpShape:
-			currentShape = shape.Merge(currentShape, operation.spec.Shape)
-			operation.shape = currentShape
-		case OpTransform:
-			if t.runtime == nil {
-				closeRuntimeBranchOwnedStages(*branch)
-				return runtimeBranchInvalidError(
-					"runtime branch transforms require the standard runtime",
-					"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching resize/resample branches",
-				)
-			}
-			if currentShape.Domain != shape.DomainFrame {
-				closeRuntimeBranchOwnedStages(*branch)
-				return runtimeBranchInvalidError(
-					"runtime branch transforms require a frame tap",
-					"attach transform branches with .From(goav.FrameTap(name)) where name is declared after Decode, Resize, Resample, or a frame-stage Tap",
-				)
-			}
-			transformName := transformFactoryName(operation.spec.Transform)
-			branchIntent := streamIntent{
-				Name:       firstNonEmpty(branch.name, "branch"),
-				Select:     StreamSelect{Type: currentStream.Type},
-				Operations: []OperationSpec{operation.spec},
-			}
-			if _, err := t.runtime.filters.Factory(transformName); err != nil {
-				closeRuntimeBranchOwnedStages(*branch)
-				return recipeTransformAdapterError("attach runtime branch", branchIntent, transformName, err)
-			}
-			if desc, err := t.runtime.filters.Descriptor(transformName); err == nil {
-				if err := validateTransformAdapterDescriptor("attach runtime branch", branchIntent, operation.spec.Transform, transformName, desc); err != nil {
-					closeRuntimeBranchOwnedStages(*branch)
-					return err
-				}
-			}
-			transform, err := runtimeBranchTransform(branch.name, currentStream, operation.spec.Transform, transformIndex)
-			if err != nil {
-				closeRuntimeBranchOwnedStages(*branch)
-				return err
-			}
-			stage, outputStream, err := (&builder{runtime: t.runtime}).newMediaTransformStage(ctx, transform, currentStream, t.runtime.realtime)
-			if err != nil {
-				closeRuntimeBranchOwnedStages(*branch)
-				return runtimeBranchTransformError(transform.name, err)
-			}
-			operation.stage = stage
-			operation.owned = true
-			currentStream = outputStream
-			currentShape = mediaShapeFromRuntimeBranchStream(outputStream, currentShape)
-			operation.shape = currentShape
-			transformIndex++
-		case OpTap:
-			if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.name, "branch"), TapRef{name: operation.spec.Tap.Name, domain: operation.spec.Tap.Domain}, currentShape.Domain); err != nil {
-				closeRuntimeBranchOwnedStages(*branch)
-				return err
-			}
-			operation.shape = currentShape
-		}
-	}
-	if err := t.prepareRuntimeBranchDestinations(ctx, branch, currentStream, currentShape, group); err != nil {
-		return err
-	}
-	return nil
-}
-
-func validateRuntimeBranchShapeContract(branch runtimeBranch, initial shape.Spec) error {
+// validateAttachBranchShapeContract validates the branch's operation list
+// against the live anchor shape with the same shape algebra the build path
+// uses, and rejects mux destinations whose final shape is not packet-domain.
+func validateAttachBranchShapeContract(spec BranchSpec, destinations []attachDestination, initial shape.Spec) error {
 	stream := streamIntent{
-		Name: branch.name,
+		Name: spec.name,
 		Select: StreamSelect{
-			Type:  firstNonEmptyMedia(branch.media, initial.MediaKind),
+			Type:  firstNonEmptyMedia(spec.media, initial.MediaKind),
 			Codec: initial.Codec,
 		},
-		Operations: runtimeBranchShapeOperationSpecs(branch),
+		Operations: cloneOperationSpecs(spec.operations),
 	}
 	if err := validateOperationSpecShapes("attach runtime branch", stream, initial); err != nil {
 		return err
 	}
-	spec := runtimeBranchFinalShape(branch, initial)
-	for i := range branch.destinations {
-		destination := branch.destinations[i]
+	final := normalizeTapShape(initial)
+	for _, operation := range spec.operations {
+		final = operationSpecOutputShape(final, operation)
+	}
+	for i := range destinations {
+		destination := destinations[i]
 		if destination.sink != nil {
 			continue
 		}
 		if !destinationSpecHasOutput(destination.dest) {
 			continue
 		}
-		if spec.Domain == shape.DomainPacket {
+		if final.Domain == shape.DomainPacket {
 			continue
 		}
 		destinationName := firstNonEmpty(destination.name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
-		return destinationShapeMismatchError("attach runtime branch", branch.name, destinationName, destination.dest, spec)
+		return destinationShapeMismatchError("attach runtime branch", spec.name, destinationName, destination.dest, final)
 	}
 	return nil
 }
 
-func runtimeBranchShapeOperationSpecs(branch runtimeBranch) []OperationSpec {
-	// The branch builder co-appends the OpEncode/OpCopy operation, so the
-	// operation list already carries the encode step — no fallback insert.
-	return cloneOperationSpecs(branch.operations)
-}
-
-func runtimeBranchFinalShape(branch runtimeBranch, initial shape.Spec) shape.Spec {
-	shape := normalizeTapShape(initial)
-	for _, operation := range runtimeBranchShapeOperationSpecs(branch) {
-		shape = operationSpecOutputShape(shape, operation)
+func (t *task) validateAttachBranchTapsLocked(steps []attachStep, pending []TapInfo) error {
+	seen := make(map[string]struct{}, len(steps))
+	current := append([]TapInfo(nil), t.tapsLocked()...)
+	current = append(current, pending...)
+	existing := make(map[string]struct{}, len(current))
+	for i := range current {
+		existing[current[i].Name] = struct{}{}
 	}
-	return shape
-}
-
-func (t *task) prepareRuntimeBranchDestinations(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentShape shape.Spec, group *runtimeAttachGroup) error {
-	if branch == nil {
-		return nil
-	}
-	if len(branch.destinations) == 0 {
-		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
-	}
-	stream := currentStream
-	spec := currentShape
-	hasMuxDestination := runtimeBranchHasMuxDestination(*branch)
-	if chainEncodeSpec(branch.operations).Copy {
-		if currentShape.Domain != shape.DomainPacket {
-			closeRuntimeBranchOwnedStages(*branch)
-			return runtimeBranchCopyDomainError(branch.name, currentShape)
-		}
-		appendRuntimeBranchPostEncodeTaps(branch, spec, OpCopy)
-	} else if codecIntentSet(chainEncodeSpec(branch.operations)) {
-		encodedStream, err := t.prepareRuntimeBranchEncode(ctx, branch, currentStream, currentShape)
-		if err != nil {
-			closeRuntimeBranchOwnedStages(*branch)
-			return err
-		}
-		stream = encodedStream
-		spec = streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape)
-		appendRuntimeBranchPostEncodeTaps(branch, spec, OpEncode)
-	} else if hasMuxDestination {
-		closeRuntimeBranchOwnedStages(*branch)
-		return runtimeBranchEncodeMissingError(branch.name)
-	}
-	if !hasMuxDestination {
-		for i := range branch.destinations {
-			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(branch.destinations[i], stream, spec))
-		}
-		return nil
-	}
-	if t.runtime == nil {
-		closeRuntimeBranchOwnedStages(*branch)
-		return runtimeBranchInvalidError(
-			"runtime branch mux destinations require the standard runtime",
-			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching file or URI branches",
-		)
-	}
-	if stream.Codec.ID == "" {
-		closeRuntimeBranchOwnedStages(*branch)
-		return runtimeBranchMuxCodecMissingError(branch.name, spec)
-	}
-	for i := range branch.destinations {
-		destination := branch.destinations[i]
-		if destination.sink != nil {
-			branch.terminals = append(branch.terminals, runtimeBranchSinkTerminal(destination, stream, spec))
+	for i := range steps {
+		if steps[i].tap == nil || !steps[i].install {
 			continue
 		}
-		if group != nil && group.isSharedMux(destination.shareKey) {
-			branch.terminals = append(branch.terminals, runtimeBranchSharedMuxTerminal(destination, stream, spec))
+		name := steps[i].tap.Name
+		if name == "" {
 			continue
 		}
-		terminal, err := prepareRuntimeBranchMuxTerminal(ctx, t.runtime, *branch, destination, stream, spec, i)
-		if err != nil {
-			closeRuntimeBranchOwnedStages(*branch)
-			return err
+		if _, ok := seen[name]; ok {
+			return runtimeBranchTapDuplicateError(name)
 		}
-		branch.terminals = append(branch.terminals, terminal)
+		seen[name] = struct{}{}
+		if _, ok := existing[name]; ok {
+			return runtimeBranchTapDuplicateError(name)
+		}
 	}
 	return nil
 }
 
-func runtimeBranchSinkTerminal(destination runtimeBranchDestination, stream av.Stream, shape shape.Spec) runtimeBranchTerminal {
-	return runtimeBranchTerminal{
-		name:     destination.name,
-		shareKey: destination.shareKey,
-		dest:     destination.dest,
-		stream:   stream,
-		sink:     destination.sink,
-		shape:    shape,
-	}
-}
-
-func runtimeBranchSharedMuxTerminal(destination runtimeBranchDestination, stream av.Stream, shape shape.Spec) runtimeBranchTerminal {
-	return runtimeBranchTerminal{
-		name:     destination.name,
-		shareKey: destination.shareKey,
-		dest:     destination.dest,
-		stream:   stream,
-		shape:    shape,
-	}
-}
-
-func prepareRuntimeBranchMuxTerminal(ctx context.Context, rt *runtime, branch runtimeBranch, destination runtimeBranchDestination, stream av.Stream, shape shape.Spec, index int) (runtimeBranchTerminal, error) {
-	formatID, err := runtimeMuxDestinationFormat(ctx, rt, destination.dest, index)
-	if err != nil {
-		return runtimeBranchTerminal{}, err
-	}
-	branchName := firstNonEmpty(branch.name, destination.name, "branch")
-	destinationName := firstNonEmpty(destination.name, destination.dest.label(branchName))
-	if issue, ok := runtimeMuxCompatibilityIssue(destinationName, formatID, []string{branchName}, []av.Stream{stream}, rt); ok {
-		return runtimeBranchTerminal{}, muxCompatibilityBuildError("attach runtime branch", issue)
-	}
-	muxStage, err := (&builder{runtime: rt}).openMuxDestinationStage(
-		ctx,
-		destination.dest,
-		index,
-		[]av.Stream{stream},
-		formatID,
-		destinationGraphFormat(destination.dest),
-	)
-	if err != nil {
-		return runtimeBranchTerminal{}, err
-	}
-	return runtimeBranchTerminal{
-		name:   destination.name,
-		dest:   destination.dest,
-		stream: stream,
-		stage:  muxStage,
-		shape:  shape,
-		owned:  true,
-	}, nil
-}
-
-func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentShape shape.Spec, spec codec.CodecSpec) (pipeline.Stage, error) {
-	if t.runtime == nil {
-		return nil, runtimeBranchInvalidError(
-			"runtime branch decoding requires the standard runtime",
-			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching decode branches",
-		)
-	}
-	if currentShape.Domain != shape.DomainPacket {
-		return nil, runtimeBranchDecodeDomainError(branchName, currentShape)
-	}
-	if currentStream.Codec.ID == "" {
-		return nil, runtimeBranchDecodeCodecMissingError(branchName, currentShape)
-	}
-	request := runtimeBranchDecodeRequest(branchName, currentStream, spec)
-	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
-		stream := streamIntent{Name: branchName, Decode: true}
-		return nil, recipeDecodeAdapterError("attach runtime branch", stream, currentStream.Codec.ID, t.runtime.codecs, err)
-	}
-	stream := streamIntent{
-		Name:   branchName,
-		Select: streamSelectFromAV(request.selector),
-		Decode: true,
-	}
-	if err := validateDecodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, decodeAdapterRequestFromStream(currentStream, stream)); err != nil {
-		return nil, err
-	}
-	stage, err := (&builder{runtime: t.runtime}).newDecodeStage(ctx, request, currentStream, t.runtime.realtime, true, codec.DecodeBounds{})
-	if err != nil {
-		return nil, err
-	}
-	return stage, nil
-}
-
-func runtimeBranchHasMuxDestination(branch runtimeBranch) bool {
-	for i := range branch.destinations {
-		if branch.destinations[i].sink == nil && destinationSpecHasOutput(branch.destinations[i].dest) {
-			return true
+// applyAttachBranch executes one branch's slice of the workPatch against the
+// running graph: each planned node is installed under its patch name and
+// connected along its planned edge, with shared destinations resolved through
+// the attach group. The returned refs/routes/taps feed the graph patch for
+// bookkeeping and rollback.
+func (t *task) applyAttachBranch(plan *attachPlan, branch attachPlanBranch, group *runtimeAttachGroup) ([]pipeline.NodeRef, []pipeline.Route, []TapInfo, error) {
+	refs := make([]pipeline.NodeRef, 0, branch.operations[1]-branch.operations[0])
+	routes := make([]pipeline.Route, 0, branch.edges[1]-branch.edges[0])
+	taps := append([]TapInfo(nil), branch.taps...)
+	edgeIndex := branch.edges[0]
+	nextRoute := func() (pipeline.Route, bool) {
+		if edgeIndex >= branch.edges[1] {
+			return pipeline.Route{}, false
 		}
+		edge := plan.work.Edges[edgeIndex]
+		edgeIndex++
+		return pipeline.Route{
+			From:   edge.From.String(),
+			To:     []string{edge.To.String()},
+			Policy: edge.Policy,
+			Label:  edge.Label,
+		}, true
 	}
-	return false
-}
-
-func (t *task) prepareRuntimeBranchEncode(ctx context.Context, branch *runtimeBranch, currentStream av.Stream, currentShape shape.Spec) (av.Stream, error) {
-	if t.runtime == nil {
-		return av.Stream{}, runtimeBranchInvalidError(
-			"runtime branch encoding requires the standard runtime",
-			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching encode branches",
-		)
-	}
-	if currentShape.Domain != shape.DomainFrame {
-		return av.Stream{}, runtimeBranchEncodeDomainError(branch.name, currentShape)
-	}
-	if err := validateRecipeEncode(chainEncodeSpec(branch.operations), "attach runtime branch", firstNonEmpty(branch.name, "branch")); err != nil {
-		return av.Stream{}, err
-	}
-	if _, err := t.runtime.codecs.EncoderFactory(chainEncodeSpec(branch.operations).ID); err != nil {
-		stream := streamIntent{Name: branch.name, Encode: chainEncodeSpec(branch.operations)}
-		return av.Stream{}, recipeEncodeAdapterError("attach runtime branch", stream, t.runtime.codecs, err)
-	}
-	request := runtimeBranchEncodeRequest(*branch, currentStream)
-	config, encodedStream, err := prepareEncodeConfig(currentStream, request, t.runtime.realtime)
-	if err != nil {
-		return av.Stream{}, err
-	}
-	stream := streamIntent{Name: branch.name, Select: StreamSelect{Type: currentStream.Type}, Encode: chainEncodeSpec(branch.operations)}
-	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(chainEncodeSpec(branch.operations), encodedStream)); err != nil {
-		return av.Stream{}, err
-	}
-	stage, err := (&builder{runtime: t.runtime}).newEncodeStage(ctx, request, config)
-	if err != nil {
-		return av.Stream{}, err
-	}
-	branch.prepared = append(branch.prepared, runtimeBranchOperation{
-		spec:  operationSpecForEncode(chainEncodeSpec(branch.operations)),
-		stage: stage,
-		shape: streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape),
-		owned: true,
-	})
-	return encodedStream, nil
-}
-
-func appendRuntimeBranchPostEncodeTaps(branch *runtimeBranch, shape shape.Spec, after OperationKind) {
-	if branch == nil || len(branch.postEncodeTaps) == 0 {
-		return
-	}
-	for i := range branch.postEncodeTaps {
-		branch.prepared = append(branch.prepared, runtimeBranchOperation{
-			spec:  operationSpecForTap(PacketTap(branch.postEncodeTaps[i]), shape.MediaKind, after),
-			shape: shape,
-		})
-	}
-	branch.postEncodeTaps = nil
-}
-
-func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string, group *runtimeAttachGroup) ([]pipeline.NodeRef, []pipeline.Route, []TapInfo, error) {
-	refs := make([]pipeline.NodeRef, 0, len(nodeNames))
-	routes := make([]pipeline.Route, 0, len(nodeNames))
-	taps := make([]TapInfo, 0, runtimeBranchTapCount(branch))
-	previous := pipeline.NodeRef(branch.from)
-	stageIndex := 0
-	connectedFromAnchor := false
-	for i := range branch.prepared {
-		operation := branch.prepared[i]
-		if operation.spec.Kind == OpTap && operation.spec.Tap.Name != "" {
-			taps = append(taps, runtimeBranchTapInfo(operation.spec.Tap.Name, previous, operation.shape, operation.spec.Tap.After))
+	for i := branch.operations[0]; i < branch.operations[1]; i++ {
+		operation := plan.work.Operations[i]
+		if operation.Kind == OpTap || operation.Node == "" {
 			continue
 		}
-		stage := runtimeBranchOperationStage(operation)
-		if stage == nil {
-			continue
-		}
-		ref, err := t.graph.AddStage(namedStage{name: nodeNames[stageIndex], stage: stage}, branch.buffer)
-		if err != nil {
-			return refs, routes, taps, runtimeBranchGraphError("add stage", nodeNames[stageIndex], err)
-		}
-		refs = append(refs, ref)
-		if !connectedFromAnchor {
-			route := runtimeBranchRoute(pipeline.NodeRef(branch.from), ref, branch)
-			if err := t.graph.Connect(route); err != nil {
-				return refs, routes, taps, runtimeBranchGraphError("connect branch", nodeNames[stageIndex], err)
-			}
-			routes = append(routes, route)
-			connectedFromAnchor = true
-		} else {
-			route := routeBetween(previous, ref)
-			if err := t.graph.Connect(route); err != nil {
-				return refs, routes, taps, runtimeBranchGraphError("connect branch stage", nodeNames[stageIndex], err)
-			}
-			routes = append(routes, route)
-		}
-		previous = ref
-		stageIndex++
-	}
-
-	terminalNameIndex := 0
-	for i := range branch.terminals {
-		terminal := branch.terminals[i]
-		if group != nil && group.isSharedSink(terminal.shareKey) {
-			ref, added, err := group.sharedSinkRef(t.graph, terminal, branch.buffer)
+		if key, ok := group.sharedSinkKeyForNode(operation.Node); ok {
+			ref, added, err := group.sharedSinkRef(t.graph, key, branch.buffer)
 			if err != nil {
 				return refs, routes, taps, err
 			}
 			if added {
 				refs = append(refs, ref)
 			}
-			var route pipeline.Route
-			if !connectedFromAnchor {
-				route = runtimeBranchRoute(pipeline.NodeRef(branch.from), ref, branch)
-			} else {
-				route = routeBetween(previous, ref)
+			route, ok := nextRoute()
+			if !ok {
+				continue
 			}
 			if err := t.graph.Connect(route); err != nil {
 				return refs, routes, taps, runtimeBranchGraphError("connect branch target", ref.String(), err)
@@ -1143,32 +774,33 @@ func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string, gro
 			routes = append(routes, route)
 			continue
 		}
-		if group != nil && group.isSharedMux(terminal.shareKey) {
-			var route pipeline.Route
-			if !connectedFromAnchor {
-				route = runtimeBranchRoute(pipeline.NodeRef(branch.from), pipeline.NodeRef(terminal.name), branch)
-			} else {
-				route = routeBetween(previous, pipeline.NodeRef(terminal.name))
+		if key, ok := group.sharedMuxKeyForNode(operation.Node); ok {
+			route, ok := nextRoute()
+			if !ok {
+				continue
 			}
-			if err := group.addSharedMuxRoute(terminal.shareKey, route); err != nil {
+			if err := group.addSharedMuxRoute(key, route); err != nil {
 				return refs, routes, taps, err
 			}
 			continue
 		}
-		nodeName := nodeNames[stageIndex+terminalNameIndex]
-		terminalNameIndex++
+		component, ok := plan.components[operation.Node]
+		if !ok {
+			continue
+		}
+		nodeName := operation.Node.String()
 		var (
 			ref pipeline.NodeRef
 			err error
 		)
 		switch {
-		case terminal.stage != nil:
-			ref, err = t.graph.AddStage(namedStage{name: nodeName, stage: terminal.stage}, branch.buffer)
+		case component.stage != nil:
+			ref, err = t.graph.AddStage(namedStage{name: nodeName, stage: component.stage}, branch.buffer)
 			if err != nil {
 				return refs, routes, taps, runtimeBranchGraphError("add stage", nodeName, err)
 			}
-		case terminal.sink != nil:
-			ref, err = t.graph.AddSink(namedSink{name: nodeName, sink: terminal.sink}, branch.buffer)
+		case component.sink != nil:
+			ref, err = t.graph.AddSink(namedSink{name: nodeName, sink: component.sink}, branch.buffer)
 			if err != nil {
 				return refs, routes, taps, runtimeBranchGraphError("add sink", nodeName, err)
 			}
@@ -1176,21 +808,28 @@ func (t *task) attachRuntimeBranch(branch runtimeBranch, nodeNames []string, gro
 			continue
 		}
 		refs = append(refs, ref)
-		if !connectedFromAnchor {
-			route := runtimeBranchRoute(pipeline.NodeRef(branch.from), ref, branch)
-			if err := t.graph.Connect(route); err != nil {
-				return refs, routes, taps, runtimeBranchGraphError("connect branch", nodeName, err)
-			}
-			routes = append(routes, route)
+		route, hasRoute := nextRoute()
+		if !hasRoute {
 			continue
 		}
-		route := routeBetween(previous, ref)
 		if err := t.graph.Connect(route); err != nil {
-			return refs, routes, taps, runtimeBranchGraphError("connect branch target", nodeName, err)
+			return refs, routes, taps, runtimeBranchGraphError(attachConnectOperation(operation, route, branch.from), nodeName, err)
 		}
 		routes = append(routes, route)
 	}
 	return refs, routes, taps, nil
+}
+
+// attachConnectOperation names the failing connect for diagnostics: branches
+// connect from their anchor first, then stage to stage, then into targets.
+func attachConnectOperation(operation workOperation, route pipeline.Route, from pipeline.NodeRef) string {
+	if route.From == from.String() {
+		return "connect branch"
+	}
+	if operation.Kind == OpSink || operation.Kind == OpMux {
+		return "connect branch target"
+	}
+	return "connect branch stage"
 }
 
 func (t *task) rollbackRuntimeBranch(nodes []pipeline.NodeRef) {
@@ -1610,37 +1249,6 @@ func isStoppedAttachmentError(err error) bool {
 		errors.Is(err, pipeline.ErrClosed)
 }
 
-func validateRuntimeBranch(branch runtimeBranch) error {
-	if branch.err != nil {
-		return branch.err
-	}
-	if branch.name == "" {
-		return runtimeBranchInvalidError("branch name is empty", "start with goav.Branch(\"name\")")
-	}
-	if branch.from == "" && branch.tap == "" {
-		return runtimeBranchInvalidError("branch source is empty", "call .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(graphNode) with an expert graph handle")
-	}
-	if len(branch.destinations) == 0 {
-		return runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
-	}
-	if err := validateRuntimeBranchDestinations(branch); err != nil {
-		return err
-	}
-	return nil
-}
-
-func validateRuntimeBranchDestinations(branch runtimeBranch) error {
-	seen := make(map[string]int, len(branch.destinations))
-	for i := range branch.destinations {
-		name := firstNonEmpty(branch.destinations[i].name, branch.destinations[i].dest.label(fmt.Sprintf("target%d", i+1)))
-		if firstIndex, ok := seen[name]; ok {
-			return duplicateRuntimeBranchDestinationRefError(branch.name, name, firstIndex, i)
-		}
-		seen[name] = i
-	}
-	return nil
-}
-
 func destinationSpecHasOutput(dest destinationSpec) bool {
 	return dest.output.Name != "" ||
 		dest.output.URI != "" ||
@@ -1649,148 +1257,37 @@ func destinationSpecHasOutput(dest destinationSpec) bool {
 		dest.resolvedFormat != ""
 }
 
-func runtimeBranchNodeNames(branch runtimeBranch, spec pipeline.Spec, group *runtimeAttachGroup) ([]string, error) {
-	capacity := runtimeBranchStageCount(branch) + len(branch.terminals)
-	names := make([]string, 0, capacity)
-	seen := make(map[string]struct{}, capacity)
-	stageIndex := 0
-	for i := range branch.prepared {
-		stage := runtimeBranchOperationStage(branch.prepared[i])
-		if stage == nil {
-			continue
-		}
-		name := runtimeBranchNodeName(branch.name, stage.Name(), fmt.Sprintf("stage%d", stageIndex+1))
-		if err := validateRuntimeBranchNodeName(spec, seen, name); err != nil {
-			return nil, err
-		}
-		if group != nil {
-			if err := group.reserveNode(spec, name); err != nil {
-				return nil, err
-			}
-		}
-		names = append(names, name)
-		stageIndex++
+func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentShape shape.Spec, spec codec.CodecSpec) (pipeline.Stage, error) {
+	if t.runtime == nil {
+		return nil, runtimeBranchInvalidError(
+			"runtime branch decoding requires the standard runtime",
+			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching decode branches",
+		)
 	}
-	for i := range branch.terminals {
-		terminal := branch.terminals[i]
-		if group != nil && group.isSharedSink(terminal.shareKey) {
-			if err := group.reserveSharedSink(spec, terminal); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if group != nil && group.isSharedMux(terminal.shareKey) {
-			if err := group.reserveSharedMux(spec, branch, terminal); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		name := runtimeBranchNodeName(branch.name, runtimeBranchTerminalName(terminal), fmt.Sprintf("target%d", i+1))
-		if err := validateRuntimeBranchNodeName(spec, seen, name); err != nil {
-			return nil, err
-		}
-		if group != nil {
-			if err := group.reserveNode(spec, name); err != nil {
-				return nil, err
-			}
-		}
-		names = append(names, name)
+	if currentShape.Domain != shape.DomainPacket {
+		return nil, runtimeBranchDecodeDomainError(branchName, currentShape)
 	}
-	return names, nil
-}
-
-func runtimeBranchPlannedTaps(branch runtimeBranch, nodeNames []string) []TapInfo {
-	if runtimeBranchTapCount(branch) == 0 {
-		return nil
+	if currentStream.Codec.ID == "" {
+		return nil, runtimeBranchDecodeCodecMissingError(branchName, currentShape)
 	}
-	taps := make([]TapInfo, 0, runtimeBranchTapCount(branch))
-	previous := pipeline.NodeRef(branch.from)
-	stageIndex := 0
-	for i := range branch.prepared {
-		operation := branch.prepared[i]
-		if operation.spec.Kind == OpTap && operation.spec.Tap.Name != "" {
-			taps = append(taps, runtimeBranchTapInfo(operation.spec.Tap.Name, previous, operation.shape, operation.spec.Tap.After))
-			continue
-		}
-		if runtimeBranchOperationStage(operation) == nil {
-			continue
-		}
-		if stageIndex >= len(nodeNames) {
-			continue
-		}
-		previous = pipeline.NodeRef(nodeNames[stageIndex])
-		stageIndex++
+	request := runtimeBranchDecodeRequest(branchName, currentStream, spec)
+	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
+		stream := streamIntent{Name: branchName, Decode: true}
+		return nil, recipeDecodeAdapterError("attach runtime branch", stream, currentStream.Codec.ID, t.runtime.codecs, err)
 	}
-	return taps
-}
-
-func runtimeBranchTerminalName(terminal runtimeBranchTerminal) string {
-	switch {
-	case terminal.stage != nil:
-		return terminal.stage.Name()
-	case terminal.sink != nil:
-		return terminal.sink.Name()
-	default:
-		return ""
+	stream := streamIntent{
+		Name:   branchName,
+		Select: streamSelectFromAV(request.selector),
+		Decode: true,
 	}
-}
-
-func runtimeBranchStageCount(branch runtimeBranch) int {
-	count := 0
-	for i := range branch.prepared {
-		if runtimeBranchOperationStage(branch.prepared[i]) != nil {
-			count++
-		}
+	if err := validateDecodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, decodeAdapterRequestFromStream(currentStream, stream)); err != nil {
+		return nil, err
 	}
-	return count
-}
-
-func runtimeBranchOperationStage(operation runtimeBranchOperation) pipeline.Stage {
-	if operation.stage != nil {
-		return operation.stage
+	stage, err := (&builder{runtime: t.runtime}).newDecodeStage(ctx, request, currentStream, t.runtime.realtime, true, codec.DecodeBounds{})
+	if err != nil {
+		return nil, err
 	}
-	if operation.spec.Kind == OpStage {
-		return operation.spec.Stage
-	}
-	return nil
-}
-
-func runtimeBranchTapCount(branch runtimeBranch) int {
-	count := 0
-	for i := range branch.prepared {
-		if branch.prepared[i].spec.Kind == OpTap && branch.prepared[i].spec.Tap.Name != "" {
-			count++
-		}
-	}
-	return count
-}
-
-func (t *task) validateRuntimeBranchTapsLocked(branch runtimeBranch, pending []TapInfo) error {
-	seen := make(map[string]struct{}, runtimeBranchTapCount(branch))
-	current := append([]TapInfo(nil), t.tapsLocked()...)
-	current = append(current, pending...)
-	existing := make(map[string]struct{}, len(current))
-	for i := range current {
-		existing[current[i].Name] = struct{}{}
-	}
-	for i := range branch.prepared {
-		operation := branch.prepared[i]
-		if operation.spec.Kind != OpTap {
-			continue
-		}
-		name := operation.spec.Tap.Name
-		if name == "" {
-			continue
-		}
-		if _, ok := seen[name]; ok {
-			return runtimeBranchTapDuplicateError(name)
-		}
-		seen[name] = struct{}{}
-		if _, ok := existing[name]; ok {
-			return runtimeBranchTapDuplicateError(name)
-		}
-	}
-	return nil
+	return stage, nil
 }
 
 func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformSpec, index int) (mediaTransform, error) {
@@ -1881,13 +1378,13 @@ func streamFromRuntimeBranchShape(name string, shape shape.Spec) av.Stream {
 	return stream
 }
 
-func runtimeBranchEncodeRequest(branch runtimeBranch, stream av.Stream) encodeRequest {
-	config := encodeConfigFromSpec(chainEncodeSpec(branch.operations))
+func runtimeBranchEncodeRequest(name string, encode codec.CodecSpec, stream av.Stream) encodeRequest {
+	config := encodeConfigFromSpec(encode)
 	if config.Stream.ID == "" {
-		config.Stream.ID = av.StreamID(firstNonEmpty(branch.name, string(stream.ID), "branch"))
+		config.Stream.ID = av.StreamID(firstNonEmpty(name, string(stream.ID), "branch"))
 	}
 	if config.Stream.Name == "" {
-		config.Stream.Name = firstNonEmpty(branch.name, stream.Name, string(stream.ID), "branch")
+		config.Stream.Name = firstNonEmpty(name, stream.Name, string(stream.ID), "branch")
 	}
 	selector := av.StreamSelector{Type: stream.Type}
 	if selector.Type == "" {
@@ -1900,7 +1397,7 @@ func runtimeBranchEncodeRequest(branch runtimeBranch, stream av.Stream) encodeRe
 		selector.Codec = stream.Codec.ID
 	}
 	return encodeRequest{
-		name:     firstNonEmpty(branch.name, string(stream.ID), "branch"),
+		name:     firstNonEmpty(name, string(stream.ID), "branch"),
 		selector: selector,
 		config:   config,
 	}
@@ -1980,21 +1477,6 @@ func runtimeBranchTapInfo(name string, node pipeline.NodeRef, spec shape.Spec, a
 	}
 }
 
-func closeRuntimeBranchOwnedStages(branch runtimeBranch) {
-	for i := range branch.prepared {
-		if branch.prepared[i].owned && branch.prepared[i].stage != nil {
-			markPipelineStageFailed(branch.prepared[i].stage)
-			_ = branch.prepared[i].stage.Close()
-		}
-	}
-	for i := range branch.terminals {
-		if branch.terminals[i].owned && branch.terminals[i].stage != nil {
-			markPipelineStageFailed(branch.terminals[i].stage)
-			_ = branch.terminals[i].stage.Close()
-		}
-	}
-}
-
 func validateRuntimeBranchNodeName(spec pipeline.Spec, seen map[string]struct{}, name string) error {
 	if _, ok := seen[name]; ok {
 		return runtimeBranchNodeDuplicateError(name)
@@ -2009,27 +1491,6 @@ func validateRuntimeBranchNodeName(spec pipeline.Spec, seen map[string]struct{},
 func runtimeBranchNodeName(branchName string, localName string, fallback string) string {
 	localName = firstNonEmpty(localName, fallback)
 	return branchName + "/" + localName
-}
-
-func runtimeBranchRoute(from pipeline.NodeRef, to pipeline.NodeRef, branch runtimeBranch) pipeline.Route {
-	policy := branch.policy
-	if policy == "" {
-		policy = pipeline.RouteAll
-	}
-	return pipeline.Route{
-		From:   from.String(),
-		To:     []string{to.String()},
-		Policy: policy,
-		Label:  branch.label,
-	}
-}
-
-func routeBetween(from pipeline.NodeRef, to pipeline.NodeRef) pipeline.Route {
-	return pipeline.Route{
-		From:   from.String(),
-		To:     []string{to.String()},
-		Policy: pipeline.RouteAll,
-	}
 }
 
 func nextRuntimeAttachmentID(name string) string {

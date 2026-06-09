@@ -304,7 +304,7 @@ func TestSelectedPacketCopyUsesBranchRoutePlanner(t *testing.T) {
 
 func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	var body strings.Builder
-	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "runtime_transcode.go", "branch_compose_plan.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
+	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "work_patch.go", "runtime_transcode.go", "branch_compose_plan.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
 		fileBody, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -339,14 +339,14 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	}
 	for _, required := range []string{
 		"type chainStep struct",
-		"func runtimeBranchOperationSpecsFromSpec",
-		"func runtimeBranchOperationsFromSpecs",
+		"func (t *task) planAttachBranchSteps",
+		"func (p *attachPlan) finalizeBranch",
 		"type chainSpec struct",
 		"type chainBuilder struct",
 		"func chainSpecFrom",
 		"func validateChainMedia",
 		"func cloneChainSteps",
-		"operations     []OperationSpec",
+		"[]OperationSpec",
 		"func operationSpecForTransform",
 		"func operationSpecForTap",
 		"func ensureJobStreamDecodeOperation",
@@ -487,25 +487,26 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 		}
 	}
 
-	runtimeBody, err := os.ReadFile("runtime_attach.go")
-	if err != nil {
-		t.Fatal(err)
+	var runtimeBuilder strings.Builder
+	for _, file := range []string{"runtime_attach.go", "work_patch.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runtimeBuilder.Write(fileBody)
 	}
-	runtimeText := string(runtimeBody)
-	runtimeStart := strings.Index(runtimeText, "type runtimeBranch struct")
-	if runtimeStart < 0 {
-		t.Fatal("could not locate runtimeBranch boundary")
+	runtimeText := runtimeBuilder.String()
+	for _, forbidden := range []string{
+		"type runtimeBranch struct",
+		"type runtimeBranchOperation struct",
+		"type runtimeBranchStep struct",
+	} {
+		if strings.Contains(runtimeText, forbidden) {
+			t.Fatalf("runtime attach should lower BranchSpec operations directly, not a parallel %q model", forbidden)
+		}
 	}
-	runtimeEnd := strings.Index(runtimeText[runtimeStart:], "type runtimeBranchOperation struct")
-	if runtimeEnd < 0 {
-		t.Fatal("could not locate runtimeBranch boundary")
-	}
-	runtimeBlock := runtimeText[runtimeStart : runtimeStart+runtimeEnd]
-	if !strings.Contains(runtimeBlock, "operations     []OperationSpec") {
-		t.Fatal("runtimeBranch should carry canonical OperationSpec records")
-	}
-	if strings.Contains(runtimeBlock, "steps") || strings.Contains(runtimeText, "type runtimeBranchStep struct") {
-		t.Fatal("runtimeBranch should prepare OperationSpec wrappers, not a parallel runtimeBranchStep model")
+	if !strings.Contains(runtimeText, "range spec.operations") {
+		t.Fatal("runtime attach planning should walk the canonical BranchSpec operation list")
 	}
 }
 
