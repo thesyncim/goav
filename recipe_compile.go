@@ -944,7 +944,7 @@ func recipeInitialStreamShape(state *recipeCompileState, stream streamIntent) Me
 		if sourceShapeOK && sourceShape.Domain != "" {
 			domain = sourceShape.Domain
 		}
-		shape = MediaShapeFromStream(selected, domain)
+		shape = mediaShapeFromStream(selected, domain)
 		if sourceShapeOK {
 			shape = mergeMediaShape(shape, sourceShape)
 		}

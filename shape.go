@@ -71,14 +71,6 @@ func ShapeCodec(codec av.CodecID) ShapeOption {
 	}
 }
 
-func ShapeFormat(format av.FormatID) ShapeOption {
-	return func(shape *MediaShape) {
-		if shape != nil {
-			shape.Format = format
-		}
-	}
-}
-
 func ShapeVideo(width int, height int, pixelFormat string) ShapeOption {
 	return func(shape *MediaShape) {
 		if shape == nil {
@@ -213,7 +205,7 @@ func (shape MediaShape) String() string {
 	return strings.Join(parts, " ")
 }
 
-func MediaShapeFromStream(stream av.Stream, domain MediaDomain) MediaShape {
+func mediaShapeFromStream(stream av.Stream, domain MediaDomain) MediaShape {
 	shape := MediaShape{Domain: domain}
 	if stream.Type != "" {
 		shape.MediaKind = stream.Type
@@ -221,10 +213,10 @@ func MediaShapeFromStream(stream av.Stream, domain MediaDomain) MediaShape {
 	if stream.ID != "" {
 		shape.StreamID = stream.ID
 	}
-	return mergeMediaShape(shape, MediaShapeFromCodecParameters(stream.Codec))
+	return mergeMediaShape(shape, mediaShapeFromCodecParameters(stream.Codec))
 }
 
-func MediaShapeFromCodecParameters(parameters av.CodecParameters) MediaShape {
+func mediaShapeFromCodecParameters(parameters av.CodecParameters) MediaShape {
 	return MediaShape{
 		MediaKind:    parameters.Type,
 		Codec:        parameters.ID,
@@ -237,8 +229,8 @@ func MediaShapeFromCodecParameters(parameters av.CodecParameters) MediaShape {
 	}
 }
 
-func MediaShapeFromCodecSpec(spec CodecSpec, domain MediaDomain) MediaShape {
-	shape := MediaShapeFromCodecParameters(spec.Parameters)
+func mediaShapeFromCodecSpec(spec CodecSpec, domain MediaDomain) MediaShape {
+	shape := mediaShapeFromCodecParameters(spec.Parameters)
 	shape.Domain = domain
 	if shape.MediaKind == "" {
 		shape.MediaKind = firstNonEmptyMedia(spec.Type, codecMedia(spec.ID))
@@ -267,7 +259,7 @@ func (spec CodecSpec) OutputShapes(input MediaShape) ShapeSet {
 	}
 	shape := input
 	shape.Domain = DomainPacket
-	shape = mergeMediaShape(shape, MediaShapeFromCodecSpec(spec, DomainPacket))
+	shape = mergeMediaShape(shape, mediaShapeFromCodecSpec(spec, DomainPacket))
 	return ShapeSet{shape}
 }
 

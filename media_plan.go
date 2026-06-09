@@ -762,7 +762,7 @@ func normalizePlanBranchShape(shape MediaShape, stream streamIntent, input input
 }
 
 func mediaShapeFromPlanStream(stream av.Stream, domain MediaDomain) MediaShape {
-	return MediaShapeFromStream(stream, domain)
+	return mediaShapeFromStream(stream, domain)
 }
 
 func mediaShapeFromInputIntent(input inputIntent, domain MediaDomain) MediaShape {
@@ -778,14 +778,6 @@ func mediaShapeFromInputIntent(input inputIntent, domain MediaDomain) MediaShape
 		shape.MediaKind = codecMedia(shape.Codec)
 	}
 	return shape
-}
-
-func mediaShapeFromCodecParameters(parameters av.CodecParameters) MediaShape {
-	return MediaShapeFromCodecParameters(parameters)
-}
-
-func mediaShapeFromCodecSpec(spec CodecSpec, domain MediaDomain) MediaShape {
-	return MediaShapeFromCodecSpec(spec, domain)
 }
 
 func mediaShapeFromTransform(transform TransformSpec) MediaShape {
