@@ -1296,8 +1296,6 @@ type Job struct {
 type jobStreamBuild struct {
 	name        string
 	selector    av.StreamSelector
-	decode      bool
-	decodeCodec CodecSpec
 	operations  []OperationSpec
 	codecChange CodecChangePolicy
 	outputs     []destinationSpec
@@ -1414,11 +1412,12 @@ func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
 	if stream == nil {
 		return
 	}
-	stream.decode = true
 	if jobStreamHasDecodeOperation(stream) {
 		return
 	}
-	operation := operationSpecForDecode(stream.decodeCodec, string(stream.selector.Codec))
+	// Reached only when no decode op exists yet (so no codec options were given);
+	// an explicit Decode(opts) always appends its own OpDecode.
+	operation := operationSpecForDecode(CodecSpec{}, string(stream.selector.Codec))
 	stream.operations = append([]OperationSpec{operation}, stream.operations...)
 }
 
@@ -1747,8 +1746,8 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 	return streamIntent{
 		Name:         stream.name,
 		Select:       streamSelectFromAV(stream.selector),
-		Decode:       stream.decode,
-		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
+		Decode:       chainHasDecode(operations),
+		DecodeCodec:  cloneCodecSpec(chainDecodeCodec(operations)),
 		Operations:   operations,
 		Taps:         operationSpecTaps(operations, stream.selector.Type),
 		Encode:       cloneCodecSpec(chainEncodeSpec(operations)),
@@ -1776,20 +1775,10 @@ func jobOperationSpecs(stream *jobStreamBuild) []OperationSpec {
 	if stream == nil {
 		return nil
 	}
-	if len(stream.operations) != 0 {
-		return cloneOperationSpecs(stream.operations)
-	}
-	steps := jobStreamChainSteps(stream)
-	operations := make([]OperationSpec, 0, len(steps)+1)
-	if stream.decode {
-		operations = append(operations, OperationSpec{Kind: OpDecode, Component: string(stream.selector.Codec), Decode: cloneCodecSpec(stream.decodeCodec)})
-	}
-	operations = append(operations, chainStepOperations(steps, stream.selector.Type, initialStepAfter(stream.decode))...)
-	// The encode op (OpEncode/OpCopy) is co-appended by the builder, so it is
-	// always already in stream.operations — there is nothing to reconstruct here
-	// (this empty-operations path is only reached for the implicit decode-for-sink
-	// case, which sets no encode).
-	return operations
+	// The operation list is authoritative: every builder method (Decode, Copy,
+	// Encode, transforms, taps, and the implicit decode-for-sink in To) appends
+	// its operation, so there is nothing to reconstruct from decode/encode flags.
+	return cloneOperationSpecs(stream.operations)
 }
 
 func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
@@ -1842,11 +1831,11 @@ func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, 
 	if prefix, ok := operationSpecsThroughTap(parentOperations, spec.source.tap); ok {
 		return sharedOperationSpecs(prefix)
 	}
-	if stream.decode && spec.source.tap == defaultDecodedTapName(stream.selector.Type) {
+	if chainHasDecode(parentOperations) && spec.source.tap == defaultDecodedTapName(stream.selector.Type) {
 		if prefix, ok := operationSpecsThroughKind(parentOperations, OpDecode); ok {
 			return sharedOperationSpecs(prefix)
 		}
-		return sharedOperationSpecs([]OperationSpec{operationSpecForDecode(stream.decodeCodec, string(stream.selector.Codec))})
+		return sharedOperationSpecs([]OperationSpec{operationSpecForDecode(chainDecodeCodec(parentOperations), string(stream.selector.Codec))})
 	}
 	return nil
 }
@@ -1913,58 +1902,6 @@ func operationSpecsThroughTap(operations []OperationSpec, tap string) ([]Operati
 		}
 	}
 	return nil, false
-}
-
-func chainStepOperations(steps []chainStep, media av.MediaType, after OperationKind) []OperationSpec {
-	if len(steps) == 0 {
-		return nil
-	}
-	operations := make([]OperationSpec, 0, len(steps))
-	for i := range steps {
-		step := steps[i]
-		switch {
-		case step.stage != nil:
-			operations = append(operations, OperationSpec{
-				Kind:      OpStage,
-				Component: step.stage.Name(),
-				Stage:     step.stage,
-			})
-			after = OpStage
-		case !mediaShapeEmpty(step.shape):
-			operationShape := step.shape
-			if operationShape.MediaKind == "" {
-				operationShape.MediaKind = media
-			}
-			operations = append(operations, OperationSpec{
-				Kind:      OpShape,
-				Component: "shape",
-				Shape:     operationShape,
-			})
-			after = OpShape
-		case step.transform.Resize != nil || step.transform.Resample != nil:
-			operations = append(operations, OperationSpec{
-				Kind:      OpTransform,
-				Component: transformFactoryName(step.transform),
-				Transform: cloneTransformSpec(step.transform),
-			})
-			after = OpTransform
-		case step.tap != "":
-			tap := tapIntent{Name: step.tap, MediaKind: media, Domain: chainStepTapDomain(step, DomainFrame), After: after}
-			operations = append(operations, OperationSpec{
-				Kind:      OpTap,
-				Component: tap.Name,
-				Tap:       tap,
-			})
-		}
-	}
-	return operations
-}
-
-func chainStepTapDomain(step chainStep, fallback MediaDomain) MediaDomain {
-	if step.tapDomain != "" {
-		return step.tapDomain
-	}
-	return fallback
 }
 
 // operationSpecTaps derives a stream's exported taps from its OpTap operations —
@@ -3500,12 +3437,11 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 			b.job.setErr(frameSourceDecodeError("build stream", jobStreamName(stream)))
 			return b
 		}
-		if stream.decode || operationSpecsContainChainStep(stream.operations) {
+		if chainHasDecode(stream.operations) || operationSpecsContainChainStep(stream.operations) {
 			b.job.setErr(flowDecodeDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
 			return b
 		}
-		stream.decode = true
-		stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, chainDecodeCodec(spec.operations))
+		// The flow's OpDecode is appended below with the rest of spec.operations.
 	}
 	if len(specSteps) != 0 && !chainHasDecode(spec.operations) {
 		b.ensureDecodeOperation()
@@ -3519,7 +3455,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 			b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
 			return b
 		}
-		if stream.decode || operationSpecsContainChainStep(stream.operations) {
+		if chainHasDecode(stream.operations) || operationSpecsContainChainStep(stream.operations) {
 			b.job.setErr(flowCopyDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
 			return b
 		}
@@ -3533,9 +3469,8 @@ func (b *jobStreamBuilder) Decode(options ...CodecOption) *jobStreamBuilder {
 		b.job.setErr(frameSourceDecodeError("build stream", jobStreamName(stream)))
 		return b
 	}
-	stream.decode = true
-	stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, codecSpecFromOptions(options...))
-	stream.operations = append(stream.operations, operationSpecForDecode(stream.decodeCodec, string(stream.selector.Codec)))
+	decodeCodec := mergeDecodeCodecSpec(chainDecodeCodec(stream.operations), codecSpecFromOptions(options...))
+	stream.operations = append(stream.operations, operationSpecForDecode(decodeCodec, string(stream.selector.Codec)))
 	return b
 }
 
@@ -3545,7 +3480,6 @@ func (b *jobStreamBuilder) Copy() *jobStreamBuilder {
 		b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
 		return b
 	}
-	stream.decode = false
 	stream.operations = append(stream.operations, operationSpecForCopy(Copy()))
 	return b
 }
@@ -3579,7 +3513,7 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 		return b
 	}
 	b.ensureDecodeOperation()
-	stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, initialStepAfter(stream.decode))))
+	stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, initialStepAfter(chainHasDecode(stream.operations)))))
 	return b
 }
 
@@ -3612,7 +3546,7 @@ func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 			return tapWithDomain(TapRef{name: steps[i].tap, domain: steps[i].tapDomain}, DomainFrame)
 		}
 	}
-	if len(steps) == 0 && stream.selector.Type != "" && stream.decode {
+	if len(steps) == 0 && stream.selector.Type != "" && chainHasDecode(stream.operations) {
 		return FrameTap(defaultDecodedTapName(stream.selector.Type))
 	}
 	return TapRef{}
@@ -3707,7 +3641,7 @@ func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 		if b.sourceStartsFrameDomain() {
 			b.ensureFrameSourceShapeOperation()
 		} else {
-			stream.decode = true
+			b.ensureDecodeOperation()
 		}
 	}
 	return b.job

@@ -449,7 +449,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 	}
 
 	streamSteps := jobStreamChainSteps(stream)
-	parentPacket := chainEncodeSpec(stream.operations).Copy && !stream.decode && len(streamSteps) == 0
+	parentPacket := chainEncodeSpec(stream.operations).Copy && !chainHasDecode(stream.operations) && len(streamSteps) == 0
 	if chainEncodeSpec(stream.operations).Copy && !parentPacket {
 		job.setErr(branchCopyParentOperationError(jobStreamName(stream)))
 		return job
@@ -485,7 +485,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			selector:         stream.selector,
 			from:             from,
 			decode:           decode,
-			decodeCodec:      mergeDecodeCodecSpec(stream.decodeCodec, chainDecodeCodec(branches[i].operations)),
+			decodeCodec:      mergeDecodeCodecSpec(chainDecodeCodec(stream.operations), chainDecodeCodec(branches[i].operations)),
 			operations:       operations,
 			sharedOps:        sharedOps,
 			privateOps:       privateOps,
@@ -658,7 +658,7 @@ func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket b
 		}
 		return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.source.tap)
 	}
-	if stream.decode && spec.source.tap == defaultDecodedTapName(stream.selector.Type) {
+	if chainHasDecode(stream.operations) && spec.source.tap == defaultDecodedTapName(stream.selector.Type) {
 		from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
 		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, DomainFrame); err != nil {
 			return nil, TapRef{}, err
