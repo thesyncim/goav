@@ -280,3 +280,52 @@ func TestMixEncodesToFile(t *testing.T) {
 		t.Fatalf("muxer writes = %+v, want one mux with >=1 write (mix -> encode -> file)", muxers.muxers)
 	}
 }
+
+func mixTestAudioSourceRate(id av.StreamID, rate int) InputSpec {
+	return Source(string(id),
+		FrameShape(av.MediaAudio, ShapeAudio(rate, Mono, av.SampleFormatS16), ShapeStream(id)),
+		func(_ context.Context, push SourcePush) error {
+			b := make([]byte, 960*2) // 960 mono S16 samples
+			for i := 0; i < 960; i++ {
+				binary.LittleEndian.PutUint16(b[i*2:], uint16(int16(100)))
+			}
+			frame := &av.Frame{
+				StreamID: id, Type: av.MediaAudio,
+				Audio:  &av.AudioFrame{SampleRate: rate, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 960},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+			}
+			if err := push.Frame(frame); err != nil {
+				return err
+			}
+			return push.EOS()
+		})
+}
+
+func TestMixResamplesMismatchedArms(t *testing.T) {
+	ctx := context.Background()
+	rt := New(WithStdFilters())
+
+	var frames int
+	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
+		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Audio != nil {
+			frames++
+		}
+		return nil
+	}))
+
+	// arm "a" is 48kHz (the target); arm "b" is 24kHz and must auto-resample.
+	task, err := Mix(
+		From(mixTestAudioSourceRate("a", 48000)).Audio(),
+		From(mixTestAudioSourceRate("b", 24000)).Audio(),
+	).To(sink).UseRuntime(rt).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if frames < 1 {
+		t.Fatalf("mixed frames at sink = %d, want >=1 (24kHz arm auto-resampled to 48kHz, then mixed)", frames)
+	}
+}

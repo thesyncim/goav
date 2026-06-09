@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -216,6 +217,8 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 	armRefs := make([]string, 0, len(j.mix.arms))
 	armIDs := make([]av.StreamID, 0, len(j.mix.arms))
 	seen := make(map[av.StreamID]struct{}, len(j.mix.arms))
+	service := &builder{runtime: rt}
+	var targetRate, targetChannels int
 	for i := range j.mix.arms {
 		arm := j.mix.arms[i]
 		if arm == nil || arm.job == nil || len(arm.job.inputs) != 1 {
@@ -246,11 +249,12 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 			return nil, err
 		}
 		upstream := string(srcRef)
+		shape, hasShape := customSourceShape(arm.job.inputs[0])
 		// Packet-domain arms decode to frames before the mix (auto-inserted —
 		// the mixer sums decoded audio). Frame-domain arms feed it directly.
-		if shape, ok := customSourceShape(arm.job.inputs[0]); ok && shape.Domain == DomainPacket {
+		if hasShape && shape.Domain == DomainPacket {
 			request := decodeRequest{selector: av.StreamSelector{Type: streams[0].Type}}
-			decodeStage, err := (&builder{runtime: rt}).newDecodeStageNamed(ctx, "mix-decode-"+string(id), request, streams[0], rt.realtime, true, codec.DecodeBounds{})
+			decodeStage, err := service.newDecodeStageNamed(ctx, "mix-decode-"+string(id), request, streams[0], rt.realtime, true, codec.DecodeBounds{})
 			if err != nil {
 				graph.Close()
 				return nil, err
@@ -265,6 +269,40 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 				return nil, err
 			}
 			upstream = string(decodeRef)
+		}
+		// Join shape-solving: the first arm's audio format is the mix target;
+		// later arms that differ get an auto-inserted resample so the mixer sees
+		// one format. No new API — the arms just declare their own shape.
+		if hasShape && shape.SampleRate > 0 {
+			channels := maxInt(shape.Channels, 1)
+			if targetRate == 0 {
+				targetRate, targetChannels = shape.SampleRate, channels
+			} else if shape.SampleRate != targetRate || channels != targetChannels {
+				armStream := av.Stream{ID: id, Type: av.MediaAudio, Codec: av.CodecParameters{
+					Type: av.MediaAudio, SampleRate: shape.SampleRate, Channels: channels,
+					SampleFormat: av.SampleFormatS16, ClockRate: uint32(shape.SampleRate),
+				}}
+				transform := mediaTransform{
+					name:    "mix-resample-" + string(id),
+					factory: filter.FactoryResample,
+					audio:   &filter.ResampleConfig{SampleRate: targetRate, Channels: targetChannels, SampleFormat: av.SampleFormatS16},
+				}
+				stage, _, err := service.newMediaTransformStageNamed(ctx, transform.name, transform, armStream, rt.realtime)
+				if err != nil {
+					graph.Close()
+					return nil, err
+				}
+				resampleRef, err := graph.AddStage(stage, rt.buffer)
+				if err != nil {
+					graph.Close()
+					return nil, err
+				}
+				if err := graph.Connect(pipeline.Route{From: upstream, To: []string{string(resampleRef)}, Policy: pipeline.RouteAll}); err != nil {
+					graph.Close()
+					return nil, err
+				}
+				upstream = string(resampleRef)
+			}
 		}
 		armRefs = append(armRefs, upstream)
 		armIDs = append(armIDs, id)

@@ -83,9 +83,17 @@ built and `openMuxDestinationStage` records the destination transaction onto the
 shared `*builder`, carried to `newTask` so the file commits/aborts. Tested (mix →
 encode → Ogg mux file). The real use case — mix audio and record — now works.
 
+**Slice 6 — DONE (join shape-solving, zero new API):** the first arm's audio
+format is the mix target; any later arm whose declared shape differs gets an
+auto-inserted resample (`mediaTransform{factory: FactoryResample}` →
+`newMediaTransformStageNamed`) before the mixer, so the mixer always sees one
+format. Tested (48kHz + 24kHz arms → resample → mix). The arms just declare their
+own shape — no negotiation API.
+
 **Next slices:**
 1. `Composite` (video) + `Select` (one-of-N) on the same `buildMix` mechanism.
-2. Join shape-solving: auto-resample mismatched arms (today same-format S16).
+2. Extend shape-solving to channel/sample-format mismatches + packet-arm decoded
+   formats (today keys off the declared source shape).
 2. Join shape-solving (theme A / gap #2): negotiate arm formats, insert
    resample/convert so the mixer's same-format precondition is guaranteed.
 3. `Composite` (video) + `Join(stage,…)` (custom N-input) on the same mechanism.
