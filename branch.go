@@ -245,7 +245,7 @@ func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 		return b
 	}
 	specSteps := chainStepsFromChainOperations(spec.operations)
-	if codecIntentSet(b.spec.encode) && (spec.decode || len(specSteps) != 0 || codecIntentSet(spec.encode)) {
+	if codecIntentSet(b.spec.encode) && (chainHasDecode(spec.operations) || len(specSteps) != 0 || codecIntentSet(chainEncodeSpec(spec.operations))) {
 		b.setErr(chainStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "flow", b.spec.encode))
 		return b
 	}
@@ -257,7 +257,7 @@ func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 			return b
 		}
 	}
-	if spec.decode {
+	if chainHasDecode(spec.operations) {
 		if b.spec.decode {
 			b.setErr(duplicateBranchDecodeError(firstNonEmpty(b.spec.name, "branch")))
 			return b
@@ -267,15 +267,15 @@ func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
 			return b
 		}
 		b.spec.decode = true
-		b.spec.decodeCodec = mergeDecodeCodecSpec(b.spec.decodeCodec, spec.decodeCodec)
+		b.spec.decodeCodec = mergeDecodeCodecSpec(b.spec.decodeCodec, chainDecodeCodec(spec.operations))
 	}
 	b.spec.operations = append(b.spec.operations, cloneOperationSpecs(spec.operations)...)
-	if codecIntentSet(spec.encode) {
-		if spec.encode.Copy && (b.spec.decode || branchOperationSpecsContainStep(b.spec.operations)) {
+	if codecIntentSet(chainEncodeSpec(spec.operations)) {
+		if chainEncodeSpec(spec.operations).Copy && (b.spec.decode || branchOperationSpecsContainStep(b.spec.operations)) {
 			b.setErr(flowCopyDomainError("build branch", firstNonEmpty(spec.name, b.spec.name, "flow")))
 			return b
 		}
-		b.spec.encode = cloneCodecSpec(spec.encode)
+		b.spec.encode = cloneCodecSpec(chainEncodeSpec(spec.operations))
 	}
 	return b
 }
@@ -494,11 +494,11 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 		privateOps := plannedBranchPrivateOperationSpecs(stream, branches[i], parentPacket)
 		operations := append(cloneOperationSpecs(sharedOps), cloneOperationSpecs(privateOps)...)
 		job.branchStreams = append(job.branchStreams, streamBuild{
-			name:        branches[i].name,
-			selector:    stream.selector,
-			from:        from,
-			decode:      decode,
-			decodeCodec: mergeDecodeCodecSpec(stream.decodeCodec, branches[i].decodeCodec),
+			name:             branches[i].name,
+			selector:         stream.selector,
+			from:             from,
+			decode:           decode,
+			decodeCodec:      mergeDecodeCodecSpec(stream.decodeCodec, branches[i].decodeCodec),
 			operations:       operations,
 			sharedOps:        sharedOps,
 			privateOps:       privateOps,
@@ -526,20 +526,20 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		return branchIntentDestinationMissingError(streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}})
 	}
 	stream := streamIntent{Name: spec.name, Select: StreamSelect{Type: selected}}
-	if spec.decode && !parentPacket {
+	if chainHasDecode(spec.operations) && !parentPacket {
 		return branchDecodeDomainError(stream.Name)
 	}
-	if spec.encode.Copy {
-		if spec.decode {
+	if chainEncodeSpec(spec.operations).Copy {
+		if chainHasDecode(spec.operations) {
 			return branchDecodeCopyError(stream.Name)
 		}
 		if !parentPacket {
 			return branchCopyUnsupportedError(stream)
 		}
-	} else if parentPacket && codecIntentSet(spec.encode) && !spec.decode {
-		return branchPacketEncodeUnsupportedError(stream, spec.encode)
+	} else if parentPacket && codecIntentSet(chainEncodeSpec(spec.operations)) && !chainHasDecode(spec.operations) {
+		return branchPacketEncodeUnsupportedError(stream, chainEncodeSpec(spec.operations))
 	}
-	if parentPacket && !spec.decode {
+	if parentPacket && !chainHasDecode(spec.operations) {
 		transforms := transformSpecsFromOperationSpecs(spec.operations)
 		for i := range transforms {
 			if err := validateTransformSpec("build branches", spec.name, transforms[i]); err != nil {
@@ -553,8 +553,8 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	if err := validateBranchStepTapDomains(spec, parentPacket); err != nil {
 		return err
 	}
-	effectiveEncode := spec.encode
-	if parentPacket && !spec.decode && !codecIntentSet(effectiveEncode) {
+	effectiveEncode := chainEncodeSpec(spec.operations)
+	if parentPacket && !chainHasDecode(spec.operations) && !codecIntentSet(effectiveEncode) {
 		effectiveEncode = Copy()
 	}
 	if !codecIntentSet(effectiveEncode) && !branchDestinationsAllSinkDestinations(spec.destinations) {
@@ -580,7 +580,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 
 func validateBranchStepTapDomains(spec BranchSpec, parentPacket bool) error {
 	domain := DomainFrame
-	if parentPacket && !spec.decode {
+	if parentPacket && !chainHasDecode(spec.operations) {
 		domain = DomainPacket
 	}
 	steps := branchSpecChainSteps(spec)

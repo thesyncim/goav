@@ -21,13 +21,10 @@ type Chain interface {
 }
 
 type chainSpec struct {
-	name        string
-	media       av.MediaType
-	decode      bool
-	decodeCodec CodecSpec
-	operations  []OperationSpec
-	encode      CodecSpec
-	err         error
+	name       string
+	media      av.MediaType
+	operations []OperationSpec
+	err        error
 }
 
 type chainBuilder struct {
@@ -267,9 +264,9 @@ func (b *chainBuilder) inputShapes() ShapeSet {
 		return nil
 	}
 	switch {
-	case b.spec.decode:
-		return ShapeSet{PacketShape(b.spec.media, b.spec.decodeCodec.ID)}
-	case b.spec.encode.Copy:
+	case chainHasDecode(b.spec.operations):
+		return ShapeSet{PacketShape(b.spec.media, chainDecodeCodec(b.spec.operations).ID)}
+	case chainEncodeSpec(b.spec.operations).Copy:
 		return ShapeSet{PacketShape(b.spec.media, "")}
 	default:
 		return ShapeSet{FrameShape(b.spec.media)}
@@ -286,7 +283,7 @@ func (b *chainBuilder) outputShapes(input MediaShape) ShapeSet {
 	}
 	if shape.Domain == "" {
 		switch {
-		case b.spec.decode || b.spec.encode.Copy:
+		case chainHasDecode(b.spec.operations) || chainEncodeSpec(b.spec.operations).Copy:
 			shape.Domain = DomainPacket
 		default:
 			shape.Domain = DomainFrame
@@ -320,11 +317,11 @@ func (b *chainBuilder) decode(options ...CodecOption) {
 	if b == nil {
 		return
 	}
-	if codecIntentSet(b.spec.encode) {
-		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "decode", b.spec.encode))
+	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
+		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "decode", chainEncodeSpec(b.spec.operations)))
 		return
 	}
-	if b.spec.decode {
+	if chainHasDecode(b.spec.operations) {
 		b.setErr(duplicateFlowDecodeError(firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
@@ -332,17 +329,16 @@ func (b *chainBuilder) decode(options ...CodecOption) {
 		b.setErr(flowDecodeOrderError(firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
-	b.spec.decode = true
-	b.spec.decodeCodec = mergeDecodeCodecSpec(b.spec.decodeCodec, codecSpecFromOptions(options...))
-	b.spec.operations = append(b.spec.operations, operationSpecForDecode(b.spec.decodeCodec, string(b.spec.decodeCodec.ID)))
+	decodeCodec := mergeDecodeCodecSpec(CodecSpec{}, codecSpecFromOptions(options...))
+	b.spec.operations = append(b.spec.operations, operationSpecForDecode(decodeCodec, string(decodeCodec.ID)))
 }
 
 func (b *chainBuilder) transform(spec TransformSpec) {
 	if b == nil {
 		return
 	}
-	if codecIntentSet(b.spec.encode) {
-		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), chainTransformStepName(spec), b.spec.encode))
+	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
+		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), chainTransformStepName(spec), chainEncodeSpec(b.spec.operations)))
 		return
 	}
 	transform := cloneTransformSpec(spec)
@@ -353,8 +349,8 @@ func (b *chainBuilder) stage(stage pipeline.Stage) {
 	if b == nil {
 		return
 	}
-	if codecIntentSet(b.spec.encode) {
-		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "custom stage", b.spec.encode))
+	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
+		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "custom stage", chainEncodeSpec(b.spec.operations)))
 		return
 	}
 	if stage == nil {
@@ -368,8 +364,8 @@ func (b *chainBuilder) shape(shape MediaShape) {
 	if b == nil {
 		return
 	}
-	if codecIntentSet(b.spec.encode) {
-		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "shape", b.spec.encode))
+	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
+		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "shape", chainEncodeSpec(b.spec.operations)))
 		return
 	}
 	b.spec.operations = append(b.spec.operations, operationSpecForShape(shape))
@@ -393,7 +389,7 @@ func (b *chainBuilder) tap(tap TapRef) {
 		})
 		return
 	}
-	if codecIntentSet(b.spec.encode) {
+	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
 		if err := validateTapDomain("build flow", firstNonEmpty(b.spec.name, "flow"), tap, DomainPacket); err != nil {
 			b.setErr(err)
 			return
@@ -405,23 +401,22 @@ func (b *chainBuilder) tap(tap TapRef) {
 		b.setErr(err)
 		return
 	}
-	b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, initialStepAfter(b.spec.decode))))
+	b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, initialStepAfter(chainHasDecode(b.spec.operations)))))
 }
 
 func (b *chainBuilder) encode(codec CodecSpec) {
 	if b == nil {
 		return
 	}
-	if codecIntentSet(b.spec.encode) {
-		b.setErr(duplicateFlowEncodeError(b.spec.name, b.spec.encode, codec))
+	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
+		b.setErr(duplicateFlowEncodeError(b.spec.name, chainEncodeSpec(b.spec.operations), codec))
 		return
 	}
-	if codec.Copy && (b.spec.decode || operationSpecsContainChainStep(b.spec.operations)) {
+	if codec.Copy && (chainHasDecode(b.spec.operations) || operationSpecsContainChainStep(b.spec.operations)) {
 		b.setErr(flowCopyDomainError("build flow", firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
-	b.spec.encode = cloneCodecSpec(codec)
-	b.spec.operations = append(b.spec.operations, operationSpecForEncode(b.spec.encode))
+	b.spec.operations = append(b.spec.operations, operationSpecForEncode(cloneCodecSpec(codec)))
 }
 
 func (b *chainBuilder) snapshot() chainSpec {
@@ -429,8 +424,6 @@ func (b *chainBuilder) snapshot() chainSpec {
 		return chainSpec{err: nilFlowError()}
 	}
 	spec := b.spec
-	spec.decodeCodec = cloneCodecSpec(spec.decodeCodec)
-	spec.encode = cloneCodecSpec(spec.encode)
 	spec.operations = cloneOperationSpecs(spec.operations)
 	return spec
 }
@@ -454,6 +447,33 @@ func chainSpecFrom(flow Chain) (chainSpec, error) {
 		return spec, spec.err
 	}
 	return spec, nil
+}
+
+// chainHasDecode / chainDecodeCodec / chainEncodeSpec derive a chain's decode and
+// encode facts from its operation list, so chainSpec keeps no parallel decode/
+// encode state — the operations are the single source of truth (one operation
+// list). The OpDecode operation carries the decode codec; the terminal
+// OpEncode/OpCopy carries the encode codec.
+func chainHasDecode(operations []OperationSpec) bool {
+	return operationSpecsContainKind(operations, OpDecode)
+}
+
+func chainDecodeCodec(operations []OperationSpec) CodecSpec {
+	for i := range operations {
+		if operations[i].Kind == OpDecode {
+			return operations[i].Decode
+		}
+	}
+	return CodecSpec{}
+}
+
+func chainEncodeSpec(operations []OperationSpec) CodecSpec {
+	for i := range operations {
+		if operations[i].Kind == OpEncode || operations[i].Kind == OpCopy {
+			return operations[i].Encode
+		}
+	}
+	return CodecSpec{}
 }
 
 func cloneTransformSpec(spec TransformSpec) TransformSpec {

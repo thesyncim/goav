@@ -1860,7 +1860,7 @@ func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, 
 }
 
 func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) []OperationSpec {
-	if !parentPacket || spec.decode || codecIntentSet(spec.encode) {
+	if !parentPacket || chainHasDecode(spec.operations) || codecIntentSet(chainEncodeSpec(spec.operations)) {
 		return cloneOperationSpecs(spec.operations)
 	}
 	if stream == nil {
@@ -3500,11 +3500,11 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 		return b
 	}
 	specSteps := chainStepsFromChainOperations(spec.operations)
-	if codecIntentSet(stream.encode) && (spec.decode || len(specSteps) != 0 || codecIntentSet(spec.encode)) {
+	if codecIntentSet(stream.encode) && (chainHasDecode(spec.operations) || len(specSteps) != 0 || codecIntentSet(chainEncodeSpec(spec.operations))) {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "flow", stream.encode))
 		return b
 	}
-	if spec.decode {
+	if chainHasDecode(spec.operations) {
 		if b.sourceStartsFrameDomain() {
 			b.job.setErr(frameSourceDecodeError("build stream", jobStreamName(stream)))
 			return b
@@ -3514,17 +3514,17 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 			return b
 		}
 		stream.decode = true
-		stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, spec.decodeCodec)
+		stream.decodeCodec = mergeDecodeCodecSpec(stream.decodeCodec, chainDecodeCodec(spec.operations))
 	}
-	if len(specSteps) != 0 && !spec.decode {
+	if len(specSteps) != 0 && !chainHasDecode(spec.operations) {
 		b.ensureDecodeOperation()
 	}
-	if codecIntentSet(spec.encode) && !spec.encode.Copy && !spec.decode {
+	if codecIntentSet(chainEncodeSpec(spec.operations)) && !chainEncodeSpec(spec.operations).Copy && !chainHasDecode(spec.operations) {
 		b.ensureDecodeOperation()
 	}
 	stream.operations = append(stream.operations, cloneOperationSpecs(spec.operations)...)
-	if codecIntentSet(spec.encode) {
-		if spec.encode.Copy {
+	if codecIntentSet(chainEncodeSpec(spec.operations)) {
+		if chainEncodeSpec(spec.operations).Copy {
 			if b.sourceStartsFrameDomain() {
 				b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
 				return b
@@ -3535,7 +3535,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 			}
 			stream.encode = Copy()
 		} else {
-			stream.encode = cloneCodecSpec(spec.encode)
+			stream.encode = cloneCodecSpec(chainEncodeSpec(spec.operations))
 		}
 	}
 	return b
