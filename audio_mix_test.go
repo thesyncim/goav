@@ -330,14 +330,18 @@ func TestMixResamplesMismatchedArms(t *testing.T) {
 	}
 }
 
-func TestMixRejectsRTPArmsClearly(t *testing.T) {
+func TestMixAcceptsRTPArmsViaUnifiedOpener(t *testing.T) {
+	// RTP now resolves through the same source opener as custom/file — it must not
+	// be special-rejected as an unsupported source kind (it may still fail later
+	// for fixture reasons, which is fine; the point is it is no longer a special
+	// case in the opener).
 	_, err := Mix(
 		From(mixTestAudioSource("a", 1)).Audio(),
-		From(RTP(&runtimeRTPReceiver{})).Audio(),
+		From(RTP(&runtimeRTPReceiver{streams: []av.Stream{{ID: "rtp-b", Type: av.MediaAudio}}})).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errorsAsMix(err, &buildErr) || buildErr.Code != "source_unsupported" {
-		t.Fatalf("err = %v, want source_unsupported rejecting RTP arms", err)
+	if errorsAsMix(err, &buildErr) && buildErr.Code == "source_unsupported" {
+		t.Fatalf("RTP arm still special-rejected by the opener: %v", err)
 	}
 }

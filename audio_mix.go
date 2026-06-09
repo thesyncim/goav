@@ -225,7 +225,7 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 			graph.Close()
 			return nil, &BuildError{Code: "mix_arm", Operation: "build mix", Node: "mix", Reason: "each mix arm must be a single-input source chain", Cause: ErrUnsupportedBuild}
 		}
-		source, streams, domain, err := arm.job.inputs[0].openGraphSource(ctx, service)
+		source, streams, domain, err := arm.job.inputs[0].openGraphSource(ctx, service, i)
 		if err != nil {
 			graph.Close()
 			return nil, err

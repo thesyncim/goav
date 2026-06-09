@@ -163,7 +163,7 @@ func customSourceStream(input InputSpec) av.Stream {
 // domain through here, so callers never branch on the input kind. Returning all
 // streams keeps it composable — the caller selects what it needs. (RTP is the
 // remaining kind to fold in; until then it returns a clear error.)
-func (s InputSpec) openGraphSource(ctx context.Context, service *builder) (pipeline.Source, []av.Stream, MediaDomain, error) {
+func (s InputSpec) openGraphSource(ctx context.Context, service *builder, index int) (pipeline.Source, []av.Stream, MediaDomain, error) {
 	switch {
 	case s.source != nil:
 		source, streams, err := newCustomSource(s)
@@ -173,7 +173,11 @@ func (s InputSpec) openGraphSource(ctx context.Context, service *builder) (pipel
 		shape, _ := customSourceShape(s)
 		return source, streams, shape.Domain, nil
 	case s.rtp != nil:
-		return nil, nil, "", &BuildError{Code: "source_unsupported", Operation: "open source", Node: firstNonEmpty(s.name, "rtp"), Reason: "RTP source is not yet folded into the unified source opener; use a custom Source or a file input for now", Cause: ErrUnsupportedBuild}
+		build, err := service.openRTPSource(ctx, s.rtpBuildInput(), index)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		return build.source, build.streams, DomainPacket, nil
 	default:
 		build, err := service.openDemuxSource(ctx, s.input)
 		if err != nil {
