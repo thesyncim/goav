@@ -80,6 +80,39 @@ func WithEncoder(desc CodecDescriptor, factory EncoderFactory) Option {
 	})
 }
 
+// WithFilter adds one filter factory by descriptor — the direct value form,
+// mirroring WithDecoder/WithEncoder, so an external filter plugs in by passing the
+// implementation, never by touching a registry. (WithFilterAdapter remains for
+// registering a whole bundle at once.)
+func WithFilter(desc filter.Descriptor, factory filter.Factory) Option {
+	return WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		registry.RegisterFactory(desc, factory)
+	})
+}
+
+// WithMuxer adds one muxer factory for a container format — pass the muxer
+// directly, no registry callback.
+func WithMuxer(id av.FormatID, factory format.MuxerFactory) Option {
+	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		registry.RegisterMuxer(id, factory)
+	})
+}
+
+// WithDemuxer adds one demuxer factory for a container format — pass the demuxer
+// directly, no registry callback.
+func WithDemuxer(id av.FormatID, factory format.DemuxerFactory) Option {
+	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		registry.RegisterDemuxer(id, factory)
+	})
+}
+
+// WithProber adds one format prober (content sniffing) directly.
+func WithProber(prober format.Prober) Option {
+	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		registry.RegisterProber(prober)
+	})
+}
+
 func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
 	return func(runtime *runtime) {
 		if register != nil {
