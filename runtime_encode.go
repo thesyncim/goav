@@ -184,22 +184,9 @@ func (b *builder) compileDecodeEncodeToOutput(ctx context.Context, graph pipelin
 }
 
 func (b *builder) compileRTPDecodeEncodeToOutput(ctx context.Context, graph pipeline.Graph) error {
-	sourceRefs := make([]pipeline.NodeRef, 0, len(b.rtpInputs))
-	streams := make([]av.Stream, 0, len(b.rtpInputs))
-	builds := make([]rtpBuild, 0, len(b.rtpInputs))
-	for i := range b.rtpInputs {
-		receiver, err := b.openRTPSource(ctx, b.rtpInputs[i], i)
-		if err != nil {
-			return err
-		}
-		sourceRef, err := graph.AddSource(receiver.source, b.runtime.buffer)
-		if err != nil {
-			receiver.source.Close()
-			return err
-		}
-		sourceRefs = append(sourceRefs, sourceRef)
-		streams = append(streams, receiver.streams...)
-		builds = append(builds, receiver)
+	sourceRefs, streams, builds, err := b.addRTPSources(ctx, graph)
+	if err != nil {
+		return err
 	}
 
 	request := b.decodes[0]

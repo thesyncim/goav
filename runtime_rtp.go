@@ -135,20 +135,9 @@ func (b *builder) buildRTPRecord(ctx context.Context) (Task, error) {
 }
 
 func (b *builder) compileRTPRecord(ctx context.Context, graph pipeline.Graph) error {
-	sourceRefs := make([]pipeline.NodeRef, 0, len(b.rtpInputs))
-	streams := make([]av.Stream, 0, len(b.rtpInputs))
-	for i := range b.rtpInputs {
-		receiver, err := b.openRTPSource(ctx, b.rtpInputs[i], i)
-		if err != nil {
-			return err
-		}
-		sourceRef, err := graph.AddSource(receiver.source, b.runtime.buffer)
-		if err != nil {
-			receiver.source.Close()
-			return err
-		}
-		sourceRefs = append(sourceRefs, sourceRef)
-		streams = append(streams, receiver.streams...)
+	sourceRefs, streams, _, err := b.addRTPSources(ctx, graph)
+	if err != nil {
+		return err
 	}
 
 	for i := range b.outputs {
@@ -168,6 +157,31 @@ func (b *builder) compileRTPRecord(ctx context.Context, graph pipeline.Graph) er
 		}
 	}
 	return nil
+}
+
+// addRTPSources opens every RTP input, adds it to the graph, and returns the
+// source refs, the union of their streams, and the per-input rtpBuild metadata.
+// The three expert RTP compile paths (decode→encode→output, decode→sink, record)
+// share this one loop so none of them re-implements RTP source opening.
+func (b *builder) addRTPSources(ctx context.Context, graph pipeline.Graph) ([]pipeline.NodeRef, []av.Stream, []rtpBuild, error) {
+	sourceRefs := make([]pipeline.NodeRef, 0, len(b.rtpInputs))
+	streams := make([]av.Stream, 0, len(b.rtpInputs))
+	builds := make([]rtpBuild, 0, len(b.rtpInputs))
+	for i := range b.rtpInputs {
+		receiver, err := b.openRTPSource(ctx, b.rtpInputs[i], i)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		sourceRef, err := graph.AddSource(receiver.source, b.runtime.buffer)
+		if err != nil {
+			receiver.source.Close()
+			return nil, nil, nil, err
+		}
+		sourceRefs = append(sourceRefs, sourceRef)
+		streams = append(streams, receiver.streams...)
+		builds = append(builds, receiver)
+	}
+	return sourceRefs, streams, builds, nil
 }
 
 func (b *builder) openRTPSource(ctx context.Context, input rtpInput, index int) (rtpBuild, error) {

@@ -463,32 +463,14 @@ func mediaPlanBranchComposerLowerer(state *recipeCompileState) (graphPlanLowerer
 }
 
 func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {
-	if len(inputs) == 1 && inputs[0].source != nil {
-		name := customSourceNodeName(inputs[0])
-		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, customSourceDetail(inputs[0])); err != nil {
-			return nil, false, err
-		}
-		return []pipeline.NodeRef{ref}, true, nil
-	}
-	if len(inputs) == 1 && inputs[0].rtp == nil {
-		input := inputs[0].formatInput()
-		name := demuxNodeName(input)
-		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, inputNodeDetail(input)); err != nil {
-			return nil, false, err
-		}
-		return []pipeline.NodeRef{ref}, true, nil
-	}
-	if !allRTPInputSpecs(inputs) {
+	if !mediaPlanStreamInputsSupported(inputs) {
 		return nil, false, nil
 	}
 	refs := make([]pipeline.NodeRef, 0, len(inputs))
 	for i := range inputs {
-		input := inputs[i].rtpBuildInput()
-		name := rtpNodeName(input, i)
+		name := inputs[i].graphSourceNodeName(i)
 		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, rtpInputDetail(input)); err != nil {
+		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSource, ref, inputs[i].graphSourceNodeDetail(i)); err != nil {
 			return nil, false, err
 		}
 		refs = append(refs, ref)

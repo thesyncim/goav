@@ -1534,71 +1534,40 @@ func compileMediaPlanSources(
 	if runtime == nil {
 		return mediaPlanCompiledSources{}, recipeGraphUnsupportedError(operation, intent)
 	}
-	service := &builder{runtime: runtime}
-	if len(inputs) == 1 && inputs[0].source != nil {
-		source, streams, err := newCustomSource(inputs[0])
-		if err != nil {
-			return mediaPlanCompiledSources{}, err
-		}
-		sourceRef, err := graph.AddSource(source, runtime.buffer)
-		if err != nil {
-			source.Close()
-			return mediaPlanCompiledSources{}, err
-		}
-		return mediaPlanCompiledSources{
-			refs:         []pipeline.NodeRef{sourceRef},
-			streams:      append([]av.Stream(nil), streams...),
-			streamGroups: [][]av.Stream{append([]av.Stream(nil), streams...)},
-			realtime:     runtime.realtime || inputs[0].source.shape.Realtime,
-		}, nil
-	}
-	if len(inputs) == 1 && inputs[0].rtp == nil {
-		input := inputs[0].formatInput()
-		demux, err := service.openDemuxSource(ctx, input)
-		if err != nil {
-			return mediaPlanCompiledSources{}, err
-		}
-		sourceRef, err := graph.AddSource(demux.source, runtime.buffer)
-		if err != nil {
-			demux.source.Close()
-			return mediaPlanCompiledSources{}, err
-		}
-		return mediaPlanCompiledSources{
-			refs:         []pipeline.NodeRef{sourceRef},
-			streams:      append([]av.Stream(nil), demux.streams...),
-			streamGroups: [][]av.Stream{append([]av.Stream(nil), demux.streams...)},
-			realtime:     runtime.realtime || input.Realtime,
-		}, nil
-	}
-	if !allRTPInputSpecs(inputs) {
+	if !mediaPlanStreamInputsSupported(inputs) {
 		return mediaPlanCompiledSources{}, recipeGraphUnsupportedError(operation, intent)
 	}
+	service := &builder{runtime: runtime}
 	sourceRefs := make([]pipeline.NodeRef, 0, len(inputs))
 	streams := make([]av.Stream, 0, len(inputs))
 	streamGroups := make([][]av.Stream, 0, len(inputs))
-	builds := make([]rtpBuild, 0, len(inputs))
+	var builds []rtpBuild
+	realtime := runtime.realtime
 	for i := range inputs {
-		receiver, err := service.openRTPSource(ctx, inputs[i].rtpBuildInput(), i)
+		build, err := inputs[i].openGraphSourceBuild(ctx, service, i)
 		if err != nil {
 			return mediaPlanCompiledSources{}, err
 		}
-		sourceRef, err := graph.AddSource(receiver.source, runtime.buffer)
+		sourceRef, err := graph.AddSource(build.source, runtime.buffer)
 		if err != nil {
-			receiver.source.Close()
+			build.source.Close()
 			return mediaPlanCompiledSources{}, err
 		}
 		sourceRefs = append(sourceRefs, sourceRef)
-		sourceStreams := append([]av.Stream(nil), receiver.streams...)
+		sourceStreams := append([]av.Stream(nil), build.streams...)
 		streams = append(streams, sourceStreams...)
 		streamGroups = append(streamGroups, sourceStreams)
-		builds = append(builds, receiver)
+		realtime = realtime || build.realtime
+		if build.rtp != nil {
+			builds = append(builds, *build.rtp)
+		}
 	}
 	return mediaPlanCompiledSources{
 		refs:         sourceRefs,
 		streams:      streams,
 		streamGroups: streamGroups,
 		rtpBuilds:    builds,
-		realtime:     runtime.realtime,
+		realtime:     realtime,
 	}, nil
 }
 

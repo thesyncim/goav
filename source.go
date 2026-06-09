@@ -159,32 +159,99 @@ func customSourceStream(input InputSpec) av.Stream {
 	}
 }
 
-// openGraphSource is the single source-opening seam: every input kind (custom
-// Source, file, RTP) resolves to a running pipeline source + its streams + media
-// domain through here, so callers never branch on the input kind. Returning all
-// streams keeps it composable — the caller selects what it needs. (RTP is the
-// remaining kind to fold in; until then it returns a clear error.)
-func (s InputSpec) openGraphSource(ctx context.Context, service *builder, index int) (pipeline.Source, []av.Stream, shape.MediaDomain, error) {
+// graphSourceBuild is the unified result of opening one input as a graph source:
+// the running pipeline source, the streams it carries, its media domain, the
+// realtime contribution of that input, and the optional RTP build metadata (decode
+// bounds) that only RTP inputs provide. Carrying everything in one value lets the
+// recipe build path iterate inputs without branching on the input kind.
+type graphSourceBuild struct {
+	source   pipeline.Source
+	streams  []av.Stream
+	domain   shape.MediaDomain
+	realtime bool
+	rtp      *rtpBuild
+}
+
+// openGraphSourceBuild is the single source-opening seam: every input kind (custom
+// Source, file/URI, RTP) resolves to a running pipeline source + its streams +
+// media domain + realtime + optional RTP metadata through here, so callers never
+// branch on the input kind. Returning all streams keeps it composable — the caller
+// selects what it needs.
+func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, index int) (graphSourceBuild, error) {
 	switch {
 	case s.source != nil:
 		source, streams, err := newCustomSource(s)
 		if err != nil {
-			return nil, nil, "", err
+			return graphSourceBuild{}, err
 		}
-		shape, _ := customSourceShape(s)
-		return source, streams, shape.Domain, nil
+		shapeSpec, _ := customSourceShape(s)
+		return graphSourceBuild{
+			source:   source,
+			streams:  streams,
+			domain:   shapeSpec.Domain,
+			realtime: shapeSpec.Realtime,
+		}, nil
 	case s.rtp != nil:
 		build, err := service.openRTPSource(ctx, s.rtpBuildInput(), index)
 		if err != nil {
-			return nil, nil, "", err
+			return graphSourceBuild{}, err
 		}
-		return build.source, build.streams, shape.DomainPacket, nil
+		rtp := build
+		return graphSourceBuild{
+			source:  build.source,
+			streams: build.streams,
+			domain:  shape.DomainPacket,
+			rtp:     &rtp,
+		}, nil
 	default:
-		build, err := service.openDemuxSource(ctx, s.input)
+		input := s.formatInput()
+		build, err := service.openDemuxSource(ctx, input)
 		if err != nil {
-			return nil, nil, "", err
+			return graphSourceBuild{}, err
 		}
-		return build.source, build.streams, shape.DomainPacket, nil
+		return graphSourceBuild{
+			source:   build.source,
+			streams:  build.streams,
+			domain:   shape.DomainPacket,
+			realtime: input.Realtime,
+		}, nil
+	}
+}
+
+// openGraphSource keeps the streams/domain 4-tuple shape used by the Mix and
+// Composite arms; it delegates to openGraphSourceBuild so all opening goes through
+// one seam.
+func (s InputSpec) openGraphSource(ctx context.Context, service *builder, index int) (pipeline.Source, []av.Stream, shape.MediaDomain, error) {
+	build, err := s.openGraphSourceBuild(ctx, service, index)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return build.source, build.streams, build.domain, nil
+}
+
+// graphSourceNodeName returns the planner node name for this input, matching the
+// running source's node name for every input kind so describe and build agree.
+func (s InputSpec) graphSourceNodeName(index int) string {
+	switch {
+	case s.source != nil:
+		return customSourceNodeName(s)
+	case s.rtp != nil:
+		return rtpNodeName(s.rtpBuildInput(), index)
+	default:
+		return demuxNodeName(s.formatInput())
+	}
+}
+
+// graphSourceNodeDetail returns the planner node detail for this input, matching
+// the running source's detail for every input kind.
+func (s InputSpec) graphSourceNodeDetail(index int) string {
+	switch {
+	case s.source != nil:
+		return customSourceDetail(s)
+	case s.rtp != nil:
+		return rtpInputDetail(s.rtpBuildInput())
+	default:
+		return inputNodeDetail(s.formatInput())
 	}
 }
 
