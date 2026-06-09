@@ -3,6 +3,7 @@ package govpx
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -119,6 +120,56 @@ func TestVP8EncoderKeyframeRequiredForcesNextPacket(t *testing.T) {
 	}
 	if !info.KeyFrame {
 		t.Fatalf("forced packet info = %+v, want keyframe", info)
+	}
+}
+
+func TestVP8EncoderBitrateChangedRetargetsLive(t *testing.T) {
+	ctx := context.Background()
+	encoder := &VP8Encoder{}
+	if err := encoder.Open(ctx, vp8EncodeConfig()); err != nil {
+		t.Fatal(err)
+	}
+	result := vp8EncodeResult(1, 64*1024)
+	frame := vp8TestFrame()
+	if err := encoder.EncodeInto(ctx, &frame, &result); err != nil {
+		t.Fatal(err)
+	}
+
+	// 900_000 bits per second retargets the live rate config to 900 kbps,
+	// up from the 300 kbps the encoder was opened with.
+	event := av.Event{Type: av.EventBitrateChanged, StreamID: "encoded", Metadata: codec.BitrateMetadata(900_000)}
+	if err := encoder.HandleEvent(ctx, &event); err != nil {
+		t.Fatal(err)
+	}
+
+	// Observe the applied rate through the library's per-frame result: the next
+	// encoded frame reports the active total target bitrate.
+	libResult, err := encoder.encoder.EncodeInto(make([]byte, 64*1024), patternedVP8Image(16, 16), 3090, 3000, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if libResult.TargetBitrateKbps != 900 {
+		t.Fatalf("target bitrate = %d kbps, want 900", libResult.TargetBitrateKbps)
+	}
+}
+
+func TestVP8EncoderBitrateChangedRejectsMalformedEvent(t *testing.T) {
+	ctx := context.Background()
+	encoder, err := NewVP8EncoderFactory().NewEncoder(ctx, vp8EncodeConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, event := range map[string]av.Event{
+		"no metadata":   {Type: av.EventBitrateChanged, StreamID: "encoded"},
+		"garbage rate":  {Type: av.EventBitrateChanged, StreamID: "encoded", Metadata: av.Metadata{av.MetadataBitrate: "fast"}},
+		"negative rate": {Type: av.EventBitrateChanged, StreamID: "encoded", Metadata: av.Metadata{av.MetadataBitrate: "-1"}},
+	} {
+		event := event
+		err := encoder.HandleEvent(ctx, &event)
+		if err == nil || !strings.Contains(err.Error(), av.MetadataBitrate) {
+			t.Fatalf("%s: err = %v, want a clear %s rejection", name, err, av.MetadataBitrate)
+		}
 	}
 }
 

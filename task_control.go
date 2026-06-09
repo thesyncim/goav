@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -21,6 +22,12 @@ const (
 	// event a decoder emits from a ControlRequestKeyframe — so an encoder reacts to
 	// a live request exactly as it would to one routed through the graph.
 	ControlKeyframe ControlType = "keyframe"
+	// ControlBitrate asks the encoders on the control's path to retarget their
+	// bitrate live. It lowers to an av.EventBitrateChanged event carrying the
+	// rate in Event.Metadata (av.MetadataBitrate, bits per second) and rides the
+	// same route as ControlKeyframe: untargeted it enters at the graph's source
+	// boundary and flows the data path downstream to every encoder.
+	ControlBitrate ControlType = "bitrate"
 	// ControlSelect switches a live Select to the input named by StreamID. Like a
 	// keyframe request it needs no target: untargeted, it enters at the graph's
 	// source boundary and rides the data path to the selector, which consumes it.
@@ -79,6 +86,9 @@ type Control struct {
 	// Position is the target media position for ControlSeek, measured from the
 	// start of the media. Ignored otherwise.
 	Position time.Duration
+	// Bitrate is the requested encoder rate in bits per second for
+	// ControlBitrate. Ignored otherwise.
+	Bitrate int
 }
 
 // At returns a copy of the control targeting a graph node directly. This is the
@@ -103,6 +113,23 @@ func (c Control) AtTap(name string) Control {
 // or (expert) At.
 func Keyframe(stream av.StreamID) Control {
 	return Control{Type: ControlKeyframe, StreamID: stream}
+}
+
+// SetBitrate builds a control that retargets live encoders to bitsPerSecond.
+// It is the encoder-control dual of Keyframe and takes the same route:
+// untargeted, it enters the graph at the source boundary and rides the data
+// path downstream — through stream-routed branches — so every live encoder on
+// the stream's path applies the new rate without the caller naming any node.
+// Narrow it to one encoder with AtTap or (expert) At.
+//
+// The control lowers to an av.EventBitrateChanged event whose rate rides
+// Event.Metadata under av.MetadataBitrate. An encoder whose backend supports
+// live rate control (libvpx vpx_codec_enc_config_set, libopus
+// OPUS_SET_BITRATE) applies it from the next encoded frame; one that cannot
+// returns an error through the task's error path instead of ignoring the
+// request. A non-positive rate fails Task.Control immediately.
+func SetBitrate(stream av.StreamID, bitsPerSecond int) Control {
+	return Control{Type: ControlBitrate, StreamID: stream, Bitrate: bitsPerSecond}
 }
 
 // Deliver builds a control that hands a caller-supplied event to the target
@@ -137,6 +164,16 @@ func (c Control) message() (*pipeline.Message, error) {
 			Type:     av.EventKeyframeRequired,
 			StreamID: c.StreamID,
 			Reason:   c.Reason,
+		}}, nil
+	case ControlBitrate:
+		if c.Bitrate <= 0 {
+			return nil, fmt.Errorf("goav: SetBitrate needs a positive rate in bits per second, got %d", c.Bitrate)
+		}
+		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
+			Type:     av.EventBitrateChanged,
+			StreamID: c.StreamID,
+			Reason:   c.Reason,
+			Metadata: codec.BitrateMetadata(c.Bitrate),
 		}}, nil
 	case ControlSelect:
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
@@ -228,10 +265,10 @@ func (t *task) controlDeliver(control Control) (func(context.Context, pipeline.N
 
 // controlTargets resolves where a control is delivered, in grammar terms first:
 // an explicit node wins; a tap name resolves through Taps(); an untargeted
-// keyframe broadcasts to the graph's entry row (the nodes fed directly by
-// sources) so it rides the data path to every downstream encoder; an untargeted
-// seek broadcasts to every source node. Anything else untargeted is an error —
-// the caller must say where.
+// keyframe or bitrate retarget broadcasts to the graph's entry row (the nodes
+// fed directly by sources) so it rides the data path to every downstream
+// encoder; an untargeted seek broadcasts to every source node. Anything else
+// untargeted is an error — the caller must say where.
 func (t *task) controlTargets(control Control) ([]pipeline.NodeRef, error) {
 	if control.Node != "" {
 		return []pipeline.NodeRef{control.Node}, nil
@@ -244,7 +281,7 @@ func (t *task) controlTargets(control Control) ([]pipeline.NodeRef, error) {
 		}
 		return nil, fmt.Errorf("goav: control targets unknown tap %q: %w", control.Tap, pipeline.ErrUnknownNode)
 	}
-	if control.Type == ControlKeyframe || control.Type == ControlSelect {
+	if control.Type == ControlKeyframe || control.Type == ControlBitrate || control.Type == ControlSelect {
 		targets := t.controlEntryNodes()
 		if len(targets) == 0 {
 			return nil, pipeline.ErrUnknownNode

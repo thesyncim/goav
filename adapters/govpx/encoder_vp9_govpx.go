@@ -138,6 +138,8 @@ func (e *VP9Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	switch event.Type {
 	case av.EventKeyframeRequired:
 		e.encoder.ForceKeyFrame()
+	case av.EventBitrateChanged:
+		return applyEventBitrate(e.encoder.SetBitrateKbps, event)
 	case av.EventCodecChanged, av.EventDiscontinuity:
 		if err := e.resetEncoder(); err != nil {
 			return err

@@ -3,6 +3,7 @@ package govpx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/thesyncim/goav/av"
@@ -138,9 +139,31 @@ func (e *VP8Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	switch event.Type {
 	case av.EventKeyframeRequired:
 		e.encoder.ForceKeyFrame()
+	case av.EventBitrateChanged:
+		return applyEventBitrate(e.encoder.SetBitrateKbps, event)
 	case av.EventCodecChanged, av.EventDiscontinuity:
 		e.encoder.Reset()
 		e.encoder.ForceKeyFrame()
+	}
+	return nil
+}
+
+// applyEventBitrate retargets a live libvpx encoder from an
+// av.EventBitrateChanged event. libvpx supports changing the rate config
+// mid-stream (vpx_codec_enc_config_set); govpx exposes that as SetBitrateKbps
+// on both VP8 and VP9 encoders, so the new target applies from the next
+// encoded frame without resetting the stream. A malformed event or a backend
+// rejection is reported, never swallowed: a bitrate request either reaches the
+// encoder or fails clearly.
+func applyEventBitrate(setBitrateKbps func(int) error, event *av.Event) error {
+	bitsPerSecond, ok := codec.EventBitrate(event)
+	if !ok {
+		return fmt.Errorf("govpx: bitrate event needs positive %s metadata in bits per second", av.MetadataBitrate)
+	}
+	// libvpx rate control works in whole kbps; round up so small positive
+	// requests stay positive.
+	if err := setBitrateKbps((bitsPerSecond + 999) / 1000); err != nil {
+		return fmt.Errorf("govpx: live bitrate retarget to %d bps rejected: %w", bitsPerSecond, mapGovpxEncodeError(err))
 	}
 	return nil
 }

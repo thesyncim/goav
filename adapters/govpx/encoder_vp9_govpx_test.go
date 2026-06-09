@@ -151,6 +151,36 @@ func TestVP9EncoderKeyframeRequiredForcesNextPacket(t *testing.T) {
 	}
 }
 
+func TestVP9EncoderBitrateChangedRetargetsLive(t *testing.T) {
+	ctx := context.Background()
+	encoder := &VP9Encoder{}
+	if err := encoder.Open(ctx, vp9EncodeConfig()); err != nil {
+		t.Fatal(err)
+	}
+	result := vp9EncodeResult(1, 256*1024)
+	frame := vp9TestFrame()
+	if err := encoder.EncodeInto(ctx, &frame, &result); err != nil {
+		t.Fatal(err)
+	}
+
+	// 900_000 bits per second retargets the live rate config to 900 kbps,
+	// up from the 600 kbps the encoder was opened with.
+	event := av.Event{Type: av.EventBitrateChanged, StreamID: "encoded", Metadata: codec.BitrateMetadata(900_000)}
+	if err := encoder.HandleEvent(ctx, &event); err != nil {
+		t.Fatal(err)
+	}
+
+	// Observe the applied rate through the library's per-frame result: the next
+	// encoded frame reports the active total target bitrate.
+	libResult, err := encoder.encoder.EncodeIntoWithResult(patternedVP9Image(64, 64), make([]byte, 256*1024))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if libResult.TargetBitrateKbps != 900 {
+		t.Fatalf("target bitrate = %d kbps, want 900", libResult.TargetBitrateKbps)
+	}
+}
+
 func TestVP9EncodeFrameMappingAllocs(t *testing.T) {
 	frame := vp9TestFrame()
 

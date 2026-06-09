@@ -59,6 +59,11 @@ type Metadata map[string]string
 
 const MetadataMediaType = "media_type"
 
+// MetadataBitrate is the Event.Metadata key carrying a requested encoder
+// bitrate as a decimal string in bits per second. It is the payload of
+// EventBitrateChanged events.
+const MetadataBitrate = "bitrate_bps"
+
 const (
 	SampleFormatS16    = "s16"
 	SampleFormatF32    = "f32"
@@ -406,6 +411,12 @@ const (
 	// acknowledges by emitting EventDiscontinuity before the first message at
 	// the new position.
 	EventSeek EventType = "seek"
+	// EventBitrateChanged asks the encoders on its path to retarget their
+	// bitrate without restarting the stream. The requested rate rides
+	// Event.Metadata under MetadataBitrate as a decimal string in bits per
+	// second. An encoder that cannot apply a live retarget must return an
+	// error from HandleEvent so the failure is visible, never silent.
+	EventBitrateChanged EventType = "bitrate_changed"
 )
 
 type Event struct {

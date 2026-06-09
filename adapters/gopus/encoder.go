@@ -3,6 +3,7 @@ package gopus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/thesyncim/goav/av"
@@ -158,6 +159,18 @@ func (e *Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 		return codec.ErrClosed
 	}
 	switch event.Type {
+	case av.EventBitrateChanged:
+		// libopus supports live bitrate retargeting (OPUS_SET_BITRATE applies
+		// from the next encoded frame); gopus exposes it as SetBitrate in bits
+		// per second. A malformed event or a rejected rate is reported, never
+		// swallowed: the request either reaches the encoder or fails clearly.
+		bitsPerSecond, ok := codec.EventBitrate(event)
+		if !ok {
+			return fmt.Errorf("gopus: bitrate event needs positive %s metadata in bits per second", av.MetadataBitrate)
+		}
+		if err := e.encoder.SetBitrate(bitsPerSecond); err != nil {
+			return fmt.Errorf("gopus: live bitrate retarget to %d bps rejected: %w", bitsPerSecond, mapEncodeError(err))
+		}
 	case av.EventCodecChanged, av.EventDiscontinuity:
 		e.encoder.Reset()
 	}
