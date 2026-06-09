@@ -649,6 +649,53 @@ func TestGraphBufferedShedsStaleUnderMaxLatency(t *testing.T) {
 	}
 }
 
+// TestGraphBufferedShedsOverflowUnderMaxBytes proves MaxBytes caps the queued
+// payload bytes: behind a slow consumer, messages that would exceed the byte
+// budget are shed (DropOverflow) instead of queued past the bound.
+func TestGraphBufferedShedsOverflowUnderMaxBytes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	const n = 20
+	const packetBytes = 64
+	source := &benchDrainSource{name: "src", n: n, msg: benchPacketMessage(packetBytes, true)}
+	slow := &countingSink{name: "slow", delay: 5 * time.Millisecond}
+
+	graph, err := NewGraph(GraphConfig{
+		Name:   "overflow",
+		Buffer: BufferPolicy{Capacity: n, Drop: DropOldest, MaxBytes: 2 * packetBytes},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(slow, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: "src", To: []string{"slow"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	delivered := slow.total()
+	if delivered == 0 {
+		t.Fatal("expected at least one message delivered")
+	}
+	if delivered >= n {
+		t.Fatalf("delivered %d of %d; expected byte-budget shedding to drop messages", delivered, n)
+	}
+	stats := graph.Stats()
+	if stats.DropReasons[DropOverflow] == 0 {
+		t.Fatalf("expected overflow drops recorded, got %+v", stats.DropReasons)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 type twoPhaseSource struct {
 	name   string
 	msg    *Message

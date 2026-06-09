@@ -29,6 +29,10 @@ type bufferedNode struct {
 	queueMutex sync.Mutex
 	done       chan struct{}
 	counters   *nodeCounters
+	// queuedBytes tracks the total payload bytes of in-flight queued messages,
+	// maintained only when policy.MaxBytes > 0: the producer adds before queuing
+	// (under queueMutex), the lock-free worker subtracts in releaseSlot.
+	queuedBytes atomic.Int64
 	// removed is set (once) when the node is torn down by Remove, so the
 	// lock-free worker can shed in-flight messages without taking g.mu.
 	removed atomic.Bool
@@ -77,6 +81,10 @@ type bufferedMessage struct {
 	// enqueuedAt stamps when the message entered the queue, set only when the
 	// node's MaxLatency is non-zero, so the worker can shed stale messages.
 	enqueuedAt time.Time
+	// bytes is the payload size counted against the node's MaxBytes budget,
+	// recorded when the slot is queued and subtracted from queuedBytes on release.
+	// Nonzero only when MaxBytes > 0, so releaseSlot's subtract is a no-op by default.
+	bytes int64
 }
 
 type bufferedRunner struct {
@@ -748,6 +756,12 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 		return nil
 	}
 
+	if node.policy.MaxBytes > 0 && node.queuedBytes.Load()+messageBytes(msg) > node.policy.MaxBytes {
+		// Byte budget exhausted: shed rather than queue past the bound.
+		observeDrop(node.counters, DropOverflow, &g.cold)
+		return nil
+	}
+
 	action := node.drop.decide(len(node.queue), msg)
 	switch action {
 	case bufferAdmit:
@@ -788,6 +802,7 @@ func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode
 		return err
 	}
 	g.pending.Add(1)
+	node.accountQueuedBytes(slot, msg)
 	select {
 	case node.queue <- slot:
 		return nil
@@ -808,12 +823,42 @@ func (g *bufferedRunner) enqueueBound(ctx context.Context, node *bufferedNode, m
 		return err
 	}
 	g.pending.Add(1)
+	node.accountQueuedBytes(slot, msg)
 	if err := enqueueMessage(ctx, node.queue, slot); err != nil {
 		g.pending.Done()
 		node.releaseSlot(slot)
 		return err
 	}
 	return nil
+}
+
+// accountQueuedBytes records a slot's payload size against the node's MaxBytes
+// budget before it enters the queue (so the lock-free worker's releaseSlot
+// subtract is correctly paired). A no-op unless MaxBytes > 0.
+func (n *bufferedNode) accountQueuedBytes(slot *bufferedMessage, msg *Message) {
+	if n.policy.MaxBytes <= 0 {
+		return
+	}
+	slot.bytes = messageBytes(msg)
+	n.queuedBytes.Add(slot.bytes)
+}
+
+// messageBytes is the payload size of a message counted against MaxBytes: packet
+// payload length plus frame plane lengths. Cold metadata is not counted.
+func messageBytes(msg *Message) int64 {
+	if msg == nil {
+		return 0
+	}
+	var n int64
+	if msg.Packet != nil {
+		n += int64(len(msg.Packet.Payload.Bytes))
+	}
+	if msg.Frame != nil {
+		for i := range msg.Frame.Planes {
+			n += int64(len(msg.Frame.Planes[i].Buffer.Bytes))
+		}
+	}
+	return n
 }
 
 func enqueueMessage(ctx context.Context, queue chan *bufferedMessage, msg *bufferedMessage) error {
@@ -902,6 +947,9 @@ func (n *bufferedNode) acquireSlot() (*bufferedMessage, error) {
 func (n *bufferedNode) releaseSlot(slot *bufferedMessage) {
 	if slot == nil {
 		return
+	}
+	if slot.bytes != 0 {
+		n.queuedBytes.Add(-slot.bytes)
 	}
 	slot.Reset()
 	n.free <- slot
@@ -1000,6 +1048,7 @@ func (m *bufferedMessage) Reset() {
 	m.packet.Payload.Bytes = m.packetBacking[:0]
 	m.frameBacking = frameBacking[:0]
 	m.enqueuedAt = time.Time{}
+	m.bytes = 0
 }
 
 func bufferSafe(buffer av.Buffer) bool {

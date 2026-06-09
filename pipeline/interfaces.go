@@ -58,6 +58,10 @@ const (
 	// waited longer than BufferPolicy.MaxLatency (orthogonal to the drop policy:
 	// any policy can also shed stale messages when MaxLatency is set).
 	DropStale DropPolicy = "stale"
+	// DropOverflow is the reason recorded when a buffered message is shed because
+	// admitting it would exceed the node's BufferPolicy.MaxBytes byte budget
+	// (orthogonal to the drop policy, like DropStale).
+	DropOverflow DropPolicy = "overflow"
 )
 
 type BufferPolicy struct {
@@ -65,6 +69,11 @@ type BufferPolicy struct {
 	Drop          DropPolicy
 	TargetLatency time.Duration
 	MaxLatency    time.Duration
+	// MaxBytes caps the total queued payload bytes for a buffered node; admitting
+	// a message that would exceed it sheds the message (DropOverflow) instead of
+	// queuing. Zero disables byte-budget shedding (the default — no per-message
+	// byte accounting runs on the hot path).
+	MaxBytes int64
 	// CopyPacketBytes bounds graph-owned packet payload copies for buffered
 	// execution when a packet buffer is not immutable.
 	CopyPacketBytes int
