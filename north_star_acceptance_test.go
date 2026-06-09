@@ -58,14 +58,14 @@ func TestNorthStarDirectChainEqualsExplicitMainBranch(t *testing.T) {
 	dest := File("archive.ogg", io.Discard)
 
 	direct, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarTranscodeRuntime()).
-		Audio().Decode().Encode(Opus(Bitrate(96_000))).To(dest).
+		Audio().Decode().Encode(Opus(codec.Bitrate(96_000))).To(dest).
 		Describe()
 	if err != nil {
 		t.Fatalf("direct chain Describe(): %v", err)
 	}
 
 	branched, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarTranscodeRuntime()).
-		Audio().Decode().Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(dest)).
+		Audio().Decode().Branches(Branch("main").Encode(Opus(codec.Bitrate(96_000))).To(dest)).
 		Describe()
 	if err != nil {
 		t.Fatalf("Branch(\"main\") Describe(): %v", err)
@@ -84,14 +84,14 @@ func TestNorthStarDirectChainEqualsExplicitMainBranchWithTransform(t *testing.T)
 	dest := File("archive.ogg", io.Discard)
 
 	direct, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarResampleRuntime()).
-		Audio().Decode().Resample(16_000, Mono).Encode(Opus(Bitrate(96_000))).To(dest).
+		Audio().Decode().Resample(16_000, Mono).Encode(Opus(codec.Bitrate(96_000))).To(dest).
 		Describe()
 	if err != nil {
 		t.Fatalf("direct chain Describe(): %v", err)
 	}
 
 	branched, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarResampleRuntime()).
-		Audio().Decode().Branches(Branch("main").Resample(16_000, Mono).Encode(Opus(Bitrate(96_000))).To(dest)).
+		Audio().Decode().Branches(Branch("main").Resample(16_000, Mono).Encode(Opus(codec.Bitrate(96_000))).To(dest)).
 		Describe()
 	if err != nil {
 		t.Fatalf("Branch(\"main\") Describe(): %v", err)

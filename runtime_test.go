@@ -286,7 +286,7 @@ func TestRuntimeWithCustomCodecHooks(t *testing.T) {
 		t.Fatalf("encoder factory = %T err=%v, want registered custom factory", got, err)
 	}
 
-	spec := Codec(desc.ID, av.MediaAudio, SampleRate(16_000), Channels(Mono), ClockRate(48_000))
+	spec := Codec(desc.ID, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(Mono), codec.ClockRate(48_000))
 	if spec.ID != desc.ID || spec.Type != av.MediaAudio || spec.Parameters.ID != desc.ID ||
 		spec.Parameters.Type != av.MediaAudio || spec.Parameters.SampleRate != 16_000 ||
 		spec.Parameters.Channels != Mono || spec.Parameters.ClockRate != 48_000 {

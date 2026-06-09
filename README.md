@@ -70,7 +70,7 @@ return goav.From(input).
     Video().
     Decode().
     Resize(1280, 720).
-    Encode(goav.VP9(goav.Bitrate(2_000_000))).
+    Encode(goav.VP9(codec.Bitrate(2_000_000))).
     To(goav.File("preview.ivf", preview)).
     Run(ctx)
 ```
@@ -104,13 +104,13 @@ return goav.From(input).
     Branches(
         goav.Branch("archive").
             Resize(1920, 1080).
-            Encode(goav.VP9(goav.Bitrate(4_000_000))).
+            Encode(goav.VP9(codec.Bitrate(4_000_000))).
             To(archive),
         goav.Branch("preview").
             Resize(640, 360).
             Do(frameMeter).
             Tap(previewFrames).
-            Encode(goav.VP8(goav.Bitrate(600_000))).
+            Encode(goav.VP8(codec.Bitrate(600_000))).
             To(preview),
     ).
     Run(ctx)
@@ -140,7 +140,7 @@ return goav.From(input).
             To(thumbnail),
         goav.Branch("web").
             From(frames720p).
-            Encode(goav.VP9(goav.Bitrate(2_000_000))).
+            Encode(goav.VP9(codec.Bitrate(2_000_000))).
             To(web),
     ).
     Run(ctx)
@@ -158,15 +158,15 @@ return goav.From(goav.FileInput("source.webm", in)).
     Branches(
         goav.Branch("v720").
             Resize(1280, 720).
-            Encode(goav.VP9(goav.Bitrate(2_000_000))).
+            Encode(goav.VP9(codec.Bitrate(2_000_000))).
             To(web),
     ).
     Audio().
     Decode().
     Branches(
         goav.Branch("a96").
-            Resample(48_000, goav.Stereo).
-            Encode(goav.Opus(goav.Bitrate(96_000))).
+            Resample(48_000, codec.Stereo).
+            Encode(goav.Opus(codec.Bitrate(96_000))).
             To(web),
     ).
     Run(ctx)
@@ -199,7 +199,7 @@ return goav.From(input).
     Branches(
         goav.Branch("archive").
             Buffer(goav.Blocking(128)).
-            Encode(goav.VP9(goav.Bitrate(4_000_000))).
+            Encode(goav.VP9(codec.Bitrate(4_000_000))).
             To(archive),
         goav.Branch("preview").
             Buffer(goav.DropOldest(3)).
@@ -225,21 +225,21 @@ operations. A branch owns the destination.
 voiceFrames := goav.FrameTap("audio.voice.frames")
 
 voiceCodec := goav.Opus(
-    goav.Bitrate(32_000),
-    goav.Channels(goav.Mono),
+    codec.Bitrate(32_000),
+    codec.Channels(codec.Mono),
 )
 archiveCodec := goav.Opus(
-    goav.Bitrate(128_000),
-    goav.Channels(goav.Stereo),
+    codec.Bitrate(128_000),
+    codec.Channels(codec.Stereo),
 )
 
 voice := goav.Flow("voice").Audio().
-    Resample(16_000, goav.Mono).
+    Resample(16_000, codec.Mono).
     Tap(voiceFrames).
     Encode(voiceCodec)
 
 archive := goav.Flow("archive").Audio().
-    Resample(48_000, goav.Stereo).
+    Resample(48_000, codec.Stereo).
     Encode(archiveCodec)
 
 voiceOut := goav.File("voice.ogg", voiceFile)
@@ -297,7 +297,7 @@ task, err := goav.From(input).
         goav.Branch("720p").
             Resize(1280, 720).
             Tap(frames720p).
-            Encode(goav.VP9(goav.Bitrate(2_000_000))).
+            Encode(goav.VP9(codec.Bitrate(2_000_000))).
             To(web),
     ).
     Build(ctx)
@@ -329,7 +329,7 @@ recording := goav.File("recording.ogg", file)
 record, err := task.Attach(ctx,
     goav.Branch("record-audio").
         From(audioDecoded).
-        Encode(goav.Opus(goav.Bitrate(96_000))).
+        Encode(goav.Opus(codec.Bitrate(96_000))).
         To(recording),
 )
 if err != nil {
@@ -594,7 +594,7 @@ enter the same recipe grammar as files, RTP, and WebRTC.
 ```go
 input := goav.Source("generated",
     goav.PacketShape(av.MediaAudio, av.CodecOpus,
-        goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+        goav.ShapeAudio(48_000, codec.Stereo, av.SampleFormatS16),
     ),
     func(ctx context.Context, push goav.SourcePush) error {
         for packet := range packets {
@@ -619,7 +619,7 @@ decoder.
 ```go
 frames := goav.Source("pcm",
     goav.FrameShape(av.MediaAudio,
-        goav.ShapeAudio(48_000, goav.Stereo, av.SampleFormatS16),
+        goav.ShapeAudio(48_000, codec.Stereo, av.SampleFormatS16),
     ),
     func(ctx context.Context, push goav.SourcePush) error {
         for frame := range decoded {
@@ -714,20 +714,22 @@ decoder/encoder allocation or graph mutation. Adapter authoring details live in
 Opus, VP8, and VP9 are the full encode/decode recipe verticals. H264 and AV1
 receive/decode paths are active while recipe encode remains guarded as work in
 progress. `Shape(...)` describes structural media compatibility only; encoder
-behavior is a two-tier ladder. Tier 1 is the common typed settings (bitrate, FPS,
-keyframe cadence, profile, level, and — in progress — grouped rate control / GOP /
-audio). Tier 2 is `Control`: a single raw callback handed the adapter's concrete
-encoder/decoder, so you type-assert and apply anything the library exposes —
-nothing is ever unreachable, and there is no separate config blob to learn:
+behavior is a two-tier ladder, and the settings live in the `codec` package (not
+the goav root) so the grammar stays small. Tier 1 is the common typed settings
+(`codec.Bitrate`, `codec.FPS`, `codec.KeyframeInterval`, `codec.Profile`,
+`codec.RateControl`, …). Tier 2 is `codec.Control`: a single raw callback handed
+the adapter's concrete encoder/decoder, so you type-assert and apply anything the
+library exposes — nothing is ever unreachable, and there is no separate config
+blob to learn:
 
 ```go
-// govpx is the libvpx encoder package, github.com/thesyncim/govpx
+// codec is github.com/thesyncim/goav/codec; govpx is github.com/thesyncim/govpx
 vp9 := goav.VP9(
-    goav.Bitrate(2_000_000),
-    goav.FPS(30),
-    goav.KeyframeInterval(60),
-    goav.Profile("0"),
-    goav.Control(func(enc any) error {       // raw escape hatch
+    codec.Bitrate(2_000_000),
+    codec.FPS(30),
+    codec.KeyframeInterval(60),
+    codec.Profile("0"),
+    codec.Control(func(enc any) error {      // raw escape hatch
         if e, ok := enc.(*govpx.VP9Encoder); ok {
             return e.SetCQLevel(20)          // any native libvpx control
         }

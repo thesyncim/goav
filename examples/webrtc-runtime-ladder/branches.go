@@ -139,9 +139,9 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 		var spec goav.BranchSpec
 		switch r.Spec.Codec {
 		case "vp8":
-			spec = branch.Encode(goav.VP8(goav.Bitrate(r.Spec.Bitrate))).To(goav.Sink(r.Sink))
+			spec = branch.Encode(goav.VP8(codec.Bitrate(r.Spec.Bitrate))).To(goav.Sink(r.Sink))
 		case "vp9":
-			spec = branch.Encode(goav.VP9(goav.Bitrate(r.Spec.Bitrate))).To(goav.Sink(r.Sink))
+			spec = branch.Encode(goav.VP9(codec.Bitrate(r.Spec.Bitrate))).To(goav.Sink(r.Sink))
 		default:
 			return fmt.Errorf("unsupported video encoder %q", r.Spec.Codec)
 		}
@@ -158,7 +158,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 		spec := goav.Branch(r.Spec.ID).
 			From(goav.FrameTap(audioTapName)).
 			Resample(48_000, goav.Stereo).
-			Encode(goav.Opus(goav.Bitrate(r.Spec.Bitrate), goav.Channels(goav.Stereo))).
+			Encode(goav.Opus(codec.Bitrate(r.Spec.Bitrate), codec.Channels(goav.Stereo))).
 			To(goav.Sink(r.Sink))
 		attachment, err := s.audioTask.Attach(ctx, spec)
 		if err != nil {

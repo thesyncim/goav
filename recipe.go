@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	Mono   = 1
-	Stereo = 2
+	Mono   = codec.Mono
+	Stereo = codec.Stereo
 )
 
 type Intent struct {
@@ -158,7 +158,10 @@ func Default() Runtime {
 	return New(WithDefaults())
 }
 
-type CodecOption func(*CodecSpec)
+// CodecOption configures a codec spec's encoder/decoder settings. The options
+// themselves live in the codec package (codec.Bitrate, codec.RateControl, …) so
+// the goav grammar stays small; this alias lets the constructors accept them.
+type CodecOption = codec.Option
 
 type CodecSpec struct {
 	ID            av.CodecID
@@ -229,102 +232,24 @@ func AV1(options ...CodecOption) CodecSpec {
 	}, options...)
 }
 
-func Bitrate(bitsPerSecond int) CodecOption {
-	return func(spec *CodecSpec) {
-		spec.Settings.Bitrate = bitsPerSecond
-	}
-}
-
-func FPS(num int, den ...int) CodecOption {
-	return func(spec *CodecSpec) {
-		rateDen := 1
-		if len(den) != 0 {
-			rateDen = den[0]
-		}
-		if num <= 0 || rateDen <= 0 {
-			spec.Settings.Framerate = av.Duration{Value: -1}
-			return
-		}
-		spec.Settings.Framerate = av.Duration{
-			Value: int64(rateDen),
-			Base:  av.TimeBase{Num: 1, Den: int64(num)},
-		}
-	}
-}
-
-func KeyframeInterval(frames int) CodecOption {
-	return func(spec *CodecSpec) {
-		spec.Settings.KeyframeInterval = frames
-	}
-}
-
-func Profile(profile string) CodecOption {
-	return func(spec *CodecSpec) {
-		spec.Settings.Profile = profile
-	}
-}
-
-func Level(level string) CodecOption {
-	return func(spec *CodecSpec) {
-		spec.Settings.Level = level
-	}
-}
-
-func Channels(channels int) CodecOption {
-	return func(spec *CodecSpec) {
-		spec.Parameters.Channels = channels
+// applyEncodeCaps maps the audio caps set through codec options (Channels /
+// SampleRate / ClockRate, which live on CodecSettings) onto the structural
+// Parameters the rest of the pipeline reads, and records that they were set.
+func applyEncodeCaps(spec *CodecSpec) {
+	s := spec.Settings
+	if s.ChannelsSet {
+		spec.Parameters.Channels = s.Channels
 		spec.channelsSet = true
-		if channels == Mono {
-			spec.Parameters.ChannelLayout = "mono"
-		}
-		if channels == Stereo {
-			spec.Parameters.ChannelLayout = "stereo"
+		if s.ChannelLayout != "" {
+			spec.Parameters.ChannelLayout = s.ChannelLayout
 		}
 	}
-}
-
-func SampleRate(sampleRate int) CodecOption {
-	return func(spec *CodecSpec) {
-		spec.Parameters.SampleRate = sampleRate
-		spec.Parameters.ClockRate = uint32(sampleRate)
+	if s.SampleRateSet {
+		spec.Parameters.SampleRate = s.SampleRate
 		spec.sampleRateSet = true
 	}
-}
-
-func ClockRate(clockRate uint32) CodecOption {
-	return func(spec *CodecSpec) {
-		spec.Parameters.ClockRate = clockRate
-	}
-}
-
-func Parameters(parameters av.CodecParameters) CodecOption {
-	return func(spec *CodecSpec) {
-		spec.Parameters = parameters
-		if spec.ID == "" && parameters.ID != "" {
-			spec.ID = parameters.ID
-		}
-		if spec.Type == "" && parameters.Type != "" {
-			spec.Type = parameters.Type
-		}
-		if spec.Parameters.ID == "" {
-			spec.Parameters.ID = spec.ID
-		}
-		if spec.Parameters.Type == "" {
-			spec.Parameters.Type = spec.Type
-		}
-	}
-}
-
-// Control is the raw codec escape hatch: at encoder/decoder open the adapter
-// invokes fn with its concrete native encoder/decoder, so you can type-assert to
-// the real type and apply anything the underlying library exposes. A non-nil
-// error from fn fails the open. This one callback covers every codec-specific
-// knob the common typed settings do not — nothing is ever unreachable.
-func Control(fn func(any) error) CodecOption {
-	return func(spec *CodecSpec) {
-		if fn != nil {
-			spec.Settings.Control = fn
-		}
+	if s.ClockRate != 0 {
+		spec.Parameters.ClockRate = s.ClockRate
 	}
 }
 
@@ -332,9 +257,10 @@ func codecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, opt
 	spec := CodecSpec{ID: id, Type: media, Parameters: params}
 	for i := range options {
 		if options[i] != nil {
-			options[i](&spec)
+			options[i](&spec.Settings)
 		}
 	}
+	applyEncodeCaps(&spec)
 	if spec.Parameters.ID == "" {
 		spec.Parameters.ID = id
 	}
@@ -348,9 +274,10 @@ func codecSpecFromOptions(options ...CodecOption) CodecSpec {
 	var spec CodecSpec
 	for i := range options {
 		if options[i] != nil {
-			options[i](&spec)
+			options[i](&spec.Settings)
 		}
 	}
+	applyEncodeCaps(&spec)
 	if spec.Parameters.ID != "" && spec.ID == "" {
 		spec.ID = spec.Parameters.ID
 	}
@@ -388,6 +315,18 @@ func mergeCodecSettings(base codec.CodecSettings, override codec.CodecSettings) 
 	}
 	if override.Level != "" {
 		base.Level = override.Level
+	}
+	if override.ChannelsSet {
+		base.Channels = override.Channels
+		base.ChannelLayout = override.ChannelLayout
+		base.ChannelsSet = true
+	}
+	if override.SampleRateSet {
+		base.SampleRate = override.SampleRate
+		base.SampleRateSet = true
+	}
+	if override.ClockRate != 0 {
+		base.ClockRate = override.ClockRate
 	}
 	if override.Control != nil {
 		base.Control = override.Control

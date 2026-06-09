@@ -111,6 +111,16 @@ type CodecSettings struct {
 	// or preserve the selected input level when copying compatible stream
 	// metadata.
 	Level string
+	// Channels, SampleRate, ClockRate, ChannelLayout set the encoder output audio
+	// format (zero = derive from the input stream). ChannelsSet/SampleRateSet
+	// record that the value was requested explicitly, so a requested zero is
+	// validated rather than treated as unset.
+	Channels      int
+	SampleRate    int
+	ClockRate     uint32
+	ChannelLayout string
+	ChannelsSet   bool
+	SampleRateSet bool
 	// Control is the raw escape hatch: at encoder/decoder open the adapter invokes
 	// it with its *concrete* native encoder/decoder (or, for construction-only
 	// knobs, its options builder — the adapter documents which), so the caller can

@@ -512,7 +512,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	voice := Flow("voice").Audio().
 		Resample(16_000, Mono).
 		Tap(FrameTap("audio.voice.frames")).
-		Encode(Opus(Bitrate(32_000), Channels(Mono))).
+		Encode(Opus(codec.Bitrate(32_000), codec.Channels(Mono))).
 		Tap(PacketTap("audio.voice.packets"))
 
 	flowSpec, err := chainSpecFrom(voice)
@@ -566,7 +566,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 	voice := Flow("voice").Audio().
 		Resample(16_000, Mono).
-		Encode(Opus(Bitrate(32_000), Channels(Mono)))
+		Encode(Opus(codec.Bitrate(32_000), codec.Channels(Mono)))
 
 	job := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -593,7 +593,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	decodeFlow := Flow("voice").Audio().
 		Decode().
 		Resample(16_000, Mono).
-		Encode(Opus(Bitrate(64_000)))
+		Encode(Opus(codec.Bitrate(64_000)))
 
 	decodeJob := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -665,7 +665,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 				To(thumbnail),
 			Branch("web").
 				From(FrameTap("video.720p.frames")).
-				Encode(VP9(Bitrate(2_000_000))).
+				Encode(VP9(codec.Bitrate(2_000_000))).
 				To(web),
 		)
 	if job.err != nil {
@@ -1284,7 +1284,7 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 			Streams: []streamIntent{{
 				Name:         "audio",
 				Select:       StreamSelect{Type: av.MediaAudio},
-				Encode:       Opus(Bitrate(96_000)),
+				Encode:       Opus(codec.Bitrate(96_000)),
 				Destinations: []string{"archive"},
 			}},
 			Destinations: []destinationIntent{{Name: "archive"}},
@@ -1325,7 +1325,7 @@ func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedDestinations(t *testi
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(context.Background(), job)
 	if err != nil {
@@ -1795,7 +1795,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 				intent: Intent{Streams: []streamIntent{{
 					Name:         "360p",
 					Select:       StreamSelect{Type: av.MediaVideo},
-					Encode:       VP9(Bitrate(600_000)),
+					Encode:       VP9(codec.Bitrate(600_000)),
 					Destinations: []string{"web"},
 				}}},
 				branchInputProbeReady: true,
@@ -1938,7 +1938,7 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: Intent{Streams: []streamIntent{{
 					Name:         "preview",
 					Select:       StreamSelect{Type: av.MediaVideo},
-					Encode:       VP9(Bitrate(600_000)),
+					Encode:       VP9(codec.Bitrate(600_000)),
 					Destinations: []string{"web"},
 				}}},
 				branchInputProbeReady: true,
@@ -2007,7 +2007,7 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 				runtime:   New(),
 				intent: Intent{Streams: []streamIntent{{
 					Name:   "audio",
-					Encode: Opus(Bitrate(96_000)),
+					Encode: Opus(codec.Bitrate(96_000)),
 				}}},
 			},
 			code:  "encode_adapter_missing",
@@ -2023,7 +2023,7 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 				runtime:   descriptorRuntime,
 				intent: Intent{Streams: []streamIntent{{
 					Name:   "360p",
-					Encode: VP9(Bitrate(600_000)),
+					Encode: VP9(codec.Bitrate(600_000)),
 				}}},
 			},
 			code:  "encode_adapter_unavailable",
@@ -2090,11 +2090,11 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: Intent{Streams: []streamIntent{{
 					Name:   "voice",
 					Select: StreamSelect{Type: av.MediaAudio},
-					Encode: Codec(audioCodec, av.MediaAudio, Parameters(av.CodecParameters{
+					Encode: CodecSpec{ID: audioCodec, Type: av.MediaAudio, Parameters: av.CodecParameters{
 						ID:           audioCodec,
 						Type:         av.MediaAudio,
 						SampleFormat: av.SampleFormatF32,
-					})),
+					}},
 				}}},
 			},
 			want: []string{"encoder adapter does not support the requested sample format", "field=sample_format", "requested=f32", "supported=s16"},
@@ -2403,7 +2403,7 @@ func TestJobStreamOutputKindsPassAllowsEncodedPacketFanout(t *testing.T) {
 			Streams: []streamIntent{{
 				Name:         "audio",
 				Decode:       true,
-				Encode:       Opus(Bitrate(96_000)),
+				Encode:       Opus(codec.Bitrate(96_000)),
 				Destinations: []string{"packets", "archive.ogg"},
 			}},
 			Destinations: []destinationIntent{{Name: "packets"}, {Name: "archive.ogg"}},
@@ -2454,7 +2454,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 						Name:         "video",
 						Select:       StreamSelect{Type: av.MediaVideo},
 						Operations:   []OperationSpec{operationSpecForTransform(Resample(48_000, Stereo))},
-						Encode:       VP9(Bitrate(2_000_000)),
+						Encode:       VP9(codec.Bitrate(2_000_000)),
 						Destinations: []string{"web"},
 					}},
 					Destinations: []destinationIntent{{Name: "web"}},
@@ -2495,7 +2495,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 				Operations: []OperationSpec{
 					{Kind: OpDecode, Decode: VP8()},
 					{Kind: OpShape, Component: "shape", Shape: Shape(ShapeDomain(DomainPacket), ShapeMedia(av.MediaVideo))},
-					{Kind: OpEncode, Component: string(av.CodecVP9), Encode: VP9(Bitrate(2_000_000))},
+					{Kind: OpEncode, Component: string(av.CodecVP9), Encode: VP9(codec.Bitrate(2_000_000))},
 				},
 				Destinations: []string{"web"},
 			},
@@ -2587,7 +2587,7 @@ func TestRecipeOperationShapePassAllowsCustomStageShapeDeclaration(t *testing.T)
 					{Kind: OpDecode, Decode: Opus()},
 					{Kind: OpStage, Component: "visualizer", Stage: &runtimeTestStage{name: "visualizer"}},
 					{Kind: OpShape, Component: "shape", Shape: FrameShape(av.MediaVideo, ShapeVideo(640, 360, av.PixelFormatYUV420P))},
-					{Kind: OpEncode, Component: string(av.CodecVP9), Encode: VP9(Bitrate(600_000))},
+					{Kind: OpEncode, Component: string(av.CodecVP9), Encode: VP9(codec.Bitrate(600_000))},
 				},
 				Destinations: []string{"web"},
 			}},
@@ -2824,7 +2824,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []streamIntent{{
 						Name:         "360p",
 						Select:       StreamSelect{Type: av.MediaVideo},
-						Encode:       VP9(Bitrate(600_000)),
+						Encode:       VP9(codec.Bitrate(600_000)),
 						Destinations: []string{"web"},
 					}},
 				},
@@ -2851,7 +2851,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Inputs: []inputIntent{{Name: "input.ivf"}},
 					Streams: []streamIntent{{
 						Select:       StreamSelect{Type: av.MediaVideo},
-						Encode:       VP9(Bitrate(600_000)),
+						Encode:       VP9(codec.Bitrate(600_000)),
 						Destinations: []string{"web"},
 					}},
 				},
@@ -2903,7 +2903,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []streamIntent{{
 						Name:         "360p",
 						Select:       StreamSelect{Type: av.MediaVideo},
-						Encode:       VP9(Bitrate(600_000)),
+						Encode:       VP9(codec.Bitrate(600_000)),
 						Destinations: []string{"web", "web"},
 					}},
 				},
@@ -3057,7 +3057,7 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 			Streams: []streamIntent{{
 				Name:         "360p",
 				Select:       StreamSelect{Type: av.MediaVideo},
-				Encode:       VP9(Bitrate(600_000)),
+				Encode:       VP9(codec.Bitrate(600_000)),
 				Destinations: []string{"missing"},
 			}},
 			Destinations: []destinationIntent{{Name: "web.ivf"}},
@@ -3099,7 +3099,7 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 		intent: Intent{Streams: []streamIntent{{
 			Name:         "720p",
 			Select:       StreamSelect{Type: av.MediaVideo},
-			Encode:       VP9(Bitrate(2_000_000)),
+			Encode:       VP9(codec.Bitrate(2_000_000)),
 			Destinations: []string{"web"},
 		}}},
 		branchInputProbeReady: true,
@@ -3168,7 +3168,7 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 		Branches(
 			Branch("360p").
 				Resize(640, 360).
-				Encode(VP9(Bitrate(600_000))).
+				Encode(VP9(codec.Bitrate(600_000))).
 				To(web),
 		)
 
@@ -3430,7 +3430,7 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 		Branches(
 			Branch("360p").
 				Resize(640, 360).
-				Encode(VP9(Bitrate(600_000))).
+				Encode(VP9(codec.Bitrate(600_000))).
 				To(web),
 		)
 
@@ -3471,8 +3471,8 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	}).Name("audio").Codec(Opus())).
 		Audio().
 		Branches(
-			Branch("voice").Apply(Flow("voice").Audio().Encode(Opus(Bitrate(32_000), Channels(Mono)))).To(voice),
-			Branch("archive").Apply(Flow("archive").Audio().Encode(Opus(Bitrate(128_000), Channels(Stereo)))).To(archive),
+			Branch("voice").Apply(Flow("voice").Audio().Encode(Opus(codec.Bitrate(32_000), codec.Channels(Mono)))).To(voice),
+			Branch("archive").Apply(Flow("archive").Audio().Encode(Opus(codec.Bitrate(128_000), codec.Channels(Stereo)))).To(archive),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -3514,7 +3514,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 		Audio().
 		Decode().
 		Tap(FrameTap("audio.decoded")).
-		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3546,7 +3546,7 @@ func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
 		Resize(1280, 720).
 		Tap(FrameTap("video.720p.frames")).
 		Branches(
-			Branch("web").Encode(VP9(Bitrate(2_000_000))).To(web),
+			Branch("web").Encode(VP9(codec.Bitrate(2_000_000))).To(web),
 			Branch("thumb").Resize(320, 180).To(thumbnail),
 		)
 
@@ -3585,7 +3585,7 @@ func TestBranchComposeLowererUsesPlanInputOperationNodes(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3634,7 +3634,7 @@ func TestBranchComposeLowererUsesPlanSharedStepOperationNodes(t *testing.T) {
 		Audio().
 		Decode().
 		Resample(48_000, Stereo).
-		Branches(Branch("main").Encode(Opus(Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Branches(Branch("main").Encode(Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3683,7 +3683,7 @@ func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testi
 		Decode().
 		Branches(Branch("main").
 			Resample(16_000, Mono).
-			Encode(Opus(Bitrate(96_000))).
+			Encode(Opus(codec.Bitrate(96_000))).
 			To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -3735,7 +3735,7 @@ func TestBranchComposeLowererUsesPlanDestinationOperationNodes(t *testing.T) {
 		Audio().
 		Decode().
 		Branches(
-			Branch("archive").Encode(Opus(Bitrate(96_000))).To(archive),
+			Branch("archive").Encode(Opus(codec.Bitrate(96_000))).To(archive),
 			Branch("frames").To(frames),
 		)
 
@@ -3849,8 +3849,8 @@ func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T)
 		Video().
 		Decode().
 		Branches(
-			Branch("720p").Resize(1280, 720).Encode(VP9(Bitrate(2_000_000))).To(web),
-			Branch("360p").Resize(640, 360).Encode(VP8(Bitrate(600_000))).To(mobile),
+			Branch("720p").Resize(1280, 720).Encode(VP9(codec.Bitrate(2_000_000))).To(web),
+			Branch("360p").Resize(640, 360).Encode(VP8(codec.Bitrate(600_000))).To(mobile),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -3876,7 +3876,7 @@ func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) 
 		Video().
 		Decode().
 		Branches(
-			Branch("720p").Resize(1280, 720).Encode(VP9(Bitrate(2_000_000))).To(web),
+			Branch("720p").Resize(1280, 720).Encode(VP9(codec.Bitrate(2_000_000))).To(web),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -3902,7 +3902,7 @@ func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testi
 		Video().
 		Decode().
 		Branches(
-			Branch("720p").Resize(1280, 720).Encode(VP9(Bitrate(2_000_000))).To(web),
+			Branch("720p").Resize(1280, 720).Encode(VP9(codec.Bitrate(2_000_000))).To(web),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -4599,7 +4599,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 		Audio().
 		Decode().
 		Do(&runtimeTestStage{name: "meter"}).
-		Encode(Opus(Bitrate(96_000))).
+		Encode(Opus(codec.Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -4643,7 +4643,7 @@ func TestStreamGraphLowererUsesPlanEncodedDestinationOperationNodes(t *testing.T
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Encode(Opus(Bitrate(96_000))).
+		Encode(Opus(codec.Bitrate(96_000))).
 		To(
 			destinationHandle(fileDestination("archive.ogg", io.Discard)),
 			Sink(&runtimeTestSink{name: "packets"}),
@@ -4690,7 +4690,7 @@ func TestStreamGraphLowererUsesPlanEncodeOperationNode(t *testing.T) {
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Encode(Opus(Bitrate(96_000))).
+		Encode(Opus(codec.Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -4719,7 +4719,7 @@ func TestEncodedFrameStreamLowererRequiresEncodeOperationBeforeSources(t *testin
 	job := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Decode().
-		Encode(Opus(Bitrate(96_000))).
+		Encode(Opus(codec.Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipe(job)
@@ -4758,7 +4758,7 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 		Decode().
 		Tap(FrameTap("audio.decoded")).
 		Do(&runtimeTestStage{name: "meter"}).
-		Encode(Opus(Bitrate(96_000))).
+		Encode(Opus(codec.Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -4811,7 +4811,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Encode(Opus(Bitrate(96_000))).
+		Encode(Opus(codec.Bitrate(96_000))).
 		To(Sink(&runtimeTestSink{name: "packets"}))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
@@ -4855,7 +4855,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Encode(Opus(Bitrate(96_000))).
+		Encode(Opus(codec.Bitrate(96_000))).
 		To(
 			destinationHandle(fileDestination("archive.ogg", io.Discard)),
 			Sink(&runtimeTestSink{name: "packets"}),
@@ -4901,7 +4901,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 	job := From(RTP(receiver).Name("audio").Codec(Opus())).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Encode(Opus(Bitrate(96_000))).
+		Encode(Opus(codec.Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
