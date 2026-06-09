@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
 	"reflect"
 	"testing"
 
@@ -253,5 +254,29 @@ func TestMixEncodesMixedOutput(t *testing.T) {
 	}
 	if packets < 1 {
 		t.Fatalf("encoded packets at sink = %d, want >=1 (mix -> encode -> sink)", packets)
+	}
+}
+
+func TestMixEncodesToFile(t *testing.T) {
+	ctx := context.Background()
+	muxers := &remuxTestMuxerFactory{}
+	rt := New(
+		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
+		WithEncoder(CodecDescriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+	)
+
+	task, err := Mix(
+		From(mixTestAudioSource("a", 100, 200)).Audio(),
+		From(mixTestAudioSource("b", 50, -50)).Audio(),
+	).Encode(codec.Opus()).To(File("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(muxers.muxers) != 1 || muxers.muxers[0].writes < 1 {
+		t.Fatalf("muxer writes = %+v, want one mux with >=1 write (mix -> encode -> file)", muxers.muxers)
 	}
 }

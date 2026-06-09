@@ -77,9 +77,15 @@ arm shape → `prepareEncodeConfig` → encode stage → destination). Tested
 (frame arms → mix → encode → packet sink). Together: `Mix(packetArms…).Encode(…).To(…)`
 now decodes each arm, mixes, and re-encodes — a real audio mixer.
 
+**Slice 5 — DONE (record to file):** `Mix(...).Encode(codec.Opus()).To(File(...))`
+— the mixer routes through the reused encode→destination path; the file mux is
+built and `openMuxDestinationStage` records the destination transaction onto the
+shared `*builder`, carried to `newTask` so the file commits/aborts. Tested (mix →
+encode → Ogg mux file). The real use case — mix audio and record — now works.
+
 **Next slices:**
-1. `Mix(...).Encode().To(File(...))` mux + destination-transaction wiring (commit/abort).
-2. `Composite` (video) + `Select` (one-of-N) on the same `buildMix` mechanism.
+1. `Composite` (video) + `Select` (one-of-N) on the same `buildMix` mechanism.
+2. Join shape-solving: auto-resample mismatched arms (today same-format S16).
 2. Join shape-solving (theme A / gap #2): negotiate arm formats, insert
    resample/convert so the mixer's same-format precondition is guaranteed.
 3. `Composite` (video) + `Join(stage,…)` (custom N-input) on the same mechanism.

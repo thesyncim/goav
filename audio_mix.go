@@ -299,11 +299,14 @@ func (j *Job) buildMix(ctx context.Context) (Task, error) {
 			graph.Close()
 			return nil, err
 		}
-		if err := compileEncodeDestinationPath(ctx, &builder{runtime: rt}, graph, mixRef, request, config, encodedStream, []destinationSpec{j.mix.dest.spec}); err != nil {
+		service := &builder{runtime: rt}
+		if err := compileEncodeDestinationPath(ctx, service, graph, mixRef, request, config, encodedStream, []destinationSpec{j.mix.dest.spec}); err != nil {
 			graph.Close()
 			return nil, err
 		}
-		return newTask(graph, rt), nil
+		// openMuxDestinationStage records the destination transaction (file commit/
+		// abort) on service; carry it to the task so the mix file finalizes.
+		return newTask(graph, rt, service.destinationTxs...), nil
 	}
 	sink := j.mix.dest.spec.sink
 	if sink == nil {
