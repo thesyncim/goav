@@ -1084,6 +1084,7 @@ type Job struct {
 	stream             *jobStreamBuild
 	branchStreams      []streamBuild
 	branchDestinations []namedDestinationSpec
+	mix                *mixSpec
 	err                error
 }
 
@@ -1382,6 +1383,9 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 }
 
 func (j *Job) Build(ctx context.Context) (Task, error) {
+	if j.mix != nil {
+		return j.buildMix(ctx)
+	}
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err != nil {
 		return nil, err

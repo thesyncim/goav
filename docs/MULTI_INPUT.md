@@ -56,11 +56,19 @@ ops**):
 every arm has a frame, sums S16-interleaved samples with clamping, and emits one
 output EOS once all arms end. Tested (sum, clamp, alignment, EOS); `-race` clean.
 
+**Slice 2 — DONE (expressible + runnable):** `Mix(arms...).To(sink)` — ONE new
+public symbol that reuses the existing `Job`, so `.To`/`Build`/`Run` are
+unchanged (thinnest possible API; single-input chains untouched). It lowers each
+arm to a source node and converges them (N edges) into the mixer stage, then to a
+Sink — a real running `Task`. `Describe` shows the convergence; tested
+end-to-end (two audio sources → mixed `[150,150]` at a sink), `-race` clean.
+First-slice scope: frame-source arms → Sink.
+
 **Next slices:**
-1. `Mix` grammar + `OpJoin` IR: `Mix(...chains)` returns a stream builder; lower
-   N source-arm chains + a mixer node + N input edges into the pipeline Spec;
-   `Describe`/`Explain` show the join. (Lift the `len(job.inputs)!=1` /
-   `multi_input_unsupported` restriction into real join planning.)
+1. Decode/encode arms: `Mix(From(rtp1).Audio().Decode(), …).Encode(Opus).To(file)`
+   — extend the lowering to per-arm decode + post-mix encode (reuse the recipe
+   encode/destination path). Lift `len(job.inputs)!=1`/`multi_input_unsupported`
+   for the join case.
 2. Join shape-solving (theme A / gap #2): negotiate arm formats, insert
    resample/convert so the mixer's same-format precondition is guaranteed.
 3. `Composite` (video) + `Join(stage,…)` (custom N-input) on the same mechanism.

@@ -158,3 +158,110 @@ func cloneMixFrame(frame *av.Frame) *av.Frame {
 	}
 	return &clone
 }
+
+// Mix sums N synchronized audio source-chains into one stream delivered to a
+// Sink — the convergent dual of Branches (N→1). Each arm is a source chain such
+// as From(frameSource).Audio(); arms must have distinct stream ids and matching
+// S16 audio format. This is the thinnest multi-input entry: one symbol that
+// reuses the existing Job, so .To/Build/Run are unchanged. (First slice: frame
+// sources to a Sink; decode/encode arms and Composite build on the same OpJoin
+// mechanism next — see docs/MULTI_INPUT.md.)
+func Mix(arms ...*jobStreamBuilder) *mixStream {
+	return &mixStream{arms: arms}
+}
+
+type mixStream struct {
+	arms []*jobStreamBuilder
+}
+
+type mixSpec struct {
+	arms []*jobStreamBuilder
+	dest Destination
+}
+
+// To delivers the mixed stream to a destination and returns a Job, so the mix
+// runs through the same Build/Run as every other recipe.
+func (m *mixStream) To(dest Destination) *Job {
+	job := &Job{name: "mix", runtime: Default()}
+	if len(m.arms) < 2 {
+		job.setErr(&BuildError{Code: "mix_inputs", Operation: "build mix", Node: "mix", Reason: "mix requires at least two source arms", Cause: ErrUnsupportedBuild})
+		return job
+	}
+	job.mix = &mixSpec{arms: m.arms, dest: dest}
+	return job
+}
+
+func (j *Job) buildMix(ctx context.Context) (Task, error) {
+	if j.err != nil {
+		return nil, j.err
+	}
+	rt, ok := j.runtime.(*runtime)
+	if !ok {
+		return nil, ErrExpertRuntimeRequired
+	}
+	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "goav-mix", Buffer: rt.buffer, Realtime: rt.realtime})
+	if err != nil {
+		return nil, err
+	}
+	armRefs := make([]string, 0, len(j.mix.arms))
+	armIDs := make([]av.StreamID, 0, len(j.mix.arms))
+	seen := make(map[av.StreamID]struct{}, len(j.mix.arms))
+	for i := range j.mix.arms {
+		arm := j.mix.arms[i]
+		if arm == nil || arm.job == nil || len(arm.job.inputs) != 1 {
+			graph.Close()
+			return nil, &BuildError{Code: "mix_arm", Operation: "build mix", Node: "mix", Reason: "each mix arm must be a single-input source chain", Cause: ErrUnsupportedBuild}
+		}
+		source, streams, err := newCustomSource(arm.job.inputs[0])
+		if err != nil {
+			graph.Close()
+			return nil, err
+		}
+		if len(streams) == 0 {
+			source.Close()
+			graph.Close()
+			return nil, ErrNilSource
+		}
+		id := streams[0].ID
+		if _, dup := seen[id]; dup {
+			source.Close()
+			graph.Close()
+			return nil, &BuildError{Code: "mix_arm", Operation: "build mix", Node: string(id), Reason: "mix arms must have distinct stream ids", Cause: ErrUnsupportedBuild}
+		}
+		seen[id] = struct{}{}
+		ref, err := graph.AddSource(source, rt.buffer)
+		if err != nil {
+			source.Close()
+			graph.Close()
+			return nil, err
+		}
+		armRefs = append(armRefs, string(ref))
+		armIDs = append(armIDs, id)
+	}
+	mixRef, err := graph.AddStage(newAudioMixStage("mix", armIDs, av.StreamID("mix")), rt.buffer)
+	if err != nil {
+		graph.Close()
+		return nil, err
+	}
+	for i := range armRefs {
+		if err := graph.Connect(pipeline.Route{From: armRefs[i], To: []string{string(mixRef)}, Policy: pipeline.RouteAll}); err != nil {
+			graph.Close()
+			return nil, err
+		}
+	}
+	sink := j.mix.dest.spec.sink
+	if sink == nil {
+		graph.Close()
+		return nil, &BuildError{Code: "mix_destination", Operation: "build mix", Node: "mix", Reason: "mix destination must be a goav.Sink", Cause: ErrUnsupportedBuild}
+	}
+	sinkRef, err := graph.AddSink(sink, rt.buffer)
+	if err != nil {
+		graph.Close()
+		return nil, err
+	}
+	if err := graph.Connect(pipeline.Route{From: string(mixRef), To: []string{string(sinkRef)}, Policy: pipeline.RouteAll}); err != nil {
+		graph.Close()
+		return nil, err
+	}
+	return newTask(graph, rt), nil
+}
