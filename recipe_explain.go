@@ -148,21 +148,21 @@ func newPlanReport(operation string, resolved recipeResolved) (PlanReport, error
 		Intent:    cloneIntent(resolved.intent),
 		Graph:     graph,
 	}
-	plan := resolved.planIR()
+	work := resolved.workIR()
 	report.Inputs = explainInputs(resolved)
 	report.Streams = explainStreams(resolved.intent.Streams)
-	report.Taps = explainTaps(plan.Taps)
-	report.Branches = explainBranches(plan.Branches)
-	report.Destinations = explainDestinations(resolved.intent.Destinations, resolved.outputFormats, plan.Outputs)
-	report.Decisions = explainDecisions(plan.Decisions)
+	report.Taps = explainTaps(work.Taps)
+	report.Branches = explainBranches(work)
+	report.Destinations = explainDestinations(resolved.intent.Destinations, resolved.outputFormats, work.Destinations)
+	report.Decisions = explainDecisions(work.Decisions)
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, report)
-	report.Warnings = appendPlanDiagnostics(report.Warnings, plan.Diagnostics...)
+	report.Warnings = appendPlanDiagnostics(report.Warnings, work.Diagnostics...)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, muxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
 	report.Summary = explainSummary(report)
 	return report, nil
 }
 
-func explainTaps(taps []planTap) []TapInfo {
+func explainTaps(taps []workTap) []TapInfo {
 	reports := make([]TapInfo, 0, len(taps))
 	for i := range taps {
 		reports = append(reports, TapInfo{
@@ -288,31 +288,42 @@ func operationSpecDetail(operation OperationSpec) string {
 	}
 }
 
-func explainBranches(branches []planBranch) []BranchReport {
-	reports := make([]BranchReport, 0, len(branches))
-	for i := range branches {
-		branch := branches[i]
+func explainBranches(work workPlan) []BranchReport {
+	operations := workOperationsByID(work.Operations)
+	reports := make([]BranchReport, 0, len(work.Branches))
+	for i := range work.Branches {
+		branch := work.Branches[i]
+		destinations := make([]string, 0, len(branch.Destinations))
+		for _, id := range branch.Destinations {
+			destinations = append(destinations, workDestinationNameByID(work.Destinations, id))
+		}
 		reports = append(reports, BranchReport{
 			Name:         branch.Name,
 			Input:        branch.Input,
 			Stream:       branch.Stream,
-			Shape:        branch.Shape,
-			Operations:   explainOperations(branch.Operations),
-			Destinations: append([]string(nil), branch.Outputs...),
+			Shape:        branch.SourceShape,
+			Operations:   explainBranchOperations(branch, operations),
+			Destinations: destinations,
 		})
 	}
 	return reports
 }
 
-func explainOperations(operations []planOperation) []OperationReport {
-	reports := make([]OperationReport, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
+// explainBranchOperations renders a branch's operation rows from the work
+// plan; the terminal destination operations are reported as destinations, not
+// branch operations.
+func explainBranchOperations(branch workBranch, operations map[string]workOperation) []OperationReport {
+	reports := make([]OperationReport, 0, len(branch.Operations))
+	for _, id := range branch.Operations {
+		operation, ok := operations[id]
+		if !ok || workOperationTerminal(operation.Kind) {
+			continue
+		}
 		reports = append(reports, OperationReport{
 			Kind:      operation.Kind,
 			Component: operation.Component,
 			Detail:    operation.Detail,
-			Shape:     operation.Shape,
+			Shape:     operation.ShapeOut,
 			Shared:    operation.Shared,
 		})
 	}
@@ -327,9 +338,9 @@ func explainDecisions(decisions []planDecision) []Decision {
 	return reports
 }
 
-func explainDestinations(destinations []destinationIntent, outputFormats map[string]av.FormatID, planOutputs []planOutput) []DestinationReport {
+func explainDestinations(destinations []destinationIntent, outputFormats map[string]av.FormatID, workDestinations []workDestination) []DestinationReport {
 	reports := make([]DestinationReport, 0, len(destinations))
-	branchesByDestination := planOutputBranches(planOutputs)
+	branchesByDestination := workDestinationBranches(workDestinations)
 	for i := range destinations {
 		destination := destinations[i]
 		name := firstNonEmpty(destination.Name, destination.URI, fmt.Sprintf("destination-%d", i))
@@ -354,13 +365,13 @@ func explainDestinations(destinations []destinationIntent, outputFormats map[str
 	return reports
 }
 
-func planOutputBranches(outputs []planOutput) map[string][]string {
-	branches := make(map[string][]string, len(outputs))
-	for i := range outputs {
-		if len(outputs[i].BranchRefs) == 0 {
+func workDestinationBranches(destinations []workDestination) map[string][]string {
+	branches := make(map[string][]string, len(destinations))
+	for i := range destinations {
+		if len(destinations[i].Branches) == 0 {
 			continue
 		}
-		branches[outputs[i].Name] = append([]string(nil), outputs[i].BranchRefs...)
+		branches[destinations[i].Name] = append([]string(nil), destinations[i].Branches...)
 	}
 	return branches
 }

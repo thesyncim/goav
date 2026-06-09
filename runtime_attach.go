@@ -587,11 +587,11 @@ func runtimeMuxDestinationFormat(ctx context.Context, rt *runtime, dest destinat
 }
 
 func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, branches []string, streams []av.Stream, rt Runtime) (muxCompatibilityIssue, bool) {
-	output := planOutput{
-		Name:       destinationName,
-		Operation:  OpMux,
-		Format:     formatID,
-		BranchRefs: append([]string(nil), branches...),
+	output := workDestination{
+		Name:      destinationName,
+		Operation: OpMux,
+		Format:    formatID,
+		Branches:  append([]string(nil), branches...),
 	}
 	plannedStreams := make([]plannedMuxStream, 0, len(streams))
 	for i := range streams {

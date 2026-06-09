@@ -49,7 +49,7 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 		strings.Contains(text, "depacketizers=") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := job.plan()
 	if len(intent.Inputs) != 1 ||
 		intent.Inputs[0].Protocol != av.ProtocolWebRTC ||
 		intent.Inputs[0].Codec.ID != av.CodecVP8 {
@@ -139,7 +139,7 @@ func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
 		strings.Contains(text, "depacketizers=") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := job.plan()
 	if len(intent.Inputs) != 2 ||
 		intent.Inputs[0].Codec.ID != av.CodecOpus ||
 		intent.Inputs[1].Codec.ID != av.CodecVP8 {
@@ -240,7 +240,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 		RTP(receiver).Name("audio").Codec(codec.Opus()).RTPBuffer(RTPBufferLimits{MaxPackets: 2}),
 	).Copy().To(File("recording.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(runtime)
 
-	intent := job.Plan()
+	intent := job.plan()
 	if len(intent.Destinations) != 1 || intent.Destinations[0].Name != "recording.ogg" {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -318,7 +318,7 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 		!strings.Contains(text, "generated -> select-audio") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := job.plan()
 	if len(intent.Inputs) != 1 ||
 		intent.Inputs[0].Protocol != av.ProtocolCustom ||
 		intent.Inputs[0].Codec.ID != av.CodecOpus {
@@ -1110,7 +1110,7 @@ func TestRecordRecipeInputMIMEDrivesFormatProbe(t *testing.T) {
 	job := From(
 		FileInput("", strings.NewReader("")).MIME("audio/ogg"),
 	).Copy().To(File("recording.ogg", io.Discard)).UseRuntime(runtime)
-	intent := job.Plan()
+	intent := job.plan()
 	if len(intent.Inputs) != 1 || intent.Inputs[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -1143,7 +1143,7 @@ func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
 	job := From(
 		FileInput("input.ogg", strings.NewReader("")),
 	).Copy().To(File("", io.Discard, MIME("audio/ogg"))).UseRuntime(runtime)
-	intent := job.Plan()
+	intent := job.plan()
 	if len(intent.Destinations) != 1 || intent.Destinations[0].MIMEType != "audio/ogg" {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -1479,7 +1479,7 @@ func TestStreamRecipeEncodeToTypedDestinationRuns(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(target)
 
-	intent := job.Plan()
+	intent := job.plan()
 	if len(intent.Streams) != 1 ||
 		len(intent.Streams[0].Destinations) != 1 ||
 		intent.Streams[0].Destinations[0] != "archive.ogg" ||

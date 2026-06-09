@@ -267,7 +267,7 @@ func TestFromMultiInputPlanDedupesSharedDestination(t *testing.T) {
 	).
 		Video().Encode(codec.VP9()).To(out).
 		Audio().Encode(codec.Opus()).To(out)
-	intent := job.Plan()
+	intent := job.plan()
 	if len(intent.Inputs) != 2 || len(intent.Streams) != 2 {
 		t.Fatalf("inputs=%d streams=%d, want 2 and 2", len(intent.Inputs), len(intent.Streams))
 	}

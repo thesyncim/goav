@@ -28,39 +28,10 @@ const (
 	OpTap         OperationKind = "tap"
 )
 
-type mediaPlan struct {
-	Name        string
-	Inputs      []planInput
-	Streams     []planStream
-	Taps        []planTap
-	Branches    []planBranch
-	Outputs     []planOutput
-	Decisions   []planDecision
-	Diagnostics []PlanDiagnostic
-}
-
-type planTap struct {
-	Name      string
-	Node      pipeline.NodeRef
-	Domain    shape.MediaDomain
-	MediaKind av.MediaType
-	After     OperationKind
-	Shape     shape.Spec
-	Shared    bool
-}
-
-type planInput struct {
-	Name     string
-	Protocol av.ProtocolID
-	Realtime bool
-	Codec    av.CodecID
-}
-
-type planStream struct {
-	Name   string
-	Select StreamSelect
-}
-
+// planBranch, planOperation, and planOutput are the planner's per-branch
+// working set: the branch planners lower the intent into these intermediates
+// and composeWorkPlan flattens them into the workPlan — the single plan the
+// compile emits. They are never stored or rendered after composition.
 type planBranch struct {
 	Name       string
 	Input      string
@@ -93,50 +64,6 @@ type planDecision struct {
 	Message string
 }
 
-func buildMediaPlan(state *recipeCompileState) mediaPlan {
-	intent := state.intent
-	plan := mediaPlan{
-		Name: firstNonEmpty(intent.Name, state.operation, "job"),
-	}
-	plan.Inputs = planInputs(intent.Inputs)
-	plan.Streams = planStreams(intent.Streams)
-	plan.Outputs = planOutputs(intent.Destinations, state.outputFormatMap())
-	// The Explain-side mediaPlan plans every branch straight from intent.Streams:
-	// branchCompositionJob.Plan() populates each branch streamIntent with its full
-	// (shared-op-inherited) operation list, so the parallel branchComposePlan is no
-	// longer a source here — it remains only the Build-side lowerer input.
-	plan.Branches, plan.Decisions = planBranches(state, plan.Outputs)
-	plan.Taps = planTaps(plan.Branches)
-	plan.Outputs = planOutputsWithBranches(plan.Outputs, plan.Branches)
-	return plan
-}
-
-func planInputs(inputs []inputIntent) []planInput {
-	out := make([]planInput, 0, len(inputs))
-	for i := range inputs {
-		input := inputs[i]
-		out = append(out, planInput{
-			Name:     firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
-			Protocol: input.Protocol,
-			Realtime: input.Realtime,
-			Codec:    input.Codec.ID,
-		})
-	}
-	return out
-}
-
-func planStreams(streams []streamIntent) []planStream {
-	out := make([]planStream, 0, len(streams))
-	for i := range streams {
-		stream := streams[i]
-		out = append(out, planStream{
-			Name:   firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("stream-%d", i)),
-			Select: stream.Select,
-		})
-	}
-	return out
-}
-
 func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []planOutput {
 	out := make([]planOutput, 0, len(outputs))
 	for i := range outputs {
@@ -163,8 +90,8 @@ func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []
 // planBranchFromStreamIntent plans one branch from a resolved stream intent —
 // the single per-branch planning body. Both planning sources (direct streams
 // and a branchComposePlan converted via streamIntentsFromBranchComposePlan)
-// reach it through planBranchesFromStreamIntents, so the Explain-side mediaPlan
-// has one branch planner (NORTH_STAR step 3).
+// reach it through planBranchesFromStreamIntents, so the work plan has one
+// branch planner (NORTH_STAR step 3).
 func planBranchFromStreamIntent(state *recipeCompileState, stream streamIntent, index int, outputs []planOutput) (planBranch, []planDecision) {
 	var spec shape.Spec
 	sourceShape, sourceShapeOK := jobStreamCustomSourceShape(state, stream)
@@ -587,8 +514,8 @@ func planPostEncodeTapOperations(stream streamIntent) []planOperation {
 	return operations
 }
 
-func planTaps(branches []planBranch) []planTap {
-	var taps []planTap
+func planTaps(branches []planBranch) []workTap {
+	var taps []workTap
 	for i := range branches {
 		branch := branches[i]
 		currentShape := branch.Shape
@@ -622,7 +549,7 @@ func planTaps(branches []planBranch) []planTap {
 				tapShape = currentShape
 			}
 			tapShape = normalizeTapShape(tapShape)
-			taps = append(taps, planTap{
+			taps = append(taps, workTap{
 				Name:      name,
 				Node:      pipeline.NodeRef(currentNode),
 				Domain:    tapShape.Domain,
@@ -876,61 +803,6 @@ func planOutputsWithBranches(outputs []planOutput, branches []planBranch) []plan
 		}
 	}
 	return outputs
-}
-
-func clonePlanInputs(inputs []planInput) []planInput {
-	if len(inputs) == 0 {
-		return nil
-	}
-	return append([]planInput(nil), inputs...)
-}
-
-func clonePlanStreams(streams []planStream) []planStream {
-	if len(streams) == 0 {
-		return nil
-	}
-	return append([]planStream(nil), streams...)
-}
-
-func clonePlanTaps(taps []planTap) []planTap {
-	if len(taps) == 0 {
-		return nil
-	}
-	return append([]planTap(nil), taps...)
-}
-
-func clonePlanBranches(branches []planBranch) []planBranch {
-	if len(branches) == 0 {
-		return nil
-	}
-	out := make([]planBranch, 0, len(branches))
-	for i := range branches {
-		branch := branches[i]
-		branch.Operations = clonePlanOperations(branch.Operations)
-		branch.Outputs = append([]string(nil), branch.Outputs...)
-		out = append(out, branch)
-	}
-	return out
-}
-
-func clonePlanOperations(operations []planOperation) []planOperation {
-	if len(operations) == 0 {
-		return nil
-	}
-	return append([]planOperation(nil), operations...)
-}
-
-func clonePlanOutputs(outputs []planOutput) []planOutput {
-	if len(outputs) == 0 {
-		return nil
-	}
-	out := make([]planOutput, 0, len(outputs))
-	for i := range outputs {
-		output := outputs[i]
-		output.BranchRefs = append([]string(nil), output.BranchRefs...)
-		out = append(out, output)
-	}
-	return out
 }
 
 func clonePlanDecisions(decisions []planDecision) []planDecision {

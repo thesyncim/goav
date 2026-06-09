@@ -501,9 +501,9 @@ func (p *attachPlan) finalizeBranch(index int, spec BranchSpec, destinations []a
 			}
 			operation.Node = node
 			operation.Name = firstNonEmpty(node.String(), destinationName)
-			operation.Destinations = []string{destinationName}
+			operation.Destinations = []string{workDestinationID(destinationName)}
 			p.work.Destinations = append(p.work.Destinations, workDestination{
-				ID:        workDestinationID(destinationName, terminalIndex),
+				ID:        workDestinationID(destinationName),
 				Name:      destinationName,
 				Operation: operation.Kind,
 				Component: operation.Component,
@@ -545,7 +545,7 @@ func (p *attachPlan) finalizeBranch(index int, spec BranchSpec, destinations []a
 		Name:         name,
 		SourceShape:  normalizeTapShape(runtimeBranchAnchorShape(anchor)),
 		Operations:   ids,
-		Destinations: attachDestinationNames(destinations),
+		Destinations: attachDestinationIDs(destinations),
 	})
 	branch.operations = [2]int{opStart, len(p.work.Operations)}
 	branch.edges = [2]int{edgeStart, len(p.work.Edges)}
@@ -627,13 +627,15 @@ func attachDestinationComponent(destination attachDestination) string {
 	return "mux"
 }
 
-func attachDestinationNames(destinations []attachDestination) []string {
+// attachDestinationIDs derives the stable destination IDs for a branch's
+// destinations from their handle labels — the patch routes by ID, not name.
+func attachDestinationIDs(destinations []attachDestination) []string {
 	if len(destinations) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(destinations))
 	for i := range destinations {
-		out = append(out, firstNonEmpty(destinations[i].name, destinations[i].dest.label("destination")))
+		out = append(out, workDestinationID(firstNonEmpty(destinations[i].name, destinations[i].dest.label("destination"))))
 	}
 	return out
 }
@@ -645,10 +647,6 @@ func attachDestinationsHaveMux(destinations []attachDestination) bool {
 		}
 	}
 	return false
-}
-
-func workOperationIDForKind(branch string, index int, kind OperationKind) string {
-	return fmt.Sprintf("%s/%03d/%s", firstNonEmpty(branch, "branch"), index, kind)
 }
 
 func workPatchRollbackFromBranches(operations []workOperation, destinations []workDestination) []workRollbackStep {

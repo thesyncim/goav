@@ -1371,7 +1371,7 @@ func (j *Job) checkSharedStreamDestination(current *jobStreamBuild, output desti
 	return nil
 }
 
-func (j *Job) Plan() Intent {
+func (j *Job) plan() Intent {
 	intent := Intent{Name: j.name}
 	if runtime, ok := j.runtime.(*runtime); ok {
 		intent.Policies.Realtime = runtime.realtime
@@ -3667,7 +3667,7 @@ func destinationIdentity(destination namedDestinationSpec) string {
 
 const branchCompositionOperation = "build branch composition"
 
-func (j *branchCompositionJob) Plan() Intent {
+func (j *branchCompositionJob) plan() Intent {
 	intent := Intent{
 		Name:   firstNonEmpty(j.name, "branch-composition"),
 		Inputs: []inputIntent{j.input.intent()},
@@ -3688,7 +3688,7 @@ func (j *branchCompositionJob) composePlan() (branchComposePlan, error) {
 	if j == nil {
 		return branchComposePlan{}, nil
 	}
-	return planBranchCompositionRecipe(j.Plan(), j.input, j.outputs, j.streams)
+	return planBranchCompositionRecipe(j.plan(), j.input, j.outputs, j.streams)
 }
 
 func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []namedDestinationSpec, branchBuilds []streamBuild) (branchComposePlan, error) {

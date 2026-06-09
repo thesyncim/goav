@@ -201,18 +201,19 @@ func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	installTaskTaps(task, r.planIR().Taps)
+	installTaskTaps(task, r.graphPlan.work.Taps)
 	return task, nil
 }
 
-func (r recipeResolved) planIR() mediaPlan {
+// workIR is the compiled work plan — the single plan views render from.
+func (r recipeResolved) workIR() workPlan {
 	if r.graphPlan.ready() {
-		return r.graphPlan.mediaPlan()
+		return r.graphPlan.workPlan()
 	}
-	return mediaPlan{}
+	return workPlan{}
 }
 
-func installTaskTaps(mediaTask Task, taps []planTap) {
+func installTaskTaps(mediaTask Task, taps []workTap) {
 	if len(taps) == 0 {
 		return
 	}
@@ -223,7 +224,7 @@ func installTaskTaps(mediaTask Task, taps []planTap) {
 	runtimeTask.taps = tapInfosFromPlan(taps)
 }
 
-func tapInfosFromPlan(taps []planTap) []TapInfo {
+func tapInfosFromPlan(taps []workTap) []TapInfo {
 	out := make([]TapInfo, 0, len(taps))
 	seen := make(map[string]struct{}, len(taps))
 	for i := range taps {
@@ -277,7 +278,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 	}
 	if job != nil {
 		state.jobPresent = true
-		state.intent = job.Plan()
+		state.intent = job.plan()
 		state.runtime = job.runtime
 		state.recipeErr = job.err
 		state.inputAttachments = append([]InputSpec(nil), job.inputs...)
@@ -335,7 +336,7 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 	}
 	if job != nil {
 		state.branchCompositionPresent = true
-		state.intent = job.Plan()
+		state.intent = job.plan()
 		state.runtime = job.runtime
 		state.recipeErr = job.err
 		state.branchInputAttachment = job.input

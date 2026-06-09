@@ -365,7 +365,7 @@ func TestSourceInputIntentUsesCustomProtocol(t *testing.T) {
 			return nil
 		})))
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Inputs) != 1 ||
 		intent.Inputs[0].Name != "generated" ||
 		intent.Inputs[0].Protocol != av.ProtocolCustom ||
@@ -539,7 +539,7 @@ func (j *testBranchJob) materialize() *goav.Job {
 }
 
 func (j *testBranchJob) Plan() goav.Intent {
-	return j.materialize().Plan()
+	return goav.JobPlanForTest(j.materialize())
 }
 
 func (j *testBranchJob) Explain(ctx context.Context) (goav.PlanReport, error) {
@@ -1671,7 +1671,7 @@ func TestTypedTapRefsDriveStreamIntent(t *testing.T) {
 		Tap(encoded).
 		To(goav.File("encoded.ogg", io.Discard))
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2504,7 +2504,7 @@ func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	if !strings.Contains(specText(spec), "input.ogg -> recording.ogg") {
 		t.Fatalf("spec:\n%s", specText(spec))
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if intent.Name != "from" || len(intent.Inputs) != 1 || len(intent.Destinations) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2516,7 +2516,7 @@ func TestRecordRecipeCanWriteToTypedDestination(t *testing.T) {
 		Copy().
 		To(target)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Destinations) != 1 || intent.Destinations[0].Name != "recording.ivf" {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2547,7 +2547,7 @@ func TestReadmeRecordFanoutRecipeIsSmall(t *testing.T) {
 		!strings.Contains(text, "input.ivf -> preview.ivf") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if intent.Name != "from" || len(intent.Inputs) != 1 || len(intent.Destinations) != 2 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2571,7 +2571,7 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 		!strings.Contains(text, "decode-audio -> frames") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 || intent.Streams[0].Select.Type != "audio" || !intent.Streams[0].Decode {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2587,7 +2587,7 @@ func TestInferredTapAdoptsChainDomain(t *testing.T) {
 		Encode(codec.VP9(codec.Bitrate(600_000))).
 		To(goav.File("out.webm", io.Discard))
 	frameDomain := shape.MediaDomain("")
-	for _, tap := range frameJob.Plan().Streams[0].Taps {
+	for _, tap := range goav.JobPlanForTest(frameJob).Streams[0].Taps {
 		if tap.Name == "preview" {
 			frameDomain = tap.Domain
 			break
@@ -2607,7 +2607,7 @@ func TestInferredTapAdoptsChainDomain(t *testing.T) {
 				To(goav.File("archive.ogg", io.Discard)),
 		)
 	pktDomain := shape.MediaDomain("")
-	for _, tap := range pktJob.Plan().Streams[0].Taps {
+	for _, tap := range goav.JobPlanForTest(pktJob).Streams[0].Taps {
 		if tap.Name == "encoded" {
 			pktDomain = tap.Domain
 			break
@@ -2641,7 +2641,7 @@ func TestReadmeCustomStageToCustomSinkRecipeIsSmall(t *testing.T) {
 		!strings.Contains(text, "meter -> levels") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 || !intent.Streams[0].Decode || intent.Streams[0].Encode.ID != "" ||
 		len(intent.Destinations) != 1 || intent.Destinations[0].Name != "levels" {
 		t.Fatalf("intent: %+v", intent)
@@ -2666,7 +2666,7 @@ func TestStreamRecipeNamesCodecChangePolicy(t *testing.T) {
 	if !strings.Contains(text, "codec-change=rebind-compatible,request-keyframe,drop-until-sync,fail-different-codec") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 || intent.Streams[0].CodecChange != policy {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2683,7 +2683,7 @@ func TestAudioChainAppliesToStreamRecipeIntent(t *testing.T) {
 		Apply(voice).
 		To(goav.File("voice.ogg", io.Discard))
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2710,7 +2710,7 @@ func TestStreamRecipeCanWriteToTypedDestination(t *testing.T) {
 		Apply(voice).
 		To(voiceOut)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 || len(intent.Destinations) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2746,7 +2746,7 @@ func TestToAcceptsDestinationSlices(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(destinations...)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 ||
 		!equalStrings(intent.Streams[0].Destinations, []string{"archive.ogg", "stats"}) ||
 		len(intent.Destinations) != 2 ||
@@ -2767,7 +2767,7 @@ func TestSharedDestinationHandleGroupsBranches(t *testing.T) {
 			goav.Branch("v360").Resize(640, 360).Encode(codec.VP8(codec.Bitrate(600_000))).To(web),
 		)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 2 || len(intent.Destinations) != 1 || intent.Destinations[0].Name != "web.ivf" {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2825,7 +2825,7 @@ func TestExternalCustomDestinationCanBeDestined(t *testing.T) {
 		Copy().
 		To(target)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Destinations) != 1 ||
 		intent.Destinations[0].Name != "custom" ||
 		intent.Destinations[0].Format != av.FormatIVF ||
@@ -2882,7 +2882,7 @@ func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
 		Apply(voice).
 		To(goav.File("voice.ogg", io.Discard))
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2911,7 +2911,7 @@ func TestFlowTapAfterEncodeIsPacketTap(t *testing.T) {
 		Apply(voice).
 		To(goav.File("voice.ogg", io.Discard))
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2944,7 +2944,7 @@ func TestFlowCopyAppliesToStreamRecipeIntent(t *testing.T) {
 		Apply(packets).
 		To(goav.File("copy.ogg", io.Discard))
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -2989,7 +2989,7 @@ func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 	if reflect.TypeOf(job) != reflect.TypeOf((*goav.Job)(nil)) {
 		t.Fatalf("Branches returned %T, want *goav.Job", job)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 2 || len(intent.Destinations) != 2 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -3090,7 +3090,7 @@ func TestBranchesGroupSelectedStreams(t *testing.T) {
 				To(watch, mobile),
 		)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 3 || len(intent.Destinations) != 2 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -3155,7 +3155,7 @@ func TestBranchAfterDecodeCustomStageUsesOrderedOperations(t *testing.T) {
 				To(web),
 		)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -3196,7 +3196,7 @@ func TestBranchTapAfterEncodeIsPacketTap(t *testing.T) {
 				To(archive),
 		)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
 		t.Fatalf("streams: %+v", intent.Streams)
 	}
@@ -3241,7 +3241,7 @@ func TestBranchCustomStageUsesOrderedOperations(t *testing.T) {
 				To(web),
 		)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -3339,7 +3339,7 @@ func TestFlowBranchSnapshotsBuilderState(t *testing.T) {
 		Audio().
 		Branches(branch)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 ||
 		len(transformOperationsForTest(intent.Streams[0].Operations)) != 1 ||
 		transformOperationsForTest(intent.Streams[0].Operations)[0].Resample.SampleRate != 16_000 {
@@ -3362,7 +3362,7 @@ func TestFlowDecodeAppliesToPacketBranchIntent(t *testing.T) {
 		Copy().
 		Branches(goav.Branch("voice").Apply(flow).To(target))
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -3396,7 +3396,7 @@ func TestFlowDecodeAppliesToStreamRecipeIntent(t *testing.T) {
 			return nil
 		})))
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 || len(intent.Destinations) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -3636,7 +3636,7 @@ func TestFlowBranchesDescribeLiveInputBranches(t *testing.T) {
 			t.Fatalf("spec missing %q:\n%s", want, text)
 		}
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 2 || len(intent.Destinations) != 2 ||
 		intent.Streams[0].Select.Type != av.MediaAudio ||
 		intent.Streams[0].Encode.ID != av.CodecOpus ||
@@ -3684,7 +3684,7 @@ func TestReadmeDecodeShortcutUsesSinkDestination(t *testing.T) {
 		!strings.Contains(text, "decode -> frames") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 || !intent.Streams[0].Decode {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -4156,7 +4156,7 @@ func TestReadmeAudioResampleEncodeRecipeIsSmall(t *testing.T) {
 		!strings.Contains(text, "1 ch") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 || len(transformOperationsForTest(intent.Streams[0].Operations)) != 1 || transformOperationsForTest(intent.Streams[0].Operations)[0].Resample == nil {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -4179,7 +4179,7 @@ func TestReadmeVideoResizeEncodeRecipeIsSmall(t *testing.T) {
 		!strings.Contains(text, "1280x720") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 || len(transformOperationsForTest(intent.Streams[0].Operations)) != 1 || transformOperationsForTest(intent.Streams[0].Operations)[0].Resize == nil {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -4237,7 +4237,7 @@ func TestStreamRecipeIntentOperationsImplyDecode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			intent := tt.job.Plan()
+			intent := goav.JobPlanForTest(tt.job)
 			if len(intent.Streams) != 1 || !intent.Streams[0].Decode {
 				t.Fatalf("intent: %+v", intent)
 			}
@@ -5155,7 +5155,7 @@ func TestBranchCompositionAcceptsSinkDestination(t *testing.T) {
 				}))),
 		)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 ||
 		intent.Streams[0].Name != "preview" ||
 		intent.Streams[0].Encode.ID != "" ||
@@ -5337,7 +5337,7 @@ func TestBranchCompositionCanSplitFromEarlierTap(t *testing.T) {
 				To(web),
 		)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 2 {
 		t.Fatalf("intent streams = %+v, want 2", intent.Streams)
 	}
@@ -5470,7 +5470,7 @@ func TestBranchCompositionSharesCurrentPointWithoutExplicitTap(t *testing.T) {
 				To(thumbnail),
 		)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 2 || intent.Streams[0].From.Name() != "" || intent.Streams[1].From.Name() != "" {
 		t.Fatalf("intent streams = %+v, want unnamed current-point branch split", intent.Streams)
 	}
@@ -5561,7 +5561,7 @@ func TestBranchCompositionAllowsPacketCopyBranches(t *testing.T) {
 			goav.Branch("packets").To(packets),
 		)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 2 ||
 		intent.Streams[0].From.Name() != "video.packets" ||
 		intent.Streams[0].From.Domain() != shape.DomainPacket ||

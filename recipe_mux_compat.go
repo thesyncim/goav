@@ -40,16 +40,15 @@ func stateMuxCompatibilityIssues(state *recipeCompileState) []muxCompatibilityIs
 	if state == nil || !state.specReady || state.specOrigin != graphSpecOriginGraphPlan {
 		return nil
 	}
-	plan := state.graphPlan.mediaPlan()
-	return muxCompatibilityIssues(plan, state.intent, state.inputProbes, state.branchInputProbe, state.branchInputProbeReady, state.runtime)
+	return muxCompatibilityIssues(state.graphPlan.work, state.intent, state.inputProbes, state.branchInputProbe, state.branchInputProbeReady, state.runtime)
 }
 
 func resolvedMuxCompatibilityIssues(resolved recipeResolved) []muxCompatibilityIssue {
-	return muxCompatibilityIssues(resolved.planIR(), resolved.intent, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady, resolved.runtime)
+	return muxCompatibilityIssues(resolved.workIR(), resolved.intent, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady, resolved.runtime)
 }
 
 func muxCompatibilityIssues(
-	plan mediaPlan,
+	work workPlan,
 	intent Intent,
 	inputProbes []format.ProbeResult,
 	transcodeProbe format.ProbeResult,
@@ -57,13 +56,14 @@ func muxCompatibilityIssues(
 	rt Runtime,
 ) []muxCompatibilityIssue {
 	var issues []muxCompatibilityIssue
-	branches := planBranchesByName(plan.Branches)
-	for i := range plan.Outputs {
-		output := plan.Outputs[i]
+	branches := workBranchesByName(work.Branches)
+	operations := workOperationsByID(work.Operations)
+	for i := range work.Destinations {
+		output := work.Destinations[i]
 		if output.Operation != OpMux || output.Format == "" {
 			continue
 		}
-		streams := muxOutputStreams(output, branches, plan.Branches, intent, inputProbes, transcodeProbe, transcodeProbeReady)
+		streams := muxOutputStreams(output, branches, work.Branches, operations, intent, inputProbes, transcodeProbe, transcodeProbeReady)
 		if issue, ok := checkKnownMuxCompatibility(output, streams, rt); ok {
 			issues = append(issues, issue)
 		}
@@ -71,41 +71,31 @@ func muxCompatibilityIssues(
 	return issues
 }
 
-func planBranchesByName(branches []planBranch) map[string]planBranch {
-	out := make(map[string]planBranch, len(branches))
-	for i := range branches {
-		if branches[i].Name == "" {
-			continue
-		}
-		out[branches[i].Name] = branches[i]
-	}
-	return out
-}
-
 func muxOutputStreams(
-	output planOutput,
-	branchesByName map[string]planBranch,
-	branches []planBranch,
+	output workDestination,
+	branchesByName map[string]workBranch,
+	branches []workBranch,
+	operations map[string]workOperation,
 	intent Intent,
 	inputProbes []format.ProbeResult,
 	transcodeProbe format.ProbeResult,
 	transcodeProbeReady bool,
 ) []plannedMuxStream {
-	streams := make([]plannedMuxStream, 0, len(output.BranchRefs))
-	for i := range output.BranchRefs {
-		branchName := output.BranchRefs[i]
+	streams := make([]plannedMuxStream, 0, len(output.Branches))
+	for i := range output.Branches {
+		branchName := output.Branches[i]
 		branch, ok := branchesByName[branchName]
 		if !ok {
 			continue
 		}
-		branchIndex := planBranchIndex(branches, branchName)
+		branchIndex := workBranchIndex(branches, branchName)
 		stream, streamOK := planStreamForBranch(intent.Streams, branch, branchIndex)
-		streams = append(streams, muxStreamForBranch(branch, branchIndex, stream, streamOK, intent, inputProbes, transcodeProbe, transcodeProbeReady))
+		streams = append(streams, muxStreamForBranch(branch, branchIndex, operations, stream, streamOK, intent, inputProbes, transcodeProbe, transcodeProbeReady))
 	}
 	return streams
 }
 
-func planBranchIndex(branches []planBranch, name string) int {
+func workBranchIndex(branches []workBranch, name string) int {
 	for i := range branches {
 		if branches[i].Name == name {
 			return i
@@ -114,7 +104,7 @@ func planBranchIndex(branches []planBranch, name string) int {
 	return -1
 }
 
-func planStreamForBranch(streams []streamIntent, branch planBranch, index int) (streamIntent, bool) {
+func planStreamForBranch(streams []streamIntent, branch workBranch, index int) (streamIntent, bool) {
 	for i := range streams {
 		if reportBranchNameForStream(streams[i], i) == branch.Name {
 			return streams[i], true
@@ -127,8 +117,9 @@ func planStreamForBranch(streams []streamIntent, branch planBranch, index int) (
 }
 
 func muxStreamForBranch(
-	branch planBranch,
+	branch workBranch,
 	branchIndex int,
+	operations map[string]workOperation,
 	stream streamIntent,
 	streamOK bool,
 	intent Intent,
@@ -137,9 +128,9 @@ func muxStreamForBranch(
 	transcodeProbeReady bool,
 ) plannedMuxStream {
 	out := plannedMuxStream{Branch: firstNonEmpty(branch.Name, fmt.Sprintf("branch-%d", branchIndex))}
-	for i := range branch.Operations {
-		operation := branch.Operations[i]
-		if operation.Kind != OpEncode {
+	for _, id := range branch.Operations {
+		operation, ok := operations[id]
+		if !ok || operation.Kind != OpEncode {
 			continue
 		}
 		if streamOK && stream.Encode.ID != "" {
@@ -159,7 +150,7 @@ func muxStreamForBranch(
 }
 
 func copyMuxStreamCodec(
-	branch planBranch,
+	branch workBranch,
 	stream streamIntent,
 	streamOK bool,
 	intent Intent,
@@ -183,7 +174,7 @@ func copyMuxStreamCodec(
 	return probedMuxInputCodec(inputProbes, branch)
 }
 
-func liveMuxInputCodec(inputs []inputIntent, branch planBranch) (av.CodecID, av.MediaType, bool) {
+func liveMuxInputCodec(inputs []inputIntent, branch workBranch) (av.CodecID, av.MediaType, bool) {
 	for i := range inputs {
 		input := inputs[i]
 		if !input.Realtime || input.Codec.ID == "" {
@@ -199,7 +190,7 @@ func liveMuxInputCodec(inputs []inputIntent, branch planBranch) (av.CodecID, av.
 	return "", "", false
 }
 
-func probedMuxInputCodec(probes []format.ProbeResult, branch planBranch) (av.CodecID, av.MediaType, bool) {
+func probedMuxInputCodec(probes []format.ProbeResult, branch workBranch) (av.CodecID, av.MediaType, bool) {
 	selector := av.StreamSelector{
 		ID:       branch.Stream.ID,
 		Index:    branch.Stream.Index,
@@ -227,7 +218,7 @@ func probedMuxInputCodec(probes []format.ProbeResult, branch planBranch) (av.Cod
 	return stream.Codec.ID, media, true
 }
 
-func checkKnownMuxCompatibility(output planOutput, streams []plannedMuxStream, rt Runtime) (muxCompatibilityIssue, bool) {
+func checkKnownMuxCompatibility(output workDestination, streams []plannedMuxStream, rt Runtime) (muxCompatibilityIssue, bool) {
 	if desc, ok := muxerDescriptorForRuntime(rt, output.Format); ok {
 		if issue, checked := checkDescriptorMuxCompatibility(output, streams, desc); checked {
 			return issue, true
@@ -264,7 +255,7 @@ func muxerDescriptorForRuntime(rt Runtime, formatID av.FormatID) (format.Descrip
 	return desc, true
 }
 
-func checkDescriptorMuxCompatibility(output planOutput, streams []plannedMuxStream, desc format.Descriptor) (muxCompatibilityIssue, bool) {
+func checkDescriptorMuxCompatibility(output workDestination, streams []plannedMuxStream, desc format.Descriptor) (muxCompatibilityIssue, bool) {
 	if desc.MinStreams > 0 && len(streams) < desc.MinStreams {
 		return newMuxCompatibilityIssue(output, streams, descriptorMuxReason(output.Format, desc)), true
 	}
@@ -354,7 +345,7 @@ func joinCodecIDs(values []av.CodecID) string {
 	return strings.Join(out, ",")
 }
 
-func checkSingleVideoMuxCompatibility(output planOutput, streams []plannedMuxStream, codecs map[av.CodecID]bool, reason string) (muxCompatibilityIssue, bool) {
+func checkSingleVideoMuxCompatibility(output workDestination, streams []plannedMuxStream, codecs map[av.CodecID]bool, reason string) (muxCompatibilityIssue, bool) {
 	if len(streams) != 1 {
 		return newMuxCompatibilityIssue(output, streams, reason), true
 	}
@@ -371,7 +362,7 @@ func checkSingleVideoMuxCompatibility(output planOutput, streams []plannedMuxStr
 	return muxCompatibilityIssue{}, false
 }
 
-func newMuxCompatibilityIssue(output planOutput, streams []plannedMuxStream, reason string) muxCompatibilityIssue {
+func newMuxCompatibilityIssue(output workDestination, streams []plannedMuxStream, reason string) muxCompatibilityIssue {
 	return muxCompatibilityIssue{
 		Code:        "destination_mux_incompatible",
 		Destination: output.Name,
@@ -382,7 +373,7 @@ func newMuxCompatibilityIssue(output planOutput, streams []plannedMuxStream, rea
 	}
 }
 
-func muxCompatibilityDetails(output planOutput, streams []plannedMuxStream) []string {
+func muxCompatibilityDetails(output workDestination, streams []plannedMuxStream) []string {
 	details := []string{
 		"destination=" + output.Name,
 		"format=" + string(output.Format),

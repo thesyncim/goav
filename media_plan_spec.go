@@ -3,7 +3,6 @@ package goav
 import (
 	"context"
 	"strconv"
-	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
@@ -20,33 +19,16 @@ type graphPlanLowerer interface {
 	lower(context.Context, graphPlan, pipeline.Graph, *builder) error
 }
 
+// graphPlan binds the compiled work plan — the single executable truth built
+// once by the compile — to the pipeline spec and the lowerer that executes it.
 type graphPlan struct {
-	runtime     *runtime
-	name        string
-	realtime    bool
-	nodes       []pipeline.NodeSpec
-	edges       []pipeline.EdgeSpec
-	operations  []graphPlanOperation
-	work        workPlan
-	inputs      []planInput
-	streams     []planStream
-	taps        []planTap
-	branches    []planBranch
-	outputs     []planOutput
-	decisions   []planDecision
-	diagnostics []PlanDiagnostic
-	lowerer     graphPlanLowerer
-}
-
-type graphPlanOperation struct {
-	Branch       string
-	Node         pipeline.NodeRef
-	Kind         OperationKind
-	Component    string
-	Detail       string
-	Shape        shape.Spec
-	Destinations []string
-	Shared       bool
+	runtime  *runtime
+	name     string
+	realtime bool
+	nodes    []pipeline.NodeSpec
+	edges    []pipeline.EdgeSpec
+	work     workPlan
+	lowerer  graphPlanLowerer
 }
 
 func (p graphPlan) ready() bool {
@@ -83,155 +65,27 @@ func (p graphPlan) spec() pipeline.Spec {
 	}
 }
 
-func (p graphPlan) mediaPlan() mediaPlan {
-	return mediaPlan{
-		Name:        p.name,
-		Inputs:      clonePlanInputs(p.inputs),
-		Streams:     clonePlanStreams(p.streams),
-		Taps:        clonePlanTaps(p.taps),
-		Branches:    clonePlanBranches(p.branches),
-		Outputs:     clonePlanOutputs(p.outputs),
-		Decisions:   clonePlanDecisions(p.decisions),
-		Diagnostics: clonePlanDiagnostics(p.diagnostics),
-	}
-}
-
-func (p graphPlan) operationPlan() []graphPlanOperation {
-	return cloneGraphPlanOperations(p.operations)
-}
-
 func (p graphPlan) workPlan() workPlan {
 	return cloneWorkPlan(p.work)
 }
 
-func newGraphPlan(runtime *runtime, spec pipeline.Spec, plan mediaPlan, lowerer graphPlanLowerer) graphPlan {
-	operations := graphPlanOperationsFromMediaPlan(spec, plan)
+func newGraphPlan(runtime *runtime, spec pipeline.Spec, work workPlan, lowerer graphPlanLowerer) graphPlan {
 	return graphPlan{
-		runtime:     runtime,
-		name:        firstNonEmpty(spec.Name, plan.Name, "goav"),
-		realtime:    spec.Realtime,
-		nodes:       append([]pipeline.NodeSpec(nil), spec.Nodes...),
-		edges:       append([]pipeline.EdgeSpec(nil), spec.Edges...),
-		operations:  operations,
-		work:        workPlanFromMediaPlan(spec, plan, operations),
-		inputs:      clonePlanInputs(plan.Inputs),
-		streams:     clonePlanStreams(plan.Streams),
-		taps:        clonePlanTaps(plan.Taps),
-		branches:    clonePlanBranches(plan.Branches),
-		outputs:     clonePlanOutputs(plan.Outputs),
-		decisions:   clonePlanDecisions(plan.Decisions),
-		diagnostics: clonePlanDiagnostics(plan.Diagnostics),
-		lowerer:     lowerer,
+		runtime:  runtime,
+		name:     work.Name,
+		realtime: spec.Realtime,
+		nodes:    append([]pipeline.NodeSpec(nil), spec.Nodes...),
+		edges:    append([]pipeline.EdgeSpec(nil), spec.Edges...),
+		work:     work,
+		lowerer:  lowerer,
 	}
-}
-
-func graphPlanOperationsFromMediaPlan(spec pipeline.Spec, plan mediaPlan) []graphPlanOperation {
-	if len(plan.Branches) == 0 {
-		return nil
-	}
-	outputs := planOutputsByName(plan.Outputs)
-	outputNodes := graphPlanOutputNodesByName(spec, plan.Outputs)
-	var operations []graphPlanOperation
-	for i := range plan.Branches {
-		branch := plan.Branches[i]
-		for j := range branch.Operations {
-			operation := branch.Operations[j]
-			node := pipeline.NodeRef(planOperationNodeName(branch, operation, j))
-			if operation.Kind == OpShape {
-				node = ""
-			}
-			operations = append(operations, graphPlanOperation{
-				Branch:    branch.Name,
-				Node:      node,
-				Kind:      operation.Kind,
-				Component: operation.Component,
-				Detail:    operation.Detail,
-				Shape:     operation.Shape,
-				Shared:    operation.Shared,
-			})
-		}
-		for _, destination := range branch.Outputs {
-			output := outputs[destination]
-			node := outputNodes[destination]
-			if node == "" {
-				node = pipeline.NodeRef(firstNonEmpty(output.Name, destination))
-			}
-			operations = append(operations, graphPlanOperation{
-				Branch:       branch.Name,
-				Node:         node,
-				Kind:         output.Operation,
-				Component:    output.Component,
-				Detail:       "destination",
-				Destinations: []string{destination},
-			})
-		}
-	}
-	return operations
-}
-
-func graphPlanOutputNodesByName(spec pipeline.Spec, outputs []planOutput) map[string]pipeline.NodeRef {
-	out := make(map[string]pipeline.NodeRef, len(outputs))
-	used := make(map[int]struct{}, len(outputs))
-	for i := range outputs {
-		output := outputs[i]
-		if output.Name == "" {
-			continue
-		}
-		for j := range spec.Nodes {
-			if _, ok := used[j]; ok {
-				continue
-			}
-			if !graphPlanNodeMatchesOutput(spec.Nodes[j], output) {
-				continue
-			}
-			out[output.Name] = pipeline.NodeRef(spec.Nodes[j].Name)
-			used[j] = struct{}{}
-			break
-		}
-	}
-	return out
-}
-
-func graphPlanNodeMatchesOutput(node pipeline.NodeSpec, output planOutput) bool {
-	switch output.Operation {
-	case OpSink:
-		return node.Kind == pipeline.NodeSink
-	case OpMux, OpWrite:
-		return node.Kind == pipeline.NodeStage && strings.HasPrefix(node.Detail, "mux")
-	default:
-		return false
-	}
-}
-
-func planOutputsByName(outputs []planOutput) map[string]planOutput {
-	out := make(map[string]planOutput, len(outputs))
-	for i := range outputs {
-		if outputs[i].Name == "" {
-			continue
-		}
-		out[outputs[i].Name] = outputs[i]
-	}
-	return out
-}
-
-func cloneGraphPlanOperations(operations []graphPlanOperation) []graphPlanOperation {
-	if len(operations) == 0 {
-		return nil
-	}
-	out := make([]graphPlanOperation, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
-		operation.Destinations = append([]string(nil), operation.Destinations...)
-		out = append(out, operation)
-	}
-	return out
 }
 
 func validateGraphPlanLowering(plan graphPlan) error {
 	if !plan.ready() {
 		return graphPlanInvalidError("graph plan is not ready", nil)
 	}
-	if len(plan.nodes) != 0 && len(plan.operations) == 0 {
+	if len(plan.nodes) != 0 && len(plan.work.Operations) == 0 {
 		return graphPlanInvalidError("graph plan has nodes but no ordered operations", []string{
 			"nodes=" + strconv.Itoa(len(plan.nodes)),
 		})
@@ -239,8 +93,8 @@ func validateGraphPlanLowering(plan graphPlan) error {
 	if err := validateGraphPlanEdges(plan); err != nil {
 		return err
 	}
-	for i := range plan.operations {
-		operation := plan.operations[i]
+	for i := range plan.work.Operations {
+		operation := plan.work.Operations[i]
 		details := []string{
 			"operation=" + strconv.Itoa(i),
 			"branch=" + operation.Branch,
@@ -334,8 +188,8 @@ func graphPlanForState(state *recipeCompileState) (graphPlan, bool, error) {
 	if err != nil {
 		return graphPlan{}, false, err
 	}
-	plan := buildMediaPlan(state)
-	return newGraphPlan(lowerer.runtimeRef(), spec, plan, lowerer), true, nil
+	work := buildWorkPlan(state, spec)
+	return newGraphPlan(lowerer.runtimeRef(), spec, work, lowerer), true, nil
 }
 
 func graphPlanLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {

@@ -75,13 +75,31 @@ func TestGraphPlanUsesSharedBuildLifecycle(t *testing.T) {
 		t.Fatal("recipeResolved should carry graphPlan as the executable boundary")
 	}
 	graphPlanType := reflect.TypeOf(graphPlan{})
-	for _, name := range []string{"nodes", "edges", "operations", "work", "inputs", "streams", "taps", "branches", "outputs", "decisions", "diagnostics", "lowerer"} {
+	for _, name := range []string{"nodes", "edges", "work", "lowerer"} {
 		if _, ok := graphPlanType.FieldByName(name); !ok {
 			t.Fatalf("graphPlan should carry %s as cold-path plan metadata", name)
 		}
 	}
+	// The work plan is the single plan the compile builds; graphPlan must not
+	// carry a parallel mediaPlan-shaped copy of it.
+	for _, name := range []string{"operations", "inputs", "streams", "taps", "branches", "outputs", "decisions", "diagnostics"} {
+		if _, ok := graphPlanType.FieldByName(name); ok {
+			t.Fatalf("graphPlan should not carry %s; the work plan is the single plan representation", name)
+		}
+	}
 	if _, ok := graphPlanType.FieldByName("spec"); ok {
 		t.Fatal("graphPlan should own nodes and edges directly instead of wrapping a stored pipeline.Spec")
+	}
+	for _, file := range []string{"work_plan.go", "media_plan.go", "media_plan_spec.go", "recipe_compile.go", "recipe_explain.go", "recipe_mux_compat.go"} {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{"workPlanFromMediaPlan", "type mediaPlan struct", "func (p graphPlan) mediaPlan"} {
+			if strings.Contains(string(body), forbidden) {
+				t.Fatalf("%s should not derive the work plan from a mediaPlan (%q); the compile builds the work plan once", file, forbidden)
+			}
+		}
 	}
 }
 
@@ -114,54 +132,32 @@ func TestGraphPlanBuildValidatesOperationsBeforeLowerer(t *testing.T) {
 
 func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 	runtime := New().(*runtime)
-	plan := mediaPlan{
-		Name: "work-plan-test",
-		Inputs: []planInput{{
-			Name:     "input.ivf",
-			Protocol: av.ProtocolFile,
-			Codec:    av.CodecVP8,
-		}},
-		Streams: []planStream{{
-			Name: "video",
-			Select: StreamSelect{
-				Type:  av.MediaVideo,
-				Codec: av.CodecVP8,
-			},
-		}},
-		Taps: []planTap{{
-			Name:      "video.decoded",
-			Node:      "decode",
-			Domain:    shape.DomainFrame,
-			MediaKind: av.MediaVideo,
+	branches := []planBranch{{
+		Name:  "preview",
+		Input: "input.ivf",
+		Stream: StreamSelect{
+			Type:  av.MediaVideo,
+			Codec: av.CodecVP8,
+		},
+		Shape: shape.Packet(av.MediaVideo, av.CodecVP8),
+		Operations: []planOperation{{
+			Kind:      OpDecode,
+			Component: string(av.CodecVP8),
+			Shape:     shape.Frame(av.MediaVideo, shape.Video(640, 360, "i420")),
+		}, {
+			Kind:      OpTap,
+			Component: "video.decoded",
 			After:     OpDecode,
 			Shape:     shape.Frame(av.MediaVideo, shape.Video(640, 360, "i420")),
 		}},
-		Branches: []planBranch{{
-			Name:  "preview",
-			Input: "input.ivf",
-			Stream: StreamSelect{
-				Type:  av.MediaVideo,
-				Codec: av.CodecVP8,
-			},
-			Shape: shape.Packet(av.MediaVideo, av.CodecVP8),
-			Operations: []planOperation{{
-				Kind:      OpDecode,
-				Component: string(av.CodecVP8),
-				Shape:     shape.Frame(av.MediaVideo, shape.Video(640, 360, "i420")),
-			}, {
-				Kind:  OpTap,
-				After: OpDecode,
-				Shape: shape.Frame(av.MediaVideo, shape.Video(640, 360, "i420")),
-			}},
-			Outputs: []string{"frames"},
-		}},
-		Outputs: []planOutput{{
-			Name:       "frames",
-			Operation:  OpSink,
-			Component:  "sink",
-			BranchRefs: []string{"preview"},
-		}},
-	}
+		Outputs: []string{"frames"},
+	}}
+	outputs := []planOutput{{
+		Name:       "frames",
+		Operation:  OpSink,
+		Component:  "sink",
+		BranchRefs: []string{"preview"},
+	}}
 	spec := pipeline.Spec{
 		Name: "work-plan-test",
 		Nodes: []pipeline.NodeSpec{{
@@ -177,7 +173,26 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 			Policy: pipeline.RouteAll,
 		}},
 	}
-	graph := newGraphPlan(runtime, spec, plan, &graphPlanTestLowerer{runtime: runtime})
+	composed := composeWorkPlan(
+		spec,
+		"work-plan-test",
+		[]workInput{{
+			Name:     "input.ivf",
+			Protocol: av.ProtocolFile,
+			Codec:    av.CodecVP8,
+		}},
+		[]workStream{{
+			Name: "video",
+			Select: StreamSelect{
+				Type:  av.MediaVideo,
+				Codec: av.CodecVP8,
+			},
+		}},
+		branches,
+		outputs,
+		nil,
+	)
+	graph := newGraphPlan(runtime, spec, composed, &graphPlanTestLowerer{runtime: runtime})
 
 	work := graph.workPlan()
 	if work.Name != "work-plan-test" {
@@ -632,7 +647,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if tap := streamBuildOperationSpecs(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != shape.DomainPacket {
 		t.Fatalf("copy branch tap = %+v, want packet branch tap", tap)
 	}
-	copyPlan, err := planBranchCompositionRecipe(copyJob.Plan(), copyJob.inputs[0], copyJob.branchDestinations, copyJob.branchStreams)
+	copyPlan, err := planBranchCompositionRecipe(copyJob.plan(), copyJob.inputs[0], copyJob.branchDestinations, copyJob.branchStreams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -704,7 +719,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web operations = %+v, want anchor tap video.720p.frames", webOps)
 	}
 
-	plan, err := planBranchCompositionRecipe(job.Plan(), job.inputs[0], job.branchDestinations, job.branchStreams)
+	plan, err := planBranchCompositionRecipe(job.plan(), job.inputs[0], job.branchDestinations, job.branchStreams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -757,39 +772,26 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web route = %+v, want shared 720p resize from operation fields", routes[1])
 	}
 
-	media := buildMediaPlan(&recipeCompileState{
+	work := buildWorkPlan(&recipeCompileState{
 		operation:                    branchCompositionOperation,
 		branchCompositionPresent:     true,
-		intent:                       job.Plan(),
+		intent:                       job.plan(),
 		branchInputAttachment:        job.inputs[0],
 		branchDestinationAttachments: job.branchDestinations,
 		plan:                         plan,
-	})
-	if len(media.Branches) != 2 {
-		t.Fatalf("media branches = %d, want 2", len(media.Branches))
+	}, pipeline.Spec{})
+	if len(work.Branches) != 2 {
+		t.Fatalf("work branches = %d, want 2", len(work.Branches))
 	}
-	if got, want := planOperationKindsForTest(media.Branches[0].Operations), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("raw media operations = %+v, want %+v", got, want)
-	}
-	if got, want := planOperationKindsForTest(media.Branches[1].Operations), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpTap, OpEncode}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("web media operations = %+v, want %+v", got, want)
-	}
-	if !media.Branches[1].Operations[4].Shared || !media.Branches[1].Operations[5].Shared || media.Branches[1].Operations[6].Shared {
-		t.Fatalf("web media operation sharing = %+v, want shared parent transform/tap and private encode", media.Branches[1].Operations)
-	}
-	graphOperations := graphPlanOperationsFromMediaPlan(pipeline.Spec{}, media)
-	if got, want := graphPlanOperationKindsForBranch(graphOperations, "raw-preview"), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpSink}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("raw graph operations = %+v, want %+v", got, want)
-	}
-	if got, want := graphPlanOperationKindsForBranch(graphOperations, "web"), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpTap, OpEncode, OpMux}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("web graph operations = %+v, want %+v", got, want)
-	}
-	work := workPlanFromMediaPlan(pipeline.Spec{}, media, graphOperations)
 	if got, want := workPlanOperationKindsForBranch(work.Operations, "raw-preview"), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpSink}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("raw work operations = %+v, want %+v", got, want)
 	}
 	if got, want := workPlanOperationKindsForBranch(work.Operations, "web"), []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpTap, OpEncode, OpMux}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("web work operations = %+v, want %+v", got, want)
+	}
+	webWorkOps := workPlanOperationsForBranch(work.Operations, "web")
+	if !webWorkOps[4].Shared || !webWorkOps[5].Shared || webWorkOps[6].Shared {
+		t.Fatalf("web work operation sharing = %+v, want shared parent transform/tap and private encode", webWorkOps)
 	}
 	if len(work.Destinations) != 2 {
 		t.Fatalf("work destinations = %d, want 2", len(work.Destinations))
@@ -809,30 +811,21 @@ func operationSpecKindsForTest(operations []OperationSpec) []OperationKind {
 	return out
 }
 
-func planOperationKindsForTest(operations []planOperation) []OperationKind {
-	out := make([]OperationKind, 0, len(operations))
-	for i := range operations {
-		out = append(out, operations[i].Kind)
-	}
-	return out
-}
-
-func graphPlanOperationKindsForBranch(operations []graphPlanOperation, branch string) []OperationKind {
-	out := make([]OperationKind, 0)
+func workPlanOperationsForBranch(operations []workOperation, branch string) []workOperation {
+	out := make([]workOperation, 0)
 	for i := range operations {
 		if operations[i].Branch == branch {
-			out = append(out, operations[i].Kind)
+			out = append(out, operations[i])
 		}
 	}
 	return out
 }
 
 func workPlanOperationKindsForBranch(operations []workOperation, branch string) []OperationKind {
-	out := make([]OperationKind, 0)
+	operations = workPlanOperationsForBranch(operations, branch)
+	out := make([]OperationKind, 0, len(operations))
 	for i := range operations {
-		if operations[i].Branch == branch {
-			out = append(out, operations[i].Kind)
-		}
+		out = append(out, operations[i].Kind)
 	}
 	return out
 }
@@ -3178,20 +3171,20 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	plan := resolved.graphPlan.mediaPlan()
+	work := resolved.graphPlan.workPlan()
 	if len(resolved.graphPlan.nodes) == 0 || len(resolved.graphPlan.edges) == 0 {
 		t.Fatalf("graphPlan nodes=%+v edges=%+v, want planned operation graph", resolved.graphPlan.nodes, resolved.graphPlan.edges)
 	}
-	if len(plan.Branches) != 1 || plan.Branches[0].Name != "360p" {
-		t.Fatalf("graphPlan media plan branches = %+v, want 360p branch", plan.Branches)
+	if len(work.Branches) != 1 || work.Branches[0].Name != "360p" {
+		t.Fatalf("graphPlan work plan branches = %+v, want 360p branch", work.Branches)
 	}
-	if len(plan.Taps) != 1 || plan.Taps[0].Name != "video.decoded" {
-		t.Fatalf("graphPlan media plan taps = %+v, want video.decoded tap", plan.Taps)
+	if len(work.Taps) != 1 || work.Taps[0].Name != "video.decoded" {
+		t.Fatalf("graphPlan work plan taps = %+v, want video.decoded tap", work.Taps)
 	}
-	if len(plan.Outputs) != 1 || plan.Outputs[0].Name != "web.ivf" || !reflect.DeepEqual(plan.Outputs[0].BranchRefs, []string{"360p"}) {
-		t.Fatalf("graphPlan media plan outputs = %+v, want web.ivf owned by 360p", plan.Outputs)
+	if len(work.Destinations) != 1 || work.Destinations[0].Name != "web.ivf" || !reflect.DeepEqual(work.Destinations[0].Branches, []string{"360p"}) {
+		t.Fatalf("graphPlan work plan destinations = %+v, want web.ivf owned by 360p", work.Destinations)
 	}
-	operations := resolved.graphPlan.operationPlan()
+	operations := work.Operations
 	for _, want := range []OperationKind{OpDemux, OpSelect, OpDecode, OpTap, OpTransform, OpEncode, OpMux} {
 		if !graphPlanOperationKindPresent(operations, want) {
 			t.Fatalf("graphPlan operations = %+v, want %s", operations, want)
@@ -3225,30 +3218,29 @@ func TestGraphPlanViewsAreImmutable(t *testing.T) {
 	}
 	spec := resolved.graphPlan.spec()
 	spec.Nodes[0].Name = "mutated"
-	plan := resolved.graphPlan.mediaPlan()
-	plan.Branches[0].Operations[0].Component = "mutated"
-	plan.Outputs[0].BranchRefs[0] = "mutated"
-	operations := resolved.graphPlan.operationPlan()
-	operations[len(operations)-1].Destinations[0] = "mutated"
+	work := resolved.graphPlan.workPlan()
+	work.Branches[0].Operations[0] = "mutated"
+	work.Destinations[0].Branches[0] = "mutated"
+	work.Operations[len(work.Operations)-1].Destinations[0] = "mutated"
 
 	nextSpec := resolved.graphPlan.spec()
 	if nextSpec.Nodes[0].Name == "mutated" {
 		t.Fatal("graphPlan.spec() returned aliased nodes")
 	}
-	nextPlan := resolved.graphPlan.mediaPlan()
-	if nextPlan.Branches[0].Operations[0].Component == "mutated" {
-		t.Fatal("graphPlan.mediaPlan() returned aliased branch operations")
+	nextWork := resolved.graphPlan.workPlan()
+	if nextWork.Branches[0].Operations[0] == "mutated" {
+		t.Fatal("graphPlan.workPlan() returned aliased branch operations")
 	}
-	if nextPlan.Outputs[0].BranchRefs[0] == "mutated" {
-		t.Fatal("graphPlan.mediaPlan() returned aliased output branch refs")
+	if nextWork.Destinations[0].Branches[0] == "mutated" {
+		t.Fatal("graphPlan.workPlan() returned aliased destination branch refs")
 	}
-	nextOperations := resolved.graphPlan.operationPlan()
+	nextOperations := resolved.graphPlan.workPlan().Operations
 	if nextOperations[len(nextOperations)-1].Destinations[0] == "mutated" {
-		t.Fatal("graphPlan.operationPlan() returned aliased destination refs")
+		t.Fatal("graphPlan.workPlan() returned aliased operation destination refs")
 	}
 }
 
-func graphPlanOperationKindPresent(operations []graphPlanOperation, kind OperationKind) bool {
+func graphPlanOperationKindPresent(operations []workOperation, kind OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true
@@ -3257,7 +3249,7 @@ func graphPlanOperationKindPresent(operations []graphPlanOperation, kind Operati
 	return false
 }
 
-func graphPlanOperationNodePresent(operations []graphPlanOperation, node pipeline.NodeRef) bool {
+func graphPlanOperationNodePresent(operations []workOperation, node pipeline.NodeRef) bool {
 	for i := range operations {
 		if operations[i].Node == node {
 			return true
@@ -3266,10 +3258,11 @@ func graphPlanOperationNodePresent(operations []graphPlanOperation, node pipelin
 	return false
 }
 
-func graphPlanOperationTargetPresent(operations []graphPlanOperation, target string) bool {
+func graphPlanOperationTargetPresent(operations []workOperation, target string) bool {
+	id := workDestinationID(target)
 	for i := range operations {
 		for _, next := range operations[i].Destinations {
-			if next == target {
+			if next == id {
 				return true
 			}
 		}
@@ -3277,8 +3270,8 @@ func graphPlanOperationTargetPresent(operations []graphPlanOperation, target str
 	return false
 }
 
-func graphPlanOperationsWithoutDestinations(operations []graphPlanOperation) []graphPlanOperation {
-	out := make([]graphPlanOperation, 0, len(operations))
+func graphPlanOperationsWithoutDestinations(operations []workOperation) []workOperation {
+	out := make([]workOperation, 0, len(operations))
 	for i := range operations {
 		if graphPlanOperationDestinationsRequired(operations[i].Kind) {
 			continue
@@ -3288,8 +3281,8 @@ func graphPlanOperationsWithoutDestinations(operations []graphPlanOperation) []g
 	return out
 }
 
-func graphPlanOperationsWithoutKind(operations []graphPlanOperation, kind OperationKind) []graphPlanOperation {
-	out := make([]graphPlanOperation, 0, len(operations))
+func graphPlanOperationsWithoutKind(operations []workOperation, kind OperationKind) []workOperation {
+	out := make([]workOperation, 0, len(operations))
 	for i := range operations {
 		if operations[i].Kind == kind {
 			continue
@@ -3299,8 +3292,8 @@ func graphPlanOperationsWithoutKind(operations []graphPlanOperation, kind Operat
 	return out
 }
 
-func graphPlanOperationsWithoutBranch(operations []graphPlanOperation, branch string) []graphPlanOperation {
-	out := make([]graphPlanOperation, 0, len(operations))
+func graphPlanOperationsWithoutBranch(operations []workOperation, branch string) []workOperation {
+	out := make([]workOperation, 0, len(operations))
 	for i := range operations {
 		if operations[i].Branch == branch {
 			continue
@@ -3310,8 +3303,9 @@ func graphPlanOperationsWithoutBranch(operations []graphPlanOperation, branch st
 	return out
 }
 
-func graphPlanOperationsWithoutBranchTarget(operations []graphPlanOperation, branch string, target string) []graphPlanOperation {
-	out := make([]graphPlanOperation, 0, len(operations))
+func graphPlanOperationsWithoutBranchTarget(operations []workOperation, branch string, target string) []workOperation {
+	id := workDestinationID(target)
+	out := make([]workOperation, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
 		if operation.Branch != branch || !graphPlanOperationDestinationsRequired(operation.Kind) {
@@ -3320,7 +3314,7 @@ func graphPlanOperationsWithoutBranchTarget(operations []graphPlanOperation, bra
 		}
 		destinations := make([]string, 0, len(operation.Destinations))
 		for _, next := range operation.Destinations {
-			if next != target {
+			if next != id {
 				destinations = append(destinations, next)
 			}
 		}
@@ -3333,14 +3327,14 @@ func graphPlanOperationsWithoutBranchTarget(operations []graphPlanOperation, bra
 	return out
 }
 
-func graphPlanOperationsWithBranchTargetNode(operations []graphPlanOperation, branch string, target string, node pipeline.NodeRef) []graphPlanOperation {
-	out := cloneGraphPlanOperations(operations)
+func graphPlanOperationsWithBranchTargetNode(operations []workOperation, branch string, target string, node pipeline.NodeRef) []workOperation {
+	out := cloneWorkOperations(operations)
 	for i := range out {
 		operation := out[i]
 		if operation.Branch != branch || !graphPlanOperationDestinationsRequired(operation.Kind) {
 			continue
 		}
-		if !stringInSlice(target, operation.Destinations) {
+		if !stringInSlice(workDestinationID(target), operation.Destinations) {
 			continue
 		}
 		out[i].Node = node
@@ -3556,7 +3550,7 @@ func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	operations := resolved.graphPlan.operationPlan()
+	operations := resolved.graphPlan.workPlan().Operations
 	for _, want := range []pipeline.NodeRef{"select-video", "decode-video", "resize-video", "encode-web", "resize-thumb"} {
 		if !graphPlanOperationNodePresent(operations, want) {
 			t.Fatalf("graphPlan operations = %+v, want node %s", operations, want)
@@ -3745,13 +3739,13 @@ func TestBranchComposeLowererUsesPlanDestinationOperationNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	archiveNode, ok := graphPlanDestinationOperationNode(resolved.graphPlan.operations, "archive.ogg")
+	archiveNode, ok := graphPlanDestinationOperationNode(resolved.graphPlan.work.Operations, "archive.ogg")
 	if !ok {
-		t.Fatalf("graphPlan operations = %+v, want archive.ogg destination operation", resolved.graphPlan.operations)
+		t.Fatalf("graphPlan operations = %+v, want archive.ogg destination operation", resolved.graphPlan.work.Operations)
 	}
-	framesNode, ok := graphPlanDestinationOperationNode(resolved.graphPlan.operations, "frames")
+	framesNode, ok := graphPlanDestinationOperationNode(resolved.graphPlan.work.Operations, "frames")
 	if !ok {
-		t.Fatalf("graphPlan operations = %+v, want frames destination operation", resolved.graphPlan.operations)
+		t.Fatalf("graphPlan operations = %+v, want frames destination operation", resolved.graphPlan.work.Operations)
 	}
 	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, archiveNode.String(), "target-plan-archive")
 	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, framesNode.String(), "target-plan-frames")
@@ -3772,13 +3766,14 @@ func TestBranchComposeLowererUsesPlanDestinationOperationNodes(t *testing.T) {
 	}
 }
 
-func graphPlanDestinationOperationNode(operations []graphPlanOperation, target string) (pipeline.NodeRef, bool) {
+func graphPlanDestinationOperationNode(operations []workOperation, target string) (pipeline.NodeRef, bool) {
+	id := workDestinationID(target)
 	for i := range operations {
 		if !graphPlanOperationDestinationsRequired(operations[i].Kind) {
 			continue
 		}
 		for _, next := range operations[i].Destinations {
-			if next == target {
+			if next == id {
 				return operations[i].Node, true
 			}
 		}
@@ -3786,7 +3781,7 @@ func graphPlanDestinationOperationNode(operations []graphPlanOperation, target s
 	return "", false
 }
 
-func graphPlanOperationNode(operations []graphPlanOperation, kind OperationKind) (pipeline.NodeRef, bool) {
+func graphPlanOperationNode(operations []workOperation, kind OperationKind) (pipeline.NodeRef, bool) {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return operations[i].Node, true
@@ -3797,9 +3792,9 @@ func graphPlanOperationNode(operations []graphPlanOperation, kind OperationKind)
 
 func renameResolvedGraphPlanOperationNode(t *testing.T, resolved recipeResolved, kind OperationKind, name string) recipeResolved {
 	t.Helper()
-	node, ok := graphPlanOperationNode(resolved.graphPlan.operations, kind)
+	node, ok := graphPlanOperationNode(resolved.graphPlan.work.Operations, kind)
 	if !ok {
-		t.Fatalf("graphPlan operations = %+v, want %s operation", resolved.graphPlan.operations, kind)
+		t.Fatalf("graphPlan operations = %+v, want %s operation", resolved.graphPlan.work.Operations, kind)
 	}
 	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, node.String(), name)
 	return resolved
@@ -3807,9 +3802,9 @@ func renameResolvedGraphPlanOperationNode(t *testing.T, resolved recipeResolved,
 
 func renameResolvedGraphPlanTargetNode(t *testing.T, resolved recipeResolved, target string, name string) recipeResolved {
 	t.Helper()
-	node, ok := graphPlanDestinationOperationNode(resolved.graphPlan.operations, target)
+	node, ok := graphPlanDestinationOperationNode(resolved.graphPlan.work.Operations, target)
 	if !ok {
-		t.Fatalf("graphPlan operations = %+v, want destination operation %q", resolved.graphPlan.operations, target)
+		t.Fatalf("graphPlan operations = %+v, want destination operation %q", resolved.graphPlan.work.Operations, target)
 	}
 	resolved.graphPlan = renameGraphPlanNodeRef(resolved.graphPlan, node.String(), name)
 	return resolved
@@ -3831,14 +3826,14 @@ func renameGraphPlanNodeRef(plan graphPlan, oldName string, newName string) grap
 			plan.edges[i].To = newRef
 		}
 	}
-	for i := range plan.operations {
-		if plan.operations[i].Node == oldRef {
-			plan.operations[i].Node = newRef
+	for i := range plan.work.Operations {
+		if plan.work.Operations[i].Node == oldRef {
+			plan.work.Operations[i].Node = newRef
 		}
 	}
-	for i := range plan.taps {
-		if plan.taps[i].Node == oldRef {
-			plan.taps[i].Node = newRef
+	for i := range plan.work.Taps {
+		if plan.work.Taps[i].Node == oldRef {
+			plan.work.Taps[i].Node = newRef
 		}
 	}
 	return plan
@@ -3859,7 +3854,7 @@ func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T)
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutBranch(resolved.graphPlan.operations, "360p")
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutBranch(resolved.graphPlan.work.Operations, "360p")
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -3885,7 +3880,7 @@ func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) 
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpDecode)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, OpDecode)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -3911,7 +3906,7 @@ func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testi
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.operations)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.work.Operations)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4046,7 +4041,7 @@ func TestPacketCopyLowererRequiresDestinationOperationsBeforeSources(t *testing.
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.operations)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.work.Operations)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4068,7 +4063,7 @@ func TestPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpCopy)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, OpCopy)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4092,7 +4087,7 @@ func TestPacketCopyLowererRequiresTargetBranchBindingsBeforeSources(t *testing.T
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutBranchTarget(resolved.graphPlan.operations, "right", "packets")
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutBranchTarget(resolved.graphPlan.work.Operations, "right", "packets")
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4116,7 +4111,7 @@ func TestPacketCopyLowererRequiresConsistentDestinationOperationsBeforeSources(t
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithBranchTargetNode(resolved.graphPlan.operations, "right", "packets", "packets-right")
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithBranchTargetNode(resolved.graphPlan.work.Operations, "right", "packets", "packets-right")
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4323,7 +4318,7 @@ func TestFrameStreamLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpDecode)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, OpDecode)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4346,7 +4341,7 @@ func TestFrameStreamLowererRequiresDestinationOperationsBeforeSources(t *testing
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.operations)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.work.Operations)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4369,7 +4364,7 @@ func TestFrameStreamLowererRequiresSingleBranchOperationSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = append(resolved.graphPlan.operations, graphPlanOperation{
+	resolved.graphPlan.work.Operations = append(resolved.graphPlan.work.Operations, workOperation{
 		Branch: "other",
 		Node:   "select-other",
 		Kind:   OpSelect,
@@ -4501,7 +4496,7 @@ func TestSelectedPacketCopyLowererRequiresSelectOperationBeforeSources(t *testin
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpSelect)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, OpSelect)
 	task, err := resolved.Build(ctx)
 	if err == nil {
 		task.Close()
@@ -4533,7 +4528,7 @@ func TestSelectedPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpCopy)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, OpCopy)
 	task, err := resolved.Build(ctx)
 	if err == nil {
 		task.Close()
@@ -4565,7 +4560,7 @@ func TestSelectedPacketCopyLowererRequiresSingleBranchOperationSet(t *testing.T)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	resolved.graphPlan.operations = append(resolved.graphPlan.operations, graphPlanOperation{
+	resolved.graphPlan.work.Operations = append(resolved.graphPlan.work.Operations, workOperation{
 		Branch: "other",
 		Node:   "select-other",
 		Kind:   OpSelect,
@@ -4728,7 +4723,7 @@ func TestEncodedFrameStreamLowererRequiresEncodeOperationBeforeSources(t *testin
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.operations = graphPlanOperationsWithoutKind(resolved.graphPlan.operations, OpEncode)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, OpEncode)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()

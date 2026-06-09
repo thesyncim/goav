@@ -320,14 +320,14 @@ func (j *Job) buildJoin(ctx context.Context) (Task, error) {
 }
 
 // joinPlanTaps validates the join-level taps and converts them into the same
-// planTap records the recipe compiler installs on its tasks, anchored at the
+// workTap records the recipe compiler installs on its tasks, anchored at the
 // join node — so a join tap shows up in task.Taps() and anchors runtime
 // branches exactly like a tap declared on an ordinary stream chain.
-func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.MediaDomain, node pipeline.NodeRef) ([]planTap, error) {
+func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.MediaDomain, node pipeline.NodeRef) ([]workTap, error) {
 	if len(spec.taps) == 0 {
 		return nil, nil
 	}
-	taps := make([]planTap, 0, len(spec.taps))
+	taps := make([]workTap, 0, len(spec.taps))
 	for _, tap := range spec.taps {
 		if tap.name == "" {
 			return nil, &BuildError{
@@ -345,7 +345,7 @@ func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.Me
 		if err := validateTapDomain("build "+name, name, tap, domain); err != nil {
 			return nil, err
 		}
-		taps = append(taps, planTap{
+		taps = append(taps, workTap{
 			Name:      tap.name,
 			Node:      node,
 			Domain:    domain,
