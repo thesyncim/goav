@@ -103,17 +103,21 @@ Revised after investigating #2 (see Grammar #2): the plan collapse must come
    no round-trip); (3b) `branchComposePlan` becomes transcode-only → move the bridge
    to a compat pkg, drop the core `transcode` import; (3c) then encode/decode
    `streamIntent` collapse (the woven 51/102-read fields) + #2 fall out together.
-   **3a blockers (tested+reverted, then diagnosed):** `buildMediaPlan` can't just
-   use `intent.Streams` instead of `streamIntentsFromBranchComposePlan(state.plan)`.
-   The two streamIntent converters diverge on ≥4 fields — `branchStreamIntent`
-   (intent source) sets `From` (the branch tap-anchor), `Taps`, and a **lossless**
-   `Encode`; `streamIntentFromBranchComposeBranch` (plan source) sets `CodecChange`
-   but leaves `From`/`Taps` empty and uses the **lossy** `codecSpecFromEncodeConfig`.
-   The reverted probe broke `TestPlannedBranchSplitOperationsRespectEarlierTapAnchors`
-   via `From` (the anchor drives split tap-anchor planning), not the split itself.
-   So 3a = reconcile the two converters into one (carry From/Taps + a faithful
-   Encode on the compose path, or recompute split via `splitOperationSpecsByShared`),
-   a dedicated multi-field reconciliation — not a loop-sized slice.
+   **3a blocker (verified observation):** `buildMediaPlan` can't use
+   `intent.Streams` instead of `streamIntentsFromBranchComposePlan(state.plan)`. The
+   re-run probe fails ONLY at `recipe_compile_test.go:757`: the raw-preview branch's
+   mediaPlan ops come out `[demux select decode]` but must be `[demux select decode
+   tap transform]` — the inherited shared `tap` + private `transform` are dropped on
+   the `intent.Streams` path but present on the `state.plan` path. So the gap is the
+   **branch operation list** (shared-op inheritance / #18 "two branches share one
+   decoder"), NOT converter field fidelity (the earlier From/Taps/Encode diagnosis
+   was a red herring). Puzzle to resolve before the fix: `branchCompositionJob.streams`
+   is a copy of the split-applied `job.branchStreams` (whose `streamBuildOperationSpecs`
+   the test shows = `[decode tap transform]`), yet `branchStreamIntent(j.streams[i])`
+   →`planOperationSpecs` yields only `[decode]` — so either `planOperationSpecs`
+   rebuilds from `Decode`/`Encode` (ignoring `stream.Operations`), or the intent-side
+   stream loses the split. Pin that, then make both paths share one split-applied
+   stream source. Dedicated reconciliation — not a loop slice.
    **#2 layer (corrected):** `graphPlan.Describe()` returns `p.spec()` (the lowerer
    graph spec), NOT the mediaPlan — so `Describe()≡Build()` is automatic (both share
    `p.spec()`). **#2 lives purely in the lowerer spec generation:** direct chains use
