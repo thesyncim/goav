@@ -326,6 +326,41 @@ or abort on detach; when attaching the replacements fails, the old branch stays
 intact (`KeepOldOnFailure` spells the default). `Pause`/`Resume` stop and
 restore delivery to one branch without touching the source or its siblings.
 
+### Dynamic Stream Discovery
+
+A source that discovers a stream mid-run announces it with
+`av.EventStreamAdded` carrying the full `av.Stream` on the event's typed
+`Stream` field (custom sources just push the event; RTP/WebRTC receivers
+forward it from their receiver). `OnStream` declares the reaction in the
+recipe: when a matching stream appears, the branches attach to it at runtime —
+anchored on the source node, routed by the discovered stream's id — through
+the same planner, atomic apply, and rollback as `Task.Attach`, with no source
+rebuild:
+
+```go
+task, err := goav.From(input).
+    OnStream(goav.MatchMedia(av.MediaAudio),
+        goav.Branch("record").Copy().To(archive),
+    ).
+    Audio().Copy().To(live).
+    Build(ctx)
+```
+
+Branch names are templated per matched stream (`record-<stream id>`), so
+repeated discoveries stay unique. `MatchMedia`, `MatchCodec`, `MatchStreamID`,
+and `MatchStream(fn)` select streams; several rules may match one stream and
+each attaches independently. On `av.EventStreamRemoved` the rule's branches
+for that stream detach with drain semantics — their destinations commit (a
+transactional destination's `Commit` runs) while the task keeps running.
+Rules are visible in `Explain` as `stream_rule` decisions before any stream
+appears, and `.Auto(shape.Allow...)` policies on rule branches solve
+conversions at attach time exactly like planned chains. Failures are never
+silent: a late branch that cannot attach rolls back fully and surfaces
+`av.EventAttachError` on `Watch`/`Events`. A discovered stream matching no
+rule just surfaces its event. Because the task watches its own events,
+`Events()` on a rule-bearing task returns an independent subscription per
+call (the documented remedy once `Watch` is in use).
+
 ## Flows
 
 When operations repeat, extract a reusable flow. A flow owns only operations; a

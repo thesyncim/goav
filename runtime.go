@@ -515,6 +515,10 @@ type task struct {
 	// watch fans the graph's event stream out to filtered Watch subscribers.
 	watch eventWatch
 
+	// rules is the dynamic-stream rule engine (OnStream grammar), installed at
+	// build before the task escapes; nil when the job declared no rules.
+	rules *taskStreamRules
+
 	// lifecycleMu guards the recorded run/close progress below, which exists
 	// only so Snapshot can report typed lifecycle states.
 	lifecycleMu sync.Mutex
@@ -554,6 +558,14 @@ func (t *task) Run(ctx context.Context) error {
 }
 
 func (t *task) Events() <-chan av.Event {
+	if t.rules != nil {
+		// The rule engine holds an internal Watch subscription, so the raw
+		// graph channel is already being drained by the watch distributor.
+		// Hand every Events caller its own unfiltered subscription — the
+		// documented remedy once Watch is in use — so no consumer competes
+		// with the engine for events.
+		return t.Watch()
+	}
 	return t.graph.Events()
 }
 

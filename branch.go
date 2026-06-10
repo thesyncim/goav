@@ -164,6 +164,12 @@ type branchSourceBinding struct {
 	tapDomain shape.MediaDomain
 	policy    pipeline.RoutePolicy
 	label     string
+	// stream pins a discovered-stream anchor: the branch hangs off the source
+	// node `from` routed by stream id, and the attach planner derives the
+	// anchor shape from these stream facts instead of a tap. streamDomain is
+	// the source's media domain (packet unless the source produces frames).
+	stream       *av.Stream
+	streamDomain shape.MediaDomain
 }
 
 type branchSource interface {

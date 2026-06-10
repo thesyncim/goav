@@ -62,7 +62,12 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   backpressure, per-branch atomic stats, MaxLatency/MaxBytes shedding, Blocking —
   **DONE (data plane)**. TODO: public CopyMode contract surfacing.
 - **Events/Snapshot/Watch** (§9): typed EventFilter Watch; richer Snapshot. **partial.**
-- **Dynamic streams** (§11): OnStream/When; late-stream attach; ambiguity lists candidates. **TODO.**
+- **Dynamic streams** (§11): `OnStream(match, branches...)` rules on the job;
+  sources announce via `av.EventStreamAdded` (typed `Event.Stream` payload);
+  late branches attach through the one planner anchored source+stream
+  (RouteByStream), solver included; removal detaches with drain; failures
+  surface as `av.EventAttachError`. **DONE.** TODO: `When` conditions beyond
+  stream identity; ambiguity candidate listing.
 - **Multi-input/Join** (§12): Mix/Composite/Select grammars **DONE** over lock-free
   stages + `task.Control` live switch; variadic `From(a, b...)` with `InputName`
   narrowing and one shared Destination **DONE**; JoinSpec lowering through ONE join

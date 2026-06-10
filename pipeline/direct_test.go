@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -384,4 +385,113 @@ func TestGraphDirectRunAllocs(t *testing.T) {
 	}); allocs != 0 {
 		t.Fatalf("direct graph run allocs = %v, want 0", allocs)
 	}
+}
+
+// removableTestSink records deliveries that arrive after Close — the contract
+// under test is that a live Remove drains in-flight deliveries before closing,
+// so no Handle ever runs on a closed node.
+type removableTestSink struct {
+	name        string
+	closed      atomic.Bool
+	delivered   atomic.Int64
+	afterClosed atomic.Int64
+}
+
+func (s *removableTestSink) Name() string {
+	return s.name
+}
+
+func (s *removableTestSink) Handle(context.Context, *Message) error {
+	if s.closed.Load() {
+		s.afterClosed.Add(1)
+	}
+	s.delivered.Add(1)
+	return nil
+}
+
+func (s *removableTestSink) Close() error {
+	s.closed.Store(true)
+	return nil
+}
+
+// TestGraphDirectRemoveDrainsInFlightDeliveries pins the live-detach contract:
+// removing a node while a source goroutine is emitting never closes the node
+// under an in-flight Handle, and deliveries racing the removal are shed.
+func TestGraphDirectRemoveDrainsInFlightDeliveries(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	graph, err := NewGraph(GraphConfig{Name: "live-remove"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer graph.Close()
+
+	packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	stop := make(chan struct{})
+	source := &directLoopSource{name: "src", packet: packet, stop: stop}
+	sourceRef, err := graph.AddSource(source, BufferPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &removableTestSink{name: "sink"}
+	sinkRef, err := graph.AddSink(sink, BufferPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: sourceRef.String(), To: []string{sinkRef.String()}, Policy: RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- graph.Run(ctx) }()
+	for sink.delivered.Load() == 0 {
+	}
+	if err := graph.Remove(sinkRef); err != nil {
+		t.Fatal(err)
+	}
+	if got := sink.afterClosed.Load(); got != 0 {
+		t.Fatalf("deliveries after close = %d, want 0 (remove must drain in-flight handles)", got)
+	}
+	if !sink.closed.Load() {
+		t.Fatal("removed sink was not closed")
+	}
+	close(stop)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// directLoopSource emits the same packet in a tight loop until stop closes.
+type directLoopSource struct {
+	name   string
+	packet *av.Packet
+	stop   <-chan struct{}
+	msg    Message
+}
+
+func (s *directLoopSource) Name() string {
+	return s.name
+}
+
+func (s *directLoopSource) Start(ctx context.Context, emitter Emitter) error {
+	for {
+		select {
+		case <-s.stop:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		s.msg.Kind = MessagePacket
+		s.msg.Packet = s.packet
+		s.msg.Frame = nil
+		s.msg.Event = nil
+		if err := emitter.Emit(ctx, &s.msg); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *directLoopSource) Close() error {
+	return nil
 }

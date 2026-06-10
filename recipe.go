@@ -839,6 +839,7 @@ type Job struct {
 	streams            []*jobStreamBuild
 	branchStreams      []streamBuild
 	branchDestinations []namedDestinationSpec
+	streamRules        []streamRule
 	join               *joinSpec
 	err                error
 }
@@ -1246,7 +1247,31 @@ func (j *Job) Build(ctx context.Context) (Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return resolved.Build(ctx)
+	built, err := resolved.Build(ctx)
+	if err != nil {
+		return nil, err
+	}
+	j.installStreamRules(built)
+	return built, nil
+}
+
+// installStreamRules binds the job's OnStream rules to the built task: the
+// rules anchor on the job's single source node (the compile validated the
+// input count) and react from the task's event stream.
+func (j *Job) installStreamRules(built Task) {
+	if len(j.streamRules) == 0 || len(j.inputs) != 1 {
+		return
+	}
+	runtimeTask, ok := built.(*task)
+	if !ok || runtimeTask == nil {
+		return
+	}
+	input := j.inputs[0]
+	runtimeTask.installStreamRules(
+		graphSourceNodeNames(j.inputs)[0],
+		input.sourceEventDomain(),
+		cloneStreamRules(j.streamRules),
+	)
 }
 
 func (j *Job) Run(ctx context.Context) error {
@@ -3441,12 +3466,13 @@ func (b *jobStreamBuilder) current() *jobStreamBuild {
 }
 
 type branchCompositionJob struct {
-	runtime Runtime
-	name    string
-	input   InputSpec
-	streams []streamBuild
-	outputs []namedDestinationSpec
-	err     error
+	runtime     Runtime
+	name        string
+	input       InputSpec
+	streams     []streamBuild
+	outputs     []namedDestinationSpec
+	streamRules []streamRule
+	err         error
 
 	fromBranchSplit bool
 }

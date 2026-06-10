@@ -136,6 +136,12 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 	}
 	patchShape := normalizeTapShape(currentShape)
 	currentStream := streamFromRuntimeBranchShape(spec.name, currentShape)
+	if spec.source.stream != nil {
+		// Source+stream anchor: the announced av.Stream is the live truth —
+		// keep its time base, clock rate, and codec extradata instead of the
+		// shape-synthesized stand-in.
+		currentStream = *spec.source.stream
+	}
 	steps := make([]attachStep, 0, len(spec.operations)+len(destinations))
 	fail := func(err error) ([]attachStep, error) {
 		for i := range steps {

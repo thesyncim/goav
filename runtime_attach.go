@@ -700,7 +700,28 @@ func (t *task) resolveRuntimeBranchAnchor(spec BranchSpec, graphSpec pipeline.Sp
 	if !specHasNode(graphSpec, spec.source.from) {
 		return "", info.Tap{}, runtimeBranchAnchorMissingError(spec.source.from)
 	}
+	if spec.source.stream != nil {
+		return spec.source.from, discoveredStreamAnchorTap(spec.source), nil
+	}
 	return spec.source.from, info.Tap{Node: pipeline.NodeRef(spec.source.from)}, nil
+}
+
+// discoveredStreamAnchorTap synthesizes the anchor tap for a source+stream
+// anchor (a branch attached to a stream the source discovered at runtime):
+// the source node is the anchor and the announced av.Stream supplies the
+// shape facts a tap would normally carry.
+func discoveredStreamAnchorTap(source branchSourceBinding) info.Tap {
+	domain := source.streamDomain
+	if domain == "" {
+		domain = shape.DomainPacket
+	}
+	spec := shape.FromStream(*source.stream, domain)
+	return info.Tap{
+		Node:      pipeline.NodeRef(source.from),
+		Domain:    domain,
+		MediaKind: spec.MediaKind,
+		Shape:     spec,
+	}
 }
 
 // validateAttachBranchShapeContract validates the branch's operation list

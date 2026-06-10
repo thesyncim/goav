@@ -414,8 +414,19 @@ func (f *Frame) Reset() {
 type EventType string
 
 const (
-	EventStreamAdded      EventType = "stream_added"
-	EventStreamRemoved    EventType = "stream_removed"
+	// EventStreamAdded announces a stream the source discovered after it
+	// opened: Event.Stream carries the full av.Stream and Event.StreamID its
+	// id. Sources emit it mid-run, before the new stream's media, so the
+	// runtime can attach branches to the stream without a rebuild.
+	EventStreamAdded EventType = "stream_added"
+	// EventStreamRemoved announces that the stream named by Event.StreamID
+	// ended; branches attached to it can be detached.
+	EventStreamRemoved EventType = "stream_removed"
+	// EventAttachError reports a failed runtime reaction to a discovered
+	// stream: a dynamic-stream rule branch that could not be attached or
+	// detached. Cause carries the failure, Reason names the rule branch, and
+	// StreamID is the discovered stream.
+	EventAttachError      EventType = "attach_error"
 	EventCodecChanged     EventType = "codec_changed"
 	EventDiscontinuity    EventType = "discontinuity"
 	EventPacketLoss       EventType = "packet_loss"

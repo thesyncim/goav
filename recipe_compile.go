@@ -28,6 +28,7 @@ type recipeResolved struct {
 	branchInputProbeReady bool
 	outputFormats         map[string]av.FormatID
 	plan                  branchComposePlan
+	streamRules           []streamRule
 }
 
 type recipeCompileState struct {
@@ -45,6 +46,7 @@ type recipeCompileState struct {
 	outputAttachments      []destinationSpec
 	outputDestinationNames []string
 	inputProbes            []format.ProbeResult
+	streamRules            []streamRule
 
 	branchInputAttachment        InputSpec
 	branchDestinationAttachments []namedDestinationSpec
@@ -171,6 +173,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		branchInputProbeReady: state.branchInputProbeReady,
 		outputFormats:         state.outputFormatMap(),
 		plan:                  state.plan,
+		streamRules:           cloneStreamRules(state.streamRules),
 	}, nil
 }
 
@@ -300,9 +303,11 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		streamOutputs, _ := job.streamOutputsAndNames()
 		state.outputAttachments = jobAllOutputs(job.outputs, streamOutputs)
 		state.outputDestinationNames = job.allOutputNames()
+		state.streamRules = cloneStreamRules(job.streamRules)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateJobRecipePass(),
+		validateStreamRulesPass(),
 		validateJobIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
 		validateJobAttachmentsPass(),
@@ -343,8 +348,10 @@ func compileJobJoinRecipeWithOptions(job *Job, options recipeCompileOptions) (re
 	}
 	state.inputAttachments = joinArmInputs(spec)
 	state.outputAttachments, state.outputDestinationNames = joinOutputAttachments(spec)
+	state.streamRules = cloneStreamRules(job.streamRules)
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateJoinRecipePass(),
+		validateStreamRulesPass(),
 		validateJobInputFormatAdaptersPass(),
 		validateRecipeRuntimePass(),
 		emitGraphPlanSpecPass(),
@@ -379,6 +386,7 @@ func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (
 		name:            job.name,
 		streams:         append([]streamBuild(nil), job.branchStreams...),
 		outputs:         append([]namedDestinationSpec(nil), job.branchDestinations...),
+		streamRules:     cloneStreamRules(job.streamRules),
 		err:             job.err,
 		fromBranchSplit: true,
 	}
@@ -404,9 +412,11 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		state.branchDestinationAttachments = append([]namedDestinationSpec(nil), job.outputs...)
 		state.branchCompositionSplit = job.fromBranchSplit
 		state.plan, state.planErr = job.composePlan()
+		state.streamRules = cloneStreamRules(job.streamRules)
 	}
 	return recipeIntentCompiler{passes: []recipeCompilePass{
 		validateBranchCompositionRecipePass(),
+		validateStreamRulesPass(),
 		validateBranchCompositionIntentShapePass(),
 		validateRecipeAttachmentConsistencyPass(),
 		validateBranchCompositionAttachmentsPass(),

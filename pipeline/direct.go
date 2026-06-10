@@ -3,8 +3,10 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -42,7 +44,17 @@ type directNode struct {
 	emitter  *directEmitter
 	counters *nodeCounters
 	paused   *atomic.Bool
+	// gate counts in-flight deliveries to this node and carries the closing
+	// tombstone bit, so a live Remove can wait out deliveries that loaded an
+	// older routing snapshot before it closes the node. One atomic add/sub per
+	// delivery — the same budget class as the per-node counters.
+	gate *atomic.Int64
 }
+
+// nodeClosingBit marks a node's delivery gate as closing: deliveries that
+// arrive after the bit is set shed themselves, and Remove waits until every
+// delivery that arrived before it has drained.
+const nodeClosingBit = int64(1) << 62
 
 type directRoute struct {
 	to     []int
@@ -67,6 +79,7 @@ type directTopoNode struct {
 	emitter  *directEmitter
 	counters *nodeCounters
 	paused   *atomic.Bool
+	gate     *atomic.Int64
 	routes   []directRoute
 }
 
@@ -131,6 +144,7 @@ func (g *directRunner) rebuildTopoLocked() {
 		tn.emitter = n.emitter
 		tn.counters = n.counters
 		tn.paused = n.paused
+		tn.gate = n.gate
 		if len(n.routes) == 0 {
 			continue
 		}
@@ -486,7 +500,27 @@ func (g *directRunner) Remove(ref NodeRef) error {
 	g.rebuildTopoLocked()
 	closeNode := *node
 	g.mu.Unlock()
+	waitNodeGateDrained(closeNode.gate)
 	return closeDirectNode(&closeNode)
+}
+
+// waitNodeGateDrained tombstones a removed node's delivery gate and waits for
+// every in-flight delivery to finish, so the node is never closed under a
+// concurrent Handle. New deliveries (from emits holding an older routing
+// snapshot) see the closing bit and shed themselves. This is the cold removal
+// path; in-flight deliveries are bounded by one downstream chain.
+func waitNodeGateDrained(gate *atomic.Int64) {
+	if gate == nil {
+		return
+	}
+	gate.Add(nodeClosingBit)
+	for spins := 0; gate.Load() != nodeClosingBit; spins++ {
+		if spins < 100 {
+			runtime.Gosched()
+			continue
+		}
+		time.Sleep(100 * time.Microsecond)
+	}
 }
 
 func (g *directRunner) addNode(node directNode) (int, error) {
@@ -501,6 +535,7 @@ func (g *directRunner) addNode(node directNode) (int, error) {
 	node.emitter = &directEmitter{graph: g, from: index}
 	node.counters = &nodeCounters{}
 	node.paused = &atomic.Bool{}
+	node.gate = &atomic.Int64{}
 	g.index[node.name] = index
 	g.nodes = append(g.nodes, node)
 	g.rebuildTopoLocked()
@@ -558,6 +593,17 @@ func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg
 	if dst.paused != nil && dst.paused.Load() {
 		// Branch paused: skip this node; the source and siblings keep flowing.
 		return nil
+	}
+	if dst.gate != nil {
+		// Register this delivery before checking the tombstone: Remove sets
+		// the closing bit and then waits for the gate to drain, so a delivery
+		// that registered first is waited out and one that arrives after the
+		// bit sheds itself — Close never runs under an in-flight Handle.
+		if dst.gate.Add(1)&nodeClosingBit != 0 {
+			dst.gate.Add(-1)
+			return nil
+		}
+		defer dst.gate.Add(-1)
 	}
 	observeIn(dst.counters, msg, &g.cold)
 	switch dst.kind {

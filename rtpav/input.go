@@ -224,19 +224,28 @@ func (in *Input) depacketizersFor(streams []av.Stream) []Depacketizer {
 	if !ok {
 		return depacketizers
 	}
-	switch in.codec.ID {
+	if depacketizer := defaultDepacketizerFor(in.codec.ID, stream); depacketizer != nil {
+		return append(depacketizers, depacketizer)
+	}
+	return depacketizers
+}
+
+// defaultDepacketizerFor derives the built-in depacketizer for a codec, bound
+// to the given stream; codecs without a built-in return nil.
+func defaultDepacketizerFor(id av.CodecID, stream av.Stream) Depacketizer {
+	switch id {
 	case av.CodecOpus:
-		return append(depacketizers, NewOpusDepacketizer(stream))
+		return NewOpusDepacketizer(stream)
 	case av.CodecVP8:
-		return append(depacketizers, NewVP8Depacketizer(stream))
+		return NewVP8Depacketizer(stream)
 	case av.CodecVP9:
-		return append(depacketizers, NewVP9Depacketizer(stream))
+		return NewVP9Depacketizer(stream)
 	case av.CodecH264:
-		return append(depacketizers, NewH264Depacketizer(stream))
+		return NewH264Depacketizer(stream)
 	case av.CodecAV1:
-		return append(depacketizers, NewAV1Depacketizer(stream))
+		return NewAV1Depacketizer(stream)
 	default:
-		return depacketizers
+		return nil
 	}
 }
 

@@ -278,6 +278,13 @@ func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
 		s.payloads = s.receiver.PayloadMap()
 		canonical, canonicalize = s.applyCodecChangedStream(event)
 	}
+	if event != nil && event.Type == av.EventStreamAdded {
+		s.payloads = s.receiver.PayloadMap()
+		s.applyStreamAdded(event)
+	}
+	if event != nil && event.Type == av.EventStreamRemoved {
+		s.applyStreamRemoved(event)
+	}
 	s.resetTimestampState(event)
 	for i := range s.depacketizers {
 		if err := s.depacketizers[i].HandleEvent(ctx, event); err != nil {
@@ -307,6 +314,72 @@ func (s *Source) applyCodecChangedStream(event *av.Event) (av.Stream, bool) {
 		return s.streams[i], true
 	}
 	return av.Stream{}, false
+}
+
+// applyStreamAdded tracks a stream the receiver announced mid-run
+// (av.EventStreamAdded with the full av.Stream): the stream and its timestamp
+// state join the source's set, and when no depacketizer handles the new
+// stream's codec yet, the default depacketizer for that codec is derived and
+// bound to the new stream — so a late stream of a distinct codec flows with
+// its own stream id. A late stream sharing an existing depacketizer's codec
+// keeps the receiver-owned disambiguation (the existing depacketizer stays).
+// The event itself continues downstream regardless.
+func (s *Source) applyStreamAdded(event *av.Event) {
+	if event == nil || event.Stream == nil {
+		return
+	}
+	stream := *event.Stream
+	if stream.ID == "" {
+		stream.ID = event.StreamID
+	}
+	if stream.ID == "" {
+		return
+	}
+	for i := range s.streams {
+		if s.streams[i].ID == stream.ID {
+			// Known stream re-announced: refresh its facts, keep machinery.
+			s.streams[i] = stream
+			return
+		}
+	}
+	s.streams = append(s.streams, stream)
+	s.timestamps = append(s.timestamps, sourceTimestampState{streamID: stream.ID})
+	if stream.Codec.ID == "" {
+		return
+	}
+	for i := range s.depacketizers {
+		if s.depacketizers[i].Codec() == stream.Codec.ID {
+			return
+		}
+	}
+	if depacketizer := defaultDepacketizerFor(stream.Codec.ID, stream); depacketizer != nil {
+		s.depacketizers = append(s.depacketizers, depacketizer)
+	}
+}
+
+// applyStreamRemoved drops a removed stream from the source's set; its
+// timestamp state goes with it (resetTimestampState already handles the
+// in-flight reset for the matching id).
+func (s *Source) applyStreamRemoved(event *av.Event) {
+	if event == nil || event.StreamID == "" {
+		return
+	}
+	streams := s.streams[:0]
+	for i := range s.streams {
+		if s.streams[i].ID == event.StreamID {
+			continue
+		}
+		streams = append(streams, s.streams[i])
+	}
+	s.streams = streams
+	timestamps := s.timestamps[:0]
+	for i := range s.timestamps {
+		if s.timestamps[i].streamID == event.StreamID {
+			continue
+		}
+		timestamps = append(timestamps, s.timestamps[i])
+	}
+	s.timestamps = timestamps
 }
 
 func sourceCodecChangedReplacementMatches(stream av.Stream, event *av.Event, singleStream bool) bool {

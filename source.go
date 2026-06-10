@@ -70,7 +70,19 @@ func (p *SourcePush) Frame(frame *av.Frame) (PushResult, error) {
 	return p.emit.frameDelivery(frame)
 }
 
+// Event delivers one out-of-band event. It is also the dynamic stream
+// announce seam: a source that discovers a stream mid-run pushes
+// av.Event{Type: av.EventStreamAdded, Stream: &stream} (the full av.Stream
+// rides the typed Stream field) before that stream's media, and
+// av.Event{Type: av.EventStreamRemoved, StreamID: id} when it ends. The
+// running task surfaces both on Events()/Watch and reacts to declared
+// OnStream rules without a rebuild. Events with an empty StreamID inherit
+// the source's declared stream id, so stream announces must set StreamID
+// (or Stream.ID) explicitly.
 func (p *SourcePush) Event(event av.Event) (PushResult, error) {
+	if event.StreamID == "" && event.Stream != nil {
+		event.StreamID = event.Stream.ID
+	}
 	if event.StreamID == "" {
 		event.StreamID = p.stream
 	}

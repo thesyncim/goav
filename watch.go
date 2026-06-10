@@ -95,6 +95,28 @@ func (w *eventWatch) subscribe(source <-chan av.Event, capacity int, filters []E
 	return watcher.events
 }
 
+// publish delivers one task-originated event (e.g. a stream-rule attach
+// failure) to every matching watcher, with the same non-blocking shed
+// contract as graph events. It never reaches the graph's event channel — the
+// fan-out is the task's own event surface.
+func (w *eventWatch) publish(event av.Event) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.done {
+		return
+	}
+	for _, watcher := range w.watchers {
+		if !watcher.matches(event) {
+			continue
+		}
+		select {
+		case watcher.events <- event:
+		default:
+			w.dropped.Add(1)
+		}
+	}
+}
+
 // distribute is the single fan-out goroutine. It exits when the underlying
 // event stream closes — the graph closes it when the task closes — and then
 // closes every watcher channel, so watchers observe task shutdown and no

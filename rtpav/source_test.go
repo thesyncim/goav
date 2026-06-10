@@ -839,3 +839,106 @@ func TestSourceStartAllocs(t *testing.T) {
 		t.Fatalf("source start allocs = %v, want 0", allocs)
 	}
 }
+
+// TestSourceStreamAddedDerivesLateStreamDepacketizer drives the dynamic
+// stream contract on the RTP source: the receiver announces a late VP8 stream
+// on its event channel, the source forwards the announce downstream (full
+// av.Stream payload intact) before the stream's media, derives the default
+// depacketizer for the new codec, and the late stream's packets flow under
+// their own stream id.
+func TestSourceStreamAddedDerivesLateStreamDepacketizer(t *testing.T) {
+	ctx := context.Background()
+	audio := av.Stream{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio, ClockRate: 48000}}
+	video := av.Stream{ID: "cam", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo, ClockRate: 90000}}
+	events := make(chan av.Event, 1)
+	events <- av.Event{Type: av.EventStreamAdded, StreamID: video.ID, Stream: &video}
+	receiver := &fakeReceiver{
+		payloads: NewStaticPayloadMap(1, []PayloadCodec{
+			{PayloadType: 111, Parameters: audio.Codec, MIMEType: MIMEOpus, ClockRate: 48000},
+			{PayloadType: 96, Parameters: video.Codec, MIMEType: MIMEVP8, ClockRate: 90000},
+		}),
+		packets: []*rtp.Packet{
+			{Header: rtp.Header{PayloadType: 111, Timestamp: 960}, Payload: []byte{1, 2, 3}},
+			{Header: rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90}, Payload: []byte{0x10, 0x00, 0x11, 0x22}},
+		},
+		events: events,
+	}
+	source, err := NewSource(SourceConfig{
+		Receiver:      receiver,
+		Depacketizers: []Depacketizer{NewOpusDepacketizer(audio)},
+		Streams:       []av.Stream{audio},
+		MaxPackets:    2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var packets []av.Packet
+	var got []av.Event
+	if err := source.Start(ctx, testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		switch msg.Kind {
+		case pipeline.MessagePacket:
+			packets = append(packets, *msg.Packet)
+		case pipeline.MessageEvent:
+			got = append(got, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) < 1 || got[0].Type != av.EventStreamAdded || got[0].StreamID != video.ID {
+		t.Fatalf("events = %+v, want the forwarded stream announce first", got)
+	}
+	if got[0].Stream == nil || got[0].Stream.ID != video.ID || got[0].Stream.Codec.ID != av.CodecVP8 {
+		t.Fatalf("announce payload = %+v, want the full av.Stream", got[0].Stream)
+	}
+	if len(packets) != 2 {
+		t.Fatalf("packets = %+v, want the audio then the late video packet", packets)
+	}
+	if packets[0].StreamID != audio.ID {
+		t.Fatalf("first packet stream = %q, want %q", packets[0].StreamID, audio.ID)
+	}
+	if packets[1].StreamID != video.ID || !packets[1].Keyframe {
+		t.Fatalf("late packet = %+v, want stream %q keyframe", packets[1], video.ID)
+	}
+}
+
+// TestSourceStreamRemovedDropsLateStream pins the removal side: after an
+// added stream is removed again, the source is back to its single configured
+// stream (the EOS event carries that stream's identity again).
+func TestSourceStreamRemovedDropsLateStream(t *testing.T) {
+	audio := av.Stream{ID: "audio", Epoch: 3, Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}}
+	video := av.Stream{ID: "cam", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}}
+	events := make(chan av.Event, 2)
+	events <- av.Event{Type: av.EventStreamAdded, StreamID: video.ID, Stream: &video}
+	events <- av.Event{Type: av.EventStreamRemoved, StreamID: video.ID}
+	receiver := &fakeReceiver{
+		payloads: NewStaticPayloadMap(1, nil),
+		events:   events,
+	}
+	source, err := NewSource(SourceConfig{
+		Receiver: receiver,
+		Streams:  []av.Stream{audio},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got []av.Event
+	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		if msg.Kind == pipeline.MessageEvent {
+			got = append(got, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0].Type != av.EventStreamAdded || got[1].Type != av.EventStreamRemoved {
+		t.Fatalf("events = %+v", got)
+	}
+	eos := got[2]
+	if eos.Type != av.EventEndOfStream || eos.StreamID != audio.ID || eos.Epoch != audio.Epoch {
+		t.Fatalf("eos = %+v, want the single configured stream restored", eos)
+	}
+}
