@@ -322,9 +322,9 @@ func streamIntentPacketCopyOnly(stream streamIntent) bool {
 				return false
 			}
 		case info.OpShape:
-			// The .Auto(...) policy carrier lowers to nothing; it does not change
-			// a packet-copy-only chain.
-			if !operationSpecIsAutoPolicy(op) {
+			// Annotation carriers (.Auto/.Require/.Prefer) lower to nothing;
+			// they do not change a packet-copy-only chain.
+			if !operationSpecIsAnnotation(op) {
 				return false
 			}
 		default:

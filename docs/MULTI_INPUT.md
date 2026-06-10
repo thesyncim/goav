@@ -12,8 +12,11 @@ GoAV was structurally a tree (one input fanning out via `Branches`); convergence
   arms within half a frame join it, ahead arms sit the step out (silence /
   unpainted, canvas keeps the absent arm's extent), stale frames drop to catch
   up, an arm discontinuity (Seek/Segment) flushes that arm and re-syncs, and an
-  ended arm stops gating so the rest keep joining (both modes). Drop counts are
-  internal-only for now — no join stats surface yet.
+  ended arm stops gating so the rest keep joining (both modes). Catch-up drops
+  surface on the join node's counters via the optional `pipeline.DropReporter`
+  capability (polled at snapshot time, atomic counter — lock-free hot path):
+  `task.Stats().Nodes["mix"].Dropped` under the `"sync"` reason, and in
+  `task.Snapshot()`.
 - `Select(arms...)` — passthrough one-of-N switch (no decode/encode); the first
   arm is active by default and `task.Control(ctx, goav.SelectActive(id))`
   switches live through the control plane.

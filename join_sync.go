@@ -2,6 +2,7 @@ package goav
 
 import (
 	"math"
+	"sync/atomic"
 	"time"
 
 	"github.com/thesyncim/goav/av"
@@ -57,13 +58,15 @@ type joinSyncState struct {
 
 	// dropped counts frames discarded to stay aligned: stale heads behind the
 	// already-emitted timeline plus frames flushed by an arm discontinuity.
-	// Internal bookkeeping only — joins expose no per-step stats surface yet
-	// (an honest gap left for a stats follow-up).
-	dropped int
+	// Written only inside the owning stage's serial Handle; atomic because the
+	// join stages surface it through pipeline.DropReporter, which the runners
+	// poll concurrently at snapshot time (Stats/Snapshot show it as the join
+	// node's Dropped count under the "sync" reason).
+	dropped atomic.Uint64
 }
 
-func newJoinSyncState(mode joinSyncMode, inputs []av.StreamID) joinSyncState {
-	return joinSyncState{
+func newJoinSyncState(mode joinSyncMode, inputs []av.StreamID) *joinSyncState {
+	return &joinSyncState{
 		mode:    mode,
 		inputs:  append([]av.StreamID(nil), inputs...),
 		pending: make(map[av.StreamID][]*av.Frame, len(inputs)),
@@ -96,7 +99,7 @@ func (s *joinSyncState) discontinuity(id av.StreamID) bool {
 		if id != "" && arm != id {
 			continue
 		}
-		s.dropped += len(s.pending[arm])
+		s.dropped.Add(uint64(len(s.pending[arm])))
 		s.pending[arm] = nil
 	}
 	s.nextNS = joinSyncNSUnset
@@ -219,10 +222,16 @@ func (s *joinSyncState) dropStale() {
 				break
 			}
 			queue = queue[1:]
-			s.dropped++
+			s.dropped.Add(1)
 		}
 		s.pending[id] = queue
 	}
+}
+
+// droppedFrames reports the running catch-up drop total — the value the join
+// stages expose through pipeline.DropReporter. Safe concurrently with Handle.
+func (s *joinSyncState) droppedFrames() uint64 {
+	return s.dropped.Load()
 }
 
 // compactJoinFrames returns the participating frames in input order.

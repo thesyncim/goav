@@ -1220,17 +1220,59 @@ func validateOperationSpecShapes(operation string, stream streamIntent, initial 
 	node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
 	for i := range stream.Operations {
 		next := stream.Operations[i]
-		if next.Kind == info.OpTap || next.Kind == info.OpShape {
+		// Taps and shape annotations advance the lineage unchecked; a
+		// .Require(...) assertion falls through to the contract check below.
+		if next.Kind == info.OpTap || (next.Kind == info.OpShape && next.Require == nil) {
 			shape = operationSpecOutputShape(shape, next)
 			continue
 		}
 		expected := next.InputShapes()
 		if len(expected) != 0 && !expected.Accepts(shape) {
-			return operationShapeMismatchError(operation, node, i, next, expected, shape)
+			return operationShapeFailureError(operation, node, i, next, expected, shape)
 		}
 		shape = operationSpecOutputShape(shape, next)
 	}
 	return nil
+}
+
+// operationShapeFailureError dispatches a failed shape contract to its
+// surface: a .Require(...) assertion gets the requirement-specific refusal,
+// every other operation keeps the established mismatch error.
+func operationShapeFailureError(operation string, node string, index int, step OperationSpec, expected shape.Set, actual shape.Spec) error {
+	if step.Kind == info.OpShape && step.Require != nil {
+		return shapeRequirementUnmetError(operation, node, index, step, expected, actual)
+	}
+	return operationShapeMismatchError(operation, node, index, step, expected, actual)
+}
+
+// shapeRequirementUnmetError is the hard .Require(...) refusal: the stream at
+// this chain position does not satisfy the asserted shape. It carries the
+// actual and required shapes in the established refusal format; the solver
+// appends the exact .Auto(...) fix when a conversion could satisfy it.
+func shapeRequirementUnmetError(operation string, node string, index int, step OperationSpec, expected shape.Set, actual shape.Spec) error {
+	required := shape.Spec{}
+	if step.Require != nil {
+		required = *step.Require
+	}
+	return &BuildError{
+		Code:      "shape_requirement_unmet",
+		Operation: operation,
+		Node:      node,
+		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
+			humanizeShape(actual), humanizeShape(required)),
+		Details: []string{
+			fmt.Sprintf("operation_index=%d", index),
+			"operation=require",
+			"source=" + humanizeShape(actual),
+			"actual_shape=" + actual.String(),
+			"expected_shape=" + shapeSetString(expected),
+		},
+		Suggestions: []string{
+			"adjust the chain so the stream satisfies the required shape before .Require(...)",
+			"relax or remove the .Require(...) assertion",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func operationSpecOutputShape(input shape.Spec, operation OperationSpec) shape.Spec {

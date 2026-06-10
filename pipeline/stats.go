@@ -143,9 +143,12 @@ func (c *coldStats) recordDrop(n *nodeCounters, policy DropPolicy) {
 // snapshotStats assembles the public GraphStats. The graph-wide totals are
 // derived by summing each node's atomic counters (no shared hot counter to
 // contend on); the cold maps and last-event are read under the cold mutex. It is
-// a cold-path call (Stats/Snapshot). names and nodes are indexed in parallel; a
-// nil node entry is skipped.
-func snapshotStats(cold *coldStats, names []string, nodes []*nodeCounters) GraphStats {
+// a cold-path call (Stats/Snapshot). names, nodes, and reported are indexed in
+// parallel; a nil node entry is skipped. reported carries each node's
+// self-reported internal drops (the optional DropReporter capability, polled
+// by the caller), folded into the node's Dropped under DropSync; a nil slice
+// means no node reports.
+func snapshotStats(cold *coldStats, names []string, nodes []*nodeCounters, reported []uint64) GraphStats {
 	var stats GraphStats
 	cold.mu.Lock()
 	defer cold.mu.Unlock()
@@ -171,6 +174,17 @@ func snapshotStats(cold *coldStats, names []string, nodes []*nodeCounters) Graph
 			continue
 		}
 		ns := nodes[i].snapshotLocked()
+		if i < len(reported) && reported[i] > 0 {
+			ns.Dropped += reported[i]
+			if ns.DropReasons == nil {
+				ns.DropReasons = make(map[DropPolicy]uint64, 1)
+			}
+			ns.DropReasons[DropSync] += reported[i]
+			if stats.DropReasons == nil {
+				stats.DropReasons = make(map[DropPolicy]uint64, 1)
+			}
+			stats.DropReasons[DropSync] += reported[i]
+		}
 		// Graph totals: messages/packets/frames/events count emissions (node
 		// "out"); delivered counts arrivals (node "in"); dropped sums per node.
 		stats.Messages += ns.OutMessages
@@ -189,6 +203,27 @@ func snapshotStats(cold *coldStats, names []string, nodes []*nodeCounters) Graph
 	}
 	stats.Nodes = nodeStats
 	return stats
+}
+
+// reportedDrops polls a node component's optional DropReporter capability:
+// the node's internal shed total at snapshot time. Exactly one of the three
+// components is non-nil per node kind.
+func reportedDrops(source Source, stage Stage, sink Sink) uint64 {
+	var component any
+	switch {
+	case source != nil:
+		component = source
+	case stage != nil:
+		component = stage
+	case sink != nil:
+		component = sink
+	default:
+		return 0
+	}
+	if reporter, ok := component.(DropReporter); ok {
+		return reporter.DroppedMessages()
+	}
+	return 0
 }
 
 // snapshotLocked reads one node's counters into the public NodeStats. The caller

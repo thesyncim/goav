@@ -173,6 +173,34 @@ does not allow fails before any resource opens with the exact policy to add,
 and join arms (Mix) keep their implicit always-on arm policy — mismatched arms
 auto-resample with zero opt-in.
 
+`.Require(...)` makes the contract explicit at a chosen point: the stream MUST
+satisfy the given shape there, or the build fails with
+`shape_requirement_unmet` carrying the actual and required shapes and the
+exact fix — including the `.Auto(...)` policy to add when a conversion could
+satisfy it. Under an active policy that covers the delta, the planner inserts
+the conversion before the assertion and the requirement holds by construction.
+It works on stream chains, branches, and flows, and lowers to no runtime node:
+
+```go
+return goav.From(mic).
+    Audio().
+    Auto(shape.AllowResample()).
+    Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, 2, ""))).
+    Encode(codec.Opus(codec.Bitrate(96_000))).
+    To(goav.File("voice.webm", out)).
+    Run(ctx)
+```
+
+`.Prefer(...)` is the soft twin: where the solver has a genuinely open choice —
+a conversion-target fact the downstream operation leaves unpinned, or several
+registered adapters that could perform the conversion — the preference biases
+it. `.Prefer(shape.New(shape.Audio(0, 0, "f32")))` steers an open sample
+format; `.Prefer(shape.New(shape.Realtime(true)))` resolves an otherwise
+ambiguous adapter choice toward the realtime-capable candidate. A preference
+never fails a build: one the policy cannot cover or no adapter can perform is
+dropped, and `Explain` reports both outcomes as `shape_preference_applied` /
+`shape_preference_ignored` diagnostics.
+
 ### Typed Taps
 
 Omit `From(...)` when every branch starts from the current stream point. Use a
@@ -612,7 +640,9 @@ Arms pair by arrival order by default — right for live sources on one clock.
 `.SyncByPTS()` aligns them by timestamp instead (files starting at different
 offsets, a `Seek` on one arm, drift): the earliest head frame sets each step,
 arms whose head is newer sit the step out, and stale frames are dropped to
-catch up.
+catch up. Catch-up drops are never silent: they surface on the join node's
+counters — `task.Stats().Nodes["mix"].Dropped` under the `"sync"` reason, and
+in `task.Snapshot()`.
 
 ```go
 goav.Mix(goav.From(songA).Audio(), goav.From(songB).Audio()).SyncByPTS().To(out)
@@ -841,7 +871,8 @@ Implemented now:
   multi-input destinations.
 - Packet-preserving `Copy().To(...)` and packet-copy `Branches(...)`.
 - Stream-scoped decode, custom stages, resize/resample, Opus/VP8/VP9 encode, and
-  operation-by-operation shape validation with structured build errors.
+  operation-by-operation shape solving with structured build errors,
+  `.Require(...)` hard assertions, and `.Prefer(...)` soft solver preferences.
 - `Mix`/`Composite`/`Select` convergence with composable join outputs, planned
   join graphs, and a live `SelectActive` switch.
 - Typed taps, branches, destinations, flows, and runtime branch attachment with

@@ -50,7 +50,11 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   capability delta, and inserts them as real planned operations under
   `.Auto(shape.AllowResample()/AllowResize()/AllowConvert())` (default OFF;
   refusals carry the exact policy to add; joins use an implicit arm policy);
-  shape.Contract honored on Do stages. **DONE.** TODO: `.Require/.Prefer`,
+  shape.Contract honored on Do stages; user-facing shape controls shipped —
+  `.Require(spec)` hard assertions (fail with actual/required/fix, solvable
+  under an active policy) on chains/branches/flows and `.Prefer(spec)` soft
+  preferences (fill open conversion-target facts, tie-break ambiguous adapter
+  selection; never fail — dropped with a diagnostic). **DONE.** TODO:
   contracts on Source/Sink/Destination/Flow.
 - **Tap** (§5): carry name/domain/kind/shape/producing-op/branch-owner/attach-policy/timebase. **partial.**
 - **Branch control plane** (§6,7,10): pause/resume/stop/rebranch **DONE** (lock-free,

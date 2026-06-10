@@ -100,8 +100,8 @@ func TestAudioMixSyncByPTSDropsStaleFrames(t *testing.T) {
 			t.Fatalf("step %d mixed=%v, want %v", i, got, want[i])
 		}
 	}
-	if mix.sync.dropped != 1 {
-		t.Fatalf("dropped=%d, want 1", mix.sync.dropped)
+	if got := mix.DroppedMessages(); got != 1 {
+		t.Fatalf("dropped=%d, want 1", got)
 	}
 }
 
@@ -122,8 +122,8 @@ func TestAudioMixSyncByPTSFlushesArmOnDiscontinuity(t *testing.T) {
 	if len(emit.events) != 1 || emit.events[0].Type != av.EventDiscontinuity || emit.events[0].StreamID != "mix" {
 		t.Fatalf("events=%+v, want one discontinuity re-stamped to the join output", emit.events)
 	}
-	if mix.sync.dropped != 1 {
-		t.Fatalf("dropped=%d, want 1 (the stale pre-seek frame flushed)", mix.sync.dropped)
+	if got := mix.DroppedMessages(); got != 1 {
+		t.Fatalf("dropped=%d, want 1 (the stale pre-seek frame flushed)", got)
 	}
 
 	if err := mix.Handle(ctx, frameMsg(mixSyncTestFrame("a", 100, 10, 10)), emit); err != nil {
@@ -301,6 +301,42 @@ func TestMixSyncByPTSEndToEnd(t *testing.T) {
 	}
 	if wantPTS := []int64{0, 20, 40}; !reflect.DeepEqual(gotPTS, wantPTS) {
 		t.Fatalf("pts=%v, want %v", gotPTS, wantPTS)
+	}
+}
+
+// TestMixSyncByPTSDropsVisibleInStats pins the drop-visibility surface: a
+// stale duplicate frame the PTS-sync join sheds to stay aligned shows up on
+// the join node's counters — task.Stats().Nodes["mix"].Dropped under the
+// "sync" reason — and through Snapshot(). No silent loss.
+func TestMixSyncByPTSDropsVisibleInStats(t *testing.T) {
+	ctx := context.Background()
+	task, err := Mix(
+		// Arm a repeats PTS 0: the duplicate lands behind the emitted timeline
+		// and is dropped to catch up, whatever the arrival interleaving.
+		From(mixSyncTestSource("a", []int64{0, 0, 20}, [][]int16{{10, 10}, {99, 99}, {20, 20}})).Audio(),
+		From(mixSyncTestSource("b", []int64{0, 20}, [][]int16{{1, 1}, {2, 2}})).Audio(),
+	).SyncByPTS().To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	stats := task.Stats()
+	node, ok := stats.Nodes["mix"]
+	if !ok {
+		t.Fatalf("stats.Nodes = %+v, want a mix entry", stats.Nodes)
+	}
+	if node.Dropped != 1 || node.DropReasons[pipeline.DropSync] != 1 {
+		t.Fatalf("mix dropped=%d reasons=%+v, want 1 under sync", node.Dropped, node.DropReasons)
+	}
+	if stats.Dropped < 1 || stats.DropReasons[pipeline.DropSync] != 1 {
+		t.Fatalf("graph dropped=%d reasons=%+v, want the join drop folded in", stats.Dropped, stats.DropReasons)
+	}
+	if snapshot := task.Snapshot(); snapshot.Stats.Nodes["mix"].Dropped != 1 {
+		t.Fatalf("snapshot mix dropped=%d, want 1", snapshot.Stats.Nodes["mix"].Dropped)
 	}
 }
 

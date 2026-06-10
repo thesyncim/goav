@@ -88,6 +88,12 @@ func (operation OperationSpec) InputShapes() shape.Set {
 		media := firstNonEmptyMedia(operation.Decode.Type, operation.Decode.Parameters.Type, codecMedia(codecID))
 		return shape.Set{shape.Packet(media, codecID)}
 	case info.OpShape:
+		// A .Require(...) assertion IS an input contract: the shape walk fails
+		// when the propagated shape does not satisfy it. Plain annotations
+		// (.Shape facts, .Auto policies, .Prefer hints) accept anything.
+		if operation.Require != nil {
+			return shape.Set{*operation.Require}
+		}
 		return nil
 	case info.OpTransform:
 		return operation.Transform.InputShapes()

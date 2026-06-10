@@ -398,11 +398,13 @@ func (g *directRunner) Stats() GraphStats {
 	defer g.mu.RUnlock()
 	names := make([]string, len(g.nodes))
 	nodes := make([]*nodeCounters, len(g.nodes))
+	reported := make([]uint64, len(g.nodes))
 	for i := range g.nodes {
 		names[i] = g.nodes[i].name
 		nodes[i] = g.nodes[i].counters
+		reported[i] = reportedDrops(g.nodes[i].source, g.nodes[i].stage, g.nodes[i].sink)
 	}
-	return snapshotStats(&g.cold, names, nodes)
+	return snapshotStats(&g.cold, names, nodes, reported)
 }
 
 // SetNodePaused pauses or resumes delivery to a single node. The lock-free

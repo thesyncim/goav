@@ -46,12 +46,15 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 	}
 	node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
 	policy, policyActive := chainAutoPolicy(stream.Operations)
+	preference, preferenceActive := chainPreference(stream.Operations)
 	solved := make([]OperationSpec, 0, len(stream.Operations)+1)
 	var diagnostics []info.Diagnostic
 	inserted := false
 	for i := range stream.Operations {
 		next := stream.Operations[i]
-		if next.Kind == info.OpTap || next.Kind == info.OpShape {
+		// Taps and shape annotations advance the lineage unchecked; a
+		// .Require(...) assertion falls through to the contract check below.
+		if next.Kind == info.OpTap || (next.Kind == info.OpShape && next.Require == nil) {
 			solved = append(solved, next)
 			current = operationSpecOutputShape(current, next)
 			continue
@@ -60,38 +63,39 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 		if len(expected) != 0 && !expected.Accepts(current) {
 			target, fixable := shapeConversionTargetFromSet(current, expected)
 			if !fixable {
-				return nil, nil, operationShapeMismatchError(operation, node, i, next, expected, current)
+				return nil, nil, operationShapeFailureError(operation, node, i, next, expected, current)
 			}
 			if !policyActive {
 				// A conversion would fix the chain, but solving is off: fail with
 				// the actual/expected shapes and the exact .Auto(...) to add.
-				mismatch := operationShapeMismatchError(operation, node, i, next, expected, current)
+				mismatch := operationShapeFailureError(operation, node, i, next, expected, current)
 				return nil, nil, appendAutoFixSuggestions(mismatch, current, target, next)
 			}
-			plan, planned, err := planShapeConversion(rt, current, target, rt.realtime)
+			plan, planned, prefDiags, err := planShapeConversionPreferred(rt, current, target, rt.realtime, policy, preference, preferenceActive, node)
 			if err != nil {
 				return nil, nil, shapeSolverAdapterError(operation, node, i, next, current, target, err)
 			}
 			if !planned {
-				return nil, nil, operationShapeMismatchError(operation, node, i, next, expected, current)
+				return nil, nil, operationShapeFailureError(operation, node, i, next, expected, current)
 			}
 			if !policy.Covers(plan.needed) {
 				return nil, nil, shapeConversionRefusedError(operation, node, i, next, policy, plan, current, target)
 			}
 			after := operationSpecOutputShape(current, plan.operation)
 			if !expected.Accepts(after) {
-				return nil, nil, operationShapeMismatchError(operation, node, i, next, expected, current)
+				return nil, nil, operationShapeFailureError(operation, node, i, next, expected, current)
 			}
 			plan.operation.Shared = next.Shared
 			solved = append(solved, plan.operation)
 			diagnostics = append(diagnostics, shapeConversionDiagnostic(node, plan, next, current, target))
+			diagnostics = append(diagnostics, prefDiags...)
 			inserted = true
 			current = after
 		}
 		if policyActive {
 			desired := operationSoftInputShape(next)
 			if !mediaShapeEmpty(desired) && !shape.Conversions(current, desired).Empty() {
-				plan, planned, err := planShapeConversion(rt, current, desired, rt.realtime)
+				plan, planned, prefDiags, err := planShapeConversionPreferred(rt, current, desired, rt.realtime, policy, preference, preferenceActive, node)
 				if err != nil {
 					return nil, nil, shapeSolverAdapterError(operation, node, i, next, current, desired, err)
 				}
@@ -102,6 +106,7 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 					plan.operation.Shared = next.Shared
 					solved = append(solved, plan.operation)
 					diagnostics = append(diagnostics, shapeConversionDiagnostic(node, plan, next, current, desired))
+					diagnostics = append(diagnostics, prefDiags...)
 					inserted = true
 					current = operationSpecOutputShape(current, plan.operation)
 				}
@@ -114,6 +119,21 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 		return nil, nil, nil
 	}
 	return solved, diagnostics, nil
+}
+
+// chainPreference merges the chain's .Prefer(...) specs (later facts win) and
+// reports whether any preference operation is present.
+func chainPreference(operations []OperationSpec) (shape.Spec, bool) {
+	var preference shape.Spec
+	active := false
+	for i := range operations {
+		if operations[i].Prefer == nil {
+			continue
+		}
+		active = true
+		preference = shape.Merge(preference, *operations[i].Prefer)
+	}
+	return preference, active
 }
 
 // operationSoftInputShape derives the format facts an operation pins for its
@@ -193,18 +213,27 @@ func shapeConversionTargetFromSet(current shape.Spec, expected shape.Set) (shape
 // mismatch error); adapter selection failures (none or several candidates)
 // return an error.
 func planShapeConversion(rt *runtime, actual shape.Spec, expected shape.Spec, realtime bool) (shapeConversionPlan, bool, error) {
+	plan, planned, _, err := planShapeConversionFor(rt, actual, expected, realtime, shape.Spec{})
+	return plan, planned, err
+}
+
+// planShapeConversionFor is planShapeConversion with an adapter preference:
+// the pref spec tie-breaks otherwise-ambiguous adapter selection. resolved
+// reports whether the preference decided the choice. A zero pref is exactly
+// the plain plan.
+func planShapeConversionFor(rt *runtime, actual shape.Spec, expected shape.Spec, realtime bool, pref shape.Spec) (shapeConversionPlan, bool, bool, error) {
 	needed := shape.Conversions(actual, expected)
 	if needed.Empty() {
-		return shapeConversionPlan{}, false, nil
+		return shapeConversionPlan{}, false, false, nil
 	}
 	media := firstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
 	transform, ok := synthesizeConversionTransform(media, actual, expected)
 	if !ok {
-		return shapeConversionPlan{}, false, nil
+		return shapeConversionPlan{}, false, false, nil
 	}
-	descriptor, candidates, err := selectShapeConversionAdapter(rt, media, transform, realtime)
+	descriptor, candidates, resolved, err := selectShapeConversionAdapter(rt, media, transform, realtime, pref)
 	if err != nil {
-		return shapeConversionPlan{}, false, &shapeAdapterSelectionError{media: media, needed: needed, candidates: candidates, cause: err}
+		return shapeConversionPlan{}, false, false, &shapeAdapterSelectionError{media: media, needed: needed, candidates: candidates, cause: err}
 	}
 	operation := operationSpecForTransform(transform)
 	operation.Component = descriptor.Name
@@ -213,7 +242,95 @@ func planShapeConversion(rt *runtime, actual shape.Spec, expected shape.Spec, re
 		factory:   descriptor.Name,
 		needed:    needed,
 		detail:    shapeConversionDetailText(descriptor.Name, actual, transform),
-	}, true, nil
+	}, true, resolved, nil
+}
+
+// planShapeConversionPreferred plans the conversion under the chain's
+// .Prefer(...). Soft by definition: the preference fills the conversion-target
+// facts the expected shape leaves open and tie-breaks otherwise-ambiguous
+// adapter selection — and a preference the active policy cannot cover, no
+// adapter can perform, or that has no open choice to influence is dropped (a
+// diagnostic records the drop when the plain plan proceeds). Without an
+// active preference the call is exactly planShapeConversion.
+func planShapeConversionPreferred(rt *runtime, actual shape.Spec, expected shape.Spec, realtime bool, policy shape.Policy, pref shape.Spec, prefActive bool, node string) (shapeConversionPlan, bool, []info.Diagnostic, error) {
+	media := firstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
+	if !prefActive || mediaShapeEmpty(pref) || (pref.MediaKind != "" && pref.MediaKind != media) {
+		plan, planned, err := planShapeConversion(rt, actual, expected, realtime)
+		return plan, planned, nil, err
+	}
+	basePlan, basePlanned, baseErr := planShapeConversion(rt, actual, expected, realtime)
+	effective := preferredConversionTarget(media, expected, pref)
+	targetBias := effective != expected
+	plan, planned, resolved, err := planShapeConversionFor(rt, actual, effective, realtime, pref)
+	reason := ""
+	switch {
+	case err != nil:
+		reason = preferenceDropReason(err)
+	case !planned:
+		reason = "the preferred conversion cannot be planned"
+	case !policy.Covers(plan.needed):
+		reason = fmt.Sprintf("the chain policy (%s) does not allow the preferred conversion (%s)", policy.String(), plan.needed.String())
+	case !targetBias && !resolved:
+		// The preference had no open choice to influence: the plain plan is
+		// already exactly this plan.
+		return basePlan, basePlanned, nil, baseErr
+	default:
+		return plan, true, []info.Diagnostic{shapePreferenceAppliedDiagnostic(node, pref, plan, targetBias, resolved)}, nil
+	}
+	// Drop the preference: the plain plan (or its plain failure) stands, so a
+	// .Prefer(...) never fails a build that would succeed without it.
+	if baseErr != nil || !basePlanned {
+		return basePlan, basePlanned, nil, baseErr
+	}
+	return basePlan, basePlanned, []info.Diagnostic{shapePreferenceIgnoredDiagnostic(node, pref, reason)}, nil
+}
+
+// preferredConversionTarget overlays the preference onto the conversion target
+// for exactly the format facts the expected shape leaves open, scoped to the
+// conversion's media. Pinned expected facts always win, and identity facts
+// (domain, media, codec, stream, container, realtime) are never taken from a
+// preference.
+func preferredConversionTarget(media av.MediaType, expected shape.Spec, pref shape.Spec) shape.Spec {
+	out := expected
+	switch media {
+	case av.MediaAudio:
+		if out.SampleRate == 0 {
+			out.SampleRate = pref.SampleRate
+		}
+		if out.Channels == 0 {
+			out.Channels = pref.Channels
+		}
+		if out.SampleFormat == "" {
+			out.SampleFormat = pref.SampleFormat
+		}
+	case av.MediaVideo:
+		if out.Width == 0 {
+			out.Width = pref.Width
+		}
+		if out.Height == 0 {
+			out.Height = pref.Height
+		}
+		if out.PixelFormat == "" {
+			out.PixelFormat = pref.PixelFormat
+		}
+	}
+	return out
+}
+
+// preferenceDropReason renders why a preferred plan could not be honored.
+func preferenceDropReason(err error) string {
+	selection, ok := err.(*shapeAdapterSelectionError)
+	if !ok {
+		return "the preferred conversion cannot be planned"
+	}
+	switch selection.cause {
+	case errShapeAdapterAmbiguous:
+		return "several registered adapters still match under the preference: " + strings.Join(selection.candidates, ", ")
+	case errShapeAdapterMissing:
+		return "no registered adapter can perform the preferred conversion"
+	default:
+		return selection.Error()
+	}
 }
 
 // synthesizeConversionTransform builds the explicit transform config from the
@@ -265,9 +382,11 @@ func (e *shapeAdapterSelectionError) Unwrap() error { return e.cause }
 // selectShapeConversionAdapter picks the registered filter whose declared
 // capabilities cover the synthesized conversion: matching media in and out,
 // the target pixel/sample format when the descriptor constrains formats, exact
-// resize support, and realtime capability on realtime runtimes. Exactly one
-// candidate must remain.
-func selectShapeConversionAdapter(rt *runtime, media av.MediaType, transform TransformSpec, realtime bool) (filter.Descriptor, []string, error) {
+// resize support, and realtime capability on realtime runtimes. When several
+// candidates remain, a non-zero pref narrows them to the adapters whose
+// declared capabilities cover the preference; resolved reports whether that
+// tie-break decided the choice. Exactly one candidate must remain.
+func selectShapeConversionAdapter(rt *runtime, media av.MediaType, transform TransformSpec, realtime bool, pref shape.Spec) (filter.Descriptor, []string, bool, error) {
 	descriptors := rt.filters.Descriptors()
 	matched := make([]filter.Descriptor, 0, len(descriptors))
 	for i := range descriptors {
@@ -293,18 +412,54 @@ func selectShapeConversionAdapter(rt *runtime, media av.MediaType, transform Tra
 		}
 		matched = append(matched, descriptor)
 	}
+	resolved := false
+	if len(matched) > 1 {
+		if narrowed := narrowAdaptersByPreference(matched, media, pref); len(narrowed) == 1 {
+			matched = narrowed
+			resolved = true
+		}
+	}
 	switch len(matched) {
 	case 0:
-		return filter.Descriptor{}, nil, errShapeAdapterMissing
+		return filter.Descriptor{}, nil, false, errShapeAdapterMissing
 	case 1:
-		return matched[0], []string{matched[0].Name}, nil
+		return matched[0], []string{matched[0].Name}, resolved, nil
 	default:
 		names := make([]string, 0, len(matched))
 		for i := range matched {
 			names = append(names, matched[i].Name)
 		}
-		return filter.Descriptor{}, names, errShapeAdapterAmbiguous
+		return filter.Descriptor{}, names, false, errShapeAdapterAmbiguous
 	}
+}
+
+// narrowAdaptersByPreference keeps the candidates whose declared capabilities
+// cover the preference's adapter-relevant facts: realtime capability when the
+// preference asks for it, and the preferred sample/pixel format when the
+// descriptor constrains formats (an unconstrained descriptor covers every
+// format, exactly like the base capability filter). A preference without such
+// facts narrows nothing.
+func narrowAdaptersByPreference(matched []filter.Descriptor, media av.MediaType, pref shape.Spec) []filter.Descriptor {
+	if !pref.Realtime && pref.SampleFormat == "" && pref.PixelFormat == "" {
+		return matched
+	}
+	narrowed := make([]filter.Descriptor, 0, len(matched))
+	for i := range matched {
+		descriptor := matched[i]
+		if pref.Realtime && !descriptor.Realtime {
+			continue
+		}
+		if media == av.MediaAudio && pref.SampleFormat != "" &&
+			len(descriptor.SampleFormats) != 0 && !stringAllowed(descriptor.SampleFormats, pref.SampleFormat) {
+			continue
+		}
+		if media == av.MediaVideo && pref.PixelFormat != "" &&
+			len(descriptor.PixelFormats) != 0 && !stringAllowed(descriptor.PixelFormats, pref.PixelFormat) {
+			continue
+		}
+		narrowed = append(narrowed, descriptor)
+	}
+	return narrowed
 }
 
 // --- errors and diagnostics ---
@@ -337,6 +492,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 			Suggestions: []string{
 				"keep one " + string(selection.media) + " conversion filter registered per runtime",
 				"build the runtime with only the intended conversion filter via goav.New(goav.WithFilter(...))",
+				"bias the choice with .Prefer(shape.New(...)) toward a capability only one candidate declares",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -414,6 +570,39 @@ func explicitConversionSuggestion(transform TransformSpec, step OperationSpec) [
 		return []string{fmt.Sprintf("insert .Resize(%d, %d) explicitly%s", transform.Resize.Width, transform.Resize.Height, target)}
 	default:
 		return nil
+	}
+}
+
+// shapePreferenceAppliedDiagnostic records a preference that influenced the
+// planned conversion: it filled open target facts, resolved an otherwise
+// ambiguous adapter choice, or both.
+func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, plan shapeConversionPlan, targetBias bool, resolved bool) info.Diagnostic {
+	effects := make([]string, 0, 2)
+	if targetBias {
+		effects = append(effects, "set the open conversion target facts")
+	}
+	if resolved {
+		effects = append(effects, "resolved the adapter choice")
+	}
+	return info.Diagnostic{
+		Code:    "shape_preference_applied",
+		Node:    node,
+		Message: fmt.Sprintf("preference (%s) %s: %s", pref.String(), strings.Join(effects, " and "), plan.detail),
+		Details: []string{
+			"preference=" + pref.String(),
+			"adapter=" + plan.factory,
+		},
+	}
+}
+
+// shapePreferenceIgnoredDiagnostic records a preference the solver could not
+// honor — soft by definition, the plain plan proceeds untouched.
+func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason string) info.Diagnostic {
+	return info.Diagnostic{
+		Code:    "shape_preference_ignored",
+		Node:    node,
+		Message: fmt.Sprintf("preference (%s) ignored: %s", pref.String(), reason),
+		Details: []string{"preference=" + pref.String()},
 	}
 }
 

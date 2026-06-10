@@ -147,6 +147,9 @@ func operationSpecShape(operation OperationSpec) shape.Spec {
 	case info.OpTransform:
 		return mediaShapeFromTransform(operation.Transform)
 	case info.OpShape:
+		if operation.Require != nil {
+			return *operation.Require
+		}
 		return operation.Shape
 	case info.OpEncode:
 		return mediaShapeFromCodecSpec(operation.Encode, shape.DomainPacket)
@@ -160,8 +163,13 @@ func operationSpecDetail(operation OperationSpec) string {
 	case info.OpTransform:
 		return firstNonEmpty(transformFactoryName(operation.Transform), "transform frames")
 	case info.OpShape:
-		if operation.Auto != nil {
+		switch {
+		case operation.Auto != nil:
 			return "shape solver policy"
+		case operation.Require != nil:
+			return "shape requirement"
+		case operation.Prefer != nil:
+			return "shape preference"
 		}
 		return "media shape annotation"
 	case info.OpStage:
@@ -853,6 +861,14 @@ func cloneOperationSpecs(operations []OperationSpec) []OperationSpec {
 		if operation.Auto != nil {
 			policy := *operation.Auto
 			operation.Auto = &policy
+		}
+		if operation.Require != nil {
+			required := *operation.Require
+			operation.Require = &required
+		}
+		if operation.Prefer != nil {
+			preferred := *operation.Prefer
+			operation.Prefer = &preferred
 		}
 		out = append(out, operation)
 	}

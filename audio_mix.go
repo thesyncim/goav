@@ -29,7 +29,7 @@ import (
 type audioMixStage struct {
 	name string
 	out  av.StreamID
-	sync joinSyncState
+	sync *joinSyncState
 }
 
 func newAudioMixStage(name string, inputs []av.StreamID, out av.StreamID, mode joinSyncMode) *audioMixStage {
@@ -43,6 +43,11 @@ func (s *audioMixStage) Name() string { return s.name }
 func (s *audioMixStage) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: joinSyncNodeDetail(s.sync.mode)}
 }
+
+// DroppedMessages implements pipeline.DropReporter: frames the join discarded
+// to stay aligned (stale catch-up heads, discontinuity flushes), surfaced as
+// the join node's Dropped count (reason "sync") in Stats and snapshots.
+func (s *audioMixStage) DroppedMessages() uint64 { return s.sync.droppedFrames() }
 
 func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	switch msg.Kind {

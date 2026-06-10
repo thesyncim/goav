@@ -61,6 +61,16 @@ type OperationSpec struct {
 	// one info.OpShape operation with Auto set, and the solver unions every Auto
 	// operation on the chain. Nil means the operation carries no policy.
 	Auto *shape.Policy
+	// Require carries a hard shape assertion: .Require(spec) appends one
+	// info.OpShape operation with Require set, and the shape walk fails the
+	// build when the propagated shape does not satisfy it at this point. Nil
+	// means the operation asserts nothing.
+	Require *shape.Spec
+	// Prefer carries the chain's soft solver preference: .Prefer(spec) appends
+	// one info.OpShape operation with Prefer set, and the solver merges every
+	// preference on the chain to bias otherwise-open conversion choices. Nil
+	// means the operation carries no preference.
+	Prefer *shape.Spec
 }
 
 type destinationIntent struct {
@@ -900,6 +910,22 @@ func operationSpecForAutoPolicy(policies []shape.Policy) OperationSpec {
 	return OperationSpec{Kind: info.OpShape, Component: "auto", Auto: &policy}
 }
 
+// operationSpecForRequire is the assertion-carrying operation .Require(...)
+// appends: an info.OpShape annotation with no shape facts of its own (it never
+// changes the media and lowers to no runtime node) whose Require field the
+// shape walk enforces as a hard constraint at this chain position.
+func operationSpecForRequire(spec shape.Spec) OperationSpec {
+	return OperationSpec{Kind: info.OpShape, Component: "require", Require: &spec}
+}
+
+// operationSpecForPreference is the preference-carrying operation .Prefer(...)
+// appends: an info.OpShape annotation with no shape facts (it never changes
+// the media and lowers to no runtime node) whose Prefer field biases the shape
+// solver's otherwise-open choices.
+func operationSpecForPreference(spec shape.Spec) OperationSpec {
+	return OperationSpec{Kind: info.OpShape, Component: "prefer", Prefer: &spec}
+}
+
 // chainAutoPolicy unions the chain's .Auto(...) policies. The second result
 // reports whether any policy operation is present — an empty .Auto() activates
 // solving while allowing nothing, so refusals name the exact policy to add.
@@ -916,10 +942,12 @@ func chainAutoPolicy(operations []OperationSpec) (shape.Policy, bool) {
 	return policy, active
 }
 
-// operationSpecIsAutoPolicy reports whether the operation is a pure policy
-// carrier (no shape facts) that lowers to no runtime node.
-func operationSpecIsAutoPolicy(operation OperationSpec) bool {
-	return operation.Kind == info.OpShape && operation.Auto != nil && mediaShapeEmpty(operation.Shape)
+// operationSpecIsAnnotation reports whether the operation is a pure annotation
+// carrier — an .Auto(...) policy, a .Require(...) assertion, or a .Prefer(...)
+// preference — that lowers to no runtime node and does no work.
+func operationSpecIsAnnotation(operation OperationSpec) bool {
+	return operation.Kind == info.OpShape && mediaShapeEmpty(operation.Shape) &&
+		(operation.Auto != nil || operation.Require != nil || operation.Prefer != nil)
 }
 
 func operationSpecForTransform(transform TransformSpec) OperationSpec {
@@ -1781,9 +1809,10 @@ func streamIntentHasOperation(stream streamIntent) bool {
 		return true
 	}
 	for i := range stream.Operations {
-		// The .Auto(...) policy carrier opts into solving but does no work; a
-		// chain holding only the policy still has no operation.
-		if !operationSpecIsAutoPolicy(stream.Operations[i]) {
+		// Annotation carriers (.Auto/.Require/.Prefer) opt into solving or
+		// assert shapes but do no work; a chain holding only annotations still
+		// has no operation.
+		if !operationSpecIsAnnotation(stream.Operations[i]) {
 			return true
 		}
 	}
@@ -3368,6 +3397,30 @@ func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
 func (b *jobStreamBuilder) Auto(policies ...shape.Policy) *jobStreamBuilder {
 	stream := b.current()
 	stream.operations = append(stream.operations, operationSpecForAutoPolicy(policies))
+	return b
+}
+
+// Require asserts a hard shape constraint at this point of the chain: the
+// stream MUST satisfy the given spec here, or the build fails before any
+// resource opens with the actual and required shapes and the exact fix —
+// including the .Auto(...) policy to add when a conversion could satisfy it
+// (an active policy that covers the conversion inserts it, and the
+// requirement holds by construction). The assertion lowers to no runtime node.
+func (b *jobStreamBuilder) Require(spec shape.Spec) *jobStreamBuilder {
+	stream := b.current()
+	stream.operations = append(stream.operations, operationSpecForRequire(spec))
+	return b
+}
+
+// Prefer biases the shape solver where a choice is genuinely open: a
+// conversion-target fact the downstream operation leaves unpinned takes the
+// preferred value, and an otherwise-ambiguous adapter selection narrows to the
+// adapters whose declared capabilities cover the preference. A preference is
+// soft by definition — it never fails the build; one that cannot be honored is
+// dropped and surfaced as an Explain diagnostic. It lowers to no runtime node.
+func (b *jobStreamBuilder) Prefer(spec shape.Spec) *jobStreamBuilder {
+	stream := b.current()
+	stream.operations = append(stream.operations, operationSpecForPreference(spec))
 	return b
 }
 

@@ -395,8 +395,13 @@ func planOperationFromOperationSpec(operation OperationSpec) planOperation {
 		return plan
 	case info.OpShape:
 		detail := "media shape annotation"
-		if operation.Auto != nil {
+		switch {
+		case operation.Auto != nil:
 			detail = "shape solver policy"
+		case operation.Require != nil:
+			detail = "shape requirement"
+		case operation.Prefer != nil:
+			detail = "shape preference"
 		}
 		return planOperation{
 			Kind:      info.OpShape,

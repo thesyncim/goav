@@ -169,6 +169,28 @@ func (b *audioChain) Shape(shape shape.Spec) *audioChain {
 	return b
 }
 
+// Require asserts a hard shape constraint at this point of the flow: wherever
+// the flow is applied, the stream MUST satisfy the given spec here or the
+// build fails with the actual and required shapes and the exact fix.
+func (b *audioChain) Require(spec shape.Spec) *audioChain {
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.require(spec)
+	return b
+}
+
+// Prefer biases the shape solver's otherwise-open choices on chains the flow
+// is applied to. Soft by definition: a preference that cannot be honored is
+// dropped with an Explain diagnostic, never an error.
+func (b *audioChain) Prefer(spec shape.Spec) *audioChain {
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.prefer(spec)
+	return b
+}
+
 func (b *audioChain) Tap(tap TapRef) *audioChain {
 	if b == nil {
 		return b
@@ -225,6 +247,28 @@ func (b *videoChain) Shape(shape shape.Spec) *videoChain {
 		return b
 	}
 	b.chainBuilder.shape(shape)
+	return b
+}
+
+// Require asserts a hard shape constraint at this point of the flow: wherever
+// the flow is applied, the stream MUST satisfy the given spec here or the
+// build fails with the actual and required shapes and the exact fix.
+func (b *videoChain) Require(spec shape.Spec) *videoChain {
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.require(spec)
+	return b
+}
+
+// Prefer biases the shape solver's otherwise-open choices on chains the flow
+// is applied to. Soft by definition: a preference that cannot be honored is
+// dropped with an Explain diagnostic, never an error.
+func (b *videoChain) Prefer(spec shape.Spec) *videoChain {
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.prefer(spec)
 	return b
 }
 
@@ -372,6 +416,23 @@ func (b *chainBuilder) shape(shape shape.Spec) {
 		return
 	}
 	b.spec.operations = append(b.spec.operations, operationSpecForShape(shape))
+}
+
+// require and prefer append annotation carriers; they lower to no runtime node
+// and assert/bias only, so — unlike .Shape(...) — they are valid after encode
+// (a post-encode .Require asserts the packet-domain output shape).
+func (b *chainBuilder) require(spec shape.Spec) {
+	if b == nil {
+		return
+	}
+	b.spec.operations = append(b.spec.operations, operationSpecForRequire(spec))
+}
+
+func (b *chainBuilder) prefer(spec shape.Spec) {
+	if b == nil {
+		return
+	}
+	b.spec.operations = append(b.spec.operations, operationSpecForPreference(spec))
 }
 
 func (b *chainBuilder) tap(tap TapRef) {

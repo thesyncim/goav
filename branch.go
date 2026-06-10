@@ -313,6 +313,30 @@ func (b *branchBuilder) Auto(policies ...shape.Policy) *branchBuilder {
 	return b
 }
 
+// Require asserts a hard shape constraint at this point of the branch — the
+// branch-side twin of the stream chain's .Require(...): the stream MUST
+// satisfy the given spec here, or the build fails with the actual and required
+// shapes and the exact fix. It lowers to no runtime node.
+func (b *branchBuilder) Require(spec shape.Spec) *branchBuilder {
+	if b == nil {
+		return b
+	}
+	b.spec.operations = append(b.spec.operations, operationSpecForRequire(spec))
+	return b
+}
+
+// Prefer biases the shape solver's otherwise-open choices on this branch — the
+// branch-side twin of the stream chain's .Prefer(...). Soft by definition: a
+// preference that cannot be honored is dropped with an Explain diagnostic,
+// never an error. It lowers to no runtime node.
+func (b *branchBuilder) Prefer(spec shape.Spec) *branchBuilder {
+	if b == nil {
+		return b
+	}
+	b.spec.operations = append(b.spec.operations, operationSpecForPreference(spec))
+	return b
+}
+
 func (b *branchBuilder) Shape(shape shape.Spec) *branchBuilder {
 	if b == nil {
 		return b

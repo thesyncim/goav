@@ -62,7 +62,21 @@ const (
 	// admitting it would exceed the node's BufferPolicy.MaxBytes byte budget
 	// (orthogonal to the drop policy, like DropStale).
 	DropOverflow DropPolicy = "overflow"
+	// DropSync is the reason recorded for messages a node sheds internally to
+	// stay time-aligned (a PTS-sync join dropping stale frames to catch up).
+	// These drops happen inside the node, not in its queue, so they reach the
+	// counters through the optional DropReporter capability at snapshot time.
+	DropSync DropPolicy = "sync"
 )
+
+// DropReporter is an optional Source/Stage/Sink capability: a node that sheds
+// messages internally (rather than through its queue policy) reports its
+// running total, and the runners fold it into the node's NodeStats.Dropped
+// under DropSync at snapshot time. DroppedMessages is called concurrently
+// with the node's hot path, so implementations must read an atomic counter.
+type DropReporter interface {
+	DroppedMessages() uint64
+}
 
 type BufferPolicy struct {
 	Capacity   int

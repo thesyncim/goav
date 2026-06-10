@@ -36,7 +36,7 @@ type videoCompositeStage struct {
 	// sizes remembers each arm's most recent frame dimensions, so absent arms
 	// (gap or ended) still reserve their canvas region.
 	sizes map[av.StreamID]compositeArmSize
-	sync  joinSyncState
+	sync  *joinSyncState
 }
 
 type compositeArmSize struct {
@@ -60,6 +60,11 @@ func (s *videoCompositeStage) Name() string { return s.name }
 func (s *videoCompositeStage) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: joinSyncNodeDetail(s.sync.mode)}
 }
+
+// DroppedMessages implements pipeline.DropReporter: frames the join discarded
+// to stay aligned (stale catch-up heads, discontinuity flushes), surfaced as
+// the join node's Dropped count (reason "sync") in Stats and snapshots.
+func (s *videoCompositeStage) DroppedMessages() uint64 { return s.sync.droppedFrames() }
 
 func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	switch msg.Kind {
