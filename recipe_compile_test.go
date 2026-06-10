@@ -321,7 +321,7 @@ func TestSelectedPacketCopyUsesBranchRoutePlanner(t *testing.T) {
 
 func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	var body strings.Builder
-	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "work_patch.go", "branch_compose_build.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
+	for _, file := range []string{"recipe.go", "intent.go", "input.go", "destination.go", "chain.go", "transform.go", "codec_spec.go", "validate_codec.go", "branch_compose_plan.go", "branch.go", "flow.go", "runtime_attach.go", "work_patch.go", "branch_compose_build.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
 		fileBody, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -422,15 +422,20 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 	if strings.Contains(text[start:start+end], "steps          []chainStep") {
 		t.Fatal("jobStreamBuild should store OperationSpec, not a parallel chainStep slice")
 	}
-	streamStart := strings.Index(text, "type streamBuild struct")
+	chainBody, err := os.ReadFile("chain.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chainText := string(chainBody)
+	streamStart := strings.Index(chainText, "type streamBuild struct")
 	if streamStart < 0 {
 		t.Fatal("could not locate streamBuild boundary")
 	}
-	streamEnd := strings.Index(text[streamStart:], "func StreamID")
+	streamEnd := strings.Index(chainText[streamStart:], "func StreamID")
 	if streamEnd < 0 {
 		t.Fatal("could not locate streamBuild boundary")
 	}
-	streamBlock := text[streamStart : streamStart+streamEnd]
+	streamBlock := chainText[streamStart : streamStart+streamEnd]
 	for _, forbidden := range []string{
 		"operationSplit",
 		"sharedSteps",
@@ -834,7 +839,7 @@ func workPlanOperationKindsForBranch(operations []workOperation, branch string) 
 
 func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {
 	var body strings.Builder
-	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "runtime_plan.go", "branch_compose_build.go", "recipe_compile.go"} {
+	for _, file := range []string{"recipe.go", "intent.go", "input.go", "destination.go", "chain.go", "transform.go", "codec_spec.go", "validate_codec.go", "branch_compose_plan.go", "branch.go", "flow.go", "runtime_attach.go", "runtime_plan.go", "branch_compose_build.go", "recipe_compile.go"} {
 		fileBody, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -2688,7 +2693,7 @@ func TestRequireGraphPlanSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
 
 func TestRecipeCompilerDoesNotCarryChainStepAttachments(t *testing.T) {
 	var body strings.Builder
-	for _, file := range []string{"recipe.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
+	for _, file := range []string{"recipe.go", "intent.go", "input.go", "destination.go", "chain.go", "transform.go", "codec_spec.go", "validate_codec.go", "branch_compose_plan.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
 		fileBody, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)

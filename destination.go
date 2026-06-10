@@ -1,0 +1,496 @@
+// Recipe destinations: Destination constructors, destinationSpec machinery, naming, and validation.
+
+package goav
+
+import (
+	"context"
+	"fmt"
+	"io"
+
+	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/pipeline"
+)
+
+// destinationSpec describes a concrete file, URI, writer, or sink destination.
+type destinationSpec struct {
+	id             uint64
+	output         format.Output
+	sink           pipeline.Sink
+	custom         DestinationProvider
+	format         av.FormatID
+	resolvedFormat av.FormatID
+	name           string
+	err            error
+}
+
+func destinationHandle(spec destinationSpec) Destination {
+	return Destination{spec: spec}
+}
+
+// File creates a writer-backed destination.
+func File(name string, writer io.Writer, opts ...DestinationOption) Destination {
+	spec := fileDestination(name, writer)
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i](&spec)
+		}
+	}
+	return Destination{spec: spec}
+}
+
+func fileDestination(name string, writer io.Writer) destinationSpec {
+	return destinationSpec{
+		id: destinationSpecSeq.Add(1),
+		output: format.Output{
+			Name:     name,
+			Protocol: av.ProtocolFile,
+			Writer:   writer,
+		},
+		name: name,
+	}
+}
+
+// URIOut creates a URI destination opened by a registered format adapter.
+func URIOut(uri string, opts ...DestinationOption) Destination {
+	spec := uriDestination(uri)
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i](&spec)
+		}
+	}
+	return Destination{spec: spec}
+}
+
+func uriDestination(uri string) destinationSpec {
+	return destinationSpec{
+		id: destinationSpecSeq.Add(1),
+		output: format.Output{
+			Name: uri,
+			URI:  uri,
+		},
+		name: uri,
+	}
+}
+
+// Sink creates a media-message destination for decoded frames or packets.
+func Sink(sink pipeline.Sink) Destination {
+	return Destination{spec: sinkDestination(sink)}
+}
+
+func sinkDestination(sink pipeline.Sink) destinationSpec {
+	name := ""
+	if sink != nil {
+		name = sink.Name()
+	}
+	if sink == nil {
+		return destinationSpec{id: destinationSpecSeq.Add(1), err: ErrNilSink}
+	}
+	return destinationSpec{id: destinationSpecSeq.Add(1), sink: sink, name: name}
+}
+
+func Custom(name string, provider DestinationProvider, opts ...DestinationOption) Destination {
+	spec := customDestination(name, provider)
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i](&spec)
+		}
+	}
+	return Destination{spec: spec}
+}
+
+func customDestination(name string, provider DestinationProvider) destinationSpec {
+	if provider == nil {
+		return destinationSpec{id: destinationSpecSeq.Add(1), err: ErrNilWriter}
+	}
+	contract := provider.Contract()
+	spec := destinationSpec{
+		id:     destinationSpecSeq.Add(1),
+		custom: provider,
+		output: format.Output{
+			Name:     name,
+			URI:      name,
+			Protocol: contract.Protocol,
+			Realtime: contract.Realtime,
+		},
+		name: firstNonEmpty(name, provider.Name()),
+	}
+	if spec.output.Name == "" {
+		spec.output.Name = spec.name
+		spec.output.URI = spec.name
+	}
+	if len(contract.Formats) != 0 {
+		spec.format = contract.Formats[0]
+	}
+	if len(contract.MIMETypes) != 0 {
+		spec.output.MIMEType = contract.MIMETypes[0]
+	}
+	return spec
+}
+
+func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destination {
+	spec := destinationSpec{
+		id:     destinationSpecSeq.Add(1),
+		custom: writerDestination{name: name, open: open},
+		output: format.Output{
+			Name: name,
+			URI:  name,
+		},
+		name: name,
+	}
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i](&spec)
+		}
+	}
+	return Destination{spec: spec}
+}
+
+func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) Destination {
+	return Writer(name, func(context.Context, DestinationInfo) (io.WriteCloser, error) {
+		if writer == nil {
+			return nil, ErrNilWriter
+		}
+		return writer, nil
+	}, opts...)
+}
+
+func Object(name string, open ObjectOpenFunc, opts ...DestinationOption) Destination {
+	return Writer(name, func(ctx context.Context, info DestinationInfo) (io.WriteCloser, error) {
+		if open == nil {
+			return nil, ErrNilWriter
+		}
+		return open(ctx, info)
+	}, opts...)
+}
+
+type writerDestination struct {
+	name     string
+	open     WriterOpenFunc
+	contract DestinationContract
+}
+
+func (d writerDestination) Name() string {
+	return d.name
+}
+
+func (d writerDestination) Contract() DestinationContract {
+	contract := d.contract
+	contract.ByteStream = true
+	return contract
+}
+
+func (d writerDestination) Open(ctx context.Context, info DestinationInfo) (DestinationWriter, error) {
+	if d.open == nil {
+		return nil, ErrNilWriter
+	}
+	writer, err := d.open(ctx, info)
+	if err != nil {
+		return nil, err
+	}
+	if writer == nil {
+		return nil, ErrNilWriter
+	}
+	return writer, nil
+}
+
+type nopDestinationWriter struct {
+	io.Writer
+}
+
+func (w nopDestinationWriter) Close() error {
+	return nil
+}
+
+func MIME(mimeType string) DestinationOption {
+	return func(spec *destinationSpec) {
+		if spec != nil {
+			*spec = spec.withMIME(mimeType)
+		}
+	}
+}
+
+func Format(format av.FormatID) DestinationOption {
+	return func(spec *destinationSpec) {
+		if spec != nil {
+			*spec = spec.withFormat(format)
+		}
+	}
+}
+
+func Metadata(metadata av.Metadata) DestinationOption {
+	return func(spec *destinationSpec) {
+		if spec != nil {
+			spec.output.Metadata = cloneMetadata(metadata)
+		}
+	}
+}
+
+func (s destinationSpec) withName(name string) destinationSpec {
+	s.name = name
+	if s.sink == nil {
+		s.output.Name = name
+	}
+	return s
+}
+
+func (s destinationSpec) withMIME(mimeType string) destinationSpec {
+	s.output.MIMEType = mimeType
+	return s
+}
+
+func (s destinationSpec) withFormat(format av.FormatID) destinationSpec {
+	s.format = format
+	return s
+}
+
+func (s destinationSpec) withResolvedFormat(format av.FormatID) destinationSpec {
+	s.resolvedFormat = format
+	return s
+}
+
+func (s destinationSpec) Name() string {
+	return s.name
+}
+
+func (s destinationSpec) Contract() DestinationContract {
+	contract := DestinationContract{
+		ByteStream: s.sink == nil,
+		Protocol:   s.output.Protocol,
+		Realtime:   s.output.Realtime,
+	}
+	if s.format != "" {
+		contract.Formats = append(contract.Formats, s.format)
+	}
+	if s.resolvedFormat != "" && s.resolvedFormat != s.format {
+		contract.Formats = append(contract.Formats, s.resolvedFormat)
+	}
+	if s.output.MIMEType != "" {
+		contract.MIMETypes = append(contract.MIMETypes, s.output.MIMEType)
+	}
+	if s.custom != nil {
+		customContract := s.custom.Contract()
+		if contract.Protocol == "" {
+			contract.Protocol = customContract.Protocol
+		}
+		contract.Seekable = customContract.Seekable
+		contract.Realtime = contract.Realtime || customContract.Realtime
+		if len(contract.Formats) == 0 {
+			contract.Formats = append(contract.Formats, customContract.Formats...)
+		}
+		if len(contract.MIMETypes) == 0 {
+			contract.MIMETypes = append(contract.MIMETypes, customContract.MIMETypes...)
+		}
+	}
+	return contract
+}
+
+func (s destinationSpec) Open(ctx context.Context, info DestinationInfo) (DestinationWriter, error) {
+	if s.custom != nil {
+		return s.custom.Open(ctx, info)
+	}
+	if s.output.Writer != nil {
+		return nopDestinationWriter{Writer: s.output.Writer}, nil
+	}
+	return nil, destinationInvalidError("open destination", firstNonEmpty(info.Name, s.name, "destination"), "destination does not provide a writer")
+}
+
+func (s destinationSpec) validate(operation string, fallback string) error {
+	node := s.label(fallback)
+	if s.err != nil {
+		return &BuildError{
+			Code:      "output_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    s.err.Error(),
+			Suggestions: []string{
+				"pass a non-nil sink to goav.Sink(...)",
+				"use goav.File(...) or goav.URIOut(...) for muxed output",
+			},
+			Cause: s.err,
+		}
+	}
+	if s.sink != nil {
+		return nil
+	}
+	if s.output.Name == "" && s.output.URI == "" && s.output.Protocol == "" && s.output.MIMEType == "" && s.output.Writer == nil && s.custom == nil && s.format == "" {
+		return &BuildError{
+			Code:      "output_invalid",
+			Operation: operation,
+			Node:      node,
+			Reason:    "empty destination",
+			Suggestions: []string{
+				"use goav.File(name, writer) for muxed output",
+				"use goav.Sink(sink) for decoded frames or packets",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if s.output.Protocol == av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
+		return &BuildError{
+			Code:      "output_writer_missing",
+			Operation: operation,
+			Node:      node,
+			Reason:    "file output has no writer",
+			Suggestions: []string{
+				"pass a non-nil io.Writer to goav.File(name, writer)",
+				"use goav.URIOut(uri) when the output is opened by an adapter",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if s.output.Protocol == av.ProtocolFile && s.output.Writer != nil && s.output.Name == "" && s.output.URI == "" && s.output.MIMEType == "" && s.format == "" {
+		return &BuildError{
+			Code:      "output_format_missing",
+			Operation: operation,
+			Node:      node,
+			Reason:    "writer-backed file output has no name, URI, MIME type, or explicit format",
+			Suggestions: []string{
+				"give goav.File(name, writer) a name with a container extension",
+				"pass goav.Format(...) to goav.File(...) when the writer has no filename",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
+		return &BuildError{
+			Code:      "output_destination_missing",
+			Operation: operation,
+			Node:      node,
+			Reason:    "output has no URI, writer, or sink",
+			Suggestions: []string{
+				"use goav.File(name, writer) for writer-backed output",
+				"use goav.URIOut(uri) for URI-backed output",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	return nil
+}
+
+func (s destinationSpec) label(fallback string) string {
+	return firstNonEmpty(s.name, s.output.Name, s.output.URI, fallback)
+}
+
+func (s destinationSpec) intent() destinationIntent {
+	return destinationIntent{
+		Name:     s.label("output"),
+		URI:      s.output.URI,
+		Protocol: s.output.Protocol,
+		MIMEType: s.output.MIMEType,
+		Format:   s.format,
+	}
+}
+
+func (s destinationSpec) intentWithName(name string) destinationIntent {
+	intent := s.intent()
+	intent.Name = firstNonEmpty(name, intent.Name)
+	return intent
+}
+
+func validateDestinationSpecs(operation string, outputs []destinationSpec, destinationNames ...string) error {
+	seen := make(map[string]bool, len(outputs))
+	for i := range outputs {
+		fallback := fmt.Sprintf("output-%d", i)
+		if err := outputs[i].validate(operation, fallback); err != nil {
+			return err
+		}
+		name := jobOutputDestinationName(outputs, destinationNames, i)
+		destinationNamed := i < len(destinationNames) && destinationNames[i] != ""
+		if previousTargetNamed, ok := seen[name]; ok {
+			if destinationNamed || previousTargetNamed {
+				return duplicateDestinationHandleError(operation, name)
+			}
+			return duplicateOutputError(operation, name)
+		}
+		seen[name] = destinationNamed
+	}
+	return nil
+}
+
+func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []destinationSpec, destinationNames ...string) ([]destinationSpec, error) {
+	resolved := append([]destinationSpec(nil), outputs...)
+	standard, ok := rt.(*runtime)
+	if !ok || standard == nil {
+		return resolved, nil
+	}
+	for i := range resolved {
+		if resolved[i].sink != nil {
+			continue
+		}
+		formatID := resolved[i].format
+		if formatID == "" {
+			result, err := standard.formats.Probe(ctx, outputProbeRequest(resolved[i].output))
+			if err != nil {
+				return nil, destinationFormatProbeError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, err)
+			}
+			formatID = result.Format
+			resolved[i] = resolved[i].withResolvedFormat(formatID)
+		}
+		if _, err := standard.formats.MuxerFactory(formatID); err != nil {
+			return nil, destinationMuxerMissingError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, formatID, err)
+		}
+	}
+	return resolved, nil
+}
+
+func destinationNodeName(output format.Output, index int, destinationNames []string) string {
+	if index >= 0 && index < len(destinationNames) && destinationNames[index] != "" {
+		return destinationNames[index]
+	}
+	return muxNodeName(output, index)
+}
+
+func duplicateOutputError(operation string, name string) error {
+	return &BuildError{
+		Code:      "output_duplicate",
+		Operation: operation,
+		Node:      name,
+		Reason:    fmt.Sprintf("output name %q is defined more than once", name),
+		Suggestions: []string{
+			"use a unique output name for each output in the recipe",
+			"remove repeated outputs when one output should receive the stream once",
+			"call .Name(...) on outputs or choose distinct sink names when labels should differ",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func duplicateDestinationHandleError(operation string, name string) error {
+	return &BuildError{
+		Code:      "destination_duplicate",
+		Operation: operation,
+		Node:      name,
+		Reason:    fmt.Sprintf("destination %q is attached more than once", name),
+		Suggestions: []string{
+			"list each destination value once in .To(...)",
+			"use distinct destination names when writing to separate destinations",
+			"reuse one destination value from multiple branches through .Branches(...) when outputs should be grouped",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func destinationNamesWithOverrides(outputs []destinationSpec, destinationNames []string) []string {
+	names := make([]string, 0, len(outputs))
+	for i := range outputs {
+		names = append(names, jobOutputDestinationName(outputs, destinationNames, i))
+	}
+	return names
+}
+
+func jobOutputDestinationName(outputs []destinationSpec, destinationNames []string, index int) string {
+	if index >= 0 && index < len(destinationNames) && destinationNames[index] != "" {
+		return destinationNames[index]
+	}
+	return outputs[index].label(fmt.Sprintf("output-%d", index))
+}
+
+func firstNonEmpty(values ...string) string {
+	for i := range values {
+		if values[i] != "" {
+			return values[i]
+		}
+	}
+	return ""
+}

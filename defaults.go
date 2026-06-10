@@ -45,3 +45,17 @@ func WithStdFilters() Option {
 		resizeadapter.Register(runtime.filters)
 	}
 }
+
+// Default builds a runtime with the standard codecs, formats, and filters already
+// registered, then applies opts on top. Because the defaults are applied first
+// and registration is last-wins, opts can both ADD new implementations and
+// OVERRIDE a default in the same call — solid batteries you can still change:
+//
+//	rt := goav.Default()                                   // stock everything
+//	rt := goav.Default(goav.WithDemuxer("flv", myFLV))     // defaults + a new format
+//	rt := goav.Default(goav.WithEncoder(vp9Desc, myVP9))   // defaults, but my VP9 wins
+//
+// Use New(opts...) instead to start bare and register only what you list.
+func Default(opts ...Option) Runtime {
+	return New(append([]Option{WithDefaults()}, opts...)...)
+}
