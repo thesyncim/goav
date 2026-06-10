@@ -43,8 +43,15 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
 
 ## Feature areas (status)
 
-- **IR collapse** (§1,2,15): one operation list; delete BranchSpec's parallel fields,
-  branchComposePlan, mediaPlan-vs-workPlan, string routing. **TODO (biggest).**
+- **IR collapse** (§1,2,15): one operation list — BranchSpec is at the target
+  shape (name/media/operations/destinations/source/buffer), `mediaPlan` is
+  deleted (workPlan is the truth), string routing is gone, and the per-workflow
+  builder compilers (remux / decode-to-sink / decode-encode-to-output) are
+  deleted: the expert builder only assembles explicit Source/Stage/Sink graphs
+  and every media job lowers through the one recipe compile. **Remaining:**
+  fold the `streamIntent` normalization layer into `OperationSpec` readers;
+  `branchComposePlan` stays, deliberately, as the recipe→lowering hand-off
+  (`branch_compose_build.go`).
 - **Shape solving** (§3,4): validation upgraded to SOLVING — the one compile walk
   propagates shapes, selects converting adapters from the filter registry by
   capability delta, and inserts them as real planned operations under
@@ -103,7 +110,9 @@ hard guards) · 3[ ] Flow no destinations/To · 4[~] Destination reuse groups by
 Planner: 5[x] Build+Attach share the canonical operation lowering · 6[x] Attach emits
 WorkPatch only downstream of taps · 7[x] Explain from WorkPlan · 8[x] Snapshot =
 WorkPlan+patches · 9[x] no
-transcode import in core (package deleted) · 10[ ] no workflow-kind dispatch.
+transcode import in core (package deleted) · 10[x] no workflow-kind dispatch
+(the builder-compiler registry is deleted; only explicit graphs remain on the
+expert builder).
 Shape: 11[x] Resize requires video frame · 12[x] Resample requires audio frame ·
 13[x] frame→File w/o Encode fails · 14[x] packet→File w/ Copy ok · 15[x] Decode→frame
 Sink ok · 16[x] errors include branch/op/actual/expected/fix · 17[x] auto-insert only
@@ -131,10 +140,11 @@ auto-resamples or fails before mutation.
 Themes A (graph shape) and B (control plane: `task.Control` + `pipeline.NodeInjector`,
 keyframe/event injection, live Select switch) are closed at the surface. The next big
 thing is NOT more API — it is making all power flow through one internal path.
-Measured residue: `runtimeBranch` 251 refs (runtime_attach.go 2,298 lines),
-`mediaPlan` 113 refs (2,567 lines of parallel plan), three join builders 700
-near-mirror lines, `branchComposePlan` 23 refs, `destinationNames` 25 refs;
-`work_plan.go`+`work_patch.go` exist (875 lines) but are not yet the truth.
+Measured residue at decision time (since worked down — see stages): `runtimeBranch`
+251 refs (runtime_attach.go 2,298 lines), `mediaPlan` 113 refs (2,567 lines of
+parallel plan), three join builders 700 near-mirror lines, `branchComposePlan`
+23 refs, `destinationNames` 25 refs; `work_plan.go`+`work_patch.go` existed
+(875 lines) before becoming the truth.
 
 Stages (each green, in dependency order):
 1. **JoinSpec** — Mix/Composite/Select lower through ONE join builder. **DONE**
@@ -172,11 +182,11 @@ Stages (each green, in dependency order):
 
 ## Execution order (condensed)
 
-Work residue-by-residue, one deletion per slice, each slice green: operations as
-the single source of truth (parallel BranchSpec/streamIntent fields die as their
-readers re-point to `OperationSpec`), then `branchComposePlan` + the lowerer
-unification, then `mediaPlan` → `WorkPlan`, then destination-by-handle routing
-(`destinationNames` dies). Naming unification for single-branch compositions
-(direct chain ≡ named branch encode nodes) is a maintainer design call recorded
-in git history. After the collapse: shape solving, SwitchAt* policies,
-dynamic streams, TimeShape.
+Work residue-by-residue, one deletion per slice, each slice green. Done:
+`mediaPlan` → `WorkPlan`, destination-by-handle routing (`destinationNames` is
+gone), shape solving, dynamic streams, and the unreachable per-workflow builder
+compilers deleted (the expert builder keeps only explicit graphs). Naming
+unification for single-branch compositions (direct chain ≡ named branch encode
+nodes) is a maintainer design call recorded in git history. Remaining: fold the
+`streamIntent` normalization layer into `OperationSpec` readers, SwitchAt*
+policies, TimeShape.

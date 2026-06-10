@@ -63,9 +63,10 @@ owns ordered operations, shape transitions, taps, destinations, branch buffer
 policy, detach policy, and lifecycle expectations. `WorkPatch` uses the same
 branch plan as initial build, anchored downstream of existing typed taps. This
 keeps special workflow compilers out of normal composition and keeps runtime
-attach from becoming a separate graph language. The remaining internal debt —
-collapsing `runtimeBranch`/`mediaPlan`/`branchComposePlan` onto the work-plan
-model — is tracked in `docs/NORTH_STAR.md`.
+attach from becoming a separate graph language. `runtimeBranch` and `mediaPlan`
+are collapsed onto the work-plan model and the per-workflow builder compilers
+are deleted; the remaining internal debt (the `streamIntent` normalization
+layer) is tracked in `docs/NORTH_STAR.md`.
 
 Inputs and destinations open through one seam per side: every input kind
 (file, URI, RTP, WebRTC, custom source) resolves through one source opener, and

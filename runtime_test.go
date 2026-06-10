@@ -125,7 +125,7 @@ func runtimeValue(t *testing.T, rt Runtime) *runtime {
 	return r
 }
 
-func newTestBuilder(t *testing.T, options ...Option) builderAPI {
+func newTestBuilder(t *testing.T, options ...Option) *builder {
 	t.Helper()
 	return runtimeValue(t, New(options...)).New()
 }
@@ -756,49 +756,7 @@ func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 	}
 }
 
-func TestRuntimeBuilderRefusesUnimplementedGraph(t *testing.T) {
-	_, err := newTestBuilder(t).
-		Input(format.Input{Name: "input"}).
-		Decode(testSelectAudio()).
-		Mux(format.Output{Name: "output"}).
-		Build(context.Background())
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want runtime_graph_unsupported wrapping ErrUnsupportedBuild", err)
-	}
-	if !strings.Contains(err.Error(), "decodes: 1") ||
-		!strings.Contains(err.Error(), "outputs: 1") ||
-		!strings.Contains(err.Error(), "Sink") {
-		t.Fatalf("err = %v, want unsupported shape guidance", err)
-	}
-}
-
-func TestRuntimeBuilderRefusesMixedGraph(t *testing.T) {
-	packet := av.Packet{StreamID: "audio"}
-	source := &runtimeTestSource{
-		name:    "source",
-		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
-	}
-
-	_, err := newTestBuilder(t).
-		Input(format.Input{Name: "input"}).
-		Source(source).
-		Build(context.Background())
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want runtime_graph_unsupported wrapping ErrUnsupportedBuild", err)
-	}
-	if !strings.Contains(err.Error(), "inputs: 1") ||
-		!strings.Contains(err.Error(), "sources: 1") ||
-		!strings.Contains(err.Error(), "avoid mixing explicit Source/Stage/Sink") {
-		t.Fatalf("err = %v, want mixed graph guidance", err)
-	}
-}
-
 func TestRuntimeBuilderDescribeValidation(t *testing.T) {
-	if _, err := newTestBuilder(t).Input(format.Input{Name: "input"}).Describe(); !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("high-level err = %v, want ErrUnsupportedBuild", err)
-	}
 	if _, err := newTestBuilder(t).Source(nil).Describe(); !errors.Is(err, ErrNilSource) {
 		t.Fatalf("source err = %v, want ErrNilSource", err)
 	}

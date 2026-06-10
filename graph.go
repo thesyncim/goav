@@ -78,7 +78,7 @@ func (o GraphOutlet) branchSource() branchSourceBinding {
 }
 
 type graphBuilder struct {
-	builder builderAPI
+	builder *builder
 	err     error
 }
 

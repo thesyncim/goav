@@ -60,7 +60,9 @@ From(input) -> Chain -> operations -> Tap -> Branch -> Destination -> Task
 - observation stays branch composition: `Branch + Do + Sink`, `Events`, `Snapshot`;
 - normal composition does not import `goav/transcode`, carry labels, or dispatch
   by workflow kind; `branchComposePlan`, `runtimeBranch`, `destinationNames`
-  bridge fields, and string output refs are removal targets, not extension points.
+  bridge fields, and string output refs were removal targets, never extension
+  points — all are gone except `branchComposePlan`, which stays as the
+  recipe→lowering hand-off.
 
 A flow is reusable operations plus media kind; it has no destination, source,
 runtime state, or lifecycle policy.

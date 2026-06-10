@@ -13,49 +13,6 @@ type demuxBuild struct {
 	streams []av.Stream
 }
 
-// builderSources is the result of opening every builder input into the graph: the
-// source node refs (one per input), the union of their streams, the per-input
-// decode-bounds capabilities (only provider inputs declare them), and the realtime
-// contribution folded in from the inputs. The merged compilers iterate every input
-// through this one loop, kind-agnostic.
-type builderSources struct {
-	refs     []pipeline.NodeRef
-	streams  []av.Stream
-	bounds   []decodeBoundsProvider
-	realtime bool
-}
-
-// addBuilderSources opens every builder input (demux or provider) through the
-// unified source-opening seam, adds each as a graph source, and collects the
-// refs, the stream union, the decode-bounds capabilities, and the realtime
-// contribution.
-func (b *builder) addBuilderSources(ctx context.Context, graph pipeline.Graph) (builderSources, error) {
-	out := builderSources{
-		refs:     make([]pipeline.NodeRef, 0, len(b.inputs)),
-		streams:  make([]av.Stream, 0, len(b.inputs)),
-		realtime: b.runtime.realtime,
-	}
-	names := b.inputNodeNames()
-	for i := range b.inputs {
-		build, err := b.inputs[i].open(ctx, b, names[i])
-		if err != nil {
-			return builderSources{}, err
-		}
-		sourceRef, err := graph.AddSource(build.source, b.runtime.buffer)
-		if err != nil {
-			build.source.Close()
-			return builderSources{}, err
-		}
-		out.refs = append(out.refs, sourceRef)
-		out.streams = append(out.streams, build.streams...)
-		out.realtime = out.realtime || build.realtime
-		if build.bounds != nil {
-			out.bounds = append(out.bounds, build.bounds)
-		}
-	}
-	return out, nil
-}
-
 func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demuxBuild, error) {
 	inputProbe, err := b.runtime.formats.Probe(ctx, inputProbeRequest(input))
 	if err != nil {

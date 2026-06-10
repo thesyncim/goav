@@ -9,61 +9,12 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func (b *builder) canBuildRemux() bool {
-	return len(b.inputs) > 0 &&
-		len(b.outputs) > 0 &&
-		len(b.decodes) == 0 &&
-		len(b.encodes) == 0 &&
-		len(b.filters) == 0
-}
-
-func (b *builder) buildRemux(ctx context.Context) (Task, error) {
-	graph, err := b.newGraph(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := b.compileRemux(ctx, graph); err != nil {
-		graph.Close()
-		return nil, err
-	}
-	return newTask(graph, b.runtime, b.destinationTxs...), nil
-}
-
-func (b *builder) compileRemux(ctx context.Context, graph pipeline.Graph) error {
-	sources, err := b.addBuilderSources(ctx, graph)
-	if err != nil {
-		return err
-	}
-
-	for i := range b.outputs {
-		stage, err := b.openMuxStage(ctx, b.outputs[i], i, sources.streams)
-		if err != nil {
-			return err
-		}
-		stageRef, err := graph.AddStage(stage, b.runtime.buffer)
-		if err != nil {
-			stage.Close()
-			return err
-		}
-		for j := range sources.refs {
-			if err := connectRefs(graph, sources.refs[j], stageRef); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (b *builder) openMuxStage(ctx context.Context, output format.Output, index int, streams []av.Stream) (*format.MuxStage, error) {
-	return b.openMuxStageWithFormat(ctx, output, index, streams, b.outputOpenFormat(index), b.outputFormat(index))
-}
-
 func (b *builder) openMuxDestinationStage(ctx context.Context, destination destinationSpec, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID) (*format.MuxStage, error) {
 	output, writer, err := b.openDestinationOutput(ctx, destination, streams, formatID)
 	if err != nil {
 		return nil, err
 	}
-	stage, err := b.openMuxStageWithFormatAndWriter(ctx, output, index, streams, formatID, detailFormat, writer)
+	stage, err := b.openMuxStage(ctx, output, index, streams, formatID, detailFormat, writer)
 	if err != nil {
 		if writer != nil {
 			closeDestinationWriterAfterFailure(writer)
@@ -104,11 +55,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 	return output, writer, nil
 }
 
-func (b *builder) openMuxStageWithFormat(ctx context.Context, output format.Output, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID) (*format.MuxStage, error) {
-	return b.openMuxStageWithFormatAndWriter(ctx, output, index, streams, formatID, detailFormat, nil)
-}
-
-func (b *builder) openMuxStageWithFormatAndWriter(ctx context.Context, output format.Output, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID, writer DestinationWriter) (*format.MuxStage, error) {
+func (b *builder) openMuxStage(ctx context.Context, output format.Output, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID, writer DestinationWriter) (*format.MuxStage, error) {
 	if formatID == "" {
 		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
 		if err != nil {
@@ -243,23 +190,6 @@ func outputProbeRequest(output format.Output) format.ProbeRequest {
 			Metadata: output.Metadata,
 		},
 	}
-}
-
-func demuxNodeName(input format.Input) string {
-	if input.Name != "" {
-		return input.Name
-	}
-	if input.URI != "" {
-		return input.URI
-	}
-	return "input"
-}
-
-func customSourceNodeName(input InputSpec) string {
-	if input.source == nil {
-		return firstNonEmpty(input.name, input.input.Name, "source")
-	}
-	return firstNonEmpty(input.name, input.input.Name, string(input.source.shape.StreamID), "source")
 }
 
 func muxNodeName(output format.Output, index int) string {

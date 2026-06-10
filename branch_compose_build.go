@@ -16,6 +16,58 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+// branchComposePlan is the recipe-side hand-off into this lowering: the recipe
+// compiler (and joins) produce one plan per branch composition, and
+// prepareBranchComposePlan converts it into the concrete routes and target
+// routes the planner/compiler below consume.
+type branchComposePlan struct {
+	Name         string
+	Input        format.Input
+	Branches     []branchComposeBranch
+	Destinations []branchComposeTarget
+	Metadata     av.Metadata
+}
+
+type branchComposeBranch struct {
+	Name     string
+	Selector av.StreamSelector
+	// Input narrows the branch's stream selection to the named job input
+	// (goav.InputName); empty means select across all inputs.
+	Input             string
+	Copy              bool
+	Operations        []OperationSpec
+	SharedOperations  []OperationSpec
+	PrivateOperations []OperationSpec
+	DecodeConfig      codec.CodecSpec
+	CodecChange       CodecChangePolicy
+	Encode            codec.EncodeConfig
+	Labels            []string
+	Metadata          av.Metadata
+}
+
+type branchComposeTarget struct {
+	Name           string
+	Destination    destinationSpec
+	Target         format.Output
+	Sink           pipeline.Sink
+	Format         av.FormatID
+	Branches       []string
+	Metadata       av.Metadata
+	resolvedFormat av.FormatID
+}
+
+func (t branchComposeTarget) OpenFormat() av.FormatID {
+	if t.resolvedFormat != "" {
+		return t.resolvedFormat
+	}
+	return t.Format
+}
+
+func resolveBranchComposeTargetFormat(target branchComposeTarget, format av.FormatID) branchComposeTarget {
+	target.resolvedFormat = format
+	return target
+}
+
 type branchComposeRoute struct {
 	name              string
 	branch            branchComposeBranch

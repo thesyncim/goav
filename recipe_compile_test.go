@@ -321,7 +321,7 @@ func TestSelectedPacketCopyUsesBranchRoutePlanner(t *testing.T) {
 
 func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 	var body strings.Builder
-	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "work_patch.go", "runtime_transcode.go", "branch_compose_plan.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
+	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "work_patch.go", "branch_compose_build.go", "recipe_compile.go", "media_plan.go", "media_plan_spec.go", "media_plan_build.go"} {
 		fileBody, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -458,7 +458,7 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 		t.Fatal("BranchSpec should store OperationSpec, not a parallel step slice")
 	}
 
-	routeBody, err := os.ReadFile("runtime_transcode.go")
+	routeBody, err := os.ReadFile("branch_compose_build.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 		t.Fatal("branchComposeRoute should not store projected mediaTransform step slices")
 	}
 
-	composeBody, err := os.ReadFile("branch_compose_plan.go")
+	composeBody, err := os.ReadFile("branch_compose_build.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -834,7 +834,7 @@ func workPlanOperationKindsForBranch(operations []workOperation, branch string) 
 
 func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {
 	var body strings.Builder
-	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "runtime_compile.go", "runtime_plan.go", "runtime_transcode.go", "recipe_compile.go"} {
+	for _, file := range []string{"recipe.go", "branch.go", "flow.go", "runtime_attach.go", "runtime_plan.go", "branch_compose_build.go", "recipe_compile.go"} {
 		fileBody, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -868,16 +868,6 @@ func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {
 	}
 }
 
-func TestRuntimeBuilderUsesMuxVerbNotOutput(t *testing.T) {
-	builder := reflect.TypeOf((*builderAPI)(nil)).Elem()
-	if _, ok := builder.MethodByName("Output"); ok {
-		t.Fatal("private runtime builder should not expose Output; use Mux for mux destinations")
-	}
-	if _, ok := builder.MethodByName("Mux"); !ok {
-		t.Fatal("private runtime builder should expose Mux for mux destinations")
-	}
-}
-
 func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 	stateType := reflect.TypeOf(recipeCompileState{})
 	forbidden := map[reflect.Type]string{
@@ -885,7 +875,7 @@ func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 		reflect.TypeOf((*branchCompositionJob)(nil)): "*branchCompositionJob",
 		reflect.TypeOf((*jobStreamBuild)(nil)):       "*jobStreamBuild",
 		reflect.TypeOf([]streamBuild(nil)):           "[]streamBuild",
-		reflect.TypeOf((*builderAPI)(nil)).Elem():    "builderAPI",
+		reflect.TypeOf((*builder)(nil)):              "*builder",
 	}
 	for i := 0; i < stateType.NumField(); i++ {
 		field := stateType.Field(i)

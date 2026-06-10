@@ -10,10 +10,9 @@ import (
 	goh264adapter "github.com/thesyncim/goav/adapters/goh264"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/format"
 )
 
-func TestRuntimeBuilderH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
+func TestRecipeH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
 	streams := []av.Stream{{
 		ID:   "video",
 		Type: av.MediaVideo,
@@ -32,15 +31,15 @@ func TestRuntimeBuilderH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
 	)
 	codecs := withTestCodecs(goh264adapter.Register)
 
-	_, err := newTestBuilder(t, formats, codecs).
-		Input(format.Input{Name: "input.ogg"}).
-		Decode(testSelectVideo()).
-		Sink(&runtimeTestSink{name: "frames"}).
+	_, err := From(FileInput("input.ogg", nil)).
+		UseRuntime(New(formats, codecs)).
+		Video().
+		To(Sink(&runtimeTestSink{name: "frames"})).
 		Build(context.Background())
 	if !errors.Is(err, codec.ErrUnavailable) {
 		t.Fatalf("err = %v, want codec.ErrUnavailable", err)
 	}
-	if !demuxer.closed {
-		t.Fatal("demux source should be closed after unavailable decoder")
+	if demuxer.opened && !demuxer.closed {
+		t.Fatal("demux source leaked after unavailable decoder")
 	}
 }

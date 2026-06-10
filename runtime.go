@@ -168,110 +168,34 @@ type runtime struct {
 	eventCapacity int
 }
 
-type builderAPI interface {
-	Input(format.Input) builderAPI
-	Provider(SourceProvider) builderAPI
-	Mux(format.Output) builderAPI
-	Decode(av.StreamSelector) builderAPI
-	Encode(av.StreamSelector, codec.EncodeConfig) builderAPI
-	Filter(av.StreamSelector, pipeline.Stage) builderAPI
-	Source(pipeline.Source) builderAPI
-	Stage(pipeline.Stage) builderAPI
-	Sink(pipeline.Sink) builderAPI
-	Routes(...pipeline.Route) builderAPI
-	Describe() (pipeline.Spec, error)
-	Build(context.Context) (Task, error)
-}
-
 func (r *runtime) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {
 	return r.formats.Probe(ctx, request)
 }
 
-func (r *runtime) New() builderAPI {
+// New returns the explicit-graph builder behind Expert(runtime).Graph(). The
+// recipe compiler lowers high-level jobs straight onto pipeline graphs; the
+// builder only assembles caller-provided Source/Stage/Sink nodes and routes.
+func (r *runtime) New() *builder {
 	return &builder{runtime: r}
 }
 
 type builder struct {
-	runtime         *runtime
-	inputs          []builderInput
-	outputs         []format.Output
-	outputFmts      []av.FormatID
-	outputGraphFmts []av.FormatID
-	destinationTxs  []*destinationTransaction
-	requireRunOK    bool
-	decodes         []decodeRequest
-	encodes         []encodeRequest
-	filters         []filterRequest
-	sources         []pipeline.Source
-	stages          []pipeline.Stage
-	sinks           []pipeline.Sink
-	routes          []pipeline.Route
+	runtime        *runtime
+	destinationTxs []*destinationTransaction
+	requireRunOK   bool
+	sources        []pipeline.Source
+	stages         []pipeline.Stage
+	sinks          []pipeline.Sink
+	routes         []pipeline.Route
 }
 
-// builderInput is the single builder input model: exactly one of demux (file/URI)
-// or provider (an external source provider, e.g. rtpav.Receive) is set. It lets
-// the runtime compilers iterate every input through one loop and one
-// source-opening seam, with provider-only build metadata (decode bounds) surfaced
-// through graphSourceBuild only when present.
-type builderInput struct {
-	demux    *format.Input
-	provider SourceProvider
-}
-
-// open resolves this input to a running pipeline source plus its streams, domain,
-// realtime contribution, and (for provider inputs) the decode-bounds capability,
-// without the caller branching on the input kind. The node name comes from the
-// caller (builder.inputNodeNames) so repeated provider names stay disambiguated.
-func (in builderInput) open(ctx context.Context, b *builder, name string) (graphSourceBuild, error) {
-	if in.provider != nil {
-		return openProviderSource(ctx, in.provider, name)
-	}
-	build, err := b.openDemuxSource(ctx, in.demuxInput())
-	if err != nil {
-		return graphSourceBuild{}, err
-	}
-	return graphSourceBuild{
-		source:   build.source,
-		streams:  build.streams,
-		realtime: in.demuxInput().Realtime,
-	}, nil
-}
-
-func (in builderInput) demuxInput() format.Input {
-	if in.demux == nil {
-		return format.Input{}
-	}
-	return *in.demux
-}
-
-// nodeName returns the base planner/source node name for this input; the
-// builder resolves the final names through inputNodeNames so describe and build
-// agree.
-func (in builderInput) nodeName() string {
-	if in.provider != nil {
-		return providerNodeName(in.provider)
-	}
-	return demuxNodeName(in.demuxInput())
-}
-
-// detail returns the planner node detail for this input, matching the running
-// source's detail for both input kinds.
-func (in builderInput) detail() string {
-	if in.provider != nil {
-		return providerNodeDetail(in.provider)
-	}
-	return inputNodeDetail(in.demuxInput())
-}
-
-// inputNodeNames resolves one node name per builder input, applying the index
-// suffix that disambiguates repeated provider names ("rtp", "rtp-1", ...).
-func (b *builder) inputNodeNames() []string {
-	names := make([]string, len(b.inputs))
-	seen := make(map[string]struct{}, len(b.inputs))
-	for i := range b.inputs {
-		names[i] = disambiguateSourceNodeName(seen, b.inputs[i].nodeName(), b.inputs[i].provider != nil, i)
-	}
-	return names
+func (b *builder) newGraph(_ context.Context) (pipeline.Graph, error) {
+	return pipeline.NewGraph(pipeline.GraphConfig{
+		Name:          "goav",
+		Realtime:      b.runtime.realtime,
+		Buffer:        b.runtime.buffer,
+		EventCapacity: b.runtime.eventCapacity,
+	})
 }
 
 type encodeRequest struct {
@@ -292,96 +216,40 @@ type filterRequest struct {
 	transform *mediaTransform
 }
 
-func (b *builder) Input(input format.Input) builderAPI {
-	in := input
-	b.inputs = append(b.inputs, builderInput{demux: &in})
-	return b
-}
-
-// Provider adds an external source provider (e.g. rtpav.Receive) as a builder
-// input, opened through the same seam as file/URI inputs.
-func (b *builder) Provider(provider SourceProvider) builderAPI {
-	b.inputs = append(b.inputs, builderInput{provider: provider})
-	return b
-}
-
-func (b *builder) Mux(output format.Output) builderAPI {
-	return b.outputWithFormats(output, "", "")
-}
-
-func (b *builder) outputWithFormats(output format.Output, openFormat av.FormatID, detailFormat av.FormatID) builderAPI {
-	b.outputs = append(b.outputs, output)
-	b.outputFmts = append(b.outputFmts, openFormat)
-	b.outputGraphFmts = append(b.outputGraphFmts, detailFormat)
-	return b
-}
-
-func (b *builder) outputOpenFormat(index int) av.FormatID {
-	if index < 0 || index >= len(b.outputFmts) {
-		return ""
-	}
-	return b.outputFmts[index]
-}
-
-func (b *builder) outputFormat(index int) av.FormatID {
-	if index < 0 || index >= len(b.outputGraphFmts) {
-		return ""
-	}
-	return b.outputGraphFmts[index]
-}
-
-func (b *builder) Decode(selector av.StreamSelector) builderAPI {
-	return b.decodeWithPolicy(selector, CodecChangePolicy{})
-}
-
-func (b *builder) decodeWithPolicy(selector av.StreamSelector, policy CodecChangePolicy) builderAPI {
-	b.decodes = append(b.decodes, decodeRequest{selector: selector, codecChange: policy})
-	return b
-}
-
-func (b *builder) Encode(selector av.StreamSelector, config codec.EncodeConfig) builderAPI {
-	b.encodes = append(b.encodes, encodeRequest{selector: selector, config: config})
-	return b
-}
-
-func (b *builder) Filter(selector av.StreamSelector, stage pipeline.Stage) builderAPI {
-	b.filters = append(b.filters, filterRequest{selector: selector, stage: stage})
-	return b
-}
-
-func (b *builder) Source(source pipeline.Source) builderAPI {
+func (b *builder) Source(source pipeline.Source) *builder {
 	b.sources = append(b.sources, source)
 	return b
 }
 
-func (b *builder) Stage(stage pipeline.Stage) builderAPI {
+func (b *builder) Stage(stage pipeline.Stage) *builder {
 	b.stages = append(b.stages, stage)
 	return b
 }
 
-func (b *builder) Sink(sink pipeline.Sink) builderAPI {
+func (b *builder) Sink(sink pipeline.Sink) *builder {
 	b.sinks = append(b.sinks, sink)
 	return b
 }
 
-func (b *builder) Routes(routes ...pipeline.Route) builderAPI {
+func (b *builder) Routes(routes ...pipeline.Route) *builder {
 	b.routes = append(b.routes, routes...)
 	return b
 }
 
 func (b *builder) Build(ctx context.Context) (Task, error) {
-	compiler, err := b.selectCompiler()
+	b.destinationTxs = nil
+	b.requireRunOK = true
+	graph, err := b.newGraph(ctx)
 	if err != nil {
 		return nil, err
 	}
-	b.destinationTxs = nil
-	b.requireRunOK = true
-	return compiler.build(ctx, b)
-}
-
-func (b *builder) hasHighLevelRequests() bool {
-	return len(b.inputs) != 0 || len(b.outputs) != 0 || len(b.decodes) != 0 ||
-		len(b.encodes) != 0 || len(b.filters) != 0
+	if b.hasExplicitGraph() {
+		if err := b.compileExplicitGraph(graph); err != nil {
+			graph.Close()
+			return nil, err
+		}
+	}
+	return newTask(graph, b.runtime, b.destinationTxs...), nil
 }
 
 func (b *builder) hasExplicitGraph() bool {

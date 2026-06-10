@@ -271,6 +271,23 @@ func (s InputSpec) graphSourceNodeName() string {
 	}
 }
 
+func demuxNodeName(input format.Input) string {
+	if input.Name != "" {
+		return input.Name
+	}
+	if input.URI != "" {
+		return input.URI
+	}
+	return "input"
+}
+
+func customSourceNodeName(input InputSpec) string {
+	if input.source == nil {
+		return firstNonEmpty(input.name, input.input.Name, "source")
+	}
+	return firstNonEmpty(input.name, input.input.Name, string(input.source.shape.StreamID), "source")
+}
+
 // graphSourceNodeNames resolves one planner/build node name per input, matching
 // the running source's node name for every input kind so describe and build
 // agree. Provider inputs repeating an earlier input's name get an index suffix

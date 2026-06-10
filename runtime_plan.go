@@ -8,63 +8,12 @@ type plannedNode struct {
 }
 
 func (b *builder) Describe() (pipeline.Spec, error) {
-	compiler, err := b.selectCompiler()
-	if err != nil {
-		return pipeline.Spec{}, err
-	}
-	return b.describeWithCompiler(compiler)
-}
-
-func (b *builder) describeWithCompiler(compiler builderCompiler) (pipeline.Spec, error) {
-	if compiler == nil {
-		return pipeline.Spec{}, missingRuntimeCompilerError()
-	}
-	return compiler.describe(b, pipeline.Spec{
+	spec := pipeline.Spec{
 		Name:     "goav",
 		Realtime: b.runtime.realtime,
-	})
-}
-
-// planBuilderSources adds one planner source node per builder input (kind-agnostic,
-// using the input's own node name and detail) and returns the source refs, matching
-// the running source nodes addBuilderSources produces.
-func (b *builder) planBuilderSources(nodes map[string]plannedNode, spec *pipeline.Spec) ([]pipeline.NodeRef, error) {
-	sourceRefs := make([]pipeline.NodeRef, len(b.inputs))
-	names := b.inputNodeNames()
-	for i := range b.inputs {
-		sourceName := names[i]
-		sourceRef := pipeline.NodeRef(sourceName)
-		if err := addPlannedNode(nodes, spec, sourceName, pipeline.NodeSource, sourceRef, b.inputs[i].detail()); err != nil {
-			return nil, err
-		}
-		sourceRefs[i] = sourceRef
 	}
-	return sourceRefs, nil
-}
-
-func (b *builder) planRemux(spec pipeline.Spec) (pipeline.Spec, error) {
-	nodes := make(map[string]plannedNode, len(b.inputs)+len(b.outputs))
-	sourceRefs, err := b.planBuilderSources(nodes, &spec)
-	if err != nil {
-		return pipeline.Spec{}, err
-	}
-	stageRefs := make([]pipeline.NodeRef, len(b.outputs))
-	for i := range b.outputs {
-		stageName := muxNodeName(b.outputs[i], i)
-		stageRef := pipeline.NodeRef(stageName)
-		if err := addPlannedNode(nodes, &spec, stageName, pipeline.NodeStage, stageRef, outputNodeDetailWithFormat(b.outputs[i], b.outputFormat(i))); err != nil {
-			return pipeline.Spec{}, err
-		}
-		stageRefs[i] = stageRef
-	}
-	for i := range sourceRefs {
-		for j := range stageRefs {
-			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
-				From:   sourceRefs[i],
-				To:     stageRefs[j],
-				Policy: pipeline.RouteAll,
-			})
-		}
+	if b.hasExplicitGraph() {
+		return b.planExplicitGraph(spec)
 	}
 	return spec, nil
 }
@@ -134,18 +83,6 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 	}
 	planLinks(&spec, stageRefs[len(stageRefs)-1:], sinkRefs)
 	return spec, nil
-}
-
-func missingRuntimeCompilerError() error {
-	return &BuildError{
-		Code:      "runtime_compiler_missing",
-		Operation: "build runtime graph",
-		Reason:    "no runtime compiler was selected",
-		Suggestions: []string{
-			"build through goav.From(input) or goav.Expert(runtime).Graph()",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
 }
 
 func explicitGraphMissingSourceError() error {

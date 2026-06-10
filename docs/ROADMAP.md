@@ -41,9 +41,10 @@ runtime attach. Public vocabulary stays `Input`, `Stream`, `Tap`, `Branch`,
 7. Time/clock/seek (north-star theme C): TimeShape, sync policies, and pull
    scheduling — the remaining feature frontier after graph shape and the
    control plane.
-8. Remove old workflow residue from normal composition: `transcode` imports,
-   `branchComposePlan`, string output refs, `destinationNames` bridge fields,
-   `runtimeBranch`, and workflow-kind compiler switches.
+8. Remove old workflow residue from normal composition — done for `transcode`
+   imports, string output refs, `destinationNames` bridge fields,
+   `runtimeBranch`, and the workflow-kind builder compilers (all deleted);
+   `branchComposePlan` stays as the recipe→lowering hand-off.
 9. Keep first-page examples executable with `goav.Default()`, or clearly label
    adapter requirements; treat adapter coverage as product surface after the
    planner can absorb it.

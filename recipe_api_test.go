@@ -530,10 +530,7 @@ func (j *testBranchJob) materialize() *goav.Job {
 		if branch.encode.ID != "" {
 			builder = builder.Encode(branch.encode)
 		}
-		destinations := make([]goav.Destination, 0, len(branch.destinations))
-		for i := range branch.destinations {
-			destinations = append(destinations, branch.destinations[i])
-		}
+		destinations := append([]goav.Destination(nil), branch.destinations...)
 		job = stream.Branches(builder.To(destinations...))
 	}
 	return job
@@ -1483,17 +1480,34 @@ func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 	}
 }
 
-func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
-	packages, err := parser.ParseDir(token.NewFileSet(), ".", func(info os.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, 0)
+// parsePackageSourceFiles parses every non-test .go file in the package
+// directory, keyed by filename. The guards below only inspect declared names,
+// so build tags are irrelevant and per-file parsing replaces the deprecated
+// parser.ParseDir.
+func parsePackageSourceFiles(t *testing.T) map[string]*ast.File {
+	t.Helper()
+	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, ok := packages["goav"]
-	if !ok {
-		t.Fatal("package goav not found")
+	fset := token.NewFileSet()
+	files := make(map[string]*ast.File)
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = file
 	}
+	return files
+}
+
+func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
+	files := parsePackageSourceFiles(t)
 	legacyFuncs := map[string]bool{
 		"SelectAudio":            true,
 		"SelectVideo":            true,
@@ -1573,7 +1587,7 @@ func TestPackageKeepsLegacyHelpersOutOfFrontDoor(t *testing.T) {
 	} {
 		legacyTypes[name] = true
 	}
-	for filename, file := range pkg.Files {
+	for filename, file := range files {
 		for _, decl := range file.Decls {
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
@@ -1812,7 +1826,7 @@ func TestPublicDiagnosticsUseDestinationVocabulary(t *testing.T) {
 		"runtime_attach.go",
 		"runtime_encode.go",
 		"runtime_format_error.go",
-		"runtime_transcode.go",
+		"branch_compose_build.go",
 	}
 	forbidden := []string{
 		"target_muxer_missing",
@@ -2393,13 +2407,7 @@ func TestReusableComponentCatalogNamesAllocationProofs(t *testing.T) {
 }
 
 func TestRootAPIUsesFromCompositionInsteadOfWorkflowHelpers(t *testing.T) {
-	pkg, err := parser.ParseDir(token.NewFileSet(), ".", func(info os.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	files := pkg["goav"].Files
+	files := parsePackageSourceFiles(t)
 	for filename, file := range files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
