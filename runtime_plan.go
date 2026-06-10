@@ -1,6 +1,9 @@
 package goav
 
-import "github.com/thesyncim/goav/pipeline"
+import (
+	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/pipeline"
+)
 
 type plannedNode struct {
 	ref  pipeline.NodeRef
@@ -87,7 +90,7 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 
 func explicitGraphMissingSourceError() error {
 	return &BuildError{
-		Code:      CodeExplicitGraphSourceMissing,
+		Code:      codes.ExplicitGraphSourceMissing,
 		Operation: "build explicit graph",
 		Reason:    "explicit graph has no source node",
 		Suggestions: []string{

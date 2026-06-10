@@ -7,10 +7,12 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/snapshot"
 )
 
 type recipeResolved struct {
@@ -65,7 +67,7 @@ type recipeCompileState struct {
 
 	// shapeDiagnostics records the shape solver's automatic insertions; the
 	// work plan carries them so Explain reports every inserted conversion.
-	shapeDiagnostics []info.Diagnostic
+	shapeDiagnostics []plan.Diagnostic
 
 	spec       pipeline.Spec
 	specReady  bool
@@ -148,7 +150,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		pass := c.passes[i]
 		if pass == nil {
 			return recipeResolved{}, &BuildError{
-				Code:      CodeCompilerPassInvalid,
+				Code:      codes.CompilerPassInvalid,
 				Operation: state.operation,
 				Reason:    fmt.Sprintf("recipe compiler pass %d is nil", i),
 				Details:   []string{"internal invariant: the recipe compiler was assembled with a nil pass"},
@@ -187,7 +189,7 @@ func compilerPassError(operation string, pass string, err error) error {
 		return err
 	}
 	return &BuildError{
-		Code:      CodeCompilerPassFailed,
+		Code:      codes.CompilerPassFailed,
 		Operation: firstNonEmpty(buildErr.Operation, operation),
 		Reason:    "recipe compiler pass failed without a diagnostic",
 		Details: []string{
@@ -239,8 +241,8 @@ func installTaskTaps(mediaTask Task, taps []workTap) {
 	runtimeTask.taps = tapInfosFromPlan(taps)
 }
 
-func tapInfosFromPlan(taps []workTap) []info.Tap {
-	out := make([]info.Tap, 0, len(taps))
+func tapInfosFromPlan(taps []workTap) []snapshot.Tap {
+	out := make([]snapshot.Tap, 0, len(taps))
 	seen := make(map[string]struct{}, len(taps))
 	for i := range taps {
 		if taps[i].Name == "" {
@@ -250,7 +252,7 @@ func tapInfosFromPlan(taps []workTap) []info.Tap {
 			continue
 		}
 		seen[taps[i].Name] = struct{}{}
-		out = append(out, info.Tap{
+		out = append(out, snapshot.Tap{
 			Name:      taps[i].Name,
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,
@@ -438,7 +440,7 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 // attachment — an internal invariant, not a user-fixable refusal.
 func nilRecipeError(operation string, reason string) error {
 	return &BuildError{
-		Code:      CodeJobInvalid,
+		Code:      codes.JobInvalid,
 		Operation: operation,
 		Reason:    reason,
 		Details:   []string{"internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed with goav.From(...))"},
@@ -449,7 +451,7 @@ func nilRecipeError(operation string, reason string) error {
 // runtimeMissingError is the no-runtime refusal shared by every recipe form.
 func runtimeMissingError(operation string) error {
 	return &BuildError{
-		Code:      CodeRuntimeMissing,
+		Code:      codes.RuntimeMissing,
 		Operation: operation,
 		Reason:    "no runtime is configured",
 		Suggestions: []string{
@@ -493,7 +495,7 @@ func validateJobIntentShapePass() recipeCompilePass {
 func validateJobIntentShape(operation string, intent Intent, jobOutputCount int) error {
 	if len(intent.Inputs) == 0 {
 		return &BuildError{
-			Code:      CodeInputMissing,
+			Code:      codes.InputMissing,
 			Operation: operation,
 			Reason:    "no input is configured",
 			Suggestions: []string{
@@ -505,7 +507,7 @@ func validateJobIntentShape(operation string, intent Intent, jobOutputCount int)
 	stream, hasStream := jobIntentStream(intent)
 	if len(intent.Destinations) == 0 {
 		return &BuildError{
-			Code:      CodeOutputMissing,
+			Code:      codes.OutputMissing,
 			Operation: operation,
 			Reason:    "no output is configured",
 			Suggestions: []string{
@@ -548,7 +550,7 @@ func validateMultiStreamJobIntentShape(operation string, intent Intent, jobOutpu
 
 func jobStreamDestinationMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Code:      CodeOutputMissing,
+		Code:      codes.OutputMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream chain has no destination",
@@ -572,7 +574,7 @@ func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCoun
 
 func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Code:      CodeOutputScopeMixed,
+		Code:      codes.OutputScopeMixed,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes use stream-local outputs",
@@ -587,7 +589,7 @@ func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 
 func jobDestinationReferenceMissingError(operation string, stream streamIntent, label string) error {
 	return &BuildError{
-		Code:      CodeOutputMissing,
+		Code:      codes.OutputMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream route output " + label + " is not attached",
@@ -630,7 +632,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 		switch {
 		case transform.Resize != nil && transform.Resample != nil:
 			return &BuildError{
-				Code:        CodeTransformInvalid,
+				Code:        codes.TransformInvalid,
 				Operation:   operation,
 				Node:        node,
 				Reason:      "one stream transform cannot be both resize and resample",
@@ -647,7 +649,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 			}
 		default:
 			return &BuildError{
-				Code:      CodeTransformInvalid,
+				Code:      codes.TransformInvalid,
 				Operation: operation,
 				Node:      node,
 				Reason:    "empty stream transform",
@@ -664,7 +666,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 
 func operationSpecMissingError(operation string, node string) error {
 	return &BuildError{
-		Code:      CodeStreamOperationMissing,
+		Code:      codes.StreamOperationMissing,
 		Operation: operation,
 		Node:      node,
 		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
@@ -905,7 +907,7 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 
 func recipeAttachmentMismatchError(operation string, kind string, intentCount int, attachmentCount int) error {
 	return &BuildError{
-		Code:      CodeRecipeAttachmentMismatch,
+		Code:      codes.RecipeAttachmentMismatch,
 		Operation: operation,
 		Reason:    kind + " intent and concrete attachments disagree",
 		Details: []string{
@@ -1221,7 +1223,7 @@ func validateRecipeDestinationShape(operation string, node string, destinationNa
 func destinationShapeMismatchError(operation string, node string, destinationName string, destination destinationSpec, spec shape.Spec) error {
 	label := firstNonEmpty(destinationName, destination.label("destination"))
 	return &BuildError{
-		Code:      CodeDestinationShapeMismatch,
+		Code:      codes.DestinationShapeMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, label, "destination"),
 		Reason:    "byte or mux destination requires packet-domain media",
@@ -1252,7 +1254,7 @@ func validateOperationSpecShapes(operation string, stream streamIntent, initial 
 		next := stream.Operations[i]
 		// Taps and shape annotations advance the lineage unchecked; a
 		// .Require(...) assertion falls through to the contract check below.
-		if next.Kind == info.OpTap || (next.Kind == info.OpShape && next.Require == nil) {
+		if next.Kind == plan.OpTap || (next.Kind == plan.OpShape && next.Require == nil) {
 			shape = operationSpecOutputShape(shape, next)
 			continue
 		}
@@ -1269,7 +1271,7 @@ func validateOperationSpecShapes(operation string, stream streamIntent, initial 
 // surface: a .Require(...) assertion gets the requirement-specific refusal,
 // every other operation keeps the established mismatch error.
 func operationShapeFailureError(operation string, node string, index int, step OperationSpec, expected shape.Set, actual shape.Spec) error {
-	if step.Kind == info.OpShape && step.Require != nil {
+	if step.Kind == plan.OpShape && step.Require != nil {
 		return shapeRequirementUnmetError(operation, node, index, step, expected, actual)
 	}
 	return operationShapeMismatchError(operation, node, index, step, expected, actual)
@@ -1285,7 +1287,7 @@ func shapeRequirementUnmetError(operation string, node string, index int, step O
 		required = *step.Require
 	}
 	return &BuildError{
-		Code:      CodeShapeRequirementUnmet,
+		Code:      codes.ShapeRequirementUnmet,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
@@ -1316,7 +1318,7 @@ func operationSpecOutputShape(input shape.Spec, operation OperationSpec) shape.S
 func operationShapeMismatchError(operation string, node string, index int, step OperationSpec, expected shape.Set, actual shape.Spec) error {
 	component := firstNonEmpty(step.Component, operationSpecComponent(step), string(step.Kind), "operation")
 	return &BuildError{
-		Code:      CodeOperationShapeMismatch,
+		Code:      codes.OperationShapeMismatch,
 		Operation: operation,
 		Node:      node,
 		Reason:    component + " cannot consume the current media shape",
@@ -1333,13 +1335,13 @@ func operationShapeMismatchError(operation string, node string, index int, step 
 
 func operationSpecComponent(operation OperationSpec) string {
 	switch operation.Kind {
-	case info.OpDecode:
+	case plan.OpDecode:
 		return firstNonEmpty(string(operation.Decode.ID), operation.Component, "decode")
-	case info.OpTransform:
+	case plan.OpTransform:
 		return firstNonEmpty(transformFactoryName(operation.Transform), "transform")
-	case info.OpEncode:
+	case plan.OpEncode:
 		return firstNonEmpty(string(operation.Encode.ID), operation.Component, "encode")
-	case info.OpCopy:
+	case plan.OpCopy:
 		return "packet-copy"
 	default:
 		return operation.Component
@@ -1359,25 +1361,25 @@ func shapeSetString(shapes shape.Set) string {
 
 func operationShapeMismatchSuggestions(operation OperationSpec) []string {
 	switch operation.Kind {
-	case info.OpDecode:
+	case plan.OpDecode:
 		return []string{
 			"decode only consumes packet-domain media",
 			"remove duplicate .Decode() calls after a frame tap",
 			"start from goav.PacketTap(name) when a runtime branch should decode",
 		}
-	case info.OpTransform:
+	case plan.OpTransform:
 		return []string{
 			"call .Decode() before frame transforms when starting from packets",
 			"use .Video().Resize(...) for video frames",
 			"use .Audio().Resample(...) for audio frames",
 		}
-	case info.OpEncode:
+	case plan.OpEncode:
 		return []string{
 			"call .Decode() before encoding when starting from packets",
 			"keep .Shape(...) annotations in the frame domain before encoders",
 			"use .Copy() instead of an encoder for packet-preserving fanout",
 		}
-	case info.OpCopy:
+	case plan.OpCopy:
 		return []string{
 			"copy only consumes packet-domain media",
 			"move .Copy() before decode or start from goav.PacketTap(name)",
@@ -1405,11 +1407,11 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 			state.plan.Destinations = fresh.Destinations
 			return nil
 		}
-		plan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchDestinationAttachments, nil)
+		composePlan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchDestinationAttachments, nil)
 		if err != nil {
 			return err
 		}
-		state.plan = plan
+		state.plan = composePlan
 		return nil
 	}}
 }
@@ -1422,7 +1424,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		fmt.Sprintf("destinations: %d", len(intent.Destinations)),
 	}
 	return &BuildError{
-		Code:      CodeRecipeGraphUnsupported,
+		Code:      codes.RecipeGraphUnsupported,
 		Operation: operation,
 		Reason:    "recipe intent did not match a supported graph plan",
 		Details:   details,

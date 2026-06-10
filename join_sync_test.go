@@ -335,8 +335,8 @@ func TestMixSyncByPTSDropsVisibleInStats(t *testing.T) {
 	if stats.Dropped < 1 || stats.DropReasons[pipeline.DropSync] != 1 {
 		t.Fatalf("graph dropped=%d reasons=%+v, want the join drop folded in", stats.Dropped, stats.DropReasons)
 	}
-	if snapshot := task.Snapshot(); snapshot.Stats.Nodes["mix"].Dropped != 1 {
-		t.Fatalf("snapshot mix dropped=%d, want 1", snapshot.Stats.Nodes["mix"].Dropped)
+	if snap := task.Snapshot(); snap.Stats.Nodes["mix"].Dropped != 1 {
+		t.Fatalf("snapshot mix dropped=%d, want 1", snap.Stats.Nodes["mix"].Dropped)
 	}
 }
 

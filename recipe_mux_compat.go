@@ -5,12 +5,13 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/plan"
 )
 
 type muxCompatibilityIssue struct {
-	Code        ErrorCode
+	Code        codes.Code
 	Destination string
 	Format      av.FormatID
 	Reason      string
@@ -61,7 +62,7 @@ func muxCompatibilityIssues(
 	operations := workOperationsByID(work.Operations)
 	for i := range work.Destinations {
 		output := work.Destinations[i]
-		if output.Operation != info.OpMux || output.Format == "" {
+		if output.Operation != plan.OpMux || output.Format == "" {
 			continue
 		}
 		streams := muxOutputStreams(output, branches, work.Branches, operations, intent, inputProbes, transcodeProbe, transcodeProbeReady)
@@ -131,7 +132,7 @@ func muxStreamForBranch(
 	out := plannedMuxStream{Branch: firstNonEmpty(branch.Name, fmt.Sprintf("branch-%d", branchIndex))}
 	for _, id := range branch.Operations {
 		operation, ok := operations[id]
-		if !ok || operation.Kind != info.OpEncode {
+		if !ok || operation.Kind != plan.OpEncode {
 			continue
 		}
 		if encode := chainEncodeSpec(stream.Operations); streamOK && encode.ID != "" {
@@ -365,7 +366,7 @@ func checkSingleVideoMuxCompatibility(output workDestination, streams []plannedM
 
 func newMuxCompatibilityIssue(output workDestination, streams []plannedMuxStream, reason string) muxCompatibilityIssue {
 	return muxCompatibilityIssue{
-		Code:        CodeDestinationMuxIncompatible,
+		Code:        codes.DestinationMuxIncompatible,
 		Destination: output.Name,
 		Format:      output.Format,
 		Reason:      reason,
@@ -429,10 +430,10 @@ func muxCompatibilityBuildError(operation string, issue muxCompatibilityIssue) e
 	}
 }
 
-func muxCompatibilityDiagnostics(issues []muxCompatibilityIssue) []info.Diagnostic {
-	diagnostics := make([]info.Diagnostic, 0, len(issues))
+func muxCompatibilityDiagnostics(issues []muxCompatibilityIssue) []plan.Diagnostic {
+	diagnostics := make([]plan.Diagnostic, 0, len(issues))
 	for i := range issues {
-		diagnostics = append(diagnostics, info.Diagnostic{
+		diagnostics = append(diagnostics, plan.Diagnostic{
 			Code:        string(issues[i].Code),
 			Node:        issues[i].Destination,
 			Message:     issues[i].Reason,

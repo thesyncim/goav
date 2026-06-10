@@ -9,8 +9,10 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
+	"github.com/thesyncim/goav/snapshot"
 )
 
 var (
@@ -387,8 +389,8 @@ type task struct {
 	graph        pipeline.Graph
 	runtime      *runtime
 	destinations []*destinationTransaction
-	taps         []info.Tap
-	branchTaps   []info.Tap
+	taps         []snapshot.Tap
+	branchTaps   []snapshot.Tap
 	attachMu     sync.Mutex
 	attachments  map[*runtimeAttachment]struct{}
 
@@ -416,12 +418,27 @@ func (t *task) Describe() pipeline.Spec {
 	return t.graph.Spec()
 }
 
-func (t *task) Explain(context.Context) (info.Plan, error) {
-	return info.Plan{
+func (t *task) Explain(context.Context) (plan.Report, error) {
+	return plan.Report{
 		Summary: "running media task",
 		Graph:   t.Describe(),
-		Taps:    t.Taps(),
+		Taps:    planTapRows(t.Taps()),
 	}, nil
+}
+
+// planTapRows projects live task taps onto the plan report's tap rows.
+func planTapRows(taps []snapshot.Tap) []plan.Tap {
+	rows := make([]plan.Tap, 0, len(taps))
+	for i := range taps {
+		rows = append(rows, plan.Tap{
+			Name:      taps[i].Name,
+			MediaKind: taps[i].MediaKind,
+			Domain:    taps[i].Domain,
+			Shape:     taps[i].Shape,
+			Node:      taps[i].Node,
+		})
+	}
+	return rows
 }
 
 func (t *task) Run(ctx context.Context) error {
@@ -453,21 +470,21 @@ func (t *task) Stats() pipeline.GraphStats {
 	return t.graph.Stats()
 }
 
-func (t *task) Taps() []info.Tap {
+func (t *task) Taps() []snapshot.Tap {
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 	return t.tapsLocked()
 }
 
-func (t *task) Snapshot() info.TaskSnapshot {
+func (t *task) Snapshot() snapshot.Task {
 	if t == nil {
-		return info.TaskSnapshot{}
+		return snapshot.Task{}
 	}
 	state, _ := t.lifecycleStates()
 	stats := t.Stats()
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
-	branches := make([]info.BranchSnapshot, 0, len(t.attachments))
+	branches := make([]snapshot.Branch, 0, len(t.attachments))
 	for attachment := range t.attachments {
 		state := attachment.branchSnapshotLocked(stats)
 		if state.ID == "" && state.Name == "" {
@@ -475,7 +492,7 @@ func (t *task) Snapshot() info.TaskSnapshot {
 		}
 		branches = append(branches, state)
 	}
-	return info.TaskSnapshot{
+	return snapshot.Task{
 		State:        state,
 		Spec:         t.Describe(),
 		Stats:        stats,
@@ -489,28 +506,28 @@ func (t *task) Snapshot() info.TaskSnapshot {
 // task's still-open destinations from the recorded run/close progress. The
 // destination outcome mirrors finishDestinations: a run that completes without
 // error commits destinations, a failed run aborts them.
-func (t *task) lifecycleStates() (info.TaskState, info.DestinationState) {
+func (t *task) lifecycleStates() (lifecycle.TaskState, lifecycle.DestinationState) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
 	switch {
 	case t.finished && t.runErr != nil:
-		return info.TaskFailed, info.DestinationAborted
+		return lifecycle.TaskFailed, lifecycle.DestinationAborted
 	case t.finished:
-		return info.TaskClosed, info.DestinationCommitted
+		return lifecycle.TaskClosed, lifecycle.DestinationCommitted
 	case t.closed:
-		return info.TaskClosed, info.DestinationClosed
+		return lifecycle.TaskClosed, lifecycle.DestinationClosed
 	case t.started:
-		return info.TaskRunning, info.DestinationOpen
+		return lifecycle.TaskRunning, lifecycle.DestinationOpen
 	default:
-		return info.TaskBuilt, info.DestinationOpen
+		return lifecycle.TaskBuilt, lifecycle.DestinationOpen
 	}
 }
 
-func taskSnapshotDestinations(branches []info.BranchSnapshot) []info.DestinationSnapshot {
+func taskSnapshotDestinations(branches []snapshot.Branch) []snapshot.Destination {
 	if len(branches) == 0 {
 		return nil
 	}
-	out := make([]info.DestinationSnapshot, 0)
+	out := make([]snapshot.Destination, 0)
 	seen := make(map[string]struct{})
 	for i := range branches {
 		for j := range branches[i].Destinations {

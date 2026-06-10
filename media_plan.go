@@ -4,9 +4,10 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -17,24 +18,24 @@ import (
 type planBranch struct {
 	Name       string
 	Input      string
-	Stream     info.StreamSelect
+	Stream     plan.StreamSelect
 	Shape      shape.Spec
 	Operations []planOperation
 	Outputs    []string
 }
 
 type planOperation struct {
-	Kind      info.OperationKind
+	Kind      plan.OperationKind
 	Component string
 	Detail    string
-	After     info.OperationKind
+	After     plan.OperationKind
 	Shape     shape.Spec
 	Shared    bool
 }
 
 type planOutput struct {
 	Name       string
-	Operation  info.OperationKind
+	Operation  plan.OperationKind
 	Component  string
 	Format     av.FormatID
 	BranchRefs []string
@@ -55,9 +56,9 @@ func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []
 		if formats != nil && formats[name] != "" {
 			formatID = formats[name]
 		}
-		operation := info.OpSink
+		operation := plan.OpSink
 		if output.URI != "" || output.Protocol != "" || output.MIMEType != "" || formatID != "" {
-			operation = info.OpMux
+			operation = plan.OpMux
 		}
 		out = append(out, planOutput{
 			Name:      name,
@@ -156,8 +157,8 @@ func planBranchesFromStreamIntents(state *recipeCompileState, streams []streamIn
 	return branches, decisions
 }
 
-func streamSelectFromStream(stream av.Stream) info.StreamSelect {
-	return info.StreamSelect{
+func streamSelectFromStream(stream av.Stream) plan.StreamSelect {
+	return plan.StreamSelect{
 		ID:    stream.ID,
 		Index: stream.Index,
 		Type:  stream.Type,
@@ -240,25 +241,25 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 		}
 		operations := planInputOperationsForShape(input, spec)
 		decision := planDecision{
-			Code:    string(CodePacketCopy),
+			Code:    string(codes.PacketCopy),
 			Branch:  name,
 			Message: "no decode, transform, or encode requested; packets are copied to outputs",
 		}
 		if spec.Domain == shape.DomainEvent {
 			operations = append(operations, planOperation{
-				Kind:      info.OpShape,
+				Kind:      plan.OpShape,
 				Component: "shape",
 				Detail:    "event source",
 				Shape:     spec,
 			})
 			decision = planDecision{
-				Code:    string(CodeEventSource),
+				Code:    string(codes.EventSource),
 				Branch:  name,
 				Message: "source produces events for sink destinations",
 			}
 		} else {
 			operations = append(operations, planOperation{
-				Kind:      info.OpCopy,
+				Kind:      plan.OpCopy,
 				Component: "packet-copy",
 				Detail:    "preserve encoded packets",
 			})
@@ -279,7 +280,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 func planOperationSpecs(input inputIntent, stream streamIntent, branchName string, initial shape.Spec, selectComponent string) ([]planOperation, []planDecision) {
 	operations := planInputOperationsForShape(input, initial)
 	operations = append(operations, planOperation{
-		Kind:      info.OpSelect,
+		Kind:      plan.OpSelect,
 		Component: firstNonEmpty(selectComponent, selectorComponent(stream.Select)),
 		Detail:    "select stream",
 	})
@@ -293,19 +294,19 @@ func planOperationSpecs(input inputIntent, stream streamIntent, branchName strin
 	var decisions []planDecision
 	if initial.Domain == shape.DomainFrame {
 		decisions = append(decisions, planDecision{
-			Code:    string(CodeFrameSource),
+			Code:    string(codes.FrameSource),
 			Branch:  branchName,
 			Message: "source already produces decoded frames",
 		})
 		return operations, decisions
 	}
 	operations = append(operations, planOperation{
-		Kind:      info.OpCopy,
+		Kind:      plan.OpCopy,
 		Component: "packet-copy",
 		Detail:    "no frame operation requested",
 	})
 	decisions = append(decisions, planDecision{
-		Code:    string(CodePacketCopy),
+		Code:    string(codes.PacketCopy),
 		Branch:  branchName,
 		Message: "stream can remain packet encoded",
 	})
@@ -319,22 +320,22 @@ func planStreamIntentOperations(stream streamIntent, branchName string) ([]planO
 		operation := stream.Operations[i]
 		operations = append(operations, planOperationFromOperationSpec(operation))
 	}
-	if operationSpecKindPresent(stream.Operations, info.OpDecode) {
+	if operationSpecKindPresent(stream.Operations, plan.OpDecode) {
 		decisions = append(decisions, planDecision{
-			Code:    string(CodeDecodeRequired),
+			Code:    string(codes.DecodeRequired),
 			Branch:  branchName,
 			Message: "operation specs require decoded frames",
 		})
-	} else if operationSpecKindPresent(stream.Operations, info.OpCopy) {
+	} else if operationSpecKindPresent(stream.Operations, plan.OpCopy) {
 		decisions = append(decisions, planDecision{
-			Code:    string(CodePacketCopy),
+			Code:    string(codes.PacketCopy),
 			Branch:  branchName,
 			Message: "stream can remain packet encoded",
 		})
 	}
-	if operationSpecKindPresent(stream.Operations, info.OpEncode) {
+	if operationSpecKindPresent(stream.Operations, plan.OpEncode) {
 		decisions = append(decisions, planDecision{
-			Code:    string(CodeEncodeRequired),
+			Code:    string(codes.EncodeRequired),
 			Branch:  branchName,
 			Message: "muxed stream output requires encoded packets",
 		})
@@ -344,14 +345,14 @@ func planStreamIntentOperations(stream streamIntent, branchName string) ([]planO
 
 func planOperationFromOperationSpec(operation OperationSpec) planOperation {
 	switch operation.Kind {
-	case info.OpTransform:
-		plan := planTransformOperation(operation.Transform)
-		plan.Shared = operation.Shared
+	case plan.OpTransform:
+		op := planTransformOperation(operation.Transform)
+		op.Shared = operation.Shared
 		// The operation may carry a solver-selected adapter that differs from
 		// the standard factory; the component names the node and the registry key.
-		plan.Component = firstNonEmpty(operation.Component, plan.Component)
-		return plan
-	case info.OpShape:
+		op.Component = firstNonEmpty(operation.Component, op.Component)
+		return op
+	case plan.OpShape:
 		detail := "media shape annotation"
 		switch {
 		case operation.Auto != nil:
@@ -362,41 +363,41 @@ func planOperationFromOperationSpec(operation OperationSpec) planOperation {
 			detail = "shape preference"
 		}
 		return planOperation{
-			Kind:      info.OpShape,
+			Kind:      plan.OpShape,
 			Component: firstNonEmpty(operation.Component, "shape"),
 			Detail:    detail,
 			Shape:     operation.Shape,
 			Shared:    operation.Shared,
 		}
-	case info.OpTap:
-		plan := planTapOperation(operation.Tap)
-		plan.Shared = operation.Shared
-		return plan
-	case info.OpEncode:
+	case plan.OpTap:
+		op := planTapOperation(operation.Tap)
+		op.Shared = operation.Shared
+		return op
+	case plan.OpEncode:
 		return planOperation{
-			Kind:      info.OpEncode,
+			Kind:      plan.OpEncode,
 			Component: string(operation.Encode.ID),
 			Detail:    "frames to packets",
 			Shape:     mediaShapeFromCodecSpec(operation.Encode, shape.DomainPacket),
 			Shared:    operation.Shared,
 		}
-	case info.OpDecode:
+	case plan.OpDecode:
 		return planOperation{
-			Kind:      info.OpDecode,
+			Kind:      plan.OpDecode,
 			Component: firstNonEmpty(string(operation.Decode.ID), operation.Component),
 			Detail:    "packets to frames",
 			Shared:    operation.Shared,
 		}
-	case info.OpStage:
+	case plan.OpStage:
 		return planOperation{
-			Kind:      info.OpStage,
+			Kind:      plan.OpStage,
 			Component: operation.Component,
 			Detail:    "custom stage",
 			Shared:    operation.Shared,
 		}
-	case info.OpCopy:
+	case plan.OpCopy:
 		return planOperation{
-			Kind:      info.OpCopy,
+			Kind:      plan.OpCopy,
 			Component: firstNonEmpty(operation.Component, "packet-copy"),
 			Detail:    "no frame operation requested",
 			Shared:    operation.Shared,
@@ -410,7 +411,7 @@ func planOperationFromOperationSpec(operation OperationSpec) planOperation {
 	}
 }
 
-func operationSpecKindPresent(operations []OperationSpec, kind info.OperationKind) bool {
+func operationSpecKindPresent(operations []OperationSpec, kind plan.OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true
@@ -427,14 +428,14 @@ func planInputOperationsForShape(input inputIntent, spec shape.Spec) []planOpera
 	case input.Realtime:
 		component := firstNonEmpty(string(input.Codec.ID), string(input.Protocol), "receive")
 		return []planOperation{{
-			Kind:      info.OpDepacketize,
+			Kind:      plan.OpDepacketize,
 			Component: component,
 			Detail:    "receive live packets",
 			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(spec.Domain, shape.DomainPacket)),
 		}}
 	default:
 		return []planOperation{{
-			Kind:      info.OpDemux,
+			Kind:      plan.OpDemux,
 			Component: "container",
 			Detail:    "read packets from input",
 			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(spec.Domain, shape.DomainPacket)),
@@ -445,7 +446,7 @@ func planInputOperationsForShape(input inputIntent, spec shape.Spec) []planOpera
 func planTransformOperation(transform TransformSpec) planOperation {
 	name := transformFactoryName(transform)
 	return planOperation{
-		Kind:      info.OpTransform,
+		Kind:      plan.OpTransform,
 		Component: firstNonEmpty(name, "transform"),
 		Detail:    firstNonEmpty(name, "transform frames"),
 		Shape:     mediaShapeFromTransform(transform),
@@ -454,7 +455,7 @@ func planTransformOperation(transform TransformSpec) planOperation {
 
 func planTapOperation(tap tapIntent) planOperation {
 	return planOperation{
-		Kind:      info.OpTap,
+		Kind:      plan.OpTap,
 		Component: firstNonEmpty(tap.Name, "tap"),
 		Detail:    "named media outlet",
 		After:     tap.After,
@@ -483,11 +484,11 @@ func planTaps(branches []planBranch) []workTap {
 			operation := branch.Operations[j]
 			// Copy and shape annotations lower to no dedicated node: they advance
 			// the shape but never move the tap anchor.
-			if operation.Kind == info.OpCopy || operation.Kind == info.OpShape {
+			if operation.Kind == plan.OpCopy || operation.Kind == plan.OpShape {
 				currentShape = planShapeForOperation(currentShape, branch, operation)
 				continue
 			}
-			if operation.Kind != info.OpTap {
+			if operation.Kind != plan.OpTap {
 				currentShape = planShapeForOperation(currentShape, branch, operation)
 				currentNode = planOperationNodeName(branch, operation, j)
 				continue
@@ -521,7 +522,7 @@ func planOperationsWithShape(branchName string, baseShape shape.Spec, operations
 	branch := planBranch{Name: branchName}
 	for i := range out {
 		operation := out[i]
-		if operation.Kind == info.OpTap {
+		if operation.Kind == plan.OpTap {
 			if mediaShapeEmpty(operation.Shape) {
 				operation.Shape = spec
 			}
@@ -544,22 +545,22 @@ func planShapeForOperation(current shape.Spec, branch planBranch, operation plan
 
 func planShapeAfterOperation(spec shape.Spec, branch planBranch, operation planOperation) shape.Spec {
 	switch operation.Kind {
-	case info.OpDepacketize:
+	case plan.OpDepacketize:
 		if codecID := knownPlanCodec(operation.Component); codecID != "" {
 			spec.Codec = codecID
 			spec.MediaKind = firstNonEmptyMedia(spec.MediaKind, codecMedia(codecID))
 		}
 		spec.Domain = shape.DomainPacket
-	case info.OpDecode, info.OpStage:
+	case plan.OpDecode, plan.OpStage:
 		spec.Domain = shape.DomainFrame
-	case info.OpShape:
+	case plan.OpShape:
 		spec = shape.Merge(spec, operation.Shape)
-	case info.OpTransform:
+	case plan.OpTransform:
 		spec.Domain = shape.DomainFrame
 		spec = shape.Merge(spec, operation.Shape)
-	case info.OpCopy:
+	case plan.OpCopy:
 		spec.Domain = shape.DomainPacket
-	case info.OpEncode:
+	case plan.OpEncode:
 		spec.Domain = shape.DomainPacket
 		spec.StreamID = av.StreamID(firstNonEmpty(branch.Name, string(spec.StreamID)))
 		spec.Codec = av.CodecID(operation.Component)
@@ -681,23 +682,23 @@ func knownPlanCodec(component string) av.CodecID {
 
 func planOperationNodeName(branch planBranch, operation planOperation, index int) string {
 	switch operation.Kind {
-	case info.OpDecode:
+	case plan.OpDecode:
 		return "decode-" + planBranchOperationScopeName(branch)
-	case info.OpTransform:
+	case plan.OpTransform:
 		name := branchEncodeOwnerName(branch)
 		if operation.Shared {
 			name = planBranchOperationScopeName(branch)
 		}
 		return operation.Component + "-" + name
-	case info.OpStage:
+	case plan.OpStage:
 		return operation.Component
-	case info.OpEncode:
+	case plan.OpEncode:
 		return "encode-" + branchEncodeOwnerName(branch)
-	case info.OpSelect:
+	case plan.OpSelect:
 		// Qualified exactly like the planned-spec select node: the declared
 		// selector scope plus any goav.InputName narrowing.
 		return branchComposeInputNodeName("select-"+firstNonEmpty(operation.Component, planBranchOperationScopeName(branch)), branch.Stream.Input)
-	case info.OpDepacketize, info.OpDemux:
+	case plan.OpDepacketize, plan.OpDemux:
 		return branch.Name
 	default:
 		if operation.Component != "" {
@@ -763,11 +764,11 @@ func clonePlanDecisions(decisions []planDecision) []planDecision {
 	return append([]planDecision(nil), decisions...)
 }
 
-func clonePlanDiagnostics(diagnostics []info.Diagnostic) []info.Diagnostic {
+func clonePlanDiagnostics(diagnostics []plan.Diagnostic) []plan.Diagnostic {
 	if len(diagnostics) == 0 {
 		return nil
 	}
-	out := make([]info.Diagnostic, 0, len(diagnostics))
+	out := make([]plan.Diagnostic, 0, len(diagnostics))
 	for i := range diagnostics {
 		diagnostic := diagnostics[i]
 		diagnostic.Details = append([]string(nil), diagnostic.Details...)
@@ -791,7 +792,7 @@ func firstInputName(inputs []inputIntent) string {
 	return firstNonEmpty(inputs[0].Name, inputs[0].URI, "input")
 }
 
-func selectorComponent(selector info.StreamSelect) string {
+func selectorComponent(selector plan.StreamSelect) string {
 	return firstNonEmpty(string(selector.ID), selector.Name, string(selector.Type), string(selector.Codec), "stream")
 }
 

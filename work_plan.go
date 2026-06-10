@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -25,7 +25,7 @@ type workPlan struct {
 	Destinations []workDestination
 	Edges        []workEdge
 	Decisions    []planDecision
-	Diagnostics  []info.Diagnostic
+	Diagnostics  []plan.Diagnostic
 }
 
 type workInput struct {
@@ -37,7 +37,7 @@ type workInput struct {
 
 type workStream struct {
 	Name   string
-	Select info.StreamSelect
+	Select plan.StreamSelect
 }
 
 // workOperation is one planned operation. Destinations carries the stable
@@ -46,7 +46,7 @@ type workStream struct {
 type workOperation struct {
 	ID           string
 	Name         string
-	Kind         info.OperationKind
+	Kind         plan.OperationKind
 	Branch       string
 	Node         pipeline.NodeRef
 	Component    string
@@ -62,7 +62,7 @@ type workTap struct {
 	Node      pipeline.NodeRef
 	Domain    shape.MediaDomain
 	MediaKind av.MediaType
-	After     info.OperationKind
+	After     plan.OperationKind
 	Shape     shape.Spec
 	Shared    bool
 }
@@ -73,7 +73,7 @@ type workBranch struct {
 	ID           string
 	Name         string
 	Input        string
-	Stream       info.StreamSelect
+	Stream       plan.StreamSelect
 	SourceShape  shape.Spec
 	Operations   []string
 	Destinations []string
@@ -85,7 +85,7 @@ type workBranch struct {
 type workDestination struct {
 	ID        string
 	Name      string
-	Operation info.OperationKind
+	Operation plan.OperationKind
 	Component string
 	Format    av.FormatID
 	Branches  []string
@@ -105,7 +105,7 @@ type workEdge struct {
 func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
 	if state.joinPlan != nil {
 		// Joins plan multi-upstream convergence: the joinPlan renders its arms,
-		// the info.OpJoin node, and the downstream chain into the same workPlan IR.
+		// the plan.OpJoin node, and the downstream chain into the same workPlan IR.
 		return state.joinPlan.buildJoinWorkPlan(state, spec)
 	}
 	intent := state.intent
@@ -244,7 +244,7 @@ func workOperationsFromBranches(spec pipeline.Spec, branches []planBranch, outpu
 		for j := range branch.Operations {
 			operation := branch.Operations[j]
 			node := pipeline.NodeRef(planOperationNodeName(branch, operation, j))
-			if operation.Kind == info.OpShape {
+			if operation.Kind == plan.OpShape {
 				node = ""
 			}
 			shapeOut := operation.Shape
@@ -317,9 +317,9 @@ func workPlanOutputNodesByName(spec pipeline.Spec, outputs []planOutput) map[str
 
 func workPlanNodeMatchesOutput(node pipeline.NodeSpec, output planOutput) bool {
 	switch output.Operation {
-	case info.OpSink:
+	case plan.OpSink:
 		return node.Kind == pipeline.NodeSink
-	case info.OpMux, info.OpWrite:
+	case plan.OpMux, plan.OpWrite:
 		return node.Kind == pipeline.NodeStage && strings.HasPrefix(node.Detail, "mux")
 	default:
 		return false
@@ -399,7 +399,7 @@ func workEdgeBranch(edge pipeline.EdgeSpec, branchByNode map[pipeline.NodeRef]st
 	return firstNonEmpty(toBranch, fromBranch)
 }
 
-func workOperationIDForKind(branch string, index int, kind info.OperationKind) string {
+func workOperationIDForKind(branch string, index int, kind plan.OperationKind) string {
 	return fmt.Sprintf("%s/%03d/%s", firstNonEmpty(branch, "branch"), index, kind)
 }
 
@@ -422,9 +422,9 @@ func workDestinationID(name string) string {
 	return "destination/" + firstNonEmpty(name, "unnamed")
 }
 
-func workOperationTerminal(kind info.OperationKind) bool {
+func workOperationTerminal(kind plan.OperationKind) bool {
 	switch kind {
-	case info.OpMux, info.OpSink, info.OpWrite:
+	case plan.OpMux, plan.OpSink, plan.OpWrite:
 		return true
 	default:
 		return false
@@ -468,17 +468,17 @@ func workDestinationNameByID(destinations []workDestination, id string) string {
 	return id
 }
 
-func cloneWorkPlan(plan workPlan) workPlan {
-	clone := plan
-	clone.Inputs = append([]workInput(nil), plan.Inputs...)
-	clone.Streams = append([]workStream(nil), plan.Streams...)
-	clone.Operations = cloneWorkOperations(plan.Operations)
-	clone.Taps = append([]workTap(nil), plan.Taps...)
-	clone.Branches = cloneWorkBranches(plan.Branches)
-	clone.Destinations = cloneWorkDestinations(plan.Destinations)
-	clone.Edges = append([]workEdge(nil), plan.Edges...)
-	clone.Decisions = clonePlanDecisions(plan.Decisions)
-	clone.Diagnostics = clonePlanDiagnostics(plan.Diagnostics)
+func cloneWorkPlan(wp workPlan) workPlan {
+	clone := wp
+	clone.Inputs = append([]workInput(nil), wp.Inputs...)
+	clone.Streams = append([]workStream(nil), wp.Streams...)
+	clone.Operations = cloneWorkOperations(wp.Operations)
+	clone.Taps = append([]workTap(nil), wp.Taps...)
+	clone.Branches = cloneWorkBranches(wp.Branches)
+	clone.Destinations = cloneWorkDestinations(wp.Destinations)
+	clone.Edges = append([]workEdge(nil), wp.Edges...)
+	clone.Decisions = clonePlanDecisions(wp.Decisions)
+	clone.Diagnostics = clonePlanDiagnostics(wp.Diagnostics)
 	return clone
 }
 

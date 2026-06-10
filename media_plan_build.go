@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -55,15 +55,15 @@ type graphPlanGraphConfigurer interface {
 	graphConfig() pipeline.GraphConfig
 }
 
-func buildGraphPlanTask(ctx context.Context, plan graphPlan) (Task, error) {
-	runtime := plan.runtime
+func buildGraphPlanTask(ctx context.Context, gp graphPlan) (Task, error) {
+	runtime := gp.runtime
 	if runtime == nil {
 		return nil, recipeGraphUnsupportedError("build recipe", Intent{})
 	}
 	service := &builder{runtime: runtime, requireRunOK: true}
 	var graph pipeline.Graph
 	var err error
-	if configurer, ok := plan.lowerer.(graphPlanGraphConfigurer); ok {
+	if configurer, ok := gp.lowerer.(graphPlanGraphConfigurer); ok {
 		graph, err = pipeline.NewGraph(configurer.graphConfig())
 	} else {
 		graph, err = service.newGraph(ctx)
@@ -71,7 +71,7 @@ func buildGraphPlanTask(ctx context.Context, plan graphPlan) (Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := plan.lower(ctx, graph, service); err != nil {
+	if err := gp.lower(ctx, graph, service); err != nil {
 		graph.Close()
 		return nil, err
 	}
@@ -92,11 +92,11 @@ func (p mediaPlanStreamGraph) runtimeRef() *runtime {
 	return p.runtime
 }
 
-func (p mediaPlanStreamGraph) lower(ctx context.Context, plan graphPlan, graph pipeline.Graph, service *builder) error {
+func (p mediaPlanStreamGraph) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder) error {
 	if p.copyPackets {
-		return p.lowerPacketCopy(ctx, plan, graph, service)
+		return p.lowerPacketCopy(ctx, gp, graph, service)
 	}
-	lowering, err := p.prepareFrameOperationSpecLowering(plan)
+	lowering, err := p.prepareFrameOperationSpecLowering(gp)
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 		return mediaPlanStreamGraph{}, false, nil
 	}
 	selector := streamIntentSelector(stream)
-	plan := mediaPlanStreamGraph{
+	sg := mediaPlanStreamGraph{
 		runtime:      runtime,
 		inputs:       append([]InputSpec(nil), inputs...),
 		outputs:      append([]destinationSpec(nil), outputs...),
@@ -132,15 +132,15 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 	if err != nil {
 		return mediaPlanStreamGraph{}, false, err
 	}
-	plan.filters = filters
+	sg.filters = filters
 	if encode := chainEncodeSpec(stream.Operations); codecIntentSet(encode) && !encode.Copy {
 		request := encodeRequest{
 			selector: selector,
 			config:   encodeConfigFromSpec(encode),
 		}
-		plan.encode = &request
+		sg.encode = &request
 	}
-	return plan, true, nil
+	return sg, true, nil
 }
 
 func mediaPlanInputDomain(inputs []InputSpec) shape.MediaDomain {
@@ -264,7 +264,7 @@ func (p mediaPlanStreamGraph) selectedPacketCopyBranchComposeRoutes() ([]branchC
 	return branches, mediaPlanBranchComposeTargetRoutes(p.outputs, branchName)
 }
 
-func newMediaPlanBranchComposeGraph(rt Runtime, inputs []InputSpec, plan branchComposePlan) (mediaPlanBranchComposeGraph, bool, error) {
+func newMediaPlanBranchComposeGraph(rt Runtime, inputs []InputSpec, composePlan branchComposePlan) (mediaPlanBranchComposeGraph, bool, error) {
 	runtime, ok := rt.(*runtime)
 	if !ok || runtime == nil {
 		return mediaPlanBranchComposeGraph{}, false, nil
@@ -278,7 +278,7 @@ func newMediaPlanBranchComposeGraph(rt Runtime, inputs []InputSpec, plan branchC
 			return mediaPlanBranchComposeGraph{}, false, nil
 		}
 	}
-	branches, destinations, err := prepareBranchComposePlan(plan)
+	branches, destinations, err := prepareBranchComposePlan(composePlan)
 	if err != nil {
 		return mediaPlanBranchComposeGraph{}, false, err
 	}
@@ -302,7 +302,7 @@ func newMediaPlanBranchComposeGraph(rt Runtime, inputs []InputSpec, plan branchC
 	return mediaPlanBranchComposeGraph{
 		runtime:      runtime,
 		inputs:       append([]InputSpec(nil), inputs...),
-		plan:         plan,
+		plan:         composePlan,
 		branches:     branches,
 		destinations: destinations,
 	}, true, nil
@@ -329,8 +329,8 @@ func (p mediaPlanBranchComposeGraph) runtimeRef() *runtime {
 	return p.runtime
 }
 
-func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, plan graphPlan, graph pipeline.Graph, service *builder) error {
-	lowering, err := p.prepareBranchComposeOperationLowering(plan)
+func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder) error {
+	lowering, err := p.prepareBranchComposeOperationLowering(gp)
 	if err != nil {
 		return err
 	}
@@ -367,8 +367,8 @@ type graphPlanBranchComposeBranchOperation struct {
 	encodeShape       shape.Spec
 }
 
-func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan graphPlan) (graphPlanBranchComposeLowering, error) {
-	branchOperations := graphPlanOperationsByBranch(plan.work.Operations)
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(gp graphPlan) (graphPlanBranchComposeLowering, error) {
+	branchOperations := graphPlanOperationsByBranch(gp.work.Operations)
 	for i := range p.branches {
 		branch := p.branches[i]
 		operations := branchOperations[branch.name]
@@ -393,7 +393,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(plan 
 	if err != nil {
 		return graphPlanBranchComposeLowering{}, err
 	}
-	destinations, err := p.prepareBranchComposeDestinations(plan)
+	destinations, err := p.prepareBranchComposeDestinations(gp)
 	if err != nil {
 		return graphPlanBranchComposeLowering{}, err
 	}
@@ -411,7 +411,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeInputOperations(branchO
 			}
 			branch := p.branches[branchIndex]
 			operations := branchOperations[branch.name]
-			selectOperation, ok := graphPlanBranchOperation(operations, info.OpSelect)
+			selectOperation, ok := graphPlanBranchOperation(operations, plan.OpSelect)
 			if !ok {
 				return nil, graphPlanInvalidError("branch composition graph plan has no select operation for branch", []string{
 					"branch=" + branch.name,
@@ -423,7 +423,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeInputOperations(branchO
 			if !branchComposeRouteNeedsDecode(branch) {
 				continue
 			}
-			decodeOperation, ok := graphPlanBranchOperation(operations, info.OpDecode)
+			decodeOperation, ok := graphPlanBranchOperation(operations, plan.OpDecode)
 			if !ok {
 				return nil, graphPlanInvalidError("branch composition graph plan has no decode operation for branch", []string{
 					"branch=" + branch.name,
@@ -514,7 +514,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branch
 		var encodeNode pipeline.NodeRef
 		var encodeShape shape.Spec
 		if branchComposeRouteNeedsEncode(branch) {
-			operation, ok := graphPlanBranchOperation(operations, info.OpEncode)
+			operation, ok := graphPlanBranchOperation(operations, plan.OpEncode)
 			if !ok {
 				return nil, graphPlanInvalidError("branch composition graph plan has no encode operation for branch", []string{
 					"branch=" + branch.name,
@@ -538,12 +538,12 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branch
 }
 
 func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branch branchComposeRoute, operations []workOperation) error {
-	if !graphPlanBranchOperationsContain(operations, info.OpSelect) {
+	if !graphPlanBranchOperationsContain(operations, plan.OpSelect) {
 		return graphPlanInvalidError("branch composition graph plan has no select operation for branch", []string{
 			"branch=" + branch.name,
 		})
 	}
-	hasDecode := graphPlanBranchOperationsContain(operations, info.OpDecode)
+	hasDecode := graphPlanBranchOperationsContain(operations, plan.OpDecode)
 	if branchComposeRouteNeedsDecode(branch) && !hasDecode {
 		return graphPlanInvalidError("branch composition graph plan has no decode operation for branch", []string{
 			"branch=" + branch.name,
@@ -554,7 +554,7 @@ func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branc
 			"branch=" + branch.name,
 		})
 	}
-	if !branchComposeRouteNeedsDecode(branch) && branch.sourceDomain != shape.DomainFrame && !graphPlanBranchOperationsContain(operations, info.OpCopy) {
+	if !branchComposeRouteNeedsDecode(branch) && branch.sourceDomain != shape.DomainFrame && !graphPlanBranchOperationsContain(operations, plan.OpCopy) {
 		return graphPlanInvalidError("packet branch composition graph plan has no copy operation for branch", []string{
 			"branch=" + branch.name,
 		})
@@ -562,7 +562,7 @@ func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branc
 	if err := p.validateBranchComposeStepOperations(branch, operations); err != nil {
 		return err
 	}
-	hasEncode := graphPlanBranchOperationsContain(operations, info.OpEncode)
+	hasEncode := graphPlanBranchOperationsContain(operations, plan.OpEncode)
 	if branchComposeRouteNeedsEncode(branch) && !hasEncode {
 		return graphPlanInvalidError("branch composition graph plan has no encode operation for branch", []string{
 			"branch=" + branch.name,
@@ -576,7 +576,7 @@ func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branc
 	return nil
 }
 
-func graphPlanBranchOperation(operations []workOperation, kind info.OperationKind) (workOperation, bool) {
+func graphPlanBranchOperation(operations []workOperation, kind plan.OperationKind) (workOperation, bool) {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return operations[i], true
@@ -607,8 +607,8 @@ func (p mediaPlanBranchComposeGraph) validateBranchComposeStepOperations(branch 
 	return nil
 }
 
-func (p mediaPlanBranchComposeGraph) prepareBranchComposeDestinations(plan graphPlan) ([]branchComposeTargetRoute, error) {
-	operations, err := graphPlanUniqueDestinationOperations(plan.work.Operations, plan.work.Destinations, "branch composition")
+func (p mediaPlanBranchComposeGraph) prepareBranchComposeDestinations(gp graphPlan) ([]branchComposeTargetRoute, error) {
+	operations, err := graphPlanUniqueDestinationOperations(gp.work.Operations, gp.work.Destinations, "branch composition")
 	if err != nil {
 		return nil, err
 	}
@@ -621,7 +621,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeDestinations(plan graph
 			"routes=" + strconv.Itoa(len(p.destinations)),
 		})
 	}
-	branchesByTarget := graphPlanDestinationBranchNames(plan.work.Operations)
+	branchesByTarget := graphPlanDestinationBranchNames(gp.work.Operations)
 	destinations := make([]branchComposeTargetRoute, len(operations))
 	for i := range operations {
 		operation := operations[i]
@@ -654,7 +654,7 @@ func validateBranchComposeDestinationOperation(operation graphPlanDestinationOpe
 		return err
 	}
 	if target.sink != nil {
-		if operation.Kind != info.OpSink {
+		if operation.Kind != plan.OpSink {
 			return graphPlanInvalidError("branch composition destination operation kind does not match sink destination", []string{
 				"destination=" + operation.Name,
 				"kind=" + string(operation.Kind),
@@ -662,7 +662,7 @@ func validateBranchComposeDestinationOperation(operation graphPlanDestinationOpe
 		}
 		return nil
 	}
-	if operation.Kind != info.OpMux && operation.Kind != info.OpWrite {
+	if operation.Kind != plan.OpMux && operation.Kind != plan.OpWrite {
 		return graphPlanInvalidError("branch composition destination operation kind does not match byte destination", []string{
 			"destination=" + operation.Name,
 			"kind=" + string(operation.Kind),
@@ -786,7 +786,7 @@ func graphPlanSingleBranchOperations(operations []workOperation, scope string) (
 	return nil, "", graphPlanInvalidError(scope+" graph plan has no branch operations", nil)
 }
 
-func graphPlanBranchOperationsContain(operations []workOperation, kind info.OperationKind) bool {
+func graphPlanBranchOperationsContain(operations []workOperation, kind plan.OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true
@@ -802,7 +802,7 @@ func graphPlanBranchStepOperationCount(operations []workOperation, shared bool) 
 		if operation.Shared != shared {
 			continue
 		}
-		if operation.Kind == info.OpTransform || operation.Kind == info.OpStage {
+		if operation.Kind == plan.OpTransform || operation.Kind == plan.OpStage {
 			count++
 		}
 	}
@@ -816,7 +816,7 @@ func graphPlanBranchStepOperationNodes(operations []workOperation, shared bool, 
 		if operation.Shared != shared {
 			continue
 		}
-		if operation.Kind != info.OpTransform && operation.Kind != info.OpStage {
+		if operation.Kind != plan.OpTransform && operation.Kind != plan.OpStage {
 			continue
 		}
 		if operation.Node == "" {
@@ -864,8 +864,8 @@ func graphPlanDestinationBranchNames(operations []workOperation) map[string]map[
 	return out
 }
 
-func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, plan graphPlan, graph pipeline.Graph, service *builder) error {
-	selectOperation, _, destinations, err := p.preparePacketCopyOperationLowering(plan)
+func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder) error {
+	selectOperation, _, destinations, err := p.preparePacketCopyOperationLowering(gp)
 	if err != nil {
 		return err
 	}
@@ -916,16 +916,16 @@ func (p mediaPlanStreamGraph) compileSelectedPacketCopyBranchCompose(ctx context
 	return compileBranchComposeRoutes(ctx, service, graph, branches, outputs, branchInputs, branchStreams, nil, nil, sources.realtime)
 }
 
-func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(plan graphPlan) (workOperation, bool, []graphPlanDestinationOperation, error) {
-	operations := plan.work.Operations
+func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(gp graphPlan) (workOperation, bool, []graphPlanDestinationOperation, error) {
+	operations := gp.work.Operations
 	if p.selectedStream {
-		branchOperations, _, err := graphPlanSingleBranchOperations(plan.work.Operations, "selected packet-copy")
+		branchOperations, _, err := graphPlanSingleBranchOperations(gp.work.Operations, "selected packet-copy")
 		if err != nil {
 			return workOperation{}, false, nil, err
 		}
 		operations = branchOperations
 	}
-	selectOperation, hasSelect := graphPlanFirstOperation(operations, info.OpSelect)
+	selectOperation, hasSelect := graphPlanFirstOperation(operations, plan.OpSelect)
 	switch {
 	case p.selectedStream && !hasSelect:
 		return workOperation{}, false, nil, graphPlanInvalidError("selected packet-copy graph plan has no select operation", []string{
@@ -936,18 +936,18 @@ func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(plan graphPlan)
 			"node=" + selectOperation.Node.String(),
 		})
 	}
-	if err := p.validatePacketCopyOperationRecords(plan, operations); err != nil {
+	if err := p.validatePacketCopyOperationRecords(gp, operations); err != nil {
 		return workOperation{}, false, nil, err
 	}
-	destinations, err := p.preparePacketCopyDestinations(plan, operations)
+	destinations, err := p.preparePacketCopyDestinations(gp, operations)
 	if err != nil {
 		return workOperation{}, false, nil, err
 	}
 	return selectOperation, hasSelect, destinations, nil
 }
 
-func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, operations []workOperation) ([]graphPlanDestinationOperation, error) {
-	destinations, err := graphPlanUniqueDestinationOperations(operations, plan.work.Destinations, "packet-copy")
+func (p mediaPlanStreamGraph) preparePacketCopyDestinations(gp graphPlan, operations []workOperation) ([]graphPlanDestinationOperation, error) {
+	destinations, err := graphPlanUniqueDestinationOperations(operations, gp.work.Destinations, "packet-copy")
 	if err != nil {
 		return nil, err
 	}
@@ -960,7 +960,7 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 		if err := validateGraphPlanDestinationOperationNode("packet-copy", target); err != nil {
 			return nil, err
 		}
-		outputIndex, ok := workDestinationIndexByID(plan.work.Destinations, target.ID)
+		outputIndex, ok := workDestinationIndexByID(gp.work.Destinations, target.ID)
 		if !ok || outputIndex < 0 || outputIndex >= len(p.outputs) {
 			return nil, graphPlanInvalidError("packet-copy destination operation is not bound to an output", []string{
 				"destination=" + target.Name,
@@ -969,8 +969,8 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 		}
 		target.OutputIndex = outputIndex
 		if !p.selectedStream {
-			matches, ok := packetCopyDestinationOperationMatches(plan.work.Branches, branchesByTarget[target.ID])
-			if !ok || !packetCopyTargetBranchesMatch(plan.work.Destinations[outputIndex], matches, plan.work.Branches) {
+			matches, ok := packetCopyDestinationOperationMatches(gp.work.Branches, branchesByTarget[target.ID])
+			if !ok || !packetCopyTargetBranchesMatch(gp.work.Destinations[outputIndex], matches, gp.work.Branches) {
 				return nil, graphPlanInvalidError("packet-copy destination operation branches do not match output branches", []string{
 					"destination=" + target.Name,
 				})
@@ -978,13 +978,13 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 			target.Matches = matches
 		}
 		output := p.outputs[outputIndex]
-		if !p.selectedStream && packetCopyTargetMatchesDomain(plan.work.Branches, target.Matches, shape.DomainEvent) && output.sink == nil {
+		if !p.selectedStream && packetCopyTargetMatchesDomain(gp.work.Branches, target.Matches, shape.DomainEvent) && output.sink == nil {
 			return nil, graphPlanInvalidError("event source destination must be a sink", []string{
 				"destination=" + target.Name,
 			})
 		}
 		if output.sink != nil {
-			if target.Kind != info.OpSink {
+			if target.Kind != plan.OpSink {
 				return nil, graphPlanInvalidError("packet-copy destination operation kind does not match sink destination", []string{
 					"destination=" + target.Name,
 					"kind=" + string(target.Kind),
@@ -993,7 +993,7 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(plan graphPlan, oper
 			destinations[i] = target
 			continue
 		}
-		if target.Kind != info.OpMux && target.Kind != info.OpWrite {
+		if target.Kind != plan.OpMux && target.Kind != plan.OpWrite {
 			return nil, graphPlanInvalidError("packet-copy destination operation kind does not match byte destination", []string{
 				"destination=" + target.Name,
 				"kind=" + string(target.Kind),
@@ -1016,9 +1016,9 @@ func packetCopyTargetMatchesDomain(branches []workBranch, matches []int, domain 
 	return false
 }
 
-func (p mediaPlanStreamGraph) validatePacketCopyOperationRecords(plan graphPlan, operations []workOperation) error {
+func (p mediaPlanStreamGraph) validatePacketCopyOperationRecords(gp graphPlan, operations []workOperation) error {
 	if p.selectedStream {
-		if !graphPlanBranchOperationsContain(operations, info.OpCopy) {
+		if !graphPlanBranchOperationsContain(operations, plan.OpCopy) {
 			return graphPlanInvalidError("selected packet-copy graph plan has no copy operation", []string{
 				"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
 			})
@@ -1026,11 +1026,11 @@ func (p mediaPlanStreamGraph) validatePacketCopyOperationRecords(plan graphPlan,
 		return nil
 	}
 	byBranch := graphPlanOperationsByBranch(operations)
-	if len(plan.work.Branches) == 0 {
+	if len(gp.work.Branches) == 0 {
 		return graphPlanInvalidError("packet-copy graph plan has no copy branches", nil)
 	}
-	for i := range plan.work.Branches {
-		branch := plan.work.Branches[i]
+	for i := range gp.work.Branches {
+		branch := gp.work.Branches[i]
 		branchOperations := byBranch[branch.Name]
 		if len(branchOperations) == 0 {
 			return graphPlanInvalidError("packet-copy graph plan has no operations for branch", []string{
@@ -1040,7 +1040,7 @@ func (p mediaPlanStreamGraph) validatePacketCopyOperationRecords(plan graphPlan,
 		if branch.SourceShape.Domain == shape.DomainEvent {
 			continue
 		}
-		if !graphPlanBranchOperationsContain(branchOperations, info.OpCopy) {
+		if !graphPlanBranchOperationsContain(branchOperations, plan.OpCopy) {
 			return graphPlanInvalidError("packet-copy graph plan has no copy operation for branch", []string{
 				"branch=" + branch.Name,
 			})
@@ -1143,7 +1143,7 @@ func packetCopyDestinationStreams(target graphPlanDestinationOperation, streamGr
 	return out, nil
 }
 
-func graphPlanFirstOperation(operations []workOperation, kind info.OperationKind) (workOperation, bool) {
+func graphPlanFirstOperation(operations []workOperation, kind plan.OperationKind) (workOperation, bool) {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return operations[i], true
@@ -1156,7 +1156,7 @@ type graphPlanDestinationOperation struct {
 	ID          string
 	Name        string
 	Node        pipeline.NodeRef
-	Kind        info.OperationKind
+	Kind        plan.OperationKind
 	OutputIndex int
 	Matches     []int
 }
@@ -1242,12 +1242,12 @@ type graphPlanFrameStreamLowering struct {
 	destinations []graphPlanDestinationOperation
 }
 
-func (p mediaPlanStreamGraph) prepareFrameOperationSpecLowering(plan graphPlan) (graphPlanFrameStreamLowering, error) {
-	operations, branchName, err := graphPlanSingleBranchOperations(plan.work.Operations, "frame stream")
+func (p mediaPlanStreamGraph) prepareFrameOperationSpecLowering(gp graphPlan) (graphPlanFrameStreamLowering, error) {
+	operations, branchName, err := graphPlanSingleBranchOperations(gp.work.Operations, "frame stream")
 	if err != nil {
 		return graphPlanFrameStreamLowering{}, err
 	}
-	selectOperation, ok := graphPlanFirstOperation(operations, info.OpSelect)
+	selectOperation, ok := graphPlanFirstOperation(operations, plan.OpSelect)
 	if !ok {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame stream graph plan has no select operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
@@ -1260,7 +1260,7 @@ func (p mediaPlanStreamGraph) prepareFrameOperationSpecLowering(plan graphPlan) 
 			"branch=" + branchName,
 		})
 	}
-	decodeOperation, hasDecode := graphPlanFirstOperation(operations, info.OpDecode)
+	decodeOperation, hasDecode := graphPlanFirstOperation(operations, plan.OpDecode)
 	if p.sourceDomain == shape.DomainFrame && hasDecode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("frame source graph plan has an unexpected decode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
@@ -1283,7 +1283,7 @@ func (p mediaPlanStreamGraph) prepareFrameOperationSpecLowering(plan graphPlan) 
 	if err != nil {
 		return graphPlanFrameStreamLowering{}, err
 	}
-	encodeOperation, hasEncode := graphPlanFirstOperation(operations, info.OpEncode)
+	encodeOperation, hasEncode := graphPlanFirstOperation(operations, plan.OpEncode)
 	if p.encode != nil && !hasEncode {
 		return graphPlanFrameStreamLowering{}, graphPlanInvalidError("encoded frame stream graph plan has no encode operation", []string{
 			"stream=" + firstNonEmpty(p.stream.Name, string(p.stream.Select.ID), string(p.stream.Select.Type), "stream"),
@@ -1308,7 +1308,7 @@ func (p mediaPlanStreamGraph) prepareFrameOperationSpecLowering(plan graphPlan) 
 			"branch=" + branchName,
 		})
 	}
-	destinations, err := p.prepareFrameStreamDestinations(operations, plan.work.Destinations)
+	destinations, err := p.prepareFrameStreamDestinations(operations, gp.work.Destinations)
 	if err != nil {
 		return graphPlanFrameStreamLowering{}, err
 	}
@@ -1323,7 +1323,7 @@ func (p mediaPlanStreamGraph) prepareFrameOperationSpecLowering(plan graphPlan) 
 }
 
 func (p mediaPlanStreamGraph) validateFrameStreamFilterOperations(operations []workOperation) ([]pipeline.NodeRef, error) {
-	planned := graphPlanOperationCount(operations, info.OpTransform) + graphPlanOperationCount(operations, info.OpStage)
+	planned := graphPlanOperationCount(operations, plan.OpTransform) + graphPlanOperationCount(operations, plan.OpStage)
 	if planned != len(p.filters) {
 		return nil, graphPlanInvalidError("frame stream graph plan filter operations do not match concrete filters", []string{
 			"planned=" + strconv.Itoa(planned),
@@ -1333,7 +1333,7 @@ func (p mediaPlanStreamGraph) validateFrameStreamFilterOperations(operations []w
 	nodes := make([]pipeline.NodeRef, 0, planned)
 	for i := range operations {
 		operation := operations[i]
-		if operation.Kind != info.OpTransform && operation.Kind != info.OpStage {
+		if operation.Kind != plan.OpTransform && operation.Kind != plan.OpStage {
 			continue
 		}
 		if operation.Node == "" {
@@ -1376,7 +1376,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamDestinations(operations []workOp
 		destinations[i] = target
 		output := p.outputs[outputIndex]
 		if output.sink != nil {
-			if target.Kind != info.OpSink {
+			if target.Kind != plan.OpSink {
 				return nil, graphPlanInvalidError("frame stream destination operation kind does not match sink destination", []string{
 					"destination=" + target.Name,
 					"kind=" + string(target.Kind),
@@ -1389,7 +1389,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamDestinations(operations []workOp
 				"destination=" + target.Name,
 			})
 		}
-		if target.Kind != info.OpMux && target.Kind != info.OpWrite {
+		if target.Kind != plan.OpMux && target.Kind != plan.OpWrite {
 			return nil, graphPlanInvalidError("frame stream destination operation kind does not match byte destination", []string{
 				"destination=" + target.Name,
 				"kind=" + string(target.Kind),
@@ -1399,7 +1399,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamDestinations(operations []workOp
 	return destinations, nil
 }
 
-func graphPlanOperationCount(operations []workOperation, kind info.OperationKind) int {
+func graphPlanOperationCount(operations []workOperation, kind plan.OperationKind) int {
 	count := 0
 	for i := range operations {
 		if operations[i].Kind == kind {
@@ -1528,7 +1528,7 @@ func mediaPlanFilterRouteOperations(filters []filterRequest) ([]OperationSpec, e
 // registry key, so the planned spec and the built graph stay identical.
 func applyTransformComponentOverride(transform mediaTransform, operation OperationSpec) mediaTransform {
 	factory := operation.Component
-	if operation.Kind != info.OpTransform || factory == "" || factory == transform.factory {
+	if operation.Kind != plan.OpTransform || factory == "" || factory == transform.factory {
 		return transform
 	}
 	transform.name = factory + strings.TrimPrefix(transform.name, transform.factory)
@@ -1656,13 +1656,13 @@ func mediaPlanStreamFilters(stream streamIntent) ([]filterRequest, error) {
 	for i := range stream.Operations {
 		operation := stream.Operations[i]
 		switch operation.Kind {
-		case info.OpStage:
+		case plan.OpStage:
 			if operation.Stage == nil {
 				return nil, streamStageMissingError(stream)
 			}
 			filters = append(filters, filterRequest{selector: selector, stage: operation.Stage})
 			frameStepIndex++
-		case info.OpTransform:
+		case plan.OpTransform:
 			transform, err := streamTransform(stream.Name, selector, operation.Transform, frameStepIndex)
 			if err != nil {
 				return nil, err
@@ -1670,7 +1670,7 @@ func mediaPlanStreamFilters(stream streamIntent) ([]filterRequest, error) {
 			transform = applyTransformComponentOverride(transform, operation)
 			filters = append(filters, filterRequest{selector: selector, transform: &transform})
 			frameStepIndex++
-		case info.OpTap:
+		case plan.OpTap:
 			if operation.Tap.After == "" {
 				frameStepIndex++
 			}

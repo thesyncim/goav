@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -124,7 +124,7 @@ func (t *task) streamRuleBranchSpecs(rule streamRule, stream av.Stream) ([]Branc
 		spec := branchSpecForDiscoveredStream(rule.branches[i], t.rules.source, domain, stream)
 		intent := streamIntent{
 			Name: spec.name,
-			Select: info.StreamSelect{
+			Select: plan.StreamSelect{
 				ID:    stream.ID,
 				Type:  stream.Type,
 				Codec: stream.Codec.ID,
@@ -145,7 +145,7 @@ func (t *task) streamRuleBranchSpecs(rule streamRule, stream av.Stream) ([]Branc
 
 // handleStreamRemoved detaches every attachment the rules created for the
 // removed stream with drain semantics: destinations commit and the branch
-// snapshot reports info.DestinationCommitted — the same typed outcome as
+// snapshot reports lifecycle.DestinationCommitted — the same typed outcome as
 // Rebranch's DrainOldBranch.
 func (t *task) handleStreamRemoved(event av.Event) {
 	if event.StreamID == "" {

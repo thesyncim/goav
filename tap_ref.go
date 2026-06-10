@@ -1,6 +1,9 @@
 package goav
 
-import "github.com/thesyncim/goav/shape"
+import (
+	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/shape"
+)
 
 // TapRef is a typed handle to a stable media attach point.
 type TapRef struct {
@@ -51,7 +54,7 @@ func validateTapDomain(operation string, node string, tap TapRef, actual shape.M
 		return nil
 	}
 	return &BuildError{
-		Code:      CodeTapDomainMismatch,
+		Code:      codes.TapDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "tap"),
 		Reason:    "typed tap domain does not match this chain point",
@@ -70,7 +73,7 @@ func validateTapDomain(operation string, node string, tap TapRef, actual shape.M
 
 func branchSourceInvalidError(node string) error {
 	return &BuildError{
-		Code:      CodeBranchSourceInvalid,
+		Code:      codes.BranchSourceInvalid,
 		Operation: "build branch",
 		Node:      firstNonEmpty(node, "branch"),
 		Reason:    "branch source must be a typed tap or expert graph handle",

@@ -150,8 +150,8 @@ packet-domain point, or end in a sink. `Shape(...)` annotates the current media
 point; it is not an escape hatch around operation contracts.
 
 That structure is the contract for EVERY goav error, not just shape refusals:
-each `BuildError` carries a typed `goav.ErrorCode` from the catalog in
-`errors.go`, the failing operation and node, machine-readable details, and at
+each `BuildError` carries a typed `codes.Code` from the catalog in the
+`codes` package, the failing operation and node, machine-readable details, and at
 least one concrete fix when the refusal is user-fixable. Match codes with
 `errors.As` and sentinels (`goav.ErrUnsupportedBuild`, ...) with `errors.Is` —
 see [docs/ERRORS.md](docs/ERRORS.md).
@@ -753,7 +753,7 @@ defer levels.Close(ctx)
 
 state := task.Snapshot()
 for _, branch := range state.Branches {
-    if branch.State == info.BranchAttached && branch.Name == "levels" {
+    if branch.State == lifecycle.BranchAttached && branch.Name == "levels" {
         log.Printf("goav levels frames=%d", branch.Stats.Frames)
     }
 }
@@ -762,7 +762,7 @@ log.Printf("goav stats packets=%d frames=%d dropped=%d",
 ```
 
 `Task.Snapshot()` returns one point-in-time view with typed lifecycle states
-(`info.TaskState`, `info.BranchState`, `info.DestinationState`), graph stats,
+(`lifecycle.TaskState`, `lifecycle.BranchState`, `lifecycle.DestinationState`), graph stats,
 stable taps, and active runtime branches. `Attachment.Snapshot()` reports the
 branch-owned view. This works the same for video probes, screenshot collectors,
 packet loss diagnostics, late recording branches, and temporary preview sinks.

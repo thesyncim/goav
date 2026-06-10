@@ -12,8 +12,8 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -50,7 +50,7 @@ func (t tapArmRef) joinArm() joinArmSpec {
 // operation it follows (decode, or nothing on frame-domain sources).
 type joinArmTap struct {
 	ref   TapRef
-	after info.OperationKind
+	after plan.OperationKind
 }
 
 // joinTapArmPlan is one planned tap arm: the resolved tap, its anchor in the
@@ -162,7 +162,7 @@ func chainArmOperations(chain *jobStreamBuilder) []OperationSpec {
 func validateJoinArmOperations(join string, arm string, operations []OperationSpec) error {
 	for i := range operations {
 		switch operations[i].Kind {
-		case info.OpDecode, info.OpTap:
+		case plan.OpDecode, plan.OpTap:
 		default:
 			return joinArmError(join, firstNonEmpty(arm, join), fmt.Sprintf(
 				"%s arm chains support .Decode() and .Tap(...) only (%s is not lowered on an arm)",
@@ -180,7 +180,7 @@ func validateJoinArmOperations(join string, arm string, operations []OperationSp
 func joinChainArmTaps(join string, arm string, operations []OperationSpec) ([]joinArmTap, error) {
 	var taps []joinArmTap
 	for i := range operations {
-		if operations[i].Kind != info.OpTap {
+		if operations[i].Kind != plan.OpTap {
 			continue
 		}
 		intent := operations[i].Tap
@@ -222,7 +222,7 @@ func declaredJoinTapNames(spec *joinSpec) []string {
 				walk(resolved.join, false)
 			case resolved.chain != nil:
 				for _, op := range chainArmOperations(resolved.chain) {
-					if op.Kind == info.OpTap {
+					if op.Kind == plan.OpTap {
 						add(op.Tap.Name)
 					}
 				}

@@ -1,6 +1,7 @@
 package goav
 
 import (
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/flow"
 )
 
@@ -13,7 +14,7 @@ func validateBranchBuffer(b flow.BranchBuffer, operation string, node string) er
 	case "", flow.BufferBlocking, flow.BufferDropOldest, flow.BufferDropNewest, flow.BufferLatest:
 	case flow.BufferUnbounded:
 		return &BuildError{
-			Code:      CodeBranchBufferUnsupported,
+			Code:      codes.BranchBufferUnsupported,
 			Operation: operation,
 			Node:      firstNonEmpty(node, "branch"),
 			Reason:    "unbounded branch buffers are not supported by the runtime yet",
@@ -55,7 +56,7 @@ func validateBranchBuffer(b flow.BranchBuffer, operation string, node string) er
 
 func branchBufferInvalidError(operation string, node string, reason string) error {
 	return &BuildError{
-		Code:      CodeBranchBufferInvalid,
+		Code:      codes.BranchBufferInvalid,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "branch"),
 		Reason:    reason,

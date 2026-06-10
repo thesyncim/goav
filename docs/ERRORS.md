@@ -4,10 +4,11 @@ goav raises one structured error from every build, validation, attach, and
 explain path: `goav.BuildError`. The contract, enforced by a source-scanning
 pin test (`errors_pin_test.go`):
 
-- **Code** — a typed `goav.ErrorCode` identifying the refusal class. Every
-  code is an exported constant in `errors.go` (the catalog), grouped by area
-  with a one-line comment saying when it fires. Codes are stable; rendered
-  text may improve.
+- **Code** — a typed `codes.Code` identifying the refusal class. Every
+  code is an exported constant in the `codes` package (the catalog), grouped
+  by area with a one-line comment saying when it fires. Codes are stable;
+  rendered text may improve. The type is an open string: external components
+  emit their own vendor-prefixed codes through the same `BuildError` shape.
 - **Operation / Node** — where it happened (`build stream`, `attach runtime
   branch`; the chain, branch, tap, or destination name).
 - **Reason** — one line saying why, including actual vs expected where it
@@ -41,9 +42,9 @@ if err != nil {
     var buildErr *goav.BuildError
     if errors.As(err, &buildErr) {
         switch buildErr.Code {
-        case goav.CodeEncodeAdapterMissing:
+        case codes.EncodeAdapterMissing:
             // register an adapter, or fall back to Copy()
-        case goav.CodeShapeConversionRefused:
+        case codes.ShapeConversionRefused:
             // widen the .Auto(...) policy
         }
     }
@@ -53,8 +54,8 @@ if err != nil {
 }
 ```
 
-The full code list lives in [`errors.go`](../errors.go) — stable,
-autocompletable (`goav.Code...`), and greppable by value (`rg encode_missing`).
+The full code list lives in [`codes/codes.go`](../codes/codes.go) — stable,
+autocompletable (`codes....`), and greppable by value (`rg encode_missing`).
 
 ## Runtime errors
 
@@ -71,6 +72,6 @@ requires s16, got f32 on arm "b"`).
 ## Diagnostics
 
 Explain reports reuse the same vocabulary for things that did NOT fail the
-build: `info.Diagnostic`/`info.Decision` codes such as
+build: `plan.Diagnostic`/`plan.Decision` codes such as
 `shape_conversion_inserted` and `shape_preference_ignored` are declared in the
 same catalog.

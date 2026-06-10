@@ -5,8 +5,9 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -87,7 +88,7 @@ type streamRule struct {
 // matched stream (suffixed "-<stream id>") so repeated discoveries stay
 // unique. On av.EventStreamRemoved the rule's branches for that stream detach
 // with drain semantics: their destinations commit and the branch snapshot
-// reports info.DestinationCommitted. Several rules may match one stream; each
+// reports lifecycle.DestinationCommitted. Several rules may match one stream; each
 // attaches independently. Attach or detach failures surface as
 // av.EventAttachError on Watch/Events — never silently. A discovered stream
 // matching no rule just surfaces its event, exactly as without rules.
@@ -212,11 +213,11 @@ func validateStreamRulesPass() recipeCompilePass {
 
 // explainStreamRules renders the declared rules as plan decisions, so Explain
 // lists the conditional branches before any stream appears.
-func explainStreamRules(rules []streamRule) []info.Decision {
+func explainStreamRules(rules []streamRule) []plan.Decision {
 	if len(rules) == 0 {
 		return nil
 	}
-	out := make([]info.Decision, 0, len(rules))
+	out := make([]plan.Decision, 0, len(rules))
 	for i := range rules {
 		names := make([]string, 0, len(rules[i].branches))
 		destinations := make([]string, 0)
@@ -224,8 +225,8 @@ func explainStreamRules(rules []streamRule) []info.Decision {
 			names = append(names, rules[i].branches[j].name+"-<stream>")
 			destinations = append(destinations, branchDestinationNames(rules[i].branches[j].destinations)...)
 		}
-		out = append(out, info.Decision{
-			Code:   string(CodeStreamRule),
+		out = append(out, plan.Decision{
+			Code:   string(codes.StreamRule),
 			Branch: strings.Join(names, "+"),
 			Message: fmt.Sprintf("on discovered stream (%s): attach %s to %s per matched stream",
 				rules[i].match.description(), strings.Join(names, ", "), strings.Join(destinations, ", ")),
@@ -253,7 +254,7 @@ func (s InputSpec) sourceEventDomain() shape.MediaDomain {
 
 func streamRuleInvalidError(node string, reason string, suggestion string) error {
 	return &BuildError{
-		Code:      CodeStreamRuleInvalid,
+		Code:      codes.StreamRuleInvalid,
 		Operation: "build stream rule",
 		Node:      firstNonEmpty(node, "rule"),
 		Reason:    reason,

@@ -1,4 +1,4 @@
-package info
+package plan
 
 import "github.com/thesyncim/goav/av"
 

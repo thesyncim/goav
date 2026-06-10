@@ -5,8 +5,9 @@ package goav
 import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -29,8 +30,8 @@ type inputIntent struct {
 
 // streamIntent is one stream chain of the normalized build intent. Operations
 // is the single source of truth for the chain's work: decode facts live on the
-// info.OpDecode operation, encode/copy facts on the terminal info.OpEncode/
-// info.OpCopy operation, and taps on info.OpTap operations — read them through
+// plan.OpDecode operation, encode/copy facts on the terminal plan.OpEncode/
+// plan.OpCopy operation, and taps on plan.OpTap operations — read them through
 // chainHasDecode, chainDecodeCodec, chainEncodeSpec, and operationSpecTaps
 // instead of keeping parallel fields.
 //
@@ -40,7 +41,7 @@ type inputIntent struct {
 // destination/<label> handle IDs from them (planBranchDestinations).
 type streamIntent struct {
 	Name         string
-	Select       info.StreamSelect
+	Select       plan.StreamSelect
 	From         TapRef
 	Operations   []OperationSpec
 	CodecChange  CodecChangePolicy
@@ -48,7 +49,7 @@ type streamIntent struct {
 }
 
 type OperationSpec struct {
-	Kind      info.OperationKind
+	Kind      plan.OperationKind
 	Component string
 	Stage     pipeline.Stage
 	Shape     shape.Spec
@@ -58,16 +59,16 @@ type OperationSpec struct {
 	Encode    codec.CodecSpec
 	Shared    bool
 	// Auto carries the chain's shape-solving policy: .Auto(policies...) appends
-	// one info.OpShape operation with Auto set, and the solver unions every Auto
+	// one plan.OpShape operation with Auto set, and the solver unions every Auto
 	// operation on the chain. Nil means the operation carries no policy.
 	Auto *shape.Policy
 	// Require carries a hard shape assertion: .Require(spec) appends one
-	// info.OpShape operation with Require set, and the shape walk fails the
+	// plan.OpShape operation with Require set, and the shape walk fails the
 	// build when the propagated shape does not satisfy it at this point. Nil
 	// means the operation asserts nothing.
 	Require *shape.Spec
 	// Prefer carries the chain's soft solver preference: .Prefer(spec) appends
-	// one info.OpShape operation with Prefer set, and the solver merges every
+	// one plan.OpShape operation with Prefer set, and the solver merges every
 	// preference on the chain to bias otherwise-open conversion choices. Nil
 	// means the operation carries no preference.
 	Prefer *shape.Spec
@@ -102,18 +103,18 @@ func RealtimeCodecChangePolicy() CodecChangePolicy {
 }
 
 func operationSpecForDecode(codec codec.CodecSpec, component string) OperationSpec {
-	return OperationSpec{Kind: info.OpDecode, Component: component, Decode: cloneCodecSpec(codec)}
+	return OperationSpec{Kind: plan.OpDecode, Component: component, Decode: cloneCodecSpec(codec)}
 }
 
 func operationSpecForCopy(codec codec.CodecSpec) OperationSpec {
-	return OperationSpec{Kind: info.OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(codec)}
+	return OperationSpec{Kind: plan.OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(codec)}
 }
 
 func operationSpecForEncode(codec codec.CodecSpec) OperationSpec {
 	if codec.Copy {
 		return operationSpecForCopy(codec)
 	}
-	return OperationSpec{Kind: info.OpEncode, Component: string(codec.ID), Encode: cloneCodecSpec(codec)}
+	return OperationSpec{Kind: plan.OpEncode, Component: string(codec.ID), Encode: cloneCodecSpec(codec)}
 }
 
 func operationSpecForStage(stage pipeline.Stage) OperationSpec {
@@ -121,38 +122,38 @@ func operationSpecForStage(stage pipeline.Stage) OperationSpec {
 	if stage != nil {
 		name = stage.Name()
 	}
-	return OperationSpec{Kind: info.OpStage, Component: name, Stage: stage}
+	return OperationSpec{Kind: plan.OpStage, Component: name, Stage: stage}
 }
 
 func operationSpecForShape(shape shape.Spec) OperationSpec {
-	return OperationSpec{Kind: info.OpShape, Component: "shape", Shape: shape}
+	return OperationSpec{Kind: plan.OpShape, Component: "shape", Shape: shape}
 }
 
 // operationSpecForAutoPolicy is the policy-carrying operation .Auto(...)
-// appends: an info.OpShape annotation with no shape facts (it never changes the
+// appends: an plan.OpShape annotation with no shape facts (it never changes the
 // media) whose Auto field opts the chain into shape solving.
 func operationSpecForAutoPolicy(policies []shape.Policy) OperationSpec {
 	var policy shape.Policy
 	for i := range policies {
 		policy = policy.Union(policies[i])
 	}
-	return OperationSpec{Kind: info.OpShape, Component: "auto", Auto: &policy}
+	return OperationSpec{Kind: plan.OpShape, Component: "auto", Auto: &policy}
 }
 
 // operationSpecForRequire is the assertion-carrying operation .Require(...)
-// appends: an info.OpShape annotation with no shape facts of its own (it never
+// appends: an plan.OpShape annotation with no shape facts of its own (it never
 // changes the media and lowers to no runtime node) whose Require field the
 // shape walk enforces as a hard constraint at this chain position.
 func operationSpecForRequire(spec shape.Spec) OperationSpec {
-	return OperationSpec{Kind: info.OpShape, Component: "require", Require: &spec}
+	return OperationSpec{Kind: plan.OpShape, Component: "require", Require: &spec}
 }
 
 // operationSpecForPreference is the preference-carrying operation .Prefer(...)
-// appends: an info.OpShape annotation with no shape facts (it never changes
+// appends: an plan.OpShape annotation with no shape facts (it never changes
 // the media and lowers to no runtime node) whose Prefer field biases the shape
 // solver's otherwise-open choices.
 func operationSpecForPreference(spec shape.Spec) OperationSpec {
-	return OperationSpec{Kind: info.OpShape, Component: "prefer", Prefer: &spec}
+	return OperationSpec{Kind: plan.OpShape, Component: "prefer", Prefer: &spec}
 }
 
 // chainAutoPolicy unions the chain's .Auto(...) policies. The second result
@@ -175,43 +176,43 @@ func chainAutoPolicy(operations []OperationSpec) (shape.Policy, bool) {
 // carrier — an .Auto(...) policy, a .Require(...) assertion, or a .Prefer(...)
 // preference — that lowers to no runtime node and does no work.
 func operationSpecIsAnnotation(operation OperationSpec) bool {
-	return operation.Kind == info.OpShape && mediaShapeEmpty(operation.Shape) &&
+	return operation.Kind == plan.OpShape && mediaShapeEmpty(operation.Shape) &&
 		(operation.Auto != nil || operation.Require != nil || operation.Prefer != nil)
 }
 
 func operationSpecForTransform(transform TransformSpec) OperationSpec {
 	return OperationSpec{
-		Kind:      info.OpTransform,
+		Kind:      plan.OpTransform,
 		Component: transformFactoryName(transform),
 		Transform: cloneTransformSpec(transform),
 	}
 }
 
-func operationSpecForTap(tap TapRef, media av.MediaType, after info.OperationKind) OperationSpec {
+func operationSpecForTap(tap TapRef, media av.MediaType, after plan.OperationKind) OperationSpec {
 	domain := tap.domain
 	if domain == "" {
 		domain = tapDomainForAfter(after)
 	}
 	intent := tapIntent{Name: tap.name, MediaKind: media, Domain: domain, After: after}
-	return OperationSpec{Kind: info.OpTap, Component: tap.name, Tap: intent}
+	return OperationSpec{Kind: plan.OpTap, Component: tap.name, Tap: intent}
 }
 
 // tapDomainForAfter infers a domain-less tap's media domain from the operation it
 // follows: packets after select/copy/encode, frames otherwise.
-func tapDomainForAfter(after info.OperationKind) shape.MediaDomain {
+func tapDomainForAfter(after plan.OperationKind) shape.MediaDomain {
 	switch after {
-	case info.OpSelect, info.OpCopy, info.OpEncode:
+	case plan.OpSelect, plan.OpCopy, plan.OpEncode:
 		return shape.DomainPacket
 	default:
 		return shape.DomainFrame
 	}
 }
 
-func operationSpecAfter(operations []OperationSpec, fallback info.OperationKind) info.OperationKind {
+func operationSpecAfter(operations []OperationSpec, fallback plan.OperationKind) plan.OperationKind {
 	after := fallback
 	for i := range operations {
 		switch operations[i].Kind {
-		case info.OpTap:
+		case plan.OpTap:
 			continue
 		default:
 			after = operations[i].Kind
@@ -220,7 +221,7 @@ func operationSpecAfter(operations []OperationSpec, fallback info.OperationKind)
 	return after
 }
 
-func operationSpecsContainKind(operations []OperationSpec, kind info.OperationKind) bool {
+func operationSpecsContainKind(operations []OperationSpec, kind plan.OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true
@@ -232,15 +233,15 @@ func operationSpecsContainKind(operations []OperationSpec, kind info.OperationKi
 func operationSpecsContainChainStep(operations []OperationSpec) bool {
 	for i := range operations {
 		switch operations[i].Kind {
-		case info.OpStage, info.OpTransform:
+		case plan.OpStage, plan.OpTransform:
 			return true
-		case info.OpShape:
+		case plan.OpShape:
 			// Shape annotations with facts are steps; empty annotations (the
 			// .Auto(...) policy carrier) lower to nothing and constrain nothing.
 			if !mediaShapeEmpty(operations[i].Shape) {
 				return true
 			}
-		case info.OpTap:
+		case plan.OpTap:
 			if operations[i].Tap.Domain != shape.DomainPacket {
 				return true
 			}
@@ -253,7 +254,7 @@ func jobStreamHasDecodeOperation(stream *jobStreamBuild) bool {
 	if stream == nil {
 		return false
 	}
-	return operationSpecsContainKind(stream.operations, info.OpDecode)
+	return operationSpecsContainKind(stream.operations, plan.OpDecode)
 }
 
 func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
@@ -264,7 +265,7 @@ func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
 		return
 	}
 	// Reached only when no decode op exists yet (so no codec options were given);
-	// an explicit Decode(opts) always appends its own info.OpDecode.
+	// an explicit Decode(opts) always appends its own plan.OpDecode.
 	operation := operationSpecForDecode(codec.CodecSpec{}, string(stream.selector.Codec))
 	stream.operations = append([]OperationSpec{operation}, stream.operations...)
 }
@@ -321,7 +322,7 @@ func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
 	operations := make([]OperationSpec, 0, 2)
 	if stream.decode {
 		operations = append(operations, OperationSpec{
-			Kind:      info.OpDecode,
+			Kind:      plan.OpDecode,
 			Component: string(stream.selector.Codec),
 			Decode:    cloneCodecSpec(stream.decodeCodec),
 			Shared:    stream.from.Domain() == shape.DomainFrame,
@@ -337,12 +338,12 @@ func streamBuildSplitOperationSpecs(stream streamBuild) []OperationSpec {
 	operations := make([]OperationSpec, 0, len(stream.sharedOps)+len(stream.privateOps)+2)
 	operations = append(operations, cloneOperationSpecs(stream.sharedOps)...)
 	operations = append(operations, cloneOperationSpecs(stream.privateOps)...)
-	if stream.decode && !operationSpecsContainKind(operations, info.OpDecode) {
+	if stream.decode && !operationSpecsContainKind(operations, plan.OpDecode) {
 		operation := operationSpecForDecode(stream.decodeCodec, string(stream.selector.Codec))
 		operation.Shared = stream.from.Domain() == shape.DomainFrame && len(stream.sharedOps) != 0
 		operations = append([]OperationSpec{operation}, operations...)
 	}
-	// The encode op (info.OpEncode/info.OpCopy) is always already in sharedOps/privateOps,
+	// The encode op (plan.OpEncode/plan.OpCopy) is always already in sharedOps/privateOps,
 	// so there is nothing to re-add.
 	return operations
 }
@@ -362,7 +363,7 @@ func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, 
 		return sharedOperationSpecs(prefix)
 	}
 	if chainHasDecode(parentOperations) && spec.source.tap == defaultDecodedTapName(stream.selector.Type) {
-		if prefix, ok := operationSpecsThroughKind(parentOperations, info.OpDecode); ok {
+		if prefix, ok := operationSpecsThroughKind(parentOperations, plan.OpDecode); ok {
 			return sharedOperationSpecs(prefix)
 		}
 		return sharedOperationSpecs([]OperationSpec{operationSpecForDecode(chainDecodeCodec(parentOperations), string(stream.selector.Codec))})
@@ -378,10 +379,10 @@ func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec,
 		return cloneOperationSpecs(spec.operations)
 	}
 	if len(spec.operations) != 0 {
-		if operationSpecsContainKind(spec.operations, info.OpCopy) {
+		if operationSpecsContainKind(spec.operations, plan.OpCopy) {
 			return cloneOperationSpecs(spec.operations)
 		}
-		if prefix, ok := operationSpecsThroughKind(stream.operations, info.OpCopy); ok {
+		if prefix, ok := operationSpecsThroughKind(stream.operations, plan.OpCopy); ok {
 			out := cloneOperationSpecs(prefix)
 			out = append(out, cloneOperationSpecs(spec.operations)...)
 			return out
@@ -409,7 +410,7 @@ func sharedOperationSpecs(operations []OperationSpec) []OperationSpec {
 	return out
 }
 
-func operationSpecsThroughKind(operations []OperationSpec, kind info.OperationKind) ([]OperationSpec, bool) {
+func operationSpecsThroughKind(operations []OperationSpec, kind plan.OperationKind) ([]OperationSpec, bool) {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return cloneOperationSpecs(operations[:i+1]), true
@@ -424,7 +425,7 @@ func operationSpecsThroughTap(operations []OperationSpec, tap string) ([]Operati
 	}
 	for i := range operations {
 		operation := operations[i]
-		if operation.Kind != info.OpTap {
+		if operation.Kind != plan.OpTap {
 			continue
 		}
 		if operation.Component == tap || operation.Tap.Name == tap {
@@ -434,14 +435,14 @@ func operationSpecsThroughTap(operations []OperationSpec, tap string) ([]Operati
 	return nil, false
 }
 
-// operationSpecTaps derives a stream's exported taps from its info.OpTap operations —
+// operationSpecTaps derives a stream's exported taps from its plan.OpTap operations —
 // the single source of truth — instead of the parallel chain-step-tap and
-// post-encode-tap projections. Each info.OpTap already carries the resolved tap
+// post-encode-tap projections. Each plan.OpTap already carries the resolved tap
 // (name/domain/media/after) from operationSpecForTap.
 func operationSpecTaps(operations []OperationSpec, media av.MediaType) []tapIntent {
 	taps := make([]tapIntent, 0, len(operations))
 	for i := range operations {
-		if operations[i].Kind != info.OpTap {
+		if operations[i].Kind != plan.OpTap {
 			continue
 		}
 		tap := operations[i].Tap
@@ -453,9 +454,9 @@ func operationSpecTaps(operations []OperationSpec, media av.MediaType) []tapInte
 	return taps
 }
 
-func initialStepAfter(decode bool) info.OperationKind {
+func initialStepAfter(decode bool) plan.OperationKind {
 	if decode {
-		return info.OpDecode
+		return plan.OpDecode
 	}
 	return ""
 }
@@ -476,7 +477,7 @@ func jobStreamOutputNames(stream *jobStreamBuild) []string {
 
 func streamStageMissingError(stream streamIntent) error {
 	return &BuildError{
-		Code:      CodeStageMissing,
+		Code:      codes.StageMissing,
 		Operation: "build stream",
 		Node:      jobStreamIntentName(stream),
 		Reason:    "custom stream stage is nil",
@@ -502,7 +503,7 @@ func validateJobStreamOutputKinds(operation string, stream streamIntent, outputs
 
 func mixedStreamOutputError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Code:      CodeOutputKindMixed,
+		Code:      codes.OutputKindMixed,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
@@ -517,7 +518,7 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 
 func streamEncodeMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Code:      CodeEncodeMissing,
+		Code:      codes.EncodeMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
@@ -536,7 +537,7 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 
 func recipeRuntimeUnsupportedError(operation string) error {
 	return &BuildError{
-		Code:      CodeRuntimeUnsupported,
+		Code:      codes.RuntimeUnsupported,
 		Operation: operation,
 		Reason:    "recipe compilation requires a goav runtime",
 		Suggestions: []string{
@@ -561,7 +562,7 @@ func jobStreamName(stream *jobStreamBuild) string {
 
 func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) error {
 	return &BuildError{
-		Code:      CodeStreamDuplicate,
+		Code:      codes.StreamDuplicate,
 		Operation: "build job",
 		Node:      jobStreamName(next),
 		Reason:    "ordinary stream recipes select one audio or video stream",
@@ -583,7 +584,7 @@ func streamIntentHasOperation(stream streamIntent) bool {
 		// Annotation carriers (.Auto/.Require/.Prefer) opt into solving or
 		// assert shapes but do no work; a chain holding only annotations still
 		// has no operation. Decode, copy, and encode are ordinary operations
-		// (info.OpDecode/info.OpCopy/info.OpEncode) on the same list.
+		// (plan.OpDecode/plan.OpCopy/plan.OpEncode) on the same list.
 		if !operationSpecIsAnnotation(stream.Operations[i]) {
 			return true
 		}

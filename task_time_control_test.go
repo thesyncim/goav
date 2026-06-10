@@ -12,7 +12,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -476,7 +476,7 @@ func TestTaskSegmentExportCommitsDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, ok := destinationSnapshotByName(task.Snapshot().Destinations, "rec")
-	if !ok || before.State != info.DestinationOpen {
+	if !ok || before.State != lifecycle.DestinationOpen {
 		t.Fatalf("destination before run = %+v, want open rec destination", before)
 	}
 
@@ -490,12 +490,12 @@ func TestTaskSegmentExportCommitsDestination(t *testing.T) {
 		t.Fatalf("Run err = %v", err)
 	}
 
-	snapshot := task.Snapshot()
-	if snapshot.State != info.TaskClosed {
-		t.Fatalf("task state = %q, want %q", snapshot.State, info.TaskClosed)
+	snap := task.Snapshot()
+	if snap.State != lifecycle.TaskClosed {
+		t.Fatalf("task state = %q, want %q", snap.State, lifecycle.TaskClosed)
 	}
-	committed, ok := destinationSnapshotByName(snapshot.Destinations, "rec")
-	if !ok || committed.State != info.DestinationCommitted || committed.Open {
+	committed, ok := destinationSnapshotByName(snap.Destinations, "rec")
+	if !ok || committed.State != lifecycle.DestinationCommitted || committed.Open {
 		t.Fatalf("destination after segment run = %+v, want committed rec destination", committed)
 	}
 }

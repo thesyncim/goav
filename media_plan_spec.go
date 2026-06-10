@@ -5,8 +5,9 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -82,20 +83,20 @@ func newGraphPlan(runtime *runtime, spec pipeline.Spec, work workPlan, lowerer g
 	}
 }
 
-func validateGraphPlanLowering(plan graphPlan) error {
-	if !plan.ready() {
+func validateGraphPlanLowering(gp graphPlan) error {
+	if !gp.ready() {
 		return graphPlanInvalidError("graph plan is not ready", nil)
 	}
-	if len(plan.nodes) != 0 && len(plan.work.Operations) == 0 {
+	if len(gp.nodes) != 0 && len(gp.work.Operations) == 0 {
 		return graphPlanInvalidError("graph plan has nodes but no ordered operations", []string{
-			"nodes=" + strconv.Itoa(len(plan.nodes)),
+			"nodes=" + strconv.Itoa(len(gp.nodes)),
 		})
 	}
-	if err := validateGraphPlanEdges(plan); err != nil {
+	if err := validateGraphPlanEdges(gp); err != nil {
 		return err
 	}
-	for i := range plan.work.Operations {
-		operation := plan.work.Operations[i]
+	for i := range gp.work.Operations {
+		operation := gp.work.Operations[i]
 		details := []string{
 			"operation=" + strconv.Itoa(i),
 			"branch=" + operation.Branch,
@@ -115,16 +116,16 @@ func validateGraphPlanLowering(plan graphPlan) error {
 	return nil
 }
 
-func validateGraphPlanEdges(plan graphPlan) error {
-	if len(plan.edges) == 0 {
+func validateGraphPlanEdges(gp graphPlan) error {
+	if len(gp.edges) == 0 {
 		return nil
 	}
-	nodes := make(map[pipeline.NodeRef]struct{}, len(plan.nodes))
-	for i := range plan.nodes {
-		nodes[pipeline.NodeRef(plan.nodes[i].Name)] = struct{}{}
+	nodes := make(map[pipeline.NodeRef]struct{}, len(gp.nodes))
+	for i := range gp.nodes {
+		nodes[pipeline.NodeRef(gp.nodes[i].Name)] = struct{}{}
 	}
-	for i := range plan.edges {
-		edge := plan.edges[i]
+	for i := range gp.edges {
+		edge := gp.edges[i]
 		details := []string{
 			"edge=" + strconv.Itoa(i),
 			"from=" + edge.From.String(),
@@ -143,9 +144,9 @@ func validateGraphPlanEdges(plan graphPlan) error {
 	return nil
 }
 
-func graphPlanOperationDestinationsRequired(kind info.OperationKind) bool {
+func graphPlanOperationDestinationsRequired(kind plan.OperationKind) bool {
 	switch kind {
-	case info.OpMux, info.OpSink, info.OpWrite:
+	case plan.OpMux, plan.OpSink, plan.OpWrite:
 		return true
 	default:
 		return false
@@ -154,7 +155,7 @@ func graphPlanOperationDestinationsRequired(kind info.OperationKind) bool {
 
 func graphPlanInvalidError(reason string, details []string) error {
 	return &BuildError{
-		Code:      CodeGraphPlanInvalid,
+		Code:      codes.GraphPlanInvalid,
 		Operation: "build graph plan",
 		Reason:    reason,
 		Details:   append([]string(nil), details...),
@@ -168,14 +169,14 @@ func graphPlanInvalidError(reason string, details []string) error {
 
 func emitGraphPlanSpecPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "emit graph plan spec", fn: func(state *recipeCompileState) error {
-		plan, ok, err := graphPlanForState(state)
+		gp, ok, err := graphPlanForState(state)
 		if err != nil || !ok {
 			return err
 		}
-		state.spec = plan.spec()
+		state.spec = gp.spec()
 		state.specReady = true
 		state.specOrigin = graphSpecOriginGraphPlan
-		state.graphPlan = plan
+		state.graphPlan = gp
 		return nil
 	}}
 }
@@ -221,12 +222,12 @@ func mediaPlanJoinLowererForState(state *recipeCompileState) (graphPlanLowerer, 
 	if !ok || rt == nil {
 		return nil, false, nil
 	}
-	plan, err := newJoinPlan(rt, state)
+	gp, err := newJoinPlan(rt, state)
 	if err != nil {
 		return nil, false, err
 	}
-	state.joinPlan = plan
-	return plan, true, nil
+	state.joinPlan = gp
+	return gp, true, nil
 }
 
 // mediaPlanMultiStreamJobLowererForState lowers a job with several direct
@@ -248,11 +249,11 @@ func mediaPlanMultiStreamJobLowererForState(state *recipeCompileState) (graphPla
 	if len(state.inputAttachments) != 0 {
 		input = state.inputAttachments[0]
 	}
-	plan, err := planBranchCompositionRecipe(state.intent, input, namedOutputs, nil)
+	gp, err := planBranchCompositionRecipe(state.intent, input, namedOutputs, nil)
 	if err != nil {
 		return nil, false, err
 	}
-	graph, ok, err := newMediaPlanBranchComposeGraph(state.runtime, state.inputAttachments, plan)
+	graph, ok, err := newMediaPlanBranchComposeGraph(state.runtime, state.inputAttachments, gp)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -271,11 +272,11 @@ func mediaPlanPacketCopyStreamLowererForState(state *recipeCompileState) (graphP
 	if !ok {
 		return nil, false, nil
 	}
-	plan, ok, err := newMediaPlanPacketCopyStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream, selectedStream)
+	gp, ok, err := newMediaPlanPacketCopyStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream, selectedStream)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
-	return plan, true, nil
+	return gp, true, nil
 }
 
 func mediaPlanPacketCopyStream(state *recipeCompileState) (streamIntent, bool, bool) {
@@ -310,16 +311,16 @@ func streamIntentPacketCopyOnly(stream streamIntent) bool {
 	for i := range stream.Operations {
 		op := stream.Operations[i]
 		switch op.Kind {
-		case info.OpCopy:
+		case plan.OpCopy:
 			if !op.Encode.Copy {
 				return false
 			}
 			hasCopy = true
-		case info.OpTap:
-			if op.Tap.Domain != shape.DomainPacket || op.Tap.After != info.OpCopy {
+		case plan.OpTap:
+			if op.Tap.Domain != shape.DomainPacket || op.Tap.After != plan.OpCopy {
 				return false
 			}
-		case info.OpShape:
+		case plan.OpShape:
 			// Annotation carriers (.Auto/.Require/.Prefer) lower to nothing;
 			// they do not change a packet-copy-only chain.
 			if !operationSpecIsAnnotation(op) {
@@ -340,11 +341,11 @@ func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanL
 	if !mediaPlanDecodeStreamShape(stream, state.outputAttachments, mediaPlanStreamInputDomain(state.inputAttachments, stream) == shape.DomainFrame) {
 		return nil, false, nil
 	}
-	plan, ok, err := newMediaPlanDecodeStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
+	gp, ok, err := newMediaPlanDecodeStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
-	return plan, true, nil
+	return gp, true, nil
 }
 
 func mediaPlanDecodeStreamShape(stream streamIntent, outputs []destinationSpec, frameSource bool) bool {
@@ -371,11 +372,11 @@ func mediaPlanBranchComposerLowerer(state *recipeCompileState) (graphPlanLowerer
 	if state == nil || !state.branchCompositionPresent {
 		return nil, false, nil
 	}
-	plan, ok, err := newMediaPlanBranchComposeGraph(state.runtime, []InputSpec{state.branchInputAttachment}, state.plan)
+	gp, ok, err := newMediaPlanBranchComposeGraph(state.runtime, []InputSpec{state.branchInputAttachment}, state.plan)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
-	return plan, true, nil
+	return gp, true, nil
 }
 
 func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {

@@ -8,9 +8,10 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/flow"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -381,7 +382,7 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 	}
 	if tap.name == "" {
 		b.setErr(&BuildError{
-			Code:      CodeTapInvalid,
+			Code:      codes.TapInvalid,
 			Operation: "build branch",
 			Node:      firstNonEmpty(b.spec.name, "branch"),
 			Reason:    "tap name is empty",
@@ -398,7 +399,7 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 			b.setErr(err)
 			return b
 		}
-		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, info.OpEncode)))
+		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, plan.OpEncode)))
 		return b
 	}
 	b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, initialStepAfter(chainHasDecode(b.spec.operations)))))
@@ -524,7 +525,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 		privateOps := plannedBranchPrivateOperationSpecs(stream, branches[i], parentPacket)
 		operations := append(cloneOperationSpecs(sharedOps), cloneOperationSpecs(privateOps)...)
 		// encode is derived from operations (chainEncodeSpec) at every reader —
-		// plannedBranchPrivateOperationSpecs already injects the info.OpCopy for the
+		// plannedBranchPrivateOperationSpecs already injects the plan.OpCopy for the
 		// parentPacket passthrough case, so the op list is the single source.
 		job.branchStreams = append(job.branchStreams, streamBuild{
 			name:             branches[i].name,
@@ -552,12 +553,12 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		return err
 	}
 	if spec.name == "" {
-		return branchIntentNameMissingError(index, streamIntent{Select: info.StreamSelect{Type: selected}})
+		return branchIntentNameMissingError(index, streamIntent{Select: plan.StreamSelect{Type: selected}})
 	}
 	if len(spec.destinations) == 0 {
-		return branchIntentDestinationMissingError(streamIntent{Name: spec.name, Select: info.StreamSelect{Type: selected}})
+		return branchIntentDestinationMissingError(streamIntent{Name: spec.name, Select: plan.StreamSelect{Type: selected}})
 	}
-	stream := streamIntent{Name: spec.name, Select: info.StreamSelect{Type: selected}}
+	stream := streamIntent{Name: spec.name, Select: plan.StreamSelect{Type: selected}}
 	if chainHasDecode(spec.operations) && !parentPacket {
 		return branchDecodeDomainError(stream.Name)
 	}
@@ -599,7 +600,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		}
 		if firstIndex, ok := seen[destinationName]; ok {
 			return duplicateBranchDestinationError(
-				streamIntent{Name: spec.name, Select: info.StreamSelect{Type: selected}, Destinations: branchDestinationNames(spec.destinations)},
+				streamIntent{Name: spec.name, Select: plan.StreamSelect{Type: selected}, Destinations: branchDestinationNames(spec.destinations)},
 				destinationName,
 				firstIndex,
 				i,
@@ -635,15 +636,15 @@ func branchSpecChainSteps(spec BranchSpec) []chainStep {
 func branchOperationSpecsContainStep(operations []OperationSpec) bool {
 	for i := range operations {
 		switch operations[i].Kind {
-		case info.OpStage, info.OpTransform:
+		case plan.OpStage, plan.OpTransform:
 			return true
-		case info.OpShape:
+		case plan.OpShape:
 			// Empty shape annotations (the .Auto(...) policy carrier) lower to
 			// nothing and never constrain operation order.
 			if !mediaShapeEmpty(operations[i].Shape) {
 				return true
 			}
-		case info.OpTap:
+		case plan.OpTap:
 			if !operationSpecTapIsTerminalPacket(operations[i]) {
 				return true
 			}
@@ -660,19 +661,19 @@ func branchChainStepsFromOperationSpecs(operations []OperationSpec) []chainStep 
 	for i := range operations {
 		operation := operations[i]
 		switch operation.Kind {
-		case info.OpStage:
+		case plan.OpStage:
 			if operation.Stage != nil {
 				steps = append(steps, chainStep{stage: operation.Stage})
 			}
-		case info.OpShape:
+		case plan.OpShape:
 			if !mediaShapeEmpty(operation.Shape) {
 				steps = append(steps, chainStep{shape: operation.Shape})
 			}
-		case info.OpTransform:
+		case plan.OpTransform:
 			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
 				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
 			}
-		case info.OpTap:
+		case plan.OpTap:
 			if operation.Tap.Name != "" && !operationSpecTapIsTerminalPacket(operation) {
 				steps = append(steps, chainStep{tap: operation.Tap.Name, tapDomain: operation.Tap.Domain})
 			}
@@ -682,11 +683,11 @@ func branchChainStepsFromOperationSpecs(operations []OperationSpec) []chainStep 
 }
 
 func operationSpecTapIsTerminalPacket(operation OperationSpec) bool {
-	if operation.Kind != info.OpTap {
+	if operation.Kind != plan.OpTap {
 		return false
 	}
 	return operation.Tap.Domain == shape.DomainPacket &&
-		(operation.Tap.After == info.OpEncode || operation.Tap.After == info.OpCopy)
+		(operation.Tap.After == plan.OpEncode || operation.Tap.After == plan.OpCopy)
 }
 
 func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]chainStep, TapRef, error) {
@@ -767,7 +768,7 @@ func chainStepsThroughTap(steps []chainStep, tap string) ([]chainStep, bool) {
 
 func branchCopyParentOperationError(node string) error {
 	return &BuildError{
-		Code:      CodeCopyBranchSourceInvalid,
+		Code:      codes.CopyBranchSourceInvalid,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "packet-copy branches must start from a packet-domain stream point",
@@ -782,7 +783,7 @@ func branchCopyParentOperationError(node string) error {
 
 func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error {
 	return &BuildError{
-		Code:      CodeEncodeBranchSourceInvalid,
+		Code:      codes.EncodeBranchSourceInvalid,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "stream encoders are terminal for planned branches",
@@ -800,7 +801,7 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 
 func plannedBranchNodeSourceError(name string, source string) error {
 	return &BuildError{
-		Code:      CodeBranchSourceInvalid,
+		Code:      codes.BranchSourceInvalid,
 		Operation: "build branches",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "planned branches do not anchor from graph handles",
@@ -818,7 +819,7 @@ func plannedBranchNodeSourceError(name string, source string) error {
 
 func plannedBranchTapMissingError(stream string, branch string, tap string) error {
 	return &BuildError{
-		Code:      CodeBranchTapMissing,
+		Code:      codes.BranchTapMissing,
 		Operation: "build branches",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "branch tap is not declared on the parent stream",
@@ -837,7 +838,7 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 
 func plannedBranchPostEncodeTapError(branch string, tap string) error {
 	return &BuildError{
-		Code:      CodeBranchTapDomainUnsupported,
+		Code:      codes.BranchTapDomainUnsupported,
 		Operation: "build branches",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "post-encode taps are runtime attachment anchors for planned branches",
@@ -855,7 +856,7 @@ func plannedBranchPostEncodeTapError(branch string, tap string) error {
 
 func duplicateBranchDecodeError(node string) error {
 	return &BuildError{
-		Code:      CodeBranchDecodeDuplicate,
+		Code:      codes.BranchDecodeDuplicate,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "branch already decodes its input packets",
@@ -869,7 +870,7 @@ func duplicateBranchDecodeError(node string) error {
 
 func branchDecodeOrderError(node string) error {
 	return &BuildError{
-		Code:      CodeBranchDecodeOrderInvalid,
+		Code:      codes.BranchDecodeOrderInvalid,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "decode must be the first branch operation",
@@ -883,7 +884,7 @@ func branchDecodeOrderError(node string) error {
 
 func branchDecodeDomainError(node string) error {
 	return &BuildError{
-		Code:      CodeBranchDecodeDomainMismatch,
+		Code:      codes.BranchDecodeDomainMismatch,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch decoding requires a packet-domain stream point",
@@ -898,7 +899,7 @@ func branchDecodeDomainError(node string) error {
 
 func branchDecodeCopyError(node string) error {
 	return &BuildError{
-		Code:      CodeBranchDecodeCopyInvalid,
+		Code:      codes.BranchDecodeCopyInvalid,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "a branch cannot decode packets and then copy the original packet payload",
@@ -913,7 +914,7 @@ func branchDecodeCopyError(node string) error {
 
 func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecSpec) error {
 	return &BuildError{
-		Code:      CodePacketBranchEncodeUnsupported,
+		Code:      codes.PacketBranchEncodeUnsupported,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot encode without decoding first",
@@ -931,7 +932,7 @@ func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecS
 
 func branchPacketTransformUnsupportedError(stream streamIntent) error {
 	return &BuildError{
-		Code:      CodePacketBranchTransformUnsupported,
+		Code:      codes.PacketBranchTransformUnsupported,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot resize or resample without decoding first",
@@ -978,7 +979,7 @@ func cloneDestinationSpec(dest destinationSpec) destinationSpec {
 
 func branchMissingError(node string) error {
 	return &BuildError{
-		Code:      CodeBranchMissing,
+		Code:      codes.BranchMissing,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
@@ -992,7 +993,7 @@ func branchMissingError(node string) error {
 
 func nilBranchError() error {
 	return &BuildError{
-		Code:      CodeBranchInvalid,
+		Code:      codes.BranchInvalid,
 		Operation: "build branch",
 		Reason:    "branch is nil",
 		Suggestions: []string{
@@ -1004,7 +1005,7 @@ func nilBranchError() error {
 
 func branchDestinationMissingError(name string) error {
 	return &BuildError{
-		Code:      CodeDestinationMissing,
+		Code:      codes.DestinationMissing,
 		Operation: "build branch",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "branch has no destination",
@@ -1030,7 +1031,7 @@ func jobDestinationInvalidError(name string, reason string) error {
 
 func destinationInvalidError(operation string, node string, reason string) error {
 	return &BuildError{
-		Code:      CodeDestinationInvalid,
+		Code:      codes.DestinationInvalid,
 		Operation: operation,
 		Node:      node,
 		Reason:    reason,
@@ -1044,7 +1045,7 @@ func destinationInvalidError(operation string, node string, reason string) error
 
 func destinationNameMissingError(dest destinationSpec) error {
 	return &BuildError{
-		Code:      CodeDestinationInvalid,
+		Code:      codes.DestinationInvalid,
 		Operation: "build destination",
 		Node:      dest.label("destination"),
 		Reason:    "destination name is empty",

@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -299,7 +300,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	node := s.label(fallback)
 	if s.err != nil {
 		return &BuildError{
-			Code:      CodeOutputInvalid,
+			Code:      codes.OutputInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    s.err.Error(),
@@ -315,7 +316,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Name == "" && s.output.URI == "" && s.output.Protocol == "" && s.output.MIMEType == "" && s.output.Writer == nil && s.custom == nil && s.format == "" {
 		return &BuildError{
-			Code:      CodeOutputInvalid,
+			Code:      codes.OutputInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    "empty destination",
@@ -328,7 +329,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Protocol == av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
-			Code:      CodeOutputWriterMissing,
+			Code:      codes.OutputWriterMissing,
 			Operation: operation,
 			Node:      node,
 			Reason:    "file output has no writer",
@@ -341,7 +342,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Protocol == av.ProtocolFile && s.output.Writer != nil && s.output.Name == "" && s.output.URI == "" && s.output.MIMEType == "" && s.format == "" {
 		return &BuildError{
-			Code:      CodeOutputFormatMissing,
+			Code:      codes.OutputFormatMissing,
 			Operation: operation,
 			Node:      node,
 			Reason:    "writer-backed file output has no name, URI, MIME type, or explicit format",
@@ -354,7 +355,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
-			Code:      CodeOutputDestinationMissing,
+			Code:      codes.OutputDestinationMissing,
 			Operation: operation,
 			Node:      node,
 			Reason:    "output has no URI, writer, or sink",
@@ -443,7 +444,7 @@ func destinationNodeName(output format.Output, index int, destinationNames []str
 
 func duplicateOutputError(operation string, name string) error {
 	return &BuildError{
-		Code:      CodeOutputDuplicate,
+		Code:      codes.OutputDuplicate,
 		Operation: operation,
 		Node:      name,
 		Reason:    fmt.Sprintf("output name %q is defined more than once", name),
@@ -458,7 +459,7 @@ func duplicateOutputError(operation string, name string) error {
 
 func duplicateDestinationHandleError(operation string, name string) error {
 	return &BuildError{
-		Code:      CodeDestinationDuplicate,
+		Code:      codes.DestinationDuplicate,
 		Operation: operation,
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is attached more than once", name),

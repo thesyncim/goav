@@ -15,10 +15,11 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/snapshot"
 	"github.com/thesyncim/goav/webrtcav"
 )
 
@@ -1636,7 +1637,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeSink(t *testing.T) {
 	if !ok {
 		t.Fatalf("attachment = %T, want runtimeAttachment", attachment)
 	}
-	if got, want := workPatchOperationKindsForBranch(runtimeAttachment.work.Operations, "late"), []info.OperationKind{info.OpCopy, info.OpSink}; !reflect.DeepEqual(got, want) {
+	if got, want := workPatchOperationKindsForBranch(runtimeAttachment.work.Operations, "late"), []plan.OperationKind{plan.OpCopy, plan.OpSink}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime copy work operations = %+v, want %+v", got, want)
 	}
 	if err := task.Run(ctx); err != nil {
@@ -1737,7 +1738,7 @@ func TestTaskAttachRuntimeFlowCopyBranchFromPacketTap(t *testing.T) {
 	if !ok ||
 		lateTap.Domain != shape.DomainPacket ||
 		lateTap.MediaKind != av.MediaAudio ||
-		lateTap.After != info.OpCopy ||
+		lateTap.After != plan.OpCopy ||
 		lateTap.Shape.Codec != av.CodecOpus ||
 		lateTap.Node != "select-audio" {
 		t.Fatalf("late tap = %+v ok=%v, want packet Opus tap on select-audio", lateTap, ok)
@@ -1802,7 +1803,7 @@ func TestBranchCompositionCopyBranchesFanOutPackets(t *testing.T) {
 		t.Fatalf("packet copy branches should not decode or encode:\n%s", text)
 	}
 
-	var packetTap info.Tap
+	var packetTap snapshot.Tap
 	for _, tap := range task.Taps() {
 		if tap.Name == "audio.packets" {
 			packetTap = tap
@@ -1888,7 +1889,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 	}
 	defer task.Close()
 
-	var copiedTap info.Tap
+	var copiedTap snapshot.Tap
 	for _, tap := range task.Taps() {
 		if tap.Name == "audio.copied" {
 			copiedTap = tap
@@ -2450,7 +2451,7 @@ func TestStreamRecipeFlowDecodeSinkRuns(t *testing.T) {
 	if !ok ||
 		decodedTap.Domain != shape.DomainFrame ||
 		decodedTap.MediaKind != av.MediaAudio ||
-		decodedTap.After != info.OpDecode ||
+		decodedTap.After != plan.OpDecode ||
 		decodedTap.Shape.Codec != av.CodecOpus ||
 		decodedTap.Shape.SampleRate != 48000 ||
 		decodedTap.Shape.Channels != codec.Stereo ||
@@ -2776,7 +2777,7 @@ func TestBranchCompositionTaskAttachesAfterEncodeTap(t *testing.T) {
 	}
 	defer task.Close()
 
-	var encodedTap info.Tap
+	var encodedTap snapshot.Tap
 	for _, tap := range task.Taps() {
 		if tap.Name == "audio.encoded" {
 			encodedTap = tap
@@ -2858,7 +2859,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	}
 	defer task.Close()
 
-	var resizeTap info.Tap
+	var resizeTap snapshot.Tap
 	for _, tap := range task.Taps() {
 		if tap.Name == "video.720p.frames" {
 			resizeTap = tap
@@ -2868,7 +2869,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	if resizeTap.Name == "" ||
 		resizeTap.Domain != shape.DomainFrame ||
 		resizeTap.MediaKind != av.MediaVideo ||
-		resizeTap.After != info.OpTransform ||
+		resizeTap.After != plan.OpTransform ||
 		resizeTap.Shape.Width != 1280 ||
 		resizeTap.Shape.Height != 720 ||
 		resizeTap.Shape.PixelFormat != av.PixelFormatYUV420P ||
@@ -2889,7 +2890,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	if resizeFactory.config.Video == nil || resizeFactory.config.Video.Width != 320 || resizeFactory.config.Video.Height != 180 {
 		t.Fatalf("runtime resize config = %+v, want 320x180", resizeFactory.config.Video)
 	}
-	var resizedTap info.Tap
+	var resizedTap snapshot.Tap
 	for _, tap := range task.Taps() {
 		if tap.Name == "video.320.frames" {
 			resizedTap = tap
@@ -2899,7 +2900,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	if resizedTap.Name == "" ||
 		resizedTap.Domain != shape.DomainFrame ||
 		resizedTap.MediaKind != av.MediaVideo ||
-		resizedTap.After != info.OpTransform ||
+		resizedTap.After != plan.OpTransform ||
 		resizedTap.Shape.Width != 320 ||
 		resizedTap.Shape.Height != 180 ||
 		resizedTap.Node != "screenshots/resize-screenshots" {
@@ -2949,7 +2950,7 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 	}
 	defer task.Close()
 
-	var customTap, encodedTap info.Tap
+	var customTap, encodedTap snapshot.Tap
 	for _, tap := range task.Taps() {
 		switch tap.Name {
 		case "audio.after-meter":
@@ -2958,10 +2959,10 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 			encodedTap = tap
 		}
 	}
-	if customTap.Name == "" || customTap.Domain != shape.DomainFrame || customTap.MediaKind != av.MediaAudio || customTap.After != info.OpStage || customTap.Node != "meter" {
+	if customTap.Name == "" || customTap.Domain != shape.DomainFrame || customTap.MediaKind != av.MediaAudio || customTap.After != plan.OpStage || customTap.Node != "meter" {
 		t.Fatalf("custom tap = %+v, want frame audio tap on meter", customTap)
 	}
-	if encodedTap.Name == "" || encodedTap.Domain != shape.DomainPacket || encodedTap.MediaKind != av.MediaAudio || encodedTap.After != info.OpEncode || encodedTap.Node != "encode-audio" {
+	if encodedTap.Name == "" || encodedTap.Domain != shape.DomainPacket || encodedTap.MediaKind != av.MediaAudio || encodedTap.After != plan.OpEncode || encodedTap.Node != "encode-audio" {
 		t.Fatalf("encoded tap = %+v, want packet audio tap on encode-audio", encodedTap)
 	}
 
@@ -2985,31 +2986,31 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 	}
 }
 
-func tapInfoByName(taps []info.Tap, name string) (info.Tap, bool) {
+func tapInfoByName(taps []snapshot.Tap, name string) (snapshot.Tap, bool) {
 	for i := range taps {
 		if taps[i].Name == name {
 			return taps[i], true
 		}
 	}
-	return info.Tap{}, false
+	return snapshot.Tap{}, false
 }
 
-func branchSnapshotByName(branches []info.BranchSnapshot, name string) (info.BranchSnapshot, bool) {
+func branchSnapshotByName(branches []snapshot.Branch, name string) (snapshot.Branch, bool) {
 	for i := range branches {
 		if branches[i].Name == name {
 			return branches[i], true
 		}
 	}
-	return info.BranchSnapshot{}, false
+	return snapshot.Branch{}, false
 }
 
-func destinationSnapshotByName(destinations []info.DestinationSnapshot, name string) (info.DestinationSnapshot, bool) {
+func destinationSnapshotByName(destinations []snapshot.Destination, name string) (snapshot.Destination, bool) {
 	for i := range destinations {
 		if destinations[i].Name == name {
 			return destinations[i], true
 		}
 	}
-	return info.DestinationSnapshot{}, false
+	return snapshot.Destination{}, false
 }
 
 func TestTaskSnapshotReportsRuntimeBranchSnapshot(t *testing.T) {
@@ -3053,10 +3054,10 @@ func TestTaskSnapshotReportsRuntimeBranchSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot := task.Snapshot()
-	branch, ok := branchSnapshotByName(snapshot.Branches, "levels")
+	snap := task.Snapshot()
+	branch, ok := branchSnapshotByName(snap.Branches, "levels")
 	if !ok {
-		t.Fatalf("branches = %+v, want levels branch", snapshot.Branches)
+		t.Fatalf("branches = %+v, want levels branch", snap.Branches)
 	}
 	if branch.ID == "" || branch.State != "attached" {
 		t.Fatalf("branch state = %+v, want attached branch with id", branch)
@@ -3071,14 +3072,14 @@ func TestTaskSnapshotReportsRuntimeBranchSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatalf("branch destinations = %+v, want levels", branch.Destinations)
 	}
-	if destination.Operation != info.OpSink || !destination.Open || !reflect.DeepEqual(destination.Branches, []string{"levels"}) {
+	if destination.Operation != plan.OpSink || !destination.Open || !reflect.DeepEqual(destination.Branches, []string{"levels"}) {
 		t.Fatalf("branch destination = %+v, want open levels sink destination", destination)
 	}
-	taskDestination, ok := destinationSnapshotByName(snapshot.Destinations, "levels")
+	taskDestination, ok := destinationSnapshotByName(snap.Destinations, "levels")
 	if !ok {
-		t.Fatalf("task destinations = %+v, want levels", snapshot.Destinations)
+		t.Fatalf("task destinations = %+v, want levels", snap.Destinations)
 	}
-	if taskDestination.Operation != info.OpSink || !taskDestination.Open {
+	if taskDestination.Operation != plan.OpSink || !taskDestination.Open {
 		t.Fatalf("task destination = %+v, want open sink destination", taskDestination)
 	}
 	if _, ok := branch.Stats.Nodes[branch.Nodes[0].String()]; len(branch.Stats.Nodes) != 0 && !ok {
@@ -3201,7 +3202,7 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 		resampleFactory.config.Audio.Channels != codec.Mono {
 		t.Fatalf("runtime resample config = %+v, want 16k mono", resampleFactory.config.Audio)
 	}
-	var resampledTap info.Tap
+	var resampledTap snapshot.Tap
 	for _, tap := range task.Taps() {
 		if tap.Name == "audio.16k" {
 			resampledTap = tap
@@ -3270,7 +3271,7 @@ func TestRuntimeObservationBranchPublishesTapAndDetachesSubtree(t *testing.T) {
 		t.Fatalf("parent attachment spec:\n%s", parentText)
 	}
 
-	var observedTap info.Tap
+	var observedTap snapshot.Tap
 	for _, tap := range task.Taps() {
 		if tap.Name == "audio.observed" {
 			observedTap = tap
@@ -3505,7 +3506,7 @@ func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainPacket,
@@ -3565,7 +3566,7 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchDestinationsBeforeMutation(t *te
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -3635,7 +3636,7 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -3686,7 +3687,7 @@ func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    shape.DomainFrame,
@@ -3762,7 +3763,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -3838,7 +3839,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -3909,7 +3910,7 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainPacket,
@@ -3997,7 +3998,7 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainPacket,
@@ -4033,7 +4034,7 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 	if !ok ||
 		decodedTap.Domain != shape.DomainFrame ||
 		decodedTap.MediaKind != av.MediaAudio ||
-		decodedTap.After != info.OpDecode ||
+		decodedTap.After != plan.OpDecode ||
 		decodedTap.Node != "preview/decode-preview" {
 		t.Fatalf("decoded tap = %+v ok=%v, want frame tap on flow decoder", decodedTap, ok)
 	}
@@ -4080,7 +4081,7 @@ func TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    shape.DomainFrame,
@@ -4162,7 +4163,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainPacket,
@@ -4193,7 +4194,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 	if !ok {
 		t.Fatalf("attachment = %T, want runtimeAttachment", attachment)
 	}
-	if got, want := workPatchOperationKindsForBranch(runtimeAttachment.work.Operations, "voice"), []info.OperationKind{info.OpDecode, info.OpTransform, info.OpEncode, info.OpTap, info.OpMux}; !reflect.DeepEqual(got, want) {
+	if got, want := workPatchOperationKindsForBranch(runtimeAttachment.work.Operations, "voice"), []plan.OperationKind{plan.OpDecode, plan.OpTransform, plan.OpEncode, plan.OpTap, plan.OpMux}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime encode work operations = %+v, want %+v", got, want)
 	}
 	attachmentText := specText(attachment.Spec())
@@ -4291,7 +4292,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -4326,7 +4327,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 	if !ok ||
 		packetTap.Domain != shape.DomainPacket ||
 		packetTap.MediaKind != av.MediaAudio ||
-		packetTap.After != info.OpEncode ||
+		packetTap.After != plan.OpEncode ||
 		packetTap.Node != "record/encode-record" ||
 		packetTap.Shape.Codec != customPCM ||
 		packetTap.Shape.SampleRate != 16_000 ||
@@ -4409,7 +4410,7 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToDestinations(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []info.Tap{{
+	runtimeTask.taps = []snapshot.Tap{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,

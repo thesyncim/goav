@@ -18,11 +18,12 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/graphrender"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/webrtcav"
@@ -181,7 +182,7 @@ func specText(spec pipeline.Spec) string {
 	return out
 }
 
-func hasRequirement(requirements []info.AdapterRequirement, kind string, codecID av.CodecID, formatID av.FormatID) bool {
+func hasRequirement(requirements []plan.AdapterRequirement, kind string, codecID av.CodecID, formatID av.FormatID) bool {
 	for i := range requirements {
 		requirement := requirements[i]
 		if requirement.Kind != kind {
@@ -198,7 +199,7 @@ func hasRequirement(requirements []info.AdapterRequirement, kind string, codecID
 	return false
 }
 
-func adapterRequirementByKind(requirements []info.AdapterRequirement, kind string, name string) (info.AdapterRequirement, bool) {
+func adapterRequirementByKind(requirements []plan.AdapterRequirement, kind string, name string) (plan.AdapterRequirement, bool) {
 	for i := range requirements {
 		requirement := requirements[i]
 		if requirement.Kind != kind {
@@ -209,10 +210,10 @@ func adapterRequirementByKind(requirements []info.AdapterRequirement, kind strin
 		}
 		return requirement, true
 	}
-	return info.AdapterRequirement{}, false
+	return plan.AdapterRequirement{}, false
 }
 
-func adapterRequirementByKindAndOwner(requirements []info.AdapterRequirement, kind string, name string, requiredBy string) (info.AdapterRequirement, bool) {
+func adapterRequirementByKindAndOwner(requirements []plan.AdapterRequirement, kind string, name string, requiredBy string) (plan.AdapterRequirement, bool) {
 	for i := range requirements {
 		requirement := requirements[i]
 		if requirement.RequiredBy != requiredBy {
@@ -226,10 +227,10 @@ func adapterRequirementByKindAndOwner(requirements []info.AdapterRequirement, ki
 		}
 		return requirement, true
 	}
-	return info.AdapterRequirement{}, false
+	return plan.AdapterRequirement{}, false
 }
 
-func hasPlanWarning(warnings []info.Diagnostic, code string) bool {
+func hasPlanWarning(warnings []plan.Diagnostic, code string) bool {
 	for i := range warnings {
 		if warnings[i].Code == code {
 			return true
@@ -238,23 +239,23 @@ func hasPlanWarning(warnings []info.Diagnostic, code string) bool {
 	return false
 }
 
-func operationKinds(operations []info.Operation) []info.OperationKind {
-	kinds := make([]info.OperationKind, 0, len(operations))
+func operationKinds(operations []plan.Operation) []plan.OperationKind {
+	kinds := make([]plan.OperationKind, 0, len(operations))
 	for i := range operations {
 		kinds = append(kinds, operations[i].Kind)
 	}
 	return kinds
 }
 
-func operationSpecKinds(operations []goav.OperationSpec) []info.OperationKind {
-	kinds := make([]info.OperationKind, 0, len(operations))
+func operationSpecKinds(operations []goav.OperationSpec) []plan.OperationKind {
+	kinds := make([]plan.OperationKind, 0, len(operations))
 	for i := range operations {
 		kinds = append(kinds, operations[i].Kind)
 	}
 	return kinds
 }
 
-func equalOperationKinds(a []info.OperationKind, b []info.OperationKind) bool {
+func equalOperationKinds(a []plan.OperationKind, b []plan.OperationKind) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -269,7 +270,7 @@ func equalOperationKinds(a []info.OperationKind, b []info.OperationKind) bool {
 func transformOperationsForTest(operations []goav.OperationSpec) []goav.TransformSpec {
 	transforms := make([]goav.TransformSpec, 0)
 	for i := range operations {
-		if operations[i].Kind == info.OpTransform {
+		if operations[i].Kind == plan.OpTransform {
 			transforms = append(transforms, operations[i].Transform)
 		}
 	}
@@ -327,7 +328,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("resized shape=%+v, want 1280x720 video frame", resized)
 	}
 
-	var copyContract shape.Contract = goav.OperationSpec{Kind: info.OpCopy, Encode: codec.Copy()}
+	var copyContract shape.Contract = goav.OperationSpec{Kind: plan.OpCopy, Encode: codec.Copy()}
 	if !copyContract.InputShapes().Accepts(packet) {
 		t.Fatalf("copy input shapes=%+v, want packet domain", copyContract.InputShapes())
 	}
@@ -336,7 +337,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("copied shape=%+v, want preserved packet %+v", copied, packet)
 	}
 
-	var operationContract shape.Contract = goav.OperationSpec{Kind: info.OpTransform, Transform: goav.Resample(16_000, codec.Mono)}
+	var operationContract shape.Contract = goav.OperationSpec{Kind: plan.OpTransform, Transform: goav.Resample(16_000, codec.Mono)}
 	resampled := operationContract.OutputShapes(shape.Frame(
 		av.MediaAudio,
 		shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
@@ -406,34 +407,34 @@ func TestFlowReportsShapeContractAndTaps(t *testing.T) {
 	}
 }
 
-func branchByName(branches []info.Branch, name string) (info.Branch, bool) {
+func branchByName(branches []plan.Branch, name string) (plan.Branch, bool) {
 	for i := range branches {
 		if branches[i].Name == name {
 			return branches[i], true
 		}
 	}
-	return info.Branch{}, false
+	return plan.Branch{}, false
 }
 
-func tapReportByName(taps []info.Tap, name string) (info.Tap, bool) {
+func tapReportByName(taps []plan.Tap, name string) (plan.Tap, bool) {
 	for i := range taps {
 		if taps[i].Name == name {
 			return taps[i], true
 		}
 	}
-	return info.Tap{}, false
+	return plan.Tap{}, false
 }
 
-func operationReportByKind(operations []info.Operation, kind info.OperationKind) (info.Operation, bool) {
+func operationReportByKind(operations []plan.Operation, kind plan.OperationKind) (plan.Operation, bool) {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return operations[i], true
 		}
 	}
-	return info.Operation{}, false
+	return plan.Operation{}, false
 }
 
-func countOperationReports(operations []info.Operation, kind info.OperationKind, shared bool) int {
+func countOperationReports(operations []plan.Operation, kind plan.OperationKind, shared bool) int {
 	count := 0
 	for i := range operations {
 		if operations[i].Kind == kind && operations[i].Shared == shared {
@@ -540,7 +541,7 @@ func (j *testBranchJob) Plan() goav.Intent {
 	return goav.JobPlanForTest(j.materialize())
 }
 
-func (j *testBranchJob) Explain(ctx context.Context) (info.Plan, error) {
+func (j *testBranchJob) Explain(ctx context.Context) (plan.Report, error) {
 	return j.materialize().Explain(ctx)
 }
 
@@ -616,10 +617,10 @@ func TestRecipesExposeStructuredExplain(t *testing.T) {
 	if _, ok := jobType.MethodByName("Explain"); !ok {
 		t.Fatal("Job should expose Explain for structured workflow reports")
 	}
-	reportType := reflect.TypeOf(info.Plan{})
+	reportType := reflect.TypeOf(plan.Report{})
 	for _, method := range []string{"Text", "Mermaid", "DOT", "Render"} {
 		if _, ok := reportType.MethodByName(method); ok {
-			t.Fatalf("info.Plan exposes renderer method %s; keep rendering outside core", method)
+			t.Fatalf("plan.Report exposes renderer method %s; keep rendering outside core", method)
 		}
 	}
 }
@@ -655,7 +656,7 @@ func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 		t.Fatalf("destination branches=%+v", report.Destinations[0].Branches)
 	}
 	if len(report.Branches) != 1 || report.Branches[0].Name != "video" ||
-		!equalOperationKinds(operationKinds(report.Branches[0].Operations), []info.OperationKind{info.OpDepacketize, info.OpCopy}) {
+		!equalOperationKinds(operationKinds(report.Branches[0].Operations), []plan.OperationKind{plan.OpDepacketize, plan.OpCopy}) {
 		t.Fatalf("branches=%+v", report.Branches)
 	}
 	if !hasRequirement(report.RequiredAdapters, "depacketizer", av.CodecVP8, "") ||
@@ -771,7 +772,7 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 		!equalStrings(report.Destinations[0].Branches, []string{"v", "a"}) {
 		t.Fatalf("destinations=%+v", report.Destinations)
 	}
-	want := []info.OperationKind{info.OpDemux, info.OpSelect, info.OpDecode, info.OpTap, info.OpTransform, info.OpEncode}
+	want := []plan.OperationKind{plan.OpDemux, plan.OpSelect, plan.OpDecode, plan.OpTap, plan.OpTransform, plan.OpEncode}
 	for _, name := range []string{"v", "a"} {
 		branch, ok := branchByName(report.Branches, name)
 		if !ok {
@@ -784,7 +785,7 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 			t.Fatalf("%s destinations=%+v", name, branch.Destinations)
 		}
 		for _, operation := range branch.Operations {
-			if operation.Kind == info.OperationKind("trans"+"code") {
+			if operation.Kind == plan.OperationKind("trans"+"code") {
 				t.Fatalf("branch %s has special transcode operation: %+v", name, branch.Operations)
 			}
 		}
@@ -955,7 +956,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 		branch.Shape.PixelFormat != av.PixelFormatYUV420P {
 		t.Fatalf("branch shape=%+v, want probed VP8 1920x1080 packet shape", branch.Shape)
 	}
-	resize, ok := operationReportByKind(branch.Operations, info.OpTransform)
+	resize, ok := operationReportByKind(branch.Operations, plan.OpTransform)
 	if !ok {
 		t.Fatalf("operations=%+v, want resize operation", branch.Operations)
 	}
@@ -967,7 +968,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 		resize.Shape.PixelFormat != av.PixelFormatYUV420P {
 		t.Fatalf("resize shape=%+v, want frame VP8 1280x720 shape", resize.Shape)
 	}
-	encode, ok := operationReportByKind(branch.Operations, info.OpEncode)
+	encode, ok := operationReportByKind(branch.Operations, plan.OpEncode)
 	if !ok {
 		t.Fatalf("operations=%+v, want encode operation", branch.Operations)
 	}
@@ -1055,7 +1056,7 @@ func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
 	if !ok {
 		t.Fatalf("branches=%+v, want v360", report.Branches)
 	}
-	wantOps := []info.OperationKind{info.OpDemux, info.OpSelect, info.OpDecode, info.OpTransform, info.OpStage, info.OpEncode}
+	wantOps := []plan.OperationKind{plan.OpDemux, plan.OpSelect, plan.OpDecode, plan.OpTransform, plan.OpStage, plan.OpEncode}
 	if !equalOperationKinds(operationKinds(branch.Operations), wantOps) {
 		t.Fatalf("operations=%+v, want %+v", branch.Operations, wantOps)
 	}
@@ -1698,10 +1699,10 @@ func TestTypedTapRefsDriveStreamIntent(t *testing.T) {
 	if len(taps) != 2 ||
 		taps[0].Name != decoded.Name() ||
 		taps[0].Domain != shape.DomainFrame ||
-		taps[0].After != info.OpDecode ||
+		taps[0].After != plan.OpDecode ||
 		taps[1].Name != encoded.Name() ||
 		taps[1].Domain != shape.DomainPacket ||
-		taps[1].After != info.OpEncode {
+		taps[1].After != plan.OpEncode {
 		t.Fatalf("taps: %+v", taps)
 	}
 }
@@ -2436,8 +2437,8 @@ func TestPublicIntentAndReportsUseDestinations(t *testing.T) {
 		typ  reflect.Type
 	}{
 		{name: "Intent", typ: reflect.TypeOf(goav.Intent{})},
-		{name: "info.Plan", typ: reflect.TypeOf(info.Plan{})},
-		{name: "info.Branch", typ: reflect.TypeOf(info.Branch{})},
+		{name: "plan.Report", typ: reflect.TypeOf(plan.Report{})},
+		{name: "plan.Branch", typ: reflect.TypeOf(plan.Branch{})},
 	} {
 		if _, ok := tt.typ.FieldByName("Targets"); ok {
 			t.Fatalf("%s exposes Targets; use Destinations as the public routing field", tt.name)
@@ -2917,11 +2918,11 @@ func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
 	}
 	operations := intent.Streams[0].Operations
 	if len(operations) != 5 ||
-		operations[0].Kind != info.OpDecode ||
-		operations[1].Kind != info.OpStage || operations[1].Component != "meter" ||
-		operations[2].Kind != info.OpTap || operations[2].Tap.Name != "audio.after-meter" ||
-		operations[3].Kind != info.OpTransform || operations[3].Transform.Resample == nil ||
-		operations[4].Kind != info.OpEncode || operations[4].Encode.ID != av.CodecOpus {
+		operations[0].Kind != plan.OpDecode ||
+		operations[1].Kind != plan.OpStage || operations[1].Component != "meter" ||
+		operations[2].Kind != plan.OpTap || operations[2].Tap.Name != "audio.after-meter" ||
+		operations[3].Kind != plan.OpTransform || operations[3].Transform.Resample == nil ||
+		operations[4].Kind != plan.OpEncode || operations[4].Encode.ID != av.CodecOpus {
 		t.Fatalf("operations: %+v", operations)
 	}
 	if len(goav.StreamTapsForTest(intent.Streams[0])) != 1 || goav.StreamTapsForTest(intent.Streams[0])[0].Name != "audio.after-meter" {
@@ -2946,18 +2947,18 @@ func TestFlowTapAfterEncodeIsPacketTap(t *testing.T) {
 	}
 	operations := intent.Streams[0].Operations
 	if len(operations) != 3 ||
-		operations[0].Kind != info.OpDecode ||
-		operations[1].Kind != info.OpEncode ||
-		operations[2].Kind != info.OpTap ||
+		operations[0].Kind != plan.OpDecode ||
+		operations[1].Kind != plan.OpEncode ||
+		operations[2].Kind != plan.OpTap ||
 		operations[2].Tap.Name != "audio.voice.packets" ||
 		operations[2].Tap.Domain != shape.DomainPacket ||
-		operations[2].Tap.After != info.OpEncode {
+		operations[2].Tap.After != plan.OpEncode {
 		t.Fatalf("operations: %+v", operations)
 	}
 	if len(goav.StreamTapsForTest(intent.Streams[0])) != 1 ||
 		goav.StreamTapsForTest(intent.Streams[0])[0].Name != "audio.voice.packets" ||
 		goav.StreamTapsForTest(intent.Streams[0])[0].Domain != shape.DomainPacket ||
-		goav.StreamTapsForTest(intent.Streams[0])[0].After != info.OpEncode {
+		goav.StreamTapsForTest(intent.Streams[0])[0].After != plan.OpEncode {
 		t.Fatalf("taps: %+v", goav.StreamTapsForTest(intent.Streams[0]))
 	}
 }
@@ -2981,17 +2982,17 @@ func TestFlowCopyAppliesToStreamRecipeIntent(t *testing.T) {
 	if goav.StreamHasDecodeForTest(stream) ||
 		!goav.StreamEncodeForTest(stream).Copy ||
 		len(stream.Operations) != 2 ||
-		stream.Operations[0].Kind != info.OpCopy ||
-		stream.Operations[1].Kind != info.OpTap ||
+		stream.Operations[0].Kind != plan.OpCopy ||
+		stream.Operations[1].Kind != plan.OpTap ||
 		stream.Operations[1].Tap.Name != "audio.copied" ||
 		stream.Operations[1].Tap.Domain != shape.DomainPacket ||
-		stream.Operations[1].Tap.After != info.OpCopy {
+		stream.Operations[1].Tap.After != plan.OpCopy {
 		t.Fatalf("stream intent: %+v", stream)
 	}
 	if len(goav.StreamTapsForTest(stream)) != 1 ||
 		goav.StreamTapsForTest(stream)[0].Name != "audio.copied" ||
 		goav.StreamTapsForTest(stream)[0].Domain != shape.DomainPacket ||
-		goav.StreamTapsForTest(stream)[0].After != info.OpCopy {
+		goav.StreamTapsForTest(stream)[0].After != plan.OpCopy {
 		t.Fatalf("taps: %+v", goav.StreamTapsForTest(stream))
 	}
 }
@@ -3073,7 +3074,7 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 	}
 	foundPreview := false
 	for _, tap := range goav.StreamTapsForTest(intent.Streams[0]) {
-		if tap.Name == "preview.frames" && tap.After == info.OpTransform {
+		if tap.Name == "preview.frames" && tap.After == plan.OpTransform {
 			foundPreview = true
 			break
 		}
@@ -3083,11 +3084,11 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 	}
 	operations := intent.Streams[0].Operations
 	if len(operations) != 5 ||
-		operations[0].Kind != info.OpDecode ||
-		operations[1].Kind != info.OpTap || operations[1].Tap.Name != "video.decoded" ||
-		operations[2].Kind != info.OpTransform ||
-		operations[3].Kind != info.OpTap || operations[3].Tap.Name != "preview.frames" ||
-		operations[4].Kind != info.OpEncode {
+		operations[0].Kind != plan.OpDecode ||
+		operations[1].Kind != plan.OpTap || operations[1].Tap.Name != "video.decoded" ||
+		operations[2].Kind != plan.OpTransform ||
+		operations[3].Kind != plan.OpTap || operations[3].Tap.Name != "preview.frames" ||
+		operations[4].Kind != plan.OpEncode {
 		t.Fatalf("operations: %+v", operations)
 	}
 }
@@ -3188,7 +3189,7 @@ func TestBranchAfterDecodeCustomStageUsesOrderedOperations(t *testing.T) {
 	if len(intent.Streams) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
-	want := []info.OperationKind{info.OpDecode, info.OpTap, info.OpStage, info.OpTransform, info.OpEncode}
+	want := []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpStage, plan.OpTransform, plan.OpEncode}
 	if !equalOperationKinds(operationSpecKinds(intent.Streams[0].Operations), want) {
 		t.Fatalf("operations=%+v, want %+v", intent.Streams[0].Operations, want)
 	}
@@ -3234,7 +3235,7 @@ func TestBranchTapAfterEncodeIsPacketTap(t *testing.T) {
 		if tap.Name == "audio.encoded" {
 			foundEncoded = tap.Domain == shape.DomainPacket &&
 				tap.MediaKind == av.MediaAudio &&
-				tap.After == info.OpEncode
+				tap.After == plan.OpEncode
 			break
 		}
 	}
@@ -3243,12 +3244,12 @@ func TestBranchTapAfterEncodeIsPacketTap(t *testing.T) {
 	}
 	operations := intent.Streams[0].Operations
 	if len(operations) != 4 ||
-		operations[0].Kind != info.OpDecode ||
-		operations[1].Kind != info.OpTap || operations[1].Tap.Name != "audio.decoded" ||
-		operations[2].Kind != info.OpEncode ||
-		operations[3].Kind != info.OpTap || operations[3].Tap.Name != "audio.encoded" ||
+		operations[0].Kind != plan.OpDecode ||
+		operations[1].Kind != plan.OpTap || operations[1].Tap.Name != "audio.decoded" ||
+		operations[2].Kind != plan.OpEncode ||
+		operations[3].Kind != plan.OpTap || operations[3].Tap.Name != "audio.encoded" ||
 		operations[3].Tap.Domain != shape.DomainPacket ||
-		operations[3].Tap.After != info.OpEncode {
+		operations[3].Tap.After != plan.OpEncode {
 		t.Fatalf("operations: %+v", operations)
 	}
 }
@@ -3274,7 +3275,7 @@ func TestBranchCustomStageUsesOrderedOperations(t *testing.T) {
 	if len(intent.Streams) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
-	want := []info.OperationKind{info.OpDecode, info.OpTap, info.OpTransform, info.OpStage, info.OpEncode}
+	want := []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpTransform, plan.OpStage, plan.OpEncode}
 	if !equalOperationKinds(operationSpecKinds(intent.Streams[0].Operations), want) {
 		t.Fatalf("operations=%+v, want %+v", intent.Streams[0].Operations, want)
 	}
@@ -3406,7 +3407,7 @@ func TestFlowDecodeAppliesToPacketBranchIntent(t *testing.T) {
 		stream.Destinations[0] != "voice" {
 		t.Fatalf("stream intent: %+v", stream)
 	}
-	want := []info.OperationKind{info.OpDecode, info.OpTransform, info.OpEncode}
+	want := []plan.OperationKind{plan.OpDecode, plan.OpTransform, plan.OpEncode}
 	if !equalOperationKinds(operationSpecKinds(stream.Operations), want) {
 		t.Fatalf("operations=%+v, want %+v", stream.Operations, want)
 	}
@@ -3438,7 +3439,7 @@ func TestFlowDecodeAppliesToStreamRecipeIntent(t *testing.T) {
 		stream.Destinations[0] != "frames" {
 		t.Fatalf("stream intent: %+v", stream)
 	}
-	want := []info.OperationKind{info.OpDecode, info.OpTap}
+	want := []plan.OperationKind{plan.OpDecode, plan.OpTap}
 	if !equalOperationKinds(operationSpecKinds(stream.Operations), want) {
 		t.Fatalf("operations=%+v, want %+v", stream.Operations, want)
 	}
@@ -3446,7 +3447,7 @@ func TestFlowDecodeAppliesToStreamRecipeIntent(t *testing.T) {
 		goav.StreamTapsForTest(stream)[0].Name != "audio.flow.decoded" ||
 		goav.StreamTapsForTest(stream)[0].Domain != shape.DomainFrame ||
 		goav.StreamTapsForTest(stream)[0].MediaKind != av.MediaAudio ||
-		goav.StreamTapsForTest(stream)[0].After != info.OpDecode {
+		goav.StreamTapsForTest(stream)[0].After != plan.OpDecode {
 		t.Fatalf("taps: %+v", goav.StreamTapsForTest(stream))
 	}
 }
@@ -4737,7 +4738,7 @@ func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 	tests := []struct {
 		name string
 		spec codec.CodecSpec
-		code goav.ErrorCode
+		code codes.Code
 	}{
 		{name: "auto", spec: codec.Auto(), code: "encode_auto_unresolved"},
 	}
@@ -5199,10 +5200,10 @@ func TestExplainMarksSharedBranchOperations(t *testing.T) {
 	if !ok {
 		t.Fatalf("branches=%+v, want web", report.Branches)
 	}
-	if countOperationReports(webBranch.Operations, info.OpDecode, true) != 1 ||
-		countOperationReports(webBranch.Operations, info.OpTransform, true) != 1 ||
-		countOperationReports(webBranch.Operations, info.OpTap, true) != 1 ||
-		countOperationReports(webBranch.Operations, info.OpEncode, false) != 1 {
+	if countOperationReports(webBranch.Operations, plan.OpDecode, true) != 1 ||
+		countOperationReports(webBranch.Operations, plan.OpTransform, true) != 1 ||
+		countOperationReports(webBranch.Operations, plan.OpTap, true) != 1 ||
+		countOperationReports(webBranch.Operations, plan.OpEncode, false) != 1 {
 		t.Fatalf("web operations=%+v, want shared decode/resize/tap and private encode", webBranch.Operations)
 	}
 
@@ -5210,10 +5211,10 @@ func TestExplainMarksSharedBranchOperations(t *testing.T) {
 	if !ok {
 		t.Fatalf("branches=%+v, want thumb", report.Branches)
 	}
-	if countOperationReports(thumbBranch.Operations, info.OpDecode, true) != 1 ||
-		countOperationReports(thumbBranch.Operations, info.OpTransform, true) != 1 ||
-		countOperationReports(thumbBranch.Operations, info.OpTap, true) != 1 ||
-		countOperationReports(thumbBranch.Operations, info.OpTransform, false) != 1 {
+	if countOperationReports(thumbBranch.Operations, plan.OpDecode, true) != 1 ||
+		countOperationReports(thumbBranch.Operations, plan.OpTransform, true) != 1 ||
+		countOperationReports(thumbBranch.Operations, plan.OpTap, true) != 1 ||
+		countOperationReports(thumbBranch.Operations, plan.OpTransform, false) != 1 {
 		t.Fatalf("thumb operations=%+v, want shared parent work and private thumbnail resize", thumbBranch.Operations)
 	}
 }

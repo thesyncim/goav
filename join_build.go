@@ -8,8 +8,9 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -211,7 +212,7 @@ type joinPlan struct {
 	taps         []workTap
 	// diagnostics records the arm conversions the shape solver inserted, so
 	// Explain reports them exactly like chain insertions.
-	diagnostics []info.Diagnostic
+	diagnostics []plan.Diagnostic
 
 	// mix: the first arm's audio format is the join target; later arms that
 	// differ get a resample planned by the mix planArm hook.
@@ -578,8 +579,8 @@ func (p *joinPlan) allTaps() []workTap {
 
 // allDiagnostics collects this join's solver diagnostics and every nested
 // join's, so Explain reports conversions inserted anywhere in the tree.
-func (p *joinPlan) allDiagnostics() []info.Diagnostic {
-	diagnostics := append([]info.Diagnostic(nil), p.diagnostics...)
+func (p *joinPlan) allDiagnostics() []plan.Diagnostic {
+	diagnostics := append([]plan.Diagnostic(nil), p.diagnostics...)
 	for i := range p.arms {
 		if p.arms[i].sub != nil {
 			diagnostics = append(diagnostics, p.arms[i].sub.allDiagnostics()...)
@@ -604,23 +605,23 @@ func (p *joinPlan) solveArmConversion(rt *runtime, stream av.Stream, armName str
 	if shape.Conversions(actual, expected).Empty() {
 		return nil, nil
 	}
-	plan, planned, err := planShapeConversion(rt, actual, expected, rt.realtime)
+	conversion, planned, err := planShapeConversion(rt, actual, expected, rt.realtime)
 	if err != nil {
-		step := OperationSpec{Kind: info.OpTransform, Component: p.name}
+		step := OperationSpec{Kind: plan.OpTransform, Component: p.name}
 		return nil, shapeSolverAdapterError("build "+p.name, firstNonEmpty(armName, string(stream.ID)), 0, step, actual, expected, err)
 	}
-	if !planned || !p.profile.armPolicy.Covers(plan.needed) {
+	if !planned || !p.profile.armPolicy.Covers(conversion.needed) {
 		return nil, joinArmError(p.name, firstNonEmpty(armName, string(stream.ID)),
 			fmt.Sprintf("%s arm %q cannot be converted to the join format (%s -> %s)", p.name, firstNonEmpty(armName, string(stream.ID)), humanizeShape(actual), humanizeShape(expected)),
 			"feed the arm "+humanizeShape(expected)+" media, or align its source format with the first arm (the join's format reference)")
 	}
-	p.diagnostics = append(p.diagnostics, info.Diagnostic{
-		Code: string(CodeShapeConversionInserted),
+	p.diagnostics = append(p.diagnostics, plan.Diagnostic{
+		Code: string(codes.ShapeConversionInserted),
 		Node: firstNonEmpty(armName, string(stream.ID)),
 		Message: fmt.Sprintf("inserted %s on %s arm %q (join arm policy)",
-			plan.detail, p.name, firstNonEmpty(armName, string(stream.ID))),
+			conversion.detail, p.name, firstNonEmpty(armName, string(stream.ID))),
 		Details: []string{
-			"adapter=" + plan.factory,
+			"adapter=" + conversion.factory,
 			"source=" + humanizeShape(actual),
 			"actual_shape=" + actual.String(),
 			"expected_shape=" + expected.String(),
@@ -628,10 +629,10 @@ func (p *joinPlan) solveArmConversion(rt *runtime, stream av.Stream, armName str
 	})
 	return &joinArmStagePlan{
 		transform: mediaTransform{
-			name:    p.name + "-" + plan.factory + "-" + string(stream.ID),
-			factory: plan.factory,
-			video:   plan.operation.Transform.Resize,
-			audio:   plan.operation.Transform.Resample,
+			name:    p.name + "-" + conversion.factory + "-" + string(stream.ID),
+			factory: conversion.factory,
+			video:   conversion.operation.Transform.Resize,
+			audio:   conversion.operation.Transform.Resample,
 		},
 		stream: joinArmTransformStream(stream, actual.MediaKind),
 	}, nil
@@ -724,11 +725,11 @@ func (p *joinPlan) planJoinBranches() error {
 	for i := range builds {
 		intent.Streams = append(intent.Streams, branchStreamIntent(builds[i]))
 	}
-	plan, err := planBranchCompositionRecipe(intent, InputSpec{}, destinations.branchDestinations, builds)
+	composePlan, err := planBranchCompositionRecipe(intent, InputSpec{}, destinations.branchDestinations, builds)
 	if err != nil {
 		return err
 	}
-	routes, targets, err := prepareBranchComposePlan(plan)
+	routes, targets, err := prepareBranchComposePlan(composePlan)
 	if err != nil {
 		return err
 	}
@@ -770,7 +771,7 @@ func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.Me
 	for _, tap := range spec.taps {
 		if tap.name == "" {
 			return nil, &BuildError{
-				Code:      CodeTapInvalid,
+				Code:      codes.TapInvalid,
 				Operation: "build " + name,
 				Node:      name,
 				Reason:    "tap name is empty",
@@ -789,7 +790,7 @@ func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.Me
 			Node:      node,
 			Domain:    domain,
 			MediaKind: joined.Type,
-			After:     info.OpStage,
+			After:     plan.OpStage,
 			Shape:     shape.FromStream(joined, domain),
 			Shared:    true,
 		})
@@ -1141,7 +1142,7 @@ func insertJoinArmStage(graph pipeline.Graph, rt *runtime, stage pipeline.Stage,
 
 // buildJoinWorkPlan renders the planned join into the workPlan IR: one branch
 // per arm (its decode/stage operations) recursing through nested joins, one
-// joined branch anchored on the info.OpJoin node carrying the downstream chain,
+// joined branch anchored on the plan.OpJoin node carrying the downstream chain,
 // and — for fanouts — one branch per planned branch route. The N-to-1
 // convergence rides workPlan.Edges, copied from the planned spec.
 func (p *joinPlan) buildJoinWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
@@ -1194,7 +1195,7 @@ func (p *joinPlan) joinWorkBranches(ids map[string]string, outputs []planOutput)
 // appendJoinArmWork renders this join's arms into the work IR: one branch per
 // leaf arm carrying its decode/transform operations, and — for nested arms —
 // the sub-join's own arm branches (recursively) plus one branch anchored on
-// the sub's info.OpJoin node carrying the outer join's per-arm operations. It
+// the sub's plan.OpJoin node carrying the outer join's per-arm operations. It
 // returns the shape of the first arm at the join input (the OpJoin ShapeIn).
 func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]workBranch) shape.Spec {
 	armShape := normalizeTapShape(shape.FromStream(p.joined, p.joinedDomain))
@@ -1217,9 +1218,9 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 				joinDetail += " by pts"
 			}
 			appendOperation(workOperation{
-				ID:        workOperationIDForKind(branchName, index, info.OpJoin),
+				ID:        workOperationIDForKind(branchName, index, plan.OpJoin),
 				Name:      arm.sub.name,
-				Kind:      info.OpJoin,
+				Kind:      plan.OpJoin,
 				Branch:    branchName,
 				Node:      pipeline.NodeRef(arm.sub.name),
 				Component: arm.sub.name,
@@ -1230,9 +1231,9 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 		}
 		if arm.tapArm != nil {
 			appendOperation(workOperation{
-				ID:        workOperationIDForKind(branchName, index, info.OpSelect),
+				ID:        workOperationIDForKind(branchName, index, plan.OpSelect),
 				Name:      arm.tapArm.node,
-				Kind:      info.OpSelect,
+				Kind:      plan.OpSelect,
 				Branch:    branchName,
 				Node:      pipeline.NodeRef(arm.tapArm.node),
 				Component: arm.tapArm.tap.name,
@@ -1245,9 +1246,9 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 			out := current
 			out.Domain = shape.DomainFrame
 			appendOperation(workOperation{
-				ID:        workOperationIDForKind(branchName, index, info.OpDecode),
+				ID:        workOperationIDForKind(branchName, index, plan.OpDecode),
 				Name:      arm.decodeNode,
-				Kind:      info.OpDecode,
+				Kind:      plan.OpDecode,
 				Branch:    branchName,
 				Node:      pipeline.NodeRef(arm.decodeNode),
 				Component: codecComponent(arm.stream.Codec.ID),
@@ -1259,9 +1260,9 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 		}
 		for _, tap := range arm.taps {
 			appendOperation(workOperation{
-				ID:        workOperationIDForKind(branchName, index, info.OpTap),
+				ID:        workOperationIDForKind(branchName, index, plan.OpTap),
 				Name:      tap.ref.name,
-				Kind:      info.OpTap,
+				Kind:      plan.OpTap,
 				Branch:    branchName,
 				Node:      pipeline.NodeRef(arm.armTapAnchorNode()),
 				Component: tap.ref.name,
@@ -1274,9 +1275,9 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 			out := shape.Merge(current, mediaShapeFromTransform(transformSpecFromMediaTransform(arm.stage.transform)))
 			out.Domain = shape.DomainFrame
 			appendOperation(workOperation{
-				ID:        workOperationIDForKind(branchName, index, info.OpTransform),
+				ID:        workOperationIDForKind(branchName, index, plan.OpTransform),
 				Name:      arm.stage.transform.name,
-				Kind:      info.OpTransform,
+				Kind:      plan.OpTransform,
 				Branch:    branchName,
 				Node:      pipeline.NodeRef(arm.stage.transform.name),
 				Component: firstNonEmpty(arm.stage.transform.factory, arm.stage.transform.name, "transform"),
@@ -1301,7 +1302,7 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 	return armShape
 }
 
-// joinedWorkBranch renders the joined stream's branch: the info.OpJoin convergence
+// joinedWorkBranch renders the joined stream's branch: the plan.OpJoin convergence
 // node plus — in single-destination mode — the optional encode and the terminal
 // destination operation.
 func (p *joinPlan) joinedWorkBranch(ids map[string]string, outputs []planOutput, armShape shape.Spec, joinedShape shape.Spec, branchIndex int) ([]workOperation, workBranch) {
@@ -1311,9 +1312,9 @@ func (p *joinPlan) joinedWorkBranch(ids map[string]string, outputs []planOutput,
 		joinDetail += " by pts"
 	}
 	operations := []workOperation{{
-		ID:        workOperationIDForKind(branchName, 0, info.OpJoin),
+		ID:        workOperationIDForKind(branchName, 0, plan.OpJoin),
 		Name:      p.name,
-		Kind:      info.OpJoin,
+		Kind:      plan.OpJoin,
 		Branch:    branchName,
 		Node:      pipeline.NodeRef(p.name),
 		Component: p.name,
@@ -1333,9 +1334,9 @@ func (p *joinPlan) joinedWorkBranch(ids map[string]string, outputs []planOutput,
 		if p.encode != nil {
 			encoded := normalizeTapShape(shape.FromStream(p.encodedStream, shape.DomainPacket))
 			operations = append(operations, workOperation{
-				ID:        workOperationIDForKind(branchName, index, info.OpEncode),
+				ID:        workOperationIDForKind(branchName, index, plan.OpEncode),
 				Name:      encodeNodeName(*p.encode),
-				Kind:      info.OpEncode,
+				Kind:      plan.OpEncode,
 				Branch:    branchName,
 				Node:      pipeline.NodeRef(encodeNodeName(*p.encode)),
 				Component: string(p.encodeConfig.Parameters.ID),
@@ -1390,9 +1391,9 @@ func (p *joinPlan) joinFanoutWorkBranches(ids map[string]string, outputs []planO
 		}
 		selectNode := branchComposeInputNodeName(selectNodeName(route.branch.Selector), route.branch.Input)
 		appendOperation(workOperation{
-			ID:        workOperationIDForKind(branchName, index, info.OpSelect),
+			ID:        workOperationIDForKind(branchName, index, plan.OpSelect),
 			Name:      selectNode,
-			Kind:      info.OpSelect,
+			Kind:      plan.OpSelect,
 			Branch:    branchName,
 			Node:      pipeline.NodeRef(selectNode),
 			Component: selectorComponent(streamSelectFromStream(p.joined)),
@@ -1406,9 +1407,9 @@ func (p *joinPlan) joinFanoutWorkBranches(ids map[string]string, outputs []planO
 			out := current
 			out.Domain = shape.DomainFrame
 			appendOperation(workOperation{
-				ID:        workOperationIDForKind(branchName, index, info.OpDecode),
+				ID:        workOperationIDForKind(branchName, index, plan.OpDecode),
 				Name:      decodeNode,
-				Kind:      info.OpDecode,
+				Kind:      plan.OpDecode,
 				Branch:    branchName,
 				Node:      pipeline.NodeRef(decodeNode),
 				Component: codecComponent(p.joined.Codec.ID),
@@ -1419,9 +1420,9 @@ func (p *joinPlan) joinFanoutWorkBranches(ids map[string]string, outputs []planO
 			current = out
 		case route.copy && p.joinedDomain == shape.DomainPacket:
 			appendOperation(workOperation{
-				ID:        workOperationIDForKind(branchName, index, info.OpCopy),
+				ID:        workOperationIDForKind(branchName, index, plan.OpCopy),
 				Name:      "packet-copy",
-				Kind:      info.OpCopy,
+				Kind:      plan.OpCopy,
 				Branch:    branchName,
 				Component: "packet-copy",
 				Detail:    "preserve encoded packets",
@@ -1431,9 +1432,9 @@ func (p *joinPlan) joinFanoutWorkBranches(ids map[string]string, outputs []planO
 		}
 		if transforms, err := branchComposePrivateOperationTransforms(route); err == nil {
 			for j := range transforms {
-				kind := info.OpTransform
+				kind := plan.OpTransform
 				if transforms[j].stage != nil {
-					kind = info.OpStage
+					kind = plan.OpStage
 				}
 				out := shape.Merge(current, mediaShapeFromTransform(transformSpecFromMediaTransform(transforms[j])))
 				out.Domain = shape.DomainFrame
@@ -1457,9 +1458,9 @@ func (p *joinPlan) joinFanoutWorkBranches(ids map[string]string, outputs []planO
 			out.Domain = shape.DomainPacket
 			out.Codec = route.request.config.Parameters.ID
 			appendOperation(workOperation{
-				ID:        workOperationIDForKind(branchName, index, info.OpEncode),
+				ID:        workOperationIDForKind(branchName, index, plan.OpEncode),
 				Name:      encodeNode,
-				Kind:      info.OpEncode,
+				Kind:      plan.OpEncode,
 				Branch:    branchName,
 				Node:      pipeline.NodeRef(encodeNode),
 				Component: string(route.request.config.Parameters.ID),
@@ -1614,4 +1615,13 @@ func joinBranchNamedDestinations(name string, branches []BranchSpec) ([]namedDes
 		}
 	}
 	return destinations.branchDestinations, nil
+}
+
+// joinErrorCode derives a join refusal code from the join kind and family:
+// joinErrorCode("mix", "arm") == codes.MixArm. The values for the built-in
+// kinds (mix, composite, select) are enumerated in the codes catalog; nested
+// joins of a repeated kind carry their claimed node name (mix-2_arm), and the
+// "kind" family marks the internal unknown-join-kind invariant.
+func joinErrorCode(kind string, family string) codes.Code {
+	return codes.Code(kind + "_" + family)
 }

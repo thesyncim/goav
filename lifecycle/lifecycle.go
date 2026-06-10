@@ -1,8 +1,16 @@
-package info
+// Package lifecycle holds the typed lifecycle states a task reports about
+// itself, its runtime branches, and its destinations. The states are
+// reporting vocabulary only — they are derived from recorded run/close
+// progress and introduce no new lifecycle machinery.
+//
+// These states are also the contract external destination implementations
+// are reported through: a custom TransactionalDestinationWriter surfaces as
+// DestinationOpen while accepting media, DestinationCommitted after a run
+// that completed without error (Commit), DestinationAborted after a failed
+// run (Abort), and DestinationClosed when closed without a run outcome.
+package lifecycle
 
-// TaskState is the typed lifecycle state a TaskSnapshot reports for a task.
-// It is derived from the task's recorded run/close progress; it is reporting
-// only and introduces no new lifecycle machinery.
+// TaskState is the typed lifecycle state a snapshot reports for a task.
 type TaskState string
 
 const (
@@ -17,9 +25,9 @@ const (
 	TaskFailed TaskState = "failed"
 )
 
-// BranchState is the typed lifecycle state a BranchSnapshot reports for a
-// runtime branch. The string values match the states snapshots have always
-// reported, so comparisons against the literal strings keep working.
+// BranchState is the typed lifecycle state a snapshot reports for a runtime
+// branch. The string values match the states snapshots have always reported,
+// so comparisons against the literal strings keep working.
 type BranchState string
 
 const (
@@ -29,8 +37,8 @@ const (
 	BranchDetached BranchState = "detached"
 )
 
-// DestinationState is the typed lifecycle state a DestinationSnapshot reports
-// for a planned task or branch destination.
+// DestinationState is the typed lifecycle state a snapshot reports for a
+// planned task or branch destination.
 type DestinationState string
 
 const (

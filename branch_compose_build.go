@@ -9,10 +9,11 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -575,18 +576,18 @@ func (b *builder) newMediaTransformStageNamed(ctx context.Context, name string, 
 	return stage, outputStream, nil
 }
 
-func prepareBranchComposePlan(plan branchComposePlan) ([]branchComposeRoute, []branchComposeTargetRoute, error) {
-	if len(plan.Branches) == 0 {
+func prepareBranchComposePlan(composePlan branchComposePlan) ([]branchComposeRoute, []branchComposeTargetRoute, error) {
+	if len(composePlan.Branches) == 0 {
 		return nil, nil, branchComposePlanEmptyError("branches")
 	}
-	if len(plan.Destinations) == 0 {
+	if len(composePlan.Destinations) == 0 {
 		return nil, nil, branchComposePlanEmptyError("destinations")
 	}
-	branches, err := branchComposeRoutes(plan)
+	branches, err := branchComposeRoutes(composePlan)
 	if err != nil {
 		return nil, nil, err
 	}
-	outputs, err := branchComposeDestinations(plan, branches)
+	outputs, err := branchComposeDestinations(composePlan, branches)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -601,7 +602,7 @@ func branchComposePlanEmptyError(kind string) error {
 	}
 	reason := "branch composition has no " + kind
 	return &BuildError{
-		Code:        CodeBranchComposePlanEmpty,
+		Code:        codes.BranchComposePlanEmpty,
 		Operation:   "build branch composition",
 		Node:        kind,
 		Reason:      reason,
@@ -657,7 +658,7 @@ func resolveBranchComposeStreamGroupsForInputs(sources mediaPlanCompiledSources,
 				return nil, selectErr
 			}
 			if !ok {
-				return nil, streamSelectionError(CodeStreamMissing, branches[i].branch.Selector, sources.streams)
+				return nil, streamSelectionError(codes.StreamMissing, branches[i].branch.Selector, sources.streams)
 			}
 			stream = selected.stream
 		} else {
@@ -752,12 +753,12 @@ func branchComposeStreamKey(stream av.Stream) string {
 	}, "\x00")
 }
 
-func branchComposeRoutes(plan branchComposePlan) ([]branchComposeRoute, error) {
-	branches := make([]branchComposeRoute, len(plan.Branches))
-	names := make(map[string]struct{}, len(plan.Branches))
-	for i := range plan.Branches {
-		branch := plan.Branches[i]
-		name := runtimeBranchComposeBranchName(branch, i, len(plan.Branches))
+func branchComposeRoutes(composePlan branchComposePlan) ([]branchComposeRoute, error) {
+	branches := make([]branchComposeRoute, len(composePlan.Branches))
+	names := make(map[string]struct{}, len(composePlan.Branches))
+	for i := range composePlan.Branches {
+		branch := composePlan.Branches[i]
+		name := runtimeBranchComposeBranchName(branch, i, len(composePlan.Branches))
 		if _, ok := names[name]; ok {
 			return nil, branchComposeDuplicateBranchError(name, i)
 		}
@@ -909,7 +910,7 @@ func codecSpecHasDecodeIntent(spec codec.CodecSpec) bool {
 
 func branchComposeDecodeConfigConflictError(first string, second string) error {
 	return &BuildError{
-		Code:      CodeDecodeConfigConflict,
+		Code:      codes.DecodeConfigConflict,
 		Operation: "build branch composition",
 		Node:      second,
 		Reason:    "branches that share one decoder declared different decode configs",
@@ -926,7 +927,7 @@ func branchComposeDecodeConfigConflictError(first string, second string) error {
 
 func branchComposeCodecChangeConflictError(first string, second string) error {
 	return &BuildError{
-		Code:      CodeDecodePolicyConflict,
+		Code:      codes.DecodePolicyConflict,
 		Operation: "build branch composition",
 		Node:      second,
 		Reason:    "branches that share one decoder declared different codec-change policies",
@@ -944,7 +945,7 @@ func branchComposeCodecChangeConflictError(first string, second string) error {
 
 func branchComposeDuplicateBranchError(name string, index int) error {
 	return &BuildError{
-		Code:      CodeBranchDuplicate,
+		Code:      codes.BranchDuplicate,
 		Operation: "build branch composition",
 		Node:      name,
 		Reason:    "branch name is defined more than once",
@@ -975,7 +976,7 @@ func branchComposeRouteOperationTransformsForName(name string, operations []Oper
 		if err != nil {
 			return nil, err
 		}
-		if operations[i].Kind == info.OpTransform && (operations[i].Transform.Resize != nil || operations[i].Transform.Resample != nil) {
+		if operations[i].Kind == plan.OpTransform && (operations[i].Transform.Resize != nil || operations[i].Transform.Resample != nil) {
 			transformIndex++
 		}
 		if !mediaTransformEmpty(step) {
@@ -991,7 +992,7 @@ func branchComposeRouteOperationTransform(branchName string, transformIndex int,
 		suffix = "-" + strconv.Itoa(transformIndex+1)
 	}
 	switch operation.Kind {
-	case info.OpStage:
+	case plan.OpStage:
 		if operation.Stage == nil {
 			return mediaTransform{}, branchChainStepError(branchName, "branch stage operation has no stage")
 		}
@@ -999,7 +1000,7 @@ func branchComposeRouteOperationTransform(branchName string, transformIndex int,
 			name:  operation.Stage.Name(),
 			stage: operation.Stage,
 		}, nil
-	case info.OpTransform:
+	case plan.OpTransform:
 		if operation.Transform.Resize != nil && operation.Transform.Resample != nil {
 			return mediaTransform{}, branchChainStepError(branchName, "branch transform operation cannot combine resize and resample")
 		}
@@ -1039,11 +1040,11 @@ func branchComposeRouteStageOperationCount(operations []OperationSpec) int {
 	count := 0
 	for i := range operations {
 		switch operations[i].Kind {
-		case info.OpStage:
+		case plan.OpStage:
 			if operations[i].Stage != nil {
 				count++
 			}
-		case info.OpTransform:
+		case plan.OpTransform:
 			if operations[i].Transform.Resize != nil || operations[i].Transform.Resample != nil {
 				count++
 			}
@@ -1060,11 +1061,11 @@ func branchComposeRouteStageOperations(operations []OperationSpec) []OperationSp
 	for i := range operations {
 		operation := operations[i]
 		switch operation.Kind {
-		case info.OpStage:
+		case plan.OpStage:
 			if operation.Stage != nil {
 				out = append(out, operation)
 			}
-		case info.OpTransform:
+		case plan.OpTransform:
 			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
 				out = append(out, operation)
 			}
@@ -1105,7 +1106,7 @@ func branchComposePrivateOperationTransforms(branch branchComposeRoute) ([]media
 
 func branchChainStepError(name string, reason string) error {
 	return &BuildError{
-		Code:      CodeBranchOperationChainUnsupported,
+		Code:      codes.BranchOperationChainUnsupported,
 		Operation: "build branch composition",
 		Node:      name,
 		Reason:    reason,
@@ -1244,7 +1245,7 @@ func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, ope
 		"codec type: " + string(stream.Codec.Type),
 	}
 	return &BuildError{
-		Code:      CodeBranchTransformMediaMismatch,
+		Code:      codes.BranchTransformMediaMismatch,
 		Operation: "build branch composition",
 		Node:      transform.name,
 		Reason:    operation + " applies to " + media + " streams",
@@ -1258,14 +1259,14 @@ func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, ope
 	}
 }
 
-func branchComposeDestinations(plan branchComposePlan, branches []branchComposeRoute) ([]branchComposeTargetRoute, error) {
-	outputs := make([]branchComposeTargetRoute, len(plan.Destinations))
-	for i := range plan.Destinations {
-		output := plan.Destinations[i]
+func branchComposeDestinations(composePlan branchComposePlan, branches []branchComposeRoute) ([]branchComposeTargetRoute, error) {
+	outputs := make([]branchComposeTargetRoute, len(composePlan.Destinations))
+	for i := range composePlan.Destinations {
+		output := composePlan.Destinations[i]
 		if output.Sink != nil && branchComposeTargetHasMuxDestination(output) {
 			return nil, branchComposeTargetDestinationInvalidError(output, "target cannot configure both a sink and a mux destination")
 		}
-		target := branchComposeFormatTarget(plan, output)
+		target := branchComposeFormatTarget(composePlan, output)
 		matches := branchComposeTargetMatches(output, branches)
 		if len(matches) == 0 {
 			return nil, branchComposeTargetUnmatchedError(output, target)
@@ -1307,7 +1308,7 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 		details = append(details, "requested: "+strings.Join(output.Branches, ", "))
 	}
 	return &BuildError{
-		Code:      CodeBranchDestinationUnmatched,
+		Code:      codes.BranchDestinationUnmatched,
 		Operation: "build branch composition",
 		Node:      node,
 		Reason:    "destination selects no branches",
@@ -1323,7 +1324,7 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 
 func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reason string) error {
 	return &BuildError{
-		Code:      CodeBranchDestinationInvalid,
+		Code:      codes.BranchDestinationInvalid,
 		Operation: "build branch composition",
 		Node:      branchComposeTargetNodeName(output, "output"),
 		Reason:    reason,
@@ -1337,7 +1338,7 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 
 func branchComposeTargetEncodeMissingError(output branchComposeTarget, destination format.Output, branch branchComposeRoute) error {
 	return &BuildError{
-		Code:      CodeEncodeMissing,
+		Code:      codes.EncodeMissing,
 		Operation: "build branch composition",
 		Node:      firstNonEmpty(branch.name, branch.branch.Name, branchComposeTargetNodeName(output, "output")),
 		Reason:    "muxed destinations require encoded branches",
@@ -1390,7 +1391,7 @@ func runtimeBranchComposeBranchName(branch branchComposeBranch, index int, total
 	return "branch-" + strconv.Itoa(index+1)
 }
 
-func branchComposeFormatTarget(plan branchComposePlan, output branchComposeTarget) format.Output {
+func branchComposeFormatTarget(composePlan branchComposePlan, output branchComposeTarget) format.Output {
 	target := output.Target
 	if !destinationSpecEmpty(output.Destination) {
 		target = output.Destination.output
@@ -1402,8 +1403,8 @@ func branchComposeFormatTarget(plan branchComposePlan, output branchComposeTarge
 		switch {
 		case output.Metadata != nil:
 			target.Metadata = output.Metadata
-		case plan.Metadata != nil:
-			target.Metadata = plan.Metadata
+		case composePlan.Metadata != nil:
+			target.Metadata = composePlan.Metadata
 		}
 	}
 	return target
@@ -1502,7 +1503,7 @@ func transcodeResizeConfigError(stream av.Stream, mode filter.ResizeMode, config
 		node += "-" + string(stream.ID)
 	}
 	return &BuildError{
-		Code:      CodeTranscodeResizeInvalid,
+		Code:      codes.TranscodeResizeInvalid,
 		Operation: "build transcode",
 		Node:      node,
 		Reason:    reason,

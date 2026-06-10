@@ -5,8 +5,9 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/filter"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -14,7 +15,7 @@ import (
 // propagates the media shape across a chain's canonical operation list and,
 // where an operation pins format facts the current media does not satisfy,
 // consults the chain's .Auto(...) policy. An allowed conversion is planned as a
-// REAL info.OpTransform operation — selected from the runtime's filter registry by
+// REAL plan.OpTransform operation — selected from the runtime's filter registry by
 // capability delta — inserted into the operation list, and recorded as a plan
 // diagnostic. Anything not allowed fails before any resource opens, with the
 // exact policy (or missing registration) to add.
@@ -32,7 +33,7 @@ type shapeConversionPlan struct {
 // solveOperationSpecShapes walks one stream chain's operations with the shape
 // solver. It returns the solved operation list (nil when nothing was inserted)
 // and one diagnostic per insertion.
-func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent, initial shape.Spec) ([]OperationSpec, []info.Diagnostic, error) {
+func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent, initial shape.Spec) ([]OperationSpec, []plan.Diagnostic, error) {
 	if rt == nil {
 		// No standard runtime (expert or test states): keep the validate-only walk.
 		return nil, nil, validateOperationSpecShapes(operation, stream, initial)
@@ -48,13 +49,13 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 	policy, policyActive := chainAutoPolicy(stream.Operations)
 	preference, preferenceActive := chainPreference(stream.Operations)
 	solved := make([]OperationSpec, 0, len(stream.Operations)+1)
-	var diagnostics []info.Diagnostic
+	var diagnostics []plan.Diagnostic
 	inserted := false
 	for i := range stream.Operations {
 		next := stream.Operations[i]
 		// Taps and shape annotations advance the lineage unchecked; a
 		// .Require(...) assertion falls through to the contract check below.
-		if next.Kind == info.OpTap || (next.Kind == info.OpShape && next.Require == nil) {
+		if next.Kind == plan.OpTap || (next.Kind == plan.OpShape && next.Require == nil) {
 			solved = append(solved, next)
 			current = operationSpecOutputShape(current, next)
 			continue
@@ -71,23 +72,23 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 				mismatch := operationShapeFailureError(operation, node, i, next, expected, current)
 				return nil, nil, appendAutoFixSuggestions(mismatch, current, target, next)
 			}
-			plan, planned, prefDiags, err := planShapeConversionPreferred(rt, current, target, rt.realtime, policy, preference, preferenceActive, node)
+			conversion, planned, prefDiags, err := planShapeConversionPreferred(rt, current, target, rt.realtime, policy, preference, preferenceActive, node)
 			if err != nil {
 				return nil, nil, shapeSolverAdapterError(operation, node, i, next, current, target, err)
 			}
 			if !planned {
 				return nil, nil, operationShapeFailureError(operation, node, i, next, expected, current)
 			}
-			if !policy.Covers(plan.needed) {
-				return nil, nil, shapeConversionRefusedError(operation, node, i, next, policy, plan, current, target)
+			if !policy.Covers(conversion.needed) {
+				return nil, nil, shapeConversionRefusedError(operation, node, i, next, policy, conversion, current, target)
 			}
-			after := operationSpecOutputShape(current, plan.operation)
+			after := operationSpecOutputShape(current, conversion.operation)
 			if !expected.Accepts(after) {
 				return nil, nil, operationShapeFailureError(operation, node, i, next, expected, current)
 			}
-			plan.operation.Shared = next.Shared
-			solved = append(solved, plan.operation)
-			diagnostics = append(diagnostics, shapeConversionDiagnostic(node, plan, next, current, target))
+			conversion.operation.Shared = next.Shared
+			solved = append(solved, conversion.operation)
+			diagnostics = append(diagnostics, shapeConversionDiagnostic(node, conversion, next, current, target))
 			diagnostics = append(diagnostics, prefDiags...)
 			inserted = true
 			current = after
@@ -95,20 +96,20 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 		if policyActive {
 			desired := operationSoftInputShape(next)
 			if !mediaShapeEmpty(desired) && !shape.Conversions(current, desired).Empty() {
-				plan, planned, prefDiags, err := planShapeConversionPreferred(rt, current, desired, rt.realtime, policy, preference, preferenceActive, node)
+				conversion, planned, prefDiags, err := planShapeConversionPreferred(rt, current, desired, rt.realtime, policy, preference, preferenceActive, node)
 				if err != nil {
 					return nil, nil, shapeSolverAdapterError(operation, node, i, next, current, desired, err)
 				}
 				if planned {
-					if !policy.Covers(plan.needed) {
-						return nil, nil, shapeConversionRefusedError(operation, node, i, next, policy, plan, current, desired)
+					if !policy.Covers(conversion.needed) {
+						return nil, nil, shapeConversionRefusedError(operation, node, i, next, policy, conversion, current, desired)
 					}
-					plan.operation.Shared = next.Shared
-					solved = append(solved, plan.operation)
-					diagnostics = append(diagnostics, shapeConversionDiagnostic(node, plan, next, current, desired))
+					conversion.operation.Shared = next.Shared
+					solved = append(solved, conversion.operation)
+					diagnostics = append(diagnostics, shapeConversionDiagnostic(node, conversion, next, current, desired))
 					diagnostics = append(diagnostics, prefDiags...)
 					inserted = true
-					current = operationSpecOutputShape(current, plan.operation)
+					current = operationSpecOutputShape(current, conversion.operation)
 				}
 			}
 		}
@@ -141,7 +142,7 @@ func chainPreference(operations []OperationSpec) (shape.Spec, bool) {
 // caps are the shape its input frames must already have. Operations without
 // pinned facts return the zero Spec.
 func operationSoftInputShape(operation OperationSpec) shape.Spec {
-	if operation.Kind != info.OpEncode || operation.Encode.Copy || operation.Encode.ID == "" {
+	if operation.Kind != plan.OpEncode || operation.Encode.Copy || operation.Encode.ID == "" {
 		return shape.Spec{}
 	}
 	parameters := operation.Encode.Parameters
@@ -213,8 +214,8 @@ func shapeConversionTargetFromSet(current shape.Spec, expected shape.Set) (shape
 // mismatch error); adapter selection failures (none or several candidates)
 // return an error.
 func planShapeConversion(rt *runtime, actual shape.Spec, expected shape.Spec, realtime bool) (shapeConversionPlan, bool, error) {
-	plan, planned, _, err := planShapeConversionFor(rt, actual, expected, realtime, shape.Spec{})
-	return plan, planned, err
+	conversion, planned, _, err := planShapeConversionFor(rt, actual, expected, realtime, shape.Spec{})
+	return conversion, planned, err
 }
 
 // planShapeConversionFor is planShapeConversion with an adapter preference:
@@ -252,37 +253,37 @@ func planShapeConversionFor(rt *runtime, actual shape.Spec, expected shape.Spec,
 // adapter can perform, or that has no open choice to influence is dropped (a
 // diagnostic records the drop when the plain plan proceeds). Without an
 // active preference the call is exactly planShapeConversion.
-func planShapeConversionPreferred(rt *runtime, actual shape.Spec, expected shape.Spec, realtime bool, policy shape.Policy, pref shape.Spec, prefActive bool, node string) (shapeConversionPlan, bool, []info.Diagnostic, error) {
+func planShapeConversionPreferred(rt *runtime, actual shape.Spec, expected shape.Spec, realtime bool, policy shape.Policy, pref shape.Spec, prefActive bool, node string) (shapeConversionPlan, bool, []plan.Diagnostic, error) {
 	media := firstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
 	if !prefActive || mediaShapeEmpty(pref) || (pref.MediaKind != "" && pref.MediaKind != media) {
-		plan, planned, err := planShapeConversion(rt, actual, expected, realtime)
-		return plan, planned, nil, err
+		conversion, planned, err := planShapeConversion(rt, actual, expected, realtime)
+		return conversion, planned, nil, err
 	}
 	basePlan, basePlanned, baseErr := planShapeConversion(rt, actual, expected, realtime)
 	effective := preferredConversionTarget(media, expected, pref)
 	targetBias := effective != expected
-	plan, planned, resolved, err := planShapeConversionFor(rt, actual, effective, realtime, pref)
+	conversion, planned, resolved, err := planShapeConversionFor(rt, actual, effective, realtime, pref)
 	reason := ""
 	switch {
 	case err != nil:
 		reason = preferenceDropReason(err)
 	case !planned:
 		reason = "the preferred conversion cannot be planned"
-	case !policy.Covers(plan.needed):
-		reason = fmt.Sprintf("the chain policy (%s) does not allow the preferred conversion (%s)", policy.String(), plan.needed.String())
+	case !policy.Covers(conversion.needed):
+		reason = fmt.Sprintf("the chain policy (%s) does not allow the preferred conversion (%s)", policy.String(), conversion.needed.String())
 	case !targetBias && !resolved:
 		// The preference had no open choice to influence: the plain plan is
 		// already exactly this plan.
 		return basePlan, basePlanned, nil, baseErr
 	default:
-		return plan, true, []info.Diagnostic{shapePreferenceAppliedDiagnostic(node, pref, plan, targetBias, resolved)}, nil
+		return conversion, true, []plan.Diagnostic{shapePreferenceAppliedDiagnostic(node, pref, conversion, targetBias, resolved)}, nil
 	}
 	// Drop the preference: the plain plan (or its plain failure) stands, so a
 	// .Prefer(...) never fails a build that would succeed without it.
 	if baseErr != nil || !basePlanned {
 		return basePlan, basePlanned, nil, baseErr
 	}
-	return basePlan, basePlanned, []info.Diagnostic{shapePreferenceIgnoredDiagnostic(node, pref, reason)}, nil
+	return basePlan, basePlanned, []plan.Diagnostic{shapePreferenceIgnoredDiagnostic(node, pref, reason)}, nil
 }
 
 // preferredConversionTarget overlays the preference onto the conversion target
@@ -483,7 +484,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 	}
 	if selection.cause == errShapeAdapterAmbiguous {
 		return &BuildError{
-			Code:      CodeShapeAdapterAmbiguous,
+			Code:      codes.ShapeAdapterAmbiguous,
 			Operation: operation,
 			Node:      node,
 			Reason: fmt.Sprintf("several registered filters can perform the %s conversion before %s: %s",
@@ -498,7 +499,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 		}
 	}
 	return &BuildError{
-		Code:      CodeShapeAdapterMissing,
+		Code:      codes.ShapeAdapterMissing,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("no registered filter can perform the %s conversion before %s",
@@ -515,26 +516,26 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 // shapeConversionRefusedError is the solver's refusal: a conversion would fix
 // the chain, but the active .Auto(...) policy does not allow it. The error
 // carries the source shape, the expected shape, and the exact policy to add.
-func shapeConversionRefusedError(operation string, node string, index int, step OperationSpec, allowed shape.Policy, plan shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
-	missing := allowed.Missing(plan.needed)
+func shapeConversionRefusedError(operation string, node string, index int, step OperationSpec, allowed shape.Policy, conversion shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
+	missing := allowed.Missing(conversion.needed)
 	return &BuildError{
-		Code:      CodeShapeConversionRefused,
+		Code:      codes.ShapeConversionRefused,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("%s needs %s but the chain policy (%s) does not allow it",
-			operationSpecLabel(step), plan.detail, allowed.String()),
+			operationSpecLabel(step), conversion.detail, allowed.String()),
 		Details: []string{
 			fmt.Sprintf("operation_index=%d", index),
 			"operation=" + string(step.Kind),
 			"source=" + humanizeShape(actual),
 			"actual_shape=" + actual.String(),
 			"expected_shape=" + expected.String(),
-			"needed=" + plan.needed.String(),
+			"needed=" + conversion.needed.String(),
 			"allowed=" + allowed.String(),
 		},
 		Suggestions: append(
 			[]string{fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(missing.Constructors(), ", "))},
-			explicitConversionSuggestion(plan.operation.Transform, step)...,
+			explicitConversionSuggestion(conversion.operation.Transform, step)...,
 		),
 		Cause: ErrUnsupportedBuild,
 	}
@@ -576,7 +577,7 @@ func explicitConversionSuggestion(transform TransformSpec, step OperationSpec) [
 // shapePreferenceAppliedDiagnostic records a preference that influenced the
 // planned conversion: it filled open target facts, resolved an otherwise
 // ambiguous adapter choice, or both.
-func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, plan shapeConversionPlan, targetBias bool, resolved bool) info.Diagnostic {
+func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, conversion shapeConversionPlan, targetBias bool, resolved bool) plan.Diagnostic {
 	effects := make([]string, 0, 2)
 	if targetBias {
 		effects = append(effects, "set the open conversion target facts")
@@ -584,22 +585,22 @@ func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, plan shapeCo
 	if resolved {
 		effects = append(effects, "resolved the adapter choice")
 	}
-	return info.Diagnostic{
-		Code:    string(CodeShapePreferenceApplied),
+	return plan.Diagnostic{
+		Code:    string(codes.ShapePreferenceApplied),
 		Node:    node,
-		Message: fmt.Sprintf("preference (%s) %s: %s", pref.String(), strings.Join(effects, " and "), plan.detail),
+		Message: fmt.Sprintf("preference (%s) %s: %s", pref.String(), strings.Join(effects, " and "), conversion.detail),
 		Details: []string{
 			"preference=" + pref.String(),
-			"adapter=" + plan.factory,
+			"adapter=" + conversion.factory,
 		},
 	}
 }
 
 // shapePreferenceIgnoredDiagnostic records a preference the solver could not
 // honor — soft by definition, the plain plan proceeds untouched.
-func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason string) info.Diagnostic {
-	return info.Diagnostic{
-		Code:    string(CodeShapePreferenceIgnored),
+func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason string) plan.Diagnostic {
+	return plan.Diagnostic{
+		Code:    string(codes.ShapePreferenceIgnored),
 		Node:    node,
 		Message: fmt.Sprintf("preference (%s) ignored: %s", pref.String(), reason),
 		Details: []string{"preference=" + pref.String()},
@@ -608,13 +609,13 @@ func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason strin
 
 // shapeConversionDiagnostic records one insertion on the plan, e.g.
 // "inserted resample 44.1kHz→48kHz before encode-opus (AllowResample)".
-func shapeConversionDiagnostic(node string, plan shapeConversionPlan, step OperationSpec, actual shape.Spec, expected shape.Spec) info.Diagnostic {
-	return info.Diagnostic{
-		Code:    string(CodeShapeConversionInserted),
+func shapeConversionDiagnostic(node string, conversion shapeConversionPlan, step OperationSpec, actual shape.Spec, expected shape.Spec) plan.Diagnostic {
+	return plan.Diagnostic{
+		Code:    string(codes.ShapeConversionInserted),
 		Node:    node,
-		Message: fmt.Sprintf("inserted %s before %s (%s)", plan.detail, operationSpecLabel(step), shapePolicyLabel(plan.needed)),
+		Message: fmt.Sprintf("inserted %s before %s (%s)", conversion.detail, operationSpecLabel(step), shapePolicyLabel(conversion.needed)),
 		Details: []string{
-			"adapter=" + plan.factory,
+			"adapter=" + conversion.factory,
 			"source=" + humanizeShape(actual),
 			"actual_shape=" + actual.String(),
 			"expected_shape=" + expected.String(),
@@ -639,13 +640,13 @@ func shapePolicyLabel(policy shape.Policy) string {
 // "encode-opus", "decode-vp8", "stage-visualizer", "resample".
 func operationSpecLabel(operation OperationSpec) string {
 	switch operation.Kind {
-	case info.OpEncode:
+	case plan.OpEncode:
 		return "encode-" + firstNonEmpty(string(operation.Encode.ID), operation.Component, "encoder")
-	case info.OpDecode:
+	case plan.OpDecode:
 		return "decode-" + firstNonEmpty(string(operation.Decode.ID), operation.Component, "decoder")
-	case info.OpStage:
+	case plan.OpStage:
 		return "stage-" + firstNonEmpty(operation.Component, "custom")
-	case info.OpTransform:
+	case plan.OpTransform:
 		return firstNonEmpty(operationSpecComponent(operation), "transform")
 	default:
 		return firstNonEmpty(operation.Component, string(operation.Kind), "operation")

@@ -7,8 +7,9 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
+	"github.com/thesyncim/goav/snapshot"
 )
 
 type Packet = av.Packet
@@ -35,12 +36,12 @@ type GraphBuilder interface {
 // Task is a runnable media composition.
 type Task interface {
 	Describe() pipeline.Spec
-	Explain(context.Context) (info.Plan, error)
+	Explain(context.Context) (plan.Report, error)
 	Attach(context.Context, ...BranchSpec) (Attachment, error)
 	Detach(context.Context, Attachment) error
-	Taps() []info.Tap
+	Taps() []snapshot.Tap
 	// Snapshot returns a point-in-time diagnostic view without exposing graph handles.
-	Snapshot() info.TaskSnapshot
+	Snapshot() snapshot.Task
 	// Control injects an out-of-band control into the running graph, delivered to a
 	// target node on its serial worker — the control-plane entry point for live
 	// switching (a selector), keyframe requests, and flushes.

@@ -1,4 +1,9 @@
-package info
+// Package plan holds the structured Explain tree: the report a job or task
+// returns about what it will do, which adapters it needs, and the decisions
+// and diagnostics behind the plan. The write-side grammar (From, Mix,
+// Branch, To, Control, constructors, options) lives in the goav root;
+// everything Explain reports back lives here.
+package plan
 
 import (
 	"github.com/thesyncim/goav/av"
@@ -8,9 +13,9 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// Plan is the structured report Explain returns: what the job will do, which
-// adapters it needs, and the decisions and diagnostics behind the plan.
-type Plan struct {
+// Report is the structured report Explain returns: what the job will do,
+// which adapters it needs, and the decisions and diagnostics behind the plan.
+type Report struct {
 	Summary          string
 	Operation        string
 	Inputs           []Input
@@ -77,6 +82,15 @@ type Operation struct {
 	Detail    string
 	Shape     shape.Spec
 	Shared    bool
+}
+
+// Tap reports one named media outlet the plan declares for runtime branches.
+type Tap struct {
+	Name      string
+	MediaKind av.MediaType
+	Domain    shape.MediaDomain
+	Shape     shape.Spec
+	Node      pipeline.NodeRef
 }
 
 // Decision records one planning decision and the branch it applies to.

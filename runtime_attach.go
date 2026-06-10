@@ -11,10 +11,13 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/snapshot"
 )
 
 var runtimeAttachmentSeq atomic.Uint64
@@ -62,7 +65,7 @@ type runtimeSharedMuxDestination struct {
 type runtimeGraphPatch struct {
 	nodes       []pipeline.NodeRef
 	routes      []pipeline.Route
-	taps        []info.Tap
+	taps        []snapshot.Tap
 	anchorTaps  []string
 	anchorNodes []string
 	stages      []pipeline.Stage
@@ -78,13 +81,13 @@ func (p *runtimeGraphPatch) addAnchor(tap string, from string) {
 	}
 }
 
-func (p *runtimeGraphPatch) addApplied(nodes []pipeline.NodeRef, routes []pipeline.Route, taps []info.Tap) {
+func (p *runtimeGraphPatch) addApplied(nodes []pipeline.NodeRef, routes []pipeline.Route, taps []snapshot.Tap) {
 	p.nodes = append(p.nodes, nodes...)
 	p.routes = append(p.routes, routes...)
 	p.taps = append(p.taps, taps...)
 }
 
-func (p *runtimeGraphPatch) addPlannedTaps(taps []info.Tap) {
+func (p *runtimeGraphPatch) addPlannedTaps(taps []snapshot.Tap) {
 	p.taps = append(p.taps, taps...)
 }
 
@@ -113,7 +116,7 @@ func (p runtimeGraphPatch) attachment(owner *task, name string) *runtimeAttachme
 		anchorNodes: uniqueStrings(p.anchorNodes),
 		nodes:       append([]pipeline.NodeRef(nil), p.nodes...),
 		routes:      append([]pipeline.Route(nil), p.routes...),
-		taps:        append([]info.Tap(nil), p.taps...),
+		taps:        append([]snapshot.Tap(nil), p.taps...),
 		stages:      append([]pipeline.Stage(nil), p.stages...),
 		work:        cloneWorkPatch(p.work),
 	}
@@ -125,7 +128,7 @@ type Attachment interface {
 	Name() string
 	Spec() pipeline.Spec
 	Stats() pipeline.GraphStats
-	Snapshot() info.BranchSnapshot
+	Snapshot() snapshot.Branch
 	// Pause stops delivery to this branch without touching the source or its
 	// siblings; messages are skipped while paused. Resume restores delivery.
 	Pause(context.Context) error
@@ -173,10 +176,10 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 	group := newRuntimeAttachGroup(groupDestinations)
-	plan := newAttachPlan()
+	ap := newAttachPlan()
 	var patch runtimeGraphPatch
 	rollback := func(err error) (Attachment, error) {
-		plan.closeOwned()
+		ap.closeOwned()
 		group.failSharedMuxStages()
 		group.closeSharedMuxStages()
 		patch.rollback(t)
@@ -193,25 +196,25 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		if err != nil {
 			return rollback(err)
 		}
-		index := plan.registerBranch(specs[i], from, steps)
+		index := ap.registerBranch(specs[i], from, steps)
 		if err := t.validateAttachBranchTapsLocked(steps, patch.taps); err != nil {
 			return rollback(err)
 		}
-		if err := plan.finalizeBranch(index, specs[i], destinations[i], anchor, graphSpec, group, steps); err != nil {
+		if err := ap.finalizeBranch(index, specs[i], destinations[i], anchor, graphSpec, group, steps); err != nil {
 			return rollback(err)
 		}
-		patch.addPlannedTaps(plan.branches[index].taps)
+		patch.addPlannedTaps(ap.branches[index].taps)
 	}
 	if err := group.prepareSharedMuxStages(ctx, t.runtime); err != nil {
 		return rollback(err)
 	}
 	name := runtimeAttachmentName(specs)
-	plan.work.Name = firstNonEmpty(name, "runtime-attach")
-	plan.work.Rollback = workPatchRollbackFromBranches(plan.work.Operations, plan.work.Destinations)
-	patch.setWork(plan.work)
+	ap.work.Name = firstNonEmpty(name, "runtime-attach")
+	ap.work.Rollback = workPatchRollbackFromBranches(ap.work.Operations, ap.work.Destinations)
+	patch.setWork(ap.work)
 	patch.resetPlannedTaps()
-	for i := range plan.branches {
-		branchRefs, branchRoutes, branchTaps, err := t.applyAttachBranch(plan, plan.branches[i], group)
+	for i := range ap.branches {
+		branchRefs, branchRoutes, branchTaps, err := t.applyAttachBranch(ap, ap.branches[i], group)
 		if err != nil {
 			patch.addApplied(branchRefs, nil, nil)
 			return rollback(err)
@@ -224,7 +227,7 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		return rollback(err)
 	}
 	patch.addApplied(sharedRefs, sharedRoutes, nil)
-	patch.stages = attachmentStages(plan, group, patch.nodes)
+	patch.stages = attachmentStages(ap, group, patch.nodes)
 	attachment := patch.attachment(t, name)
 	t.trackAttachmentLocked(attachment)
 	t.addAttachmentTapsLocked(patch.taps)
@@ -234,13 +237,13 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 // attachmentStages binds the applied nodes back to their prepared stages so a
 // later disposition detach (DrainOldBranch/AbortOldBranch) can finalize the
 // branch's destinations explicitly instead of relying on the default close.
-func attachmentStages(plan *attachPlan, group *runtimeAttachGroup, nodes []pipeline.NodeRef) []pipeline.Stage {
-	if plan == nil {
+func attachmentStages(ap *attachPlan, group *runtimeAttachGroup, nodes []pipeline.NodeRef) []pipeline.Stage {
+	if ap == nil {
 		return nil
 	}
 	out := make([]pipeline.Stage, 0, len(nodes))
 	for _, node := range nodes {
-		if component, ok := plan.components[node]; ok && component.stage != nil {
+		if component, ok := ap.components[node]; ok && component.stage != nil {
 			out = append(out, component.stage)
 			continue
 		}
@@ -337,7 +340,7 @@ func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][
 					}
 				}
 				return group, &BuildError{
-					Code:      CodeDestinationDuplicate,
+					Code:      codes.DestinationDuplicate,
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(specs[i].name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
@@ -627,7 +630,7 @@ func runtimeMuxDestinationFormat(ctx context.Context, rt *runtime, dest destinat
 func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, branches []string, streams []av.Stream, rt Runtime) (muxCompatibilityIssue, bool) {
 	output := workDestination{
 		Name:      destinationName,
-		Operation: info.OpMux,
+		Operation: plan.OpMux,
 		Format:    formatID,
 		Branches:  append([]string(nil), branches...),
 	}
@@ -683,40 +686,40 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-func (t *task) resolveRuntimeBranchAnchor(spec BranchSpec, graphSpec pipeline.Spec, pending []info.Tap) (string, info.Tap, error) {
+func (t *task) resolveRuntimeBranchAnchor(spec BranchSpec, graphSpec pipeline.Spec, pending []snapshot.Tap) (string, snapshot.Tap, error) {
 	if spec.source.tap != "" {
-		taps := append([]info.Tap(nil), t.tapsLocked()...)
+		taps := append([]snapshot.Tap(nil), t.tapsLocked()...)
 		taps = append(taps, pending...)
 		for _, tap := range taps {
 			if tap.Name == spec.source.tap {
 				if err := validateTapDomain("attach runtime branch", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.source.tap, domain: spec.source.tapDomain}, tap.Domain); err != nil {
-					return "", info.Tap{}, err
+					return "", snapshot.Tap{}, err
 				}
 				return tap.Node.String(), tap, nil
 			}
 		}
-		return "", info.Tap{}, runtimeBranchTapMissingError(spec.source.tap, taps)
+		return "", snapshot.Tap{}, runtimeBranchTapMissingError(spec.source.tap, taps)
 	}
 	if !specHasNode(graphSpec, spec.source.from) {
-		return "", info.Tap{}, runtimeBranchAnchorMissingError(spec.source.from)
+		return "", snapshot.Tap{}, runtimeBranchAnchorMissingError(spec.source.from)
 	}
 	if spec.source.stream != nil {
 		return spec.source.from, discoveredStreamAnchorTap(spec.source), nil
 	}
-	return spec.source.from, info.Tap{Node: pipeline.NodeRef(spec.source.from)}, nil
+	return spec.source.from, snapshot.Tap{Node: pipeline.NodeRef(spec.source.from)}, nil
 }
 
 // discoveredStreamAnchorTap synthesizes the anchor tap for a source+stream
 // anchor (a branch attached to a stream the source discovered at runtime):
 // the source node is the anchor and the announced av.Stream supplies the
 // shape facts a tap would normally carry.
-func discoveredStreamAnchorTap(source branchSourceBinding) info.Tap {
+func discoveredStreamAnchorTap(source branchSourceBinding) snapshot.Tap {
 	domain := source.streamDomain
 	if domain == "" {
 		domain = shape.DomainPacket
 	}
 	spec := shape.FromStream(*source.stream, domain)
-	return info.Tap{
+	return snapshot.Tap{
 		Node:      pipeline.NodeRef(source.from),
 		Domain:    domain,
 		MediaKind: spec.MediaKind,
@@ -730,7 +733,7 @@ func discoveredStreamAnchorTap(source branchSourceBinding) info.Tap {
 func validateAttachBranchShapeContract(spec BranchSpec, destinations []attachDestination, initial shape.Spec) error {
 	stream := streamIntent{
 		Name: spec.name,
-		Select: info.StreamSelect{
+		Select: plan.StreamSelect{
 			Type:  firstNonEmptyMedia(spec.media, initial.MediaKind),
 			Codec: initial.Codec,
 		},
@@ -760,9 +763,9 @@ func validateAttachBranchShapeContract(spec BranchSpec, destinations []attachDes
 	return nil
 }
 
-func (t *task) validateAttachBranchTapsLocked(steps []attachStep, pending []info.Tap) error {
+func (t *task) validateAttachBranchTapsLocked(steps []attachStep, pending []snapshot.Tap) error {
 	seen := make(map[string]struct{}, len(steps))
-	current := append([]info.Tap(nil), t.tapsLocked()...)
+	current := append([]snapshot.Tap(nil), t.tapsLocked()...)
 	current = append(current, pending...)
 	existing := make(map[string]struct{}, len(current))
 	for i := range current {
@@ -792,16 +795,16 @@ func (t *task) validateAttachBranchTapsLocked(steps []attachStep, pending []info
 // connected along its planned edge, with shared destinations resolved through
 // the attach group. The returned refs/routes/taps feed the graph patch for
 // bookkeeping and rollback.
-func (t *task) applyAttachBranch(plan *attachPlan, branch attachPlanBranch, group *runtimeAttachGroup) ([]pipeline.NodeRef, []pipeline.Route, []info.Tap, error) {
+func (t *task) applyAttachBranch(ap *attachPlan, branch attachPlanBranch, group *runtimeAttachGroup) ([]pipeline.NodeRef, []pipeline.Route, []snapshot.Tap, error) {
 	refs := make([]pipeline.NodeRef, 0, branch.operations[1]-branch.operations[0])
 	routes := make([]pipeline.Route, 0, branch.edges[1]-branch.edges[0])
-	taps := append([]info.Tap(nil), branch.taps...)
+	taps := append([]snapshot.Tap(nil), branch.taps...)
 	edgeIndex := branch.edges[0]
 	nextRoute := func() (pipeline.Route, bool) {
 		if edgeIndex >= branch.edges[1] {
 			return pipeline.Route{}, false
 		}
-		edge := plan.work.Edges[edgeIndex]
+		edge := ap.work.Edges[edgeIndex]
 		edgeIndex++
 		return pipeline.Route{
 			From:   edge.From.String(),
@@ -811,8 +814,8 @@ func (t *task) applyAttachBranch(plan *attachPlan, branch attachPlanBranch, grou
 		}, true
 	}
 	for i := branch.operations[0]; i < branch.operations[1]; i++ {
-		operation := plan.work.Operations[i]
-		if operation.Kind == info.OpTap || operation.Node == "" {
+		operation := ap.work.Operations[i]
+		if operation.Kind == plan.OpTap || operation.Node == "" {
 			continue
 		}
 		if key, ok := group.sharedSinkKeyForNode(operation.Node); ok {
@@ -843,7 +846,7 @@ func (t *task) applyAttachBranch(plan *attachPlan, branch attachPlanBranch, grou
 			}
 			continue
 		}
-		component, ok := plan.components[operation.Node]
+		component, ok := ap.components[operation.Node]
 		if !ok {
 			continue
 		}
@@ -885,7 +888,7 @@ func attachConnectOperation(operation workOperation, route pipeline.Route, from 
 	if route.From == from.String() {
 		return "connect branch"
 	}
-	if operation.Kind == info.OpSink || operation.Kind == info.OpMux {
+	if operation.Kind == plan.OpSink || operation.Kind == plan.OpMux {
 		return "connect branch target"
 	}
 	return "connect branch stage"
@@ -904,16 +907,16 @@ func (t *task) trackAttachmentLocked(attachment *runtimeAttachment) {
 	t.attachments[attachment] = struct{}{}
 }
 
-func (t *task) tapsLocked() []info.Tap {
-	var base []info.Tap
+func (t *task) tapsLocked() []snapshot.Tap {
+	var base []snapshot.Tap
 	if len(t.taps) != 0 {
 		base = t.taps
 	} else {
 		base = inferSpecTaps(t.graph.Spec())
 	}
-	out := make([]info.Tap, 0, len(base)+len(t.branchTaps))
+	out := make([]snapshot.Tap, 0, len(base)+len(t.branchTaps))
 	seen := make(map[string]struct{}, len(base)+len(t.branchTaps))
-	appendTap := func(tap info.Tap) {
+	appendTap := func(tap snapshot.Tap) {
 		if tap.Name == "" {
 			return
 		}
@@ -932,7 +935,7 @@ func (t *task) tapsLocked() []info.Tap {
 	return out
 }
 
-func (t *task) addAttachmentTapsLocked(taps []info.Tap) {
+func (t *task) addAttachmentTapsLocked(taps []snapshot.Tap) {
 	if len(taps) == 0 {
 		return
 	}
@@ -1048,14 +1051,14 @@ type runtimeAttachment struct {
 	anchorNodes []string
 	nodes       []pipeline.NodeRef
 	routes      []pipeline.Route
-	taps        []info.Tap
+	taps        []snapshot.Tap
 	stages      []pipeline.Stage
 	work        workPatch
 	stopMu      sync.Mutex
 	stopped     bool
-	// detachOutcome records the info.DestinationState a disposition detach
+	// detachOutcome records the lifecycle.DestinationState a disposition detach
 	// (DrainOldBranch/AbortOldBranch) chose for this branch's destinations;
-	// snapshots report it instead of the plain info.DestinationClosed.
+	// snapshots report it instead of the plain lifecycle.DestinationClosed.
 	detachOutcome atomic.Value
 }
 
@@ -1135,9 +1138,9 @@ func (a *runtimeAttachment) Stats() pipeline.GraphStats {
 	return branchStatsForNodes(a.owner.Stats(), a.nodes)
 }
 
-func (a *runtimeAttachment) Snapshot() info.BranchSnapshot {
+func (a *runtimeAttachment) Snapshot() snapshot.Branch {
 	if a == nil {
-		return info.BranchSnapshot{}
+		return snapshot.Branch{}
 	}
 	stats := pipeline.GraphStats{}
 	if a.owner == nil {
@@ -1149,32 +1152,32 @@ func (a *runtimeAttachment) Snapshot() info.BranchSnapshot {
 	return a.branchSnapshotLocked(stats)
 }
 
-func (a *runtimeAttachment) branchSnapshotLocked(taskStats pipeline.GraphStats) info.BranchSnapshot {
+func (a *runtimeAttachment) branchSnapshotLocked(taskStats pipeline.GraphStats) snapshot.Branch {
 	if a == nil {
-		return info.BranchSnapshot{}
+		return snapshot.Branch{}
 	}
-	state := info.BranchAttached
-	destinationState := info.DestinationOpen
+	state := lifecycle.BranchAttached
+	destinationState := lifecycle.DestinationOpen
 	spec := pipeline.Spec{}
 	if a.owner != nil {
 		_, destinationState = a.owner.lifecycleStates()
 		spec = a.specFromGraph(a.owner.Describe())
 	}
 	if a.stopped {
-		state = info.BranchDetached
-		destinationState = info.DestinationClosed
-		if outcome, ok := a.detachOutcome.Load().(info.DestinationState); ok && outcome != "" {
+		state = lifecycle.BranchDetached
+		destinationState = lifecycle.DestinationClosed
+		if outcome, ok := a.detachOutcome.Load().(lifecycle.DestinationState); ok && outcome != "" {
 			destinationState = outcome
 		}
 	}
-	return info.BranchSnapshot{
+	return snapshot.Branch{
 		ID:           a.id,
 		Name:         a.name,
 		State:        state,
 		AnchorTaps:   append([]string(nil), a.allAnchorTaps()...),
 		AnchorNodes:  append([]string(nil), a.allAnchorNodes()...),
 		Nodes:        append([]pipeline.NodeRef(nil), a.nodes...),
-		Taps:         append([]info.Tap(nil), a.taps...),
+		Taps:         append([]snapshot.Tap(nil), a.taps...),
 		Destinations: destinationSnapshotsFromWork(a.work.Destinations, destinationState),
 		Spec:         spec,
 		Stats:        branchStatsForNodes(taskStats, a.nodes),
@@ -1271,12 +1274,12 @@ func (a *runtimeAttachment) detachReplacedAtBoundary(group *switchGroup, disposi
 func (a *runtimeAttachment) detachReplaced(ctx context.Context, disposition oldBranchDisposition) error {
 	switch disposition {
 	case oldBranchDrain:
-		a.detachOutcome.Store(info.DestinationCommitted)
+		a.detachOutcome.Store(lifecycle.DestinationCommitted)
 	case oldBranchAbort:
 		for _, stage := range a.stages {
 			markPipelineStageFailed(stage)
 		}
-		a.detachOutcome.Store(info.DestinationAborted)
+		a.detachOutcome.Store(lifecycle.DestinationAborted)
 	case oldBranchDetach:
 	}
 	return a.owner.Detach(ctx, a)
@@ -1418,7 +1421,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 	switch {
 	case spec.Resize != nil && spec.Resample != nil:
 		return mediaTransform{}, &BuildError{
-			Code:        CodeTransformInvalid,
+			Code:        codes.TransformInvalid,
 			Operation:   "attach runtime branch",
 			Node:        base,
 			Reason:      "one runtime branch transform cannot be both resize and resample",
@@ -1447,7 +1450,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 		}, nil
 	default:
 		return mediaTransform{}, &BuildError{
-			Code:      CodeTransformInvalid,
+			Code:      codes.TransformInvalid,
 			Operation: "attach runtime branch",
 			Node:      base,
 			Reason:    "empty runtime branch transform",
@@ -1460,7 +1463,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 	}
 }
 
-func runtimeBranchAnchorShape(anchor info.Tap) shape.Spec {
+func runtimeBranchAnchorShape(anchor snapshot.Tap) shape.Spec {
 	shape := anchor.Shape
 	if shape.Domain == "" {
 		shape.Domain = anchor.Domain
@@ -1572,7 +1575,7 @@ func streamPacketShapeFromRuntimeBranchStream(stream av.Stream, previous shape.S
 	return spec
 }
 
-func runtimeBranchTap(name string, node pipeline.NodeRef, spec shape.Spec, after info.OperationKind) info.Tap {
+func runtimeBranchTap(name string, node pipeline.NodeRef, spec shape.Spec, after plan.OperationKind) snapshot.Tap {
 	domain := spec.Domain
 	if domain == "" {
 		domain = shape.DomainPacket
@@ -1584,7 +1587,7 @@ func runtimeBranchTap(name string, node pipeline.NodeRef, spec shape.Spec, after
 	if spec.MediaKind == "" {
 		spec.MediaKind = media
 	}
-	return info.Tap{
+	return snapshot.Tap{
 		Name:      name,
 		MediaKind: media,
 		Domain:    domain,
@@ -1629,7 +1632,7 @@ func specHasNode(spec pipeline.Spec, name string) bool {
 
 func runtimeBranchInvalidError(reason string, suggestion string) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchInvalid,
+		Code:      codes.RuntimeBranchInvalid,
 		Operation: "attach runtime branch",
 		Reason:    reason,
 		Suggestions: []string{
@@ -1641,7 +1644,7 @@ func runtimeBranchInvalidError(reason string, suggestion string) error {
 
 func runtimeBranchAnchorMissingError(node string) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchAnchorMissing,
+		Code:      codes.RuntimeBranchAnchorMissing,
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "branch source node does not exist in the running task graph",
@@ -1654,13 +1657,13 @@ func runtimeBranchAnchorMissingError(node string) error {
 	}
 }
 
-func runtimeBranchTapMissingError(name string, taps []info.Tap) error {
+func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 	details := make([]string, 0, len(taps))
 	for i := range taps {
 		details = append(details, taps[i].Name+": "+string(taps[i].Domain)+" "+string(taps[i].MediaKind))
 	}
 	return &BuildError{
-		Code:      CodeRuntimeBranchTapMissing,
+		Code:      codes.RuntimeBranchTapMissing,
 		Operation: "attach runtime branch",
 		Node:      name,
 		Reason:    "branch source tap does not exist in the running task",
@@ -1676,7 +1679,7 @@ func runtimeBranchTapMissingError(name string, taps []info.Tap) error {
 
 func runtimeBranchNodeDuplicateError(node string) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchNodeDuplicate,
+		Code:      codes.RuntimeBranchNodeDuplicate,
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "branch node name already exists in the task graph",
@@ -1690,7 +1693,7 @@ func runtimeBranchNodeDuplicateError(node string) error {
 
 func duplicateRuntimeBranchDestinationRefError(branch string, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Code:      CodeDestinationDuplicate,
+		Code:      codes.DestinationDuplicate,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", label),
@@ -1709,7 +1712,7 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 
 func runtimeBranchTapDuplicateError(name string) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchTapDuplicate,
+		Code:      codes.RuntimeBranchTapDuplicate,
 		Operation: "attach runtime branch",
 		Node:      name,
 		Reason:    "branch tap name already exists in the task",
@@ -1723,7 +1726,7 @@ func runtimeBranchTapDuplicateError(name string) error {
 
 func runtimeBranchTransformMediaError(branch string, transform string, media string) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchTransformMediaMismatch,
+		Code:      codes.RuntimeBranchTransformMediaMismatch,
 		Operation: "attach runtime branch",
 		Node:      branch,
 		Reason:    transform + " applies to " + media + " frame taps",
@@ -1741,7 +1744,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 		return nil
 	}
 	return &BuildError{
-		Code:      CodeRuntimeBranchTransformError,
+		Code:      codes.RuntimeBranchTransformError,
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "runtime branch transform could not be opened",
@@ -1756,7 +1759,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 
 func runtimeBranchEncodeMissingError(branch string) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchEncodeMissing,
+		Code:      codes.RuntimeBranchEncodeMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "muxed runtime branches need packet copy or an encoder",
@@ -1771,7 +1774,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 
 func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchEncodeDomainMismatch,
+		Code:      codes.RuntimeBranchEncodeDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch encoding requires a frame tap",
@@ -1787,7 +1790,7 @@ func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchDecodeDomainMismatch,
+		Code:      codes.RuntimeBranchDecodeDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decoding requires a packet tap",
@@ -1803,7 +1806,7 @@ func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchDecodeCodecMissing,
+		Code:      codes.RuntimeBranchDecodeCodecMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decode needs packet codec metadata",
@@ -1819,7 +1822,7 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error
 
 func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchCopyDomainMismatch,
+		Code:      codes.RuntimeBranchCopyDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch packet copy requires a packet tap",
@@ -1835,7 +1838,7 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchMuxCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchMuxCodecMissing,
+		Code:      codes.RuntimeBranchMuxCodecMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch mux destination needs codec metadata",
@@ -1865,7 +1868,7 @@ func runtimeBranchShapeDetails(shape shape.Spec) []string {
 
 func runtimeBranchGraphError(operation string, node string, cause error) error {
 	return &BuildError{
-		Code:      CodeRuntimeBranchGraphError,
+		Code:      codes.RuntimeBranchGraphError,
 		Operation: operation,
 		Node:      node,
 		Reason:    "runtime graph rejected the branch attachment",

@@ -5,8 +5,9 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -352,7 +353,7 @@ func (b *chainBuilder) taps() []TapRef {
 	out := make([]TapRef, 0, len(b.spec.operations))
 	for i := range b.spec.operations {
 		operation := b.spec.operations[i]
-		if operation.Kind != info.OpTap || operation.Tap.Name == "" {
+		if operation.Kind != plan.OpTap || operation.Tap.Name == "" {
 			continue
 		}
 		out = append(out, TapRef{name: operation.Tap.Name, domain: operation.Tap.Domain})
@@ -441,7 +442,7 @@ func (b *chainBuilder) tap(tap TapRef) {
 	}
 	if tap.name == "" {
 		b.setErr(&BuildError{
-			Code:      CodeTapInvalid,
+			Code:      codes.TapInvalid,
 			Operation: "build flow",
 			Node:      firstNonEmpty(b.spec.name, "flow"),
 			Reason:    "tap name is empty",
@@ -458,7 +459,7 @@ func (b *chainBuilder) tap(tap TapRef) {
 			b.setErr(err)
 			return
 		}
-		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, info.OpEncode)))
+		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, plan.OpEncode)))
 		return
 	}
 	if err := validateTapDomain("build flow", firstNonEmpty(b.spec.name, "flow"), tap, shape.DomainFrame); err != nil {
@@ -516,15 +517,15 @@ func chainSpecFrom(flow Chain) (chainSpec, error) {
 // chainHasDecode / chainDecodeCodec / chainEncodeSpec derive a chain's decode and
 // encode facts from its operation list, so chainSpec keeps no parallel decode/
 // encode state — the operations are the single source of truth (one operation
-// list). The info.OpDecode operation carries the decode codec; the terminal
-// info.OpEncode/info.OpCopy carries the encode codec.
+// list). The plan.OpDecode operation carries the decode codec; the terminal
+// plan.OpEncode/plan.OpCopy carries the encode codec.
 func chainHasDecode(operations []OperationSpec) bool {
-	return operationSpecsContainKind(operations, info.OpDecode)
+	return operationSpecsContainKind(operations, plan.OpDecode)
 }
 
 func chainDecodeCodec(operations []OperationSpec) codec.CodecSpec {
 	for i := range operations {
-		if operations[i].Kind == info.OpDecode {
+		if operations[i].Kind == plan.OpDecode {
 			return operations[i].Decode
 		}
 	}
@@ -533,7 +534,7 @@ func chainDecodeCodec(operations []OperationSpec) codec.CodecSpec {
 
 func chainEncodeSpec(operations []OperationSpec) codec.CodecSpec {
 	for i := range operations {
-		if operations[i].Kind == info.OpEncode || operations[i].Kind == info.OpCopy {
+		if operations[i].Kind == plan.OpEncode || operations[i].Kind == plan.OpCopy {
 			return operations[i].Encode
 		}
 	}
@@ -570,7 +571,7 @@ func duplicateFlowEncodeError(name string, first codec.CodecSpec, second codec.C
 
 func duplicateFlowDecodeError(node string) error {
 	return &BuildError{
-		Code:      CodeFlowDecodeDuplicate,
+		Code:      codes.FlowDecodeDuplicate,
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "flow already decodes its input packets",
@@ -584,7 +585,7 @@ func duplicateFlowDecodeError(node string) error {
 
 func flowDecodeOrderError(node string) error {
 	return &BuildError{
-		Code:      CodeFlowDecodeOrderInvalid,
+		Code:      codes.FlowDecodeOrderInvalid,
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "decode must be the first flow operation",
@@ -598,7 +599,7 @@ func flowDecodeOrderError(node string) error {
 
 func flowDecodeDomainError(operation string, node string) error {
 	return &BuildError{
-		Code:      CodeFlowDecodeDomainMismatch,
+		Code:      codes.FlowDecodeDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow decoding requires a packet-domain stream point",
@@ -613,7 +614,7 @@ func flowDecodeDomainError(operation string, node string) error {
 
 func flowCopyDomainError(operation string, node string) error {
 	return &BuildError{
-		Code:      CodeFlowCopyDomainMismatch,
+		Code:      codes.FlowCopyDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow copying requires a packet-domain stream point",
@@ -628,7 +629,7 @@ func flowCopyDomainError(operation string, node string) error {
 
 func nilFlowError() error {
 	return &BuildError{
-		Code:      CodeFlowInvalid,
+		Code:      codes.FlowInvalid,
 		Operation: "build flow",
 		Reason:    "flow is nil",
 		Suggestions: []string{
@@ -643,7 +644,7 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 		return nil
 	}
 	return &BuildError{
-		Code:      CodeFlowMediaMismatch,
+		Code:      codes.FlowMediaMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(spec.name, node, "flow"),
 		Reason:    string(spec.media) + " flow cannot be applied to " + string(selected) + " stream",
@@ -657,7 +658,7 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 
 func branchInputCountError(node string, count int) error {
 	return &BuildError{
-		Code:      CodeInputCountUnsupported,
+		Code:      codes.InputCountUnsupported,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branches currently compose from one input",
@@ -674,7 +675,7 @@ func branchInputCountError(node string, count int) error {
 
 func branchOutputScopeError(node string) error {
 	return &BuildError{
-		Code:      CodeOutputScopeMixed,
+		Code:      codes.OutputScopeMixed,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch destinations are declared inside Branch(...).To(...)",

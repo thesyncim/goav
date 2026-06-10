@@ -14,7 +14,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
@@ -176,7 +176,7 @@ func lateStreamSource(late av.Stream, payload byte, stopLate <-chan struct{}, fi
 func taskHasBranch(task Task, name string) bool {
 	branches := task.Snapshot().Branches
 	for i := range branches {
-		if branches[i].Name == name && branches[i].State == info.BranchAttached {
+		if branches[i].Name == name && branches[i].State == lifecycle.BranchAttached {
 			return true
 		}
 	}
@@ -240,12 +240,12 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 	waitForCondition(t, "late branch attached", func() bool {
 		return taskHasBranch(task, "record-late-audio")
 	})
-	snapshot := task.Snapshot()
-	for _, branch := range snapshot.Branches {
+	snap := task.Snapshot()
+	for _, branch := range snap.Branches {
 		if branch.Name != "record-late-audio" {
 			continue
 		}
-		if len(branch.Destinations) == 0 || branch.Destinations[0].State != info.DestinationOpen {
+		if len(branch.Destinations) == 0 || branch.Destinations[0].State != lifecycle.DestinationOpen {
 			t.Fatalf("attached branch destinations = %+v, want open", branch.Destinations)
 		}
 	}
@@ -472,12 +472,12 @@ func TestOnStreamRuleVisibleInExplain(t *testing.T) {
 		OnStream(MatchMedia(av.MediaAudio), Branch("record").Copy().To(monitor)).
 		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil })))
 
-	plan, err := job.Explain(ctx)
+	report, err := job.Explain(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	found := false
-	for _, decision := range plan.Decisions {
+	for _, decision := range report.Decisions {
 		if decision.Code != "stream_rule" {
 			continue
 		}
@@ -487,7 +487,7 @@ func TestOnStreamRuleVisibleInExplain(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("no stream_rule decision in plan: %+v", plan.Decisions)
+		t.Fatalf("no stream_rule decision in plan: %+v", report.Decisions)
 	}
 }
 

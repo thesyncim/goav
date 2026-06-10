@@ -11,10 +11,11 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/info"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 )
@@ -123,7 +124,7 @@ func TestGraphPlanUsesSharedBuildLifecycle(t *testing.T) {
 func TestGraphPlanBuildValidatesOperationsBeforeLowerer(t *testing.T) {
 	runtime := New().(*runtime)
 	lowerer := &graphPlanTestLowerer{runtime: runtime}
-	plan := graphPlan{
+	gp := graphPlan{
 		runtime: runtime,
 		name:    "goav",
 		nodes: []pipeline.NodeSpec{{
@@ -133,7 +134,7 @@ func TestGraphPlanBuildValidatesOperationsBeforeLowerer(t *testing.T) {
 		lowerer: lowerer,
 	}
 
-	task, err := buildGraphPlanTask(context.Background(), plan)
+	task, err := buildGraphPlanTask(context.Background(), gp)
 	if err == nil {
 		task.Close()
 		t.Fatal("buildGraphPlanTask() error = nil, want invalid graph-plan error")
@@ -152,26 +153,26 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 	branches := []planBranch{{
 		Name:  "preview",
 		Input: "input.ivf",
-		Stream: info.StreamSelect{
+		Stream: plan.StreamSelect{
 			Type:  av.MediaVideo,
 			Codec: av.CodecVP8,
 		},
 		Shape: shape.Packet(av.MediaVideo, av.CodecVP8),
 		Operations: []planOperation{{
-			Kind:      info.OpDecode,
+			Kind:      plan.OpDecode,
 			Component: string(av.CodecVP8),
 			Shape:     shape.Frame(av.MediaVideo, shape.Video(640, 360, "i420")),
 		}, {
-			Kind:      info.OpTap,
+			Kind:      plan.OpTap,
 			Component: "video.decoded",
-			After:     info.OpDecode,
+			After:     plan.OpDecode,
 			Shape:     shape.Frame(av.MediaVideo, shape.Video(640, 360, "i420")),
 		}},
 		Outputs: []string{"frames"},
 	}}
 	outputs := []planOutput{{
 		Name:       "frames",
-		Operation:  info.OpSink,
+		Operation:  plan.OpSink,
 		Component:  "sink",
 		BranchRefs: []string{"preview"},
 	}}
@@ -200,7 +201,7 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 		}},
 		[]workStream{{
 			Name: "video",
-			Select: info.StreamSelect{
+			Select: plan.StreamSelect{
 				Type:  av.MediaVideo,
 				Codec: av.CodecVP8,
 			},
@@ -221,7 +222,7 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 	if len(work.Branches) != 1 || work.Branches[0].Name != "preview" {
 		t.Fatalf("work branches = %+v, want preview branch", work.Branches)
 	}
-	if got, want := workPlanOperationKindsForBranch(work.Operations, "preview"), []info.OperationKind{info.OpDecode, info.OpTap, info.OpSink}; !reflect.DeepEqual(got, want) {
+	if got, want := workPlanOperationKindsForBranch(work.Operations, "preview"), []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpSink}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("work operations = %+v, want %+v", got, want)
 	}
 	if len(work.Destinations) != 1 || work.Destinations[0].Name != "frames" || len(work.Destinations[0].Branches) != 1 {
@@ -587,7 +588,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := operationSpecKindsForTest(flowSpec.operations), []info.OperationKind{info.OpTransform, info.OpTap, info.OpEncode, info.OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(flowSpec.operations), []plan.OperationKind{plan.OpTransform, plan.OpTap, plan.OpEncode, plan.OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("flow operations = %+v, want %+v", got, want)
 	}
 	flowOutputs := voice.OutputShapes(shape.Frame(
@@ -616,7 +617,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	if job.currentStream() == nil {
 		t.Fatal("job stream is nil")
 	}
-	if got, want := operationSpecKindsForTest(job.currentStream().operations), []info.OperationKind{info.OpDecode, info.OpTransform, info.OpTap, info.OpEncode, info.OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(job.currentStream().operations), []plan.OperationKind{plan.OpDecode, plan.OpTransform, plan.OpTap, plan.OpEncode, plan.OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("recipe chain stored operations = %+v, want %+v", got, want)
 	}
 
@@ -626,7 +627,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	if branch.err != nil {
 		t.Fatal(branch.err)
 	}
-	if got, want := operationSpecKindsForTest(branch.operations), []info.OperationKind{info.OpTransform, info.OpTap, info.OpEncode, info.OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(branch.operations), []plan.OperationKind{plan.OpTransform, plan.OpTap, plan.OpEncode, plan.OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("branch stored operations = %+v, want %+v", got, want)
 	}
 }
@@ -649,10 +650,10 @@ func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 	if len(stream.sharedOps) != 0 {
 		t.Fatalf("shared operations = %+v, want none before implicit decode", stream.sharedOps)
 	}
-	if got, want := operationSpecKindsForTest(stream.privateOps), []info.OperationKind{info.OpTransform, info.OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(stream.privateOps), []plan.OperationKind{plan.OpTransform, plan.OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("private operations = %+v, want %+v", got, want)
 	}
-	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(stream)), []info.OperationKind{info.OpDecode, info.OpTransform, info.OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(stream)), []plan.OperationKind{plan.OpDecode, plan.OpTransform, plan.OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("normalized operations = %+v, want %+v", got, want)
 	}
 }
@@ -673,7 +674,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if len(decodeJob.branchStreams) != 1 {
 		t.Fatalf("decode branch streams = %d, want 1", len(decodeJob.branchStreams))
 	}
-	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(decodeJob.branchStreams[0])), []info.OperationKind{info.OpDecode, info.OpTransform, info.OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(decodeJob.branchStreams[0])), []plan.OperationKind{plan.OpDecode, plan.OpTransform, plan.OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("decode branch operations = %+v, want %+v", got, want)
 	}
 
@@ -692,7 +693,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if len(copyJob.branchStreams) != 1 {
 		t.Fatalf("copy branch streams = %d, want 1", len(copyJob.branchStreams))
 	}
-	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(copyJob.branchStreams[0])), []info.OperationKind{info.OpCopy, info.OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(copyJob.branchStreams[0])), []plan.OperationKind{plan.OpCopy, plan.OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("copy branch operations = %+v, want %+v", got, want)
 	}
 	if tap := streamBuildOperationSpecs(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != shape.DomainPacket {
@@ -705,7 +706,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if len(copyPlan.Branches) != 1 {
 		t.Fatalf("copy plan branches = %d, want 1", len(copyPlan.Branches))
 	}
-	if got, want := operationSpecKindsForTest(copyPlan.Branches[0].Operations), []info.OperationKind{info.OpCopy, info.OpTap}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(copyPlan.Branches[0].Operations), []plan.OperationKind{plan.OpCopy, plan.OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("copy plan operations = %+v, want %+v", got, want)
 	}
 	if len(copyPlan.Branches[0].PrivateOperations) != 2 ||
@@ -744,7 +745,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	}
 
 	rawOps := streamBuildOperationSpecs(job.branchStreams[0])
-	if got, want := operationSpecKindsForTest(rawOps), []info.OperationKind{info.OpDecode, info.OpTap, info.OpTransform}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(rawOps), []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpTransform}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("raw operations = %+v, want %+v", got, want)
 	}
 	if !rawOps[0].Shared || !rawOps[1].Shared || rawOps[2].Shared {
@@ -755,7 +756,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	}
 
 	webOps := streamBuildOperationSpecs(job.branchStreams[1])
-	if got, want := operationSpecKindsForTest(webOps), []info.OperationKind{info.OpDecode, info.OpTap, info.OpTransform, info.OpTap, info.OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(webOps), []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpTransform, plan.OpTap, plan.OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("web operations = %+v, want %+v", got, want)
 	}
 	for i := 0; i < 4; i++ {
@@ -770,34 +771,34 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web operations = %+v, want anchor tap video.720p.frames", webOps)
 	}
 
-	plan, err := planBranchCompositionRecipe(job.plan(), job.inputs[0], job.branchDestinations, job.branchStreams)
+	gp, err := planBranchCompositionRecipe(job.plan(), job.inputs[0], job.branchDestinations, job.branchStreams)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Branches) != 2 {
-		t.Fatalf("plan branches = %d, want 2", len(plan.Branches))
+	if len(gp.Branches) != 2 {
+		t.Fatalf("plan branches = %d, want 2", len(gp.Branches))
 	}
-	if len(plan.Branches[0].SharedOperations) != 2 ||
-		len(plan.Branches[0].PrivateOperations) != 1 ||
-		plan.Branches[0].PrivateOperations[0].Transform.Resize == nil ||
-		plan.Branches[0].PrivateOperations[0].Transform.Resize.Width != 320 {
-		t.Fatalf("raw plan branch = %+v, want private thumbnail resize from operation split", plan.Branches[0])
+	if len(gp.Branches[0].SharedOperations) != 2 ||
+		len(gp.Branches[0].PrivateOperations) != 1 ||
+		gp.Branches[0].PrivateOperations[0].Transform.Resize == nil ||
+		gp.Branches[0].PrivateOperations[0].Transform.Resize.Width != 320 {
+		t.Fatalf("raw plan branch = %+v, want private thumbnail resize from operation split", gp.Branches[0])
 	}
-	if len(plan.Branches[1].SharedOperations) != 4 ||
-		plan.Branches[1].SharedOperations[2].Transform.Resize == nil ||
-		plan.Branches[1].SharedOperations[2].Transform.Resize.Width != 1280 ||
-		len(plan.Branches[1].PrivateOperations) != 1 {
-		t.Fatalf("web plan branch = %+v, want shared 720p resize from operation split", plan.Branches[1])
+	if len(gp.Branches[1].SharedOperations) != 4 ||
+		gp.Branches[1].SharedOperations[2].Transform.Resize == nil ||
+		gp.Branches[1].SharedOperations[2].Transform.Resize.Width != 1280 ||
+		len(gp.Branches[1].PrivateOperations) != 1 {
+		t.Fatalf("web plan branch = %+v, want shared 720p resize from operation split", gp.Branches[1])
 	}
 
-	if got, want := operationSpecKindsForTest(plan.Branches[0].Operations), []info.OperationKind{info.OpDecode, info.OpTap, info.OpTransform}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(gp.Branches[0].Operations), []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpTransform}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("raw plan operations = %+v, want %+v", got, want)
 	}
-	if got, want := operationSpecKindsForTest(plan.Branches[1].Operations), []info.OperationKind{info.OpDecode, info.OpTap, info.OpTransform, info.OpTap, info.OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(gp.Branches[1].Operations), []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpTransform, plan.OpTap, plan.OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("web plan operations = %+v, want %+v", got, want)
 	}
 
-	routes, _, err := prepareBranchComposePlan(plan)
+	routes, _, err := prepareBranchComposePlan(gp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -808,7 +809,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	rawPrivate := branchComposeRouteStageOperations(routes[0].privateOperations)
 	if len(rawShared) != 0 ||
 		len(rawPrivate) != 1 ||
-		rawPrivate[0].Kind != info.OpTransform ||
+		rawPrivate[0].Kind != plan.OpTransform ||
 		rawPrivate[0].Transform.Resize == nil ||
 		rawPrivate[0].Transform.Resize.Width != 320 {
 		t.Fatalf("raw route = %+v, want private thumbnail resize from operation fields", routes[0])
@@ -816,7 +817,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	webShared := branchComposeRouteStageOperations(routes[1].sharedOperations)
 	webPrivate := branchComposeRouteStageOperations(routes[1].privateOperations)
 	if len(webShared) != 1 ||
-		webShared[0].Kind != info.OpTransform ||
+		webShared[0].Kind != plan.OpTransform ||
 		webShared[0].Transform.Resize == nil ||
 		webShared[0].Transform.Resize.Width != 1280 ||
 		len(webPrivate) != 0 {
@@ -829,15 +830,15 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		intent:                       job.plan(),
 		branchInputAttachment:        job.inputs[0],
 		branchDestinationAttachments: job.branchDestinations,
-		plan:                         plan,
+		plan:                         gp,
 	}, pipeline.Spec{})
 	if len(work.Branches) != 2 {
 		t.Fatalf("work branches = %d, want 2", len(work.Branches))
 	}
-	if got, want := workPlanOperationKindsForBranch(work.Operations, "raw-preview"), []info.OperationKind{info.OpDemux, info.OpSelect, info.OpDecode, info.OpTap, info.OpTransform, info.OpSink}; !reflect.DeepEqual(got, want) {
+	if got, want := workPlanOperationKindsForBranch(work.Operations, "raw-preview"), []plan.OperationKind{plan.OpDemux, plan.OpSelect, plan.OpDecode, plan.OpTap, plan.OpTransform, plan.OpSink}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("raw work operations = %+v, want %+v", got, want)
 	}
-	if got, want := workPlanOperationKindsForBranch(work.Operations, "web"), []info.OperationKind{info.OpDemux, info.OpSelect, info.OpDecode, info.OpTap, info.OpTransform, info.OpTap, info.OpEncode, info.OpMux}; !reflect.DeepEqual(got, want) {
+	if got, want := workPlanOperationKindsForBranch(work.Operations, "web"), []plan.OperationKind{plan.OpDemux, plan.OpSelect, plan.OpDecode, plan.OpTap, plan.OpTransform, plan.OpTap, plan.OpEncode, plan.OpMux}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("web work operations = %+v, want %+v", got, want)
 	}
 	webWorkOps := workPlanOperationsForBranch(work.Operations, "web")
@@ -854,8 +855,8 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	}
 }
 
-func operationSpecKindsForTest(operations []OperationSpec) []info.OperationKind {
-	out := make([]info.OperationKind, 0, len(operations))
+func operationSpecKindsForTest(operations []OperationSpec) []plan.OperationKind {
+	out := make([]plan.OperationKind, 0, len(operations))
 	for i := range operations {
 		out = append(out, operations[i].Kind)
 	}
@@ -872,9 +873,9 @@ func workPlanOperationsForBranch(operations []workOperation, branch string) []wo
 	return out
 }
 
-func workPlanOperationKindsForBranch(operations []workOperation, branch string) []info.OperationKind {
+func workPlanOperationKindsForBranch(operations []workOperation, branch string) []plan.OperationKind {
 	operations = workPlanOperationsForBranch(operations, branch)
-	out := make([]info.OperationKind, 0, len(operations))
+	out := make([]plan.OperationKind, 0, len(operations))
 	for i := range operations {
 		out = append(out, operations[i].Kind)
 	}
@@ -1000,7 +1001,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  ErrorCode
+		code  codes.Code
 		want  string
 	}{
 		{
@@ -1319,7 +1320,7 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 			Inputs: []inputIntent{{Name: "input.ivf"}},
 			Streams: []streamIntent{{
 				Name:         "audio",
-				Select:       info.StreamSelect{Type: av.MediaAudio},
+				Select:       plan.StreamSelect{Type: av.MediaAudio},
 				Operations:   encodeIntentOperations(codec.Opus(codec.Bitrate(96_000))),
 				Destinations: []string{"archive"},
 			}},
@@ -1379,7 +1380,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  ErrorCode
+		code  codes.Code
 		want  []string
 	}{
 		{
@@ -1504,14 +1505,14 @@ func TestKnownInputStreamSelectionPassRejectsProbedAmbiguousAndMissingStreams(t 
 	tests := []struct {
 		name   string
 		stream streamIntent
-		code   ErrorCode
+		code   codes.Code
 		want   []string
 	}{
 		{
 			name: "ambiguous probed audio",
 			stream: streamIntent{
 				Name:       "audio",
-				Select:     info.StreamSelect{Type: av.MediaAudio},
+				Select:     plan.StreamSelect{Type: av.MediaAudio},
 				Operations: decodeIntentOperations(),
 			},
 			code: "stream_ambiguous",
@@ -1521,7 +1522,7 @@ func TestKnownInputStreamSelectionPassRejectsProbedAmbiguousAndMissingStreams(t 
 			name: "missing probed video",
 			stream: streamIntent{
 				Name:       "video",
-				Select:     info.StreamSelect{Type: av.MediaVideo},
+				Select:     plan.StreamSelect{Type: av.MediaVideo},
 				Operations: decodeIntentOperations(),
 			},
 			code: "stream_missing",
@@ -1559,7 +1560,7 @@ func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) 
 	tests := []struct {
 		name   string
 		intent Intent
-		code   ErrorCode
+		code   codes.Code
 		want   []string
 	}{
 		{
@@ -1571,7 +1572,7 @@ func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) 
 				},
 				Streams: []streamIntent{{
 					Name:       "video",
-					Select:     info.StreamSelect{Type: av.MediaVideo},
+					Select:     plan.StreamSelect{Type: av.MediaVideo},
 					Operations: decodeIntentOperations(),
 				}},
 			},
@@ -1586,7 +1587,7 @@ func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) 
 				},
 				Streams: []streamIntent{{
 					Name:       "audio",
-					Select:     info.StreamSelect{Type: av.MediaAudio},
+					Select:     plan.StreamSelect{Type: av.MediaAudio},
 					Operations: decodeIntentOperations(),
 				}},
 			},
@@ -1652,7 +1653,7 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  ErrorCode
+		code  codes.Code
 		cause error
 		want  []string
 	}{
@@ -1671,7 +1672,7 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 					}},
 					Streams: []streamIntent{{
 						Name:       "audio",
-						Select:     info.StreamSelect{Type: av.MediaAudio},
+						Select:     plan.StreamSelect{Type: av.MediaAudio},
 						Operations: decodeIntentOperations(),
 					}},
 				},
@@ -1695,7 +1696,7 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 					}},
 					Streams: []streamIntent{{
 						Name:       "video",
-						Select:     info.StreamSelect{Type: av.MediaVideo},
+						Select:     plan.StreamSelect{Type: av.MediaVideo},
 						Operations: decodeIntentOperations(),
 					}},
 				},
@@ -1733,7 +1734,7 @@ func TestDecodeAdapterPassDefersAmbiguousLiveSelection(t *testing.T) {
 			},
 			Streams: []streamIntent{{
 				Name:       "video",
-				Select:     info.StreamSelect{Type: av.MediaVideo},
+				Select:     plan.StreamSelect{Type: av.MediaVideo},
 				Operations: decodeIntentOperations(),
 			}},
 		},
@@ -1765,7 +1766,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  ErrorCode
+		code  codes.Code
 		cause error
 		want  []string
 	}{
@@ -1778,7 +1779,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 				runtime:   New(),
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "audio",
-					Select:     info.StreamSelect{Type: av.MediaAudio},
+					Select:     plan.StreamSelect{Type: av.MediaAudio},
 					Operations: decodeIntentOperations(),
 				}}},
 				inputProbes: []format.ProbeResult{{
@@ -1804,7 +1805,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 				runtime:   descriptorRuntime,
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "video",
-					Select:     info.StreamSelect{Type: av.MediaVideo},
+					Select:     plan.StreamSelect{Type: av.MediaVideo},
 					Operations: decodeIntentOperations(),
 				}}},
 				inputProbes: []format.ProbeResult{{
@@ -1830,7 +1831,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 				runtime:   New(),
 				intent: Intent{Streams: []streamIntent{{
 					Name:         "360p",
-					Select:       info.StreamSelect{Type: av.MediaVideo},
+					Select:       plan.StreamSelect{Type: av.MediaVideo},
 					Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 					Destinations: []string{"web"},
 				}}},
@@ -1873,7 +1874,7 @@ func TestKnownInputDecodeAdapterPassDefersAmbiguousSelection(t *testing.T) {
 		runtime:   New(),
 		intent: Intent{Streams: []streamIntent{{
 			Name:       "audio",
-			Select:     info.StreamSelect{Type: av.MediaAudio},
+			Select:     plan.StreamSelect{Type: av.MediaAudio},
 			Operations: decodeIntentOperations(),
 		}}},
 		inputProbes: []format.ProbeResult{{
@@ -1917,7 +1918,7 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 					}},
 					Streams: []streamIntent{{
 						Name:       "audio",
-						Select:     info.StreamSelect{Type: av.MediaAudio},
+						Select:     plan.StreamSelect{Type: av.MediaAudio},
 						Operations: decodeIntentOperations(),
 					}},
 				},
@@ -1939,7 +1940,7 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))),
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "audio",
-					Select:     info.StreamSelect{Type: av.MediaAudio},
+					Select:     plan.StreamSelect{Type: av.MediaAudio},
 					Operations: decodeIntentOperations(),
 				}}},
 				inputProbes: []format.ProbeResult{{
@@ -1973,7 +1974,7 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))),
 				intent: Intent{Streams: []streamIntent{{
 					Name:         "preview",
-					Select:       info.StreamSelect{Type: av.MediaVideo},
+					Select:       plan.StreamSelect{Type: av.MediaVideo},
 					Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 					Destinations: []string{"web"},
 				}}},
@@ -2030,7 +2031,7 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  ErrorCode
+		code  codes.Code
 		cause error
 		want  []string
 	}{
@@ -2104,7 +2105,7 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				}, &encodeTestEncoderFactory{}))),
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "audio",
-					Select:     info.StreamSelect{Type: av.MediaAudio},
+					Select:     plan.StreamSelect{Type: av.MediaAudio},
 					Operations: encodeIntentOperations(codec.Codec(audioCodec, av.MediaAudio)),
 				}}},
 			},
@@ -2125,7 +2126,7 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				}, &encodeTestEncoderFactory{}))),
 				intent: Intent{Streams: []streamIntent{{
 					Name:   "voice",
-					Select: info.StreamSelect{Type: av.MediaAudio},
+					Select: plan.StreamSelect{Type: av.MediaAudio},
 					Operations: encodeIntentOperations(codec.CodecSpec{ID: audioCodec, Type: av.MediaAudio, Parameters: av.CodecParameters{
 						ID:           audioCodec,
 						Type:         av.MediaAudio,
@@ -2150,7 +2151,7 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				}, &encodeTestEncoderFactory{}))),
 				intent: Intent{Streams: []streamIntent{{
 					Name:   "preview",
-					Select: info.StreamSelect{Type: av.MediaVideo},
+					Select: plan.StreamSelect{Type: av.MediaVideo},
 					Operations: append([]OperationSpec{operationSpecForTransform(TransformSpec{
 						Resize: &filter.ResizeConfig{
 							Width:       640,
@@ -2195,7 +2196,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 				runtime:   New(),
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "audio",
-					Select:     info.StreamSelect{Type: av.MediaAudio},
+					Select:     plan.StreamSelect{Type: av.MediaAudio},
 					Operations: []OperationSpec{operationSpecForTransform(Resample(16_000, codec.Mono))},
 				}}},
 			},
@@ -2210,7 +2211,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 				runtime:   New(),
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "720p",
-					Select:     info.StreamSelect{Type: av.MediaVideo},
+					Select:     plan.StreamSelect{Type: av.MediaVideo},
 					Operations: []OperationSpec{operationSpecForTransform(Resize(1280, 720))},
 				}}},
 			},
@@ -2253,7 +2254,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				}, &transcodeTestFilterFactory{}))),
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "audio",
-					Select:     info.StreamSelect{Type: av.MediaAudio},
+					Select:     plan.StreamSelect{Type: av.MediaAudio},
 					Operations: []OperationSpec{operationSpecForTransform(Resample(16_000, codec.Mono))},
 				}}},
 			},
@@ -2272,7 +2273,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				}, &transcodeTestFilterFactory{}))),
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "720p",
-					Select:     info.StreamSelect{Type: av.MediaVideo},
+					Select:     plan.StreamSelect{Type: av.MediaVideo},
 					Operations: []OperationSpec{operationSpecForTransform(Resize(1280, 720))},
 				}}},
 			},
@@ -2292,7 +2293,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				}, &transcodeTestFilterFactory{}))),
 				intent: Intent{Streams: []streamIntent{{
 					Name:       "video",
-					Select:     info.StreamSelect{Type: av.MediaVideo},
+					Select:     plan.StreamSelect{Type: av.MediaVideo},
 					Operations: []OperationSpec{operationSpecForTransform(Resize(1280, 720))},
 				}}},
 			},
@@ -2313,7 +2314,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				}, &transcodeTestFilterFactory{}))),
 				intent: Intent{Streams: []streamIntent{{
 					Name:   "preview",
-					Select: info.StreamSelect{Type: av.MediaVideo},
+					Select: plan.StreamSelect{Type: av.MediaVideo},
 					Operations: []OperationSpec{operationSpecForTransform(TransformSpec{
 						Resize: &filter.ResizeConfig{
 							Width:       640,
@@ -2340,7 +2341,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				}, &transcodeTestFilterFactory{}))),
 				intent: Intent{Streams: []streamIntent{{
 					Name:   "audio",
-					Select: info.StreamSelect{Type: av.MediaAudio},
+					Select: plan.StreamSelect{Type: av.MediaAudio},
 					Operations: []OperationSpec{operationSpecForTransform(TransformSpec{
 						Resample: &filter.ResampleConfig{
 							SampleRate:   16_000,
@@ -2376,7 +2377,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 		name    string
 		stream  streamIntent
 		outputs []destinationSpec
-		code    ErrorCode
+		code    codes.Code
 		want    []string
 	}{
 		{
@@ -2454,7 +2455,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  ErrorCode
+		code  codes.Code
 		want  []string
 	}{
 		{
@@ -2466,7 +2467,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 					Inputs: []inputIntent{{Name: "input"}},
 					Streams: []streamIntent{{
 						Name:         "audio",
-						Select:       info.StreamSelect{Type: av.MediaAudio},
+						Select:       plan.StreamSelect{Type: av.MediaAudio},
 						Operations:   append(decodeIntentOperations(), operationSpecForTransform(Resize(320, 180))),
 						Destinations: []string{"frames"},
 					}},
@@ -2485,7 +2486,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 					Inputs: []inputIntent{{Name: "input"}},
 					Streams: []streamIntent{{
 						Name:         "video",
-						Select:       info.StreamSelect{Type: av.MediaVideo},
+						Select:       plan.StreamSelect{Type: av.MediaVideo},
 						Operations:   append([]OperationSpec{operationSpecForTransform(Resample(48_000, codec.Stereo))}, operationSpecForEncode(codec.VP9(codec.Bitrate(2_000_000)))),
 						Destinations: []string{"web"},
 					}},
@@ -2516,18 +2517,18 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 	tests := []struct {
 		name   string
 		stream streamIntent
-		code   ErrorCode
+		code   codes.Code
 		want   []string
 	}{
 		{
 			name: "encode after packet annotation",
 			stream: streamIntent{
 				Name:   "video",
-				Select: info.StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
+				Select: plan.StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
 				Operations: []OperationSpec{
-					{Kind: info.OpDecode, Decode: codec.VP8()},
-					{Kind: info.OpShape, Component: "shape", Shape: shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaVideo))},
-					{Kind: info.OpEncode, Component: string(av.CodecVP9), Encode: codec.VP9(codec.Bitrate(2_000_000))},
+					{Kind: plan.OpDecode, Decode: codec.VP8()},
+					{Kind: plan.OpShape, Component: "shape", Shape: shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaVideo))},
+					{Kind: plan.OpEncode, Component: string(av.CodecVP9), Encode: codec.VP9(codec.Bitrate(2_000_000))},
 				},
 				Destinations: []string{"web"},
 			},
@@ -2544,11 +2545,11 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 			name: "resize after audio annotation",
 			stream: streamIntent{
 				Name:   "video",
-				Select: info.StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
+				Select: plan.StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
 				Operations: []OperationSpec{
-					{Kind: info.OpDecode, Decode: codec.VP8()},
-					{Kind: info.OpShape, Component: "shape", Shape: shape.New(shape.Media(av.MediaAudio))},
-					{Kind: info.OpTransform, Component: filter.FactoryResize, Transform: Resize(640, 360)},
+					{Kind: plan.OpDecode, Decode: codec.VP8()},
+					{Kind: plan.OpShape, Component: "shape", Shape: shape.New(shape.Media(av.MediaAudio))},
+					{Kind: plan.OpTransform, Component: filter.FactoryResize, Transform: Resize(640, 360)},
 				},
 				Destinations: []string{"frames"},
 			},
@@ -2565,10 +2566,10 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 			name: "copy after decode",
 			stream: streamIntent{
 				Name:   "audio",
-				Select: info.StreamSelect{Type: av.MediaAudio, Codec: av.CodecOpus},
+				Select: plan.StreamSelect{Type: av.MediaAudio, Codec: av.CodecOpus},
 				Operations: []OperationSpec{
-					{Kind: info.OpDecode, Decode: codec.Opus()},
-					{Kind: info.OpCopy, Component: "packet-copy", Encode: codec.Copy()},
+					{Kind: plan.OpDecode, Decode: codec.Opus()},
+					{Kind: plan.OpCopy, Component: "packet-copy", Encode: codec.Copy()},
 				},
 				Destinations: []string{"packets"},
 			},
@@ -2614,12 +2615,12 @@ func TestRecipeOperationShapePassAllowsCustomStageShapeDeclaration(t *testing.T)
 			Inputs: []inputIntent{{Name: "input"}},
 			Streams: []streamIntent{{
 				Name:   "visualized",
-				Select: info.StreamSelect{Type: av.MediaAudio, Codec: av.CodecOpus},
+				Select: plan.StreamSelect{Type: av.MediaAudio, Codec: av.CodecOpus},
 				Operations: []OperationSpec{
-					{Kind: info.OpDecode, Decode: codec.Opus()},
-					{Kind: info.OpStage, Component: "visualizer", Stage: &runtimeTestStage{name: "visualizer"}},
-					{Kind: info.OpShape, Component: "shape", Shape: shape.Frame(av.MediaVideo, shape.Video(640, 360, av.PixelFormatYUV420P))},
-					{Kind: info.OpEncode, Component: string(av.CodecVP9), Encode: codec.VP9(codec.Bitrate(600_000))},
+					{Kind: plan.OpDecode, Decode: codec.Opus()},
+					{Kind: plan.OpStage, Component: "visualizer", Stage: &runtimeTestStage{name: "visualizer"}},
+					{Kind: plan.OpShape, Component: "shape", Shape: shape.Frame(av.MediaVideo, shape.Video(640, 360, av.PixelFormatYUV420P))},
+					{Kind: plan.OpEncode, Component: string(av.CodecVP9), Encode: codec.VP9(codec.Bitrate(600_000))},
 				},
 				Destinations: []string{"web"},
 			}},
@@ -2638,10 +2639,10 @@ func TestRecipeDestinationShapePassRejectsFrameShapeForMuxDestination(t *testing
 			Inputs: []inputIntent{{Name: "input"}},
 			Streams: []streamIntent{{
 				Name:   "preview",
-				Select: info.StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
+				Select: plan.StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
 				Operations: []OperationSpec{
-					{Kind: info.OpDecode, Decode: codec.VP8()},
-					{Kind: info.OpStage, Component: "inspect", Stage: &runtimeTestStage{name: "inspect"}},
+					{Kind: plan.OpDecode, Decode: codec.VP8()},
+					{Kind: plan.OpStage, Component: "inspect", Stage: &runtimeTestStage{name: "inspect"}},
 				},
 				Destinations: []string{"archive.ivf"},
 			}},
@@ -2675,9 +2676,9 @@ func TestRecipeDestinationShapePassAllowsFrameShapeForSinkDestination(t *testing
 			Inputs: []inputIntent{{Name: "input"}},
 			Streams: []streamIntent{{
 				Name:   "preview",
-				Select: info.StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
+				Select: plan.StreamSelect{Type: av.MediaVideo, Codec: av.CodecVP8},
 				Operations: []OperationSpec{
-					{Kind: info.OpDecode, Decode: codec.VP8()},
+					{Kind: plan.OpDecode, Decode: codec.VP8()},
 				},
 				Destinations: []string{"frames"},
 			}},
@@ -2757,14 +2758,14 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 	tests := []struct {
 		name   string
 		stream streamIntent
-		code   ErrorCode
+		code   codes.Code
 		want   string
 	}{
 		{
 			name: "invalid resize",
 			stream: streamIntent{
 				Name:         "video",
-				Select:       info.StreamSelect{Type: av.MediaVideo},
+				Select:       plan.StreamSelect{Type: av.MediaVideo},
 				Operations:   append(decodeIntentOperations(), operationSpecForTransform(Resize(0, 720))),
 				Destinations: []string{"frames"},
 			},
@@ -2775,7 +2776,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 			name: "wrong media",
 			stream: streamIntent{
 				Name:         "audio",
-				Select:       info.StreamSelect{Type: av.MediaAudio},
+				Select:       plan.StreamSelect{Type: av.MediaAudio},
 				Operations:   append(decodeIntentOperations(), operationSpecForTransform(Resize(320, 180))),
 				Destinations: []string{"frames"},
 			},
@@ -2786,7 +2787,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 			name: "empty transform",
 			stream: streamIntent{
 				Name:         "video",
-				Select:       info.StreamSelect{Type: av.MediaVideo},
+				Select:       plan.StreamSelect{Type: av.MediaVideo},
 				Operations:   append(decodeIntentOperations(), operationSpecForTransform(TransformSpec{})),
 				Destinations: []string{"frames"},
 			},
@@ -2820,7 +2821,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 func TestMediaPlanTransformFiltersUseOperationSpecs(t *testing.T) {
 	stream := streamIntent{
 		Name:   "preview",
-		Select: info.StreamSelect{Type: av.MediaVideo},
+		Select: plan.StreamSelect{Type: av.MediaVideo},
 		Operations: []OperationSpec{
 			operationSpecForTransform(Resize(320, 180)),
 		},
@@ -2842,7 +2843,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  ErrorCode
+		code  codes.Code
 		want  string
 	}{
 		{
@@ -2852,7 +2853,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 				intent: Intent{
 					Streams: []streamIntent{{
 						Name:         "360p",
-						Select:       info.StreamSelect{Type: av.MediaVideo},
+						Select:       plan.StreamSelect{Type: av.MediaVideo},
 						Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 						Destinations: []string{"web"},
 					}},
@@ -2879,7 +2880,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 				intent: Intent{
 					Inputs: []inputIntent{{Name: "input.ivf"}},
 					Streams: []streamIntent{{
-						Select:       info.StreamSelect{Type: av.MediaVideo},
+						Select:       plan.StreamSelect{Type: av.MediaVideo},
 						Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 						Destinations: []string{"web"},
 					}},
@@ -2896,7 +2897,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Inputs: []inputIntent{{Name: "input.ivf"}},
 					Streams: []streamIntent{{
 						Name:         "360p",
-						Select:       info.StreamSelect{Type: av.MediaVideo},
+						Select:       plan.StreamSelect{Type: av.MediaVideo},
 						Operations:   decodeEncodeIntentOperations(codec.Copy()),
 						Destinations: []string{"web"},
 					}},
@@ -2913,7 +2914,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Inputs: []inputIntent{{Name: "input.ivf"}},
 					Streams: []streamIntent{{
 						Name:         "360p",
-						Select:       info.StreamSelect{Type: av.MediaVideo},
+						Select:       plan.StreamSelect{Type: av.MediaVideo},
 						Operations:   encodeIntentOperations(codec.Auto()),
 						Destinations: []string{"web"},
 					}},
@@ -2930,7 +2931,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Inputs: []inputIntent{{Name: "input.ivf"}},
 					Streams: []streamIntent{{
 						Name:         "360p",
-						Select:       info.StreamSelect{Type: av.MediaVideo},
+						Select:       plan.StreamSelect{Type: av.MediaVideo},
 						Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 						Destinations: []string{"web", "web"},
 					}},
@@ -2959,7 +2960,7 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  ErrorCode
+		code  codes.Code
 		want  string
 	}{
 		{
@@ -3009,7 +3010,7 @@ func TestTranscodeBranchTargetKindsPassAllowsCopyMuxBranches(t *testing.T) {
 			Inputs: []inputIntent{{Name: "input.ivf"}},
 			Streams: []streamIntent{{
 				Name:         "archive",
-				Select:       info.StreamSelect{Type: av.MediaVideo},
+				Select:       plan.StreamSelect{Type: av.MediaVideo},
 				Operations:   encodeIntentOperations(codec.Copy()),
 				Destinations: []string{"web"},
 			}},
@@ -3035,7 +3036,7 @@ func TestTranscodeBranchTargetKindsPassAllowsRawSinkBranches(t *testing.T) {
 			Inputs: []inputIntent{{Name: "input.ivf"}},
 			Streams: []streamIntent{{
 				Name:         "preview",
-				Select:       info.StreamSelect{Type: av.MediaVideo},
+				Select:       plan.StreamSelect{Type: av.MediaVideo},
 				Destinations: []string{"frames"},
 			}},
 		},
@@ -3057,7 +3058,7 @@ func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
 			Inputs: []inputIntent{{Name: "input.ivf"}},
 			Streams: []streamIntent{{
 				Name:         "preview",
-				Select:       info.StreamSelect{Type: av.MediaVideo},
+				Select:       plan.StreamSelect{Type: av.MediaVideo},
 				Destinations: []string{"web"},
 			}},
 		},
@@ -3084,7 +3085,7 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 			Inputs: []inputIntent{{Name: "input.ivf"}},
 			Streams: []streamIntent{{
 				Name:         "360p",
-				Select:       info.StreamSelect{Type: av.MediaVideo},
+				Select:       plan.StreamSelect{Type: av.MediaVideo},
 				Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 				Destinations: []string{"missing"},
 			}},
@@ -3126,7 +3127,7 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 		operation: branchCompositionOperation,
 		intent: Intent{Streams: []streamIntent{{
 			Name:         "720p",
-			Select:       info.StreamSelect{Type: av.MediaVideo},
+			Select:       plan.StreamSelect{Type: av.MediaVideo},
 			Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(2_000_000))),
 			Destinations: []string{"web"},
 		}}},
@@ -3218,7 +3219,7 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 		t.Fatalf("graphPlan work plan destinations = %+v, want web.ivf owned by 360p", work.Destinations)
 	}
 	operations := work.Operations
-	for _, want := range []info.OperationKind{info.OpDemux, info.OpSelect, info.OpDecode, info.OpTap, info.OpTransform, info.OpEncode, info.OpMux} {
+	for _, want := range []plan.OperationKind{plan.OpDemux, plan.OpSelect, plan.OpDecode, plan.OpTap, plan.OpTransform, plan.OpEncode, plan.OpMux} {
 		if !graphPlanOperationKindPresent(operations, want) {
 			t.Fatalf("graphPlan operations = %+v, want %s", operations, want)
 		}
@@ -3273,7 +3274,7 @@ func TestGraphPlanViewsAreImmutable(t *testing.T) {
 	}
 }
 
-func graphPlanOperationKindPresent(operations []workOperation, kind info.OperationKind) bool {
+func graphPlanOperationKindPresent(operations []workOperation, kind plan.OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true
@@ -3314,7 +3315,7 @@ func graphPlanOperationsWithoutDestinations(operations []workOperation) []workOp
 	return out
 }
 
-func graphPlanOperationsWithoutKind(operations []workOperation, kind info.OperationKind) []workOperation {
+func graphPlanOperationsWithoutKind(operations []workOperation, kind plan.OperationKind) []workOperation {
 	out := make([]workOperation, 0, len(operations))
 	for i := range operations {
 		if operations[i].Kind == kind {
@@ -3814,7 +3815,7 @@ func graphPlanDestinationOperationNode(operations []workOperation, target string
 	return "", false
 }
 
-func graphPlanOperationNode(operations []workOperation, kind info.OperationKind) (pipeline.NodeRef, bool) {
+func graphPlanOperationNode(operations []workOperation, kind plan.OperationKind) (pipeline.NodeRef, bool) {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return operations[i].Node, true
@@ -3823,7 +3824,7 @@ func graphPlanOperationNode(operations []workOperation, kind info.OperationKind)
 	return "", false
 }
 
-func renameResolvedGraphPlanOperationNode(t *testing.T, resolved recipeResolved, kind info.OperationKind, name string) recipeResolved {
+func renameResolvedGraphPlanOperationNode(t *testing.T, resolved recipeResolved, kind plan.OperationKind, name string) recipeResolved {
 	t.Helper()
 	node, ok := graphPlanOperationNode(resolved.graphPlan.work.Operations, kind)
 	if !ok {
@@ -3843,33 +3844,33 @@ func renameResolvedGraphPlanTargetNode(t *testing.T, resolved recipeResolved, ta
 	return resolved
 }
 
-func renameGraphPlanNodeRef(plan graphPlan, oldName string, newName string) graphPlan {
+func renameGraphPlanNodeRef(gp graphPlan, oldName string, newName string) graphPlan {
 	oldRef := pipeline.NodeRef(oldName)
 	newRef := pipeline.NodeRef(newName)
-	for i := range plan.nodes {
-		if plan.nodes[i].Name == oldName {
-			plan.nodes[i].Name = newName
+	for i := range gp.nodes {
+		if gp.nodes[i].Name == oldName {
+			gp.nodes[i].Name = newName
 		}
 	}
-	for i := range plan.edges {
-		if plan.edges[i].From == oldRef {
-			plan.edges[i].From = newRef
+	for i := range gp.edges {
+		if gp.edges[i].From == oldRef {
+			gp.edges[i].From = newRef
 		}
-		if plan.edges[i].To == oldRef {
-			plan.edges[i].To = newRef
-		}
-	}
-	for i := range plan.work.Operations {
-		if plan.work.Operations[i].Node == oldRef {
-			plan.work.Operations[i].Node = newRef
+		if gp.edges[i].To == oldRef {
+			gp.edges[i].To = newRef
 		}
 	}
-	for i := range plan.work.Taps {
-		if plan.work.Taps[i].Node == oldRef {
-			plan.work.Taps[i].Node = newRef
+	for i := range gp.work.Operations {
+		if gp.work.Operations[i].Node == oldRef {
+			gp.work.Operations[i].Node = newRef
 		}
 	}
-	return plan
+	for i := range gp.work.Taps {
+		if gp.work.Taps[i].Node == oldRef {
+			gp.work.Taps[i].Node = newRef
+		}
+	}
+	return gp
 }
 
 func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T) {
@@ -3913,7 +3914,7 @@ func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) 
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, info.OpDecode)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpDecode)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4047,7 +4048,7 @@ func TestSelectedPacketCopyLowererUsesPlanSelectOperationNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	resolved = renameResolvedGraphPlanOperationNode(t, resolved, info.OpSelect, "select-plan-audio")
+	resolved = renameResolvedGraphPlanOperationNode(t, resolved, plan.OpSelect, "select-plan-audio")
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -4096,7 +4097,7 @@ func TestPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, info.OpCopy)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpCopy)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4319,9 +4320,9 @@ func TestStreamGraphLowererUsesPlanSelectDecodeFilterOperationNodes(t *testing.T
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	resolved = renameResolvedGraphPlanOperationNode(t, resolved, info.OpSelect, "select-plan-audio")
-	resolved = renameResolvedGraphPlanOperationNode(t, resolved, info.OpDecode, "decode-plan-audio")
-	resolved = renameResolvedGraphPlanOperationNode(t, resolved, info.OpTransform, "resample-plan-audio")
+	resolved = renameResolvedGraphPlanOperationNode(t, resolved, plan.OpSelect, "select-plan-audio")
+	resolved = renameResolvedGraphPlanOperationNode(t, resolved, plan.OpDecode, "decode-plan-audio")
+	resolved = renameResolvedGraphPlanOperationNode(t, resolved, plan.OpTransform, "resample-plan-audio")
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -4351,7 +4352,7 @@ func TestFrameStreamLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, info.OpDecode)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpDecode)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4400,7 +4401,7 @@ func TestFrameStreamLowererRequiresSingleBranchOperationSet(t *testing.T) {
 	resolved.graphPlan.work.Operations = append(resolved.graphPlan.work.Operations, workOperation{
 		Branch: "other",
 		Node:   "select-other",
-		Kind:   info.OpSelect,
+		Kind:   plan.OpSelect,
 	})
 	task, err := resolved.Build(context.Background())
 	if err == nil {
@@ -4529,7 +4530,7 @@ func TestSelectedPacketCopyLowererRequiresSelectOperationBeforeSources(t *testin
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, info.OpSelect)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpSelect)
 	task, err := resolved.Build(ctx)
 	if err == nil {
 		task.Close()
@@ -4561,7 +4562,7 @@ func TestSelectedPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, info.OpCopy)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpCopy)
 	task, err := resolved.Build(ctx)
 	if err == nil {
 		task.Close()
@@ -4596,7 +4597,7 @@ func TestSelectedPacketCopyLowererRequiresSingleBranchOperationSet(t *testing.T)
 	resolved.graphPlan.work.Operations = append(resolved.graphPlan.work.Operations, workOperation{
 		Branch: "other",
 		Node:   "select-other",
-		Kind:   info.OpSelect,
+		Kind:   plan.OpSelect,
 	})
 	task, err := resolved.Build(ctx)
 	if err == nil {
@@ -4727,7 +4728,7 @@ func TestStreamGraphLowererUsesPlanEncodeOperationNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	resolved = renameResolvedGraphPlanOperationNode(t, resolved, info.OpEncode, "encode-plan-audio")
+	resolved = renameResolvedGraphPlanOperationNode(t, resolved, plan.OpEncode, "encode-plan-audio")
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -4756,7 +4757,7 @@ func TestEncodedFrameStreamLowererRequiresEncodeOperationBeforeSources(t *testin
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, info.OpEncode)
+	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpEncode)
 	task, err := resolved.Build(context.Background())
 	if err == nil {
 		task.Close()
@@ -4799,11 +4800,11 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	if !ok {
 		t.Fatalf("resolved intent streams = %+v, want one stream", resolved.intent.Streams)
 	}
-	plan, ok, err := newMediaPlanDecodeStreamGraph(resolved.runtime, resolved.inputAttachments, resolved.outputAttachments, stream)
+	gp, ok, err := newMediaPlanDecodeStreamGraph(resolved.runtime, resolved.inputAttachments, resolved.outputAttachments, stream)
 	if err != nil || !ok {
 		t.Fatalf("newMediaPlanDecodeStreamGraph ok=%v err=%v", ok, err)
 	}
-	spec, err := plan.encodeOutputSpec()
+	spec, err := gp.encodeOutputSpec()
 	if err != nil {
 		t.Fatalf("encodeOutputSpec() error = %v", err)
 	}
@@ -4818,7 +4819,7 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 		t.Fatalf("spec = %+v, want stage, encoder, and target from resolved attachments", spec)
 	}
 	kinds := operationSpecKindsForTest(stream.Operations)
-	want := []info.OperationKind{info.OpDecode, info.OpTap, info.OpStage, info.OpEncode}
+	want := []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpStage, plan.OpEncode}
 	if !reflect.DeepEqual(kinds, want) {
 		t.Fatalf("resolved stream operations = %+v, want %+v", kinds, want)
 	}

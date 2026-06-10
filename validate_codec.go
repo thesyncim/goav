@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/format"
 )
 
@@ -168,10 +169,10 @@ func liveDecodeCodec(inputs []inputIntent, stream streamIntent) (av.CodecID, boo
 }
 
 func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
-	code := CodeDecodeAdapterMissing
+	code := codes.DecodeAdapterMissing
 	reason := "no decoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
-		code = CodeDecodeAdapterUnavailable
+		code = codes.DecodeAdapterUnavailable
 		reason = string(codecID) + " decoder adapter is descriptor-only in this build"
 	}
 	details := []string{"codec=" + string(codecID)}
@@ -243,7 +244,7 @@ func decodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &BuildError{
-		Code:      CodeDecodeAdapterIncompatible,
+		Code:      codes.DecodeAdapterIncompatible,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    string(request.Codec) + " decoder adapter does not support the requested " + label,
@@ -376,7 +377,7 @@ func encodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &BuildError{
-		Code:      CodeEncodeAdapterIncompatible,
+		Code:      codes.EncodeAdapterIncompatible,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    string(request.Codec) + " encoder adapter does not support the requested " + label,
@@ -496,10 +497,10 @@ func mergeStringList(existing []string, next []string) []string {
 
 func recipeEncodeAdapterError(operation string, stream streamIntent, registry *codec.SimpleRegistry, cause error) error {
 	codecID := chainEncodeSpec(stream.Operations).ID
-	code := CodeEncodeAdapterMissing
+	code := codes.EncodeAdapterMissing
 	reason := "no encoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
-		code = CodeEncodeAdapterUnavailable
+		code = codes.EncodeAdapterUnavailable
 		reason = string(codecID) + " encoder adapter is descriptor-only in this build"
 	}
 	details := []string{"codec=" + string(codecID)}

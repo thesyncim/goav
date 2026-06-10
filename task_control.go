@@ -77,7 +77,7 @@ var (
 // it concerns. Build one with Keyframe or Deliver and target it with At.
 type Control struct {
 	// Node is the expert-level target: a node named as it appears in
-	// Task.Describe / info.Tap.Node. Normal controls do not need it — an
+	// Task.Describe / snapshot.Tap.Node. Normal controls do not need it — an
 	// untargeted Keyframe reaches every encoder by itself, and AtTap targets by
 	// tap name.
 	Node pipeline.NodeRef

@@ -7,8 +7,9 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/info"
+	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -17,7 +18,7 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 		return nil
 	}
 	return &BuildError{
-		Code:      CodeStreamSelectorInvalid,
+		Code:      codes.StreamSelectorInvalid,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream index must be non-negative",
@@ -38,7 +39,7 @@ func codecIntentSet(spec codec.CodecSpec) bool {
 
 func chainStepAfterEncodeError(operation string, node string, step string, encode codec.CodecSpec) error {
 	return &BuildError{
-		Code:      CodeStreamStepAfterEncode,
+		Code:      codes.StreamStepAfterEncode,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream processing steps must be declared before the encoder",
@@ -56,7 +57,7 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 
 func duplicateStreamEncodeError(operation string, node string, first codec.CodecSpec, second codec.CodecSpec) error {
 	return &BuildError{
-		Code:      CodeEncodeDuplicate,
+		Code:      codes.EncodeDuplicate,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream recipes allow one terminal encoder",
@@ -219,7 +220,7 @@ func (b *jobStreamBuilder) ensureFrameSourceShapeOperation() {
 
 func frameSourceDecodeError(operation string, node string) error {
 	return &BuildError{
-		Code:      CodeSourceShapeMismatch,
+		Code:      codes.SourceShapeMismatch,
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources are already decoded frames",
@@ -237,7 +238,7 @@ func frameSourceDecodeError(operation string, node string) error {
 
 func frameSourceCopyError(operation string, node string) error {
 	return &BuildError{
-		Code:      CodeSourceShapeMismatch,
+		Code:      codes.SourceShapeMismatch,
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources cannot use packet copy",
@@ -278,7 +279,7 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 			b.job.setErr(flowDecodeDomainError("build stream", firstNonEmpty(spec.name, jobStreamName(stream), "flow")))
 			return b
 		}
-		// The flow's info.OpDecode is appended below with the rest of spec.operations.
+		// The flow's plan.OpDecode is appended below with the rest of spec.operations.
 	}
 	if len(specSteps) != 0 && !chainHasDecode(spec.operations) {
 		b.ensureDecodeOperation()
@@ -325,7 +326,7 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 	stream := b.current()
 	if tap.name == "" {
 		b.job.setErr(&BuildError{
-			Code:      CodeTapInvalid,
+			Code:      codes.TapInvalid,
 			Operation: "build stream",
 			Node:      jobStreamName(stream),
 			Reason:    "tap name is empty",
@@ -342,7 +343,7 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 			b.job.setErr(err)
 			return b
 		}
-		stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, info.OpEncode)))
+		stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, plan.OpEncode)))
 		return b
 	}
 	if err := validateTapDomain("build stream", jobStreamName(stream), tap, shape.DomainFrame); err != nil {
@@ -354,8 +355,8 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 	return b
 }
 
-func streamSelectFromAV(selector av.StreamSelector) info.StreamSelect {
-	return info.StreamSelect{
+func streamSelectFromAV(selector av.StreamSelector) plan.StreamSelect {
+	return plan.StreamSelect{
 		ID:       selector.ID,
 		Index:    selector.Index,
 		UseIndex: selector.UseIndex,

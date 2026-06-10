@@ -12,7 +12,7 @@ import (
 
 // TestBuildErrorContractPinned enforces the error contract at the source
 // level: every &BuildError{...} literal in the package carries a Code from
-// the errors.go catalog (never a raw string), an Operation, a Reason, and
+// the codes catalog (never a raw string), an Operation, a Reason, and
 // either Suggestions (a user-fixable refusal's concrete fixes) or Details
 // (an internal invariant's explanation). The contract is what makes goav
 // errors uniformly actionable; this pin makes regressions impossible.
@@ -46,7 +46,7 @@ func TestBuildErrorContractPinned(t *testing.T) {
 				return true
 			}
 			if reason := describeForbiddenCodeExpr(code); reason != "" {
-				t.Errorf("%s: BuildError Code must come from the errors.go catalog: %s", filename, reason)
+				t.Errorf("%s: BuildError Code must come from the codes catalog: %s", filename, reason)
 			}
 			if _, ok := fields["Operation"]; !ok {
 				t.Errorf("%s: BuildError literal without Operation", filename)
@@ -65,10 +65,10 @@ func TestBuildErrorContractPinned(t *testing.T) {
 }
 
 // describeForbiddenCodeExpr rejects Code expressions that bypass the catalog:
-// raw string literals, string concatenations, and inline ErrorCode("...")
-// conversions. Catalog constants (CodeX), typed code parameters, struct
+// raw string literals, string concatenations, and inline codes.Code("...")
+// conversions. Catalog constants (codes.X), typed code parameters, struct
 // fields, and the joinErrorCode derivation are the allowed forms; the
-// compiler guarantees they are typed ErrorCode.
+// compiler guarantees they are typed codes.Code.
 func describeForbiddenCodeExpr(expr ast.Expr) string {
 	switch e := expr.(type) {
 	case *ast.BasicLit:
@@ -76,19 +76,22 @@ func describeForbiddenCodeExpr(expr ast.Expr) string {
 	case *ast.BinaryExpr:
 		return "string concatenation"
 	case *ast.CallExpr:
-		if fn, ok := e.Fun.(*ast.Ident); ok && fn.Name == "ErrorCode" {
-			return "inline ErrorCode(...) conversion"
+		if fn, ok := e.Fun.(*ast.SelectorExpr); ok && fn.Sel.Name == "Code" {
+			if pkg, ok := fn.X.(*ast.Ident); ok && pkg.Name == "codes" {
+				return "inline codes.Code(...) conversion"
+			}
 		}
 	}
 	return ""
 }
 
-// TestErrorCodeCatalogPinned keeps the catalog itself healthy: every
-// ErrorCode constant lives in errors.go, is documented, uses a snake_case
-// value, and no value is declared twice.
+// TestErrorCodeCatalogPinned keeps the catalog itself healthy: every Code
+// constant lives in codes/codes.go, is documented, drops the package name
+// from its own (no codes.CodeX stutter), uses a snake_case value, and no
+// value is declared twice.
 func TestErrorCodeCatalogPinned(t *testing.T) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "errors.go", nil, parser.ParseComments)
+	file, err := parser.ParseFile(fset, "codes/codes.go", nil, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,48 +109,45 @@ func TestErrorCodeCatalogPinned(t *testing.T) {
 				continue
 			}
 			typeIdent, ok := vs.Type.(*ast.Ident)
-			if !ok || typeIdent.Name != "ErrorCode" {
+			if !ok || typeIdent.Name != "Code" {
 				continue
 			}
 			for i, name := range vs.Names {
 				count++
-				if !strings.HasPrefix(name.Name, "Code") {
-					t.Errorf("errors.go: ErrorCode constant %s should be named Code...", name.Name)
+				if rest, ok := strings.CutPrefix(name.Name, "Code"); ok && rest != "" && rest[0] >= 'A' && rest[0] <= 'Z' {
+					t.Errorf("codes/codes.go: constant %s stutters as codes.%s; drop the Code prefix", name.Name, name.Name)
 				}
 				if vs.Doc == nil || strings.TrimSpace(vs.Doc.Text()) == "" {
-					t.Errorf("errors.go: %s has no doc comment saying when it fires", name.Name)
+					t.Errorf("codes/codes.go: %s has no doc comment saying when it fires", name.Name)
 				}
 				lit, ok := vs.Values[i].(*ast.BasicLit)
 				if !ok {
-					t.Errorf("errors.go: %s must be a string literal", name.Name)
+					t.Errorf("codes/codes.go: %s must be a string literal", name.Name)
 					continue
 				}
 				code := strings.Trim(lit.Value, `"`)
 				if !value.MatchString(code) {
-					t.Errorf("errors.go: %s value %q is not snake_case", name.Name, code)
+					t.Errorf("codes/codes.go: %s value %q is not snake_case", name.Name, code)
 				}
 				if prev, dup := seen[code]; dup {
-					t.Errorf("errors.go: value %q declared by both %s and %s", code, prev, name.Name)
+					t.Errorf("codes/codes.go: value %q declared by both %s and %s", code, prev, name.Name)
 				}
 				seen[code] = name.Name
 			}
 		}
 	}
 	if count < 140 {
-		t.Errorf("errors.go declares %d ErrorCode constants; the catalog should stay complete (>= 140)", count)
+		t.Errorf("codes/codes.go declares %d Code constants; the catalog should stay complete (>= 140)", count)
 	}
 }
 
 // TestErrorCodeLiteralsStayInCatalog sweeps every non-test source file for
-// stray code-shaped string literals assigned to Code fields outside errors.go
-// — diagnostics and decisions included — so new codes land in the catalog
-// instead of drifting back to scattered strings.
+// stray code-shaped string literals assigned to Code fields — diagnostics and
+// decisions included — so new codes land in the codes catalog instead of
+// drifting back to scattered strings.
 func TestErrorCodeLiteralsStayInCatalog(t *testing.T) {
 	files := parsePackageSourceFiles(t)
 	for filename, file := range files {
-		if filename == "errors.go" {
-			continue
-		}
 		ast.Inspect(file, func(n ast.Node) bool {
 			kv, ok := n.(*ast.KeyValueExpr)
 			if !ok {
@@ -158,7 +158,7 @@ func TestErrorCodeLiteralsStayInCatalog(t *testing.T) {
 				return true
 			}
 			if lit, ok := kv.Value.(*ast.BasicLit); ok {
-				t.Errorf("%s: Code field assigned raw string %s; declare it in errors.go and use the constant", filename, lit.Value)
+				t.Errorf("%s: Code field assigned raw string %s; declare it in codes/codes.go and use the constant", filename, lit.Value)
 			}
 			return true
 		})
