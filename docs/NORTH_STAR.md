@@ -142,9 +142,12 @@ Stages (each green, in dependency order):
    resample synthesis are absorbed (deleted) into it.
 7. Remaining: SwitchAt* policies; time/clock (theme C — pull scheduling is the
    keystone). The time-axis CONTROLS exist on the source-control seam
-   (`Seek`/`Rate`/`Segment` → `pipeline.ControllableSource`); what remains is
-   making sources honour them without custom code: clock/sync scheduling and a
-   seekable `format.Demuxer` hook for the container demuxers.
+   (`Seek`/`Rate`/`Segment` → `pipeline.ControllableSource`), and file inputs
+   honour Seek/Segment without custom code: the seekable demuxer hook shipped
+   (`format.Seeker`, discovered by assertion; `format.DemuxSource` becomes a
+   ControllableSource over it; matroska/webm implement it via Cues with a
+   cluster-index fallback). What remains is clock/sync scheduling — Rate on a
+   file pump stays honestly rejected until pacing exists to scale.
 
 ## Execution order (condensed)
 

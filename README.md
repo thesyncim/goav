@@ -716,7 +716,13 @@ position — the signal downstream decoders already reset on; a rate change is a
 pure pacing change and never discontinues; a segment plays `[start, end)` and
 then ends the stream exactly as at the end of the media, so destinations
 finalize naturally. A source that cannot honour a control reports a clear
-per-source error without stopping a capable sibling.
+per-source error without stopping a capable sibling. File inputs honour Seek
+and Segment out of the box when the container demuxer implements
+`format.Seeker` — the Matroska and WebM demuxers do, repositioning through
+Cues (with a cluster-index fallback for cue-less files) to the keyframe at or
+before the target; a reader that cannot seek reports `format.ErrNotSeekable`,
+and Rate on a file pump is rejected with `format.ErrRateUnsupported` because
+file delivery has no pacing to scale.
 
 `.AtTap(name)` narrows any control to one tap's point in the graph —
 `goav.Keyframe("video").AtTap("video.720p.frames")` — and `goav.Deliver(event)`

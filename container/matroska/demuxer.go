@@ -354,7 +354,13 @@ func (d *Demuxer) seekToClusterPosition(position uint64) (ebml.Header, error) {
 	if _, err := d.seeker.Seek(offset, io.SeekStart); err != nil {
 		return ebml.Header{}, err
 	}
-	d.reader.Reset(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize})
+	// ResetAt keeps the reader's logical offsets absolute (file offsets), the
+	// same convention as the sequential read and every other reposition site.
+	// A plain Reset would restart offsets at zero, so a top-level element
+	// already preloaded through the seek head (the trailing Cues, typically)
+	// would no longer match its recorded offset when the post-seek read
+	// reaches it — tripping the duplicate-element guard instead of skipping.
+	d.reader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, offset)
 	header, err := d.reader.ReadHeader()
 	if err != nil {
 		return ebml.Header{}, err
@@ -868,18 +874,21 @@ func (d *Demuxer) seekToPacketIndexEntry(entry packetIndexEntry) error {
 	if err != nil {
 		return err
 	}
-	blockOffset := int64(entry.BlockPosition - entry.ClusterPosition)
+	if entry.BlockPosition > uint64(math.MaxInt64) ||
+		int64(entry.BlockPosition) > math.MaxInt64-d.segmentData {
+		return ErrInvalidData
+	}
+	// The reader's logical offsets are absolute file offsets (the same
+	// convention as the sequential read), so the block bounds are checked and
+	// the reader repositioned in absolute terms too.
+	blockOffset := d.segmentData + int64(entry.BlockPosition)
 	if blockOffset < cluster.DataOffset {
 		return ErrInvalidData
 	}
 	if !cluster.Size.Unknown && blockOffset >= cluster.DataOffset+int64(cluster.Size.Value) {
 		return ErrInvalidData
 	}
-	if entry.BlockPosition > uint64(math.MaxInt64) ||
-		int64(entry.BlockPosition) > math.MaxInt64-d.segmentData {
-		return ErrInvalidData
-	}
-	if _, err := d.seeker.Seek(d.segmentData+int64(entry.BlockPosition), io.SeekStart); err != nil {
+	if _, err := d.seeker.Seek(blockOffset, io.SeekStart); err != nil {
 		return err
 	}
 	d.reader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, blockOffset)

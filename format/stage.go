@@ -3,7 +3,10 @@ package format
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"sync/atomic"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
@@ -33,12 +36,34 @@ type DemuxSource struct {
 	name    string
 	detail  string
 	demuxer Demuxer
+	seeker  Seeker
+	pending atomic.Pointer[timeControlRequest]
+	window  demuxWindow
 	result  ReadResult
 	message pipeline.Message
 	eos     av.Event
+	disc    av.Event
 	streams []av.Stream
 	events  []av.Event
 	closed  bool
+}
+
+// timeControlRequest is one recorded reposition: a seek position, plus an
+// exclusive segment end when the request is a window (end > 0 means segment).
+// Control swaps it into DemuxSource.pending; the Start loop applies it between
+// reads, per the pipeline.ControllableSource concurrency contract.
+type timeControlRequest struct {
+	position time.Duration
+	end      time.Duration
+}
+
+// demuxWindow is the Start-loop-local segment state: the exclusive end bound
+// and the streams whose packets already passed it. Only the Start loop touches
+// it — Control communicates exclusively through the pending pointer.
+type demuxWindow struct {
+	active bool
+	end    time.Duration
+	done   []av.StreamID
 }
 
 type MuxStage struct {
@@ -54,8 +79,17 @@ var _ pipeline.Source = (*DemuxSource)(nil)
 var _ pipeline.Stage = (*MuxStage)(nil)
 var _ pipeline.NodeDescriber = (*DemuxSource)(nil)
 var _ pipeline.NodeDescriber = (*MuxStage)(nil)
+var _ pipeline.ControllableSource = (*controllableDemuxSource)(nil)
 
-func NewDemuxSource(config DemuxSourceConfig) (*DemuxSource, error) {
+// NewDemuxSource builds the pump that drives Demuxer.ReadInto into a pipeline.
+// When the demuxer implements Seeker the returned source also implements
+// pipeline.ControllableSource, honouring av.EventSeek and av.EventSegment by
+// repositioning through the demuxer (Control records the request; the Start
+// loop applies it and emits av.EventDiscontinuity before the first message at
+// the new position). A demuxer without Seeker yields a plain source — time
+// controls report the standard not-controllable error at the graph seam, never
+// a silent ignore.
+func NewDemuxSource(config DemuxSourceConfig) (pipeline.Source, error) {
 	if config.Demuxer == nil {
 		return nil, ErrNilDemuxer
 	}
@@ -74,7 +108,54 @@ func NewDemuxSource(config DemuxSourceConfig) (*DemuxSource, error) {
 		result:  config.Result,
 	}
 	source.initStreamEvents(config.Demuxer.Streams())
+	if seeker, ok := config.Demuxer.(Seeker); ok {
+		source.seeker = seeker
+		return &controllableDemuxSource{DemuxSource: source}, nil
+	}
 	return source, nil
+}
+
+// controllableDemuxSource is the pipeline.ControllableSource face of a
+// DemuxSource whose demuxer implements Seeker. The split keeps the capability
+// honest: a source over a demuxer that cannot reposition does not expose
+// Control at all, so capability discovery by type assertion never lies.
+type controllableDemuxSource struct {
+	*DemuxSource
+}
+
+// Control records a time-axis request for the Start loop to apply between
+// reads (the ControllableSource contract: record, don't touch loop state).
+// av.EventSeek and av.EventSegment are honoured through the demuxer's Seeker;
+// av.EventRate is rejected with ErrRateUnsupported — a demux pump delivers as
+// fast as the graph drains and has no pacing to scale.
+func (s *controllableDemuxSource) Control(_ context.Context, msg *pipeline.Message) error {
+	if msg == nil || msg.Kind != pipeline.MessageEvent || msg.Event == nil {
+		return fmt.Errorf("format: %s: only event controls are supported", s.name)
+	}
+	switch msg.Event.Type {
+	case av.EventSeek:
+		position, ok := msg.Event.Timestamp.ToDuration()
+		if !ok || position < 0 {
+			return fmt.Errorf("format: %s: seek needs a non-negative position on Event.Timestamp", s.name)
+		}
+		s.pending.Store(&timeControlRequest{position: position})
+		return nil
+	case av.EventSegment:
+		start, ok := msg.Event.Timestamp.ToDuration()
+		if !ok || start < 0 {
+			return fmt.Errorf("format: %s: segment needs a non-negative start on Event.Timestamp", s.name)
+		}
+		end, ok := av.EventSegmentEnd(msg.Event)
+		if !ok || end <= start {
+			return fmt.Errorf("format: %s: segment needs an exclusive end after start (build it with av.SegmentEndMetadata)", s.name)
+		}
+		s.pending.Store(&timeControlRequest{position: start, end: end})
+		return nil
+	case av.EventRate:
+		return fmt.Errorf("%s: %w", s.name, ErrRateUnsupported)
+	default:
+		return fmt.Errorf("format: %s: unsupported source control %q", s.name, msg.Event.Type)
+	}
 }
 
 func NewMuxStage(config MuxStageConfig) (*MuxStage, error) {
@@ -124,6 +205,9 @@ func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if err := s.applyPendingControl(ctx, emitter); err != nil {
+			return err
+		}
 		s.result.Reset()
 		if err := s.demuxer.ReadInto(ctx, &s.result); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -135,11 +219,104 @@ func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error
 			return err
 		}
 		if s.result.PacketReady {
-			if err := s.emitPacket(ctx, emitter, s.result.Packet); err != nil {
-				return err
+			emit, finished := s.windowAdmits(s.result.Packet)
+			if finished {
+				return s.emitEndOfStream(ctx, emitter)
+			}
+			if emit {
+				if err := s.emitPacket(ctx, emitter, s.result.Packet); err != nil {
+					return err
+				}
 			}
 		}
 	}
+}
+
+// applyPendingControl applies a reposition recorded by Control: it seeks the
+// demuxer, arms or disarms the segment window, and emits av.EventDiscontinuity
+// before the first message at the new position (the repositioning half of the
+// pipeline.ControllableSource contract). Only the Start loop calls it, so the
+// seek never races ReadInto. A failed seek stops the pump with the demuxer's
+// error — including format.ErrNotSeekable input — rather than playing on from
+// the wrong position.
+func (s *DemuxSource) applyPendingControl(ctx context.Context, emitter pipeline.Emitter) error {
+	request := s.pending.Swap(nil)
+	if request == nil {
+		return nil
+	}
+	if err := s.seeker.Seek(ctx, request.position); err != nil {
+		return fmt.Errorf("format: %s: seek to %v: %w", s.name, request.position, err)
+	}
+	s.window.active = request.end > 0
+	s.window.end = request.end
+	s.window.done = s.window.done[:0]
+	s.disc.Reset()
+	s.disc.Type = av.EventDiscontinuity
+	if s.window.active {
+		s.disc.Reason = "segment"
+	} else {
+		s.disc.Reason = "seek"
+	}
+	if len(s.streams) == 1 {
+		s.disc.StreamID = s.streams[0].ID
+		s.disc.Epoch = s.streams[0].Epoch
+	}
+	s.message.Kind = pipeline.MessageEvent
+	s.message.Packet = nil
+	s.message.Frame = nil
+	s.message.Event = &s.disc
+	return emitter.Emit(ctx, &s.message)
+}
+
+// windowAdmits applies the segment window to one demuxed packet: packets
+// before the exclusive end pass through; a packet at or past the end marks its
+// stream finished and is dropped. finished reports that every declared stream
+// passed the bound, which ends the source exactly like the end of the media.
+// A packet without a comparable time passes through — bounding cannot justify
+// silently dropping media.
+func (s *DemuxSource) windowAdmits(packet *av.Packet) (emit bool, finished bool) {
+	if !s.window.active || packet == nil {
+		return true, false
+	}
+	pts, ok := packet.PTS.ToDuration()
+	if !ok {
+		return true, false
+	}
+	if pts < s.window.end {
+		return !s.windowStreamDone(packet.StreamID), false
+	}
+	s.markWindowStreamDone(packet.StreamID)
+	return false, s.windowFinished()
+}
+
+func (s *DemuxSource) windowStreamDone(id av.StreamID) bool {
+	for i := range s.window.done {
+		if s.window.done[i] == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *DemuxSource) markWindowStreamDone(id av.StreamID) {
+	if !s.windowStreamDone(id) {
+		s.window.done = append(s.window.done, id)
+	}
+}
+
+// windowFinished reports whether every declared stream has passed the segment
+// end. With no declared streams the first crossing finishes the window — there
+// is no stream set to wait for.
+func (s *DemuxSource) windowFinished() bool {
+	if len(s.streams) == 0 {
+		return true
+	}
+	for i := range s.streams {
+		if !s.windowStreamDone(s.streams[i].ID) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *MuxStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {

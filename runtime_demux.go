@@ -9,7 +9,7 @@ import (
 )
 
 type demuxBuild struct {
-	source  *format.DemuxSource
+	source  pipeline.Source
 	streams []av.Stream
 }
 

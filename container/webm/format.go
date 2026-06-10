@@ -3,10 +3,13 @@ package webm
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/container/matroska"
@@ -250,6 +253,36 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	}
 	out.Packet.Keyframe = packet.Keyframe
 	out.PacketReady = true
+	return nil
+}
+
+var _ format.Seeker = (*FormatDemuxer)(nil)
+
+// Seek implements format.Seeker: it repositions the demuxer to the nearest
+// cue at or before position (falling back to the cluster index when the file
+// carries no Cues), so the next ReadInto resumes at a keyframe-aligned point
+// at or before position. The demuxer's monotonic-timecode validation restarts
+// at the new position. Input opened from a reader that cannot seek reports an
+// error wrapping format.ErrNotSeekable.
+func (d *FormatDemuxer) Seek(ctx context.Context, position time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if d.closed {
+		return matroska.ErrClosed
+	}
+	if d.demuxer == nil {
+		return matroska.ErrNilReader
+	}
+	if position < 0 {
+		return matroska.ErrInvalidData
+	}
+	if err := d.demuxer.SeekToTime(int64(position)); err != nil {
+		if errors.Is(err, matroska.ErrNonSeekableReader) {
+			return fmt.Errorf("%w: %w", format.ErrNotSeekable, err)
+		}
+		return err
+	}
 	return nil
 }
 
