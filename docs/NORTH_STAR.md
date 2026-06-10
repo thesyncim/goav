@@ -83,8 +83,12 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   aligns arms on a common ns clock (min-head step, tolerance = half a frame;
   ahead arms gap as silence/unpainted, stale frames drop to catch up, an arm
   discontinuity flushes+re-syncs and forwards, an ended arm stops gating).
-  Remaining: minimal TimeShape (TimeBase/Clock/Live/Latency), pipeline clock +
-  pull scheduling, Attach-at policies. **TODO.**
+  Realtime file playback is clock-paced **DONE**: `av.Clock` (Now/Sleep,
+  injectable, default monotonic) drives the demux pump — packets deliver when
+  their media time is due, Rate scales the pace live, seeks/segments/
+  discontinuities re-anchor. Remaining: minimal TimeShape
+  (TimeBase/Clock/Live/Latency), pipeline-wide clock service + pull
+  scheduling, A/V sink sync, Attach-at policies. **TODO.**
 - **Source backpressure** (§14): result-aware `push.X(...) (PushResult, error)` —
   Accepted/Dropped per push, sheds stay nil-error. **DONE.**
 
@@ -155,8 +159,12 @@ Stages (each green, in dependency order):
    honour Seek/Segment without custom code: the seekable demuxer hook shipped
    (`format.Seeker`, discovered by assertion; `format.DemuxSource` becomes a
    ControllableSource over it; matroska/webm implement it via Cues with a
-   cluster-index fallback). What remains is clock/sync scheduling — Rate on a
-   file pump stays honestly rejected until pacing exists to scale.
+   cluster-index fallback). Paced realtime file playback shipped: the demux
+   pump anchors wall↔media time on an injectable `av.Clock` (per-runtime
+   `WithClock`, default monotonic) and re-anchors on every seek/segment/
+   discontinuity/rate change, so Rate on a file is a real pacing multiplier
+   (offline pumps stay full-speed and reject it). What remains of theme C:
+   the pipeline-wide clock service, A/V sink sync, and pull scheduling.
 
 ## Execution order (condensed)
 

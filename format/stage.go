@@ -20,6 +20,15 @@ type DemuxSourceConfig struct {
 	Demuxer Demuxer
 	// Result owns the packet pointer and event slice reused for every read.
 	Result ReadResult
+	// Realtime paces the pump on a clock: each packet is delivered when its
+	// media time is due (PTS-paced playback), and av.EventRate scales the pace
+	// live. False (offline) pumps as fast as the sink drains — a transcode job
+	// must not run at 1x — and rejects rate controls with ErrRateUnsupported.
+	Realtime bool
+	// Clock is the time source realtime pacing runs on; nil defaults to
+	// av.MonotonicClock(). Tests inject a fake so nothing sleeps for real.
+	// Ignored when Realtime is false.
+	Clock av.Clock
 }
 
 type MuxStageConfig struct {
@@ -39,6 +48,7 @@ type DemuxSource struct {
 	seeker  Seeker
 	pending atomic.Pointer[timeControlRequest]
 	window  demuxWindow
+	pacer   *demuxPacer
 	result  ReadResult
 	message pipeline.Message
 	eos     av.Event
@@ -89,6 +99,11 @@ var _ pipeline.ControllableSource = (*controllableDemuxSource)(nil)
 // the new position). A demuxer without Seeker yields a plain source — time
 // controls report the standard not-controllable error at the graph seam, never
 // a silent ignore.
+//
+// With Realtime set the pump paces delivery on the configured clock — each
+// packet emits when its media time is due, av.EventRate scales the pace — and
+// every reposition (seek, segment start, demuxer discontinuity) re-anchors the
+// pacing timeline so playback resumes paced at the new position.
 func NewDemuxSource(config DemuxSourceConfig) (pipeline.Source, error) {
 	if config.Demuxer == nil {
 		return nil, ErrNilDemuxer
@@ -106,6 +121,13 @@ func NewDemuxSource(config DemuxSourceConfig) (pipeline.Source, error) {
 		detail:  config.Detail,
 		demuxer: config.Demuxer,
 		result:  config.Result,
+	}
+	if config.Realtime {
+		clock := config.Clock
+		if clock == nil {
+			clock = av.MonotonicClock()
+		}
+		source.pacer = newDemuxPacer(clock)
 	}
 	source.initStreamEvents(config.Demuxer.Streams())
 	if seeker, ok := config.Demuxer.(Seeker); ok {
@@ -125,9 +147,11 @@ type controllableDemuxSource struct {
 
 // Control records a time-axis request for the Start loop to apply between
 // reads (the ControllableSource contract: record, don't touch loop state).
-// av.EventSeek and av.EventSegment are honoured through the demuxer's Seeker;
-// av.EventRate is rejected with ErrRateUnsupported — a demux pump delivers as
-// fast as the graph drains and has no pacing to scale.
+// av.EventSeek and av.EventSegment are honoured through the demuxer's Seeker.
+// av.EventRate is honoured when the pump paces delivery (Realtime): the rate
+// multiplier swaps atomically and the loop re-anchors its pacing timeline at
+// the next packet — pure pacing, no discontinuity. An offline pump runs
+// unpaced and rejects rate controls with ErrRateUnsupported.
 func (s *controllableDemuxSource) Control(_ context.Context, msg *pipeline.Message) error {
 	if msg == nil || msg.Kind != pipeline.MessageEvent || msg.Event == nil {
 		return fmt.Errorf("format: %s: only event controls are supported", s.name)
@@ -152,7 +176,15 @@ func (s *controllableDemuxSource) Control(_ context.Context, msg *pipeline.Messa
 		s.pending.Store(&timeControlRequest{position: start, end: end})
 		return nil
 	case av.EventRate:
-		return fmt.Errorf("%s: %w", s.name, ErrRateUnsupported)
+		if s.pacer == nil {
+			return fmt.Errorf("%s: %w", s.name, ErrRateUnsupported)
+		}
+		rate, ok := av.EventRateValue(msg.Event)
+		if !ok {
+			return fmt.Errorf("format: %s: rate needs a positive, finite value on Event.Metadata (build it with av.RateMetadata)", s.name)
+		}
+		s.pacer.setRate(rate)
+		return nil
 	default:
 		return fmt.Errorf("format: %s: unsupported source control %q", s.name, msg.Event.Type)
 	}
@@ -218,12 +250,16 @@ func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error
 		if err := s.emitEvents(ctx, emitter, s.result.Events); err != nil {
 			return err
 		}
+		s.reanchorOnDiscontinuity(s.result.Events)
 		if s.result.PacketReady {
 			emit, finished := s.windowAdmits(s.result.Packet)
 			if finished {
 				return s.emitEndOfStream(ctx, emitter)
 			}
 			if emit {
+				if err := s.pacePacket(ctx, s.result.Packet); err != nil {
+					return err
+				}
 				if err := s.emitPacket(ctx, emitter, s.result.Packet); err != nil {
 					return err
 				}
@@ -265,7 +301,36 @@ func (s *DemuxSource) applyPendingControl(ctx context.Context, emitter pipeline.
 	s.message.Packet = nil
 	s.message.Frame = nil
 	s.message.Event = &s.disc
+	if s.pacer != nil {
+		// The reposition moved media time; re-anchor so playback resumes paced
+		// at the new position — no giant sleep forward, no burst backward.
+		s.pacer.reset()
+	}
 	return emitter.Emit(ctx, &s.message)
+}
+
+// pacePacket holds the packet until its media time is due when the pump is
+// realtime (paced); offline pumps deliver as fast as the sink drains.
+func (s *DemuxSource) pacePacket(ctx context.Context, packet *av.Packet) error {
+	if s.pacer == nil {
+		return nil
+	}
+	return s.pacer.pace(ctx, packet)
+}
+
+// reanchorOnDiscontinuity resets the pacing anchor when the demuxer itself
+// reported a timeline break in this read's events, so pacing re-anchors at the
+// first packet after the break exactly as it does after a seek.
+func (s *DemuxSource) reanchorOnDiscontinuity(events []av.Event) {
+	if s.pacer == nil {
+		return
+	}
+	for i := range events {
+		if events[i].Type == av.EventDiscontinuity {
+			s.pacer.reset()
+			return
+		}
+	}
 }
 
 // windowAdmits applies the segment window to one demuxed packet: packets

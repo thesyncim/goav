@@ -295,7 +295,8 @@ func TestDemuxSourceControlRejections(t *testing.T) {
 	controllable := source.(pipeline.ControllableSource)
 	ctx := context.Background()
 
-	// Rate is rejected honestly: a demux pump has no pacing to scale.
+	// Rate is rejected honestly on an offline pump: it runs unpaced, so there
+	// is no pacing to scale (realtime pumps accept it — see the pacing tests).
 	rate := &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 		Type:     av.EventRate,
 		Metadata: av.RateMetadata(2),

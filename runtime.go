@@ -147,12 +147,24 @@ func WithRealtime(realtime bool) Option {
 	}
 }
 
+// WithClock sets the time source the runtime's realtime pacing runs on — a
+// realtime task playing a file delivers each packet when its media time is due
+// on this clock (and goav.Rate scales that pace). Nil or unset defaults to
+// av.MonotonicClock(); tests and simulations inject a fake so nothing sleeps
+// for real. Offline runtimes (WithRealtime(false)) never consult it.
+func WithClock(clock av.Clock) Option {
+	return func(runtime *runtime) {
+		runtime.clock = clock
+	}
+}
+
 type runtime struct {
 	codecs        *codec.SimpleRegistry
 	filters       *filter.SimpleRegistry
 	formats       *format.SimpleRegistry
 	buffer        pipeline.BufferPolicy
 	realtime      bool
+	clock         av.Clock
 	eventCapacity int
 }
 

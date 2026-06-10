@@ -69,8 +69,9 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demu
 	if err != nil {
 		return demuxBuild{}, inputDemuxerMissingError(input, inputProbe.Format, err)
 	}
+	realtime := b.runtime.realtime || input.Realtime
 	if err := demuxer.Open(ctx, input, format.OpenOptions{
-		Realtime: b.runtime.realtime || input.Realtime,
+		Realtime: realtime,
 		Metadata: input.Metadata,
 	}); err != nil {
 		demuxer.Close()
@@ -91,6 +92,11 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demu
 			},
 			Events: make([]av.Event, 0, 1),
 		},
+		// A realtime task plays files paced — packets deliver when their media
+		// time is due on the runtime clock, which is what makes goav.Rate work
+		// on file inputs. Offline tasks pump at full speed.
+		Realtime: realtime,
+		Clock:    b.runtime.clock,
 	})
 	if err != nil {
 		demuxer.Close()

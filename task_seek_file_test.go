@@ -110,10 +110,65 @@ func (s *seekFileSink) snapshot() []int64 {
 	return append([]int64(nil), s.log...)
 }
 
-func seekFileTask(t *testing.T, reader io.Reader, sink *seekFileSink) Task {
+// paceFileClock is the deterministic av.Clock the realtime file tests inject:
+// Sleep records each requested wait and advances Now by it, so paced playback
+// runs instantly and tests assert the exact pacing the pump asked for.
+type paceFileClock struct {
+	mu     sync.Mutex
+	now    time.Duration
+	sleeps []time.Duration
+}
+
+func (c *paceFileClock) Now() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *paceFileClock) Sleep(ctx context.Context, d time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sleeps = append(c.sleeps, d)
+	if d > 0 {
+		c.now += d
+	}
+	return nil
+}
+
+func (c *paceFileClock) recorded() []time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]time.Duration(nil), c.sleeps...)
+}
+
+func assertPacingSleeps(t *testing.T, got []time.Duration, want []time.Duration) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("pacing sleeps = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("pacing sleeps = %v, want %v", got, want)
+		}
+	}
+}
+
+// repeatSleeps builds the expected pacing sequence: count waits of d each.
+func repeatSleeps(d time.Duration, count int) []time.Duration {
+	out := make([]time.Duration, count)
+	for i := range out {
+		out[i] = d
+	}
+	return out
+}
+
+func seekFileTask(t *testing.T, reader io.Reader, sink *seekFileSink, options ...Option) Task {
 	t.Helper()
 	task, err := From(FileInput("seek.mkv", reader)).
-		UseRuntime(New(WithFormatAdapter(matroskaadapter.Register))).
+		UseRuntime(New(append([]Option{WithFormatAdapter(matroskaadapter.Register)}, options...)...)).
 		Audio().Copy().
 		To(Sink(SinkFunc("rec", sink.record))).
 		Build(context.Background())
@@ -140,7 +195,8 @@ func TestTaskSeekRepositionsRealMatroskaFile(t *testing.T) {
 	ctx := context.Background()
 	data := muxSeekFileMKV(t)
 	sink := &seekFileSink{}
-	task := seekFileTask(t, bytes.NewReader(data), sink)
+	// Realtime tasks pace file playback; the fake clock keeps the test instant.
+	task := seekFileTask(t, bytes.NewReader(data), sink, WithClock(&paceFileClock{}))
 
 	// 450ms sits between the 400ms and 500ms cues: the demuxer repositions
 	// at-or-before, so playback resumes at the 400ms keyframe with a
@@ -166,7 +222,7 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 	data := muxSeekFileMKV(t)
 	sink := &seekFileSink{}
 	task, err := From(FileInput("seek.mkv", bytes.NewReader(data))).
-		UseRuntime(New(WithFormatAdapter(matroskaadapter.Register))).
+		UseRuntime(New(WithFormatAdapter(matroskaadapter.Register), WithClock(&paceFileClock{}))).
 		Audio().Copy().
 		Tap(PacketTap("audio.packets")).
 		To(Sink(SinkFunc("base", sink.record))).
@@ -214,7 +270,7 @@ func TestTaskSeekNonSeekableFileReaderFailsClearly(t *testing.T) {
 	// Hide the reader's Seek method: a pure io.Reader cannot reposition, like
 	// a pipe or a network stream.
 	sink := &seekFileSink{}
-	task := seekFileTask(t, struct{ io.Reader }{bytes.NewReader(data)}, sink)
+	task := seekFileTask(t, struct{ io.Reader }{bytes.NewReader(data)}, sink, WithClock(&paceFileClock{}))
 
 	// The control is recorded (the demuxer supports seeking in general); the
 	// reposition itself fails when the pump applies it, stopping the task with
@@ -228,15 +284,106 @@ func TestTaskSeekNonSeekableFileReaderFailsClearly(t *testing.T) {
 	}
 }
 
-func TestTaskRateOnFileInputRejectedHonestly(t *testing.T) {
+func TestTaskRealtimeFilePlaybackPacedByDefault(t *testing.T) {
 	ctx := context.Background()
 	data := muxSeekFileMKV(t)
 	sink := &seekFileSink{}
-	task := seekFileTask(t, bytes.NewReader(data), sink)
+	clock := &paceFileClock{}
+	// A realtime task (the default) playing a file gets PTS pacing without
+	// asking: that is the point of a clock-driven pump.
+	task := seekFileTask(t, bytes.NewReader(data), sink, WithClock(clock))
 
-	// A demux pump has no pacing to scale, so Rate reports the typed
-	// not-supported error instead of lying about playback speed.
+	if err := task.Run(ctx); err != nil {
+		t.Fatalf("Run err = %v", err)
+	}
+
+	// The first packet anchors the timeline; each of the nine that follow
+	// waits its 100ms media-time delta on the runtime clock.
+	assertPacingSleeps(t, clock.recorded(), repeatSleeps(100*time.Millisecond, 9))
+	want := []int64{}
+	for ms := int64(0); ms <= 900; ms += 100 {
+		want = append(want, ms*int64(time.Millisecond))
+	}
+	want = append(want, -2)
+	assertSeekFileLog(t, sink.snapshot(), want)
+}
+
+func TestTaskOfflineFileTaskPumpsUnpaced(t *testing.T) {
+	ctx := context.Background()
+	data := muxSeekFileMKV(t)
+	sink := &seekFileSink{}
+	clock := &paceFileClock{}
+	// WithRealtime(false) is the offline transcode shape: full-speed pumping,
+	// the clock is never consulted.
+	task := seekFileTask(t, bytes.NewReader(data), sink, WithRealtime(false), WithClock(clock))
+
+	// With no pacing there is nothing for Rate to scale — the typed rejection
+	// says offline tasks run unpaced instead of lying about playback speed.
 	if err := task.Control(ctx, Rate(2.0)); !errors.Is(err, format.ErrRateUnsupported) {
 		t.Fatalf("Rate err = %v, want format.ErrRateUnsupported", err)
 	}
+
+	if err := task.Run(ctx); err != nil {
+		t.Fatalf("Run err = %v", err)
+	}
+	if sleeps := clock.recorded(); len(sleeps) != 0 {
+		t.Fatalf("offline task slept %v, want full-speed pumping", sleeps)
+	}
+}
+
+func TestTaskRateOnFileScalesPacing(t *testing.T) {
+	ctx := context.Background()
+	data := muxSeekFileMKV(t)
+	sink := &seekFileSink{}
+	clock := &paceFileClock{}
+	task := seekFileTask(t, bytes.NewReader(data), sink, WithClock(clock))
+
+	// Rate on a file is a pacing multiplier now: at 2x the 100ms cadence
+	// plays in 50ms steps of clock time. Delivered before Run, the control
+	// pre-positions the source (direct-runner delivery).
+	if err := task.Control(ctx, Rate(2.0)); err != nil {
+		t.Fatalf("Rate err = %v", err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatalf("Run err = %v", err)
+	}
+
+	assertPacingSleeps(t, clock.recorded(), repeatSleeps(50*time.Millisecond, 9))
+	// A pure pacing change repositions nothing: the full timeline plays with
+	// no discontinuity.
+	want := []int64{}
+	for ms := int64(0); ms <= 900; ms += 100 {
+		want = append(want, ms*int64(time.Millisecond))
+	}
+	want = append(want, -2)
+	assertSeekFileLog(t, sink.snapshot(), want)
+}
+
+func TestTaskSeekAndRateComposeOnFile(t *testing.T) {
+	ctx := context.Background()
+	data := muxSeekFileMKV(t)
+	sink := &seekFileSink{}
+	clock := &paceFileClock{}
+	task := seekFileTask(t, bytes.NewReader(data), sink, WithClock(clock))
+
+	// Seek and Rate compose: playback resumes at the 400ms keyframe (anchor
+	// reset — the first packet after the discontinuity emits immediately) and
+	// the remaining 100ms cadence paces at 50ms of clock per step.
+	if err := task.Control(ctx, Seek(450*time.Millisecond)); err != nil {
+		t.Fatalf("Seek err = %v", err)
+	}
+	if err := task.Control(ctx, Rate(2.0)); err != nil {
+		t.Fatalf("Rate err = %v", err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatalf("Run err = %v", err)
+	}
+
+	assertPacingSleeps(t, clock.recorded(), repeatSleeps(50*time.Millisecond, 5))
+	want := []int64{-1}
+	for ms := int64(400); ms <= 900; ms += 100 {
+		want = append(want, ms*int64(time.Millisecond))
+	}
+	want = append(want, -2)
+	assertSeekFileLog(t, sink.snapshot(), want)
 }

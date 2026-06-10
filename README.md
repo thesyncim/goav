@@ -755,9 +755,13 @@ per-source error without stopping a capable sibling. File inputs honour Seek
 and Segment out of the box when the container demuxer implements
 `format.Seeker` — the Matroska and WebM demuxers do, repositioning through
 Cues (with a cluster-index fallback for cue-less files) to the keyframe at or
-before the target; a reader that cannot seek reports `format.ErrNotSeekable`,
-and Rate on a file pump is rejected with `format.ErrRateUnsupported` because
-file delivery has no pacing to scale.
+before the target; a reader that cannot seek reports `format.ErrNotSeekable`.
+Realtime tasks (the default) pace file playback on a clock — each packet is
+delivered when its media time is due — so Rate works on files as a live pacing
+multiplier and composes with Seek/Segment; offline tasks (`WithRealtime(false)`)
+pump at full speed and reject Rate with `format.ErrRateUnsupported`. The pacing
+clock is injectable per runtime (`goav.WithClock`, default monotonic), so tests
+and simulations never sleep for real.
 
 `.AtTap(name)` narrows any control to one tap's point in the graph —
 `goav.Keyframe("video").AtTap("video.720p.frames")` — and `goav.Deliver(event)`
